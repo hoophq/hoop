@@ -422,11 +422,38 @@ type AITrigger struct {
 	// Resources matches an HTTP resource glob, using the same matcher an
 	// http_resource rule uses.
 	Resources []string `json:"resources,omitempty"`
+
+	// Any matches a statement that meets EVERY field one item names. The
+	// flat lists above OR each value, so "patch, under /api only" could
+	// not be written with them (ADR-0024). Items OR with each other and
+	// with the flat lists.
+	Any []AITriggerItem `json:"any,omitempty" cap:"analyzer_trigger_items"`
+
+	// Exclude drops a statement that meets every field one item names,
+	// whatever matched it above.
+	Exclude []AITriggerItem `json:"exclude,omitempty" cap:"analyzer_trigger_items"`
 }
 
-// IsZero reports whether the trigger names nothing.
+// AITriggerItem is one condition of AITrigger.Any or AITrigger.Exclude. Every
+// field it names must match; a field it leaves empty is not checked.
+type AITriggerItem struct {
+	Operations []inspect.Operation `json:"operations,omitempty"`
+	Tables     []string            `json:"tables,omitempty"`
+	Resources  []string            `json:"resources,omitempty"`
+}
+
+// IsZero reports whether the item names no field. Such an item would match
+// every statement by checking nothing, so a config carrying one is refused.
+func (i AITriggerItem) IsZero() bool {
+	return len(i.Operations) == 0 && len(i.Tables) == 0 && len(i.Resources) == 0
+}
+
+// IsZero reports whether the trigger names nothing that selects a statement.
+// Exclude alone selects nothing: it only narrows what something else
+// selected, so a trigger carrying only Exclude is zero here.
 func (t *AITrigger) IsZero() bool {
-	return t == nil || (len(t.Operations) == 0 && len(t.Tables) == 0 && len(t.Resources) == 0)
+	return t == nil || (len(t.Operations) == 0 && len(t.Tables) == 0 &&
+		len(t.Resources) == 0 && len(t.Any) == 0)
 }
 
 // Rule is one local matcher.

@@ -995,6 +995,28 @@ listeners:
       rate_limit: {calls: 10}  # per_sec and burst still inherited
 ```
 
+**A trigger can AND its conditions.** The flat lists OR every value, so
+"patch, under `/api` only" needs an item (ADR-0024):
+
+```yaml
+    analyzer:
+      trigger:
+        operations: [delete]            # flat lists: each value ORed, as before
+        any:                            # an item matches when ALL its fields match
+          - {operations: [patch], resources: ["/api/**"]}
+        exclude:                        # an item here removes a match
+          - {resources: ["/api/healthz"]}
+```
+
+A statement is classified when a flat list or an `any` item matches it and
+no `exclude` item does. Fields left out of an item are not checked, and an
+item that names no field is refused at startup. With no positive condition,
+an ungated lane classifies everything except what `exclude` names. Under
+`opa.gate` a gate `request` still replaces the whole trigger, `exclude`
+included, and `exclude` with nothing else to narrow is refused. A control
+plane serves `any` and `exclude` only to a sidecar that reports
+`analyzer_trigger_items`.
+
 **What the block may override.** `send`, `fail_open`, `timeout_sec`,
 `max_input_bytes`, `max_calls`, `rate_limit` and `cache` all default to the
 top-level value and replace it when the block names them; `rate_limit` and

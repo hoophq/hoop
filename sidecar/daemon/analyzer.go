@@ -917,7 +917,24 @@ func triggerFrom(t *policy.AITrigger) analyzer.Trigger {
 		Operations: t.Operations,
 		Tables:     t.Tables,
 		Resources:  t.Resources,
+		Any:        triggerItems(t.Any),
+		Exclude:    triggerItems(t.Exclude),
 	}
+}
+
+func triggerItems(items []policy.AITriggerItem) []analyzer.TriggerItem {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]analyzer.TriggerItem, len(items))
+	for i, item := range items {
+		out[i] = analyzer.TriggerItem{
+			Operations: item.Operations,
+			Tables:     item.Tables,
+			Resources:  item.Resources,
+		}
+	}
+	return out
 }
 
 // actionMap turns the block's high/medium/low strings into the analyzer's
@@ -1099,6 +1116,7 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 
 	if la != nil {
 		problems = append(problems, validateLaneBlock(la, lane)...)
+		problems = append(problems, validateGatedExclude(la.Trigger, gated, lane+": analyzer block")...)
 		problems = append(problems, ValidateHoldOnLane(la, lc, lane+": analyzer block")...)
 		// Only where the block names a rate: otherwise the effective one
 		// is the top level's, which AnalyzerConfig.validate already said.
@@ -1128,6 +1146,8 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 		where := fmt.Sprintf("%s: ai_analysis rule %q", lane, r.Name)
 		problems = append(problems, validateRiskActions(
 			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
+		problems = append(problems, validateTriggerItems(r.Trigger, where)...)
+		problems = append(problems, validateGatedExclude(r.Trigger, gated, where)...)
 		problems = append(problems, refuseRuleFormHold(
 			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
 	}
@@ -1205,6 +1225,7 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 	where := lane + ": analyzer block"
 	problems = append(problems, validateRiskActions(
 		la.HighRisk, la.MediumRisk, la.LowRisk, where)...)
+	problems = append(problems, validateTriggerItems(la.Trigger, where)...)
 
 	switch la.Send {
 	case "", SendRaw, SendRedacted, SendRefuse:
@@ -1268,6 +1289,41 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 			where, la.ReviewMode, analyzer.ActionRequireReview))
 	}
 	return problems
+}
+
+// validateTriggerItems refuses a trigger item that names no field. It would
+// check nothing and so match every statement, which an operator writing
+// "any" or "exclude" never means.
+func validateTriggerItems(t *policy.AITrigger, where string) []string {
+	if t == nil {
+		return nil
+	}
+	var problems []string
+	for _, list := range [...]struct {
+		name  string
+		items []policy.AITriggerItem
+	}{{"any", t.Any}, {"exclude", t.Exclude}} {
+		for i, item := range list.items {
+			if item.IsZero() {
+				problems = append(problems, fmt.Sprintf(
+					"%s: trigger.%s[%d] names no operations, tables or resources",
+					where, list.name, i))
+			}
+		}
+	}
+	return problems
+}
+
+// validateGatedExclude refuses exclude on a gated lane whose trigger selects
+// nothing else. The gate decides there: a request replaces the whole trigger
+// and silence selects nothing, so exclude is never read.
+func validateGatedExclude(t *policy.AITrigger, gated bool, where string) []string {
+	if !gated || t == nil || len(t.Exclude) == 0 || !t.IsZero() {
+		return nil
+	}
+	return []string{where + ": trigger.exclude narrows nothing on a lane with " +
+		"opa.gate and no other trigger condition; the gate-phase policy decides " +
+		"what is classified there"}
 }
 
 // validateRiskActions checks a high/medium/low action map, shared by the

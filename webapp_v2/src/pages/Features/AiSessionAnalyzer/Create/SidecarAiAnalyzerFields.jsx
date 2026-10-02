@@ -42,6 +42,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     operations,
     actions,
     noTrigger,
+    apiOnlyTrigger,
   } = editor
 
   return (
@@ -115,6 +116,11 @@ export default function SidecarAiAnalyzerFields({ editor }) {
           {noTrigger && (
             <Alert color="amber" variant="light" icon={<Info size={16} />} radius="md">
               With no trigger, every statement on this listener is sent to the model.
+            </Alert>
+          )}
+          {apiOnlyTrigger && (
+            <Alert color="indigo" variant="light" icon={<Info size={16} />} radius="md">
+              This trigger also has any or exclude conditions, set outside this form. Saving keeps them.
             </Alert>
           )}
           <NumberInput
