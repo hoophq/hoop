@@ -142,6 +142,11 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 				t.Errorf("%s: want %q, got %q", name, desc, got[name])
 			}
 		}
+		// The gateway has no route to a sidecar: no access mode is offered.
+		if n := queryString(t, `SELECT count(*)::text FROM private.connections WHERE org_id = ? AND managed_by = 'sidecar'
+			AND 'disabled' = ALL (ARRAY[access_mode_connect, access_mode_exec, access_mode_runbooks, access_schema])`, testOrgID); n != "5" {
+			t.Errorf("want every access mode of the 5 mirrors disabled, got %s mirrors so", n)
+		}
 		if s := queryString(t, `SELECT COALESCE(managed_by, '') || '|' || COALESCE(sidecar_id::text, '') FROM private.connections WHERE org_id = ? AND name = 'conf-appdb'`, testOrgID); s != "|" {
 			t.Errorf("the admin's connection was taken over: %q", s)
 		}

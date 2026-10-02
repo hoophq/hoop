@@ -12026,7 +12026,7 @@
     },
     "/connections/{nameOrID}": {
       "delete": {
-        "description": "Delete a connection resource.",
+        "description": "Delete a connection resource. A connection that mirrors a sidecar listener answers 409: remove the listener from the sidecar instead.",
         "parameters": [
           {
             "description": "Name or UUID of the connection",
@@ -12051,6 +12051,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "500": {
             "content": {

@@ -2,8 +2,11 @@ package services
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"unicode/utf8"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
@@ -39,6 +42,60 @@ func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
 	return models.SyncSidecarConnectionsTx(tx, sc.OrgID, sc.ID, mirrors)
 }
 
+// ReconcileSidecarListenerConnections writes the mirrors of every sidecar of
+// orgID, one transaction per sidecar. The write path mirrors a sidecar only
+// while the flag is on, so a sidecar written while it was off has none until
+// this runs: when the org turns the flag on, and at startup.
+//
+// A sidecar it cannot mirror is skipped and returned, never fatal: turning the
+// flag on must not fail on one sidecar, and that sidecar's next write answers
+// the same error to the admin.
+func ReconcileSidecarListenerConnections(db *gorm.DB, orgID string) []error {
+	if !SidecarListenersEnabled(orgID) {
+		return nil
+	}
+	sidecars, err := models.ListSidecars(db, orgID)
+	if err != nil {
+		return []error{fmt.Errorf("failed listing sidecars, reason=%v", err)}
+	}
+	var failed []error
+	for _, listed := range sidecars {
+		err := db.Transaction(func(tx *gorm.DB) error {
+			// Read again under the lock the config writers take: a write that
+			// lands after the listing must not be undone by its older copy.
+			sc, err := models.GetSidecarByNameOrIDForUpdate(tx, orgID, listed.ID)
+			if err != nil {
+				return err
+			}
+			return SyncSidecarListenerConnectionsTx(tx, sc)
+		})
+		switch {
+		case errors.Is(err, models.ErrNotFound):
+			// Deleted after the listing: the cascade took its mirrors.
+		case err != nil:
+			failed = append(failed, fmt.Errorf("sidecar %q: %w", listed.Name, err))
+		}
+	}
+	return failed
+}
+
+// ReconcileAllSidecarListenerConnections runs the reconcile for every org
+// with the flag on. Called at startup, after the flag cache is warm: it
+// covers an org whose mirrors fell behind while this gateway was not running,
+// such as a redeploy after a rollback. It logs and never stops the startup.
+func ReconcileAllSidecarListenerConnections(db *gorm.DB) {
+	orgs, err := models.ListAllOrganizations()
+	if err != nil {
+		log.Warnf("sidecar mirrors: failed listing orgs, reason=%v", err)
+		return
+	}
+	for _, org := range orgs {
+		for _, err := range ReconcileSidecarListenerConnections(db, org.ID) {
+			log.With("org", org.ID).Warnf("sidecar mirrors: %v", err)
+		}
+	}
+}
+
 // listenerConnectionKind is the connection type and subtype a listener
 // protocol projects to. A protocol absent here is an error, never a default:
 // the type decides which proxy, which UI and which rules apply.
@@ -66,12 +123,14 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 // daemon accepts those names, so refusing them would refuse a sidecar config
 // that works today.
 //
-// A listener with no name, or with the name of an earlier listener, has no
-// mirror. Rules bind to a listener by its name, so neither one can be
-// addressed, and the daemon accepts both.
+// A listener with no name, with the name of an earlier listener, or with a
+// name wider than connections.sidecar_listener has no mirror. Rules bind to a
+// listener by its name, so none of them can be addressed, and the daemon
+// accepts all three.
 //
-// No agent runs a mirror, so only connect is enabled: exec, runbooks and the
-// schema browser have nobody to run them.
+// Every access mode is disabled: the gateway has no route to a sidecar, so a
+// client connects to the listener itself, and exec, runbooks and the schema
+// browser have nobody to run them.
 func ProjectListeners(orgID string, sc *models.Sidecar) ([]models.Connection, error) {
 	listeners := sc.Configuration.Listeners
 	out := make([]models.Connection, 0, len(listeners))
@@ -81,7 +140,7 @@ func ProjectListeners(orgID string, sc *models.Sidecar) ([]models.Connection, er
 		if !ok {
 			return nil, fmt.Errorf("listener %q: no connection type for protocol %q", l.Name, l.Protocol)
 		}
-		if l.Name == "" || seen[l.Name] {
+		if l.Name == "" || seen[l.Name] || utf8.RuneCountInString(l.Name) > models.MaxSidecarListenerNameLength {
 			continue
 		}
 		seen[l.Name] = true
@@ -97,7 +156,7 @@ func ProjectListeners(orgID string, sc *models.Sidecar) ([]models.Connection, er
 			ManagedBy:          sql.NullString{String: models.ConnectionManagedBySidecar, Valid: true},
 			SidecarID:          sql.NullString{String: sc.ID, Valid: true},
 			SidecarListener:    sql.NullString{String: l.Name, Valid: true},
-			AccessModeConnect:  "enabled",
+			AccessModeConnect:  "disabled",
 			AccessModeExec:     "disabled",
 			AccessModeRunbooks: "disabled",
 			AccessSchema:       "disabled",

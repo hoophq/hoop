@@ -291,3 +291,63 @@ func TestDeletingASidecarRemovesItsMirrorsAndResources(t *testing.T) {
 		t.Error("the mirror's resource outlived the sidecar")
 	}
 }
+
+// An admin may give a mirror's resource an agent, or put a connection of
+// their own on it. The resource is theirs then: a later sync rewrites the
+// mirror's own row and leaves the resource as the admin set it.
+func TestAKeptMirrorLeavesAResourceAnAdminTookOver(t *testing.T) {
+	startTestDB(t)
+	sc := seedSidecar(t, "pay")
+	if err := syncMirrors(t, sc,
+		daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"},
+		daemon.ListenerConfig{Name: "cache", Protocol: "clickhouse"}); err != nil {
+		t.Fatal(err)
+	}
+	agentID := uuid.NewString()
+	execSQL(t, `INSERT INTO private.agents (id, org_id, name, mode, key_hash, status) VALUES (?, ?, 'res-agent', 'standard', 'x', 'DISCONNECTED')`, agentID, testOrgID)
+	execSQL(t, `UPDATE private.resources SET agent_id = ? WHERE org_id = ? AND name = 'pay-appdb'`, agentID, testOrgID)
+	seedAdminConnection(t, "logs", "pay-cache")
+
+	if err := syncMirrors(t, sc,
+		daemon.ListenerConfig{Name: "appdb", Protocol: "mysql"},
+		daemon.ListenerConfig{Name: "cache", Protocol: "grpc"}); err != nil {
+		t.Fatal(err)
+	}
+	got := mirrorsOf(t, sc.ID)
+	if got["appdb"].SubType != "mysql" || got["cache"].SubType != "grpc" {
+		t.Errorf("the mirrors' own rows must follow the listeners: %+v", got)
+	}
+	res := func(name string) string {
+		return queryString(t, `SELECT r.subtype || '|' || COALESCE(r.agent_id::text, '') FROM private.resources r WHERE r.org_id = ? AND r.name = ?`, testOrgID, name)
+	}
+	if s := res("pay-appdb"); s != "postgres|"+agentID {
+		t.Errorf("the resource an admin gave an agent was rewritten: %s", s)
+	}
+	if s := res("pay-cache"); s != "clickhouse|" {
+		t.Errorf("the resource another connection uses was rewritten: %s", s)
+	}
+}
+
+// The connections API must not delete a mirror: the listener would stay, and
+// the next write would bring the mirror back without its bindings.
+func TestDeleteConnectionRefusesAMirror(t *testing.T) {
+	startTestDB(t)
+	sc := seedSidecar(t, "pay")
+	if err := syncMirrors(t, sc, daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := models.DeleteConnection(testOrgID, "pay-appdb"); !errors.Is(err, models.ErrConnectionManagedBySidecar) {
+		t.Errorf("want ErrConnectionManagedBySidecar, got %v", err)
+	}
+	if len(mirrorsOf(t, sc.ID)) != 1 {
+		t.Error("the mirror was deleted")
+	}
+
+	seedAdminConnection(t, "logs", "logs")
+	if err := models.DeleteConnection(testOrgID, "logs"); err != nil {
+		t.Errorf("an admin's connection must delete as before: %v", err)
+	}
+	if err := models.DeleteConnection(testOrgID, "logs"); !errors.Is(err, models.ErrNotFound) {
+		t.Errorf("a missing connection must answer not found as before, got %v", err)
+	}
+}

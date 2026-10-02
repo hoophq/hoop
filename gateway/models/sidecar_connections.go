@@ -15,6 +15,10 @@ import (
 // resources.name. A mirror's resource carries the mirror's name.
 const MaxSidecarMirrorNameLength = 128
 
+// MaxSidecarListenerNameLength is the width of connections.sidecar_listener,
+// in characters.
+const MaxSidecarListenerNameLength = 255
+
 // sidecarMirrorSuffixLength is "-" plus eight hex digits.
 const sidecarMirrorSuffixLength = 9
 
@@ -65,6 +69,12 @@ type ErrSidecarConnectionNameTaken struct{ Listener, Name string }
 func (e ErrSidecarConnectionNameTaken) Error() string {
 	return fmt.Sprintf("listener %q: the name %q is in use by another connection; rename the listener", e.Listener, e.Name)
 }
+
+// ErrConnectionManagedBySidecar is a delete of a mirror through the
+// connections API. The sidecar's configuration owns it: removing the listener
+// removes the mirror, and a mirror deleted here would come back on the next
+// write without what was bound to it.
+var ErrConnectionManagedBySidecar = errors.New("the connection mirrors a sidecar listener; remove the listener from the sidecar instead")
 
 // ErrSidecarConnectionInUse is a mirror the sync could not delete: an event
 // subscription still names it.
@@ -149,9 +159,17 @@ func SyncSidecarConnectionsTx(tx *gorm.DB, orgID, sidecarID string, mirrors []Co
 func updateSidecarConnection(tx *gorm.DB, name string, m Connection) error {
 	// Its own resource, written before the connection points back at it: an
 	// admin may have re-pointed the mirror and deleted the resource.
-	err := tx.Exec(`INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, ?, ?, ?)
-		ON CONFLICT (org_id, name) DO UPDATE SET type = EXCLUDED.type, subtype = EXCLUDED.subtype, updated_at = NOW()`,
-		m.OrgID, name, m.Type, m.SubType).Error
+	//
+	// A resource an admin gave an agent, or put another connection on, is
+	// theirs now and keeps its type. The mirror can still read that agent
+	// through its resource; no session opens on a mirror whatever agent it
+	// reads (refuseSidecarMirror, gateway/transport).
+	err := tx.Exec(`INSERT INTO private.resources AS r (org_id, name, type, subtype) VALUES (?, ?, ?, ?)
+		ON CONFLICT (org_id, name) DO UPDATE SET type = EXCLUDED.type, subtype = EXCLUDED.subtype, updated_at = NOW()
+		WHERE r.agent_id IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM private.connections c
+		                  WHERE c.org_id = r.org_id AND c.resource_name = r.name AND c.name <> ?)`,
+		m.OrgID, name, m.Type, m.SubType, name).Error
 	if err != nil {
 		return fmt.Errorf("failed writing resource %q, reason=%v", name, err)
 	}

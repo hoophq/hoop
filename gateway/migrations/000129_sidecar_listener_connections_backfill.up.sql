@@ -11,8 +11,9 @@ SET search_path TO private;
 --
 -- A listener this cannot mirror under its preferred name is left out, not
 -- refused: a migration that fails leaves the database dirty and the gateway
--- down. The next write of that sidecar mirrors it, under the fallback name
--- when it needs one (SidecarMirrorFallbackName). Left out:
+-- down. The reconcile that runs at startup, after the migrations
+-- (services.ReconcileAllSidecarListenerConnections), mirrors it under the
+-- fallback name (SidecarMirrorFallbackName). Left out:
 --   * a protocol with no connection type, or no listener name;
 --   * a composed name that fails apivalidation.ValidateResourceName or
 --     exceeds resources.name;
@@ -75,7 +76,7 @@ INSERT INTO connections
     (org_id, name, resource_name, type, subtype, status, managed_by, sidecar_id, sidecar_listener,
      access_mode_runbooks, access_mode_exec, access_mode_connect, access_schema)
 SELECT org_id, name, name, type::enum_connection_type, subtype, 'offline', 'sidecar', sidecar_id, listener,
-       'disabled', 'disabled', 'enabled', 'disabled'
+       'disabled', 'disabled', 'disabled', 'disabled'
 FROM _sidecar_mirrors
 ORDER BY sidecar_created_at, ordinality;
 

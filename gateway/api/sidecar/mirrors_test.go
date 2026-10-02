@@ -3,14 +3,18 @@ package apisidecar
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/featureflag"
+	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/api/featureflags"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -198,4 +202,86 @@ func TestAnImportWithANameInUseStillImports(t *testing.T) {
 	assert.Len(t, stored.Configuration.Listeners, 1, "the import stored the file")
 	assert.Equal(t, map[string]string{models.SidecarMirrorFallbackName("clash-appdb", sc.ID, "appdb"): "database/postgres"},
 		mirrorNames(t, sc.ID))
+}
+
+// putFlag sets beta.sidecar_listeners through the feature flag API, as the
+// Experimental page does.
+func putFlag(t *testing.T, enabled bool) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/feature-flags/"+featureflag.FlagSidecarListeners,
+		bytes.NewReader([]byte(fmt.Sprintf(`{"enabled": %v}`, enabled))))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(storagev2.ContextKey, storagev2.NewContext("user-1", switchOrgID).
+		WithUserInfo("Admin", "admin@hoop.dev", "active", "", nil))
+	c.Params = gin.Params{{Key: "name", Value: featureflag.FlagSidecarListeners}}
+	featureflags.Update(c)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	t.Cleanup(func() { featureflag.Set(switchOrgID, featureflag.FlagSidecarListeners, false) })
+}
+
+// A sidecar written while the flag was off has no mirror. Turning the flag on
+// must mirror it without another write, and one sidecar that cannot be
+// mirrored must not fail the flag change or the others.
+func TestTurningTheFlagOnMirrorsExistingSidecars(t *testing.T) {
+	startSwitchDB(t)
+	w, early := postSidecar(t, "early", `{"listeners": [
+		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"},
+		{"name": "app db", "protocol": "http", "listen": ":8080", "upstream": "api:80"}]}`)
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	w, stuck := postSidecar(t, "stuck", `{"listeners": [
+		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`)
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	// Both of stuck's names are taken, so it cannot be mirrored.
+	seedConnection(t, "stuck-appdb")
+	seedConnection(t, models.SidecarMirrorFallbackName("stuck-appdb", stuck.ID, "appdb"))
+	require.Empty(t, mirrorNames(t, early.ID), "the flag is off")
+
+	putFlag(t, true)
+	assert.Equal(t, map[string]string{
+		"early-appdb": "database/postgres",
+		models.SidecarMirrorFallbackName("early-app db", early.ID, "app db"): "httpproxy/httpproxy",
+	}, mirrorNames(t, early.ID))
+	assert.Empty(t, mirrorNames(t, stuck.ID))
+
+	// The startup reconcile puts back what fell behind, as after a redeploy.
+	require.NoError(t, models.DB.Exec(`DELETE FROM private.connections WHERE org_id = ? AND sidecar_id = ?`, switchOrgID, early.ID).Error)
+	services.ReconcileAllSidecarListenerConnections(models.DB)
+	assert.Len(t, mirrorNames(t, early.ID), 2)
+}
+
+// The reconcile is the flag's own: with the flag off it writes nothing.
+func TestTheReconcileIsOffWithTheFlag(t *testing.T) {
+	startSwitchDB(t)
+	w, sc := postSidecar(t, "quiet", `{"listeners": [
+		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`)
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	assert.Empty(t, services.ReconcileSidecarListenerConnections(models.DB, switchOrgID))
+	services.ReconcileAllSidecarListenerConnections(models.DB)
+	putFlag(t, false)
+	assert.Empty(t, mirrorNames(t, sc.ID))
+}
+
+// DELETE /connections must not take a mirror: the sidecar's configuration owns
+// it.
+func TestTheConnectionsAPIRefusesToDeleteAMirror(t *testing.T) {
+	startSwitchDB(t)
+	mirrorsOn(t)
+	w, sc := postSidecar(t, "pay", `{"listeners": [
+		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`)
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+
+	gin.SetMode(gin.TestMode)
+	w = httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/connections/pay-appdb", nil)
+	c.Set(storagev2.ContextKey, storagev2.NewContext("user-1", switchOrgID).
+		WithUserInfo("Admin", "admin@hoop.dev", "active", "", nil))
+	c.Params = gin.Params{{Key: "nameOrID", Value: "pay-appdb"}}
+	apiconnections.Delete(c)
+	assert.Equal(t, http.StatusConflict, w.Code, "body: %s", w.Body)
+	assert.Contains(t, w.Body.String(), "remove the listener from the sidecar")
+	assert.Len(t, mirrorNames(t, sc.ID), 1)
 }

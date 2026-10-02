@@ -89,9 +89,11 @@ func TestProjectListenersRendersTheMirror(t *testing.T) {
 		if c.AgentID.Valid {
 			t.Errorf("%s: a mirror has no agent, got %+v", c.Name, c.AgentID)
 		}
-		if c.AccessModeConnect != "enabled" || c.AccessModeExec != "disabled" ||
+		// The gateway has no route to a sidecar: a mode left on would offer
+		// a session that cannot open.
+		if c.AccessModeConnect != "disabled" || c.AccessModeExec != "disabled" ||
 			c.AccessModeRunbooks != "disabled" || c.AccessSchema != "disabled" {
-			t.Errorf("%s: want connect only, got connect=%s exec=%s runbooks=%s schema=%s",
+			t.Errorf("%s: want every access mode disabled, got connect=%s exec=%s runbooks=%s schema=%s",
 				c.Name, c.AccessModeConnect, c.AccessModeExec, c.AccessModeRunbooks, c.AccessSchema)
 		}
 	}
@@ -184,20 +186,30 @@ func TestSidecarMirrorFallbackName(t *testing.T) {
 	}
 }
 
-// Rules bind to a listener by its name, so a listener with no name, or with
-// the name of an earlier one, has no mirror. The daemon accepts both, so
-// neither may refuse the write.
+// Rules bind to a listener by its name, so a listener with no name, with the
+// name of an earlier one, or with a name the column cannot hold, has no
+// mirror. The daemon accepts all three, so none may refuse the write.
 func TestProjectListenersSkipsUnnamedAndRepeatedListeners(t *testing.T) {
 	got, err := ProjectListeners("org-1", sidecarWith("pay",
 		daemon.ListenerConfig{Name: "", Protocol: "postgres"},
 		daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"},
 		daemon.ListenerConfig{Name: "appdb", Protocol: "mysql"},
+		// One over connections.sidecar_listener: the insert would fail.
+		daemon.ListenerConfig{Name: strings.Repeat("a", models.MaxSidecarListenerNameLength+1), Protocol: "postgres"},
 	))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0].SidecarListener.String != "appdb" || got[0].SubType.String != "postgres" {
 		t.Errorf("want one mirror, the first appdb, got %+v", got)
+	}
+
+	// The width counts characters, as VARCHAR does: a multibyte name that
+	// fits keeps its mirror.
+	wide := strings.Repeat("é", models.MaxSidecarListenerNameLength)
+	got, err = ProjectListeners("org-1", sidecarWith("pay", daemon.ListenerConfig{Name: wide, Protocol: "postgres"}))
+	if err != nil || len(got) != 1 || got[0].SidecarListener.String != wide {
+		t.Errorf("a %d-character name fits the column and must be mirrored: %v, %d mirrors", models.MaxSidecarListenerNameLength, err, len(got))
 	}
 }
 
