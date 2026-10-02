@@ -517,14 +517,25 @@ func dedupeResourceNames(resourceNames []string) (v []string) {
 	return v
 }
 
+// DeleteConnection refuses a mirror of a sidecar listener with
+// ErrConnectionManagedBySidecar: the sidecar's configuration owns it.
 func DeleteConnection(orgID, name string) error {
 	res := DB.Table(tableConnections).
-		Where(`org_id = ? and name = ?`, orgID, name).
+		Where(`org_id = ? and name = ? and sidecar_id IS NULL`, orgID, name).
 		Delete(&Connection{})
 	if res.Error != nil {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
+		var mirror bool
+		err := DB.Raw(`SELECT EXISTS (SELECT 1 FROM private.connections WHERE org_id = ? AND name = ? AND sidecar_id IS NOT NULL)`,
+			orgID, name).Scan(&mirror).Error
+		if err != nil {
+			return err
+		}
+		if mirror {
+			return ErrConnectionManagedBySidecar
+		}
 		return ErrNotFound
 	}
 	return nil
