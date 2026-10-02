@@ -368,6 +368,28 @@ func TestHTTPIdentityHeaderNamesThePrincipal(t *testing.T) {
 	}
 }
 
+// A header-named caller says so, because any client that reaches the
+// listener directly can set that header; a reviewer weighs the name by it. A
+// blank value names nobody and claims no method, so the relay falls back to
+// the connection's own identity.
+func TestHeaderIdentityNamesItsMethod(t *testing.T) {
+	id, err := proxy.HeaderIdentity{}.Resolve(context.Background(), " alice ")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if id.Subject != "alice" || id.Method != session.MethodIdentityHeader {
+		t.Errorf("identity = %q/%q, want alice/%s", id.Subject, id.Method, session.MethodIdentityHeader)
+	}
+
+	id, err = proxy.HeaderIdentity{}.Resolve(context.Background(), "  ")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !id.IsAnonymous() || id.Method != "" {
+		t.Errorf("a blank header resolved to %+v, want anonymous with no method", id)
+	}
+}
+
 // Envoy pools upstream connections, so alice's and bob's requests arrive on
 // one socket. Each must be recorded under its own caller, in its own
 // session, with the connection left open between them.

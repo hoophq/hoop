@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/proxy"
+	"github.com/hoophq/hoop/sidecar/session"
 )
 
 // waitingPolicy stands in for a hold: it blocks every statement until the
@@ -497,5 +498,128 @@ func TestAPostgresClientOptsIntoReturnWithItsApplicationName(t *testing.T) {
 				t.Error("the upstream received the denied statement")
 			}
 		})
+	}
+}
+
+// namingReviewer releases every filing at once, as an approval the plane
+// consumed, and keeps the caller each filing's context carried: what the
+// daemon sends the plane as the requester.
+type namingReviewer struct {
+	filed chan session.Identity
+}
+
+func newNamingReviewer() *namingReviewer {
+	return &namingReviewer{filed: make(chan session.Identity, 8)}
+}
+
+func (r *namingReviewer) File(ctx context.Context, _ string) (analyzer.ReviewResult, error) {
+	id, ok := session.IdentityFromContext(ctx)
+	if !ok {
+		id = session.Identity{Subject: "<no caller on the context>"}
+	}
+	r.filed <- id
+	return analyzer.ReviewResult{ID: "9f97", Status: "EXECUTED", Forward: true}, nil
+}
+
+func (*namingReviewer) Claim(_ context.Context, id string) (analyzer.ReviewResult, error) {
+	return analyzer.ReviewResult{ID: id, Status: "PENDING"}, nil
+}
+
+func (r *namingReviewer) next(t *testing.T) session.Identity {
+	t.Helper()
+	select {
+	case id := <-r.filed:
+		return id
+	case <-time.After(3 * time.Second):
+		t.Fatal("the statement was not filed for review")
+	}
+	return session.Identity{}
+}
+
+func holdingEvaluator(t *testing.T, rev analyzer.Reviewer, trigger analyzer.Trigger) *analyzer.Evaluator {
+	t.Helper()
+	ev, err := analyzer.New(analyzer.Config{
+		Rule:     "payments",
+		Provider: highRisk{},
+		Trigger:  trigger,
+		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
+		Review:   rev,
+	})
+	if err != nil {
+		t.Fatalf("analyzer.New: %v", err)
+	}
+	return ev
+}
+
+// A pgwire lane names its caller from the StartupMessage's user, and a review
+// filed on it must say so: the name is the one the client CLAIMED, marked
+// database_user, with the address it came from. Filed before any
+// AuthenticationOk here, which is exactly the case the label exists for.
+func TestAHeldPostgresStatementNamesItsCaller(t *testing.T) {
+	rev := newNamingReviewer()
+	up := newEchoUpstream(t, nil)
+	srv := startServer(t, proxy.Config{
+		Upstream:   up.addr(),
+		Protocol:   inspect.Postgres,
+		Connection: "appdb",
+		Policy:     holdingEvaluator(t, rev, analyzer.Trigger{Operations: []inspect.Operation{inspect.OpDelete}}),
+		DenyWriter: proxy.ProtocolDenyWriter{},
+	})
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	if _, err := c.Write(append(pgStartup("psql"), pgQuery("DELETE FROM customers")...)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	got := rev.next(t)
+	if got.Subject != "agent" || got.Method != session.MethodDatabaseUser {
+		t.Errorf("the review named %q via %q, want agent via %s", got.Subject, got.Method, session.MethodDatabaseUser)
+	}
+	if got.PeerAddr == "" {
+		t.Error("the review names no peer address")
+	}
+}
+
+// Envoy pools one upstream connection across users. A review filed for
+// bob's request must name bob, not alice, whose request opened the
+// connection: the caller rides per statement, after the gate rotated the
+// session.
+func TestAnHTTPHoldNamesEachCallerOnAPooledConnection(t *testing.T) {
+	const ok = "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
+	rev := newNamingReviewer()
+	up := newEchoUpstream(t, []byte(ok))
+	cfg := identityLane(up.addr(), nil)
+	cfg.Policy = holdingEvaluator(t, rev, analyzer.Trigger{All: true})
+	cfg.DenyWriter = proxy.ProtocolDenyWriter{}
+	srv := startServer(t, cfg)
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	for _, user := range []string{"alice@example.com", "bob@example.com"} {
+		req := "DELETE /transfers/7 HTTP/1.1\r\nHost: api\r\nX-Forwarded-User: " + user + "\r\n\r\n"
+		if _, err := c.Write([]byte(req)); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		got := rev.next(t)
+		if got.Subject != user || got.Method != session.MethodIdentityHeader {
+			t.Errorf("the review for %s named %q via %q", user, got.Subject, got.Method)
+		}
+		if got.PeerAddr == "" {
+			t.Errorf("the review for %s names no peer address", user)
+		}
+		if err := c.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+			t.Fatalf("set deadline: %v", err)
+		}
+		buf := make([]byte, len(ok))
+		if _, err := io.ReadFull(c, buf); err != nil || string(buf) != ok {
+			t.Fatalf("%s: response %q, %v; the released request did not come back", user, buf, err)
+		}
 	}
 }

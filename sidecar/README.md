@@ -1168,6 +1168,39 @@ may approve. The rule holds the reviewer groups, the approval count and the
 force-approval list; the lane holds only its name, and the control plane
 authorizes each review against the config it stored for that sidecar.
 
+**The review names who filed it.** The filing carries an optional
+`requester`: the caller the statement was judged under, as this sidecar
+established it, with the method that established it. Approvers see it as
+"Filed by", with the method as a badge:
+
+| Lane | Named by | `method` |
+|---|---|---|
+| http with `google_identity` | the Google token, checked with Google's tokeninfo; the audience is not checked | `google_identity` |
+| http, grpc or spanner with `identity_header` | the header's value. Any client that reaches the listener directly can set it, unless a proxy in front strips it | `identity_header` |
+| grpc or spanner, no header value but a client certificate | the certificate's name. The gRPC server requests no client certificate, so nothing verified it | `tls_client_certificate` |
+| ssh | the user certificate the listener's CA signed, checked before the connection opens | `ssh_certificate` |
+| postgres | the `user` of the StartupMessage: the login name the client CLAIMED before authenticating. A statement pipelined ahead of AuthenticationOk is judged, and can be held, under it | `database_user` |
+| any lane that names nobody | the peer address only, which behind Envoy or a local proxy is the proxy's | `peer_address` |
+
+A name with no method reads `unspecified`. The requester is four strings
+(`subject`, `email`, `peer_addr`, `method`), each cut to 255 bytes of valid
+UTF-8. Groups and attributes are never sent.
+
+The control plane verifies none of it, and never uses it to decide who may
+approve: the sidecar token is still the only credential a filing carries,
+and the review's owner is still the sidecar. It is display data, and it
+names the FIRST filer only. Callers who send the same bytes on one listener
+share one review and its approval: a second filing is answered from the
+review already open and is not recorded, and an approval releases the
+statement once, to whichever caller sends it or is waiting on it first. That
+caller may not be the one named. The sidecar's audit record for the
+statement, which carries the `review_id` annotation, names who ran it.
+
+A control plane older than the sidecar ignores the key and shows no filer.
+Sending it means caller identity (a name, an email, an address) reaches the
+control plane's database, the review UI and the Slack channel the rule
+posts to.
+
 **A hold waits, then gives up.** A pending review holds the statement on
 its connection for up to 30 minutes, on every protocol. Every 5 seconds the relay asks the plane
 about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never

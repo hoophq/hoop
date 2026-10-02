@@ -335,7 +335,9 @@ type Gate struct {
 
 	// sess and polCtx are guarded by mu too, because RequestIdentity can
 	// replace both mid-connection while the other pump is judging a
-	// response. Read them through session() and policyContext().
+	// response, and Adopt rewrites the running identity. Read them through
+	// session() and evalFacts(), which reads the two under one lock so a
+	// statement is never judged under one caller and filed under another.
 	//
 	// sessionStatements and sessionDenied are the totals at the moment the
 	// running session began, so its session_end row counts its own
@@ -490,10 +492,14 @@ func (g *Gate) session() *session.Session {
 	return g.sess
 }
 
-func (g *Gate) policyContext() map[string]string {
+// evalFacts returns what a statement is judged under: the policy context OPA
+// reads, and the typed identity of the running caller. One lock for both, so
+// a rotate or an Adopt landing between two reads cannot pair one caller's
+// context with another caller's name.
+func (g *Gate) evalFacts() (map[string]string, session.Identity) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.polCtx
+	return g.polCtx, g.sess.Identity
 }
 
 // ErrSessionStarted is returned by Adopt once the gate has judged a
@@ -509,6 +515,15 @@ var ErrSessionStarted = errors.New("sidecar/gate: session facts are fixed once a
 // operator's IdentityFn resolved saw a verified subject and outranks a claim.
 // metadata is merged over the session's own, copied rather than aliased.
 //
+// A subject it fills is marked session.MethodDatabaseUser, and that is a
+// CLAIM: the name is true only once the server answers AuthenticationOk
+// (proxy/downstream.go), while the codec judges frontend bytes with no auth
+// phase, so a statement pipelined before authentication can be held and
+// filed under a name nobody proved. The method is what lets a reviewer see
+// that. It replaces whatever method the identity had, because the subject it
+// describes is now the claim; naming the weaker source never overclaims. A
+// resolved subject keeps its own method.
+//
 // It refuses once a statement has been judged: a policy context that changed
 // mid-session would evaluate two statements of one session against two
 // different actors, and the first one's verdict could not be explained.
@@ -520,6 +535,7 @@ func (g *Gate) Adopt(subject string, metadata map[string]string) error {
 	}
 	if subject != "" && g.sess.Identity.Subject == "" {
 		g.sess.Identity.Subject = subject
+		g.sess.Identity.Method = session.MethodDatabaseUser
 	}
 	if len(metadata) > 0 {
 		md := maps.Clone(g.sess.Metadata)
@@ -1073,7 +1089,20 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) policy.Verd
 	if !ok {
 		return g.policy.Evaluate(stmt)
 	}
-	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx}
+	// The typed caller rides on ConnCtx, per statement, for the one reader
+	// that needs a name and not a string map: the review filing, which
+	// shows approvers who filed. Per statement, so a caller rotated in on a
+	// pooled connection is named for its own requests. Typed, because
+	// input.context merges Attributes and Metadata over its keys, so a claim
+	// spelled `email` could rename the caller there and cannot here.
+	// policy and analyzer pass the context through without importing
+	// session. A nil ctx stays nil: connContext reads that as Background.
+	polCtx, caller := g.evalFacts()
+	connCtx := ctx
+	if connCtx != nil {
+		connCtx = session.ContextWithIdentity(connCtx, caller)
+	}
+	ec := &policy.EvalContext{Context: polCtx, ConnCtx: connCtx}
 	g.seedExchange(stmt, ec)
 	v := ce.EvaluateWith(stmt, ec)
 	g.recordExchange(stmt, ec, &v)

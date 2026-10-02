@@ -107,6 +107,10 @@ const (
 	// out-of-band updates, past the later of its post and the review's deadline
 	// (trackedUntil). A gateway review has no deadline.
 	sentReviewRetention = 48 * time.Hour
+	// maxFilerValueSize bounds each escaped filer value, so the section stays under 3000 chars.
+	maxFilerValueSize = 300
+	// sharedApprovalNote warns that a sidecar approval goes to the first caller, not the filer.
+	sharedApprovalNote = "_Approving releases this statement once, to the first caller on this listener that sends it or waits on it. That may not be the caller named here._"
 	// reviewDeadlineBlockID marks the decision deadline block, so a terminal rewrite drops it.
 	reviewDeadlineBlockID = "review-deadline"
 	// expiredReviewText closes a sidecar review that passed its deadline.
@@ -244,9 +248,15 @@ type MessageReviewRequest struct {
 	// SlackChannels is empty. The control plane sets it; the gateway posts to
 	// the default channel always.
 	DefaultChannelAsFallback bool
+	// FiledBy is the caller who filed a sidecar review. The gateway never sets it.
+	FiledBy *ReviewFiler
 	// ExpiresAt is a sidecar review's decision deadline. The gateway never sets it.
 	ExpiresAt *time.Time
 }
+
+// ReviewFiler is set only for a sidecar review. Source is text the control plane wrote;
+// the other fields are caller-chosen.
+type ReviewFiler struct{ Source, Subject, Email, PeerAddr string }
 
 type MessageReviewResponse struct {
 	ID              string
@@ -305,6 +315,43 @@ func escapeSlackText(s string) string {
 }
 
 var slackTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// filerCodeSpanBreakers are the runes that can end an inline code span early.
+var filerCodeSpanBreakers = strings.NewReplacer("`", "'", "\n", " ", "\r", " ")
+
+// filedByBlock names who filed a sidecar review, or is nil. The fixed text comes first,
+// so a caller-chosen value cannot push it out or imitate it.
+func filedByBlock(msg *MessageReviewRequest) *slack.SectionBlock {
+	f := msg.FiledBy
+	if f == nil {
+		return nil
+	}
+	lines := []string{
+		"*Filed by* — " + escapeSlackText(f.Source) + ". Reported by the sidecar; hoop does not verify it.",
+		sharedApprovalNote,
+	}
+	var values []string
+	for _, v := range []string{f.Subject, f.Email} {
+		if v != "" {
+			values = append(values, filerValue(v))
+		}
+	}
+	if f.PeerAddr != "" {
+		values = append(values, "from "+filerValue(f.PeerAddr))
+	}
+	if len(values) > 0 {
+		lines = append(lines, strings.Join(values, " · "))
+	}
+	return slack.NewSectionBlock(&slack.TextBlockObject{
+		Type: slack.MarkdownType,
+		Text: strings.Join(lines, "\n"),
+	}, nil, nil)
+}
+
+// filerValue puts one caller-chosen value in an inline code span, escaped and bounded on its own.
+func filerValue(v string) string {
+	return "`" + truncateRunes(escapeSlackText(filerCodeSpanBreakers.Replace(v)), maxFilerValueSize) + "`"
+}
 
 func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result string) {
 	return s.PostMessageReview(msg).String()
@@ -375,6 +422,9 @@ func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostRe
 		blocks = append(blocks, slack.NewContextBlock(reviewDeadlineBlockID,
 			slack.NewTextBlockObject(slack.MarkdownType,
 				fmt.Sprintf("_Decide before %s; after it the review expires._", msg.ExpiresAt.UTC().Format(time.RFC1123)), false, false)))
+	}
+	if b := filedByBlock(msg); b != nil {
+		blocks = append(blocks, b)
 	}
 	// script at the maximum slack allowed size
 	if script != "" {

@@ -14,10 +14,13 @@ import (
 )
 
 // contextRecorder allows everything and keeps the input.context each
-// statement was judged under.
+// statement was judged under, and the typed caller its ConnCtx carried
+// (named reports whether it carried one at all).
 type contextRecorder struct {
-	mu   sync.Mutex
-	seen []map[string]string
+	mu      sync.Mutex
+	seen    []map[string]string
+	callers []session.Identity
+	named   []bool
 }
 
 func (r *contextRecorder) Evaluate(inspect.Statement) policy.Verdict { return policy.Allow() }
@@ -26,6 +29,9 @@ func (r *contextRecorder) EvaluateWith(_ inspect.Statement, ec *policy.EvalConte
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.seen = append(r.seen, maps.Clone(ec.Context))
+	id, ok := session.IdentityFromContext(ec.ConnCtx)
+	r.callers = append(r.callers, id)
+	r.named = append(r.named, ok)
 	return policy.Allow()
 }
 
@@ -79,5 +85,55 @@ func TestAdoptKeepsAResolvedSubject(t *testing.T) {
 	}
 	if got := g.Session().Identity.Subject; got != "alice@example.com" {
 		t.Errorf("subject = %q, want the resolved alice@example.com", got)
+	}
+	// The claim filled nothing, so it must not relabel the resolved name as
+	// a database login either.
+	if got := g.Session().Identity.Method; got != "" {
+		t.Errorf("method = %q after a refused claim, want the resolved identity's own (none)", got)
+	}
+
+	// A resolved identity that says how it was established keeps saying so.
+	sess = session.New(inspect.Postgres, session.Identity{
+		Subject: "alice@example.com", Method: session.MethodIdentityHeader,
+	})
+	g, err = gate.New(sess, gate.Config{Protocol: inspect.Postgres})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := g.Adopt("postgres", nil); err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+	if got := g.Session().Identity.Method; got != session.MethodIdentityHeader {
+		t.Errorf("method = %q, want the resolved identity_header", got)
+	}
+}
+
+// The StartupMessage's user is a claim until the server answers
+// AuthenticationOk, and a statement pipelined before that is judged, and can
+// be held for review, under it. Adopt marks it database_user so a reviewer
+// can see the name was claimed, not proved, and the statement's context
+// names the same caller the session does.
+func TestAdoptNamesTheDatabaseUser(t *testing.T) {
+	rec := &contextRecorder{}
+	sess := session.New(inspect.Postgres, session.Identity{PeerAddr: "10.0.0.7:51234"})
+	g, err := gate.New(sess, gate.Config{Protocol: inspect.Postgres, Policy: rec})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := g.Adopt("alice", nil); err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+	id := g.Session().Identity
+	if id.Subject != "alice" || id.Method != session.MethodDatabaseUser {
+		t.Errorf("identity = %q/%q, want alice/%s", id.Subject, id.Method, session.MethodDatabaseUser)
+	}
+
+	g.Request(context.Background(), pgQuery("SELECT 1"))
+	if len(rec.callers) != 1 || !rec.named[0] {
+		t.Fatalf("the policy saw %d statements, typed caller present %v", len(rec.callers), rec.named)
+	}
+	if got := rec.callers[0]; got.Subject != "alice" || got.Method != session.MethodDatabaseUser ||
+		got.PeerAddr != "10.0.0.7:51234" {
+		t.Errorf("the statement's caller = %+v, want alice, database_user and the peer", got)
 	}
 }

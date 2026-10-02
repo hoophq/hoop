@@ -396,6 +396,11 @@ func TestToOpenApiSidecarReviewOmitsConnectionFields(t *testing.T) {
 	// visible rather than silent.
 	assert.Equal(t, "payments-approvers", *got.AccessRequestRuleName)
 	assert.Equal(t, []string{"security"}, got.ForceApprovalGroups)
+
+	// The sidecar never gets the filer back.
+	body, err := json.Marshal(got)
+	assert.NoError(t, err)
+	assert.NotContains(t, string(body), "requester")
 }
 
 // Without the middleware there is no sidecar, and the handler must say so
@@ -655,7 +660,8 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
 	statement := "DELETE FROM users WHERE id = 42;"
 
-	req := newSlackReviewRequest(sc, rev, "appdb", statement)
+	req := newSlackReviewRequest(sc, rev, "appdb", statement, nil)
+	assert.Nil(t, req.FiledBy, "an older sidecar names no filer")
 
 	// Without these two a click cannot find the review: the id becomes the
 	// message metadata and the prefix of every button id.
@@ -686,9 +692,62 @@ func TestNewSlackReviewRequest(t *testing.T) {
 
 	rule = ruleWithTTLs(ptr.Int(900), nil)
 	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
-	req = newSlackReviewRequest(sc, rev, "appdb", statement)
+	req = newSlackReviewRequest(sc, rev, "appdb", statement, nil)
 	require.NotNil(t, req.ExpiresAt, "the approvers see when the review expires")
 	assert.Equal(t, *rev.ExpiresAt, *req.ExpiresAt)
+}
+
+// The filer gets its own section. Name and Email stay the sidecar.
+func TestNewSlackReviewRequestNamesTheFiler(t *testing.T) {
+	sc := sidecarWithListener("appdb", "payments-approvers")
+	rule := approvalRule()
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	caller := &requester{subject: "alice", email: "alice@example.com", peerAddr: "10.0.0.1:5432", method: "database_user"}
+
+	req := newSlackReviewRequest(sc, rev, "appdb", "DELETE FROM users;", caller)
+
+	assert.Equal(t, "payments-sidecar", req.Name)
+	assert.Equal(t, reviewOwnerEmail, req.Email)
+	require.NotNil(t, req.FiledBy)
+	assert.Equal(t, requesterMethodLabel("database_user"), req.FiledBy.Source)
+	assert.Equal(t, "alice", req.FiledBy.Subject)
+	assert.Equal(t, "alice@example.com", req.FiledBy.Email)
+	assert.Equal(t, "10.0.0.1:5432", req.FiledBy.PeerAddr)
+}
+
+// canAccessSession reads the session user, so it stays the sidecar. The filer is in the labels.
+func TestNewSidecarSessionKeepsTheSidecarAsItsUser(t *testing.T) {
+	sc := sidecarWithListener("appdb", "payments-approvers")
+	now := time.Now().UTC()
+	caller := &requester{subject: "alice", peerAddr: "10.0.0.1:5432", method: "database_user"}
+
+	sess := newSidecarSession(sc, "session-1", "DELETE FROM users;", caller, now)
+
+	assert.Equal(t, sc.ID, sess.UserID)
+	assert.Equal(t, sc.Name, sess.UserName)
+	assert.Equal(t, reviewOwnerEmail, sess.UserEmail)
+	assert.Equal(t, map[string]string{
+		"sidecar.requester.subject":   "alice",
+		"sidecar.requester.peer_addr": "10.0.0.1:5432",
+		"sidecar.requester.method":    "database_user",
+	}, sess.Labels)
+	assert.Nil(t, sess.Metadata, "metadata has a writer after creation; labels do not")
+	assert.Equal(t, "session-1", sess.ID)
+	assert.Equal(t, reviewConnectionType, sess.ConnectionType)
+	assert.Equal(t, now, sess.CreatedAt)
+
+	assert.Nil(t, newSidecarSession(sc, "session-2", "x", nil, now).Labels, "an older sidecar stores no labels")
+}
+
+// OwnerID decides self-approval and owner-may-reject, so the filer never becomes the owner.
+func TestNewSidecarReviewKeepsTheSidecarAsOwner(t *testing.T) {
+	sc := sidecarWithListener("appdb", "payments-approvers")
+	rule := approvalRule()
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+
+	assert.Equal(t, sc.ID, rev.OwnerID)
+	assert.Equal(t, reviewOwnerEmail, rev.OwnerEmail)
+	assert.Equal(t, sc.Name, ptr.ToString(rev.OwnerName))
 }
 
 func TestSlackChannelsResponse(t *testing.T) {

@@ -10230,7 +10230,7 @@ const docTemplate = `{
         },
         "/sidecars/reviews": {
             "post": {
-                "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body. A review of the same bytes past its deadline is expired and a new one is filed.",
+                "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body. The optional requester is shown to approvers as the filer and decides nothing. A review of the same bytes past its deadline is expired and a new one is filed.",
                 "consumes": [
                     "application/json"
                 ],
@@ -20404,6 +20404,39 @@ const docTemplate = `{
                     "description": "The statement to review, base64 encoded",
                     "type": "string",
                     "example": "REVMRVRFIEZST00gdXNlcnM7"
+                },
+                "requester": {
+                    "description": "Optional. The caller as the sidecar established it.\nIt is shown to approvers and never decides who may approve.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SidecarReviewRequester"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.SidecarReviewRequester": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "description": "The caller email, when the sidecar knows it",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "method": {
+                    "description": "How the sidecar established the caller, e.g. google_identity or database_user",
+                    "type": "string",
+                    "example": "database_user"
+                },
+                "peer_addr": {
+                    "description": "The network address the statement came from",
+                    "type": "string",
+                    "example": "10.0.0.12:53122"
+                },
+                "subject": {
+                    "description": "The caller name, as the sidecar established it",
+                    "type": "string",
+                    "example": "alice"
                 }
             }
         },

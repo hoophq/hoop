@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,12 +18,16 @@ import (
 // reviewCall is what the plane received, in the shape a reviewer's authority
 // depends on: which sidecar (the token), which listener, which rule, and the
 // exact statement bytes.
+//
+// raw is the body exactly as it arrived, for the assertions that are about
+// bytes and not fields: an older plane must receive what it always did.
 type reviewCall struct {
 	token   string
 	path    string
 	listen  string
 	rule    string
 	payload string
+	raw     []byte
 }
 
 // reviewPlane is a control plane that answers one canned response and records
@@ -36,13 +41,15 @@ func reviewPlane(t *testing.T, status int, body string) (*controlPlane, *[]revie
 			ApprovalRule string `json:"approval_rule"`
 			Payload      string `json:"payload"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &req)
 		*calls = append(*calls, reviewCall{
 			token:   r.Header.Get(sidecarTokenHeader),
 			path:    r.URL.Path,
 			listen:  req.ListenerName,
 			rule:    req.ApprovalRule,
 			payload: req.Payload,
+			raw:     raw,
 		})
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))

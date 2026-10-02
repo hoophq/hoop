@@ -10,6 +10,8 @@ const EMPTY = {
   // Keyed by session id: the statement the sidecar held, fetched per modal.
   statements: {},
   statementStatus: {},
+  // Keyed by session id: the raw session labels, where a sidecar review names its filer.
+  labels: {},
   submitting: false,
 }
 
@@ -45,6 +47,8 @@ export const useReviewStore = create((set, get) => ({
       set((s) => ({
         statements: { ...s.statements, [sessionId]: data?.script?.data ?? '' },
         statementStatus: { ...s.statementStatus, [sessionId]: 'success' },
+        // Raw, so nothing here can throw; the modal derives the filer.
+        labels: { ...s.labels, [sessionId]: data?.labels ?? null },
       }))
     } catch {
       set((s) => ({ statementStatus: { ...s.statementStatus, [sessionId]: 'error' } }))

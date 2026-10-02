@@ -33,6 +33,8 @@ func TestSidecarReviewRoutesAnswerPreconditionFailed(t *testing.T) {
 		"get":   {apisidecar.GetReview, http.MethodGet, ""},
 		"claim": {apisidecar.ClaimReview, http.MethodPost, ""},
 		"post":  {apisidecar.PostReview, http.MethodPost, `{}`},
+		"post with requester": {apisidecar.PostReview, http.MethodPost,
+			`{"listener_name":"appdb","payload":"c2VsZWN0IDE7","approval_rule":"r","requester":{"subject":"alice","method":"database_user"}}`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
