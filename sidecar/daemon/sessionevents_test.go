@@ -119,7 +119,7 @@ func testSink(t *testing.T, plane *eventsPlane, enabled bool, opts audit.SinkOpt
 	tweak func(*sessionEventSink)) (*sessionEventSink, *syncBuffer) {
 	t.Helper()
 	buf := &syncBuffer{}
-	cp := &controlPlane{url: plane.srv.URL, token: "hsc_events"}
+	cp := &controlPlane{url: plane.srv.URL, cred: tokenCredential("hsc_events")}
 	s := newSessionEventSinkStopped(cp, opts, enabled, slog.New(slog.NewTextHandler(buf, nil)))
 	s.flushEvery = time.Hour
 	s.backoffMin = time.Millisecond
@@ -578,7 +578,7 @@ func TestTheHeartbeatTurnsTheSinkOnAndOff(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cp := &controlPlane{url: srv.URL, token: "hsc_x", every: time.Millisecond, events: sink}
+	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_x"), every: time.Millisecond, events: sink}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -636,7 +636,7 @@ func TestBuildAuditAddsTheSinkOnlyWithAPlane(t *testing.T) {
 	}
 
 	plane := newEventsPlane(t)
-	cp := &controlPlane{url: plane.srv.URL, token: "hsc_x", sessionEvents: true}
+	cp := &controlPlane{url: plane.srv.URL, cred: tokenCredential("hsc_x"), sessionEvents: true}
 	chain, err := buildAudit(AuditConfig{File: file, RedactStatements: true}, cp, log)
 	if err != nil {
 		t.Fatalf("buildAudit: %v", err)

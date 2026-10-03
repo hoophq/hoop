@@ -58,6 +58,11 @@ const (
 	// EventCreateSidecarReview measures how many held statements a human
 	// actually releases.
 	EventConsumeSidecarReview = "hoop-consume-sidecar-review"
+	// sidecar service accounts
+	EventCreateSidecarServiceAccount = "hoop-create-sidecar-service-account"
+	EventUpdateSidecarServiceAccount = "hoop-update-sidecar-service-account"
+	EventDeleteSidecarServiceAccount = "hoop-delete-sidecar-service-account"
+	EventClearSidecarDeletedName     = "hoop-clear-sidecar-deleted-name"
 
 	// plugins
 	EventCreatePlugin          = "hoop-create-plugin"

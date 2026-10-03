@@ -187,7 +187,9 @@ func (t *telemetry) retireAnalyzers(evs []*analyzer.Evaluator) {
 //   - analytics.IDEnvVar, an operator-chosen id. The only thing that
 //     survives a Kubernetes rollout for a standalone install, where the
 //     hostname is the pod name.
-//   - The control plane token: one per registered sidecar.
+//   - The control plane credential: the token, one per registered sidecar,
+//     or the service account identity's issuer and subject under that
+//     plane (see controlPlane.analyticsID).
 //   - The hostname plus the config file path. Two processes on one host
 //     have two files; one process editing its file — renaming a listener,
 //     adding one, changing rules — keeps the same path and the same id.
@@ -201,14 +203,17 @@ func newTelemetry(cfg *Config, log *slog.Logger) *telemetry {
 	if opts.Entrypoint == "" {
 		opts.Entrypoint = analytics.EntrypointEmbedded
 	}
-	switch {
-	case analytics.IDFromEnv() != "":
-		opts.SidecarID = analytics.IDFromEnv()
-	case cfg.cp != nil:
-		opts.SidecarID = analytics.IDFromToken(cfg.cp.token)
-	case cfg.configPath != "":
+	// A chain rather than a switch so a lower source is only consulted when
+	// every higher one came up empty: the plane's is asked of the
+	// credential, and an identity whose token does not decode yields none.
+	opts.SidecarID = analytics.IDFromEnv()
+	if opts.SidecarID == "" && cfg.cp != nil {
+		opts.SidecarID = cfg.cp.analyticsID()
+	}
+	if opts.SidecarID == "" && cfg.configPath != "" {
 		opts.SidecarID = analytics.IDFromHost(absPath(cfg.configPath))
-	default:
+	}
+	if opts.SidecarID == "" {
 		opts.SidecarID = analytics.IDFromHost()
 	}
 	now := time.Now()

@@ -211,7 +211,13 @@ func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set(sidecarTokenHeader, cp.token)
+	// ctx bounds a metadata server fetch too: refreshing a Google ID token
+	// is part of this review call's budget, not a second one.
+	header, value, err := cp.cred.present(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set(header, value)
 
 	resp, err := controlPlaneHTTPClient().Do(req)
 	if err != nil {
@@ -229,6 +235,12 @@ func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body
 		return nil, nil, fmt.Errorf("the control plane at %s answered a review with more than "+
 			"%d bytes; check that the URL is the control plane and not something in "+
 			"front of it", cp.url, maxReviewResponse)
+	}
+	// Answered here rather than in reviewError, because only this function
+	// still holds the identity the plane refused, and the message names it.
+	// The token path keeps reviewError's wording.
+	if resp.StatusCode == http.StatusUnauthorized && header == SidecarIdentityHeader {
+		return nil, nil, identityRejected(cp.url, value, raw)
 	}
 	return resp, raw, nil
 }

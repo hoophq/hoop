@@ -60,6 +60,7 @@ import (
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	apisidecar "github.com/hoophq/hoop/gateway/api/sidecar"
+	sidecarserviceaccountsapi "github.com/hoophq/hoop/gateway/api/sidecarserviceaccounts"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
 	spiffemappingsapi "github.com/hoophq/hoop/gateway/api/spiffemappings"
 	userapi "github.com/hoophq/hoop/gateway/api/user"
@@ -351,6 +352,55 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		apisidecar.PutSlackChannels)
+}
+
+// buildSidecarServiceAccountRoutes registers the admin API for the service
+// accounts whose tokens authenticate a sidecar through SidecarAuthMiddleware,
+// and for the deleted sidecar names those tokens must not create again.
+func (api *Api) buildSidecarServiceAccountRoutes(r *apiroutes.Router) {
+	r.GET("/sidecar-service-accounts",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		sidecarserviceaccountsapi.List)
+	r.POST("/sidecar-service-accounts",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateSidecarServiceAccount),
+		sidecarserviceaccountsapi.Create)
+	r.GET("/sidecar-service-accounts/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		sidecarserviceaccountsapi.Get)
+	r.PUT("/sidecar-service-accounts/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventUpdateSidecarServiceAccount),
+		sidecarserviceaccountsapi.Update)
+	r.DELETE("/sidecar-service-accounts/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventDeleteSidecarServiceAccount),
+		sidecarserviceaccountsapi.Delete)
+	r.GET("/sidecar-deleted-names",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		sidecarserviceaccountsapi.ListDeletedNames)
+	r.DELETE("/sidecar-deleted-names/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventClearSidecarDeletedName),
+		sidecarserviceaccountsapi.ClearDeletedName)
 }
 
 func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
@@ -851,6 +901,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		apiagents.Delete)
 
 	api.buildSidecarRoutes(r)
+	api.buildSidecarServiceAccountRoutes(r)
 
 	r.POST("/orgs/keys",
 		apiroutes.AdminOnlyAccessRole,

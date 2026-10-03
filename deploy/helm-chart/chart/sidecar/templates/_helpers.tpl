@@ -115,6 +115,15 @@ the handshake supplies the running config and there is no file to point at.
 {{- end -}}
 
 {{/*
+Where the projected service account token lands under
+controlPlane.identity: kubernetes. Its own directory, never the default
+service account mount: that token's audience is the API server, and the
+control plane must refuse it.
+*/}}
+{{- define "hoopsidecar.identityTokenDir" -}}/var/run/hoop-sidecar{{- end -}}
+{{- define "hoopsidecar.identityTokenPath" -}}{{ include "hoopsidecar.identityTokenDir" . }}/token{{- end -}}
+
+{{/*
 Refuse to render a Deployment that cannot start, with the message the relay
 itself would print on the restart nobody is watching.
 */}}
@@ -125,11 +134,18 @@ itself would print on the restart nobody is watching.
 {{- if not (or (include "hoopsidecar.hasConfigFile" .) .Values.controlPlane.url) -}}
 {{- fail "no config file was given and no control plane is configured: set config, existingConfigMap or controlPlane.url" -}}
 {{- end -}}
-{{- if and .Values.controlPlane.url (not .Values.controlPlane.token) -}}
-{{- fail "controlPlane.url is set but controlPlane.token is empty: the handshake is refused without it" -}}
+{{- $cp := .Values.controlPlane -}}
+{{- if and $cp.identity (not (has $cp.identity (list "kubernetes" "gcp"))) -}}
+{{- fail (printf "controlPlane.identity is %q: use kubernetes or gcp, or leave it empty" $cp.identity) -}}
 {{- end -}}
-{{- if and .Values.controlPlane.token (not .Values.controlPlane.url) -}}
-{{- fail "controlPlane.token is set but no control plane is configured: set controlPlane.url or drop the token" -}}
+{{- if and $cp.token $cp.identity -}}
+{{- fail "set controlPlane.token or controlPlane.identity, not both: the relay refuses two credentials" -}}
+{{- end -}}
+{{- if and $cp.url (not (or $cp.token $cp.identity)) -}}
+{{- fail "controlPlane.url is set but neither controlPlane.token nor controlPlane.identity is: the handshake is refused without a credential" -}}
+{{- end -}}
+{{- if and (or $cp.token $cp.identity) (not $cp.url) -}}
+{{- fail "a control plane credential is set but no control plane is configured: set controlPlane.url or drop the credential" -}}
 {{- end -}}
 {{/*
 The probes are hardcoded to the admin port, so a config that moves or omits

@@ -414,6 +414,11 @@ type SidecarResponse struct {
 	// still uses, phrased for an operator. The sidecar folds them on load,
 	// where nobody reads the warning.
 	Deprecations []string `json:"deprecations,omitempty"`
+	// IdentityIssuer and IdentitySubject name the last service account
+	// identity that reached this sidecar through hoop-sidecar-identity. Empty
+	// for a sidecar no identity reached.
+	IdentityIssuer  string `json:"identity_issuer,omitempty" example:"https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu"`
+	IdentitySubject string `json:"identity_subject,omitempty" example:"system:serviceaccount:ws-123:hoop-sidecar"`
 }
 
 // SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one
@@ -611,6 +616,62 @@ type AgentSPIFFEMapping struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true"`
 	// Last update timestamp
 	UpdatedAt time.Time `json:"updated_at" readonly:"true"`
+}
+
+// SidecarServiceAccount lets a sidecar authenticate with a platform service
+// account token in the hoop-sidecar-identity header, instead of a token the
+// control plane issued. The token must come from Issuer, be valid
+// for Audience, and carry a Claim that matches SubjectPattern. The sidecar it
+// reaches is the one named by NameTemplate, created on its first handshake
+// when no sidecar has that name.
+type SidecarServiceAccount struct {
+	// The unique identifier of this resource
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// A label for this mapping, unique in the organization
+	Name string `json:"name" binding:"required" example:"gke-eu"`
+	// The exact iss of the tokens. An https URL, where the control plane
+	// fetches the keys through OIDC discovery, unless jwks is set
+	Issuer string `json:"issuer" binding:"required" example:"https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu"`
+	// The aud the tokens must carry: the control plane URL the sidecar uses.
+	// An issuer and audience pair belongs to one organization
+	Audience string `json:"audience" binding:"required" example:"https://hoop.example.com"`
+	// The claim matched against subject_pattern
+	// * sub - The subject, for a Kubernetes service account
+	// * email - The email, for a Google service account. The token must carry email_verified true
+	Claim string `json:"claim" binding:"required" enums:"sub,email" example:"sub"`
+	// An exact value, or one with a single * that matches one or more
+	// characters. A bare * needs allow_any_subject. For the issuer
+	// https://accounts.google.com it must end in a literal
+	// @<project>.iam.gserviceaccount.com
+	SubjectPattern string `json:"subject_pattern" binding:"required" example:"system:serviceaccount:*:hoop-sidecar"`
+	// The name of the sidecar a matching token reaches. {1} is the text the *
+	// matched. A sidecar that exists with this name is used, whoever created it
+	NameTemplate string `json:"name_template" binding:"required" example:"gke-eu-{1}"`
+	// A static JWKS for an issuer the control plane cannot reach. Omitted
+	// means OIDC discovery at {issuer}/.well-known/openid-configuration
+	JWKS json.RawMessage `json:"jwks,omitempty" swaggertype:"object"`
+	// Allows the bare * pattern, which admits every subject of the issuer
+	AllowAnySubject bool `json:"allow_any_subject" example:"false"`
+	// The admin who created this mapping
+	CreatedBy string `json:"created_by" readonly:"true"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at" readonly:"true"`
+	// Last update timestamp
+	UpdatedAt time.Time `json:"updated_at" readonly:"true"`
+}
+
+// SidecarDeletedName is the name of a deleted sidecar a service account
+// identity had reached. Its next handshake is refused, and nothing is
+// created, until an admin clears the name.
+type SidecarDeletedName struct {
+	// The sidecar name
+	Name string `json:"name" example:"gke-eu-ws-123"`
+	// The admin who deleted the sidecar
+	DeletedBy string `json:"deleted_by" example:"admin@hoop.dev"`
+	// When the sidecar was deleted
+	DeletedAt time.Time `json:"deleted_at"`
 }
 
 type AgentRequest struct {
