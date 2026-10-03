@@ -167,12 +167,31 @@ license: ''
 # the plane holds a configuration of its own. A plane holding none is seeded
 # with the file's document on that first handshake.
 #
-# The token is shown once when the sidecar is created; a lost one means
-# registering a new sidecar. In this mode the chart cannot know which ports
-# the plane will hand out: set `ports` and `probe.port` to match.
+# Exactly one credential: `token`, or `identity`.
+#
+# `token` is shown once when the sidecar is created; a lost one means
+# registering a new sidecar.
+#
+# `identity` uses the pod's own service account instead, so nothing is issued
+# before deploy. The control plane matches it against a sidecar
+# service account entry and creates the sidecar on first contact.
+#   kubernetes: the chart mounts a projected service account token whose
+#               audience is `url` → HOOP_SIDECAR_IDENTITY_TOKEN_FILE
+#   gcp:        a Google ID token from the metadata server (GKE Workload
+#               Identity, GCE) → HOOP_SIDECAR_IDENTITY_GCP=true
+# Set `serviceAccount` to the account the entry's pattern names.
+#
+# In this mode the chart cannot know which ports the plane will hand out: set
+# `ports` and `probe.port` to match.
 controlPlane:
   url: ''
   token: ''
+  # '', kubernetes or gcp
+  identity: ''
+  # Lifetime of the projected token under `identity: kubernetes`; the kubelet
+  # rotates it before it ends and the relay re-reads it on every request.
+  # Kubernetes refuses less than 600.
+  tokenExpirationSeconds: 3600
 
 # -- Usage analytics. A release build reports anonymous usage to Segment —
 # counts and config shape, never statement text, identities, rule names or

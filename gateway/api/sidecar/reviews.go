@@ -78,7 +78,8 @@ func (e ruleNotAuthorized) Error() string {
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
+//	@Param			hoop-sidecar-token	header		string							false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity	header		string							false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			request				body		openapi.SidecarReviewRequest	true	"The request body resource"
 //	@Success		200						{object}	openapi.SidecarReviewResponse
 //	@Success		201						{object}	openapi.SidecarReviewResponse
@@ -198,7 +199,8 @@ func PostReview(c *gin.Context) {
 //	@Description	Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement; any other status is returned as it stands. It never files a review.
 //	@Tags			Sidecars
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
+//	@Param			hoop-sidecar-token	header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			id					path		string	true	"The review id"
 //	@Success		200					{object}	openapi.SidecarReviewResponse
 //	@Failure		401,404,412,500		{object}	openapi.HTTPError
@@ -237,7 +239,8 @@ func ClaimReview(c *gin.Context) {
 //	@Description	Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement.
 //	@Tags			Sidecars
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
+//	@Param			hoop-sidecar-token	header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			id					path		string	true	"The review id"
 //	@Success		200					{object}	openapi.SidecarReviewStatus
 //	@Failure		401,404,412,500		{object}	openapi.HTTPError

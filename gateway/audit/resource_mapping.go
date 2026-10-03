@@ -45,6 +45,8 @@ var root = buildRoutes([]struct {
 	{[]string{"spiffe-mappings"}, ResourceAgentSPIFFEMapping},
 	{[]string{"spiffemappings"}, ResourceAgentSPIFFEMapping},
 	{[]string{"feature-flags"}, ResourceFeatureFlag},
+	{[]string{"sidecar-service-accounts"}, ResourceSidecarServiceAccount},
+	{[]string{"sidecar-deleted-names"}, ResourceSidecarDeletedName},
 })
 
 func buildRoutes(entries []struct {

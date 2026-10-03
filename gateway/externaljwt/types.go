@@ -1,11 +1,11 @@
 // Package externaljwt validates JWT tokens issued by external identity
-// providers (currently only SPIFFE JWT-SVIDs, but shaped to admit other
-// issuer types such as generic OIDC pass-through in the future).
+// providers: SPIFFE JWT-SVIDs for agents, through the Provider interface and
+// the singleton manager the auth interceptors use, and OIDC tokens for
+// sidecar service accounts, through OIDCVerifier (oidc.go).
 //
-// The package exposes a Provider interface and a singleton manager used by
-// the auth interceptors. Validation returns a ValidatedIdentity which the
-// caller is expected to map onto a Hoop identity (e.g. via the
-// agent_spiffe_mappings table for SPIFFE tokens).
+// Validation returns a normalized identity which the caller is expected to
+// map onto a Hoop identity (e.g. via the agent_spiffe_mappings table for
+// SPIFFE tokens, or sidecar_service_accounts for OIDC tokens).
 package externaljwt
 
 import (

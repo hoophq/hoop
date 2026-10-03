@@ -145,7 +145,9 @@ under `deploy/docker-compose/` binds:
 | `configRevision` | Rollout trigger for `existingConfigMap`. Change it whenever that ConfigMap's content changes, or the pods never pick it up |
 | `license` | License document or a path to one → `HOOP_LICENSE` |
 | `controlPlane.url` | Control Plane to take the running config from → `HOOP_CONTROL_PLANE_URL` |
-| `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN` |
+| `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN`. Exclusive with `controlPlane.identity` |
+| `controlPlane.identity` | Authenticate with the pod's service account instead of a token. `kubernetes` mounts a projected token with audience `controlPlane.url` → `HOOP_SIDECAR_IDENTITY_TOKEN_FILE`; `gcp` reads a Google ID token from the metadata server → `HOOP_SIDECAR_IDENTITY_GCP=true`. The control plane creates the sidecar on first contact; see "Service account identity" below |
+| `controlPlane.tokenExpirationSeconds` | Lifetime of the projected token under `identity: kubernetes`. Default `3600`, minimum `600`; the kubelet rotates it |
 | `analytics.enabled` | Usage analytics to Segment. `false` → `HOOP_SIDECAR_ANALYTICS=off`. Default `true` |
 | `analytics.sidecarId` | Stable install identity → `HOOP_SIDECAR_ID`. Default: the release's full name. Hashed before it is sent |
 | `analytics.hostId` | Machine identity → `HOOP_HOST_ID`. Default: the node name via the downward API. Hashed before it is sent |
@@ -251,7 +253,7 @@ unnecessary. Without any of these,
 
 ## Environment variables
 
-The relay reads seven. Six come from the Secret `sidecar-config`; the seventh
+The relay reads nine. Eight come from the Secret `sidecar-config`; the ninth
 is set directly on the container because it defaults to a downward-API field,
 which a Secret cannot express:
 
@@ -261,6 +263,8 @@ which a Secret cannot express:
 | `HOOP_LICENSE` | `license` |
 | `HOOP_CONTROL_PLANE_URL` | `controlPlane.url` |
 | `HOOP_SIDECAR_TOKEN` | `controlPlane.token` |
+| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `/var/run/hoop-sidecar/token` when `controlPlane.identity: kubernetes`, else empty |
+| `HOOP_SIDECAR_IDENTITY_GCP` | `true` when `controlPlane.identity: gcp`, else empty |
 | `HOOP_SIDECAR_ANALYTICS` | `off` when `analytics.enabled: false`, else empty |
 | `HOOP_SIDECAR_ID` | `analytics.sidecarId`, defaulting to the release's full name |
 | `HOOP_HOST_ID` | `analytics.hostId`, defaulting to `fieldRef: spec.nodeName` on the container |
@@ -357,4 +361,27 @@ Two, both deliberate:
 
 There is no `spiffe` block. SPIFFE authenticates an agent to the gateway; this
 process does not dial the gateway. It authenticates to a control plane with
-`controlPlane.token`, or to nothing at all when it runs standalone.
+`controlPlane.token` or `controlPlane.identity`, or to nothing at all when it
+runs standalone.
+
+## Service account identity
+
+With `controlPlane.identity`, no token is created before deploy. An admin adds
+one sidecar service account entry per cluster in the control plane
+(`POST /api/sidecar-service-accounts`), and every release whose service
+account matches its pattern enrolls on its first handshake:
+
+```yaml
+serviceAccount:
+  create: true
+  name: hoop-sidecar        # the name the entry's pattern matches
+controlPlane:
+  url: https://hoop.example.com
+  identity: kubernetes
+```
+
+The sidecar's name comes from the entry's template, for example
+`gke-eu-{1}` with pattern `system:serviceaccount:ws-*:hoop-sidecar` makes
+`gke-eu-acme` for namespace `ws-acme`. Restarts, rollouts and replicas reach
+the same sidecar; it is never created twice. A sidecar deleted in the
+control plane stays deleted until an admin clears its name.
