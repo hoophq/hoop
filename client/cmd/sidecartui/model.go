@@ -40,12 +40,14 @@ type (
 	doneMsg struct{ err error }
 )
 
-// cursor is one tab's position. sel is the key of the selected row rather
-// than its index, so a row stays selected while new ones arrive above it.
+// cursor is one section's position. sel is the key of the selected row
+// rather than its index, so a row stays selected while new ones arrive above
+// it. An empty sel is the top row, whichever row is newest: a person at the
+// top of a list watches traffic arrive, and one who moved down keeps the row
+// they chose. off scrolls a section that has no rows (System).
 type cursor struct {
-	sel    string
-	off    int
-	follow bool
+	sel string
+	off int
 }
 
 type model struct {
@@ -57,8 +59,15 @@ type model struct {
 	width, height int
 	tab           tab
 	cur           [tabCount]cursor
-	detail        bool
 	deniedOnly    bool
+	// zoom shows the selected row's details over the whole content area,
+	// opened with enter and closed with esc.
+	zoom bool
+	// confirmQuit is the "stop the sidecar?" prompt q opens. quitYes is
+	// its focused answer, No by default, so an enter after a stray q keeps
+	// the sidecar running.
+	confirmQuit bool
+	quitYes     bool
 
 	searching bool
 	search    textinput.Model
@@ -104,13 +113,9 @@ func newModel(version string, notes []string, now func() time.Time, stop func())
 		now:     now,
 		version: version,
 		notes:   notes,
-		detail:  true,
 		search:  ti,
 		spin:    sp,
 		stop:    stop,
-	}
-	for i := range m.cur {
-		m.cur[i].follow = true
 	}
 	return m
 }
@@ -178,6 +183,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.confirmQuit {
+		return m.confirmKey(k)
+	}
 	if m.modal != "" {
 		return m.modalKey(k)
 	}
@@ -203,12 +211,12 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "q", "ctrl+c":
 		return m.quit()
-	case "tab", "right", "l":
-		m.tab = (m.tab + 1) % tabCount
-	case "shift+tab", "left", "h":
-		m.tab = (m.tab + tabCount - 1) % tabCount
+	case "tab":
+		m.tab, m.zoom = (m.tab+1)%tabCount, false
+	case "shift+tab":
+		m.tab, m.zoom = (m.tab+tabCount-1)%tabCount, false
 	case "1", "2", "3", "4", "5", "6":
-		m.tab = tab(k.String()[0] - '1')
+		m.tab, m.zoom = tab(k.String()[0]-'1'), false
 	case "up", "k":
 		m.move(-1)
 	case "down", "j":
@@ -218,27 +226,53 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "pgdown", "ctrl+d":
 		m.move(m.listHeight() / 2)
 	case "home", "g":
-		m.cur[m.tab].follow = true
+		m.cur[m.tab].sel, m.cur[m.tab].off = "", 0
 	case "end", "G":
 		m.move(1 << 20)
-	case "f":
-		m.cur[m.tab].follow = !m.cur[m.tab].follow
 	case "enter", " ":
 		if id := m.selectedLocalPending(); id != "" {
 			m.openModal(id)
 			return m, nil
 		}
-		m.detail = !m.detail
+		if m.tab != tabSystem && len(m.keys(m.tab)) > 0 {
+			m.zoom = !m.zoom
+		}
 	case "d":
-		m.deniedOnly = !m.deniedOnly
-		m.cur[tabWire].follow = true
+		if m.tab == tabWire {
+			m.deniedOnly = !m.deniedOnly
+			m.cur[tabWire].sel = ""
+		}
 	case "/":
 		m.searching = true
 		m.search.Focus()
 		return m, textinput.Blink
 	case "esc":
+		if m.zoom {
+			m.zoom = false
+			break
+		}
 		m.search.SetValue("")
 		m.deniedOnly = false
+	}
+	return m, nil
+}
+
+// confirmKey answers the "stop the sidecar?" prompt. y and n answer at once;
+// enter takes the focused answer, which starts on No; esc is No. A second
+// ctrl+c is Yes, so a person who means it is never asked twice.
+func (m model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "y", "ctrl+c":
+		return m.stopNow()
+	case "n", "esc", "q":
+		m.confirmQuit = false
+	case "tab", "shift+tab", "left", "right", "h", "l":
+		m.quitYes = !m.quitYes
+	case "enter":
+		if m.quitYes {
+			return m.stopNow()
+		}
+		m.confirmQuit = false
 	}
 	return m, nil
 }
@@ -290,7 +324,7 @@ func (m *model) decide(approve bool) {
 	}
 	m.modal = ""
 	if next := m.st.NextLocalPending(nil); next != "" {
-		m.cur[tabReviews].sel, m.cur[tabReviews].follow = next, false
+		m.cur[tabReviews].sel = next
 	}
 }
 
@@ -304,16 +338,27 @@ func (m model) selectedLocalPending() string {
 	if len(keys) == 0 {
 		return ""
 	}
-	id := keys[indexOf(keys, m.cur[tabReviews].sel, m.cur[tabReviews].follow)]
+	id := keys[indexOf(keys, m.cur[tabReviews].sel)]
 	if r := m.st.Reviews[id]; r != nil && r.Local && r.Status == statusPending {
 		return id
 	}
 	return ""
 }
 
-// quit stops the daemon and waits for it; a second press leaves at once, for
-// a daemon stuck in its shutdown.
+// quit asks before stopping: q sits next to keys people type all day, and
+// stopping the sidecar closes every listener. Once stopping, it leaves at
+// once, for a daemon stuck in its shutdown.
 func (m model) quit() (tea.Model, tea.Cmd) {
+	if m.stopping || m.done || m.stop == nil {
+		return m, tea.Quit
+	}
+	m.confirmQuit, m.quitYes = true, false
+	return m, nil
+}
+
+// stopNow stops the daemon and waits for it to return.
+func (m model) stopNow() (tea.Model, tea.Cmd) {
+	m.confirmQuit = false
 	if m.stopping || m.done || m.stop == nil {
 		return m, tea.Quit
 	}
@@ -322,7 +367,8 @@ func (m model) quit() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// move shifts the selection by delta rows and stops following.
+// move shifts the selection by delta rows. Back at the top it selects the
+// top again rather than that row, so new rows arriving keep it on the newest.
 func (m *model) move(delta int) {
 	keys := m.keys(m.tab)
 	c := &m.cur[m.tab]
@@ -330,10 +376,11 @@ func (m *model) move(delta int) {
 		c.off = max(c.off+delta, 0)
 		return
 	}
-	i := indexOf(keys, c.sel, c.follow)
-	i = min(max(i+delta, 0), len(keys)-1)
+	i := min(max(indexOf(keys, c.sel)+delta, 0), len(keys)-1)
 	c.sel = keys[i]
-	c.follow = i == 0
+	if i == 0 {
+		c.sel = ""
+	}
 }
 
 // keys returns the row keys of a tab, in display order, under the current
@@ -363,12 +410,9 @@ func (m model) keys(t tab) []string {
 	return out
 }
 
-// indexOf finds the selected key. Following, or a key that scrolled away,
-// selects the newest row.
-func indexOf(keys []string, sel string, follow bool) int {
-	if follow {
-		return 0
-	}
+// indexOf finds the selected key. The top (sel "") and a key that scrolled
+// away select the newest row.
+func indexOf(keys []string, sel string) int {
 	for i, k := range keys {
 		if k == sel {
 			return i

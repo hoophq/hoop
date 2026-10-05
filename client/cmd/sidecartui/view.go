@@ -10,30 +10,52 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
-// chrome is the rows the header, tab bar and footer take.
-const chrome = 4
+// chrome is the rows above the body: the two header rows and the hints row.
+const chrome = 3
 
+// View lays the screen out as the header and the key hints across the top,
+// then the section menu on the left and the section's content on the right.
+// A dialog (an approval, the quit prompt) takes the content area only, so
+// the menu and the header stay in view behind it.
 func (m model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
-	if m.width < 60 || m.height < 12 {
+	if m.width < 60 || m.height < 14 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
-			stFaint.Render("hoop sidecar: make the terminal at least 60×12"))
+			stFaint.Render("hoop sidecar: make the terminal at least 60×14"))
 	}
-	body := m.body(m.width, m.height-chrome)
-	if m.modal != "" {
-		body = m.approvalView(m.width, m.height-chrome)
+	h := m.height - chrome
+	mw := menuWidth(m.width)
+	cw := m.width - mw
+	var content string
+	switch {
+	case m.confirmQuit:
+		content = m.confirmView(cw, h)
+	case m.modal != "":
+		content = m.approvalView(cw, h)
+	default:
+		content = m.content(cw, h)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.header(), m.tabs(), body, m.footer())
+	body := lipgloss.JoinHorizontal(lipgloss.Top, m.menu(mw, h), content)
+	return lipgloss.JoinVertical(lipgloss.Left, m.header(), m.hints(), body)
 }
 
-func (m model) listHeight() int { return max(m.height-chrome-2, 1) }
+func menuWidth(w int) int {
+	if w >= 100 {
+		return 22
+	}
+	return 18
+}
+
+// listHeight is the rows a list shows: the body less its border and title.
+func (m model) listHeight() int { return max(m.height-chrome-3, 1) }
 
 // header is two rows: who and how long on the left with the last minute's
 // traffic on the right, then the totals that matter at a glance.
@@ -93,48 +115,97 @@ func chip(icon, n, label string, st lipgloss.Style, lit bool) string {
 	return st.Render(icon) + " " + stBold.Render(n) + " " + stFaint.Render(label)
 }
 
-func (m model) tabs() string {
-	parts := make([]string, 0, tabCount)
+// menu is the section list on the left. The current section has the soft
+// selection background and a blue bar; a section with something waiting on
+// a person (an approval) shimmers until the person goes there.
+func (m model) menu(w, h int) string {
+	inner := w - 4
+	lines := []string{stLabel.Render("SECTIONS"), ""}
 	for i := range tabCount {
-		name := fmt.Sprintf("%d %s", i+1, tabNames[i])
+		label := fmt.Sprintf("%d %s", i+1, tabNames[i])
+		count := ""
 		switch i {
 		case tabSessions:
 			if n := len(m.st.OpenSessions()); n > 0 {
-				name += fmt.Sprintf(" (%d)", n)
+				count = num(n)
 			}
 		case tabReviews:
 			if n := m.st.PendingReviews(); n > 0 {
-				name += fmt.Sprintf(" (%d)", n)
-				if i != m.tab {
-					parts = append(parts, shimmer(name, m.now()))
-					continue
-				}
+				count = num(n)
 			}
 		case tabLanes:
 			if n := len(m.st.LaneOrder); n > 0 {
-				name += fmt.Sprintf(" (%d)", n)
+				count = num(n)
 			}
 		case tabSystem:
 			if len(m.st.Warnings) > 0 {
-				name += " ⚠"
+				count = "⚠"
 			}
 		}
-		if i == m.tab {
-			parts = append(parts, stTabOn.Render(name))
-		} else {
-			parts = append(parts, stTabOff.Render(name))
+		text := label + strings.Repeat(" ", max(inner-1-lipgloss.Width(label)-lipgloss.Width(count), 1)) + count
+		switch {
+		case i == m.tab:
+			lines = append(lines, stPrimary.Background(colSelBg).Render("▌")+
+				stPrimary.Background(colSelBg).Width(inner-1).Render(text))
+		case i == tabReviews && count != "":
+			lines = append(lines, " "+shimmer(text, m.now()))
+		default:
+			lines = append(lines, " "+stText.Render(label)+
+				strings.Repeat(" ", max(inner-1-lipgloss.Width(label)-lipgloss.Width(count), 1))+stFaint.Render(count))
 		}
 	}
-	line := " " + strings.Join(parts, "   ")
+	return pane("", strings.Join(lines, "\n"), w, h)
+}
+
+type keyHint [2]string
+
+// hints is the row under the header saying what the keys do HERE: in this
+// section, on this row, in this dialog. Enter is spelled out by what it
+// does to the selected row, so nobody has to try it to find out.
+func (m model) hints() string {
+	if m.searching {
+		return " " + m.search.View()
+	}
+	var keys []keyHint
+	switch {
+	case m.confirmQuit:
+		keys = []keyHint{{"←→", "choose"}, {"enter", "confirm"}, {"y", "stop"}, {"n/esc", "keep running"}}
+	case m.modal != "":
+		keys = []keyHint{{"a", "approve"}, {"r", "reject"}, {"←→", "choose"}, {"enter", "confirm"}, {"esc", "close"}}
+	case m.zoom:
+		keys = []keyHint{{"esc", "back to the list"}, {"↑↓", "previous / next"}, {"tab/1-6", "section"}, {"q", "quit"}}
+	case m.tab == tabSystem:
+		keys = []keyHint{{"↑↓", "scroll"}, {"tab/1-6", "section"}, {"q", "quit"}}
+	default:
+		keys = []keyHint{{"↑↓", "move"}}
+		switch {
+		case m.selectedLocalPending() != "":
+			keys = append(keys, keyHint{"enter", "approve or reject"})
+		case len(m.keys(m.tab)) > 0:
+			keys = append(keys, keyHint{"enter", "open"})
+		}
+		keys = append(keys, keyHint{"/", "filter"})
+		if m.tab == tabWire {
+			if m.deniedOnly {
+				keys = append(keys, keyHint{"d", "show all"})
+			} else {
+				keys = append(keys, keyHint{"d", "denied only"})
+			}
+		}
+		keys = append(keys, keyHint{"tab/1-6", "section"}, keyHint{"q", "quit"})
+	}
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, stKey.Bold(true).Render(k[0])+" "+stFaint.Render(k[1]))
+	}
+	line := " " + strings.Join(parts, stFaint.Render("  ·  "))
+
 	var flags []string
 	if m.tab == tabWire && m.deniedOnly {
 		flags = append(flags, badge("denied only", colDanger))
 	}
-	if q := m.search.Value(); q != "" && !m.searching {
+	if q := m.search.Value(); q != "" {
 		flags = append(flags, badge("/"+q, colPrimary))
-	}
-	if !m.cur[m.tab].follow && m.tab != tabSystem && m.tab != tabLanes {
-		flags = append(flags, stStrong.Render("paused · g to follow"))
 	}
 	if len(flags) > 0 {
 		f := strings.Join(flags, " ")
@@ -144,50 +215,20 @@ func (m model) tabs() string {
 	return ansi.Truncate(line, m.width, "…")
 }
 
-func (m model) footer() string {
-	if m.searching {
-		return m.search.View()
-	}
-	if m.modal != "" {
-		var parts []string
-		for _, k := range [][2]string{{"a", "approve"}, {"r", "reject"}, {"←→", "choose"},
-			{"enter", "confirm"}, {"esc", "decide later"}} {
-			parts = append(parts, stKey.Render(k[0])+" "+stFaint.Render(k[1]))
-		}
-		return ansi.Truncate(" "+strings.Join(parts, stFaint.Render(" · ")), m.width, "…")
-	}
-	keys := [][2]string{
-		{"tab/1-6", "view"}, {"↑↓", "select"}, {"enter", "details"},
-		{"/", "filter"}, {"f", "follow"},
-	}
-	if m.tab == tabWire {
-		keys = append(keys, [2]string{"d", "denied"})
-	}
-	if m.selectedLocalPending() != "" {
-		keys[2] = [2]string{"enter", "approve or reject"}
-	}
-	keys = append(keys, [2]string{"q", "stop sidecar"})
-	var parts []string
-	for _, k := range keys {
-		parts = append(parts, stKey.Render(k[0])+" "+stFaint.Render(k[1]))
-	}
-	return ansi.Truncate(" "+strings.Join(parts, stFaint.Render(" · ")), m.width, "…")
-}
-
-// body splits the space between a list and the detail of its selection:
-// side by side when the terminal is wide, stacked when it is not.
-func (m model) body(w, h int) string {
+// content is the section on the right: a list beside the selected row's
+// details when there is room for both, stacked when not, and the details
+// alone once enter opened them.
+func (m model) content(w, h int) string {
 	if m.tab == tabSystem {
 		return pane("", m.systemView(w-4, h-2, m.cur[tabSystem].off), w, h)
 	}
 	keys := m.keys(m.tab)
-	c := m.cur[m.tab]
-	sel := indexOf(keys, c.sel, c.follow)
-
-	if !m.detail {
-		return pane(m.listTitle(len(keys)), m.list(keys, sel, w-4, h-3), w, h)
+	sel := indexOf(keys, m.cur[m.tab].sel)
+	if m.zoom && len(keys) > 0 {
+		return pane(m.listTitle(len(keys))+stFaint.Render(fmt.Sprintf("  ·  %d of %d", sel+1, len(keys))),
+			m.detailView(keys, sel, w-4, h-3), w, h)
 	}
-	if w >= 110 {
+	if w >= 100 {
 		lw := w * 11 / 20
 		list := pane(m.listTitle(len(keys)), m.list(keys, sel, lw-4, h-3), lw, h)
 		det := pane("", m.detailView(keys, sel, w-lw-4, h-2), w-lw, h)
@@ -197,6 +238,36 @@ func (m model) body(w, h int) string {
 	list := pane(m.listTitle(len(keys)), m.list(keys, sel, w-4, lh-3), w, lh)
 	det := pane("", m.detailView(keys, sel, w-4, h-lh-2), w, h-lh)
 	return lipgloss.JoinVertical(lipgloss.Left, list, det)
+}
+
+// confirmView asks before stopping the sidecar. No is focused, and filled
+// blue as the safe primary answer; Yes is the danger answer, red.
+func (m model) confirmView(w, h int) string {
+	bw := min(max(w-4, 30), 64)
+	noText, yesText := "No, keep running", "Yes, stop"
+	if bw-4 < 36 {
+		// The long labels would wrap the button row on a narrow screen.
+		noText, yesText = "No", "Yes, stop"
+	}
+	no := stPrimary.Padding(0, 2).Render(noText)
+	yes := stDanger.Bold(true).Padding(0, 2).Render(yesText)
+	if m.quitYes {
+		yes = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colDanger).Padding(0, 2).Render(yesText)
+	} else {
+		no = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 2).Render(noText)
+	}
+	open := len(m.st.OpenSessions())
+	body := []string{
+		stStrong.Render("Stop the sidecar?"),
+		"",
+		lipgloss.NewStyle().Width(bw - 4).Render(fmt.Sprintf(
+			"Every listener closes and %d open connection(s) end.", open)),
+		"",
+		lipgloss.PlaceHorizontal(bw-4, lipgloss.Right, no+"  "+yes),
+	}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colDanger).
+		Padding(0, 1).Width(bw - 2).Render(strings.Join(body, "\n"))
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m model) listTitle(n int) string {
@@ -232,7 +303,8 @@ func pane(title, content string, w, h int) string {
 	return stPane.Width(w - 2).Height(inner).Render(strings.Join(lines, "\n"))
 }
 
-// list renders the visible window of rows around the selection.
+// list renders the visible window of rows around the selection. The selected
+// row gets a blue bar and the soft background across its whole width.
 func (m model) list(keys []string, sel, w, h int) string {
 	if len(keys) == 0 {
 		return m.empty(w)
@@ -244,13 +316,47 @@ func (m model) list(keys []string, sel, w, h int) string {
 	}
 	var rows []string
 	for i := off; i < len(keys) && i < off+h; i++ {
-		row := ansi.Truncate(m.row(keys[i], w), w, "…")
+		row := ansi.Truncate(m.row(keys[i], w-1), w-1, "…")
 		if i == sel {
-			row = stSel.Render(row + strings.Repeat(" ", max(w-lipgloss.Width(row), 0)))
+			row = stPrimary.Background(colSelBg).Render("▌") + withBackground(row, w-1)
+		} else {
+			row = " " + row
 		}
 		rows = append(rows, row)
 	}
 	return strings.Join(rows, "\n")
+}
+
+// withBackground paints the selection background under an already styled
+// row, padded to width. Wrapping the row in a lipgloss style would not do:
+// each colored segment inside ends with a reset, which clears the background
+// from there on, so the row would show it only up to its first color. The
+// background is re-applied after every reset instead.
+func withBackground(row string, width int) string {
+	pad := strings.Repeat(" ", max(width-ansi.StringWidth(row), 0))
+	bg := selectionSequence()
+	if bg == "" {
+		return row + pad
+	}
+	return bg + strings.ReplaceAll(row, "\x1b[0m", "\x1b[0m"+bg) + pad + "\x1b[0m"
+}
+
+// selectionSequence is the escape sequence that sets the selection
+// background in the terminal's color profile, or "" without color.
+func selectionSequence() string {
+	hex := colSelBg.Dark
+	if !lipgloss.HasDarkBackground() {
+		hex = colSelBg.Light
+	}
+	c := lipgloss.ColorProfile().Color(hex)
+	if c == nil {
+		return ""
+	}
+	seq := c.Sequence(true)
+	if seq == "" {
+		return ""
+	}
+	return termenv.CSI + seq + "m"
 }
 
 func (m model) empty(w int) string {

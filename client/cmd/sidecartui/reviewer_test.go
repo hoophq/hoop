@@ -137,7 +137,7 @@ func TestANewApprovalDoesNotInterrupt(t *testing.T) {
 		t.Fatalf("a new approval moved the screen to tab %d", mm.tab)
 	}
 	screen := ansi.Strip(mm.View())
-	for _, want := range []string{"1 awaiting approval · press 3", "3 Approvals (1)"} {
+	for _, want := range []string{"1 awaiting approval · press 3", "3 Approvals"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("the screen does not call for attention with %q", want)
 		}
@@ -159,7 +159,9 @@ func TestANewApprovalDoesNotInterrupt(t *testing.T) {
 func TestApprovalDialogFlow(t *testing.T) {
 	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 	r := NewReviewer()
-	r.now = func() time.Time { return now }
+	// Each filing a second later, so "newest" is not decided by random ids.
+	filed := now
+	r.now = func() time.Time { filed = filed.Add(time.Second); return filed }
 	m := newModel("dev", nil, func() time.Time { return now }, nil)
 	m.reviewer, m.operator = r, "alice"
 	var tm tea.Model = m

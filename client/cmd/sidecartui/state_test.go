@@ -7,7 +7,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"github.com/hoophq/hoop/sidecar/audit"
 )
@@ -181,26 +183,114 @@ func TestViewRenders(t *testing.T) {
 			m.st.ApplyLog(rec)
 		}
 	}
-	for _, size := range [][2]int{{60, 12}, {80, 24}, {109, 30}, {140, 40}, {220, 60}} {
+	for _, size := range [][2]int{{60, 14}, {80, 24}, {109, 30}, {140, 40}, {220, 60}} {
 		var tm tea.Model = m
 		tm, _ = tm.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		for tb := range tabCount {
-			for _, detail := range []bool{true, false} {
+			for _, mode := range []string{"list", "open", "quit"} {
 				mm := tm.(model)
-				mm.tab, mm.detail = tb, detail
+				mm.tab = tb
 				mm.move(1)
+				switch mode {
+				case "open":
+					mm.zoom = true
+				case "quit":
+					mm.confirmQuit = true
+				}
 				out := mm.View()
 				lines := strings.Split(out, "\n")
 				if len(lines) != size[1] {
-					t.Errorf("%dx%d %s detail=%v: %d rows", size[0], size[1], tabNames[tb], detail, len(lines))
+					t.Errorf("%dx%d %s %s: %d rows", size[0], size[1], tabNames[tb], mode, len(lines))
 				}
 				for i, line := range lines {
 					if w := ansi.StringWidth(line); w > size[0] {
-						t.Errorf("%dx%d %s detail=%v: row %d is %d wide", size[0], size[1], tabNames[tb], detail, i, w)
+						t.Errorf("%dx%d %s %s: row %d is %d wide", size[0], size[1], tabNames[tb], mode, i, w)
 						break
 					}
 				}
 			}
 		}
+	}
+}
+
+// q asks first, and the answer an enter gives is No: a stray q must not stop
+// the sidecar. y, or enter after moving to Yes, stops it.
+func TestQuitAsksAndDefaultsToNo(t *testing.T) {
+	stopped := 0
+	m := newModel("dev", nil, time.Now, func() { stopped++ })
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	tm, _ = tm.Update(key("q"))
+	if mm := tm.(model); !mm.confirmQuit || stopped != 0 {
+		t.Fatalf("q did not ask first: confirm=%v stopped=%d", mm.confirmQuit, stopped)
+	}
+	if !strings.Contains(ansi.Strip(tm.(model).View()), "Stop the sidecar?") {
+		t.Fatal("the prompt is not on screen")
+	}
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if mm := tm.(model); mm.confirmQuit || stopped != 0 || mm.stopping {
+		t.Fatalf("enter on the prompt stopped the sidecar: stopped=%d", stopped)
+	}
+
+	tm, _ = tm.Update(key("q"))
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if stopped != 0 || tm.(model).confirmQuit {
+		t.Fatal("esc on the prompt stopped the sidecar or kept the prompt")
+	}
+
+	tm, _ = tm.Update(key("q"))
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyRight})
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if mm := tm.(model); stopped != 1 || !mm.stopping {
+		t.Fatalf("Yes did not stop the sidecar: stopped=%d", stopped)
+	}
+}
+
+// Enter opens the selected row over the content area and esc goes back; the
+// hints row says so before anyone presses it.
+func TestEnterOpensAndHintsSayIt(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 20, 0, time.UTC)
+	m := newModel("dev", nil, func() time.Time { return now }, nil)
+	feed(m.st, script)
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 36})
+
+	screen := ansi.Strip(tm.(model).View())
+	for _, want := range []string{"enter open", "↑↓ move", "SECTIONS", "1 Wire", "3 Approvals"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("the screen does not show %q", want)
+		}
+	}
+	if strings.Contains(screen, "follow") {
+		t.Error("the screen still mentions follow")
+	}
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if mm := tm.(model); !mm.zoom || !strings.Contains(ansi.Strip(mm.View()), "esc back to the list") {
+		t.Fatal("enter did not open the selected row")
+	}
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if tm.(model).zoom {
+		t.Fatal("esc did not go back to the list")
+	}
+}
+
+// The selected row carries the soft background across its whole width, even
+// past the colored segments inside it, whose resets would otherwise clear it.
+func TestSelectionBackgroundSurvivesColors(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(prev)
+	row := stDanger.Render("DENY") + " " + stStrong.Render("users")
+	got := withBackground(row, 20)
+	bg := selectionSequence()
+	if bg == "" {
+		t.Fatal("no selection background under a true-color profile")
+	}
+	if strings.Count(got, bg) < 3 {
+		t.Fatalf("the background is not re-applied after each reset: %q", got)
+	}
+	if ansi.StringWidth(got) != 20 {
+		t.Fatalf("the selected row is %d wide, want the full 20", ansi.StringWidth(got))
 	}
 }
