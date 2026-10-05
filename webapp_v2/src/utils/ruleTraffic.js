@@ -8,6 +8,10 @@ export const RULE_KIND_ANALYZER = 'analyzer'
 
 const nonEmpty = (value) => Array.isArray(value) && value.length > 0
 
+// What the sidecar analyzer editor stores in the agent-only risk_evaluation.
+const DEFAULT_RISK_ACTION = 'allow_execution'
+const RISK_ACTIONS = ['low_risk_action', 'medium_risk_action', 'high_risk_action']
+
 const AGENT_FIELDS = {
   [RULE_KIND_GUARDRAIL]: (r) =>
     nonEmpty(r.connection_ids) ||
@@ -23,7 +27,7 @@ const AGENT_FIELDS = {
     nonEmpty(r.connection_names) ||
     Boolean(r.custom_prompt) ||
     Boolean(r.agentic) ||
-    Object.values(r.risk_evaluation ?? {}).some((action) => action && action !== 'allow_execution'),
+    RISK_ACTIONS.some((key) => (r.risk_evaluation?.[key] ?? DEFAULT_RISK_ACTION) !== DEFAULT_RISK_ACTION),
 }
 
 // GET /guardrails drops sidecar_spec (gateway/api/guardrails List), so a guardrail
