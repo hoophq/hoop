@@ -22,6 +22,9 @@ var (
 	colStrong = lipgloss.AdaptiveColor{Light: "#1A1A1A", Dark: "#EDEDED"}
 	colBorder = lipgloss.AdaptiveColor{Light: "#D4D4D4", Dark: "#3A3A3A"}
 	colSelBg  = lipgloss.AdaptiveColor{Light: "#EBEBEB", Dark: "#2B2B2B"}
+	// colNeutral fills a button that is safe and not an action: the No of
+	// a "stop the sidecar?" prompt. Gray, so blue keeps meaning "act".
+	colNeutral = lipgloss.AdaptiveColor{Light: "#D4D4D4", Dark: "#4A4A4A"}
 
 	stBrand   = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 1)
 	stFaint   = lipgloss.NewStyle().Foreground(colFaint)

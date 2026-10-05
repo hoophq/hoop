@@ -247,7 +247,7 @@ func (m model) content(w, h int) string {
 }
 
 // confirmView asks before stopping the sidecar. No is focused, and filled
-// blue as the safe primary answer; Yes is the danger answer, red.
+// neutral gray as the safe answer; Yes is the danger answer, red.
 func (m model) confirmView(w, h int) string {
 	bw := min(max(w-4, 30), 64)
 	noText, yesText := "No, keep running", "Yes, stop"
@@ -255,12 +255,12 @@ func (m model) confirmView(w, h int) string {
 		// The long labels would wrap the button row on a narrow screen.
 		noText, yesText = "No", "Yes, stop"
 	}
-	no := stPrimary.Padding(0, 2).Render(noText)
+	no := stFaint.Bold(true).Padding(0, 2).Render(noText)
 	yes := stDanger.Bold(true).Padding(0, 2).Render(yesText)
 	if m.quitYes {
 		yes = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colDanger).Padding(0, 2).Render(yesText)
 	} else {
-		no = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 2).Render(noText)
+		no = lipgloss.NewStyle().Bold(true).Foreground(colStrong).Background(colNeutral).Padding(0, 2).Render(noText)
 	}
 	open := len(m.st.OpenSessions())
 	body := []string{
