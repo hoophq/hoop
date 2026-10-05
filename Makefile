@@ -154,6 +154,23 @@ test-sidecar:
 test-sidecar-e2e:
 	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 go test -tags integration -v -timeout 10m -count=1 ./...
 
+# EVL-338: the previous release must decode the document this plane serves.
+# The test builds a decoder in a worktree of the newest release tag HEAD does
+# not contain, so it needs the tags (fetch-depth: 0). The grep makes a renamed
+# test fail here instead of matching nothing. Own CI job: sidecar-compat.
+test-sidecar-compat:
+	@set -e; \
+	prev=$$(git tag -l --no-contains HEAD --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$$' | head -1); \
+	test -n "$$prev" || { echo "no release tag found; fetch the tags first" >&2; exit 1; }; \
+	tree=$$(cd "$$(mktemp -d)" && pwd -P); trap 'git worktree remove --force "$$tree"' EXIT; \
+	git worktree add --quiet --detach "$$tree" "$$prev"; \
+	echo "previous release: $$prev"; \
+	out=$$(cd sidecar/daemon && env CGO_ENABLED=0 SIDECAR_PREVIOUS_RELEASE_TREE="$$tree" SIDECAR_PREVIOUS_RELEASE="$$prev" \
+		go test -count=1 -v -run '^TestThePreviousReleaseDecodesTheServedDocument$$' . 2>&1) \
+		|| { echo "$$out"; exit 1; }; \
+	echo "$$out"; \
+	echo "$$out" | grep -q -- '--- PASS: TestThePreviousReleaseDecodesTheServedDocument'
+
 prepare-mssql-jdbc:
 	$(RM) $(MSSQL_JDBC_CLASSPATH_FILE)
 	mvn -q -f $(MSSQL_JDBC_FIXTURE)/pom.xml dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=$(MSSQL_JDBC_CLASSPATH_FILE)
@@ -409,4 +426,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

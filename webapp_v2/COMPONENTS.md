@@ -19,7 +19,7 @@ Text size pairs with height: 24px↔12px text, 32px↔14, 40px↔16, 48px↔18.
 |---|---|---|
 | *(none)* / `md` | 40px | **Default — do not pass a size prop** |
 | `xs` | 24px | Micro affordances in dense chrome |
-| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. |
+| `sm` | 32px | Compact contexts: table row-action buttons, icon buttons in tight slots (e.g. an input `rightSection`). Inputs stay at the default — no small fields in the app. Two exceptions, both drawn so in the Figma: a value that edits in place inside a text row (the sidecar Global settings) takes `xs` so the row keeps its height when Edit opens it, and the search in a table's title row (the sidecar listeners) takes `xs` to sit on the title's line. |
 | `lg` | 48px | Prominent/hero actions |
 
 Rules:
@@ -908,17 +908,20 @@ Non-obvious notes only:
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
-  `updateSidecar`, `deleteSidecar`) and the one record `/sidecars/:id` reads
+  `updateSidecar`, `patchSidecar`, `deleteSidecar`) and the one record `/sidecars/:id` reads
   (`selected`, `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
   `clearSelected`). `createSidecar` returns the response with the one-time token
   and keeps none of it. `updateSidecar(nameOrId, configuration)` replaces the
   whole configuration document and returns `{ ok, error }` instead of throwing,
-  so a listener form can put the gateway's message next to the field; it writes
-  the stored document into both the list and `selected`, and moves both
-  generation counters, because a read already in flight would otherwise commit
-  the pre-save document over the saved one. Two generation counters, one per
-  resource, drop a response that arrives after its resource moved on; `reset()`
-  runs on logout through an `useAuthStore` subscription.
+  so a listener form can put the gateway's message next to the field.
+  `patchSidecar(nameOrId, configuration)` is a shallow top-level merge: only the
+  keys sent change, so a nested block such as `audit` travels whole. Both commit
+  through `written()`, which writes the document into the list and moves the
+  list and refresh counters; `selected` and `selectedRequestId` move only when
+  the written sidecar is the one on screen. Three generation counters (list,
+  selected, refresh) drop a response that arrives after its resource moved on.
+  `reset()` runs on logout through an `useAuthStore` subscription and moves
+  `session`, so a write that answers after logout commits nothing.
   The selected record needs **both** of its flags, and a page checks both:
   `selectedId !== id` catches the frame between a URL change and the effect that
   refetches — a loading flag alone still reads "idle" there and paints the

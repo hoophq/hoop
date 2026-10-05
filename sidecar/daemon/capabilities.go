@@ -30,11 +30,12 @@ const CapabilitiesHeader = "hoop-sidecar-capabilities"
 // is reported without anyone listing it (ADR-0022):
 //
 //   - A bare name is a FIELD: the cap:"<name>" tag on the struct field that
-//     decodes it. A document that sets the field needs the entry. A field
-//     that is safe when absent needs no tag: the plane serves no zero value
-//     (every field omits it), so an older build never sees the key. A
-//     since:"<release>" tag beside it names the release the field shipped
-//     in; see CheckServable for what it decides.
+//     decodes it. A document that sets the field needs the entry. Every
+//     new field needs the tag, unless it ships in the same release as a
+//     tagged block around it: the plane serves no zero value, but an
+//     older build refuses a key it does not declare once an admin sets it
+//     (EVL-338). A since:"<release>" tag beside it names the release the
+//     field shipped in; see CheckServable for what it decides.
 //   - rule:<type> is a guardrail rule type policy.RuleTypes lists.
 //   - protocol:<name> is a listener protocol Protocols lists.
 const (
@@ -83,8 +84,9 @@ var baselineCapabilities = map[string]string{
 
 // Handshake is what a sidecar said about itself, as far as serving needs it.
 type Handshake struct {
-	// Version is the release the sidecar reported. It is read only for a
-	// build whose header predates the generated list; see CheckServable.
+	// Version is the release the sidecar reported. It grants a since-tagged
+	// field, and a baseline entry to a build whose header predates the
+	// generated list; see CheckServable.
 	Version string
 	// Capabilities is the parsed CapabilitiesHeader. nil means the sidecar
 	// never reported one.
@@ -179,50 +181,21 @@ func servedView(cfg Config) (Config, error) {
 // will, so a default the plane never serves and a value the wire drops need
 // no entry. The error names the listener and the release that adds support.
 //
-// A build from before the generated list names no field but the few it was
-// taught by hand, and no rule type or protocol at all, so for such a build
-// the release stands in for the missing entry: a baseline entry and a
-// since-tagged field are granted when the reported release parses and
-// reaches the release they shipped in. A release that does not parse (a dev
-// build's "unknown") grants nothing by release. A build that sends the
-// generated list is read from the list alone; its release decides nothing.
+// A since-tagged field is granted to any build whose reported release
+// parses and reaches the release the field shipped in, because a build can
+// decode a field it does not report: the tag may postdate the field. A
+// build from before the generated list names no rule type or protocol, so
+// for such a build the release also grants a baseline entry. A build that
+// sends the list is read from it alone for rule types and protocols. A
+// release that does not parse (a dev build's "unknown") grants nothing by
+// release.
 func CheckServable(cfg Config, hs Handshake) error {
 	served, err := servedView(cfg)
 	if err != nil {
 		return err
 	}
-	reported := map[string]bool{}
-	for _, c := range hs.Capabilities {
-		reported[c] = true
-	}
-	// A header that names no entry of a kind comes from a build older than
-	// that kind's generated list. A field is read by the rule list: every
-	// build that generates the list links at least one rule type.
-	lacksKind := func(prefix string) bool {
-		return !slices.ContainsFunc(hs.Capabilities, func(c string) bool { return strings.HasPrefix(c, prefix) })
-	}
 	since := capabilitySince()
-	release, releaseKnown := parseRelease(hs.Version)
-	reaches := func(capability string) bool {
-		shipped, ok := parseRelease(since[capability])
-		return ok && releaseKnown && !releaseBefore(release, shipped)
-	}
-	granted := func(capability string) bool {
-		if reported[capability] {
-			return true
-		}
-		kind := capabilityRulePrefix
-		if strings.HasPrefix(capability, capabilityProtocolPrefix) {
-			kind = capabilityProtocolPrefix
-		}
-		if !lacksKind(kind) {
-			return false
-		}
-		if shipped, inBaseline := baselineCapabilities[capability]; inBaseline && shipped == "" {
-			return true
-		}
-		return reaches(capability)
-	}
+	granted := func(capability string) bool { return hs.grants(capability, since) }
 	who := "this sidecar"
 	if hs.Version != "" {
 		who = fmt.Sprintf("this sidecar (%s)", hs.Version)
@@ -255,6 +228,38 @@ func CheckServable(cfg Config, hs Handshake) error {
 		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// grants reports whether the build behind hs decodes capability, an entry
+// of the header; since is capabilitySince. CheckServable refuses what it
+// does not grant.
+func (hs Handshake) grants(capability string, since map[string]string) bool {
+	if slices.Contains(hs.Capabilities, capability) {
+		return true
+	}
+	release, releaseKnown := parseRelease(hs.Version)
+	shipped, shippedKnown := parseRelease(since[capability])
+	reaches := releaseKnown && shippedKnown && !releaseBefore(release, shipped)
+	// A field is granted by its since release to every build, list or not.
+	// A field is never removed, and the releases that shipped one before it
+	// carried a cap tag decode it without reporting it: 1.210 and 1.211 list
+	// no trust (EVL-338).
+	kind, isEntry := capabilityRulePrefix, strings.HasPrefix(capability, capabilityRulePrefix)
+	if strings.HasPrefix(capability, capabilityProtocolPrefix) {
+		kind, isEntry = capabilityProtocolPrefix, true
+	}
+	if !isEntry {
+		return reaches
+	}
+	// A header that names no entry of a kind comes from a build older than
+	// that kind's generated list.
+	if slices.ContainsFunc(hs.Capabilities, func(c string) bool { return strings.HasPrefix(c, kind) }) {
+		return false
+	}
+	if shipped, inBaseline := baselineCapabilities[capability]; inBaseline && shipped == "" {
+		return true
+	}
+	return reaches
 }
 
 func upgradeHint(capability string, since map[string]string) string {
