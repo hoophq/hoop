@@ -174,11 +174,13 @@ license: ''
 #
 # `identity` uses the pod's own service account instead, so nothing is issued
 # before deploy. The control plane matches it against a sidecar
-# service account entry and creates the sidecar on first contact.
+# service account entry and creates the sidecar on first contact. It sets
+# HOOP_SIDECAR_IDENTITY_TYPE:
 #   kubernetes: the chart mounts a projected service account token whose
-#               audience is `identityAudience` → HOOP_SIDECAR_IDENTITY_TOKEN_FILE
+#               audience is `identityAudience` and points
+#               HOOP_SIDECAR_IDENTITY_TOKEN_FILE at it
 #   gcp:        a Google ID token from the metadata server (GKE Workload
-#               Identity, GCE) for `identityAudience` → HOOP_SIDECAR_IDENTITY_GCP=true
+#               Identity, GCE) for `identityAudience`
 # Set `serviceAccount` to the account the entry's pattern names.
 #
 # In this mode the chart cannot know which ports the plane will hand out: set

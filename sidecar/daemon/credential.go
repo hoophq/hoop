@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,16 +18,18 @@ import (
 	"github.com/hoophq/hoop/sidecar/analytics"
 )
 
-// A sidecar proves who it is to the control plane with exactly one of three
-// credentials:
+// A sidecar proves who it is to the control plane with exactly one of:
 //
 //   - the token the plane issued when the sidecar was registered;
-//   - a Kubernetes projected service account token, read from a file;
-//   - a Google ID token from the GCE/GKE metadata server.
+//   - a platform identity, picked by HOOP_SIDECAR_IDENTITY_TYPE: a Kubernetes
+//     projected service account token read from a file (kubernetes), or a
+//     Google ID token from the GCE/GKE metadata server (gcp).
 //
-// The last two are identities the platform already issued. The plane maps
+// Platform identities are issued and rotated by the platform. The plane maps
 // them to a sidecar row through an allowlist entry, so a fleet of workspaces
 // needs no token per sidecar and a new pod lands on the row its name maps to.
+// One type variable, rather than a switch per platform, keeps "exactly one
+// credential" a single check as platforms are added.
 const (
 	// SidecarIdentityHeader carries a platform-issued JWT, raw, with no
 	// "Bearer " prefix. Exported because the gateway reads what this sets:
@@ -36,21 +37,28 @@ const (
 	// LicenseManagedHeader is one.
 	SidecarIdentityHeader = "hoop-sidecar-identity"
 
-	// SidecarIdentityTokenFileEnv names a file holding the JWT. It is a
-	// path, unlike SidecarTokenEnv: the kubelet rotates a projected token in
-	// place, so the file is re-read on every request and a value copied
-	// into the environment would expire under the running process.
+	// SidecarIdentityTypeEnv selects the platform identity: empty for the
+	// token, IdentityTypeKubernetes or IdentityTypeGCP.
+	SidecarIdentityTypeEnv = "HOOP_SIDECAR_IDENTITY_TYPE"
+	IdentityTypeKubernetes = "kubernetes"
+	IdentityTypeGCP        = "gcp"
+
+	// SidecarIdentityTokenFileEnv overrides where the kubernetes type reads
+	// its token. It is a path, unlike SidecarTokenEnv: the kubelet rotates a
+	// projected token in place, so the file is re-read on every request and
+	// a value copied into the environment would expire under the running
+	// process.
 	SidecarIdentityTokenFileEnv = "HOOP_SIDECAR_IDENTITY_TOKEN_FILE"
-	// SidecarIdentityGCPEnv, when true, fetches a Google ID token for the
-	// node's or the pod's (Workload Identity) service account from the
-	// metadata server.
-	SidecarIdentityGCPEnv = "HOOP_SIDECAR_IDENTITY_GCP"
-	// SidecarIdentityAudienceEnv is the Google ID token's audience,
-	// default the control plane URL. A plane shared by several
-	// organizations needs one audience per organization, because the plane
-	// maps an (issuer, audience) pair to one organization. Only the GCP
-	// source reads it: a projected token's audience is fixed where the
-	// token is minted.
+	// DefaultIdentityTokenFile is where the kubernetes type reads its token
+	// when SidecarIdentityTokenFileEnv is empty: the path the sidecar helm
+	// chart mounts its projected volume at. Never the default service
+	// account mount, whose token's audience is the API server.
+	DefaultIdentityTokenFile = "/var/run/hoop-sidecar/token"
+	// SidecarIdentityAudienceEnv is the gcp type's audience, default the
+	// control plane URL. A plane shared by several organizations needs one
+	// audience per organization, because the plane maps an (issuer,
+	// audience) pair to one organization. Only the gcp type reads it: a
+	// projected token's audience is fixed where the token is minted.
 	SidecarIdentityAudienceEnv = "HOOP_SIDECAR_IDENTITY_AUDIENCE"
 
 	// gcpMetadataHostEnv is the override the Google client libraries
@@ -112,23 +120,24 @@ type tokenFileCredential struct {
 func (f tokenFileCredential) present(context.Context) (string, string, error) {
 	fh, err := os.Open(f.path)
 	if err != nil {
-		return "", "", fmt.Errorf("reading the service account token (%s): %w", SidecarIdentityTokenFileEnv, err)
+		return "", "", fmt.Errorf("reading the service account token at %s (%s=%s; %s moves it): %w",
+			f.path, SidecarIdentityTypeEnv, IdentityTypeKubernetes, SidecarIdentityTokenFileEnv, err)
 	}
 	// Read-only file, fully read below; a close error carries nothing.
 	defer func() { _ = fh.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(fh, maxIdentityToken+1))
 	if err != nil {
-		return "", "", fmt.Errorf("reading the service account token (%s): %w", SidecarIdentityTokenFileEnv, err)
+		return "", "", fmt.Errorf("reading the service account token at %s: %w", f.path, err)
 	}
 	if len(raw) > maxIdentityToken {
-		return "", "", fmt.Errorf("%s names %s, which holds more than %d bytes; "+
-			"a service account token is about 1 KiB, so this is not one",
-			SidecarIdentityTokenFileEnv, f.path, maxIdentityToken)
+		return "", "", fmt.Errorf("the service account token at %s holds more than %d bytes; "+
+			"a service account token is about 1 KiB, so this is not one (%s moves it)",
+			f.path, maxIdentityToken, SidecarIdentityTokenFileEnv)
 	}
 	tok := strings.TrimSpace(string(raw))
 	if tok == "" {
-		return "", "", fmt.Errorf("%s names %s, which is empty; "+
-			"check the projected serviceAccountToken volume", SidecarIdentityTokenFileEnv, f.path)
+		return "", "", fmt.Errorf("the service account token at %s is empty; "+
+			"check the projected serviceAccountToken volume", f.path)
 	}
 	return SidecarIdentityHeader, tok, nil
 }
@@ -185,8 +194,8 @@ func fetchGCPIdentityToken(ctx context.Context, audience string) (string, time.T
 	req.Header.Set("Metadata-Flavor", "Google")
 	resp, err := gcpMetadataClient.Do(req)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("%s is set but the GCP metadata server at %s is unreachable "+
-			"(this process must run on GCE or GKE): %w", SidecarIdentityGCPEnv, host, err)
+		return "", time.Time{}, fmt.Errorf("%s=%s is set but the GCP metadata server at %s is unreachable "+
+			"(this process must run on GCE or GKE): %w", SidecarIdentityTypeEnv, IdentityTypeGCP, host, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxIdentityToken+1))
@@ -254,61 +263,60 @@ func jwtClaimsUnverified(tok string) (jwtClaims, error) {
 	return c, nil
 }
 
-// resolveCredential picks the one credential source that is set. It returns
-// a nil credential when none is, and refuses two: precedence between a token
-// and an identity would decide which sidecar row this process becomes, and
-// no operator setting both meant the one that loses.
+// resolveCredential picks the one credential that is set. It returns a nil
+// credential when none is, and refuses a token beside an identity type:
+// precedence between them would decide which sidecar row this process
+// becomes, and no operator setting both meant the one that loses.
 //
 // The token flag outranking HOOP_SIDECAR_TOKEN is not two sources: it is
 // the one token, set from two places, as it always was.
 //
-// planeURL is the Google ID token's audience unless
-// HOOP_SIDECAR_IDENTITY_AUDIENCE is set. That env var with any other source,
-// or with none, is an error: it would do nothing, and the operator who set
-// it expects the plane to see that audience.
+// HOOP_SIDECAR_IDENTITY_TOKEN_FILE and HOOP_SIDECAR_IDENTITY_AUDIENCE belong
+// to one type each. Either one set for another type, or for none, is an
+// error: it would do nothing, and the operator who set it expects it to.
+//
+// The returned source names the credential in startup errors.
 func resolveCredential(tokenFlag, planeURL string) (credential, string, error) {
-	var set []string
 	token, tokenSource := resolveSidecarToken(tokenFlag)
-	if token != "" {
-		set = append(set, tokenSource)
-	}
+	identity := strings.TrimSpace(os.Getenv(SidecarIdentityTypeEnv))
 	file := os.Getenv(SidecarIdentityTokenFileEnv)
-	if file != "" {
-		set = append(set, SidecarIdentityTokenFileEnv)
-	}
-	gcp := false
-	if v := os.Getenv(SidecarIdentityGCPEnv); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return nil, "", fmt.Errorf("%s holds %q, which is not a boolean (true or false)", SidecarIdentityGCPEnv, v)
-		}
-		if b {
-			gcp = true
-			set = append(set, SidecarIdentityGCPEnv)
-		}
-	}
 	audience := os.Getenv(SidecarIdentityAudienceEnv)
-	switch {
-	case len(set) > 1:
-		return nil, "", fmt.Errorf("more than one control plane credential is set (%s); set exactly one",
-			strings.Join(set, ", "))
-	case audience != "" && !gcp:
-		other := "no credential"
-		if len(set) == 1 {
-			other = set[0]
-		}
-		return nil, "", fmt.Errorf("%s is set with %s; it is the Google ID token's audience and only %s=true uses it. "+
+
+	switch identity {
+	case "", IdentityTypeKubernetes, IdentityTypeGCP:
+	default:
+		return nil, "", fmt.Errorf("%s is %q: use %s or %s, or leave it empty to authenticate with a token",
+			SidecarIdentityTypeEnv, identity, IdentityTypeKubernetes, IdentityTypeGCP)
+	}
+	identitySource := SidecarIdentityTypeEnv + "=" + identity
+	if token != "" && identity != "" {
+		return nil, "", fmt.Errorf("more than one control plane credential is set (%s, %s); set exactly one",
+			tokenSource, identitySource)
+	}
+	if file != "" && identity != IdentityTypeKubernetes {
+		return nil, "", fmt.Errorf("%s is set, but only %s=%s reads it; set the type or drop the path",
+			SidecarIdentityTokenFileEnv, SidecarIdentityTypeEnv, IdentityTypeKubernetes)
+	}
+	if audience != "" && identity != IdentityTypeGCP {
+		return nil, "", fmt.Errorf("%s is set, but only %s=%s reads it: it is the Google ID token's audience. "+
 			"A projected service account token's audience is set where the token is minted "+
-			"(the serviceAccountToken volume's audience)", SidecarIdentityAudienceEnv, other, SidecarIdentityGCPEnv)
-	case token != "":
-		return tokenCredential(token), tokenSource, nil
-	case file != "":
-		return tokenFileCredential{path: file}, SidecarIdentityTokenFileEnv, nil
-	case gcp:
+			"(the serviceAccountToken volume's audience)", SidecarIdentityAudienceEnv, SidecarIdentityTypeEnv, IdentityTypeGCP)
+	}
+
+	switch identity {
+	case IdentityTypeKubernetes:
+		if file == "" {
+			file = DefaultIdentityTokenFile
+		}
+		return tokenFileCredential{path: file}, identitySource, nil
+	case IdentityTypeGCP:
 		if audience == "" {
 			audience = planeURL
 		}
-		return &gcpCredential{audience: audience}, SidecarIdentityGCPEnv, nil
+		return &gcpCredential{audience: audience}, identitySource, nil
+	}
+	if token != "" {
+		return tokenCredential(token), tokenSource, nil
 	}
 	return nil, "", nil
 }

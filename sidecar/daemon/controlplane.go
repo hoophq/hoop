@@ -21,8 +21,8 @@ import (
 //
 //	URL:        HOOP_CONTROL_PLANE_URL, then the config file's "control_plane_url" key.
 //	Credential: exactly one of the token (the token flag, then
-//	            HOOP_SIDECAR_TOKEN), HOOP_SIDECAR_IDENTITY_TOKEN_FILE or
-//	            HOOP_SIDECAR_IDENTITY_GCP; see resolveCredential. Never a
+//	            HOOP_SIDECAR_TOKEN) or HOOP_SIDECAR_IDENTITY_TYPE
+//	            (kubernetes or gcp); see resolveCredential. Never a
 //	            config key: a bearer secret does not belong in a file that
 //	            gets committed.
 //
@@ -300,8 +300,8 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 
 	if cred == nil {
 		return nil, fmt.Errorf("a control plane is configured (%s) but no credential was given; "+
-			"pass the token flag or set %s, set %s to a service account token file, or set %s=true on GCP",
-			urlSource, SidecarTokenEnv, SidecarIdentityTokenFileEnv, SidecarIdentityGCPEnv)
+			"pass the token flag, set %s, or set %s to %s or %s",
+			urlSource, SidecarTokenEnv, SidecarIdentityTypeEnv, IdentityTypeKubernetes, IdentityTypeGCP)
 	}
 
 	// The first handshake reports nothing about a previous document: this

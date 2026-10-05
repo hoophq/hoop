@@ -146,7 +146,7 @@ under `deploy/docker-compose/` binds:
 | `license` | License document or a path to one → `HOOP_LICENSE` |
 | `controlPlane.url` | Control Plane to take the running config from → `HOOP_CONTROL_PLANE_URL` |
 | `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN`. Exclusive with `controlPlane.identity` |
-| `controlPlane.identity` | Authenticate with the pod's service account instead of a token. `kubernetes` mounts a projected token with audience `controlPlane.identityAudience` → `HOOP_SIDECAR_IDENTITY_TOKEN_FILE`; `gcp` reads a Google ID token from the metadata server → `HOOP_SIDECAR_IDENTITY_GCP=true`. The control plane creates the sidecar on first contact; see "Service account identity" below |
+| `controlPlane.identity` | Authenticate with the pod's service account instead of a token → `HOOP_SIDECAR_IDENTITY_TYPE`. `kubernetes` mounts a projected token with audience `controlPlane.identityAudience` and sets `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` to it; `gcp` reads a Google ID token from the metadata server. The control plane creates the sidecar on first contact; see "Service account identity" below |
 | `controlPlane.identityAudience` | Audience of the identity token. Default: `controlPlane.url`. Set it when one control plane serves several organizations; see "Several organizations on one control plane" below. Under `gcp` → `HOOP_SIDECAR_IDENTITY_AUDIENCE`. Refused without `controlPlane.identity` |
 | `controlPlane.tokenExpirationSeconds` | Lifetime of the projected token under `identity: kubernetes`. Default `3600`. An integer, minimum `600`: the chart refuses to render otherwise. The kubelet rotates it |
 | `analytics.enabled` | Usage analytics to Segment. `false` → `HOOP_SIDECAR_ANALYTICS=off`. Default `true` |
@@ -264,8 +264,8 @@ which a Secret cannot express:
 | `HOOP_LICENSE` | `license` |
 | `HOOP_CONTROL_PLANE_URL` | `controlPlane.url` |
 | `HOOP_SIDECAR_TOKEN` | `controlPlane.token` |
+| `HOOP_SIDECAR_IDENTITY_TYPE` | `controlPlane.identity`: empty, `kubernetes` or `gcp` |
 | `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `/var/run/hoop-sidecar/token` when `controlPlane.identity: kubernetes`, else empty |
-| `HOOP_SIDECAR_IDENTITY_GCP` | `true` when `controlPlane.identity: gcp`, else empty |
 | `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `controlPlane.identityAudience` when `controlPlane.identity: gcp`, else empty. Empty means the control plane URL |
 | `HOOP_SIDECAR_ANALYTICS` | `off` when `analytics.enabled: false`, else empty |
 | `HOOP_SIDECAR_ID` | `analytics.sidecarId`, defaulting to the release's full name |

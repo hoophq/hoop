@@ -265,12 +265,13 @@ of carrying its own listeners. Two facts connect it, highest precedence first:
 | Fact | Sources |
 |---|---|
 | URL | `HOOP_CONTROL_PLANE_URL`, then the `control_plane_url` config key |
-| Credential | exactly one of: the token flag (`--token` / `-token`), then `HOOP_SIDECAR_TOKEN`; `HOOP_SIDECAR_IDENTITY_TOKEN_FILE`; `HOOP_SIDECAR_IDENTITY_GCP` |
+| Credential | exactly one of: the token flag (`--token` / `-token`), then `HOOP_SIDECAR_TOKEN`; or `HOOP_SIDECAR_IDENTITY_TYPE` (`kubernetes` or `gcp`) |
 
 First wins, not first valid, same as the license sources: an env var holding
-garbage is an error, never a reason to fall through to the file. Two
-credentials set is an error naming both, a credential with no URL is an
-error, and a URL with no credential is an error naming all three.
+garbage is an error, never a reason to fall through to the file. A token and
+an identity type both set is an error naming both, a credential with no URL
+is an error, and a URL with no credential is an error naming the token and
+the identity type.
 
 ```bash
 # No config file at all: the env pair is the whole configuration.
@@ -299,9 +300,9 @@ one, and a sidecar an admin deleted stays deleted.
 
 | Variable | Holds |
 |---|---|
-| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | path to a JWT, normally a Kubernetes projected service account token. Re-read on every request, because the kubelet rotates it in place. Whitespace is trimmed; an empty file or one over 16 KiB is refused |
-| `HOOP_SIDECAR_IDENTITY_GCP` | `true` to fetch a Google ID token from the GCE/GKE metadata server, with `HOOP_SIDECAR_IDENTITY_AUDIENCE` as audience. Cached until 5 minutes before it expires. `GCE_METADATA_HOST` overrides the server, as in the Google client libraries |
-| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | the Google ID token's audience. Default: the control plane URL. Only `HOOP_SIDECAR_IDENTITY_GCP` reads it; set without `HOOP_SIDECAR_IDENTITY_GCP=true` (beside the token, `HOOP_SIDECAR_IDENTITY_TOKEN_FILE`, or alone), it stops startup, because a projected token's audience is set where the token is minted |
+| `HOOP_SIDECAR_IDENTITY_TYPE` | `kubernetes`: read a Kubernetes projected service account token from a file. `gcp`: fetch a Google ID token from the GCE/GKE metadata server. Empty: the token. Any other value stops startup |
+| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `kubernetes` only. The token's path; default `/var/run/hoop-sidecar/token`, where the helm chart mounts it. Re-read on every request, because the kubelet rotates it in place. Whitespace is trimmed; an empty file or one over 16 KiB is refused. Set with another type, it stops startup |
+| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `gcp` only. The Google ID token's audience; default the control plane URL. The token is cached until 5 minutes before it expires, and `GCE_METADATA_HOST` overrides the metadata server, as in the Google client libraries. Set with another type, it stops startup, because a projected token's audience is set where the token is minted |
 
 Kubernetes projected token, audience set to the control plane URL exactly as
 `HOOP_CONTROL_PLANE_URL` holds it (or to the organization's own audience, see
@@ -315,6 +316,8 @@ spec:
       env:
         - name: HOOP_CONTROL_PLANE_URL
           value: https://cp.example.com
+        - name: HOOP_SIDECAR_IDENTITY_TYPE
+          value: kubernetes
         - name: HOOP_SIDECAR_IDENTITY_TOKEN_FILE
           value: /var/run/secrets/hoop/token
       volumeMounts:
@@ -343,8 +346,8 @@ no volume is needed:
       env:
         - name: HOOP_CONTROL_PLANE_URL
           value: https://cp.example.com
-        - name: HOOP_SIDECAR_IDENTITY_GCP
-          value: "true"
+        - name: HOOP_SIDECAR_IDENTITY_TYPE
+          value: gcp
 ```
 
 Its allowlist entry uses issuer `https://accounts.google.com`, claim `email`,

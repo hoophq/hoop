@@ -76,10 +76,17 @@ func identityPlane(t *testing.T, status int, body string) (*httptest.Server, fun
 func clearCredentialEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv(SidecarTokenEnv, "")
+	t.Setenv(SidecarIdentityTypeEnv, "")
 	t.Setenv(SidecarIdentityTokenFileEnv, "")
-	t.Setenv(SidecarIdentityGCPEnv, "")
 	t.Setenv(SidecarIdentityAudienceEnv, "")
 	t.Setenv(gcpMetadataHostEnv, "")
+}
+
+// useTokenFile selects the kubernetes identity type reading path.
+func useTokenFile(t *testing.T, path string) {
+	t.Helper()
+	t.Setenv(SidecarIdentityTypeEnv, IdentityTypeKubernetes)
+	t.Setenv(SidecarIdentityTokenFileEnv, path)
 }
 
 func writeTokenFile(t *testing.T, path, content string) {
@@ -99,7 +106,7 @@ func TestATokenFileIsReReadOnEveryHandshake(t *testing.T) {
 	first := k8sJWT(t, "system:serviceaccount:ws-1:hoop-sidecar", time.Now().Add(time.Hour))
 	writeTokenFile(t, path, first)
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
-	t.Setenv(SidecarIdentityTokenFileEnv, path)
+	useTokenFile(t, path)
 
 	cfg, _, err := SetupWith("", nil, nil)
 	if err != nil {
@@ -139,14 +146,14 @@ func TestAnUnusableTokenFileStopsStartup(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "token")
 			writeTokenFile(t, path, tc.content)
 			t.Setenv(ControlPlaneURLEnv, srv.URL)
-			t.Setenv(SidecarIdentityTokenFileEnv, path)
+			useTokenFile(t, path)
 
 			_, _, err := SetupWith("", nil, nil)
 			if err == nil {
 				t.Fatal("an unusable token file was accepted")
 			}
-			if !strings.Contains(err.Error(), SidecarIdentityTokenFileEnv) || !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("the error does not name the source and the fault %q: %v", tc.want, err)
+			if !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("the error does not name the file and the fault %q: %v", tc.want, err)
 			}
 			if n := len(calls()); n != 0 {
 				t.Errorf("the plane was contacted %d time(s)", n)
@@ -155,22 +162,39 @@ func TestAnUnusableTokenFileStopsStartup(t *testing.T) {
 	}
 }
 
-// Precedence between two credentials would decide which sidecar row this
-// process becomes, so two set is an error naming both.
-func TestTwoCredentialSourcesStopStartup(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "token")
+// Without a path the kubernetes type reads the file the helm chart mounts,
+// and says which file it tried when that one is missing.
+func TestTheKubernetesTypeDefaultsToTheChartsTokenPath(t *testing.T) {
+	clearCredentialEnv(t)
+	srv, calls := identityPlane(t, http.StatusOK, planeConfig)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarIdentityTypeEnv, IdentityTypeKubernetes)
+
+	_, _, err := SetupWith("", nil, nil)
+	if _, statErr := os.Stat(DefaultIdentityTokenFile); statErr == nil {
+		t.Skipf("%s exists on this host; the test needs it absent", DefaultIdentityTokenFile)
+	}
+	if err == nil || !strings.Contains(err.Error(), DefaultIdentityTokenFile) {
+		t.Errorf("want an error naming %s, got %v", DefaultIdentityTokenFile, err)
+	}
+	if n := len(calls()); n != 0 {
+		t.Errorf("the plane was contacted %d time(s)", n)
+	}
+}
+
+// Precedence between a token and an identity would decide which sidecar
+// row this process becomes, so both set is an error naming both.
+func TestATokenBesideAnIdentityTypeStopsStartup(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		flag string
 		env  map[string]string
 		want []string
 	}{
-		{"token env and file", "", map[string]string{SidecarTokenEnv: "hsc_x", SidecarIdentityTokenFileEnv: path},
-			[]string{SidecarTokenEnv, SidecarIdentityTokenFileEnv}},
-		{"token flag and gcp", "hsc_x", map[string]string{SidecarIdentityGCPEnv: "true"},
-			[]string{"token flag", SidecarIdentityGCPEnv}},
-		{"file and gcp", "", map[string]string{SidecarIdentityTokenFileEnv: path, SidecarIdentityGCPEnv: "1"},
-			[]string{SidecarIdentityTokenFileEnv, SidecarIdentityGCPEnv}},
+		{"token env and kubernetes", "", map[string]string{SidecarTokenEnv: "hsc_x", SidecarIdentityTypeEnv: IdentityTypeKubernetes},
+			[]string{SidecarTokenEnv, SidecarIdentityTypeEnv + "=" + IdentityTypeKubernetes}},
+		{"token flag and gcp", "hsc_x", map[string]string{SidecarIdentityTypeEnv: IdentityTypeGCP},
+			[]string{"token flag", SidecarIdentityTypeEnv + "=" + IdentityTypeGCP}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clearCredentialEnv(t)
@@ -181,7 +205,7 @@ func TestTwoCredentialSourcesStopStartup(t *testing.T) {
 			}
 			_, _, err := SetupWith("", nil, nil, WithControlPlaneToken(tc.flag))
 			if err == nil {
-				t.Fatal("two credential sources were accepted")
+				t.Fatal("two credentials were accepted")
 			}
 			for _, want := range tc.want {
 				if !strings.Contains(err.Error(), want) {
@@ -195,40 +219,54 @@ func TestTwoCredentialSourcesStopStartup(t *testing.T) {
 	}
 }
 
-// HOOP_SIDECAR_IDENTITY_GCP=false is no source at all, so a token beside
-// it is the one credential.
-func TestAFalseGCPSwitchIsNotASource(t *testing.T) {
-	clearCredentialEnv(t)
-	srv, calls := identityPlane(t, http.StatusOK, planeConfig)
-	t.Setenv(ControlPlaneURLEnv, srv.URL)
-	t.Setenv(SidecarTokenEnv, "hsc_env")
-	t.Setenv(SidecarIdentityGCPEnv, "false")
+// A token file path does nothing without the kubernetes type, so it is an
+// error rather than a setting the operator believes is in force.
+func TestATokenFileWithoutTheKubernetesTypeStopsStartup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	writeTokenFile(t, path, k8sJWT(t, "s", time.Now().Add(time.Hour)))
+	for _, tc := range []struct {
+		name, flag, identity string
+	}{
+		{"with a token", "hsc_x", ""},
+		{"with gcp", "", IdentityTypeGCP},
+		{"alone", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearCredentialEnv(t)
+			srv, calls := identityPlane(t, http.StatusOK, planeConfig)
+			t.Setenv(ControlPlaneURLEnv, srv.URL)
+			t.Setenv(SidecarIdentityTokenFileEnv, path)
+			t.Setenv(SidecarIdentityTypeEnv, tc.identity)
 
-	if _, _, err := SetupWith("", nil, nil); err != nil {
-		t.Fatalf("SetupWith: %v", err)
-	}
-	if got := calls(); len(got) != 1 || got[0].token != "hsc_env" || got[0].identity != "" {
-		t.Errorf("calls = %+v, want one token handshake", got)
+			_, _, err := SetupWith("", nil, nil, WithControlPlaneToken(tc.flag))
+			if err == nil || !strings.Contains(err.Error(), SidecarIdentityTokenFileEnv) ||
+				!strings.Contains(err.Error(), IdentityTypeKubernetes) {
+				t.Errorf("want an error naming %s and the kubernetes type, got %v", SidecarIdentityTokenFileEnv, err)
+			}
+			if n := len(calls()); n != 0 {
+				t.Errorf("the plane was contacted %d time(s)", n)
+			}
+		})
 	}
 }
 
-func TestAnIdentitySourceWithoutAControlPlaneStopsStartup(t *testing.T) {
+func TestAnIdentityTypeWithoutAControlPlaneStopsStartup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	writeTokenFile(t, path, k8sJWT(t, "s", time.Now().Add(time.Hour)))
-	for _, tc := range []struct{ env, value string }{
-		{SidecarIdentityTokenFileEnv, path},
-		{SidecarIdentityGCPEnv, "true"},
-	} {
-		t.Run(tc.env, func(t *testing.T) {
+	for _, identity := range []string{IdentityTypeKubernetes, IdentityTypeGCP} {
+		t.Run(identity, func(t *testing.T) {
 			clearCredentialEnv(t)
 			t.Setenv(ControlPlaneURLEnv, "")
-			t.Setenv(tc.env, tc.value)
+			t.Setenv(SidecarIdentityTypeEnv, identity)
+			if identity == IdentityTypeKubernetes {
+				t.Setenv(SidecarIdentityTokenFileEnv, path)
+			}
 
 			_, _, err := SetupWith(writeConfig(t, minimalConfig+`}`), nil, nil)
 			if err == nil {
 				t.Fatal("an orphan credential was accepted")
 			}
-			if !strings.Contains(err.Error(), tc.env) {
+			if !strings.Contains(err.Error(), SidecarIdentityTypeEnv+"="+identity) {
 				t.Errorf("the error does not name the source: %v", err)
 			}
 		})
@@ -244,25 +282,27 @@ func TestAControlPlaneWithoutACredentialNamesEverySource(t *testing.T) {
 	if err == nil {
 		t.Fatal("a control plane with no credential was accepted")
 	}
-	for _, want := range []string{SidecarTokenEnv, SidecarIdentityTokenFileEnv, SidecarIdentityGCPEnv} {
+	for _, want := range []string{SidecarTokenEnv, SidecarIdentityTypeEnv, IdentityTypeKubernetes, IdentityTypeGCP} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error does not name %q: %v", want, err)
 		}
 	}
 }
 
-func TestAGarbageGCPSwitchStopsStartup(t *testing.T) {
+func TestAnUnknownIdentityTypeStopsStartup(t *testing.T) {
 	clearCredentialEnv(t)
 	srv, calls := identityPlane(t, http.StatusOK, planeConfig)
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
-	t.Setenv(SidecarIdentityGCPEnv, "yes please")
+	t.Setenv(SidecarIdentityTypeEnv, "aws")
 
 	_, _, err := SetupWith("", nil, nil)
 	if err == nil {
-		t.Fatal("a garbage boolean was accepted")
+		t.Fatal("an unknown identity type was accepted")
 	}
-	if !strings.Contains(err.Error(), SidecarIdentityGCPEnv) || !strings.Contains(err.Error(), "yes please") {
-		t.Errorf("the error does not name the source and the value: %v", err)
+	for _, want := range []string{SidecarIdentityTypeEnv, `"aws"`, IdentityTypeKubernetes, IdentityTypeGCP} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not name %q: %v", want, err)
+		}
 	}
 	if n := len(calls()); n != 0 {
 		t.Errorf("the plane was contacted %d time(s)", n)
@@ -315,7 +355,7 @@ func TestGCPIdentityAsksTheMetadataServerForThePlaneAudience(t *testing.T) {
 	meta := metadataServer(t, time.Hour)
 	srv, calls := identityPlane(t, http.StatusOK, planeConfig)
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
-	t.Setenv(SidecarIdentityGCPEnv, "true")
+	t.Setenv(SidecarIdentityTypeEnv, IdentityTypeGCP)
 
 	cfg, _, err := SetupWith("", nil, nil)
 	if err != nil {
@@ -347,7 +387,7 @@ func TestGCPIdentityAsksForTheConfiguredAudience(t *testing.T) {
 	meta := metadataServer(t, time.Hour)
 	srv, calls := identityPlane(t, http.StatusOK, planeConfig)
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
-	t.Setenv(SidecarIdentityGCPEnv, "true")
+	t.Setenv(SidecarIdentityTypeEnv, IdentityTypeGCP)
 	t.Setenv(SidecarIdentityAudienceEnv, "hoop-org-a")
 
 	if _, _, err := SetupWith("", nil, nil); err != nil {
@@ -372,12 +412,10 @@ func TestAnIdentityAudienceWithoutGCPStopsStartup(t *testing.T) {
 		name string
 		flag string
 		env  map[string]string
-		want string
 	}{
-		{"token flag", "hsc_x", nil, "token flag"},
-		{"token env", "", map[string]string{SidecarTokenEnv: "hsc_x"}, SidecarTokenEnv},
-		{"token file", "", map[string]string{SidecarIdentityTokenFileEnv: path}, SidecarIdentityTokenFileEnv},
-		{"gcp false", "", map[string]string{SidecarTokenEnv: "hsc_x", SidecarIdentityGCPEnv: "false"}, SidecarTokenEnv},
+		{"token flag", "hsc_x", nil},
+		{"token env", "", map[string]string{SidecarTokenEnv: "hsc_x"}},
+		{"kubernetes", "", map[string]string{SidecarIdentityTypeEnv: IdentityTypeKubernetes, SidecarIdentityTokenFileEnv: path}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clearCredentialEnv(t)
@@ -391,7 +429,7 @@ func TestAnIdentityAudienceWithoutGCPStopsStartup(t *testing.T) {
 			if err == nil {
 				t.Fatal("an audience beside a non-GCP credential was accepted")
 			}
-			for _, want := range []string{SidecarIdentityAudienceEnv, tc.want} {
+			for _, want := range []string{SidecarIdentityAudienceEnv, SidecarIdentityTypeEnv + "=" + IdentityTypeGCP} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("the error does not name %q: %v", want, err)
 				}
@@ -472,7 +510,7 @@ func TestARejectedIdentityNamesTheSubjectAndThePlanesReason(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "token")
 			writeTokenFile(t, path, k8sJWT(t, "system:serviceaccount:ws-9:hoop-sidecar", time.Now().Add(time.Hour)))
 			t.Setenv(ControlPlaneURLEnv, srv.URL)
-			t.Setenv(SidecarIdentityTokenFileEnv, path)
+			useTokenFile(t, path)
 
 			_, _, err := SetupWith("", nil, nil)
 			if err == nil {
