@@ -110,6 +110,7 @@ var protocolLabels = map[string]string{
 	"mongodb":    "MongoDB",
 	"mssql":      "SQL Server",
 	"mysql":      "MySQL",
+	"oracle":     "Oracle",
 	"postgres":   "PostgreSQL",
 	"spanner":    "Cloud Spanner",
 	"ssh":        "SSH",

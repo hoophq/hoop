@@ -685,7 +685,12 @@ func (s *sessionEventSink) post(ctx context.Context, body []byte) (status int, m
 		return 0, "", fmt.Errorf("control plane request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(sidecarTokenHeader, s.cp.token)
+	// ctx bounds a metadata server fetch too, as on the review path.
+	header, value, err := s.cp.cred.present(ctx)
+	if err != nil {
+		return 0, "", err
+	}
+	req.Header.Set(header, value)
 
 	resp, err := s.http.Do(req)
 	if err != nil {

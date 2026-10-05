@@ -33,18 +33,25 @@
 // # What it actually runs
 //
 // The REAL artifact, not a library composition: `hoop-inspect` built from
-// sidecar/cmd and launched as a subprocess against mysql:8 and mongo:7
-// containers. That matters because masking is only reachable through the
-// binary — the detection plugin is a nested module the root cannot import, so
-// a test that called daemon.Run in-process would have to pass a nil Plugin and
-// would silently test the unmasked path.
+// sidecar/cmd and launched as a subprocess against mysql:8, mongo:7, and
+// gvenzl/oracle-free:23-slim-faststart containers. That matters because masking
+// is only reachable through the binary — the detection plugin is a nested
+// module the root cannot import, so a test that called daemon.Run in-process
+// would have to pass a nil Plugin and would silently test the unmasked path.
 //
 // mysql:8 rather than the MariaDB image the agent integration suite uses,
 // deliberately. MariaDB negotiates mysql_native_password; the hang above only
 // appears under caching_sha2_password, which is MySQL 8's default. mongo:7 is
 // driven through real SCRAM authentication with the official Go driver,
 // including OP_QUERY hello, document sequences, native command errors and
-// multi-batch cursors.
+// multi-batch cursors. Oracle is exercised with a thin Go driver and OCI
+// SQLPlus in the database image, through the same shipped sidecar binary.
+// SIDECAR_E2E_ORACLE_IMAGE and SIDECAR_E2E_ORACLE_SERVICE run the Oracle tests
+// against another gvenzl image, and SIDECAR_E2E_ORACLE_CLIENT_IMAGE runs
+// SQLPlus from a separate image; `make test-sidecar-e2e-oracle21` uses them for
+// Oracle XE 21c with SQLPlus 21 and 23. SIDECAR_E2E_ORACLE_PLATFORM=linux/amd64
+// runs the Oracle images as CI does on an arm64 host: OCI sends fields whose
+// values depend on the platform.
 //
 // # Its own module
 //

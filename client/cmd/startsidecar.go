@@ -322,7 +322,7 @@ func init() {
 	// --help output.
 	startSidecarCmd.Flags().StringVar(&sidecarTokenFlag, "token", "",
 		"The token identifying this sidecar to the control plane. Overrides "+
-			daemon.SidecarTokenEnv)
+			daemon.SidecarTokenEnv+". Exclusive with "+daemon.SidecarIdentityTypeEnv)
 	startSidecarCmd.Flags().BoolVar(&sidecarValidateFlag, "validate", false,
 		"Validate the config, report what each listener resolved to, and exit")
 	startSidecarCmd.Flags().BoolVar(&sidecarStrictFlag, "strict", false,

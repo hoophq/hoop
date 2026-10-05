@@ -45,6 +45,11 @@ var root = buildRoutes([]struct {
 	{[]string{"spiffe-mappings"}, ResourceAgentSPIFFEMapping},
 	{[]string{"spiffemappings"}, ResourceAgentSPIFFEMapping},
 	{[]string{"feature-flags"}, ResourceFeatureFlag},
+	{[]string{"sidecar-service-accounts"}, ResourceSidecarServiceAccount},
+	{[]string{"sidecar-deleted-names"}, ResourceSidecarDeletedName},
+	// DELETE /sidecars/:nameOrID/identity clears a binding; with no entry
+	// it would be logged as a deleted sidecar.
+	{[]string{"sidecars", "identity"}, ResourceSidecarIdentity},
 })
 
 func buildRoutes(entries []struct {

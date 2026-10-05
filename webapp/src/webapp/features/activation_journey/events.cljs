@@ -1,8 +1,6 @@
 (ns webapp.features.activation-journey.events
   (:require
-   [clojure.string :as cs]
-   [re-frame.core :as rf]
-   [webapp.features.activation-journey.templates :as templates]))
+   [re-frame.core :as rf]))
 
 ;; State path: [:activation-journey]
 ;;
@@ -14,11 +12,6 @@
 
 (defn- admin? [db]
   (boolean (get-in db [:users->current-user :data :admin?])))
-
-(defn- parse-csv [value]
-  (if (seq value)
-    (vec (remove cs/blank? (cs/split value #",")))
-    []))
 
 (defn- role-names-from-db
   "Role names created by the current resource flow. Mirrors the sources the
@@ -120,22 +113,5 @@
        db
        (update-in db [:activation-journey :roles] (fnil conj []) role)))))
 
-;; There is no guardrail counterpart to the event below: the guardrail create
-;; form is a React page (webapp_v2 pages/Guardrails/Create) and seeds itself
-;; from ?template=&connections= through findGuardrailTemplate.
-
-;; Seeds the AI Session Analyzer create form
-;; (?template=<name>&connections=<csv of role names>).
-(rf/reg-event-fx
- :activation-journey/seed-ai-analyzer-template
- (fn [_ [_ template-id connections-csv]]
-   (if-let [template (templates/find-ai-analyzer-template template-id)]
-     (do
-       ;; A user deep-linked into rule creation has already seen the feature
-       ;; pitch; without this flag the post-save redirect to the analyzer list
-       ;; page would land on the first-visit promotion splash.
-       (.setItem (.-localStorage js/window) "ai-session-analyzer-promotion-seen" "true")
-       {:fx [[:dispatch [:ai-session-analyzer/set-active-rule
-                         (assoc (templates/ai-analyzer-payload template)
-                                :connection_names (parse-csv connections-csv))]]]})
-     {:fx [[:dispatch [:ai-session-analyzer/clear-active-rule]]]})))
+;; No feature needs a seed event any more: every create form is a React page
+;; and seeds itself from ?template=&connections=.

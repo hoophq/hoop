@@ -34,7 +34,7 @@ func TestTheHeartbeatReportsARefusalUntilItClears(t *testing.T) {
 		_, _ = w.Write([]byte(unknown))
 	}))
 	defer srv.Close()
-	cp := &controlPlane{url: srv.URL, token: "hsc_x", every: time.Millisecond,
+	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_x"), every: time.Millisecond,
 		revision: "rev-1", outcome: reloadApplied.String()}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)

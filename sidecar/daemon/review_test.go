@@ -48,7 +48,7 @@ func reviewPlane(t *testing.T, status int, body string) (*controlPlane, *[]revie
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
-	return &controlPlane{url: srv.URL, token: "hsc_token"}, calls
+	return &controlPlane{url: srv.URL, cred: tokenCredential("hsc_token")}, calls
 }
 
 // The wire contract, asserted from the plane's side: the token identifies the
@@ -176,7 +176,7 @@ func TestAReviewNeverFollowsARedirect(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	cp := &controlPlane{url: srv.URL, token: "hsc_token"}
+	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_token")}
 	_, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t")
 	if err == nil {
 		t.Fatal("a redirect was accepted")
@@ -200,7 +200,7 @@ func TestAPathPrefixedPlaneKeepsItsPrefix(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	cp := &controlPlane{url: srv.URL + "/hoop", token: "hsc_token"}
+	cp := &controlPlane{url: srv.URL + "/hoop", cred: tokenCredential("hsc_token")}
 	if _, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t"); err != nil {
 		t.Fatalf("fileReview: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestAHoldWithNoPlaceToFileIsRefusedAtBuild(t *testing.T) {
 	// A running process HAS one, and its document is the plane's own, which
 	// never carries the URL. This is the deployment the check must not
 	// refuse.
-	deps.cp = &controlPlane{url: "https://cp.example.com", token: "t"}
+	deps.cp = &controlPlane{url: "https://cp.example.com", cred: tokenCredential("t")}
 	if _, err := buildLanes(cfg, nil, deps); err != nil {
 		t.Fatalf("a plane-connected process was refused its own document: %v", err)
 	}
@@ -526,7 +526,7 @@ func TestAnObservingLaneRecordsTheHoldAndFilesNothing(t *testing.T) {
 // The three cases the lane builder refuses to file in, each for a different
 // reason, all landing on the same nil that denies.
 func TestReviewerForFilesOnlyWhereItShould(t *testing.T) {
-	deps := &analyzerDeps{cp: &controlPlane{url: "https://cp.example.com", token: "t"}}
+	deps := &analyzerDeps{cp: &controlPlane{url: "https://cp.example.com", cred: tokenCredential("t")}}
 	holding := func() *LaneAnalyzerConfig {
 		la := laneBlock()
 		la.HighRisk = "require_review"
