@@ -315,12 +315,18 @@ func (m model) list(keys []string, sel, w, h int) string {
 	if len(keys) == 0 {
 		return m.empty(w)
 	}
+	// The column header takes the first row, so a newcomer reads what each
+	// column is before reading any row.
+	var rows []string
+	if head := m.columns(); head != "" {
+		rows = append(rows, " "+stLabel.Bold(true).Render(ansi.Truncate(head, w-1, "…")))
+		h--
+	}
 	h = max(h, 1)
 	off := 0
 	if sel >= h {
 		off = sel - h + 1
 	}
-	var rows []string
 	for i := off; i < len(keys) && i < off+h; i++ {
 		row := ansi.Truncate(m.row(keys[i], w-1), w-1, "…")
 		switch {
@@ -419,6 +425,31 @@ func (m model) row(key string, w int) string {
 	case tabLogs:
 		i, _ := strconv.Atoi(key)
 		return logRow(m.st.Logs[i-m.st.LogsDropped])
+	}
+	return ""
+}
+
+// columns is the header row of the current section's list. Each label is
+// cut to the width its row column uses (the same col widths the rows use),
+// so a header cannot drift from the rows under it.
+func (m model) columns() string {
+	join := func(cells ...string) string { return strings.Join(cells, " ") }
+	right := func(s string, w int) string { return fmt.Sprintf("%*s", w, s) }
+	switch m.tab {
+	case tabWire:
+		return join(col("TIME", 8), col("VERDICT", 8), col("LISTENER", 12), col("PRINCIPAL", 16),
+			"WHAT WENT THROUGH")
+	case tabSessions:
+		return join(col("STATE", 8), col("LISTENER", 12), col("PRINCIPAL", 14), col("PROTO", 6),
+			right("TIME", 6), right("STMT", 4), right("DENY", 4), right("MASK", 4), "LAST STATEMENT")
+	case tabReviews:
+		return join(col("STATUS", 11), col("RISK", 5), col("APPROVAL", 14), col("LISTENER", 12),
+			col("PRINCIPAL", 16), col("LAST SEEN", 11), "STATEMENT")
+	case tabLanes:
+		return join(" ", col("NAME", 12), col("MODE", 8), right("CONN", 4), col("PROTOCOL", 8),
+			"LISTEN → UPSTREAM")
+	case tabLogs:
+		return join(col("TIME", 8), col("LEVEL", 5), "MESSAGE")
 	}
 	return ""
 }
@@ -548,9 +579,9 @@ func (m model) laneRow(l *Lane) string {
 	if l.Ready {
 		dot = stPrimary.Render("●")
 	}
-	active := stFaint.Render(fmt.Sprintf("%2d●", m.st.Active(l.Name)))
+	active := stFaint.Render(fmt.Sprintf("%3d●", m.st.Active(l.Name)))
 	if n := m.st.Active(l.Name); n > 0 {
-		active = stPrimary.Render(fmt.Sprintf("%2d●", n))
+		active = stPrimary.Render(fmt.Sprintf("%3d●", n))
 	}
 	return strings.Join([]string{
 		dot,
