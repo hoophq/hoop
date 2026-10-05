@@ -1065,8 +1065,8 @@ listeners:
 ```
 
 A statement is classified when a flat list or an `any` item matches it and
-no `exclude` item does. Fields left out of an item are not checked, and an
-item that names no field is refused at startup. With no positive condition,
+no `exclude` item does. Fields left out of an item are not checked. An item
+that names no field, or an operation no codec reports, is refused at startup. With no positive condition,
 an ungated lane classifies everything except what `exclude` names. Under
 `opa.gate` a gate `request` still replaces the whole trigger, `exclude`
 included, and `exclude` with nothing else to narrow is refused. A control

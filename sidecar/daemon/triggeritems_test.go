@@ -159,3 +159,24 @@ func TestValidateLaneTriggersReadsAnInheritedGate(t *testing.T) {
 		t.Fatal("the sidecar accepted what the plane refuses")
 	}
 }
+
+// A typo in an item operation matches nothing, so its condition would never
+// classify or never exclude. The plane gets the same refusal at save.
+func TestAnUnknownItemOperationIsRefused(t *testing.T) {
+	for _, name := range []string{"any", "exclude"} {
+		la := laneBlock()
+		item := []policy.AITriggerItem{{Operations: []inspect.Operation{"pacth"}}}
+		if name == "any" {
+			la.Trigger.Any = item
+		} else {
+			la.Trigger.Exclude = item
+		}
+		want := "trigger." + name + `[0] names unknown operation "pacth"`
+		if err := blockLane(la).Validate(); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: Validate = %v, want %q", name, err, want)
+		}
+		if got := strings.Join(ValidateLaneAnalyzerBlock(la, "appdb"), "; "); !strings.Contains(got, want) {
+			t.Errorf("%s: ValidateLaneAnalyzerBlock = %q, want %q", name, got, want)
+		}
+	}
+}

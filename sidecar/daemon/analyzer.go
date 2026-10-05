@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/inspect"
 
 	"github.com/hoophq/hoop/sidecar/policy"
 	codecssh "github.com/hoophq/libhoop/v2/codec/ssh"
@@ -1294,6 +1296,11 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 // validateTriggerItems refuses a trigger item that names no field. It would
 // check nothing and so match every statement, which an operator writing
 // "any" or "exclude" never means.
+//
+// It also refuses an item operation no codec reports: a typo there matches
+// nothing, so its condition never classifies or never excludes. The flat
+// lists keep their old, unchecked reading, because a deployed config may
+// carry a value that would now refuse to load.
 func validateTriggerItems(t *policy.AITrigger, where string) []string {
 	if t == nil {
 		return nil
@@ -1308,6 +1315,13 @@ func validateTriggerItems(t *policy.AITrigger, where string) []string {
 				problems = append(problems, fmt.Sprintf(
 					"%s: trigger.%s[%d] names no operations, tables or resources",
 					where, list.name, i))
+			}
+			for _, op := range item.Operations {
+				if !slices.Contains(inspect.Operations(), op) {
+					problems = append(problems, fmt.Sprintf(
+						"%s: trigger.%s[%d] names unknown operation %q",
+						where, list.name, i, op))
+				}
 			}
 		}
 	}
