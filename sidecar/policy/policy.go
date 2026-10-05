@@ -425,7 +425,7 @@ type AITrigger struct {
 
 	// Any matches a statement that meets EVERY field one item names. The
 	// flat lists above OR each value, so "patch, under /api only" could
-	// not be written with them (ADR-0024). Items OR with each other and
+	// not be written with them (ADR-0030). Items OR with each other and
 	// with the flat lists.
 	Any []AITriggerItem `json:"any,omitempty" cap:"analyzer_trigger_items"`
 

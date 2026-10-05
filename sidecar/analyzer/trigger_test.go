@@ -33,7 +33,7 @@ func classified(t *testing.T, trigger analyzer.Trigger, stmt inspect.Statement) 
 }
 
 // "Hold patch except on this path" could not be written while every list
-// ORed (ADR-0024). An item ANDs its fields; exclude removes a match.
+// ORed (ADR-0030). An item ANDs its fields; exclude removes a match.
 func TestTriggerItemsAndTheirFields(t *testing.T) {
 	patchUnderAPI := analyzer.Trigger{Any: []analyzer.TriggerItem{{
 		Operations: []inspect.Operation{inspect.OpPatch},

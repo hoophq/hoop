@@ -996,7 +996,7 @@ listeners:
 ```
 
 **A trigger can AND its conditions.** The flat lists OR every value, so
-"patch, under `/api` only" needs an item (ADR-0024):
+"patch, under `/api` only" needs an item (ADR-0030):
 
 ```yaml
     analyzer:
