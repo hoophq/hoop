@@ -37,7 +37,7 @@ func testFileReloader(t *testing.T, raw string) (*reloader, string, *bytes.Buffe
 	}
 	servers := map[string]ruleSwapper{}
 	for _, ln := range lanes {
-		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
+		srv, serr := buildServer(ln, cfg.Audit, nil, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}

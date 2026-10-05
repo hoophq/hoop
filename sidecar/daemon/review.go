@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -186,14 +187,24 @@ func (cp *controlPlane) claimReview(ctx context.Context, reviewID string) (analy
 // answer, bounded. The status is the caller's to interpret: reviewAnswer
 // handles what every review call shares.
 func (cp *controlPlane) reviewRequest(ctx context.Context, method string, body []byte, elem ...string) (*http.Response, []byte, error) {
+	return cp.reviewRoundTrip(ctx, method, body, nil, elem...)
+}
+
+// reviewQuery is a GET under the reviews path with a query string.
+func (cp *controlPlane) reviewQuery(ctx context.Context, query url.Values, elem ...string) (*http.Response, []byte, error) {
+	return cp.reviewRoundTrip(ctx, http.MethodGet, nil, query, elem...)
+}
+
+func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body []byte, query url.Values, elem ...string) (*http.Response, []byte, error) {
 	// The base was validated by checkControlPlaneURL; JoinPath keeps a
 	// path prefix (a plane behind /hoop) and normalizes trailing slashes.
 	u, err := url.Parse(cp.url)
 	if err != nil {
 		return nil, nil, fmt.Errorf("control plane URL %q: %w", cp.url, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, method,
-		u.JoinPath(elem...).String(), bytes.NewReader(body))
+	u = u.JoinPath(elem...)
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, fmt.Errorf("control plane request: %w", err)
 	}
@@ -256,6 +267,43 @@ func (cp *controlPlane) ReviewStatus(ctx context.Context, reviewID string) (Revi
 		return ReviewStatus{}, ErrPlaneTooOld
 	}
 	return ReviewStatus{}, cp.reviewError(resp, raw)
+}
+
+// ListReviews implements ReviewStatusReader with one GET /api/sidecars/reviews,
+// read-only like ReviewStatus. The plane scopes the list to this sidecar's
+// token, which is the whole of its authorization: every listener and replica
+// sharing the token sees the same list.
+func (cp *controlPlane) ListReviews(ctx context.Context, status string, limit int) ([]ReviewStatus, error) {
+	if limit < 1 || limit > MaxReviewListLimit {
+		return nil, fmt.Errorf("limit must be from 1 to %d", MaxReviewListLimit)
+	}
+	q := url.Values{"limit": {strconv.Itoa(limit)}}
+	if status != "" {
+		q.Set("status", status)
+	}
+	resp, raw, err := cp.reviewQuery(ctx, q, controlPlaneReviewsPath)
+	if err != nil {
+		return nil, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var out []ReviewStatus
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return nil, fmt.Errorf("the review list could not be read: %w", err)
+		}
+		return out, nil
+	case http.StatusNotFound:
+		// The route never answers 404; Gin's own does, on a plane older
+		// than the route.
+		return nil, ErrPlaneTooOld
+	case http.StatusUnauthorized, http.StatusForbidden:
+		// An older plane routes this GET to the admin GET /sidecars/:name,
+		// which refuses a sidecar token. A wrong token reads the same.
+		return nil, fmt.Errorf("%w, or it rejected the token", ErrPlaneTooOld)
+	case http.StatusBadRequest:
+		return nil, fmt.Errorf("the control plane refused the list: %s", controlPlaneMessage(raw))
+	}
+	return nil, cp.reviewError(resp, raw)
 }
 
 // canonicalUUID reports a lowercase 8-4-4-4-12 hex UUID, the only form the

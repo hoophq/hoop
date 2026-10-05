@@ -1294,6 +1294,41 @@ to the metadata allowlist. The header reaches policy and audit. It is kept
 out of the analyzer prompt and the verdict cache key, so hold and return
 share one classification.
 
+**Find the review without parsing text.** On http and grpc a review
+denial also carries the review in structured fields. http sends headers on
+the 403; grpc sends the same keys, lowercase, as trailing metadata beside
+`PERMISSION_DENIED`.
+
+| Field | Value |
+|---|---|
+| `X-Hoop-Denied` | `review`; any other denial says `policy` |
+| `X-Hoop-Review-Id` | the review id |
+| `X-Hoop-Review-Status` | the plane's status, such as `PENDING` or `REJECTED`; absent when the sidecar could not read it |
+| `Retry-After` | `5`, in return mode while the review is pending only |
+
+The body stays the text message, so a client that knows nothing of reviews
+still reads it. kubectl prints it as `Error from server (Forbidden): ...`.
+
+**Read the status on the lane.** An http lane answers
+`GET /.well-known/hoop/reviews/<id>` itself for a review filed on that lane,
+with the `review_status` fields and `next` (see
+[Agents over MCP](#agents-over-mcp)), never the statement. Another lane's
+review reads as not found:
+
+```bash
+curl -s http://relay:18080/.well-known/hoop/reviews/9f97…
+```
+
+The whole `/.well-known/hoop/` prefix belongs to the sidecar on every http
+lane and never reaches the upstream, so a route there cannot shadow one the
+upstream serves. GET and HEAD only. It is answered only as the first request
+on a connection: behind another one, the lane closes the connection
+unanswered, because HTTP/1.1 pairs responses by order. curl and Go clients
+resend on a fresh connection. A sidecar with no control plane answers
+503. Like the MCP endpoint, it needs no credential: it answers by review id
+only, and never with the statement. Other protocols read the status over
+MCP.
+
 **The retry contract.** An agent in return mode follows four rules:
 
 1. **Resend the identical bytes.** The plane matches an approval on the exact
@@ -1620,7 +1655,7 @@ appdb            postgres  enforcing 2 rule(s) + ai analyzer (and 1 deprecated a
 ### Agents over MCP
 
 An agent that drew a `return` denial must learn when a person decides. The
-`mcp:` block starts an MCP server with two read-only tools for that
+`mcp:` block starts an MCP server with three read-only tools for that
 (ADR-0021).
 
 ```yaml
@@ -1641,20 +1676,22 @@ mcp:
 - A bind failure stops the process, as a listener's does.
 
 **The endpoint has no authentication**, the same as the listener ports. A
-caller with a review id reads its status, listener name and approval rule,
-never the statement. Bind it where only the agent reaches it: loopback when
+caller reads every review of this sidecar: its id, status, listener name and
+approval rule, never the statement. Bind it where only the agent reaches it: loopback when
 the agent runs on the same host, a ClusterIP Service on Kubernetes, never a
 public load balancer. The server refuses cross-origin browser requests, so a
 web page cannot drive it from a victim's browser.
 
-**Two tools.**
+**Three tools.**
 
 | Tool | Input | Does |
 |---|---|---|
+| `review_list` | `status`, `limit` (default 20, max 200) | lists this sidecar's reviews, newest first, across every listener |
 | `review_status` | `id` | reads the review once |
 | `review_wait` | `id`, `timeout_seconds` (default 60, max 300) | reads every 2 seconds until a person decides or the timeout ends |
 
-Both return one review and what to do next:
+`review_status` and `review_wait` return one review and what to do next.
+`review_list` returns `{"reviews": [...]}` of the same shape:
 
 ```json
 {
@@ -1688,7 +1725,7 @@ scopes the read to this sidecar's token, so another sidecar's review reads
 the same as a wrong id. "The control plane is older than this sidecar" means
 a person checks the review in the control plane.
 
-The server never approves, lists or claims a review. The resend runs
+The server never approves or claims a review. The resend runs
 through the lane like any statement, so the analyzer, audit and masking
 apply, and the resend spends the approval.
 
