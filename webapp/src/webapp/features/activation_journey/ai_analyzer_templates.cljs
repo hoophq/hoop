@@ -735,11 +735,3 @@
   "Returns the curated list of templates for the given connection subtype, or [] if none."
   [subtype]
   (get templates-by-subtype subtype []))
-
-(defn find-by-name
-  "Flat lookup of a template by its :name across all subtypes. Template names
-  are globally unique and double as deep-link ids (?template=)."
-  [template-name]
-  (->> (vals templates-by-subtype)
-       (apply concat)
-       (some #(when (= (:name %) template-name) %))))

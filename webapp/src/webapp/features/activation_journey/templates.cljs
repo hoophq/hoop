@@ -77,11 +77,3 @@
   "The ?template= value for a template entry."
   [template]
   (or (:id template) (:name template)))
-
-(defn find-ai-analyzer-template [template-id]
-  (ai-analyzer-templates/find-by-name template-id))
-
-(defn ai-analyzer-payload
-  "Strips UI-only keys, leaving the exact POST /ai/session-analyzer/rules body."
-  [template]
-  (dissoc template :title :card-description))
