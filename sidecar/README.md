@@ -124,7 +124,7 @@ docker compose logs hoop-inspect | ./sidecar/read-audit.py
 |---|---|
 | 8443 | Envoy HTTPS, to the `httpbin` lane |
 | 5433 | Envoy TCP, to the `appdb` lane |
-| 19000 | sidecar admin: `/healthz`, `/stats`, `/config`, `/events`, `/api/*` |
+| 19000 | sidecar admin: `/healthz`, `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
 | 9901 | Envoy admin |
 
 That Postgres listener is `envoy:5432` inside the compose network and `5433` on
@@ -805,7 +805,7 @@ license: /etc/hoop-inspect/license.json
 # control_plane_url: https://cp.example.com
 
 admin:
-  listen: 127.0.0.1:19000   # /healthz /stats /config /events /api/*
+  listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*
 
 # Review status for agents; needs a control plane. See "Agents over MCP".
 # mcp:
@@ -1724,8 +1724,8 @@ to the audit trail.
 |---|---|---|---|
 | `anthropic` | Claude | Anthropic API key | |
 | `openai` | any Chat Completions endpoint | API key | |
-| `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global) |
-| `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi` |
+| `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global); `thinking_level`, `thinking_budget` |
+| `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi`; with `publisher: google`, also `thinking_level`, `thinking_budget`, `labels` |
 
 **Gemini** with an API key goes through `provider: gemini`. `api: developer`
 is the Gemini Developer API on `generativelanguage.googleapis.com`, billed to
@@ -1773,6 +1773,116 @@ analyzer:
   model: meta/llama-4-maverick-17b-128e-instruct-maas
   extra: {project: my-gcp-project, region: us-east5, publisher: openapi}
 ```
+
+#### Tuning the model call
+
+Every key below is optional. Unset, nothing is sent and the model's own
+default applies, so a config that names none of them sends the request it
+always did. All are process-wide, like the model, and restart-guarded.
+
+```yaml
+analyzer:
+  provider: vertex
+  model: gemini-3.8-flash
+  extra:
+    project: my-gcp-project
+    region: global
+    publisher: google
+    thinking_level: low          # Gemini 3+: minimal | low | medium | high
+    labels: team=platform,env=prod
+  temperature: 0                 # 0 is a value, not "unset"
+  top_p: 0.9
+  top_k: 40
+  seed: 7
+  max_output_tokens: 1024        # the default
+  max_retries: 2
+  timeout_sec: 15
+```
+
+**Thinking.** Gemini 3 and later models reason before they answer, and the
+default tier (`MEDIUM` on the 3.x Flash models) can take one call past
+`timeout_sec`. One forced tool call needs little reasoning, so `thinking_level:
+low` is the usual setting. Each model accepts only some levels
+(`gemini-3.8-flash` has no `minimal`), and Google answers an unsupported one
+with a 400 on every call, which `/metrics` shows as `outcome="error"`. Gemini
+2.5 models take `thinking_budget` instead: `0` turns thinking off on 2.5 Flash
+and Flash-Lite, `-1` lets the model decide, and 2.5 Pro cannot turn it off.
+Setting both keys is refused, because Google rejects a request with both.
+Both apply to `provider: gemini` and to `provider: vertex` with `publisher:
+google`; any other publisher refuses them.
+
+**Sampling.** `temperature` (0 to 2), `top_p` (0 to 1), `top_k` (1 or more)
+and `seed` go to whichever API the provider speaks, under that API's own
+field name. A provider whose API has no field for one refuses it at startup
+rather than send a setting that does nothing:
+
+| | `temperature` | `top_p` | `top_k` | `seed` |
+|---|---|---|---|---|
+| `anthropic`, `vertex` + `anthropic` | sent | sent | sent | refused |
+| `openai`, `vertex` + `openapi` | sent | sent | refused | sent |
+| `gemini`, `vertex` + `google` | sent | sent | sent | sent |
+
+Gemini 3 and later models accept `temperature`, `top_p` and `top_k` and
+ignore them; Google steers determinism to `thinking_level` instead. That is
+not checked, because the model name is the only signal and it changes with
+every release. Some Claude models refuse `temperature` and `top_p` together;
+that answer comes from the API.
+
+These narrow a model's answer; they do not make two calls agree. The verdict
+cache does: two statements of one shape share one verdict for `ttl_sec`,
+with no second call. Structured output is already fixed: every provider is
+forced to call one of three risk tools, so the verdict is an enum.
+`max_output_tokens` caps the length of that tool call, not its shape.
+
+**Retries.** `max_retries` re-sends a classification after a 408, 429, 500,
+502, 503 or 504, waiting about 250 ms, then twice as long each time (at most
+4 s), or the provider's `Retry-After` when it sends one. Every attempt shares
+`timeout_sec`, so a retry never holds a connection longer than one call
+could; a wait that would outlast it is not taken, and the provider's own
+answer is reported. Any other status and any transport error is final. Zero,
+the default, sends once. A retry is not charged to `max_calls` or the rate
+limit.
+
+**Labels.** `labels` tags every call for GCP billing, as `key=value` pairs
+separated by commas. Keys start with a lowercase letter; keys and values hold
+lowercase letters, digits, `_` and `-`, at most 63 characters. Only
+`publisher: google` sends them.
+
+A sidecar that does not report `analyzer_sampling` (the four sampling keys) or
+`analyzer_retries` (`max_retries`) cannot decode them, so the control plane
+refuses to serve a document that carries them to one. The `extra` keys need no
+entry: an older build ignores an `extra` key it does not read.
+
+#### Watching the analyzer: `/metrics`
+
+The admin listener serves `GET /metrics` in the Prometheus text format. A
+process with no analyzer answers an empty document, so a scrape job pointed
+at every sidecar does not mark one down.
+
+| Series | Type | Labels |
+|---|---|---|
+| `hoop_inspect_analyzer_request_duration_seconds` | histogram | `analyzer`, `provider`, `model`, `outcome` (`ok`, `error`, `timeout`) |
+| `hoop_inspect_analyzer_retries_total` | counter | `analyzer`, `provider`, `model` |
+| `hoop_inspect_analyzer_statements_total` | counter | `analyzer`, `status` (the `ai_status` values), `risk_level`, `action` |
+
+`analyzer` is the lane name for an analyzer block, the rule name for the
+deprecated rule form. The duration covers one classification, retries
+included, so a timeout lands at `timeout_sec`. Buckets run from 0.25 s to
+60 s. The counters survive hot reloads. Two queries worth having:
+
+```
+histogram_quantile(0.99, sum by (le, analyzer) (rate(hoop_inspect_analyzer_request_duration_seconds_bucket[5m])))
+sum by (analyzer) (rate(hoop_inspect_analyzer_request_duration_seconds_count{outcome="timeout"}[5m]))
+```
+
+The first sets `timeout_sec` from data rather than a guess. The second is the
+rate at which statements go unscored: under `fail_open: true` each of those
+was allowed with no verdict.
+
+The same numbers reach the log. A failed classification's error carries how
+long it ran and the limit, `context deadline exceeded (after 10.002s,
+timeout 10s)`, and `log_level: debug` adds one `analyzer call` line per call
+with `outcome`, `duration_ms`, `timeout_ms` and `attempts`.
 
 #### Migrating from `type: ai_analysis` rules
 

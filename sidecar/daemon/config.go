@@ -1742,9 +1742,15 @@ type analyzerDeps struct {
 	// builds, then only the heartbeat) needs no lock.
 	budgets map[string]*analyzer.Budget
 
-	// log is the process logger, for the rate-limit edges an evaluator
-	// reports. Nil in a build that never serves, which logs nothing.
+	// log is the process logger, for the rate-limit edges and the per-call
+	// debug line an evaluator reports. Nil in a build that never serves,
+	// which logs nothing.
 	log *slog.Logger
+
+	// metrics is what GET /metrics renders for the analyzer. Shared by every
+	// generation of every evaluator, so a reload does not reset a counter.
+	// Nil in tests that build deps by hand, which then count nothing.
+	metrics *analyzerMetrics
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.

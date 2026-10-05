@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -55,11 +56,19 @@ const scope = "https://www.googleapis.com/auth/cloud-platform"
 
 const defaultMaxTokens = 1024
 
-// Extra keys this provider reads from the config's analyzer section.
+// Extra keys this provider reads from the config's analyzer section. The
+// google publisher also reads gemini.KeyThinkingLevel and
+// gemini.KeyThinkingBudget.
 const (
 	KeyProject   = "project"
 	KeyRegion    = "region"
 	KeyPublisher = "publisher"
+
+	// KeyLabels tags every call for GCP billing, as comma-separated
+	// key=value pairs: `team=platform,env=prod`. Google publisher only:
+	// generateContent takes a labels map, and rawPredict and the
+	// OpenAI-compatible endpoint document none.
+	KeyLabels = "labels"
 )
 
 // Publisher values for KeyPublisher. Empty means PublisherAnthropic, which
@@ -117,9 +126,16 @@ func init() {
 			return nil, fmt.Errorf("analyzer/vertex: unknown publisher %q (want %q, %q or %q)",
 				publisher, PublisherAnthropic, PublisherGoogle, PublisherOpenAPI)
 		}
-		maxTokens := opts.MaxOutputTokens
-		if maxTokens <= 0 {
-			maxTokens = defaultMaxTokens
+		// Extras that only the google publisher sends are refused on the
+		// others rather than ignored: an operator who set one expects it
+		// to act, and silence would leave them chasing its effect.
+		if publisher != PublisherGoogle {
+			for _, k := range []string{gemini.KeyThinkingLevel, gemini.KeyThinkingBudget, KeyLabels} {
+				if strings.TrimSpace(opts.Extra[k]) != "" {
+					return nil, fmt.Errorf("analyzer/vertex: %s applies to publisher %q only; publisher is %q",
+						k, PublisherGoogle, publisher)
+				}
+			}
 		}
 
 		p := &Provider{
@@ -128,9 +144,30 @@ func init() {
 			publisher: publisher,
 			model:     opts.Model,
 			endpoint:  opts.Endpoint,
-			maxTokens: maxTokens,
+			maxTokens: opts.MaxOutputTokens,
+			sampling:  opts.Sampling,
 			saJSON:    opts.Credential,
 			client:    opts.Client(),
+		}
+		if p.maxTokens <= 0 {
+			p.maxTokens = defaultMaxTokens
+		}
+		var err error
+		switch publisher {
+		case PublisherGoogle:
+			if p.gen, err = gemini.NewGenerationConfig(opts); err != nil {
+				return nil, fmt.Errorf("analyzer/vertex: %w", err)
+			}
+			if p.labels, err = parseLabels(opts.Extra[KeyLabels]); err != nil {
+				return nil, fmt.Errorf("analyzer/vertex: %w", err)
+			}
+		case PublisherOpenAPI:
+			err = opts.Sampling.Unsupported("analyzer/vertex", openai.UnsupportedSampling...)
+		default:
+			err = opts.Sampling.Unsupported("analyzer/vertex", anthropic.UnsupportedSampling...)
+		}
+		if err != nil {
+			return nil, err
 		}
 		return p, nil
 	})
@@ -144,7 +181,13 @@ type Provider struct {
 	model     string
 	endpoint  string // overrides the derived URL; empty derives it
 	maxTokens int
-	saJSON    analyzer.Secret
+	sampling  analyzer.Sampling
+
+	// gen and labels serve the google publisher only.
+	gen    gemini.GenerationConfig
+	labels map[string]string
+
+	saJSON analyzer.Secret
 
 	client *http.Client
 
@@ -332,10 +375,53 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 func (p *Provider) encode(systemPrompt, content string) ([]byte, error) {
 	switch p.publisher {
 	case PublisherGoogle:
-		return json.Marshal(gemini.BuildRequest(p.maxTokens, systemPrompt, content))
+		req := gemini.BuildRequest(p.gen, systemPrompt, content)
+		req.Labels = p.labels
+		return json.Marshal(req)
 	case PublisherOpenAPI:
-		return json.Marshal(openai.BuildRequest(p.model, p.maxTokens, systemPrompt, content, true))
+		return json.Marshal(openai.BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, true))
 	default:
-		return json.Marshal(anthropic.BuildRequest(p.model, p.maxTokens, systemPrompt, content, true))
+		return json.Marshal(anthropic.BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, true))
 	}
+}
+
+// labelKey and labelValue are GCP's label rules, ASCII subset: a key starts
+// with a lowercase letter, and both are lowercase letters, digits, '_' and
+// '-', at most 63 characters. A value may be empty.
+var (
+	labelKey   = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
+	labelValue = regexp.MustCompile(`^[a-z0-9_-]{0,63}$`)
+)
+
+// maxLabels is GCP's per-resource limit.
+const maxLabels = 64
+
+// parseLabels reads KeyLabels. Refused at config load, because Vertex
+// rejects a malformed label on every call.
+func parseLabels(raw string) (map[string]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	out := map[string]string{}
+	for _, pair := range strings.Split(raw, ",") {
+		k, v, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		switch {
+		case !ok:
+			return nil, fmt.Errorf("%s: %q is not key=value", KeyLabels, pair)
+		case !labelKey.MatchString(k):
+			return nil, fmt.Errorf("%s: key %q must start with a lowercase letter and hold only a-z, 0-9, '_' and '-' (max 63)", KeyLabels, k)
+		case !labelValue.MatchString(v):
+			return nil, fmt.Errorf("%s: value %q for %q may hold only a-z, 0-9, '_' and '-' (max 63)", KeyLabels, v, k)
+		}
+		if _, dup := out[k]; dup {
+			return nil, fmt.Errorf("%s: key %q appears twice", KeyLabels, k)
+		}
+		out[k] = v
+	}
+	if len(out) > maxLabels {
+		return nil, fmt.Errorf("%s: %d labels, GCP allows %d", KeyLabels, len(out), maxLabels)
+	}
+	return out, nil
 }

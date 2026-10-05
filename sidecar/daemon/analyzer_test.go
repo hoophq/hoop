@@ -547,6 +547,7 @@ func TestNegativeNumericsAreRefused(t *testing.T) {
 		{"rate_limit calls", "rate_limit.calls", AnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Calls: -1, PerSec: 60}}},
 		{"rate_limit per_sec", "rate_limit.per_sec", AnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Calls: 30, PerSec: -1}}},
 		{"rate_limit burst", "rate_limit.burst", AnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Calls: 30, PerSec: 60, Burst: -1}}},
+		{"max_retries", "max_retries", AnalyzerConfig{MaxRetries: -1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := tc.cfg
@@ -568,6 +569,35 @@ func TestZeroNumericsAreAccepted(t *testing.T) {
 	for _, p := range c.validate(false, true) {
 		if strings.Contains(p, "negative") {
 			t.Errorf("a zero value was refused as negative: %v", p)
+		}
+	}
+}
+
+// Sampling values outside what every provider accepts fail validation, which
+// also runs off the host, so the control plane refuses them at save. Zero is
+// a value, not "unset": temperature 0 is the deterministic setting.
+func TestSamplingRangesAreChecked(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	k := func(v int) *int { return &v }
+	for _, tc := range []struct {
+		cfg  AnalyzerConfig
+		want string // "" means valid
+	}{
+		{AnalyzerConfig{Temperature: f(0), TopP: f(0), TopK: k(1)}, ""},
+		{AnalyzerConfig{Temperature: f(2), TopP: f(1)}, ""},
+		{AnalyzerConfig{Temperature: f(2.5)}, "temperature"},
+		{AnalyzerConfig{Temperature: f(-0.1)}, "temperature"},
+		{AnalyzerConfig{TopP: f(1.1)}, "top_p"},
+		{AnalyzerConfig{TopK: k(0)}, "top_k"},
+	} {
+		c := tc.cfg
+		c.Provider, c.Model = "stub", "m"
+		got := strings.Join(c.validate(false, false), "; ")
+		switch {
+		case tc.want == "" && got != "":
+			t.Errorf("%+v refused: %s", tc.cfg, got)
+		case tc.want != "" && !strings.Contains(got, tc.want):
+			t.Errorf("%+v: problems %q, want one naming %s", tc.cfg, got, tc.want)
 		}
 	}
 }

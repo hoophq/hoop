@@ -212,6 +212,29 @@ type AnalyzerConfig struct {
 	// MaxOutputTokens bounds the model's reply. Zero uses the provider
 	// default.
 	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
+
+	// Temperature, TopP, TopK and Seed are the model's sampling
+	// parameters. Unset sends nothing and the model's default applies.
+	// Pointers, because 0 is a value: temperature 0 is the most
+	// deterministic setting. A provider whose API lacks one refuses it at
+	// startup (Anthropic has no seed, OpenAI no top_k). Gemini 3 and later
+	// models accept temperature, top_p and top_k and ignore them.
+	//
+	// Process-wide like the model, because sampling is a property of the
+	// model call, not of a lane.
+	Temperature *float64 `json:"temperature,omitempty" cap:"analyzer_sampling"`
+	TopP        *float64 `json:"top_p,omitempty" cap:"analyzer_sampling"`
+	TopK        *int     `json:"top_k,omitempty" cap:"analyzer_sampling"`
+	Seed        *int64   `json:"seed,omitempty" cap:"analyzer_sampling"`
+
+	// MaxRetries re-sends a classification after a 408, 429 or 5xx answer,
+	// up to this many times, inside the same timeout_sec. Zero sends once.
+	MaxRetries int `json:"max_retries,omitempty" cap:"analyzer_retries"`
+}
+
+// sampling is the section's sampling parameters as the provider takes them.
+func (a *AnalyzerConfig) sampling() analyzer.Sampling {
+	return analyzer.Sampling{Temperature: a.Temperature, TopP: a.TopP, TopK: a.TopK, Seed: a.Seed}
 }
 
 // SendMode decides what a statement looks like when it leaves the process.
@@ -564,6 +587,14 @@ func (a *AnalyzerConfig) validate(hasScanner, onHost bool) []string {
 	if a.MaxOutputTokens < 0 {
 		problems = append(problems, "analyzer: max_output_tokens is negative")
 	}
+	if err := a.sampling().Validate(); err != nil {
+		for _, line := range strings.Split(err.Error(), "\n") {
+			problems = append(problems, "analyzer: "+line)
+		}
+	}
+	if a.MaxRetries < 0 {
+		problems = append(problems, "analyzer: max_retries is negative")
+	}
 	if a.Cache.Size < 0 {
 		problems = append(problems, "analyzer: cache.size is negative")
 	}
@@ -643,6 +674,7 @@ func buildAnalyzer(cfg *AnalyzerConfig, roots *x509.CertPool) (analyzer.Provider
 		Credential:      cred,
 		Extra:           cfg.Extra,
 		MaxOutputTokens: cfg.MaxOutputTokens,
+		Sampling:        cfg.sampling(),
 		HTTPClient:      outboundHTTPClient(roots),
 	})
 }
@@ -887,6 +919,7 @@ func buildAnalyzerEvaluator(
 		Trigger:       trigger,
 		Message:       la.Message,
 		Timeout:       time.Duration(timeout) * time.Second,
+		MaxRetries:    cfg.MaxRetries,
 		FailOpen:      failOpen,
 		MaxInputBytes: maxInput,
 		CacheSize:     cache.Size,
@@ -894,6 +927,8 @@ func buildAnalyzerEvaluator(
 		MaxCalls:      maxCalls,
 		RateLimit:     rate,
 		OnRateLimit:   ac.rateLimitLog(name),
+		OnCall:        ac.callObserver(),
+		OnOutcome:     ac.outcomeObserver(),
 		Budget:        ac.budgetFor(budgetKey),
 		Redact:        redactorFor(send, ac.det),
 		Review:        review,
@@ -998,6 +1033,7 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 		cp:       cfg.cp,
 		det:      det,
 		mcp:      cfg.MCP != nil,
+		metrics:  newAnalyzerMetrics(cfg.Analyzer.Provider, cfg.Analyzer.Model),
 	}, nil
 }
 

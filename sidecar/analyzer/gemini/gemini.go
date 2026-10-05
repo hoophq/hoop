@@ -30,7 +30,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -53,6 +55,89 @@ const (
 	// carries no project and no location; the endpoint is global.
 	APIVertex = "vertex"
 )
+
+// KeyThinkingLevel is the extra key that sets a Gemini 3 or later model's
+// reasoning tier, sent as thinkingConfig.thinkingLevel. Values are minimal,
+// low, medium and high; empty sends nothing and the model uses its default.
+//
+// Gemini 3 models think before they answer, and the default tier (MEDIUM on
+// the 3.x Flash models) can take a call past the analyzer timeout. One forced
+// tool call needs little reasoning, so low is the usual setting. Each model
+// accepts only some levels (gemini-3.8-flash has no minimal), and Google
+// answers an unsupported one with a 400 on every call.
+const KeyThinkingLevel = "thinking_level"
+
+// KeyThinkingBudget is the extra key that bounds a Gemini 2.5 model's
+// reasoning in tokens, sent as thinkingConfig.thinkingBudget. 0 turns
+// thinking off on 2.5 Flash and Flash-Lite; -1 lets the model decide; 2.5 Pro
+// cannot turn it off and rejects 0. Gemini 3 models take KeyThinkingLevel
+// instead. Setting both is refused: Google rejects a request with both.
+const KeyThinkingBudget = "thinking_budget"
+
+// NewGenerationConfig resolves the generationConfig every request of one
+// provider carries: the output limit, the sampling parameters and the
+// thinking extras.
+//
+// Everything is checked here, at config load, where the operator is
+// watching. Sent as written, a typo is a 400 on every statement.
+func NewGenerationConfig(opts analyzer.Options) (GenerationConfig, error) {
+	gen := GenerationConfig{
+		MaxOutputTokens: opts.MaxOutputTokens,
+		Temperature:     opts.Sampling.Temperature,
+		TopP:            opts.Sampling.TopP,
+		TopK:            opts.Sampling.TopK,
+		Seed:            opts.Sampling.Seed,
+	}
+	if gen.MaxOutputTokens <= 0 {
+		gen.MaxOutputTokens = defaultMaxTokens
+	}
+	if s := gen.Seed; s != nil && (*s < math.MinInt32 || *s > math.MaxInt32) {
+		return GenerationConfig{}, fmt.Errorf("seed %d does not fit the API's 32-bit field", *s)
+	}
+
+	level, err := parseThinkingLevel(opts.Extra[KeyThinkingLevel])
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	budget, err := parseThinkingBudget(opts.Extra[KeyThinkingBudget])
+	if err != nil {
+		return GenerationConfig{}, err
+	}
+	switch {
+	case level != "" && budget != nil:
+		return GenerationConfig{}, fmt.Errorf("%s and %s are mutually exclusive: %s is for Gemini 3 and later, %s for Gemini 2.5",
+			KeyThinkingLevel, KeyThinkingBudget, KeyThinkingLevel, KeyThinkingBudget)
+	case level != "":
+		gen.ThinkingConfig = &ThinkingConfig{ThinkingLevel: level}
+	case budget != nil:
+		gen.ThinkingConfig = &ThinkingConfig{ThinkingBudget: budget}
+	}
+	return gen, nil
+}
+
+// parseThinkingLevel returns the enum name the API takes, or "" when unset.
+func parseThinkingLevel(raw string) (string, error) {
+	switch v := strings.ToLower(strings.TrimSpace(raw)); v {
+	case "":
+		return "", nil
+	case "minimal", "low", "medium", "high":
+		return strings.ToUpper(v), nil
+	}
+	return "", fmt.Errorf("unknown %s %q (want minimal, low, medium or high)", KeyThinkingLevel, raw)
+}
+
+// parseThinkingBudget returns the budget, or nil when unset.
+func parseThinkingBudget(raw string) (*int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < -1 {
+		return nil, fmt.Errorf("%s %q is not -1, 0 or a token count", KeyThinkingBudget, raw)
+	}
+	return &n, nil
+}
 
 // defaultMaxTokens bounds the reply. A tool call with a title and a short
 // explanation is a few hundred tokens; 1024 is slack, not a budget.
@@ -78,15 +163,15 @@ func init() {
 				return nil, err
 			}
 		}
-		maxTokens := opts.MaxOutputTokens
-		if maxTokens <= 0 {
-			maxTokens = defaultMaxTokens
+		gen, err := NewGenerationConfig(opts)
+		if err != nil {
+			return nil, fmt.Errorf("analyzer/gemini: %w", err)
 		}
 		return &Provider{
-			endpoint:  endpoint,
-			key:       opts.Credential,
-			maxTokens: maxTokens,
-			client:    opts.Client(), // no timeout: the caller's ctx owns the deadline
+			endpoint: endpoint,
+			key:      opts.Credential,
+			gen:      gen,
+			client:   opts.Client(), // no timeout: the caller's ctx owns the deadline
 		}, nil
 	})
 }
@@ -110,10 +195,10 @@ func DefaultEndpoint(api, model string) (string, error) {
 
 // Provider classifies statements with the Gemini API under an API key.
 type Provider struct {
-	endpoint  string
-	key       analyzer.Secret
-	maxTokens int
-	client    *http.Client
+	endpoint string
+	key      analyzer.Secret
+	gen      GenerationConfig
+	client   *http.Client
 }
 
 // Name implements analyzer.Provider.
@@ -121,7 +206,7 @@ func (p *Provider) Name() string { return Name }
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
-	body, err := json.Marshal(BuildRequest(p.maxTokens, systemPrompt, content))
+	body, err := json.Marshal(BuildRequest(p.gen, systemPrompt, content))
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/gemini: encoding request: %w", err)
 	}
@@ -158,6 +243,10 @@ type Request struct {
 	Tools             []Tool           `json:"tools"`
 	ToolConfig        ToolConfig       `json:"toolConfig"`
 	GenerationConfig  GenerationConfig `json:"generationConfig"`
+
+	// Labels tag the call for GCP billing. Only the project-scoped Vertex
+	// endpoint reads them; analyzer/vertex sets them and nothing else does.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Content is one turn, or the system instruction, which has no role.
@@ -217,13 +306,31 @@ type FunctionCallingConfig struct {
 	Mode string `json:"mode"`
 }
 
-// GenerationConfig bounds the reply.
+// GenerationConfig bounds and tunes the reply. Build it with
+// NewGenerationConfig.
 type GenerationConfig struct {
 	MaxOutputTokens int `json:"maxOutputTokens"`
+
+	// Sampling, omitted when unset so the model default applies. Gemini 3
+	// and later models accept temperature, topP and topK and ignore them.
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"topP,omitempty"`
+	TopK        *int     `json:"topK,omitempty"`
+	Seed        *int64   `json:"seed,omitempty"`
+
+	// ThinkingConfig is nil unless thinking_level or thinking_budget is
+	// set, so a config that names neither sends the body it always did.
+	ThinkingConfig *ThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+// ThinkingConfig bounds the model's reasoning. One field is set, never both.
+type ThinkingConfig struct {
+	ThinkingLevel  string `json:"thinkingLevel,omitempty"`
+	ThinkingBudget *int   `json:"thinkingBudget,omitempty"`
 }
 
 // BuildRequest renders a classification request.
-func BuildRequest(maxTokens int, systemPrompt, content string) Request {
+func BuildRequest(gen GenerationConfig, systemPrompt, content string) Request {
 	specs := analyzer.ToolSpecs()
 	decls := make([]FunctionDeclaration, 0, len(specs))
 	for _, s := range specs {
@@ -255,7 +362,7 @@ func BuildRequest(maxTokens int, systemPrompt, content string) Request {
 		// prose, and a classifier whose output shape is optional is a
 		// parsing problem rather than an enum.
 		ToolConfig:       ToolConfig{FunctionCallingConfig: FunctionCallingConfig{Mode: "ANY"}},
-		GenerationConfig: GenerationConfig{MaxOutputTokens: maxTokens},
+		GenerationConfig: gen,
 	}
 }
 
@@ -282,9 +389,6 @@ type response struct {
 	} `json:"error"`
 }
 
-// maxErrorBytes bounds how much of a failed response is read.
-const maxErrorBytes = 4 << 10
-
 // ParseResponse turns an HTTP response into a Result.
 //
 // Exported so analyzer/vertex reuses it: Vertex returns the same document.
@@ -300,10 +404,7 @@ const maxErrorBytes = 4 << 10
 // out of the returned error: Google's message can quote the offending field.
 func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		// Drain a bounded amount so the connection can be reused, and
-		// discard it.
-		_, _ = io.CopyN(io.Discard, resp.Body, maxErrorBytes)
-		return nil, fmt.Errorf("%s: provider returned %s", provider, resp.Status)
+		return nil, analyzer.ResponseError(provider, resp)
 	}
 
 	var out response
