@@ -158,6 +158,9 @@ config:
   # GOOGLE_APPLICATION_CREDENTIALS_JSON: ''
   # PLUGIN_AUDIT_PATH: ''
   # PLUGIN_INDEX_PATH: ''
+  # Slack Web API base URL, for a proxy in front of slack.com. Empty uses
+  # https://slack.com/api/.
+  # SLACK_API_URL: ''
   #
   # Async RDP session-replay PII analysis. Workers run OCR + Presidio over
   # recorded RDP bitmap frames so the webapp can highlight PII on top of the
