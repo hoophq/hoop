@@ -208,6 +208,8 @@ github.com/hoophq/libhoop v0.0.0-20260929214837-7bf5e47c42a8 h1:0Jm0CMgqElRdfDw2
 github.com/hoophq/libhoop v0.0.0-20260929214837-7bf5e47c42a8/go.mod h1:nHA5Pm/wX+iz3JHQR+aJm236TzmZ2RYUo2x3SgwJhWo=
 github.com/hoophq/libhoop v0.0.0-20261002164341-4b1cc0e84fbf h1:tLUdTuLCTexZ4+p9SCoVXQU1vEZITPDNPyz0azZR0kM=
 github.com/hoophq/libhoop v0.0.0-20261002164341-4b1cc0e84fbf/go.mod h1:nHA5Pm/wX+iz3JHQR+aJm236TzmZ2RYUo2x3SgwJhWo=
+github.com/hoophq/libhoop v0.0.0-20261005142803-0620ef314f79 h1:WzD8if6NPIfWLLoCDrEtdqzP4IpiT9w7Ikh7zB4947c=
+github.com/hoophq/libhoop v0.0.0-20261005142803-0620ef314f79/go.mod h1:nHA5Pm/wX+iz3JHQR+aJm236TzmZ2RYUo2x3SgwJhWo=
 github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ=
 github.com/hoophq/mcpproxy v0.1.1/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
