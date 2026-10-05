@@ -191,6 +191,24 @@ const (
 	reviewPoll = 5 * time.Second
 )
 
+// requestHold hands the hold to the Chain that owns ec, which runs it after
+// every evaluator placed after this one allowed (ADR-0030). Holding here
+// would file and spend the approval before a decide-phase OPA could deny.
+//
+// With no Chain to hand it to, it holds at once: nothing runs after a bare
+// evaluator, so here is already last.
+func (e *Evaluator) requestHold(ctx context.Context, stmt inspect.Statement,
+	ec *policy.EvalContext, notes map[string]string) policy.Verdict {
+	mode, source := e.reviewMode(ctx, stmt)
+	resolve := func() policy.Verdict { return e.hold(ctx, stmt, notes, mode, source) }
+	if ec.RequestReview(policy.ReviewRequest{
+		Mode: string(mode), ModeSource: source, Resolve: resolve,
+	}) {
+		return policy.Verdict{Annotations: notes}
+	}
+	return resolve()
+}
+
 // hold resolves an ActionRequireReview verdict: it files the statement for
 // human approval, waits on the connection while the review is pending (or, in
 // ReviewReturn, denies at once), and forwards only what came back released.
@@ -208,8 +226,8 @@ const (
 //
 // ctx is the connection's. It ends the wait when the client or the upstream
 // goes away, so an approval is never spent on a statement that cannot run.
-func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string) policy.Verdict {
-	mode, source := e.reviewMode(ctx, stmt)
+func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string,
+	mode ReviewMode, source string) policy.Verdict {
 	notes[MetadataReviewMode] = string(mode)
 	notes[MetadataReviewModeSource] = source
 

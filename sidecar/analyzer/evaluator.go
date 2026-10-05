@@ -408,7 +408,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// collapses classifications, not approvals: the statement in
 		// front of us has not been released, whatever a previous one of
 		// the same shape cost.
-		return e.hold(connContext(ec), stmt, notes)
+		return e.requestHold(connContext(ec), stmt, ec, notes)
 	}
 
 	if action != ActionBlock {

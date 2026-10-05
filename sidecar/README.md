@@ -1226,6 +1226,14 @@ may approve. The rule holds the reviewer groups, the approval count and the
 force-approval list; the lane holds only its name, and the control plane
 authorizes each review against the config it stored for that sidecar.
 
+**The review runs last.** The lane files the review only after every other
+evaluator allowed the statement, the decide-phase OPA call included
+(ADR-0030). A decide denial files nothing, pages nobody and spends no
+approval. Decide sees the pending review as `input.review` (see [Guardrails
+and OPA](#guardrails-and-opa)), and it can deny the statement but cannot
+skip the review. A library caller that runs `analyzer.Evaluator` outside a
+`policy.Chain` holds at once, because nothing runs after it.
+
 **A hold waits, then gives up (ADR-0028).** A pending review holds the statement on
 its connection for up to 30 minutes, on every protocol. Every 5 seconds the relay asks the plane
 about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never
@@ -2907,6 +2915,18 @@ keys as `ai_analysis`. Every entry has one shape:
   under a source you know writes it.
 - `rule` names what produced the entry: the first configured rule of that
   type, or the listener for its analyzer block.
+
+`review` rides the decide phase only, and only when a risk level asked for
+`require_review`. The lane files the review after decide allows, so the key
+says what will happen and carries no id or status:
+
+```json
+"review": {"required": true, "mode": "hold", "mode_source": "listener"}
+```
+
+`mode` is `hold` or `return`, and `mode_source` is `listener` or `client`
+(see [Analyzing statements with a
+model](#analyzing-statements-with-a-model)). A denial here files nothing.
 
 **A source that ran and could not answer still appears**, carrying a status
 and no values, and that is the whole reason `status` exists. An absent
