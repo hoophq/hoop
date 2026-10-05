@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 	codecclickhouse "github.com/hoophq/libhoop/v2/codec/clickhouse"
 	codecmongodb "github.com/hoophq/libhoop/v2/codec/mongodb"
+	codecoracle "github.com/hoophq/libhoop/v2/codec/oracle"
 )
 
 // ProtocolDenyWriter renders a denial in each protocol's native error frame.
@@ -76,18 +77,21 @@ func (ProtocolDenyWriter) Deny(proto inspect.Protocol, dir inspect.Direction, ms
 // the review without parsing the body. Every other protocol already carries
 // the id in the message, and its error frame has no field for it.
 func (w ProtocolDenyWriter) DenyStatement(statement inspect.Statement, msg string, review *policy.Review) []byte {
-	if statement.Protocol == inspect.HTTP && review != nil {
+	switch {
+	case statement.Protocol == inspect.HTTP && review != nil:
 		return HTTPReviewForbidden(msg, *review)
-	}
-	if statement.Protocol != inspect.MongoDB {
+	case statement.Protocol == inspect.Oracle:
+		return codecoracle.DenyResponse(statement.Metadata, msg)
+	case statement.Protocol == inspect.MongoDB:
+		requestID, err := strconv.ParseInt(
+			statement.Metadata[codecmongodb.MetadataRequestID], 10, 32)
+		if err != nil {
+			return nil
+		}
+		return codecmongodb.DenyResponse(int32(requestID), msg)
+	default:
 		return w.Deny(statement.Protocol, statement.Direction, msg)
 	}
-	requestID, err := strconv.ParseInt(
-		statement.Metadata[codecmongodb.MetadataRequestID], 10, 32)
-	if err != nil {
-		return nil
-	}
-	return codecmongodb.DenyResponse(int32(requestID), msg)
 }
 
 // TDS token-stream constants for a synthesized server error.

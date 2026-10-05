@@ -1889,10 +1889,53 @@ gaps named above are the narrow ones; Envoy is not blind here.
 | `mysql` | `COM_QUERY` (0x03), `COM_STMT_PREPARE` (0x16) and the prepared-statement commands (0x17, 0x19, 0x1a, 0x1c); handshake read for the negotiated capabilities, not skipped | column definitions and both row encodings, text and binary, for masking; the terminator that ends a result set | yes |
 | `mongodb` | `OP_MSG` commands and the legacy `OP_QUERY` hello; document-sequence sections are reassembled into the command | cursor `firstBatch`/`nextBatch`, `findAndModify.value`, distinct values and inline map-reduce results for masking | yes |
 | `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
+| `oracle` | Plaintext TCP Oracle Net (TNS/TTC) SQL calls from thin and OCI (thick) clients; negotiated TTC request layouts and cursor re-execution | Verified result-set columns and rows for character-value masking | yes |
 | `http` | HTTP/1.x requests; HTTP/2 streams, each bridged into one HTTP/1.1 request | HTTP/1.x responses | no |
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
 | `spanner` | like `grpc`, plus one SQL statement per query or DDL string extracted from known Cloud Spanner methods | as `grpc` | yes, per HTTP/2 stream |
 | `ssh` | the command of an `exec`, the name of an `env`, the path of each file operation | none — the lane rewrites output in flight and records none of it | yes, per connection |
+
+An `oracle` lane applies Oracle SQL classification to each decoded statement for
+policy decisions. It masks supported character results (VARCHAR, CHAR and
+national character data) only after validating the result layout; a policy
+denial sends a native Oracle error for supported TTC layouts before closing
+the session; an unsupported layout closes without an error frame. Unsupported
+client TTC calls fail closed, and with masking configured an unrecognized
+result layout is refused rather than forwarded unmasked. This is plaintext TCP
+TNS/TTC inspection, **not** TCPS or Oracle native encryption/integrity (ANO);
+neither encrypted path is inspected.
+
+Oracle tracks at most 1,024 open cursors, 16 MiB of retained SQL and column
+metadata, and 65,536 character cells per result; crossing a limit refuses the
+stream rather than forwarding a result without inspection. With masking on, an
+OCI row sent as a table row image that carries a non-NULL unselected column is
+refused too: that value has no name or type a mask rule could match.
+
+Supported servers are Oracle Database 23ai (Free) and 21c (XE), with
+go-ora and python-oracledb thin clients and SQL*Plus 21 and 23. The codec
+reads the integer encodings each session settles in data-type negotiation,
+not the TTC version alone, so the same lane serves thin and OCI clients. An
+OCI session below TTC field version 27 (23ai) other than 16 (21c) is
+refused; no public image exists to capture 19c. OCI clients may run queries,
+DML, MERGE, DDL, PL/SQL blocks and CALL. OCI array DML (more than one
+iteration per call), PL/SQL with more than one bind, and DDL with binds have
+no captured layout and are refused; with masking on, so are PL/SQL output
+binds (`EXEC :v := ...`), whose values no mask rule can name. Each
+negotiation message must end its packet, so no call can ride behind one. The
+SQL a client asks the server to run at logon (`AUTH_ALTER_SESSION`, e.g.
+`ALTER SESSION SET NLS_LANGUAGE=...`) reaches policy as a statement like any
+other, so a rule that denies `ALTER SESSION` refuses those logins.
+
+Oracle runs one statement per call: a call with two statements fails with
+ORA-00933 and runs neither. The lane therefore never splits a call; its only
+inner semicolons belong to PL/SQL, and the whole text is analyzed together.
+A PL/SQL block (`BEGIN`, `DECLARE`, with or without a `<<label>>`) or a query
+with `WITH FUNCTION`/`WITH PROCEDURE` is `unknown`, with the DML the scanner
+sees as its effects, so a rule naming `delete` denies
+`BEGIN DELETE FROM t; END;`. The `CREATE` of a stored unit is a `create`:
+its body is compiled, not run. SQL*Plus 21 sends
+`BEGIN DBMS_APPLICATION_INFO.SET_MODULE(:1,NULL); END;` at logon, so a rule
+naming `unknown` refuses SQL*Plus 21 sessions.
 
 `grpc` is the exception to this table's codec model. It has a canonical
 `libhoop/v2/codec/types.GRPC` protocol value and its HTTP/2 endpoint and
@@ -2816,6 +2859,12 @@ policy.NewRules([]policy.Rule{
 })
 ```
 
+An `operation` rule matches the statement's `operation`. When that is
+`unknown` (the scanner could not read the whole statement, e.g. a PL/SQL
+block), the rule also matches the effects the scanner did see, so
+`BEGIN DELETE FROM t; END;` is denied by a rule naming `delete`. The
+`operations` scope of every other rule type uses the same test.
+
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
 
@@ -3719,11 +3768,13 @@ That covers the root module only (`inspect/`, `lexer/`, `codec/`, `policy/`,
 (cd lexer/conformance && go test ./...)   # differential, against PostgreSQL's parser
 ```
 
-End to end, against a real server: `make test-sidecar-e2e` at the repo root
-boots a `mysql:8` container and runs the `hoop-inspect` binary as a subprocess
-in front of it. It needs Docker, is behind the `integration` build tag, and is
-not part of `make test-oss`. Running it by hand needs `GOWORK=off`, because
-`e2e/` is deliberately not a `go.work` member:
+End to end, against real servers: `make test-sidecar-e2e` at the repo root
+boots MySQL, MongoDB and Oracle Free containers and runs the `hoop-inspect`
+binary as a subprocess. Oracle coverage uses a thin Go client and SQL*Plus
+(OCI) for filtered reads, multi-batch masking, writes, policy denial and
+normal disconnect. It needs Docker, is behind the `integration` build tag,
+and is not part of `make test-oss`. Running it by hand needs `GOWORK=off`,
+because `e2e/` is deliberately not a `go.work` member:
 
 ```bash
 (cd e2e && GOWORK=off go test -tags integration -count=1 ./...)

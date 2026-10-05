@@ -975,7 +975,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 	// MatchOperation is excluded because there the field IS the matcher;
 	// narrowing it by itself would be a tautology.
 	if len(r.Operations) > 0 && r.Type != MatchOperation {
-		if !slices.Contains(r.Operations, stmt.Operation) {
+		if !slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }) {
 			return false, nil
 		}
 	}
@@ -1008,12 +1008,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return r.compiled.MatchString(stmt.Text), nil
 
 	case MatchOperation:
-		for _, op := range r.Operations {
-			if stmt.Operation == op {
-				return true, nil
-			}
-		}
-		return false, nil
+		return slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }), nil
 
 	case MatchTable:
 		if len(stmt.Relations) == 0 && len(stmt.Tables) == 0 {
@@ -1047,6 +1042,13 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("policy: unknown rule type %q", r.Type)
+}
+
+// performs reports whether stmt performs op. An unknown statement still
+// performs the effects the scanner saw: a PL/SQL block's DELETE is a delete,
+// and its operation alone would let a rule naming delete miss it.
+func performs(stmt inspect.Statement, op inspect.Operation) bool {
+	return stmt.Operation == op || stmt.Operation == inspect.OpUnknown && slices.Contains(stmt.Effects, op)
 }
 
 // accessMatches reports whether a relation's access satisfies the rule.
