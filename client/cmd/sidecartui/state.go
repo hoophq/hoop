@@ -203,6 +203,7 @@ func (s *State) session(id string, at time.Time) (*Session, bool) {
 
 // ApplyLog folds one operational log record in.
 func (s *State) ApplyLog(r LogRecord) {
+	r = cleanRecord(r)
 	if len(s.Logs) == maxLogs {
 		s.LogsDropped++
 	}
@@ -301,8 +302,24 @@ func (s *State) ApplyLog(r LogRecord) {
 	// resolved no rules", "upstream certificate verification is DISABLED".
 	if r.Level == "WARN" && r.Msg != "session start not recorded" {
 		if l, ok := s.Lanes[r.Get("listener")]; ok && r.Get("session") == "" {
-			l.Notes = append(l.Notes, r.Msg)
+			l.note(r.Msg)
 		}
+	}
+}
+
+// maxNotes bounds the warnings kept on one listener's card. A warning the
+// daemon repeats (a rate limit, a failed reload) is kept once.
+const maxNotes = 10
+
+func (l *Lane) note(msg string) {
+	for _, n := range l.Notes {
+		if n == msg {
+			return
+		}
+	}
+	l.Notes = append(l.Notes, msg)
+	if len(l.Notes) > maxNotes {
+		l.Notes = l.Notes[len(l.Notes)-maxNotes:]
 	}
 }
 
@@ -318,8 +335,9 @@ func (s *State) closeSession(sess *Session, at time.Time) {
 
 // ApplyAudit folds one audit event in.
 func (s *State) ApplyAudit(ev audit.Event) {
+	ev = cleanEvent(ev)
 	if len(ev.Statement) > maxStatementLen {
-		ev.Statement = ev.Statement[:maxStatementLen] + "…"
+		ev.Statement = cutRunes(ev.Statement, maxStatementLen) + "…"
 	}
 	id := string(ev.SessionID)
 	lane := s.lane(ev.Connection)
@@ -356,11 +374,16 @@ func (s *State) ApplyAudit(ev audit.Event) {
 		if lane != nil {
 			lane.Statements++
 		}
-		if sess, ok := s.Sessions[id]; ok {
-			fill(sess, ev)
-			sess.Statements++
-			sess.Last = ev.Statement
+		// A session whose start the screen never saw (the TUI attached to
+		// an audit file already being written) appears with its first
+		// statement, rather than only once it ends.
+		sess, isNew := s.session(id, ev.Timestamp)
+		if isNew && lane != nil {
+			lane.Sessions++
 		}
+		fill(sess, ev)
+		sess.Statements++
+		sess.Last = ev.Statement
 		if ev.Kind == audit.KindViolation {
 			s.Denied++
 			if lane != nil {
@@ -459,6 +482,8 @@ func (s *State) applyReview(id string, ev audit.Event) {
 // settled. It arrives before any audit event names it: the hold is still
 // waiting when it is filed, and the trail records it only once it settles.
 func (s *State) ApplyLocalReview(lr LocalReview) {
+	lr.Listener, lr.Statement = clean(lr.Listener), clean(lr.Statement)
+	lr.Title, lr.Why, lr.Rule = clean(lr.Title), clean(lr.Why), clean(lr.Rule)
 	r, ok := s.Reviews[lr.ID]
 	if !ok {
 		r = &Review{ID: lr.ID, First: lr.Filed, Last: lr.Filed}

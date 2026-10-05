@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 
 	"github.com/hoophq/hoop/client/cmd/sidecartui"
 	"github.com/hoophq/hoop/client/cmd/styles"
@@ -163,7 +164,8 @@ needs a restart.`,
 		// control plane load require_review at all. Everywhere else
 		// (a pipe, CI, a container) nobody could answer, and Setup keeps
 		// refusing such a config.
-		format := sidecartui.Resolve(logFormat, term.IsTerminal(int(os.Stdout.Fd())), os.Getenv)
+		stdoutTTY, stdinTTY := term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd()))
+		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv)
 		setupOpts := []daemon.Option{
 			daemon.WithLicense(sidecarLicenseFlag),
 			daemon.WithControlPlaneToken(sidecarTokenFlag),
@@ -171,7 +173,7 @@ needs a restart.`,
 			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
 		}
 		var reviewer *sidecartui.Reviewer
-		if format == sidecartui.FormatTUI {
+		if format == sidecartui.FormatTUI && sidecartui.Interactive(stdoutTTY, stdinTTY) {
 			reviewer = sidecartui.NewReviewer()
 			setupOpts = append(setupOpts, daemon.WithLocalReviewer(reviewer.For))
 		}
@@ -204,6 +206,7 @@ needs a restart.`,
 			AuditFile: cfg.Audit.File,
 			Reviewer:  reviewer,
 			Operator:  sidecarOperator(),
+			SaveDir:   sidecarSaveDir(),
 		}, func() error { return daemon.Run(cfg, det) })
 	},
 }
@@ -260,6 +263,17 @@ func sidecarOperator() string {
 		return u
 	}
 	return "unknown"
+}
+
+// sidecarSaveDir is where the TUI keeps a copy of what it shows: the hoop
+// directory the CLI already uses for its own files. Empty when the home
+// directory is unknown; the TUI then says nothing is saved.
+func sidecarSaveDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".hoop", "sidecar")
 }
 
 // sidecarConfigFromEnv reads the config path from the environment. It prefers

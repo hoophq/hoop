@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/hoophq/hoop/sidecar/audit"
 )
@@ -79,7 +79,8 @@ type model struct {
 
 	// stop asks the daemon to shut down (SIGINT to this process, which the
 	// daemon already handles). Stopping is drawn until doneMsg arrives.
-	stop     func()
+	stop     func() error
+	stopErr  error
 	stopping bool
 	done     bool
 	err      error
@@ -95,13 +96,21 @@ type model struct {
 	// a stray enter never releases a statement.
 	modal          string
 	approveFocused bool
+	// modalOff scrolls the statement inside the dialog. Approve stays off
+	// until the last line has been on screen: a statement taller than the
+	// dialog must not be released with its tail unread.
+	modalOff int
+	// record writes a decision to the daemon's log stream (runTUI sets
+	// it), so it is saved with the log and not only drawn. Nil in tests,
+	// where the decision goes straight into the Logs section.
+	record func(msg string, args ...any)
 
 	// dropped counts captured lines thrown away because the screen fell
 	// behind; the daemon is never made to wait for the screen.
 	dropped int64
 }
 
-func newModel(version string, notes []string, now func() time.Time, stop func()) model {
+func newModel(version string, notes []string, now func() time.Time, stop func() error) model {
 	ti := textinput.New()
 	ti.Prompt = "/ "
 	ti.Placeholder = "filter: listener, user, table, rule, text…"
@@ -181,13 +190,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doneMsg:
 		m.done, m.err = true, msg.err
 		return m, tea.Quit
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.key(msg)
 	}
 	return m, nil
 }
 
-func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.confirmQuit {
 		return m.confirmKey(k)
 	}
@@ -240,7 +249,7 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cur[m.tab].sel, m.cur[m.tab].off = "", 0
 	case "end", "G":
 		m.move(1 << 20)
-	case "enter", " ":
+	case "enter", "space":
 		if id := m.selectedLocalPending(); id != "" {
 			m.openModal(id)
 			return m, nil
@@ -255,8 +264,7 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "/":
 		m.searching = true
-		m.search.Focus()
-		return m, textinput.Blink
+		return m, tea.Batch(m.search.Focus(), textinput.Blink)
 	case "esc":
 		// One step back per press: out of the opened row, then off the
 		// filters, then out to the menu.
@@ -276,7 +284,7 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // menuKey moves through the section menu. The content follows the
 // highlighted section as the arrows move, so the menu doubles as a preview;
 // enter or the right arrow goes into the section.
-func (m model) menuKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) menuKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "q", "ctrl+c":
 		return m.quit()
@@ -287,13 +295,12 @@ func (m model) menuKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "1", "2", "3", "4", "5", "6":
 		m.tab = tab(k.String()[0] - '1')
 		m.menuFocus = false
-	case "enter", " ", "right", "l":
+	case "enter", "space", "right", "l":
 		m.menuFocus = false
 	case "/":
 		m.menuFocus = false
 		m.searching = true
-		m.search.Focus()
-		return m, textinput.Blink
+		return m, tea.Batch(m.search.Focus(), textinput.Blink)
 	}
 	m.zoom = false
 	return m, nil
@@ -302,7 +309,7 @@ func (m model) menuKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // confirmKey answers the "stop the sidecar?" prompt. y and n answer at once;
 // enter takes the focused answer, which starts on No; esc is No. A second
 // ctrl+c is Yes, so a person who means it is never asked twice.
-func (m model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) confirmKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "y", "ctrl+c":
 		return m.stopNow()
@@ -320,19 +327,33 @@ func (m model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // modalKey handles keys while the approval dialog is open. a and r decide at
-// once; enter presses the focused button; esc closes it undecided.
-func (m model) modalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+// once; enter presses the focused button; esc closes it undecided; the arrows
+// scroll a statement taller than the dialog. Approve does nothing until the
+// whole statement has been shown (canApprove); Reject always works.
+func (m model) modalKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "ctrl+c":
 		return m.quit()
 	case "a", "y":
-		m.decide(true)
+		if m.canApprove() {
+			m.decide(true)
+		}
 	case "r", "n":
 		m.decide(false)
 	case "tab", "shift+tab", "left", "right", "h", "l":
 		m.approveFocused = !m.approveFocused
 	case "enter":
-		m.decide(m.approveFocused)
+		if !m.approveFocused || m.canApprove() {
+			m.decide(m.approveFocused)
+		}
+	case "up", "k":
+		m.scrollModal(-1)
+	case "down", "j":
+		m.scrollModal(1)
+	case "pgup":
+		m.scrollModal(-max(m.modalRoom()-1, 1))
+	case "pgdown", "space":
+		m.scrollModal(max(m.modalRoom()-1, 1))
 	case "esc":
 		m.modal = ""
 	}
@@ -342,6 +363,19 @@ func (m model) modalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) openModal(id string) {
 	m.modal = id
 	m.approveFocused = false
+	m.modalOff = 0
+}
+
+func (m *model) scrollModal(delta int) {
+	total, room := len(m.modalStatement()), m.modalRoom()
+	m.modalOff = min(max(m.modalOff+delta, 0), max(total-room, 0))
+}
+
+// canApprove is whether the last line of the held statement has been on
+// screen: it fits the dialog, or the person scrolled to its end.
+func (m model) canApprove() bool {
+	total, room := len(m.modalStatement()), m.modalRoom()
+	return m.modalOff+room >= total
 }
 
 // decide answers the approval in the dialog and records who answered. The
@@ -361,8 +395,12 @@ func (m *model) decide(approve bool) {
 		if approve {
 			msg = "approval granted"
 		}
-		m.st.ApplyLog(LogRecord{Time: m.now(), Level: "INFO", Msg: msg, Attrs: []Attr{
-			{"approval", lr.ID}, {"listener", lr.Listener}, {"by", lr.DecidedBy}}})
+		if m.record != nil {
+			m.record(msg, "approval", lr.ID, "listener", lr.Listener, "by", lr.DecidedBy)
+		} else {
+			m.st.ApplyLog(LogRecord{Time: m.now(), Level: "INFO", Msg: msg, Attrs: []Attr{
+				{"approval", lr.ID}, {"listener", lr.Listener}, {"by", lr.DecidedBy}}})
+		}
 	}
 	m.modal = ""
 	if next := m.st.NextLocalPending(nil); next != "" {
@@ -404,8 +442,13 @@ func (m model) stopNow() (tea.Model, tea.Cmd) {
 	if m.stopping || m.done || m.stop == nil {
 		return m, tea.Quit
 	}
+	if err := m.stop(); err != nil {
+		// The interrupt could not be sent, so the daemon is not stopping
+		// and waiting would only hide that. Leave; Run reports it.
+		m.stopErr = err
+		return m, tea.Quit
+	}
 	m.stopping = true
-	m.stop()
 	return m, nil
 }
 

@@ -20,11 +20,28 @@ const (
 	statusApproved = "APPROVED"
 	statusRejected = "REJECTED"
 	statusExecuted = "EXECUTED"
+	// statusExpired is a review nobody may use any more: pending past the
+	// time a hold waits, or approved and not used in that time. The
+	// analyzer reads an unknown status as "not released", which is right.
+	statusExpired = "EXPIRED"
 )
 
-// maxSettled bounds the settled reviews kept for the Reviews tab. Pending and
-// approved ones are never dropped: a client is waiting on those.
+// maxSettled bounds the settled reviews kept for the Approvals section.
 const maxSettled = 300
+
+// maxPending bounds the reviews waiting on the person at once. Past it a new
+// hold is refused (the analyzer denies it) rather than queued without end:
+// nobody decides fifty statements in a row, and each one holds its bytes.
+const maxPending = 50
+
+// maxStatementBytes is the largest statement filed for review: the control
+// plane's own limit, so a statement is refused the same way on both paths.
+const maxStatementBytes = 100 << 10
+
+// reviewLife is how long a review stays usable: the time a held client waits
+// (analyzer.ReviewWait). After it, a pending review has nobody waiting on it,
+// and an approval nobody used is stale; both expire, and a resend files anew.
+var reviewLife = analyzer.ReviewWait
 
 // LocalReview is one statement held for the person at the terminal.
 type LocalReview struct {
@@ -33,6 +50,7 @@ type LocalReview struct {
 	Statement string
 	Status    string
 	Filed     time.Time
+	Expired   bool
 	DecidedBy string
 	Decided   time.Time
 
@@ -129,8 +147,13 @@ func (l laneReviewer) Claim(_ context.Context, id string) (analyzer.ReviewResult
 func openKey(listener, statement string) string { return listener + "\x00" + statement }
 
 func (r *Reviewer) file(listener, statement string, d analyzer.HoldDetail) (analyzer.ReviewResult, error) {
+	if len(statement) > maxStatementBytes {
+		return analyzer.ReviewResult{}, fmt.Errorf("the statement is %d bytes, more than the %d a review takes",
+			len(statement), maxStatementBytes)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.expireLocked()
 	if id, ok := r.open[openKey(listener, statement)]; ok {
 		rv := r.reviews[id]
 		switch rv.Status {
@@ -139,6 +162,9 @@ func (r *Reviewer) file(listener, statement string, d analyzer.HoldDetail) (anal
 		case statusApproved:
 			return r.spend(rv), nil
 		}
+	}
+	if n := r.pendingLocked(); n >= maxPending {
+		return analyzer.ReviewResult{}, fmt.Errorf("%d statements already wait for approval in this terminal", n)
 	}
 	id, err := newReviewID()
 	if err != nil {
@@ -156,9 +182,10 @@ func (r *Reviewer) file(listener, statement string, d analyzer.HoldDetail) (anal
 func (r *Reviewer) claim(id string) (analyzer.ReviewResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.expireLocked()
 	rv, ok := r.reviews[id]
 	if !ok {
-		return analyzer.ReviewResult{}, fmt.Errorf("no local review %s", id)
+		return analyzer.ReviewResult{}, fmt.Errorf("no local approval %s", id)
 	}
 	if rv.Status == statusApproved {
 		return r.spend(rv), nil
@@ -179,6 +206,7 @@ func (r *Reviewer) spend(rv *LocalReview) analyzer.ReviewResult {
 func (r *Reviewer) Decide(id string, approve bool, by string) (LocalReview, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.expireLocked()
 	rv, found := r.reviews[id]
 	if !found {
 		return LocalReview{}, false
@@ -197,6 +225,51 @@ func (r *Reviewer) Decide(id string, approve bool, by string) (LocalReview, bool
 	return *rv, true
 }
 
+// expire settles the reviews past reviewLife. The TUI calls it on a timer,
+// so an expired review leaves the screen without waiting for the next filing.
+func (r *Reviewer) expire() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireLocked()
+}
+
+// expireLocked does the work of expire. Called with mu held.
+func (r *Reviewer) expireLocked() {
+	now := r.now()
+	changed := false
+	for _, rv := range r.reviews {
+		var since time.Time
+		switch rv.Status {
+		case statusPending:
+			since = rv.Filed
+		case statusApproved:
+			since = rv.Decided
+		default:
+			continue
+		}
+		if now.Sub(since) < reviewLife {
+			continue
+		}
+		rv.Status, rv.Expired = statusExpired, true
+		delete(r.open, openKey(rv.Listener, rv.Statement))
+		changed = true
+	}
+	if changed {
+		r.prune()
+		r.poke()
+	}
+}
+
+func (r *Reviewer) pendingLocked() int {
+	n := 0
+	for _, rv := range r.reviews {
+		if rv.Status == statusPending {
+			n++
+		}
+	}
+	return n
+}
+
 // poke raises the Changed flag without waiting.
 func (r *Reviewer) poke() {
 	select {
@@ -209,7 +282,7 @@ func (r *Reviewer) poke() {
 func (r *Reviewer) prune() {
 	var settled []*LocalReview
 	for _, rv := range r.reviews {
-		if rv.Status == statusRejected || rv.Status == statusExecuted {
+		if rv.Status == statusRejected || rv.Status == statusExecuted || rv.Status == statusExpired {
 			settled = append(settled, rv)
 		}
 	}

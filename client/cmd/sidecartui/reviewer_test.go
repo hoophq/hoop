@@ -7,10 +7,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 // The analyzer's hold loop is written against the control plane's contract;
@@ -136,17 +134,13 @@ func TestANewApprovalDoesNotInterrupt(t *testing.T) {
 	if mm.tab != tabWire {
 		t.Fatalf("a new approval moved the screen to tab %d", mm.tab)
 	}
-	screen := ansi.Strip(mm.View())
+	screen := ansi.Strip(mm.render())
 	for _, want := range []string{"1 awaiting approval · press 3", "3 Approvals"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("the screen does not call for attention with %q", want)
 		}
 	}
-	// The call for attention moves: two moments draw it differently. Color
-	// is on for this check; a test process has no terminal to detect.
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	defer lipgloss.SetColorProfile(prev)
+	// The call for attention moves: two moments draw it differently.
 	a := shimmer("1 awaiting approval", now)
 	b := shimmer("1 awaiting approval", now.Add(210*time.Millisecond))
 	if a == b || ansi.Strip(a) != ansi.Strip(b) {
@@ -171,19 +165,19 @@ func TestApprovalDialogFlow(t *testing.T) {
 	second, _ := r.For("pg").File(context.Background(), "drop table audit")
 	tm, _ = tm.Update(localReviewsMsg(r.Snapshot()))
 	tm, _ = tm.Update(key("3"))
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	mm := tm.(model)
 	if mm.modal != second.ID {
 		t.Fatalf("enter opened %q, want the newest approval %q", mm.modal, second.ID)
 	}
-	view := ansi.Strip(mm.View())
+	view := ansi.Strip(mm.render())
 	for _, want := range []string{"Approval needed", "drop table audit", "Approve", "Reject", "1 more waiting"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("dialog does not show %q", want)
 		}
 	}
 
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := r.reviews[second.ID].Status; got != statusRejected {
 		t.Fatalf("enter on the opened dialog = %s, want REJECTED: focus must start on Reject", got)
 	}
@@ -193,7 +187,7 @@ func TestApprovalDialogFlow(t *testing.T) {
 	}
 
 	// The next one waiting is selected, one enter away.
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if mm = tm.(model); mm.modal != first.ID {
 		t.Fatalf("enter after the answer opened %q, want the next waiting %q", mm.modal, first.ID)
 	}
@@ -205,7 +199,7 @@ func TestApprovalDialogFlow(t *testing.T) {
 	if rv := mm.st.Reviews[first.ID]; rv.Status != statusApproved || !rv.Local {
 		t.Fatalf("the Approvals tab did not record the approval: %+v", rv)
 	}
-	if mm.st.PendingReviews() != 0 || strings.Contains(ansi.Strip(mm.View()), "awaiting approval · press") {
+	if mm.st.PendingReviews() != 0 || strings.Contains(ansi.Strip(mm.render()), "awaiting approval · press") {
 		t.Error("the screen still calls for attention with nothing waiting")
 	}
 }
@@ -221,13 +215,13 @@ func TestApprovalDialogEscCloses(t *testing.T) {
 	res, _ := r.For("pg").File(context.Background(), "delete from t")
 	tm, _ = tm.Update(localReviewsMsg(r.Snapshot()))
 	tm, _ = tm.Update(key("3"))
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	mm := tm.(model)
 	if mm.modal != "" || r.reviews[res.ID].Status != statusPending {
 		t.Fatalf("esc answered or kept the dialog: modal=%q status=%s", mm.modal, r.reviews[res.ID].Status)
 	}
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if mm = tm.(model); mm.modal != res.ID {
 		t.Fatalf("enter on the waiting approval did not reopen it: %q", mm.modal)
 	}
@@ -249,11 +243,11 @@ func TestApprovalDialogFits(t *testing.T) {
 		tm, _ = tm.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		tm, _ = tm.Update(localReviewsMsg(r.Snapshot()))
 		tm, _ = tm.Update(key("3"))
-		tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		if tm.(model).modal == "" {
 			t.Fatalf("%dx%d: enter did not open the dialog", size[0], size[1])
 		}
-		lines := strings.Split(tm.(model).View(), "\n")
+		lines := strings.Split(tm.(model).render(), "\n")
 		if len(lines) != size[1] {
 			t.Errorf("%dx%d: %d rows", size[0], size[1], len(lines))
 		}
@@ -263,10 +257,10 @@ func TestApprovalDialogFits(t *testing.T) {
 				break
 			}
 		}
-		if size[1] >= 24 && !strings.Contains(ansi.Strip(tm.(model).View()), "Approve") {
+		if size[1] >= 24 && !strings.Contains(ansi.Strip(tm.(model).render()), "Approve") {
 			t.Errorf("%dx%d: the buttons were pushed off the screen", size[0], size[1])
 		}
 	}
 }
 
-func key(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+func key(s string) tea.KeyPressMsg { return tea.KeyPressMsg{Code: []rune(s)[0], Text: s} }

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -31,14 +31,14 @@ func TestApprovalsShowTheAnalyzerVerdict(t *testing.T) {
 	tm, _ = tm.Update(localReviewsMsg(r.Snapshot()))
 	tm, _ = tm.Update(key("3"))
 
-	list := ansi.Strip(tm.(model).View())
+	list := ansi.Strip(tm.(model).render())
 	for _, want := range []string{"▲high", "deletes every user", "no WHERE clause"} {
 		if !strings.Contains(list, want) {
 			t.Errorf("the Approvals section does not show %q", want)
 		}
 	}
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	dialog := ansi.Strip(tm.(model).View())
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	dialog := ansi.Strip(tm.(model).render())
 	for _, want := range []string{"Approval needed", "▲high", "deletes every user", "no WHERE clause"} {
 		if !strings.Contains(dialog, want) {
 			t.Errorf("the dialog does not show %q", want)

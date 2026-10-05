@@ -2,29 +2,38 @@ package sidecartui
 
 import (
 	"fmt"
+	"image/color"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // The palette is Hoop's: grayscale for everything that is only information,
 // and two colors for what an operator acts on. Blue (#3E63DD) is the primary
-// color: the brand, the active tab, keys, live state and reviews. Red
+// color: the brand, the active tab, keys, live state and approvals. Red
 // (#C4060A) means refused or broken: denials, errors, high risk. A color
 // anywhere else would dilute those two, so allowed traffic stays gray.
+//
+// The grays follow the terminal's background, read from COLORFGBG once at
+// startup (see darkBackground). Never from a terminal query: asking the
+// terminal stalls up to five seconds in one that does not answer, and this
+// package is linked into every hoop command.
 var (
+	shade = lipgloss.LightDark(darkBackground(os.Getenv("COLORFGBG")))
+
 	colPrimary = lipgloss.Color("#3E63DD")
 	colDanger  = lipgloss.Color("#C4060A")
 	// colInk is text on a blue or red background.
 	colInk    = lipgloss.Color("#FFFFFF")
-	colFaint  = lipgloss.AdaptiveColor{Light: "#8B8B8B", Dark: "#7A7A7A"}
-	colStrong = lipgloss.AdaptiveColor{Light: "#1A1A1A", Dark: "#EDEDED"}
-	colBorder = lipgloss.AdaptiveColor{Light: "#D4D4D4", Dark: "#3A3A3A"}
-	colSelBg  = lipgloss.AdaptiveColor{Light: "#EBEBEB", Dark: "#2B2B2B"}
+	colFaint  = shade(lipgloss.Color("#8B8B8B"), lipgloss.Color("#7A7A7A"))
+	colStrong = shade(lipgloss.Color("#1A1A1A"), lipgloss.Color("#EDEDED"))
+	colBorder = shade(lipgloss.Color("#D4D4D4"), lipgloss.Color("#3A3A3A"))
+	colSelBg  = shade(lipgloss.Color("#EBEBEB"), lipgloss.Color("#2B2B2B"))
 	// colNeutral fills a button that is safe and not an action: the No of
 	// a "stop the sidecar?" prompt. Gray, so blue keeps meaning "act".
-	colNeutral = lipgloss.AdaptiveColor{Light: "#D4D4D4", Dark: "#4A4A4A"}
+	colNeutral = shade(lipgloss.Color("#D4D4D4"), lipgloss.Color("#4A4A4A"))
 
 	stBrand   = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 1)
 	stFaint   = lipgloss.NewStyle().Foreground(colFaint)
@@ -42,7 +51,7 @@ var (
 	stTitle   = stStrong
 )
 
-func badge(text string, bg lipgloss.TerminalColor) string {
+func badge(text string, bg color.Color) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(bg).Padding(0, 1).Render(text)
 }
 

@@ -50,18 +50,25 @@ func ParseFormat(s string) (Format, error) {
 //
 // An explicit format always wins. Auto keeps today's JSON whenever no person
 // can be watching (stdout is a pipe or a file, or CI is set), because that is
-// what every deployed sidecar already ships to its log platform. A person at
-// a terminal that cannot or must not draw (TERM=dumb, NO_COLOR) gets text.
-// Everyone else gets the TUI.
-func Resolve(requested Format, stdoutTTY bool, getenv func(string) string) Format {
+// what every deployed sidecar already ships to its log platform. A person who
+// can read but not type (stdin is not a terminal), or whose terminal cannot
+// or must not draw (TERM=dumb, NO_COLOR), gets text: a dashboard that cannot
+// take a key cannot be quit or answer an approval. Everyone else gets the TUI.
+func Resolve(requested Format, stdoutTTY, stdinTTY bool, getenv func(string) string) Format {
 	if requested != FormatAuto && requested != "" {
 		return requested
 	}
 	if !stdoutTTY || getenv("CI") != "" {
 		return FormatJSON
 	}
-	if getenv("NO_COLOR") != "" || strings.EqualFold(getenv("TERM"), "dumb") {
+	if !stdinTTY || getenv("NO_COLOR") != "" || strings.EqualFold(getenv("TERM"), "dumb") {
 		return FormatText
 	}
 	return FormatTUI
 }
+
+// Interactive is whether a person can answer at this terminal: both stdin and
+// stdout are terminals. Only then may the TUI take held statements for
+// approval. A TUI forced onto a pipe (--log-format tui) still draws, but a
+// hold there would wait its whole timeout for a key nobody can press.
+func Interactive(stdoutTTY, stdinTTY bool) bool { return stdoutTTY && stdinTTY }

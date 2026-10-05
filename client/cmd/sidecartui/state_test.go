@@ -6,10 +6,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 
 	"github.com/hoophq/hoop/sidecar/audit"
 )
@@ -138,8 +136,10 @@ func TestBuffersStayBounded(t *testing.T) {
 		s.ApplyAudit(mustAudit(t, `{"kind":"session_start","timestamp":"2026-10-05T12:00:00Z","session_id":"`+id+`"}`))
 		s.ApplyAudit(mustAudit(t, `{"kind":"session_end","timestamp":"2026-10-05T12:00:01Z","session_id":"`+id+`"}`))
 	}
-	if len(s.Sessions) != maxClosed {
-		t.Fatalf("sessions kept = %d, want %d", len(s.Sessions), maxClosed)
+	// The closed ones are bounded; "x", whose statements opened it above
+	// and which never ended, is open and stays.
+	if len(s.Sessions) != maxClosed+1 || !s.Sessions["x"].Open {
+		t.Fatalf("sessions kept = %d, want %d closed plus the open x", len(s.Sessions), maxClosed)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestViewRenders(t *testing.T) {
 				case "quit":
 					mm.confirmQuit = true
 				}
-				out := mm.View()
+				out := mm.render()
 				lines := strings.Split(out, "\n")
 				if len(lines) != size[1] {
 					t.Errorf("%dx%d %s %s: %d rows", size[0], size[1], tabNames[tb], mode, len(lines))
@@ -217,7 +217,7 @@ func TestViewRenders(t *testing.T) {
 // the sidecar. y, or enter after moving to Yes, stops it.
 func TestQuitAsksAndDefaultsToNo(t *testing.T) {
 	stopped := 0
-	m := newModel("dev", nil, time.Now, func() { stopped++ })
+	m := newModel("dev", nil, time.Now, func() error { stopped++; return nil })
 	var tm tea.Model = m
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
@@ -225,23 +225,23 @@ func TestQuitAsksAndDefaultsToNo(t *testing.T) {
 	if mm := tm.(model); !mm.confirmQuit || stopped != 0 {
 		t.Fatalf("q did not ask first: confirm=%v stopped=%d", mm.confirmQuit, stopped)
 	}
-	if !strings.Contains(ansi.Strip(tm.(model).View()), "Stop the sidecar?") {
+	if !strings.Contains(ansi.Strip(tm.(model).render()), "Stop the sidecar?") {
 		t.Fatal("the prompt is not on screen")
 	}
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if mm := tm.(model); mm.confirmQuit || stopped != 0 || mm.stopping {
 		t.Fatalf("enter on the prompt stopped the sidecar: stopped=%d", stopped)
 	}
 
 	tm, _ = tm.Update(key("q"))
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if stopped != 0 || tm.(model).confirmQuit {
 		t.Fatal("esc on the prompt stopped the sidecar or kept the prompt")
 	}
 
 	tm, _ = tm.Update(key("q"))
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyRight})
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	tm, _ = tm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if mm := tm.(model); stopped != 1 || !mm.stopping {
 		t.Fatalf("Yes did not stop the sidecar: stopped=%d", stopped)
 	}
@@ -257,8 +257,8 @@ func TestArrowsMoveThroughTheMenuThenTheSection(t *testing.T) {
 	feed(m.st, script)
 	var tm tea.Model = m
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 36})
-	press := func(k tea.KeyType) { tm, _ = tm.Update(tea.KeyMsg{Type: k}) }
-	screen := func() string { return ansi.Strip(tm.(model).View()) }
+	press := func(k rune) { tm, _ = tm.Update(tea.KeyPressMsg{Code: k}) }
+	screen := func() string { return ansi.Strip(tm.(model).render()) }
 
 	if !tm.(model).menuFocus || !strings.Contains(screen(), "↑↓ choose a section") {
 		t.Fatal("the arrows do not start in the menu, or the hints do not say so")
@@ -291,11 +291,11 @@ func TestArrowsMoveThroughTheMenuThenTheSection(t *testing.T) {
 	if mm := tm.(model); !mm.zoom || !strings.Contains(screen(), "esc back to the list") {
 		t.Fatal("enter did not open the selected row")
 	}
-	press(tea.KeyEsc)
+	press(tea.KeyEscape)
 	if mm := tm.(model); mm.zoom || mm.menuFocus {
 		t.Fatal("esc from the opened row did not go back to the list")
 	}
-	press(tea.KeyEsc)
+	press(tea.KeyEscape)
 	if !tm.(model).menuFocus {
 		t.Fatal("esc from the list did not go back to the menu")
 	}
@@ -312,9 +312,6 @@ func TestArrowsMoveThroughTheMenuThenTheSection(t *testing.T) {
 // The selected row carries the soft background across its whole width, even
 // past the colored segments inside it, whose resets would otherwise clear it.
 func TestSelectionBackgroundSurvivesColors(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	defer lipgloss.SetColorProfile(prev)
 	row := stDanger.Render("DENY") + " " + stStrong.Render("users")
 	got := withBackground(row, 20)
 	bg := selectionSequence()

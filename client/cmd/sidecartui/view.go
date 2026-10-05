@@ -2,15 +2,16 @@ package sidecartui
 
 import (
 	"fmt"
+	"image/color"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -23,7 +24,17 @@ const chrome = 3
 // then the section menu on the left and the section's content on the right.
 // A dialog (an approval, the quit prompt) takes the content area only, so
 // the menu and the header stay in view behind it.
-func (m model) View() string {
+// View hands the frame to Bubble Tea on the alternate screen, so the
+// terminal's scrollback is left as it was when the sidecar stops.
+func (m model) View() tea.View {
+	v := tea.NewView(m.render())
+	v.AltScreen = true
+	return v
+}
+
+// render is the frame as text: the header and the key hints across the top,
+// the section menu on the left and the section's content on the right.
+func (m model) render() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
@@ -272,7 +283,7 @@ func (m model) confirmView(w, h int) string {
 		lipgloss.PlaceHorizontal(bw-4, lipgloss.Right, no+"  "+yes),
 	}
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colDanger).
-		Padding(0, 1).Width(bw - 2).Render(strings.Join(body, "\n"))
+		Padding(0, 1).Width(bw).Render(strings.Join(body, "\n"))
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)
 }
 
@@ -306,7 +317,7 @@ func pane(title, content string, w, h int) string {
 	for len(lines) < inner {
 		lines = append(lines, "")
 	}
-	return stPane.Width(w - 2).Height(inner).Render(strings.Join(lines, "\n"))
+	return stPane.Width(w).Height(inner + 2).Render(strings.Join(lines, "\n"))
 }
 
 // list renders the visible window of rows around the selection. The selected
@@ -355,25 +366,21 @@ func withBackground(row string, width int) string {
 	if bg == "" {
 		return row + pad
 	}
-	return bg + strings.ReplaceAll(row, "\x1b[0m", "\x1b[0m"+bg) + pad + "\x1b[0m"
+	// Both spellings of the reset: "\x1b[0m" and the shorter "\x1b[m".
+	row = strings.ReplaceAll(row, "\x1b[0m", "\x1b[m")
+	return bg + strings.ReplaceAll(row, "\x1b[m", "\x1b[m"+bg) + pad + "\x1b[m"
 }
 
 // selectionSequence is the escape sequence that sets the selection
-// background in the terminal's color profile, or "" without color.
+// background, taken from what lipgloss renders for it so the two can never
+// disagree. Bubble Tea downsamples it to the terminal's colors on output.
 func selectionSequence() string {
-	hex := colSelBg.Dark
-	if !lipgloss.HasDarkBackground() {
-		hex = colSelBg.Light
+	const mark = "\x00"
+	painted := lipgloss.NewStyle().Background(colSelBg).Render(mark)
+	if i := strings.Index(painted, mark); i > 0 {
+		return painted[:i]
 	}
-	c := lipgloss.ColorProfile().Color(hex)
-	if c == nil {
-		return ""
-	}
-	seq := c.Sequence(true)
-	if seq == "" {
-		return ""
-	}
-	return termenv.CSI + seq + "m"
+	return ""
 }
 
 func (m model) empty(w int) string {
@@ -639,11 +646,11 @@ func kvBlock(rows []kv, w int) string {
 }
 
 // codeBlock draws statement text under a rule, wrapped to the pane.
-func codeBlock(title, text string, w int, color lipgloss.TerminalColor) string {
+func codeBlock(title, text string, w int, accent color.Color) string {
 	if strings.TrimSpace(text) == "" {
 		return ""
 	}
-	bar := lipgloss.NewStyle().Foreground(color).Render("│ ")
+	bar := lipgloss.NewStyle().Foreground(accent).Render("│ ")
 	wrapped := lipgloss.NewStyle().Width(max(w-2, 10)).Render(strings.ReplaceAll(text, "\t", "    "))
 	var lines []string
 	for _, l := range strings.Split(wrapped, "\n") {
@@ -691,22 +698,22 @@ func (m model) detailView(keys []string, sel, w, h int) string {
 
 func (m model) wireDetail(ev audit.Event, w int) string {
 	var title string
-	color := lipgloss.TerminalColor(colFaint)
+	accent := color.Color(colFaint)
 	switch ev.Kind {
 	case audit.KindStatement:
 		title = stStrong.Render("✓ Allowed")
 	case audit.KindViolation:
 		title = stDanger.Bold(true).Render("✕ Denied")
-		color = colDanger
+		accent = colDanger
 	case audit.KindMasked:
 		title = stStrong.Render("▒ Response masked")
-		color = colStrong
+		accent = colStrong
 	case audit.KindError:
 		title = stDanger.Bold(true).Render("! Error")
-		color = colDanger
+		accent = colDanger
 	case audit.KindActivity:
 		title = stStrong.Render("◆ Activity")
-		color = colFaint
+		accent = colFaint
 	case audit.KindSessionStart:
 		title = stBold.Render("→ Session opened")
 	case audit.KindSessionEnd:
@@ -763,7 +770,7 @@ func (m model) wireDetail(ev audit.Event, w int) string {
 	if b := kvBlock(ai, w); b != "" {
 		parts = append(parts, "", stLabel.Render("analyzer"), b)
 	}
-	if b := codeBlock("statement", ev.Statement, w, color); b != "" {
+	if b := codeBlock("statement", ev.Statement, w, accent); b != "" {
 		parts = append(parts, "", b)
 	}
 	meta := sortedMeta(ev.Metadata, metaRiskLevel, metaRiskAction, metaAIStatus, metaAIRule,
@@ -830,12 +837,12 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 		{"attempts", strconv.Itoa(r.Hits)},
 		{"message", r.Message},
 	}
-	color := lipgloss.TerminalColor(colPrimary)
+	accent := color.Color(colPrimary)
 	switch r.Status {
 	case "APPROVED":
-		color = colPrimary
+		accent = colPrimary
 	case "REJECTED", "REVOKED", "DENIED":
-		color = colDanger
+		accent = colDanger
 	}
 	where := "control plane"
 	if r.Local {
@@ -846,7 +853,7 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 		rows = append(rows, kv{"decided by", r.DecidedBy + stFaint.Render(" at "+r.Decided.Local().Format("15:04:05"))})
 	}
 	parts := []string{stBold.Render("⧗ Approval"), "", kvBlock(rows, w)}
-	if b := codeBlock("statement", r.Statement, w, color); b != "" {
+	if b := codeBlock("statement", r.Statement, w, accent); b != "" {
 		parts = append(parts, "", b)
 	}
 	if r.Status == "PENDING" {
@@ -983,14 +990,19 @@ func intMap(in map[string]int) map[string]string {
 // and the two answers. Approve is the primary action (blue) and Reject the
 // danger one (red); the focused button is filled. Focus starts on Reject, so
 // an enter pressed out of habit never releases a statement.
-func (m model) approvalView(w, h int) string {
-	r := m.st.Reviews[m.modal]
+// approvalLayout is the dialog's geometry, shared by the view and the keys so
+// "the whole statement has been shown" means the same thing to both:
+// the fixed facts above, the statement wrapped to the dialog's width, and the
+// rows the statement gets. On a short screen the facts shrink to the title,
+// never the statement: its lines are only ever scrolled, not cut.
+func (m model) approvalLayout() (r *Review, fixed, stmt []string, room, bw int) {
+	w, h := m.width-menuWidth(m.width), m.height-chrome
+	r = m.st.Reviews[m.modal]
 	if r == nil {
-		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, "")
+		return nil, nil, nil, 1, w
 	}
-	bw := min(max(w-8, 40), 100)
+	bw = min(max(w-8, 40), 100, w)
 	inner := bw - 4
-	now := m.now()
 
 	who := stFaint.Render("nobody connected")
 	if p := m.st.Principals(r.Lane); len(p) > 0 {
@@ -1005,17 +1017,56 @@ func (m model) approvalView(w, h int) string {
 		{"why", r.Why},
 		{"listener", stStrong.Render(r.Lane) + proto},
 		{"connected", who},
-		{"waiting", short(now.Sub(r.First)) + stFaint.Render(" since "+r.First.Local().Format("15:04:05"))},
+		{"waiting", short(m.now().Sub(r.First)) + stFaint.Render(" since "+r.First.Local().Format("15:04:05"))},
 		{"you are", m.operator},
 	}
-
 	head := stPrimary.Render("⧗ Approval needed")
 	id := stFaint.Render(r.ID)
 	head += strings.Repeat(" ", max(inner-lipgloss.Width(head)-lipgloss.Width(id), 1)) + id
 
-	// The statement gets what the rest leaves, so a long request body is
-	// cut rather than pushing the buttons off the screen.
-	fixed := []string{head, "", kvBlock(rows, inner), ""}
+	// Below the statement: a scroll line, a blank, the buttons. Above it
+	// and around it: the border.
+	const below, border = 3, 2
+	fixed = strings.Split(strings.Join([]string{head, "", kvBlock(rows, inner), "", stLabel.Render("statement")}, "\n"), "\n")
+	room = h - border - len(fixed) - below
+	if room < 3 {
+		fixed = []string{head, stLabel.Render("statement")}
+		room = h - border - len(fixed) - below
+	}
+	room = max(room, 1)
+
+	bar := stPrimary.UnsetBold().Render("│ ")
+	wrapped := lipgloss.NewStyle().Width(max(inner-2, 10)).Render(strings.ReplaceAll(r.Statement, "\t", "    "))
+	for _, l := range strings.Split(wrapped, "\n") {
+		stmt = append(stmt, bar+l)
+	}
+	return r, fixed, stmt, room, bw
+}
+
+func (m model) modalStatement() []string { _, _, stmt, _, _ := m.approvalLayout(); return stmt }
+func (m model) modalRoom() int           { _, _, _, room, _ := m.approvalLayout(); return room }
+
+// approvalView is the decision dialog: why the statement was held, where,
+// the statement itself, and the two answers. A statement taller than the
+// dialog scrolls, and Approve stays dimmed until its last line has been on
+// screen, so nothing is released with an unread tail. Reject always works.
+func (m model) approvalView(w, h int) string {
+	r, fixed, stmt, room, bw := m.approvalLayout()
+	if r == nil {
+		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, "")
+	}
+	inner := bw - 4
+	off := min(m.modalOff, max(len(stmt)-room, 0))
+	visible := stmt[off:min(off+room, len(stmt))]
+
+	scroll := ""
+	if len(stmt) > room {
+		scroll = stFaint.Render(fmt.Sprintf("lines %d–%d of %d · ↑↓ scroll", off+1, off+len(visible), len(stmt)))
+		if !m.canApprove() {
+			scroll += "  " + stStrong.Render("scroll to the end to approve")
+		}
+	}
+
 	buttons := m.approvalButtons()
 	more := ""
 	if n := len(m.pendingLocal()) - 1; n > 0 {
@@ -1025,31 +1076,29 @@ func (m model) approvalView(w, h int) string {
 	if more != "" {
 		footer = more + strings.Repeat(" ", max(inner-lipgloss.Width(more)-lipgloss.Width(buttons), 1)) + buttons
 	}
-	room := max(h-2-lipgloss.Height(strings.Join(fixed, "\n"))-4, 3)
-	stmt := strings.Split(codeBlock("statement", r.Statement, inner, colPrimary), "\n")
-	if len(stmt) > room {
-		stmt = append(stmt[:room-1], stFaint.Render(fmt.Sprintf("… %d more lines", len(stmt)-room+1)))
+
+	lines := append(append(append([]string{}, fixed...), visible...), scroll, "", footer)
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, inner, "…")
 	}
-	lines := strings.Split(strings.Join(append(append(fixed, stmt...), "", footer), "\n"), "\n")
-	style := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colPrimary).
-		Padding(0, 1).Width(bw - 2)
-	box := style.Render(strings.Join(lines, "\n"))
-	// On a short terminal even the facts do not fit: drop lines from the
-	// middle and keep the title and the buttons, which are the part that
-	// must be on screen. Measured after rendering, because the box wraps.
-	for lipgloss.Height(box) > h && len(lines) > 2 {
-		lines = append(lines[:len(lines)-2], lines[len(lines)-1])
-		box = style.Render(strings.Join(lines, "\n"))
-	}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colPrimary).
+		Padding(0, 1).Width(bw).Render(strings.Join(lines, "\n"))
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m model) approvalButtons() string {
 	reject := stDanger.Bold(true).Padding(0, 2).Render("Reject")
 	approve := stPrimary.Padding(0, 2).Render("Approve")
-	if m.approveFocused {
+	switch {
+	case !m.canApprove():
+		// Dimmed, focused or not: the tail of the statement is unread.
+		approve = stFaint.Padding(0, 2).Render("Approve")
+		if !m.approveFocused {
+			reject = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colDanger).Padding(0, 2).Render("Reject")
+		}
+	case m.approveFocused:
 		approve = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 2).Render("Approve")
-	} else {
+	default:
 		reject = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colDanger).Padding(0, 2).Render("Reject")
 	}
 	return reject + "  " + approve
