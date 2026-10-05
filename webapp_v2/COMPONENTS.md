@@ -845,7 +845,7 @@ Reference: `pages/Settings/Infrastructure/index.jsx`.
 ## Hooks (`src/hooks/`)
 
 ### `useRuleTrafficFilter(kind)`
-The Traffic filter of the guardrail, masking and analyzer lists: `filterProps` for a `ValueFilter`, `matches(rule)`, `trafficOf(rule)` for the badge, and `showAgentFilters` / `showSidecarFilter`.
+The Traffic filter of the guardrail, masking and analyzer lists: `filterProps` for a `ValueFilter`, `matches(rule)`, `trafficOf(rule)` for the badge, and `showAgentFilters` / `showSidecarFilter`. `classifiable` is false where the list response carries no `sidecar_spec` (guardrails today).
 
 ### `useMinDelay(value, ms = 500)`
 Returns `true` for at least `ms` milliseconds even if `value` goes `false` sooner. Prevents loading flash.

@@ -1,6 +1,12 @@
 import { useCallback, useState } from 'react'
 import { useRuleTraffics } from '@/modes'
-import { TRAFFIC_AGENT, TRAFFIC_BOTH, TRAFFIC_SIDECAR, ruleTraffic } from '@/utils/ruleTraffic'
+import {
+  LIST_CARRIES_SIDECAR_SPEC,
+  TRAFFIC_AGENT,
+  TRAFFIC_BOTH,
+  TRAFFIC_SIDECAR,
+  ruleTraffic,
+} from '@/utils/ruleTraffic'
 
 const LABELS = { Agent: TRAFFIC_AGENT, Sidecar: TRAFFIC_SIDECAR }
 const VALUES = Object.keys(LABELS)
@@ -10,8 +16,9 @@ const VALUES = Object.keys(LABELS)
 export function useRuleTrafficFilter(kind) {
   const traffics = useRuleTraffics()
   const mixed = traffics.length > 1
+  const classifiable = mixed && LIST_CARRIES_SIDECAR_SPEC[kind]
   const [label, setLabel] = useState(null)
-  const selected = LABELS[label] ?? null
+  const selected = classifiable ? (LABELS[label] ?? null) : null
 
   const showAgentFilters = traffics.includes(TRAFFIC_AGENT) && selected !== TRAFFIC_SIDECAR
   const showSidecarFilter = traffics.includes(TRAFFIC_SIDECAR) && selected !== TRAFFIC_AGENT
@@ -28,10 +35,11 @@ export function useRuleTrafficFilter(kind) {
   return {
     traffics,
     mixed,
+    classifiable,
     showAgentFilters,
     showSidecarFilter,
     matches,
-    trafficOf: (rule) => (mixed ? ruleTraffic(kind, rule) : null),
+    trafficOf: (rule) => (classifiable ? ruleTraffic(kind, rule) : null),
     filterProps: {
       label: 'Traffic',
       values: VALUES,

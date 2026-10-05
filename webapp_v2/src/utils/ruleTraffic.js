@@ -26,6 +26,14 @@ const AGENT_FIELDS = {
     Object.values(r.risk_evaluation ?? {}).some((action) => action && action !== 'allow_execution'),
 }
 
+// GET /guardrails drops sidecar_spec (gateway/api/guardrails List), so a guardrail
+// row cannot be classified until the list returns it.
+export const LIST_CARRIES_SIDECAR_SPEC = {
+  [RULE_KIND_GUARDRAIL]: false,
+  [RULE_KIND_DATAMASKING]: true,
+  [RULE_KIND_ANALYZER]: true,
+}
+
 export function ruleTraffic(kind, rule) {
   if (rule?.sidecar_spec == null) return TRAFFIC_AGENT
   return AGENT_FIELDS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR

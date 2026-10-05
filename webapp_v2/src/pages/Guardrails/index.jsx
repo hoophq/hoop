@@ -167,7 +167,7 @@ export default function Guardrails() {
 
       {list.length > 0 && (
         <Group gap="sm">
-          {mixed && <ValueFilter icon={Network} {...traffic.filterProps} />}
+          {traffic.classifiable && <ValueFilter icon={Network} {...traffic.filterProps} />}
           {showSidecarFilter && (
             <SidecarListenerFilter
               selected={selectedTarget}

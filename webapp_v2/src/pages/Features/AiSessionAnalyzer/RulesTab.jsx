@@ -100,7 +100,7 @@ export default function RulesTab({ providerConfigured, onGoConfigure }) {
   return (
     <Stack gap="lg">
       <Group gap="sm">
-        {mixed && <ValueFilter icon={Network} {...traffic.filterProps} />}
+        {traffic.classifiable && <ValueFilter icon={Network} {...traffic.filterProps} />}
         {showSidecarFilter && (
           <SidecarListenerFilter
             selected={selectedTarget}
