@@ -24,7 +24,8 @@
   --fa-tint: var(--mantine-color-indigo-0);
 }
 
-.control {
+.control,
+.row {
   background-color: color-mix(in srgb, var(--fa-tint) 50%, var(--mantine-color-body));
 }
 

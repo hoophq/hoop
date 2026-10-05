@@ -13,7 +13,7 @@ Confirm the mode — application_mode must read "control-plane":
 
 This deployment carries no traffic: no gRPC on :8010, no protocol proxies, and
 of the six transport plugins only Slack is started. The routes that need the
-transport answer with an error rather than hanging; see ADR-0013.
+transport answer with an error rather than hanging; see ADR-0024.
 
 Register a sidecar at {{ .Values.config.API_URL }}, copy the token it shows
 once, and install hoopsidecar-chart with controlPlane.url and

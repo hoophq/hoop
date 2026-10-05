@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Group, Image, Stack, Text } from '@mantine/core'
-import { ArrowRightFromLine, ArrowRightToLine, ChevronDown, ChevronRight, Pencil, Plus, Search } from 'lucide-react'
+import { ArrowRightFromLine, ArrowRightToLine, ChevronDown, ChevronRight, CirclePlus, Pencil, Search } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
@@ -96,27 +96,30 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
   return (
     <Stack gap="md">
       <Group justify="space-between" align="center">
-        <Group gap="md" align="center">
-          <Group gap="sm" align="baseline">
-            <Text fw={600}>Listeners</Text>
-            <Text size="sm" c="dimmed">
-              {`${listeners.length} ${listeners.length === 1 ? 'listener' : 'listeners'}`}
+        <Group gap="lgAlt" align="center">
+          <Group gap="smAlt" align="baseline">
+            <Text size="sm" fw={700}>
+              Listeners
+            </Text>
+            <Text size="xs" fw={500} c="gray.5">
+              {`${listeners.length} ${listeners.length === 1 ? 'Listener' : 'Listeners'}`}
             </Text>
           </Group>
           {listeners.length > 0 && (
             <TextInput
-              placeholder="Search listeners"
+              size="xs"
+              placeholder="Search Listeners"
               aria-label="Search listeners"
-              leftSection={<Search size={16} />}
+              leftSection={<Search size={16} aria-hidden="true" />}
               value={query}
               onChange={(e) => setQuery(e.currentTarget.value)}
-              w={240}
+              w={200}
             />
           )}
         </Group>
         {editable && (
-          <Button variant="light" leftSection={<Plus size={16} />} onClick={onAdd}>
-            Add listener
+          <Button variant="light" size="xs" leftSection={<CirclePlus size={16} />} onClick={onAdd}>
+            Add Listener
           </Button>
         )}
       </Group>

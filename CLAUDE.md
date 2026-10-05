@@ -117,6 +117,15 @@ Gateways auto-deploy. Agents run on customer infrastructure and can stay old for
 - Gate new behavior on an agent capability (`supports_*` keys in `gateway/broker/headers.go`) or on `pb.SpecAgentVersion`. Fail closed when the capability is absent.
 - A change that an old agent cannot process is a `major` change. Call it out in the PR description.
 
+## Sidecar ↔ Control Plane Compatibility
+
+The same rule, for the sidecar config the control plane serves. Sidecars run on customer infrastructure and lag the control plane. Supported order: control plane first, then sidecars (ADR-0022).
+
+- A sidecar refuses a whole document that holds one key it does not decode. Never serve a key an older build cannot read.
+- Every config field omits its zero value. A field an older build must not receive carries `cap:"<name>"`. `sidecar/CLAUDE.md` has the details.
+- Rename a field by adding the new one and folding the old one in `normalize`. Remove a field only when no stored document and no sidecar uses it.
+- Never change the meaning of a key, a value or a handshake field that a released sidecar sends or reads.
+
 ## Gateway Proxy Servers
 Protocol-specific proxy servers configured through `models.ServerMiscConfig` (stored in `private.serverconfig`, edited via `/api/serverconfig/misc`):
 - **PostgreSQL proxy**: `gateway/proxyproto/postgresproxy/`

@@ -79,7 +79,7 @@ type Config struct {
 	// MCP serves review status to agents over MCP (ADR-0021). Absent means
 	// off. The server lives in the nested sidecar/mcp module; checkMCP
 	// refuses the block in a build that did not link it.
-	MCP *MCPConfig `json:"mcp,omitempty"`
+	MCP *MCPConfig `json:"mcp,omitempty" cap:"mcp" since:"1.199.0"`
 
 	// PII configures the optional detector plugin. This package decodes it
 	// without interpreting it: knowing what an alcatraz Options looks like
@@ -110,7 +110,7 @@ type Config struct {
 	// Trust adds CA certificates to the host trust store for every outbound
 	// TLS client this process builds. See TrustConfig. Absent is the host
 	// trust store alone, which is every config written before the key.
-	Trust *TrustConfig `json:"trust,omitempty"`
+	Trust *TrustConfig `json:"trust,omitempty" cap:"trust" since:"1.198.0"`
 
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level,omitempty"`
@@ -305,7 +305,7 @@ type ListenerConfig struct {
 	// would otherwise need ext_authz just to learn the name the token
 	// already holds. The upstream still authorizes the request; this names
 	// who sent it.
-	GoogleIdentity *GoogleIdentityConfig `json:"google_identity,omitempty" ui:"-"`
+	GoogleIdentity *GoogleIdentityConfig `json:"google_identity,omitempty" cap:"google_identity" since:"1.198.0" ui:"-"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
@@ -373,7 +373,7 @@ type ListenerConfig struct {
 	// Postgres configures what a postgres lane reads from the client's
 	// StartupMessage beyond the user. Only valid on a postgres lane. See
 	// PostgresConfig.
-	Postgres *PostgresConfig `json:"postgres,omitempty" ui:"-"`
+	Postgres *PostgresConfig `json:"postgres,omitempty" cap:"postgres_startup_metadata" since:"1.201.0" ui:"-"`
 
 	// GRPC configures what this lane's gRPC transport decodes and exposes.
 	// Only valid on a grpc lane. See GRPCCodecConfig.

@@ -312,6 +312,62 @@ logs `restart to apply it`. A failed heartbeat changes nothing, because
 losing the phone line home must not take the data path down with it.
 ADR-0014 records the boundary.
 
+#### Upgrading: the control plane first
+
+Upgrade the control plane, then the sidecars. A sidecar refuses a whole
+document that holds one key its build does not decode, so the plane must
+know what each sidecar decodes. From 1.210.0 it does (ADR-0022):
+
+- It serves only the fields an admin set. A plane upgrade alone changes
+  nothing an older sidecar receives.
+- A save that sets a field, a rule type or a protocol that a connected
+  sidecar's build lacks answers 422, naming the sidecar and the upgrade it
+  needs. A sidecar that never connected is checked at its first handshake,
+  which answers 422 the same way.
+- This covers every sidecar from 1.162.0, the first release that handshakes.
+
+A sidecar newer than its plane runs, but cannot use a key the plane does not
+know. Its first import into an empty plane fails when its file sets such a
+key, and startup stops. Do not roll a plane back below a key a stored
+document uses: the plane answers 500 on that sidecar's handshake.
+
+When a sidecar refuses a document anyway, it exits at startup with an error
+that names the key. On a heartbeat it keeps running its last rules and
+reports `refused`. The sidecar page shows `refused`, the version and the
+reason until a document applies; `not_applied` there is the shape of a boot
+crash-loop.
+
+**Escape hatch.** `PATCH /api/sidecars/<name>` with
+`{"configuration": {"load_from_disk": true}}` hands the sidecar back to its
+own config file. The plane then serves only that flag and the license, so the
+sidecar's own build decodes everything it runs. The switch deletes the rules
+imported from this sidecar that nothing else uses, and unbinds the rest.
+`load_from_disk: false`, sent alone, returns ownership to the plane: the
+stored document is cleared, and the sidecar imports its file again.
+
+#### Sessions on the plane
+
+A plane that records sidecar sessions says so on every handshake answer with
+`hoop-sidecar-session-events: true` (the organization's
+`experimental.sidecar_session_events` flag). The process then also sends its
+audit events to `POST {url}/api/sidecars/events`, in batches of at most 500
+events and 4 MiB, with the same redaction and statement cap as the audit file.
+Each event carries `seq`, its number in its session from 1, so a resend is
+safe: the plane ignores a seq it already applied. A 5xx or an unreachable
+plane gets the same batch again, with backoff; a 4xx is final.
+
+The audit file stays the record of truth. The send never blocks a statement
+and never fails one: a queue of 16 MiB holds what the plane has not taken,
+and when it is full the oldest events go first. `GET /stats` reports the
+count under `session_events.dropped`. An answer without the header, or a
+401, 403, 404, 405 or 412 to a batch, stops the sending and empties the
+queue; the next handshake that answers the header starts it again. A plane
+older than this build sends no header, so nothing is sent to it. A proxy that
+answers 413 makes the batches smaller (ingress-nginx allows 1 MiB unless
+`proxy-body-size` says more). The copy goes to the plane whatever the
+`audit.file` setting is: an `audit.file` of `/dev/null` keeps nothing locally
+and still sends.
+
 ### Usage analytics
 
 A release build reports usage to Segment: that the process started, what
@@ -1178,7 +1234,7 @@ and OPA](#guardrails-and-opa)), and it can deny the statement but cannot
 skip the review. A library caller that runs `analyzer.Evaluator` outside a
 `policy.Chain` holds at once, because nothing runs after it.
 
-**A hold waits, then gives up.** A pending review holds the statement on
+**A hold waits, then gives up (ADR-0028).** A pending review holds the statement on
 its connection for up to 30 minutes, on every protocol. Every 5 seconds the relay asks the plane
 about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never
 files a review. An approval that lands in time runs the statement on the same
@@ -1205,6 +1261,14 @@ attempt: the plane recognizes the same statement, consumes the approved review
 and answers that this one may go through. It answers that ONCE, since the
 third run of the same statement files a fresh review. A rejection or a
 revocation ends that one review: running the statement again files a new one.
+
+**Revoking an approval.** An approved review can be revoked until the sidecar
+uses it, from the review page or with `PUT /api/reviews/<id>` and status
+`REVOKED`. A hold that is still waiting denies on its next poll, and the
+Slack message says the approval was revoked. Once the sidecar uses the
+approval, the review is `EXECUTED` and a revoke answers 400: the statement
+already ran. Any decision that loses that race to the sidecar answers 400
+the same way.
 
 The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first
@@ -1239,7 +1303,7 @@ first 512 bytes of an error.
 
 `review_mode` is valid only where a risk level asks for `require_review`;
 elsewhere startup refuses it. A control plane serves `return` only to a
-sidecar at 1.191.0 or later, and refuses the config for an older one.
+sidecar at 1.196.0 or later, and refuses the config for an older one.
 
 **`return` applies to every client on the listener**, humans included. A
 developer in psql gets the denial too, and has to run the statement again
@@ -1278,6 +1342,41 @@ header, even with no `http:` block; a grpc or spanner lane that holds adds it
 to the metadata allowlist. The header reaches policy and audit. It is kept
 out of the analyzer prompt and the verdict cache key, so hold and return
 share one classification.
+
+**Find the review without parsing text.** On http and grpc a review
+denial also carries the review in structured fields. http sends headers on
+the 403; grpc sends the same keys, lowercase, as trailing metadata beside
+`PERMISSION_DENIED`.
+
+| Field | Value |
+|---|---|
+| `X-Hoop-Denied` | `review`; any other denial says `policy` |
+| `X-Hoop-Review-Id` | the review id |
+| `X-Hoop-Review-Status` | the plane's status, such as `PENDING` or `REJECTED`; absent when the sidecar could not read it |
+| `Retry-After` | `5`, in return mode while the review is pending only |
+
+The body stays the text message, so a client that knows nothing of reviews
+still reads it. kubectl prints it as `Error from server (Forbidden): ...`.
+
+**Read the status on the lane.** An http lane answers
+`GET /.well-known/hoop/reviews/<id>` itself for a review filed on that lane,
+with the `review_status` fields and `next` (see
+[Agents over MCP](#agents-over-mcp)), never the statement. Another lane's
+review reads as not found:
+
+```bash
+curl -s http://relay:18080/.well-known/hoop/reviews/9f97…
+```
+
+The whole `/.well-known/hoop/` prefix belongs to the sidecar on every http
+lane and never reaches the upstream, so a route there cannot shadow one the
+upstream serves. GET and HEAD only. It is answered only as the first request
+on a connection: behind another one, the lane closes the connection
+unanswered, because HTTP/1.1 pairs responses by order. curl and Go clients
+resend on a fresh connection. A sidecar with no control plane answers
+503. Like the MCP endpoint, it needs no credential: it answers by review id
+only, and never with the statement. Other protocols read the status over
+MCP.
 
 **The retry contract.** An agent in return mode follows four rules:
 
@@ -1605,7 +1704,7 @@ appdb            postgres  enforcing 2 rule(s) + ai analyzer (and 1 deprecated a
 ### Agents over MCP
 
 An agent that drew a `return` denial must learn when a person decides. The
-`mcp:` block starts an MCP server with two read-only tools for that
+`mcp:` block starts an MCP server with three read-only tools for that
 (ADR-0021).
 
 ```yaml
@@ -1626,20 +1725,22 @@ mcp:
 - A bind failure stops the process, as a listener's does.
 
 **The endpoint has no authentication**, the same as the listener ports. A
-caller with a review id reads its status, listener name and approval rule,
-never the statement. Bind it where only the agent reaches it: loopback when
+caller reads every review of this sidecar: its id, status, listener name and
+approval rule, never the statement. Bind it where only the agent reaches it: loopback when
 the agent runs on the same host, a ClusterIP Service on Kubernetes, never a
 public load balancer. The server refuses cross-origin browser requests, so a
 web page cannot drive it from a victim's browser.
 
-**Two tools.**
+**Three tools.**
 
 | Tool | Input | Does |
 |---|---|---|
+| `review_list` | `status`, `limit` (default 20, max 200) | lists this sidecar's reviews, newest first, across every listener |
 | `review_status` | `id` | reads the review once |
 | `review_wait` | `id`, `timeout_seconds` (default 60, max 300) | reads every 2 seconds until a person decides or the timeout ends |
 
-Both return one review and what to do next:
+`review_status` and `review_wait` return one review and what to do next.
+`review_list` returns `{"reviews": [...]}` of the same shape:
 
 ```json
 {
@@ -1673,7 +1774,7 @@ scopes the read to this sidecar's token, so another sidecar's review reads
 the same as a wrong id. "The control plane is older than this sidecar" means
 a person checks the review in the control plane.
 
-The server never approves, lists or claims a review. The resend runs
+The server never approves or claims a review. The resend runs
 through the lane like any statement, so the analyzer, audit and masking
 apply, and the resend spends the approval.
 

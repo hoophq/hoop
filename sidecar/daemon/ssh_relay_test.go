@@ -643,7 +643,7 @@ func TestRelayMatchesTheRootLabel(t *testing.T) {
 // address instead matches no name target, passes destinations_allowed on the
 // resolved address, and is carried blind to the same host. It is a warning
 // rather than a refusal: whether an uncovered destination should be carried
-// at all is ADR-0021's model, and a config that works today must not stop
+// at all is ADR-0027's model, and a config that works today must not stop
 // starting on an upgrade.
 func TestRelayWarnsWhenAddressesAreNotCovered(t *testing.T) {
 	nameOnly := []*sshRelayTarget{mustTargetKey(t, "*.prod")}

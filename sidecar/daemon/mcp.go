@@ -74,9 +74,26 @@ var (
 		"cannot report review status; upgrade the control plane")
 )
 
-// ReviewStatusReader reads one review of this sidecar. It never claims one.
+// ReviewStatusReader reads the reviews of this sidecar. It never claims one.
 type ReviewStatusReader interface {
 	ReviewStatus(ctx context.Context, id string) (ReviewStatus, error)
+
+	// ListReviews returns this sidecar's reviews, newest first. An empty
+	// status lists every status; limit is 1 to MaxReviewListLimit.
+	ListReviews(ctx context.Context, status string, limit int) ([]ReviewStatus, error)
+}
+
+// MaxReviewListLimit is the most reviews one ListReviews returns, the plane's
+// own bound on GET /api/sidecars/reviews.
+const MaxReviewListLimit = 200
+
+// reviewStatusReader is the plane as a ReviewStatusReader, or nil when this
+// process has none. A nil *controlPlane must not become a non-nil interface.
+func (c *Config) reviewStatusReader() ReviewStatusReader {
+	if c.cp == nil {
+		return nil
+	}
+	return c.cp
 }
 
 // MCPServe runs the MCP server on listen until ctx ends. It returns nil after

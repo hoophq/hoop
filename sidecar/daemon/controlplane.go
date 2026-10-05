@@ -75,6 +75,19 @@ const (
 	// the sidecar never parses it.
 	ConfigRevisionHeader = "hoop-sidecar-config-revision"
 
+	// SessionEventsHeader is how a plane says it takes this sidecar's audit
+	// events on controlPlaneSessionEventsPath. A gateway that predates the
+	// route sends nothing, and neither does one whose organization has the
+	// feature off; either way this process sends no event.
+	//
+	// A HEADER, like LicenseManagedHeader, so the document stays the same
+	// bytes for every build. The plane answers it on every handshake and the
+	// sidecar reads it on every handshake: the feature turns on and off
+	// with the next heartbeat, never with a restart.
+	//
+	// Exported because the gateway sets what this reads.
+	SessionEventsHeader = "hoop-sidecar-session-events"
+
 	controlPlaneTimeout = 15 * time.Second
 	// maxControlPlaneConfig bounds the response read. A config is a few KB;
 	// anything near this is a misdirected URL, not a big deployment.
@@ -142,6 +155,14 @@ type controlPlane struct {
 	// hot-applies license drift and ownership flips when the documents
 	// allow it, restarting only for drift no reload can absorb.
 	diskMode bool
+
+	// sessionEvents is what the boot handshake said about
+	// SessionEventsHeader. Run hands it to events, and the heartbeat
+	// updates events from every later answer.
+	sessionEvents bool
+	// events is the sink that sends audit events to the plane. Run sets it
+	// before the heartbeat starts; nil in a process without one.
+	events *sessionEventSink
 }
 
 // WithControlPlaneToken supplies the sidecar token from the command line,
@@ -286,7 +307,7 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 		local.ControlPlaneURL = planeURL
 		local.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
 			lastRaw: raw, diskMode: true, license: planeDoc.License, licenseManaged: managed,
-			revision: answer.revision}
+			revision: answer.revision, sessionEvents: answer.sessionEvents}
 		return local, nil
 	}
 	imported := false
@@ -336,7 +357,8 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	// what it reports here.
 	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
 		lastRaw: raw, imported: imported, license: planeLicense, licenseManaged: managed,
-		revision: answer.revision, outcome: reloadApplied.String()}
+		revision: answer.revision, outcome: reloadApplied.String(),
+		sessionEvents: answer.sessionEvents}
 	if !imported && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
@@ -362,12 +384,15 @@ type handshakeRequest struct {
 	LastError string `json:"last_error,omitempty"`
 }
 
-// handshakeAnswer is one handshake's result: the document, and the two facts
-// the plane reports beside it rather than inside it.
+// handshakeAnswer is one handshake's result: the document, and the facts the
+// plane reports beside it rather than inside it.
 type handshakeAnswer struct {
 	raw      []byte
 	managed  bool
 	revision string
+	// sessionEvents reports SessionEventsHeader: the plane takes audit
+	// events from this sidecar.
+	sessionEvents bool
 }
 
 // fetchControlPlaneConfig runs one handshake: it presents the token, reports
@@ -418,9 +443,10 @@ func fetchControlPlaneConfig(baseURL, token string, hs handshakeRequest) (answer
 				baseURL, maxControlPlaneConfig)
 		}
 		return handshakeAnswer{
-			raw:      raw,
-			managed:  resp.Header.Get(LicenseManagedHeader) == "true",
-			revision: resp.Header.Get(ConfigRevisionHeader),
+			raw:           raw,
+			managed:       resp.Header.Get(LicenseManagedHeader) == "true",
+			revision:      resp.Header.Get(ConfigRevisionHeader),
+			sessionEvents: resp.Header.Get(SessionEventsHeader) == "true",
 		}, nil
 	case http.StatusUnauthorized:
 		// Not self-healing: a mistyped token and a deleted sidecar both land
@@ -675,6 +701,13 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			log.Warn("control plane handshake failed; serving the last good config",
 				"url", cp.url, "error", err)
 			continue
+		}
+		// Only an answer says whether the plane takes events. A failed
+		// handshake says nothing, so the sink keeps its state and its
+		// queue: a gateway that is down for a minute is the case the
+		// queue is for.
+		if cp.events != nil {
+			cp.events.setEnabled(answer.sessionEvents)
 		}
 		outcome := rl.handle(log, answer.raw)
 		cp.outcome = outcome.String()

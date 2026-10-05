@@ -21,6 +21,10 @@ const IdentityTypeMachine = "machine"
 // verification (mirroring IdentityTypeMachine).
 const IdentityTypeAPIKey = "api_key"
 
+// IdentityTypeSidecar marks sessions a sidecar recorded: the principal is what
+// the sidecar resolved on the wire, not a hoop identity.
+const IdentityTypeSidecar = "sidecar"
+
 type GenericMap map[string]any
 
 type PacketErr struct {

@@ -456,7 +456,7 @@ func buildSSHRelay(lane string, sc *SSHConfig, log *slog.Logger) (*sshRelay, err
 // target trusts the CA rather than a credential this host holds.
 //
 // A warning and not a refusal. Whether an uncovered destination should be
-// carried blind at all is ADR-0021's model, not something to change from
+// carried blind at all is ADR-0027's model, not something to change from
 // here — and a config that works today must not stop starting on an upgrade.
 // What load owes the operator is that the gap is stated once, at the moment
 // they can still choose.

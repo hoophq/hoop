@@ -258,7 +258,7 @@ jobs:
           # Both directions. A default that drifted and a value that stopped
           # being read look identical in a passing lint.
           echo "$out" | grep -q 'replicas: 1' \
-            || { echo "::error::replicas no longer defaults to 1 (ADR-0013)"; exit 1; }
+            || { echo "::error::replicas no longer defaults to 1 (ADR-0024)"; exit 1; }
           helm template t "$chart" "${base[@]}" --set replicas=3 | grep -q 'replicas: 3' \
             || { echo "::error::replicas is no longer configurable"; exit 1; }
 

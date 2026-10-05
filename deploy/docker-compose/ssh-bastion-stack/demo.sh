@@ -242,6 +242,6 @@ ok "a terminated forward is recorded" "$out" "relay_open"
 # --------------------------------------------------------------------------
 printf '\n\033[1m%d passed, %d failed\033[0m\n' "$PASS" "$FAIL"
 if (( FAIL == 0 )); then
-    printf '\033[32mEvery property ADR-0021 specifies holds in this stack.\033[0m\n'
+    printf '\033[32mEvery property ADR-0027 specifies holds in this stack.\033[0m\n'
 fi
 exit "$FAIL"

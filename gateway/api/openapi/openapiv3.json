@@ -7880,10 +7880,11 @@
             "type": "string"
           },
           "identity_type": {
-            "description": "The type of identity that created this session\n* user - a human user\n* machine - a machine identity (non-human identity)",
+            "description": "The type of identity that created this session\n* user - a human user\n* machine - a machine identity (non-human identity)\n* sidecar - a principal a sidecar resolved on the wire",
             "enum": [
               "user",
-              "machine"
+              "machine",
+              "sidecar"
             ],
             "example": "user",
             "type": "string"
@@ -8948,6 +8949,48 @@
             "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
             "format": "uuid",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarSessionEvent": {
+        "properties": {
+          "event": {
+            "additionalProperties": {},
+            "description": "The audit record exactly as the sidecar's JSONL audit file holds it\n(sidecar/audit.Event): kind, timestamp, session_id, principal,\nprotocol, connection (the listener), statement, allowed, rule,\nmessage, error, masked_entities, masked_count and the session totals",
+            "type": "object"
+          },
+          "seq": {
+            "description": "The event's number in its sidecar session: 1 for the first, one more\nfor each after it. An event at or below the last one applied is\nignored, which makes a resend safe",
+            "example": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarSessionEventsRequest": {
+        "properties": {
+          "events": {
+            "description": "The events, in the order the sidecar numbered them. At most 500, and\nthe body at most 4 MiB; above either the answer is 413",
+            "items": {
+              "$ref": "#/components/schemas/openapi.SidecarSessionEvent"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarSessionEventsResponse": {
+        "properties": {
+          "accepted": {
+            "description": "Events applied by this request, the ignored kinds included",
+            "example": 42,
+            "type": "integer"
+          },
+          "duplicates": {
+            "description": "Events at or below their session's last applied seq, ignored",
+            "example": 0,
+            "type": "integer"
           }
         },
         "type": "object"
@@ -12026,7 +12069,7 @@
     },
     "/connections/{nameOrID}": {
       "delete": {
-        "description": "Delete a connection resource.",
+        "description": "Delete a connection resource. A connection that mirrors a sidecar listener answers 409: remove the listener from the sidecar instead.",
         "parameters": [
           {
             "description": "Name or UUID of the connection",
@@ -12051,6 +12094,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "500": {
             "content": {
@@ -22355,6 +22408,120 @@
         ]
       }
     },
+    "/sidecars/events": {
+      "post": {
+        "description": "Record a sidecar's audit events as sessions. The sidecar is taken from the token, never the body, and every session it writes is its own.\n2xx means the batch is applied, now or by an earlier request: an event at or below its session's last applied seq is ignored. 4xx means the sidecar must not resend the batch; a 422 names the sessions that can never be recorded, and the other sessions of the batch were applied. 5xx means it may resend it as it is.\nThe organization must have the experimental.sidecar_session_events flag on; the handshake answers the hoop-sidecar-session-events header when it does.",
+        "parameters": [
+          {
+            "description": "The token returned when the sidecar was created",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarSessionEventsRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarSessionEventsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Record Sidecar Session Events",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
     "/sidecars/handshake": {
       "post": {
         "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
@@ -22369,7 +22536,7 @@
             }
           },
           {
-            "description": "Comma-separated served-document features this sidecar decodes, such as review_mode. Absent means a build too old to report.",
+            "description": "Comma-separated served-document features this sidecar decodes, such as review_mode, and behaviours it has, such as session_events. Absent means a build too old to report.",
             "in": "header",
             "name": "hoop-sidecar-capabilities",
             "schema": {
@@ -22403,6 +22570,12 @@
             "headers": {
               "hoop-sidecar-license-managed": {
                 "description": "Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "hoop-sidecar-session-events": {
+                "description": "Present, as true, when the organization records sidecar sessions (experimental.sidecar_session_events). The sidecar then sends its audit events to POST /sidecars/events, and stops when an answer omits it.",
                 "schema": {
                   "type": "string"
                 }
@@ -22477,6 +22650,105 @@
       }
     },
     "/sidecars/reviews": {
+      "get": {
+        "description": "List the reviews the calling sidecar filed, newest first. It never changes a review.",
+        "parameters": [
+          {
+            "description": "The token returned when the sidecar was created",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only reviews in this status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED",
+                "REVOKED",
+                "PROCESSING",
+                "EXECUTED",
+                "UNKNOWN"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "The most reviews to return, 1 to 200",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/openapi.SidecarReviewStatus"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List Sidecar Reviews",
+        "tags": [
+          "Sidecars"
+        ]
+      },
       "post": {
         "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body.",
         "parameters": [
@@ -22790,6 +23062,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "500": {
             "content": {
               "application/json": {
@@ -22932,6 +23214,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -23023,6 +23315,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {

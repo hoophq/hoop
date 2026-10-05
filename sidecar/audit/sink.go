@@ -90,6 +90,14 @@ func (o SinkOptions) now() time.Time {
 	return o.Now()
 }
 
+// Apply returns ev as a sink built with these options persists it: the
+// redaction, the statement cap and the UTC timestamp. A sink outside this
+// package calls it so its copy of the trail never holds more than the JSONL
+// file does.
+func (o SinkOptions) Apply(ev Event) Event {
+	return o.apply(ev)
+}
+
 // apply returns ev with the statement policy and timestamp normalization
 // applied. It takes ev by value and never mutates anything the caller still
 // owns.

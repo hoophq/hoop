@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
@@ -17,14 +18,6 @@ const (
 	defaultWaitTimeout = 60 * time.Second
 	maxWaitTimeout     = 300 * time.Second
 	pollInterval       = 2 * time.Second
-)
-
-// What the agent does next. Every result carries one, so an agent never has
-// to interpret a status on its own.
-const (
-	nextWait   = "wait"
-	nextResend = "resend_identical_statement"
-	nextStop   = "stop"
 )
 
 // The plane's statuses this server acts on. Any other one stops the agent.
@@ -58,6 +51,19 @@ type statusInput struct {
 	ID string `json:"id" jsonschema:"the review id from the sidecar's deny message"`
 }
 
+type listInput struct {
+	Status string `json:"status,omitempty" jsonschema:"only reviews in this status: PENDING, APPROVED, REJECTED, REVOKED or EXECUTED"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"how many of the newest reviews, default 20, max 200"`
+}
+
+// listOutput wraps the list: a tool's structured output is an object.
+type listOutput struct {
+	Reviews []reviewOutput `json:"reviews"`
+}
+
+// defaultListLimit keeps an agent's context small. The plane allows more.
+const defaultListLimit = 20
+
 type waitInput struct {
 	ID             string `json:"id" jsonschema:"the review id from the sidecar's deny message"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"how long to wait, default 60, max 300"`
@@ -89,6 +95,12 @@ func (t *tools) register(server *sdk.Server) {
 		Annotations: readOnly,
 	}, t.status)
 	sdk.AddTool(server, &sdk.Tool{
+		Name: "review_list",
+		Description: "List the reviews this sidecar filed, newest first, across every listener. " +
+			"Each one's next field says what to do: wait, resend_identical_statement, or stop.",
+		Annotations: readOnly,
+	}, t.list)
+	sdk.AddTool(server, &sdk.Tool{
 		Name: daemon.ReviewWaitTool,
 		Description: "Wait until a review is decided or the timeout elapses (default 60s, max 300s). " +
 			"timed_out=true is not an error: call again to keep waiting. The result's next " +
@@ -108,6 +120,28 @@ func (t *tools) status(ctx context.Context, _ *sdk.CallToolRequest, in statusInp
 		return nil, reviewOutput{}, err
 	}
 	return nil, describe(rev), nil
+}
+
+func (t *tools) list(ctx context.Context, _ *sdk.CallToolRequest, in listInput) (*sdk.CallToolResult, listOutput, error) {
+	limit := in.Limit
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+	limit = min(limit, daemon.MaxReviewListLimit)
+	ctx, cancel := t.bound(ctx)
+	defer cancel()
+	revs, err := t.reviews.ListReviews(ctx, strings.ToUpper(in.Status), limit)
+	if errors.Is(err, daemon.ErrPlaneTooOld) {
+		return nil, listOutput{}, fmt.Errorf("%w. Use review_status with an id from a deny message", err)
+	}
+	if err != nil {
+		return nil, listOutput{}, err
+	}
+	out := listOutput{Reviews: make([]reviewOutput, 0, len(revs))}
+	for _, r := range revs {
+		out.Reviews = append(out.Reviews, describe(r))
+	}
+	return nil, out, nil
 }
 
 func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput) (*sdk.CallToolResult, reviewOutput, error) {
@@ -173,31 +207,26 @@ func describe(r daemon.ReviewStatus) reviewOutput {
 		CreatedAt:       r.CreatedAt,
 		DecidedAt:       r.DecidedAt,
 		RejectionReason: r.RejectionReason,
+		Next:            daemon.ReviewNext(r.Status),
 	}
 	switch r.Status {
 	case statusPending:
-		out.Next = nextWait
 		out.Instruction = "No reviewer has decided yet. Call review_wait with this id. Do not " +
 			"resend the statement now, and never reformat it: different bytes file a new review."
 	case statusApproved:
-		out.Next = nextResend
 		out.Instruction = fmt.Sprintf("Approved. Resend the identical statement, byte for byte, "+
 			"to listener %s. It runs once.", r.ListenerName)
 	case statusRejected:
-		out.Next = nextStop
 		out.Instruction = "Rejected. The statement will not run; do not resend it."
 		if r.RejectionReason != "" {
 			out.Instruction += " Reason: " + r.RejectionReason
 		}
 	case statusRevoked:
-		out.Next = nextStop
 		out.Instruction = "The approval was revoked. The statement will not run; do not resend it."
 	case statusExecuted:
-		out.Next = nextStop
 		out.Instruction = "The approval was already used by a resent statement. Running it " +
 			"again needs a new review."
 	default:
-		out.Next = nextStop
 		out.Instruction = fmt.Sprintf("Unknown review status %q. Stop and ask a human.", r.Status)
 	}
 	return out

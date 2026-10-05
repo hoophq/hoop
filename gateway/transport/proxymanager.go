@@ -159,6 +159,11 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 			return status.Errorf(codes.NotFound, "connection '%v' not found", req.RequestConnectionName)
 		}
 
+		if err := refuseSidecarMirror(conn.Name, conn.SidecarID.String); err != nil {
+			disp.sendResponse(nil, err)
+			return err
+		}
+
 		if conn.Type != "database" && conn.SubType.String != "tcp" && conn.Type != "httpproxy" {
 			disp.sendResponse(nil, ErrUnsupportedType)
 			return fmt.Errorf("connection type %s/%s not supported", conn.Type, conn.SubType.String)
