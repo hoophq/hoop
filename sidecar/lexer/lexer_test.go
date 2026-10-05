@@ -1510,3 +1510,47 @@ func TestOracleInlinePLSQLInWithIsOpaque(t *testing.T) {
 		}
 	}
 }
+
+// Inside PL/SQL a DML word is a statement only where one can start. A member
+// call (`v.DELETE`) and the row lock of `FOR UPDATE` write nothing, and
+// reading them as DML lets a rule naming delete or update refuse the block.
+// Real DML around them is still an effect.
+func TestOraclePLSQLMemberCallsAndRowLocksAreNotDML(t *testing.T) {
+	for _, tc := range []struct {
+		sql     string
+		effect  lexer.Verb
+		present bool
+		write   []string
+	}{
+		{`BEGIN v.DELETE; END;`, lexer.Delete, false, nil},
+		{`BEGIN v_tab.DELETE(1); r.update; END;`, lexer.Delete, false, nil},
+		{`DECLARE CURSOR c IS SELECT * FROM t FOR UPDATE OF x; BEGIN NULL; END;`, lexer.Update, false, nil},
+		{`BEGIN SELECT a INTO v FROM t WHERE id = 1 FOR UPDATE; END;`, lexer.Update, false, nil},
+		{`BEGIN v.DELETE; DELETE FROM customers; END;`, lexer.Delete, true, []string{"customers"}},
+		{`BEGIN FOR r IN (SELECT id FROM t FOR UPDATE) LOOP UPDATE customers SET x = 1 WHERE id = r.id; END LOOP; END;`, lexer.Update, true, []string{"customers"}},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Oracle)
+		if slices.Contains(a.Effects, tc.effect) != tc.present {
+			t.Errorf("effects = %v, %s present = %v: %s", a.Effects, tc.effect, !tc.present, tc.sql)
+		}
+		if got := writes(a); !slices.Equal(got, tc.write) {
+			t.Errorf("writes = %v, want %v: %s", got, tc.write, tc.sql)
+		}
+		for _, r := range a.Relations {
+			if r.Name == "of" {
+				t.Errorf("relation %q read from FOR UPDATE OF: %s", r.Name, tc.sql)
+			}
+		}
+	}
+}
+
+// RENAME old TO new removes a table from under its name. It is an alter
+// that writes the renamed table, so drop/alter and table rules see it.
+func TestOracleRenameIsAnAlterOfItsTable(t *testing.T) {
+	for _, sql := range []string{`RENAME customers TO c_old`, `rename CUSTOMERS to c_old`} {
+		a := lexer.Analyze(sql, lexer.Oracle)
+		if a.Verb != lexer.Alter || !slices.Equal(writes(a), []string{"customers"}) || !a.Complete {
+			t.Errorf("verb = %v, writes = %v, complete = %v: %s", a.Verb, writes(a), a.Complete, sql)
+		}
+	}
+}

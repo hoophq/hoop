@@ -388,6 +388,52 @@ func TestClickHouseDialectCorpus(t *testing.T) {
 	}
 }
 
+// TestOracleDialectCorpus keeps the Oracle-only classifications in this
+// module, as ClickHouse does above. No offline Oracle grammar can judge
+// them, so each row is the verdict an operator's rule depends on, checked
+// against the server where it is verified (sidecar/e2e and the libhoop
+// capture tests). Oracle runs one statement per call, so each row is one
+// whole call.
+func TestOracleDialectCorpus(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		sql      string
+		verb     lexer.Verb
+		complete bool
+		writes   []string
+	}{
+		{"q-quote hides no statement", `SELECT q'[']' FROM dual; DELETE FROM customers; --'`, lexer.Delete, true, []string{"customers"}},
+		{"q-quote literal is data", `SELECT q'[DELETE FROM customers]' FROM dual`, lexer.Select, true, nil},
+		{"anonymous block", `BEGIN DELETE FROM customers; END;`, lexer.Delete, false, []string{"customers"}},
+		{"labelled block", `<<x>> BEGIN UPDATE customers SET ssn = NULL; END;`, lexer.Update, false, []string{"customers"}},
+		{"FORALL in a declared block", `DECLARE TYPE ids IS TABLE OF NUMBER; v ids; BEGIN FORALL i IN 1 .. v.count DELETE FROM customers WHERE id = v(i); END;`, lexer.Delete, false, []string{"customers"}},
+		{"inline PL/SQL in WITH", `WITH PROCEDURE p IS BEGIN DELETE FROM customers; END; FUNCTION f RETURN NUMBER IS PRAGMA AUTONOMOUS_TRANSACTION; BEGIN p; COMMIT; RETURN 1; END; SELECT f FROM dual`, lexer.Delete, false, []string{"customers"}},
+		{"CTE named function", `WITH function (a) AS (SELECT 1 FROM dual) SELECT a FROM function`, lexer.Select, true, nil},
+		{"stored unit body is data", `CREATE OR REPLACE PROCEDURE purge_all AS BEGIN DELETE FROM customers; END;`, lexer.Create, true, nil},
+		{"member call is not DML", `BEGIN v.DELETE; END;`, lexer.Call, false, nil},
+		{"row lock is not DML", `DECLARE CURSOR c IS SELECT * FROM t FOR UPDATE OF x; BEGIN NULL; END;`, lexer.Call, false, nil},
+		{"rename", `RENAME customers TO c_old`, lexer.Alter, true, []string{"customers"}},
+		{"alter session is set", `ALTER SESSION SET NLS_LANGUAGE = 'AMERICAN'`, lexer.Set, true, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := lexer.Split(tc.sql, lexer.Oracle)
+			if len(parts) != 1 {
+				t.Fatalf("Split = %q, want the whole call", parts)
+			}
+			got := lexer.Analyze(parts[0], lexer.Oracle)
+			if got.Complete != tc.complete {
+				t.Errorf("complete = %v (%s), want %v", got.Complete, got.Reason, tc.complete)
+			}
+			if verb := got.Severity(); verb != tc.verb {
+				t.Errorf("verb = %q, want %q", verb, tc.verb)
+			}
+			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+				t.Errorf("writes = %v, want %v", writes, tc.writes)
+			}
+		})
+	}
+}
+
 func groups() []string {
 	return []string{"regression", "cte", "dml-shapes", "ddl", "orm"}
 }

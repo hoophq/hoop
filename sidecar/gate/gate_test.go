@@ -1092,3 +1092,45 @@ func (*neverCompletesCodec) Protocol() inspect.Protocol { return inspect.Postgre
 func (*neverCompletesCodec) Decode(inspect.Direction, []byte) ([]inspect.Statement, int, error) {
 	return nil, 0, nil
 }
+
+// The gate forwards bytes a codec cannot parse unless the codec reports
+// ErrStreamUnsafe. The Oracle codec is fail-closed: a malformed client
+// request is denied, and with masking on so is a malformed server reply,
+// whose rows masking could not attribute.
+func TestMalformedOracleTrafficIsDeniedNotForwarded(t *testing.T) {
+	data := func(ttc ...byte) []byte {
+		p := make([]byte, 10, 10+len(ttc))
+		p = append(p, ttc...)
+		binary.BigEndian.PutUint16(p, uint16(len(p)))
+		p[4] = 6 // DATA
+		return p
+	}
+	for _, tc := range []struct {
+		name   string
+		server bool
+		in     []byte
+	}{
+		{"short TNS header length", false, []byte{0, 4, 0, 0, 6, 0, 0, 0}},
+		{"call before negotiation", false, data(3, 0x5e, 0xff, 0xff, 0xff)},
+		{"unknown client message", false, data(0xee, 1, 2, 3)},
+		{"truncated protocol negotiation", false, data(1, 6)},
+		{"garbage server reply", true, data(0x10, 0xff, 0xff)},
+		{"redirect", true, []byte{0, 8, 0, 0, 5, 0, 0, 0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := session.New(inspect.Oracle, session.Identity{Subject: "alice@example.com"})
+			g, err := gate.New(s, gate.Config{Protocol: inspect.Oracle, Policy: denyDrops(t),
+				Masker: stubMasker{find: "ada@example.com", replace: "[REDACTED]"}})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			d := g.Request(context.Background(), tc.in)
+			if tc.server {
+				d = g.Response(context.Background(), tc.in)
+			}
+			if d.Allowed || d.Err == nil {
+				t.Fatalf("malformed Oracle %s forwarded: rule=%q err=%v", tc.name, d.Rule, d.Err)
+			}
+		})
+	}
+}

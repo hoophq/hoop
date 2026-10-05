@@ -382,7 +382,7 @@ func (a *analyzer) walk() {
 			continue
 		}
 
-		if (atHead || (a.plsql && plsqlDML[t.Text])) && a.head(t, i) {
+		if (atHead || (a.plsql && plsqlDML[t.Text] && !a.plsqlNotDML(i))) && a.head(t, i) {
 			// A stored PL/SQL unit carries its body inline. What
 			// follows the header is source Oracle compiles and does
 			// not run, so the scan ends here with the header read.
@@ -394,9 +394,10 @@ func (a *analyzer) walk() {
 				}
 			}
 			// Several keywords are both a verb and a relation
-			// introducer: UPDATE t, TRUNCATE t, COPY t. Consuming the
-			// head must not skip the target they name.
-			if relIntro[t.Text] {
+			// introducer: UPDATE t, TRUNCATE t, COPY t, and Oracle's
+			// RENAME t TO u. Consuming the head must not skip the
+			// target they name.
+			if relIntro[t.Text] || a.d == Oracle && t.Text == "rename" {
 				if j, rels, ok := a.relationsAfter(i); ok {
 					for _, rel := range rels {
 						a.addRelation(rel)
@@ -410,8 +411,9 @@ func (a *analyzer) walk() {
 			continue
 		}
 
-		// A relation introducer claims the list that follows.
-		if relIntro[t.Text] {
+		// A relation introducer claims the list that follows. Oracle's
+		// `FOR UPDATE OF col` locks rows: the name after it is a column.
+		if relIntro[t.Text] && !(a.d == Oracle && a.forUpdate(i)) {
 			if j, rels, ok := a.relationsAfter(i); ok {
 				for _, rel := range rels {
 					a.addRelation(rel)
@@ -866,7 +868,7 @@ func (a *analyzer) access(r *region, intro string) Access {
 		// an ACL, REFRESH repopulates a matview: all of them change the
 		// named object rather than reading rows from it.
 		switch intro {
-		case "table", "view", "into", "on", "truncate":
+		case "table", "view", "into", "on", "truncate", "rename":
 			return Write
 		}
 	}
@@ -925,4 +927,22 @@ func (a *analyzer) result() Analysis {
 		Complete:  a.incomplete == "",
 		Reason:    a.incomplete,
 	}
+}
+
+// plsqlNotDML reports whether a DML word at i inside PL/SQL is not a
+// statement: a member call (`v_tab.DELETE`, `r.update`) after a dot, or the
+// row lock of `SELECT ... FOR UPDATE`. Neither runs DML, and reading one as
+// a delete or update would let a rule naming it refuse a block that writes
+// nothing.
+func (a *analyzer) plsqlNotDML(i int) bool {
+	if i == 0 {
+		return false
+	}
+	return a.puncts(i-1, ".") || a.forUpdate(i)
+}
+
+// forUpdate reports whether the token at i is the UPDATE of a FOR UPDATE
+// row lock.
+func (a *analyzer) forUpdate(i int) bool {
+	return i > 0 && a.toks[i].isWord("update") && a.toks[i-1].isWord("for")
 }

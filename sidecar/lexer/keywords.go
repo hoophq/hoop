@@ -162,6 +162,7 @@ var opaque = map[string]string{
 // destroys a dropped table past recovery. Both are DDL on the named
 // object, and both sit in the severity order where their consequence does.
 var oracleVerb = map[string]Verb{
+	"rename":    Alter, // RENAME t TO u, Oracle's table rename
 	"begin":     Call,
 	"declare":   Call,
 	"flashback": Alter,
@@ -204,10 +205,12 @@ var plsqlHeadAfter = map[string]bool{
 // only in head position.
 //
 // PL/SQL puts DML where SQL never does: `FORALL i IN 1 .. n DELETE FROM
-// t WHERE ...` has the DELETE after an expression. The block is already
-// Complete=false, so over-reading costs nothing a caller acts on, and
-// under-reading records t as READ, which a rule guarding writes to t
-// misses. SELECT is absent because it never hides a write, and SET,
+// t WHERE ...` has the DELETE after an expression. Under-reading records t
+// as READ, which a rule guarding writes to t misses. Over-reading is not
+// free either: a rule naming an operation matches the effects of an
+// unknown statement, so a false DELETE refuses the block. plsqlNotDML
+// excludes the two known false readings, member calls (`v.DELETE`) and
+// `FOR UPDATE`. SELECT is absent because it never hides a write, and SET,
 // VALUES and TABLE are absent because inside DML they are clauses.
 var plsqlDML = map[string]bool{
 	"insert": true, "update": true, "delete": true, "merge": true,
