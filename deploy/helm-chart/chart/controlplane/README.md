@@ -1,7 +1,7 @@
 # hoopcontrolplane-chart
 
 Deploys the **hoop control plane**: the gateway binary started with
-`hoop start control-plane` (see [ADR-0013](https://github.com/hoophq/adr/blob/main/0013-gateway-control-plane-mode.md)).
+`hoop start control-plane` (see [ADR-0024](https://github.com/hoophq/adr/blob/main/0024-gateway-control-plane-mode.md)).
 It serves the HTTP API and the web app, and administers a fleet of inspection
 sidecars.
 

@@ -5,7 +5,7 @@
 # Refer to this guide for more details: https://hoop.dev/docs/setup/deployment/overview
 
 # The control plane is the gateway binary started with
-# `hoop start control-plane` (ADR-0013). It serves the HTTP API and the web app,
+# `hoop start control-plane` (ADR-0024). It serves the HTTP API and the web app,
 # administers a fleet of sidecars, and carries no traffic: no gRPC on :8010, no
 # protocol proxies, no agent controller, and of the six transport plugins only
 # Slack is started.
@@ -131,7 +131,7 @@ existingSecret: ''
 
 # -- Number of control plane replicas.
 #
-# Defaults to 1, and read ADR-0013 before raising it. socketmode opens one Slack
+# Defaults to 1, and read ADR-0024 before raising it. socketmode opens one Slack
 # websocket per process and nothing coordinates them: no lease, no advisory
 # lock, only in-process mutexes in gateway/slack. Two replicas with Slack
 # configured for an org post every review twice and race each other's clicks,

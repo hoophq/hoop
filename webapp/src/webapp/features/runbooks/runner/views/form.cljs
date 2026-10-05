@@ -211,7 +211,9 @@
                [:> Box {:class "p-3 space-y-6 flex-1"}
                 [:> Text
                  {:size "1" :class "text-gray-11"}
-                 "Fill the params below for this Runbook"]
+                 (if (seq (-> template :data :params))
+                   "Fill the params below for this Runbook"
+                   "This runbook has no parameters.")]
 
                 (doall (for [param (sort-params-by-order (-> template :data :params)
                                                          (-> template :data :metadata))

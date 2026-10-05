@@ -1,0 +1,8 @@
+/* Mantine's default is its xs (10px). */
+.section:where([data-position='left']) {
+  margin-inline-end: var(--mantine-spacing-xsAlt);
+}
+
+.section:where([data-position='right']) {
+  margin-inline-start: var(--mantine-spacing-xsAlt);
+}

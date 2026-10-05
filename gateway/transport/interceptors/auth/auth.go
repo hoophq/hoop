@@ -330,6 +330,7 @@ func (i *interceptor) getConnection(name string, userCtx *models.Context) (*type
 		AgentID:                             conn.AgentID.String,
 		AgentMode:                           conn.AgentMode,
 		AgentName:                           conn.AgentName,
+		SidecarID:                           conn.SidecarID.String,
 		AccessModeRunbooks:                  conn.AccessModeRunbooks,
 		AccessModeExec:                      conn.AccessModeExec,
 		AccessModeConnect:                   conn.AccessModeConnect,

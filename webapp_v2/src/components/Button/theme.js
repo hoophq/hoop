@@ -1,4 +1,5 @@
 import { Button, rem } from '@mantine/core'
+import classes from './Button.module.css'
 
 // App-wide button height scale: xs=24px, sm=32px, md=40px (default, no
 // size prop needed at call sites), lg=48px. Heights come from the global
@@ -19,6 +20,7 @@ const SIZES = {
 }
 
 export const ButtonTheme = Button.extend({
+  classNames: { section: classes.section },
   defaultProps: { size: 'md' },
   vars: (_theme, props) => {
     const s = SIZES[props.size]
