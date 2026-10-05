@@ -355,7 +355,7 @@ func TestSidecarServiceAccountMigrationRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	down, err := migrations.FS.ReadFile("000130_sidecar_service_accounts.down.sql")
+	down, err := migrations.FS.ReadFile("000131_sidecar_service_accounts.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
