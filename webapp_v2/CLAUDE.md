@@ -88,6 +88,7 @@ what a product shows, and ClojureScript exists only in the gateway.**
   the control plane or with the `beta.sidecar_listeners` flag. A route picks its
   variant with `<BySidecars on={…} off={…} />`, and a nav or palette item with
   `sidecars: true`. Never read the flag alone: control plane orgs get it later.
+  Guardrail, masking and analyzer forms are picked per rule with `<ByRuleTraffic>`.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`) serves both. Each product adds its own
   redirect through the `onReady` hook: `GatewayProtectedRoute` the onboarding,
