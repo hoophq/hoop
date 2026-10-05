@@ -1,6 +1,8 @@
 import { useUserStore } from '@/stores/useUserStore'
+import { TRAFFIC_AGENT, TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 import gateway from './gateway'
 import controlPlane from './controlPlane'
+import { useSidecarsEnabled } from './sidecars'
 
 /**
  * Application modes.
@@ -38,4 +40,17 @@ export function useModeConfig() {
 export async function postAuthPath(kind = 'postLoginPath') {
   await useUserStore.getState().loadAppMode()
   return getModeConfig()[kind]
+}
+
+const AGENT_ONLY = [TRAFFIC_AGENT]
+const SIDECAR_ONLY = [TRAFFIC_SIDECAR]
+const AGENT_AND_SIDECAR = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
+
+// Which traffic a guardrail, masking or analyzer rule can protect here. A control
+// plane has no agents.
+export function useRuleTraffics() {
+  const { id } = useModeConfig()
+  const sidecars = useSidecarsEnabled()
+  if (id === 'control-plane') return SIDECAR_ONLY
+  return sidecars ? AGENT_AND_SIDECAR : AGENT_ONLY
 }
