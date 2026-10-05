@@ -150,6 +150,23 @@ func TestTheDatabaseStoreSharesReviewMessagesAcrossReplicas(t *testing.T) {
 		}
 	})
 
+	t.Run("an approval rewrite that lands after the revoke changes nothing", func(t *testing.T) {
+		id := post(t)
+		if err := clicker.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsRevoked: true}); err != nil {
+			t.Fatalf("revoke: %v", err)
+		}
+		before := len(f.rewrites())
+		if err := poster.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsApproved: true}); err != nil {
+			t.Fatalf("late approval: %v", err)
+		}
+		if len(f.rewrites()) != before {
+			t.Error("a late approval rewrote a revoked message")
+		}
+		if final := poster.settledReview(id); final == nil || !final.IsRevoked {
+			t.Errorf("settled state = %+v, want the revoke to stay", final)
+		}
+	})
+
 	t.Run("a post after the review settled elsewhere is rewritten at once", func(t *testing.T) {
 		id := uuid.NewString()
 		if err := clicker.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsApproved: true}); err != nil {

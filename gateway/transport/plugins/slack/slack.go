@@ -114,6 +114,7 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, cfg *slackConfig) 
 		defer close(reviewRespCh)
 		if err := ss.ProcessEvents(reviewRespCh); err != nil {
 			log.Errorf("failed processing slack events for org %v, reason=%v", orgID, err)
+			p.markSocketDown(orgID, ss)
 			return
 		}
 		log.Infof("done processing events for org %v", orgID)
@@ -132,7 +133,7 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, cfg *slackConfig) 
 }
 
 func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
-	configs, err := slackConfigsByOrg()
+	configs, _, err := slackConfigsByOrg()
 	if err != nil {
 		return err
 	}
@@ -154,17 +155,20 @@ func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
 }
 
 // slackConfigsByOrg reads the Slack config of every org that has a valid one.
-// An org whose row cannot be read or parsed is logged and left out.
-func slackConfigsByOrg() (map[string]slackConfig, error) {
+// An org whose row cannot be read or parsed is logged and left out; unreadable
+// names the ones whose row could not be read, which is not the same as having
+// no config.
+func slackConfigsByOrg() (configs map[string]slackConfig, unreadable map[string]bool, err error) {
 	orgList, err := models.ListAllOrganizations()
 	if err != nil {
-		return nil, fmt.Errorf("failed listing organizations: %v", err)
+		return nil, nil, fmt.Errorf("failed listing organizations: %v", err)
 	}
-	configs := map[string]slackConfig{}
+	configs, unreadable = map[string]slackConfig{}, map[string]bool{}
 	for _, org := range orgList {
 		pl, err := models.GetPluginByName(models.DB, org.ID, plugintypes.PluginSlackName)
 		if err != nil && err != models.ErrNotFound {
 			log.Errorf("failed retrieving plugin entity %v", err)
+			unreadable[org.ID] = true
 			continue
 		}
 		if pl == nil || len(pl.EnvVars) == 0 {
@@ -181,7 +185,7 @@ func slackConfigsByOrg() (map[string]slackConfig, error) {
 		}
 		configs[pl.OrgID] = *slackConfig
 	}
-	return configs, nil
+	return configs, unreadable, nil
 }
 
 // syncControlPlane makes this replica run each org's stored Slack config:
@@ -189,7 +193,7 @@ func slackConfigsByOrg() (map[string]slackConfig, error) {
 // also renews the socket slot, and restarts the service when the slot was won
 // or lost. A config that fails to start is retried on the next tick.
 func (p *slackPlugin) syncControlPlane() {
-	configs, err := slackConfigsByOrg()
+	configs, unreadable, err := slackConfigsByOrg()
 	if err != nil {
 		log.Warnf("failed reading the slack configs to sync, reason=%v", err)
 		return
@@ -207,7 +211,8 @@ func (p *slackPlugin) syncControlPlane() {
 		}
 	}
 	for orgID := range p.running {
-		if _, ok := configs[orgID]; !ok {
+		// A row that failed to read is a database blip, not a removed config.
+		if _, ok := configs[orgID]; !ok && !unreadable[orgID] {
 			log.Infof("slack config removed on another replica, stopping slack instance %v", orgID)
 			p.stopSlackServiceInstance(orgID)
 		}
@@ -224,6 +229,19 @@ func (p *slackPlugin) stopSlackServiceInstance(orgID string) {
 	delete(p.running, orgID)
 	if err := models.ReleaseSlackSocketSlot(models.DB, orgID, p.holder); err != nil {
 		log.Warnf("failed releasing the slack socket slot for org %v, reason=%v", orgID, err)
+	}
+}
+
+// markSocketDown records that ss's socket stopped, so the next control plane
+// sync restarts the service instead of renewing a slot with no socket behind
+// it. A service already replaced or removed is left alone: its socket ending
+// is the restart, not a failure.
+func (p *slackPlugin) markSocketDown(orgID string, ss *slack.SlackService) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if r, ok := p.running[orgID]; ok && slack.GetServiceInstance(orgID) == ss {
+		r.socket = false
+		p.running[orgID] = r
 	}
 }
 

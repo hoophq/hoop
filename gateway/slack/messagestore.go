@@ -176,11 +176,16 @@ func (s *dbMessageStore) update(req *UpdateReviewMessageRequest) ([]sentReviewMe
 		if err != nil {
 			return nil, fmt.Errorf("encoding the review settlement: %w", err)
 		}
-		err = models.UpsertSlackReviewSettlement(s.db, models.SlackReviewSettlement{
+		applied, err := models.UpsertSlackReviewSettlement(s.db, models.SlackReviewSettlement{
 			ReviewID: req.ReviewID, OrgID: s.orgID, Request: encoded, Rewritable: req.IsApproved,
 		})
 		if err != nil {
 			return nil, err
+		}
+		// The review was revoked first, and this request lost the race:
+		// rewriting would put the revoked message back to its old state.
+		if !applied {
+			return nil, nil
 		}
 	}
 	if prev != nil && !(req.IsRevoked && prev.Rewritable) {

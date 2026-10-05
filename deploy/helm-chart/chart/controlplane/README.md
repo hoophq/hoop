@@ -103,13 +103,13 @@ by default) open one per organization, holding a slot in
 Slack hands each click to one open socket. A replica that dies frees its slot
 within 90 seconds, and the other slots keep taking clicks meanwhile.
 
-**Slack apps shared across deployments.** The 10-socket limit is per Slack app,
-not per deployment. Every deployment that uses the same app counts against it:
-another control plane (staging, say) and a gateway each add their sockets.
-Each slot switch also opens the new socket before it closes the old one. Keep
-the sum of `SLACK_SOCKET_SLOTS` across deployments sharing an app at 8 or less,
-or give each deployment its own Slack app. Past 10, Slack refuses the extra
-sockets and they reconnect in a loop, which can starve the working ones.
+**One Slack app per organization and deployment.** Slack hands a click to any
+socket of the app, and a socket only answers clicks for its own organization in
+its own database. An app shared with another organization, another control
+plane (staging, say) or a gateway sends clicks to a socket that cannot find the
+review, and the approver sees an error. Sharing also adds sockets toward the
+limit of 10. Each slot switch briefly opens one extra socket, which is why
+`SLACK_SOCKET_SLOTS` stops at 9.
 
 For the upgrade **into** this release, keep `deploymentStrategy: Recreate`. An
 older pod tracks review messages in memory, so a message it posts during a
@@ -274,7 +274,7 @@ does nothing. Use `extraSecret` if you have a reason to set one anyway.
 | `config.MIGRATION_PATH_FILES` | `''` | Migrations are embedded and the image ships no SQL files; set this only to override them with files you mount |
 | `config.GIN_MODE` | `release` | |
 | `config.LOG_ENCODING` / `config.LOG_LEVEL` | `json` / `info` | |
-| `config.SLACK_SOCKET_SLOTS` | `3` | Replicas that open a Slack socket per organization, 1 to 10. Outside that range falls back to 3 |
+| `config.SLACK_SOCKET_SLOTS` | `3` | Replicas that open a Slack socket per organization, 1 to 9. Outside that range falls back to 3 |
 | `config.TLS_CERT` / `config.TLS_KEY` | `''` | Both set = HTTPS, both empty = plaintext |
 | `extraSecret` | `{}` | Extra environment variables, rendered into a Secret |
 | `existingSecret` | `''` | A Secret the chart references but does not manage. Loaded last, so it overrides |

@@ -291,11 +291,12 @@ func Load(mode AppMode) error {
 		}
 	}
 
-	// Slack allows 10 sockets per app, so a value past it would put replicas
-	// back in the reconnect loop the slots exist to prevent.
+	// Slack allows 10 sockets per app and a slot switch briefly opens one
+	// extra, so 9 is the most that never reaches the reconnect loop the slots
+	// exist to prevent.
 	slackSocketSlots := 3
 	if v := os.Getenv("SLACK_SOCKET_SLOTS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 10 {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 9 {
 			slackSocketSlots = n
 		}
 	}
