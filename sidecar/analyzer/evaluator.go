@@ -3,6 +3,7 @@ package analyzer
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,7 +32,8 @@ const DefaultMaxInputBytes = 8 << 10
 // only thing that spends money — Rego's silence must keep meaning "skip",
 // or a policy that answers nothing would start paying for every statement.
 type Trigger struct {
-	// All classifies every statement, overriding the three lists below.
+	// All classifies every statement, overriding the lists below. Exclude
+	// still narrows it.
 	All bool
 
 	// Operations matches the statement's normalized verb.
@@ -47,39 +49,106 @@ type Trigger struct {
 	// Resources matches an HTTP resource with a glob, using the same
 	// matcher as an http_resource policy rule.
 	Resources []string
+
+	// Any matches a statement that meets every field of one item. Items
+	// OR with each other and with the three lists above.
+	Any []TriggerItem
+
+	// Exclude drops a statement that meets every field of one item,
+	// whatever matched it. It narrows All too.
+	Exclude []TriggerItem
 }
 
-// IsZero reports whether the trigger names nothing.
+// TriggerItem is one condition of Trigger.Any or Trigger.Exclude: every field
+// it names must match. New refuses an item that names none, because it would
+// match every statement by checking nothing.
+type TriggerItem struct {
+	Operations []inspect.Operation
+	Tables     []string
+	Resources  []string
+}
+
+func (i TriggerItem) isZero() bool {
+	return len(i.Operations) == 0 && len(i.Tables) == 0 && len(i.Resources) == 0
+}
+
+func (i TriggerItem) matches(stmt inspect.Statement) bool {
+	return (len(i.Operations) == 0 || matchOperation(i.Operations, stmt)) &&
+		(len(i.Tables) == 0 || matchTable(i.Tables, stmt)) &&
+		(len(i.Resources) == 0 || matchResource(i.Resources, stmt))
+}
+
+// IsZero reports whether the trigger selects nothing. Exclude alone selects
+// nothing, so a trigger carrying only Exclude is zero.
 func (t Trigger) IsZero() bool {
-	return !t.All && len(t.Operations) == 0 && len(t.Tables) == 0 && len(t.Resources) == 0
+	return !t.All && len(t.Operations) == 0 && len(t.Tables) == 0 &&
+		len(t.Resources) == 0 && len(t.Any) == 0
+}
+
+// validate refuses an item that names no field.
+func (t Trigger) validate() error {
+	for _, list := range [...]struct {
+		name  string
+		items []TriggerItem
+	}{{"any", t.Any}, {"exclude", t.Exclude}} {
+		for i, item := range list.items {
+			if item.isZero() {
+				return fmt.Errorf("sidecar/analyzer: trigger %s[%d] names no "+
+					"operations, tables or resources", list.name, i)
+			}
+		}
+	}
+	return nil
 }
 
 // matches reports whether stmt should be classified.
 func (t Trigger) matches(stmt inspect.Statement) bool {
-	if t.All {
+	for _, item := range t.Exclude {
+		if item.matches(stmt) {
+			return false
+		}
+	}
+	if t.All || matchOperation(t.Operations, stmt) || matchTable(t.Tables, stmt) ||
+		matchResource(t.Resources, stmt) {
 		return true
 	}
-	for _, op := range t.Operations {
-		if stmt.Operation == op {
+	for _, item := range t.Any {
+		if item.matches(stmt) {
 			return true
 		}
 	}
-	for _, want := range t.Tables {
+	return false
+}
+
+func matchOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
+	return slices.Contains(ops, stmt.Operation)
+}
+
+func matchTable(tables []string, stmt inspect.Statement) bool {
+	for _, want := range tables {
 		for _, got := range stmt.Tables {
 			if strings.EqualFold(want, got) {
 				return true
 			}
 		}
 	}
-	if stmt.HTTP != nil {
-		target := stmt.HTTP.Resource
-		if target == "" {
-			target = stmt.HTTP.Path
-		}
-		for _, pattern := range t.Resources {
-			if policy.MatchResource(pattern, target) {
-				return true
-			}
+	return false
+}
+
+// matchResource matches an HTTP target. A statement with no HTTP detail
+// never matches, so an item pairing resources with operations stays on the
+// http lane.
+func matchResource(patterns []string, stmt inspect.Statement) bool {
+	if stmt.HTTP == nil {
+		return false
+	}
+	target := stmt.HTTP.Resource
+	if target == "" {
+		target = stmt.HTTP.Path
+	}
+	for _, pattern := range patterns {
+		if policy.MatchResource(pattern, target) {
+			return true
 		}
 	}
 	return false
@@ -271,6 +340,9 @@ func New(cfg Config) (*Evaluator, error) {
 		return nil, fmt.Errorf("sidecar/analyzer: unknown review mode %q", cfg.ReviewMode)
 	}
 	if err := cfg.RateLimit.validate(); err != nil {
+		return nil, err
+	}
+	if err := cfg.Trigger.validate(); err != nil {
 		return nil, err
 	}
 	holds := false

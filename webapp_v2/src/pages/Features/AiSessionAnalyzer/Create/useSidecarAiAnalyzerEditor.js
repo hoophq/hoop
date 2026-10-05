@@ -9,6 +9,9 @@ const EMPTY = {
   trigger_operations: [],
   trigger_tables: [],
   trigger_resources: [],
+  // Items: every field one names must match (ADR-0030).
+  trigger_any: [],
+  trigger_exclude: [],
   high: 'block',
   medium: '',
   low: '',
@@ -25,6 +28,8 @@ function specToForm(spec) {
     trigger_operations: spec.trigger?.operations ?? [],
     trigger_tables: spec.trigger?.tables ?? [],
     trigger_resources: spec.trigger?.resources ?? [],
+    trigger_any: spec.trigger?.any ?? [],
+    trigger_exclude: spec.trigger?.exclude ?? [],
     high: spec.high ?? '',
     medium: spec.medium ?? '',
     low: spec.low ?? '',
@@ -36,12 +41,26 @@ function specToForm(spec) {
   }
 }
 
+// An item keeps only the fields it names, or is null when it names none.
+function compactItem(item) {
+  const out = {}
+  for (const key of ['operations', 'tables', 'resources']) {
+    if (item[key]?.length > 0) out[key] = item[key]
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
 function formToSpec(f, ruleName) {
   const spec = {}
   const trigger = {}
   if (f.trigger_operations.length > 0) trigger.operations = f.trigger_operations
   if (f.trigger_tables.length > 0) trigger.tables = f.trigger_tables
   if (f.trigger_resources.length > 0) trigger.resources = f.trigger_resources
+  // The sidecar refuses an item that names no field, so an empty row is dropped.
+  const any = f.trigger_any.map(compactItem).filter(Boolean)
+  const exclude = f.trigger_exclude.map(compactItem).filter(Boolean)
+  if (any.length > 0) trigger.any = any
+  if (exclude.length > 0) trigger.exclude = exclude
   if (Object.keys(trigger).length > 0) spec.trigger = trigger
   for (const level of ['high', 'medium', 'low']) {
     if (f[level] !== '') spec[level] = f[level]
@@ -100,8 +119,12 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
   const isHTTP = protocol.toLowerCase() === 'http'
   const operations = useMemo(() => operationsFor(protocol), [protocol])
   const actions = useMemo(() => analyzerActionsFor(), [])
+  // Exclude alone selects nothing, so it does not count as a trigger.
   const noTrigger =
-    form.trigger_operations.length === 0 && form.trigger_tables.length === 0 && form.trigger_resources.length === 0
+    form.trigger_operations.length === 0 &&
+    form.trigger_tables.length === 0 &&
+    form.trigger_resources.length === 0 &&
+    form.trigger_any.length === 0
 
   const canSubmit = name.trim() !== '' && !submitting
   // Plus the stored ones, so a removed group can still be unselected.

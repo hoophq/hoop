@@ -1342,16 +1342,18 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if !(opa.enabled() && opa.Gate) {
 			if lc.Analyzer != nil && lc.Analyzer.Trigger.IsZero() {
 				ln.notes = append(ln.notes,
-					"the analyzer block has no trigger, so every statement on this "+
-						"lane is classified: a model call per statement shape, bounded "+
-						"only by the cache, max_calls and rate_limit. Add a trigger to narrow it")
+					"the analyzer block has no trigger condition, so every statement on "+
+						"this lane that no trigger.exclude item names is classified: a model "+
+						"call per statement shape, bounded only by the cache, max_calls and "+
+						"rate_limit. Add a trigger to narrow it")
 			}
 			for _, r := range gc.Rules {
 				if r.Type == policy.MatchAIAnalysis && r.Trigger.IsZero() {
 					ln.notes = append(ln.notes, fmt.Sprintf(
-						"ai_analysis rule %q has no trigger, so every statement on this "+
-							"lane is classified: a model call per statement shape, bounded "+
-							"only by the cache, max_calls and rate_limit. Add a trigger to narrow it", r.Name))
+						"ai_analysis rule %q has no trigger condition, so every statement on "+
+							"this lane that no trigger.exclude item names is classified: a model "+
+							"call per statement shape, bounded only by the cache, max_calls and "+
+							"rate_limit. Add a trigger to narrow it", r.Name))
 				}
 			}
 		}

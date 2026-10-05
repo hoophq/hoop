@@ -49,6 +49,9 @@ const (
 	// CapabilityAnalyzerRateLimit means this build decodes analyzer
 	// rate_limit, on the top-level section and on a listener's block.
 	CapabilityAnalyzerRateLimit = "analyzer_rate_limit"
+	// CapabilityAnalyzerTriggerItems means this build decodes an analyzer
+	// trigger's any and exclude, on the block and on the rule form.
+	CapabilityAnalyzerTriggerItems = "analyzer_trigger_items"
 	// CapabilitySessionEvents means this build sends its audit events to
 	// the plane when the handshake answers with SessionEventsHeader.
 	CapabilitySessionEvents = "session_events"

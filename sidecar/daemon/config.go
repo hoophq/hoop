@@ -1824,15 +1824,27 @@ func (t *TLSConfig) downstreamKeypairNamed() error {
 // analyzerTriggerOperations lists every operation a lane's analyzer is
 // triggered on, in BOTH spellings: the listener's analyzer block and any
 // deprecated ai_analysis rule still carrying its own trigger.
+//
+// Exclude items are left out: excluding what the lane never classifies is
+// harmless, while selecting it is a trigger that silently never fires.
 func analyzerTriggerOperations(lc ListenerConfig, aiRules []policy.Rule) []inspect.Operation {
 	var ops []inspect.Operation
-	if lc.Analyzer != nil && lc.Analyzer.Trigger != nil {
-		ops = append(ops, lc.Analyzer.Trigger.Operations...)
+	if lc.Analyzer != nil {
+		ops = append(ops, triggerOperations(lc.Analyzer.Trigger)...)
 	}
 	for _, r := range aiRules {
-		if r.Trigger != nil {
-			ops = append(ops, r.Trigger.Operations...)
-		}
+		ops = append(ops, triggerOperations(r.Trigger)...)
+	}
+	return ops
+}
+
+func triggerOperations(t *policy.AITrigger) []inspect.Operation {
+	if t == nil {
+		return nil
+	}
+	ops := slices.Clone(t.Operations)
+	for _, item := range t.Any {
+		ops = append(ops, item.Operations...)
 	}
 	return ops
 }
