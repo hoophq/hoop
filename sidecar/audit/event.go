@@ -17,6 +17,11 @@
 // A sink that cannot keep up returns an error and the caller decides. The
 // gate treats a failed audit write as a policy failure, because an
 // unrecorded statement is the one an attacker wants.
+//
+// The one exception is a best-effort COPY of a trail another sink already
+// records, which must never fail a write: its failure would turn a remote
+// collector's health into the database's. It drops, counts what it dropped
+// and says so (MemorySink, and daemon's session events sink).
 package audit
 
 import (
@@ -152,7 +157,8 @@ type Event struct {
 // Write is called on the connection's data path, so an implementation that
 // blocks blocks the user's query. Buffer internally if the backing store is
 // slow, and return an error rather than dropping when the buffer is full.
-// The caller decides whether an unrecorded statement may still run.
+// The caller decides whether an unrecorded statement may still run. A
+// best-effort copy (see the package doc) drops and returns nil instead.
 //
 // Implementations must be safe for concurrent use: one sink serves every
 // connection in the process.

@@ -59,6 +59,10 @@ type FetchConnectionsOptions struct {
 // (client/cmd/connect.go), so the tunnel must apply the same gate.
 const oracleNativeFlag = "beta.oracle_native"
 
+// managedBySidecar is the managed_by of a connection that mirrors a sidecar
+// listener (models.ConnectionManagedBySidecar in the gateway).
+const managedBySidecar = "sidecar"
+
 // FetchConnections returns the list of connections available to the
 // current user that are tunnelable (TCP-style protocols plus
 // httpproxy, which speaks plain HTTP to the tunnel while the agent
@@ -113,11 +117,12 @@ func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Conn
 	harvestRotatedToken(resp, opts.OnNewToken)
 
 	// The non-paginated endpoint returns a flat array of openapi.Connection.
-	// We decode only the two fields we need so this code is robust to
+	// We decode only the fields we need so this code is robust to
 	// upstream schema additions.
 	var raw []struct {
-		Name    string `json:"name"`
-		SubType string `json:"subtype"`
+		Name      string  `json:"name"`
+		SubType   string  `json:"subtype"`
+		ManagedBy *string `json:"managed_by"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
@@ -126,6 +131,11 @@ func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Conn
 	out := make([]Connection, 0, len(raw))
 	for _, r := range raw {
 		if r.Name == "" {
+			continue
+		}
+		// A sidecar listener's mirror has no route through the gateway; a
+		// client reaches the listener itself.
+		if r.ManagedBy != nil && *r.ManagedBy == managedBySidecar {
 			continue
 		}
 		if !isTunnelableSubType(r.SubType, opts.FeatureFlags) {

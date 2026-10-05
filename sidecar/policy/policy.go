@@ -76,6 +76,28 @@ type Verdict struct {
 	// redact_statements and lands in the trail verbatim. Never put a value
 	// the statement contained here.
 	Annotations map[string]string
+
+	// Review is set on a denial that names a human review, so a protocol
+	// with structured fields (HTTP headers, gRPC trailers) can carry the
+	// id and status a client acts on without parsing Message. Nil on
+	// every other verdict.
+	Review *Review
+}
+
+// Review is the review a denied statement waits on, or the one that ended
+// it.
+type Review struct {
+	// ID is the review's id. Never empty.
+	ID string
+
+	// Status is the backend's own word (PENDING, REJECTED, ...), or empty
+	// when the sidecar could not learn it.
+	Status string
+
+	// Return is true when the client was denied at once to resend the
+	// identical statement after approval, rather than held on its
+	// connection.
+	Return bool
 }
 
 // Allow is the zero verdict.

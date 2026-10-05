@@ -71,7 +71,7 @@ type SSHConfig struct {
 	Identity *SSHIdentityConfig `json:"identity,omitempty" label:"Identity mapping" help:"Which field of the user's certificate fills each identity slot that policy and the audit trail read. Empty uses the key id as the subject."`
 
 	// Relay turns this listener into a TERMINATING BASTION, and its
-	// presence is the whole mode switch (ADR-0021). Absent, the listener is
+	// presence is the whole mode switch (ADR-0027). Absent, the listener is
 	// exactly ADR-0015's.
 	//
 	// It changes what CapabilitiesAllowed above means. On a plain listener
@@ -86,7 +86,7 @@ type SSHConfig struct {
 	// a map of targets each carrying its own credential, host-key mode and
 	// capability ceiling. Putting it on the form is a product decision, not
 	// something to settle while resolving a merge.
-	Relay *SSHRelayConfig `json:"relay,omitempty" ui:"-"`
+	Relay *SSHRelayConfig `json:"relay,omitempty" cap:"ssh_relay" since:"1.207.0" ui:"-"`
 }
 
 // terminates reports whether this lane is a terminating bastion.

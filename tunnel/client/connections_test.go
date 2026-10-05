@@ -117,3 +117,18 @@ func TestFetchConnectionsSkipsUnnamedEntries(t *testing.T) {
 		t.Fatalf("want only the named connection, got %v", got)
 	}
 }
+
+// A sidecar listener's mirror is listed by the gateway but has no route
+// through it: the gateway refuses the session. Offering it would hand out a
+// hostname that never connects.
+func TestFetchConnectionsSkipsSidecarMirrors(t *testing.T) {
+	srv := newConnectionsGateway(t, `[
+		{"name":"pay-appdb","subtype":"postgres","managed_by":"sidecar"},
+		{"name":"pg","subtype":"postgres","managed_by":null},
+		{"name":"aws-pg","subtype":"postgres","managed_by":"hoop"}
+	]`)
+	got := fetch(t, srv, nil)
+	if _, ok := got["pay-appdb"]; ok || len(got) != 2 {
+		t.Errorf("want pg and aws-pg, the mirror left out, got %v", got)
+	}
+}

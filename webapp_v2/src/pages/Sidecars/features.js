@@ -188,12 +188,6 @@ const ROWS = {
   guardrails: guardrailRows,
 }
 
-const EMPTY = {
-  'ai-analyzer': 'Not used. Nothing is sent to a model.',
-  'data-masking': 'No rules. Responses are returned unchanged.',
-  guardrails: 'No rules. Everything passes.',
-}
-
 function summary(key, rules) {
   if (rules.length === 0) return 'No rule configured'
   if (key === 'ai-analyzer' && rules.length === 1 && rules[0].id === 'analyzer-block') return 'Configured'
@@ -207,7 +201,6 @@ export function featureList(listener, config, boundRules) {
       ...FEATURES[key],
       rules,
       summary: summary(key, rules),
-      empty: EMPTY[key],
       mode: key === 'guardrails' ? guardrailMode(listener, config) : null,
     }
   })

@@ -9,6 +9,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport"
 )
@@ -99,6 +100,15 @@ func Update(c *gin.Context) {
 	}
 
 	featureflag.Set(orgID, flagName, req.Enabled)
+
+	// The write path skips a sidecar while the flag is off, so turning it on
+	// mirrors the sidecars that already exist. A sidecar that fails is
+	// logged: its next write answers the error to the admin.
+	if flagName == featureflag.FlagSidecarListeners && req.Enabled {
+		for _, err := range services.ReconcileSidecarListenerConnections(models.DB, orgID) {
+			log.With("org", orgID).Warnf("sidecar mirrors: %v", err)
+		}
+	}
 
 	go transport.SendFeatureFlagUpdateToOrg(orgID)
 

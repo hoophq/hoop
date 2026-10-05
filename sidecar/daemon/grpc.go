@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/descriptors"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 	codecgrpc "github.com/hoophq/libhoop/v2/codec/grpc"
 )
@@ -377,7 +378,7 @@ func buildGRPCServer(
 		d := g.EvaluateStatement(ctx, state.stmts.request(info.Request))
 		state.logDecisionError("request headers", d)
 		if !d.Allowed {
-			return handler, grpcDeniedStatus(d.Message), nil
+			return handler, grpcDeniedStatus(d), nil
 		}
 		return handler, nil, nil
 	}
@@ -493,7 +494,7 @@ func (r *grpcRPCState) requestMessage(
 					r.stmts.spannerSQL(sql, rendered, truncated, index, i+1, req.database, dialect, d))
 				r.logDecisionError("request message", dec)
 				if !dec.Allowed {
-					return grpcDeniedStatus(dec.Message)
+					return grpcDeniedStatus(dec)
 				}
 			}
 			return nil
@@ -506,7 +507,7 @@ func (r *grpcRPCState) requestMessage(
 		r.stmts.message(inspect.FromClient, rendered, truncated, index))
 	r.logDecisionError("request message", d)
 	if !d.Allowed {
-		return grpcDeniedStatus(d.Message)
+		return grpcDeniedStatus(d)
 	}
 	return nil
 }
@@ -518,7 +519,7 @@ func (r *grpcRPCState) evaluateSpannerUnreadable(ctx context.Context, rendered s
 	d := r.gate.EvaluateStatement(ctx, r.stmts.spannerUnreadable(rendered, truncated, index, reason))
 	r.logDecisionError("request message", d)
 	if !d.Allowed {
-		return grpcDeniedStatus(d.Message)
+		return grpcDeniedStatus(d)
 	}
 	return nil
 }
@@ -533,7 +534,7 @@ func (r *grpcRPCState) responseMessage(
 		r.stmts.message(inspect.FromServer, rendered, truncated, index))
 	r.logDecisionError("response message", d)
 	if !d.Allowed {
-		return grpcDeniedStatus(d.Message)
+		return grpcDeniedStatus(d)
 	}
 	return nil
 }
@@ -548,7 +549,7 @@ func (r *grpcRPCState) responseStatus(
 		r.stmts.trailer(trailers, code, message))
 	r.logDecisionError("response trailers", d)
 	if !d.Allowed {
-		return grpcDeniedStatus(d.Message)
+		return grpcDeniedStatus(d)
 	}
 	return nil
 }
@@ -581,8 +582,15 @@ func (r *grpcRPCState) logDecisionError(phase string, d gate.Decision) {
 	}
 }
 
-func grpcDeniedStatus(message string) *codecgrpc.Status {
-	return &codecgrpc.Status{Code: grpcPermissionDenied, Message: message}
+// grpcDeniedStatus is PERMISSION_DENIED with the operator's message. The
+// trailers are the markers an http lane sends as headers, so a client finds a
+// review without parsing grpc-message.
+func grpcDeniedStatus(d gate.Decision) *codecgrpc.Status {
+	trailers := http.Header{"X-Hoop-Denied": {"policy"}}
+	if d.Review != nil {
+		trailers = proxy.ReviewHeaders(*d.Review)
+	}
+	return &codecgrpc.Status{Code: grpcPermissionDenied, Message: d.Message, Trailers: trailers}
 }
 
 // grpcPeerSubject names the caller from a verified client certificate, the
