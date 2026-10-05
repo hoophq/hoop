@@ -525,8 +525,13 @@ func reviewRow(r *Review, now time.Time) string {
 	if r == nil {
 		return ""
 	}
+	risk := riskBadge(r.Risk)
+	if risk == "" {
+		risk = stFaint.Render("—")
+	}
 	return strings.Join([]string{
 		col(reviewBadge(r.Status), 11),
+		col(risk, 5),
 		stBold.Render(col(r.ID, 14)),
 		stText.Render(col(r.Lane, 12)),
 		col(r.Principal, 16),
@@ -782,6 +787,9 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 	}
 	rows := []kv{
 		{"status", reviewBadge(r.Status)},
+		{"risk", riskLine(r)},
+		{"why", r.Why},
+		{"analyzer", r.AIRule},
 		{"approval", r.ID},
 		{"listener", r.Lane},
 		{"principal", r.Principal},
@@ -962,6 +970,8 @@ func (m model) approvalView(w, h int) string {
 		proto = stFaint.Render("  " + l.Protocol)
 	}
 	rows := []kv{
+		{"risk", riskLine(r)},
+		{"why", r.Why},
 		{"listener", stStrong.Render(r.Lane) + proto},
 		{"connected", who},
 		{"waiting", short(now.Sub(r.First)) + stFaint.Render(" since "+r.First.Local().Format("15:04:05"))},
@@ -1022,4 +1032,19 @@ func (m model) pendingLocal() []string {
 		}
 	}
 	return out
+}
+
+// riskLine is the analyzer's verdict on one line: the level, then the model's
+// title for it. Empty when the analyzer reported nothing.
+func riskLine(r *Review) string {
+	badge := riskBadge(r.Risk)
+	switch {
+	case badge == "" && r.Title == "":
+		return ""
+	case r.Title == "":
+		return badge
+	case badge == "":
+		return stStrong.Render(r.Title)
+	}
+	return badge + "  " + stStrong.Render(r.Title)
 }

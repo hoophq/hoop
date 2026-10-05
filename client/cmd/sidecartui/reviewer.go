@@ -35,6 +35,14 @@ type LocalReview struct {
 	Filed     time.Time
 	DecidedBy string
 	Decided   time.Time
+
+	// Why the analyzer held it (analyzer.HoldDetail): the level, the
+	// model's one-line title and its explanation, and the rule. Shown to
+	// the person deciding, who already sees the statement itself.
+	Risk  string
+	Title string
+	Why   string
+	Rule  string
 }
 
 // Reviewer is the review backend for a sidecar with no control plane: the
@@ -109,8 +117,9 @@ type laneReviewer struct {
 	listener string
 }
 
-func (l laneReviewer) File(_ context.Context, statement string) (analyzer.ReviewResult, error) {
-	return l.r.file(l.listener, statement)
+func (l laneReviewer) File(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
+	d, _ := analyzer.HoldDetailFrom(ctx)
+	return l.r.file(l.listener, statement, d)
 }
 
 func (l laneReviewer) Claim(_ context.Context, id string) (analyzer.ReviewResult, error) {
@@ -119,7 +128,7 @@ func (l laneReviewer) Claim(_ context.Context, id string) (analyzer.ReviewResult
 
 func openKey(listener, statement string) string { return listener + "\x00" + statement }
 
-func (r *Reviewer) file(listener, statement string) (analyzer.ReviewResult, error) {
+func (r *Reviewer) file(listener, statement string, d analyzer.HoldDetail) (analyzer.ReviewResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if id, ok := r.open[openKey(listener, statement)]; ok {
@@ -136,7 +145,8 @@ func (r *Reviewer) file(listener, statement string) (analyzer.ReviewResult, erro
 		return analyzer.ReviewResult{}, err
 	}
 	r.reviews[id] = &LocalReview{ID: id, Listener: listener, Statement: statement,
-		Status: statusPending, Filed: r.now()}
+		Status: statusPending, Filed: r.now(),
+		Risk: string(d.RiskLevel), Title: d.Title, Why: d.Explanation, Rule: d.Rule}
 	r.open[openKey(listener, statement)] = id
 	r.prune()
 	r.poke()

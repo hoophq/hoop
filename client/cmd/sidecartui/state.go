@@ -101,6 +101,14 @@ type Review struct {
 	Local     bool
 	DecidedBy string
 	Decided   time.Time
+
+	// The analyzer's verdict. Risk comes from the trail's risk_level as
+	// well; Title and Why only from the terminal's own reviewer, because
+	// the trail keeps model prose out.
+	Risk   string
+	Title  string
+	Why    string
+	AIRule string
 }
 
 // System is the process-level facts the startup log announces.
@@ -430,6 +438,12 @@ func (s *State) applyReview(id string, ev audit.Event) {
 	r.Last = ev.Timestamp
 	r.Lane = ev.Connection
 	r.Principal = ev.Principal
+	if lvl := ev.Metadata[metaRiskLevel]; lvl != "" {
+		r.Risk = lvl
+	}
+	if rule := ev.Metadata[metaAIRule]; rule != "" {
+		r.AIRule = rule
+	}
 	r.Mode = ev.Metadata[metaReviewMode]
 	r.Message = ev.Message
 	if r.Local {
@@ -461,6 +475,9 @@ func (s *State) ApplyLocalReview(lr LocalReview) {
 	r.Status = lr.Status
 	r.DecidedBy = lr.DecidedBy
 	r.Decided = lr.Decided
+	if lr.Risk != "" {
+		r.Risk, r.Title, r.Why, r.AIRule = lr.Risk, lr.Title, lr.Why, lr.Rule
+	}
 	if lr.Decided.After(r.Last) {
 		r.Last = lr.Decided
 	}
