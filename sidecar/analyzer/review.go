@@ -184,28 +184,12 @@ type Reviewer interface {
 // gives up sooner disconnects, which ends the wait without spending the
 // approval, so the caller's own deadline is the budget in practice. The lane's
 // idle_timeout_sec ends it too, since a waiting client sends nothing.
-//
-// The poll stays at reviewPoll for reviewPollFast, when an approver who is
-// already looking answers, then doubles up to reviewPollMax. One held
-// statement costs about 71 calls at these values instead of 360, which is
-// what the control plane pays per waiting statement across a whole fleet.
-// ReviewWait is exported so the daemon can compare it with a lane's idle
-// timeout.
+// One held statement costs ReviewWait/reviewPoll calls, 360 at these values.
+// Exported so the daemon can compare it with a lane's idle timeout.
 const (
-	ReviewWait     = 30 * time.Minute
-	reviewPoll     = 5 * time.Second
-	reviewPollFast = time.Minute
-	reviewPollMax  = 30 * time.Second
+	ReviewWait = 30 * time.Minute
+	reviewPoll = 5 * time.Second
 )
-
-// nextReviewPoll is the wait before the next claim, given the last one and
-// how long the hold has waited so far.
-func nextReviewPoll(last, waited, fast, ceiling time.Duration) time.Duration {
-	if waited < fast {
-		return last
-	}
-	return min(2*last, ceiling)
-}
 
 // hold resolves an ActionRequireReview verdict: it files the statement for
 // human approval, waits on the connection while the review is pending (or, in
@@ -310,10 +294,8 @@ func reviewText(stmt inspect.Statement) (string, error) {
 // at the deadline may already have spent the approval, so its answer is
 // honored.
 func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]string) policy.Verdict {
-	start := time.Now()
-	deadline := start.Add(e.reviewWait)
-	poll := e.reviewPoll
-	timer := time.NewTimer(poll)
+	deadline := time.Now().Add(e.reviewWait)
+	timer := time.NewTimer(e.reviewPoll)
 	defer timer.Stop()
 	for {
 		select {
@@ -348,8 +330,7 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 				"still waiting for approval after %s; run the statement again once it is approved",
 				e.reviewWait))
 		}
-		poll = nextReviewPoll(poll, time.Since(start), e.reviewPollFast, e.reviewPollMax)
-		timer.Reset(min(poll, left))
+		timer.Reset(min(e.reviewPoll, left))
 	}
 }
 

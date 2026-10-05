@@ -543,13 +543,6 @@ type SidecarHandshakeRequest struct {
 	//
 	// Optional. A build from before the field sends nothing.
 	LastError string `json:"last_error,omitempty" example:"the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""`
-	// ServedRevision is the hoop-sidecar-config-revision of the last
-	// configuration this sidecar received in full, applied or not. When the
-	// control plane would serve the same one, it answers 304 with no body.
-	//
-	// Optional. A sidecar too old to send it, and one on its first
-	// handshake, always receive the full configuration.
-	ServedRevision string `json:"served_revision,omitempty" example:"8f14e45fceea167a5a36dedd4bea2543"`
 }
 
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop

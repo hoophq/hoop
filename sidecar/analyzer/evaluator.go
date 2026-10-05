@@ -227,13 +227,11 @@ type Evaluator struct {
 	// their change to take effect would see nothing.
 	promptKey string
 
-	// reviewWait, reviewPoll, reviewPollFast and reviewPollMax pace a hold's
-	// wait. Fields rather than the constants read directly, so a test can
-	// shorten them; nothing outside the package can.
-	reviewWait     time.Duration
-	reviewPoll     time.Duration
-	reviewPollFast time.Duration
-	reviewPollMax  time.Duration
+	// reviewWait and reviewPoll pace a hold's wait. Fields rather than the
+	// constants read directly, so a test can shorten them; nothing outside
+	// the package can.
+	reviewWait time.Duration
+	reviewPoll time.Duration
 
 	// holds reports that some risk level on this lane waits for a human.
 	//
@@ -293,16 +291,14 @@ func New(cfg Config) (*Evaluator, error) {
 		budget = new(Budget)
 	}
 	return &Evaluator{
-		cfg:            cfg,
-		cache:          newCache(cfg.CacheSize, cfg.CacheTTL),
-		prompt:         prompt,
-		promptKey:      fingerprint(prompt),
-		holds:          holds,
-		budget:         budget,
-		reviewWait:     ReviewWait,
-		reviewPoll:     reviewPoll,
-		reviewPollFast: reviewPollFast,
-		reviewPollMax:  reviewPollMax,
+		cfg:        cfg,
+		cache:      newCache(cfg.CacheSize, cfg.CacheTTL),
+		prompt:     prompt,
+		promptKey:  fingerprint(prompt),
+		holds:      holds,
+		budget:     budget,
+		reviewWait: ReviewWait,
+		reviewPoll: reviewPoll,
 	}, nil
 }
 

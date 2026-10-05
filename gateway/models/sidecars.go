@@ -78,17 +78,6 @@ type Sidecar struct {
 	// daemon.CapabilitiesHeader. Nil until the sidecar handshakes; empty for
 	// a build too old to send the header.
 	Capabilities pq.StringArray `gorm:"column:capabilities;type:text[]"`
-
-	// ServedGen is the org's sidecar_config_gens.gen the served document was
-	// composed at, and ComposedAt when. A handshake skips the compose while
-	// ServedGen still equals OrgConfigGen (migration 000128). NULL until a
-	// handshake composes.
-	ServedGen  *int64     `gorm:"column:served_gen"`
-	ComposedAt *time.Time `gorm:"column:composed_at"`
-	// OrgConfigGen is read with the row, never written through it: only
-	// GetSidecarByKeyHash selects it, in the same statement as Configuration,
-	// so the two cannot come from different writes.
-	OrgConfigGen int64 `gorm:"column:org_config_gen;->"`
 }
 
 const sidecarColumns = `
@@ -185,11 +174,8 @@ func GetSidecarByNameOrIDForUpdate(tx *gorm.DB, orgID, nameOrID string) (*Sideca
 func GetSidecarByKeyHash(db *gorm.DB, keyHash string) (*Sidecar, error) {
 	var item Sidecar
 	err := db.Raw(`
-	SELECT s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
-		s.reported_version, s.served_revision, s.last_outcome, s.capabilities,
-		s.served_gen, s.composed_at, COALESCE(g.gen, 0) AS org_config_gen
+	SELECT s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration
 	FROM private.sidecars s
-	LEFT JOIN private.sidecar_config_gens g ON g.org_id = s.org_id
 	WHERE s.key_hash = ?`, keyHash).
 		Scan(&item).
 		Error
@@ -358,11 +344,7 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 // A SidecarOutcomeNotServed is the plane's own verdict, so this handshake,
 // which the plane did serve, ends it whatever the sidecar reports: the
 // sidecar never received the document it names and holds nothing about it.
-//
-// composedGen is the org gen the plane composed servedRevision at. Nil keeps
-// served_gen and composed_at: the plane skipped the compose and served the
-// revision it already recorded.
-func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string, composedGen *int64) error {
+func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string) error {
 	if capabilities == nil {
 		capabilities = []string{}
 	}
@@ -381,14 +363,11 @@ func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, la
 		served_revision_at = CASE WHEN served_revision IS DISTINCT FROM NULLIF(@served, '')
 			THEN NOW() ELSE served_revision_at END,
 		served_revision = NULLIF(@served, ''),
-		capabilities = @capabilities,
-		served_gen = CASE WHEN @composed THEN @gen ELSE served_gen END,
-		composed_at = CASE WHEN @composed THEN NOW() ELSE composed_at END
+		capabilities = @capabilities
 	WHERE id = @id`, map[string]any{
 		"version": version, "applied": appliedRevision, "outcome": lastOutcome, "error": lastError,
 		"served": servedRevision, "capabilities": pq.StringArray(capabilities), "id": sidecarID,
 		"not_served": SidecarOutcomeNotServed,
-		"composed":   composedGen != nil, "gen": composedGen,
 	}).Error
 }
 

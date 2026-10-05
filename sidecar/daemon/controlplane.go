@@ -119,13 +119,6 @@ type controlPlane struct {
 	// Run can say so once. Empty when no local source held a document.
 	ignoredLicense string
 
-	// served is the last document the plane answered with in full. Its
-	// revision rides on the next heartbeat, and a plane that would serve
-	// the same document answers 304; served.raw then goes to the reloader
-	// again, so a document still being retried is retried. Empty against a
-	// gateway that sends no revision, which then always answers in full.
-	served handshakeAnswer
-
 	// every overrides the heartbeat interval. Zero means heartbeatEvery,
 	// which is what every deployment runs; a test sets it so a case about
 	// what a heartbeat does is not also a case about waiting a minute.
@@ -299,7 +292,7 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 		local.ControlPlaneURL = planeURL
 		local.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
 			lastRaw: raw, diskMode: true, license: planeDoc.License, licenseManaged: managed,
-			revision: answer.revision, served: answer}
+			revision: answer.revision}
 		return local, nil
 	}
 	imported := false
@@ -349,7 +342,7 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	// what it reports here.
 	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
 		lastRaw: raw, imported: imported, license: planeLicense, licenseManaged: managed,
-		revision: answer.revision, outcome: reloadApplied.String(), served: answer}
+		revision: answer.revision, outcome: reloadApplied.String()}
 	if !imported && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
@@ -373,11 +366,6 @@ type handshakeRequest struct {
 	// stores it beside the outcome and shows it on the sidecar page, so an
 	// admin reads the reason without the sidecar's log.
 	LastError string `json:"last_error,omitempty"`
-	// ServedRevision is the ConfigRevisionHeader of the last document the
-	// plane sent in full, applied or not. A plane that would send the same
-	// one answers 304 with no body (errNotModified). Omitted on the boot
-	// handshake, which needs the body whatever the plane holds.
-	ServedRevision string `json:"served_revision,omitempty"`
 }
 
 // handshakeAnswer is one handshake's result: the document, and the two facts
@@ -440,12 +428,6 @@ func fetchControlPlaneConfig(baseURL, token string, hs handshakeRequest) (answer
 			managed:  resp.Header.Get(LicenseManagedHeader) == "true",
 			revision: resp.Header.Get(ConfigRevisionHeader),
 		}, nil
-	case http.StatusNotModified:
-		if hs.ServedRevision == "" {
-			return handshakeAnswer{}, fmt.Errorf("the control plane at %s answered 304 to a handshake "+
-				"that named no served revision", baseURL)
-		}
-		return handshakeAnswer{}, errNotModified
 	case http.StatusUnauthorized:
 		// Not self-healing: a mistyped token and a deleted sidecar both land
 		// here, and the plane shows the token once at creation, so a lost
@@ -513,11 +495,6 @@ func (cp *controlPlane) reimport(log *slog.Logger, rl *reloader) (handshakeAnswe
 // token and holds nothing to serve. resolveConfigSource turns it into an
 // import when the local file can supply the document.
 var errPlaneHasNoConfig = errors.New("the control plane has no configuration for this sidecar")
-
-// errNotModified marks the handshake's 304: the plane would serve the
-// document named by handshakeRequest.ServedRevision again. The caller holds
-// that document; the plane did not send it.
-var errNotModified = errors.New("the control plane configuration is unchanged")
 
 // errPlaneAlreadyConfigured marks the import's 409: a configuration landed
 // on the plane between the handshake and the push. The concurrent author
@@ -705,12 +682,8 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			AppliedRevision: cp.revision,
 			LastOutcome:     cp.outcome,
 			LastError:       cp.reason,
-			ServedRevision:  cp.served.revision,
 		})
-		switch {
-		case errors.Is(err, errNotModified):
-			answer, err = cp.served, nil
-		case errors.Is(err, errPlaneHasNoConfig):
+		if errors.Is(err, errPlaneHasNoConfig) {
 			answer, err = cp.reimport(log, rl)
 		}
 		if err != nil {
@@ -719,7 +692,6 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 				"url", cp.url, "error", err)
 			continue
 		}
-		cp.served = answer
 		outcome := rl.handle(log, answer.raw)
 		cp.outcome = outcome.String()
 		cp.reason = ""

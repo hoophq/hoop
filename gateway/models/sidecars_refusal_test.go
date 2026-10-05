@@ -70,7 +70,7 @@ func TestAServeRefusalEndsWithTheNextServedHandshake(t *testing.T) {
 	}
 	serve := func(applied, outcome string) *models.Sidecar {
 		t.Helper()
-		if err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.190.0", applied, outcome, "", "rev-1", []string{}, nil); err != nil {
+		if err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.190.0", applied, outcome, "", "rev-1", []string{}); err != nil {
 			t.Fatalf("serve: %v", err)
 		}
 		got, err := models.GetSidecarByNameOrID(models.DB, testOrgID, sc.Name)
