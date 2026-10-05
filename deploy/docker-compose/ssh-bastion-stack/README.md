@@ -9,7 +9,7 @@ Managed instances run an image you do not control. Hosts sit under
 change-freeze. And "inspect these twelve hosts by Friday" cannot mean twelve
 installs. For those the choice today is no inspection at all.
 
-This stack is the fourth topology — ADR-0021 — where the **bastion is the
+This stack is the fourth topology — ADR-0027 — where the **bastion is the
 endpoint and the target runs nothing**:
 
 ```
@@ -56,7 +56,7 @@ changes shape: ADR-0015's modes degrade per host, this one takes the fleet.
 ```
 
 `./run.sh` needs a `libhoop` checkout, which is a **private** module — so this
-stack is runnable by hoop engineers alone until ADR-0021 ships in a release.
+stack is runnable by hoop engineers alone until ADR-0027 ships in a release.
 There is no published-image mode, deliberately: a released image carries no
 relay code, and a stack whose whole subject was missing would fail in a way
 that looks like a configuration mistake.

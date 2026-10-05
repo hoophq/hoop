@@ -4,7 +4,7 @@
 #
 # ADR-0015's three topologies all put the inspecting endpoint on the TARGET,
 # which needs a hoop sidecar on every host you want to inspect. This stack is
-# ADR-0021's answer to the hosts where that does not hold: appliances that
+# ADR-0027's answer to the hosts where that does not hold: appliances that
 # take configuration but not binaries, managed instances whose image we do not
 # control, hosts under change-freeze, and an evaluation where "inspect these
 # twelve hosts by Friday" cannot mean twelve installs.

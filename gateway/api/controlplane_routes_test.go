@@ -24,7 +24,7 @@ func routeSet(engine *gin.Engine) map[string]bool {
 // The control plane serves exactly the routes the gateway serves, the web UI
 // included; only the /healthz handler differs. A route added to the gateway
 // reaches the control plane by construction, and this test fails when either
-// surface drifts from the other (ADR-0013).
+// surface drifts from the other (ADR-0024).
 func TestControlPlaneServesEveryGatewayRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	gateway := routeSet((&Api{}).buildEngine(appconfig.AppModeGateway))
