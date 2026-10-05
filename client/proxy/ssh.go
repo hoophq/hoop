@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,7 +29,25 @@ import (
 	"golang.org/x/term"
 )
 
-var clog = charmlog.New(os.Stderr)
+// The SSH proxy's logger, built on first use and never at package init.
+// charmbracelet/log asks the terminal for its colors when a logger is made,
+// and a terminal that does not answer stalls that for up to ten seconds; at
+// package init the stall hit every hoop command, not only `hoop connect` on
+// an SSH connection.
+var (
+	clogMu sync.Mutex
+	clog   *charmlog.Logger
+)
+
+// sshLog returns the logger NewSSHServer configured, or a default one.
+func sshLog() *charmlog.Logger {
+	clogMu.Lock()
+	defer clogMu.Unlock()
+	if clog == nil {
+		clog = charmlog.New(os.Stderr)
+	}
+	return clog
+}
 
 // from syscall.SIGWINCH, avoid syscall errors when compiling on Windows
 const SIGWINCH = syscall.Signal(0x1c)
@@ -52,10 +71,13 @@ func NewSSHServer(listenPort, connName string, client pb.ClientTransport, hostKe
 	if isDebug {
 		logLevel = charmlog.DebugLevel
 	}
-	clog = charmlog.NewWithOptions(os.Stderr, charmlog.Options{
+	logger := charmlog.NewWithOptions(os.Stderr, charmlog.Options{
 		Level:  logLevel,
 		Prefix: fmt.Sprintf("%s 🔒", connName),
 	})
+	clogMu.Lock()
+	clog = logger
+	clogMu.Unlock()
 	listenHost := getListenAddr(defaultListenAddr(defaultSSHPort))
 	if listenPort == "" {
 		var err error
@@ -116,7 +138,7 @@ func (p *SSHServer) Serve(sid string) error {
 			connectionID++
 			conn, err := lis.Accept()
 			if err != nil {
-				clog.Debugf("failed obtain listening connection, err=%v", err)
+				sshLog().Debugf("failed obtain listening connection, err=%v", err)
 				lis.Close()
 				break
 			}
@@ -124,17 +146,17 @@ func (p *SSHServer) Serve(sid string) error {
 		}
 	}()
 
-	clog.Infof("proxy started, ready to accept connections at %s", p.listenHost.Addr())
+	sshLog().Infof("proxy started, ready to accept connections at %s", p.listenHost.Addr())
 	if !p.isSshClientExec {
-		clog.Infof("use the ssh client command below to connect in another terminal")
-		clog.Info(fmt.Sprintf("ssh %s -p %s -o StrictHostKeyChecking=no", p.listenHost.Host, p.listenHost.Port))
+		sshLog().Infof("use the ssh client command below to connect in another terminal")
+		sshLog().Info(fmt.Sprintf("ssh %s -p %s -o StrictHostKeyChecking=no", p.listenHost.Host, p.listenHost.Port))
 	}
 	return nil
 }
 
 func (p *SSHServer) serveConn(sid, connectionID string, conn net.Conn) {
 	defer func() {
-		clog.Debug("closing ssh connection", "sid", sid, "conn", connectionID, "remote", conn.RemoteAddr())
+		sshLog().Debug("closing ssh connection", "sid", sid, "conn", connectionID, "remote", conn.RemoteAddr())
 		p.connectionStore.Del(connectionID)
 		_ = conn.Close()
 		_ = p.client.Send(&pb.Packet{
@@ -148,14 +170,14 @@ func (p *SSHServer) serveConn(sid, connectionID string, conn net.Conn) {
 	p.connectionStore.Set(connectionID, conn)
 	sshConn, clientNewCh, sshReq, err := ssh.NewServerConn(conn, p.serverConfig)
 	if err != nil {
-		clog.Debugf("session=%v | conn=%v - failed to establish handshake with client: %v", sid, connectionID, err)
+		sshLog().Debugf("session=%v | conn=%v - failed to establish handshake with client: %v", sid, connectionID, err)
 		conn.Close()
 		return
 	}
 	go ssh.DiscardRequests(sshReq)
 	defer sshConn.Close()
 
-	clog.Debug("ssh connection established", "sid", sid, "conn", connectionID, "remote", conn.RemoteAddr())
+	sshLog().Debug("ssh connection established", "sid", sid, "conn", connectionID, "remote", conn.RemoteAddr())
 	spec := map[string][]byte{
 		string(pb.SpecGatewaySessionID):   []byte(sid),
 		string(pb.SpecClientConnectionID): []byte(connectionID),
@@ -190,7 +212,7 @@ func (p *SSHServer) runSSHClient() error {
 	// TODO: check if ssh command exists
 	p.sshClientExec = exec.Command("ssh", p.listenHost.Host, "-p", p.listenHost.Port, "-o", "StrictHostKeyChecking=no")
 
-	clog.Info(p.sshClientExec.String())
+	sshLog().Info(p.sshClientExec.String())
 	fmt.Fprintln(os.Stderr, "")
 
 	ptmx, err := pty.Start(p.sshClientExec)
@@ -206,7 +228,7 @@ func (p *SSHServer) runSSHClient() error {
 	go func() {
 		for range sig {
 			if err := pty.InheritSize(os.Stdin, ptmx); err != nil {
-				clog.Warnf("error resizing pty: %s", err)
+				sshLog().Warnf("error resizing pty: %s", err)
 			}
 		}
 	}()
@@ -216,13 +238,13 @@ func (p *SSHServer) runSSHClient() error {
 	// NOTE: The goroutine will keep reading until the next keystroke before returning.
 	go func() {
 		if _, err = io.Copy(ptmx, os.Stdin); err != nil {
-			clog.Warnf("error copying stdin to pty: %s", err)
+			sshLog().Warnf("error copying stdin to pty: %s", err)
 		}
 	}()
 
 	go func() {
 		if _, err = io.Copy(os.Stdout, ptmx); err != nil {
-			clog.Warnf("error copying pty to stdout: %s", err)
+			sshLog().Warnf("error copying pty to stdout: %s", err)
 		}
 	}()
 
@@ -240,7 +262,7 @@ func (p *SSHServer) handleChannel(newCh ssh.NewChannel, streamW io.Writer, connI
 	chType, chExtra := newCh.ChannelType(), newCh.ExtraData()
 	clientCh, clientRequests, err := newCh.Accept()
 	if err != nil {
-		clog.With("ch", channelID, "conn", connID).Debugf("failed obtaining channel, err=%v", err)
+		sshLog().With("ch", channelID, "conn", connID).Debugf("failed obtaining channel, err=%v", err)
 		return
 	}
 
@@ -251,7 +273,7 @@ func (p *SSHServer) handleChannel(newCh ssh.NewChannel, streamW io.Writer, connI
 		ChannelExtraData: chExtra,
 	}).Encode()
 	if _, err := streamW.Write([]byte(openChData)); err != nil {
-		clog.With("ch", channelID, "conn", connID).Debugf("unable to write open channel to stream, err=%v", err)
+		sshLog().With("ch", channelID, "conn", connID).Debugf("unable to write open channel to stream, err=%v", err)
 		return
 	}
 
@@ -278,9 +300,9 @@ func (p *SSHServer) handleChannel(newCh ssh.NewChannel, streamW io.Writer, connI
 		// its output back. The channel is closed later when the agent sends
 		// CloseChannel (handled in PacketWriteClient).
 		if _, werr := streamW.Write((sshtypes.EOF{ChannelID: channelID}).Encode()); werr != nil {
-			clog.With("ch", channelID, "conn", connID).Debugf("failed sending EOF to stream, err=%v", werr)
+			sshLog().With("ch", channelID, "conn", connID).Debugf("failed sending EOF to stream, err=%v", werr)
 		}
-		clog.With("ch", channelID, "conn", connID).Debugf("done copying ssh buffer, err=%v", err)
+		sshLog().With("ch", channelID, "conn", connID).Debugf("done copying ssh buffer, err=%v", err)
 	}()
 
 	go func() {
@@ -304,10 +326,10 @@ func (p *SSHServer) handleChannel(newCh ssh.NewChannel, streamW io.Writer, connI
 				WantReply:   req.WantReply,
 				Payload:     req.Payload,
 			}).Encode()
-			clog.With("ch", channelID, "conn", connID, "type", req.Type).Debug("received client ssh request")
+			sshLog().With("ch", channelID, "conn", connID, "type", req.Type).Debug("received client ssh request")
 			_, err := streamW.Write([]byte(data))
 			if err != nil {
-				clog.With("ch", channelID, "conn", connID).Debugf("failed writing to stream, err=%v", err)
+				sshLog().With("ch", channelID, "conn", connID).Debugf("failed writing to stream, err=%v", err)
 				return
 			}
 			// The command request has now been forwarded ahead of any stdin data:
@@ -319,12 +341,12 @@ func (p *SSHServer) handleChannel(newCh ssh.NewChannel, streamW io.Writer, connI
 			}
 			if req.WantReply {
 				if err := req.Reply(true, nil); err != nil {
-					clog.With("ch", channelID, "conn", connID).Debugf("failed sending response to channel, err=%v", err)
+					sshLog().With("ch", channelID, "conn", connID).Debugf("failed sending response to channel, err=%v", err)
 					return
 				}
 			}
 		}
-		clog.With("ch", channelID, "conn", connID).Debugf("done processing ssh client requests")
+		sshLog().With("ch", channelID, "conn", connID).Debugf("done processing ssh client requests")
 	}()
 }
 
@@ -362,7 +384,7 @@ func (p *SSHServer) PacketWriteClient(connectionID string, pkt *pb.Packet) (int,
 			_ = p.Close()
 			// break line to separate the output
 			fmt.Fprintln(os.Stderr, "")
-			clog.Infof("ssh client disconnected")
+			sshLog().Infof("ssh client disconnected")
 		}
 
 		obj := p.connectionStore.Get(fmt.Sprintf("%s:%v", connectionID, cc.ID))
@@ -464,7 +486,7 @@ func getAvailableLocalAddress(sshHost, sshPort string) (host Host, err error) {
 		sshPortInt++
 		addr := fmt.Sprintf("%s:%d", sshHost, sshPortInt)
 		isAvailable := isAddressAvailable(addr)
-		clog.Debug("checking address local availability", "addr", addr, "available", isAvailable)
+		sshLog().Debug("checking address local availability", "addr", addr, "available", isAvailable)
 		if isAvailable {
 			host = Host{
 				Host: sshHost,

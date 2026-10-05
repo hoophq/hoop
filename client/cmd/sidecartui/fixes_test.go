@@ -164,7 +164,7 @@ func TestUntrustedTextCannotDriveTheTerminal(t *testing.T) {
 		"DELETE FROM t\x1b[2K\x1b[1A SELECT 1": "DELETE FROM t␛[2K␛[1A SELECT 1",
 		"a\rb":                                 `a\x0db`,
 		"ok\x07":                               `ok\x07`,
-		"x\u202ey": "x\\u202ey",
+		"x\u202ey":                             "x\\u202ey",
 		"bad\xffbyte":                          `bad\xffbyte`,
 		"multi\nline\twith tab":                "multi\nline\twith tab",
 		"naïve – plain":                        "naïve – plain",

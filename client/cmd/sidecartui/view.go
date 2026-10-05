@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/hoophq/hoop/sidecar/audit"
-	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
 // chrome is the rows above the body: the two header rows and the hints row.
@@ -124,52 +123,6 @@ func chip(icon, n, label string, st lipgloss.Style, lit bool) string {
 		return stFaint.Render(icon + " " + n + " " + label)
 	}
 	return st.Render(icon) + " " + stBold.Render(n) + " " + stFaint.Render(label)
-}
-
-// menu is the section list on the left. The current section has the soft
-// selection background and a blue bar; a section with something waiting on
-// a person (an approval) shimmers until the person goes there.
-func (m model) menu(w, h int) string {
-	inner := w - 4
-	lines := []string{stLabel.Render("SECTIONS"), ""}
-	for i := range tabCount {
-		label := fmt.Sprintf("%d %s", i+1, tabNames[i])
-		count := ""
-		switch i {
-		case tabSessions:
-			if n := len(m.st.OpenSessions()); n > 0 {
-				count = num(n)
-			}
-		case tabReviews:
-			if n := m.st.PendingReviews(); n > 0 {
-				count = num(n)
-			}
-		case tabLanes:
-			if n := len(m.st.LaneOrder); n > 0 {
-				count = num(n)
-			}
-		case tabSystem:
-			if len(m.st.Warnings) > 0 {
-				count = "⚠"
-			}
-		}
-		text := label + strings.Repeat(" ", max(inner-1-lipgloss.Width(label)-lipgloss.Width(count), 1)) + count
-		switch {
-		case i == m.tab && m.menuFocus:
-			lines = append(lines, stPrimary.Background(colSelBg).Render("▌")+
-				stPrimary.Background(colSelBg).Width(inner-1).Render(text))
-		case i == m.tab:
-			// The section the content shows, while the arrows are in it:
-			// marked, without the bar that says "the arrows move here".
-			lines = append(lines, " "+stStrong.Background(colSelBg).Width(inner-1).Render(text))
-		case i == tabReviews && count != "":
-			lines = append(lines, " "+shimmer(text, m.now()))
-		default:
-			lines = append(lines, " "+stText.Render(label)+
-				strings.Repeat(" ", max(inner-1-lipgloss.Width(label)-lipgloss.Width(count), 1))+stFaint.Render(count))
-		}
-	}
-	return pane("", strings.Join(lines, "\n"), w, h)
 }
 
 type keyHint [2]string
@@ -320,41 +273,6 @@ func pane(title, content string, w, h int) string {
 	return stPane.Width(w).Height(inner + 2).Render(strings.Join(lines, "\n"))
 }
 
-// list renders the visible window of rows around the selection. The selected
-// row gets a blue bar and the soft background across its whole width.
-func (m model) list(keys []string, sel, w, h int) string {
-	if len(keys) == 0 {
-		return m.empty(w)
-	}
-	// The column header takes the first row, so a newcomer reads what each
-	// column is before reading any row.
-	var rows []string
-	if head := m.columns(); head != "" {
-		rows = append(rows, " "+stLabel.Bold(true).Render(ansi.Truncate(head, w-1, "…")))
-		h--
-	}
-	h = max(h, 1)
-	off := 0
-	if sel >= h {
-		off = sel - h + 1
-	}
-	for i := off; i < len(keys) && i < off+h; i++ {
-		row := ansi.Truncate(m.row(keys[i], w-1), w-1, "…")
-		switch {
-		case i == sel && !m.menuFocus:
-			row = stPrimary.Background(colSelBg).Render("▌") + withBackground(row, w-1)
-		case i == sel:
-			// The arrows are in the menu: the row keeps its background so
-			// the details beside it still say which row they describe.
-			row = " " + withBackground(row, w-1)
-		default:
-			row = " " + row
-		}
-		rows = append(rows, row)
-	}
-	return strings.Join(rows, "\n")
-}
-
 // withBackground paints the selection background under an already styled
 // row, padded to width. Wrapping the row in a lipgloss style would not do:
 // each colored segment inside ends with a reset, which clears the background
@@ -418,49 +336,6 @@ func (m model) empty(w int) string {
 	return lipgloss.NewStyle().Width(w).Render(b.String())
 }
 
-func (m model) row(key string, w int) string {
-	switch m.tab {
-	case tabWire:
-		i, _ := strconv.Atoi(key)
-		return wireRow(m.st.Feed[i-m.st.FeedDropped])
-	case tabSessions:
-		return sessionRow(m.st.Sessions[key], m.now())
-	case tabReviews:
-		return reviewRow(m.st.Reviews[key], m.now())
-	case tabLanes:
-		return m.laneRow(m.st.Lanes[key])
-	case tabLogs:
-		i, _ := strconv.Atoi(key)
-		return logRow(m.st.Logs[i-m.st.LogsDropped])
-	}
-	return ""
-}
-
-// columns is the header row of the current section's list. Each label is
-// cut to the width its row column uses (the same col widths the rows use),
-// so a header cannot drift from the rows under it.
-func (m model) columns() string {
-	join := func(cells ...string) string { return strings.Join(cells, " ") }
-	right := func(s string, w int) string { return fmt.Sprintf("%*s", w, s) }
-	switch m.tab {
-	case tabWire:
-		return join(col("TIME", 8), col("VERDICT", 8), col("LISTENER", 12), col("USER", 16),
-			"WHAT WENT THROUGH")
-	case tabSessions:
-		return join(col("STATE", 8), col("LISTENER", 12), col("USER", 14), col("PROTO", 6),
-			right("TIME", 6), right("STMT", 4), right("DENY", 4), right("MASK", 4), "LAST STATEMENT")
-	case tabReviews:
-		return join(col("STATUS", 11), col("RISK", 5), col("APPROVAL", 14), col("LISTENER", 12),
-			col("USER", 16), col("LAST SEEN", 11), "STATEMENT")
-	case tabLanes:
-		return join(" ", col("NAME", 12), col("MODE", 8), right("CONN", 4), col("PROTOCOL", 8),
-			"LISTEN → UPSTREAM")
-	case tabLogs:
-		return join(col("TIME", 8), col("LEVEL", 5), "MESSAGE")
-	}
-	return ""
-}
-
 func clock(t time.Time) string {
 	if t.IsZero() {
 		return "--:--:--"
@@ -473,132 +348,11 @@ func col(s string, w int) string {
 	return s + strings.Repeat(" ", max(w-lipgloss.Width(s), 0))
 }
 
-func wireRow(ev audit.Event) string {
-	parts := []string{
-		stFaint.Render(clock(ev.Timestamp)),
-		verdictBadge(string(ev.Kind), ev.Allowed),
-		stText.Render(col(ev.Connection, 12)),
-		col(ev.Principal, 16),
-	}
-	switch ev.Kind {
-	case audit.KindStatement, audit.KindViolation:
-		if ev.Direction == inspect.FromServer {
-			// A response the upstream sent back: its operation is
-			// unknown by construction, and the arrow says more.
-			parts = append(parts, stFaint.Render(col("↩ RESP", 7)))
-		} else {
-			parts = append(parts, stBold.Render(col(strings.ToUpper(string(ev.Operation)), 7)))
-		}
-		if r := riskBadge(ev.Metadata[metaRiskLevel]); r != "" {
-			parts = append(parts, r)
-		}
-		if rid := ev.Metadata[metaReviewID]; rid != "" {
-			parts = append(parts, stPrimary.Render("⧗"))
-		}
-		text := oneLine(ev.Statement)
-		if ev.HTTP != nil && text == "" {
-			text = strings.TrimSpace(ev.HTTP.Method + " " + ev.HTTP.Path)
-		}
-		parts = append(parts, text)
-		if ev.Kind == audit.KindViolation && ev.Rule != "" {
-			parts = append(parts, stDanger.Render("["+ev.Rule+"]"))
-		}
-	case audit.KindMasked:
-		parts = append(parts, stStrong.Render(fmt.Sprintf("%d value(s)", max(ev.MaskedCount, 1))),
-			stFaint.Render(strings.Join(ev.MaskedEntities, ", ")))
-	case audit.KindError:
-		parts = append(parts, stDanger.Render(oneLine(ev.Error)))
-	case audit.KindActivity:
-		parts = append(parts, stText.Render(ev.Metadata[metaActivity]), stFaint.Render(oneLine(ev.Message)))
-	case audit.KindSessionStart:
-		parts = append(parts, stFaint.Render(protocolText(ev)+" session "+shortID(string(ev.SessionID))))
-	case audit.KindSessionEnd:
-		parts = append(parts, stFaint.Render(fmt.Sprintf("after %s · %d statements · %d denied",
-			short(ev.Duration), ev.StatementCount, ev.DeniedCount)))
-	}
-	return strings.Join(parts, " ")
-}
-
-func protocolText(ev audit.Event) string { return string(ev.Protocol) }
-
 func shortID(id string) string {
 	if len(id) > 8 {
 		return id[:8]
 	}
 	return id
-}
-
-func sessionRow(s *Session, now time.Time) string {
-	if s == nil {
-		return ""
-	}
-	state := stPrimary.Render("● open  ")
-	if !s.Open {
-		state = stFaint.Render("○ closed")
-	}
-	// Counts as icon columns, the header's vocabulary: ▸ statements,
-	// ✕ denied, ▒ masked. Words would push the last statement off a
-	// 120-column screen, and it is the column that says what happened.
-	counts := func(n int, icon string, lit lipgloss.Style) string {
-		s := fmt.Sprintf("%3d%s", n, icon)
-		if n == 0 {
-			return stFaint.Render(s)
-		}
-		return lit.Render(s)
-	}
-	return strings.Join([]string{
-		state,
-		stText.Render(col(s.Lane, 12)),
-		col(s.Principal, 14),
-		protocolBadge(col(s.Protocol, 6)),
-		stFaint.Render(fmt.Sprintf("%6s", short(s.Duration(now)))),
-		counts(s.Statements, "▸", stBold),
-		counts(s.Denied, "✕", stDanger),
-		counts(s.Masked, "▒", stStrong),
-		stFaint.Render(oneLine(s.Last)),
-	}, " ")
-}
-
-func reviewRow(r *Review, now time.Time) string {
-	if r == nil {
-		return ""
-	}
-	risk := riskBadge(r.Risk)
-	if risk == "" {
-		risk = stFaint.Render("—")
-	}
-	return strings.Join([]string{
-		col(reviewBadge(r.Status), 11),
-		col(risk, 5),
-		stBold.Render(col(r.ID, 14)),
-		stText.Render(col(r.Lane, 12)),
-		col(r.Principal, 16),
-		stFaint.Render(fmt.Sprintf("%7s ago", short(now.Sub(r.Last)))),
-		oneLine(r.Statement),
-	}, " ")
-}
-
-func (m model) laneRow(l *Lane) string {
-	if l == nil {
-		return ""
-	}
-	dot := stFaint.Render("○")
-	if l.Ready {
-		dot = stPrimary.Render("●")
-	}
-	active := stFaint.Render(fmt.Sprintf("%3d●", m.st.Active(l.Name)))
-	if n := m.st.Active(l.Name); n > 0 {
-		active = stPrimary.Render(fmt.Sprintf("%3d●", n))
-	}
-	return strings.Join([]string{
-		dot,
-		stStrong.Render(col(l.Name, 12)),
-		laneMode(l),
-		active,
-		protocolBadge(col(l.Protocol, 8)),
-		orDash(l.Listen),
-		stFaint.Render("→ " + orDash(l.Upstream)),
-	}, " ")
 }
 
 func laneMode(l *Lane) string {
@@ -611,15 +365,6 @@ func laneMode(l *Lane) string {
 		return stPrimary.Render(col("ENFORCE", 8))
 	}
 	return stFaint.Render(col("AUDIT", 8))
-}
-
-func logRow(r LogRecord) string {
-	var attrs []string
-	for _, a := range r.Attrs {
-		attrs = append(attrs, a.Key+"="+quoteValue(a.Value))
-	}
-	return stFaint.Render(clock(r.Time)) + " " + levelStyle(r.Level).Render(col(r.Level, 5)) + " " +
-		r.Msg + " " + stFaint.Render(strings.Join(attrs, " "))
 }
 
 func orDash(s string) string {
