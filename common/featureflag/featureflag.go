@@ -30,6 +30,10 @@ type Flag struct {
 	Components  []Component
 }
 
+// FlagSidecarListeners is the one place the flag name is spelled: the catalog
+// key and every IsEnabled call read it from here.
+const FlagSidecarListeners = "beta.sidecar_listeners"
+
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
@@ -136,6 +140,13 @@ var catalog = map[string]Flag{
 		Description: "Offer the MCP Gateway (mcpproxy) resource type in the webapp catalog, so admins can create protocol-aware MCP connections: tool-level allow/deny, per-tool approval, rug-pull detection and structured tool-call audit, over remote (streamable-http/sse) or stdio backends run either on the agent or on each user's own machine. When off, the card is hidden and no new MCP Gateway connection can be created; connections that already exist keep working end to end, and their role form, edit view and Connect modal stay reachable.",
 		Default:     false,
 		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	FlagSidecarListeners: {
+		Name:        FlagSidecarListeners,
+		Description: "Manage sidecar listeners from Resources, with the same guardrails, data masking, reviews and access rules as any other resource.",
+		Default:     false,
+		Stability:   StabilityBeta,
 		Components:  []Component{ComponentGateway},
 	},
 }

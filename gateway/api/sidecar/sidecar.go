@@ -142,6 +142,11 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 				return err
 			}
 		}
+		// After the checks: a write they refuse never touches connections,
+		// and a binding error outranks a mirror error.
+		if err := services.SyncSidecarListenerConnectionsTx(tx, sc); err != nil {
+			return err
+		}
 		item = sc
 		return nil
 	})
@@ -157,6 +162,9 @@ func answerSidecarWrite(c *gin.Context, err error) {
 	var configInvalid services.ErrSidecarConfigInvalid
 	var missing services.ErrSidecarCapabilityMissing
 	var invalid services.ErrSidecarAnalyzerInvalid
+	var unmirrored services.ErrSidecarListenerInvalid
+	var nameTaken models.ErrSidecarConnectionNameTaken
+	var inUse models.ErrSidecarConnectionInUse
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
@@ -172,6 +180,12 @@ func answerSidecarWrite(c *gin.Context, err error) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid.Error()})
 	case errors.Is(err, errSwitchNeedsPatch):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+	case errors.As(err, &unmirrored):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": unmirrored.Error()})
+	case errors.As(err, &nameTaken):
+		c.JSON(http.StatusConflict, gin.H{"message": nameTaken.Error()})
+	case errors.As(err, &inUse):
+		c.JSON(http.StatusConflict, gin.H{"message": inUse.Error()})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed writing sidecar configuration")
 	}
@@ -251,7 +265,13 @@ func Post(c *gin.Context) {
 		CreatedBy:     ctx.UserEmail,
 	}
 
-	switch err := models.CreateSidecar(models.DB, sidecar); {
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateSidecar(tx, sidecar); err != nil {
+			return err
+		}
+		return services.SyncSidecarListenerConnectionsTx(tx, sidecar)
+	})
+	switch {
 	case err == nil:
 		c.JSON(http.StatusCreated, openapi.SidecarCreateResponse{
 			SidecarResponse: toResponse(*sidecar),
@@ -260,7 +280,7 @@ func Post(c *gin.Context) {
 	case errors.Is(err, models.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"message": "a sidecar with this name already exists"})
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar")
+		answerSidecarWrite(c, err)
 	}
 }
 
@@ -359,20 +379,25 @@ func Get(c *gin.Context) {
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"Name or UUID of the sidecar"
 //	@Success		204
-//	@Failure		403,404,500	{object}	openapi.HTTPError
+//	@Failure		403,404,409,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	_, err := models.DeleteSidecarByNameOrID(models.DB, ctx.OrgID, c.Param("nameOrID"))
-	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
-			return
-		}
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		_, err := models.DeleteSidecarByNameOrID(tx, ctx.OrgID, c.Param("nameOrID"))
+		return err
+	})
+	var inUse models.ErrSidecarConnectionInUse
+	switch {
+	case err == nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, models.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+	case errors.As(err, &inUse):
+		c.JSON(http.StatusConflict, gin.H{"message": inUse.Error()})
+	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting sidecar")
-		return
 	}
-	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
 // Update Sidecar
@@ -385,7 +410,7 @@ func Delete(c *gin.Context) {
 //	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
 //	@Param			request				body		openapi.SidecarUpdateRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarResponse
-//	@Failure		400,403,404,500		{object}	openapi.HTTPError
+//	@Failure		400,403,404,409,500	{object}	openapi.HTTPError
 //	@Failure		422					{object}	openapi.SidecarConfigError
 //	@Router			/sidecars/{nameOrID} [put]
 func Put(c *gin.Context) {
@@ -450,7 +475,7 @@ func Put(c *gin.Context) {
 //	@Param			nameOrID			path		string						true	"Name or UUID of the sidecar"
 //	@Param			request				body		openapi.SidecarPatchRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarResponse
-//	@Failure		400,403,404,500		{object}	openapi.HTTPError
+//	@Failure		400,403,404,409,500	{object}	openapi.HTTPError
 //	@Failure		422					{object}	openapi.SidecarConfigError
 //	@Router			/sidecars/{nameOrID} [patch]
 func Patch(c *gin.Context) {
@@ -783,13 +808,26 @@ func ImportConfiguration(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		// Mirrors before rules: a rule binds to a mirror once the bindings
+		// move to connections.
+		if err := services.SyncSidecarListenerConnectionsTx(tx, item); err != nil {
+			return err
+		}
 		return services.ImportSidecarRulesTx(tx, sidecar.OrgID, sidecar.ID, rules)
 	})
+	var unmirrored services.ErrSidecarListenerInvalid
+	var nameTaken models.ErrSidecarConnectionNameTaken
 	switch {
 	case err == nil:
 		c.JSON(http.StatusOK, item.Configuration)
 	case errors.As(err, &invalid):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid.Error()})
+	// Both 422: the sidecar reads an import 409 as "the plane already holds
+	// a configuration" and fetches it, which would hide the reason.
+	case errors.As(err, &unmirrored):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": unmirrored.Error()})
+	case errors.As(err, &nameTaken):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": nameTaken.Error()})
 	case errors.Is(err, services.ErrImportedRuleConflict):
 		c.JSON(http.StatusConflict, gin.H{"message": services.ErrImportedRuleConflict.Error()})
 	case errors.Is(err, models.ErrAlreadyExists):
