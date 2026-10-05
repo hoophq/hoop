@@ -18,10 +18,5 @@ transport answer with an error rather than hanging; see ADR-0024.
 Register a sidecar at {{ .Values.config.API_URL }}, copy the token it shows
 once, and install hoopsidecar-chart with controlPlane.url and
 controlPlane.token.
-{{ if gt (int (.Values.replicas | default 1)) 10 }}
-WARNING: replicas is {{ .Values.replicas }}.
 
-  Slack allows 10 open socket-mode connections per app. Run at most 10
-  replicas while any organization has Slack configured.
-{{ end }}
 Documentation: https://hoop.dev/docs/setup

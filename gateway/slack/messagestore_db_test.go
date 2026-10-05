@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
@@ -170,4 +171,48 @@ func TestTheDatabaseStoreSharesReviewMessagesAcrossReplicas(t *testing.T) {
 			t.Error("a partial approval must rewrite once and leave the message tracked")
 		}
 	})
+}
+
+// Socket slots cap how many replicas open a Slack socket per org.
+func TestSlackSocketSlotsCapTheSockets(t *testing.T) {
+	startStoreDB(t)
+	const ttl = time.Minute
+	hold := func(t *testing.T, holder string, slots int) bool {
+		t.Helper()
+		held, err := models.HoldSlackSocketSlot(models.DB, storeOrgID, holder, slots, ttl)
+		if err != nil {
+			t.Fatalf("hold %s: %v", holder, err)
+		}
+		return held
+	}
+
+	if !hold(t, "a", 2) || !hold(t, "b", 2) {
+		t.Fatal("the first two replicas must get a slot")
+	}
+	if hold(t, "c", 2) {
+		t.Fatal("a third replica got a slot past the cap")
+	}
+	if !hold(t, "a", 2) {
+		t.Fatal("a holder lost its slot on renewal")
+	}
+
+	// b stops renewing; c takes its slot once it expires.
+	if err := models.DB.Exec(`UPDATE private.slack_socket_slots SET expires_at = NOW() - INTERVAL '1 second'
+		WHERE holder = 'b'`).Error; err != nil {
+		t.Fatalf("expire b: %v", err)
+	}
+	if !hold(t, "c", 2) {
+		t.Fatal("an expired slot was not handed over")
+	}
+	if hold(t, "b", 2) {
+		t.Fatal("b renewed a slot it no longer holds")
+	}
+
+	// A release frees the slot at once.
+	if err := models.ReleaseSlackSocketSlot(models.DB, storeOrgID, "a"); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if !hold(t, "b", 2) {
+		t.Fatal("a released slot was not free")
+	}
 }

@@ -29,4 +29,17 @@ CREATE TABLE IF NOT EXISTS slack_review_settlements (
 );
 CREATE INDEX IF NOT EXISTS idx_slack_review_settlements_settled_at ON slack_review_settlements (settled_at);
 
+-- Which replicas may open a Slack socket for an org. Slack allows 10 sockets
+-- per app and answers an 11th with a disconnect that slack-go reconnects
+-- after at once, so every replica past the cap would loop on
+-- apps.connections.open. A replica holds a slot by renewing expires_at; one
+-- that stops renewing loses it to the next replica that asks.
+CREATE TABLE IF NOT EXISTS slack_socket_slots (
+    org_id     UUID NOT NULL REFERENCES orgs (id) ON DELETE CASCADE,
+    slot       INT NOT NULL,
+    holder     VARCHAR(64) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (org_id, slot)
+);
+
 COMMIT;

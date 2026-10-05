@@ -93,13 +93,15 @@ value serves API-only with a 404 at `/` — and nothing shows it, because
 `replicas` defaults to **1**. Several replicas are supported, with or without
 Slack.
 
-Every replica opens one Slack socket per organization, and Slack hands each
-click to one of them. The review messages live in the database
-(`private.slack_review_messages`), so any replica can rewrite them. A Slack
-config change reaches the replicas that did not serve it within 30 seconds.
+The review messages live in the database (`private.slack_review_messages`), so
+any replica can rewrite them. A Slack config change reaches the replicas that
+did not serve it within 30 seconds.
 
-Slack allows 10 open sockets per app, so run at most **10 replicas** while any
-organization has Slack configured. `helm install` prints a warning above 10.
+Slack allows 10 sockets per app. Only `config.SLACK_SOCKET_SLOTS` replicas (3
+by default) open one per organization, holding a slot in
+`private.slack_socket_slots`; the others post reviews through the Web API.
+Slack hands each click to one open socket. A replica that dies frees its slot
+within 90 seconds, and the other slots keep taking clicks meanwhile.
 
 For the upgrade **into** this release, keep `deploymentStrategy: Recreate`. An
 older pod tracks review messages in memory, so a message it posts during a
@@ -264,6 +266,7 @@ does nothing. Use `extraSecret` if you have a reason to set one anyway.
 | `config.MIGRATION_PATH_FILES` | `''` | Migrations are embedded and the image ships no SQL files; set this only to override them with files you mount |
 | `config.GIN_MODE` | `release` | |
 | `config.LOG_ENCODING` / `config.LOG_LEVEL` | `json` / `info` | |
+| `config.SLACK_SOCKET_SLOTS` | `3` | Replicas that open a Slack socket per organization, 1 to 10. Outside that range falls back to 3 |
 | `config.TLS_CERT` / `config.TLS_KEY` | `''` | Both set = HTTPS, both empty = plaintext |
 | `extraSecret` | `{}` | Extra environment variables, rendered into a Secret |
 | `existingSecret` | `''` | A Secret the chart references but does not manage. Loaded last, so it overrides |

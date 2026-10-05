@@ -103,6 +103,8 @@ type Config struct {
 
 	eventRoutingWorkers int
 
+	slackSocketSlots int
+
 	spiffeMode          string
 	spiffeBundleURL     string
 	spiffeBundleFile    string
@@ -289,6 +291,15 @@ func Load(mode AppMode) error {
 		}
 	}
 
+	// Slack allows 10 sockets per app, so a value past it would put replicas
+	// back in the reconnect loop the slots exist to prevent.
+	slackSocketSlots := 3
+	if v := os.Getenv("SLACK_SOCKET_SLOTS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 10 {
+			slackSocketSlots = n
+		}
+	}
+
 	spiffeMode, spiffeBundleURL, spiffeBundleFile, spiffeBundleJWKS, spiffeTrustDomain, spiffeAudience, spiffeRefreshPeriod, err := loadSPIFFEConfig()
 	if err != nil {
 		return err
@@ -335,6 +346,7 @@ func Load(mode AppMode) error {
 		rdpPIIEntityDenylist:            rdpPIIEntityDenylist,
 		rdpPIIGuardPolicy:               rdpPIIGuardPolicy,
 		eventRoutingWorkers:             eventRoutingWorkers,
+		slackSocketSlots:                slackSocketSlots,
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
 		forceUrlTokenExchange: os.Getenv("URL_TOKEN_EXCHANGE") == "force",
@@ -557,6 +569,10 @@ func (c Config) RDPPIIScoreThreshold() float64         { return c.rdpPIIScoreThr
 func (c Config) RDPPIIEntityDenylist() []string        { return c.rdpPIIEntityDenylist }
 func (c Config) RDPPIIGuardPolicy() string             { return c.rdpPIIGuardPolicy }
 func (c Config) EventRoutingWorkers() int              { return c.eventRoutingWorkers }
+
+// SlackSocketSlots is how many control plane replicas may open a Slack socket
+// per organization. The others post through the Web API only.
+func (c Config) SlackSocketSlots() int { return c.slackSocketSlots }
 func (c Config) AskAIApiURL() (u string) {
 	if c.IsAskAIAvailable() {
 		return fmt.Sprintf("%s://%s", c.askAICredentials.Scheme, c.askAICredentials.Host)

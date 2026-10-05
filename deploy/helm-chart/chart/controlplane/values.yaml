@@ -101,6 +101,10 @@ config:
   # LOG_ENCODING: 'console|json'
   # LOG_LEVEL: 'debug|info|warn|error'
 
+  ## How many replicas open a Slack socket per organization, 1 to 10. The
+  ## others post reviews through the Web API only. See `replicas` below.
+  # SLACK_SOCKET_SLOTS: '3'
+
   ## TLS for the API listener.
   ##
   ## Set both to serve HTTPS; leave both empty to serve plaintext. That is the
@@ -131,14 +135,14 @@ existingSecret: ''
 
 # -- Number of control plane replicas.
 #
-# Several replicas are supported, with or without Slack. Every replica opens
-# one Slack socket per organization, and Slack hands each click to one of them;
-# the review messages live in the database, so any replica can rewrite them. A
-# Slack config change reaches the replicas that did not serve it within 30
-# seconds.
+# Several replicas are supported, with or without Slack. The review messages
+# live in the database, so any replica can rewrite them, and a Slack config
+# change reaches the replicas that did not serve it within 30 seconds.
 #
-# Slack allows 10 open sockets per app, so run at most 10 replicas while any
-# organization has Slack configured.
+# Slack allows 10 sockets per app. Only config.SLACK_SOCKET_SLOTS replicas (3
+# by default) open one per organization; the others post reviews through the
+# Web API. A replica that dies frees its slot within 90 seconds, and the other
+# slots keep taking clicks meanwhile.
 replicas: 1
 
 # -- Deployment strategy

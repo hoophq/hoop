@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
@@ -30,40 +31,59 @@ type (
 		TransportReleaseConnection reviewapi.TransportReleaseConnectionFunc
 		apiURL                     string
 
-		// mu serializes starting and stopping services; running is the
-		// config each org's service was started with, for the control
-		// plane's sync to compare against.
+		// mu serializes starting and stopping services; running is what
+		// each org's service was started with, for the control plane's sync
+		// to compare against.
 		mu      sync.Mutex
-		running map[string]slackConfig
+		running map[string]runningService
+		// holder names this process in slack_socket_slots.
+		holder string
+	}
+
+	// runningService is how an org's service was started: with which config,
+	// and whether it opened a socket.
+	runningService struct {
+		cfg    slackConfig
+		socket bool
 	}
 )
 
-// controlPlaneSyncEvery is how long a control plane replica that did not serve
-// a Slack config write keeps running the previous config. The write reaches
-// only the replica that served it (OnUpdate); every other one finds it here.
-const controlPlaneSyncEvery = 30 * time.Second
+const (
+	// controlPlaneSyncEvery is how long a control plane replica that did not
+	// serve a Slack config write keeps running the previous config, and how
+	// often it renews its socket slot. The write reaches only the replica
+	// that served it (OnUpdate); every other one finds it here.
+	controlPlaneSyncEvery = 30 * time.Second
+	// socketSlotTTL outlives two missed renewals, so a slow tick does not
+	// hand the slot to another replica while this one still holds the socket.
+	socketSlotTTL = 3 * controlPlaneSyncEvery
+)
 
 func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *slackPlugin {
 	return &slackPlugin{
 		TransportReleaseConnection: releaseConnFn,
 		apiURL:                     appconfig.Get().ApiURL(),
+		holder:                     uuid.NewString(),
 	}
 }
 
 func (p *slackPlugin) Name() string { return plugintypes.PluginSlackName }
 
-// startSlackServiceInstance starts the org's service. Callers hold p.mu.
+// startSlackServiceInstance starts the org's service, replacing the running
+// one. Callers hold p.mu.
 //
-// A control plane keeps the posted review messages in the database. Every
-// replica opens its own socket, and Slack hands each click to one of them
-// (up to 10 per app), so the replica handling a click is rarely the one that
-// posted the message it rewrites.
+// A control plane keeps the posted review messages in the database, and only
+// the replicas holding a socket slot open a socket; the rest post through the
+// Web API. Slack hands each click to one open socket, so the replica handling
+// a click is rarely the one that posted the message it rewrites.
 func (p *slackPlugin) startSlackServiceInstance(orgID string, cfg *slackConfig) error {
-	log.Infof("starting slack service instance for org %v", orgID)
+	socket := true
 	var opts []slack.Option
 	if appconfig.Get().IsControlPlane() {
 		opts = append(opts, slack.WithMessageStoreIn(models.DB))
+		socket = p.holdSocketSlot(orgID)
 	}
+	log.Infof("starting slack service instance for org %v, socket=%v", orgID, socket)
 	ss, err := slack.New(
 		cfg.slackBotToken,
 		cfg.slackAppToken,
@@ -75,11 +95,20 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, cfg *slackConfig) 
 	if err != nil {
 		return fmt.Errorf("failed starting slack service, err=%v", err)
 	}
+	// Swap before closing the old one, so a review filed meanwhile always
+	// finds a service to post with.
+	old := slack.GetServiceInstance(orgID)
 	slack.SetServiceInstance(orgID, ss)
-	if p.running == nil {
-		p.running = map[string]slackConfig{}
+	if old != nil && old != ss {
+		old.Close()
 	}
-	p.running[orgID] = *cfg
+	if p.running == nil {
+		p.running = map[string]runningService{}
+	}
+	p.running[orgID] = runningService{cfg: *cfg, socket: socket}
+	if !socket {
+		return nil
+	}
 	reviewRespCh := make(chan *slack.MessageReviewResponse)
 	go func() {
 		defer close(reviewRespCh)
@@ -156,8 +185,9 @@ func slackConfigsByOrg() (map[string]slackConfig, error) {
 }
 
 // syncControlPlane makes this replica run each org's stored Slack config:
-// it starts what is new, restarts what changed and stops what was removed.
-// A config that fails to start is retried on the next tick.
+// it starts what is new, restarts what changed and stops what was removed. It
+// also renews the socket slot, and restarts the service when the slot was won
+// or lost. A config that fails to start is retried on the next tick.
 func (p *slackPlugin) syncControlPlane() {
 	configs, err := slackConfigsByOrg()
 	if err != nil {
@@ -167,11 +197,11 @@ func (p *slackPlugin) syncControlPlane() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for orgID, cfg := range configs {
-		if cur, ok := p.running[orgID]; ok && cur == cfg {
+		cur, ok := p.running[orgID]
+		if ok && cur.cfg == cfg && cur.socket == p.holdSocketSlot(orgID) {
 			continue
 		}
-		log.Infof("slack config changed on another replica, (re)starting slack instance %v", orgID)
-		p.stopSlackServiceInstance(orgID)
+		log.Infof("slack config or socket slot changed, (re)starting slack instance %v", orgID)
 		if err := p.startSlackServiceInstance(orgID, &cfg); err != nil {
 			log.Warnf("failed starting slack service for org %v, err=%v", orgID, err)
 		}
@@ -184,13 +214,30 @@ func (p *slackPlugin) syncControlPlane() {
 	}
 }
 
-// stopSlackServiceInstance stops the org's service. Callers hold p.mu.
+// stopSlackServiceInstance stops the org's service and frees its socket slot.
+// Callers hold p.mu.
 func (p *slackPlugin) stopSlackServiceInstance(orgID string) {
 	if ss := slack.GetServiceInstance(orgID); ss != nil {
 		ss.Close()
 		slack.RemoveServiceInstanceIf(orgID, ss)
 	}
 	delete(p.running, orgID)
+	if err := models.ReleaseSlackSocketSlot(models.DB, orgID, p.holder); err != nil {
+		log.Warnf("failed releasing the slack socket slot for org %v, reason=%v", orgID, err)
+	}
+}
+
+// holdSocketSlot renews or claims this replica's socket slot for the org. A
+// database error keeps what the replica has now: dropping every socket on a
+// database blip would leave no replica taking clicks.
+func (p *slackPlugin) holdSocketSlot(orgID string) bool {
+	held, err := models.HoldSlackSocketSlot(models.DB, orgID, p.holder,
+		appconfig.Get().SlackSocketSlots(), socketSlotTTL)
+	if err != nil {
+		log.Warnf("failed holding a slack socket slot for org %v, reason=%v", orgID, err)
+		return p.running[orgID].socket
+	}
+	return held
 }
 
 func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) error {
