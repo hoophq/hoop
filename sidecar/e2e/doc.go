@@ -49,7 +49,9 @@
 // SIDECAR_E2E_ORACLE_IMAGE and SIDECAR_E2E_ORACLE_SERVICE run the Oracle tests
 // against another gvenzl image, and SIDECAR_E2E_ORACLE_CLIENT_IMAGE runs
 // SQLPlus from a separate image; `make test-sidecar-e2e-oracle21` uses them for
-// Oracle XE 21c with SQLPlus 21 and 23.
+// Oracle XE 21c with SQLPlus 21 and 23. SIDECAR_E2E_ORACLE_PLATFORM=linux/amd64
+// runs the Oracle images as CI does on an arm64 host: OCI sends fields whose
+// values depend on the platform.
 //
 // # Its own module
 //

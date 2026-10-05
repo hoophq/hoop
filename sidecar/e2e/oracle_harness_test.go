@@ -28,10 +28,13 @@ const (
 // The default is Oracle Free 23. SIDECAR_E2E_ORACLE_IMAGE runs the same tests
 // against another gvenzl image, which honours the same ORACLE_PASSWORD and
 // APP_USER variables, e.g. gvenzl/oracle-xe:21-slim-faststart with
-// SIDECAR_E2E_ORACLE_SERVICE=XEPDB1.
+// SIDECAR_E2E_ORACLE_SERVICE=XEPDB1. SIDECAR_E2E_ORACLE_PLATFORM picks the
+// image platform: linux/amd64 on Apple silicon runs what CI runs, and OCI
+// sends platform-dependent fields.
 var (
-	oracleImage   = envOr("SIDECAR_E2E_ORACLE_IMAGE", "gvenzl/oracle-free:23-slim-faststart")
-	oracleService = envOr("SIDECAR_E2E_ORACLE_SERVICE", "FREEPDB1")
+	oracleImage    = envOr("SIDECAR_E2E_ORACLE_IMAGE", "gvenzl/oracle-free:23-slim-faststart")
+	oracleService  = envOr("SIDECAR_E2E_ORACLE_SERVICE", "FREEPDB1")
+	oraclePlatform = os.Getenv("SIDECAR_E2E_ORACLE_PLATFORM")
 )
 
 func envOr(name, fallback string) string {
@@ -81,8 +84,9 @@ func startOracle(t *testing.T) *oracleDB {
 	ctx := context.Background()
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        oracleImage,
-			ExposedPorts: []string{"1521/tcp"},
+			Image:         oracleImage,
+			ImagePlatform: oraclePlatform,
+			ExposedPorts:  []string{"1521/tcp"},
 			Env: map[string]string{
 				"ORACLE_PASSWORD":   oraclePassword,
 				"APP_USER":          oracleUser,
@@ -127,9 +131,10 @@ func startOracleClient(t *testing.T, image string) testcontainers.Container {
 	t.Helper()
 	client, err := testcontainers.GenericContainer(context.Background(), testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:      image,
-			Entrypoint: []string{"sleep", "infinity"},
-			ExtraHosts: []string{"host.docker.internal:host-gateway"},
+			Image:         image,
+			ImagePlatform: oraclePlatform,
+			Entrypoint:    []string{"sleep", "infinity"},
+			ExtraHosts:    []string{"host.docker.internal:host-gateway"},
 		},
 		Started: true,
 	})
@@ -184,6 +189,13 @@ func openOracle(t *testing.T, addr string, prefetchRows int) *sql.DB {
 		time.Sleep(250 * time.Millisecond)
 	}
 }
+
+// closeDenied closes a pool whose session the relay ended after a denial.
+// go-ora then writes LOGOFF to that dead pooled connection and fails with a
+// broken pipe or EOF: that is the denial, not a test failure. The Cleanup
+// that openOracle registered closes the pool again, and DB.Close is
+// idempotent, so it still reports errors from every other pool.
+func closeDenied(db *sql.DB) { _ = db.Close() }
 
 // Seed directly against Oracle, not through the relay under test.
 func seedOracle(t *testing.T, addr string) {

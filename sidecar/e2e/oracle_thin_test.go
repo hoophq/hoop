@@ -126,6 +126,7 @@ func TestOracleThinClientE2E(t *testing.T) {
 	// A DELETE inside a PL/SQL block is the same delete. FORALL puts it
 	// after an expression, where only a reading of the whole block finds
 	// it. The relay closed the denied session, so use a fresh pool.
+	closeDenied(client)
 	client = openOracle(t, relay.addr, 5)
 	_, err = client.ExecContext(ctx, `DECLARE TYPE ids IS TABLE OF NUMBER; v ids := ids(1); BEGIN FORALL i IN 1 .. v.count DELETE FROM people WHERE id = v(i); END;`)
 	if !errors.As(err, &oracleErr) || oracleErr.ErrCode != 1031 {
@@ -148,6 +149,7 @@ func TestOracleThinClientE2E(t *testing.T) {
 	// pooled connection before go-ora sees the close, and a transaction
 	// cannot retry onto another one, so continue on a fresh pool: the claim
 	// under test is that the lane keeps serving new sessions.
+	closeDenied(client)
 	client = openOracle(t, relay.addr, 5)
 	tx, err := client.BeginTx(ctx, nil)
 	if err != nil {
