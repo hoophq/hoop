@@ -8,34 +8,35 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// The palette matches the CLI's existing accents (client/cmd/styles: 204 for
-// keywords, #DBAB79 for warnings) so the sidecar reads as the same product.
+// The palette is Hoop's: grayscale for everything that is only information,
+// and two colors for what an operator acts on. Blue (#3E63DD) is the primary
+// color: the brand, the active tab, keys, live state and reviews. Red
+// (#C4060A) means refused or broken: denials, errors, high risk. A color
+// anywhere else would dilute those two, so allowed traffic stays gray.
 var (
-	colAccent = lipgloss.Color("204")
-	colWarn   = lipgloss.Color("#DBAB79")
-	colOK     = lipgloss.Color("42")
-	colBad    = lipgloss.Color("203")
-	colInfo   = lipgloss.Color("75")
-	colInk    = lipgloss.Color("0")
-	colFaint  = lipgloss.AdaptiveColor{Light: "245", Dark: "243"}
-	colBorder = lipgloss.AdaptiveColor{Light: "250", Dark: "238"}
-	colSelBg  = lipgloss.AdaptiveColor{Light: "254", Dark: "236"}
+	colPrimary = lipgloss.Color("#3E63DD")
+	colDanger  = lipgloss.Color("#C4060A")
+	// colInk is text on a blue or red background.
+	colInk    = lipgloss.Color("#FFFFFF")
+	colFaint  = lipgloss.AdaptiveColor{Light: "#8B8B8B", Dark: "#7A7A7A"}
+	colStrong = lipgloss.AdaptiveColor{Light: "#1A1A1A", Dark: "#EDEDED"}
+	colBorder = lipgloss.AdaptiveColor{Light: "#D4D4D4", Dark: "#3A3A3A"}
+	colSelBg  = lipgloss.AdaptiveColor{Light: "#EBEBEB", Dark: "#2B2B2B"}
 
-	stBrand  = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colAccent).Padding(0, 1)
-	stFaint  = lipgloss.NewStyle().Foreground(colFaint)
-	stBold   = lipgloss.NewStyle().Bold(true)
-	stAccent = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	stOK     = lipgloss.NewStyle().Foreground(colOK)
-	stBad    = lipgloss.NewStyle().Foreground(colBad)
-	stWarn   = lipgloss.NewStyle().Foreground(colWarn)
-	stInfo   = lipgloss.NewStyle().Foreground(colInfo)
-	stKey    = lipgloss.NewStyle().Foreground(colAccent)
-	stLabel  = lipgloss.NewStyle().Foreground(colFaint)
-	stTabOn  = lipgloss.NewStyle().Bold(true).Foreground(colAccent).Underline(true)
-	stTabOff = lipgloss.NewStyle().Foreground(colFaint)
-	stSel    = lipgloss.NewStyle().Background(colSelBg)
-	stPane   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBorder).Padding(0, 1)
-	stTitle  = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
+	stBrand   = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 1)
+	stFaint   = lipgloss.NewStyle().Foreground(colFaint)
+	stBold    = lipgloss.NewStyle().Bold(true)
+	stText    = lipgloss.NewStyle().Foreground(colStrong)
+	stStrong  = lipgloss.NewStyle().Foreground(colStrong).Bold(true)
+	stPrimary = lipgloss.NewStyle().Foreground(colPrimary).Bold(true)
+	stDanger  = lipgloss.NewStyle().Foreground(colDanger)
+	stKey     = lipgloss.NewStyle().Foreground(colPrimary)
+	stLabel   = lipgloss.NewStyle().Foreground(colFaint)
+	stTabOn   = lipgloss.NewStyle().Bold(true).Foreground(colPrimary).Underline(true)
+	stTabOff  = lipgloss.NewStyle().Foreground(colFaint)
+	stSel     = lipgloss.NewStyle().Background(colSelBg)
+	stPane    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBorder).Padding(0, 1)
+	stTitle   = stStrong
 )
 
 func badge(text string, bg lipgloss.TerminalColor) string {
@@ -43,22 +44,22 @@ func badge(text string, bg lipgloss.TerminalColor) string {
 }
 
 // verdictBadge is the fixed-width tag that leads every wire row, so the eye
-// can run down one column and find the denials.
+// can run down one column and find the denials: the only red in it.
 func verdictBadge(kind string, allowed bool) string {
 	switch kind {
 	case "statement":
-		return stOK.Render("✓ ALLOW ")
+		return stFaint.Render("✓ ALLOW ")
 	case "violation":
-		return stBad.Bold(true).Render("✕ DENY  ")
+		return stDanger.Bold(true).Render("✕ DENY  ")
 	case "masked":
-		return stWarn.Render("▒ MASK  ")
+		return stStrong.Render("▒ MASK  ")
 	case "error":
-		return stBad.Render("! ERROR ")
+		return stDanger.Render("! ERROR ")
 	case "activity":
 		if !allowed {
-			return stBad.Render("◆ REFUSE")
+			return stDanger.Render("◆ REFUSE")
 		}
-		return stInfo.Render("◆ ACT   ")
+		return stText.Render("◆ ACT   ")
 	case "session_start":
 		return stFaint.Render("→ OPEN  ")
 	case "session_end":
@@ -70,44 +71,46 @@ func verdictBadge(kind string, allowed bool) string {
 func riskBadge(level string) string {
 	switch level {
 	case "high":
-		return stBad.Bold(true).Render("▲high")
+		return stDanger.Bold(true).Render("▲high")
 	case "medium":
-		return stWarn.Render("▲med")
+		return stStrong.Render("▲med")
 	case "low":
 		return stFaint.Render("▲low")
 	}
 	return ""
 }
 
+// reviewBadge: a pending review is the call to action, so it is blue text;
+// an approval is the confirmed state, solid blue; a refusal is solid red.
 func reviewBadge(status string) string {
 	switch status {
 	case "PENDING":
-		return badge("PENDING", colWarn)
+		return stPrimary.Padding(0, 1).Render("PENDING")
 	case "APPROVED":
-		return badge("APPROVED", colOK)
+		return badge("APPROVED", colPrimary)
 	case "REJECTED", "REVOKED":
-		return badge(status, colBad)
+		return badge(status, colDanger)
 	}
-	return lipgloss.NewStyle().Foreground(colFaint).Bold(true).Render(status)
+	return stFaint.Bold(true).Render(status)
 }
 
 func levelStyle(level string) lipgloss.Style {
 	switch level {
 	case "ERROR":
-		return stBad.Bold(true)
+		return stDanger.Bold(true)
 	case "WARN":
-		return stWarn.Bold(true)
+		return stStrong
 	case "DEBUG":
 		return stFaint
 	}
-	return stInfo
+	return stText
 }
 
 func protocolBadge(p string) string {
 	if p == "" {
 		return ""
 	}
-	return lipgloss.NewStyle().Foreground(colInfo).Render(p)
+	return stFaint.Render(p)
 }
 
 var sparkBlocks = []rune(" ▁▂▃▄▅▆▇█")
@@ -127,9 +130,9 @@ func sparkline(stmts, denied []int) string {
 		}
 		cell := string(r)
 		if denied[i] > 0 {
-			b.WriteString(stBad.Render(cell))
+			b.WriteString(stDanger.Render(cell))
 		} else {
-			b.WriteString(stAccent.UnsetBold().Render(cell))
+			b.WriteString(stKey.Render(cell))
 		}
 	}
 	return b.String()

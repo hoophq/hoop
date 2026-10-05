@@ -36,12 +36,12 @@ func (m model) listHeight() int { return max(m.height-chrome-2, 1) }
 // traffic on the right, then the totals that matter at a glance.
 func (m model) header() string {
 	now := m.now()
-	state := m.spin.View() + " " + stOK.Render("live")
+	state := m.spin.View() + " " + stPrimary.Render("live")
 	switch {
 	case m.done:
 		state = stFaint.Render("■ stopped")
 	case m.stopping:
-		state = m.spin.View() + " " + stWarn.Render("stopping…")
+		state = m.spin.View() + " " + stStrong.Render("stopping…")
 	}
 	left := stBrand.Render("hoop sidecar") + " " +
 		stFaint.Render(m.version+" · up "+short(now.Sub(m.st.Started))) + "  " + state
@@ -61,19 +61,19 @@ func (m model) header() string {
 
 	open := len(m.st.OpenSessions())
 	chips := []string{
-		chip("●", num(open), "open", stOK, open > 0),
-		chip("▸", num(m.st.Statements), "statements", stAccent, m.st.Statements > 0),
-		chip("✕", num(m.st.Denied), "denied", stBad, m.st.Denied > 0),
-		chip("▒", num(m.st.Masked), "masked", stWarn, m.st.Masked > 0),
+		chip("●", num(open), "open", stPrimary, open > 0),
+		chip("▸", num(m.st.Statements), "statements", stStrong, m.st.Statements > 0),
+		chip("✕", num(m.st.Denied), "denied", stDanger, m.st.Denied > 0),
+		chip("▒", num(m.st.Masked), "masked", stStrong, m.st.Masked > 0),
 	}
 	if len(m.st.Reviews) > 0 {
-		chips = append(chips, chip("⧗", num(m.st.PendingReviews()), "pending review", stWarn, m.st.PendingReviews() > 0))
+		chips = append(chips, chip("⧗", num(m.st.PendingReviews()), "pending review", stPrimary, m.st.PendingReviews() > 0))
 	}
 	if m.st.Errors > 0 {
-		chips = append(chips, chip("!", num(m.st.Errors), "errors", stBad, true))
+		chips = append(chips, chip("!", num(m.st.Errors), "errors", stDanger, true))
 	}
 	if n := len(m.st.Warnings); n > 0 {
-		chips = append(chips, chip("⚠", num(n), "warnings", stWarn, true))
+		chips = append(chips, chip("⚠", num(n), "warnings", stStrong, true))
 	}
 	line2 := ansi.Truncate(" "+strings.Join(chips, "   "), m.width, "…")
 	return line1 + "\n" + line2
@@ -117,13 +117,13 @@ func (m model) tabs() string {
 	line := " " + strings.Join(parts, "   ")
 	var flags []string
 	if m.tab == tabWire && m.deniedOnly {
-		flags = append(flags, badge("denied only", colBad))
+		flags = append(flags, badge("denied only", colDanger))
 	}
 	if q := m.search.Value(); q != "" && !m.searching {
-		flags = append(flags, badge("/"+q, colAccent))
+		flags = append(flags, badge("/"+q, colPrimary))
 	}
 	if !m.cur[m.tab].follow && m.tab != tabSystem && m.tab != tabLanes {
-		flags = append(flags, stWarn.Render("paused · g to follow"))
+		flags = append(flags, stStrong.Render("paused · g to follow"))
 	}
 	if len(flags) > 0 {
 		f := strings.Join(flags, " ")
@@ -242,7 +242,7 @@ func (m model) empty(w int) string {
 		b.WriteString(stFaint.Render("Waiting for traffic. Point a client at a listener:") + "\n\n")
 		for _, name := range m.st.LaneOrder {
 			l := m.st.Lanes[name]
-			b.WriteString("  " + stAccent.Render(name) + "  " + protocolBadge(l.Protocol) + "  " +
+			b.WriteString("  " + stStrong.Render(name) + "  " + protocolBadge(l.Protocol) + "  " +
 				stBold.Render(orDash(l.Listen)) + stFaint.Render(" → "+orDash(l.Upstream)) + "\n")
 		}
 		if len(m.st.LaneOrder) == 0 {
@@ -295,7 +295,7 @@ func wireRow(ev audit.Event) string {
 	parts := []string{
 		stFaint.Render(clock(ev.Timestamp)),
 		verdictBadge(string(ev.Kind), ev.Allowed),
-		stAccent.UnsetBold().Render(col(ev.Connection, 12)),
+		stText.Render(col(ev.Connection, 12)),
 		col(ev.Principal, 16),
 	}
 	switch ev.Kind {
@@ -303,7 +303,7 @@ func wireRow(ev audit.Event) string {
 		if ev.Direction == inspect.FromServer {
 			// A response the upstream sent back: its operation is
 			// unknown by construction, and the arrow says more.
-			parts = append(parts, stInfo.Render(col("↩ RESP", 7)))
+			parts = append(parts, stFaint.Render(col("↩ RESP", 7)))
 		} else {
 			parts = append(parts, stBold.Render(col(strings.ToUpper(string(ev.Operation)), 7)))
 		}
@@ -311,7 +311,7 @@ func wireRow(ev audit.Event) string {
 			parts = append(parts, r)
 		}
 		if rid := ev.Metadata[metaReviewID]; rid != "" {
-			parts = append(parts, stWarn.Render("⧗"))
+			parts = append(parts, stPrimary.Render("⧗"))
 		}
 		text := oneLine(ev.Statement)
 		if ev.HTTP != nil && text == "" {
@@ -319,15 +319,15 @@ func wireRow(ev audit.Event) string {
 		}
 		parts = append(parts, text)
 		if ev.Kind == audit.KindViolation && ev.Rule != "" {
-			parts = append(parts, stBad.Render("["+ev.Rule+"]"))
+			parts = append(parts, stDanger.Render("["+ev.Rule+"]"))
 		}
 	case audit.KindMasked:
-		parts = append(parts, stWarn.Render(fmt.Sprintf("%d value(s)", max(ev.MaskedCount, 1))),
+		parts = append(parts, stStrong.Render(fmt.Sprintf("%d value(s)", max(ev.MaskedCount, 1))),
 			stFaint.Render(strings.Join(ev.MaskedEntities, ", ")))
 	case audit.KindError:
-		parts = append(parts, stBad.Render(oneLine(ev.Error)))
+		parts = append(parts, stDanger.Render(oneLine(ev.Error)))
 	case audit.KindActivity:
-		parts = append(parts, stInfo.Render(ev.Metadata[metaActivity]), stFaint.Render(oneLine(ev.Message)))
+		parts = append(parts, stText.Render(ev.Metadata[metaActivity]), stFaint.Render(oneLine(ev.Message)))
 	case audit.KindSessionStart:
 		parts = append(parts, stFaint.Render(protocolText(ev)+" session "+shortID(string(ev.SessionID))))
 	case audit.KindSessionEnd:
@@ -350,7 +350,7 @@ func sessionRow(s *Session, now time.Time) string {
 	if s == nil {
 		return ""
 	}
-	state := stOK.Render("● open  ")
+	state := stPrimary.Render("● open  ")
 	if !s.Open {
 		state = stFaint.Render("○ closed")
 	}
@@ -366,13 +366,13 @@ func sessionRow(s *Session, now time.Time) string {
 	}
 	return strings.Join([]string{
 		state,
-		stAccent.UnsetBold().Render(col(s.Lane, 12)),
+		stText.Render(col(s.Lane, 12)),
 		col(s.Principal, 14),
 		protocolBadge(col(s.Protocol, 6)),
 		stFaint.Render(fmt.Sprintf("%6s", short(s.Duration(now)))),
 		counts(s.Statements, "▸", stBold),
-		counts(s.Denied, "✕", stBad),
-		counts(s.Masked, "▒", stWarn),
+		counts(s.Denied, "✕", stDanger),
+		counts(s.Masked, "▒", stStrong),
 		stFaint.Render(oneLine(s.Last)),
 	}, " ")
 }
@@ -384,7 +384,7 @@ func reviewRow(r *Review, now time.Time) string {
 	return strings.Join([]string{
 		col(reviewBadge(r.Status), 11),
 		stBold.Render(col(r.ID, 14)),
-		stAccent.UnsetBold().Render(col(r.Lane, 12)),
+		stText.Render(col(r.Lane, 12)),
 		col(r.Principal, 16),
 		stFaint.Render(fmt.Sprintf("%7s ago", short(now.Sub(r.Last)))),
 		oneLine(r.Statement),
@@ -397,15 +397,15 @@ func (m model) laneRow(l *Lane) string {
 	}
 	dot := stFaint.Render("○")
 	if l.Ready {
-		dot = stOK.Render("●")
+		dot = stPrimary.Render("●")
 	}
 	active := stFaint.Render(fmt.Sprintf("%2d●", m.st.Active(l.Name)))
 	if n := m.st.Active(l.Name); n > 0 {
-		active = stOK.Render(fmt.Sprintf("%2d●", n))
+		active = stPrimary.Render(fmt.Sprintf("%2d●", n))
 	}
 	return strings.Join([]string{
 		dot,
-		stAccent.Render(col(l.Name, 12)),
+		stStrong.Render(col(l.Name, 12)),
 		laneMode(l),
 		active,
 		protocolBadge(col(l.Protocol, 8)),
@@ -419,9 +419,9 @@ func laneMode(l *Lane) string {
 	case !l.Ready:
 		return stFaint.Render(col("starting", 8))
 	case l.Observing:
-		return stWarn.Render(col("OBSERVE", 8))
+		return stText.Render(col("OBSERVE", 8))
 	case l.Enforcing:
-		return stOK.Render(col("ENFORCE", 8))
+		return stPrimary.Render(col("ENFORCE", 8))
 	}
 	return stFaint.Render(col("AUDIT", 8))
 }
@@ -511,22 +511,22 @@ func (m model) detailView(keys []string, sel, w, h int) string {
 
 func (m model) wireDetail(ev audit.Event, w int) string {
 	var title string
-	color := lipgloss.TerminalColor(colOK)
+	color := lipgloss.TerminalColor(colFaint)
 	switch ev.Kind {
 	case audit.KindStatement:
-		title = stOK.Bold(true).Render("✓ Allowed")
+		title = stStrong.Render("✓ Allowed")
 	case audit.KindViolation:
-		title = stBad.Bold(true).Render("✕ Denied")
-		color = colBad
+		title = stDanger.Bold(true).Render("✕ Denied")
+		color = colDanger
 	case audit.KindMasked:
-		title = stWarn.Bold(true).Render("▒ Response masked")
-		color = colWarn
+		title = stStrong.Render("▒ Response masked")
+		color = colStrong
 	case audit.KindError:
-		title = stBad.Bold(true).Render("! Error")
-		color = colBad
+		title = stDanger.Bold(true).Render("! Error")
+		color = colDanger
 	case audit.KindActivity:
-		title = stInfo.Bold(true).Render("◆ Activity")
-		color = colInfo
+		title = stStrong.Render("◆ Activity")
+		color = colFaint
 	case audit.KindSessionStart:
 		title = stBold.Render("→ Session opened")
 	case audit.KindSessionEnd:
@@ -543,7 +543,7 @@ func (m model) wireDetail(ev audit.Event, w int) string {
 		{"tables", strings.Join(ev.Tables, ", ")},
 	}
 	if ev.Kind == audit.KindViolation {
-		rows = append(rows, kv{"rule", stBad.Render(ev.Rule)}, kv{"message", ev.Message})
+		rows = append(rows, kv{"rule", stDanger.Render(ev.Rule)}, kv{"message", ev.Message})
 	} else if ev.Message != "" {
 		rows = append(rows, kv{"message", ev.Message})
 	}
@@ -552,7 +552,7 @@ func (m model) wireDetail(ev audit.Event, w int) string {
 			strings.Join(ev.MaskedEntities, ", "))})
 	}
 	if ev.Error != "" {
-		rows = append(rows, kv{"error", stBad.Render(ev.Error)})
+		rows = append(rows, kv{"error", stDanger.Render(ev.Error)})
 	}
 	if ev.Kind == audit.KindSessionEnd {
 		rows = append(rows, kv{"duration", short(ev.Duration)},
@@ -575,7 +575,7 @@ func (m model) wireDetail(ev audit.Event, w int) string {
 	}
 	ai = append(ai, kv{"ai status", ev.Metadata[metaAIStatus]}, kv{"ai rule", ev.Metadata[metaAIRule]})
 	if rid := ev.Metadata[metaReviewID]; rid != "" {
-		ai = append(ai, kv{"review", stWarn.Render(rid) + " " + reviewBadge(reviewStatus(ev))},
+		ai = append(ai, kv{"review", stPrimary.Render(rid) + " " + reviewBadge(reviewStatus(ev))},
 			kv{"review mode", ev.Metadata[metaReviewMode]})
 	}
 
@@ -599,7 +599,7 @@ func (m model) sessionDetail(s *Session, w, h int) string {
 		return ""
 	}
 	now := m.now()
-	state := stOK.Bold(true).Render("● Open connection")
+	state := stPrimary.Render("● Open connection")
 	if !s.Open {
 		state = stFaint.Bold(true).Render("○ Closed connection")
 	}
@@ -647,12 +647,12 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 		{"attempts", strconv.Itoa(r.Hits)},
 		{"message", r.Message},
 	}
-	color := lipgloss.TerminalColor(colWarn)
+	color := lipgloss.TerminalColor(colPrimary)
 	switch r.Status {
 	case "APPROVED":
-		color = colOK
+		color = colPrimary
 	case "REJECTED", "REVOKED", "DENIED":
-		color = colBad
+		color = colDanger
 	}
 	parts := []string{stBold.Render("⧗ Human review"), "", kvBlock(rows, w)}
 	if b := codeBlock("statement", r.Statement, w, color); b != "" {
@@ -671,7 +671,7 @@ func (m model) laneDetail(l *Lane, w int) string {
 	}
 	yes := func(b bool) string {
 		if b {
-			return stOK.Render("on")
+			return stPrimary.Render("on")
 		}
 		return stFaint.Render("off")
 	}
@@ -692,11 +692,11 @@ func (m model) laneDetail(l *Lane, w int) string {
 		{"masked", strconv.Itoa(l.Masked)},
 		{"errors", strconv.Itoa(l.Errors)},
 	}
-	parts := []string{stAccent.Render(l.Name), "", kvBlock(rows, w), "", stLabel.Render("traffic"), kvBlock(counters, w)}
+	parts := []string{stStrong.Render(l.Name), "", kvBlock(rows, w), "", stLabel.Render("traffic"), kvBlock(counters, w)}
 	if len(l.Notes) > 0 {
 		parts = append(parts, "", stLabel.Render("warnings"))
 		for _, n := range l.Notes {
-			parts = append(parts, stWarn.Render("⚠ ")+lipgloss.NewStyle().Width(max(w-2, 10)).Render(n))
+			parts = append(parts, stStrong.Render("⚠ ")+lipgloss.NewStyle().Width(max(w-2, 10)).Render(n))
 		}
 	}
 	return strings.Join(parts, "\n")
@@ -714,11 +714,11 @@ func (m model) systemView(w, h, off int) string {
 	sys := m.st.System
 	license := sys.License
 	if sys.LicenseWarn {
-		license = stWarn.Render(license)
+		license = stDanger.Render(license)
 	}
 	on := func(b bool, text string) string {
 		if b {
-			return stOK.Render("● ") + text
+			return stPrimary.Render("● ") + text
 		}
 		return stFaint.Render("○ off")
 	}
@@ -762,7 +762,7 @@ func (m model) systemView(w, h, off int) string {
 
 	parts = append(parts, "", stTitle.Render("Warnings and errors")+stFaint.Render(fmt.Sprintf("  %d", len(m.st.Warnings))), "")
 	if len(m.st.Warnings) == 0 {
-		parts = append(parts, stOK.Render("✓ ")+stFaint.Render("none"))
+		parts = append(parts, stPrimary.Render("✓ ")+stFaint.Render("none"))
 	}
 	for i := len(m.st.Warnings) - 1; i >= 0; i-- {
 		r := m.st.Warnings[i]

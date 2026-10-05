@@ -74,7 +74,7 @@ func newModel(version string, notes []string, now func() time.Time, stop func())
 	ti.Placeholder = "filter: lane, principal, table, rule, text…"
 	ti.CharLimit = 200
 	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot))
-	sp.Style = stAccent
+	sp.Style = stPrimary
 	if version == "" || version == "unknown" {
 		// A build without -ldflags, which is every local `make` build.
 		version = "dev"
