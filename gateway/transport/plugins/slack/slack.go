@@ -3,6 +3,7 @@ package slack
 import (
 	"encoding/base64"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
@@ -28,8 +29,19 @@ type (
 	slackPlugin struct {
 		TransportReleaseConnection reviewapi.TransportReleaseConnectionFunc
 		apiURL                     string
+
+		// mu serializes starting and stopping services; running is the
+		// config each org's service was started with, for the control
+		// plane's sync to compare against.
+		mu      sync.Mutex
+		running map[string]slackConfig
 	}
 )
+
+// controlPlaneSyncEvery is how long a control plane replica that did not serve
+// a Slack config write keeps running the previous config. The write reaches
+// only the replica that served it (OnUpdate); every other one finds it here.
+const controlPlaneSyncEvery = 30 * time.Second
 
 func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *slackPlugin {
 	return &slackPlugin{
@@ -40,19 +52,34 @@ func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *slackPlugin {
 
 func (p *slackPlugin) Name() string { return plugintypes.PluginSlackName }
 
-func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slackConfig) error {
+// startSlackServiceInstance starts the org's service. Callers hold p.mu.
+//
+// A control plane keeps the posted review messages in the database. Every
+// replica opens its own socket, and Slack hands each click to one of them
+// (up to 10 per app), so the replica handling a click is rarely the one that
+// posted the message it rewrites.
+func (p *slackPlugin) startSlackServiceInstance(orgID string, cfg *slackConfig) error {
 	log.Infof("starting slack service instance for org %v", orgID)
+	var opts []slack.Option
+	if appconfig.Get().IsControlPlane() {
+		opts = append(opts, slack.WithMessageStoreIn(models.DB))
+	}
 	ss, err := slack.New(
-		slackConfig.slackBotToken,
-		slackConfig.slackAppToken,
-		slackConfig.slackChannel,
+		cfg.slackBotToken,
+		cfg.slackAppToken,
+		cfg.slackChannel,
 		orgID,
 		p.apiURL,
+		opts...,
 	)
 	if err != nil {
 		return fmt.Errorf("failed starting slack service, err=%v", err)
 	}
 	slack.SetServiceInstance(orgID, ss)
+	if p.running == nil {
+		p.running = map[string]slackConfig{}
+	}
+	p.running[orgID] = *cfg
 	reviewRespCh := make(chan *slack.MessageReviewResponse)
 	go func() {
 		defer close(reviewRespCh)
@@ -62,7 +89,7 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slack
 		}
 		log.Infof("done processing events for org %v", orgID)
 		ss.Close()
-		slack.RemoveServiceInstance(orgID)
+		slack.RemoveServiceInstanceIf(orgID, ss)
 	}()
 
 	// response channel
@@ -76,11 +103,35 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slack
 }
 
 func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
+	configs, err := slackConfigsByOrg()
+	if err != nil {
+		return err
+	}
+	p.mu.Lock()
+	for orgID, cfg := range configs {
+		if err := p.startSlackServiceInstance(orgID, &cfg); err != nil {
+			log.Errorf("failed starting slack service for org %v, err=%v", orgID, err)
+		}
+	}
+	p.mu.Unlock()
+	if appconfig.Get().IsControlPlane() {
+		go func() {
+			for range time.Tick(controlPlaneSyncEvery) {
+				p.syncControlPlane()
+			}
+		}()
+	}
+	return nil
+}
+
+// slackConfigsByOrg reads the Slack config of every org that has a valid one.
+// An org whose row cannot be read or parsed is logged and left out.
+func slackConfigsByOrg() (map[string]slackConfig, error) {
 	orgList, err := models.ListAllOrganizations()
 	if err != nil {
-		return fmt.Errorf("failed listing organizations: %v", err)
+		return nil, fmt.Errorf("failed listing organizations: %v", err)
 	}
-
+	configs := map[string]slackConfig{}
 	for _, org := range orgList {
 		pl, err := models.GetPluginByName(models.DB, org.ID, plugintypes.PluginSlackName)
 		if err != nil && err != models.ErrNotFound {
@@ -99,15 +150,52 @@ func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
 			log.Errorf("failed parsing slack config for org %v, err=%v", pl.OrgID, err)
 			continue
 		}
-		if err := p.startSlackServiceInstance(pl.OrgID, slackConfig); err != nil {
-			log.Errorf("failed starting slack service for org %v, err=%v", pl.OrgID, err)
+		configs[pl.OrgID] = *slackConfig
+	}
+	return configs, nil
+}
+
+// syncControlPlane makes this replica run each org's stored Slack config:
+// it starts what is new, restarts what changed and stops what was removed.
+// A config that fails to start is retried on the next tick.
+func (p *slackPlugin) syncControlPlane() {
+	configs, err := slackConfigsByOrg()
+	if err != nil {
+		log.Warnf("failed reading the slack configs to sync, reason=%v", err)
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for orgID, cfg := range configs {
+		if cur, ok := p.running[orgID]; ok && cur == cfg {
 			continue
 		}
+		log.Infof("slack config changed on another replica, (re)starting slack instance %v", orgID)
+		p.stopSlackServiceInstance(orgID)
+		if err := p.startSlackServiceInstance(orgID, &cfg); err != nil {
+			log.Warnf("failed starting slack service for org %v, err=%v", orgID, err)
+		}
 	}
-	return nil
+	for orgID := range p.running {
+		if _, ok := configs[orgID]; !ok {
+			log.Infof("slack config removed on another replica, stopping slack instance %v", orgID)
+			p.stopSlackServiceInstance(orgID)
+		}
+	}
+}
+
+// stopSlackServiceInstance stops the org's service. Callers hold p.mu.
+func (p *slackPlugin) stopSlackServiceInstance(orgID string) {
+	if ss := slack.GetServiceInstance(orgID); ss != nil {
+		ss.Close()
+		slack.RemoveServiceInstanceIf(orgID, ss)
+	}
+	delete(p.running, orgID)
 }
 
 func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	slackInstance := slack.GetServiceInstance(newState.GetOrgID())
 	if slackInstance == nil {
 		slackInstance = &slack.SlackService{}

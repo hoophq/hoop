@@ -205,7 +205,9 @@ func gatewayPlugins(apiURL string, releaseConnFn reviewapi.TransportReleaseConne
 }
 
 // controlPlanePlugins is Slack only: a background service worth starting, not
-// packet work. One process per org may run it. See ADR-0024, amended 2026-09-09.
+// packet work. Every replica runs it: the review messages live in the
+// database and a config change syncs every 30s (ADR-0024; EVL-345 lifts the
+// one-process limit of its 2026-09-09 amendment).
 func controlPlanePlugins(releaseConnFn reviewapi.TransportReleaseConnectionFunc) []plugintypes.Plugin {
 	return []plugintypes.Plugin{
 		pluginsslack.New(releaseConnFn),

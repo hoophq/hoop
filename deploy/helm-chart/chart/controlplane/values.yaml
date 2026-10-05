@@ -131,30 +131,22 @@ existingSecret: ''
 
 # -- Number of control plane replicas.
 #
-# Defaults to 1, and read ADR-0024 before raising it. socketmode opens one Slack
-# websocket per process and nothing coordinates them: no lease, no advisory
-# lock, only in-process mutexes in gateway/slack. Two replicas with Slack
-# configured for an org post every review twice and race each other's clicks,
-# and Slack documents that a payload may go to any open connection with no
-# pattern to rely on — so a click can be handled by the replica that is not
-# holding the waiting session, the verdict is written, and the session is never
-# released.
+# Several replicas are supported, with or without Slack. Every replica opens
+# one Slack socket per organization, and Slack hands each click to one of them;
+# the review messages live in the database, so any replica can rewrite them. A
+# Slack config change reaches the replicas that did not serve it within 30
+# seconds.
 #
-# Raising this is safe when no organization in this deployment has Slack
-# configured. Everything else in the process is stateless HTTP over a shared
-# database. The chart does not enforce it: whether Slack is configured lives in
-# a private.plugins row no chart can read.
+# Slack allows 10 open sockets per app, so run at most 10 replicas while any
+# organization has Slack configured.
 replicas: 1
 
 # -- Deployment strategy
 #
-# Recreate, not the sidecar chart's RollingUpdate. At one replica the default
-# maxSurge of 1 runs two pods through every upgrade, which is two Slack sockets
-# on a timer — the condition above, every `helm upgrade`. The control plane
-# holds no sessions, so the short API gap drops nothing.
-#
-# Running several replicas already accepts that condition; set RollingUpdate
-# there.
+# Recreate by default. RollingUpdate is safe from this release on. Keep
+# Recreate for the upgrade INTO this release: an older pod tracks review
+# messages in memory, so a message it posts during the rollout is not
+# rewritten when the review settles.
 deploymentStrategy:
   type: Recreate
 

@@ -90,28 +90,25 @@ value serves API-only with a 404 at `/` — and nothing shows it, because
 
 ## Replicas
 
-`replicas` defaults to **1**. Read this before raising it.
+`replicas` defaults to **1**. Several replicas are supported, with or without
+Slack.
 
-socketmode opens one Slack websocket per process and nothing coordinates them:
-no lease, no advisory lock, only in-process mutexes in `gateway/slack`. With
-Slack configured for an organization, two replicas post every review twice and
-race each other's clicks — and Slack documents that a payload may go to any open
-connection with no pattern to rely on, so a click can be handled by the replica
-that is not holding the waiting session. The verdict is written and the session
-is never released.
+Every replica opens one Slack socket per organization, and Slack hands each
+click to one of them. The review messages live in the database
+(`private.slack_review_messages`), so any replica can rewrite them. A Slack
+config change reaches the replicas that did not serve it within 30 seconds.
 
-Raising `replicas` is safe when **no organization in this deployment has Slack
-configured**. Everything else in the process is stateless HTTP over a shared
-database.
+Slack allows 10 open sockets per app, so run at most **10 replicas** while any
+organization has Slack configured. `helm install` prints a warning above 10.
 
-The chart does not enforce this. Whether Slack is configured lives in a
-`private.plugins` row no chart can read. `helm install` prints a warning above
-one replica.
+For the upgrade **into** this release, keep `deploymentStrategy: Recreate`. An
+older pod tracks review messages in memory, so a message it posts during a
+rolling update is not rewritten when the review settles.
 
 Two related constraints the chart also cannot see:
 
-- A gateway and a control plane pointed at **the same database** both read that
-  row and both open a socket. One organization must not have Slack configured
+- A gateway and a control plane pointed at **the same database** both read the
+  Slack plugin row and both open a socket. One organization must not have Slack configured
   on both at once.
 - `GET /api/ws` registers a WebSocket agent in the in-process broker, and
   `/rdpproxy/*` relays RDP through it — so such an agent turns a control plane
