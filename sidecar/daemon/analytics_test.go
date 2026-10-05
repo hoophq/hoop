@@ -242,7 +242,7 @@ func TestAnAnalyzerStillOpenAcrossAReloadIsCounted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(base)}
+	cfg.cp = &controlPlane{url: "http://plane", cred: tokenCredential("hsc_x"), lastRaw: []byte(base)}
 	ac, err := setupAnalyzer(cfg, nil)
 	if err != nil {
 		t.Fatalf("setupAnalyzer: %v", err)

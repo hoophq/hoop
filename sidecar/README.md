@@ -260,16 +260,18 @@ there, and `SIGHUP` logs that and does nothing.
 ### Connecting it to a Control Plane
 
 A sidecar can fetch its whole configuration from a Hoop Control Plane instead
-of carrying its own listeners. Two facts connect it, each with two sources,
-highest precedence first:
+of carrying its own listeners. Two facts connect it, highest precedence first:
 
 | Fact | Sources |
 |---|---|
 | URL | `HOOP_CONTROL_PLANE_URL`, then the `control_plane_url` config key |
-| Token | the token flag (`--token` / `-token`), then `HOOP_SIDECAR_TOKEN` |
+| Credential | exactly one of: the token flag (`--token` / `-token`), then `HOOP_SIDECAR_TOKEN`; or `HOOP_SIDECAR_IDENTITY_TYPE` (`kubernetes` or `gcp`) |
 
 First wins, not first valid, same as the license sources: an env var holding
-garbage is an error, never a reason to fall through to the file.
+garbage is an error, never a reason to fall through to the file. A token and
+an identity type both set is an error naming both, a credential with no URL
+is an error, and a URL with no credential is an error naming the token and
+the identity type.
 
 ```bash
 # No config file at all: the env pair is the whole configuration.
@@ -283,9 +285,110 @@ hoop start sidecar --config config.yaml --token hsc_...
 
 The plane issues the token once, when you register the sidecar
 (`POST /api/sidecars`), and stores only a hash of it, so losing the token
-means registering a new sidecar. Both sources hold the token itself, never a
-path, and no config key exists for it: a bearer secret does not belong in a
-file that gets committed.
+means registering a new sidecar. The token flag and `HOOP_SIDECAR_TOKEN`
+hold the token itself, never a path, and no config key exists for it: a
+bearer secret does not belong in a file that gets committed.
+
+#### Service account identity instead of a token
+
+A fleet does not have to register each sidecar. The sidecar can present an
+identity the platform already issued (header `hoop-sidecar-identity`), and
+the plane maps it to a sidecar through a service account allowlist entry
+(issuer, audience, subject pattern, name template). The first handshake
+creates the sidecar; restarts, new pod names and replicas land on the same
+one, and a sidecar an admin deleted stays deleted.
+
+| Variable | Holds |
+|---|---|
+| `HOOP_SIDECAR_IDENTITY_TYPE` | `kubernetes`: read a Kubernetes projected service account token from a file. `gcp`: fetch a Google ID token from the GCE/GKE metadata server. Empty: the token. Any other value stops startup |
+| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `kubernetes` only. The token's path; default `/var/run/hoop-sidecar/token`, where the helm chart mounts it. Re-read on every request, because the kubelet rotates it in place. Whitespace is trimmed; an empty file or one over 16 KiB is refused. Set with another type, it stops startup |
+| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `gcp` only. The Google ID token's audience; default the control plane URL. The token is cached until 5 minutes before it expires, and `GCE_METADATA_HOST` overrides the metadata server, as in the Google client libraries. Set with another type, it stops startup, because a projected token's audience is set where the token is minted |
+
+Kubernetes projected token, audience set to the control plane URL exactly as
+`HOOP_CONTROL_PLANE_URL` holds it (or to the organization's own audience, see
+below):
+
+```yaml
+spec:
+  serviceAccountName: hoop-sidecar
+  containers:
+    - name: hoop-sidecar
+      env:
+        - name: HOOP_CONTROL_PLANE_URL
+          value: https://cp.example.com
+        - name: HOOP_SIDECAR_IDENTITY_TYPE
+          value: kubernetes
+        - name: HOOP_SIDECAR_IDENTITY_TOKEN_FILE
+          value: /var/run/secrets/hoop/token
+      volumeMounts:
+        - name: hoop-token
+          mountPath: /var/run/secrets/hoop
+          readOnly: true
+  volumes:
+    - name: hoop-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              path: token
+              audience: https://cp.example.com
+              expirationSeconds: 3600
+```
+
+The allowlist entry for it uses the cluster's OIDC issuer, claim `sub`, and a
+pattern such as `system:serviceaccount:*:hoop-sidecar` with a name template
+such as `gke-eu-{1}`, so each workspace namespace becomes one sidecar.
+
+On GKE with Workload Identity, bind the Kubernetes service account to a
+Google service account and let the metadata server mint the token instead;
+no volume is needed:
+
+```yaml
+      env:
+        - name: HOOP_CONTROL_PLANE_URL
+          value: https://cp.example.com
+        - name: HOOP_SIDECAR_IDENTITY_TYPE
+          value: gcp
+```
+
+Its allowlist entry uses issuer `https://accounts.google.com`, claim `email`,
+and the Google service account's address. A 401 at startup names the issuer
+and subject the sidecar presented, so the entry can be checked against them;
+a control plane that predates service account support answers 401 as well.
+
+When the plane cannot verify the token (not a JWT, an issuer no entry names,
+a bad signature, an expired token, or keys it could not fetch), the 401 says
+only `the service account token failed verification`. The plane does not tell
+an unverified caller why; the reason is in the control plane log, with the
+issuer. A refusal after verification (a subject no pattern allows, a deleted
+sidecar, a binding to another service account) keeps its own message.
+
+##### One control plane, several organizations
+
+The plane maps one (issuer, audience) pair to one organization. Sidecars of
+two organizations that share a plane and an issuer (one GKE cluster, or
+`https://accounts.google.com`) must present different audiences, or the
+second organization cannot add its entry. Give each organization its own
+audience: `HOOP_SIDECAR_IDENTITY_AUDIENCE` under GCP, the projected volume's
+`audience` under Kubernetes (`controlPlane.identityAudience` in the helm
+chart), and the same value in that organization's entry. One organization on
+a plane leaves it unset and uses the plane URL.
+
+##### A sidecar keeps the first service account that reached it
+
+The first service account that reaches a sidecar binds to it. Replicas and
+restarts present the same account, so they reach it too. A different
+service account whose name template renders the same sidecar name is refused
+with 401 until an admin clears the binding:
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $HOOP_ADMIN_TOKEN" \
+  https://cp.example.com/api/sidecars/<name>/identity
+```
+
+The next service account to reach it then binds to it. A sidecar registered
+with a token has no binding; a service account reaches it only when its
+entry sets `adopt_existing_sidecars: true`. The first one binds to it, and the
+sidecar's token keeps working.
 
 At startup the process runs the handshake
 (`POST {url}/api/sidecars/handshake`). The plane answers with the document
@@ -391,7 +494,9 @@ Every event also carries the version, the entry point (`hoop`,
 `hoop-inspect` or `embedded`), OS and architecture, the `runtime`
 (`linux`, `docker`, `kubernetes`, `macos`, `windows`), and two identities.
 `sidecar-id` says which install: `HOOP_SIDECAR_ID` if you set one, else the
-control plane token, else the hostname plus the config file path — stable
+control plane token (or, for a service account identity, the plane URL plus
+the identity's issuer and subject, never the rotating token), else the
+hostname plus the config file path — stable
 across restarts and config edits. `host-id` says which machine: `HOOP_HOST_ID`
 if you set one, else the OS machine id plus the hostname. Every source is
 hashed; nothing leaves the process in the clear.
@@ -405,7 +510,7 @@ variable the table names and nothing else:
 | Docker | hostname is the container id: pass `--hostname` or set `HOOP_SIDECAR_ID` | container's own; set `HOOP_HOST_ID` to group by machine |
 | Kubernetes | hostname is the pod name: set `HOOP_SIDECAR_ID`, or connect a control plane | set `HOOP_HOST_ID` from `spec.nodeName` via the downward API |
 
-A control plane token makes `HOOP_SIDECAR_ID` unnecessary anywhere.
+A control plane credential makes `HOOP_SIDECAR_ID` unnecessary anywhere.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends

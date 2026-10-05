@@ -93,23 +93,41 @@ spec:
             port: 19000
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
-        {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumeMounts }}
+        {{- $k8sIdentity := eq .Values.controlPlane.identity "kubernetes" }}
+        {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumeMounts $k8sIdentity }}
         volumeMounts:
         {{- if include "hoopsidecar.hasConfigFile" . }}
         - name: sidecar-config-volume
           mountPath: {{ include "hoopsidecar.configDir" . }}
           readOnly: true
         {{- end }}
+        {{- if $k8sIdentity }}
+        - name: sidecar-identity
+          mountPath: {{ include "hoopsidecar.identityTokenDir" . }}
+          readOnly: true
+        {{- end }}
         {{- with .Values.extraVolumeMounts }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- end }}
-      {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumes }}
+      {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumes $k8sIdentity }}
       volumes:
       {{- if include "hoopsidecar.hasConfigFile" . }}
       - name: sidecar-config-volume
         configMap:
           name: {{ include "hoopsidecar.configMapName" . }}
+      {{- end }}
+      {{- if $k8sIdentity }}
+      # The audience is controlPlane.identityAudience, else the control
+      # plane URL, so the token is good for the control plane and nothing
+      # else. The kubelet rotates it in place.
+      - name: sidecar-identity
+        projected:
+          sources:
+          - serviceAccountToken:
+              audience: {{ include "hoopsidecar.identityAudience" . | quote }}
+              expirationSeconds: {{ include "hoopsidecar.identityTokenExpiration" . }}
+              path: token
       {{- end }}
       {{- with .Values.extraVolumes }}
       {{- toYaml . | nindent 6 }}
