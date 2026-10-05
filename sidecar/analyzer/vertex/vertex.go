@@ -57,18 +57,14 @@ const scope = "https://www.googleapis.com/auth/cloud-platform"
 const defaultMaxTokens = 1024
 
 // Extra keys this provider reads from the config's analyzer section. The
-// google publisher also reads gemini.KeyThinkingLevel and
-// gemini.KeyThinkingBudget.
+// google publisher also reads gemini.KeyThinkingLevel,
+// gemini.KeyThinkingBudget and gemini.KeyLabels; the other publishers refuse
+// them, because rawPredict and the OpenAI-compatible endpoint take no
+// equivalent.
 const (
 	KeyProject   = "project"
 	KeyRegion    = "region"
 	KeyPublisher = "publisher"
-
-	// KeyLabels tags every call for GCP billing, as comma-separated
-	// key=value pairs: `team=platform,env=prod`. Google publisher only:
-	// generateContent takes a labels map, and rawPredict and the
-	// OpenAI-compatible endpoint document none.
-	KeyLabels = "labels"
 )
 
 // Publisher values for KeyPublisher. Empty means PublisherAnthropic, which
@@ -130,7 +126,7 @@ func init() {
 		// others rather than ignored: an operator who set one expects it
 		// to act, and silence would leave them chasing its effect.
 		if publisher != PublisherGoogle {
-			for _, k := range []string{gemini.KeyThinkingLevel, gemini.KeyThinkingBudget, KeyLabels} {
+			for _, k := range []string{gemini.KeyThinkingLevel, gemini.KeyThinkingBudget, gemini.KeyLabels} {
 				if strings.TrimSpace(opts.Extra[k]) != "" {
 					return nil, fmt.Errorf("analyzer/vertex: %s applies to publisher %q only; publisher is %q",
 						k, PublisherGoogle, publisher)
@@ -158,7 +154,7 @@ func init() {
 			if p.gen, err = gemini.NewGenerationConfig(opts); err != nil {
 				return nil, fmt.Errorf("analyzer/vertex: %w", err)
 			}
-			if p.labels, err = parseLabels(opts.Extra[KeyLabels]); err != nil {
+			if p.labels, err = parseLabels(opts.Extra[gemini.KeyLabels]); err != nil {
 				return nil, fmt.Errorf("analyzer/vertex: %w", err)
 			}
 		case PublisherOpenAPI:
@@ -396,7 +392,7 @@ var (
 // maxLabels is GCP's per-resource limit.
 const maxLabels = 64
 
-// parseLabels reads KeyLabels. Refused at config load, because Vertex
+// parseLabels reads gemini.KeyLabels. Refused at config load, because Vertex
 // rejects a malformed label on every call.
 func parseLabels(raw string) (map[string]string, error) {
 	raw = strings.TrimSpace(raw)
@@ -409,19 +405,19 @@ func parseLabels(raw string) (map[string]string, error) {
 		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
 		switch {
 		case !ok:
-			return nil, fmt.Errorf("%s: %q is not key=value", KeyLabels, pair)
+			return nil, fmt.Errorf("%s: %q is not key=value", gemini.KeyLabels, pair)
 		case !labelKey.MatchString(k):
-			return nil, fmt.Errorf("%s: key %q must start with a lowercase letter and hold only a-z, 0-9, '_' and '-' (max 63)", KeyLabels, k)
+			return nil, fmt.Errorf("%s: key %q must start with a lowercase letter and hold only a-z, 0-9, '_' and '-' (max 63)", gemini.KeyLabels, k)
 		case !labelValue.MatchString(v):
-			return nil, fmt.Errorf("%s: value %q for %q may hold only a-z, 0-9, '_' and '-' (max 63)", KeyLabels, v, k)
+			return nil, fmt.Errorf("%s: value %q for %q may hold only a-z, 0-9, '_' and '-' (max 63)", gemini.KeyLabels, v, k)
 		}
 		if _, dup := out[k]; dup {
-			return nil, fmt.Errorf("%s: key %q appears twice", KeyLabels, k)
+			return nil, fmt.Errorf("%s: key %q appears twice", gemini.KeyLabels, k)
 		}
 		out[k] = v
 	}
 	if len(out) > maxLabels {
-		return nil, fmt.Errorf("%s: %d labels, GCP allows %d", KeyLabels, len(out), maxLabels)
+		return nil, fmt.Errorf("%s: %d labels, GCP allows %d", gemini.KeyLabels, len(out), maxLabels)
 	}
 	return out, nil
 }

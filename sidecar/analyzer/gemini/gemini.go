@@ -74,6 +74,13 @@ const KeyThinkingLevel = "thinking_level"
 // instead. Setting both is refused: Google rejects a request with both.
 const KeyThinkingBudget = "thinking_budget"
 
+// KeyLabels is the extra key that tags every call for GCP billing, as
+// comma-separated key=value pairs. Only analyzer/vertex with publisher google
+// sends it, as the labels map of its project-scoped generateContent. This
+// provider does not send it, so it refuses it: a key that reads as set must
+// not do nothing.
+const KeyLabels = "labels"
+
 // NewGenerationConfig resolves the generationConfig every request of one
 // provider carries: the output limit, the sampling parameters and the
 // thinking extras.
@@ -162,6 +169,9 @@ func init() {
 			if err != nil {
 				return nil, err
 			}
+		}
+		if strings.TrimSpace(opts.Extra[KeyLabels]) != "" {
+			return nil, fmt.Errorf("analyzer/gemini: %s applies to provider vertex with publisher google only", KeyLabels)
 		}
 		gen, err := NewGenerationConfig(opts)
 		if err != nil {

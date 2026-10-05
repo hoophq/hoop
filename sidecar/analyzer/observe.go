@@ -137,8 +137,11 @@ func (e *Evaluator) retryWait(ctx context.Context, attempt int, err error) (time
 	if !errors.As(err, &he) || !he.Retryable() {
 		return 0, false
 	}
+	// A provider's Retry-After wins, an explicit 0 included: it is the
+	// provider saying "now", and a backoff in its place could push the
+	// retry past a deadline the immediate attempt would fit.
 	wait := he.RetryAfter
-	if wait <= 0 {
+	if !he.HasRetryAfter {
 		d := e.retryCap
 		if shift := attempt - 1; shift < 16 {
 			d = min(e.retryBase<<shift, e.retryCap)

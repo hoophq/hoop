@@ -30,9 +30,11 @@ func (s *scriptedProvider) Classify(context.Context, string, string) (*analyzer.
 	return &analyzer.Result{RiskLevel: analyzer.RiskHigh, Title: "t"}, nil
 }
 
+// httpStatus builds a provider answer; a positive retryAfter is sent as the
+// header, zero as no header at all.
 func httpStatus(code int, retryAfter time.Duration) error {
 	return &analyzer.HTTPError{Provider: "analyzer/stub", Code: code,
-		Status: http.StatusText(code), RetryAfter: retryAfter}
+		Status: http.StatusText(code), RetryAfter: retryAfter, HasRetryAfter: retryAfter > 0}
 }
 
 // newRetrying builds a blocking evaluator that records its calls, with retry
@@ -185,18 +187,45 @@ func TestOutcomesCoverCacheHits(t *testing.T) {
 	}
 }
 
+// Retry-After: 0 is the provider saying "now". It must not be read as an
+// absent header, whose backoff would not fit a deadline the immediate retry
+// does.
+func TestAnExplicitRetryAfterZeroRetriesAtOnce(t *testing.T) {
+	now := &analyzer.HTTPError{Provider: "analyzer/stub", Code: http.StatusServiceUnavailable,
+		Status: "503", HasRetryAfter: true}
+	for name, tc := range map[string]struct {
+		err   error
+		calls int64
+	}{
+		"Retry-After: 0": {now, 2},
+		"no header":      {httpStatus(http.StatusServiceUnavailable, 0), 1},
+	} {
+		p := &scriptedProvider{errs: []error{tc.err}}
+		ev, _ := newRetrying(t, p, 1, 100*time.Millisecond)
+		// A backoff of at least 500ms cannot fit the 100ms deadline.
+		analyzer.SetRetryPacing(ev, time.Second, time.Second)
+		ev.Evaluate(sqlStmt("DELETE FROM t", inspect.OpDelete, "t"))
+		if got := p.calls.Load(); got != tc.calls {
+			t.Errorf("%s: provider called %d times, want %d", name, got, tc.calls)
+		}
+	}
+}
+
 // Retry-After arrives as seconds or as an HTTP date; anything else is no
 // hint at all, never a zero wait taken as an instruction.
 func TestResponseErrorReadsRetryAfter(t *testing.T) {
 	for _, tc := range []struct {
-		header string
-		min    time.Duration
-		max    time.Duration
+		header   string
+		min, max time.Duration
+		set      bool
 	}{
-		{"7", 7 * time.Second, 7 * time.Second},
-		{time.Now().Add(30 * time.Second).UTC().Format(http.TimeFormat), 28 * time.Second, 30 * time.Second},
-		{"soon", 0, 0},
-		{"", 0, 0},
+		{"7", 7 * time.Second, 7 * time.Second, true},
+		{"0", 0, 0, true},
+		{time.Now().Add(30 * time.Second).UTC().Format(http.TimeFormat), 28 * time.Second, 30 * time.Second, true},
+		{time.Now().Add(-time.Minute).UTC().Format(http.TimeFormat), 0, 0, true},
+		{"-3", 0, 0, false},
+		{"soon", 0, 0, false},
+		{"", 0, 0, false},
 	} {
 		rec := httptest.NewRecorder()
 		rec.Header().Set("Retry-After", tc.header)
@@ -207,8 +236,9 @@ func TestResponseErrorReadsRetryAfter(t *testing.T) {
 		if !errors.As(err, &he) || !he.Retryable() {
 			t.Fatalf("%q: err = %v, want a retryable HTTPError", tc.header, err)
 		}
-		if he.RetryAfter < tc.min || he.RetryAfter > tc.max {
-			t.Errorf("%q: RetryAfter = %v, want in [%v, %v]", tc.header, he.RetryAfter, tc.min, tc.max)
+		if he.HasRetryAfter != tc.set || he.RetryAfter < tc.min || he.RetryAfter > tc.max {
+			t.Errorf("%q: RetryAfter = %v set %v, want in [%v, %v] set %v",
+				tc.header, he.RetryAfter, he.HasRetryAfter, tc.min, tc.max, tc.set)
 		}
 	}
 }

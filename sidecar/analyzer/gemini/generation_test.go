@@ -80,8 +80,8 @@ func TestSettingsReachTheGenerationConfig(t *testing.T) {
 	}
 }
 
-// Each of these is a 400 on every call if sent, so it is refused when the
-// provider is built.
+// Each of these is a 400 on every call if sent, or a key this provider never
+// sends, so it is refused when the provider is built.
 func TestBadSettingsAreRefusedAtConstruction(t *testing.T) {
 	big := int64(math.MaxInt32) + 1
 	for name, tc := range map[string]struct {
@@ -96,6 +96,7 @@ func TestBadSettingsAreRefusedAtConstruction(t *testing.T) {
 			"mutually exclusive",
 		},
 		"seed past 32 bits": {analyzer.Options{Sampling: analyzer.Sampling{Seed: &big}}, "32-bit"},
+		"billing labels":    {analyzer.Options{Extra: map[string]string{KeyLabels: "team=a"}}, "labels applies to provider vertex"},
 	} {
 		tc.opts.Model = "m"
 		tc.opts.Credential = analyzer.NewSecret([]byte("k"))

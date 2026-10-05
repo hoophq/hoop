@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -59,5 +60,30 @@ func TestNoAnalyzerWritesNothing(t *testing.T) {
 	var b strings.Builder
 	if err := m.writeTo(&b); err != nil || b.Len() != 0 {
 		t.Errorf("nil metrics wrote %q, err %v", b.String(), err)
+	}
+}
+
+// Observers run inline on data connections. A scraper that stops reading
+// holds its write open, and that must not hold the lock the next call
+// reports under.
+func TestAStalledScrapeDoesNotBlockObservers(t *testing.T) {
+	m := newAnalyzerMetrics("p", "m")
+	m.call(analyzer.Call{Rule: "lane", Outcome: analyzer.CallOK, Duration: time.Second, Attempts: 1})
+
+	r, w := io.Pipe() // nothing reads r, so the write blocks
+	defer r.Close()
+	go func() { _ = m.writeTo(w) }()
+	time.Sleep(20 * time.Millisecond) // let writeTo reach the write
+
+	done := make(chan struct{})
+	go func() {
+		m.call(analyzer.Call{Rule: "lane", Outcome: analyzer.CallOK, Duration: time.Second, Attempts: 1})
+		m.outcome(analyzer.Outcome{Rule: "lane", Status: analyzer.StatusOK})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("an observer waited on a scrape the client stopped reading")
 	}
 }

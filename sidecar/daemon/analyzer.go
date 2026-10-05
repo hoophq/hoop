@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
@@ -160,8 +162,8 @@ type AnalyzerConfig struct {
 	CredentialsFile string `json:"credentials_file,omitempty"`
 
 	// Extra carries provider-specific settings: Vertex's project, region
-	// and publisher; Gemini's api.
-	Extra map[string]string `json:"extra,omitempty"`
+	// and publisher; Gemini's api; the thinking and labels keys.
+	Extra ProviderExtra `json:"extra,omitempty"`
 
 	// Prompt replaces the built-in risk guidance for every ai_analysis rule
 	// that does not set its own. Empty uses analyzer.PromptGuidance.
@@ -235,6 +237,48 @@ type AnalyzerConfig struct {
 // sampling is the section's sampling parameters as the provider takes them.
 func (a *AnalyzerConfig) sampling() analyzer.Sampling {
 	return analyzer.Sampling{Temperature: a.Temperature, TopP: a.TopP, TopK: a.TopK, Seed: a.Seed}
+}
+
+// ProviderExtra is the analyzer section's provider-specific settings. Every
+// value is a string to the provider, and a JSON number or boolean is accepted
+// as its literal text.
+//
+// The YAML loader keeps an unquoted scalar's type, so `thinking_budget: 0`
+// arrives as the number 0. A plain map[string]string would refuse the whole
+// document over it, which reads as a broken file for a value that is right.
+type ProviderExtra map[string]string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (e *ProviderExtra) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		*e = nil
+		return nil
+	}
+	out := make(ProviderExtra, len(raw))
+	for k, v := range raw {
+		dec := json.NewDecoder(bytes.NewReader(v))
+		dec.UseNumber()
+		var val any
+		if err := dec.Decode(&val); err != nil {
+			return fmt.Errorf("extra.%s: %w", k, err)
+		}
+		switch val := val.(type) {
+		case string:
+			out[k] = val
+		case json.Number:
+			out[k] = val.String()
+		case bool:
+			out[k] = fmt.Sprint(val)
+		default:
+			return fmt.Errorf("extra.%s: want a string, a number or a boolean", k)
+		}
+	}
+	*e = out
+	return nil
 }
 
 // SendMode decides what a statement looks like when it leaves the process.

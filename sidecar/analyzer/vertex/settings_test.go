@@ -32,7 +32,7 @@ func TestGooglePublisherSendsThinkingSamplingAndLabels(t *testing.T) {
 		Extra: map[string]string{
 			KeyPublisher:            PublisherGoogle,
 			gemini.KeyThinkingLevel: "low",
-			KeyLabels:               "team=platform, env=prod",
+			gemini.KeyLabels:        "team=platform, env=prod",
 		},
 	})
 	withToken(p, "tok")
@@ -70,7 +70,7 @@ func TestPublisherSpecificSettingsAreRefusedElsewhere(t *testing.T) {
 	}{
 		"thinking on claude":   {PublisherAnthropic, map[string]string{gemini.KeyThinkingLevel: "low"}, analyzer.Sampling{}, "thinking_level applies to publisher"},
 		"budget on open model": {PublisherOpenAPI, map[string]string{gemini.KeyThinkingBudget: "0"}, analyzer.Sampling{}, "thinking_budget applies to publisher"},
-		"labels on claude":     {PublisherAnthropic, map[string]string{KeyLabels: "a=b"}, analyzer.Sampling{}, "labels applies to publisher"},
+		"labels on claude":     {PublisherAnthropic, map[string]string{gemini.KeyLabels: "a=b"}, analyzer.Sampling{}, "labels applies to publisher"},
 		"seed on claude":       {PublisherAnthropic, nil, analyzer.Sampling{Seed: &seed}, "no [seed] parameter"},
 		"top_k on open model":  {PublisherOpenAPI, nil, analyzer.Sampling{TopK: &topK}, "no [top_k] parameter"},
 	} {
@@ -96,7 +96,7 @@ func TestMalformedLabelsAreRefused(t *testing.T) {
 		"k=" + strings.Repeat("v", 64), // value too long
 	} {
 		_, err := analyzer.NewProvider(Name, analyzer.Options{Model: "m", Extra: map[string]string{
-			KeyProject: "p", KeyRegion: "r", KeyPublisher: PublisherGoogle, KeyLabels: raw,
+			KeyProject: "p", KeyRegion: "r", KeyPublisher: PublisherGoogle, gemini.KeyLabels: raw,
 		}})
 		if err == nil || !strings.Contains(err.Error(), "labels") {
 			t.Errorf("labels %q: err = %v, want a labels error", raw, err)

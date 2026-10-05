@@ -89,13 +89,22 @@ func (m *analyzerMetrics) outcome(o analyzer.Outcome) {
 	m.mu.Unlock()
 }
 
-// writeTo renders every family. Series are sorted so two scrapes of the same
-// state are byte-identical. A nil receiver writes nothing, which is a valid
-// exposition: the process has no analyzer.
+// writeTo renders every family and writes it to w. A nil receiver writes
+// nothing, which is a valid exposition: the process has no analyzer.
+//
+// The lock is released before the write. Observers run inline on data
+// connections, and a scraper that stops reading must not stall them.
 func (m *analyzerMetrics) writeTo(w io.Writer) error {
 	if m == nil {
 		return nil
 	}
+	_, err := io.WriteString(w, m.render())
+	return err
+}
+
+// render formats every family under the lock, into memory only. Series are
+// sorted so two scrapes of the same state are byte-identical.
+func (m *analyzerMetrics) render() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var b strings.Builder
@@ -153,8 +162,7 @@ func (m *analyzerMetrics) writeTo(w io.Writer) error {
 			labels("analyzer", k.rule, "status", k.status, "risk_level", k.level, "action", k.action), m.outcomes[k])
 	}
 
-	_, err := io.WriteString(w, b.String())
-	return err
+	return b.String()
 }
 
 // labels renders name="value" pairs, escaped as the exposition format

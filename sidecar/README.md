@@ -1836,7 +1836,7 @@ forced to call one of three risk tools, so the verdict is an enum.
 
 **Retries.** `max_retries` re-sends a classification after a 408, 429, 500,
 502, 503 or 504, waiting about 250 ms, then twice as long each time (at most
-4 s), or the provider's `Retry-After` when it sends one. Every attempt shares
+4 s), or the provider's `Retry-After` when it sends one, `0` meaning at once. Every attempt shares
 `timeout_sec`, so a retry never holds a connection longer than one call
 could; a wait that would outlast it is not taken, and the provider's own
 answer is reported. Any other status and any transport error is final. Zero,
@@ -1846,7 +1846,9 @@ limit.
 **Labels.** `labels` tags every call for GCP billing, as `key=value` pairs
 separated by commas. Keys start with a lowercase letter; keys and values hold
 lowercase letters, digits, `_` and `-`, at most 63 characters. Only
-`publisher: google` sends them.
+`provider: vertex` with `publisher: google` sends them; `provider: gemini`
+and the other publishers refuse them. Unquoted numbers and booleans under
+`extra` load as their text, so `thinking_budget: 0` needs no quotes.
 
 A sidecar that does not report `analyzer_sampling` (the four sampling keys) or
 `analyzer_retries` (`max_retries`) cannot decode them, so the control plane
