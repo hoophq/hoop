@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/hoophq/hoop/client/cmd/sidecartui"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/version"
 	// Analyzer providers register themselves on import, matching the
@@ -26,6 +27,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/term"
 )
 
 // deprecatedSidecarAlias is the pre-rename name of this command. Cobra routes
@@ -40,6 +42,7 @@ var (
 	sidecarStrictFlag     bool
 	sidecarMigrateFlag    bool
 	sidecarMigrateOutFlag string
+	sidecarLogFormatFlag  string
 )
 
 var startSidecarCmd = &cobra.Command{
@@ -107,6 +110,14 @@ needs a restart.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		warnDeprecatedSidecarAlias(os.Stderr, cmd.CalledAs())
 
+		// Read before anything starts, so a typo is a usage error and not a
+		// sidecar that came up in a format nobody asked for.
+		logFormat, err := sidecartui.ParseFormat(sidecarLogFormatFlag)
+		if err != nil {
+			cmd.SilenceUsage = false
+			return err
+		}
+
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
 			if sidecarBareInvocation(cmd, args) {
 				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml",
@@ -172,7 +183,13 @@ needs a restart.`,
 		}
 
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
-		return daemon.Run(cfg, det)
+		// The format only changes how its output reaches the terminal: a
+		// pipe, a file, a container or CI keeps the JSON it always wrote.
+		format := sidecartui.Resolve(logFormat, term.IsTerminal(int(os.Stdout.Fd())), os.Getenv)
+		return sidecartui.Run(format, sidecartui.Options{
+			Version:   daemon.Version,
+			AuditFile: cfg.Audit.File,
+		}, func() error { return daemon.Run(cfg, det) })
 	},
 }
 
@@ -276,6 +293,10 @@ func init() {
 	startSidecarCmd.Flags().StringVar(&sidecarMigrateOutFlag, "migrate-out", "",
 		"File --migrate writes to instead of stdout; its extension picks the syntax, "+
 			"defaulting to the input's")
+
+	startSidecarCmd.Flags().StringVar(&sidecarLogFormatFlag, "log-format", string(sidecartui.FormatAuto),
+		"How output reaches the terminal: auto, tui, text or json. auto draws the TUI on an "+
+			"interactive terminal and writes JSON to a pipe, a file or CI (text when NO_COLOR or TERM=dumb)")
 
 	startCmd.AddCommand(startSidecarCmd)
 }
