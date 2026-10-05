@@ -17,6 +17,10 @@ import (
 // The migration that adds the binding columns, after which the backfill runs.
 const bindingColumnsVersion = 128
 
+// backfillVersion is the backfill itself. The test steps to it and back by
+// number: Up and Steps(-1) would roll back whatever migration is newest.
+const backfillVersion = 129
+
 // migrateTo steps the embedded migrations and releases the connection: the
 // embedded backend serves one session at a time.
 func migrateTo(t *testing.T, inst *pglite.Instance, step func(m *migrate.Migrate) error) {
@@ -104,7 +108,7 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 		execSQL(t, `INSERT INTO private.resources (org_id, name, type, subtype, agent_id) VALUES (?, 'agentres-q', 'custom', 'redis', ?)`, testOrgID, agentID)
 	})
 
-	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Up() })
+	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(backfillVersion) })
 
 	withDB(t, inst, func() {
 		var rows []struct {
@@ -170,7 +174,7 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 
 	// Down removes every mirror, the subscriptions on them and the resources
 	// they alone used; the admin's connections stay.
-	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Steps(-1) })
+	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(bindingColumnsVersion) })
 	withDB(t, inst, func() {
 		if n := queryString(t, `SELECT count(*)::text FROM private.connections WHERE org_id = ?`, testOrgID); n != "2" {
 			t.Errorf("want only the admin's connections after down, got %s", n)

@@ -202,7 +202,8 @@ func TestRebuildReviewBlocks(t *testing.T) {
 // Terminal updates must consume the tracked entry (no stale rewrites) and
 // untracked reviews must be a silent no-op even without an api client.
 func TestUpdateReviewMessageTracking(t *testing.T) {
-	s := &SlackService{sentReviewItems: make(map[string][]sentReviewMessage)}
+	s := &SlackService{}
+	s.mem.items = make(map[string][]sentReviewMessage)
 
 	// untracked review: no-op, no network
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "unknown", IsApproved: true}); err != nil {
@@ -219,7 +220,7 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	defer srv.Close()
 	s.apiClient = slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))
 
-	s.sentReviewItems["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
+	s.mem.items["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
 	req := &UpdateReviewMessageRequest{ReviewID: "rev-1", IsApproved: true}
 	if err := s.UpdateReviewMessage(req); err != nil {
 		t.Fatalf("tracked terminal update failed: %v", err)
@@ -236,18 +237,18 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	if final := s.trackSentReviewMessage("rev-1", sentReviewMessage{channelID: "C3", timestamp: "3.0"}); final == nil || !final.IsApproved {
 		t.Fatalf("a post after settlement must get the terminal state, got %+v", final)
 	}
-	if _, ok := s.sentReviewItems["rev-1"]; ok {
+	if _, ok := s.mem.items["rev-1"]; ok {
 		t.Errorf("a settled review must not be tracked again")
 	}
 
 	// eviction drops entries older than the retention window on new sends
 	stale := time.Now().UTC().Add(-sentReviewRetention - time.Hour)
-	s.sentReviewItems["rev-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: stale}}
+	s.mem.items["rev-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: stale}}
 	s.trackSentReviewMessage("rev-new", sentReviewMessage{channelID: "C2", timestamp: "2.0", sentAt: time.Now().UTC()})
-	if _, ok := s.sentReviewItems["rev-old"]; ok {
+	if _, ok := s.mem.items["rev-old"]; ok {
 		t.Errorf("expired entry survived eviction")
 	}
-	if _, ok := s.sentReviewItems["rev-new"]; !ok {
+	if _, ok := s.mem.items["rev-new"]; !ok {
 		t.Errorf("fresh entry was not tracked")
 	}
 }
@@ -359,10 +360,11 @@ func TestUpdateReviewMessageRevokeAfterApproval(t *testing.T) {
 		fmt.Fprint(w, `{"ok":true,"channel":"C1","ts":"1.0"}`)
 	}))
 	defer srv.Close()
-	s := &SlackService{sentReviewItems: make(map[string][]sentReviewMessage),
+	s := &SlackService{
 		apiClient: slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))}
+	s.mem.items = make(map[string][]sentReviewMessage)
 
-	s.sentReviewItems["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
+	s.mem.items["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-1", IsApproved: true}); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -379,11 +381,45 @@ func TestUpdateReviewMessageRevokeAfterApproval(t *testing.T) {
 		t.Errorf("a second revoke rewrote again: calls=%d err=%v", updates, err)
 	}
 
-	s.sentReviewItems["rev-2"] = []sentReviewMessage{{channelID: "C1", timestamp: "2.0"}}
+	s.mem.items["rev-2"] = []sentReviewMessage{{channelID: "C1", timestamp: "2.0"}}
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-2", IsRejected: true}); err != nil {
 		t.Fatalf("reject: %v", err)
 	}
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-2", IsRevoked: true}); err != nil || updates != 3 {
 		t.Errorf("a revoke after a rejection rewrote a message: calls=%d err=%v", updates, err)
+	}
+}
+
+// A service shutting down after a restart removes itself only. Removing by org
+// alone dropped the service that replaced it, and Slack went quiet until the
+// next restart.
+func TestRemoveServiceInstanceIfKeepsTheReplacement(t *testing.T) {
+	const org = "org-restart"
+	old, replacement := &SlackService{}, &SlackService{}
+	SetServiceInstance(org, replacement)
+	t.Cleanup(func() { RemoveServiceInstance(org) })
+
+	RemoveServiceInstanceIf(org, old)
+	if GetServiceInstance(org) != replacement {
+		t.Fatal("the old service removed its replacement")
+	}
+	RemoveServiceInstanceIf(org, replacement)
+	if GetServiceInstance(org) != nil {
+		t.Fatal("the current service was not removed")
+	}
+	(&SlackService{}).Close() // a zero service closes without a panic
+}
+
+// A reject submitted on a replica that did not open the modal carries the
+// modal submission, with no button in it. The fallback rewrite refuses it
+// rather than index an empty action list on the response goroutine.
+func TestTheFallbackRewriteRefusesAnInteractionWithoutAButton(t *testing.T) {
+	s := &SlackService{}
+	msg := &MessageReviewResponse{ID: "rev-1", Status: "rejected"}
+	if err := s.UpdateMessage(msg, false); err == nil {
+		t.Error("UpdateMessage accepted an interaction with no button")
+	}
+	if err := s.UpdateMessagePartialApproval(msg, 1, 2); err == nil {
+		t.Error("UpdateMessagePartialApproval accepted an interaction with no button")
 	}
 }

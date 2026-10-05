@@ -304,7 +304,9 @@ the license belongs to the organization, which serves its own on every
 handshake. A first handshake that fails stops
 startup, since there is nothing to serve yet.
 
-Once running, a heartbeat repeats the handshake every minute. It keeps the
+Once running, a heartbeat repeats the handshake about every minute (each
+wait is drawn from 48 to 72 seconds, so a fleet started together does not
+stay in step). It keeps the
 plane's last-seen fresh and picks up edits, applying them under the same
 boundary as a file edit: rule-only drift swaps in place, logged as
 `configuration applied` with a generation number; drift beyond the rules

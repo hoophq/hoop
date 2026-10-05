@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
@@ -97,6 +98,11 @@ const (
 	// gateway's last-seen fresh and notices a config edited in the UI; a
 	// minute is fast enough for both and costs one small request.
 	heartbeatEvery = time.Minute
+	// heartbeatJitter spreads each wait over every ± this fraction. A fleet
+	// restarted by one rollout would otherwise handshake in the same second
+	// every minute for its whole life; the mean stays heartbeatEvery, so
+	// last-seen staleness on the plane reads the same.
+	heartbeatJitter = 0.2
 )
 
 // controlPlane is the resolved connection Setup reached: where to call, what
@@ -658,6 +664,15 @@ func controlPlaneMessage(raw []byte) string {
 	return s
 }
 
+// jittered draws one heartbeat wait, uniform over every ± heartbeatJitter.
+func jittered(every time.Duration) time.Duration {
+	spread := time.Duration(float64(every) * 2 * heartbeatJitter)
+	if spread <= 0 {
+		return every
+	}
+	return every - spread/2 + rand.N(spread)
+}
+
 // heartbeat re-runs the handshake until ctx ends. It keeps the gateway's
 // last-seen fresh and notices a config edited in the UI.
 //
@@ -673,7 +688,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 	if every == 0 {
 		every = heartbeatEvery
 	}
-	t := time.NewTicker(every)
+	t := time.NewTimer(jittered(every))
 	defer t.Stop()
 	for {
 		select {
@@ -681,6 +696,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			return
 		case <-t.C:
 		}
+		t.Reset(jittered(every))
 		// What this sidecar did with the LAST document rides on this
 		// request. Reporting it is the whole reason the plane can render a
 		// fleet state at all: a document that was refused, or that needs a
