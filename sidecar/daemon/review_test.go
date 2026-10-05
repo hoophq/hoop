@@ -396,7 +396,7 @@ func TestALocalReviewerReceivesHoldsWithoutAPlane(t *testing.T) {
 func TestThePlaneWinsOverALocalReviewer(t *testing.T) {
 	local := &localReviewer{}
 	deps := &analyzerDeps{
-		cp:    &controlPlane{url: "https://cp.example.com", token: "t"},
+		cp:    &controlPlane{url: "https://cp.example.com", cred: tokenCredential("t")},
 		local: func(string) analyzer.Reviewer { return local },
 	}
 	la := holdingLane().Listeners[0].Analyzer
