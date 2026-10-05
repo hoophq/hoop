@@ -407,12 +407,12 @@ func Patch(c *gin.Context) {
 // DeleteConnection
 //
 //	@Summary		Delete Connection
-//	@Description	Delete a connection resource.
+//	@Description	Delete a connection resource. A connection that mirrors a sidecar listener answers 409: remove the listener from the sidecar instead.
 //	@Tags			Connections
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
 //	@Success		204
-//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Failure		404,409,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -426,6 +426,8 @@ func Delete(c *gin.Context) {
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+	case models.ErrConnectionManagedBySidecar:
+		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case nil:
 		connectionrequests.InvalidateSyncCache(ctx.OrgID, connName)
 		c.Writer.WriteHeader(http.StatusNoContent)

@@ -106,6 +106,8 @@ func Run(mode appconfig.AppMode) {
 
 	services.WarmFeatureFlagCache()
 	analytics.WarmModeCache()
+	// After the flag cache: it mirrors only orgs with the flag on.
+	services.ReconcileAllSidecarListenerConnections(models.DB)
 
 	if err := externaljwt.Init(context.Background()); err != nil {
 		// Bootstrap failures are typically transient (bundle URL

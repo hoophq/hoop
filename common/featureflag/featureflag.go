@@ -30,6 +30,10 @@ type Flag struct {
 	Components  []Component
 }
 
+// FlagSidecarListeners is the one place the flag name is spelled: the catalog
+// key and every IsEnabled call read it from here.
+const FlagSidecarListeners = "beta.sidecar_listeners"
+
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
@@ -82,6 +86,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.sidecar_session_events": {
+		Name:        "experimental.sidecar_session_events",
+		Description: "Record sidecar traffic as sessions: each sidecar connected to this gateway sends its audit events (session start and end, statements, guardrail violations, masking counts, errors) to POST /api/sidecars/events, and the gateway writes them to the session list, the session detail and its query list. The local audit file of the sidecar stays the record of truth; under pressure the sidecar drops the oldest events it has not sent. The copy is sent whatever the local audit file setting is. When off, the handshake does not offer the endpoint, sidecars send nothing, and the endpoint answers 412. Adds write volume to the gateway database.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 	"experimental.ssh_guardrails": {
 		Name:        "experimental.ssh_guardrails",
 		Description: "Enforce guardrails on native SSH connections: exec commands are validated against input rules before they run, and session-channel output (interactive shell/exec) is validated against output rules before it reaches the client. Port-forward (direct-tcpip) channels are not inspected. Interactive shell stdin is validated separately by experimental.ssh_input_guardrails. Requires a DLP provider (Presidio) to be configured.",
@@ -129,6 +140,13 @@ var catalog = map[string]Flag{
 		Description: "Offer the MCP Gateway (mcpproxy) resource type in the webapp catalog, so admins can create protocol-aware MCP connections: tool-level allow/deny, per-tool approval, rug-pull detection and structured tool-call audit, over remote (streamable-http/sse) or stdio backends run either on the agent or on each user's own machine. When off, the card is hidden and no new MCP Gateway connection can be created; connections that already exist keep working end to end, and their role form, edit view and Connect modal stay reachable.",
 		Default:     false,
 		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	FlagSidecarListeners: {
+		Name:        FlagSidecarListeners,
+		Description: "Manage sidecar listeners from Resources, with the same guardrails, data masking, reviews and access rules as any other resource.",
+		Default:     false,
+		Stability:   StabilityBeta,
 		Components:  []Component{ComponentGateway},
 	},
 }

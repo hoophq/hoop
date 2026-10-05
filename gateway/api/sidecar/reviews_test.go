@@ -452,6 +452,17 @@ func TestGetReviewRefusesARequestThatSkippedTheMiddleware(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 
+func TestListReviewsRefusesARequestThatSkippedTheMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/sidecars/reviews", nil)
+
+	ListReviews(c)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
 func TestGetReviewAnswersAMalformedIDAsNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

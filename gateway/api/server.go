@@ -295,9 +295,12 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	// user, and TrackRequest requires a user email, so it would be a no-op
 	// that reads as an emitted event.
 	r.POST("/sidecars/reviews", r.SidecarAuthMiddleware, apisidecar.PostReview)
+	r.GET("/sidecars/reviews", r.SidecarAuthMiddleware, apisidecar.ListReviews)
 	r.GET("/sidecars/reviews/:id", r.SidecarAuthMiddleware, apisidecar.GetReview)
 	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apisidecar.ClaimReview)
 	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.ImportConfiguration)
+	// No TrackRequest, for the reason above. 412 while the flag is off.
+	r.POST("/sidecars/events", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.PostEvents)
 
 	r.POST("/sidecars",
 		apiroutes.AdminOnlyAccessRole,

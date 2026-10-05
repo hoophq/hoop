@@ -142,7 +142,10 @@ const (
 	SessionOriginRunbooks     = "runbooks"
 	SessionOriginProxyManager = "proxymanager"
 	SessionOriginAgent        = "agent"
-	SessionOriginUnknown      = "unknown"
+	// SessionOriginSidecar: a session a sidecar recorded; no transport origin
+	// maps to it.
+	SessionOriginSidecar = "sidecar"
+	SessionOriginUnknown = "unknown"
 
 	SessionPhaseClientConnect       = "client-connect"
 	SessionPhaseClientConnected     = "client-connected"

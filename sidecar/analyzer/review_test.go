@@ -158,6 +158,9 @@ func TestAnUnreleasedReviewDeniesAndNamesIt(t *testing.T) {
 			if v.Source != policy.SourceAnalyzer || v.Rule != "payments" {
 				t.Errorf("denial is attributed to %q/%q, want analyzer/payments", v.Source, v.Rule)
 			}
+			if want := (policy.Review{ID: "9f97", Status: tc.status}); v.Review == nil || *v.Review != want {
+				t.Errorf("review = %+v, want %+v", v.Review, want)
+			}
 		})
 	}
 }
@@ -189,6 +192,9 @@ func TestNoReviewBackendDenies(t *testing.T) {
 	}
 	if strings.Contains(v.Message, "(review ") {
 		t.Errorf("the denial quotes a review id that was never filed: %q", v.Message)
+	}
+	if v.Review != nil {
+		t.Errorf("the verdict names review %+v, which was never filed", *v.Review)
 	}
 }
 

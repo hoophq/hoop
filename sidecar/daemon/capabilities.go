@@ -13,7 +13,8 @@ import (
 )
 
 // CapabilitiesHeader lists, comma separated, what this build decodes of the
-// served document. The sidecar sends it on every handshake.
+// served document, and the behaviours it has toward the plane. The sidecar
+// sends it on every handshake.
 //
 // A header, like the answer's LicenseManagedHeader and ConfigRevisionHeader.
 // Absent means a build too old to report; the plane keeps that apart from a
@@ -25,9 +26,9 @@ import (
 // refuse such a document at save and at serve instead; see CheckServable.
 const CapabilitiesHeader = "hoop-sidecar-capabilities"
 
-// Three kinds of entry travel in the header. SidecarCapabilities generates
-// all three from what the build links, so a new field, rule type or protocol
-// is reported without anyone listing it (ADR-0022):
+// Four kinds of entry travel in the header. SidecarCapabilities generates
+// the first three from what the build links, so a new field, rule type or
+// protocol is reported without anyone listing it (ADR-0022):
 //
 //   - A bare name is a FIELD: the cap:"<name>" tag on the struct field that
 //     decodes it. A document that sets the field needs the entry. Every
@@ -38,6 +39,9 @@ const CapabilitiesHeader = "hoop-sidecar-capabilities"
 //     field shipped in; see CheckServable for what it decides.
 //   - rule:<type> is a guardrail rule type policy.RuleTypes lists.
 //   - protocol:<name> is a listener protocol Protocols lists.
+//   - A bare name no field carries is a BEHAVIOUR this build has toward the
+//     plane, listed in behaviourCapabilities. CheckServable never reads one:
+//     it says what the sidecar does, not what it decodes.
 const (
 	// CapabilityReviewMode means this build decodes an analyzer block's
 	// review_mode.
@@ -45,6 +49,9 @@ const (
 	// CapabilityAnalyzerRateLimit means this build decodes analyzer
 	// rate_limit, on the top-level section and on a listener's block.
 	CapabilityAnalyzerRateLimit = "analyzer_rate_limit"
+	// CapabilitySessionEvents means this build sends its audit events to
+	// the plane when the handshake answers with SessionEventsHeader.
+	CapabilitySessionEvents = "session_events"
 
 	capabilityRulePrefix     = "rule:"
 	capabilityProtocolPrefix = "protocol:"
@@ -129,15 +136,20 @@ func capabilitySince() map[string]string {
 	return out
 }
 
+// behaviourCapabilities are the entries no field, rule type or protocol
+// generates. A behaviour has no type to generate it from, so it is listed.
+var behaviourCapabilities = []string{CapabilitySessionEvents}
+
 // SidecarCapabilities is what this build sends in CapabilitiesHeader: every
 // cap-tagged field of the config, every rule type and every protocol it
-// links. Sorted, so two builds that decode the same document send the same
-// header.
+// links, and every behaviour it has. Sorted, so two builds that decode the
+// same document send the same header.
 func SidecarCapabilities() []string {
 	var out []string
 	for _, f := range capFields() {
 		out = append(out, f.name)
 	}
+	out = append(out, behaviourCapabilities...)
 	for _, t := range policy.RuleTypes() {
 		out = append(out, capabilityRulePrefix+string(t))
 	}
