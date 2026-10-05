@@ -1015,8 +1015,12 @@ func Run(cfg *Config, det Plugin) error {
 	go rl.watchFile(ctx, log)
 
 	if cfg.Admin.Listen != "" {
+		var am *analyzerMetrics
+		if analyzerDeps != nil {
+			am = analyzerDeps.metrics
+		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, cfg.Analyzer, licState, log)
+			view, ac, cfg.Analyzer, am, licState, log)
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
@@ -1651,6 +1655,7 @@ func serveAdmin(
 	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
+	analyzerMetrics *analyzerMetrics,
 	licState *licenseState,
 	log *slog.Logger,
 ) {
@@ -1707,6 +1712,18 @@ func serveAdmin(
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	// Prometheus text exposition. The analyzer families only, so far: the
+	// other counters this process keeps are served as JSON by /stats. A
+	// process with no analyzer answers an empty, valid document rather than
+	// 404, so a scrape job pointed at every sidecar does not mark this one
+	// down.
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", metricsContentType)
+		if err := analyzerMetrics.writeTo(w); err != nil {
+			log.Debug("metrics write failed", "error", err)
+		}
 	})
 
 	// The resolved enforcement stack, per lane.

@@ -200,6 +200,14 @@ type Config struct {
 	// Timeout bounds one classification. Zero uses DefaultTimeout.
 	Timeout time.Duration
 
+	// MaxRetries is how many times a classification is re-sent after a
+	// retryable provider answer (408, 429, 500, 502, 503, 504). Zero sends
+	// once. Every attempt shares Timeout, so retries never hold a
+	// connection longer than one call could. A retry is not charged to
+	// MaxCalls or the rate limit: those count classifications, and
+	// providers do not bill a refused request.
+	MaxRetries int
+
 	// FailOpen allows a statement whose classification failed.
 	//
 	// Default false matches the policy package's convention, but the
@@ -239,6 +247,14 @@ type Config struct {
 	// many it refused meanwhile). Edges only, so a throttled lane logs two
 	// lines rather than one per statement. Nil reports nothing.
 	OnRateLimit func(limited bool, refused int64)
+
+	// OnCall is told about every classification sent to the provider,
+	// after its last attempt. Nil reports nothing.
+	OnCall func(Call)
+
+	// OnOutcome is told what happened to every eligible statement, cache
+	// hits and skips included. Nil reports nothing.
+	OnOutcome func(Outcome)
 
 	// Budget optionally supplies the purse itself. A hot reload that
 	// rebuilds an evaluator hands the replacement the SAME Budget, so the
@@ -302,6 +318,10 @@ type Evaluator struct {
 	reviewWait time.Duration
 	reviewPoll time.Duration
 
+	// retryBase and retryCap pace retries. Fields for the same reason.
+	retryBase time.Duration
+	retryCap  time.Duration
+
 	// holds reports that some risk level on this lane waits for a human.
 	//
 	// It is read where a statement could NOT be classified (a spent
@@ -335,6 +355,9 @@ func New(cfg Config) (*Evaluator, error) {
 	}
 	if cfg.MaxInputBytes <= 0 {
 		cfg.MaxInputBytes = DefaultMaxInputBytes
+	}
+	if cfg.MaxRetries < 0 {
+		return nil, fmt.Errorf("sidecar/analyzer: max retries %d is negative", cfg.MaxRetries)
 	}
 	if !cfg.ReviewMode.Valid() {
 		return nil, fmt.Errorf("sidecar/analyzer: unknown review mode %q", cfg.ReviewMode)
@@ -371,6 +394,8 @@ func New(cfg Config) (*Evaluator, error) {
 		budget:     budget,
 		reviewWait: ReviewWait,
 		reviewPoll: reviewPoll,
+		retryBase:  retryBase,
+		retryCap:   retryCap,
 	}, nil
 }
 
@@ -407,6 +432,11 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	if status == StatusOK || status == StatusCached {
 		level = res.RiskLevel
 		action = e.cfg.Actions.actionFor(level)
+	}
+	if status == StatusRefused {
+		e.observe(status, "", ActionBlock)
+	} else {
+		e.observe(status, level, action)
 	}
 	e.report(ec, status, level)
 	// The trail's ai_status is the folded one, not this evaluation's own.
@@ -698,15 +728,10 @@ func (e *Evaluator) classify(
 	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
 	defer cancel()
 
-	res, err := e.cfg.Provider.Classify(callCtx, e.prompt, text)
+	res, err := e.call(callCtx, text)
 	if err != nil {
 		e.errs.Add(1)
 		return Result{}, StatusError, err
-	}
-	if res == nil || !res.RiskLevel.Valid() {
-		e.errs.Add(1)
-		return Result{}, StatusError, fmt.Errorf(
-			"provider returned no usable risk level")
 	}
 
 	e.cache.put(cacheKey, *res)

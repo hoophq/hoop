@@ -38,6 +38,10 @@ const apiVersion = "2023-06-01"
 // explanation is a few hundred tokens; 1024 is slack, not a budget.
 const defaultMaxTokens = 1024
 
+// UnsupportedSampling names the sampling parameters the Messages API has no
+// field for. A provider speaking this encoder refuses them at construction.
+var UnsupportedSampling = []string{"seed"}
+
 func init() {
 	analyzer.Register(Name, func(opts analyzer.Options) (analyzer.Provider, error) {
 		if opts.Credential.IsZero() {
@@ -50,11 +54,15 @@ func init() {
 		if endpoint == "" {
 			endpoint = DefaultEndpoint
 		}
+		if err := opts.Sampling.Unsupported("analyzer/"+Name, UnsupportedSampling...); err != nil {
+			return nil, err
+		}
 		return &Provider{
 			endpoint:  endpoint,
 			model:     opts.Model,
 			key:       opts.Credential,
 			maxTokens: pickMaxTokens(opts.MaxOutputTokens),
+			sampling:  opts.Sampling,
 			client:    opts.Client(), // no timeout: the caller's ctx owns the deadline
 		}, nil
 	})
@@ -73,6 +81,7 @@ type Provider struct {
 	model     string
 	key       analyzer.Secret
 	maxTokens int
+	sampling  analyzer.Sampling
 	client    *http.Client
 }
 
@@ -81,7 +90,7 @@ func (p *Provider) Name() string { return Name }
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
-	body, err := json.Marshal(BuildRequest(p.model, p.maxTokens, systemPrompt, content, false))
+	body, err := json.Marshal(BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, false))
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/anthropic: encoding request: %w", err)
 	}
@@ -117,7 +126,13 @@ type Request struct {
 	// the body rather than as a header. Anthropic direct rejects it.
 	AnthropicVersion string `json:"anthropic_version,omitempty"`
 
-	MaxTokens  int        `json:"max_tokens"`
+	MaxTokens int `json:"max_tokens"`
+
+	// Sampling, omitted when unset so the model default applies.
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"top_p,omitempty"`
+	TopK        *int     `json:"top_k,omitempty"`
+
 	System     string     `json:"system"`
 	Messages   []Message  `json:"messages"`
 	Tools      []Tool     `json:"tools"`
@@ -163,8 +178,9 @@ const VertexAPIVersion = "vertex-2023-10-16"
 // forVertex switches the two transport differences: the model moves from the
 // body to the URL, and the API version moves from a header into the body.
 // Everything else — messages, tools, tool_choice — is identical, which is why
-// one encoder serves both.
-func BuildRequest(model string, maxTokens int, systemPrompt, content string, forVertex bool) Request {
+// one encoder serves both. The caller has already refused s.Seed, which this
+// API has no field for.
+func BuildRequest(model string, maxTokens int, s analyzer.Sampling, systemPrompt, content string, forVertex bool) Request {
 	specs := analyzer.ToolSpecs()
 	tools := make([]Tool, 0, len(specs))
 	for _, s := range specs {
@@ -189,10 +205,13 @@ func BuildRequest(model string, maxTokens int, systemPrompt, content string, for
 	}
 
 	req := Request{
-		MaxTokens: maxTokens,
-		System:    systemPrompt,
-		Messages:  []Message{{Role: "user", Content: content}},
-		Tools:     tools,
+		MaxTokens:   maxTokens,
+		Temperature: s.Temperature,
+		TopP:        s.TopP,
+		TopK:        s.TopK,
+		System:      systemPrompt,
+		Messages:    []Message{{Role: "user", Content: content}},
+		Tools:       tools,
 		// "any" forces a tool call. Without it the model may answer in
 		// prose, and a classifier whose output shape is optional is a
 		// parsing problem rather than an enum.
@@ -226,9 +245,6 @@ type contentBlock struct {
 	Input json.RawMessage `json:"input"`
 }
 
-// maxErrorBytes bounds how much of a failed response is read.
-const maxErrorBytes = 4 << 10
-
 // ParseResponse turns an HTTP response into a Result.
 //
 // Exported so analyzer/vertex reuses it: Vertex returns the same document.
@@ -243,10 +259,7 @@ const maxErrorBytes = 4 << 10
 // error an operator pastes into a ticket.
 func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		// Drain a bounded amount so the connection can be reused, and
-		// discard it.
-		_, _ = io.CopyN(io.Discard, resp.Body, maxErrorBytes)
-		return nil, fmt.Errorf("%s: provider returned %s", provider, resp.Status)
+		return nil, analyzer.ResponseError(provider, resp)
 	}
 
 	var out response
