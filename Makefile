@@ -232,6 +232,16 @@ test-standalone:
 test-standalone-e2e:
 	./scripts/standalone-e2e.sh
 
+# Daily parity acceptance (ENG-529): builds the hoop CLI, boots it as
+# today's gateway (flag off), today's control plane, the gateway with
+# beta.sidecar_listeners on, and the control plane on a synthetic
+# control-plane database, then checks MUST_NOT_BREAK.md over HTTP. Needs
+# Docker (Postgres) and a free port 8010. Narrow a local run with
+# PARITY_RUNS=control-plane and PARITY_CHECKS=SC-,RV-01; PARITY_LOG_DIR keeps
+# the process logs and report.md. Own CI workflow: parity-daily.yml.
+test-parity:
+	cd gateway && env CGO_ENABLED=0 go test -tags integration,parity -v -timeout 30m -count=1 ./integration/parity/
+
 generate-openapi-docs:
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
 	go run gateway/cmd/openapi-gen/main.go
@@ -426,4 +436,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: test-parity run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 )
@@ -99,12 +100,11 @@ const (
 )
 
 func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) (*SlackService, error) {
-	apiClient := slack.New(
-		slackBotToken,
-		// slack.OptionDebug(true),
-		// slack.OptionLog(log.New(os.Stdout, "api: ", log.Lshortfile|log.LstdFlags)),
-		slack.OptionAppLevelToken(slackAppToken),
-	)
+	opts := []slack.Option{slack.OptionAppLevelToken(slackAppToken)}
+	if slackAPIURL := appconfig.Get().SlackAPIURL(); slackAPIURL != "" {
+		opts = append(opts, slack.OptionAPIURL(slackAPIURL))
+	}
+	apiClient := slack.New(slackBotToken, opts...)
 	auth, err := apiClient.AuthTest()
 	if err != nil {
 		return nil, fmt.Errorf("fail to validate slack bot token authentication, err=%v", err)

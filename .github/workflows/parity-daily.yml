@@ -1,0 +1,71 @@
+name: Parity Acceptance
+
+# ENG-529: proves every day that today's gateway and today's control plane
+# still behave as customers rely on, and tracks what the sidecar-in-gateway
+# rollout has delivered. The checks are listed in
+# gateway/integration/parity/MUST_NOT_BREAK.md; the job summary has the
+# result of each one.
+on:
+  schedule:
+    # 06:00 UTC, before the working day in Brazil and Europe.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# Same HTTP/1.1 workaround as pullrequest.yml: proxy.golang.org resets
+# HTTP/2 streams and cmd/go does not retry.
+env:
+  GODEBUG: http2client=0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parity-daily
+  cancel-in-progress: false
+
+jobs:
+  parity:
+    name: Parity (gateway flag off, control plane, gateway flag on, migration rehearsal)
+    runs-on: ubuntu-latest
+    # The job holds GH_TOKEN and runs repository code. A manual dispatch may
+    # pick any branch, so run only the default branch's code.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    # The suite's own go test timeout is 30m; the gap covers module
+    # download, the hoop build and the Postgres image pull.
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          # This is a go.work workspace with no root go.mod, so setup-go
+          # cannot find a manifest on its own and silently caches nothing.
+          cache-dependency-path: "**/go.sum"
+
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
+      - name: Authenticate private modules
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      - name: Parity acceptance
+        env:
+          PARITY_LOG_DIR: ${{ runner.temp }}/parity
+        run: make test-parity
+
+      - name: Upload process logs and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-logs
+          path: ${{ runner.temp }}/parity
+          if-no-files-found: ignore
+          retention-days: 14

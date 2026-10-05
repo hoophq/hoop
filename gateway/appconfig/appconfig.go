@@ -70,6 +70,7 @@ type Config struct {
 	dlpProvider                     string
 	dlpMode                         string
 	hasRedactCredentials            bool
+	slackAPIURL                     string
 	msPresidioAnalyzerURL           string
 	msPresidioAnonymizerURL         string
 	webhookAppKey                   string
@@ -195,6 +196,10 @@ func Load(mode AppMode) error {
 			return fmt.Errorf("failed parsing WEBHOOK_APPURL, reason=%v", err)
 		}
 	}
+	slackAPIURL, err := parseSlackAPIURL(os.Getenv("SLACK_API_URL"))
+	if err != nil {
+		return err
+	}
 
 	grpcClientTLSCa, err := envloader.GetEnv("HOOP_TLSCA")
 	if err != nil {
@@ -317,6 +322,7 @@ func Load(mode AppMode) error {
 		msPresidioAnonymizerURL:         os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
 		webhookAppKey:                   os.Getenv("WEBHOOK_APPKEY"),
 		webhookAppURL:                   webhookAppURL,
+		slackAPIURL:                     slackAPIURL,
 		webappUsersManagement:           webappUsersManagement,
 		webappStaticUIPath:              webappStaticUiPath,
 		migrationPathFiles:              migrationPathFiles,
@@ -510,6 +516,10 @@ func (c Config) DlpProvider() string               { return c.dlpProvider }
 func (c Config) DlpMode() string                   { return c.dlpMode }
 func (c Config) HasRedactCredentials() bool        { return c.hasRedactCredentials }
 
+// SlackAPIURL is the Slack Web API base URL, ending in "/". Empty means the
+// Slack client default (https://slack.com/api/).
+func (c Config) SlackAPIURL() string { return c.slackAPIURL }
+
 // HasGuardrailProvider reports whether the mspresidio provider is fully
 // configured (both analyzer and anonymizer URLs).
 //
@@ -696,3 +706,20 @@ func (c Config) SPIFFEBundleJWKS() string           { return c.spiffeBundleJWKS 
 func (c Config) SPIFFETrustDomain() string          { return c.spiffeTrustDomain }
 func (c Config) SPIFFEAudience() string             { return c.spiffeAudience }
 func (c Config) SPIFFERefreshPeriod() time.Duration { return c.spiffeRefreshPeriod }
+
+// parseSlackAPIURL validates SLACK_API_URL: an absolute http(s) URL, such as
+// a proxy in front of slack.com or a fake Slack in tests. The Slack client
+// appends method names to it and sends the bot token there, so it must be a
+// plain base: no credentials, query or fragment, and it always ends in "/".
+func parseSlackAPIURL(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(raw, "?") {
+		return "", fmt.Errorf("SLACK_API_URL must be an absolute http(s) base URL with no credentials, query or fragment, got %q", raw)
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/"
+	return u.String(), nil
+}
