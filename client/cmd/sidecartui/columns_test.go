@@ -21,9 +21,9 @@ func TestListHeadersLineUpWithTheirRows(t *testing.T) {
 		label, value string
 	}{
 		{tabWire, "LISTENER", "pg-prod"},
-		{tabWire, "PRINCIPAL", "bob"},
+		{tabWire, "USER", "bob"},
 		{tabSessions, "LISTENER", "pg-prod"},
-		{tabSessions, "PRINCIPAL", "bob"},
+		{tabSessions, "USER", "bob"},
 		{tabReviews, "APPROVAL", "rv_1"},
 		{tabReviews, "LISTENER", "pg-prod"},
 		{tabLanes, "NAME", "pg-prod"},

@@ -437,14 +437,14 @@ func (m model) columns() string {
 	right := func(s string, w int) string { return fmt.Sprintf("%*s", w, s) }
 	switch m.tab {
 	case tabWire:
-		return join(col("TIME", 8), col("VERDICT", 8), col("LISTENER", 12), col("PRINCIPAL", 16),
+		return join(col("TIME", 8), col("VERDICT", 8), col("LISTENER", 12), col("USER", 16),
 			"WHAT WENT THROUGH")
 	case tabSessions:
-		return join(col("STATE", 8), col("LISTENER", 12), col("PRINCIPAL", 14), col("PROTO", 6),
+		return join(col("STATE", 8), col("LISTENER", 12), col("USER", 14), col("PROTO", 6),
 			right("TIME", 6), right("STMT", 4), right("DENY", 4), right("MASK", 4), "LAST STATEMENT")
 	case tabReviews:
 		return join(col("STATUS", 11), col("RISK", 5), col("APPROVAL", 14), col("LISTENER", 12),
-			col("PRINCIPAL", 16), col("LAST SEEN", 11), "STATEMENT")
+			col("USER", 16), col("LAST SEEN", 11), "STATEMENT")
 	case tabLanes:
 		return join(" ", col("NAME", 12), col("MODE", 8), right("CONN", 4), col("PROTOCOL", 8),
 			"LISTEN → UPSTREAM")
@@ -716,7 +716,7 @@ func (m model) wireDetail(ev audit.Event, w int) string {
 		{"time", ev.Timestamp.Local().Format("2006-01-02 15:04:05.000")},
 		{"listener", ev.Connection},
 		{"protocol", string(ev.Protocol)},
-		{"principal", ev.Principal},
+		{"user", ev.Principal},
 		{"session", string(ev.SessionID)},
 		{"operation", strings.ToUpper(string(ev.Operation))},
 		{"direction", string(ev.Direction)},
@@ -787,7 +787,7 @@ func (m model) sessionDetail(s *Session, w, h int) string {
 		{"session", s.ID},
 		{"listener", s.Lane},
 		{"protocol", s.Protocol},
-		{"principal", s.Principal},
+		{"user", s.Principal},
 		{"started", s.Started.Local().Format("15:04:05")},
 		{"duration", short(s.Duration(now))},
 		{"statements", strconv.Itoa(s.Statements)},
@@ -823,7 +823,7 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 		{"analyzer", r.AIRule},
 		{"approval", r.ID},
 		{"listener", r.Lane},
-		{"principal", r.Principal},
+		{"user", r.Principal},
 		{"mode", r.Mode},
 		{"first seen", r.First.Local().Format("15:04:05") + stFaint.Render(" ("+short(now.Sub(r.First))+" ago)")},
 		{"last seen", r.Last.Local().Format("15:04:05")},

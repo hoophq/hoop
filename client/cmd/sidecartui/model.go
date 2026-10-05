@@ -24,7 +24,7 @@ const (
 	tabCount
 )
 
-var tabNames = [tabCount]string{"Wire", "Sessions", "Approvals", "Lanes", "System", "Logs"}
+var tabNames = [tabCount]string{"Wire", "Sessions", "Approvals", "Listeners", "System", "Logs"}
 
 // Messages the capture goroutines and the clock send in.
 type (
@@ -104,7 +104,7 @@ type model struct {
 func newModel(version string, notes []string, now func() time.Time, stop func()) model {
 	ti := textinput.New()
 	ti.Prompt = "/ "
-	ti.Placeholder = "filter: lane, principal, table, rule, text…"
+	ti.Placeholder = "filter: listener, user, table, rule, text…"
 	ti.CharLimit = 200
 	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	sp.Style = stPrimary
