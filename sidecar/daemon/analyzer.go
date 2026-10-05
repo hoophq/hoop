@@ -700,17 +700,31 @@ func (ac *analyzerDeps) rateLimitLog(name string) func(limited bool, refused int
 //
 // Nil in three cases, and each one denies rather than forwards:
 //
-//   - The lane names no approval_rule, so no level on it holds.
+//   - With a control plane, the lane names no approval_rule, so no level on
+//     it holds.
 //   - The lane is OBSERVING. A dry run that paged approvers would be a dry
 //     run with consequences, and the statement runs anyway: policy.Observe
 //     turns the hold's denial into an allow annotated would_deny, which is
 //     the record the mode exists to produce.
-//   - The process has no control plane, which is every -validate run.
+//   - The process has neither a control plane nor a local reviewer, which is
+//     every -validate run outside a terminal.
+//
+// The plane is asked first: a process connected to one files there even when
+// a local reviewer is linked, so its approval rule is never bypassed.
 func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, observing bool) analyzer.Reviewer {
-	if ac == nil || la == nil || la.ApprovalRule == "" || observing {
+	if ac == nil || la == nil || observing {
 		return nil
 	}
-	return ac.cp.reviewer(listener, la.ApprovalRule)
+	if ac.cp != nil {
+		if la.ApprovalRule == "" {
+			return nil
+		}
+		return ac.cp.reviewer(listener, la.ApprovalRule)
+	}
+	if ac.local != nil && analyzerHolds(la) {
+		return ac.local(listener)
+	}
+	return nil
 }
 
 // budget key prefixes. The map in analyzerDeps is process-wide and keyed by
@@ -996,6 +1010,7 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 		cfg:      cfg.Analyzer,
 		provider: provider,
 		cp:       cfg.cp,
+		local:    cfg.localReviewer,
 		det:      det,
 		mcp:      cfg.MCP != nil,
 	}, nil
@@ -1088,7 +1103,7 @@ const refuseSentinel = analyzer.RefuseSentinel
 //
 // lc is read only by ValidateHoldOnLane: the analyzer block cannot see which
 // lane it is on. A hold's OTHER prerequisite, a control plane to file with,
-// is checked in buildLanes; see holdsWithoutAPlane.
+// is checked in buildLanes; see holdRefusal.
 func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	cfg *AnalyzerConfig, opa *OPAConfig, lane string, lc ListenerConfig) []string {
 	gated := opa.enabled() && opa.Gate
@@ -1117,7 +1132,10 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	}
 
 	if la != nil {
-		problems = append(problems, validateLaneBlock(la, lane)...)
+		// The rule-without-a-hold pairing is checked; the hold-without-a-rule
+		// half waits for buildLanes, which knows whether a control plane or
+		// a local reviewer will receive the review (holdRefusal).
+		problems = append(problems, validateLaneBlock(la, lane, false)...)
 		problems = append(problems, validateGatedExclude(la.Trigger, gated, lane+": analyzer block")...)
 		problems = append(problems, ValidateHoldOnLane(la, lc, lane+": analyzer block")...)
 		// Only where the block names a rate: otherwise the effective one
@@ -1198,7 +1216,8 @@ func ValidateLaneAnalyzerBlock(la *LaneAnalyzerConfig, lane string) []string {
 	if la == nil {
 		return nil
 	}
-	return validateLaneBlock(la, lane)
+	// The plane always files with a rule, so a hold there must name one.
+	return validateLaneBlock(la, lane, true)
 }
 
 // ValidateHoldOnLane is the half of a hold only the lane answers: an ssh lane
@@ -1222,7 +1241,12 @@ func ValidateHoldOnLane(la *LaneAnalyzerConfig, lc ListenerConfig, where string)
 // checks mirror the rule-form ones — same failure, same message shape — plus
 // the numeric bounds a rule never carried, which get the same negative
 // refusal AnalyzerConfig.validate applies to the defaults they override.
-func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
+//
+// holdNeedsRule is whether require_review without an approval_rule is refused
+// here. True for a block the control plane stores; false for a process's own
+// config, where a local reviewer may receive the review and holdRefusal
+// decides at build.
+func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) []string {
 	var problems []string
 	where := lane + ": analyzer block"
 	problems = append(problems, validateRiskActions(
@@ -1262,7 +1286,7 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 	// review long after startup.
 	holds := analyzerHolds(la)
 	switch {
-	case la.ApprovalRule == "" && holds:
+	case la.ApprovalRule == "" && holds && holdNeedsRule:
 		problems = append(problems, fmt.Sprintf(
 			"%s asks for %q and names no approval_rule; the rule is what decides who "+
 				"may release a held statement, and the control plane refuses a review "+

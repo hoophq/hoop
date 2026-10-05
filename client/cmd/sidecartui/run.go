@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,6 +23,11 @@ type Options struct {
 	// AuditFile is the config's audit.file. "" and "-" mean the trail goes
 	// to stdout, which the TUI captures; a path is followed like tail -f.
 	AuditFile string
+	// Reviewer, when set, is the backend the daemon files held statements
+	// with (daemon.WithLocalReviewer); the TUI shows each one and records
+	// the answer. Operator is who answers, written with each decision.
+	Reviewer *Reviewer
+	Operator string
 }
 
 // Run starts the daemon through run and presents its output in format f.
@@ -140,6 +146,11 @@ func runTUI(opts Options, run func() error) error {
 		}
 	}
 	m := newModel(opts.Version, notes, now, stop)
+	m.reviewer, m.operator = opts.Reviewer, opts.Operator
+	if opts.Reviewer != nil {
+		notes = append(notes, "held statements are reviewed in this terminal by "+opts.Operator)
+		m.notes = notes
+	}
 	// No mouse capture: an operator selects a session or review id with
 	// the mouse to paste it elsewhere, and capturing the mouse takes that
 	// away for a scroll wheel the arrow keys already cover.
@@ -150,22 +161,72 @@ func runTUI(opts Options, run func() error) error {
 		// does.
 		tea.WithoutSignalHandler())
 
+	// The daemon never waits for the screen. Captured lines go into a
+	// bounded inbox without blocking, and a line that finds it full is
+	// counted and dropped: the audit trail and the log keep everything,
+	// the screen only shows it. Without this, a terminal frozen with Ctrl-S
+	// would fill the pipes and stall every connection behind a log write.
+	stopTail := make(chan struct{})
+	inbox := make(chan tea.Msg, 8192)
+	var dropped atomic.Int64
+	push := func(msg tea.Msg) {
+		select {
+		case inbox <- msg:
+		default:
+			dropped.Add(1)
+		}
+	}
+	go func() {
+		for msg := range inbox {
+			p.Send(msg)
+		}
+	}()
+	go func() {
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		var shown int64
+		for {
+			select {
+			case <-stopTail:
+				return
+			case <-t.C:
+				if n := dropped.Load(); n != shown {
+					shown = n
+					p.Send(droppedMsg(n))
+				}
+			}
+		}
+	}()
 	emit := func(line []byte) {
 		if ev, ok := ParseAudit(line); ok {
-			p.Send(auditMsg(ev))
+			push(auditMsg(ev))
 			return
 		}
 		if rec, ok := ParseLog(line); ok {
-			p.Send(logMsg(rec))
+			push(logMsg(rec))
 			return
 		}
 		if len(line) > 0 {
-			p.Send(rawMsg(string(line)))
+			push(rawMsg(string(line)))
 		}
+	}
+	if rv := opts.Reviewer; rv != nil {
+		// Reviews are never dropped: each change raises a flag and this
+		// loop sends the whole state, so a missed signal is caught by the
+		// next one.
+		go func() {
+			for {
+				select {
+				case <-stopTail:
+					return
+				case <-rv.Changed():
+					p.Send(localReviewsMsg(rv.Snapshot()))
+				}
+			}
+		}()
 	}
 	go scan(errR, emit)
 	go scan(outR, emit)
-	stopTail := make(chan struct{})
 	if tail != nil {
 		go follow(tail, emit, stopTail)
 	}
@@ -203,6 +264,19 @@ func runTUI(opts Options, run func() error) error {
 		st := fm.st
 		fmt.Fprintf(out, "hoop sidecar stopped after %s: %s statements, %s denied, %s masked, %d warnings\n",
 			short(now().Sub(st.Started)), num(st.Statements), num(st.Denied), num(st.Masked), len(st.Warnings))
+		// Who approved what: the audit trail has no field for it, so the
+		// decisions this terminal made are printed where the scrollback
+		// keeps them.
+		for _, id := range st.ReviewOrder {
+			if r := st.Reviews[id]; r != nil && r.Local && r.DecidedBy != "" {
+				verdict := "approved"
+				if r.Status == statusRejected {
+					verdict = "rejected"
+				}
+				fmt.Fprintf(out, "  review %s on %s: %s by %s at %s\n", r.ID, r.Lane,
+					verdict, r.DecidedBy, r.Decided.Local().Format("15:04:05"))
+			}
+		}
 		// The last errors are what the operator needs once the screen is
 		// gone, so they are printed where the scrollback keeps them.
 		shown := 0

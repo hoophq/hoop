@@ -94,6 +94,13 @@ type Review struct {
 	First     time.Time
 	Last      time.Time
 	Hits      int
+
+	// Local is a review this process holds for the person at the
+	// terminal (Reviewer), as opposed to one a control plane holds. Its
+	// status is the Reviewer's, which knows it before the trail does.
+	Local     bool
+	DecidedBy string
+	Decided   time.Time
 }
 
 // System is the process-level facts the startup log announces.
@@ -423,10 +430,68 @@ func (s *State) applyReview(id string, ev audit.Event) {
 	r.Last = ev.Timestamp
 	r.Lane = ev.Connection
 	r.Principal = ev.Principal
-	r.Statement = ev.Statement
 	r.Mode = ev.Metadata[metaReviewMode]
 	r.Message = ev.Message
+	if r.Local {
+		// The Reviewer's word stands: it filed the review, so its
+		// statement carries the request body the trail leaves out.
+		return
+	}
+	r.Statement = ev.Statement
 	r.Status = reviewStatus(ev)
+}
+
+// ApplyLocalReview folds in a review the terminal's Reviewer filed or
+// settled. It arrives before any audit event names it: the hold is still
+// waiting when it is filed, and the trail records it only once it settles.
+func (s *State) ApplyLocalReview(lr LocalReview) {
+	r, ok := s.Reviews[lr.ID]
+	if !ok {
+		r = &Review{ID: lr.ID, First: lr.Filed, Last: lr.Filed}
+		s.Reviews[lr.ID] = r
+		s.ReviewOrder = append(s.ReviewOrder, lr.ID)
+		for len(s.ReviewOrder) > maxReviews {
+			delete(s.Reviews, s.ReviewOrder[0])
+			s.ReviewOrder = s.ReviewOrder[1:]
+		}
+	}
+	r.Local = true
+	r.Lane = lr.Listener
+	r.Statement = lr.Statement
+	r.Status = lr.Status
+	r.DecidedBy = lr.DecidedBy
+	r.Decided = lr.Decided
+	if lr.Decided.After(r.Last) {
+		r.Last = lr.Decided
+	}
+}
+
+// NextLocalPending is the oldest local review still waiting, skipping the
+// ones the person put aside, or "".
+func (s *State) NextLocalPending(skip map[string]bool) string {
+	for _, id := range s.ReviewOrder {
+		r := s.Reviews[id]
+		if r != nil && r.Local && r.Status == statusPending && !skip[id] {
+			return id
+		}
+	}
+	return ""
+}
+
+// Principals lists who has a connection open on a lane, for the approval
+// dialog: the reviewer is not told who sent a statement, so the dialog
+// shows who could have.
+func (s *State) Principals(lane string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, sess := range s.OpenSessions() {
+		if sess.Lane == lane && sess.Principal != "" && !seen[sess.Principal] {
+			seen[sess.Principal] = true
+			out = append(out, sess.Principal)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // reviewStatus reads where a review stands from the verdict it produced.

@@ -32,6 +32,10 @@ type (
 	auditMsg audit.Event
 	rawMsg   string
 	tickMsg  time.Time
+	// localReviewsMsg is the terminal Reviewer's state after a change.
+	localReviewsMsg []LocalReview
+	// droppedMsg is how many captured lines the UI could not keep up with.
+	droppedMsg int64
 	// doneMsg says the daemon returned. err is what it returned.
 	doneMsg struct{ err error }
 )
@@ -66,6 +70,23 @@ type model struct {
 	stopping bool
 	done     bool
 	err      error
+
+	// reviewer is the terminal's review backend, nil when the sidecar
+	// files with a control plane or holds nothing. operator is who
+	// decides here, recorded with each decision.
+	reviewer *Reviewer
+	operator string
+	// modal is the local review the approval dialog shows, "" when it is
+	// closed. approveFocused is which button enter presses; it starts on
+	// Reject so a stray enter never releases a statement. skipped holds
+	// the reviews put aside with esc, so the dialog does not reopen them.
+	modal          string
+	approveFocused bool
+	skipped        map[string]bool
+
+	// dropped counts captured lines thrown away because the screen fell
+	// behind; the daemon is never made to wait for the screen.
+	dropped int64
 }
 
 func newModel(version string, notes []string, now func() time.Time, stop func()) model {
@@ -88,6 +109,7 @@ func newModel(version string, notes []string, now func() time.Time, stop func())
 		search:  ti,
 		spin:    sp,
 		stop:    stop,
+		skipped: map[string]bool{},
 	}
 	for i := range m.cur {
 		m.cur[i].follow = true
@@ -119,6 +141,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// as a log so it is not lost behind the screen.
 		m.st.ApplyLog(LogRecord{Time: m.now(), Level: "RAW", Msg: string(msg)})
 		return m, nil
+	case localReviewsMsg:
+		for _, lr := range msg {
+			was := ""
+			if prev := m.st.Reviews[lr.ID]; prev != nil && prev.Local {
+				was = prev.Status
+			}
+			if was == lr.Status {
+				continue
+			}
+			m.st.ApplyLocalReview(lr)
+			switch lr.Status {
+			case statusPending:
+				if m.modal == "" && !m.skipped[lr.ID] {
+					m.openModal(lr.ID)
+				}
+			case statusExecuted:
+				m.st.ApplyLog(LogRecord{Time: m.now(), Level: "INFO", Msg: "approved statement released",
+					Attrs: []Attr{{"review", lr.ID}, {"listener", lr.Listener}}})
+			}
+		}
+		return m, nil
+	case droppedMsg:
+		m.dropped = int64(msg)
+		return m, nil
 	case tickMsg:
 		return m, tick()
 	case spinner.TickMsg:
@@ -135,6 +181,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.modal != "" {
+		return m.modalKey(k)
+	}
 	if m.searching {
 		switch k.String() {
 		case "enter":
@@ -178,6 +227,10 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		m.cur[m.tab].follow = !m.cur[m.tab].follow
 	case "enter", " ":
+		if id := m.selectedLocalPending(); id != "" {
+			m.openModal(id)
+			return m, nil
+		}
 		m.detail = !m.detail
 	case "d":
 		m.deniedOnly = !m.deniedOnly
@@ -191,6 +244,73 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.deniedOnly = false
 	}
 	return m, nil
+}
+
+// modalKey handles keys while the approval dialog is open. a and r decide at
+// once; enter presses the focused button; esc puts the review aside and
+// shows the next one waiting.
+func (m model) modalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "ctrl+c":
+		return m.quit()
+	case "a", "y":
+		m.decide(true)
+	case "r", "n":
+		m.decide(false)
+	case "tab", "shift+tab", "left", "right", "h", "l":
+		m.approveFocused = !m.approveFocused
+	case "enter":
+		m.decide(m.approveFocused)
+	case "esc":
+		m.skipped[m.modal] = true
+		m.openModal(m.st.NextLocalPending(m.skipped))
+	}
+	return m, nil
+}
+
+func (m *model) openModal(id string) {
+	m.modal = id
+	m.approveFocused = false
+	if id != "" {
+		delete(m.skipped, id)
+	}
+}
+
+// decide answers the review in the dialog and records who answered. The
+// audit trail has no field for an approver, so the operational log carries
+// it, and the summary printed at exit repeats it.
+func (m *model) decide(approve bool) {
+	if m.reviewer == nil || m.modal == "" {
+		return
+	}
+	lr, ok := m.reviewer.Decide(m.modal, approve, m.operator)
+	if ok {
+		m.st.ApplyLocalReview(lr)
+		msg := "review rejected"
+		if approve {
+			msg = "review approved"
+		}
+		m.st.ApplyLog(LogRecord{Time: m.now(), Level: "INFO", Msg: msg, Attrs: []Attr{
+			{"review", lr.ID}, {"listener", lr.Listener}, {"by", lr.DecidedBy}}})
+	}
+	m.openModal(m.st.NextLocalPending(m.skipped))
+}
+
+// selectedLocalPending is the review under the cursor on the Reviews tab
+// when it is local and still waiting, so enter can open it.
+func (m model) selectedLocalPending() string {
+	if m.tab != tabReviews || m.reviewer == nil {
+		return ""
+	}
+	keys := m.keys(tabReviews)
+	if len(keys) == 0 {
+		return ""
+	}
+	id := keys[indexOf(keys, m.cur[tabReviews].sel, m.cur[tabReviews].follow)]
+	if r := m.st.Reviews[id]; r != nil && r.Local && r.Status == statusPending {
+		return id
+	}
+	return ""
 }
 
 // quit stops the daemon and waits for it; a second press leaves at once, for

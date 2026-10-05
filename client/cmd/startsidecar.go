@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 
 	"github.com/hoophq/hoop/client/cmd/sidecartui"
 	"github.com/hoophq/hoop/client/cmd/styles"
@@ -157,11 +158,24 @@ needs a restart.`,
 			return daemon.WriteMigrated(cfg, configyaml.IsYAML(target), out, os.Stderr)
 		}
 
-		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin,
+		// Resolved before Setup: in the TUI the person at the terminal
+		// reviews held statements, which is what lets a sidecar with no
+		// control plane load require_review at all. Everywhere else
+		// (a pipe, CI, a container) nobody could answer, and Setup keeps
+		// refusing such a config.
+		format := sidecartui.Resolve(logFormat, term.IsTerminal(int(os.Stdout.Fd())), os.Getenv)
+		setupOpts := []daemon.Option{
 			daemon.WithLicense(sidecarLicenseFlag),
 			daemon.WithControlPlaneToken(sidecarTokenFlag),
 			daemon.WithEntrypoint(analytics.EntrypointCLI),
-			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias))
+			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
+		}
+		var reviewer *sidecartui.Reviewer
+		if format == sidecartui.FormatTUI {
+			reviewer = sidecartui.NewReviewer()
+			setupOpts = append(setupOpts, daemon.WithLocalReviewer(reviewer.For))
+		}
+		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, setupOpts...)
 		if err != nil {
 			return err
 		}
@@ -185,10 +199,11 @@ needs a restart.`,
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
 		// The format only changes how its output reaches the terminal: a
 		// pipe, a file, a container or CI keeps the JSON it always wrote.
-		format := sidecartui.Resolve(logFormat, term.IsTerminal(int(os.Stdout.Fd())), os.Getenv)
 		return sidecartui.Run(format, sidecartui.Options{
 			Version:   daemon.Version,
 			AuditFile: cfg.Audit.File,
+			Reviewer:  reviewer,
+			Operator:  sidecarOperator(),
 		}, func() error { return daemon.Run(cfg, det) })
 	},
 }
@@ -232,6 +247,19 @@ func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
 	cmd.Flags().VisitAll(seen)
 	cmd.InheritedFlags().VisitAll(seen)
 	return !changed
+}
+
+// sidecarOperator names the person reviewing at this terminal: the OS
+// account that started the process, which is who the decision is recorded
+// against.
+func sidecarOperator() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	return "unknown"
 }
 
 // sidecarConfigFromEnv reads the config path from the environment. It prefers

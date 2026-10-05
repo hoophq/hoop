@@ -27,6 +27,9 @@ func (m model) View() string {
 			stFaint.Render("hoop sidecar: make the terminal at least 60×12"))
 	}
 	body := m.body(m.width, m.height-chrome)
+	if m.modal != "" {
+		body = m.approvalView(m.width, m.height-chrome)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, m.header(), m.tabs(), body, m.footer())
 }
 
@@ -137,12 +140,23 @@ func (m model) footer() string {
 	if m.searching {
 		return m.search.View()
 	}
+	if m.modal != "" {
+		var parts []string
+		for _, k := range [][2]string{{"a", "approve"}, {"r", "reject"}, {"←→", "choose"},
+			{"enter", "confirm"}, {"esc", "decide later"}} {
+			parts = append(parts, stKey.Render(k[0])+" "+stFaint.Render(k[1]))
+		}
+		return ansi.Truncate(" "+strings.Join(parts, stFaint.Render(" · ")), m.width, "…")
+	}
 	keys := [][2]string{
 		{"tab/1-6", "view"}, {"↑↓", "select"}, {"enter", "details"},
 		{"/", "filter"}, {"f", "follow"},
 	}
 	if m.tab == tabWire {
 		keys = append(keys, [2]string{"d", "denied"})
+	}
+	if m.selectedLocalPending() != "" {
+		keys[2] = [2]string{"enter", "approve or reject"}
 	}
 	keys = append(keys, [2]string{"q", "stop sidecar"})
 	var parts []string
@@ -654,13 +668,24 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 	case "REJECTED", "REVOKED", "DENIED":
 		color = colDanger
 	}
+	where := "control plane"
+	if r.Local {
+		where = "this terminal"
+	}
+	rows = append(rows, kv{"reviewed in", where})
+	if r.DecidedBy != "" {
+		rows = append(rows, kv{"decided by", r.DecidedBy + stFaint.Render(" at "+r.Decided.Local().Format("15:04:05"))})
+	}
 	parts := []string{stBold.Render("⧗ Human review"), "", kvBlock(rows, w)}
 	if b := codeBlock("statement", r.Statement, w, color); b != "" {
 		parts = append(parts, "", b)
 	}
 	if r.Status == "PENDING" {
-		parts = append(parts, "", stFaint.Render(lipgloss.NewStyle().Width(w).Render(
-			"Approve or reject it in the control plane. The client resends the statement once it is approved.")))
+		hint := "Approve or reject it in the control plane. The client resends the statement once it is approved."
+		if r.Local {
+			hint = "Press enter to approve or reject it here."
+		}
+		parts = append(parts, "", stFaint.Render(lipgloss.NewStyle().Width(w).Render(hint)))
 	}
 	return strings.Join(parts, "\n")
 }
@@ -738,6 +763,10 @@ func (m model) systemView(w, h, off int) string {
 	for _, n := range m.notes {
 		rows = append(rows, kv{"output", n})
 	}
+	if m.dropped > 0 {
+		rows = append(rows, kv{"screen", stDanger.Render(fmt.Sprintf(
+			"%s lines not shown: the screen fell behind (the audit trail has them)", num(int(m.dropped))))})
+	}
 	parts := []string{stTitle.Render("Sidecar"), "", kvBlock(rows, w)}
 
 	if len(m.st.Risk) > 0 || len(m.st.AIStatus) > 0 {
@@ -777,6 +806,90 @@ func intMap(in map[string]int) map[string]string {
 	out := make(map[string]string, len(in))
 	for k, v := range in {
 		out[k] = num(v)
+	}
+	return out
+}
+
+// approvalView is the dialog a held statement opens: what is waiting, where,
+// and the two answers. Approve is the primary action (blue) and Reject the
+// danger one (red); the focused button is filled. Focus starts on Reject, so
+// an enter pressed out of habit never releases a statement.
+func (m model) approvalView(w, h int) string {
+	r := m.st.Reviews[m.modal]
+	if r == nil {
+		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, "")
+	}
+	bw := min(max(w-8, 40), 100)
+	inner := bw - 4
+	now := m.now()
+
+	who := stFaint.Render("nobody connected")
+	if p := m.st.Principals(r.Lane); len(p) > 0 {
+		who = strings.Join(p, ", ")
+	}
+	proto := ""
+	if l := m.st.Lanes[r.Lane]; l != nil && l.Protocol != "" {
+		proto = stFaint.Render("  " + l.Protocol)
+	}
+	rows := []kv{
+		{"listener", stStrong.Render(r.Lane) + proto},
+		{"connected", who},
+		{"waiting", short(now.Sub(r.First)) + stFaint.Render(" since "+r.First.Local().Format("15:04:05"))},
+		{"you are", m.operator},
+	}
+
+	head := stPrimary.Render("⧗ Approval needed")
+	id := stFaint.Render(r.ID)
+	head += strings.Repeat(" ", max(inner-lipgloss.Width(head)-lipgloss.Width(id), 1)) + id
+
+	// The statement gets what the rest leaves, so a long request body is
+	// cut rather than pushing the buttons off the screen.
+	fixed := []string{head, "", kvBlock(rows, inner), ""}
+	buttons := m.approvalButtons()
+	more := ""
+	if n := len(m.pendingLocal()) - 1; n > 0 {
+		more = stFaint.Render(fmt.Sprintf("%d more waiting", n))
+	}
+	footer := lipgloss.PlaceHorizontal(inner, lipgloss.Right, buttons)
+	if more != "" {
+		footer = more + strings.Repeat(" ", max(inner-lipgloss.Width(more)-lipgloss.Width(buttons), 1)) + buttons
+	}
+	room := max(h-2-lipgloss.Height(strings.Join(fixed, "\n"))-4, 3)
+	stmt := strings.Split(codeBlock("statement", r.Statement, inner, colPrimary), "\n")
+	if len(stmt) > room {
+		stmt = append(stmt[:room-1], stFaint.Render(fmt.Sprintf("… %d more lines", len(stmt)-room+1)))
+	}
+	lines := strings.Split(strings.Join(append(append(fixed, stmt...), "", footer), "\n"), "\n")
+	style := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colPrimary).
+		Padding(0, 1).Width(bw - 2)
+	box := style.Render(strings.Join(lines, "\n"))
+	// On a short terminal even the facts do not fit: drop lines from the
+	// middle and keep the title and the buttons, which are the part that
+	// must be on screen. Measured after rendering, because the box wraps.
+	for lipgloss.Height(box) > h && len(lines) > 2 {
+		lines = append(lines[:len(lines)-2], lines[len(lines)-1])
+		box = style.Render(strings.Join(lines, "\n"))
+	}
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)
+}
+
+func (m model) approvalButtons() string {
+	reject := stDanger.Bold(true).Padding(0, 2).Render("Reject")
+	approve := stPrimary.Padding(0, 2).Render("Approve")
+	if m.approveFocused {
+		approve = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 2).Render("Approve")
+	} else {
+		reject = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colDanger).Padding(0, 2).Render("Reject")
+	}
+	return reject + "  " + approve
+}
+
+func (m model) pendingLocal() []string {
+	var out []string
+	for _, id := range m.st.ReviewOrder {
+		if r := m.st.Reviews[id]; r != nil && r.Local && r.Status == statusPending {
+			out = append(out, id)
+		}
 	}
 	return out
 }
