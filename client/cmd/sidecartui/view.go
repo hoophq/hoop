@@ -144,9 +144,13 @@ func (m model) menu(w, h int) string {
 		}
 		text := label + strings.Repeat(" ", max(inner-1-lipgloss.Width(label)-lipgloss.Width(count), 1)) + count
 		switch {
-		case i == m.tab:
+		case i == m.tab && m.menuFocus:
 			lines = append(lines, stPrimary.Background(colSelBg).Render("▌")+
 				stPrimary.Background(colSelBg).Width(inner-1).Render(text))
+		case i == m.tab:
+			// The section the content shows, while the arrows are in it:
+			// marked, without the bar that says "the arrows move here".
+			lines = append(lines, " "+stStrong.Background(colSelBg).Width(inner-1).Render(text))
 		case i == tabReviews && count != "":
 			lines = append(lines, " "+shimmer(text, m.now()))
 		default:
@@ -172,10 +176,12 @@ func (m model) hints() string {
 		keys = []keyHint{{"←→", "choose"}, {"enter", "confirm"}, {"y", "stop"}, {"n/esc", "keep running"}}
 	case m.modal != "":
 		keys = []keyHint{{"a", "approve"}, {"r", "reject"}, {"←→", "choose"}, {"enter", "confirm"}, {"esc", "close"}}
+	case m.menuFocus:
+		keys = []keyHint{{"↑↓", "choose a section"}, {"enter/→", "go in"}, {"/", "filter"}, {"q", "quit"}}
 	case m.zoom:
-		keys = []keyHint{{"esc", "back to the list"}, {"↑↓", "previous / next"}, {"tab/1-6", "section"}, {"q", "quit"}}
+		keys = []keyHint{{"esc", "back to the list"}, {"↑↓", "previous / next"}, {"←", "sections"}, {"q", "quit"}}
 	case m.tab == tabSystem:
-		keys = []keyHint{{"↑↓", "scroll"}, {"tab/1-6", "section"}, {"q", "quit"}}
+		keys = []keyHint{{"↑↓", "scroll"}, {"←/esc", "sections"}, {"q", "quit"}}
 	default:
 		keys = []keyHint{{"↑↓", "move"}}
 		switch {
@@ -192,7 +198,7 @@ func (m model) hints() string {
 				keys = append(keys, keyHint{"d", "denied only"})
 			}
 		}
-		keys = append(keys, keyHint{"tab/1-6", "section"}, keyHint{"q", "quit"})
+		keys = append(keys, keyHint{"←/esc", "sections"}, keyHint{"q", "quit"})
 	}
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
@@ -317,9 +323,14 @@ func (m model) list(keys []string, sel, w, h int) string {
 	var rows []string
 	for i := off; i < len(keys) && i < off+h; i++ {
 		row := ansi.Truncate(m.row(keys[i], w-1), w-1, "…")
-		if i == sel {
+		switch {
+		case i == sel && !m.menuFocus:
 			row = stPrimary.Background(colSelBg).Render("▌") + withBackground(row, w-1)
-		} else {
+		case i == sel:
+			// The arrows are in the menu: the row keeps its background so
+			// the details beside it still say which row they describe.
+			row = " " + withBackground(row, w-1)
+		default:
 			row = " " + row
 		}
 		rows = append(rows, row)

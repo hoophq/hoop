@@ -247,31 +247,65 @@ func TestQuitAsksAndDefaultsToNo(t *testing.T) {
 	}
 }
 
-// Enter opens the selected row over the content area and esc goes back; the
-// hints row says so before anyone presses it.
-func TestEnterOpensAndHintsSayIt(t *testing.T) {
+// The arrows start in the section menu: up and down pick a section and the
+// content follows; enter or the right arrow goes in; there the arrows move
+// rows, enter opens one, and esc or the left arrow steps back out. The
+// hints row names each step before anyone presses it.
+func TestArrowsMoveThroughTheMenuThenTheSection(t *testing.T) {
 	now := time.Date(2026, 10, 5, 12, 0, 20, 0, time.UTC)
 	m := newModel("dev", nil, func() time.Time { return now }, nil)
 	feed(m.st, script)
 	var tm tea.Model = m
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 36})
+	press := func(k tea.KeyType) { tm, _ = tm.Update(tea.KeyMsg{Type: k}) }
+	screen := func() string { return ansi.Strip(tm.(model).View()) }
 
-	screen := ansi.Strip(tm.(model).View())
-	for _, want := range []string{"enter open", "↑↓ move", "SECTIONS", "1 Wire", "3 Approvals"} {
-		if !strings.Contains(screen, want) {
-			t.Errorf("the screen does not show %q", want)
-		}
+	if !tm.(model).menuFocus || !strings.Contains(screen(), "↑↓ choose a section") {
+		t.Fatal("the arrows do not start in the menu, or the hints do not say so")
 	}
-	if strings.Contains(screen, "follow") {
-		t.Error("the screen still mentions follow")
+	press(tea.KeyDown)
+	press(tea.KeyDown)
+	if got := tm.(model).tab; got != tabReviews {
+		t.Fatalf("two downs in the menu reached section %d, want Approvals", got)
 	}
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if mm := tm.(model); !mm.zoom || !strings.Contains(ansi.Strip(mm.View()), "esc back to the list") {
+	press(tea.KeyUp)
+	if got := tm.(model).tab; got != tabSessions {
+		t.Fatalf("up in the menu reached section %d, want Sessions", got)
+	}
+	press(tea.KeyUp)
+	press(tea.KeyUp)
+	if got := tm.(model).tab; got != tabLogs {
+		t.Fatalf("up past the first section reached %d, want it to wrap to Logs", got)
+	}
+	press(tea.KeyDown) // back to Wire
+
+	press(tea.KeyRight)
+	if mm := tm.(model); mm.menuFocus || !strings.Contains(screen(), "enter open") {
+		t.Fatal("right did not go into the section, or the hints do not say enter opens")
+	}
+	press(tea.KeyDown)
+	if tm.(model).cur[tabWire].sel == "" {
+		t.Fatal("down inside the section did not move the row")
+	}
+	press(tea.KeyEnter)
+	if mm := tm.(model); !mm.zoom || !strings.Contains(screen(), "esc back to the list") {
 		t.Fatal("enter did not open the selected row")
 	}
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if tm.(model).zoom {
-		t.Fatal("esc did not go back to the list")
+	press(tea.KeyEsc)
+	if mm := tm.(model); mm.zoom || mm.menuFocus {
+		t.Fatal("esc from the opened row did not go back to the list")
+	}
+	press(tea.KeyEsc)
+	if !tm.(model).menuFocus {
+		t.Fatal("esc from the list did not go back to the menu")
+	}
+	press(tea.KeyEnter)
+	press(tea.KeyLeft)
+	if !tm.(model).menuFocus {
+		t.Fatal("left did not go back to the menu")
+	}
+	if strings.Contains(screen(), "follow") {
+		t.Error("the screen still mentions follow")
 	}
 }
 

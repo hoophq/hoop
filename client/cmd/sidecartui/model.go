@@ -63,6 +63,10 @@ type model struct {
 	// zoom shows the selected row's details over the whole content area,
 	// opened with enter and closed with esc.
 	zoom bool
+	// menuFocus is true while the arrows move through the section menu,
+	// false once the person went into a section. It starts on the menu:
+	// the first thing anyone does is pick where to look.
+	menuFocus bool
 	// confirmQuit is the "stop the sidecar?" prompt q opens. quitYes is
 	// its focused answer, No by default, so an enter after a stray q keeps
 	// the sidecar running.
@@ -109,13 +113,14 @@ func newModel(version string, notes []string, now func() time.Time, stop func())
 		version = "dev"
 	}
 	m := model{
-		st:      NewState(now()),
-		now:     now,
-		version: version,
-		notes:   notes,
-		search:  ti,
-		spin:    sp,
-		stop:    stop,
+		st:        NewState(now()),
+		now:       now,
+		version:   version,
+		notes:     notes,
+		search:    ti,
+		spin:      sp,
+		stop:      stop,
+		menuFocus: true,
 	}
 	return m
 }
@@ -208,6 +213,10 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.menuFocus {
+		return m.menuKey(k)
+	}
+
 	switch k.String() {
 	case "q", "ctrl+c":
 		return m.quit()
@@ -217,6 +226,8 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tab, m.zoom = (m.tab+tabCount-1)%tabCount, false
 	case "1", "2", "3", "4", "5", "6":
 		m.tab, m.zoom = tab(k.String()[0]-'1'), false
+	case "left", "h":
+		m.zoom, m.menuFocus = false, true
 	case "up", "k":
 		m.move(-1)
 	case "down", "j":
@@ -247,13 +258,44 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.search.Focus()
 		return m, textinput.Blink
 	case "esc":
-		if m.zoom {
+		// One step back per press: out of the opened row, then off the
+		// filters, then out to the menu.
+		switch {
+		case m.zoom:
 			m.zoom = false
-			break
+		case m.search.Value() != "" || m.deniedOnly:
+			m.search.SetValue("")
+			m.deniedOnly = false
+		default:
+			m.menuFocus = true
 		}
-		m.search.SetValue("")
-		m.deniedOnly = false
 	}
+	return m, nil
+}
+
+// menuKey moves through the section menu. The content follows the
+// highlighted section as the arrows move, so the menu doubles as a preview;
+// enter or the right arrow goes into the section.
+func (m model) menuKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "q", "ctrl+c":
+		return m.quit()
+	case "up", "k", "shift+tab":
+		m.tab = (m.tab + tabCount - 1) % tabCount
+	case "down", "j", "tab":
+		m.tab = (m.tab + 1) % tabCount
+	case "1", "2", "3", "4", "5", "6":
+		m.tab = tab(k.String()[0] - '1')
+		m.menuFocus = false
+	case "enter", " ", "right", "l":
+		m.menuFocus = false
+	case "/":
+		m.menuFocus = false
+		m.searching = true
+		m.search.Focus()
+		return m, textinput.Blink
+	}
+	m.zoom = false
 	return m, nil
 }
 
