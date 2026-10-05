@@ -24,7 +24,7 @@ const (
 	tabCount
 )
 
-var tabNames = [tabCount]string{"Wire", "Sessions", "Reviews", "Lanes", "System", "Logs"}
+var tabNames = [tabCount]string{"Wire", "Sessions", "Approvals", "Lanes", "System", "Logs"}
 
 // Messages the capture goroutines and the clock send in.
 type (
@@ -76,13 +76,12 @@ type model struct {
 	// decides here, recorded with each decision.
 	reviewer *Reviewer
 	operator string
-	// modal is the local review the approval dialog shows, "" when it is
-	// closed. approveFocused is which button enter presses; it starts on
-	// Reject so a stray enter never releases a statement. skipped holds
-	// the reviews put aside with esc, so the dialog does not reopen them.
+	// modal is the local approval the dialog shows, "" when it is closed.
+	// It opens only when the person presses enter on the Approvals tab.
+	// approveFocused is which button enter presses; it starts on Reject so
+	// a stray enter never releases a statement.
 	modal          string
 	approveFocused bool
-	skipped        map[string]bool
 
 	// dropped counts captured lines thrown away because the screen fell
 	// behind; the daemon is never made to wait for the screen.
@@ -109,7 +108,6 @@ func newModel(version string, notes []string, now func() time.Time, stop func())
 		search:  ti,
 		spin:    sp,
 		stop:    stop,
-		skipped: map[string]bool{},
 	}
 	for i := range m.cur {
 		m.cur[i].follow = true
@@ -150,15 +148,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if was == lr.Status {
 				continue
 			}
+			// A new approval never opens anything: it would take the
+			// screen from whatever the person was reading. The Approvals
+			// tab and the header shimmer instead, and the person decides
+			// when to go there.
 			m.st.ApplyLocalReview(lr)
-			switch lr.Status {
-			case statusPending:
-				if m.modal == "" && !m.skipped[lr.ID] {
-					m.openModal(lr.ID)
-				}
-			case statusExecuted:
+			if lr.Status == statusExecuted {
 				m.st.ApplyLog(LogRecord{Time: m.now(), Level: "INFO", Msg: "approved statement released",
-					Attrs: []Attr{{"review", lr.ID}, {"listener", lr.Listener}}})
+					Attrs: []Attr{{"approval", lr.ID}, {"listener", lr.Listener}}})
 			}
 		}
 		return m, nil
@@ -247,8 +244,7 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // modalKey handles keys while the approval dialog is open. a and r decide at
-// once; enter presses the focused button; esc puts the review aside and
-// shows the next one waiting.
+// once; enter presses the focused button; esc closes it undecided.
 func (m model) modalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "ctrl+c":
@@ -262,8 +258,7 @@ func (m model) modalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.decide(m.approveFocused)
 	case "esc":
-		m.skipped[m.modal] = true
-		m.openModal(m.st.NextLocalPending(m.skipped))
+		m.modal = ""
 	}
 	return m, nil
 }
@@ -271,14 +266,14 @@ func (m model) modalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) openModal(id string) {
 	m.modal = id
 	m.approveFocused = false
-	if id != "" {
-		delete(m.skipped, id)
-	}
 }
 
-// decide answers the review in the dialog and records who answered. The
+// decide answers the approval in the dialog and records who answered. The
 // audit trail has no field for an approver, so the operational log carries
 // it, and the summary printed at exit repeats it.
+//
+// The dialog then closes, with the next approval still waiting selected on
+// the tab: one enter away, never opened on its own.
 func (m *model) decide(approve bool) {
 	if m.reviewer == nil || m.modal == "" {
 		return
@@ -286,14 +281,17 @@ func (m *model) decide(approve bool) {
 	lr, ok := m.reviewer.Decide(m.modal, approve, m.operator)
 	if ok {
 		m.st.ApplyLocalReview(lr)
-		msg := "review rejected"
+		msg := "approval rejected"
 		if approve {
-			msg = "review approved"
+			msg = "approval granted"
 		}
 		m.st.ApplyLog(LogRecord{Time: m.now(), Level: "INFO", Msg: msg, Attrs: []Attr{
-			{"review", lr.ID}, {"listener", lr.Listener}, {"by", lr.DecidedBy}}})
+			{"approval", lr.ID}, {"listener", lr.Listener}, {"by", lr.DecidedBy}}})
 	}
-	m.openModal(m.st.NextLocalPending(m.skipped))
+	m.modal = ""
+	if next := m.st.NextLocalPending(nil); next != "" {
+		m.cur[tabReviews].sel, m.cur[tabReviews].follow = next, false
+	}
 }
 
 // selectedLocalPending is the review under the cursor on the Reviews tab

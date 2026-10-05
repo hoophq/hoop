@@ -148,7 +148,7 @@ func runTUI(opts Options, run func() error) error {
 	m := newModel(opts.Version, notes, now, stop)
 	m.reviewer, m.operator = opts.Reviewer, opts.Operator
 	if opts.Reviewer != nil {
-		notes = append(notes, "held statements are reviewed in this terminal by "+opts.Operator)
+		notes = append(notes, "held statements wait for approval in this terminal, decided by "+opts.Operator)
 		m.notes = notes
 	}
 	// No mouse capture: an operator selects a session or review id with
@@ -273,7 +273,7 @@ func runTUI(opts Options, run func() error) error {
 				if r.Status == statusRejected {
 					verdict = "rejected"
 				}
-				fmt.Fprintf(out, "  review %s on %s: %s by %s at %s\n", r.ID, r.Lane,
+				fmt.Fprintf(out, "  approval %s on %s: %s by %s at %s\n", r.ID, r.Lane,
 					verdict, r.DecidedBy, r.Decided.Local().Format("15:04:05"))
 			}
 		}

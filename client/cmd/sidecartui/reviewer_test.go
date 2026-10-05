@@ -8,7 +8,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 // The analyzer's hold loop is written against the control plane's contract;
@@ -113,8 +115,47 @@ func TestReviewerRejectionIsFinal(t *testing.T) {
 	}
 }
 
-// The dialog opens on a filed review, starts on Reject so a stray enter
-// refuses, and moves to the next waiting review after an answer.
+// A new approval interrupts nothing: no dialog opens, the header and the
+// Approvals tab call for attention, and the person opens it with enter.
+func TestANewApprovalDoesNotInterrupt(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	r := NewReviewer()
+	m := newModel("dev", nil, func() time.Time { return now }, nil)
+	m.reviewer, m.operator = r, "alice"
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 36})
+
+	if _, err := r.For("pg").File(context.Background(), "delete from users"); err != nil {
+		t.Fatal(err)
+	}
+	tm, _ = tm.Update(localReviewsMsg(r.Snapshot()))
+	mm := tm.(model)
+	if mm.modal != "" {
+		t.Fatalf("a new approval opened the dialog on its own: %q", mm.modal)
+	}
+	if mm.tab != tabWire {
+		t.Fatalf("a new approval moved the screen to tab %d", mm.tab)
+	}
+	screen := ansi.Strip(mm.View())
+	for _, want := range []string{"1 awaiting approval · press 3", "3 Approvals (1)"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("the screen does not call for attention with %q", want)
+		}
+	}
+	// The call for attention moves: two moments draw it differently. Color
+	// is on for this check; a test process has no terminal to detect.
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(prev)
+	a := shimmer("1 awaiting approval", now)
+	b := shimmer("1 awaiting approval", now.Add(210*time.Millisecond))
+	if a == b || ansi.Strip(a) != ansi.Strip(b) {
+		t.Error("shimmer does not animate, or changes the text it animates")
+	}
+}
+
+// On the Approvals tab, enter opens the newest waiting approval; focus starts
+// on Reject; deciding closes the dialog and selects the next one waiting.
 func TestApprovalDialogFlow(t *testing.T) {
 	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 	r := NewReviewer()
@@ -127,42 +168,48 @@ func TestApprovalDialogFlow(t *testing.T) {
 	first, _ := r.For("pg").File(context.Background(), "delete from users")
 	second, _ := r.For("pg").File(context.Background(), "drop table audit")
 	tm, _ = tm.Update(localReviewsMsg(r.Snapshot()))
+	tm, _ = tm.Update(key("3"))
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mm := tm.(model)
-	if mm.modal != first.ID {
-		t.Fatalf("dialog shows %q, want the first filed review %q", mm.modal, first.ID)
+	if mm.modal != second.ID {
+		t.Fatalf("enter opened %q, want the newest approval %q", mm.modal, second.ID)
 	}
-	view := mm.View()
-	for _, want := range []string{"Approval needed", "delete from users", "Approve", "Reject", "1 more waiting"} {
-		if !strings.Contains(ansi.Strip(view), want) {
+	view := ansi.Strip(mm.View())
+	for _, want := range []string{"Approval needed", "drop table audit", "Approve", "Reject", "1 more waiting"} {
+		if !strings.Contains(view, want) {
 			t.Errorf("dialog does not show %q", want)
 		}
 	}
 
 	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := r.reviews[first.ID].Status; got != statusRejected {
+	if got := r.reviews[second.ID].Status; got != statusRejected {
 		t.Fatalf("enter on the opened dialog = %s, want REJECTED: focus must start on Reject", got)
 	}
 	mm = tm.(model)
-	if mm.modal != second.ID {
-		t.Fatalf("after the answer the dialog shows %q, want %q", mm.modal, second.ID)
+	if mm.modal != "" {
+		t.Fatalf("the dialog chained to %q after an answer; it must close", mm.modal)
 	}
 
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	if got := r.reviews[second.ID]; got.Status != statusApproved || got.DecidedBy != "alice" {
+	// The next one waiting is selected, one enter away.
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if mm = tm.(model); mm.modal != first.ID {
+		t.Fatalf("enter after the answer opened %q, want the next waiting %q", mm.modal, first.ID)
+	}
+	tm, _ = tm.Update(key("a"))
+	if got := r.reviews[first.ID]; got.Status != statusApproved || got.DecidedBy != "alice" {
 		t.Fatalf("a = %+v, want APPROVED by alice", got)
 	}
 	mm = tm.(model)
-	if mm.modal != "" {
-		t.Fatalf("the dialog stayed open with nothing waiting: %q", mm.modal)
+	if rv := mm.st.Reviews[first.ID]; rv.Status != statusApproved || !rv.Local {
+		t.Fatalf("the Approvals tab did not record the approval: %+v", rv)
 	}
-	if rv := mm.st.Reviews[second.ID]; rv.Status != statusApproved || !rv.Local {
-		t.Fatalf("the Reviews tab did not record the approval: %+v", rv)
+	if mm.st.PendingReviews() != 0 || strings.Contains(ansi.Strip(mm.View()), "awaiting approval · press") {
+		t.Error("the screen still calls for attention with nothing waiting")
 	}
 }
 
-// Esc puts a review aside without answering it; enter on the Reviews tab
-// brings it back.
-func TestApprovalDialogEscDefers(t *testing.T) {
+// Esc closes the dialog undecided; enter brings it back.
+func TestApprovalDialogEscCloses(t *testing.T) {
 	now := time.Now()
 	r := NewReviewer()
 	m := newModel("dev", nil, func() time.Time { return now }, nil)
@@ -171,15 +218,16 @@ func TestApprovalDialogEscDefers(t *testing.T) {
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	res, _ := r.For("pg").File(context.Background(), "delete from t")
 	tm, _ = tm.Update(localReviewsMsg(r.Snapshot()))
+	tm, _ = tm.Update(key("3"))
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	mm := tm.(model)
 	if mm.modal != "" || r.reviews[res.ID].Status != statusPending {
 		t.Fatalf("esc answered or kept the dialog: modal=%q status=%s", mm.modal, r.reviews[res.ID].Status)
 	}
-	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
 	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if mm = tm.(model); mm.modal != res.ID {
-		t.Fatalf("enter on the pending review did not reopen it: %q", mm.modal)
+		t.Fatalf("enter on the waiting approval did not reopen it: %q", mm.modal)
 	}
 }
 
@@ -198,6 +246,11 @@ func TestApprovalDialogFits(t *testing.T) {
 		var tm tea.Model = m
 		tm, _ = tm.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		tm, _ = tm.Update(localReviewsMsg(r.Snapshot()))
+		tm, _ = tm.Update(key("3"))
+		tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if tm.(model).modal == "" {
+			t.Fatalf("%dx%d: enter did not open the dialog", size[0], size[1])
+		}
 		lines := strings.Split(tm.(model).View(), "\n")
 		if len(lines) != size[1] {
 			t.Errorf("%dx%d: %d rows", size[0], size[1], len(lines))
@@ -213,3 +266,5 @@ func TestApprovalDialogFits(t *testing.T) {
 		}
 	}
 }
+
+func key(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }

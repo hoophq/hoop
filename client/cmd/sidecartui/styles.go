@@ -113,6 +113,33 @@ func protocolBadge(p string) string {
 	return stFaint.Render(p)
 }
 
+// shimmer draws text in the primary blue with a bright band sweeping across
+// it, left to right, about once a second and a half. It asks for attention
+// without taking the screen: the eye catches the movement, and nothing opens
+// until the person goes there.
+//
+// The frame is a function of the clock, so it moves on every redraw the
+// spinner already causes; no timer of its own. The band's head is white on
+// blue, readable on a dark or a light terminal alike.
+func shimmer(text string, now time.Time) string {
+	runes := []rune(text)
+	period := len(runes) + 8
+	head := int(now.UnixMilli()/70) % period
+	var b strings.Builder
+	for i, r := range runes {
+		cell := string(r)
+		switch d := head - i; {
+		case d == 0:
+			b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Render(cell))
+		case d == 1 || d == 2:
+			b.WriteString(stPrimary.Render(cell))
+		default:
+			b.WriteString(stKey.Render(cell))
+		}
+	}
+	return b.String()
+}
+
 var sparkBlocks = []rune(" ▁▂▃▄▅▆▇█")
 
 // sparkline draws one cell per second. A second with a denial is drawn red,

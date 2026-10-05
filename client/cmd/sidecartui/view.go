@@ -69,8 +69,12 @@ func (m model) header() string {
 		chip("✕", num(m.st.Denied), "denied", stDanger, m.st.Denied > 0),
 		chip("▒", num(m.st.Masked), "masked", stStrong, m.st.Masked > 0),
 	}
-	if len(m.st.Reviews) > 0 {
-		chips = append(chips, chip("⧗", num(m.st.PendingReviews()), "pending review", stPrimary, m.st.PendingReviews() > 0))
+	if n := m.st.PendingReviews(); n > 0 && m.tab != tabReviews {
+		// The one moving thing in the header: something is waiting on a
+		// person, and the hint says where to go.
+		chips = append(chips, shimmer(fmt.Sprintf("⧗ %d awaiting approval · press 3", n), m.now()))
+	} else if len(m.st.Reviews) > 0 {
+		chips = append(chips, chip("⧗", num(n), "awaiting approval", stPrimary, n > 0))
 	}
 	if m.st.Errors > 0 {
 		chips = append(chips, chip("!", num(m.st.Errors), "errors", stDanger, true))
@@ -101,6 +105,10 @@ func (m model) tabs() string {
 		case tabReviews:
 			if n := m.st.PendingReviews(); n > 0 {
 				name += fmt.Sprintf(" (%d)", n)
+				if i != m.tab {
+					parts = append(parts, shimmer(name, m.now()))
+					continue
+				}
 			}
 		case tabLanes:
 			if n := len(m.st.LaneOrder); n > 0 {
@@ -199,7 +207,7 @@ func (m model) listTitle(n int) string {
 		return stTitle.Render("Connections") + stFaint.Render(fmt.Sprintf("  %d open · %d recent",
 			len(m.st.OpenSessions()), n-len(m.st.OpenSessions())))
 	case tabReviews:
-		return stTitle.Render("Human reviews") + stFaint.Render(fmt.Sprintf("  %d", n))
+		return stTitle.Render("Approvals") + stFaint.Render(fmt.Sprintf("  %d", n))
 	case tabLanes:
 		return stTitle.Render("Listeners") + stFaint.Render(fmt.Sprintf("  %d", n))
 	case tabLogs:
@@ -265,8 +273,13 @@ func (m model) empty(w int) string {
 	case tabSessions:
 		b.WriteString(stFaint.Render("No connections yet."))
 	case tabReviews:
-		b.WriteString(stFaint.Render("No reviews yet.\n\nA statement an analyzer holds for human approval shows here\n" +
-			"with its review id once the review settles. A lane in\nreview_mode \"return\" shows it at once, as PENDING."))
+		hint := "No approvals yet.\n\nA statement an analyzer holds for approval shows here.\n"
+		if m.reviewer != nil {
+			hint += "You decide it here: select it and press enter."
+		} else {
+			hint += "It is decided in the control plane."
+		}
+		b.WriteString(stFaint.Render(hint))
 	case tabLanes:
 		b.WriteString(m.spin.View() + stFaint.Render(" starting listeners…"))
 	case tabLogs:
@@ -589,8 +602,8 @@ func (m model) wireDetail(ev audit.Event, w int) string {
 	}
 	ai = append(ai, kv{"ai status", ev.Metadata[metaAIStatus]}, kv{"ai rule", ev.Metadata[metaAIRule]})
 	if rid := ev.Metadata[metaReviewID]; rid != "" {
-		ai = append(ai, kv{"review", stPrimary.Render(rid) + " " + reviewBadge(reviewStatus(ev))},
-			kv{"review mode", ev.Metadata[metaReviewMode]})
+		ai = append(ai, kv{"approval", stPrimary.Render(rid) + " " + reviewBadge(reviewStatus(ev))},
+			kv{"approval mode", ev.Metadata[metaReviewMode]})
 	}
 
 	parts := []string{title, "", kvBlock(rows, w)}
@@ -652,7 +665,7 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 	}
 	rows := []kv{
 		{"status", reviewBadge(r.Status)},
-		{"review", r.ID},
+		{"approval", r.ID},
 		{"listener", r.Lane},
 		{"principal", r.Principal},
 		{"mode", r.Mode},
@@ -672,11 +685,11 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 	if r.Local {
 		where = "this terminal"
 	}
-	rows = append(rows, kv{"reviewed in", where})
+	rows = append(rows, kv{"decided in", where})
 	if r.DecidedBy != "" {
 		rows = append(rows, kv{"decided by", r.DecidedBy + stFaint.Render(" at "+r.Decided.Local().Format("15:04:05"))})
 	}
-	parts := []string{stBold.Render("⧗ Human review"), "", kvBlock(rows, w)}
+	parts := []string{stBold.Render("⧗ Approval"), "", kvBlock(rows, w)}
 	if b := codeBlock("statement", r.Statement, w, color); b != "" {
 		parts = append(parts, "", b)
 	}
