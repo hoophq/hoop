@@ -1557,7 +1557,7 @@ type Plugin interface {
 //
 // A review a risk level asks for is not a position in this list. The Chain
 // runs it after every evaluator here allowed, decide included, so a denial
-// files nothing and spends no approval (ADR-0024).
+// files nothing and spends no approval (ADR-0030).
 //
 // A lane with NO OPA cannot consume a finding at all, so deferring rules deny
 // instead of reporting. `defer` means "hand this to a decision-maker"; with no

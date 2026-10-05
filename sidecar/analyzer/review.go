@@ -192,7 +192,7 @@ const (
 )
 
 // requestHold hands the hold to the Chain that owns ec, which runs it after
-// every evaluator placed after this one allowed (ADR-0024). Holding here
+// every evaluator placed after this one allowed (ADR-0030). Holding here
 // would file and spend the approval before a decide-phase OPA could deny.
 //
 // With no Chain to hand it to, it holds at once: nothing runs after a bare

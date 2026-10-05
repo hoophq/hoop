@@ -180,7 +180,7 @@ type EvalContext struct {
 	ConnCtx context.Context
 
 	// review is the hold a producer asked for, run by the outermost Chain
-	// after every evaluator allowed (ADR-0024). depth is how many Chains
+	// after every evaluator allowed (ADR-0030). depth is how many Chains
 	// are evaluating on this context; only the outermost runs the review,
 	// so a nested chain cannot run it before a decision placed after it.
 	// requests counts every ask: more than one denies, see RequestReview.
@@ -1149,7 +1149,7 @@ func (c Chain) Evaluate(stmt inspect.Statement) Verdict {
 //
 // The outermost chain runs a requested review after its last evaluator
 // allowed, so a decision placed after the producer that asked for it denies
-// before anything is filed or spent (ADR-0024).
+// before anything is filed or spent (ADR-0030).
 func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 	ec.depth++
 	defer func() { ec.depth-- }()

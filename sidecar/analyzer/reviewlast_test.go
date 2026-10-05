@@ -31,7 +31,7 @@ func decideOPA(t *testing.T, result string) (*policy.OPAClient, *map[string]any)
 	return &policy.OPAClient{URL: srv.URL, Phase: policy.PhaseDecide}, review
 }
 
-// The bug ADR-0024 fixes: the hold filed and spent the approval, then the
+// The bug ADR-0030 fixes: the hold filed and spent the approval, then the
 // decide phase denied. A decide denial must now file nothing.
 func TestADecideDenialFilesNoReview(t *testing.T) {
 	rev := &recordingReviewer{res: analyzer.ReviewResult{

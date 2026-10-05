@@ -171,7 +171,7 @@ type opaInput struct {
 
 	// Review says a human will be asked to release the statement if this
 	// decision allows it. Decide phase only: nothing is filed yet, so it
-	// carries no id or status (ADR-0024).
+	// carries no id or status (ADR-0030).
 	Review *opaReview `json:"review,omitempty"`
 }
 

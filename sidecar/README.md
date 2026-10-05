@@ -1172,7 +1172,7 @@ authorizes each review against the config it stored for that sidecar.
 
 **The review runs last.** The lane files the review only after every other
 evaluator allowed the statement, the decide-phase OPA call included
-(ADR-0024). A decide denial files nothing, pages nobody and spends no
+(ADR-0030). A decide denial files nothing, pages nobody and spends no
 approval. Decide sees the pending review as `input.review` (see [Guardrails
 and OPA](#guardrails-and-opa)), and it can deny the statement but cannot
 skip the review. A library caller that runs `analyzer.Evaluator` outside a

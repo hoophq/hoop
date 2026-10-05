@@ -454,7 +454,7 @@ func TestReviewerForFilesOnlyWhereItShould(t *testing.T) {
 	}
 }
 
-// ADR-0024 through the real build path: on a two-phase lane the decide
+// ADR-0030 through the real build path: on a two-phase lane the decide
 // phase runs before the review, so a decide denial files nothing and spends
 // no approval.
 func TestADecideDenialOnAHoldingLaneFilesNothing(t *testing.T) {

@@ -56,7 +56,7 @@ func sameSteps(t *testing.T, got steps, want ...string) {
 	}
 }
 
-// The bug ADR-0024 fixes: the hold ran inside the analyzer, so a decision
+// The bug ADR-0030 fixes: the hold ran inside the analyzer, so a decision
 // placed after it denied a statement whose approval was already spent.
 func TestTheChainRunsAReviewAfterEveryEvaluator(t *testing.T) {
 	var log steps
