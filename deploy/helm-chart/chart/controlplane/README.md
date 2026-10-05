@@ -103,6 +103,14 @@ by default) open one per organization, holding a slot in
 Slack hands each click to one open socket. A replica that dies frees its slot
 within 90 seconds, and the other slots keep taking clicks meanwhile.
 
+**Slack apps shared across deployments.** The 10-socket limit is per Slack app,
+not per deployment. Every deployment that uses the same app counts against it:
+another control plane (staging, say) and a gateway each add their sockets.
+Each slot switch also opens the new socket before it closes the old one. Keep
+the sum of `SLACK_SOCKET_SLOTS` across deployments sharing an app at 8 or less,
+or give each deployment its own Slack app. Past 10, Slack refuses the extra
+sockets and they reconnect in a loop, which can starve the working ones.
+
 For the upgrade **into** this release, keep `deploymentStrategy: Recreate`. An
 older pod tracks review messages in memory, so a message it posts during a
 rolling update is not rewritten when the review settles.
