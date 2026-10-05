@@ -7,6 +7,8 @@ SET search_path TO private;
 -- the plane loads only the rows for its exact issuer before it fetches
 -- anything, so an unknown issuer costs no network call.
 -- jwks NULL means OIDC discovery at {issuer}/.well-known/openid-configuration.
+-- adopt_existing_sidecars lets a matching token bind a sidecar an admin
+-- created with a token. Without it, no identity binds such a sidecar.
 CREATE TABLE IF NOT EXISTS sidecar_service_accounts (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id            UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
@@ -18,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sidecar_service_accounts (
     name_template     VARCHAR(255) NOT NULL,
     jwks              JSONB NULL,
     allow_any_subject BOOLEAN NOT NULL DEFAULT FALSE,
+    adopt_existing_sidecars BOOLEAN NOT NULL DEFAULT FALSE,
     created_by        VARCHAR(255) NOT NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -31,14 +34,14 @@ CREATE INDEX IF NOT EXISTS idx_sidecar_service_accounts_issuer
     ON sidecar_service_accounts (issuer);
 
 -- A sidecar a service account created has no token. The identity columns
--- record the last identity that reached the row, for display and audit; the
--- lookup stays on (org_id, name).
+-- bind a sidecar to the first identity that reached it: another identity is
+-- refused until an admin clears them. The lookup stays on (org_id, name). A
+-- row may hold neither a token nor an identity: an identity-made sidecar
+-- whose binding an admin cleared, which the next identity binds.
 ALTER TABLE sidecars
     ALTER COLUMN key_hash DROP NOT NULL,
     ADD COLUMN IF NOT EXISTS identity_issuer TEXT NULL,
-    ADD COLUMN IF NOT EXISTS identity_subject TEXT NULL,
-    ADD CONSTRAINT sidecars_has_credential
-        CHECK (key_hash IS NOT NULL OR identity_subject IS NOT NULL);
+    ADD COLUMN IF NOT EXISTS identity_subject TEXT NULL;
 
 -- A name an admin deleted after an identity reached it. Without this row the
 -- next heartbeat would create the sidecar again.

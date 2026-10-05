@@ -45,6 +45,13 @@ const (
 	// node's or the pod's (Workload Identity) service account from the
 	// metadata server.
 	SidecarIdentityGCPEnv = "HOOP_SIDECAR_IDENTITY_GCP"
+	// SidecarIdentityAudienceEnv is the Google ID token's audience,
+	// default the control plane URL. A plane shared by several
+	// organizations needs one audience per organization, because the plane
+	// maps an (issuer, audience) pair to one organization. Only the GCP
+	// source reads it: a projected token's audience is fixed where the
+	// token is minted.
+	SidecarIdentityAudienceEnv = "HOOP_SIDECAR_IDENTITY_AUDIENCE"
 
 	// gcpMetadataHostEnv is the override the Google client libraries
 	// honor. Reading the same name means an operator who already points
@@ -126,9 +133,10 @@ func (f tokenFileCredential) present(context.Context) (string, string, error) {
 	return SidecarIdentityHeader, tok, nil
 }
 
-// gcpCredential fetches a Google ID token whose audience is the control
-// plane URL. The token is cached: the metadata server mints a new one per
-// call, and one per review request would put it on the data path.
+// gcpCredential fetches a Google ID token for audience, the control plane
+// URL unless HOOP_SIDECAR_IDENTITY_AUDIENCE overrides it. The token is
+// cached: the metadata server mints a new one per call, and one per review
+// request would put it on the data path.
 type gcpCredential struct {
 	audience string
 
@@ -140,7 +148,7 @@ type gcpCredential struct {
 func (g *gcpCredential) present(ctx context.Context) (string, string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.token != "" && time.Now().Before(g.exp.Add(-gcpTokenRefreshBefore)) {
+	if g.token != "" && time.Now().UTC().Before(g.exp.Add(-gcpTokenRefreshBefore)) {
 		return SidecarIdentityHeader, g.token, nil
 	}
 	tok, exp, err := fetchGCPIdentityToken(ctx, g.audience)
@@ -254,8 +262,10 @@ func jwtClaimsUnverified(tok string) (jwtClaims, error) {
 // The token flag outranking HOOP_SIDECAR_TOKEN is not two sources: it is
 // the one token, set from two places, as it always was.
 //
-// planeURL is the Google ID token's audience, the same string the allowlist
-// entry's audience is compared against.
+// planeURL is the Google ID token's audience unless
+// HOOP_SIDECAR_IDENTITY_AUDIENCE is set. That env var with any other source,
+// or with none, is an error: it would do nothing, and the operator who set
+// it expects the plane to see that audience.
 func resolveCredential(tokenFlag, planeURL string) (credential, string, error) {
 	var set []string
 	token, tokenSource := resolveSidecarToken(tokenFlag)
@@ -277,16 +287,28 @@ func resolveCredential(tokenFlag, planeURL string) (credential, string, error) {
 			set = append(set, SidecarIdentityGCPEnv)
 		}
 	}
+	audience := os.Getenv(SidecarIdentityAudienceEnv)
 	switch {
 	case len(set) > 1:
 		return nil, "", fmt.Errorf("more than one control plane credential is set (%s); set exactly one",
 			strings.Join(set, ", "))
+	case audience != "" && !gcp:
+		other := "no credential"
+		if len(set) == 1 {
+			other = set[0]
+		}
+		return nil, "", fmt.Errorf("%s is set with %s; it is the Google ID token's audience and only %s=true uses it. "+
+			"A projected service account token's audience is set where the token is minted "+
+			"(the serviceAccountToken volume's audience)", SidecarIdentityAudienceEnv, other, SidecarIdentityGCPEnv)
 	case token != "":
 		return tokenCredential(token), tokenSource, nil
 	case file != "":
 		return tokenFileCredential{path: file}, SidecarIdentityTokenFileEnv, nil
 	case gcp:
-		return &gcpCredential{audience: planeURL}, SidecarIdentityGCPEnv, nil
+		if audience == "" {
+			audience = planeURL
+		}
+		return &gcpCredential{audience: audience}, SidecarIdentityGCPEnv, nil
 	}
 	return nil, "", nil
 }

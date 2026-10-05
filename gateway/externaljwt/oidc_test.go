@@ -187,6 +187,7 @@ func TestOIDCVerifyRefuses(t *testing.T) {
 }
 
 // issuerServer is an OIDC issuer over TLS whose key set the test can swap.
+// While down is set, discovery answers 503.
 type issuerServer struct {
 	*httptest.Server
 	mu            sync.Mutex
@@ -194,6 +195,7 @@ type issuerServer struct {
 	discoveryHits atomic.Int32
 	jwksHits      atomic.Int32
 	docIssuer     string
+	down          atomic.Bool
 }
 
 func newIssuerServer(t *testing.T, keys ...testKey) *issuerServer {
@@ -203,6 +205,10 @@ func newIssuerServer(t *testing.T, keys ...testKey) *issuerServer {
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration":
 			s.discoveryHits.Add(1)
+			if s.down.Load() {
+				http.Error(w, "down", http.StatusServiceUnavailable)
+				return
+			}
 			iss := s.docIssuer
 			if iss == "" {
 				iss = s.URL
@@ -337,6 +343,117 @@ func TestOIDCUnknownKIDRefetch(t *testing.T) {
 	}
 	if got := srv.jwksHits.Load(); got != 3 {
 		t.Errorf("want a refetch after the TTL, got %d fetches", got)
+	}
+}
+
+// A failed refresh keeps the last keys only until oidcMaxStaleAge after
+// their last successful fetch. Past it nothing verifies until a fetch
+// succeeds: an issuer that rotated out a key must not have it accepted for
+// as long as its discovery stays down.
+func TestOIDCStaleKeysFailClosed(t *testing.T) {
+	key := newRSAKey(t, "k1")
+	srv := newIssuerServer(t, key)
+	v := NewOIDCVerifier(OIDCOptions{HTTPClient: srv.Client()})
+	fetched := time.Now().UTC()
+	clock := fetched
+	v.now = func() time.Time { return clock }
+	verify := func() error {
+		_, err := v.Verify(context.Background(), sign(t, key, validClaims(srv.URL, clock)), srv.URL, testAudience, nil)
+		return err
+	}
+	if err := verify(); err != nil {
+		t.Fatal(err)
+	}
+	srv.down.Store(true)
+
+	for _, age := range []time.Duration{oidcKeyTTL + time.Second, oidcMaxStaleAge - time.Second} {
+		clock = fetched.Add(age)
+		if err := verify(); err != nil {
+			t.Fatalf("keys %s old must still verify while the refresh fails: %v", age, err)
+		}
+	}
+	if got := srv.discoveryHits.Load(); got != 3 {
+		t.Fatalf("want 1 fetch and 2 failed refreshes, got %d discovery requests", got)
+	}
+
+	// Past the age, inside the refetch interval of the last failure: no fetch.
+	clock = fetched.Add(oidcMaxStaleAge + time.Second)
+	if err := verify(); err == nil || !strings.Contains(err.Error(), "more than 24h0m0s ago") {
+		t.Fatalf("want the stale keys refused, got %v", err)
+	}
+	// The next refresh fails too.
+	clock = clock.Add(oidcRefetchInterval)
+	if err := verify(); err == nil || !strings.Contains(err.Error(), "more than 24h0m0s ago") {
+		t.Fatalf("want the stale keys refused after a failed refresh, got %v", err)
+	}
+	if got := srv.discoveryHits.Load(); got != 4 {
+		t.Fatalf("want one more failed refresh, got %d discovery requests", got)
+	}
+
+	srv.down.Store(false)
+	clock = clock.Add(oidcRefetchInterval)
+	if err := verify(); err != nil {
+		t.Fatalf("a successful fetch must verify again: %v", err)
+	}
+}
+
+// The default client dials public addresses only, whatever the URL names.
+// The issuer server listens on 127.0.0.1, so a fetch is refused at dial.
+func TestOIDCDefaultClientRefusesALoopbackIssuer(t *testing.T) {
+	key := newRSAKey(t, "k1")
+	srv := newIssuerServer(t, key)
+	v := NewOIDCVerifier(OIDCOptions{})
+	_, err := v.Verify(context.Background(), sign(t, key, validClaims(srv.URL, time.Now())), srv.URL, testAudience, nil)
+	if err == nil || !strings.Contains(err.Error(), "not a public address") || !strings.Contains(err.Error(), "set jwks") {
+		t.Fatalf("want a dial refusal that names the jwks escape, got %v", err)
+	}
+	if got := srv.discoveryHits.Load(); got != 0 {
+		t.Errorf("a loopback issuer was reached %d times", got)
+	}
+}
+
+func TestRefuseNonPublicAddress(t *testing.T) {
+	for _, address := range []string{
+		"127.0.0.1:443", "127.1.2.3:443", "[::1]:443",
+		"10.0.0.1:443", "172.16.5.4:443", "192.168.1.1:443", "[fd00::1]:443", "[fc00::1]:443",
+		"169.254.169.254:80", "[fe80::1%eth0]:443",
+		"0.0.0.0:443", "[::]:443",
+		"224.0.0.1:443", "[ff02::1]:443",
+		"100.64.0.1:443", "100.127.255.254:443",
+		"[::ffff:10.0.0.1]:443", "[::ffff:127.0.0.1]:443", "[::ffff:169.254.169.254]:80",
+		"issuer.example.com:443",
+	} {
+		if err := refuseNonPublicAddress("tcp", address, nil); err == nil {
+			t.Errorf("%s: want a refusal", address)
+		}
+	}
+	for _, address := range []string{
+		"8.8.8.8:443", "1.1.1.1:443", "100.63.255.255:443", "100.128.0.1:443", "172.32.0.1:443",
+		"[2001:4860:4860::8888]:443", "[::ffff:8.8.8.8]:443",
+	} {
+		if err := refuseNonPublicAddress("tcp", address, nil); err != nil {
+			t.Errorf("%s: refused a public address: %v", address, err)
+		}
+	}
+}
+
+func TestCheckOIDCRedirect(t *testing.T) {
+	req := func(rawURL string) *http.Request {
+		r, err := http.NewRequest(http.MethodGet, rawURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	via := func(n int) []*http.Request { return make([]*http.Request, n) }
+	if err := checkOIDCRedirect(req("https://issuer.example.com/keys"), via(oidcMaxRedirects)); err != nil {
+		t.Errorf("redirect %d of %d refused: %v", oidcMaxRedirects, oidcMaxRedirects, err)
+	}
+	if err := checkOIDCRedirect(req("https://issuer.example.com/keys"), via(oidcMaxRedirects+1)); err == nil {
+		t.Errorf("redirect %d followed", oidcMaxRedirects+1)
+	}
+	if err := checkOIDCRedirect(req("http://issuer.example.com/keys"), via(1)); err == nil {
+		t.Error("a redirect to http was followed")
 	}
 }
 

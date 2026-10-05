@@ -176,9 +176,9 @@ license: ''
 # before deploy. The control plane matches it against a sidecar
 # service account entry and creates the sidecar on first contact.
 #   kubernetes: the chart mounts a projected service account token whose
-#               audience is `url` → HOOP_SIDECAR_IDENTITY_TOKEN_FILE
+#               audience is `identityAudience` → HOOP_SIDECAR_IDENTITY_TOKEN_FILE
 #   gcp:        a Google ID token from the metadata server (GKE Workload
-#               Identity, GCE) → HOOP_SIDECAR_IDENTITY_GCP=true
+#               Identity, GCE) for `identityAudience` → HOOP_SIDECAR_IDENTITY_GCP=true
 # Set `serviceAccount` to the account the entry's pattern names.
 #
 # In this mode the chart cannot know which ports the plane will hand out: set
@@ -188,9 +188,14 @@ controlPlane:
   token: ''
   # '', kubernetes or gcp
   identity: ''
+  # Audience of the identity token under `identity`. Empty means `url`. Set
+  # it when one control plane serves several organizations: each one needs
+  # its own audience, and its sidecar service account entry names the same
+  # value. Under gcp → HOOP_SIDECAR_IDENTITY_AUDIENCE.
+  identityAudience: ''
   # Lifetime of the projected token under `identity: kubernetes`; the kubelet
   # rotates it before it ends and the relay re-reads it on every request.
-  # Kubernetes refuses less than 600.
+  # An integer, at least 600: Kubernetes refuses less.
   tokenExpirationSeconds: 3600
 
 # -- Usage analytics. A release build reports anonymous usage to Segment —

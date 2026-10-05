@@ -9,7 +9,6 @@ DROP TABLE IF EXISTS sidecar_deleted_names;
 DELETE FROM sidecars WHERE key_hash IS NULL;
 
 ALTER TABLE sidecars
-    DROP CONSTRAINT IF EXISTS sidecars_has_credential,
     DROP COLUMN IF EXISTS identity_issuer,
     DROP COLUMN IF EXISTS identity_subject,
     ALTER COLUMN key_hash SET NOT NULL;

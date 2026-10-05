@@ -35,7 +35,7 @@ func TestDeleteRecordsTheNameOfAnIdentitySidecar(t *testing.T) {
 	startSwitchDB(t)
 	const sub = "system:serviceaccount:ws-1:hoop-sidecar"
 	identity, err := models.GetOrCreateSidecarForIdentity(models.DB, switchOrgID, "gke-eu-ws-1",
-		"https://issuer.example.com", sub, "service-account:"+sub)
+		"https://issuer.example.com", sub, "service-account:"+sub, false)
 	require.NoError(t, err)
 	token := &models.Sidecar{OrgID: switchOrgID, Name: "token-made", KeyHash: models.HashAPIKey("hsc_token_made"), CreatedBy: "tests@hoop.dev"}
 	require.NoError(t, models.CreateSidecar(models.DB, token))
@@ -50,7 +50,7 @@ func TestDeleteRecordsTheNameOfAnIdentitySidecar(t *testing.T) {
 	assert.Equal(t, "admin@hoop.dev", names[0].DeletedBy)
 
 	_, err = models.GetOrCreateSidecarForIdentity(models.DB, switchOrgID, "gke-eu-ws-1",
-		"https://issuer.example.com", sub, "service-account:"+sub)
+		"https://issuer.example.com", sub, "service-account:"+sub, false)
 	assert.ErrorIs(t, err, models.ErrSidecarNameDeleted)
 
 	assert.Equal(t, http.StatusNotFound, callDelete(t, token.Name))

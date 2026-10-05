@@ -63,6 +63,7 @@ const (
 	EventUpdateSidecarServiceAccount = "hoop-update-sidecar-service-account"
 	EventDeleteSidecarServiceAccount = "hoop-delete-sidecar-service-account"
 	EventClearSidecarDeletedName     = "hoop-clear-sidecar-deleted-name"
+	EventClearSidecarIdentity        = "hoop-clear-sidecar-identity"
 
 	// plugins
 	EventCreatePlugin          = "hoop-create-plugin"

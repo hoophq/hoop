@@ -82,6 +82,7 @@ func TestSidecarServiceAccountsAPI(t *testing.T) {
 	assert.NotEmpty(t, created.ID)
 	assert.Equal(t, "admin@hoop.dev", created.CreatedBy)
 	assert.Empty(t, created.JWKS, "no key set was sent")
+	assert.False(t, created.AdoptExistingSidecars, "a mapping adopts no token sidecar unless asked")
 	id := gin.Params{{Key: "id", Value: created.ID}}
 
 	w = call(t, Create, http.MethodPost, nil, k8sMapping)
@@ -91,7 +92,11 @@ func TestSidecarServiceAccountsAPI(t *testing.T) {
 	// it first; a second pattern in that organization reuses it.
 	w = callAs(t, otherOrgID, Create, http.MethodPost, nil, k8sMapping)
 	assert.Equal(t, http.StatusConflict, w.Code, "another organization, same pair: %s", w.Body)
-	assert.Contains(t, w.Body.String(), "already used by another organization")
+	var conflict openapi.HTTPError
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &conflict))
+	assert.Equal(t, "this issuer and audience are already used by another organization; "+
+		"give this organization's sidecars their own audience (HOOP_SIDECAR_IDENTITY_AUDIENCE, "+
+		"or controlPlane.identityAudience in the helm chart) and use the same value here", conflict.Message)
 	w = callAs(t, otherOrgID, Create, http.MethodPost, nil,
 		strings.Replace(k8sMapping, `"https://hoop.example.com"`, `"https://hoop.example.com/org-b"`, 1))
 	assert.Equal(t, http.StatusCreated, w.Code, "another organization, own audience: %s", w.Body)
@@ -120,13 +125,19 @@ func TestSidecarServiceAccountsAPI(t *testing.T) {
 
 	w = call(t, Update, http.MethodPut, id, `{"name": "gke-eu",
 		"issuer": "https://container.googleapis.com/v1/projects/p/locations/eu/clusters/eu",
-		"audience": "https://hoop2.example.com", "claim": "sub", "jwks": null,
+		"audience": "https://hoop2.example.com", "claim": "sub", "jwks": null, "adopt_existing_sidecars": true,
 		"subject_pattern": "system:serviceaccount:*:hoop-sidecar", "name_template": "gke-eu-{1}"}`)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
 	var updated openapi.SidecarServiceAccount
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &updated))
 	assert.Equal(t, "https://hoop2.example.com", updated.Audience)
 	assert.Equal(t, "admin@hoop.dev", updated.CreatedBy, "an update keeps who created the mapping")
+	assert.True(t, updated.AdoptExistingSidecars)
+	w = call(t, Get, http.MethodGet, id, "")
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	var stored openapi.SidecarServiceAccount
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &stored))
+	assert.True(t, stored.AdoptExistingSidecars, "adopt_existing_sidecars must be stored")
 	w = call(t, Update, http.MethodPut, gin.Params{{Key: "id", Value: "8a4239fa-5116-4bbb-ad3c-ea1f294aac4a"}}, k8sMapping)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 

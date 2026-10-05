@@ -414,9 +414,10 @@ type SidecarResponse struct {
 	// still uses, phrased for an operator. The sidecar folds them on load,
 	// where nobody reads the warning.
 	Deprecations []string `json:"deprecations,omitempty"`
-	// IdentityIssuer and IdentitySubject name the last service account
-	// identity that reached this sidecar through hoop-sidecar-identity. Empty
-	// for a sidecar no identity reached.
+	// IdentityIssuer and IdentitySubject name the service account identity
+	// this sidecar is bound to: the first that reached it through
+	// hoop-sidecar-identity. Empty for a sidecar no identity reached, or
+	// whose binding an admin cleared.
 	IdentityIssuer  string `json:"identity_issuer,omitempty" example:"https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu"`
 	IdentitySubject string `json:"identity_subject,omitempty" example:"system:serviceaccount:ws-123:hoop-sidecar"`
 }
@@ -623,7 +624,9 @@ type AgentSPIFFEMapping struct {
 // control plane issued. The token must come from Issuer, be valid
 // for Audience, and carry a Claim that matches SubjectPattern. The sidecar it
 // reaches is the one named by NameTemplate, created on its first handshake
-// when no sidecar has that name.
+// when no sidecar has that name. A sidecar is bound to the first identity
+// that reaches it; another identity is refused until an admin clears the
+// binding with DELETE /sidecars/{nameOrID}/identity.
 type SidecarServiceAccount struct {
 	// The unique identifier of this resource
 	ID string `json:"id" readonly:"true" format:"uuid"`
@@ -647,13 +650,18 @@ type SidecarServiceAccount struct {
 	// @<project>.iam.gserviceaccount.com
 	SubjectPattern string `json:"subject_pattern" binding:"required" example:"system:serviceaccount:*:hoop-sidecar"`
 	// The name of the sidecar a matching token reaches. {1} is the text the *
-	// matched. A sidecar that exists with this name is used, whoever created it
+	// matched. A sidecar that exists with this name is used when it is bound
+	// to the same identity, or to none (see adopt_existing_sidecars)
 	NameTemplate string `json:"name_template" binding:"required" example:"gke-eu-{1}"`
 	// A static JWKS for an issuer the control plane cannot reach. Omitted
 	// means OIDC discovery at {issuer}/.well-known/openid-configuration
 	JWKS json.RawMessage `json:"jwks,omitempty" swaggertype:"object"`
 	// Allows the bare * pattern, which admits every subject of the issuer
 	AllowAnySubject bool `json:"allow_any_subject" example:"false"`
+	// Lets a matching token reach a sidecar an admin created with a token,
+	// that no identity is bound to yet, and binds it. The sidecar's token
+	// keeps working. Without it the token is refused there
+	AdoptExistingSidecars bool `json:"adopt_existing_sidecars" example:"false"`
 	// The admin who created this mapping
 	CreatedBy string `json:"created_by" readonly:"true"`
 	// Creation timestamp

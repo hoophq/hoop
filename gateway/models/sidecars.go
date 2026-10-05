@@ -62,9 +62,10 @@ type Sidecar struct {
 	CreatedBy     string               `gorm:"column:created_by"`
 	CreatedAt     time.Time            `gorm:"column:created_at"`
 
-	// The last service account identity that reached this sidecar, for
-	// display and audit. Nil on a sidecar no identity reached. The lookup
-	// never uses them: the name is the key.
+	// The service account identity this sidecar is bound to: the first that
+	// reached it. Another identity is refused until an admin clears them
+	// (ClearSidecarIdentity). Nil on a sidecar no identity reached, or whose
+	// binding was cleared. The lookup never uses them: the name is the key.
 	IdentityIssuer  *string `gorm:"column:identity_issuer"`
 	IdentitySubject *string `gorm:"column:identity_subject"`
 
@@ -97,11 +98,19 @@ const sidecarColumns = `
 // account identity reached it. The identity must not create it again.
 var ErrSidecarNameDeleted = errors.New("sidecar name was deleted")
 
+// ErrSidecarBoundToAnotherIdentity reports a sidecar bound to an identity
+// other than the one asking.
+var ErrSidecarBoundToAnotherIdentity = errors.New("sidecar is bound to another identity")
+
+// ErrSidecarHasToken reports a sidecar an admin created with a token, that
+// no identity is bound to, reached by a mapping that does not adopt it.
+var ErrSidecarHasToken = errors.New("sidecar was registered with a token")
+
 // CreateSidecar stores a sidecar that authenticates with a token. A sidecar a
 // service account reaches is created by GetOrCreateSidecarForIdentity.
 func CreateSidecar(db *gorm.DB, s *Sidecar) error {
-	// An empty hash would be stored as '' and pass the credential CHECK,
-	// leaving a row no token and no identity can reach.
+	// An empty hash would be stored as '', a token no sidecar can present:
+	// the row would read as made with a token, and no token would reach it.
 	if s.KeyHash == "" {
 		return errors.New("a sidecar created with a token needs its key hash")
 	}
@@ -131,38 +140,66 @@ func CreateSidecar(db *gorm.DB, s *Sidecar) error {
 // subject can be longer (namespace 63 + service account 253 characters).
 const sidecarCreatedByMax = 255
 
-// GetOrCreateSidecarForIdentity returns the sidecar named name, and creates
-// it with no token only when no sidecar has that name. A sidecar
-// that exists is used whoever created it, so restarts, new pods and replicas
-// land on one row. A name in sidecar_deleted_names returns
-// ErrSidecarNameDeleted and creates nothing.
+// sidecarBindAttempts bounds the reads of one GetOrCreateSidecarForIdentity.
+// A read is repeated only when the row was bound or deleted after it was
+// read, so a second read decides unless an admin keeps changing the row.
+const sidecarBindAttempts = 3
+
+// GetOrCreateSidecarForIdentity returns the sidecar named name for the
+// identity (issuer, subject). A sidecar is bound to the first identity that
+// reaches it; replicas and restarts share one service account, so they share
+// the binding.
 //
-// The insert is ON CONFLICT DO NOTHING followed by a SELECT, so concurrent
-// first boots create one row. issuer and subject are written only when they
-// differ from the stored ones: a heartbeat must not write the row.
-func GetOrCreateSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string) (*Sidecar, error) {
-	sc, err := getSidecarByName(db, orgID, name)
-	if errors.Is(err, ErrNotFound) {
-		sc, err = createSidecarForIdentity(db, orgID, name, issuer, subject, createdBy)
+//   - Bound to this identity: used, with no write. A heartbeat must not
+//     write the row.
+//   - Bound to another identity: ErrSidecarBoundToAnotherIdentity.
+//   - Not bound, made with a token: ErrSidecarHasToken, unless
+//     adoptTokenSidecar. Then it is bound and its token keeps working.
+//   - Not bound, no token (an admin cleared the binding): bound.
+//   - No sidecar with that name: created with no token and bound, unless
+//     the name is in sidecar_deleted_names: ErrSidecarNameDeleted, and
+//     nothing is created.
+//
+// The bind is an UPDATE that requires identity_subject IS NULL, so of two
+// identities that race for one row exactly one binds it, and the other reads
+// the row again and is refused. The insert is ON CONFLICT DO NOTHING followed
+// by a SELECT, so concurrent first boots create one row.
+func GetOrCreateSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string, adoptTokenSidecar bool) (*Sidecar, error) {
+	for range sidecarBindAttempts {
+		sc, err := getSidecarForIdentity(db, orgID, name)
+		if errors.Is(err, ErrNotFound) {
+			sc, err = createSidecarForIdentity(db, orgID, name, issuer, subject, createdBy)
+		}
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case sc.IdentitySubject != nil:
+			if derefOr(sc.IdentityIssuer) == issuer && *sc.IdentitySubject == subject {
+				return &sc.Sidecar, nil
+			}
+			return nil, ErrSidecarBoundToAnotherIdentity
+		case sc.HasToken && !adoptTokenSidecar:
+			return nil, ErrSidecarHasToken
+		}
+		res := db.Exec(`
+		UPDATE private.sidecars
+		SET identity_issuer = ?, identity_subject = ?
+		WHERE id = ? AND identity_subject IS NULL`, issuer, subject, sc.ID)
+		if res.Error != nil {
+			return nil, res.Error
+		}
+		if res.RowsAffected == 1 {
+			sc.IdentityIssuer, sc.IdentitySubject = &issuer, &subject
+			return &sc.Sidecar, nil
+		}
+		// Bound or deleted since the read: read it again.
 	}
-	if err != nil {
-		return nil, err
-	}
-	if derefOr(sc.IdentityIssuer) == issuer && derefOr(sc.IdentitySubject) == subject {
-		return sc, nil
-	}
-	err = db.Exec(`
-	UPDATE private.sidecars
-	SET identity_issuer = ?, identity_subject = ?
-	WHERE id = ?`, issuer, subject, sc.ID).Error
-	if err != nil {
-		return nil, err
-	}
-	sc.IdentityIssuer, sc.IdentitySubject = &issuer, &subject
-	return sc, nil
+	return nil, fmt.Errorf("sidecar %q was bound or deleted %d times while an identity was being bound to it",
+		name, sidecarBindAttempts)
 }
 
-func createSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string) (*Sidecar, error) {
+func createSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, createdBy string) (*sidecarForIdentity, error) {
 	if deleted, err := SidecarNameIsDeleted(db, orgID, name); err != nil || deleted {
 		if deleted {
 			return nil, ErrSidecarNameDeleted
@@ -185,7 +222,7 @@ func createSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, created
 	if err != nil {
 		return nil, err
 	}
-	sc, err := getSidecarByName(db, orgID, name)
+	sc, err := getSidecarForIdentity(db, orgID, name)
 	if !errors.Is(err, ErrNotFound) {
 		return sc, err
 	}
@@ -201,10 +238,17 @@ func createSidecarForIdentity(db *gorm.DB, orgID, name, issuer, subject, created
 	return nil, err
 }
 
-func getSidecarByName(db *gorm.DB, orgID, name string) (*Sidecar, error) {
-	var item Sidecar
+// sidecarForIdentity is a sidecar read with whether it holds a token, which
+// decides whether an identity may bind it. The hash itself is never read.
+type sidecarForIdentity struct {
+	Sidecar
+	HasToken bool `gorm:"column:has_token"`
+}
+
+func getSidecarForIdentity(db *gorm.DB, orgID, name string) (*sidecarForIdentity, error) {
+	var item sidecarForIdentity
 	err := db.Raw(`
-	SELECT`+sidecarColumns+`
+	SELECT`+sidecarColumns+`, s.key_hash IS NOT NULL AS has_token
 	FROM private.sidecars s
 	WHERE s.org_id = ? AND s.name = ?`, orgID, name).
 		Scan(&item).
@@ -413,21 +457,30 @@ func AdoptSidecarConfiguration(db *gorm.DB, orgID, id string, configuration Side
 	return &item, nil
 }
 
-// DeleteSidecarByNameOrID hard deletes the row and returns its id, name and
-// identity columns. The connections that mirror its listeners go first: the
-// cascade would take them anyway, but not the resources they alone used. Run
-// it in a transaction: the row is locked until the delete lands, and the
-// caller records the name of a sidecar an identity reached
-// (InsertSidecarDeletedName) in the same one.
-func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (*Sidecar, error) {
+// DeletedSidecar is the row DeleteSidecarByNameOrID removed.
+type DeletedSidecar struct {
+	ID   string `gorm:"column:id"`
+	Name string `gorm:"column:name"`
+	// IdentityReached is a sidecar bound to an identity, or one with no
+	// token, which only an identity creates. An identity would create it
+	// again, so the caller records its name (InsertSidecarDeletedName).
+	IdentityReached bool `gorm:"column:identity_reached"`
+}
+
+// DeleteSidecarByNameOrID hard deletes the row and returns it. The
+// connections that mirror its listeners go first: the cascade would take them
+// anyway, but not the resources they alone used. Run it in a transaction: the
+// row is locked until the delete lands, and the caller records the name of a
+// sidecar an identity reached in the same one.
+func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (*DeletedSidecar, error) {
 	identifierClause := "name = ?"
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		identifierClause = "id = ?"
 	}
 
-	var deleted Sidecar
+	var deleted DeletedSidecar
 	err := db.Raw(`
-	SELECT id, org_id, name, identity_issuer, identity_subject
+	SELECT id, name, (identity_subject IS NOT NULL OR key_hash IS NULL) AS identity_reached
 	FROM private.sidecars
 	WHERE org_id = ? AND `+identifierClause+`
 	FOR UPDATE`, orgID, nameOrID).
@@ -446,6 +499,28 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (*Sidecar, err
 		return nil, err
 	}
 	return &deleted, nil
+}
+
+// ClearSidecarIdentity removes the binding of a sidecar to the identity that
+// reached it, so the next identity that reaches it is bound instead. A
+// sidecar with a token keeps it, and is bound again only through a mapping
+// that adopts existing sidecars. Returns ErrNotFound when no row matched.
+func ClearSidecarIdentity(db *gorm.DB, orgID, nameOrID string) error {
+	identifierClause := "name = ?"
+	if _, err := uuid.Parse(nameOrID); err == nil {
+		identifierClause = "id = ?"
+	}
+	res := db.Exec(`
+	UPDATE private.sidecars
+	SET identity_issuer = NULL, identity_subject = NULL
+	WHERE org_id = ? AND `+identifierClause, orgID, nameOrID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SidecarDeletedName is a sidecar name a service account identity must not

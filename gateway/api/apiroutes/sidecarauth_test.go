@@ -85,6 +85,7 @@ func TestSidecarAuthRefusesAnIdentityThatIsNotAJWT(t *testing.T) {
 	w, reached, _ := callSidecarAuth(r, map[string]string{SidecarIdentityHeader: "hsc_not-a-jwt"})
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Nil(t, reached)
+	assert.JSONEq(t, `{"message": "`+services.SidecarIdentityUnverifiedMessage+`"}`, w.Body.String())
 }
 
 type testIssuer struct {
@@ -153,10 +154,11 @@ func TestSidecarIdentityAuth(t *testing.T) {
 	iss := newTestIssuer(t)
 	r := &Router{apiURL: "http://localhost:8009",
 		sidecarIdentity: externaljwt.NewOIDCVerifier(externaljwt.OIDCOptions{HTTPClient: iss.Client()})}
-	require.NoError(t, models.CreateSidecarServiceAccount(models.DB, &models.SidecarServiceAccount{
+	gke := &models.SidecarServiceAccount{
 		OrgID: sidecarOrgA, Name: "gke-eu", Issuer: iss.URL, Audience: sidecarAudience, Claim: services.SidecarClaimSub,
 		SubjectPattern: "system:serviceaccount:*:hoop-sidecar", NameTemplate: "gke-eu-{1}", CreatedBy: "admin@hoop.dev",
-	}))
+	}
+	require.NoError(t, models.CreateSidecarServiceAccount(models.DB, gke))
 	identity := func(subject string) map[string]string {
 		return map[string]string{SidecarIdentityHeader: iss.token(t, iss.URL, sidecarAudience, subject)}
 	}
@@ -187,17 +189,44 @@ func TestSidecarIdentityAuth(t *testing.T) {
 		assert.Len(t, items, 1)
 	})
 
-	t.Run("a sidecar an admin made with a token is reached and its token still works", func(t *testing.T) {
+	t.Run("another service account is refused on a bound sidecar", func(t *testing.T) {
+		// A second mapping renders the name the first one's identity is bound to.
+		require.NoError(t, models.CreateSidecarServiceAccount(models.DB, &models.SidecarServiceAccount{
+			OrgID: sidecarOrgA, Name: "gke-eu-other", Issuer: iss.URL, Audience: sidecarAudience, Claim: services.SidecarClaimSub,
+			SubjectPattern: "system:serviceaccount:ws-1:other", NameTemplate: "gke-eu-ws-1", CreatedBy: "admin@hoop.dev",
+		}))
+		msg := refused(t, identity("system:serviceaccount:ws-1:other"))
+		assert.Equal(t, `sidecar "gke-eu-ws-1" is bound to another service account; an admin must clear its binding `+
+			`(DELETE /api/sidecars/gke-eu-ws-1/identity) before this one can reach it`, msg)
+
+		w, reached, _ := callSidecarAuth(r, identity("system:serviceaccount:ws-1:hoop-sidecar"))
+		require.Equal(t, http.StatusOK, w.Code, "the bound identity must keep its sidecar: %s", w.Body)
+		assert.Equal(t, "gke-eu-ws-1", reached.Name)
+	})
+
+	t.Run("a sidecar an admin made with a token is reached only once its mapping adopts it", func(t *testing.T) {
 		const token = "hsc_ws2_token"
+		const subject = "system:serviceaccount:ws-2:hoop-sidecar"
 		made := &models.Sidecar{OrgID: sidecarOrgA, Name: "gke-eu-ws-2", KeyHash: models.HashAPIKey(token), CreatedBy: "admin@hoop.dev"}
 		require.NoError(t, models.CreateSidecar(models.DB, made))
 
-		w, reached, _ := callSidecarAuth(r, identity("system:serviceaccount:ws-2:hoop-sidecar"))
+		msg := refused(t, identity(subject))
+		assert.Equal(t, `sidecar "gke-eu-ws-2" was registered with a token; set adopt_existing_sidecars `+
+			`on the sidecar service account entry to let service accounts reach it`, msg)
+
+		gke.AdoptExistingSidecars = true
+		_, err := models.UpdateSidecarServiceAccount(models.DB, gke)
+		require.NoError(t, err)
+		w, reached, _ := callSidecarAuth(r, identity(subject))
 		require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
 		assert.Equal(t, made.ID, reached.ID)
+		stored, err := models.GetSidecarByNameOrID(models.DB, sidecarOrgA, made.ID)
+		require.NoError(t, err)
+		require.NotNil(t, stored.IdentitySubject, "the adopted sidecar is bound")
+		assert.Equal(t, subject, *stored.IdentitySubject)
 
 		w, reached, _ = callSidecarAuth(r, map[string]string{SidecarTokenHeader: token})
-		require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+		require.Equal(t, http.StatusOK, w.Code, "the token keeps working: %s", w.Body)
 		assert.Equal(t, made.ID, reached.ID)
 	})
 
@@ -209,8 +238,9 @@ func TestSidecarIdentityAuth(t *testing.T) {
 		assert.ErrorIs(t, err, models.ErrNotFound)
 	})
 
-	t.Run("a wrong audience is refused", func(t *testing.T) {
-		refused(t, map[string]string{SidecarIdentityHeader: iss.token(t, iss.URL, "https://other.example.com", "system:serviceaccount:ws-4:hoop-sidecar")})
+	t.Run("a wrong audience is refused with the generic message", func(t *testing.T) {
+		msg := refused(t, map[string]string{SidecarIdentityHeader: iss.token(t, iss.URL, "https://other.example.com", "system:serviceaccount:ws-4:hoop-sidecar")})
+		assert.Equal(t, services.SidecarIdentityUnverifiedMessage, msg)
 	})
 
 	t.Run("a subject no mapping allows is refused", func(t *testing.T) {
@@ -218,7 +248,7 @@ func TestSidecarIdentityAuth(t *testing.T) {
 		assert.Contains(t, msg, "system:serviceaccount:ws-5:default")
 	})
 
-	t.Run("an unknown issuer is refused without a fetch", func(t *testing.T) {
+	t.Run("an unknown issuer is refused without a fetch, with the generic message", func(t *testing.T) {
 		offline := &Router{apiURL: r.apiURL,
 			sidecarIdentity: externaljwt.NewOIDCVerifier(externaljwt.OIDCOptions{HTTPClient: noNetwork(t)})}
 		w, reached, _ := callSidecarAuth(offline, map[string]string{
@@ -226,6 +256,18 @@ func TestSidecarIdentityAuth(t *testing.T) {
 		})
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 		assert.Nil(t, reached)
+		assert.JSONEq(t, `{"message": "`+services.SidecarIdentityUnverifiedMessage+`"}`, w.Body.String())
+	})
+
+	t.Run("a key fetch failure is refused with the generic message", func(t *testing.T) {
+		// The test issuer serves no discovery document under this path.
+		broken := iss.URL + "/broken"
+		require.NoError(t, models.CreateSidecarServiceAccount(models.DB, &models.SidecarServiceAccount{
+			OrgID: sidecarOrgA, Name: "broken", Issuer: broken, Audience: sidecarAudience, Claim: services.SidecarClaimSub,
+			SubjectPattern: "system:serviceaccount:*:hoop-sidecar", NameTemplate: "broken-{1}", CreatedBy: "admin@hoop.dev",
+		}))
+		msg := refused(t, map[string]string{SidecarIdentityHeader: iss.token(t, broken, sidecarAudience, "system:serviceaccount:ws-6:hoop-sidecar")})
+		assert.Equal(t, services.SidecarIdentityUnverifiedMessage, msg)
 	})
 
 	t.Run("a match in two organizations is refused", func(t *testing.T) {

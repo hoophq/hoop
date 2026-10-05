@@ -385,7 +385,7 @@ func Delete(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if deleted.IdentitySubject == nil {
+		if !deleted.IdentityReached {
 			return nil
 		}
 		return models.InsertSidecarDeletedName(tx, ctx.OrgID, deleted.Name, ctx.UserEmail)
@@ -401,6 +401,30 @@ func Delete(c *gin.Context) {
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting sidecar")
 	}
+}
+
+// Clear Sidecar Identity
+//
+//	@Summary		Clear Sidecar Identity
+//	@Description	Remove the binding of a sidecar to the service account identity that reached it first. The next identity a sidecar service account allows is bound to it on its next handshake; a sidecar created with a token is bound again only through a sidecar service account with adopt_existing_sidecars. A token the sidecar has keeps working.
+//	@Tags			Sidecars
+//	@Produce		json
+//	@Param			nameOrID	path	string	true	"Name or UUID of the sidecar"
+//	@Success		204
+//	@Failure		403,404,500	{object}	openapi.HTTPError
+//	@Router			/sidecars/{nameOrID}/identity [delete]
+func ClearIdentity(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	err := models.ClearSidecarIdentity(models.DB, ctx.OrgID, c.Param("nameOrID"))
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed clearing the sidecar identity")
+		return
+	}
+	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
 // Update Sidecar

@@ -16,25 +16,30 @@ import (
 //
 // JWKS, when set, is the issuer's key set and nothing is fetched; nil means
 // OIDC discovery at {Issuer}/.well-known/openid-configuration.
+//
+// AdoptExistingSidecars lets a matching token bind a sidecar an admin
+// created with a token, which no identity is bound to yet. Without it the
+// token is refused there.
 type SidecarServiceAccount struct {
-	ID              string          `gorm:"column:id"`
-	OrgID           string          `gorm:"column:org_id"`
-	Name            string          `gorm:"column:name"`
-	Issuer          string          `gorm:"column:issuer"`
-	Audience        string          `gorm:"column:audience"`
-	Claim           string          `gorm:"column:claim"`
-	SubjectPattern  string          `gorm:"column:subject_pattern"`
-	NameTemplate    string          `gorm:"column:name_template"`
-	JWKS            json.RawMessage `gorm:"column:jwks"`
-	AllowAnySubject bool            `gorm:"column:allow_any_subject"`
-	CreatedBy       string          `gorm:"column:created_by"`
-	CreatedAt       time.Time       `gorm:"column:created_at"`
-	UpdatedAt       time.Time       `gorm:"column:updated_at"`
+	ID                    string          `gorm:"column:id"`
+	OrgID                 string          `gorm:"column:org_id"`
+	Name                  string          `gorm:"column:name"`
+	Issuer                string          `gorm:"column:issuer"`
+	Audience              string          `gorm:"column:audience"`
+	Claim                 string          `gorm:"column:claim"`
+	SubjectPattern        string          `gorm:"column:subject_pattern"`
+	NameTemplate          string          `gorm:"column:name_template"`
+	JWKS                  json.RawMessage `gorm:"column:jwks"`
+	AllowAnySubject       bool            `gorm:"column:allow_any_subject"`
+	AdoptExistingSidecars bool            `gorm:"column:adopt_existing_sidecars"`
+	CreatedBy             string          `gorm:"column:created_by"`
+	CreatedAt             time.Time       `gorm:"column:created_at"`
+	UpdatedAt             time.Time       `gorm:"column:updated_at"`
 }
 
 const sidecarServiceAccountColumns = `
 	id, org_id, name, issuer, audience, claim, subject_pattern, name_template,
-	jwks, allow_any_subject, created_by, created_at, updated_at`
+	jwks, allow_any_subject, adopt_existing_sidecars, created_by, created_at, updated_at`
 
 // jwksParam passes an absent key set as SQL NULL. An empty RawMessage is not
 // a JSON document, and the column must read back as nil.
@@ -105,7 +110,8 @@ func GetSidecarServiceAccount(db *gorm.DB, orgID, id string) (*SidecarServiceAcc
 // its sidecars would then be refused as ambiguous, or enroll into the wrong
 // organization.
 var ErrSidecarServiceAccountPairTaken = errors.New("this issuer and audience are already used by another organization; " +
-	"use an audience unique to your organization (for example the control plane URL with a path naming your organization)")
+	"give this organization's sidecars their own audience (HOOP_SIDECAR_IDENTITY_AUDIENCE, " +
+	"or controlPlane.identityAudience in the helm chart) and use the same value here")
 
 // claimIssuerAudience holds the (issuer, audience) pair for orgID until tx
 // ends, and returns ErrSidecarServiceAccountPairTaken when another
@@ -153,10 +159,10 @@ func CreateSidecarServiceAccount(db *gorm.DB, sa *SidecarServiceAccount) error {
 		}
 		err := tx.Exec(`
 		INSERT INTO private.sidecar_service_accounts (id, org_id, name, issuer, audience, claim,
-			subject_pattern, name_template, jwks, allow_any_subject, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)`,
+			subject_pattern, name_template, jwks, allow_any_subject, adopt_existing_sidecars, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)`,
 			id, sa.OrgID, sa.Name, sa.Issuer, sa.Audience, sa.Claim, sa.SubjectPattern,
-			sa.NameTemplate, jwksParam(sa.JWKS), sa.AllowAnySubject, sa.CreatedBy).Error
+			sa.NameTemplate, jwksParam(sa.JWKS), sa.AllowAnySubject, sa.AdoptExistingSidecars, sa.CreatedBy).Error
 		if err != nil {
 			return err
 		}
@@ -185,10 +191,10 @@ func UpdateSidecarServiceAccount(db *gorm.DB, sa *SidecarServiceAccount) (*Sidec
 		res := tx.Exec(`
 		UPDATE private.sidecar_service_accounts
 		SET name = ?, issuer = ?, audience = ?, claim = ?, subject_pattern = ?, name_template = ?,
-			jwks = ?::jsonb, allow_any_subject = ?, updated_at = NOW()
+			jwks = ?::jsonb, allow_any_subject = ?, adopt_existing_sidecars = ?, updated_at = NOW()
 		WHERE org_id = ? AND id::TEXT = ?`,
 			sa.Name, sa.Issuer, sa.Audience, sa.Claim, sa.SubjectPattern, sa.NameTemplate,
-			jwksParam(sa.JWKS), sa.AllowAnySubject, sa.OrgID, sa.ID)
+			jwksParam(sa.JWKS), sa.AllowAnySubject, sa.AdoptExistingSidecars, sa.OrgID, sa.ID)
 		if res.Error != nil {
 			return res.Error
 		}

@@ -10,10 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	keyfunc "github.com/MicahParks/keyfunc/v2"
@@ -29,11 +32,17 @@ const (
 	// oidcKeyTTL is how long fetched keys are used before the next request
 	// fetches them again. A kid the keys do not hold refetches sooner.
 	oidcKeyTTL = time.Hour
+	// oidcMaxStaleAge is how long after their last successful fetch keys
+	// still verify while every refresh fails. An issuer that rotated out a
+	// compromised key must not have it accepted for as long as its
+	// discovery stays down.
+	oidcMaxStaleAge = 24 * time.Hour
 	// oidcRefetchInterval is the shortest time between two fetches for one
 	// issuer. A caller can send any kid; without the limit each unknown one
 	// would be a fetch.
 	oidcRefetchInterval = time.Minute
 	oidcFetchTimeout    = 10 * time.Second
+	oidcMaxRedirects    = 3
 	oidcMaxDocument     = 1 << 20
 	// oidcClockSkew tolerates a kubelet or metadata server clock that runs
 	// ahead of or behind the plane. exp is still required.
@@ -61,8 +70,8 @@ type OIDCClaims struct {
 // OIDCOptions configures an OIDCVerifier. Issuers are not configured here:
 // they come from the database, per mapping, on every call.
 type OIDCOptions struct {
-	// HTTPClient fetches discovery documents and key sets. Nil uses a client
-	// with a 10s timeout that refuses a redirect off https. Discovery is
+	// HTTPClient fetches discovery documents and key sets. Nil uses
+	// newOIDCHTTPClient, which refuses non-public addresses. Discovery is
 	// https only in every case, so a test passes the client of an httptest
 	// TLS server rather than turning the check off.
 	HTTPClient *http.Client
@@ -79,6 +88,7 @@ type OIDCOptions struct {
 type OIDCVerifier struct {
 	client          *http.Client
 	keyTTL          time.Duration
+	maxStaleAge     time.Duration
 	refetchInterval time.Duration
 	now             func() time.Time
 
@@ -90,30 +100,87 @@ type OIDCVerifier struct {
 func NewOIDCVerifier(opts OIDCOptions) *OIDCVerifier {
 	client := opts.HTTPClient
 	if client == nil {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-		client = &http.Client{
-			Timeout:   oidcFetchTimeout,
-			Transport: transport,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if req.URL.Scheme != "https" {
-					return fmt.Errorf("refused a redirect to %s: only https is fetched", req.URL.Scheme)
-				}
-				if len(via) >= 5 {
-					return errors.New("stopped after 5 redirects")
-				}
-				return nil
-			},
-		}
+		client = newOIDCHTTPClient()
 	}
 	return &OIDCVerifier{
 		client:          client,
 		keyTTL:          oidcKeyTTL,
+		maxStaleAge:     oidcMaxStaleAge,
 		refetchInterval: oidcRefetchInterval,
-		now:             time.Now,
+		now:             func() time.Time { return time.Now().UTC() },
 		issuers:         map[string]*issuerKeys{},
 		static:          map[[sha256.Size]byte]*keyfunc.JWKS{},
 	}
+}
+
+// newOIDCHTTPClient fetches from public addresses only. The issuer URL comes
+// from an admin-written mapping, so without the check the plane would fetch
+// from its own network on request: loopback, a cluster service, the cloud
+// metadata endpoint. The check runs on the address each connection dials,
+// after DNS resolution and on every redirect, so a public name that
+// resolves to a private address is refused too.
+//
+// No proxy: through one, the dialed address is the proxy's and the check
+// would see nothing of the issuer. An issuer on a private network, or one
+// only a proxy reaches, is served by the mapping's static jwks.
+func newOIDCHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = (&net.Dialer{
+		Timeout:   oidcFetchTimeout,
+		KeepAlive: 30 * time.Second,
+		Control:   refuseNonPublicAddress,
+	}).DialContext
+	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	return &http.Client{
+		Timeout:       oidcFetchTimeout,
+		Transport:     transport,
+		CheckRedirect: checkOIDCRedirect,
+	}
+}
+
+// checkOIDCRedirect follows at most oidcMaxRedirects redirects, to https
+// only.
+func checkOIDCRedirect(req *http.Request, via []*http.Request) error {
+	if req.URL.Scheme != "https" {
+		return fmt.Errorf("refused a redirect to %s: only https is fetched", req.URL.Scheme)
+	}
+	if len(via) > oidcMaxRedirects {
+		return fmt.Errorf("stopped after %d redirects", oidcMaxRedirects)
+	}
+	return nil
+}
+
+// cgnatPrefix is the shared address space of RFC 6598, which carriers and
+// some clusters use internally.
+var cgnatPrefix = netip.MustParsePrefix("100.64.0.0/10")
+
+// refuseNonPublicAddress is a net.Dialer Control hook. address is the
+// resolved ip:port the connection is about to dial.
+func refuseNonPublicAddress(_, address string, _ syscall.RawConn) error {
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return fmt.Errorf("oidc: refused to dial %q: not an ip:port: %w", address, err)
+	}
+	if !isPublicAddr(ap.Addr()) {
+		return fmt.Errorf("oidc: refused to dial %s: not a public address; "+
+			"for an issuer on a private network set jwks on the sidecar service account", ap.Addr())
+	}
+	return nil
+}
+
+// isPublicAddr refuses loopback, private (RFC 1918 and IPv6 ULA),
+// link-local (169.254.169.254 among them), unspecified, multicast and CGNAT
+// addresses, IPv4 ones in their IPv6-mapped form too.
+func isPublicAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	return addr.IsValid() &&
+		!addr.IsLoopback() &&
+		!addr.IsPrivate() &&
+		!addr.IsLinkLocalUnicast() &&
+		!addr.IsMulticast() &&
+		!addr.IsUnspecified() &&
+		!cgnatPrefix.Contains(addr)
 }
 
 // UnverifiedIssuer reads iss from a token without checking anything else.
@@ -259,7 +326,9 @@ type issuerKeys struct {
 
 // keys returns e's key set, fetching it when there is none, when it is older
 // than the TTL, or when unknownKID asks for a refetch. Fetches for one issuer
-// are at least refetchInterval apart whatever the callers send.
+// are at least refetchInterval apart whatever the callers send. Keys fetched
+// more than maxStaleAge ago are never returned: past it, only a successful
+// fetch verifies a token again.
 func (v *OIDCVerifier) keys(ctx context.Context, e *issuerKeys, unknownKID bool) (*keyfunc.JWKS, error) {
 	e.mu.RLock()
 	jwks, fetchedAt, triedAt, lastErr := e.jwks, e.fetchedAt, e.triedAt, e.err
@@ -270,9 +339,9 @@ func (v *OIDCVerifier) keys(ctx context.Context, e *issuerKeys, unknownKID bool)
 		return jwks, nil
 	}
 	if !triedAt.IsZero() && now.Sub(triedAt) < v.refetchInterval {
-		return currentKeys(jwks, lastErr)
+		return v.currentKeys(jwks, fetchedAt, lastErr, now)
 	}
-	if jwks != nil && !unknownKID {
+	if jwks != nil && !unknownKID && now.Sub(fetchedAt) < v.maxStaleAge {
 		// Keys past their TTL still verify: one request refreshes them, and
 		// the others do not wait for it.
 		if !e.fetching.TryLock() {
@@ -286,9 +355,9 @@ func (v *OIDCVerifier) keys(ctx context.Context, e *issuerKeys, unknownKID bool)
 	e.mu.RLock()
 	if !e.triedAt.Equal(triedAt) {
 		// Another request fetched while this one waited.
-		jwks, lastErr = e.jwks, e.err
+		jwks, fetchedAt, lastErr = e.jwks, e.fetchedAt, e.err
 		e.mu.RUnlock()
-		return currentKeys(jwks, lastErr)
+		return v.currentKeys(jwks, fetchedAt, lastErr, v.now())
 	}
 	e.mu.RUnlock()
 
@@ -299,25 +368,31 @@ func (v *OIDCVerifier) keys(ctx context.Context, e *issuerKeys, unknownKID bool)
 	e.triedAt = v.now()
 	if err != nil {
 		e.err = err
-		if e.jwks != nil {
+		kept, keptErr := v.currentKeys(e.jwks, e.fetchedAt, err, e.triedAt)
+		if kept != nil {
 			log.With("issuer", e.issuer).Warnf("oidc: key refresh failed, keeping the keys fetched at %s: %v",
 				e.fetchedAt.UTC().Format(time.RFC3339), err)
-			return e.jwks, nil
 		}
-		return nil, err
+		return kept, keptErr
 	}
 	e.jwks, e.fetchedAt, e.err = fresh, e.triedAt, nil
 	return fresh, nil
 }
 
-func currentKeys(jwks *keyfunc.JWKS, lastErr error) (*keyfunc.JWKS, error) {
-	if jwks != nil {
+// currentKeys returns the cached keys while they are younger than
+// maxStaleAge, and else the reason no key verifies.
+func (v *OIDCVerifier) currentKeys(jwks *keyfunc.JWKS, fetchedAt time.Time, lastErr error, now time.Time) (*keyfunc.JWKS, error) {
+	if jwks != nil && now.Sub(fetchedAt) < v.maxStaleAge {
 		return jwks, nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("no key set fetched yet")
 	}
-	return nil, fmt.Errorf("oidc: keys for this issuer are unavailable, next fetch within %s: %w", oidcRefetchInterval, lastErr)
+	if jwks != nil {
+		return nil, fmt.Errorf("oidc: the keys for this issuer were fetched at %s, more than %s ago, and every refresh since failed: %w",
+			fetchedAt.UTC().Format(time.RFC3339), v.maxStaleAge, lastErr)
+	}
+	return nil, fmt.Errorf("oidc: keys for this issuer are unavailable, next fetch within %s: %w", v.refetchInterval, lastErr)
 }
 
 // fetch runs discovery and loads the key set it names.

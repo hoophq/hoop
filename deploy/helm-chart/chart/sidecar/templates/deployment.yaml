@@ -118,14 +118,15 @@ spec:
           name: {{ include "hoopsidecar.configMapName" . }}
       {{- end }}
       {{- if $k8sIdentity }}
-      # The audience is the control plane URL, so the token is good for the
-      # control plane and nothing else. The kubelet rotates it in place.
+      # The audience is controlPlane.identityAudience, else the control
+      # plane URL, so the token is good for the control plane and nothing
+      # else. The kubelet rotates it in place.
       - name: sidecar-identity
         projected:
           sources:
           - serviceAccountToken:
-              audience: {{ .Values.controlPlane.url | quote }}
-              expirationSeconds: {{ .Values.controlPlane.tokenExpirationSeconds | default 3600 }}
+              audience: {{ include "hoopsidecar.identityAudience" . | quote }}
+              expirationSeconds: {{ include "hoopsidecar.identityTokenExpiration" . }}
               path: token
       {{- end }}
       {{- with .Values.extraVolumes }}

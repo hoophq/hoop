@@ -10007,7 +10007,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Allow the tokens of a Kubernetes or Google service account to authenticate a sidecar with the hoop-sidecar-identity header. A matching token reaches the sidecar name_template renders, and creates it on its first handshake when no sidecar has that name. An issuer and audience pair belongs to one organization: 409 when another organization uses it.",
+                "description": "Allow the tokens of a Kubernetes or Google service account to authenticate a sidecar with the hoop-sidecar-identity header. A matching token reaches the sidecar name_template renders, and creates it on its first handshake when no sidecar has that name. The sidecar is bound to the first identity that reaches it; another identity is refused until an admin clears the binding with DELETE /sidecars/{nameOrID}/identity. A sidecar created with a token is reached only with adopt_existing_sidecars. An issuer and audience pair belongs to one organization: 409 when another organization uses it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -11202,6 +11202,50 @@ const docTemplate = `{
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.SidecarConfigError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/{nameOrID}/identity": {
+            "delete": {
+                "description": "Remove the binding of a sidecar to the service account identity that reached it first. The next identity a sidecar service account allows is bound to it on its next handshake; a sidecar created with a token is bound again only through a sidecar service account with adopt_existing_sidecars. A token the sidecar has keeps working.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Clear Sidecar Identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "500": {
@@ -20650,7 +20694,7 @@ const docTemplate = `{
                     "readOnly": true
                 },
                 "identity_issuer": {
-                    "description": "IdentityIssuer and IdentitySubject name the last service account\nidentity that reached this sidecar through hoop-sidecar-identity. Empty\nfor a sidecar no identity reached.",
+                    "description": "IdentityIssuer and IdentitySubject name the service account identity\nthis sidecar is bound to: the first that reached it through\nhoop-sidecar-identity. Empty for a sidecar no identity reached, or\nwhose binding an admin cleared.",
                     "type": "string",
                     "example": "https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu"
                 },
@@ -20874,7 +20918,7 @@ const docTemplate = `{
                     "readOnly": true
                 },
                 "identity_issuer": {
-                    "description": "IdentityIssuer and IdentitySubject name the last service account\nidentity that reached this sidecar through hoop-sidecar-identity. Empty\nfor a sidecar no identity reached.",
+                    "description": "IdentityIssuer and IdentitySubject name the service account identity\nthis sidecar is bound to: the first that reached it through\nhoop-sidecar-identity. Empty for a sidecar no identity reached, or\nwhose binding an admin cleared.",
                     "type": "string",
                     "example": "https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu"
                 },
@@ -21085,6 +21129,11 @@ const docTemplate = `{
                 "subject_pattern"
             ],
             "properties": {
+                "adopt_existing_sidecars": {
+                    "description": "Lets a matching token reach a sidecar an admin created with a token,\nthat no identity is bound to yet, and binds it. The sidecar's token\nkeeps working. Without it the token is refused there",
+                    "type": "boolean",
+                    "example": false
+                },
                 "allow_any_subject": {
                     "description": "Allows the bare * pattern, which admits every subject of the issuer",
                     "type": "boolean",
@@ -21135,7 +21184,7 @@ const docTemplate = `{
                     "example": "gke-eu"
                 },
                 "name_template": {
-                    "description": "The name of the sidecar a matching token reaches. {1} is the text the *\nmatched. A sidecar that exists with this name is used, whoever created it",
+                    "description": "The name of the sidecar a matching token reaches. {1} is the text the *\nmatched. A sidecar that exists with this name is used when it is bound\nto the same identity, or to none (see adopt_existing_sidecars)",
                     "type": "string",
                     "example": "gke-eu-{1}"
                 },

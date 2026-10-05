@@ -63,14 +63,24 @@ func (r *Router) SidecarAuthMiddleware(c *gin.Context) {
 }
 
 // sidecarIdentityAuth resolves the sidecar a service account token reaches.
-// A refused token is 401 with the reason; the sidecar logs it, and its
-// operator fixes the mapping from it.
+// A refused token is 401. Before the token is verified the answer is
+// generic and the reason is only in this log, with the issuer the token
+// names; after, the answer names the reason, the sidecar logs it, and its
+// operator fixes the mapping from it. This is the one place a refusal is
+// logged.
 func (r *Router) sidecarIdentityAuth(c *gin.Context, identity string) {
 	sidecar, err := services.AuthenticateSidecarIdentity(c.Request.Context(), models.DB, r.sidecarIdentity, identity)
 	if err != nil {
 		var refusal *services.SidecarIdentityRefusal
 		if errors.As(err, &refusal) {
-			log.With("reason", refusal.Message).Infof("refused a sidecar service account token")
+			l := log.With("issuer", refusal.Issuer, "reason", refusal.LogReason())
+			if errors.Is(refusal, services.ErrSidecarIdentityAmbiguous) {
+				// Mappings of two organizations match one token: the plane's
+				// operator fixes it, not the sidecar's.
+				l.Errorf("refused a sidecar service account token matched in more than one organization")
+			} else {
+				l.Infof("refused a sidecar service account token")
+			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": refusal.Message})
 			return
 		}

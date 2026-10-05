@@ -124,6 +124,31 @@ control plane must refuse it.
 {{- define "hoopsidecar.identityTokenPath" -}}{{ include "hoopsidecar.identityTokenDir" . }}/token{{- end -}}
 
 {{/*
+The identity token's audience. A control plane serving several
+organizations maps each (issuer, audience) pair to one organization, so each
+one sets its own; a single organization leaves it empty and gets the URL.
+*/}}
+{{- define "hoopsidecar.identityAudience" -}}
+{{- .Values.controlPlane.identityAudience | default .Values.controlPlane.url -}}
+{{- end -}}
+
+{{/*
+The projected token's lifetime as an integer, or "" when the value is not
+one. A values file parses every number as float64, so a whole float counts;
+it is printed through int64 so a large value never renders as 1e+06.
+*/}}
+{{- define "hoopsidecar.identityTokenExpiration" -}}
+{{- $exp := .Values.controlPlane.tokenExpirationSeconds | default 3600 -}}
+{{- if kindIs "string" $exp -}}
+{{- if regexMatch "^[1-9][0-9]*$" $exp -}}{{ $exp }}{{- end -}}
+{{- else if or (kindIs "int" $exp) (kindIs "int64" $exp) -}}
+{{- $exp -}}
+{{- else if kindIs "float64" $exp -}}
+{{- if eq $exp (float64 (int64 $exp)) -}}{{ int64 $exp }}{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Refuse to render a Deployment that cannot start, with the message the relay
 itself would print on the restart nobody is watching.
 */}}
@@ -146,6 +171,18 @@ itself would print on the restart nobody is watching.
 {{- end -}}
 {{- if and (or $cp.token $cp.identity) (not $cp.url) -}}
 {{- fail "a control plane credential is set but no control plane is configured: set controlPlane.url or drop the credential" -}}
+{{- end -}}
+{{- if and $cp.identityAudience (not $cp.identity) -}}
+{{- fail "controlPlane.identityAudience is set but controlPlane.identity is not: only a service account identity token has an audience" -}}
+{{- end -}}
+{{- if eq $cp.identity "kubernetes" -}}
+{{- $exp := include "hoopsidecar.identityTokenExpiration" . -}}
+{{- if not $exp -}}
+{{- fail (printf "controlPlane.tokenExpirationSeconds is %v: it must be an integer number of seconds, 600 or more (the Kubernetes minimum)" $cp.tokenExpirationSeconds) -}}
+{{- end -}}
+{{- if lt (atoi $exp) 600 -}}
+{{- fail (printf "controlPlane.tokenExpirationSeconds is %s: Kubernetes refuses a projected token that expires in less than 600 seconds; set 600 or more" $exp) -}}
+{{- end -}}
 {{- end -}}
 {{/*
 The probes are hardcoded to the admin port, so a config that moves or omits

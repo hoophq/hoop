@@ -78,6 +78,7 @@ func clearCredentialEnv(t *testing.T) {
 	t.Setenv(SidecarTokenEnv, "")
 	t.Setenv(SidecarIdentityTokenFileEnv, "")
 	t.Setenv(SidecarIdentityGCPEnv, "")
+	t.Setenv(SidecarIdentityAudienceEnv, "")
 	t.Setenv(gcpMetadataHostEnv, "")
 }
 
@@ -335,6 +336,70 @@ func TestGCPIdentityAsksTheMetadataServerForThePlaneAudience(t *testing.T) {
 	got := calls()
 	if len(got) != 2 || got[0].identity == "" || got[0].identity != got[1].identity || got[0].token != "" {
 		t.Errorf("plane calls = %+v, want two identity handshakes with the cached token", got)
+	}
+}
+
+// A plane shared by several organizations maps an (issuer, audience) pair
+// to one organization, so each organization's sidecars name their own
+// audience instead of the plane URL.
+func TestGCPIdentityAsksForTheConfiguredAudience(t *testing.T) {
+	clearCredentialEnv(t)
+	meta := metadataServer(t, time.Hour)
+	srv, calls := identityPlane(t, http.StatusOK, planeConfig)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarIdentityGCPEnv, "true")
+	t.Setenv(SidecarIdentityAudienceEnv, "hoop-org-a")
+
+	if _, _, err := SetupWith("", nil, nil); err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	m := meta()
+	if len(m) != 1 || m[0].audience != "hoop-org-a" {
+		t.Errorf("metadata requests = %+v, want one for audience %q", m, "hoop-org-a")
+	}
+	if got := calls(); len(got) != 1 || got[0].identity == "" {
+		t.Errorf("plane calls = %+v, want one identity handshake", got)
+	}
+}
+
+// The audience does nothing for a token, and a projected token's audience
+// is fixed where it is minted, so setting it beside either is an error
+// naming it before the plane is contacted.
+func TestAnIdentityAudienceWithoutGCPStopsStartup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	writeTokenFile(t, path, k8sJWT(t, "s", time.Now().Add(time.Hour)))
+	for _, tc := range []struct {
+		name string
+		flag string
+		env  map[string]string
+		want string
+	}{
+		{"token flag", "hsc_x", nil, "token flag"},
+		{"token env", "", map[string]string{SidecarTokenEnv: "hsc_x"}, SidecarTokenEnv},
+		{"token file", "", map[string]string{SidecarIdentityTokenFileEnv: path}, SidecarIdentityTokenFileEnv},
+		{"gcp false", "", map[string]string{SidecarTokenEnv: "hsc_x", SidecarIdentityGCPEnv: "false"}, SidecarTokenEnv},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearCredentialEnv(t)
+			srv, calls := identityPlane(t, http.StatusOK, planeConfig)
+			t.Setenv(ControlPlaneURLEnv, srv.URL)
+			t.Setenv(SidecarIdentityAudienceEnv, "hoop-org-a")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			_, _, err := SetupWith("", nil, nil, WithControlPlaneToken(tc.flag))
+			if err == nil {
+				t.Fatal("an audience beside a non-GCP credential was accepted")
+			}
+			for _, want := range []string{SidecarIdentityAudienceEnv, tc.want} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the error does not name %q: %v", want, err)
+				}
+			}
+			if n := len(calls()); n != 0 {
+				t.Errorf("the plane was contacted %d time(s)", n)
+			}
+		})
 	}
 }
 

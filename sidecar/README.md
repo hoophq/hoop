@@ -300,10 +300,12 @@ one, and a sidecar an admin deleted stays deleted.
 | Variable | Holds |
 |---|---|
 | `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | path to a JWT, normally a Kubernetes projected service account token. Re-read on every request, because the kubelet rotates it in place. Whitespace is trimmed; an empty file or one over 16 KiB is refused |
-| `HOOP_SIDECAR_IDENTITY_GCP` | `true` to fetch a Google ID token from the GCE/GKE metadata server, with the control plane URL as audience. Cached until 5 minutes before it expires. `GCE_METADATA_HOST` overrides the server, as in the Google client libraries |
+| `HOOP_SIDECAR_IDENTITY_GCP` | `true` to fetch a Google ID token from the GCE/GKE metadata server, with `HOOP_SIDECAR_IDENTITY_AUDIENCE` as audience. Cached until 5 minutes before it expires. `GCE_METADATA_HOST` overrides the server, as in the Google client libraries |
+| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | the Google ID token's audience. Default: the control plane URL. Only `HOOP_SIDECAR_IDENTITY_GCP` reads it; set without `HOOP_SIDECAR_IDENTITY_GCP=true` (beside the token, `HOOP_SIDECAR_IDENTITY_TOKEN_FILE`, or alone), it stops startup, because a projected token's audience is set where the token is minted |
 
 Kubernetes projected token, audience set to the control plane URL exactly as
-`HOOP_CONTROL_PLANE_URL` holds it:
+`HOOP_CONTROL_PLANE_URL` holds it (or to the organization's own audience, see
+below):
 
 ```yaml
 spec:
@@ -349,6 +351,41 @@ Its allowlist entry uses issuer `https://accounts.google.com`, claim `email`,
 and the Google service account's address. A 401 at startup names the issuer
 and subject the sidecar presented, so the entry can be checked against them;
 a control plane that predates service account support answers 401 as well.
+
+When the plane cannot verify the token (not a JWT, an issuer no entry names,
+a bad signature, an expired token, or keys it could not fetch), the 401 says
+only `the service account token failed verification`. The plane does not tell
+an unverified caller why; the reason is in the control plane log, with the
+issuer. A refusal after verification (a subject no pattern allows, a deleted
+sidecar, a binding to another service account) keeps its own message.
+
+##### One control plane, several organizations
+
+The plane maps one (issuer, audience) pair to one organization. Sidecars of
+two organizations that share a plane and an issuer (one GKE cluster, or
+`https://accounts.google.com`) must present different audiences, or the
+second organization cannot add its entry. Give each organization its own
+audience: `HOOP_SIDECAR_IDENTITY_AUDIENCE` under GCP, the projected volume's
+`audience` under Kubernetes (`controlPlane.identityAudience` in the helm
+chart), and the same value in that organization's entry. One organization on
+a plane leaves it unset and uses the plane URL.
+
+##### A sidecar keeps the first service account that reached it
+
+The first service account that reaches a sidecar binds to it. Replicas and
+restarts present the same account, so they reach it too. A different
+service account whose name template renders the same sidecar name is refused
+with 401 until an admin clears the binding:
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $HOOP_ADMIN_TOKEN" \
+  https://cp.example.com/api/sidecars/<name>/identity
+```
+
+The next service account to reach it then binds to it. A sidecar registered
+with a token has no binding; a service account reaches it only when its
+entry sets `adopt_existing_sidecars: true`. The first one binds to it, and the
+sidecar's token keeps working.
 
 At startup the process runs the handshake
 (`POST {url}/api/sidecars/handshake`). The plane answers with the document

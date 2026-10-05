@@ -68,7 +68,7 @@ func Get(c *gin.Context) {
 // Create Sidecar Service Account
 //
 //	@Summary		Create Sidecar Service Account
-//	@Description	Allow the tokens of a Kubernetes or Google service account to authenticate a sidecar with the hoop-sidecar-identity header. A matching token reaches the sidecar name_template renders, and creates it on its first handshake when no sidecar has that name. An issuer and audience pair belongs to one organization: 409 when another organization uses it.
+//	@Description	Allow the tokens of a Kubernetes or Google service account to authenticate a sidecar with the hoop-sidecar-identity header. A matching token reaches the sidecar name_template renders, and creates it on its first handshake when no sidecar has that name. The sidecar is bound to the first identity that reaches it; another identity is refused until an admin clears the binding with DELETE /sidecars/{nameOrID}/identity. A sidecar created with a token is reached only with adopt_existing_sidecars. An issuer and audience pair belongs to one organization: 409 when another organization uses it.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -215,32 +215,34 @@ func toModel(req openapi.SidecarServiceAccount, orgID string) *models.SidecarSer
 		jwks = nil
 	}
 	return &models.SidecarServiceAccount{
-		OrgID:           orgID,
-		Name:            req.Name,
-		Issuer:          req.Issuer,
-		Audience:        req.Audience,
-		Claim:           req.Claim,
-		SubjectPattern:  req.SubjectPattern,
-		NameTemplate:    req.NameTemplate,
-		JWKS:            jwks,
-		AllowAnySubject: req.AllowAnySubject,
+		OrgID:                 orgID,
+		Name:                  req.Name,
+		Issuer:                req.Issuer,
+		Audience:              req.Audience,
+		Claim:                 req.Claim,
+		SubjectPattern:        req.SubjectPattern,
+		NameTemplate:          req.NameTemplate,
+		JWKS:                  jwks,
+		AllowAnySubject:       req.AllowAnySubject,
+		AdoptExistingSidecars: req.AdoptExistingSidecars,
 	}
 }
 
 func toOpenAPI(sa models.SidecarServiceAccount) openapi.SidecarServiceAccount {
 	return openapi.SidecarServiceAccount{
-		ID:              sa.ID,
-		OrgID:           sa.OrgID,
-		Name:            sa.Name,
-		Issuer:          sa.Issuer,
-		Audience:        sa.Audience,
-		Claim:           sa.Claim,
-		SubjectPattern:  sa.SubjectPattern,
-		NameTemplate:    sa.NameTemplate,
-		JWKS:            sa.JWKS,
-		AllowAnySubject: sa.AllowAnySubject,
-		CreatedBy:       sa.CreatedBy,
-		CreatedAt:       sa.CreatedAt,
-		UpdatedAt:       sa.UpdatedAt,
+		ID:                    sa.ID,
+		OrgID:                 sa.OrgID,
+		Name:                  sa.Name,
+		Issuer:                sa.Issuer,
+		Audience:              sa.Audience,
+		Claim:                 sa.Claim,
+		SubjectPattern:        sa.SubjectPattern,
+		NameTemplate:          sa.NameTemplate,
+		JWKS:                  sa.JWKS,
+		AllowAnySubject:       sa.AllowAnySubject,
+		AdoptExistingSidecars: sa.AdoptExistingSidecars,
+		CreatedBy:             sa.CreatedBy,
+		CreatedAt:             sa.CreatedAt,
+		UpdatedAt:             sa.UpdatedAt,
 	}
 }

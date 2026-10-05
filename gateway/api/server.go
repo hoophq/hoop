@@ -341,6 +341,13 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteSidecar),
 		apisidecar.Delete)
+	r.DELETE("/sidecars/:nameOrID/identity",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventClearSidecarIdentity),
+		apisidecar.ClearIdentity)
 	// Where the sidecar's reviews are posted in Slack. Both modes register
 	// them; a gateway answers 412.
 	r.GET("/sidecars/:nameOrID/slack-channels",

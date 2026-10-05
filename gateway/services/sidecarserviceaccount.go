@@ -11,7 +11,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/hoophq/hoop/common/log"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/externaljwt"
 	"github.com/hoophq/hoop/gateway/models"
@@ -53,14 +52,24 @@ var (
 	ErrSidecarIdentityAmbiguous     = errors.New("sidecar identity: matched in more than one organization")
 	ErrSidecarIdentityInvalidName   = errors.New("sidecar identity: rendered name refused")
 	ErrSidecarIdentityDeleted       = errors.New("sidecar identity: sidecar deleted")
+	ErrSidecarIdentityBound         = errors.New("sidecar identity: sidecar bound to another service account")
+	ErrSidecarIdentityHasToken      = errors.New("sidecar identity: sidecar registered with a token")
 )
 
+// SidecarIdentityUnverifiedMessage answers every refusal made before the
+// token is verified. Its sender is not authenticated yet, so it learns
+// nothing about the plane's mappings or key fetches.
+const SidecarIdentityUnverifiedMessage = "the service account token failed verification"
+
 // SidecarIdentityRefusal is a service account token the plane refused.
-// Message is safe to send to the caller: it names the reason and never key
-// material.
+// Message is safe to send to the caller and never holds key material:
+// SidecarIdentityUnverifiedMessage before the token is verified, the reason
+// after.
 type SidecarIdentityRefusal struct {
 	Kind    error
 	Message string
+	// Issuer is the token's iss, verified or not. Empty when it has none.
+	Issuer string
 	// detail is for the plane's log only.
 	detail string
 }
@@ -68,8 +77,23 @@ type SidecarIdentityRefusal struct {
 func (r *SidecarIdentityRefusal) Error() string { return r.Message }
 func (r *SidecarIdentityRefusal) Unwrap() error { return r.Kind }
 
+// LogReason is what the plane logs: Message, with the detail the caller is
+// not sent.
+func (r *SidecarIdentityRefusal) LogReason() string {
+	if r.detail == "" {
+		return r.Message
+	}
+	return r.Message + ": " + r.detail
+}
+
 func refuseIdentity(kind error, format string, args ...any) *SidecarIdentityRefusal {
 	return &SidecarIdentityRefusal{Kind: kind, Message: fmt.Sprintf(format, args...)}
+}
+
+// refuseUnverified refuses a token before it is verified: the reason goes to
+// the plane's log only.
+func refuseUnverified(kind error, format string, args ...any) *SidecarIdentityRefusal {
+	return &SidecarIdentityRefusal{Kind: kind, Message: SidecarIdentityUnverifiedMessage, detail: fmt.Sprintf(format, args...)}
 }
 
 // ErrInvalidSidecarServiceAccount wraps every reason a mapping write is
@@ -287,7 +311,7 @@ func MatchSidecarServiceAccount(mappings []models.SidecarServiceAccount, claims 
 	case len(orgs) > 1:
 		r := refuseIdentity(ErrSidecarIdentityAmbiguous,
 			"the token matches sidecar service accounts in more than one organization; an admin must narrow the patterns")
-		r.detail = "orgs=" + strings.Join(orgs, ",")
+		r.detail = fmt.Sprintf("orgs=%s subject=%q email=%q", strings.Join(orgs, ","), claims.Subject, claims.Email)
 		return nil, r
 	case best == nil && unverified:
 		return nil, refuseIdentity(ErrSidecarIdentityNotAllowed,
@@ -331,23 +355,33 @@ func betterServiceAccount(a, b *models.SidecarServiceAccount) bool {
 // AuthenticateSidecarIdentity resolves the sidecar a service account token
 // reaches: the mappings for the token's issuer, across every
 // organization, then verification, matching, and the sidecar with the
-// rendered name, created only when no sidecar has it.
+// rendered name, bound to the first identity that reaches it (see
+// models.GetOrCreateSidecarForIdentity).
 //
 // An issuer no mapping names is refused before anything is fetched: the
-// issuer of an unverified token is whatever its sender wrote.
+// issuer of an unverified token is whatever its sender wrote. Every refusal
+// carries that issuer for the plane's log.
 func AuthenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw string) (*models.Sidecar, error) {
 	issuer, err := externaljwt.UnverifiedIssuer(raw)
 	if err != nil {
-		return nil, refuseIdentity(ErrSidecarIdentityMalformed,
-			"the service account token is not a JWT with an issuer: %v", err)
+		return nil, refuseUnverified(ErrSidecarIdentityMalformed, "not a JWT with an issuer: %v", err)
 	}
+	sc, err := authenticateSidecarIdentity(ctx, db, verifier, raw, issuer)
+	var r *SidecarIdentityRefusal
+	if errors.As(err, &r) {
+		r.Issuer = issuer
+	}
+	return sc, err
+}
+
+func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *externaljwt.OIDCVerifier, raw, issuer string) (*models.Sidecar, error) {
 	mappings, err := models.ListSidecarServiceAccountsByIssuer(db, issuer)
 	if err != nil {
 		return nil, fmt.Errorf("failed listing sidecar service accounts: %w", err)
 	}
 	if len(mappings) == 0 {
-		return nil, refuseIdentity(ErrSidecarIdentityUnknownIssuer,
-			"no sidecar service account is configured for the token's issuer")
+		return nil, refuseUnverified(ErrSidecarIdentityUnknownIssuer,
+			"no sidecar service account is configured for this issuer")
 	}
 
 	verified, claims, err := verifySidecarIdentity(ctx, verifier, raw, issuer, mappings)
@@ -356,21 +390,28 @@ func AuthenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *ext
 	}
 	match, err := MatchSidecarServiceAccount(verified, *claims)
 	if err != nil {
-		var r *SidecarIdentityRefusal
-		if errors.As(err, &r) && errors.Is(err, ErrSidecarIdentityAmbiguous) {
-			log.With("issuer", issuer, "subject", claims.Subject, "email", claims.Email).
-				Errorf("sidecar service account token matched in more than one organization, %s", r.detail)
-		}
 		return nil, err
 	}
 
 	sa := match.ServiceAccount
 	sc, err := models.GetOrCreateSidecarForIdentity(db, sa.OrgID, match.Name, issuer, match.Subject,
-		sidecarCreatedByPrefix+match.Subject)
-	if errors.Is(err, models.ErrSidecarNameDeleted) {
+		sidecarCreatedByPrefix+match.Subject, sa.AdoptExistingSidecars)
+	switch {
+	case errors.Is(err, models.ErrSidecarNameDeleted):
 		return nil, refuseIdentity(ErrSidecarIdentityDeleted, "%s", SidecarDeletedMessage)
-	}
-	if err != nil {
+	case errors.Is(err, models.ErrSidecarBoundToAnotherIdentity):
+		r := refuseIdentity(ErrSidecarIdentityBound,
+			"sidecar %q is bound to another service account; an admin must clear its binding "+
+				"(DELETE /api/sidecars/%s/identity) before this one can reach it", match.Name, match.Name)
+		r.detail = fmt.Sprintf("subject=%q", match.Subject)
+		return nil, r
+	case errors.Is(err, models.ErrSidecarHasToken):
+		r := refuseIdentity(ErrSidecarIdentityHasToken,
+			"sidecar %q was registered with a token; set adopt_existing_sidecars on the sidecar service account "+
+				"entry to let service accounts reach it", match.Name)
+		r.detail = fmt.Sprintf("subject=%q mapping=%q", match.Subject, sa.Name)
+		return nil, r
+	case err != nil:
 		return nil, fmt.Errorf("failed resolving sidecar %q for a service account: %w", match.Name, err)
 	}
 	return sc, nil
@@ -411,8 +452,7 @@ func verifySidecarIdentity(ctx context.Context, verifier *externaljwt.OIDCVerifi
 		verified = append(verified, sa)
 	}
 	if len(verified) == 0 {
-		return nil, nil, refuseIdentity(ErrSidecarIdentityInvalid,
-			"the service account token failed verification: %v", firstErr)
+		return nil, nil, refuseUnverified(ErrSidecarIdentityInvalid, "%v", firstErr)
 	}
 	return verified, claims, nil
 }
