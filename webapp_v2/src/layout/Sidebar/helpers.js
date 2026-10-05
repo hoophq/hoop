@@ -3,12 +3,14 @@ import { hasRole } from '@/utils/roles'
 // `adminOnly` is the gate both products share; `role` (utils/roles) is the
 // control plane's. An item may carry either. hasRole lets an admin through every
 // role gate; the gateway never passes a role, so nothing changes there.
-export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEnabled = null, isLicenseFeatureEnabled = null, userRole = null) {
+// `sidecars` follows useSidecarsEnabled() (modes/sidecars).
+export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEnabled = null, isLicenseFeatureEnabled = null, userRole = null, sidecarsEnabled = false) {
   if (item.adminOnly && !isAdmin) return true
   if (item.role && !hasRole(userRole, item.role)) return true
   if (item.selfhostedOnly && !isSelfHosted) return true
   if (item.featureFlag && isFeatureFlagEnabled && !isFeatureFlagEnabled(item.featureFlag)) return true
   if (item.licenseFeature && isLicenseFeatureEnabled && !isLicenseFeatureEnabled(item.licenseFeature)) return true
+  if (item.sidecars && !sidecarsEnabled) return true
   return false
 }
 

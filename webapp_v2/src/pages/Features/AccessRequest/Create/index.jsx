@@ -115,7 +115,7 @@ function RuleFormFields({ rule, isEdit, defaultReviewerRoles }) {
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   // Roles (utils/roles) a new rule names as reviewers, given by the route table:
-  // the control plane passes the approver, the gateway none. The group name
+  // the approver when sidecars are on, none otherwise. The group name
   // comes from /serverinfo: a deployment may rename it.
   const adminRoleName = useUserStore((s) => s.adminRoleName)
   const approverRoleName = useUserStore((s) => s.approverRoleName)

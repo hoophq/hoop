@@ -29,6 +29,7 @@ import {
   Tags,
   FlaskConical,
   ScrollText,
+  View,
 } from 'lucide-react';
 
 // ─── Nav items ─────────────────────────────────────────────────────────────
@@ -38,7 +39,8 @@ export const MAIN_ITEMS = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, adminOnly: true },
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false, licenseFeature: 'runbooks' },
-  { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false }
+  { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false },
+  { label: 'Reviews', path: '/reviews', icon: View, adminOnly: false, sidecars: true }
   // No Search entry: the global header owns that affordance now (layout/Header/
   // HeaderSearch.jsx), and it opens the very same command palette.
 ]
@@ -90,7 +92,7 @@ export const ORGANIZATION_ITEMS = [
     icon: Container,
     adminOnly: true,
     badge: { text: 'BETA', color: 'indigo' },
-    featureFlag: 'beta.sidecar_listeners'
+    sidecars: true
   },
   {
     label: 'Integrations',
@@ -123,7 +125,7 @@ export const ORGANIZATION_ITEMS = [
 ]
 
 // ─── Command palette ────────────────────────────────────────────────────────
-// Gating flags (adminOnly / selfhostedOnly / featureFlag / licenseFeature)
+// Gating flags (adminOnly / selfhostedOnly / featureFlag / licenseFeature / sidecars)
 // mirror the sidebar entries above and are applied with the same shouldHide()
 // helper — keep both lists in sync when a page's gating changes.
 export const SUGGESTION_ITEMS = [
@@ -135,6 +137,7 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', description: 'Overview dashboard', icon: LayoutDashboard, path: '/dashboard', adminOnly: true },
   { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks' },
   { id: 'sessions', label: 'Sessions', description: 'View session history', icon: GalleryVerticalEnd, path: '/sessions' },
+  { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: View, path: '/reviews', sidecars: true },
   { id: 'access-request', label: 'Access Request', description: 'Manage access requests', icon: CircleCheckBig, path: '/features/access-request', adminOnly: true, licenseFeature: 'access-requests' },
   { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup', adminOnly: true, licenseFeature: 'runbooks' },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
@@ -142,7 +145,7 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'access-control', label: 'Access Control', description: 'Manage access control rules', icon: UserRoundCheck, path: '/features/access-control', adminOnly: true, licenseFeature: 'access-control' },
   { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect', adminOnly: true, licenseFeature: 'resource-discovery' },
   { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents', adminOnly: true },
-  { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true, featureFlag: 'beta.sidecar_listeners' },
+  { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true, sidecars: true },
   { id: 'authentication', label: 'Authentication', description: 'Configure authentication', icon: ShieldCheck, path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
   { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },
   { id: 'jira-templates', label: 'Jira Templates', description: 'Manage Jira issue templates', icon: Layers, path: '/jira-templates', adminOnly: true, licenseFeature: 'jira-integration' },

@@ -9,6 +9,7 @@ import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
 import Tabs from '@/components/Tabs'
 import PageLoader from '@/components/PageLoader'
 import { showSnackbar } from '@/utils/snackbar'
+import { isSidecarMirror } from '@/utils/connectionPolicy'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import ConfigureHeader from '@/pages/Roles/Configure/ConfigureHeader'
 import CredentialsTab from '@/pages/Roles/Configure/CredentialsTab'
@@ -16,6 +17,7 @@ import DetailsTab from '@/pages/Roles/Configure/DetailsTab'
 import TerminalAccessTab from '@/pages/Roles/Configure/TerminalAccessTab'
 import NativeAccessTab from '@/pages/Roles/Configure/NativeAccessTab'
 import TestConnectionModal from '@/pages/Roles/Configure/sections/TestConnectionModal'
+import SidecarMirrorView from '@/pages/Roles/Configure/sections/SidecarMirrorView'
 
 function DeleteConfirmationModal({ opened, onClose, onConfirm, connectionName, deleting }) {
   return (
@@ -122,6 +124,9 @@ export default function ConfigureRolePage() {
   }
   if (!connection) {
     return null
+  }
+  if (isSidecarMirror(connection)) {
+    return <SidecarMirrorView connection={connection} onBack={() => navigate(-1)} />
   }
 
   // Empty auto-placeholder rows (added by the credentials editors so

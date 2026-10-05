@@ -126,6 +126,11 @@
     (= source-or-provider "aws-iam-role") "_aws_iam_rds:"
     :else ""))
 
+(defn sidecar-mirror?
+  "A connection that mirrors a sidecar listener. The API refuses to update or delete it."
+  [connection]
+  (= (:managed_by connection) "sidecar"))
+
 (defn can-connect? [connection]
   (not (and (= "disabled" (:access_mode_runbooks connection))
             (= "disabled" (:access_mode_exec connection))

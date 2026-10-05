@@ -4,6 +4,7 @@ import PageLoader from '@/components/PageLoader'
 import NotImplemented from '@/components/NotImplemented'
 import { useModeConfig } from '@/modes'
 import ByProduct from '@/modes/ByProduct'
+import BySidecars from '@/modes/BySidecars'
 import { ROLE_APPROVER } from '@/utils/roles'
 
 // Auth pages
@@ -72,9 +73,9 @@ import SidecarListenerPage from '@/pages/Sidecars/Listener'
 // only — no reason to put that in the bundle every user downloads.
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 
-// A review rule created in the control plane names the approver group as
-// reviewer; the form maps the role to the group name through /serverinfo.
-const CONTROL_PLANE_REVIEWER_ROLES = [ROLE_APPROVER]
+// A review rule created with sidecars on names the approver group as reviewer;
+// the form maps the role to the group name through /serverinfo.
+const SIDECAR_REVIEWER_ROLES = [ROLE_APPROVER]
 
 /**
  * One route table for both products (src/modes). Every React route below exists
@@ -166,24 +167,24 @@ function Router() {
         }
       />
       {/* Both render the list; the session id opens its drawer, so the Slack
-          link resolves to one review. In the control plane every signed-in
-          user reaches it: a reviewer's groups come from the identity provider,
+          link resolves to one review. With sidecars every signed-in user
+          reaches it: a reviewer's groups come from the identity provider,
           not from a role. */}
       <Route
         path="/reviews"
         element={
-          <ByProduct
-            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
-            controlPlane={<Page><Reviews /></Page>}
+          <BySidecars
+            on={<Page><Reviews /></Page>}
+            off={<Page role={ROLE_APPROVER}><Reviews /></Page>}
           />
         }
       />
       <Route
         path="/reviews/:sessionId"
         element={
-          <ByProduct
-            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
-            controlPlane={<Page><Reviews /></Page>}
+          <BySidecars
+            on={<Page><Reviews /></Page>}
+            off={<Page role={ROLE_APPROVER}><Reviews /></Page>}
           />
         }
       />
@@ -494,9 +495,9 @@ function Router() {
         path="/features/access-request/new"
         element={
           <Page adminOnly licenseFeature="access-requests">
-            <ByProduct
-              gateway={<AccessRequestForm />}
-              controlPlane={<AccessRequestForm defaultReviewerRoles={CONTROL_PLANE_REVIEWER_ROLES} />}
+            <BySidecars
+              on={<AccessRequestForm defaultReviewerRoles={SIDECAR_REVIEWER_ROLES} />}
+              off={<AccessRequestForm />}
             />
           </Page>
         }
@@ -505,9 +506,9 @@ function Router() {
         path="/features/access-request/edit/:ruleName"
         element={
           <Page adminOnly licenseFeature="access-requests">
-            <ByProduct
-              gateway={<AccessRequestForm />}
-              controlPlane={<AccessRequestForm defaultReviewerRoles={CONTROL_PLANE_REVIEWER_ROLES} />}
+            <BySidecars
+              on={<AccessRequestForm defaultReviewerRoles={SIDECAR_REVIEWER_ROLES} />}
+              off={<AccessRequestForm />}
             />
           </Page>
         }
@@ -682,7 +683,10 @@ function Router() {
         path="/integrations/slack"
         element={
           <Page adminOnly>
-            <ByProduct gateway={<GatewaySlack />} controlPlane={<ControlPlaneSlack />} />
+            <ByProduct
+              gateway={<BySidecars on={<GatewaySlack showListeners />} off={<GatewaySlack />} />}
+              controlPlane={<ControlPlaneSlack />}
+            />
           </Page>
         }
       />
