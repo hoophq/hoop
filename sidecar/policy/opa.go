@@ -168,6 +168,18 @@ type opaInput struct {
 	// status and no values, because "no answer" is the case a policy most
 	// needs to see and the case an absent key hides.
 	Findings map[string]Finding `json:"findings,omitempty"`
+
+	// Review says a human will be asked to release the statement if this
+	// decision allows it. Decide phase only: nothing is filed yet, so it
+	// carries no id or status (ADR-0030).
+	Review *opaReview `json:"review,omitempty"`
+}
+
+// opaReview is input.review.
+type opaReview struct {
+	Required   bool   `json:"required"`
+	Mode       string `json:"mode"`
+	ModeSource string `json:"mode_source"`
 }
 
 // opaResponse models OPA's Data API reply. Result is json.RawMessage,
@@ -245,6 +257,16 @@ func (c *OPAClient) findingsFor(ec *EvalContext) map[string]Finding {
 	return ec.Findings
 }
 
+// reviewFor renders input.review for the decide phase, and nil on any other
+// phase or when no producer asked for a review.
+func (c *OPAClient) reviewFor(ec *EvalContext) *opaReview {
+	r, ok := ec.PendingReview()
+	if c.Phase != PhaseDecide || !ok {
+		return nil
+	}
+	return &opaReview{Required: true, Mode: r.Mode, ModeSource: r.ModeSource}
+}
+
 // contextFor merges the client's static Context with the per-connection facts
 // the caller seeded on the evaluation context.
 //
@@ -298,6 +320,7 @@ func (c *OPAClient) evaluate(ctx context.Context, stmt inspect.Statement, ec *Ev
 		Context:   c.contextFor(ec),
 		Phase:     string(c.Phase),
 		Findings:  c.findingsFor(ec),
+		Review:    c.reviewFor(ec),
 	}})
 	if err != nil {
 		return c.failure(fmt.Errorf("policy/opa: encoding input: %w", err))

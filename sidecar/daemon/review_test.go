@@ -453,3 +453,54 @@ func TestReviewerForFilesOnlyWhereItShould(t *testing.T) {
 		t.Error("a lane with no control plane got a reviewer")
 	}
 }
+
+// ADR-0030 through the real build path: on a two-phase lane the decide
+// phase runs before the review, so a decide denial files nothing and spends
+// no approval.
+func TestADecideDenialOnAHoldingLaneFilesNothing(t *testing.T) {
+	cp, calls := reviewPlane(t, http.StatusCreated,
+		`{"forward":true,"review":{"id":"9f97","status":"EXECUTED"}}`)
+	var review map[string]any
+	opa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Input struct {
+				Review map[string]any `json:"review"`
+			} `json:"input"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		review = body.Input.Review
+		_, _ = w.Write([]byte(`{"result": {"denied": true, "rule": "breakglass-only"}}`))
+	}))
+	t.Cleanup(opa.Close)
+	deps := &analyzerDeps{
+		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"},
+		provider: highRiskProvider{},
+		cp:       cp,
+	}
+	la := laneBlock()
+	la.HighRisk = "require_review"
+	la.MediumRisk = "defer"
+	la.ApprovalRule = "payments-approvers"
+
+	pol, err := buildPolicy("payments", GuardrailsConfig{}, la, &OPAConfig{URL: opa.URL}, nil, deps)
+	if err != nil {
+		t.Fatalf("buildPolicy: %v", err)
+	}
+	v := pol.Evaluate(inspect.Statement{
+		Protocol:  inspect.Postgres,
+		Direction: inspect.FromClient,
+		Text:      "DELETE FROM users",
+		Operation: inspect.OpDelete,
+		Tables:    []string{"users"},
+	})
+
+	if !v.Denied || v.Rule != "breakglass-only" {
+		t.Fatalf("the decide denial did not stand: %+v", v)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("the plane saw %d requests before decide denied", len(*calls))
+	}
+	if review["required"] != true || review["mode"] != "hold" {
+		t.Fatalf("decide saw input.review = %v", review)
+	}
+}
