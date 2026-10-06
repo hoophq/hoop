@@ -142,15 +142,14 @@ func TestLaneAnalyzerWithoutAnyActionIsRefused(t *testing.T) {
 // The block refuses the same action values the rule form refuses, through
 // the same shared check.
 //
-// require_review is in the table with its own reason: the block SUPPORTS it,
-// so what is refused here is the half-written form: a hold that names nobody
-// who could release it.
+// require_review without an approval_rule is not in the table: whether it is
+// half-written depends on who receives the review, which the document cannot
+// know. TestAHoldWithoutARuleIsRefusedWhereAPlaneFiles pins it.
 func TestLaneAnalyzerActionVocabulary(t *testing.T) {
 	for _, tc := range []struct {
 		name, action, want string
 	}{
 		{"unknown", "explode", "unknown action"},
-		{"require_review with no approval_rule", "require_review", "names no approval_rule"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			la := laneBlock()

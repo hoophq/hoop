@@ -177,6 +177,10 @@ type Config struct {
 	// verdict about reachability.
 	cp *controlPlane
 
+	// localReviewer files held statements with whoever runs this process,
+	// when it has no control plane. WithLocalReviewer fills it; see there.
+	localReviewer LocalReviewer
+
 	// entrypoint, deprecatedAlias and configFormat are facts the entry
 	// point learned about its own invocation, carried here so Run can
 	// report them. Setup fills them from its Options; none is a config
@@ -1719,6 +1723,11 @@ type analyzerDeps struct {
 	// down because the reloader rebuilds lanes from these deps, so an
 	// edited approval_rule reaches the lane on the next heartbeat.
 	cp *controlPlane
+
+	// local files reviews with the person running this process, used only
+	// when cp is nil. Held here for the same reason as cp: a reload that
+	// adds require_review to a lane gets a reviewer without a restart.
+	local LocalReviewer
 
 	// det builds each evaluator's redactor from its EFFECTIVE send mode:
 	// a lane overriding `send` gets its own rewrite function while every

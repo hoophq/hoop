@@ -510,7 +510,13 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// collapses classifications, not approvals: the statement in
 		// front of us has not been released, whatever a previous one of
 		// the same shape cost.
-		return e.requestHold(connContext(ec), stmt, ec, notes)
+		ctx := withHoldDetail(connContext(ec), HoldDetail{
+			Rule:        e.cfg.Rule,
+			RiskLevel:   level,
+			Title:       res.Title,
+			Explanation: res.Explanation,
+		})
+		return e.requestHold(ctx, stmt, ec, notes)
 	}
 
 	if action != ActionBlock {

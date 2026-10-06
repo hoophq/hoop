@@ -86,6 +86,7 @@ type setupOptions struct {
 	token           string
 	entrypoint      string
 	deprecatedAlias bool
+	localReviewer   LocalReviewer
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -177,6 +178,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	}
 	cfg.entrypoint = o.entrypoint
 	cfg.deprecatedAlias = o.deprecatedAlias
+	cfg.localReviewer = o.localReviewer
 	cfg.configPath = path
 	setConfigFormat(cfg, path)
 	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
@@ -1254,12 +1256,8 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		if holdsWithoutAPlane(cfg, lc.Analyzer, ac) {
-			problems = append(problems, fmt.Sprintf(
-				"%s: the analyzer block asks for %q and this sidecar has no control "+
-					"plane; the review is filed with the plane named by %s or the "+
-					"control_plane_url key, and there is nowhere else to file it",
-				name, analyzer.ActionRequireReview, ControlPlaneURLEnv))
+		if why := holdRefusal(cfg, lc.Analyzer, ac); why != "" {
+			problems = append(problems, name+": "+why)
 			continue
 		}
 

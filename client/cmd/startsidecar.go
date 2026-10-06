@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
+	"path/filepath"
 
+	"github.com/hoophq/hoop/client/cmd/sidecartui"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/version"
 	// Analyzer providers register themselves on import, matching the
@@ -26,6 +29,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/term"
 )
 
 // deprecatedSidecarAlias is the pre-rename name of this command. Cobra routes
@@ -40,6 +44,7 @@ var (
 	sidecarStrictFlag     bool
 	sidecarMigrateFlag    bool
 	sidecarMigrateOutFlag string
+	sidecarLogFormatFlag  string
 )
 
 var startSidecarCmd = &cobra.Command{
@@ -107,6 +112,14 @@ needs a restart.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		warnDeprecatedSidecarAlias(os.Stderr, cmd.CalledAs())
 
+		// Read before anything starts, so a typo is a usage error and not a
+		// sidecar that came up in a format nobody asked for.
+		logFormat, err := sidecartui.ParseFormat(sidecarLogFormatFlag)
+		if err != nil {
+			cmd.SilenceUsage = false
+			return err
+		}
+
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
 			if sidecarBareInvocation(cmd, args) {
 				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml",
@@ -146,11 +159,25 @@ needs a restart.`,
 			return daemon.WriteMigrated(cfg, configyaml.IsYAML(target), out, os.Stderr)
 		}
 
-		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin,
+		// Resolved before Setup: in the TUI the person at the terminal
+		// reviews held statements, which is what lets a sidecar with no
+		// control plane load require_review at all. Everywhere else
+		// (a pipe, CI, a container) nobody could answer, and Setup keeps
+		// refusing such a config.
+		stdoutTTY, stdinTTY := term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd()))
+		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv)
+		setupOpts := []daemon.Option{
 			daemon.WithLicense(sidecarLicenseFlag),
 			daemon.WithControlPlaneToken(sidecarTokenFlag),
 			daemon.WithEntrypoint(analytics.EntrypointCLI),
-			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias))
+			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
+		}
+		var reviewer *sidecartui.Reviewer
+		if format == sidecartui.FormatTUI && sidecartui.Interactive(stdoutTTY, stdinTTY) {
+			reviewer = sidecartui.NewReviewer()
+			setupOpts = append(setupOpts, daemon.WithLocalReviewer(reviewer.For))
+		}
+		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, setupOpts...)
 		if err != nil {
 			return err
 		}
@@ -172,7 +199,15 @@ needs a restart.`,
 		}
 
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
-		return daemon.Run(cfg, det)
+		// The format only changes how its output reaches the terminal: a
+		// pipe, a file, a container or CI keeps the JSON it always wrote.
+		return sidecartui.Run(format, sidecartui.Options{
+			Version:   daemon.Version,
+			AuditFile: cfg.Audit.File,
+			Reviewer:  reviewer,
+			Operator:  sidecarOperator(),
+			SaveDir:   sidecarSaveDir(),
+		}, func() error { return daemon.Run(cfg, det) })
 	},
 }
 
@@ -215,6 +250,30 @@ func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
 	cmd.Flags().VisitAll(seen)
 	cmd.InheritedFlags().VisitAll(seen)
 	return !changed
+}
+
+// sidecarOperator names the person reviewing at this terminal: the OS
+// account that started the process, which is who the decision is recorded
+// against.
+func sidecarOperator() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	return "unknown"
+}
+
+// sidecarSaveDir is where the TUI keeps a copy of what it shows: the hoop
+// directory the CLI already uses for its own files. Empty when the home
+// directory is unknown; the TUI then says nothing is saved.
+func sidecarSaveDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".hoop", "sidecar")
 }
 
 // sidecarConfigFromEnv reads the config path from the environment. It prefers
@@ -276,6 +335,10 @@ func init() {
 	startSidecarCmd.Flags().StringVar(&sidecarMigrateOutFlag, "migrate-out", "",
 		"File --migrate writes to instead of stdout; its extension picks the syntax, "+
 			"defaulting to the input's")
+
+	startSidecarCmd.Flags().StringVar(&sidecarLogFormatFlag, "log-format", string(sidecartui.FormatAuto),
+		"How output reaches the terminal: auto, tui, text or json. auto draws the TUI on an "+
+			"interactive terminal and writes JSON to a pipe, a file or CI (text when NO_COLOR or TERM=dumb)")
 
 	startCmd.AddCommand(startSidecarCmd)
 }

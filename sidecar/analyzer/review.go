@@ -170,12 +170,45 @@ const (
 type Reviewer interface {
 	// File files the statement for approval, or answers from the review
 	// already filed for these exact bytes. It receives the RAW statement
-	// text, never the model input. See hold.
+	// text, never the model input. See hold. Its context carries the
+	// verdict that caused the hold; see HoldDetailFrom.
 	File(ctx context.Context, statement string) (ReviewResult, error)
 
 	// Claim answers about one review by id, spending it when it is
 	// approved. It never files.
 	Claim(ctx context.Context, reviewID string) (ReviewResult, error)
+}
+
+// HoldDetail is the verdict that put a statement on hold: what the analyzer
+// rated it and why. It reaches the reviewer's context, not the review
+// request, so a backend that shows a person the statement can show the
+// reason beside it.
+//
+// It never reaches the audit trail or the control plane. Title and
+// Explanation are model prose, and the trail keeps them out because a model
+// that quotes the statement back would write its values into the record
+// (see Evaluate). The plane's reviewer sends what it always sent; only a
+// reviewer that already shows the statement to the person deciding, the
+// terminal one, reads this.
+type HoldDetail struct {
+	// Rule names the analyzer rule, or the listener for a block.
+	Rule        string
+	RiskLevel   RiskLevel
+	Title       string
+	Explanation string
+}
+
+type holdDetailKey struct{}
+
+func withHoldDetail(ctx context.Context, d HoldDetail) context.Context {
+	return context.WithValue(ctx, holdDetailKey{}, d)
+}
+
+// HoldDetailFrom returns the verdict a reviewer's call was made for. ok is
+// false for a call made without one.
+func HoldDetailFrom(ctx context.Context) (HoldDetail, bool) {
+	d, ok := ctx.Value(holdDetailKey{}).(HoldDetail)
+	return d, ok
 }
 
 // How long a held statement waits on its connection, and how often it asks.

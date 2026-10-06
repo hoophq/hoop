@@ -1355,6 +1355,18 @@ may approve. The rule holds the reviewer groups, the approval count and the
 force-approval list; the lane holds only its name, and the control plane
 authorizes each review against the config it stored for that sidecar.
 
+**Approving in the terminal.** A sidecar with no control plane, started with
+`hoop start sidecar` in a terminal (stdin and stdout both a TTY), files each
+review with the person running it: the TUI's Approvals section shows the
+statement, the analyzer's risk level and explanation, and the decision is
+theirs. Such a lane needs no `approval_rule`, since there is no plane to hold
+one. The same rules hold as on the plane: an approval releases one
+statement, a resend of the same bytes answers from the same review, and a
+review nobody decided expires after the 30-minute wait. A control plane,
+when one is configured, always wins: its `approval_rule` decides, and the
+terminal never releases a statement the plane governs. An embedder offers the
+same with `daemon.WithLocalReviewer`.
+
 **The review runs last.** The lane files the review only after every other
 evaluator allowed the statement, the decide-phase OPA call included
 (ADR-0030). A decide denial files nothing, pages nobody and spends no
@@ -1594,9 +1606,9 @@ than at the first held statement:
 | | |
 |---|---|
 | a level asks for `require_review` | otherwise `approval_rule` names reviewers nobody consults |
-| `approval_rule` is set, and not blank | spaces match no rule in the control plane |
+| with a control plane, `approval_rule` is set, and not blank | the plane refuses a review naming no rule, and spaces match none |
 | an ssh lane does not admit `shell` | a shell sends no statements, so what is typed in it walks around the hold |
-| the sidecar has a control plane | there is nowhere else to file a review |
+| the sidecar has a control plane, or runs in a terminal | there is nowhere else to file a review (see Approving in the terminal) |
 
 Everything else fails CLOSED, `fail_open` included: it answers for a model
 vendor's outage, not for a human gate. A control plane that times out, refuses

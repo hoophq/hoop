@@ -323,6 +323,101 @@ func TestAHoldWithNoPlaceToFileIsRefusedAtBuild(t *testing.T) {
 	}
 }
 
+// A hold that names no approval_rule is half-written wherever the review goes
+// to a control plane, which refuses a review naming no rule. The control
+// plane's own check (ValidateLaneAnalyzerBlock) refuses it at the save; a
+// process refuses it when its lanes are built.
+func TestAHoldWithoutARuleIsRefusedWhereAPlaneFiles(t *testing.T) {
+	deps := &analyzerDeps{
+		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"},
+		provider: highRiskProvider{},
+	}
+	cfg := holdingLane()
+	cfg.Listeners[0].Analyzer.ApprovalRule = ""
+
+	if problems := ValidateLaneAnalyzerBlock(cfg.Listeners[0].Analyzer, "pg"); len(problems) == 0 ||
+		!strings.Contains(problems[0], "names no approval_rule") {
+		t.Fatalf("the control plane's check accepted a hold naming no rule: %v", problems)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("the document alone cannot know who files, and refused: %v", err)
+	}
+	_, err := buildLanes(cfg, nil, deps)
+	if err == nil || !strings.Contains(err.Error(), "names no approval_rule") {
+		t.Fatalf("a hold naming no rule built under a plane: %v", err)
+	}
+
+	// A local reviewer changes nothing while a plane is configured: the
+	// plane's rule decides who approves, and it was not written.
+	deps.local = func(string) analyzer.Reviewer { return &localReviewer{} }
+	if _, err := buildLanes(cfg, nil, deps); err == nil {
+		t.Fatal("a local reviewer let a plane-configured lane hold without a rule")
+	}
+}
+
+// With no control plane, a local reviewer is somewhere to file: the person
+// running the process. The lane then needs no approval_rule, and the lane
+// files with that reviewer.
+func TestALocalReviewerReceivesHoldsWithoutAPlane(t *testing.T) {
+	local := &localReviewer{}
+	deps := &analyzerDeps{
+		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"},
+		provider: highRiskProvider{},
+		local:    func(string) analyzer.Reviewer { return local },
+	}
+	cfg := holdingLane()
+	cfg.ControlPlaneURL = ""
+	cfg.Listeners[0].Analyzer.ApprovalRule = ""
+
+	if _, err := buildLanes(cfg, nil, deps); err != nil {
+		t.Fatalf("a hold with a local reviewer and no plane was refused: %v", err)
+	}
+	if got := deps.reviewerFor("pg", cfg.Listeners[0].Analyzer, false); got != local {
+		t.Fatalf("reviewerFor = %v, want the local reviewer", got)
+	}
+	if deps.reviewerFor("pg", cfg.Listeners[0].Analyzer, true) != nil {
+		t.Error("an observed lane got a local reviewer, so a dry run would ask a person")
+	}
+	if deps.reviewerFor("pg", laneBlock(), false) != nil {
+		t.Error("a lane that holds nothing got a reviewer")
+	}
+
+	// Without the local reviewer the refusal names both places to file.
+	deps.local = nil
+	_, err := buildLanes(cfg, nil, deps)
+	if err == nil || !strings.Contains(err.Error(), "in a terminal") {
+		t.Fatalf("a hold with nowhere to file was not refused by name: %v", err)
+	}
+}
+
+// A plane-connected process files with the plane even when a local reviewer
+// is linked: the local one never releases a statement the plane's rule
+// governs.
+func TestThePlaneWinsOverALocalReviewer(t *testing.T) {
+	local := &localReviewer{}
+	deps := &analyzerDeps{
+		cp:    &controlPlane{url: "https://cp.example.com", cred: tokenCredential("t")},
+		local: func(string) analyzer.Reviewer { return local },
+	}
+	la := holdingLane().Listeners[0].Analyzer
+	got := deps.reviewerFor("pg", la, false)
+	if _, ok := got.(planReviewer); !ok {
+		t.Fatalf("reviewerFor = %T, want the plane's reviewer", got)
+	}
+}
+
+// localReviewer stands in for the person at the terminal: what a LocalReviewer
+// returns. These tests only ask which backend a lane got, so it answers nothing.
+type localReviewer struct{}
+
+func (*localReviewer) File(context.Context, string) (analyzer.ReviewResult, error) {
+	return analyzer.ReviewResult{}, nil
+}
+
+func (*localReviewer) Claim(context.Context, string) (analyzer.ReviewResult, error) {
+	return analyzer.ReviewResult{}, nil
+}
+
 // A process with no control plane has no reviewer, which is what makes the
 // hold deny instead of build-failing: -validate builds every lane without
 // ever contacting a plane.
