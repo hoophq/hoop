@@ -95,7 +95,7 @@ func TestPersistDecisionLosesToTheClaim(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, claimed)
 
-		assert.Equal(t, ErrWrongState, persistDecision(decided, nil, fromStatus))
+		assert.Equal(t, ErrWrongState, persistDecision(decided, fromStatus))
 		got, err := models.GetReviewByIdOrSid(decisionTestOrgID, rev.ID)
 		require.NoError(t, err)
 		assert.Equal(t, models.ReviewStatusExecuted, got.Status)
@@ -109,7 +109,7 @@ func TestPersistDecisionLosesToTheClaim(t *testing.T) {
 		decided, err := doReview(admin, rev, nil, models.ReviewStatusRevoked, false)
 		require.NoError(t, err)
 
-		require.NoError(t, persistDecision(decided, nil, fromStatus))
+		require.NoError(t, persistDecision(decided, fromStatus))
 		got, err := models.GetReviewByIdOrSid(decisionTestOrgID, rev.ID)
 		require.NoError(t, err)
 		assert.Equal(t, models.ReviewStatusRevoked, got.Status)

@@ -7,12 +7,12 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/utils"
@@ -58,9 +58,8 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 	return nil
 }
 
-// validateSidecarAccessRequestRuleBody checks a rule in control-plane mode,
-// where every rule serves sidecar reviews. It checks only what makes a rule a
-// sidecar rule; every other field is stored as sent.
+// validateSidecarAccessRequestRuleBody checks what makes a rule a sidecar
+// rule; every other field is stored as sent.
 func validateSidecarAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest) error {
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		return err
@@ -74,15 +73,18 @@ func validateSidecarAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest)
 	return nil
 }
 
-// bindAccessRequestRule decodes the request body. A control plane skips the
+// bindAccessRequestRule decodes the request body. A sidecar rule skips the
 // binding tags: they require the fields of a connection rule, which a sidecar
-// rule has no reason to send. validateSidecarAccessRequestRuleBody checks what
-// a sidecar rule needs instead.
+// rule has no reason to send; validateSidecarAccessRequestRuleBody checks what
+// it needs instead. Every other rule is validated as before.
 func bindAccessRequestRule(c *gin.Context, req *openapi.AccessRequestRuleRequest) error {
-	if appconfig.Get().IsControlPlane() {
-		return json.NewDecoder(c.Request.Body).Decode(req)
+	if err := json.NewDecoder(c.Request.Body).Decode(req); err != nil {
+		return err
 	}
-	return c.ShouldBindJSON(req)
+	if req.AccessType == models.AccessTypeSidecar {
+		return nil
+	}
+	return binding.Validator.ValidateStruct(req)
 }
 
 // CreateAccessRequestRule
@@ -124,9 +126,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 		}
 	}
 
-	// A deployment runs as a gateway or as a control plane, never both, and
-	// every rule a control plane stores serves sidecar reviews.
-	if appconfig.Get().IsControlPlane() {
+	if req.AccessType == models.AccessTypeSidecar {
 		createSidecarAccessRequestRule(c, models.DB, orgID, &req)
 		return
 	}
@@ -358,7 +358,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	if appconfig.Get().IsControlPlane() {
+	if existingRule.AccessType == models.AccessTypeSidecar {
 		updateSidecarAccessRequestRule(c, models.DB, orgID, existingRule, &req)
 		return
 	}

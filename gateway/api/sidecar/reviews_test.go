@@ -22,16 +22,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// The handler refuses outside the control plane, so a test reaching past that
-// guard has to run as one. appconfig.Load is one-shot (it returns early once
-// loaded), so a test binary gets a single mode and the gateway-mode refusal is
-// covered in the gatewaymodetest package.
 func TestMain(m *testing.M) {
 	// With a bare origin the two url accessors return the same string, so the
 	// WebappURL assertion below would hold whichever one the code calls. The
 	// path prefix is what makes it mean something.
 	os.Setenv("API_URL", "http://localhost:8009/hoop")
-	if err := appconfig.Load(appconfig.AppModeControlPlane); err != nil {
+	if err := appconfig.Load(); err != nil {
 		panic(err)
 	}
 	os.Exit(m.Run())

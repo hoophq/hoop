@@ -10372,12 +10372,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
-                    "412": {
-                        "description": "Precondition Failed",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -10437,12 +10431,6 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "412": {
-                        "description": "Precondition Failed",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10513,12 +10501,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
-                    "412": {
-                        "description": "Precondition Failed",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -10569,12 +10551,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "412": {
-                        "description": "Precondition Failed",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10865,12 +10841,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
-                    "412": {
-                        "description": "Precondition Failed",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -10924,12 +10894,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "412": {
-                        "description": "Precondition Failed",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -12209,7 +12173,7 @@ const docTemplate = `{
                     "example": "block-dangerous-queries"
                 },
                 "reviewers_groups": {
-                    "description": "The groups whose members may release a statement this rule holds.\nPresent only in a control plane, while the rule holds.",
+                    "description": "The groups whose members may release a statement this rule holds.\nPresent while the rule holds.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -12227,7 +12191,7 @@ const docTemplate = `{
                     ]
                 },
                 "sidecar_spec": {
-                    "description": "SidecarSpec is this rule in the sidecar's own vocabulary; see the\nrequest type. Present only in a control plane.",
+                    "description": "SidecarSpec is this rule in the sidecar's own vocabulary; see the\nrequest type. Present when the rule carries one.",
                     "type": "object"
                 },
                 "sidecar_targets": {
@@ -12285,7 +12249,7 @@ const docTemplate = `{
                     "example": "block-dangerous-queries"
                 },
                 "reviewers_groups": {
-                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group reviews.\n\nA control plane field, read only while sidecar_spec holds a statement.",
+                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group reviews.\n\nRead only while sidecar_spec holds a statement.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -12303,7 +12267,7 @@ const docTemplate = `{
                     ]
                 },
                 "sidecar_spec": {
-                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /\ndefer, and the per-lane cost overrides. It IS the analyzer block the\nlistener receives.\n\nA control plane field. A gateway has no sidecars and refuses it.",
+                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /\ndefer, and the per-lane cost overrides. It IS the analyzer block the\nlistener receives.\n\nOmitted on a rule no sidecar runs.",
                     "type": "object"
                 },
                 "sidecar_targets": {
@@ -12795,7 +12759,7 @@ const docTemplate = `{
                     "example": 3600
                 },
                 "access_type": {
-                    "description": "The access type. A control plane accepts only sidecar; a gateway accepts jit, command or jit_command",
+                    "description": "The access type. sidecar names a rule that releases statements a sidecar holds; jit, command and jit_command gate connections",
                     "type": "string",
                     "enum": [
                         "jit",
@@ -12833,7 +12797,7 @@ const docTemplate = `{
                     ]
                 },
                 "connection_names": {
-                    "description": "Connection names that this rule applies to. Required by a gateway, refused by a control plane",
+                    "description": "Connection names that this rule applies to. Required unless access_type is sidecar, which refuses it",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -14902,7 +14866,7 @@ const docTemplate = `{
                     "example": 0.6
                 },
                 "sidecar_spec": {
-                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: entities OR column names, a strategy (redact, mask,\npartial, hash) and a keep_last. It holds the mask block the listener\nreceives: {\"rules\": [...]}.\n\nA control plane field. A gateway has no sidecars and refuses it.",
+                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: entities OR column names, a strategy (redact, mask,\npartial, hash) and a keep_last. It holds the mask block the listener\nreceives: {\"rules\": [...]}.\n\nOmitted on a rule no sidecar runs.",
                     "type": "object"
                 },
                 "sidecar_targets": {
@@ -15029,7 +14993,7 @@ const docTemplate = `{
                     "example": 0.6
                 },
                 "sidecar_spec": {
-                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: entities OR column names, a strategy (redact, mask,\npartial, hash) and a keep_last. It holds the mask block the listener\nreceives: {\"rules\": [...]}.\n\nA control plane field. A gateway has no sidecars and refuses it.",
+                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: entities OR column names, a strategy (redact, mask,\npartial, hash) and a keep_last. It holds the mask block the listener\nreceives: {\"rules\": [...]}.\n\nOmitted on a rule no sidecar runs.",
                     "type": "object"
                 },
                 "sidecar_targets": {
@@ -15469,7 +15433,7 @@ const docTemplate = `{
                     "additionalProperties": {}
                 },
                 "sidecar_spec": {
-                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: seven rule types, an ` + "`" + `operations` + "`" + ` scope on every one of them,\nand ` + "`" + `action: defer` + "`" + ` to hand the verdict to a Rego policy. It holds the\nguardrails block the listener receives: {\"rules\": [...]}.\n\nA control plane field. A gateway has no sidecars and refuses it.",
+                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: seven rule types, an ` + "`" + `operations` + "`" + ` scope on every one of them,\nand ` + "`" + `action: defer` + "`" + ` to hand the verdict to a Rego policy. It holds the\nguardrails block the listener receives: {\"rules\": [...]}.\n\nOmitted on a rule no sidecar runs.",
                     "type": "object"
                 },
                 "sidecar_targets": {
@@ -15546,7 +15510,7 @@ const docTemplate = `{
                     "additionalProperties": {}
                 },
                 "sidecar_spec": {
-                    "description": "SidecarSpec is this rule in the sidecar's own vocabulary; see the\nrequest type. Present only in a control plane.",
+                    "description": "SidecarSpec is this rule in the sidecar's own vocabulary; see the\nrequest type. Present when the rule carries one.",
                     "type": "object"
                 },
                 "sidecar_targets": {
@@ -17118,11 +17082,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "application_mode": {
-                    "description": "Which component this process runs as",
+                    "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
                     "type": "string",
                     "enum": [
-                        "gateway",
-                        "control-plane"
+                        "gateway"
                     ],
                     "example": "gateway"
                 },
@@ -17663,6 +17626,15 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "default-access-request-rule"
                 },
+                "connection": {
+                    "description": "The connection the review was filed against. On a sidecar review, the resource that mirrors the listener; absent while the organization has no mirror for it",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewConnection"
+                        }
+                    ],
+                    "readOnly": true
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
@@ -17762,6 +17734,23 @@ const docTemplate = `{
                         }
                     ],
                     "readOnly": true
+                }
+            }
+        },
+        "openapi.ReviewConnection": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "The resource identifier",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "20A5AABE-C35D-4F04-A5A7-C856EE6C7703"
+                },
+                "name": {
+                    "description": "The name of the connection",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "pgdemo"
                 }
             }
         },
@@ -19120,11 +19109,10 @@ const docTemplate = `{
                     "example": "https://api.johnwick.org"
                 },
                 "application_mode": {
-                    "description": "Which component this process runs as",
+                    "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
                     "type": "string",
                     "enum": [
-                        "gateway",
-                        "control-plane"
+                        "gateway"
                     ],
                     "example": "gateway"
                 },

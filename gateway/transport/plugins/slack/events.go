@@ -7,7 +7,6 @@ import (
 	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/common/log"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -45,12 +44,23 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 }
 
 // resolveApprover returns the reviewer context, or nil after the Slack user
-// was told why the click was refused. The gateway names the approver by the
-// Slack ID a hoop user linked to their account; the control plane also matches
-// the email Slack holds for them (resolveControlPlaneApprover).
+// was told why the click was refused. A review filed from a connection names
+// its approver by the Slack ID a hoop user linked to their account. A review
+// filed by a sidecar also matches the email Slack holds for them
+// (resolveSidecarApprover).
 func (p *slackPlugin) resolveApprover(ev *event) *storagev2.Context {
-	if appconfig.Get().IsControlPlane() {
-		return p.resolveControlPlaneApprover(ev)
+	rev, err := models.GetReviewByIdOrSid(ev.orgID, ev.msg.ID)
+	switch {
+	case err == models.ErrNotFound:
+		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", reviewapi.ErrNotFound.Error())
+		return nil
+	case err != nil:
+		log.With("sid", ev.msg.SessionID).Errorf("failed obtaining review, err=%v", err)
+		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining the review")
+		return nil
+	}
+	if reviewapi.IsSidecarReview(rev) {
+		return p.resolveSidecarApprover(ev)
 	}
 	return p.resolveHoopApprover(ev)
 }

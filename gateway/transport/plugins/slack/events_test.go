@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -199,7 +200,54 @@ func clickEvent(ss *slackservice.SlackService, slackID, group string) *event {
 	}
 }
 
-func TestResolveControlPlaneApprover(t *testing.T) {
+// seedReview files a review with or without a listener. The row is what
+// decides the approver path.
+func seedReview(t *testing.T, listener string) string {
+	t.Helper()
+	rev := &models.Review{
+		ID: uuid.NewString(), OrgID: approverOrgID, SessionID: uuid.NewString(),
+		Type: models.ReviewTypeOneTime, Status: models.ReviewStatusPending,
+		ConnectionName: "pg", OwnerID: "owner", OwnerEmail: "owner@corp.com",
+		ListenerName: sql.NullString{String: listener, Valid: listener != ""},
+	}
+	if err := models.CreateReview(rev, ""); err != nil {
+		t.Fatalf("seed review: %v", err)
+	}
+	return rev.ID
+}
+
+// The review decides the path: an unlinked Slack user whose email names a
+// hoop user approves a sidecar review, and is told to link their account on a
+// connection review.
+func TestResolveApproverDispatchesOnTheReview(t *testing.T) {
+	startApproverDB(t)
+	seedApprover(t, "email@corp.com", "active", "", "dba")
+	f := &fakeSlack{users: map[string]map[string]any{
+		"U-EMAIL": slackUserJSON("U-EMAIL", botTeamID, "email@corp.com", nil),
+	}}
+	p := &slackPlugin{apiURL: "http://hoop.test"}
+	ss := newFakeSlackService(t, f)
+
+	ev := clickEvent(ss, "U-EMAIL", "dba")
+	ev.msg.ID = seedReview(t, "appdb")
+	if ctx := p.resolveApprover(ev); ctx == nil || ctx.UserEmail != "email@corp.com" {
+		t.Fatalf("sidecar review: want the email approver, got %v (%q)", ctx, f.last())
+	}
+
+	ev = clickEvent(ss, "U-EMAIL", "dba")
+	ev.msg.ID = seedReview(t, "")
+	if ctx := p.resolveApprover(ev); ctx != nil || !strings.Contains(f.last(), "not registered") {
+		t.Fatalf("connection review: want the link refusal, got %v (%q)", ctx, f.last())
+	}
+
+	ev = clickEvent(ss, "U-EMAIL", "dba")
+	ev.msg.ID = uuid.NewString()
+	if ctx := p.resolveApprover(ev); ctx != nil || !strings.Contains(f.last(), "not found") {
+		t.Fatalf("unknown review: want not found, got %v (%q)", ctx, f.last())
+	}
+}
+
+func TestResolveSidecarApprover(t *testing.T) {
 	startApproverDB(t)
 	seedApprover(t, "linked@corp.com", "active", "U-LINK-ACTIVE", "dba")
 	seedApprover(t, "invited@corp.com", "invited", "U-LINK-INVITED", "dba")
@@ -269,7 +317,7 @@ func TestResolveControlPlaneApprover(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			before := len(f.ephemerals)
-			ctx := p.resolveControlPlaneApprover(clickEvent(ss, tt.slackID, tt.group))
+			ctx := p.resolveSidecarApprover(clickEvent(ss, tt.slackID, tt.group))
 			if tt.wantEmail != "" {
 				if ctx == nil {
 					t.Fatalf("refused with %q, want approver %s", f.last(), tt.wantEmail)

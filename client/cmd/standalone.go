@@ -10,7 +10,6 @@ import (
 	"github.com/hoophq/hoop/agent"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/services"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/spf13/cobra"
@@ -50,7 +49,7 @@ func runStandalone() error {
 	// The gateway blocks forever serving the HTTP API; it fatals on its own
 	// if the bootstrap fails, taking the whole process down (standalone has
 	// no use for an agent without a gateway).
-	go gateway.Run(appconfig.AppModeGateway)
+	go gateway.Run()
 
 	apiURL := envOrDefault("API_URL", standaloneDefaultAPIURL)
 	if err := waitGatewayHealthy(apiURL, 120*time.Second); err != nil {

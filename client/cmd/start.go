@@ -1,14 +1,21 @@
 package cmd
 
 import (
+	"fmt"
+	"io"
 	"os"
 
 	"github.com/hoophq/hoop/agent"
+	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/spf13/cobra"
 )
+
+// deprecatedGatewayAlias is the subcommand that ran the HTTP API alone, to
+// administer sidecars. One gateway serves agents and sidecars now; the alias
+// keeps existing installs starting.
+const deprecatedGatewayAlias = "control-plane"
 
 var (
 	outputFormat string
@@ -67,32 +74,33 @@ var startAgentCmd = &cobra.Command{
 }
 
 var startGatewayCmd = &cobra.Command{
-	Use:          "gateway",
-	Short:        "Runs the gateway component",
+	Use:     "gateway",
+	Aliases: []string{deprecatedGatewayAlias},
+	Short:   "Runs the gateway component",
+	Long: `Runs the gateway: the gRPC transport for agents and clients, the protocol
+proxies, and the HTTP API and web app that also administer a fleet of
+sidecars.
+
+This command was also reachable as "control-plane". That name still works as
+a deprecated alias and starts the same gateway.`,
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		gateway.Run(appconfig.AppModeGateway)
+		warnDeprecatedGatewayAlias(os.Stderr, cmd.CalledAs())
+		gateway.Run()
 	},
 }
 
-var startControlPlaneCmd = &cobra.Command{
-	Use:   "control-plane",
-	Short: "Runs the control plane component",
-	Long: `Runs the control plane: the HTTP API used to administer a fleet of
-sidecars.
-
-It shares the gateway binary, its database, its HTTP API and its web UI, and
-starts none of the gateway's data plane: no gRPC transport on :8010, no
-protocol proxies and no transport plugins. A route that needs an agent or a
-client stream is still registered and fails per request.
-
-It reads the same database and API configuration the gateway does
-(POSTGRES_DB_URI, API_URL, AUTH_METHOD, ...); nothing in it is agent- or
-connection-shaped.`,
-	SilenceUsage: false,
-	Run: func(cmd *cobra.Command, args []string) {
-		gateway.Run(appconfig.AppModeControlPlane)
-	},
+// warnDeprecatedGatewayAlias renders the notice to w when the command was
+// reached through the old name. calledAs is the token the user typed.
+func warnDeprecatedGatewayAlias(w io.Writer, calledAs string) {
+	if calledAs != deprecatedGatewayAlias {
+		return
+	}
+	msg := styles.ClientErrorSimple(fmt.Sprintf(
+		"warn: \"hoop start %s\" is deprecated and aliases to \"hoop start gateway\".\n"+
+			"Use \"hoop start gateway\"; the alias is removed in a future release.",
+		deprecatedGatewayAlias))
+	_, _ = fmt.Fprintf(w, "%s\n", msg)
 }
 
 func init() {
@@ -101,6 +109,5 @@ func init() {
 
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
-	startCmd.AddCommand(startControlPlaneCmd)
 	rootCmd.AddCommand(startCmd)
 }

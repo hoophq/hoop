@@ -10,7 +10,7 @@ export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSele
     <Table>
       <Table.Thead>
         <Table.Tr>
-          <Table.Th>Listener</Table.Th>
+          <Table.Th>Resource</Table.Th>
           <Table.Th>Rule</Table.Th>
           <Table.Th>Status</Table.Th>
           <Table.Th>Filed</Table.Th>
@@ -30,11 +30,11 @@ export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSele
               <Table.Td miw={190}>
                 <Stack gap={0}>
                   <Text size="sm" fw={600}>
-                    {source.primary}
+                    {source.resource}
                   </Text>
-                  {source.secondary && (
+                  {source.detail && (
                     <Text size="xs" c="dimmed">
-                      {source.secondary}
+                      {source.detail}
                     </Text>
                   )}
                 </Stack>

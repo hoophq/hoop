@@ -137,9 +137,9 @@ func TestPutReviewOnASidecarReview(t *testing.T) {
 		}
 	})
 
-	// A row with no listener is a gateway review in a shared database. It keeps
-	// the answer it has today: the gateway revokes jit reviews only.
-	t.Run("a review without a listener answers as today", func(t *testing.T) {
+	// A row with no listener is a connection review and takes the gateway path,
+	// which resolves its connection first; nothing of the sidecar path runs.
+	t.Run("a review without a listener takes the gateway path", func(t *testing.T) {
 		rev := seedStatusReview(t, sc, models.ReviewStatusApproved)
 		require.NoError(t, models.DB.Exec(
 			`UPDATE private.reviews SET listener_name = NULL, sidecar_id = NULL, connection_name = 'pg' WHERE id = ?`,
@@ -148,7 +148,7 @@ func TestPutReviewOnASidecarReview(t *testing.T) {
 
 		rec := putReview(t, rev.ID, `{"status":"revoked"}`, []string{types.GroupAdmin})
 		assert.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
-		assert.Contains(t, rec.Body.String(), "review not found")
+		assert.Contains(t, rec.Body.String(), "failed fetching connection")
 		assert.JSONEq(t, before, reviewSnapshot(t, rev))
 	})
 

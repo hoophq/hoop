@@ -54,14 +54,13 @@ import (
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 )
 
-// Run boots the binary as mode. The caller is the subcommand the operator
-// typed, so the deployment picks a component by picking a command line.
-func Run(mode appconfig.AppMode) {
+// Run boots the gateway.
+func Run() {
 	bootstrap.Start()
 	ver := version.Get()
 	bootstrap.Header(ver.Version, ver.Platform, ver.GitCommit)
 
-	if err := appconfig.Load(mode); err != nil {
+	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
 
@@ -184,10 +183,6 @@ func Run(mode appconfig.AppMode) {
 
 	_, _ = monitoring.StartSentry(appconfig.Get().ApiHostname())
 
-	if appconfig.Get().IsControlPlane() {
-		runControlPlane(tlsConfig)
-		return
-	}
 	runGateway(tlsConfig, apiURL, defaultOrgID, isOrgMultiTenant)
 }
 
@@ -200,14 +195,6 @@ func gatewayPlugins(apiURL string, releaseConnFn reviewapi.TransportReleaseConne
 		pluginsdlp.New(),
 		pluginsrbac.New(),
 		pluginswebhooks.New(),
-		pluginsslack.New(releaseConnFn),
-	}
-}
-
-// controlPlanePlugins is Slack only: a background service worth starting, not
-// packet work. One process per org may run it. See ADR-0024, amended 2026-09-09.
-func controlPlanePlugins(releaseConnFn reviewapi.TransportReleaseConnectionFunc) []plugintypes.Plugin {
-	return []plugintypes.Plugin{
 		pluginsslack.New(releaseConnFn),
 	}
 }
@@ -226,10 +213,9 @@ func startPlugins(plugins []plugintypes.Plugin) {
 }
 
 // reconcileStaleReviews settles every review left in PROCESSING or UNKNOWN by
-// an execution whose session finished while this process was down. Both boot
-// paths run it: a control plane may share its database with a gateway
-// (ADR-0024), and the rows it finds there were written by the gateway. The
-// UPDATE is idempotent, so both settling the same row costs nothing.
+// an execution whose session finished while this process was down. The UPDATE
+// is idempotent, so two gateways on one database settling the same row costs
+// nothing.
 //
 // Callers run it on a goroutine. A large backlog must never delay readiness.
 func reconcileStaleReviews(db *gorm.DB) {
@@ -240,37 +226,7 @@ func reconcileStaleReviews(db *gorm.DB) {
 	}
 }
 
-// runControlPlane serves the control plane: the HTTP API, Slack, and the
-// background work that needs nothing but a database. The gRPC transport and
-// the protocol proxies never start. The HTTP API is the gateway's (see
-// Api.BuildEngine): a route that needs the gRPC transport fails per request,
-// while /api/ws still accepts an agent over WebSocket and /rdpproxy relays
-// through it (ADR-0024).
-func runControlPlane(tlsConfig *tls.Config) {
-	// Same wiring as runGateway. The transport server exists for its review
-	// callback and is never started, so the handlers run the gateway's code.
-	g := &transport.Server{
-		TLSConfig:   tlsConfig,
-		ApiHostname: appconfig.Get().ApiHostname(),
-		AppConfig:   appconfig.Get(),
-	}
-	a := &api.Api{
-		ReleaseConnectionFn: g.ReleaseConnectionOnReview,
-		TLSConfig:           tlsConfig,
-	}
-	startPlugins(controlPlanePlugins(g.ReleaseConnectionOnReview))
-	go reconcileStaleReviews(models.DB)
-
-	bootstrap.Phase("Starting API")
-	apiStep := bootstrap.Step("HTTP API")
-	apiStep.OK(fmt.Sprintf("%s mode=%s", appconfig.Get().ApiURL(), appconfig.AppModeControlPlane))
-
-	bootstrap.Ready(map[string]string{"Control Plane": appconfig.Get().ApiURL()})
-
-	a.StartAPI()
-}
-
-// runGateway serves the gateway: everything that carries agent and client
+// runGateway serves everything that carries agent, client and sidecar
 // traffic — the transport plugins, the protocol proxies, the gRPC server —
 // plus the full HTTP API.
 func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTenant bool) {

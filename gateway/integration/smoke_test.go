@@ -55,8 +55,8 @@ func TestPublicServerInfo(t *testing.T) {
 	if _, ok := body["auth_method"]; !ok {
 		t.Errorf("publicserverinfo: missing auth_method field, got %v", body)
 	}
-	// The web app reads this before login to render as the gateway or the
-	// control plane. The harness boots in gateway mode.
+	// Kept for clients that read it while the control plane was a separate
+	// mode; it only ever says gateway now.
 	if got := body["application_mode"]; got != "gateway" {
 		t.Errorf("publicserverinfo: application_mode = %v, want gateway", got)
 	}

@@ -143,16 +143,24 @@ export default function ReviewModal({
     <Modal opened={opened} onClose={onClose} title="Review Details" size="xl">
       <Stack gap="xl">
         <Stack gap="md">
-          <DetailRow icon={Package} label="Listener">
+          <DetailRow icon={Package} label="Resource">
             <Badge variant="light" color="gray" fullLabel>
-              {source.primary}
+              {source.resource}
             </Badge>
           </DetailRow>
 
-          {source.secondary && (
+          {source.sidecar && (
             <DetailRow icon={Container} label="Sidecar">
               <Badge variant="light" color="gray" fullLabel>
-                {source.secondary}
+                {source.sidecar}
+              </Badge>
+            </DetailRow>
+          )}
+
+          {source.listener && (
+            <DetailRow icon={Container} label="Listener">
+              <Badge variant="light" color="gray" fullLabel>
+                {source.listener}
               </Badge>
             </DetailRow>
           )}
