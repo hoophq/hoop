@@ -51,7 +51,7 @@ make build-dev-webapp
 
 | | Slot 0 | Slot N |
 |---|---|---|
-| Container | `hoopdev` | `hoopdev-N` |
+| Container and image | `hoopdev` | `hoopdev-N` |
 | Host ports | 8009, 8010, 15432, 12222, 13389, 18888, 2225 | each port + N*100 |
 
 In the worktree's `.env`, set the slot's URLs. `run.sh` stops if they do not match the slot. Use the `POSTGRES_DB_URI` of slot 0 with a different database name, so that each branch runs its own migrations.
@@ -68,8 +68,9 @@ docker exec hoopdevpg createdb hoopdev_slot1
 HOOPDEV_SLOT=1 make run-dev
 ```
 
+- The gateway proxies (Postgres, SSH, RDP, HTTP) are off on a new database. In slot N, give them the slot's ports, for example `0.0.0.0:15532` for Postgres in slot 1. Credentials carry this port, so a proxy left on 15432 sends clients to slot 0.
 - Start `make run-dev-postgres` from one checkout only. It stops and replaces the `hoopdevpg` container.
-- `make build-dev-rust` writes `$HOME/.hoop/bin/hoop_rs` for all slots. Set `HOOP_RS_BUILD=0` when the worktree does not change `agentrs/`.
+- Slot N reads the Alcatraz model cache but does not fill it. Fill it from slot 0 first.
 - The control plane takes its port from the shell: `PORT=8119 make run-dev-control-plane`.
 - The SPIFFE scripts target slot 0 only.
 

@@ -43,9 +43,11 @@ function hostport() {
 }
 
 CONTAINER_NAME=hoopdev
+IMAGE_NAME=hoopdev
 SLOT_ARGS=()
 if [[ $HOOPDEV_SLOT != 0 ]]; then
   CONTAINER_NAME="hoopdev-${HOOPDEV_SLOT}"
+  IMAGE_NAME="hoopdev-${HOOPDEV_SLOT}"
 
   # Clients on the host get API_URL and GRPC_URL from the gateway. A value
   # left at 8009/8010 sends them to the slot 0 stack.
@@ -82,7 +84,7 @@ if [[ $WEBAPP_BUILD == "1" ]]; then
   exit 1
 fi
 
-docker build -t hoopdev -f ./scripts/dev/Dockerfile .
+docker build -t "$IMAGE_NAME" -f ./scripts/dev/Dockerfile .
 mkdir -p ./dist/dev/bin
 cp ./scripts/dev/entrypoint.sh ./dist/dev/bin/entrypoint.sh
 
@@ -93,8 +95,13 @@ if [[ $HOOP_RS_BUILD == "1" ]]; then
   echo ""
   echo "You need to have Rust installed to build the Rust agent."
   echo "You need to have Cross installed to build the Rust agent for multiple architectures."
-  make build-dev-rust
-  cp $HOME/.hoop/bin/hoop_rs ./dist/dev/bin/hoop_rs
+  if [[ $HOOPDEV_SLOT == 0 ]]; then
+    make build-dev-rust
+    cp $HOME/.hoop/bin/hoop_rs ./dist/dev/bin/hoop_rs
+  else
+    # $HOME/.hoop/bin is shared by all checkouts; a slot writes its own copy.
+    make build-dev-rust HOOP_RS_OUT="$PWD/dist/dev/bin/hoop_rs"
+  fi
 fi
 
 
@@ -121,7 +128,15 @@ if [[ -z ${ALCATRAZ_MODELS_DOWNLOAD:-} ]]; then
   fi
 fi
 
-if [[ $ALCATRAZ_MODELS_DOWNLOAD == "1" ]]; then
+if [[ $ALCATRAZ_MODELS_DOWNLOAD == "1" && $HOOPDEV_SLOT != 0 ]]; then
+  # Only slot 0 writes the shared cache, so two starts never fill it at once.
+  if ! [[ -f $ALCATRAZ_MODELS_DIR/checksums.txt ]]; then
+    echo "slot $HOOPDEV_SLOT reads the Alcatraz cache but does not fill it: $ALCATRAZ_MODELS_DIR has no checksums.txt." >&2
+    echo "  fill it once from slot 0, or run: ./scripts/dev/alcatraz-models.sh \"$ALCATRAZ_MODELS_DIR\"" >&2
+    exit 1
+  fi
+  echo "--> SLOT $HOOPDEV_SLOT: USING ALCATRAZ MODELS CACHED IN $ALCATRAZ_MODELS_DIR"
+elif [[ $ALCATRAZ_MODELS_DOWNLOAD == "1" ]]; then
   echo "--> CACHING ALCATRAZ MODELS IN $ALCATRAZ_MODELS_DIR"
   ./scripts/dev/alcatraz-models.sh "$ALCATRAZ_MODELS_DIR"
 fi
@@ -144,14 +159,16 @@ docker rm "$CONTAINER_NAME" &> /dev/null || true
 
 mkdir -p ./dist/dev/spiffe
 
+# Proxy credentials carry the proxy's listen port, so in slot N the proxies
+# listen on the slot's ports and publish them unchanged.
 docker run --rm --name "$CONTAINER_NAME" \
   -p "$(hostport 2225):22" \
   -p "$(hostport 8009):8009" \
   -p "$(hostport 8010):8010" \
-  -p "$(hostport 15432):15432" \
-  -p "$(hostport 12222):12222" \
-  -p "$(hostport 13389):13389" \
-  -p "$(hostport 18888):18888" \
+  -p "$(hostport 15432):$(hostport 15432)" \
+  -p "$(hostport 12222):$(hostport 12222)" \
+  -p "$(hostport 13389):$(hostport 13389)" \
+  -p "$(hostport 18888):$(hostport 18888)" \
   --env-file=.env \
   "${SLOT_ARGS[@]}" \
   --cap-add=NET_ADMIN \
@@ -160,4 +177,4 @@ docker run --rm --name "$CONTAINER_NAME" \
   -v ./dist/dev/root/.ssh:/root/.ssh \
   -v ./dist/dev/resources/:/app/ui/ \
   "${ALCATRAZ_MOUNT[@]}" \
-  -it hoopdev /app/bin/entrypoint.sh
+  -it "$IMAGE_NAME" /app/bin/entrypoint.sh
