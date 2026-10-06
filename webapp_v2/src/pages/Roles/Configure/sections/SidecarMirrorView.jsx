@@ -3,7 +3,6 @@ import { ArrowLeft, Lock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Alert from '@/components/Alert'
 import Button from '@/components/Button'
-import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
 import TextInput from '@/components/TextInput'
 import ConfigureHeader from '@/pages/Roles/Configure/ConfigureHeader'
 
@@ -11,7 +10,18 @@ import ConfigureHeader from '@/pages/Roles/Configure/ConfigureHeader'
 // there is nothing to edit here.
 export default function SidecarMirrorView({ connection, onBack }) {
   return (
-    <Stack gap="xl" pb={FORM_FOOTER_CLEARANCE}>
+    <Stack gap="xl">
+      <Button
+        variant="transparent"
+        color="gray"
+        leftSection={<ArrowLeft size={16} />}
+        onClick={onBack}
+        px={0}
+        w="fit-content"
+      >
+        Back
+      </Button>
+
       <ConfigureHeader connection={connection} />
 
       <Alert variant="light" color="gray" icon={<Lock size={16} />}>
@@ -29,14 +39,6 @@ export default function SidecarMirrorView({ connection, onBack }) {
         <TextInput label="Resource" value={connection.resource_name ?? ''} disabled />
         <TextInput label="Protocol" value={connection.subtype || connection.type || ''} disabled />
       </Stack>
-
-      <FormFooter
-        left={
-          <Button variant="default" leftSection={<ArrowLeft size={16} />} onClick={onBack}>
-            Back
-          </Button>
-        }
-      />
     </Stack>
   )
 }
