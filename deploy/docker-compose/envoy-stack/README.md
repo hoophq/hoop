@@ -92,6 +92,13 @@ client that asks to upgrade, and the demo shows the refusal.
 [`../mysql-stack`](../mysql-stack/README.md) is the same lane as a
 standalone stack, without OPA and the other two protocols.
 
+[`oracle/`](oracle/README.md) adds an Oracle Database Free lane behind a
+`protocol: oracle` listener on Envoy `:1521` (host `:1522`), again with no
+rules of its own. SQL*Plus (an OCI client) and python-oracledb in thin mode
+both reach it; the demo checks masking, a native `ORA-01031` denial, and a
+new session after it, and exits non-zero if any check fails. Plaintext TNS on
+both legs: the codec does not inspect TCPS or native encryption.
+
 [`clickhouse/`](clickhouse/README.md) puts one `clickhouse-server` behind
 four lanes, one per protocol it exposes: native on Envoy `:9000`
 (`protocol: clickhouse`), its MySQL emulation on `:9004` (`protocol:

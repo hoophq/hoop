@@ -8588,6 +8588,15 @@
             "readOnly": true,
             "type": "string"
           },
+          "identity_issuer": {
+            "description": "IdentityIssuer and IdentitySubject name the service account identity\nthis sidecar is bound to: the first that reached it through\nhoop-sidecar-identity. Empty for a sidecar no identity reached, or\nwhose binding an admin cleared.",
+            "example": "https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu",
+            "type": "string"
+          },
+          "identity_subject": {
+            "example": "system:serviceaccount:ws-123:hoop-sidecar",
+            "type": "string"
+          },
           "last_error": {
             "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
             "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
@@ -8626,6 +8635,25 @@
           "version": {
             "description": "Version reported at the last handshake. Empty until the sidecar calls.",
             "example": "1.0.0",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarDeletedName": {
+        "properties": {
+          "deleted_at": {
+            "description": "When the sidecar was deleted",
+            "type": "string"
+          },
+          "deleted_by": {
+            "description": "The admin who deleted the sidecar",
+            "example": "admin@hoop.dev",
+            "type": "string"
+          },
+          "name": {
+            "description": "The sidecar name",
+            "example": "gke-eu-ws-123",
             "type": "string"
           }
         },
@@ -8782,6 +8810,15 @@
             "description": "Unique identifier",
             "format": "uuid",
             "readOnly": true,
+            "type": "string"
+          },
+          "identity_issuer": {
+            "description": "IdentityIssuer and IdentitySubject name the service account identity\nthis sidecar is bound to: the first that reached it through\nhoop-sidecar-identity. Empty for a sidecar no identity reached, or\nwhose binding an admin cleared.",
+            "example": "https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu",
+            "type": "string"
+          },
+          "identity_subject": {
+            "example": "system:serviceaccount:ws-123:hoop-sidecar",
             "type": "string"
           },
           "last_error": {
@@ -8975,6 +9012,94 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "openapi.SidecarServiceAccount": {
+        "properties": {
+          "adopt_existing_sidecars": {
+            "description": "Lets a matching token reach a sidecar an admin created with a token,\nthat no identity is bound to yet, and binds it. The sidecar's token\nkeeps working. Without it the token is refused there",
+            "example": false,
+            "type": "boolean"
+          },
+          "allow_any_subject": {
+            "description": "Allows the bare * pattern, which admits every subject of the issuer",
+            "example": false,
+            "type": "boolean"
+          },
+          "audience": {
+            "description": "The aud the tokens must carry: the control plane URL the sidecar uses.\nAn issuer and audience pair belongs to one organization",
+            "example": "https://hoop.example.com",
+            "type": "string"
+          },
+          "claim": {
+            "description": "The claim matched against subject_pattern\n* sub - The subject, for a Kubernetes service account\n* email - The email, for a Google service account. The token must carry email_verified true",
+            "enum": [
+              "sub",
+              "email"
+            ],
+            "example": "sub",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "Creation timestamp",
+            "readOnly": true,
+            "type": "string"
+          },
+          "created_by": {
+            "description": "The admin who created this mapping",
+            "readOnly": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "The unique identifier of this resource",
+            "format": "uuid",
+            "readOnly": true,
+            "type": "string"
+          },
+          "issuer": {
+            "description": "The exact iss of the tokens. An https URL, where the control plane\nfetches the keys through OIDC discovery, unless jwks is set",
+            "example": "https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu",
+            "type": "string"
+          },
+          "jwks": {
+            "description": "A static JWKS for an issuer the control plane cannot reach. Omitted\nmeans OIDC discovery at {issuer}/.well-known/openid-configuration",
+            "type": "object"
+          },
+          "name": {
+            "description": "A label for this mapping, unique in the organization",
+            "example": "gke-eu",
+            "type": "string"
+          },
+          "name_template": {
+            "description": "The name of the sidecar a matching token reaches. {1} is the text the *\nmatched. A sidecar that exists with this name is used when it is bound\nto the same identity, or to none (see adopt_existing_sidecars)",
+            "example": "gke-eu-{1}",
+            "type": "string"
+          },
+          "org_id": {
+            "description": "Organization ID",
+            "format": "uuid",
+            "readOnly": true,
+            "type": "string"
+          },
+          "subject_pattern": {
+            "description": "An exact value, or one with a single * that matches one or more\ncharacters. A bare * needs allow_any_subject. For the issuer\nhttps://accounts.google.com it must end in a literal\n@\u003cproject\u003e.iam.gserviceaccount.com",
+            "example": "system:serviceaccount:*:hoop-sidecar",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "Last update timestamp",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "audience",
+          "claim",
+          "issuer",
+          "name",
+          "name_template",
+          "subject_pattern"
+        ],
         "type": "object"
       },
       "openapi.SidecarSessionEvent": {
@@ -22115,6 +22240,447 @@
         ]
       }
     },
+    "/sidecar-deleted-names": {
+      "get": {
+        "description": "List the names of deleted sidecars a service account identity had reached. A token that renders one of them is refused and creates nothing.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/openapi.SidecarDeletedName"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List Sidecar Deleted Names",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecar-deleted-names/{name}": {
+      "delete": {
+        "description": "Allow a service account identity to create a sidecar with this name again, on its next handshake.",
+        "parameters": [
+          {
+            "description": "The deleted sidecar name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Clear Sidecar Deleted Name",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecar-service-accounts": {
+      "get": {
+        "description": "List the service accounts whose tokens may authenticate a sidecar in the organization.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/openapi.SidecarServiceAccount"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List Sidecar Service Accounts",
+        "tags": [
+          "Sidecars"
+        ]
+      },
+      "post": {
+        "description": "Allow the tokens of a Kubernetes or Google service account to authenticate a sidecar with the hoop-sidecar-identity header. A matching token reaches the sidecar name_template renders, and creates it on its first handshake when no sidecar has that name. The sidecar is bound to the first identity that reaches it; another identity is refused until an admin clears the binding with DELETE /sidecars/{nameOrID}/identity. A sidecar created with a token is reached only with adopt_existing_sidecars. An issuer and audience pair belongs to one organization: 409 when another organization uses it.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarServiceAccount"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarServiceAccount"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Create Sidecar Service Account",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecar-service-accounts/{id}": {
+      "delete": {
+        "description": "Remove a sidecar service account. The sidecars it reached stay; their tokens stop authenticating unless another sidecar service account allows them.",
+        "parameters": [
+          {
+            "description": "Sidecar service account ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Delete Sidecar Service Account",
+        "tags": [
+          "Sidecars"
+        ]
+      },
+      "get": {
+        "description": "Get one sidecar service account by its ID.",
+        "parameters": [
+          {
+            "description": "Sidecar service account ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarServiceAccount"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Sidecar Service Account",
+        "tags": [
+          "Sidecars"
+        ]
+      },
+      "put": {
+        "description": "Replace a sidecar service account. The sidecars it reached keep their names; a token it no longer matches stops authenticating. 409 when another organization uses the new issuer and audience.",
+        "parameters": [
+          {
+            "description": "Sidecar service account ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarServiceAccount"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarServiceAccount"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Update Sidecar Service Account",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
     "/sidecars": {
       "get": {
         "description": "List all sidecars for the organization",
@@ -22242,13 +22808,20 @@
     },
     "/sidecars/configuration": {
       "get": {
-        "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, carrying the organization's license in its \"license\" key, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.",
+        "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Returns the configuration the sidecar must serve, carrying the organization's license in its \"license\" key, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.",
         "parameters": [
           {
-            "description": "The token returned when the sidecar was created",
+            "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
             "in": "header",
             "name": "hoop-sidecar-token",
-            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+            "in": "header",
+            "name": "hoop-sidecar-identity",
             "schema": {
               "type": "string"
             }
@@ -22329,13 +22902,20 @@
         ]
       },
       "put": {
-        "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
+        "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
         "parameters": [
           {
-            "description": "The token returned when the sidecar was created",
+            "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
             "in": "header",
             "name": "hoop-sidecar-token",
-            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+            "in": "header",
+            "name": "hoop-sidecar-identity",
             "schema": {
               "type": "string"
             }
@@ -22437,10 +23017,17 @@
         "description": "Record a sidecar's audit events as sessions. The sidecar is taken from the token, never the body, and every session it writes is its own.\n2xx means the batch is applied, now or by an earlier request: an event at or below its session's last applied seq is ignored. 4xx means the sidecar must not resend the batch; a 422 names the sessions that can never be recorded, and the other sessions of the batch were applied. 5xx means it may resend it as it is.\nThe organization must have the experimental.sidecar_session_events flag on; the handshake answers the hoop-sidecar-session-events header when it does.",
         "parameters": [
           {
-            "description": "The token returned when the sidecar was created",
+            "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
             "in": "header",
             "name": "hoop-sidecar-token",
-            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+            "in": "header",
+            "name": "hoop-sidecar-identity",
             "schema": {
               "type": "string"
             }
@@ -22548,13 +23135,20 @@
     },
     "/sidecars/handshake": {
       "post": {
-        "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
+        "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
         "parameters": [
           {
-            "description": "The token returned when the sidecar was created",
+            "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
             "in": "header",
             "name": "hoop-sidecar-token",
-            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+            "in": "header",
+            "name": "hoop-sidecar-identity",
             "schema": {
               "type": "string"
             }
@@ -22678,10 +23272,17 @@
         "description": "List the reviews the calling sidecar filed, newest first. It never changes a review.",
         "parameters": [
           {
-            "description": "The token returned when the sidecar was created",
+            "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
             "in": "header",
             "name": "hoop-sidecar-token",
-            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+            "in": "header",
+            "name": "hoop-sidecar-identity",
             "schema": {
               "type": "string"
             }
@@ -22767,10 +23368,17 @@
         "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body.",
         "parameters": [
           {
-            "description": "The token returned when the sidecar was created",
+            "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
             "in": "header",
             "name": "hoop-sidecar-token",
-            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+            "in": "header",
+            "name": "hoop-sidecar-identity",
             "schema": {
               "type": "string"
             }
@@ -22871,10 +23479,17 @@
         "description": "Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement.",
         "parameters": [
           {
-            "description": "The token returned when the sidecar was created",
+            "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
             "in": "header",
             "name": "hoop-sidecar-token",
-            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+            "in": "header",
+            "name": "hoop-sidecar-identity",
             "schema": {
               "type": "string"
             }
@@ -22942,10 +23557,17 @@
         "description": "Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement; any other status is returned as it stands. It never files a review.",
         "parameters": [
           {
-            "description": "The token returned when the sidecar was created",
+            "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
             "in": "header",
             "name": "hoop-sidecar-token",
-            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+            "in": "header",
+            "name": "hoop-sidecar-identity",
             "schema": {
               "type": "string"
             }
@@ -23010,7 +23632,7 @@
     },
     "/sidecars/{nameOrID}": {
       "delete": {
-        "description": "Delete a sidecar. The token stops working immediately.",
+        "description": "Delete a sidecar. The token stops working immediately. A sidecar a service account identity reached has its name recorded, so the identity does not create it again; clear it with DELETE /sidecar-deleted-names/{name}.",
         "parameters": [
           {
             "description": "Name or UUID of the sidecar",
@@ -23332,6 +23954,61 @@
           }
         },
         "summary": "Update Sidecar",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/{nameOrID}/identity": {
+      "delete": {
+        "description": "Remove the binding of a sidecar to the service account identity that reached it first. The next identity a sidecar service account allows is bound to it on its next handshake; a sidecar created with a token is bound again only through a sidecar service account with adopt_existing_sidecars. A token the sidecar has keeps working.",
+        "parameters": [
+          {
+            "description": "Name or UUID of the sidecar",
+            "in": "path",
+            "name": "nameOrID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Clear Sidecar Identity",
         "tags": [
           "Sidecars"
         ]

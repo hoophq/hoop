@@ -491,6 +491,19 @@ func TestClickHouseIsAnalyzedWithTheClickHouseDialect(t *testing.T) {
 	}
 }
 
+// The oracle lane speaks Oracle SQL and PL/SQL. Read as PostgreSQL, BEGIN
+// opens a transaction, so a PL/SQL block hid its DELETE from a rule naming
+// delete, and the END that closes a block read as a COMMIT.
+func TestOracleIsAnalyzedWithTheOracleDialect(t *testing.T) {
+	a := inspect.AnalyzeSQL(`BEGIN DELETE FROM customers; END;`, inspect.Oracle)
+	if !slices.Contains(a.Effects, inspect.OpDelete) || slices.Contains(a.Effects, inspect.OpBegin) || a.Complete {
+		t.Errorf("PL/SQL block: op = %q, effects = %v, complete = %v", a.Operation, a.Effects, a.Complete)
+	}
+	if got := inspect.AnalyzeSQL(`SELECT q'[']' FROM dual; DELETE FROM customers; --'`, inspect.Oracle); !slices.Contains(got.Effects, inspect.OpDelete) {
+		t.Errorf("q-quote swallowed the DELETE: effects = %v", got.Effects)
+	}
+}
+
 // The spanner lane speaks GoogleSQL, and AnalyzeSQL must select that
 // dialect for inspect.Spanner. Each case is phrased as the verdict an
 // operator gets: the first hides a live DELETE that a wrong-dialect read

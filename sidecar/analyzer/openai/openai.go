@@ -45,11 +45,15 @@ func init() {
 		if maxTokens <= 0 {
 			maxTokens = defaultMaxTokens
 		}
+		if err := opts.Sampling.Unsupported("analyzer/"+Name, UnsupportedSampling...); err != nil {
+			return nil, err
+		}
 		return &Provider{
 			endpoint:  endpoint,
 			model:     opts.Model,
 			key:       opts.Credential,
 			maxTokens: maxTokens,
+			sampling:  opts.Sampling,
 			client:    opts.Client(),
 		}, nil
 	})
@@ -61,6 +65,7 @@ type Provider struct {
 	model     string
 	key       analyzer.Secret
 	maxTokens int
+	sampling  analyzer.Sampling
 	client    *http.Client
 }
 
@@ -69,7 +74,7 @@ func (p *Provider) Name() string { return Name }
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
-	body, err := json.Marshal(BuildRequest(p.model, p.maxTokens, systemPrompt, content, false))
+	body, err := json.Marshal(BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, false))
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/openai: encoding request: %w", err)
 	}
@@ -102,6 +107,12 @@ type Request struct {
 	// BuildRequest fills one of these two limits: the one its target reads.
 	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
 	MaxTokens           int `json:"max_tokens,omitempty"`
+
+	// Sampling, omitted when unset so the model default applies. Chat
+	// Completions has no top_k; see UnsupportedSampling.
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"top_p,omitempty"`
+	Seed        *int64   `json:"seed,omitempty"`
 
 	Messages   []Message `json:"messages"`
 	Tools      []Tool    `json:"tools"`
@@ -140,6 +151,10 @@ type Property struct {
 	Description string `json:"description"`
 }
 
+// UnsupportedSampling names the sampling parameters Chat Completions has no
+// field for. A provider speaking this encoder refuses them at construction.
+var UnsupportedSampling = []string{"top_k"}
+
 // BuildRequest renders a classification request.
 //
 // forVertex switches the spelling of the output limit. OpenAI deprecated
@@ -147,7 +162,7 @@ type Property struct {
 // old name. Vertex documents only max_tokens for its open models. Llama on
 // Vertex returns empty text when the request has no limit it reads, and
 // empty text carries no verdict.
-func BuildRequest(model string, maxTokens int, systemPrompt, content string, forVertex bool) Request {
+func BuildRequest(model string, maxTokens int, s analyzer.Sampling, systemPrompt, content string, forVertex bool) Request {
 	specs := analyzer.ToolSpecs()
 	tools := make([]Tool, 0, len(specs))
 	for _, s := range specs {
@@ -175,7 +190,10 @@ func BuildRequest(model string, maxTokens int, systemPrompt, content string, for
 	}
 
 	req := Request{
-		Model: model,
+		Model:       model,
+		Temperature: s.Temperature,
+		TopP:        s.TopP,
+		Seed:        s.Seed,
 		Messages: []Message{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: content},
@@ -211,8 +229,6 @@ type response struct {
 	} `json:"error"`
 }
 
-const maxErrorBytes = 4 << 10
-
 // ParseResponse turns an HTTP response into a Result.
 //
 // analyzer/vertex reuses it, because Vertex's OpenAI-compatible endpoint
@@ -224,8 +240,7 @@ const maxErrorBytes = 4 << 10
 // forwarding the body would copy the statement into the relay's logs.
 func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		_, _ = io.CopyN(io.Discard, resp.Body, maxErrorBytes)
-		return nil, fmt.Errorf("%s: provider returned %s", provider, resp.Status)
+		return nil, analyzer.ResponseError(provider, resp)
 	}
 
 	var out response

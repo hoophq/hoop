@@ -499,11 +499,38 @@ type AITrigger struct {
 	// Resources matches an HTTP resource glob, using the same matcher an
 	// http_resource rule uses.
 	Resources []string `json:"resources,omitempty"`
+
+	// Any matches a statement that meets EVERY field one item names. The
+	// flat lists above OR each value, so "patch, under /api only" could
+	// not be written with them (ADR-0030). Items OR with each other and
+	// with the flat lists.
+	Any []AITriggerItem `json:"any,omitempty" cap:"analyzer_trigger_items"`
+
+	// Exclude drops a statement that meets every field one item names,
+	// whatever matched it above.
+	Exclude []AITriggerItem `json:"exclude,omitempty" cap:"analyzer_trigger_items"`
 }
 
-// IsZero reports whether the trigger names nothing.
+// AITriggerItem is one condition of AITrigger.Any or AITrigger.Exclude. Every
+// field it names must match; a field it leaves empty is not checked.
+type AITriggerItem struct {
+	Operations []inspect.Operation `json:"operations,omitempty"`
+	Tables     []string            `json:"tables,omitempty"`
+	Resources  []string            `json:"resources,omitempty"`
+}
+
+// IsZero reports whether the item names no field. Such an item would match
+// every statement by checking nothing, so a config carrying one is refused.
+func (i AITriggerItem) IsZero() bool {
+	return len(i.Operations) == 0 && len(i.Tables) == 0 && len(i.Resources) == 0
+}
+
+// IsZero reports whether the trigger names nothing that selects a statement.
+// Exclude alone selects nothing: it only narrows what something else
+// selected, so a trigger carrying only Exclude is zero here.
 func (t *AITrigger) IsZero() bool {
-	return t == nil || (len(t.Operations) == 0 && len(t.Tables) == 0 && len(t.Resources) == 0)
+	return t == nil || (len(t.Operations) == 0 && len(t.Tables) == 0 &&
+		len(t.Resources) == 0 && len(t.Any) == 0)
 }
 
 // Rule is one local matcher.
@@ -948,7 +975,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 	// MatchOperation is excluded because there the field IS the matcher;
 	// narrowing it by itself would be a tautology.
 	if len(r.Operations) > 0 && r.Type != MatchOperation {
-		if !slices.Contains(r.Operations, stmt.Operation) {
+		if !slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }) {
 			return false, nil
 		}
 	}
@@ -981,12 +1008,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return r.compiled.MatchString(stmt.Text), nil
 
 	case MatchOperation:
-		for _, op := range r.Operations {
-			if stmt.Operation == op {
-				return true, nil
-			}
-		}
-		return false, nil
+		return slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }), nil
 
 	case MatchTable:
 		if len(stmt.Relations) == 0 && len(stmt.Tables) == 0 {
@@ -1020,6 +1042,13 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("policy: unknown rule type %q", r.Type)
+}
+
+// performs reports whether stmt performs op. An unknown statement still
+// performs the effects the scanner saw: a PL/SQL block's DELETE is a delete,
+// and its operation alone would let a rule naming delete miss it.
+func performs(stmt inspect.Statement, op inspect.Operation) bool {
+	return stmt.Operation == op || stmt.Operation == inspect.OpUnknown && slices.Contains(stmt.Effects, op)
 }
 
 // accessMatches reports whether a relation's access satisfies the rule.

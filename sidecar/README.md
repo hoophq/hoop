@@ -124,7 +124,7 @@ docker compose logs hoop-inspect | ./sidecar/read-audit.py
 |---|---|
 | 8443 | Envoy HTTPS, to the `httpbin` lane |
 | 5433 | Envoy TCP, to the `appdb` lane |
-| 19000 | sidecar admin: `/healthz`, `/stats`, `/config`, `/events`, `/api/*` |
+| 19000 | sidecar admin: `/healthz`, `/stats`, `/metrics`, `/config`, `/events`, `/api/*` |
 | 9901 | Envoy admin |
 
 That Postgres listener is `envoy:5432` inside the compose network and `5433` on
@@ -260,16 +260,18 @@ there, and `SIGHUP` logs that and does nothing.
 ### Connecting it to a Control Plane
 
 A sidecar can fetch its whole configuration from a Hoop Control Plane instead
-of carrying its own listeners. Two facts connect it, each with two sources,
-highest precedence first:
+of carrying its own listeners. Two facts connect it, highest precedence first:
 
 | Fact | Sources |
 |---|---|
 | URL | `HOOP_CONTROL_PLANE_URL`, then the `control_plane_url` config key |
-| Token | the token flag (`--token` / `-token`), then `HOOP_SIDECAR_TOKEN` |
+| Credential | exactly one of: the token flag (`--token` / `-token`), then `HOOP_SIDECAR_TOKEN`; or `HOOP_SIDECAR_IDENTITY_TYPE` (`kubernetes` or `gcp`) |
 
 First wins, not first valid, same as the license sources: an env var holding
-garbage is an error, never a reason to fall through to the file.
+garbage is an error, never a reason to fall through to the file. A token and
+an identity type both set is an error naming both, a credential with no URL
+is an error, and a URL with no credential is an error naming the token and
+the identity type.
 
 ```bash
 # No config file at all: the env pair is the whole configuration.
@@ -283,9 +285,110 @@ hoop start sidecar --config config.yaml --token hsc_...
 
 The plane issues the token once, when you register the sidecar
 (`POST /api/sidecars`), and stores only a hash of it, so losing the token
-means registering a new sidecar. Both sources hold the token itself, never a
-path, and no config key exists for it: a bearer secret does not belong in a
-file that gets committed.
+means registering a new sidecar. The token flag and `HOOP_SIDECAR_TOKEN`
+hold the token itself, never a path, and no config key exists for it: a
+bearer secret does not belong in a file that gets committed.
+
+#### Service account identity instead of a token
+
+A fleet does not have to register each sidecar. The sidecar can present an
+identity the platform already issued (header `hoop-sidecar-identity`), and
+the plane maps it to a sidecar through a service account allowlist entry
+(issuer, audience, subject pattern, name template). The first handshake
+creates the sidecar; restarts, new pod names and replicas land on the same
+one, and a sidecar an admin deleted stays deleted.
+
+| Variable | Holds |
+|---|---|
+| `HOOP_SIDECAR_IDENTITY_TYPE` | `kubernetes`: read a Kubernetes projected service account token from a file. `gcp`: fetch a Google ID token from the GCE/GKE metadata server. Empty: the token. Any other value stops startup |
+| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `kubernetes` only. The token's path; default `/var/run/hoop-sidecar/token`, where the helm chart mounts it. Re-read on every request, because the kubelet rotates it in place. Whitespace is trimmed; an empty file or one over 16 KiB is refused. Set with another type, it stops startup |
+| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `gcp` only. The Google ID token's audience; default the control plane URL. The token is cached until 5 minutes before it expires, and `GCE_METADATA_HOST` overrides the metadata server, as in the Google client libraries. Set with another type, it stops startup, because a projected token's audience is set where the token is minted |
+
+Kubernetes projected token, audience set to the control plane URL exactly as
+`HOOP_CONTROL_PLANE_URL` holds it (or to the organization's own audience, see
+below):
+
+```yaml
+spec:
+  serviceAccountName: hoop-sidecar
+  containers:
+    - name: hoop-sidecar
+      env:
+        - name: HOOP_CONTROL_PLANE_URL
+          value: https://cp.example.com
+        - name: HOOP_SIDECAR_IDENTITY_TYPE
+          value: kubernetes
+        - name: HOOP_SIDECAR_IDENTITY_TOKEN_FILE
+          value: /var/run/secrets/hoop/token
+      volumeMounts:
+        - name: hoop-token
+          mountPath: /var/run/secrets/hoop
+          readOnly: true
+  volumes:
+    - name: hoop-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              path: token
+              audience: https://cp.example.com
+              expirationSeconds: 3600
+```
+
+The allowlist entry for it uses the cluster's OIDC issuer, claim `sub`, and a
+pattern such as `system:serviceaccount:*:hoop-sidecar` with a name template
+such as `gke-eu-{1}`, so each workspace namespace becomes one sidecar.
+
+On GKE with Workload Identity, bind the Kubernetes service account to a
+Google service account and let the metadata server mint the token instead;
+no volume is needed:
+
+```yaml
+      env:
+        - name: HOOP_CONTROL_PLANE_URL
+          value: https://cp.example.com
+        - name: HOOP_SIDECAR_IDENTITY_TYPE
+          value: gcp
+```
+
+Its allowlist entry uses issuer `https://accounts.google.com`, claim `email`,
+and the Google service account's address. A 401 at startup names the issuer
+and subject the sidecar presented, so the entry can be checked against them;
+a control plane that predates service account support answers 401 as well.
+
+When the plane cannot verify the token (not a JWT, an issuer no entry names,
+a bad signature, an expired token, or keys it could not fetch), the 401 says
+only `the service account token failed verification`. The plane does not tell
+an unverified caller why; the reason is in the control plane log, with the
+issuer. A refusal after verification (a subject no pattern allows, a deleted
+sidecar, a binding to another service account) keeps its own message.
+
+##### One control plane, several organizations
+
+The plane maps one (issuer, audience) pair to one organization. Sidecars of
+two organizations that share a plane and an issuer (one GKE cluster, or
+`https://accounts.google.com`) must present different audiences, or the
+second organization cannot add its entry. Give each organization its own
+audience: `HOOP_SIDECAR_IDENTITY_AUDIENCE` under GCP, the projected volume's
+`audience` under Kubernetes (`controlPlane.identityAudience` in the helm
+chart), and the same value in that organization's entry. One organization on
+a plane leaves it unset and uses the plane URL.
+
+##### A sidecar keeps the first service account that reached it
+
+The first service account that reaches a sidecar binds to it. Replicas and
+restarts present the same account, so they reach it too. A different
+service account whose name template renders the same sidecar name is refused
+with 401 until an admin clears the binding:
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $HOOP_ADMIN_TOKEN" \
+  https://cp.example.com/api/sidecars/<name>/identity
+```
+
+The next service account to reach it then binds to it. A sidecar registered
+with a token has no binding; a service account reaches it only when its
+entry sets `adopt_existing_sidecars: true`. The first one binds to it, and the
+sidecar's token keeps working.
 
 At startup the process runs the handshake
 (`POST {url}/api/sidecars/handshake`). The plane answers with the document
@@ -304,7 +407,9 @@ the license belongs to the organization, which serves its own on every
 handshake. A first handshake that fails stops
 startup, since there is nothing to serve yet.
 
-Once running, a heartbeat repeats the handshake every minute. It keeps the
+Once running, a heartbeat repeats the handshake about every minute (each
+wait is drawn from 48 to 72 seconds, so a fleet started together does not
+stay in step). It keeps the
 plane's last-seen fresh and picks up edits, applying them under the same
 boundary as a file edit: rule-only drift swaps in place, logged as
 `configuration applied` with a generation number; drift beyond the rules
@@ -389,7 +494,9 @@ Every event also carries the version, the entry point (`hoop`,
 `hoop-inspect` or `embedded`), OS and architecture, the `runtime`
 (`linux`, `docker`, `kubernetes`, `macos`, `windows`), and two identities.
 `sidecar-id` says which install: `HOOP_SIDECAR_ID` if you set one, else the
-control plane token, else the hostname plus the config file path — stable
+control plane token (or, for a service account identity, the plane URL plus
+the identity's issuer and subject, never the rotating token), else the
+hostname plus the config file path — stable
 across restarts and config edits. `host-id` says which machine: `HOOP_HOST_ID`
 if you set one, else the OS machine id plus the hostname. Every source is
 hashed; nothing leaves the process in the clear.
@@ -403,7 +510,7 @@ variable the table names and nothing else:
 | Docker | hostname is the container id: pass `--hostname` or set `HOOP_SIDECAR_ID` | container's own; set `HOOP_HOST_ID` to group by machine |
 | Kubernetes | hostname is the pod name: set `HOOP_SIDECAR_ID`, or connect a control plane | set `HOOP_HOST_ID` from `spec.nodeName` via the downward API |
 
-A control plane token makes `HOOP_SIDECAR_ID` unnecessary anywhere.
+A control plane credential makes `HOOP_SIDECAR_ID` unnecessary anywhere.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends
@@ -698,7 +805,7 @@ license: /etc/hoop-inspect/license.json
 # control_plane_url: https://cp.example.com
 
 admin:
-  listen: 127.0.0.1:19000   # /healthz /stats /config /events /api/*
+  listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*
 
 # Review status for agents; needs a control plane. See "Agents over MCP".
 # mcp:
@@ -1051,6 +1158,28 @@ listeners:
       rate_limit: {calls: 10}  # per_sec and burst still inherited
 ```
 
+**A trigger can AND its conditions.** The flat lists OR every value, so
+"patch, under `/api` only" needs an item (ADR-0030):
+
+```yaml
+    analyzer:
+      trigger:
+        operations: [delete]            # flat lists: each value ORed, as before
+        any:                            # an item matches when ALL its fields match
+          - {operations: [patch], resources: ["/api/**"]}
+        exclude:                        # an item here removes a match
+          - {resources: ["/api/healthz"]}
+```
+
+A statement is classified when a flat list or an `any` item matches it and
+no `exclude` item does. Fields left out of an item are not checked. An item
+that names no field, or an operation no codec reports, is refused at startup. With no positive condition,
+an ungated lane classifies everything except what `exclude` names. Under
+`opa.gate` a gate `request` still replaces the whole trigger, `exclude`
+included, and `exclude` with nothing else to narrow is refused. A control
+plane serves `any` and `exclude` only to a sidecar that reports
+`analyzer_trigger_items`.
+
 **What the block may override.** `send`, `fail_open`, `timeout_sec`,
 `max_input_bytes`, `max_calls`, `rate_limit` and `cache` all default to the
 top-level value and replace it when the block names them; `rate_limit` and
@@ -1225,6 +1354,18 @@ listeners:
 may approve. The rule holds the reviewer groups, the approval count and the
 force-approval list; the lane holds only its name, and the control plane
 authorizes each review against the config it stored for that sidecar.
+
+**Approving in the terminal.** A sidecar with no control plane, started with
+`hoop start sidecar` in a terminal (stdin and stdout both a TTY), files each
+review with the person running it: the TUI's Approvals section shows the
+statement, the analyzer's risk level and explanation, and the decision is
+theirs. Such a lane needs no `approval_rule`, since there is no plane to hold
+one. The same rules hold as on the plane: an approval releases one
+statement, a resend of the same bytes answers from the same review, and a
+review nobody decided expires after the 30-minute wait. A control plane,
+when one is configured, always wins: its `approval_rule` decides, and the
+terminal never releases a statement the plane governs. An embedder offers the
+same with `daemon.WithLocalReviewer`.
 
 **The review runs last.** The lane files the review only after every other
 evaluator allowed the statement, the decide-phase OPA call included
@@ -1465,9 +1606,9 @@ than at the first held statement:
 | | |
 |---|---|
 | a level asks for `require_review` | otherwise `approval_rule` names reviewers nobody consults |
-| `approval_rule` is set, and not blank | spaces match no rule in the control plane |
+| with a control plane, `approval_rule` is set, and not blank | the plane refuses a review naming no rule, and spaces match none |
 | an ssh lane does not admit `shell` | a shell sends no statements, so what is typed in it walks around the hold |
-| the sidecar has a control plane | there is nowhere else to file a review |
+| the sidecar has a control plane, or runs in a terminal | there is nowhere else to file a review (see Approving in the terminal) |
 
 Everything else fails CLOSED, `fail_open` included: it answers for a model
 vendor's outage, not for a human gate. A control plane that times out, refuses
@@ -1595,8 +1736,8 @@ to the audit trail.
 |---|---|---|---|
 | `anthropic` | Claude | Anthropic API key | |
 | `openai` | any Chat Completions endpoint | API key | |
-| `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global) |
-| `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi` |
+| `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global); `thinking_level`, `thinking_budget` |
+| `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi`; with `publisher: google`, also `thinking_level`, `thinking_budget`, `labels` |
 
 **Gemini** with an API key goes through `provider: gemini`. `api: developer`
 is the Gemini Developer API on `generativelanguage.googleapis.com`, billed to
@@ -1644,6 +1785,118 @@ analyzer:
   model: meta/llama-4-maverick-17b-128e-instruct-maas
   extra: {project: my-gcp-project, region: us-east5, publisher: openapi}
 ```
+
+#### Tuning the model call
+
+Every key below is optional. Unset, nothing is sent and the model's own
+default applies, so a config that names none of them sends the request it
+always did. All are process-wide, like the model, and restart-guarded.
+
+```yaml
+analyzer:
+  provider: vertex
+  model: gemini-3.8-flash
+  extra:
+    project: my-gcp-project
+    region: global
+    publisher: google
+    thinking_level: low          # Gemini 3+: minimal | low | medium | high
+    labels: team=platform,env=prod
+  temperature: 0                 # 0 is a value, not "unset"
+  top_p: 0.9
+  top_k: 40
+  seed: 7
+  max_output_tokens: 1024        # the default
+  max_retries: 2
+  timeout_sec: 15
+```
+
+**Thinking.** Gemini 3 and later models reason before they answer, and the
+default tier (`MEDIUM` on the 3.x Flash models) can take one call past
+`timeout_sec`. One forced tool call needs little reasoning, so `thinking_level:
+low` is the usual setting. Each model accepts only some levels
+(`gemini-3.8-flash` has no `minimal`), and Google answers an unsupported one
+with a 400 on every call, which `/metrics` shows as `outcome="error"`. Gemini
+2.5 models take `thinking_budget` instead: `0` turns thinking off on 2.5 Flash
+and Flash-Lite, `-1` lets the model decide, and 2.5 Pro cannot turn it off.
+Setting both keys is refused, because Google rejects a request with both.
+Both apply to `provider: gemini` and to `provider: vertex` with `publisher:
+google`; any other publisher refuses them.
+
+**Sampling.** `temperature` (0 to 2), `top_p` (0 to 1), `top_k` (1 or more)
+and `seed` go to whichever API the provider speaks, under that API's own
+field name. A provider whose API has no field for one refuses it at startup
+rather than send a setting that does nothing:
+
+| | `temperature` | `top_p` | `top_k` | `seed` |
+|---|---|---|---|---|
+| `anthropic`, `vertex` + `anthropic` | sent | sent | sent | refused |
+| `openai`, `vertex` + `openapi` | sent | sent | refused | sent |
+| `gemini`, `vertex` + `google` | sent | sent | sent | sent |
+
+Gemini 3 and later models accept `temperature`, `top_p` and `top_k` and
+ignore them; Google steers determinism to `thinking_level` instead. That is
+not checked, because the model name is the only signal and it changes with
+every release. Some Claude models refuse `temperature` and `top_p` together;
+that answer comes from the API.
+
+These narrow a model's answer; they do not make two calls agree. The verdict
+cache does: two statements of one shape share one verdict for `ttl_sec`,
+with no second call. Structured output is already fixed: every provider is
+forced to call one of three risk tools, so the verdict is an enum.
+`max_output_tokens` caps the length of that tool call, not its shape.
+
+**Retries.** `max_retries` re-sends a classification after a 408, 429, 500,
+502, 503 or 504, waiting about 250 ms, then twice as long each time (at most
+4 s), or the provider's `Retry-After` when it sends one, `0` meaning at once. Every attempt shares
+`timeout_sec`, so a retry never holds a connection longer than one call
+could; a wait that would outlast it is not taken, and the provider's own
+answer is reported. Any other status and any transport error is final. Zero,
+the default, sends once. A retry is not charged to `max_calls` or the rate
+limit.
+
+**Labels.** `labels` tags every call for GCP billing, as `key=value` pairs
+separated by commas. Keys start with a lowercase letter; keys and values hold
+lowercase letters, digits, `_` and `-`, at most 63 characters. Only
+`provider: vertex` with `publisher: google` sends them; `provider: gemini`
+and the other publishers refuse them. Unquoted numbers and booleans under
+`extra` load as their text, so `thinking_budget: 0` needs no quotes.
+
+A sidecar that does not report `analyzer_sampling` (the four sampling keys) or
+`analyzer_retries` (`max_retries`) cannot decode them, so the control plane
+refuses to serve a document that carries them to one. The `extra` keys need no
+entry: an older build ignores an `extra` key it does not read.
+
+#### Watching the analyzer: `/metrics`
+
+The admin listener serves `GET /metrics` in the Prometheus text format. A
+process with no analyzer answers an empty document, so a scrape job pointed
+at every sidecar does not mark one down.
+
+| Series | Type | Labels |
+|---|---|---|
+| `hoop_inspect_analyzer_request_duration_seconds` | histogram | `analyzer`, `provider`, `model`, `outcome` (`ok`, `error`, `timeout`) |
+| `hoop_inspect_analyzer_retries_total` | counter | `analyzer`, `provider`, `model` |
+| `hoop_inspect_analyzer_statements_total` | counter | `analyzer`, `status` (the `ai_status` values), `risk_level`, `action` |
+
+`analyzer` is the lane name for an analyzer block, the rule name for the
+deprecated rule form. The duration covers one classification, retries
+included, so a timeout lands at `timeout_sec`. Buckets run from 0.25 s to
+60 s. The counters survive hot reloads. Two queries worth having:
+
+```
+histogram_quantile(0.99, sum by (le, analyzer) (rate(hoop_inspect_analyzer_request_duration_seconds_bucket[5m])))
+sum by (analyzer) (rate(hoop_inspect_analyzer_request_duration_seconds_count{outcome="timeout"}[5m]))
+```
+
+The first sets `timeout_sec` from data rather than a guess. The second is the
+rate at which statements go unscored: under `fail_open: true` each of those
+was allowed with no verdict.
+
+The same numbers reach the log. A failed classification's error carries how
+long it ran and the limit, `context deadline exceeded (after 10.002s,
+timeout 10s)`, and `log_level: debug` adds one `analyzer call` line per call
+with `outcome`, `duration_ms`, `timeout_ms` and `attempts`.
 
 #### Migrating from `type: ai_analysis` rules
 
@@ -1867,10 +2120,53 @@ gaps named above are the narrow ones; Envoy is not blind here.
 | `mysql` | `COM_QUERY` (0x03), `COM_STMT_PREPARE` (0x16) and the prepared-statement commands (0x17, 0x19, 0x1a, 0x1c); handshake read for the negotiated capabilities, not skipped | column definitions and both row encodings, text and binary, for masking; the terminator that ends a result set | yes |
 | `mongodb` | `OP_MSG` commands and the legacy `OP_QUERY` hello; document-sequence sections are reassembled into the command | cursor `firstBatch`/`nextBatch`, `findAndModify.value`, distinct values and inline map-reduce results for masking | yes |
 | `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
+| `oracle` | Plaintext TCP Oracle Net (TNS/TTC) SQL calls from thin and OCI (thick) clients; negotiated TTC request layouts and cursor re-execution | Verified result-set columns and rows for character-value masking | yes |
 | `http` | HTTP/1.x requests; HTTP/2 streams, each bridged into one HTTP/1.1 request | HTTP/1.x responses | no |
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
 | `spanner` | like `grpc`, plus one SQL statement per query or DDL string extracted from known Cloud Spanner methods | as `grpc` | yes, per HTTP/2 stream |
 | `ssh` | the command of an `exec`, the name of an `env`, the path of each file operation | none — the lane rewrites output in flight and records none of it | yes, per connection |
+
+An `oracle` lane applies Oracle SQL classification to each decoded statement for
+policy decisions. It masks supported character results (VARCHAR, CHAR and
+national character data) only after validating the result layout; a policy
+denial sends a native Oracle error for supported TTC layouts before closing
+the session; an unsupported layout closes without an error frame. Unsupported
+client TTC calls fail closed, and with masking configured an unrecognized
+result layout is refused rather than forwarded unmasked. This is plaintext TCP
+TNS/TTC inspection, **not** TCPS or Oracle native encryption/integrity (ANO);
+neither encrypted path is inspected.
+
+Oracle tracks at most 1,024 open cursors, 16 MiB of retained SQL and column
+metadata, and 65,536 character cells per result; crossing a limit refuses the
+stream rather than forwarding a result without inspection. With masking on, an
+OCI row sent as a table row image that carries a non-NULL unselected column is
+refused too: that value has no name or type a mask rule could match.
+
+Supported servers are Oracle Database 23ai (Free) and 21c (XE), with
+go-ora and python-oracledb thin clients and SQL*Plus 21 and 23. The codec
+reads the integer encodings each session settles in data-type negotiation,
+not the TTC version alone, so the same lane serves thin and OCI clients. An
+OCI session below TTC field version 27 (23ai) other than 16 (21c) is
+refused; no public image exists to capture 19c. OCI clients may run queries,
+DML, MERGE, DDL, PL/SQL blocks and CALL. OCI array DML (more than one
+iteration per call), PL/SQL with more than one bind, and DDL with binds have
+no captured layout and are refused; with masking on, so are PL/SQL output
+binds (`EXEC :v := ...`), whose values no mask rule can name. Each
+negotiation message must end its packet, so no call can ride behind one. The
+SQL a client asks the server to run at logon (`AUTH_ALTER_SESSION`, e.g.
+`ALTER SESSION SET NLS_LANGUAGE=...`) reaches policy as a statement like any
+other, so a rule that denies `ALTER SESSION` refuses those logins.
+
+Oracle runs one statement per call: a call with two statements fails with
+ORA-00933 and runs neither. The lane therefore never splits a call; its only
+inner semicolons belong to PL/SQL, and the whole text is analyzed together.
+A PL/SQL block (`BEGIN`, `DECLARE`, with or without a `<<label>>`) or a query
+with `WITH FUNCTION`/`WITH PROCEDURE` is `unknown`, with the DML the scanner
+sees as its effects, so a rule naming `delete` denies
+`BEGIN DELETE FROM t; END;`. The `CREATE` of a stored unit is a `create`:
+its body is compiled, not run. SQL*Plus 21 sends
+`BEGIN DBMS_APPLICATION_INFO.SET_MODULE(:1,NULL); END;` at logon, so a rule
+naming `unknown` refuses SQL*Plus 21 sessions.
 
 `grpc` is the exception to this table's codec model. It has a canonical
 `libhoop/v2/codec/types.GRPC` protocol value and its HTTP/2 endpoint and
@@ -2794,6 +3090,12 @@ policy.NewRules([]policy.Rule{
 })
 ```
 
+An `operation` rule matches the statement's `operation`. When that is
+`unknown` (the scanner could not read the whole statement, e.g. a PL/SQL
+block), the rule also matches the effects the scanner did see, so
+`BEGIN DELETE FROM t; END;` is denied by a rule naming `delete`. The
+`operations` scope of every other rule type uses the same test.
+
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
 
@@ -3697,11 +3999,13 @@ That covers the root module only (`inspect/`, `lexer/`, `codec/`, `policy/`,
 (cd lexer/conformance && go test ./...)   # differential, against PostgreSQL's parser
 ```
 
-End to end, against a real server: `make test-sidecar-e2e` at the repo root
-boots a `mysql:8` container and runs the `hoop-inspect` binary as a subprocess
-in front of it. It needs Docker, is behind the `integration` build tag, and is
-not part of `make test-oss`. Running it by hand needs `GOWORK=off`, because
-`e2e/` is deliberately not a `go.work` member:
+End to end, against real servers: `make test-sidecar-e2e` at the repo root
+boots MySQL, MongoDB and Oracle Free containers and runs the `hoop-inspect`
+binary as a subprocess. Oracle coverage uses a thin Go client and SQL*Plus
+(OCI) for filtered reads, multi-batch masking, writes, policy denial and
+normal disconnect. It needs Docker, is behind the `integration` build tag,
+and is not part of `make test-oss`. Running it by hand needs `GOWORK=off`,
+because `e2e/` is deliberately not a `go.work` member:
 
 ```bash
 (cd e2e && GOWORK=off go test -tags integration -count=1 ./...)

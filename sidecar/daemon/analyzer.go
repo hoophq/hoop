@@ -1,15 +1,19 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/inspect"
 
 	"github.com/hoophq/hoop/sidecar/policy"
 	codecssh "github.com/hoophq/libhoop/v2/codec/ssh"
@@ -158,8 +162,8 @@ type AnalyzerConfig struct {
 	CredentialsFile string `json:"credentials_file,omitempty"`
 
 	// Extra carries provider-specific settings: Vertex's project, region
-	// and publisher; Gemini's api.
-	Extra map[string]string `json:"extra,omitempty"`
+	// and publisher; Gemini's api; the thinking and labels keys.
+	Extra ProviderExtra `json:"extra,omitempty"`
 
 	// Prompt replaces the built-in risk guidance for every ai_analysis rule
 	// that does not set its own. Empty uses analyzer.PromptGuidance.
@@ -210,6 +214,71 @@ type AnalyzerConfig struct {
 	// MaxOutputTokens bounds the model's reply. Zero uses the provider
 	// default.
 	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
+
+	// Temperature, TopP, TopK and Seed are the model's sampling
+	// parameters. Unset sends nothing and the model's default applies.
+	// Pointers, because 0 is a value: temperature 0 is the most
+	// deterministic setting. A provider whose API lacks one refuses it at
+	// startup (Anthropic has no seed, OpenAI no top_k). Gemini 3 and later
+	// models accept temperature, top_p and top_k and ignore them.
+	//
+	// Process-wide like the model, because sampling is a property of the
+	// model call, not of a lane.
+	Temperature *float64 `json:"temperature,omitempty" cap:"analyzer_sampling"`
+	TopP        *float64 `json:"top_p,omitempty" cap:"analyzer_sampling"`
+	TopK        *int     `json:"top_k,omitempty" cap:"analyzer_sampling"`
+	Seed        *int64   `json:"seed,omitempty" cap:"analyzer_sampling"`
+
+	// MaxRetries re-sends a classification after a 408, 429 or 5xx answer,
+	// up to this many times, inside the same timeout_sec. Zero sends once.
+	MaxRetries int `json:"max_retries,omitempty" cap:"analyzer_retries"`
+}
+
+// sampling is the section's sampling parameters as the provider takes them.
+func (a *AnalyzerConfig) sampling() analyzer.Sampling {
+	return analyzer.Sampling{Temperature: a.Temperature, TopP: a.TopP, TopK: a.TopK, Seed: a.Seed}
+}
+
+// ProviderExtra is the analyzer section's provider-specific settings. Every
+// value is a string to the provider, and a JSON number or boolean is accepted
+// as its literal text.
+//
+// The YAML loader keeps an unquoted scalar's type, so `thinking_budget: 0`
+// arrives as the number 0. A plain map[string]string would refuse the whole
+// document over it, which reads as a broken file for a value that is right.
+type ProviderExtra map[string]string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (e *ProviderExtra) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		*e = nil
+		return nil
+	}
+	out := make(ProviderExtra, len(raw))
+	for k, v := range raw {
+		dec := json.NewDecoder(bytes.NewReader(v))
+		dec.UseNumber()
+		var val any
+		if err := dec.Decode(&val); err != nil {
+			return fmt.Errorf("extra.%s: %w", k, err)
+		}
+		switch val := val.(type) {
+		case string:
+			out[k] = val
+		case json.Number:
+			out[k] = val.String()
+		case bool:
+			out[k] = fmt.Sprint(val)
+		default:
+			return fmt.Errorf("extra.%s: want a string, a number or a boolean", k)
+		}
+	}
+	*e = out
+	return nil
 }
 
 // SendMode decides what a statement looks like when it leaves the process.
@@ -562,6 +631,14 @@ func (a *AnalyzerConfig) validate(hasScanner, onHost bool) []string {
 	if a.MaxOutputTokens < 0 {
 		problems = append(problems, "analyzer: max_output_tokens is negative")
 	}
+	if err := a.sampling().Validate(); err != nil {
+		for _, line := range strings.Split(err.Error(), "\n") {
+			problems = append(problems, "analyzer: "+line)
+		}
+	}
+	if a.MaxRetries < 0 {
+		problems = append(problems, "analyzer: max_retries is negative")
+	}
 	if a.Cache.Size < 0 {
 		problems = append(problems, "analyzer: cache.size is negative")
 	}
@@ -641,6 +718,7 @@ func buildAnalyzer(cfg *AnalyzerConfig, roots *x509.CertPool) (analyzer.Provider
 		Credential:      cred,
 		Extra:           cfg.Extra,
 		MaxOutputTokens: cfg.MaxOutputTokens,
+		Sampling:        cfg.sampling(),
 		HTTPClient:      outboundHTTPClient(roots),
 	})
 }
@@ -698,17 +776,31 @@ func (ac *analyzerDeps) rateLimitLog(name string) func(limited bool, refused int
 //
 // Nil in three cases, and each one denies rather than forwards:
 //
-//   - The lane names no approval_rule, so no level on it holds.
+//   - With a control plane, the lane names no approval_rule, so no level on
+//     it holds.
 //   - The lane is OBSERVING. A dry run that paged approvers would be a dry
 //     run with consequences, and the statement runs anyway: policy.Observe
 //     turns the hold's denial into an allow annotated would_deny, which is
 //     the record the mode exists to produce.
-//   - The process has no control plane, which is every -validate run.
+//   - The process has neither a control plane nor a local reviewer, which is
+//     every -validate run outside a terminal.
+//
+// The plane is asked first: a process connected to one files there even when
+// a local reviewer is linked, so its approval rule is never bypassed.
 func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, observing bool) analyzer.Reviewer {
-	if ac == nil || la == nil || la.ApprovalRule == "" || observing {
+	if ac == nil || la == nil || observing {
 		return nil
 	}
-	return ac.cp.reviewer(listener, la.ApprovalRule)
+	if ac.cp != nil {
+		if la.ApprovalRule == "" {
+			return nil
+		}
+		return ac.cp.reviewer(listener, la.ApprovalRule)
+	}
+	if ac.local != nil && analyzerHolds(la) {
+		return ac.local(listener)
+	}
+	return nil
 }
 
 // budget key prefixes. The map in analyzerDeps is process-wide and keyed by
@@ -885,6 +977,7 @@ func buildAnalyzerEvaluator(
 		Trigger:       trigger,
 		Message:       la.Message,
 		Timeout:       time.Duration(timeout) * time.Second,
+		MaxRetries:    cfg.MaxRetries,
 		FailOpen:      failOpen,
 		MaxInputBytes: maxInput,
 		CacheSize:     cache.Size,
@@ -892,6 +985,8 @@ func buildAnalyzerEvaluator(
 		MaxCalls:      maxCalls,
 		RateLimit:     rate,
 		OnRateLimit:   ac.rateLimitLog(name),
+		OnCall:        ac.callObserver(),
+		OnOutcome:     ac.outcomeObserver(),
 		Budget:        ac.budgetFor(budgetKey),
 		Redact:        redactorFor(send, ac.det),
 		Review:        review,
@@ -917,7 +1012,24 @@ func triggerFrom(t *policy.AITrigger) analyzer.Trigger {
 		Operations: t.Operations,
 		Tables:     t.Tables,
 		Resources:  t.Resources,
+		Any:        triggerItems(t.Any),
+		Exclude:    triggerItems(t.Exclude),
 	}
+}
+
+func triggerItems(items []policy.AITriggerItem) []analyzer.TriggerItem {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]analyzer.TriggerItem, len(items))
+	for i, item := range items {
+		out[i] = analyzer.TriggerItem{
+			Operations: item.Operations,
+			Tables:     item.Tables,
+			Resources:  item.Resources,
+		}
+	}
+	return out
 }
 
 // actionMap turns the block's high/medium/low strings into the analyzer's
@@ -977,8 +1089,10 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 		cfg:      cfg.Analyzer,
 		provider: provider,
 		cp:       cfg.cp,
+		local:    cfg.localReviewer,
 		det:      det,
 		mcp:      cfg.MCP != nil,
+		metrics:  newAnalyzerMetrics(cfg.Analyzer.Provider, cfg.Analyzer.Model),
 	}, nil
 }
 
@@ -1069,7 +1183,7 @@ const refuseSentinel = analyzer.RefuseSentinel
 //
 // lc is read only by ValidateHoldOnLane: the analyzer block cannot see which
 // lane it is on. A hold's OTHER prerequisite, a control plane to file with,
-// is checked in buildLanes; see holdsWithoutAPlane.
+// is checked in buildLanes; see holdRefusal.
 func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	cfg *AnalyzerConfig, opa *OPAConfig, lane string, lc ListenerConfig) []string {
 	gated := opa.enabled() && opa.Gate
@@ -1098,7 +1212,11 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	}
 
 	if la != nil {
-		problems = append(problems, validateLaneBlock(la, lane)...)
+		// The rule-without-a-hold pairing is checked; the hold-without-a-rule
+		// half waits for buildLanes, which knows whether a control plane or
+		// a local reviewer will receive the review (holdRefusal).
+		problems = append(problems, validateLaneBlock(la, lane, false)...)
+		problems = append(problems, validateGatedExclude(la.Trigger, gated, lane+": analyzer block")...)
 		problems = append(problems, ValidateHoldOnLane(la, lc, lane+": analyzer block")...)
 		// Only where the block names a rate: otherwise the effective one
 		// is the top level's, which AnalyzerConfig.validate already said.
@@ -1128,6 +1246,8 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 		where := fmt.Sprintf("%s: ai_analysis rule %q", lane, r.Name)
 		problems = append(problems, validateRiskActions(
 			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
+		problems = append(problems, validateTriggerItems(r.Trigger, where)...)
+		problems = append(problems, validateGatedExclude(r.Trigger, gated, where)...)
 		problems = append(problems, refuseRuleFormHold(
 			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
 	}
@@ -1176,7 +1296,8 @@ func ValidateLaneAnalyzerBlock(la *LaneAnalyzerConfig, lane string) []string {
 	if la == nil {
 		return nil
 	}
-	return validateLaneBlock(la, lane)
+	// The plane always files with a rule, so a hold there must name one.
+	return validateLaneBlock(la, lane, true)
 }
 
 // ValidateHoldOnLane is the half of a hold only the lane answers: an ssh lane
@@ -1200,11 +1321,17 @@ func ValidateHoldOnLane(la *LaneAnalyzerConfig, lc ListenerConfig, where string)
 // checks mirror the rule-form ones — same failure, same message shape — plus
 // the numeric bounds a rule never carried, which get the same negative
 // refusal AnalyzerConfig.validate applies to the defaults they override.
-func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
+//
+// holdNeedsRule is whether require_review without an approval_rule is refused
+// here. True for a block the control plane stores; false for a process's own
+// config, where a local reviewer may receive the review and holdRefusal
+// decides at build.
+func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) []string {
 	var problems []string
 	where := lane + ": analyzer block"
 	problems = append(problems, validateRiskActions(
 		la.HighRisk, la.MediumRisk, la.LowRisk, where)...)
+	problems = append(problems, validateTriggerItems(la.Trigger, where)...)
 
 	switch la.Send {
 	case "", SendRaw, SendRedacted, SendRefuse:
@@ -1239,7 +1366,7 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 	// review long after startup.
 	holds := analyzerHolds(la)
 	switch {
-	case la.ApprovalRule == "" && holds:
+	case la.ApprovalRule == "" && holds && holdNeedsRule:
 		problems = append(problems, fmt.Sprintf(
 			"%s asks for %q and names no approval_rule; the rule is what decides who "+
 				"may release a held statement, and the control plane refuses a review "+
@@ -1266,6 +1393,79 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 			"%s: review_mode %q decides how a held statement waits, and no risk "+
 				"level asks for %q, so nothing on this lane would hold one",
 			where, la.ReviewMode, analyzer.ActionRequireReview))
+	}
+	return problems
+}
+
+// validateTriggerItems refuses a trigger item that names no field. It would
+// check nothing and so match every statement, which an operator writing
+// "any" or "exclude" never means.
+//
+// It also refuses an item operation no codec reports: a typo there matches
+// nothing, so its condition never classifies or never excludes. The flat
+// lists keep their old, unchecked reading, because a deployed config may
+// carry a value that would now refuse to load.
+func validateTriggerItems(t *policy.AITrigger, where string) []string {
+	if t == nil {
+		return nil
+	}
+	var problems []string
+	for _, list := range [...]struct {
+		name  string
+		items []policy.AITriggerItem
+	}{{"any", t.Any}, {"exclude", t.Exclude}} {
+		for i, item := range list.items {
+			if item.IsZero() {
+				problems = append(problems, fmt.Sprintf(
+					"%s: trigger.%s[%d] names no operations, tables or resources",
+					where, list.name, i))
+			}
+			for _, op := range item.Operations {
+				if !slices.Contains(inspect.Operations(), op) {
+					problems = append(problems, fmt.Sprintf(
+						"%s: trigger.%s[%d] names unknown operation %q",
+						where, list.name, i, op))
+				}
+			}
+		}
+	}
+	return problems
+}
+
+// validateGatedExclude refuses exclude on a gated lane whose trigger selects
+// nothing else. The gate decides there: a request replaces the whole trigger
+// and silence selects nothing, so exclude is never read.
+func validateGatedExclude(t *policy.AITrigger, gated bool, where string) []string {
+	if !gated || t == nil || len(t.Exclude) == 0 || !t.IsZero() {
+		return nil
+	}
+	return []string{where + ": trigger.exclude narrows nothing on a lane with " +
+		"opa.gate and no other trigger condition; the gate-phase policy decides " +
+		"what is classified there"}
+}
+
+// ValidateLaneTriggers runs the trigger checks that need a lane's RESOLVED
+// OPA settings, over a whole document: exclude with nothing else to narrow on
+// a gated lane. The lane may inherit opa.gate from the top level.
+//
+// Exported for the control plane. A rule is valid alone and the listener it
+// binds to decides whether the lane is gated; served unchecked, the sidecar
+// refuses the whole document and every lane on it stops reloading.
+func ValidateLaneTriggers(cfg Config) []string {
+	var problems []string
+	for _, lc := range cfg.Listeners {
+		gc, opa, _ := cfg.resolve(lc)
+		gated := opa.enabled() && opa.Gate
+		if lc.Analyzer != nil {
+			problems = append(problems, validateGatedExclude(
+				lc.Analyzer.Trigger, gated, lc.Name+": analyzer block")...)
+		}
+		for _, r := range gc.Rules {
+			if r.Type == policy.MatchAIAnalysis {
+				problems = append(problems, validateGatedExclude(r.Trigger, gated,
+					fmt.Sprintf("%s: ai_analysis rule %q", lc.Name, r.Name))...)
+			}
+		}
 	}
 	return problems
 }

@@ -105,6 +105,7 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 	inspect.MySQL:      {"database", string(proto.ConnectionTypeMySQL)},
 	inspect.MSSQL:      {"database", string(proto.ConnectionTypeMSSQL)},
 	inspect.MongoDB:    {"database", string(proto.ConnectionTypeMongoDB)},
+	inspect.Oracle:     {"database", string(proto.ConnectionTypeOracleDB)},
 	inspect.SSH:        {"application", string(proto.ConnectionTypeSSH)},
 	inspect.HTTP:       {"httpproxy", string(proto.ConnectionTypeHttpProxy)},
 	inspect.ClickHouse: {"custom", string(inspect.ClickHouse)},

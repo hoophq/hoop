@@ -21,7 +21,7 @@ func statusPlane(t *testing.T, status int, body string) (*controlPlane, *[]strin
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
-	return &controlPlane{url: srv.URL, token: "hsc_token"}, calls
+	return &controlPlane{url: srv.URL, cred: tokenCredential("hsc_token")}, calls
 }
 
 func TestAStatusReadIsOneGetAndNeverAClaim(t *testing.T) {
@@ -156,7 +156,7 @@ func TestAnMCPBlockIsRefusedWhereItCannotServe(t *testing.T) {
 
 	// A running process holds the connection; its document carries no URL.
 	cfg.ControlPlaneURL = ""
-	cfg.cp = &controlPlane{url: "https://cp.example.com", token: "t"}
+	cfg.cp = &controlPlane{url: "https://cp.example.com", cred: tokenCredential("t")}
 	if err := checkMCP(cfg); err != nil {
 		t.Errorf("a plane-connected process was refused: %v", err)
 	}

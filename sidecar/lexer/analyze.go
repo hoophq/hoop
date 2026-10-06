@@ -141,6 +141,11 @@ type analyzer struct {
 	wrapper      bool
 	sawStatement bool
 
+	// plsql is true once an Oracle BEGIN or DECLARE opened an anonymous
+	// block. From there DML is recognised anywhere, not only in head
+	// position, and INTO names variables rather than tables; see plsqlDML.
+	plsql bool
+
 	incomplete string
 }
 
@@ -262,6 +267,15 @@ func (a *analyzer) walk() {
 	for i := 0; i < len(a.toks); i++ {
 		t := a.toks[i]
 
+		// An Oracle label, <<name>>, comes before a block or a loop and
+		// leaves the head position as it was: `<<x>> BEGIN DELETE ...`
+		// is the block BEGIN opens.
+		if a.d == Oracle && a.puncts(i, "<") && a.puncts(i+1, "<") && i+2 < len(a.toks) &&
+			a.toks[i+2].isName() && a.puncts(i+3, ">") && a.puncts(i+4, ">") {
+			i += 4
+			continue
+		}
+
 		if t.Kind == Punct {
 			switch t.Text {
 			case "(":
@@ -341,10 +355,20 @@ func (a *analyzer) walk() {
 		}
 
 		if t.Text == "with" {
-			a.inCTEList = true
-			a.expectCTEName = true
 			a.sawStatement = true
 			atHead = false
+			// Oracle's WITH FUNCTION / WITH PROCEDURE declares PL/SQL
+			// that the query runs: procedural code, like a block.
+			// `WITH function AS (...)` and `WITH function (a) AS (...)`
+			// are CTEs of that name: an inline unit has a name next.
+			if a.d == Oracle && i+2 < len(a.toks) && a.toks[i+1].Kind == Word &&
+				oracleInlinePLSQL[a.toks[i+1].Text] && a.toks[i+2].isName() && !a.toks[i+2].isWord("as") {
+				a.fail("inline PL/SQL in WITH; body is procedural code")
+				a.plsql = true
+				continue
+			}
+			a.inCTEList = true
+			a.expectCTEName = true
 			continue
 		}
 
@@ -358,11 +382,22 @@ func (a *analyzer) walk() {
 			continue
 		}
 
-		if atHead && a.head(t, i) {
+		if (atHead || (a.plsql && plsqlDML[t.Text] && !a.plsqlNotDML(i))) && a.head(t, i) {
+			// A stored PL/SQL unit carries its body inline. What
+			// follows the header is source Oracle compiles and does
+			// not run, so the scan ends here with the header read.
+			if a.d == Oracle && !a.plsql && a.top().verb == Create {
+				if end, ok := a.storedUnit(i); ok {
+					i = end
+					atHead = false
+					continue
+				}
+			}
 			// Several keywords are both a verb and a relation
-			// introducer: UPDATE t, TRUNCATE t, COPY t. Consuming the
-			// head must not skip the target they name.
-			if relIntro[t.Text] {
+			// introducer: UPDATE t, TRUNCATE t, COPY t, and Oracle's
+			// RENAME t TO u. Consuming the head must not skip the
+			// target they name.
+			if relIntro[t.Text] || a.d == Oracle && t.Text == "rename" {
 				if j, rels, ok := a.relationsAfter(i); ok {
 					for _, rel := range rels {
 						a.addRelation(rel)
@@ -370,12 +405,15 @@ func (a *analyzer) walk() {
 					i = j
 				}
 			}
-			atHead = false
+			// `BEGIN DELETE FROM t`: the block keyword is a verb AND
+			// the position before the block's first statement.
+			atHead = a.plsql && plsqlHeadAfter[t.Text]
 			continue
 		}
 
-		// A relation introducer claims the list that follows.
-		if relIntro[t.Text] {
+		// A relation introducer claims the list that follows. Oracle's
+		// `FOR UPDATE OF col` locks rows: the name after it is a column.
+		if relIntro[t.Text] && !(a.d == Oracle && a.forUpdate(i)) {
 			if j, rels, ok := a.relationsAfter(i); ok {
 				for _, rel := range rels {
 					a.addRelation(rel)
@@ -419,6 +457,9 @@ func (a *analyzer) headFollows(word string) bool {
 	if word == "as" {
 		return ddlVerb(a.top().verb)
 	}
+	if a.plsql && plsqlHeadAfter[word] {
+		return true
+	}
 	return headAfter[word]
 }
 
@@ -460,14 +501,29 @@ func (a *analyzer) pop() {
 // head handles a token in statement-head position. It reports whether the
 // token was consumed as a verb.
 func (a *analyzer) head(t Token, i int) bool {
-	verb, ok := statementVerb[t.Text]
+	verb, ok := a.statementVerb(t.Text)
 	if !ok {
 		return false
 	}
 	a.sawStatement = true
 
-	if why, bad := opaque[t.Text]; bad {
+	if why, bad := a.opaque(t.Text); bad {
 		a.fail(why)
+	}
+
+	if a.d == Oracle {
+		switch {
+		case oracleOpaque[t.Text] != "":
+			a.plsql = true
+		case verb == Alter && i+1 < len(a.toks) && a.toks[i+1].isWord("session"):
+			// ALTER SESSION is Oracle's spelling of SET: NLS formats,
+			// CURRENT_SCHEMA, time zone — the PostgreSQL SET and
+			// search_path this package already files under set. Every
+			// driver may send one on connect, and filing it under
+			// alter would make a lane refusing DDL refuse the login.
+			// ALTER SYSTEM changes the instance and stays alter.
+			verb = Set
+		}
 	}
 
 	if verb == Explain {
@@ -490,6 +546,106 @@ func (a *analyzer) head(t Token, i int) bool {
 	r.firstTarget = true
 	a.effects = append(a.effects, verb)
 	return true
+}
+
+// statementVerb looks a head keyword up under the analyzer's dialect.
+func (a *analyzer) statementVerb(word string) (Verb, bool) {
+	if a.d == Oracle {
+		if oracleNotAVerb[word] {
+			return Unknown, false
+		}
+		if v, ok := oracleVerb[word]; ok {
+			return v, true
+		}
+	}
+	v, ok := statementVerb[word]
+	return v, ok
+}
+
+// opaque reports why a head keyword's effect cannot be read, under the
+// analyzer's dialect.
+func (a *analyzer) opaque(word string) (string, bool) {
+	if a.d == Oracle {
+		if why, ok := oracleOpaque[word]; ok {
+			return why, true
+		}
+	}
+	why, ok := opaque[word]
+	return why, ok
+}
+
+// storedUnit recognises Oracle's CREATE of a stored PL/SQL or Java unit at
+// the CREATE in position i and, when it is one, returns the index of the
+// last token, having recorded what the header names.
+//
+// PostgreSQL dollar-quotes a function body, so the scanner already reads it
+// as a literal. Oracle writes the body inline: `CREATE PROCEDURE p AS BEGIN
+// DELETE FROM t; END;` walked as SQL reports a delete of t that nothing
+// performs, and the BEGIN inside marks the statement unreadable, so every
+// migration defining a procedure would be refused as unknown. The body is
+// source text Oracle compiles — verified by the server storing it with
+// compilation errors rather than running any trailing statement — so the
+// scan stops at the header.
+//
+// A trigger's header names the table it fires on, and that relation is
+// recorded as a DDL target, as CREATE TRIGGER ... ON t does in PostgreSQL.
+// `ON DATABASE` and `ON SCHEMA` name no relation; `ON NESTED TABLE c OF v`
+// names v.
+func (a *analyzer) storedUnit(i int) (int, bool) {
+	j := i + 1
+	for j < len(a.toks) && a.toks[j].Kind == Word && oracleCreateModifier[a.toks[j].Text] {
+		j++
+	}
+	if j >= len(a.toks) || a.toks[j].Kind != Word || !oracleStoredUnit[a.toks[j].Text] {
+		return i, false
+	}
+	last := len(a.toks) - 1
+	if a.toks[j].Text != "trigger" {
+		return last, true
+	}
+	if rel, ok := a.triggerTable(j); ok {
+		a.addRelation(rel)
+	}
+	return last, true
+}
+
+// triggerTable finds the relation a trigger header fires on: the name after
+// the first top-level ON, scanning from the TRIGGER keyword at j to the
+// body. It reports false for a DATABASE or SCHEMA event trigger.
+func (a *analyzer) triggerTable(j int) (Relation, bool) {
+	depth := 0
+	for k := j + 1; k < len(a.toks); k++ {
+		t := a.toks[k]
+		switch {
+		case a.puncts(k, "("):
+			depth++
+		case a.puncts(k, ")"):
+			depth--
+		case t.Kind != Word || depth != 0:
+		case triggerBody[t.Text]:
+			return Relation{}, false
+		case t.Text == "on":
+			intro := k
+			if k+1 < len(a.toks) && a.toks[k+1].isWord("nested") {
+				// ON NESTED TABLE column OF view: the relation follows OF.
+				intro = slices.IndexFunc(a.toks[k:], func(t Token) bool { return t.isWord("of") })
+				if intro < 0 {
+					return Relation{}, false
+				}
+				intro += k
+			}
+			if n := intro + 1; n < len(a.toks) && (a.toks[n].isWord("database") ||
+				a.toks[n].isWord("schema") || a.toks[n].isWord("pluggable")) {
+				return Relation{}, false
+			}
+			_, rel, ok := a.relationAt(intro, intro)
+			// Access is decided from the introducer's text, and OF is
+			// not a DDL introducer; either way the trigger acts on it.
+			rel.Access = Write
+			return rel, ok
+		}
+	}
+	return Relation{}, false
 }
 
 // relationsAfter resolves the comma-separated relation list following an
@@ -550,9 +706,27 @@ func (a *analyzer) relationAt(i, j int) (int, Relation, bool) {
 		j += 2
 	}
 
+	// Oracle names a remote object `emp@link`, the link dotted and
+	// optionally qualified: `emp@hq.example.com@hr`. The relation is the
+	// OBJECT, reported under its own name: a rule guarding emp must fire
+	// through a loopback link to the same database, and reporting
+	// "emp@loop" would be a new name nothing was written against. The
+	// link is consumed so a following comma still continues the list;
+	// left in place, `FROM a@l, b` lost b.
+	if a.d == Oracle && a.puncts(j+1, "@") && j+2 < len(a.toks) && a.toks[j+2].isName() {
+		j += 2
+		for (a.puncts(j+1, ".") || a.puncts(j+1, "@")) && j+2 < len(a.toks) && a.toks[j+2].isName() {
+			j += 2
+		}
+	}
+
 	// A CTE alias is not a relation. Reporting it would put someone's
 	// `WITH doomed AS ...` into a table list beside real objects.
 	if a.cteNames[name] {
+		return j, Relation{}, false
+	}
+	r := a.top()
+	if a.d == Oracle && a.oracleNoRelation(r, a.toks[i].Text) {
 		return j, Relation{}, false
 	}
 	// A set-returning function in a FROM position is not a relation:
@@ -566,7 +740,6 @@ func (a *analyzer) relationAt(i, j int) (int, Relation, bool) {
 		}
 	}
 
-	r := a.top()
 	acc := a.access(r, a.toks[i].Text)
 	if r.verb == Copy && a.toks[i].Text == "copy" {
 		// COPY's direction is a keyword AFTER the relation, so it is the
@@ -574,6 +747,39 @@ func (a *analyzer) relationAt(i, j int) (int, Relation, bool) {
 		acc = a.copyDirection(j)
 	}
 	return j, Relation{Name: name, Access: acc}, true
+}
+
+// puncts reports whether the token at k is the punctuation p.
+func (a *analyzer) puncts(k int, p string) bool {
+	return k < len(a.toks) && a.toks[k].Kind == Punct && a.toks[k].Text == p
+}
+
+// oracleNoRelation reports whether an Oracle introducer names something
+// other than a relation here.
+//
+// Inside PL/SQL, INTO in SELECT ... INTO, FETCH ... INTO and UPDATE/DELETE
+// ... RETURNING ... INTO assigns to variables; under the PostgreSQL rule,
+// where SELECT INTO creates a table, `SELECT count(*) INTO n FROM t`
+// reported a write of n. EXECUTE IMMEDIATE ... USING binds values the same
+// way. INSERT and MERGE keep INTO as a target even there: a variable after
+// INSERT ... RETURNING reads as a spurious write, which a lane survives,
+// while tracking RETURNING — not reserved in Oracle, so `WHEN returning > 1
+// THEN INTO b` is legal — could hide b. Outside PL/SQL a RETURNING target
+// is a :bind, which never names a relation.
+//
+// UPDATE inside a SELECT is the row-lock clause, `FOR UPDATE OF col`, and
+// OF is reserved in Oracle, so the name after it is a column. The select
+// stays a select, as in PostgreSQL.
+func (a *analyzer) oracleNoRelation(r *region, intro string) bool {
+	switch intro {
+	case "into":
+		return a.plsql && r.verb != Insert && r.verb != Merge
+	case "using":
+		return r.verb == Call
+	case "update":
+		return r.verb == Select
+	}
+	return false
 }
 
 // copyDirection resolves COPY's access from the keyword following the
@@ -638,7 +844,11 @@ func (a *analyzer) access(r *region, intro string) Access {
 			return Write
 		}
 	case Insert, Merge:
-		if intro == "into" && r.firstTarget {
+		// Oracle's multi-table INSERT ALL / INSERT FIRST names a target
+		// after EVERY `INTO`; only the first claimed a write, so
+		// `INSERT ALL INTO a ... INTO b ... SELECT ...` hid the write of b
+		// as a read. See oracleNoRelation for the INTO that names a variable.
+		if intro == "into" && (r.firstTarget || (a.d == Oracle && r.verb == Insert)) {
 			r.firstTarget = false
 			return Write
 		}
@@ -658,7 +868,7 @@ func (a *analyzer) access(r *region, intro string) Access {
 		// an ACL, REFRESH repopulates a matview: all of them change the
 		// named object rather than reading rows from it.
 		switch intro {
-		case "table", "view", "into", "on", "truncate":
+		case "table", "view", "into", "on", "truncate", "rename":
 			return Write
 		}
 	}
@@ -717,4 +927,22 @@ func (a *analyzer) result() Analysis {
 		Complete:  a.incomplete == "",
 		Reason:    a.incomplete,
 	}
+}
+
+// plsqlNotDML reports whether a DML word at i inside PL/SQL is not a
+// statement: a member call (`v_tab.DELETE`, `r.update`) after a dot, or the
+// row lock of `SELECT ... FOR UPDATE`. Neither runs DML, and reading one as
+// a delete or update would let a rule naming it refuse a block that writes
+// nothing.
+func (a *analyzer) plsqlNotDML(i int) bool {
+	if i == 0 {
+		return false
+	}
+	return a.puncts(i-1, ".") || a.forUpdate(i)
+}
+
+// forUpdate reports whether the token at i is the UPDATE of a FOR UPDATE
+// row lock.
+func (a *analyzer) forUpdate(i int) bool {
+	return i > 0 && a.toks[i].isWord("update") && a.toks[i-1].isWord("for")
 }

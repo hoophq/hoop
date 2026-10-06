@@ -7,3 +7,8 @@ import "time"
 func SetReviewPacing(e *Evaluator, wait, poll time.Duration) {
 	e.reviewWait, e.reviewPoll = wait, poll
 }
+
+// SetRetryPacing shortens the wait between retries.
+func SetRetryPacing(e *Evaluator, base, limit time.Duration) {
+	e.retryBase, e.retryCap = base, limit
+}

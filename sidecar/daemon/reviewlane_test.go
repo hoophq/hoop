@@ -226,7 +226,7 @@ func TestListReviewsAsksThePlane(t *testing.T) {
 		_, _ = w.Write([]byte(`[{"id":"` + laneReviewID + `","status":"PENDING","listener_name":"api"}]`))
 	}))
 	defer plane.Close()
-	cp := &controlPlane{url: plane.URL, token: "hsc_token"}
+	cp := &controlPlane{url: plane.URL, cred: tokenCredential("hsc_token")}
 
 	revs, err := cp.ListReviews(context.Background(), "PENDING", 5)
 	if err != nil {

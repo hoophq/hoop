@@ -20,7 +20,7 @@ import (
 //     the whole statement and it does nothing", which is a lie the caller
 //     cannot detect. Not understanding is fine; it spells Complete=false.
 
-var dialects = []lexer.Dialect{lexer.Postgres, lexer.MSSQL}
+var dialects = []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.Oracle}
 
 // hostile is input designed to walk the scanner off the end of something.
 // Every entry is a construct that terminated a previous implementation early

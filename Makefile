@@ -40,13 +40,16 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/sidecar/analytics.writeKey=${SEGMENT_API_KEY} \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
+# scripts/dev/run.sh sets HOOP_RS_OUT for HOOPDEV_SLOT > 0, so that slots do not share one binary.
+HOOP_RS_OUT ?= ${HOME}/.hoop/bin/hoop_rs
+
 build-dev-rust:
 	# since we are in osx machine cross needs to be used to build linux binary because some crypto libs does not have cross compilation
 	echo "Building hoop_rs for dev"
 	cd agentrs && cross build --release --target aarch64-unknown-linux-gnu
-	mkdir -p ${HOME}/.hoop/bin
-	cp agentrs/target/aarch64-unknown-linux-gnu/release/agentrs ${HOME}/.hoop/bin/hoop_rs
-	chmod +x ${HOME}/.hoop/bin/hoop_rs
+	mkdir -p $(patsubst %/,%,$(dir ${HOOP_RS_OUT}))
+	cp agentrs/target/aarch64-unknown-linux-gnu/release/agentrs ${HOOP_RS_OUT}
+	chmod +x ${HOOP_RS_OUT}
 
 install-rust:
 	./scripts/install-rust.sh
@@ -170,6 +173,16 @@ test-sidecar-compat:
 		|| { echo "$$out"; exit 1; }; \
 	echo "$$out"; \
 	echo "$$out" | grep -q -- '--- PASS: TestThePreviousReleaseDecodesTheServedDocument'
+
+# The Oracle E2E tests against Oracle XE 21c (TTC field version 16), once with
+# its own SQL*Plus 21 and once with SQL*Plus 23 from the Free image. The XE
+# image is amd64 only; it runs under emulation on arm64 hosts.
+test-sidecar-e2e-oracle21:
+	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 SIDECAR_E2E_ORACLE_IMAGE=gvenzl/oracle-xe:21-slim-faststart SIDECAR_E2E_ORACLE_SERVICE=XEPDB1 \
+		go test -tags integration -v -timeout 20m -count=1 -run 'TestOracle' ./...
+	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 SIDECAR_E2E_ORACLE_IMAGE=gvenzl/oracle-xe:21-slim-faststart SIDECAR_E2E_ORACLE_SERVICE=XEPDB1 \
+		SIDECAR_E2E_ORACLE_CLIENT_IMAGE=gvenzl/oracle-free:23-slim-faststart \
+		go test -tags integration -v -timeout 20m -count=1 -run 'TestOracleThick' ./...
 
 prepare-mssql-jdbc:
 	$(RM) $(MSSQL_JDBC_CLASSPATH_FILE)

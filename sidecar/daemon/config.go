@@ -177,6 +177,10 @@ type Config struct {
 	// verdict about reachability.
 	cp *controlPlane
 
+	// localReviewer files held statements with whoever runs this process,
+	// when it has no control plane. WithLocalReviewer fills it; see there.
+	localReviewer LocalReviewer
+
 	// entrypoint, deprecatedAlias and configFormat are facts the entry
 	// point learned about its own invocation, carried here so Run can
 	// report them. Setup fills them from its Options; none is a config
@@ -1720,6 +1724,11 @@ type analyzerDeps struct {
 	// edited approval_rule reaches the lane on the next heartbeat.
 	cp *controlPlane
 
+	// local files reviews with the person running this process, used only
+	// when cp is nil. Held here for the same reason as cp: a reload that
+	// adds require_review to a lane gets a reviewer without a restart.
+	local LocalReviewer
+
 	// det builds each evaluator's redactor from its EFFECTIVE send mode:
 	// a lane overriding `send` gets its own rewrite function while every
 	// other lane keeps the default. Held here rather than a prebuilt
@@ -1742,9 +1751,15 @@ type analyzerDeps struct {
 	// builds, then only the heartbeat) needs no lock.
 	budgets map[string]*analyzer.Budget
 
-	// log is the process logger, for the rate-limit edges an evaluator
-	// reports. Nil in a build that never serves, which logs nothing.
+	// log is the process logger, for the rate-limit edges and the per-call
+	// debug line an evaluator reports. Nil in a build that never serves,
+	// which logs nothing.
 	log *slog.Logger
+
+	// metrics is what GET /metrics renders for the analyzer. Shared by every
+	// generation of every evaluator, so a reload does not reset a counter.
+	// Nil in tests that build deps by hand, which then count nothing.
+	metrics *analyzerMetrics
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.
@@ -1824,15 +1839,27 @@ func (t *TLSConfig) downstreamKeypairNamed() error {
 // analyzerTriggerOperations lists every operation a lane's analyzer is
 // triggered on, in BOTH spellings: the listener's analyzer block and any
 // deprecated ai_analysis rule still carrying its own trigger.
+//
+// Exclude items are left out: excluding what the lane never classifies is
+// harmless, while selecting it is a trigger that silently never fires.
 func analyzerTriggerOperations(lc ListenerConfig, aiRules []policy.Rule) []inspect.Operation {
 	var ops []inspect.Operation
-	if lc.Analyzer != nil && lc.Analyzer.Trigger != nil {
-		ops = append(ops, lc.Analyzer.Trigger.Operations...)
+	if lc.Analyzer != nil {
+		ops = append(ops, triggerOperations(lc.Analyzer.Trigger)...)
 	}
 	for _, r := range aiRules {
-		if r.Trigger != nil {
-			ops = append(ops, r.Trigger.Operations...)
-		}
+		ops = append(ops, triggerOperations(r.Trigger)...)
+	}
+	return ops
+}
+
+func triggerOperations(t *policy.AITrigger) []inspect.Operation {
+	if t == nil {
+		return nil
+	}
+	ops := slices.Clone(t.Operations)
+	for _, item := range t.Any {
+		ops = append(ops, item.Operations...)
 	}
 	return ops
 }

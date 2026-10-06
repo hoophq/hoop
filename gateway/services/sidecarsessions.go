@@ -80,6 +80,8 @@ func sidecarMirrorConnection(sidecarName, listener, protocol string) (sidecarMir
 	switch protocol {
 	case "postgres", "mysql", "mssql", "mongodb":
 		out.Type, out.Subtype = "database", protocol
+	case "oracle":
+		out.Type, out.Subtype = "database", string(pb.ConnectionTypeOracleDB)
 	case "ssh":
 		out.Type, out.Subtype = "application", "ssh"
 	case "http":

@@ -27,6 +27,7 @@ func TestProjectListenersMapsEveryProtocol(t *testing.T) {
 		{"mysql", "database", "mysql"},
 		{"mssql", "database", "mssql"},
 		{"mongodb", "database", "mongodb"},
+		{"oracle", "database", "oracledb"},
 		{"ssh", "application", "ssh"},
 		{"http", "httpproxy", "httpproxy"},
 		{"clickhouse", "custom", "clickhouse"},
@@ -104,7 +105,7 @@ func TestProjectListenersRendersTheMirror(t *testing.T) {
 }
 
 func TestProjectListenersRefusesAProtocolWithNoConnectionType(t *testing.T) {
-	for _, protocol := range []string{"oracle", ""} {
+	for _, protocol := range []string{"redis", ""} {
 		got, err := ProjectListeners("org-1", sidecarWith("pay", daemon.ListenerConfig{Name: "appdb", Protocol: protocol}))
 		if err == nil || !strings.Contains(err.Error(), `no connection type for protocol "`+protocol+`"`) {
 			t.Errorf("protocol %q: want the no-connection-type error, got %v", protocol, err)

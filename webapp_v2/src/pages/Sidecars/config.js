@@ -26,6 +26,7 @@ const ICON_SUBTYPES = {
   mysql: 'mysql',
   mssql: 'mssql',
   mongodb: 'mongodb',
+  oracle: 'oracledb',
   http: 'httpproxy',
   ssh: 'ssh',
 }

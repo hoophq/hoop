@@ -41,6 +41,7 @@ const (
 	MySQL      = codectypes.MySQL
 	ClickHouse = codectypes.ClickHouse
 	MongoDB    = codectypes.MongoDB
+	Oracle     = codectypes.Oracle
 	HTTP       = codectypes.HTTP
 	// GRPC is canonical in libhoop like every other protocol, but unlike
 	// them it has no codec to register: the lane terminates HTTP/2 and
@@ -105,6 +106,9 @@ const (
 	OpSFTPSetstat = codectypes.OpSFTPSetstat
 	OpSFTPSymlink = codectypes.OpSFTPSymlink
 
+	OpWSMessage = codectypes.OpWSMessage
+	OpWSClose   = codectypes.OpWSClose
+
 	OpOther   = codectypes.OpOther
 	OpUnknown = codectypes.OpUnknown
 
@@ -128,3 +132,21 @@ const (
 // the relay does not hold. MSSQL's routing ENVCHANGE is the case that
 // motivated it. A caller MUST close the connection rather than forward.
 var ErrStreamUnsafe = codectypes.ErrStreamUnsafe
+
+// Operations lists every operation a codec can report. A config naming one
+// outside it is a typo that never matches, so it is refused rather than
+// loaded. TestOperationsMatchLibhoop holds it to the constants libhoop
+// defines.
+func Operations() []Operation {
+	return []Operation{
+		OpSelect, OpInsert, OpUpdate, OpDelete, OpCreate, OpDrop, OpAlter,
+		OpTruncate, OpGrant, OpRevoke, OpCall, OpShow, OpSet, OpBegin,
+		OpCommit, OpRollback,
+		OpGet, OpPost, OpPut, OpPatch, OpHead, OpOptions, OpConnect, OpTrace,
+		OpExecLine, OpEnvSet,
+		OpSFTPRead, OpSFTPWrite, OpSFTPRemove, OpSFTPRename, OpSFTPMkdir,
+		OpSFTPRmdir, OpSFTPList, OpSFTPStat, OpSFTPSetstat, OpSFTPSymlink,
+		OpWSMessage, OpWSClose,
+		OpOther, OpUnknown,
+	}
+}

@@ -30,10 +30,49 @@ if [[ -z "$(go list -m -f '{{.Dir}}' github.com/hoophq/libhoop 2>/dev/null)" ]];
   exit 1
 fi
 
+# HOOPDEV_SLOT runs one stack per git worktree. Slot 0 (default) is the usual
+# "hoopdev" container. Slot N is "hoopdev-N", with each host port + N*100.
+HOOPDEV_SLOT="${HOOPDEV_SLOT:-0}"
+if ! [[ $HOOPDEV_SLOT =~ ^[0-9]$ ]]; then
+  echo "HOOPDEV_SLOT must be a number from 0 to 9, got '$HOOPDEV_SLOT'" >&2
+  exit 1
+fi
+
+function hostport() {
+  echo $(($1 + HOOPDEV_SLOT * 100))
+}
+
+CONTAINER_NAME=hoopdev
+IMAGE_NAME=hoopdev
+SLOT_ARGS=()
+if [[ $HOOPDEV_SLOT != 0 ]]; then
+  CONTAINER_NAME="hoopdev-${HOOPDEV_SLOT}"
+  IMAGE_NAME="hoopdev-${HOOPDEV_SLOT}"
+
+  # Clients on the host get API_URL and GRPC_URL from the gateway. A value
+  # left at 8009/8010 sends them to the slot 0 stack.
+  API_URL_WANT="http://127.0.0.1:$(hostport 8009)"
+  GRPC_URL_WANT="grpc://127.0.0.1:$(hostport 8010)"
+  API_URL_SET="$(sed -nE 's/^[[:space:]]*API_URL=//p' .env | tail -n 1)"
+  GRPC_URL_SET="$(sed -nE 's/^[[:space:]]*GRPC_URL=//p' .env | tail -n 1)"
+  if [[ $API_URL_SET != "$API_URL_WANT" || $GRPC_URL_SET != "$GRPC_URL_WANT" ]]; then
+    echo "slot $HOOPDEV_SLOT serves the API on $(hostport 8009) and gRPC on $(hostport 8010)." >&2
+    echo "  set these in this worktree's .env:" >&2
+    echo "      API_URL=$API_URL_WANT" >&2
+    echo "      GRPC_URL=$GRPC_URL_WANT" >&2
+    exit 1
+  fi
+
+  # entrypoint.sh waits on API_URL from inside the container, where the
+  # shifted host port does not exist.
+  SLOT_ARGS=(-e HOOPDEV_HEALTHZ_URL=http://127.0.0.1:8009/api/healthz)
+  echo "--> SLOT $HOOPDEV_SLOT: container $CONTAINER_NAME, API $API_URL_WANT, gRPC $GRPC_URL_WANT"
+fi
+
 trap ctrl_c INT
 
 function ctrl_c() {
-    docker stop hoopdev
+    docker stop "$CONTAINER_NAME"
     exit 130
 }
 
@@ -45,7 +84,7 @@ if [[ $WEBAPP_BUILD == "1" ]]; then
   exit 1
 fi
 
-docker build -t hoopdev -f ./scripts/dev/Dockerfile .
+docker build -t "$IMAGE_NAME" -f ./scripts/dev/Dockerfile .
 mkdir -p ./dist/dev/bin
 cp ./scripts/dev/entrypoint.sh ./dist/dev/bin/entrypoint.sh
 
@@ -56,8 +95,13 @@ if [[ $HOOP_RS_BUILD == "1" ]]; then
   echo ""
   echo "You need to have Rust installed to build the Rust agent."
   echo "You need to have Cross installed to build the Rust agent for multiple architectures."
-  make build-dev-rust
-  cp $HOME/.hoop/bin/hoop_rs ./dist/dev/bin/hoop_rs
+  if [[ $HOOPDEV_SLOT == 0 ]]; then
+    make build-dev-rust
+    cp $HOME/.hoop/bin/hoop_rs ./dist/dev/bin/hoop_rs
+  else
+    # $HOME/.hoop/bin is shared by all checkouts; a slot writes its own copy.
+    make build-dev-rust HOOP_RS_OUT="$PWD/dist/dev/bin/hoop_rs"
+  fi
 fi
 
 
@@ -84,7 +128,15 @@ if [[ -z ${ALCATRAZ_MODELS_DOWNLOAD:-} ]]; then
   fi
 fi
 
-if [[ $ALCATRAZ_MODELS_DOWNLOAD == "1" ]]; then
+if [[ $ALCATRAZ_MODELS_DOWNLOAD == "1" && $HOOPDEV_SLOT != 0 ]]; then
+  # Only slot 0 writes the shared cache, so two starts never fill it at once.
+  if ! [[ -f $ALCATRAZ_MODELS_DIR/checksums.txt ]]; then
+    echo "slot $HOOPDEV_SLOT reads the Alcatraz cache but does not fill it: $ALCATRAZ_MODELS_DIR has no checksums.txt." >&2
+    echo "  fill it once from slot 0, or run: ./scripts/dev/alcatraz-models.sh \"$ALCATRAZ_MODELS_DIR\"" >&2
+    exit 1
+  fi
+  echo "--> SLOT $HOOPDEV_SLOT: USING ALCATRAZ MODELS CACHED IN $ALCATRAZ_MODELS_DIR"
+elif [[ $ALCATRAZ_MODELS_DOWNLOAD == "1" ]]; then
   echo "--> CACHING ALCATRAZ MODELS IN $ALCATRAZ_MODELS_DIR"
   ./scripts/dev/alcatraz-models.sh "$ALCATRAZ_MODELS_DIR"
 fi
@@ -102,24 +154,27 @@ VERSION="${VERSION:-unknown}"
 CGO_ENABLED=0 GOOS=linux go build \
   -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION} -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" \
   -o ./dist/dev/bin/hooplinux github.com/hoophq/hoop/client
-docker stop hoopdev &> /dev/null || true
-docker rm hoopdev &> /dev/null || true
+docker stop "$CONTAINER_NAME" &> /dev/null || true
+docker rm "$CONTAINER_NAME" &> /dev/null || true
 
 mkdir -p ./dist/dev/spiffe
 
-docker run --rm --name hoopdev \
-  -p 2225:22 \
-  -p 8009:8009 \
-  -p 8010:8010 \
-  -p 15432:15432 \
-  -p 12222:12222 \
-  -p 13389:13389 \
-  -p 18888:18888 \
+# Proxy credentials carry the proxy's listen port, so in slot N the proxies
+# listen on the slot's ports and publish them unchanged.
+docker run --rm --name "$CONTAINER_NAME" \
+  -p "$(hostport 2225):22" \
+  -p "$(hostport 8009):8009" \
+  -p "$(hostport 8010):8010" \
+  -p "$(hostport 15432):$(hostport 15432)" \
+  -p "$(hostport 12222):$(hostport 12222)" \
+  -p "$(hostport 13389):$(hostport 13389)" \
+  -p "$(hostport 18888):$(hostport 18888)" \
   --env-file=.env \
+  "${SLOT_ARGS[@]}" \
   --cap-add=NET_ADMIN \
   --add-host=host.docker.internal:host-gateway \
   -v ./dist/dev/bin/:/app/bin/ \
   -v ./dist/dev/root/.ssh:/root/.ssh \
   -v ./dist/dev/resources/:/app/ui/ \
   "${ALCATRAZ_MOUNT[@]}" \
-  -it hoopdev /app/bin/entrypoint.sh
+  -it "$IMAGE_NAME" /app/bin/entrypoint.sh

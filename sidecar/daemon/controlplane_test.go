@@ -1017,7 +1017,7 @@ func TestHandshakeReportsWhatTheSidecarIsRunning(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	answer, err := fetchControlPlaneConfig(srv.URL, "hsc_token", handshakeRequest{
+	answer, err := fetchControlPlaneConfig(srv.URL, tokenCredential("hsc_token"), handshakeRequest{
 		Version:         "1.2.3",
 		AppliedRevision: "rev-1",
 		LastOutcome:     "refused",
@@ -1053,7 +1053,7 @@ func TestHandshakeOmitsAnUnreportedDocument(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := fetchControlPlaneConfig(srv.URL, "hsc_token", handshakeRequest{Version: "1.2.3"}); err != nil {
+	if _, err := fetchControlPlaneConfig(srv.URL, tokenCredential("hsc_token"), handshakeRequest{Version: "1.2.3"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, key := range []string{"applied_revision", "last_outcome"} {

@@ -860,6 +860,7 @@ func TestSidecarMirrorConnection(t *testing.T) {
 		{"mysql", "database", "mysql"},
 		{"mssql", "database", "mssql"},
 		{"mongodb", "database", "mongodb"},
+		{"oracle", "database", "oracledb"},
 		{"ssh", "application", "ssh"},
 		{"http", "httpproxy", "httpproxy"},
 		{"clickhouse", "custom", "clickhouse"},
@@ -875,7 +876,7 @@ func TestSidecarMirrorConnection(t *testing.T) {
 
 	// The protocol names are the sidecar's own constants.
 	for _, p := range []inspect.Protocol{
-		inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB, inspect.SSH,
+		inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB, inspect.Oracle, inspect.SSH,
 		inspect.HTTP, inspect.ClickHouse, inspect.GRPC, inspect.Spanner,
 	} {
 		_, err := sidecarMirrorConnection("edge", "lst", string(p))
@@ -888,7 +889,7 @@ func TestSidecarMirrorConnection(t *testing.T) {
 		assert.Equal(t, "prod-sidecar-billing-db", got.Name)
 	})
 
-	for _, protocol := range []string{"", "redis", "oracle", "tcp", "Postgres", "POSTGRES"} {
+	for _, protocol := range []string{"", "redis", "tcp", "Postgres", "POSTGRES"} {
 		t.Run("refuses "+protocol, func(t *testing.T) {
 			got, err := sidecarMirrorConnection("edge", "lst", protocol)
 			require.Error(t, err)

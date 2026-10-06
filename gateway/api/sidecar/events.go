@@ -26,7 +26,8 @@ import (
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string								true	"The token returned when the sidecar was created"
+//	@Param			hoop-sidecar-token	header		string								false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity	header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			request				body		openapi.SidecarSessionEventsRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarSessionEventsResponse
 //	@Failure		400,401,403,412,413,422,500	{object}	openapi.HTTPError

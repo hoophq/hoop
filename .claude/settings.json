@@ -12,7 +12,6 @@
       "Bash(gofmt:*)",
       "Bash(make test:*)",
       "Bash(make test-oss:*)",
-      "Bash(make libhoop-map:*)",
       "Bash(make generate-wasm:*)",
       "Bash(npm run lint:*)",
       "Bash(npm run build:*)",

@@ -76,6 +76,54 @@ func (cp *controlPlane) reviewer(listener, rule string) analyzer.Reviewer {
 	return planReviewer{cp: cp, listener: listener, rule: rule}
 }
 
+// LocalReviewer returns the backend one lane files held statements with when
+// the process has no control plane: the person running it, at its terminal.
+//
+// The listener names the lane, so one reviewer can tell an operator which
+// database a statement is waiting at. It never receives an approval_rule:
+// that names a rule stored in a control plane, and there is none to ask.
+type LocalReviewer func(listener string) analyzer.Reviewer
+
+// WithLocalReviewer lets a process without a control plane hold statements
+// for review: require_review files with r instead of refusing to start, and
+// such a lane needs no approval_rule.
+//
+// For an entry point that has a person in front of it, which is why only
+// `hoop start sidecar` on a terminal passes it. A control plane, when one is
+// configured, always wins: its rule decides who approves, and a local
+// reviewer never releases a statement the plane would have to authorize.
+func WithLocalReviewer(r LocalReviewer) Option {
+	return func(o *setupOptions) { o.localReviewer = r }
+}
+
+// holdRefusal is why a lane that holds statements cannot be built, or "".
+//
+// Two refusals, both at build rather than in Config.Validate for the reason
+// holdsWithoutAPlane gives. With a control plane, require_review needs an
+// approval_rule: the plane refuses a review that names none. Without one, it
+// needs a local reviewer, or there is nowhere to file the review at all.
+func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
+	if !analyzerHolds(la) {
+		return ""
+	}
+	if holdsWithoutAPlane(cfg, la, ac) {
+		if ac != nil && ac.local != nil {
+			return ""
+		}
+		return fmt.Sprintf("the analyzer block asks for %q and this sidecar has no control "+
+			"plane; the review is filed with the plane named by %s or the "+
+			"control_plane_url key, or with the person running `hoop start sidecar` "+
+			"in a terminal, and there is neither",
+			analyzer.ActionRequireReview, ControlPlaneURLEnv)
+	}
+	if la.ApprovalRule == "" {
+		return fmt.Sprintf("the analyzer block asks for %q and names no approval_rule; the "+
+			"rule is what decides who may release a held statement, and the control "+
+			"plane refuses a review that does not name one", analyzer.ActionRequireReview)
+	}
+	return ""
+}
+
 // holdsWithoutAPlane reports a lane that holds statements for approval in a
 // process that can file none.
 //
@@ -211,7 +259,13 @@ func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set(sidecarTokenHeader, cp.token)
+	// ctx bounds a metadata server fetch too: refreshing a Google ID token
+	// is part of this review call's budget, not a second one.
+	header, value, err := cp.cred.present(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set(header, value)
 
 	resp, err := controlPlaneHTTPClient().Do(req)
 	if err != nil {
@@ -229,6 +283,12 @@ func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body
 		return nil, nil, fmt.Errorf("the control plane at %s answered a review with more than "+
 			"%d bytes; check that the URL is the control plane and not something in "+
 			"front of it", cp.url, maxReviewResponse)
+	}
+	// Answered here rather than in reviewError, because only this function
+	// still holds the identity the plane refused, and the message names it.
+	// The token path keeps reviewError's wording.
+	if resp.StatusCode == http.StatusUnauthorized && header == SidecarIdentityHeader {
+		return nil, nil, identityRejected(cp.url, value, raw)
 	}
 	return resp, raw, nil
 }

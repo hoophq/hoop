@@ -38,14 +38,13 @@ import (
 
 // Options configures one lane's HTTP codec.
 //
-// Every field but CaptureRequestBody and CredentialHeader is forwarded to
-// libhoop's codechttp.Options unchanged; see there for their defaults.
+// Every field but CredentialHeader is forwarded to libhoop's
+// codechttp.Options unchanged; see there for their defaults.
 type Options struct {
 	CaptureBody bool
 
-	// CaptureRequestBody captures the bodies a client sends, and not the
-	// responses. CaptureBody implies it. A lane that holds for review sets
-	// it: the reviewer must read the body the approval releases.
+	// CaptureRequestBody is set by a lane that holds for review: the
+	// reviewer must read the body the approval releases.
 	CaptureRequestBody bool
 
 	MaxBodyBytes         int
@@ -74,13 +73,6 @@ type Codec struct {
 
 	creds credentials
 	via   viaFilter
-
-	// dropResponseBody undoes libhoop's capture on the server side. Shim for
-	// libhoop v0.0.0-20260929214837-7bf5e47c42a8, whose CaptureBody covers
-	// both directions; server WebSocket messages are still inflated before
-	// the drop. Delete it with EVL-375, when libhoop captures request bodies
-	// alone (TestLibhoopStillCapturesBothDirectionsOrNeither).
-	dropResponseBody bool
 }
 
 // New builds an HTTP codec.
@@ -105,14 +97,14 @@ func New(o Options) *Codec {
 	}
 	return &Codec{
 		Inspector: codechttp.New(codechttp.Options{
-			CaptureBody:          o.CaptureBody || o.CaptureRequestBody,
+			CaptureBody:          o.CaptureBody,
+			CaptureRequestBody:   o.CaptureRequestBody,
 			MaxBodyBytes:         o.MaxBodyBytes,
 			Headers:              headers,
 			SensitiveQueryParams: o.SensitiveQueryParams,
 			MaxMessageBytes:      o.MaxMessageBytes,
 		}),
-		creds:            credentials{header: header, keep: keep},
-		dropResponseBody: o.CaptureRequestBody && !o.CaptureBody,
+		creds: credentials{header: header, keep: keep},
 	}
 }
 
@@ -132,9 +124,6 @@ func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement,
 	stmts, n, err := c.Inspector.Decode(dir, data)
 	var liftErr error
 	for i := range stmts {
-		if dir == inspect.FromServer {
-			c.dropBody(&stmts[i])
-		}
 		stripConnectGatewayPrefix(&stmts[i])
 		if e := c.creds.lift(&stmts[i]); e != nil && liftErr == nil {
 			liftErr = e
@@ -165,17 +154,9 @@ func (c *Codec) InspectRequest(r *http.Request, body []byte) inspect.Statement {
 // InspectRequest.
 func (c *Codec) InspectResponse(resp *http.Response, req *http.Request, body []byte) inspect.Statement {
 	stmt := c.Inspector.InspectResponse(resp, req, body)
-	c.dropBody(&stmt)
 	stripConnectGatewayPrefix(&stmt)
 	c.creds.scrub(&stmt)
 	return stmt
-}
-
-// dropBody removes a server-side body the lane did not ask for.
-func (c *Codec) dropBody(stmt *inspect.Statement) {
-	if c.dropResponseBody && stmt.HTTP != nil {
-		stmt.HTTP.Body, stmt.HTTP.BodyTruncated = "", false
-	}
 }
 
 // Filter is the gate's StreamFilter: it marks client requests with Via and

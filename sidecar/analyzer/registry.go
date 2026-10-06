@@ -44,6 +44,11 @@ type Options struct {
 	// default.
 	MaxOutputTokens int
 
+	// Sampling carries the optional sampling parameters. A provider whose
+	// API has no field for a set value refuses it, so the operator learns
+	// at startup rather than reading a setting that does nothing.
+	Sampling Sampling
+
 	// HTTPClient carries every request the provider makes: model calls,
 	// and for a provider that mints its own token, the token exchange. The
 	// daemon sets it up with the process trust roots, so a model endpoint

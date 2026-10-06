@@ -86,6 +86,7 @@ type setupOptions struct {
 	token           string
 	entrypoint      string
 	deprecatedAlias bool
+	localReviewer   LocalReviewer
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -177,6 +178,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	}
 	cfg.entrypoint = o.entrypoint
 	cfg.deprecatedAlias = o.deprecatedAlias
+	cfg.localReviewer = o.localReviewer
 	cfg.configPath = path
 	setConfigFormat(cfg, path)
 	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
@@ -1015,8 +1017,12 @@ func Run(cfg *Config, det Plugin) error {
 	go rl.watchFile(ctx, log)
 
 	if cfg.Admin.Listen != "" {
+		var am *analyzerMetrics
+		if analyzerDeps != nil {
+			am = analyzerDeps.metrics
+		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, cfg.Analyzer, licState, log)
+			view, ac, cfg.Analyzer, am, licState, log)
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
@@ -1250,12 +1256,8 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		if holdsWithoutAPlane(cfg, lc.Analyzer, ac) {
-			problems = append(problems, fmt.Sprintf(
-				"%s: the analyzer block asks for %q and this sidecar has no control "+
-					"plane; the review is filed with the plane named by %s or the "+
-					"control_plane_url key, and there is nowhere else to file it",
-				name, analyzer.ActionRequireReview, ControlPlaneURLEnv))
+		if why := holdRefusal(cfg, lc.Analyzer, ac); why != "" {
+			problems = append(problems, name+": "+why)
 			continue
 		}
 
@@ -1342,16 +1344,18 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if !(opa.enabled() && opa.Gate) {
 			if lc.Analyzer != nil && lc.Analyzer.Trigger.IsZero() {
 				ln.notes = append(ln.notes,
-					"the analyzer block has no trigger, so every statement on this "+
-						"lane is classified: a model call per statement shape, bounded "+
-						"only by the cache, max_calls and rate_limit. Add a trigger to narrow it")
+					"the analyzer block has no trigger condition, so every statement on "+
+						"this lane that no trigger.exclude item names is classified: a model "+
+						"call per statement shape, bounded only by the cache, max_calls and "+
+						"rate_limit. Add a trigger to narrow it")
 			}
 			for _, r := range gc.Rules {
 				if r.Type == policy.MatchAIAnalysis && r.Trigger.IsZero() {
 					ln.notes = append(ln.notes, fmt.Sprintf(
-						"ai_analysis rule %q has no trigger, so every statement on this "+
-							"lane is classified: a model call per statement shape, bounded "+
-							"only by the cache, max_calls and rate_limit. Add a trigger to narrow it", r.Name))
+						"ai_analysis rule %q has no trigger condition, so every statement on "+
+							"this lane that no trigger.exclude item names is classified: a model "+
+							"call per statement shape, bounded only by the cache, max_calls and "+
+							"rate_limit. Add a trigger to narrow it", r.Name))
 				}
 			}
 		}
@@ -1649,6 +1653,7 @@ func serveAdmin(
 	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
+	analyzerMetrics *analyzerMetrics,
 	licState *licenseState,
 	log *slog.Logger,
 ) {
@@ -1705,6 +1710,18 @@ func serveAdmin(
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	// Prometheus text exposition. The analyzer families only, so far: the
+	// other counters this process keeps are served as JSON by /stats. A
+	// process with no analyzer answers an empty, valid document rather than
+	// 404, so a scrape job pointed at every sidecar does not mark this one
+	// down.
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", metricsContentType)
+		if err := analyzerMetrics.writeTo(w); err != nil {
+			log.Debug("metrics write failed", "error", err)
+		}
 	})
 
 	// The resolved enforcement stack, per lane.
