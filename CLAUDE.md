@@ -163,7 +163,6 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 | Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |
 | Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
 | Run tests (OSS) | `make test-oss` | Generates WASM and runs `test-sidecar` first |
-| Run tests (enterprise) | `make test-enterprise` | `make test` runs both |
 | Run `sidecar` tests only | `make test-sidecar` | Walks every `go.mod` under `sidecar/`, nested modules included |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
 | Format Swagger annotations | `make swag-fmt` | |
