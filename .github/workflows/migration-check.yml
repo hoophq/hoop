@@ -2,9 +2,6 @@ name: Migration Safety Check
 
 on:
   pull_request:
-    # PRs without migration changes get no comment.
-    paths:
-      - 'gateway/migrations/**'
 
 # A newer run for the same PR makes this one stale.
 concurrency:
@@ -118,7 +115,9 @@ jobs:
             gh pr comment "${PR_NUMBER}" --body "$COMMENT"
           fi
 
-      - name: Post No Migrations Comment
+      # Only replaces an analysis left from an earlier push (a PR that dropped
+      # its migrations). A PR that never changed migrations gets no comment.
+      - name: Update Comment When Migrations Were Removed
         if: steps.detect.outputs.has_changes == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -128,7 +127,7 @@ jobs:
           COMMENT_BODY="<!-- migration-check-bot -->
           ## Migration Safety Analysis
 
-          No database migrations were changed in this PR. Safe to deploy to sandbox."
+          This PR no longer changes database migrations. Safe to deploy to sandbox."
           EXISTING_COMMENT_ID=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
             --jq '.[] | select(.body | contains("<!-- migration-check-bot -->")) | .id' \
             | head -1)
@@ -136,6 +135,5 @@ jobs:
             gh api --method PATCH "repos/${REPO}/issues/comments/${EXISTING_COMMENT_ID}" -f body="$COMMENT_BODY"
             echo "Updated existing comment ${EXISTING_COMMENT_ID}"
           else
-            gh pr comment "${PR_NUMBER}" --body "$COMMENT_BODY"
-            echo "Posted new comment"
+            echo "No migrations changed and no earlier analysis; no comment"
           fi

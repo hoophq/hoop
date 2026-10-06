@@ -49,7 +49,8 @@ jobs:
         run: make test
 
   # Builds do not wait for test: they publish nothing. Every job that
-  # pushes an image or a file needs test.
+  # pushes an image or a file needs test and every tarball, so a failed
+  # build publishes nothing (test outlasts the builds, so this costs no time).
   build-rust-darwin:
     runs-on: macos-latest
     name: Build Darwin Rust Binaries
@@ -409,6 +410,7 @@ jobs:
     needs:
       - test
       - build-tar-files-linux
+      - build-tar-files-other
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -450,6 +452,7 @@ jobs:
     needs:
       - test
       - build-tar-files-linux
+      - build-tar-files-other
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -647,6 +650,7 @@ jobs:
     needs:
       - test
       - build-tar-files-linux
+      - build-tar-files-other
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -681,6 +685,7 @@ jobs:
     needs:
       - test
       - build-tar-files-linux
+      - build-tar-files-other
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -776,6 +781,7 @@ jobs:
     needs:
       - test
       - build-tar-files-linux
+      - build-tar-files-other
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -894,6 +900,7 @@ jobs:
     needs:
       - test
       - build-tar-files-linux
+      - build-tar-files-other
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -977,6 +984,7 @@ jobs:
     needs:
       - test
       - build-tar-files-linux
+      - build-tar-files-other
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -1072,6 +1080,7 @@ jobs:
     needs:
       - test
       - build-tar-files-linux
+      - build-tar-files-other
     continue-on-error: true
     steps:
       - name: Checkout
@@ -1126,6 +1135,7 @@ jobs:
     needs:
       - test
       - build-tar-files-linux
+      - build-tar-files-other
     continue-on-error: true
     steps:
       - name: Checkout
