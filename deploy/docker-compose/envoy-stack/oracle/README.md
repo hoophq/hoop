@@ -1,7 +1,5 @@
 # Oracle lane
 
-> hoop-inspect 0.1.0
-
 An overlay on the stack in the parent directory: Oracle Database Free behind a
 `protocol: oracle` lane, beside the postgres and HTTP ones. The lane adds no
 rules; it inherits the process's one guardrail rule and one mask rule and

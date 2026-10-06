@@ -1,11 +1,5 @@
 # sidecar
 
-> **0.1.0**: the API is settling. The config schema moved in this release.
-> `policy` split into `guardrails` and `opa`, `mask.enabled` went away, and two
-> defaults reversed. [Deprecated fields](#deprecated-fields) carries the
-> migration table and the three behaviour changes that can move traffic. The
-> Go interfaces will keep moving.
-
 Turn wire protocols into structured statements, and structured statements
 into allow/deny verdicts.
 
@@ -708,8 +702,8 @@ which is the guard: production code calling one would have to import
 
 ### Deprecated fields
 
-0.1.0 renamed six keys, removed one, and reversed two defaults. Both
-spellings load for two minor releases and the old one prints a warning.
+The schema renamed six keys, removed one, and reversed two defaults. Both
+spellings load and the old one prints a warning.
 Setting both spellings of one field at one scope refuses the config, because
 picking a winner silently would contradict the rule the decoder already
 enforces: a typo in a key must not disable a control. Read this before the
@@ -3936,6 +3930,24 @@ grpc or spanner lane, because libhoop builds that pool from
 so. Nor does it reach OPA, the Control Plane or the analytics client. A
 missing file, or one with no certificate in it, fails validation naming the
 path. The section is bound at startup; a change needs a restart.
+
+### What the sidecar calls itself
+
+Every outbound HTTP request identifies this process, so a provider's logs
+can be filtered on one prefix instead of on Go's default
+`Go-http-client/1.1`. In Cloud Logging the header is `httpRequest.userAgent`;
+in the audit log it is `requestMetadata.callerSuppliedUserAgent`:
+
+```
+hoop-sidecar/1.212.0 (analyzer/vertex; linux/amd64; go1.26.0)
+```
+
+The release is the hoop release the binary was built from, the same one
+`hoop version` prints. The comment names the component that made the call:
+`analyzer/<provider>`, `descriptors` (the `gs://` fetch), `identity/google`
+(tokeninfo), `controlplane`, `policy/opa` and `credential/gcp` (the metadata
+server). Vertex and GCS token mints carry it too, because oauth2 sends them
+over the same client. A build nobody stamped reports `unknown`.
 
 ## Limits
 

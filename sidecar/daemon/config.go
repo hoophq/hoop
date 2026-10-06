@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -574,6 +575,7 @@ func (o *OPAConfig) client(phase policy.Phase) *policy.OPAClient {
 	}
 	return &policy.OPAClient{
 		URL:           o.URL,
+		HTTPClient:    &http.Client{Transport: withUserAgent(nil, "policy/opa"), Timeout: timeout},
 		Timeout:       timeout,
 		FailOpen:      o.FailOpen,
 		Phase:         phase,

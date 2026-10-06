@@ -59,22 +59,22 @@ func loadTrustRoots(t *TrustConfig) (*x509.CertPool, error) {
 }
 
 // outboundHTTPClient is the client every outbound HTTPS call of this process
-// sends through, so the trust section reaches all of them.
+// sends through, so the trust section reaches all of them. component names
+// the caller in the User-Agent, see userAgent.
 //
-// Nil roots is the host trust store and returns a client with no settings of
-// its own, which behaves exactly as http.DefaultClient: its nil Transport is
-// http.DefaultTransport. Otherwise the transport is a clone of the default
-// one, keeping its proxy-from-environment, dial and idle settings, with only
-// RootCAs replaced. A timeout is not set here: each caller's context owns the
-// deadline of its own call.
-func outboundHTTPClient(roots *x509.CertPool) *http.Client {
+// Nil roots is the host trust store and sends through http.DefaultTransport,
+// as http.DefaultClient does. Otherwise the transport is a clone of the
+// default one, keeping its proxy-from-environment, dial and idle settings,
+// with only RootCAs replaced. A timeout is not set here: each caller's
+// context owns the deadline of its own call.
+func outboundHTTPClient(roots *x509.CertPool, component string) *http.Client {
 	if roots == nil {
-		return &http.Client{}
+		return &http.Client{Transport: withUserAgent(nil, component)}
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	if tr.TLSClientConfig == nil {
 		tr.TLSClientConfig = &tls.Config{}
 	}
 	tr.TLSClientConfig.RootCAs = roots
-	return &http.Client{Transport: tr}
+	return &http.Client{Transport: withUserAgent(tr, component)}
 }

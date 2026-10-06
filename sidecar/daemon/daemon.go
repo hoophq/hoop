@@ -54,10 +54,14 @@ import (
 	"github.com/hoophq/hoop/sidecar/store"
 )
 
-// Version is the library release, reported by the admin /stats endpoint and
-// the -version flag. Main overwrites it with the version its binary was
-// stamped with; a caller embedding Run keeps this unless it assigns its own.
-var Version = "0.1.0"
+// Version is the release this process reports: the admin /stats endpoint,
+// the -version flag, the control plane handshake and the User-Agent of every
+// outbound HTTP call. The shipped binary is `hoop start sidecar`, which sets
+// it to the hoop release the binary was built from, so the sidecar and the
+// CLI report one version. Main overwrites it with what its binary was
+// stamped with; "unknown" is a build nobody stamped, the spelling
+// common/version uses for the same case.
+var Version = "unknown"
 
 // Loader reads and validates a config file. It lets a build accept YAML
 // without the root module linking a YAML parser: pass

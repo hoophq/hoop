@@ -1,7 +1,5 @@
 # GKE Connect Gateway lane
 
-> hoop-inspect 0.1.0
-
 An overlay on the stack in the parent directory: kubectl through a GKE
 Connect Gateway, behind a customer's transparent MITM Envoy. Real kubectl
 and a real k3s API server; Google itself is faked by `fake-google`, so the

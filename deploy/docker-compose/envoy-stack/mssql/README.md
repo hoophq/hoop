@@ -1,7 +1,5 @@
 # MSSQL + Kerberos
 
-> hoop-inspect 0.1.0
-
 An overlay on the stack in the parent directory. It adds a third lane where the
 client authenticates with Kerberos, using a ticket its own OS minted, and
 hoop-inspect inspects each statement without holding a credential, reading the

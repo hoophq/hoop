@@ -23,8 +23,11 @@ COPY . .
 COPY --from=libhoop . /libhoop
 WORKDIR /src/cmd
 RUN go mod edit -replace github.com/hoophq/libhoop=/libhoop && go mod tidy
+# VERSION stamps what -version, /stats and the outbound User-Agent report;
+# unstamped reads "unknown".
+ARG VERSION=unknown
 RUN CGO_ENABLED=0 go build \
-    -ldflags "-s -w -X main.version=0.1.0" \
+    -ldflags "-s -w -X main.version=${VERSION}" \
     -o /out/hoop-inspect .
 
 FROM alpine:3.20

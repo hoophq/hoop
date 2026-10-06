@@ -1,7 +1,5 @@
 # ClickHouse lanes
 
-> hoop-inspect 0.1.0
-
 An overlay on the stack in the parent directory: one `clickhouse-server`
 behind four lanes, one per wire protocol it exposes. The lanes add no rules;
 all four inherit the process's one guardrail and one mask rule. The HTTP
