@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -294,6 +295,14 @@ func TestApprovableSidecarRule(t *testing.T) {
 				MinApprovals:         ptr.Int(0),
 			},
 		},
+		// A stored 0 would expire every review at once; the write paths store nil.
+		{name: "a stored pending limit of 0", rule: ruleWithTTLs(ptr.Int(0), nil), wantErr: "pending_ttl_sec must be between"},
+		{name: "a pending limit under a minute", rule: ruleWithTTLs(ptr.Int(59), nil), wantErr: "pending_ttl_sec must be between"},
+		{name: "a pending limit over a week", rule: ruleWithTTLs(ptr.Int(604801), nil), wantErr: "pending_ttl_sec must be between"},
+		{name: "a stored approval limit of 0", rule: ruleWithTTLs(nil, ptr.Int(0)), wantErr: "approval_ttl_sec must be between"},
+		{name: "an approval limit over a week", rule: ruleWithTTLs(nil, ptr.Int(604801)), wantErr: "approval_ttl_sec must be between"},
+		{name: "no limits pass", rule: ruleWithTTLs(nil, nil)},
+		{name: "the bounds pass", rule: ruleWithTTLs(ptr.Int(60), ptr.Int(604800))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := approvableSidecarRule(tc.rule)
@@ -304,6 +313,40 @@ func TestApprovableSidecarRule(t *testing.T) {
 			assert.ErrorContains(t, err, tc.wantErr)
 		})
 	}
+}
+
+func ruleWithTTLs(pending, approval *int) *models.AccessRequestRule {
+	rule := approvalRule()
+	rule.PendingTTLSec = pending
+	rule.ApprovalTTLSec = approval
+	return rule
+}
+
+// The limits are fixed at filing like the rest of the policy, so a rule edit
+// moves no live review.
+func TestNewSidecarReviewSnapshotsTheTTLs(t *testing.T) {
+	sc := sidecarWithListener("appdb", "payments-approvers")
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+
+	rule := ruleWithTTLs(ptr.Int(900), ptr.Int(600))
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	require.NotNil(t, rev.ExpiresAt)
+	assert.Equal(t, now.Add(15*time.Minute), *rev.ExpiresAt, "the decision deadline counts from filing")
+	require.NotNil(t, rev.ApprovalTTLSec, "the approval clock starts at the approval, so the limit is kept")
+	assert.Equal(t, 600, *rev.ApprovalTTLSec)
+
+	*rule.ApprovalTTLSec = 60
+	assert.Equal(t, 600, *rev.ApprovalTTLSec, "a copy, not the rule's pointer")
+
+	rule = ruleWithTTLs(nil, ptr.Int(600))
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	assert.Nil(t, rev.ExpiresAt, "no pending limit is no decision deadline")
+	require.NotNil(t, rev.ApprovalTTLSec)
+
+	rule = approvalRule()
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	assert.Nil(t, rev.ExpiresAt)
+	assert.Nil(t, rev.ApprovalTTLSec)
 }
 
 func groupNames(groups []models.ReviewGroups) []string {
@@ -508,6 +551,76 @@ func TestToSidecarReviewStatusOmitsStatementAndReviewers(t *testing.T) {
 	}`, string(body))
 }
 
+// The sidecar reads the deadline of a live or expired review, and nothing on
+// a settled one. With no limit the key is absent.
+func TestToSidecarReviewStatusCarriesTheDeadline(t *testing.T) {
+	deadline := time.Date(2026, 9, 28, 12, 15, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		status    models.ReviewStatusType
+		expiresAt *time.Time
+		want      bool
+	}{
+		{models.ReviewStatusPending, &deadline, true},
+		{models.ReviewStatusApproved, &deadline, true},
+		{models.ReviewStatusExpired, &deadline, true},
+		{models.ReviewStatusPending, nil, false},
+		{models.ReviewStatusRejected, &deadline, false},
+		{models.ReviewStatusRevoked, &deadline, false},
+		{models.ReviewStatusExecuted, &deadline, false},
+	} {
+		name := string(tc.status)
+		if tc.expiresAt == nil {
+			name += " with no limit"
+		}
+		t.Run(name, func(t *testing.T) {
+			rev := &models.Review{
+				ID:           "review-1",
+				Status:       tc.status,
+				ListenerName: sql.NullString{String: "appdb", Valid: true},
+				ExpiresAt:    tc.expiresAt,
+			}
+			body, err := json.Marshal(toSidecarReviewStatus(rev))
+			require.NoError(t, err)
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(body, &got))
+			if !tc.want {
+				assert.NotContains(t, got, "expires_at")
+				return
+			}
+			assert.Equal(t, "2026-09-28T12:15:00Z", got["expires_at"])
+		})
+	}
+}
+
+// The POST and claim answers carry the same deadline as the status read.
+func TestToOpenApiSidecarReviewCarriesTheDeadline(t *testing.T) {
+	deadline := time.Date(2026, 9, 28, 12, 15, 0, 0, time.UTC)
+	rev := &models.Review{
+		ID:           "review-1",
+		Status:       models.ReviewStatusPending,
+		SidecarID:    sql.NullString{String: "sidecar-1", Valid: true},
+		ListenerName: sql.NullString{String: "appdb", Valid: true},
+		ExpiresAt:    &deadline,
+	}
+	ttl := 600
+	rev.ApprovalTTLSec = &ttl
+	got := toOpenApiSidecarReview(rev)
+	require.NotNil(t, got.ExpiresAt)
+	assert.Equal(t, deadline, *got.ExpiresAt)
+	require.NotNil(t, got.ApprovalTTLSec)
+	assert.Equal(t, 600, *got.ApprovalTTLSec)
+
+	rev.Status = models.ReviewStatusExecuted
+	assert.Nil(t, toOpenApiSidecarReview(rev).ExpiresAt, "a spent approval has no deadline")
+
+	rev.Status = models.ReviewStatusPending
+	rev.ExpiresAt, rev.ApprovalTTLSec = nil, nil
+	body, err := json.Marshal(toOpenApiSidecarReview(rev))
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "expires_at", "with no limit the answer is the one an older plane gives")
+	assert.NotContains(t, string(body), "approval_ttl_sec")
+}
+
 func TestReviewDecidedAt(t *testing.T) {
 	early := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 	late := early.Add(time.Minute)
@@ -576,6 +689,13 @@ func TestNewSlackReviewRequest(t *testing.T) {
 
 	assert.Empty(t, req.SlackChannels, "notifySlack sets the channels from the listener")
 	assert.Nil(t, req.SessionTime, "a sidecar review grants no access window")
+	assert.Nil(t, req.ExpiresAt, "a rule with no limit shows no deadline")
+
+	rule = ruleWithTTLs(ptr.Int(900), nil)
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	req = newSlackReviewRequest(sc, rev, "appdb", statement)
+	require.NotNil(t, req.ExpiresAt, "the approvers see when the review expires")
+	assert.Equal(t, *rev.ExpiresAt, *req.ExpiresAt)
 }
 
 func TestSlackChannelsResponse(t *testing.T) {

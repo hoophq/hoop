@@ -56,7 +56,7 @@ func seedSidecarReview(t *testing.T, sc *models.Sidecar, statement string) *mode
 		UserEmail:      "hoop@hoop.dev",
 		CreatedAt:      time.Now().UTC(),
 	}
-	if err := models.CreateSidecarReview(models.DB, sess, rev, statement); err != nil {
+	if _, err := models.CreateSidecarReview(models.DB, sess, rev, statement); err != nil {
 		t.Fatalf("seed sidecar review: %v", err)
 	}
 	return rev
@@ -74,13 +74,13 @@ func TestGetSidecarReviewFindsASpentReview(t *testing.T) {
 	if err := models.UpdateReviewStatus(testOrgID, rev.ID, models.ReviewStatusApproved); err != nil {
 		t.Fatalf("approve the review: %v", err)
 	}
-	claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, testOrgID, rev.ID)
+	claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, testOrgID, rev.ID, time.Now().UTC())
 	if err != nil || !claimed {
 		t.Fatalf("claim the approval: claimed=%v err=%v", claimed, err)
 	}
 
 	_, err = models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb",
-		"payments-approvers", models.HashStatement([]byte(statement)))
+		"payments-approvers", models.HashStatement([]byte(statement)), time.Now().UTC())
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("the live lookup returned a spent review: err=%v", err)
 	}
@@ -111,13 +111,13 @@ func TestRefusedSidecarReviewIsNotLive(t *testing.T) {
 			if err := models.UpdateReviewStatus(testOrgID, rev.ID, status); err != nil {
 				t.Fatalf("refuse the review: %v", err)
 			}
-			_, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash)
+			_, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash, time.Now().UTC())
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				t.Fatalf("the live lookup returned a %s review: err=%v", status, err)
 			}
 
 			next := seedSidecarReview(t, sc, statement)
-			got, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash)
+			got, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash, time.Now().UTC())
 			if err != nil {
 				t.Fatalf("the live lookup lost the new review: %v", err)
 			}
@@ -190,7 +190,7 @@ func TestPendingSidecarReviewBlocksADuplicate(t *testing.T) {
 		ConnectionType: "custom", Verb: "exec", Status: "open",
 		UserID: sc.ID, UserName: sc.Name, UserEmail: "hoop@hoop.dev", CreatedAt: time.Now().UTC(),
 	}
-	err := models.CreateSidecarReview(models.DB, sess, &dup, statement)
+	_, err := models.CreateSidecarReview(models.DB, sess, &dup, statement)
 	if !errors.Is(err, gorm.ErrDuplicatedKey) {
 		t.Fatalf("a second pending review was filed: err=%v", err)
 	}
@@ -274,7 +274,7 @@ func TestUpdateSidecarReview(t *testing.T) {
 
 	t.Run("writes the decision", func(t *testing.T) {
 		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM a;")
-		if err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved); err != nil {
+		if err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved, time.Now().UTC()); err != nil {
 			t.Fatalf("revoke: %v", err)
 		}
 		got, err := models.GetSidecarReview(models.DB, testOrgID, sc.ID, rev.ID)
@@ -297,13 +297,13 @@ func TestUpdateSidecarReview(t *testing.T) {
 
 	t.Run("loses to a claim", func(t *testing.T) {
 		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM b;")
-		claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, testOrgID, rev.ID)
+		claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, testOrgID, rev.ID, time.Now().UTC())
 		if err != nil || !claimed {
 			t.Fatalf("claim: claimed=%v err=%v", claimed, err)
 		}
 		before := sessionStatus(t, rev.SessionID)
 
-		err = models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved)
+		err = models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved, time.Now().UTC())
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Fatalf("a stale decision returned %v, want gorm.ErrRecordNotFound", err)
 		}
@@ -326,7 +326,7 @@ func TestUpdateSidecarReview(t *testing.T) {
 		other := seedApprovedSidecarReview(t, sc, "DELETE FROM d;")
 		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM e;")
 		before := sessionStatus(t, other.SessionID)
-		if err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved); err != nil {
+		if err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved, time.Now().UTC()); err != nil {
 			t.Fatalf("revoke: %v", err)
 		}
 		got, err := models.GetSidecarReview(models.DB, testOrgID, sc.ID, other.ID)
@@ -346,7 +346,7 @@ func TestUpdateSidecarReview(t *testing.T) {
 		if err := models.DB.Exec(`UPDATE private.reviews SET listener_name = NULL WHERE id = ?`, rev.ID).Error; err != nil {
 			t.Fatalf("clear listener: %v", err)
 		}
-		err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved)
+		err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved, time.Now().UTC())
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Fatalf("returned %v, want gorm.ErrRecordNotFound", err)
 		}

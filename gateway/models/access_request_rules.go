@@ -47,6 +47,11 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `gorm:"column:access_max_duration"`
 	MinApprovals      *int `gorm:"column:min_approvals"`
 
+	// PendingTTLSec and ApprovalTTLSec limit a sidecar review, in seconds; nil
+	// is no limit. Only an AccessTypeSidecar rule on a control plane sets them.
+	PendingTTLSec  *int `gorm:"column:pending_ttl_sec"`
+	ApprovalTTLSec *int `gorm:"column:approval_ttl_sec"`
+
 	RuleAttributes []AccessRequestRuleAttribute `gorm:"foreignKey:OrgID,AccessRuleName;references:OrgID,Name"`
 
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`

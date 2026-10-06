@@ -27,8 +27,8 @@ type messageStore interface {
 	// that has not settled.
 	hasTracked(reviewID string) (bool, error)
 	// update returns the messages req rewrites, and records req when it is
-	// terminal. A revoke rewrites what an approval did; any other request
-	// after a terminal one rewrites nothing.
+	// terminal. A revoke or an expiry rewrites what an approval did; any
+	// other request after a terminal one rewrites nothing.
 	update(req *UpdateReviewMessageRequest) ([]sentReviewMessage, error)
 }
 
@@ -36,13 +36,23 @@ type messageStore interface {
 type settledReview struct {
 	req *UpdateReviewMessageRequest
 	at  time.Time
-	// items are the messages an approval rewrote, kept so a revoke can rewrite
-	// them again. Empty for every other terminal state.
+	// items are the messages an approval rewrote, kept so a revoke or an expiry
+	// can rewrite them again. Empty for every other terminal state.
 	items []sentReviewMessage
+	// deadline is the approval deadline, so the items outlive it.
+	deadline *time.Time
+}
+
+// trackedUntil: from + sentReviewRetention, counted from the deadline when it is later.
+func trackedUntil(from time.Time, deadline *time.Time) time.Time {
+	if deadline != nil && deadline.After(from) {
+		from = *deadline
+	}
+	return from.Add(sentReviewRetention)
 }
 
 // memoryMessageStore keeps the messages in process. Entries are removed on
-// terminal updates and expire after sentReviewRetention. The zero value is
+// terminal updates and expire after trackedUntil. The zero value is
 // ready to use.
 type memoryMessageStore struct {
 	mu    sync.Mutex
@@ -59,12 +69,12 @@ func (s *memoryMessageStore) track(reviewID string, m sentReviewMessage) (*Updat
 	defer s.mu.Unlock()
 	// lazy eviction keeps the maps bounded without a janitor goroutine
 	for id, items := range s.items {
-		if len(items) > 0 && now.Sub(items[0].sentAt) > sentReviewRetention {
+		if len(items) > 0 && now.After(trackedUntil(items[0].sentAt, items[0].deadline)) {
 			delete(s.items, id)
 		}
 	}
 	for id, sr := range s.settledReviews {
-		if now.Sub(sr.at) > sentReviewRetention {
+		if now.After(trackedUntil(sr.at, sr.deadline)) {
 			delete(s.settledReviews, id)
 		}
 	}
@@ -94,12 +104,12 @@ func (s *memoryMessageStore) hasTracked(reviewID string) (bool, error) {
 }
 
 func (s *memoryMessageStore) update(req *UpdateReviewMessageRequest) ([]sentReviewMessage, error) {
-	done := req.IsApproved || req.IsRejected || req.IsRevoked
+	done := req.isDone()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	items := s.items[req.ReviewID]
-	if req.IsRevoked {
-		// The approval already consumed the tracked messages.
+	if req.IsRevoked || req.IsExpired {
+		// An approval already consumed the tracked messages.
 		items = append(items, s.settledReviews[req.ReviewID].items...)
 	}
 	if done {
@@ -110,6 +120,7 @@ func (s *memoryMessageStore) update(req *UpdateReviewMessageRequest) ([]sentRevi
 		settled := settledReview{req: req, at: time.Now().UTC()}
 		if req.IsApproved {
 			settled.items = items
+			settled.deadline = req.ExpiresAt
 		}
 		s.settledReviews[req.ReviewID] = settled
 	}
@@ -137,7 +148,7 @@ func (s *dbMessageStore) track(reviewID string, m sentReviewMessage) (*UpdateRev
 	}
 	err = models.InsertSlackReviewMessage(s.db, models.SlackReviewMessage{
 		ReviewID: reviewID, OrgID: s.orgID, ChannelID: m.channelID, Timestamp: m.timestamp,
-		EventKind: m.eventKind, Blocks: blocks, SentAt: m.sentAt,
+		EventKind: m.eventKind, Blocks: blocks, SentAt: m.sentAt, Deadline: m.deadline,
 	}, sentReviewRetention)
 	if err != nil {
 		return nil, err
@@ -171,24 +182,33 @@ func (s *dbMessageStore) update(req *UpdateReviewMessageRequest) ([]sentReviewMe
 	if err != nil {
 		return nil, err
 	}
-	if req.IsApproved || req.IsRejected || req.IsRevoked {
+	if req.isDone() {
 		encoded, err := json.Marshal(req)
 		if err != nil {
 			return nil, fmt.Errorf("encoding the review settlement: %w", err)
 		}
-		applied, err := models.UpsertSlackReviewSettlement(s.db, models.SlackReviewSettlement{
-			ReviewID: req.ReviewID, OrgID: s.orgID, Request: encoded, Rewritable: req.IsApproved,
-		})
+		st := models.SlackReviewSettlement{ReviewID: req.ReviewID, OrgID: s.orgID, Request: encoded,
+			Rewritable: req.IsApproved}
+		if req.IsApproved {
+			st.Deadline = req.ExpiresAt
+		}
+		applied, err := models.UpsertSlackReviewSettlement(s.db, st)
 		if err != nil {
 			return nil, err
 		}
-		// The review was revoked first, and this request lost the race:
-		// rewriting would put the revoked message back to its old state.
+		// The review was revoked or expired first, and this request lost the
+		// race: rewriting would put the message back to its old state.
 		if !applied {
 			return nil, nil
 		}
+		// An expiry rewrites these messages at the approval deadline.
+		if st.Deadline != nil {
+			if err := models.ExtendSlackReviewMessagesDeadline(s.db, req.ReviewID, *st.Deadline); err != nil {
+				return nil, err
+			}
+		}
 	}
-	if prev != nil && !(req.IsRevoked && prev.Rewritable) {
+	if prev != nil && !((req.IsRevoked || req.IsExpired) && prev.Rewritable) {
 		return nil, nil
 	}
 	rows, err := models.ListSlackReviewMessages(s.db, req.ReviewID)
@@ -202,7 +222,7 @@ func (s *dbMessageStore) update(req *UpdateReviewMessageRequest) ([]sentReviewMe
 			return nil, fmt.Errorf("decoding the blocks of review message %s/%s: %w", r.ChannelID, r.Timestamp, err)
 		}
 		items = append(items, sentReviewMessage{channelID: r.ChannelID, timestamp: r.Timestamp,
-			eventKind: r.EventKind, blocks: blocks.BlockSet, sentAt: r.SentAt})
+			eventKind: r.EventKind, blocks: blocks.BlockSet, sentAt: r.SentAt, deadline: r.Deadline})
 	}
 	return items, nil
 }

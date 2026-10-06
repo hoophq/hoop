@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -75,7 +76,7 @@ func (e ruleNotAuthorized) Error() string {
 // PostReview
 //
 //	@Summary		Create Sidecar Review
-//	@Description	Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body.
+//	@Description	Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body. A review of the same bytes past its deadline is expired and a new one is filed.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -154,20 +155,22 @@ func PostReview(c *gin.Context) {
 	// Two passes. A match can be consumed between the read and the insert, and
 	// an insert can lose the index to a racing request whose review is then
 	// consumed before the re-read. Either way one more pass settles it.
+	// One clock for both, so the insert expires the holder the read found lapsed.
+	now := time.Now().UTC()
 	const attempts = 2
 	for range attempts {
 		rev, err := models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
-			req.ListenerName, rule.Name, statementHash)
+			req.ListenerName, rule.Name, statementHash, now)
 		switch {
 		case err == nil:
-			answerExistingReview(c, sidecar, req.ListenerName, rev)
+			answerExistingReview(c, sidecar, req.ListenerName, rev, time.Now().UTC())
 			return
 		case !errors.Is(err, gorm.ErrRecordNotFound):
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
 			return
 		}
 
-		rev, err = createSidecarReview(sidecar, req.ListenerName, display, statementHash, rule, policy)
+		rev, expiredIDs, err := createSidecarReview(sidecar, req.ListenerName, display, statementHash, rule, policy, now)
 		switch {
 		case errors.Is(err, gorm.ErrDuplicatedKey):
 			// A racing request filed first. Look again rather than answer: its
@@ -180,6 +183,15 @@ func PostReview(c *gin.Context) {
 			// columns, and a token holder has no use for any of that.
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar review")
 			return
+		}
+
+		if len(expiredIDs) > 0 {
+			log.With("review-id", rev.ID, "expired", expiredIDs, "sidecar", sidecar.Name).
+				Infof("expired the lapsed review of this statement")
+			// Detached like notifySlack, and only when there is a Slack to rewrite.
+			if slackservice.GetServiceInstance(sidecar.OrgID) != nil {
+				go reviewapi.PublishSidecarExpiry(sidecar.OrgID, expiredIDs)
+			}
 		}
 
 		answerFiledReview(c, sidecar, req, rule, rev, display)
@@ -197,7 +209,7 @@ func PostReview(c *gin.Context) {
 // ClaimReview
 //
 //	@Summary		Claim Sidecar Review
-//	@Description	Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement; any other status is returned as it stands. It never files a review.
+//	@Description	Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement; a review past its deadline is expired and never releases it; any other status is returned as it stands. It never files a review.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
@@ -231,13 +243,13 @@ func ClaimReview(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
 		return
 	}
-	answerExistingReview(c, sidecar, rev.ListenerName.String, rev)
+	answerExistingReview(c, sidecar, rev.ListenerName.String, rev, time.Now().UTC())
 }
 
 // GetReview
 //
 //	@Summary		Get Sidecar Review Status
-//	@Description	Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement.
+//	@Description	Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement or its approval expires. A review past its deadline reads EXPIRED.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
@@ -286,7 +298,7 @@ const (
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
 //	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
-//	@Param			status				query		string	false	"Only reviews in this status"	Enums(PENDING, APPROVED, REJECTED, REVOKED, PROCESSING, EXECUTED, UNKNOWN)
+//	@Param			status				query		string	false	"Only reviews in this status"	Enums(PENDING, APPROVED, REJECTED, REVOKED, PROCESSING, EXECUTED, EXPIRED, UNKNOWN)
 //	@Param			limit				query		int		false	"The most reviews to return, 1 to 200"	default(50)
 //	@Success		200					{array}		openapi.SidecarReviewStatus
 //	@Failure		400,401,500			{object}	openapi.HTTPError
@@ -301,7 +313,7 @@ func ListReviews(c *gin.Context) {
 	switch status {
 	case "", models.ReviewStatusPending, models.ReviewStatusApproved, models.ReviewStatusRejected,
 		models.ReviewStatusRevoked, models.ReviewStatusProcessing, models.ReviewStatusExecuted,
-		models.ReviewStatusUnknown:
+		models.ReviewStatusExpired, models.ReviewStatusUnknown:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("unknown review status %q", c.Query("status"))})
 		return
@@ -376,38 +388,41 @@ func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 	})
 }
 
-// answerExistingReview answers a retry against the review already filed for its
-// statement, and a waiting sidecar's claim of it by id (ClaimReview). PENDING,
-// REJECTED, REVOKED and EXECUTED come back as they stand, so a
-// rejection keeps denying instead of being retried into a fresh review.
-// APPROVED is claimed here, and only the claim's winner may forward.
-func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review) {
+// answerExistingReview answers a retry, or a claim by id, from the filed review. Only the
+// claim's winner of an APPROVED review forwards; a lapsed one is expired; others return as they stand.
+func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review, now time.Time) {
 	forward := false
 	if rev.Status == models.ReviewStatusApproved {
-		claimed, status, err := models.ClaimApprovedSidecarReview(models.DB, sidecar.OrgID, rev.ID)
-		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err,
-				"failed consuming the approved sidecar review")
+		var ok bool
+		if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, now); !ok {
 			return
 		}
-		// The status the row holds now, so a claim loser reports EXECUTED
-		// rather than the APPROVED it read a moment earlier. It is forward,
-		// not this, that says whether the statement may run.
+	}
+
+	// A lost claim leaves the row APPROVED only when the deadline refused it, by
+	// the database clock, which can pass it while the request waits on the lock.
+	refusedByDeadline := rev.Status == models.ReviewStatusApproved
+	if !forward && (refusedByDeadline || lapsedSidecarReview(rev, now)) {
+		expired, status, err := models.ExpireSidecarReview(models.DB, sidecar.OrgID, rev.ID, now)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed expiring the sidecar review")
+			return
+		}
 		rev.Status = status
-		forward = claimed
-
-		if claimed {
+		if expired {
 			log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
-				"listener", listenerName).
-				Infof("consumed an approved sidecar review")
-
-			trackClient := analytics.New()
-			defer trackClient.Close()
-			trackClient.TrackEvent(analytics.EventConsumeSidecarReview, map[string]any{
-				"org-id":   sidecar.OrgID,
-				"sidecar":  sidecar.Name,
-				"listener": listenerName,
-			})
+				"listener", listenerName).Infof("expired a sidecar review")
+			if slackservice.GetServiceInstance(sidecar.OrgID) != nil {
+				go reviewapi.PublishSidecarExpiry(sidecar.OrgID, []string{rev.ID})
+			}
+		}
+		// An approval committed after the read and moved the deadline. The
+		// sidecar reads APPROVED with forward false as final, so claim it now.
+		if status == models.ReviewStatusApproved {
+			var ok bool
+			if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, time.Now().UTC()); !ok {
+				return
+			}
 		}
 	}
 
@@ -415,6 +430,48 @@ func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName 
 		Forward: forward,
 		Review:  toOpenApiSidecarReview(rev),
 	})
+}
+
+// lapsedSidecarReview: the review read as live, or as EXPIRED before the row
+// records it, and its deadline passed at now.
+func lapsedSidecarReview(rev *models.Review, now time.Time) bool {
+	switch rev.Status {
+	case models.ReviewStatusPending, models.ReviewStatusApproved, models.ReviewStatusExpired:
+		return rev.ExpiresAt != nil && !now.Before(*rev.ExpiresAt)
+	}
+	return false
+}
+
+// claimSidecarApproval consumes an approved review and reports whether this
+// request won it. ok is false when it already answered the request.
+func claimSidecarApproval(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review,
+	now time.Time) (forward, ok bool) {
+	claimed, status, err := models.ClaimApprovedSidecarReview(models.DB, sidecar.OrgID, rev.ID, now)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+			"failed consuming the approved sidecar review")
+		return false, false
+	}
+	// The status the row holds now, so a claim loser reports EXECUTED
+	// rather than the APPROVED it read a moment earlier. It is forward,
+	// not this, that says whether the statement may run.
+	rev.Status = status
+	if !claimed {
+		return false, true
+	}
+
+	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
+		"listener", listenerName).
+		Infof("consumed an approved sidecar review")
+
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.TrackEvent(analytics.EventConsumeSidecarReview, map[string]any{
+		"org-id":   sidecar.OrgID,
+		"sidecar":  sidecar.Name,
+		"listener": listenerName,
+	})
+	return true, true
 }
 
 // notifySlack posts the review to the org's Slack channel, so a human learns it
@@ -497,6 +554,9 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		// FullApiURL, not ApiURL: the latter drops the configured path prefix,
 		// which lands the approver outside the app wherever one is set.
 		WebappURL: fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), rev.SessionID),
+
+		// The decision deadline; nil with no limit.
+		ExpiresAt: rev.ExpiresAt,
 	}
 }
 
@@ -541,6 +601,14 @@ func approvableSidecarRule(rule *models.AccessRequestRule) error {
 			return fmt.Errorf("access request rule %q sets min_approvals to %d, more than its %d reviewers_groups",
 				rule.Name, min, len(rule.ReviewersGroups))
 		}
+	}
+
+	// The rule write paths check these too, but a stored value is not trusted.
+	if err := services.CheckSidecarReviewTTL("pending_ttl_sec", rule.PendingTTLSec); err != nil {
+		return fmt.Errorf("access request rule %q: %w", rule.Name, err)
+	}
+	if err := services.CheckSidecarReviewTTL("approval_ttl_sec", rule.ApprovalTTLSec); err != nil {
+		return fmt.Errorf("access request rule %q: %w", rule.Name, err)
 	}
 	return nil
 }
@@ -636,25 +704,41 @@ func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, 
 
 // createSidecarReview writes the session and the review one statement needs to
 // wait for a human. It returns gorm.ErrDuplicatedKey when a racing request
-// filed for the same bytes first.
+// filed for the same bytes first, and the ids of the lapsed reviews it expired.
 //
 // Both rows point at the listener's mirror connection when the org has one,
 // so the review and the session show the resource the admin sees. An org
 // without mirrors (beta.sidecar_listeners off) files them as before, with the
 // listener alone.
-func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy) (*models.Review, error) {
-	now := time.Now().UTC()
+func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) (*models.Review, []string, error) {
 	sessionID := uuid.NewString()
 
 	mirror, err := models.GetSidecarMirror(models.DB, sidecar.OrgID, sidecar.ID, listenerName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("failed reading the listener's mirror connection: %w", err)
+		return nil, nil, fmt.Errorf("failed reading the listener's mirror connection: %w", err)
 	}
 
 	// A review is one per session (private.reviews is UNIQUE on org and
 	// session), and UpdateReview syncs the session's status when the review
 	// settles, so the session is not optional bookkeeping.
-	sess := models.Session{
+	sess := newSidecarSession(sidecar, sessionID, display, now)
+
+	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
+	if mirror != nil {
+		sess.Connection = mirror.Name
+		rev.ConnectionName = mirror.Name
+		rev.ConnectionID = sql.NullString{String: mirror.ID, Valid: true}
+	}
+	expiredIDs, err := models.CreateSidecarReview(models.DB, sess, rev, display)
+	if err != nil {
+		return nil, nil, err
+	}
+	return rev, expiredIDs, nil
+}
+
+// newSidecarSession is the session a sidecar review waits in. Its user is the sidecar.
+func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, now time.Time) models.Session {
+	return models.Session{
 		ID:             sessionID,
 		OrgID:          sidecar.OrgID,
 		BlobInput:      models.BlobInputType(display),
@@ -666,17 +750,6 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 		UserEmail:      reviewOwnerEmail,
 		CreatedAt:      now,
 	}
-
-	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
-	if mirror != nil {
-		sess.Connection = mirror.Name
-		rev.ConnectionName = mirror.Name
-		rev.ConnectionID = sql.NullString{String: mirror.ID, Valid: true}
-	}
-	if err := models.CreateSidecarReview(models.DB, sess, rev, display); err != nil {
-		return nil, err
-	}
-	return rev, nil
 }
 
 // newSidecarReview builds the row, and with it the whole approval policy the
@@ -712,8 +785,20 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		ForceApprovalGroups:   rule.ForceApprovalGroups,
 		AccessRequestRuleName: &rule.Name,
 
+		// Fixed at filing like the policy, so a rule edit moves no live review.
+		ExpiresAt:      models.SidecarReviewDeadline(now, rule.PendingTTLSec),
+		ApprovalTTLSec: copyInt(rule.ApprovalTTLSec),
+
 		CreatedAt: now,
 	}
+}
+
+func copyInt(v *int) *int {
+	if v == nil {
+		return nil
+	}
+	n := *v
+	return &n
 }
 
 // toOpenApiSidecarReview renders what the sidecar needs to recognise the review
@@ -743,6 +828,9 @@ func toOpenApiSidecarReview(r *models.Review) *openapi.Review {
 		// rule held a statement rather than only which rule it asked for.
 		AccessRequestRuleName: r.AccessRequestRuleName,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
+
+		ExpiresAt:      r.SidecarExpiresAt(),
+		ApprovalTTLSec: r.SidecarApprovalTTLSec(),
 	}
 }
 
@@ -755,6 +843,7 @@ func toSidecarReviewStatus(r *models.Review) *openapi.SidecarReviewStatus {
 		CreatedAt:       r.CreatedAt,
 		DecidedAt:       reviewDecidedAt(r),
 		RejectionReason: r.RejectionReason,
+		ExpiresAt:       r.SidecarExpiresAt(),
 	}
 }
 

@@ -521,7 +521,7 @@ type SidecarReviewResponse struct {
 	//
 	// True only on the request that consumed an approved review, and only
 	// once per review. False while the review waits, and false forever once
-	// it is rejected or revoked.
+	// it is rejected, revoked or expired.
 	Forward bool `json:"forward" example:"false"`
 	// The review the statement is waiting on, or the one that released it
 	Review *Review `json:"review"`
@@ -540,6 +540,7 @@ type SidecarReviewStatus struct {
 	// * REJECTED - Rejected; the statement will not run
 	// * REVOKED - Revoked after approval
 	// * EXECUTED - The approval was consumed by a resent statement
+	// * EXPIRED - The review passed its deadline; it never releases the statement
 	Status ReviewStatusType `json:"status" readonly:"true"`
 	// The sidecar listener this review is bound to
 	ListenerName string `json:"listener_name" readonly:"true" example:"appdb"`
@@ -551,6 +552,9 @@ type SidecarReviewStatus struct {
 	DecidedAt *time.Time `json:"decided_at" readonly:"true" example:"2024-07-25T16:01:12.000Z"`
 	// The reason the reviewer gave when rejecting the review
 	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"Not during business hours."`
+	// The decision deadline while PENDING, the approval deadline once APPROVED,
+	// the deadline that passed when EXPIRED. Absent with no limit
+	ExpiresAt *time.Time `json:"expires_at,omitempty" readonly:"true" example:"2024-07-25T16:11:35.000Z"`
 }
 
 type SidecarHandshakeRequest struct {
@@ -1487,6 +1491,7 @@ const (
 	ReviewStatusProcessing ReviewStatusType = "PROCESSING"
 	ReviewStatusExecuted   ReviewStatusType = "EXECUTED"
 	ReviewStatusUnknown    ReviewStatusType = "UNKNOWN"
+	ReviewStatusExpired    ReviewStatusType = "EXPIRED"
 
 	ReviewStatusRequestApprovedType ReviewRequestStatusType = ReviewRequestStatusType(ReviewStatusApproved)
 	ReviewStatusRequestRejectedType ReviewRequestStatusType = ReviewRequestStatusType(ReviewStatusRejected)
@@ -1569,6 +1574,7 @@ type Review struct {
 	// * PROCESSING - The review is being executed
 	// * EXECUTED - The review was executed
 	// * UNKNOWN - Unable to know the status of the review
+	// * EXPIRED - A sidecar review passed its deadline; it never releases the statement
 	Status ReviewStatusType `json:"status"`
 	// The time when this review was revoked
 	RevokeAt *time.Time `json:"revoke_at" readonly:"true" example:""`
@@ -1592,6 +1598,12 @@ type Review struct {
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
 	// The connection the review was filed against. On a sidecar review, the resource that mirrors the listener; absent while the organization has no mirror for it
 	Connection *ReviewConnection `json:"connection,omitempty" readonly:"true"`
+	// The deadline of a sidecar review: to decide while PENDING, to use the
+	// approval once APPROVED. Absent with no limit or on a review from a connection
+	ExpiresAt *time.Time `json:"expires_at,omitempty" readonly:"true" example:"2024-07-25T16:11:35.000Z"`
+	// The time a sidecar approval lasts, in seconds, copied from the rule at
+	// filing. Absent with no limit or on a review from a connection
+	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" readonly:"true" example:"600"`
 }
 
 type ReviewOwner struct {
@@ -3958,6 +3970,12 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals" example:"2"`
+	// Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules
+	// only; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule
+	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
+	// Seconds a sidecar approval lasts from the approval, 60 to 604800, or 0 for none. The same rules as
+	// pending_ttl_sec
+	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" example:"600"`
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
 	// protection profile; only approval settings and group lists can be
 	// changed on managed rules, and they cannot be deleted
@@ -3995,6 +4013,12 @@ type AccessRequestRuleRequest struct {
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
+	// Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules
+	// only; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule
+	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
+	// Seconds a sidecar approval lasts from the approval, 60 to 604800, or 0 for none. The same rules as
+	// pending_ttl_sec
+	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" example:"600"`
 }
 
 type AIProviderRequest struct {
@@ -4093,6 +4117,12 @@ type AISessionAnalyzerRuleRequest struct {
 	//
 	// Read only while sidecar_spec holds a statement.
 	ReviewersGroups *[]string `json:"reviewers_groups,omitempty" example:"dba-leads"`
+
+	// Seconds a held statement's review may wait for a decision, 60 to 604800. Control plane, read only while
+	// sidecar_spec holds under its own approval rule. Absent keeps, 0 clears
+	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
+	// Seconds an approval lasts from the approval, 60 to 604800. The same rules as pending_ttl_sec
+	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" example:"600"`
 }
 
 type AISessionAnalyzerRule struct {
@@ -4120,6 +4150,11 @@ type AISessionAnalyzerRule struct {
 	// The groups whose members may release a statement this rule holds.
 	// Present while the rule holds.
 	ReviewersGroups []string `json:"reviewers_groups,omitempty" example:"dba-leads"`
+	// Seconds a held statement's review may wait for a decision. Present only in a control plane, while the
+	// rule holds and the limit is set
+	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
+	// Seconds an approval lasts from the approval. Present as pending_ttl_sec is
+	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" example:"600"`
 
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
 	// protection profile; managed rules are read-only through this API

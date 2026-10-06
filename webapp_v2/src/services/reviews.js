@@ -10,6 +10,8 @@ export const reviewsService = {
    *
    * → [{ id, session, type, status, created_at, review_groups_data, ... }]
    *   status ∈ PENDING | APPROVED | REJECTED | REVOKED | PROCESSING | EXECUTED | UNKNOWN
+   *   | EXPIRED (sidecar reviews only). A sidecar review with a time limit also
+   *   carries expires_at and approval_ttl_sec.
    */
   list: () => api.get('/reviews'),
   get: (id) => api.get(`/reviews/${encodeURIComponent(id)}`),

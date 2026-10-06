@@ -17,7 +17,7 @@ import (
 )
 
 // seedReviewingSidecar stores a sidecar whose appdb listener files reviews
-// under payments-approvers, and that rule.
+// under payments-approvers, and that rule when the database has none yet.
 func seedReviewingSidecar(t *testing.T, name string) *models.Sidecar {
 	t.Helper()
 	sc := &models.Sidecar{

@@ -7,7 +7,9 @@ import {
   CircleUser,
   Container,
   Hash,
+  Hourglass,
   OctagonX,
+  Timer,
   Package,
   Users,
 } from 'lucide-react'
@@ -25,6 +27,7 @@ import {
   canReject,
   canRevoke,
   decidedGroups,
+  expiryLabel,
   isSettled,
   reviewSource,
   statusLabel,
@@ -138,6 +141,7 @@ export default function ReviewModal({
   const mayApprove = canApprove(review, user)
   const mayReject = canReject(review, user)
   const revocable = canRevoke(review)
+  const expiry = expiryLabel(review)
 
   return (
     <Modal opened={opened} onClose={onClose} title="Review Details" size="xl">
@@ -193,6 +197,25 @@ export default function ReviewModal({
             </Text>
           </DetailRow>
 
+          {expiry && (
+            <DetailRow icon={Hourglass} label={expiry}>
+              <Text size="sm" fw={500}>
+                {formatFullDate(review.expires_at)}
+                <Text span size="sm" c="dimmed">
+                  {` (${formatRelativeTime(review.expires_at)})`}
+                </Text>
+              </Text>
+            </DetailRow>
+          )}
+
+          {review.status === STATUS.PENDING && review.approval_ttl_sec > 0 && (
+            <DetailRow icon={Timer} label="Approval lasts">
+              <Text size="sm" fw={500}>
+                {`${Math.max(1, Math.round(review.approval_ttl_sec / 60))} minutes`}
+              </Text>
+            </DetailRow>
+          )}
+
           <DetailRow icon={Hash} label="ID">
             <Text size="sm" fw={500}>
               {review.id}
@@ -203,6 +226,12 @@ export default function ReviewModal({
         {review.rejection_reason && (
           <Alert color="red" variant="light" radius="md" title="Rejection reason">
             {review.rejection_reason}
+          </Alert>
+        )}
+
+        {review.status === STATUS.EXPIRED && (
+          <Alert color="gray" variant="light" radius="md" title="Review expired">
+            Nothing was released. Running the statement again files a new review.
           </Alert>
         )}
 

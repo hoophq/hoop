@@ -35,6 +35,7 @@ var (
 	ErrForbidden            = errors.New("forbidden")
 	ErrUnknownStatus        = errors.New("unknown status")
 	ErrNoTimeWindow         = errors.New("a review bound to a listener takes no time window")
+	ErrExpired              = errors.New("review expired")
 )
 
 type TransportReleaseConnectionFunc func(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason, rejectedBy string)
@@ -166,7 +167,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	req.Status = openapi.ReviewRequestStatusType(strings.ToUpper(string(req.Status)))
 	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow, req.ForceReview, req.RejectionReason)
 	switch err {
-	case ErrNotEligible, ErrSelfApproval, ErrWrongState, ErrNoTimeWindow:
+	case ErrNotEligible, ErrSelfApproval, ErrWrongState, ErrNoTimeWindow, ErrExpired:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	case ErrForbidden:
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "access denied"})
@@ -223,7 +224,8 @@ func UpdateSlackMessage(rev *models.Review) error {
 // slackReviewUpdate is the rewrite a review state asks for, or nil for none.
 func slackReviewUpdate(rev *models.Review) *slackservice.UpdateReviewMessageRequest {
 	switch rev.Status {
-	case models.ReviewStatusPending, models.ReviewStatusApproved, models.ReviewStatusRejected:
+	case models.ReviewStatusPending, models.ReviewStatusApproved, models.ReviewStatusRejected,
+		models.ReviewStatusExpired:
 	case models.ReviewStatusRevoked:
 		// A gateway message keeps its approval; only a sidecar revokes one.
 		if !IsSidecarReview(rev) {
@@ -237,11 +239,16 @@ func slackReviewUpdate(rev *models.Review) *slackservice.UpdateReviewMessageRequ
 		ReviewID:    rev.ID,
 		IsApproved:  rev.Status == models.ReviewStatusApproved,
 		IsRejected:  rev.Status == models.ReviewStatusRejected,
+		IsExpired:   rev.Status == models.ReviewStatusExpired,
 		IsRevoked:   rev.Status == models.ReviewStatusRevoked,
 		TotalGroups: len(rev.ReviewGroups),
 		// Shown on the message, so a reviewer in Slack sees why, whether the
 		// rejection came from Slack, the web app or the API.
 		RejectionReason: ptr.ToString(rev.RejectionReason),
+	}
+	// The approval deadline. It is nil on a gateway review.
+	if rev.Status == models.ReviewStatusApproved {
+		req.ExpiresAt = rev.SidecarExpiresAt()
 	}
 	for _, rg := range rev.ReviewGroups {
 		if rg.Status == models.ReviewStatusPending {
@@ -305,6 +312,11 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		}
 	}
 
+	// A lapsed sidecar review never takes a decision. The read reports EXPIRED
+	// before the row records it.
+	if IsSidecarReview(rev) && rev.Status == models.ReviewStatusExpired {
+		return nil, refuseExpiredSidecarDecision(ctx, rev, status)
+	}
 	if timeWindow != nil {
 		if rev.TimeWindow != nil {
 			return nil, fmt.Errorf("time window can only be set once")
@@ -356,7 +368,8 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 }
 
 // persistDecision writes the decision. On a sidecar review it loses to the
-// sidecar's claim with ErrWrongState, never success on a statement that ran.
+// sidecar's claim with ErrWrongState, never success on a statement that ran,
+// and to an expiry with ErrExpired.
 func persistDecision(rev *models.Review, fromStatus models.ReviewStatusType) error {
 	if !IsSidecarReview(rev) {
 		if err := models.UpdateReview(rev); err != nil {
@@ -364,9 +377,10 @@ func persistDecision(rev *models.Review, fromStatus models.ReviewStatusType) err
 		}
 		return nil
 	}
-	err := models.UpdateSidecarReview(models.DB, rev, fromStatus)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ErrWrongState
+	err := models.UpdateSidecarReview(models.DB, rev, fromStatus, time.Now().UTC())
+	if errors.Is(err, models.ErrSidecarReviewExpired) || errors.Is(err, gorm.ErrRecordNotFound) {
+		// A claim, an expiry or another decision won; the row tells which.
+		return expireSidecarDecision(rev.OrgID, rev.ID, "")
 	}
 	if err != nil {
 		return fmt.Errorf("failed updating review state, reason=%v", err)
@@ -640,6 +654,8 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		SidecarID:             nullStringPtr(r.SidecarID),
 		ListenerName:          nullStringPtr(r.ListenerName),
 		Connection:            reviewConnection(r),
+		ExpiresAt:             r.SidecarExpiresAt(),
+		ApprovalTTLSec:        r.SidecarApprovalTTLSec(),
 	}
 }
 

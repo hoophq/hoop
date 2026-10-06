@@ -1379,8 +1379,8 @@ skip the review. A library caller that runs `analyzer.Evaluator` outside a
 its connection for up to 30 minutes, on every protocol. Every 5 seconds the relay asks the plane
 about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never
 files a review. An approval that lands in time runs the statement on the same
-connection, late. A rejection, a revocation, or an approval another connection
-already used ends the wait at once and denies. The review id is in every
+connection, late. A rejection, a revocation, an expiry, or an approval another
+connection already used ends the wait at once and denies. The review id is in every
 denial:
 
 ```
@@ -1410,6 +1410,17 @@ Slack message says the approval was revoked. Once the sidecar uses the
 approval, the review is `EXECUTED` and a revoke answers 400: the statement
 already ran. Any decision that loses that race to the sidecar answers 400
 the same way.
+
+**A review can expire.** The control plane's approval rule may set two limits
+on the analyzer rule form: `pending_ttl_sec`, the time to decide, and
+`approval_ttl_sec`, the time to use an approval, counted from the approval.
+Past either limit the review is `EXPIRED`: nothing is released, the relay
+denies with `the review expired; running the statement again files a new
+review`, and the next run of the statement files a new review. The limits are
+copied into the review when it is filed, so a later rule change does not move
+them. A pending limit above the 30-minute hold does not make a hold wait
+longer. A relay older than the limits says `the statement was not released`
+instead. The sidecar has no setting for either limit.
 
 The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first

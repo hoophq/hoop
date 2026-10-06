@@ -140,6 +140,7 @@ func TestAnUnreleasedReviewDeniesAndNamesIt(t *testing.T) {
 		{"rejected", "REJECTED", "was rejected"},
 		{"revoked", "REVOKED", "was revoked"},
 		{"claim lost", "EXECUTED", "already used"},
+		{"expired", "EXPIRED", "review expired; running the statement again files a new review"},
 		{"unknown status", "SOMETHING_NEW", "not released"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -506,6 +507,7 @@ func TestASettledReviewEndsTheWait(t *testing.T) {
 		{"rejected", "REJECTED", "was rejected"},
 		{"revoked", "REVOKED", "was revoked"},
 		{"spent elsewhere", "EXECUTED", "already used"},
+		{"expired", "EXPIRED", "review expired"},
 		{"unknown status", "SOMETHING_NEW", "not released"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -755,6 +757,7 @@ func TestReturnModeNamesASettledReview(t *testing.T) {
 	for status, want := range map[string]string{
 		"REJECTED": "was rejected",
 		"REVOKED":  "was revoked",
+		"EXPIRED":  "review expired",
 	} {
 		t.Run(status, func(t *testing.T) {
 			rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: status}}
