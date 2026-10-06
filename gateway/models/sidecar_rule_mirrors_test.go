@@ -61,7 +61,7 @@ func seedMirrorFixture(t *testing.T) mirrorFixture {
 }
 
 // seedListenerBindings writes rules bound by listener name, as every gateway
-// before 000132 stored them. Positions run against name order, so a move that
+// before 000132 stored them. Positions run against name order, so a copy that
 // drops them reorders the lane.
 func seedListenerBindings(t *testing.T, f mirrorFixture) {
 	t.Helper()
@@ -129,6 +129,21 @@ func execScan(t *testing.T, dest any, query string, args ...any) {
 	}
 }
 
+// oldGatewayView is every row a gateway older than 000132 reads to compose a
+// sidecar's rules: the listener tables, nothing else.
+func oldGatewayView(t *testing.T) []string {
+	t.Helper()
+	var rows []string
+	execScan(t, &rows, `
+	SELECT 'guardrail/' || guardrail_rule_name || '/' || listener_name || '/' || position FROM private.guardrail_rules_listeners
+	UNION ALL
+	SELECT 'datamasking/' || datamasking_rule_name || '/' || listener_name || '/' || position FROM private.datamasking_rules_listeners
+	UNION ALL
+	SELECT 'analyzer/' || analyzer_rule_name || '/' || listener_name || '/' || position FROM private.ai_session_analyzer_rules_listeners
+	ORDER BY 1`)
+	return rows
+}
+
 func countRows(t *testing.T, query string, args ...any) int {
 	t.Helper()
 	var n int
@@ -147,8 +162,8 @@ func withSession(t *testing.T, inst *pglite.Instance, fn func()) {
 	})
 }
 
-// 000132 moves every binding whose listener has a mirror onto the mirror. The
-// sidecar must receive the same document before the move, after it, and after
+// 000132 copies every binding whose listener has a mirror onto the mirror. The
+// sidecar must receive the same document before the copy, after it, and after
 // the rollback.
 func TestRulesOnMirrorsMigrationServesTheSameConfig(t *testing.T) {
 	if testing.Short() {
@@ -164,10 +179,12 @@ func TestRulesOnMirrorsMigrationServesTheSameConfig(t *testing.T) {
 
 	var f mirrorFixture
 	var before string
+	var oldView []string
 	withSession(t, inst, func() {
 		f = seedMirrorFixture(t)
 		seedListenerBindings(t, f)
 		before = servedDocument(t, f.sc)
+		oldView = oldGatewayView(t)
 	})
 	// The comparison proves nothing over a document that carries no rule.
 	gb, ga := strings.Index(before, `"g-b"`), strings.Index(before, `"g-a"`)
@@ -193,13 +210,13 @@ func TestRulesOnMirrorsMigrationServesTheSameConfig(t *testing.T) {
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(rulesOnMirrorsVersion) })
 	withSession(t, inst, func() {
 		if after := servedDocument(t, f.sc); after != before {
-			t.Fatalf("the served document changed with the move\nbefore: %s\nafter:  %s", before, after)
+			t.Fatalf("the served document changed with the copy\nbefore: %s\nafter:  %s", before, after)
 		}
-		if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_listeners WHERE listener_name = 'appdb'`); n != 0 {
-			t.Errorf("a mirrored listener must keep no listener binding, got %d", n)
-		}
-		if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_listeners WHERE listener_name = 'reports'`); n != 1 {
-			t.Errorf("a listener with no mirror keeps its binding, got %d", n)
+		// A gateway still on the old code, in a rolling deploy or after an
+		// image rollback, reads only the listener tables. It must find every
+		// rule where it was, or it serves the sidecar no rules at all.
+		if got := oldGatewayView(t); !equalStrings(got, oldView) {
+			t.Errorf("an older gateway reads different bindings after the copy\nbefore: %v\nafter:  %v", oldView, got)
 		}
 		var onMirror []struct {
 			Name     string
@@ -237,14 +254,14 @@ func TestRulesOnMirrorsMigrationServesTheSameConfig(t *testing.T) {
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(rulesOnMirrorsVersion) })
 	withSession(t, inst, func() {
 		if after := servedDocument(t, f.sc); after != before {
-			t.Fatalf("the served document changed after a rollback and a new move\nbefore: %s\nafter:  %s", before, after)
+			t.Fatalf("the served document changed after a rollback and a new copy\nbefore: %s\nafter:  %s", before, after)
 		}
 	})
 }
 
 // A mirror made after 000132 (a fallback name, an org that turns the flag on)
 // takes the bindings of its listener when the mirror writer runs.
-func TestTheMirrorWriterMovesBindingsOntoANewMirror(t *testing.T) {
+func TestTheMirrorWriterCopiesBindingsOntoANewMirror(t *testing.T) {
 	startTestDB(t)
 	f := seedMirrorFixture(t)
 	seedListenerBindings(t, f)
@@ -260,12 +277,14 @@ func TestTheMirrorWriterMovesBindingsOntoANewMirror(t *testing.T) {
 	}
 
 	if after := servedDocument(t, f.sc); after != before {
-		t.Fatalf("the served document changed with the move\nbefore: %s\nafter:  %s", before, after)
+		t.Fatalf("the served document changed with the copy\nbefore: %s\nafter:  %s", before, after)
 	}
-	for _, table := range []string{"guardrail_rules_listeners", "datamasking_rules_listeners", "ai_session_analyzer_rules_listeners"} {
-		if n := countRows(t, `SELECT count(*) FROM private.`+table); n != 0 {
-			t.Errorf("%s: both listeners have a mirror now, want no listener binding, got %d", table, n)
-		}
+	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_connections g
+		JOIN private.connections c ON c.id = g.connection_id WHERE c.sidecar_listener = 'reports'`); n != 1 {
+		t.Errorf("want g-c copied onto the new reports mirror, got %d", n)
+	}
+	if got := oldGatewayView(t); len(got) != 5 {
+		t.Errorf("the listener rows stay for older gateways, got %v", got)
 	}
 	targets, err := models.ListGuardrailRuleTargets(models.DB, uuid.MustParse(testOrgID), "g-c")
 	if err != nil {
@@ -300,6 +319,10 @@ func TestASidecarTargetIsStoredOnTheMirror(t *testing.T) {
 	}
 	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_listeners WHERE listener_name = 'reports'`); n != 1 {
 		t.Fatalf("want the reports binding on its listener, got %d", n)
+	}
+	// Dual write: an older gateway reads the appdb binding from the listener.
+	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_listeners WHERE listener_name = 'appdb'`); n != 1 {
+		t.Fatalf("want the appdb binding on its listener too, got %d", n)
 	}
 	if lane := composedLane(t, f.sc, "appdb"); lane.Guardrails == nil || len(lane.Guardrails.Rules) != 1 {
 		t.Errorf("want the rule served on appdb, got %+v", lane.Guardrails)

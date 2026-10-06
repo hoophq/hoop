@@ -2,10 +2,14 @@ BEGIN;
 
 SET search_path TO private;
 
--- A sidecar rule binding moves from the listener name to the listener's
--- mirror connection (000128), the resource the admin sees. A listener with no
--- mirror (beta.sidecar_listeners off) keeps its bindings in *_rules_listeners;
--- services.SyncSidecarListenerConnectionsTx moves them when the mirror comes.
+-- A sidecar rule binding is bound to the listener's mirror connection (000128),
+-- the resource the admin sees. A listener with no mirror (beta.sidecar_listeners
+-- off) keeps its bindings in *_rules_listeners only;
+-- services.SyncSidecarListenerConnectionsTx copies them when the mirror comes.
+--
+-- Expand phase: this COPIES and keeps every *_rules_listeners row. A gateway
+-- older than this migration reads only those rows, and during a rolling deploy
+-- or after an image rollback it must go on serving every rule.
 
 -- The analyzer has no connection junction, only connection_names. Keyed by
 -- the rule name as the listener and attribute junctions are, so a rename
@@ -32,28 +36,22 @@ WHERE c.id = g.connection_id AND c.sidecar_id IS NOT NULL;
 DELETE FROM datamasking_rules_connections d USING connections c
 WHERE c.id = d.connection_id AND c.sidecar_id IS NOT NULL;
 
--- The move. The position is kept: the sidecar evaluates rules in order.
+-- The copy. The position is kept: the sidecar evaluates rules in order.
 INSERT INTO guardrail_rules_connections (org_id, rule_id, connection_id, position)
 SELECT b.org_id, r.id, c.id, b.position
 FROM guardrail_rules_listeners b
 JOIN guardrail_rules r ON r.org_id = b.org_id AND r.name = b.guardrail_rule_name
 JOIN connections c ON c.org_id = b.org_id AND c.sidecar_id = b.sidecar_id AND c.sidecar_listener = b.listener_name;
-DELETE FROM guardrail_rules_listeners b USING connections c
-WHERE c.org_id = b.org_id AND c.sidecar_id = b.sidecar_id AND c.sidecar_listener = b.listener_name;
 
 INSERT INTO datamasking_rules_connections (org_id, rule_id, connection_id, position)
 SELECT b.org_id, r.id, c.id, b.position
 FROM datamasking_rules_listeners b
 JOIN datamasking_rules r ON r.org_id = b.org_id AND r.name = b.datamasking_rule_name
 JOIN connections c ON c.org_id = b.org_id AND c.sidecar_id = b.sidecar_id AND c.sidecar_listener = b.listener_name;
-DELETE FROM datamasking_rules_listeners b USING connections c
-WHERE c.org_id = b.org_id AND c.sidecar_id = b.sidecar_id AND c.sidecar_listener = b.listener_name;
 
 INSERT INTO ai_session_analyzer_rules_connections (org_id, analyzer_rule_name, connection_id, position)
 SELECT b.org_id, b.analyzer_rule_name, c.id, b.position
 FROM ai_session_analyzer_rules_listeners b
 JOIN connections c ON c.org_id = b.org_id AND c.sidecar_id = b.sidecar_id AND c.sidecar_listener = b.listener_name;
-DELETE FROM ai_session_analyzer_rules_listeners b USING connections c
-WHERE c.org_id = b.org_id AND c.sidecar_id = b.sidecar_id AND c.sidecar_listener = b.listener_name;
 
 COMMIT;

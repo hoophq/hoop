@@ -23,7 +23,7 @@ func (e ErrSidecarListenerInvalid) Error() string { return e.Err.Error() }
 func (e ErrSidecarListenerInvalid) Unwrap() error { return e.Err }
 
 // SyncSidecarListenerConnectionsTx writes the mirror of every listener of sc,
-// in the transaction that stored its configuration, then moves the rule
+// in the transaction that stored its configuration, then copies the rule
 // bindings of each mirrored listener onto its mirror. Every write of the
 // configuration must call it.
 //
@@ -44,7 +44,7 @@ func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
 		return err
 	}
 	// A listener that just got its mirror takes its rule bindings with it.
-	return models.MoveSidecarBindingsToMirrorsTx(tx, sc.OrgID, sc.ID)
+	return models.CopySidecarBindingsToMirrorsTx(tx, sc.OrgID, sc.ID)
 }
 
 // ReconcileSidecarListenerConnections writes the mirrors of every sidecar of
