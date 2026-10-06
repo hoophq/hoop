@@ -28,7 +28,7 @@ export default function SidecarSourceModal({ opened, toConfigFile, boundRules, o
     <Modal
       opened={opened}
       onClose={onClose}
-      title={toConfigFile ? 'Use the sidecar configuration file?' : 'Let the control plane own the configuration?'}
+      title={toConfigFile ? 'Use the sidecar configuration file?' : 'Let Hoop own the configuration?'}
       size="md"
     >
       <Stack>
@@ -37,7 +37,7 @@ export default function SidecarSourceModal({ opened, toConfigFile, boundRules, o
             <Alert color="red" variant="light" radius="md" icon={<TriangleAlert size={16} />}>
               <Stack gap={4}>
                 <Text size="sm" fw={600}>
-                  This deletes control-plane rules.
+                  This deletes the rules stored in Hoop.
                 </Text>
                 {counts.length > 0 ? (
                   <>
@@ -53,19 +53,19 @@ export default function SidecarSourceModal({ opened, toConfigFile, boundRules, o
                     </Text>
                   </>
                 ) : (
-                  <Text size="sm">No control-plane rule is bound to this sidecar now.</Text>
+                  <Text size="sm">No rule stored in Hoop is bound to this sidecar now.</Text>
                 )}
               </Stack>
             </Alert>
             <Text size="sm">
-              The sidecar will use only the rules in its configuration file. The control plane sends only its license
-              and cannot manage its features.
+              The sidecar will use only the rules in its configuration file. Hoop sends only its license and cannot
+              manage its features.
             </Text>
           </>
         ) : (
           <Text size="sm">
-            The configuration file replaces the stored document. The sidecar sends its file to the control plane on its
-            next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session Analyzer.
+            The configuration file replaces the stored document. The sidecar sends its file to Hoop on its next
+            check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session Analyzer.
           </Text>
         )}
         <Group justify="flex-end" mt="xs">
@@ -73,7 +73,7 @@ export default function SidecarSourceModal({ opened, toConfigFile, boundRules, o
             Cancel
           </Button>
           <Button color={toConfigFile ? 'red' : undefined} onClick={onConfirm} loading={loading}>
-            {toConfigFile ? 'Delete rules and use file' : 'Use the control plane'}
+            {toConfigFile ? 'Delete rules and use file' : 'Manage in Hoop'}
           </Button>
         </Group>
       </Stack>

@@ -48,7 +48,7 @@ function withLanes(targets, sidecar, lanes, on) {
 }
 
 export const ruleErrorMessage = (error) =>
-  error?.response?.data?.message || error?.message || 'The control plane refused the change.'
+  error?.response?.data?.message || error?.message || 'Hoop refused the change.'
 
 // The record read back whole plus the new targets, since PUT replaces every
 // field it names. One request per rule, nothing atomic; failures are returned.

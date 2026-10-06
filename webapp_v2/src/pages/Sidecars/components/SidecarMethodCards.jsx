@@ -14,7 +14,7 @@ const METHODS = [
     icon: PlugZap,
     title: 'Connect an existing Sidecar',
     description:
-      'Link a sidecar that already runs in your infrastructure. You get a token to point it to this control plane.',
+      'Link a sidecar that already runs in your infrastructure. You get a token to point it to Hoop.',
     action: 'Connect',
     path: CONNECT_PATH,
   },

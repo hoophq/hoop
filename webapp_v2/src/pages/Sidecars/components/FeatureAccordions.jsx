@@ -9,7 +9,7 @@ import classes from './FeatureAccordions.module.css'
 
 const SOURCE_LABELS = {
   [SOURCE_LISTENER]: { label: 'Listener', color: 'indigo' },
-  [SOURCE_DISTRIBUTED]: { label: 'Control plane', color: 'sky' },
+  [SOURCE_DISTRIBUTED]: { label: 'Hoop', color: 'sky' },
   [SOURCE_SIDECAR]: { label: 'Sidecar', color: 'gray' },
 }
 

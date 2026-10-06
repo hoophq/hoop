@@ -11,7 +11,7 @@ export default function DeleteListenerModal({ label, lastOne, opened, onClose, o
       <Stack>
         <Stack gap={4}>
           <Text size="sm">
-            {`This removes the listener "${label ?? ''}" from the configuration the control plane serves, along with any guardrails and masking rules written on it.`}
+            {`This removes the listener "${label ?? ''}" from the configuration Hoop serves, along with any guardrails and masking rules written on it.`}
           </Text>
           {lastOne && (
             <Text size="sm" c="red">

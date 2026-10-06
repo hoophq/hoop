@@ -25,7 +25,7 @@ import {
 export const saveErrorMessage = (error) => {
   const { problems, message } = error?.response?.data ?? {}
   if (problems?.length) return problems.join('. ')
-  return message || error?.message || 'The control plane refused the change.'
+  return message || error?.message || 'Hoop refused the change.'
 }
 
 /**

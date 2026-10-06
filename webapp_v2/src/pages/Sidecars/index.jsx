@@ -39,7 +39,7 @@ export default function Sidecars() {
           <Stack gap="sm">
             <Title order={1}>Sidecars</Title>
             <Text size="lg" c="dimmed">
-              Connect existing sidecars to this control plane, or create a new one.
+              Connect your existing sidecars, or create a new one.
             </Text>
           </Stack>
           {count > 0 && (
