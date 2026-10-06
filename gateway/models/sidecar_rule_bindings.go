@@ -114,14 +114,14 @@ func DetachSidecarRulesTx(tx *gorm.DB, orgID uuid.UUID, sidecarID string) (Detac
 	}
 	for _, j := range sidecarRuleJunctions {
 		var unbound, onMirrors []string
-		err := tx.Raw(`DELETE FROM `+j.listeners+` WHERE org_id = ? AND sidecar_id = ? RETURNING `+j.listenerCol,
+		err := tx.Raw(`DELETE FROM `+j.listeners+` WHERE org_id = ? AND sidecar_id = ? RETURNING `+j.ruleCol,
 			orgID, sidecarID).Scan(&unbound).Error
 		if err != nil {
 			return out, err
 		}
-		err = tx.Raw(`DELETE FROM `+j.mirrors+` m USING `+j.rules+` r, private.connections c
-		WHERE `+j.mirrorJoin+` AND c.id = m.connection_id AND c.org_id = ? AND c.sidecar_id = ?
-		RETURNING r.name`, orgID, sidecarID).Scan(&onMirrors).Error
+		err = tx.Raw(`DELETE FROM `+j.mirrors+` m USING private.connections c
+		WHERE c.id = m.connection_id AND c.org_id = ? AND c.sidecar_id = ?
+		RETURNING m.`+j.ruleCol, orgID, sidecarID).Scan(&onMirrors).Error
 		if err != nil {
 			return out, err
 		}
@@ -133,10 +133,10 @@ func DetachSidecarRulesTx(tx *gorm.DB, orgID uuid.UUID, sidecarID string) (Detac
 		err = tx.Raw(`
 		DELETE FROM `+j.rules+` r
 		WHERE r.org_id = ? AND r.name IN ? AND r.imported_from_sidecar = ? AND `+j.rulepackFree+`
-		  AND NOT EXISTS (SELECT 1 FROM `+j.listeners+` l WHERE l.org_id = r.org_id AND l.`+j.listenerCol+` = r.name)
-		  AND NOT EXISTS (SELECT 1 FROM `+j.mirrors+` m WHERE `+j.mirrorJoin+`)
-		  AND NOT EXISTS (SELECT 1 FROM `+j.attributes+` a WHERE a.org_id = r.org_id AND a.`+j.listenerCol+` = r.name)
-		  AND NOT (`+j.namedConnections+`)
+		  AND NOT EXISTS (SELECT 1 FROM `+j.listeners+` l WHERE l.org_id = r.org_id AND l.`+j.ruleCol+` = r.name)
+		  AND NOT EXISTS (SELECT 1 FROM `+j.mirrors+` m WHERE m.org_id = r.org_id AND m.`+j.ruleCol+` = r.name)
+		  AND NOT EXISTS (SELECT 1 FROM `+j.attributes+` a WHERE a.org_id = r.org_id AND a.`+j.ruleCol+` = r.name)
+		  AND NOT (`+j.gatewayBound+`)
 		RETURNING r.name`, orgID, unbound, sidecarID).Scan(&deleted).Error
 		if err != nil {
 			return out, err

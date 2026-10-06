@@ -86,9 +86,6 @@ func CreateDataMaskingRuleTx(tx *gorm.DB, rule *DataMaskingRule) error {
 		}
 		return err
 	}
-	if err := refuseMirrorConnectionsTx(tx, rule.OrgID, rule.ConnectionIDs); err != nil {
-		return err
-	}
 	for _, connID := range rule.ConnectionIDs {
 		err := tx.Exec(`
 			INSERT INTO private.datamasking_rules_connections (org_id, rule_id, connection_id)
@@ -143,12 +140,8 @@ func UpdateDataMaskingRuleTx(tx *gorm.DB, rule *DataMaskingRule) error {
 		return ErrNotFound
 	}
 
-	// The rows on sidecar mirrors stay: the rule's sidecar targets own them.
-	if err := refuseMirrorConnectionsTx(tx, rule.OrgID, rule.ConnectionIDs); err != nil {
-		return err
-	}
 	err := tx.Table("private.datamasking_rules_connections").
-		Where("org_id = ? AND rule_id = ? AND "+notMirrorConnection, rule.OrgID, rule.ID).
+		Where("org_id = ? AND rule_id = ?", rule.OrgID, rule.ID).
 		Delete(&DataMaskingRule{}).
 		Error
 	if err != nil {
@@ -198,7 +191,7 @@ func ListDataMaskingRules(orgID string, opts ...DataMaskingListOption) ([]DataMa
 		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id, r.managed_by, r.sidecar_spec,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
-			WHERE org_id = ? AND rule_id = r.id AND status = 'active' AND `+notMirrorConnection+`
+			WHERE org_id = ? AND rule_id = r.id AND status = 'active'
 		) AS connection_ids,
 		COALESCE((
 			SELECT ARRAY_AGG(attribute_name) FROM private.datamasking_rules_attributes
@@ -219,7 +212,7 @@ func GetDataMaskingRuleByID(orgID, ruleID string) (*DataMaskingRule, error) {
 		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id, r.managed_by, r.sidecar_spec,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
-			WHERE org_id = ? AND rule_id = r.id AND status = 'active' AND `+notMirrorConnection+`
+			WHERE org_id = ? AND rule_id = r.id AND status = 'active'
 		) AS connection_ids,
 		COALESCE((
 			SELECT ARRAY_AGG(attribute_name) FROM private.datamasking_rules_attributes
@@ -322,11 +315,7 @@ func DeleteDataMaskingRule(orgID, ruleID string) error {
 
 func UpdateDataMaskingRuleConnection(orgID, connectionID string, items []DataMaskingRuleConnection) ([]DataMaskingRuleConnection, error) {
 	return items, DB.Table("private.datamasking_rules_connections").Transaction(func(tx *gorm.DB) error {
-		mirror, err := mirrorRulesUnchangedTx(tx, "private.datamasking_rules_connections", orgID, connectionID, dataMaskingRuleIDs(items))
-		if err != nil || mirror {
-			return err
-		}
-		err = tx.Exec(`DELETE FROM private.datamasking_rules_connections WHERE org_id = ? AND connection_id = ?`,
+		err := tx.Exec(`DELETE FROM private.datamasking_rules_connections WHERE org_id = ? AND connection_id = ?`,
 			orgID, connectionID).
 			Error
 		if err != nil {
@@ -337,12 +326,4 @@ func UpdateDataMaskingRuleConnection(orgID, connectionID string, items []DataMas
 		}
 		return nil
 	})
-}
-
-func dataMaskingRuleIDs(items []DataMaskingRuleConnection) []string {
-	ids := make([]string, 0, len(items))
-	for _, it := range items {
-		ids = append(ids, it.RuleID)
-	}
-	return ids
 }

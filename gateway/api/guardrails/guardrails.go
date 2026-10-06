@@ -65,7 +65,7 @@ func validateOssRulesLimitations(req *openapi.GuardRailRuleRequest) error {
 //	@Produce		json
 //	@Param			request		body		openapi.GuardRailRuleRequest	true	"The request body resource"
 //	@Success		201			{object}	openapi.GuardRailRuleResponse
-//	@Failure		400,409,422,500	{object}	openapi.HTTPError
+//	@Failure		400,403,409,422,500	{object}	openapi.HTTPError
 //	@Router			/guardrails [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -140,9 +140,6 @@ func Post(c *gin.Context) {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 		return
-	case models.ErrSidecarMirrorRuleBinding:
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
 	case nil:
 		targets, loadErr := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name)
 		if loadErr != nil {
@@ -176,7 +173,7 @@ func Post(c *gin.Context) {
 //	@Produce		json
 //	@Param			request	body		openapi.GuardRailRuleRequest	true	"The request body resource"
 //	@Success		200		{object}	openapi.GuardRailRuleResponse
-//	@Failure		400,422,500	{object}	openapi.HTTPError
+//	@Failure		400,403,422,500	{object}	openapi.HTTPError
 //	@Router			/guardrails/{id} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -262,9 +259,6 @@ func Put(c *gin.Context) {
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
-		return
-	case models.ErrSidecarMirrorRuleBinding:
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	case nil:
 		targets, loadErr := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name)

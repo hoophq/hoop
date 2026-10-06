@@ -2,8 +2,7 @@ package models
 
 import (
 	"database/sql"
-	"errors"
-	"maps"
+	"slices"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -16,77 +15,58 @@ import (
 //     reads and writes only that table, and during a rolling deploy or after
 //     an image rollback its writes must count, a removed binding included.
 //     The served document and every read come from it.
-//   - The rule's connection junction holds the same binding on the mirror, the
-//     resource the admin sees. Every write here keeps it in step, and
+//   - *_rules_mirrors holds the same binding on the mirror, the resource the
+//     admin sees. Every write here keeps it in step, and
 //     SyncSidecarBindingsToMirrorsTx repairs what an older gateway changed.
+//
+// The mirror rows are not in *_rules_connections: those carry a rule's
+// connection_ids, a public API field, and keep their meaning.
 //
 // The contract phase, once no older gateway runs, reads the mirror rows and
 // drops the listener rows of mirrored listeners.
 
-// ErrSidecarMirrorRuleBinding is a write that changes the rules of a mirror
-// connection through a connection list. The sidecar path owns those rows: it
-// checks every binding against what the sidecar can run before it stores it.
-var ErrSidecarMirrorRuleBinding = errors.New("the connection mirrors a sidecar listener; bind a rule to it through the rule's sidecar_targets")
-
 // sidecarRuleJunction names the tables of one rule kind. Every value is a
-// constant below, never input, so the queries can splice them.
+// constant below, never input, so the queries can splice them. Every table
+// keys the rule by name in ruleCol.
 type sidecarRuleJunction struct {
-	kind        string
-	rules       string
-	listeners   string
-	listenerCol string
-	attributes  string
-	// mirrors is the connection junction. mirrorJoin joins its row m to the
-	// rule row r; mirrorRuleCol and mirrorRuleValue are the rule key it holds,
-	// and mirrorConflict is its unique key.
-	mirrors, mirrorJoin, mirrorRuleCol, mirrorRuleValue, mirrorConflict string
-	// rulepackFree and namedConnections are SQL over r for the detach.
-	rulepackFree, namedConnections string
+	kind, rules, ruleCol, listeners, mirrors, attributes string
+	// rulepackFree and gatewayBound are SQL over the rule row r for the
+	// detach: the rule has no rulepack, and the rule is bound to a gateway
+	// connection.
+	rulepackFree, gatewayBound string
 }
 
 var (
 	guardrailJunction = sidecarRuleJunction{
-		kind:             "guardrail",
-		rules:            "private.guardrail_rules",
-		listeners:        "private.guardrail_rules_listeners",
-		listenerCol:      "guardrail_rule_name",
-		attributes:       "private.guardrail_rules_attributes",
-		mirrors:          "private.guardrail_rules_connections",
-		mirrorJoin:       "r.id = m.rule_id",
-		mirrorRuleCol:    "rule_id",
-		mirrorRuleValue:  "r.id",
-		mirrorConflict:   "rule_id, connection_id",
-		rulepackFree:     "r.rulepack_id IS NULL",
-		namedConnections: "FALSE",
+		kind:         "guardrail",
+		rules:        "private.guardrail_rules",
+		ruleCol:      "guardrail_rule_name",
+		listeners:    "private.guardrail_rules_listeners",
+		mirrors:      "private.guardrail_rules_mirrors",
+		attributes:   "private.guardrail_rules_attributes",
+		rulepackFree: "r.rulepack_id IS NULL",
+		gatewayBound: "EXISTS (SELECT 1 FROM private.guardrail_rules_connections c WHERE c.rule_id = r.id)",
 	}
 	datamaskingJunction = sidecarRuleJunction{
-		kind:             "datamasking",
-		rules:            "private.datamasking_rules",
-		listeners:        "private.datamasking_rules_listeners",
-		listenerCol:      "datamasking_rule_name",
-		attributes:       "private.datamasking_rules_attributes",
-		mirrors:          "private.datamasking_rules_connections",
-		mirrorJoin:       "r.id = m.rule_id",
-		mirrorRuleCol:    "rule_id",
-		mirrorRuleValue:  "r.id",
-		mirrorConflict:   "rule_id, connection_id",
-		rulepackFree:     "r.rulepack_id IS NULL",
-		namedConnections: "FALSE",
+		kind:         "datamasking",
+		rules:        "private.datamasking_rules",
+		ruleCol:      "datamasking_rule_name",
+		listeners:    "private.datamasking_rules_listeners",
+		mirrors:      "private.datamasking_rules_mirrors",
+		attributes:   "private.datamasking_rules_attributes",
+		rulepackFree: "r.rulepack_id IS NULL",
+		gatewayBound: "EXISTS (SELECT 1 FROM private.datamasking_rules_connections c WHERE c.rule_id = r.id)",
 	}
 	analyzerJunction = sidecarRuleJunction{
-		kind:            "analyzer",
-		rules:           "private.ai_session_analyzer_rules",
-		listeners:       "private.ai_session_analyzer_rules_listeners",
-		listenerCol:     "analyzer_rule_name",
-		attributes:      "private.ai_session_analyzer_rules_attributes",
-		mirrors:         "private.ai_session_analyzer_rules_connections",
-		mirrorJoin:      "r.org_id = m.org_id AND r.name = m.analyzer_rule_name",
-		mirrorRuleCol:   "analyzer_rule_name",
-		mirrorRuleValue: "r.name",
-		mirrorConflict:  "org_id, analyzer_rule_name, connection_id",
-		rulepackFree:    "TRUE",
+		kind:         "analyzer",
+		rules:        "private.ai_session_analyzer_rules",
+		ruleCol:      "analyzer_rule_name",
+		listeners:    "private.ai_session_analyzer_rules_listeners",
+		mirrors:      "private.ai_session_analyzer_rules_mirrors",
+		attributes:   "private.ai_session_analyzer_rules_attributes",
+		rulepackFree: "TRUE",
 		// The gateway binds an analyzer by connection name, not by junction.
-		namedConnections: "COALESCE(array_length(r.connection_names, 1), 0) > 0",
+		gatewayBound: "COALESCE(array_length(r.connection_names, 1), 0) > 0",
 	}
 	sidecarRuleJunctions = []sidecarRuleJunction{guardrailJunction, datamaskingJunction, analyzerJunction}
 )
@@ -97,7 +77,7 @@ func (j sidecarRuleJunction) boundRows() string {
 	return `
 	SELECT b.sidecar_id::text AS sidecar_id, b.listener_name, b.position, r.name AS rule_name, r.sidecar_spec
 	FROM ` + j.listeners + ` b
-	JOIN ` + j.rules + ` r ON r.org_id = b.org_id AND r.name = b.` + j.listenerCol + `
+	JOIN ` + j.rules + ` r ON r.org_id = b.org_id AND r.name = b.` + j.ruleCol + `
 	WHERE b.org_id = @org`
 }
 
@@ -158,17 +138,27 @@ func (j sidecarRuleJunction) setTargetsTx(tx *gorm.DB, orgID uuid.UUID, ruleName
 	if err != nil {
 		return err
 	}
+	// The lock the mirror writer takes. Without it, a mirror made while this
+	// runs can miss a binding this writes, and the reverse.
+	sidecars := make([]string, 0, len(stored)+len(targets))
+	for _, s := range stored {
+		sidecars = append(sidecars, s.SidecarID)
+	}
+	for _, t := range targets {
+		sidecars = append(sidecars, t.SidecarID)
+	}
+	if err := lockSidecarsTx(tx, orgID, sidecars); err != nil {
+		return err
+	}
 	kept := map[string]int{}
 	for _, s := range stored {
 		kept[s.SidecarID+"/"+s.ListenerName] = s.Position
 	}
-	err = tx.Exec(`DELETE FROM `+j.listeners+` WHERE org_id = ? AND `+j.listenerCol+` = ?`, orgID, ruleName).Error
+	err = tx.Exec(`DELETE FROM `+j.listeners+` WHERE org_id = ? AND `+j.ruleCol+` = ?`, orgID, ruleName).Error
 	if err != nil {
 		return err
 	}
-	err = tx.Exec(`DELETE FROM `+j.mirrors+` m USING `+j.rules+` r, private.connections c
-	WHERE `+j.mirrorJoin+` AND c.id = m.connection_id AND c.sidecar_id IS NOT NULL
-	  AND r.org_id = ? AND r.name = ?`, orgID, ruleName).Error
+	err = tx.Exec(`DELETE FROM `+j.mirrors+` WHERE org_id = ? AND `+j.ruleCol+` = ?`, orgID, ruleName).Error
 	if err != nil {
 		return err
 	}
@@ -193,10 +183,7 @@ func (j sidecarRuleJunction) setTargetsTx(tx *gorm.DB, orgID uuid.UUID, ruleName
 		if err != nil {
 			return err
 		}
-		// The listener row first: its foreign key refuses a rule that does
-		// not exist, which the INSERT ... SELECT on the mirror would skip
-		// without a word.
-		err = tx.Exec(`INSERT INTO `+j.listeners+` (org_id, `+j.listenerCol+`, sidecar_id, listener_name, position)
+		err = tx.Exec(`INSERT INTO `+j.listeners+` (org_id, `+j.ruleCol+`, sidecar_id, listener_name, position)
 		VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`, orgID, ruleName, t.SidecarID, t.ListenerName, pos).Error
 		if err != nil {
 			return err
@@ -204,9 +191,8 @@ func (j sidecarRuleJunction) setTargetsTx(tx *gorm.DB, orgID uuid.UUID, ruleName
 		if mirrorID == "" {
 			continue
 		}
-		err = tx.Exec(`INSERT INTO `+j.mirrors+` (org_id, `+j.mirrorRuleCol+`, connection_id, position)
-		SELECT r.org_id, `+j.mirrorRuleValue+`, ?, ? FROM `+j.rules+` r WHERE r.org_id = ? AND r.name = ?
-		ON CONFLICT DO NOTHING`, mirrorID, pos, orgID, ruleName).Error
+		err = tx.Exec(`INSERT INTO `+j.mirrors+` (org_id, `+j.ruleCol+`, connection_id, position)
+		VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`, orgID, ruleName, mirrorID, pos).Error
 		if err != nil {
 			return err
 		}
@@ -214,28 +200,40 @@ func (j sidecarRuleJunction) setTargetsTx(tx *gorm.DB, orgID uuid.UUID, ruleName
 	return nil
 }
 
+// lockSidecarsTx locks the sidecar rows in id order, so two writes that touch
+// the same sidecars cannot deadlock.
+func lockSidecarsTx(tx *gorm.DB, orgID uuid.UUID, sidecarIDs []string) error {
+	slices.Sort(sidecarIDs)
+	sidecarIDs = slices.Compact(sidecarIDs)
+	if len(sidecarIDs) == 0 {
+		return nil
+	}
+	var locked []string
+	return tx.Raw(`SELECT id FROM private.sidecars WHERE org_id = ? AND id::text IN ? ORDER BY id FOR UPDATE`,
+		orgID, sidecarIDs).Scan(&locked).Error
+}
+
 // syncMirrorsTx makes the mirror rows of one sidecar match its listener
 // rows: it adds a missing one, takes the listener row's position, and deletes
 // one whose listener row is gone (an older gateway removed the binding).
 func (j sidecarRuleJunction) syncMirrorsTx(tx *gorm.DB, orgID, sidecarID string) error {
 	err := tx.Exec(`
-	DELETE FROM `+j.mirrors+` m USING `+j.rules+` r, private.connections c
-	WHERE `+j.mirrorJoin+` AND c.id = m.connection_id AND c.org_id = ? AND c.sidecar_id = ?
+	DELETE FROM `+j.mirrors+` m USING private.connections c
+	WHERE c.id = m.connection_id AND c.org_id = ? AND c.sidecar_id = ?
 	  AND NOT EXISTS (SELECT 1 FROM `+j.listeners+` b
-		WHERE b.org_id = r.org_id AND b.`+j.listenerCol+` = r.name
+		WHERE b.org_id = m.org_id AND b.`+j.ruleCol+` = m.`+j.ruleCol+`
 		  AND b.sidecar_id = c.sidecar_id AND b.listener_name = c.sidecar_listener)`, orgID, sidecarID).Error
 	if err != nil {
 		return err
 	}
 	return tx.Exec(`
-	INSERT INTO `+j.mirrors+` (org_id, `+j.mirrorRuleCol+`, connection_id, position)
-	SELECT b.org_id, `+j.mirrorRuleValue+`, c.id, b.position
+	INSERT INTO `+j.mirrors+` (org_id, `+j.ruleCol+`, connection_id, position)
+	SELECT b.org_id, b.`+j.ruleCol+`, c.id, b.position
 	FROM `+j.listeners+` b
-	JOIN `+j.rules+` r ON r.org_id = b.org_id AND r.name = b.`+j.listenerCol+`
 	JOIN private.connections c
 	  ON c.org_id = b.org_id AND c.sidecar_id = b.sidecar_id AND c.sidecar_listener = b.listener_name
 	WHERE b.org_id = ? AND b.sidecar_id = ?
-	ON CONFLICT (`+j.mirrorConflict+`) DO UPDATE SET position = EXCLUDED.position`, orgID, sidecarID).Error
+	ON CONFLICT (org_id, `+j.ruleCol+`, connection_id) DO UPDATE SET position = EXCLUDED.position`, orgID, sidecarID).Error
 }
 
 // SyncSidecarBindingsToMirrorsTx makes the mirror rows of one sidecar match
@@ -250,65 +248,4 @@ func SyncSidecarBindingsToMirrorsTx(tx *gorm.DB, orgID, sidecarID string) error 
 		}
 	}
 	return nil
-}
-
-// isSidecarMirrorTx reports whether a connection mirrors a sidecar listener.
-func isSidecarMirrorTx(tx *gorm.DB, orgID, connectionID string) (bool, error) {
-	var mirror bool
-	err := tx.Raw(`SELECT EXISTS (SELECT 1 FROM private.connections
-	WHERE org_id = ? AND id = ? AND sidecar_id IS NOT NULL)`, orgID, connectionID).Scan(&mirror).Error
-	return mirror, err
-}
-
-// notMirrorConnection is SQL over a connection_id column: true for a
-// connection that is not a sidecar mirror. A rule's connection list reads
-// and writes only those; the sidecar path owns the rows on mirrors.
-const notMirrorConnection = `connection_id NOT IN (SELECT id FROM private.connections WHERE sidecar_id IS NOT NULL)`
-
-// refuseMirrorConnectionsTx refuses a connection list that names a mirror.
-func refuseMirrorConnectionsTx(tx *gorm.DB, orgID string, connectionIDs []string) error {
-	if len(connectionIDs) == 0 {
-		return nil
-	}
-	var mirror bool
-	err := tx.Raw(`SELECT EXISTS (SELECT 1 FROM private.connections
-	WHERE org_id = ? AND id::text IN ? AND sidecar_id IS NOT NULL)`, orgID, connectionIDs).Scan(&mirror).Error
-	if err != nil {
-		return err
-	}
-	if mirror {
-		return ErrSidecarMirrorRuleBinding
-	}
-	return nil
-}
-
-// mirrorRulesUnchangedTx guards a write of one connection's rule list. On a
-// mirror it answers true when the list is the one stored, so the caller writes
-// nothing, and ErrSidecarMirrorRuleBinding when it differs. On any other
-// connection it answers false.
-//
-// A round trip of a mirror's own list passes: the connection form sends back
-// what it read.
-func mirrorRulesUnchangedTx(tx *gorm.DB, table, orgID, connectionID string, ruleIDs []string) (bool, error) {
-	mirror, err := isSidecarMirrorTx(tx, orgID, connectionID)
-	if err != nil || !mirror {
-		return false, err
-	}
-	var stored []string
-	err = tx.Raw(`SELECT rule_id::text FROM `+table+` WHERE connection_id = ?`, connectionID).Scan(&stored).Error
-	if err != nil {
-		return false, err
-	}
-	want := map[string]bool{}
-	for _, id := range ruleIDs {
-		want[id] = true
-	}
-	have := map[string]bool{}
-	for _, id := range stored {
-		have[id] = true
-	}
-	if !maps.Equal(want, have) {
-		return false, ErrSidecarMirrorRuleBinding
-	}
-	return true, nil
 }

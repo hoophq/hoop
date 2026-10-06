@@ -330,8 +330,6 @@ func Post(c *gin.Context) {
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
-	case models.ErrSidecarMirrorRuleBinding:
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 	case models.ErrNotFound:
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection not found: a connection reference in the connection_ids field does not exist"})
 	case nil:
@@ -465,8 +463,6 @@ func Put(c *gin.Context) {
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
-	case models.ErrSidecarMirrorRuleBinding:
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 	case nil:
 		rule.Attributes = req.Attributes
 		out := toOpenApi(rule)

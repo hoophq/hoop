@@ -3,7 +3,6 @@ package models_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 
@@ -193,9 +192,9 @@ func TestRulesOnMirrorsMigrationServesTheSameConfig(t *testing.T) {
 		t.Fatalf("want every seeded rule served, g-b before g-a, got %s", before)
 	}
 
-	// Back to the schema the bindings were written under, with a rule bound to
-	// the mirror through its connection list: no sidecar read that row, so it
-	// protected nothing.
+	// Back to the schema the bindings were written under, with a gateway rule
+	// bound to the mirror through its connection list. That row belongs to the
+	// rule's connection_ids, and the migration must leave it alone.
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(beforeRulesOnMirrorsVersion) })
 	withSession(t, inst, func() {
 		gw := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: "gateway-only",
@@ -218,28 +217,31 @@ func TestRulesOnMirrorsMigrationServesTheSameConfig(t *testing.T) {
 		if got := oldGatewayView(t); !equalStrings(got, oldView) {
 			t.Errorf("an older gateway reads different bindings after the copy\nbefore: %v\nafter:  %v", oldView, got)
 		}
+		if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_connections WHERE connection_id = ?`, f.mirrorID); n != 1 {
+			t.Errorf("the gateway rule's connection_ids row must stay, got %d rows", n)
+		}
 		var onMirror []struct {
 			Name     string
 			Position int
 		}
-		execScan(t, &onMirror, `SELECT r.name, g.position FROM private.guardrail_rules_connections g
-			JOIN private.guardrail_rules r ON r.id = g.rule_id WHERE g.connection_id = ? ORDER BY g.position`, f.mirrorID)
+		execScan(t, &onMirror, `SELECT guardrail_rule_name AS name, position FROM private.guardrail_rules_mirrors
+			WHERE connection_id = ? ORDER BY position`, f.mirrorID)
 		if len(onMirror) != 2 || onMirror[0].Name != "g-b" || onMirror[0].Position != 0 ||
 			onMirror[1].Name != "g-a" || onMirror[1].Position != 1 {
 			t.Errorf("want g-b then g-a on the mirror, in place, got %+v", onMirror)
 		}
-		if n := countRows(t, `SELECT count(*) FROM private.datamasking_rules_connections WHERE connection_id = ?`, f.mirrorID); n != 1 {
+		if n := countRows(t, `SELECT count(*) FROM private.datamasking_rules_mirrors WHERE connection_id = ?`, f.mirrorID); n != 1 {
 			t.Errorf("want the mask rule on the mirror, got %d", n)
 		}
-		if n := countRows(t, `SELECT count(*) FROM private.ai_session_analyzer_rules_connections WHERE connection_id = ?`, f.mirrorID); n != 1 {
+		if n := countRows(t, `SELECT count(*) FROM private.ai_session_analyzer_rules_mirrors WHERE connection_id = ?`, f.mirrorID); n != 1 {
 			t.Errorf("want the analyzer rule on the mirror, got %d", n)
 		}
 	})
 
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(beforeRulesOnMirrorsVersion) })
 	withSession(t, inst, func() {
-		if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_connections WHERE connection_id = ?`, f.mirrorID); n != 0 {
-			t.Errorf("the rollback must leave no binding on the mirror, got %d", n)
+		if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_connections WHERE connection_id = ?`, f.mirrorID); n != 1 {
+			t.Errorf("the rollback must leave the connection_ids row alone, got %d rows", n)
 		}
 		var positions []int
 		execScan(t, &positions, `SELECT position FROM private.guardrail_rules_listeners
@@ -289,7 +291,7 @@ func TestAnOlderGatewayWriteCounts(t *testing.T) {
 	}
 	sync()
 	onAppdb := func() int {
-		return countRows(t, `SELECT count(*) FROM private.guardrail_rules_connections WHERE connection_id = ?`, f.mirrorID)
+		return countRows(t, `SELECT count(*) FROM private.guardrail_rules_mirrors WHERE connection_id = ?`, f.mirrorID)
 	}
 	if n := onAppdb(); n != 2 {
 		t.Fatalf("want g-b and g-a on the appdb mirror, got %d", n)
@@ -318,8 +320,8 @@ func TestAnOlderGatewayWriteCounts(t *testing.T) {
 		Name     string
 		Position int
 	}
-	execScan(t, &onMirror, `SELECT r.name, g.position FROM private.guardrail_rules_connections g
-		JOIN private.guardrail_rules r ON r.id = g.rule_id WHERE g.connection_id = ? ORDER BY g.position`, f.mirrorID)
+	execScan(t, &onMirror, `SELECT guardrail_rule_name AS name, position FROM private.guardrail_rules_mirrors
+		WHERE connection_id = ? ORDER BY position`, f.mirrorID)
 	if len(onMirror) != 2 || onMirror[0].Name != "g-a" || onMirror[1].Name != "g-c" || onMirror[1].Position != 5 {
 		t.Errorf("want the mirror to follow the listener rows, g-a then g-c at 5, got %+v", onMirror)
 	}
@@ -345,7 +347,7 @@ func TestTheMirrorWriterCopiesBindingsOntoANewMirror(t *testing.T) {
 	if after := servedDocument(t, f.sc); after != before {
 		t.Fatalf("the served document changed with the copy\nbefore: %s\nafter:  %s", before, after)
 	}
-	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_connections g
+	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_mirrors g
 		JOIN private.connections c ON c.id = g.connection_id WHERE c.sidecar_listener = 'reports'`); n != 1 {
 		t.Errorf("want g-c copied onto the new reports mirror, got %d", n)
 	}
@@ -361,8 +363,9 @@ func TestTheMirrorWriterCopiesBindingsOntoANewMirror(t *testing.T) {
 	}
 }
 
-// A sidecar target on a listener with a mirror is stored on the mirror, and a
-// rule's connection list neither shows nor changes that row.
+// A sidecar target on a listener with a mirror is stored on the mirror too,
+// and a rule's connection_ids keeps its meaning: it neither shows nor changes
+// that row, and it still accepts a mirror as before.
 func TestASidecarTargetIsStoredOnTheMirror(t *testing.T) {
 	startTestDB(t)
 	f := seedMirrorFixture(t)
@@ -380,15 +383,15 @@ func TestASidecarTargetIsStoredOnTheMirror(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_connections WHERE connection_id = ?`, f.mirrorID); n != 1 {
+	onMirror := func() int {
+		return countRows(t, `SELECT count(*) FROM private.guardrail_rules_mirrors WHERE connection_id = ?`, f.mirrorID)
+	}
+	if n := onMirror(); n != 1 {
 		t.Fatalf("want the appdb binding on its mirror, got %d", n)
 	}
-	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_listeners WHERE listener_name = 'reports'`); n != 1 {
-		t.Fatalf("want the reports binding on its listener, got %d", n)
-	}
-	// Dual write: an older gateway reads the appdb binding from the listener.
-	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_listeners WHERE listener_name = 'appdb'`); n != 1 {
-		t.Fatalf("want the appdb binding on its listener too, got %d", n)
+	// Dual write: an older gateway reads both bindings from the listeners.
+	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_listeners`); n != 2 {
+		t.Fatalf("want both bindings on their listeners, got %d", n)
 	}
 	if lane := composedLane(t, f.sc, "appdb"); lane.Guardrails == nil || len(lane.Guardrails.Rules) != 1 {
 		t.Errorf("want the rule served on appdb, got %+v", lane.Guardrails)
@@ -399,38 +402,28 @@ func TestASidecarTargetIsStoredOnTheMirror(t *testing.T) {
 		t.Fatalf("read rule: %v", err)
 	}
 	if len(stored.ConnectionIDs) != 0 {
-		t.Errorf("a binding on a mirror is a sidecar target, not a connection, got %v", stored.ConnectionIDs)
+		t.Errorf("a sidecar target is not a connection, got %v", stored.ConnectionIDs)
 	}
-	// An edit that sends the connection list it read keeps the binding.
-	if err := models.UpsertGuardRailRuleWithConnections(rule, stored.ConnectionIDs, false); err != nil {
-		t.Fatalf("edit: %v", err)
+	// connection_ids accepts a mirror as it did before this change, and an
+	// edit of it leaves the sidecar binding alone.
+	if err := models.UpsertGuardRailRuleWithConnections(rule, []string{f.mirrorID}, false); err != nil {
+		t.Fatalf("edit connection_ids: %v", err)
 	}
-	if n := countRows(t, `SELECT count(*) FROM private.guardrail_rules_connections WHERE connection_id = ?`, f.mirrorID); n != 1 {
-		t.Errorf("an edit of the connection list must leave the mirror binding, got %d", n)
+	stored, err = models.GetGuardRailRules(testOrgID, rule.ID)
+	if err != nil {
+		t.Fatalf("read rule: %v", err)
 	}
-	// Binding a mirror through the connection list would skip the sidecar
-	// write checks.
-	err = models.UpsertGuardRailRuleWithConnections(rule, []string{f.mirrorID}, false)
-	if !errors.Is(err, models.ErrSidecarMirrorRuleBinding) {
-		t.Errorf("want ErrSidecarMirrorRuleBinding, got %v", err)
+	if len(stored.ConnectionIDs) != 1 || stored.ConnectionIDs[0] != f.mirrorID {
+		t.Errorf("want connection_ids to read back as written, got %v", stored.ConnectionIDs)
 	}
-	mask := &models.DataMaskingRule{ID: uuid.NewString(), OrgID: testOrgID, Name: "mask-on-mirror",
-		SupportedEntityTypes: models.SupportedEntityTypesList{}, CustomEntityTypes: models.CustomEntityTypesList{},
-		ConnectionIDs: pq.StringArray{f.mirrorID}}
-	if _, err := models.CreateDataMaskingRule(mask); !errors.Is(err, models.ErrSidecarMirrorRuleBinding) {
-		t.Errorf("want ErrSidecarMirrorRuleBinding for a mask rule, got %v", err)
+	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, false); err != nil {
+		t.Fatalf("clear connection_ids: %v", err)
 	}
-
-	// The connection side: sending the mirror's own list back is a no-op, and
-	// a different list is refused.
-	_, err = models.UpdateDataMaskingRuleConnection(testOrgID, f.mirrorID, []models.DataMaskingRuleConnection{
-		{ID: uuid.NewString(), OrgID: testOrgID, RuleID: uuid.NewString(), ConnectionID: f.mirrorID, Status: "active"},
-	})
-	if !errors.Is(err, models.ErrSidecarMirrorRuleBinding) {
-		t.Errorf("want ErrSidecarMirrorRuleBinding from the connection side, got %v", err)
+	if n := onMirror(); n != 1 {
+		t.Errorf("clearing connection_ids must leave the mirror binding, got %d", n)
 	}
-	if _, err := models.UpdateDataMaskingRuleConnection(testOrgID, f.mirrorID, nil); err != nil {
-		t.Errorf("the mirror's own (empty) mask list must pass, got %v", err)
+	if targets, _ := models.ListGuardrailRuleTargets(models.DB, org, rule.Name); len(targets) != 2 {
+		t.Errorf("want both sidecar targets kept, got %+v", targets)
 	}
 }
 
