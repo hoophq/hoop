@@ -27,6 +27,8 @@ type fakeReviews struct {
 	err      error
 	asked    []string
 	listed   []string
+	// expiresAt is on every answer.
+	expiresAt *time.Time
 }
 
 func (f *fakeReviews) ReviewStatus(_ context.Context, id string) (daemon.ReviewStatus, error) {
@@ -40,7 +42,8 @@ func (f *fakeReviews) ReviewStatus(_ context.Context, id string) (daemon.ReviewS
 	if len(f.statuses) > 1 {
 		f.statuses = f.statuses[1:]
 	}
-	return daemon.ReviewStatus{ID: id, Status: status, ListenerName: "appdb", ApprovalRule: "dba"}, nil
+	return daemon.ReviewStatus{ID: id, Status: status, ListenerName: "appdb", ApprovalRule: "dba",
+		ExpiresAt: f.expiresAt}, nil
 }
 
 // ListReviews answers the next status for one review, the way ReviewStatus
@@ -195,6 +198,7 @@ func TestEveryStatusSaysWhatToDoNext(t *testing.T) {
 		statusRejected: daemon.ReviewNextStop,
 		statusRevoked:  daemon.ReviewNextStop,
 		statusExecuted: daemon.ReviewNextStop,
+		statusExpired:  daemon.ReviewNextStop,
 		"PROCESSING":   daemon.ReviewNextStop,
 		"":             daemon.ReviewNextStop,
 	} {
@@ -206,6 +210,45 @@ func TestEveryStatusSaysWhatToDoNext(t *testing.T) {
 	out := describe(daemon.ReviewStatus{Status: statusRejected, RejectionReason: "not in business hours"})
 	if !strings.Contains(out.Instruction, "not in business hours") {
 		t.Errorf("the rejection reason is missing from %q", out.Instruction)
+	}
+}
+
+// An expiry ends the wait like a refusal: waiting longer never releases it,
+// and a resend would page the approvers again.
+func TestAnExpiredReviewEndsTheWait(t *testing.T) {
+	reviews := &fakeReviews{statuses: []string{statusPending, statusExpired}}
+	cs, _ := connect(t, reviews)
+	out, res := call(t, cs, &sdk.CallToolParams{Name: "review_wait",
+		Arguments: map[string]any{"id": "r1", "timeout_seconds": 5}})
+	if res.IsError {
+		t.Fatalf("an expiry was an error: %s", errorText(res))
+	}
+	if out.Status != statusExpired || out.Next != daemon.ReviewNextStop || out.TimedOut == nil || *out.TimedOut {
+		t.Fatalf("review_wait answered %+v, want a stop on EXPIRED", out)
+	}
+	if !strings.Contains(out.Instruction, "only if a human asks") {
+		t.Errorf("instruction %q lets the agent resend on its own", out.Instruction)
+	}
+}
+
+// The deadline reaches the agent in UTC, whatever the zone the plane used.
+func TestTheInstructionNamesTheDeadline(t *testing.T) {
+	at := time.Date(2026, 9, 29, 15, 4, 5, 0, time.FixedZone("x", -3*3600))
+	for status, want := range map[string]string{
+		statusPending:  "It expires at 2026-09-29T18:04:05Z if nobody decides.",
+		statusApproved: "Resend it before 2026-09-29T18:04:05Z, when the approval expires.",
+	} {
+		out := describe(daemon.ReviewStatus{Status: status, ExpiresAt: &at})
+		if !strings.HasSuffix(out.Instruction, want) {
+			t.Errorf("%s: instruction %q, want it to end with %q", status, out.Instruction, want)
+		}
+		if out.ExpiresAt == nil || !out.ExpiresAt.Equal(at) {
+			t.Errorf("%s: expires_at %v, want %v", status, out.ExpiresAt, at)
+		}
+		plain := describe(daemon.ReviewStatus{Status: status})
+		if strings.Contains(plain.Instruction, "expire") || plain.ExpiresAt != nil {
+			t.Errorf("%s with no limit: %+v names a deadline", status, plain)
+		}
 	}
 }
 

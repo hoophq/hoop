@@ -1,6 +1,7 @@
 package accessrequests
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -102,5 +103,95 @@ func TestValidateAccessRequestRuleBodyRefusesSidecarAccessType(t *testing.T) {
 	want := "access_type must be one of 'jit', 'command' or 'jit_command'"
 	if err := validateAccessRequestRuleBody(uuid.New(), &req, nil); err == nil || err.Error() != want {
 		t.Fatalf("expected %q, got %v", want, err)
+	}
+}
+
+// A limit out of bounds answers 422 on both sidecar paths, before any write.
+func TestSidecarRuleTTLBounds(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		pending, approval  *int
+		wantErr            string
+		wantPend, wantAppr *int
+	}{
+		{name: "absent"},
+		{name: "clear", pending: ptr.Int(0), approval: ptr.Int(0), wantPend: ptr.Int(0), wantAppr: ptr.Int(0)},
+		{name: "the bounds", pending: ptr.Int(60), approval: ptr.Int(604800), wantPend: ptr.Int(60), wantAppr: ptr.Int(604800)},
+		{name: "pending too short", pending: ptr.Int(30), wantErr: "pending_ttl_sec"},
+		{name: "pending negative", pending: ptr.Int(-60), wantErr: "pending_ttl_sec"},
+		{name: "approval too long", approval: ptr.Int(604801), wantErr: "approval_ttl_sec"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := openapi.AccessRequestRuleRequest{
+				Name: "prod-approvals", AccessType: models.AccessTypeSidecar,
+				PendingTTLSec: tt.pending, ApprovalTTLSec: tt.approval,
+			}
+			pending, approval, err := sidecarRuleTTLs(&req)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if !intPtrEqual(pending, tt.wantPend) || !intPtrEqual(approval, tt.wantAppr) {
+					t.Fatalf("got %v/%v, want %v/%v", pending, approval, tt.wantPend, tt.wantAppr)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("want an error naming %s, got %v", tt.wantErr, err)
+			}
+
+			// The handlers answer 422 with that message and never reach the
+			// database: the nil handle would panic.
+			stored := &models.AccessRequestRule{Name: "prod-approvals", AccessType: models.AccessTypeSidecar, PendingTTLSec: ptr.Int(900)}
+			for name, run := range map[string]func(c *gin.Context){
+				"create": func(c *gin.Context) { createSidecarAccessRequestRule(c, nil, uuid.New(), &req) },
+				"update": func(c *gin.Context) { updateSidecarAccessRequestRule(c, nil, uuid.New(), stored, &req) },
+			} {
+				rec := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(rec)
+				run(c)
+				if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), tt.wantErr) {
+					t.Errorf("%s: got %d %s, want 422 naming %s", name, rec.Code, rec.Body, tt.wantErr)
+				}
+			}
+			if stored.PendingTTLSec == nil || *stored.PendingTTLSec != 900 {
+				t.Errorf("a refused update changed the loaded rule: %v", stored.PendingTTLSec)
+			}
+		})
+	}
+}
+
+// A gateway rule never shows a limit, even one forced onto the row.
+func TestToAccessRequestRuleOpenApiShowsTTLsOnlyOnSidecarRules(t *testing.T) {
+	keys := func(rule *models.AccessRequestRule) map[string]any {
+		t.Helper()
+		raw, err := json.Marshal(toAccessRequestRuleOpenApi(rule))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	for _, accessType := range []string{models.AccessTypeJit, models.AccessTypeCommand, models.AccessTypeJitCommand} {
+		out := keys(&models.AccessRequestRule{AccessType: accessType, PendingTTLSec: ptr.Int(900), ApprovalTTLSec: ptr.Int(600)})
+		for _, k := range []string{"pending_ttl_sec", "approval_ttl_sec"} {
+			if _, ok := out[k]; ok {
+				t.Errorf("%s rule: %s present", accessType, k)
+			}
+		}
+	}
+
+	out := keys(&models.AccessRequestRule{AccessType: models.AccessTypeSidecar, PendingTTLSec: ptr.Int(900), ApprovalTTLSec: ptr.Int(600)})
+	if out["pending_ttl_sec"] != float64(900) || out["approval_ttl_sec"] != float64(600) {
+		t.Errorf("sidecar rule: got %v/%v, want 900/600", out["pending_ttl_sec"], out["approval_ttl_sec"])
+	}
+	out = keys(&models.AccessRequestRule{AccessType: models.AccessTypeSidecar})
+	for _, k := range []string{"pending_ttl_sec", "approval_ttl_sec"} {
+		if _, ok := out[k]; ok {
+			t.Errorf("sidecar rule with no limit: %s present", k)
+		}
 	}
 }

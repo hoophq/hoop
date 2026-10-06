@@ -59,6 +59,10 @@ type ReviewStatus struct {
 	CreatedAt       time.Time  `json:"created_at"`
 	DecidedAt       *time.Time `json:"decided_at"`
 	RejectionReason string     `json:"rejection_reason,omitempty"`
+	// ExpiresAt is the deadline of the status the review holds: to decide
+	// while PENDING, to use the approval once APPROVED. Nil with no limit,
+	// and always nil from a plane that predates review limits.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 var (

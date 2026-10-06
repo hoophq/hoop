@@ -8,6 +8,7 @@ export const STATUS = {
   PROCESSING: 'PROCESSING',
   EXECUTED: 'EXECUTED',
   UNKNOWN: 'UNKNOWN',
+  EXPIRED: 'EXPIRED',
 }
 
 // APPROVED is released and waiting for the sidecar to retry; EXECUTED already ran.
@@ -19,6 +20,7 @@ const STATUS_LABEL = {
   [STATUS.REVOKED]: { label: 'Revoked', color: 'red' },
   [STATUS.PROCESSING]: { label: 'Processing', color: 'gray' },
   [STATUS.UNKNOWN]: { label: 'Unknown', color: 'gray' },
+  [STATUS.EXPIRED]: { label: 'Expired', color: 'gray' },
 }
 
 export const statusLabel = (status) =>
@@ -56,6 +58,17 @@ export const canRevoke = (review) =>
 
 export const isSettled = (review) =>
   review?.status !== STATUS.PENDING && review?.status !== STATUS.APPROVED
+
+// The API sends expires_at only for a sidecar review with a time limit, and
+// reports EXPIRED itself, so no client clock decides the status.
+const EXPIRY_LABEL = {
+  [STATUS.PENDING]: 'Decide by',
+  [STATUS.APPROVED]: 'Approval expires at',
+  [STATUS.EXPIRED]: 'Expired at',
+}
+
+export const expiryLabel = (review) =>
+  (review?.expires_at && EXPIRY_LABEL[review.status]) || null
 
 // The review carries no connection name, so a review filed against one has
 // nothing to show here. A control plane stores none; the gateway is where they

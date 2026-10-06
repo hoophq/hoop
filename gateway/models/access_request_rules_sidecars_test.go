@@ -52,6 +52,54 @@ func TestSidecarAccessRequestRules(t *testing.T) {
 			t.Errorf("expected the rule to roll back, got %v", err)
 		}
 	})
+
+	t.Run("the review limits read back as written", testSidecarAccessRequestRuleTTLs)
+}
+
+// The review limits are nullable columns: they must read back as written, and
+// a gateway rule that never sets them must stay NULL through a Save.
+func testSidecarAccessRequestRuleTTLs(t *testing.T) {
+	orgID := uuid.MustParse(testOrgID)
+
+	limited := newAccessRequestRule(orgID, "limited", models.AccessTypeSidecar)
+	limited.PendingTTLSec, limited.ApprovalTTLSec = ptr.Int(900), ptr.Int(600)
+	if err := models.CreateAccessRequestRule(models.DB, limited); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := models.GetAccessRequestRuleByName(models.DB, "limited", orgID)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got.PendingTTLSec == nil || *got.PendingTTLSec != 900 || got.ApprovalTTLSec == nil || *got.ApprovalTTLSec != 600 {
+		t.Fatalf("limits = %v/%v, want 900/600", got.PendingTTLSec, got.ApprovalTTLSec)
+	}
+
+	got.ApprovalTTLSec = nil
+	if err := models.UpdateAccessRequestRule(models.DB, got); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, _ = models.GetAccessRequestRuleByName(models.DB, "limited", orgID)
+	if got.PendingTTLSec == nil || *got.PendingTTLSec != 900 || got.ApprovalTTLSec != nil {
+		t.Fatalf("after clearing the approval limit: %v/%v, want 900/nil", got.PendingTTLSec, got.ApprovalTTLSec)
+	}
+
+	jit := newAccessRequestRule(orgID, "jit-rule", models.AccessTypeJit)
+	jit.ConnectionNames = []string{"pg-prod"}
+	if err := models.CreateAccessRequestRule(models.DB, jit); err != nil {
+		t.Fatalf("create jit: %v", err)
+	}
+	jit.Description = ptr.String("edited")
+	if err := models.UpdateAccessRequestRule(models.DB, jit); err != nil {
+		t.Fatalf("save jit: %v", err)
+	}
+	var nulls bool
+	if err := models.DB.Raw(`SELECT pending_ttl_sec IS NULL AND approval_ttl_sec IS NULL
+		FROM private.access_request_rules WHERE org_id = ? AND name = 'jit-rule'`, orgID).Scan(&nulls).Error; err != nil {
+		t.Fatalf("raw read: %v", err)
+	}
+	if !nulls {
+		t.Error("a jit rule must keep NULL limits through a Save")
+	}
 }
 
 func newAccessRequestRule(orgID uuid.UUID, name, accessType string) *models.AccessRequestRule {

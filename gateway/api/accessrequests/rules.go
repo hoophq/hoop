@@ -14,6 +14,7 @@ import (
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/utils"
 	"gorm.io/gorm"
@@ -468,6 +469,11 @@ func createSidecarAccessRequestRule(c *gin.Context, db *gorm.DB, orgID uuid.UUID
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	pending, approval, err := sidecarRuleTTLs(req)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
 
 	rule := &models.AccessRequestRule{
 		OrgID:                  orgID,
@@ -482,9 +488,11 @@ func createSidecarAccessRequestRule(c *gin.Context, db *gorm.DB, orgID uuid.UUID
 		SkipReviewGroups:       req.SkipReviewGroups,
 		AccessMaxDuration:      req.AccessMaxDuration,
 		MinApprovals:           req.MinApprovals,
+		PendingTTLSec:          services.StoredSidecarReviewTTL(pending),
+		ApprovalTTLSec:         services.StoredSidecarReviewTTL(approval),
 	}
 	// One transaction: a failed attribute write must not leave the rule behind.
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := models.CreateAccessRequestRule(tx, rule); err != nil {
 			return err
 		}
@@ -509,6 +517,11 @@ func updateSidecarAccessRequestRule(c *gin.Context, db *gorm.DB, orgID uuid.UUID
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	pending, approval, err := sidecarRuleTTLs(req)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
 
 	rule.Name = req.Name
 	rule.Description = req.Description
@@ -519,7 +532,11 @@ func updateSidecarAccessRequestRule(c *gin.Context, db *gorm.DB, orgID uuid.UUID
 	rule.SkipReviewGroups = req.SkipReviewGroups
 	rule.AccessMaxDuration = req.AccessMaxDuration
 	rule.MinApprovals = req.MinApprovals
-	err := db.Transaction(func(tx *gorm.DB) error {
+	// Absent keeps the limits, unlike the fields above: a client that does not
+	// know them must not clear them.
+	rule.PendingTTLSec = services.ApplySidecarReviewTTL(rule.PendingTTLSec, pending)
+	rule.ApprovalTTLSec = services.ApplySidecarReviewTTL(rule.ApprovalTTLSec, approval)
+	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := models.UpdateAccessRequestRule(tx, rule); err != nil {
 			return err
 		}
@@ -535,6 +552,17 @@ func updateSidecarAccessRequestRule(c *gin.Context, db *gorm.DB, orgID uuid.UUID
 	}
 	rule.RuleAttributes = ruleAttributes(orgID, rule.Name, req.Attributes)
 	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(rule))
+}
+
+// sidecarRuleTTLs checks the review limits a sidecar rule request names.
+func sidecarRuleTTLs(req *openapi.AccessRequestRuleRequest) (pending, approval *int, err error) {
+	if pending, err = services.NormalizeSidecarReviewTTL("pending_ttl_sec", req.PendingTTLSec); err != nil {
+		return nil, nil, err
+	}
+	if approval, err = services.NormalizeSidecarReviewTTL("approval_ttl_sec", req.ApprovalTTLSec); err != nil {
+		return nil, nil, err
+	}
+	return pending, approval, nil
 }
 
 // orEmpty stores a list the request omitted as empty: the rule's group
@@ -639,7 +667,7 @@ func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessR
 	for i, ra := range rule.RuleAttributes {
 		attrs[i] = ra.AttributeName
 	}
-	return &openapi.AccessRequestRule{
+	out := &openapi.AccessRequestRule{
 		ID:                     rule.ID.String(),
 		Name:                   rule.Name,
 		Description:            rule.Description,
@@ -657,6 +685,12 @@ func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessR
 		CreatedAt:              rule.CreatedAt,
 		UpdatedAt:              rule.UpdatedAt,
 	}
+	// Only a sidecar review has a limit, so a gateway rule never shows one.
+	if rule.AccessType == models.AccessTypeSidecar {
+		out.PendingTTLSec = rule.PendingTTLSec
+		out.ApprovalTTLSec = rule.ApprovalTTLSec
+	}
+	return out
 }
 
 func parseIntParam(value, paramName string) (int, error) {

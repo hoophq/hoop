@@ -17,10 +17,11 @@ import (
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // seedReviewingSidecar stores a sidecar whose appdb listener files reviews
-// under payments-approvers, and that rule.
+// under payments-approvers, and that rule when the database has none yet.
 func seedReviewingSidecar(t *testing.T, name string) *models.Sidecar {
 	t.Helper()
 	sc := &models.Sidecar{
@@ -34,6 +35,11 @@ func seedReviewingSidecar(t *testing.T, name string) *models.Sidecar {
 		}}},
 	}
 	require.NoError(t, models.CreateSidecar(models.DB, sc))
+	_, err := models.GetAccessRequestRuleByName(models.DB, "payments-approvers", uuid.MustParse(statusTestOrgID))
+	if err == nil {
+		return sc
+	}
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 	require.NoError(t, models.CreateAccessRequestRule(models.DB, &models.AccessRequestRule{
 		OrgID:                  uuid.MustParse(statusTestOrgID),
 		Name:                   "payments-approvers",

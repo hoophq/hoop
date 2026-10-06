@@ -314,13 +314,10 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 		}
 
 		rev, err := reviewapi.DoReview(sc, args.ID, status, reviewTimeWindow, args.ForceReview, args.RejectionReason)
+		if refusal := reviewsUpdateRefusal(err); refusal != nil {
+			return refusal, nil, nil
+		}
 		switch err {
-		case reviewapi.ErrNotEligible, reviewapi.ErrSelfApproval, reviewapi.ErrWrongState, reviewapi.ErrNoTimeWindow:
-			return errResult(err.Error()), nil, nil
-		case reviewapi.ErrForbidden:
-			return errResult("access denied"), nil, nil
-		case reviewapi.ErrNotFound:
-			return errResult("review not found"), nil, nil
 		case nil:
 			// Release transport connection if review was approved or rejected
 			if rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected {
@@ -342,6 +339,20 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 			return nil, nil, fmt.Errorf("failed updating review: %w", err)
 		}
 	}
+}
+
+// reviewsUpdateRefusal is the tool result for a decision DoReview refused, or
+// nil when err is not a refusal.
+func reviewsUpdateRefusal(err error) *mcp.CallToolResult {
+	switch err {
+	case reviewapi.ErrNotEligible, reviewapi.ErrSelfApproval, reviewapi.ErrWrongState, reviewapi.ErrNoTimeWindow, reviewapi.ErrExpired:
+		return errResult(err.Error())
+	case reviewapi.ErrForbidden:
+		return errResult("access denied")
+	case reviewapi.ErrNotFound:
+		return errResult("review not found")
+	}
+	return nil
 }
 
 func reviewsWaitHandler(ctx context.Context, req *mcp.CallToolRequest, args reviewsWaitInput) (*mcp.CallToolResult, any, error) {
@@ -415,7 +426,8 @@ func isReviewTerminal(s models.ReviewStatusType) bool {
 	case models.ReviewStatusApproved,
 		models.ReviewStatusRejected,
 		models.ReviewStatusRevoked,
-		models.ReviewStatusExecuted:
+		models.ReviewStatusExecuted,
+		models.ReviewStatusExpired:
 		return true
 	}
 	return false
@@ -435,6 +447,13 @@ func reviewToMap(r *models.Review) map[string]any {
 	}
 	if r.RevokedAt != nil {
 		m["revoke_at"] = r.RevokedAt
+	}
+	// Only a sidecar review has these, so a gateway map keeps its keys.
+	if expiresAt := r.SidecarExpiresAt(); expiresAt != nil {
+		m["expires_at"] = expiresAt
+	}
+	if ttl := r.SidecarApprovalTTLSec(); ttl != nil {
+		m["approval_ttl_sec"] = *ttl
 	}
 	if r.AccessRequestRuleName != nil {
 		m["access_request_rule_name"] = *r.AccessRequestRuleName
