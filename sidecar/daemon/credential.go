@@ -192,6 +192,9 @@ func fetchGCPIdentityToken(ctx context.Context, audience string) (string, time.T
 	// Without it the server refuses the call: it is the server's guard
 	// against a request forged through an SSRF.
 	req.Header.Set("Metadata-Flavor", "Google")
+	// Set per request rather than on gcpMetadataClient: that client is a
+	// package variable, built before Main stamps Version.
+	req.Header.Set("User-Agent", userAgent("credential/gcp"))
 	resp, err := gcpMetadataClient.Do(req)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("%s=%s is set but the GCP metadata server at %s is unreachable "+

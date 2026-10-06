@@ -1,7 +1,5 @@
 # Kubernetes lane
 
-> hoop-inspect 0.1.0
-
 An overlay on the stack in the parent directory: a one-node k3s cluster
 behind a `protocol: http` lane, beside the postgres and httpbin ones. Plain
 requests (`kubectl get`) and the WebSocket that `kubectl exec` opens cross

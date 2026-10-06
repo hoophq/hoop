@@ -1,7 +1,5 @@
 # Envoy + hoop-inspect, MySQL lane
 
-> hoop-inspect 0.1.0
-
 The [`envoy-stack`](../envoy-stack/README.md) shape with MySQL as the upstream:
 Envoy owns the network path, hoop-inspect is an ordinary upstream behind it
 that decodes the MySQL protocol, enforces policy per statement, writes an audit

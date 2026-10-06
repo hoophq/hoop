@@ -301,9 +301,9 @@ func buildSidecarPlugin(raw json.RawMessage) (daemon.Plugin, error) {
 }
 
 func init() {
-	// The sidecar reports this at /stats and in its startup log, so an
-	// operator reading either sees the hoop version that produced the binary
-	// rather than the library's "dev" default.
+	// The sidecar reports this at /stats, in its startup log and in the
+	// User-Agent of its outbound calls, so an operator reading any of them
+	// sees the hoop version that produced the binary rather than "unknown".
 	daemon.Version = version.Get().Version
 	// --migrate renders YAML through the same module that parses it; the
 	// daemon package cannot import it, so the renderer is injected.

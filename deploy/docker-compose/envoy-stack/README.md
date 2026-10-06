@@ -1,7 +1,5 @@
 # Envoy + OPA + hoop-inspect
 
-> hoop-inspect 0.1.0
-
 A local replica of the common enterprise topology: **Envoy owns TLS and the
 network path, OPA owns policy, hoop stitches in behind them.** hoop-inspect is
 an ordinary upstream that the client never sees, so there is no UDS, no PROXY
