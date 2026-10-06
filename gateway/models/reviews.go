@@ -458,12 +458,18 @@ func UpdateSidecarReview(db *gorm.DB, rev *Review, fromStatus ReviewStatusType, 
 		return ErrSidecarReviewExpired
 	}
 	approvedNow := fromStatus == ReviewStatusPending && rev.Status == ReviewStatusApproved
-	if approvedNow {
-		rev.ExpiresAt = SidecarReviewDeadline(now, rev.ApprovalTTLSec)
-	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := lockSidecarReviewTx(tx, rev.OrgID, rev.ID); err != nil {
 			return err
+		}
+		if approvedNow {
+			// The lock wait can be longer than the approval limit: count from
+			// the later of now and the database clock after the lock.
+			from, err := laterOfDatabaseClockTx(tx, now)
+			if err != nil {
+				return err
+			}
+			rev.ExpiresAt = SidecarReviewDeadline(from, rev.ApprovalTTLSec)
 		}
 		res := tx.Table("private.reviews").
 			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL AND (expires_at IS NULL OR "+
@@ -638,14 +644,24 @@ func GetSidecarReview(db *gorm.DB, orgID, sidecarID, reviewID string) (*Review, 
 }
 
 // ListSidecarReviews returns the reviews this sidecar filed, newest first, at
-// most limit of them. An empty status lists every status.
+// most limit of them. An empty status lists every status. The status filter
+// and the result use the status reportSidecarExpiry shows.
 //
 // The sidecar scope is the authorization, as in GetSidecarReview.
 func ListSidecarReviews(db *gorm.DB, orgID, sidecarID string, status ReviewStatusType, limit int) ([]Review, error) {
+	now := time.Now().UTC()
 	query := sidecarReviewSelect + `
 	WHERE org_id = ? AND sidecar_id = ?`
 	args := []any{orgID, sidecarID}
-	if status != "" {
+	switch status {
+	case "":
+	case ReviewStatusPending, ReviewStatusApproved:
+		query += ` AND status = ? AND NOT ` + sidecarLapsed
+		args = append(args, status, now)
+	case ReviewStatusExpired:
+		query += ` AND (status = ? OR (status IN (?, ?) AND ` + sidecarLapsed + `))`
+		args = append(args, status, ReviewStatusPending, ReviewStatusApproved, now)
+	default:
 		query += ` AND status = ?`
 		args = append(args, status)
 	}
@@ -655,6 +671,9 @@ func ListSidecarReviews(db *gorm.DB, orgID, sidecarID string, status ReviewStatu
 	var reviews []Review
 	if err := db.Raw(query, args...).Find(&reviews).Error; err != nil {
 		return nil, err
+	}
+	for i := range reviews {
+		reviews[i].reportSidecarExpiry(now)
 	}
 	return reviews, nil
 }
@@ -743,6 +762,22 @@ func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string)
 // database clock, read as the UTC wall time the column stores. A write runs it after
 // it locks the row, so a call that waited on the lock checks the clock after the wait.
 const sidecarInsideDeadline = `(expires_at > ? AND expires_at > (clock_timestamp() AT TIME ZONE 'UTC'))`
+
+// sidecarLapsed matches a review PastSidecarDeadline reports, given its status
+// is live. It takes one argument: now.
+const sidecarLapsed = `(COALESCE(listener_name, '') <> '' AND expires_at IS NOT NULL AND expires_at <= ?)`
+
+// laterOfDatabaseClockTx returns the later of t and the database clock.
+func laterOfDatabaseClockTx(tx *gorm.DB, t time.Time) (time.Time, error) {
+	var dbNow time.Time
+	if err := tx.Raw(`SELECT clock_timestamp() AT TIME ZONE 'UTC'`).Scan(&dbNow).Error; err != nil {
+		return t, err
+	}
+	if dbNow = dbNow.UTC(); dbNow.After(t) {
+		return dbNow, nil
+	}
+	return t, nil
+}
 
 // lockSidecarReviewTx locks one review before a deadline check reads the clock.
 func lockSidecarReviewTx(tx *gorm.DB, orgID, reviewID string) error {

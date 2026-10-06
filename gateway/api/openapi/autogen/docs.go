@@ -10712,6 +10712,7 @@ const docTemplate = `{
                             "REVOKED",
                             "PROCESSING",
                             "EXECUTED",
+                            "EXPIRED",
                             "UNKNOWN"
                         ],
                         "type": "string",

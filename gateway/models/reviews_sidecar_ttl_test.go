@@ -527,6 +527,20 @@ func testDeadlinesUseTheDatabaseClock(t *testing.T) {
 			t.Fatalf("a stale decision wrote %s", got)
 		}
 	})
+	// stale stands in for an approval that waited on the row lock
+	t.Run("an approval deadline", func(t *testing.T) {
+		rev := seedSidecarReview(t, sc, "DELETE FROM approval_clock;")
+		setDeadline(t, rev.ID, timeAt(10*time.Minute))
+		setApprovalTTL(t, rev.ID, 60)
+		if err := models.UpdateSidecarReview(models.DB, approved(loadSidecarReview(t, sc, rev.ID)),
+			models.ReviewStatusPending, stale); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
+		got := readStored(t, rev.ID).ExpiresAt
+		if want := time.Now().UTC().Add(time.Minute); got == nil || got.Before(want.Add(-5*time.Second)) {
+			t.Fatalf("deadline = %v, want about %v: counted from the stale clock", got, want)
+		}
+	})
 	t.Run("a lookup and an expiry", func(t *testing.T) {
 		const statement = "DELETE FROM expiry_clock;"
 		rev := seedSidecarReview(t, sc, statement)
@@ -678,6 +692,34 @@ func testReadsReportAnExpiredSidecarReview(t *testing.T) {
 	for _, r := range *list {
 		listed[r.ID] = r.Status
 	}
+	sidecarList, err := models.ListSidecarReviews(models.DB, testOrgID, sc.ID, "", 50)
+	if err != nil {
+		t.Fatalf("sidecar list: %v", err)
+	}
+	sidecarListed := map[string]models.ReviewStatusType{}
+	for _, r := range sidecarList {
+		sidecarListed[r.ID] = r.Status
+	}
+	// a status filter matches the status a read shows, not the stored one
+	for _, status := range []models.ReviewStatusType{models.ReviewStatusPending, models.ReviewStatusApproved,
+		models.ReviewStatusExpired, models.ReviewStatusRejected} {
+		filtered, err := models.ListSidecarReviews(models.DB, testOrgID, sc.ID, status, 50)
+		if err != nil {
+			t.Fatalf("sidecar list %s: %v", status, err)
+		}
+		got := map[string]bool{}
+		for _, r := range filtered {
+			if r.Status != status {
+				t.Errorf("ListSidecarReviews(status=%s) answered %s with %s", status, r.ID, r.Status)
+			}
+			got[r.ID] = true
+		}
+		for id, s := range want {
+			if (s == status) != got[id] {
+				t.Errorf("ListSidecarReviews(status=%s) listed %s = %v, its status is %s", status, id, got[id], s)
+			}
+		}
+	}
 	for id, status := range want {
 		byID, err := models.GetReviewByIdOrSid(testOrgID, id)
 		if err != nil {
@@ -692,6 +734,9 @@ func testReadsReportAnExpiredSidecarReview(t *testing.T) {
 		}
 		if listed[id] != status {
 			t.Errorf("ListReviews(%s) = %s, want %s", id, listed[id], status)
+		}
+		if sidecarListed[id] != status {
+			t.Errorf("ListSidecarReviews(%s) = %s, want %s", id, sidecarListed[id], status)
 		}
 		if got := loadSidecarReview(t, sc, id); got.Status != status {
 			t.Errorf("GetSidecarReview(%s) = %s, want %s", id, got.Status, status)

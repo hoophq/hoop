@@ -23355,6 +23355,7 @@
                 "REVOKED",
                 "PROCESSING",
                 "EXECUTED",
+                "EXPIRED",
                 "UNKNOWN"
               ],
               "type": "string"

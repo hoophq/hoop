@@ -53,7 +53,7 @@ type statusInput struct {
 }
 
 type listInput struct {
-	Status string `json:"status,omitempty" jsonschema:"only reviews in this status: PENDING, APPROVED, REJECTED, REVOKED or EXECUTED"`
+	Status string `json:"status,omitempty" jsonschema:"only reviews in this status: PENDING, APPROVED, REJECTED, REVOKED, EXECUTED or EXPIRED"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"how many of the newest reviews, default 20, max 200"`
 }
 

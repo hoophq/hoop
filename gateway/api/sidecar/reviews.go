@@ -298,7 +298,7 @@ const (
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
 //	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
-//	@Param			status				query		string	false	"Only reviews in this status"	Enums(PENDING, APPROVED, REJECTED, REVOKED, PROCESSING, EXECUTED, UNKNOWN)
+//	@Param			status				query		string	false	"Only reviews in this status"	Enums(PENDING, APPROVED, REJECTED, REVOKED, PROCESSING, EXECUTED, EXPIRED, UNKNOWN)
 //	@Param			limit				query		int		false	"The most reviews to return, 1 to 200"	default(50)
 //	@Success		200					{array}		openapi.SidecarReviewStatus
 //	@Failure		400,401,412,500		{object}	openapi.HTTPError
@@ -313,7 +313,7 @@ func ListReviews(c *gin.Context) {
 	switch status {
 	case "", models.ReviewStatusPending, models.ReviewStatusApproved, models.ReviewStatusRejected,
 		models.ReviewStatusRevoked, models.ReviewStatusProcessing, models.ReviewStatusExecuted,
-		models.ReviewStatusUnknown:
+		models.ReviewStatusExpired, models.ReviewStatusUnknown:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("unknown review status %q", c.Query("status"))})
 		return
