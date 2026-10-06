@@ -2,6 +2,7 @@ import { Stack, Box, Text, Tooltip, ScrollArea } from '@mantine/core'
 import { ChevronsRight } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
+import { useSidecarsEnabled } from '@/modes/sidecars'
 import { IconBtn } from './IconBtn'
 import { shouldHide } from './helpers'
 import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './gatewayNav'
@@ -12,6 +13,7 @@ export function SidebarCollapsed() {
   const { isAdmin, isSelfHosted } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
+  const sidecarsEnabled = useSidecarsEnabled()
 
   return (
     <Stack
@@ -41,7 +43,7 @@ export function SidebarCollapsed() {
         classNames={{ root: classes.collapsedScrollArea, viewport: classes.scrollFill }}
       >
         <Stack gap={2} align="center" role="list" aria-label="Main navigation">
-          {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
+          {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, null, sidecarsEnabled)).map((item) => (
             <Box component="li" key={item.path || item.label} className={classes.listItem}>
               <IconBtn {...item} />
             </Box>
@@ -52,7 +54,7 @@ export function SidebarCollapsed() {
           <Box mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Discover</Text>
             <Stack gap="xsAlt" align="center" role="list" aria-label="Discover">
-              {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
+              {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, null, sidecarsEnabled)).map((item) => (
                 <Box component="li" key={item.path} className={classes.listItem}>
                   <IconBtn {...item} />
                 </Box>
@@ -65,7 +67,7 @@ export function SidebarCollapsed() {
           <Box mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Organization</Text>
             <Stack gap="xsAlt" align="center" role="list" aria-label="Organization">
-              {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) =>
+              {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, null, sidecarsEnabled)).map((item) =>
                 item.children ? (
                   <Box component="li" key={item.label} className={classes.listItem}>
                     <IconBtn

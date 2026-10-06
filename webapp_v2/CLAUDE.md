@@ -84,6 +84,10 @@ what a product shows, and ClojureScript exists only in the gateway.**
   product). `grep ByProduct src/Router.jsx` lists every such page. A shared page may
   take a prop (`AccessRequest/Create` takes `defaultReviewerRoles`, passed through
   `ByProduct`), never know the mode.
+- **Sidecar features follow `useSidecarsEnabled()`** (`modes/sidecars.js`): true in
+  the control plane or with the `beta.sidecar_listeners` flag. A route picks its
+  variant with `<BySidecars on={…} off={…} />`, and a nav or palette item with
+  `sidecars: true`. Never read the flag alone: control plane orgs get it later.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`) serves both. Each product adds its own
   redirect through the `onReady` hook: `GatewayProtectedRoute` the onboarding,

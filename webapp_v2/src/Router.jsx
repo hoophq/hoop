@@ -4,6 +4,7 @@ import PageLoader from '@/components/PageLoader'
 import NotImplemented from '@/components/NotImplemented'
 import { useModeConfig } from '@/modes'
 import ByProduct from '@/modes/ByProduct'
+import BySidecars from '@/modes/BySidecars'
 import { ROLE_APPROVER } from '@/utils/roles'
 
 // Auth pages
@@ -682,7 +683,10 @@ function Router() {
         path="/integrations/slack"
         element={
           <Page adminOnly>
-            <ByProduct gateway={<GatewaySlack />} controlPlane={<ControlPlaneSlack />} />
+            <ByProduct
+              gateway={<BySidecars on={<GatewaySlack showListeners />} off={<GatewaySlack />} />}
+              controlPlane={<ControlPlaneSlack />}
+            />
           </Page>
         }
       />

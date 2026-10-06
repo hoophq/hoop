@@ -19,12 +19,12 @@ const LIST_PATH = '/sidecars'
 const COPY = {
   connect: {
     title: 'Connect an existing Sidecar',
-    subtitle: 'Link a sidecar that already runs in your infrastructure. You get a token to point it to this control plane.',
+    subtitle: 'Link a sidecar that already runs in your infrastructure. You get a token to point it to Hoop.',
     steps: ['Connect', 'Configure', 'Overview'],
   },
   create: {
     title: 'Create and deploy a new Sidecar',
-    subtitle: 'Deploy a new sidecar with Docker or Kubernetes, then point it at this control plane.',
+    subtitle: 'Deploy a new sidecar with Docker or Kubernetes, then point it at Hoop.',
     steps: ['Deploy', 'Configure', 'Overview'],
   },
 }

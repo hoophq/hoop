@@ -1,18 +1,22 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Stack, Text, Title } from '@mantine/core'
 import Tabs from '@/components/Tabs'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import { useMinDelay } from '@/hooks/useMinDelay'
+import { useUserStore } from '@/stores/useUserStore'
+import { isSidecarMirror } from '@/utils/connectionPolicy'
 import { usePlugin } from '../usePlugin'
 import PluginConnectionsList from '../components/PluginConnectionsList'
+import SidecarSlackChannelsTab from './SidecarSlackChannelsTab'
 import SlackChannelsModal from './components/SlackChannelsModal'
 import SlackConfigurationsTab from './components/SlackConfigurationsTab'
 import { slackAppConfigured } from './helpers'
 
 // The gateway's Slack page, sibling of ControlPlaneSlack.jsx: reviews reach
-// the channels set on each connection.
-function GatewaySlack() {
+// the channels set on each connection, and a sidecar's reviews the channels
+// set on each listener. A mirror takes its channels from its listener.
+function GatewaySlack({ showListeners = false }) {
   const {
     plugin,
     connections,
@@ -30,6 +34,14 @@ function GatewaySlack() {
     setTab(slackAppConfigured(plugin) ? 'connections' : 'configurations')
   }
   const [configConnection, setConfigConnection] = useState(null)
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const serverInfoLoaded = useUserStore((s) => s.serverInfoLoaded)
+  // The sidecar API answers 403 without an Enterprise license.
+  const listeners = showListeners && !(serverInfoLoaded && isFreeLicense)
+  const listedConnections = useMemo(
+    () => (listeners ? connections.filter((connection) => !isSidecarMirror(connection)) : connections),
+    [connections, listeners],
+  )
 
   const showLoader = useMinDelay(status === 'loading')
 
@@ -48,13 +60,14 @@ function GatewaySlack() {
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
           <Tabs.Tab value="connections">Connections</Tabs.Tab>
+          {listeners && <Tabs.Tab value="listeners">Listeners</Tabs.Tab>}
           <Tabs.Tab value="configurations">Configurations</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="connections" pt="md">
           <PluginConnectionsList
             plugin={plugin}
-            connections={connections}
+            connections={listedConnections}
             mutating={mutating}
             onToggle={toggleConnection}
             renderAction={(connection, enabled) => (
@@ -69,6 +82,12 @@ function GatewaySlack() {
             )}
           />
         </Tabs.Panel>
+
+        {listeners && (
+          <Tabs.Panel value="listeners" pt="md">
+            <SidecarSlackChannelsTab />
+          </Tabs.Panel>
+        )}
 
         <Tabs.Panel value="configurations" pt="md">
           <SlackConfigurationsTab plugin={plugin} saving={mutating} onSave={saveEnvvars} />

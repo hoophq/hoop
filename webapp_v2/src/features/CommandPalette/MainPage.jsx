@@ -2,13 +2,15 @@ import { SpotlightAction, SpotlightActionsGroup, SpotlightEmpty } from '@mantine
 import { Loader, Text, Group } from '@mantine/core'
 import { Package, Rotate3d, File, ChevronRight } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
+import { useSidecarsEnabled } from '@/modes/sidecars'
 import { shouldHide } from '@/layout/Sidebar/helpers'
 import { SUGGESTION_ITEMS, QUICK_ACCESS_ITEMS } from '@/layout/Sidebar/gatewayNav'
 
 function SuggestionsAndQuickAccess({ onNavigate }) {
   const { isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()
-  const visibleSuggestions = SUGGESTION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
-  const visibleQuickAccess = QUICK_ACCESS_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+  const sidecarsEnabled = useSidecarsEnabled()
+  const visibleSuggestions = SUGGESTION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, null, sidecarsEnabled))
+  const visibleQuickAccess = QUICK_ACCESS_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, null, sidecarsEnabled))
 
   return (
     <>

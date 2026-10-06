@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
+import { useSidecarsEnabled } from '@/modes/sidecars'
 import { ItemBadge } from './ItemBadge'
 import { SidebarNavLink } from './SidebarNavLink'
 import { shouldHide, isActive } from './helpers'
@@ -35,8 +36,9 @@ export function NavItem({ item, isAdmin, isSelfHosted, role }) {
   const { setSidebarOpen, pendingOpenSection, clearPendingOpenSection } = useUIStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
+  const sidecarsEnabled = useSidecarsEnabled()
 
-  if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role)) return null
+  if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role, sidecarsEnabled)) return null
 
   const active = item.path ? isActive(item.path, location.pathname, location.search) : false
   const closeMobile = () => setSidebarOpen(false)

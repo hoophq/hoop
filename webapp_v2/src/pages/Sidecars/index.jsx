@@ -14,18 +14,21 @@ import SidecarsTable from './sections/SidecarsTable'
 export default function Sidecars() {
   const { sidecars, loading, error, fetchSidecars } = useSidecarStore()
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  const showLoader = useMinDelay(loading, 500)
+  const serverInfoLoaded = useUserStore((s) => s.serverInfoLoaded)
+  // Every sidecar route answers 403 without an Enterprise license.
+  const locked = serverInfoLoaded && isFreeLicense
+  const showLoader = useMinDelay(loading && !locked, 500)
 
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false)
 
   useEffect(() => {
-    fetchSidecars()
-  }, [fetchSidecars])
+    if (!locked) fetchSidecars()
+  }, [locked, fetchSidecars])
 
   if (showLoader) return <PageLoader h={400} />
-  if (error) return <Text c="red">{error}</Text>
+  if (error && !locked) return <Text c="red">{error}</Text>
 
-  const count = sidecars.length
+  const count = locked ? 0 : sidecars.length
 
   return (
     <>
@@ -36,7 +39,7 @@ export default function Sidecars() {
           <Stack gap="sm">
             <Title order={1}>Sidecars</Title>
             <Text size="lg" c="dimmed">
-              Connect existing sidecars to this control plane, or create a new one.
+              Connect your existing sidecars, or create a new one.
             </Text>
           </Stack>
           {count > 0 && (
@@ -49,7 +52,7 @@ export default function Sidecars() {
         <SidecarLicenseNotice />
 
         {count === 0 ? (
-          <SidecarMethodCards />
+          <SidecarMethodCards disabled={locked} />
         ) : (
           <Stack gap="sm">
             <Text size="lg" fw={700}>

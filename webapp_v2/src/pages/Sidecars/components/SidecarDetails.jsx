@@ -65,18 +65,18 @@ function SourceCallout({ fromFile, configured, editable, onSwitch }) {
         action={
           editable && (
             <Button variant="light" size="xs" onClick={() => onSwitch(false)} flex="0 0 auto">
-              Use the control plane
+              Manage in Hoop
             </Button>
           )
         }
       >
         <Text size="sm">
           {
-            'This sidecar loads its configuration from its own config file, and the control plane sends only its license. A running sidecar picks this up on its next check-in, within a minute.'
+            'This sidecar loads its configuration from its own config file, and Hoop sends only its license. A running sidecar picks this up on its next check-in, within a minute.'
           }
         </Text>
         {configured && (
-          <Text size="sm">The configuration below is stored in the control plane and is not applied.</Text>
+          <Text size="sm">The configuration below is stored in Hoop and is not applied.</Text>
         )}
       </Callout>
     )
@@ -96,7 +96,7 @@ function SourceCallout({ fromFile, configured, editable, onSwitch }) {
       >
         <Text size="sm">
           {
-            "The control plane owns this sidecar's configuration and serves it on every check-in. Edit it here, not in the sidecar's own file."
+            "Hoop owns this sidecar's configuration and serves it on every check-in. Edit it here, not in the sidecar's own file."
           }
         </Text>
       </Callout>
@@ -105,8 +105,8 @@ function SourceCallout({ fromFile, configured, editable, onSwitch }) {
   return (
     <Callout icon={Info} color="gray.0">
       <Text size="sm">
-        The control plane stores no listeners for this sidecar yet. The sidecar imports its own config file on its
-        first handshake, and the control plane owns it from then on.
+        Hoop stores no listeners for this sidecar yet. The sidecar imports its own config file on its first
+        handshake, and Hoop owns it from then on.
       </Text>
     </Callout>
   )
@@ -230,7 +230,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
               <EmptyState
                 compact
                 title="This sidecar runs the configuration in its own config file"
-                description="The control plane stores no listeners for it and sends only its license."
+                description="Hoop stores no listeners for it and sends only its license."
               />
             </>
           ) : (
