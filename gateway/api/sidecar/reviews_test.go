@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 	// WebappURL assertion below would hold whichever one the code calls. The
 	// path prefix is what makes it mean something.
 	os.Setenv("API_URL", "http://localhost:8009/hoop")
-	if err := appconfig.Load(); err != nil {
+	if err := appconfig.Load(appconfig.AppModeGateway); err != nil {
 		panic(err)
 	}
 	os.Exit(m.Run())

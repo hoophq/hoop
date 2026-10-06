@@ -2,20 +2,16 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/hoophq/hoop/agent"
-	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway"
+	"github.com/hoophq/hoop/gateway/appconfig"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/spf13/cobra"
 )
-
-// deprecatedGatewayAlias is the subcommand that ran the HTTP API alone, to
-// administer sidecars. One gateway serves agents and sidecars now; the alias
-// keeps existing installs starting.
-const deprecatedGatewayAlias = "control-plane"
 
 var (
 	outputFormat string
@@ -74,33 +70,34 @@ var startAgentCmd = &cobra.Command{
 }
 
 var startGatewayCmd = &cobra.Command{
-	Use:     "gateway",
-	Aliases: []string{deprecatedGatewayAlias},
-	Short:   "Runs the gateway component",
-	Long: `Runs the gateway: the gRPC transport for agents and clients, the protocol
-proxies, and the HTTP API and web app that also administer a fleet of
-sidecars.
-
-This command was also reachable as "control-plane". That name still works as
-a deprecated alias and starts the same gateway.`,
+	Use:          "gateway",
+	Short:        "Runs the gateway component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		warnDeprecatedGatewayAlias(os.Stderr, cmd.CalledAs())
-		gateway.Run()
+		gateway.Run(appconfig.AppModeGateway)
 	},
 }
 
-// warnDeprecatedGatewayAlias renders the notice to w when the command was
-// reached through the old name. calledAs is the token the user typed.
-func warnDeprecatedGatewayAlias(w io.Writer, calledAs string) {
-	if calledAs != deprecatedGatewayAlias {
-		return
-	}
-	msg := styles.ClientErrorSimple(fmt.Sprintf(
-		"warn: \"hoop start %s\" is deprecated and aliases to \"hoop start gateway\".\n"+
-			"Use \"hoop start gateway\"; the alias is removed in a future release.",
-		deprecatedGatewayAlias))
-	_, _ = fmt.Fprintf(w, "%s\n", msg)
+var startControlPlaneCmd = &cobra.Command{
+	Use:   "control-plane",
+	Short: "Runs the gateway as the control plane",
+	Long: `Runs the gateway with the application mode set to "control-plane".
+
+It reads the same configuration the gateway does and reports the mode in
+/api/publicserverinfo and /api/serverinfo as application_mode.`,
+	SilenceUsage: false,
+	Run: func(cmd *cobra.Command, args []string) {
+		// PLUGIN_AUDIT_PATH is consumed at package init time, so the resolved
+		// variable is adjusted directly when the env was not provided.
+		if os.Getenv("PLUGIN_AUDIT_PATH") == "" {
+			auditPath := filepath.Join(os.TempDir(), "hoop_sessions")
+			if err := os.MkdirAll(auditPath, 0o700); err != nil {
+				panic(fmt.Sprintf("failed creating the session storage directory %v: %v", auditPath, err))
+			}
+			plugintypes.AuditPath = auditPath
+		}
+		gateway.Run(appconfig.AppModeControlPlane)
+	},
 }
 
 func init() {
@@ -109,5 +106,6 @@ func init() {
 
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
+	startCmd.AddCommand(startControlPlaneCmd)
 	rootCmd.AddCommand(startCmd)
 }

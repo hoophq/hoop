@@ -5453,9 +5453,10 @@
       "openapi.PublicServerInfo": {
         "properties": {
           "application_mode": {
-            "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
+            "description": "Which component this process runs as",
             "enum": [
-              "gateway"
+              "gateway",
+              "control-plane"
             ],
             "example": "gateway",
             "type": "string"
@@ -7494,9 +7495,10 @@
             "type": "string"
           },
           "application_mode": {
-            "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
+            "description": "Which component this process runs as",
             "enum": [
-              "gateway"
+              "gateway",
+              "control-plane"
             ],
             "example": "gateway",
             "type": "string"

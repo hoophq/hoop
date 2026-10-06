@@ -159,7 +159,7 @@ func StartGateway(ctx context.Context, opts GatewayOptions) (gw *Gateway, err er
 		}
 	}
 
-	if err = appconfig.Load(); err != nil {
+	if err = appconfig.Load(appconfig.AppModeGateway); err != nil {
 		return nil, fmt.Errorf("appconfig.Load: %w", err)
 	}
 

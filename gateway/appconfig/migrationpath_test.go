@@ -33,7 +33,7 @@ func TestLoadMigrationPathFiles(t *testing.T) {
 			t.Setenv("MIGRATION_PATH_FILES", tc.env)
 			runtimeConfig = Config{}
 
-			err := Load()
+			err := Load(AppModeGateway)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected Load to fail, got nil")

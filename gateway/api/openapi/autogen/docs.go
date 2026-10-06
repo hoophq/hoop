@@ -17559,10 +17559,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "application_mode": {
-                    "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
+                    "description": "Which component this process runs as",
                     "type": "string",
                     "enum": [
-                        "gateway"
+                        "gateway",
+                        "control-plane"
                     ],
                     "example": "gateway"
                 },
@@ -19600,10 +19601,11 @@ const docTemplate = `{
                     "example": "https://api.johnwick.org"
                 },
                 "application_mode": {
-                    "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
+                    "description": "Which component this process runs as",
                     "type": "string",
                     "enum": [
-                        "gateway"
+                        "gateway",
+                        "control-plane"
                     ],
                     "example": "gateway"
                 },

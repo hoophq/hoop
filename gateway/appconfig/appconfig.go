@@ -20,6 +20,33 @@ import (
 
 // TODO: it should include all runtime configuration
 
+// AppMode names the component the gateway binary runs as. It is chosen by
+// the subcommand that started the process, not by the environment, and is
+// reported to clients as application_mode.
+type AppMode string
+
+const (
+	// AppModeGateway is the default. Started by "hoop start gateway".
+	AppModeGateway AppMode = "gateway"
+	// AppModeControlPlane administers a fleet of sidecars. Started by
+	// "hoop start control-plane".
+	AppModeControlPlane AppMode = "control-plane"
+)
+
+// resolveAppMode guards the mode handed to Load. The zero value reads as the
+// gateway so a caller that leaves it unset keeps the shipping behaviour, and
+// anything else unrecognised stops startup rather than guessing.
+func resolveAppMode(mode AppMode) (AppMode, error) {
+	switch mode {
+	case "":
+		return AppModeGateway, nil
+	case AppModeGateway, AppModeControlPlane:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid app mode %q (want %s|%s)", mode, AppModeGateway, AppModeControlPlane)
+	}
+}
+
 type pgCredentials struct {
 	connectionString string
 	username         string
@@ -30,6 +57,7 @@ type pgCredentials struct {
 	pgliteDataDir string
 }
 type Config struct {
+	appMode                         AppMode
 	apiKey                          string
 	askAICredentials                *url.URL
 	authMethod                      idptypes.ProviderType
@@ -87,10 +115,16 @@ type Config struct {
 
 var runtimeConfig Config
 
-// Load validate for any errors and set the RuntimeConfig var
-func Load() error {
+// Load validate for any errors and set the RuntimeConfig var. mode names the
+// component this process runs as and comes from the subcommand that started
+// it; the zero value means the gateway.
+func Load(mode AppMode) error {
 	if runtimeConfig.isLoaded {
 		return nil
+	}
+	appMode, err := resolveAppMode(mode)
+	if err != nil {
+		return err
 	}
 	apiURL := os.Getenv("API_URL")
 	if apiURL == "" {
@@ -270,6 +304,7 @@ func Load() error {
 	}
 
 	runtimeConfig = Config{
+		appMode:                         appMode,
 		apiKey:                          os.Getenv("API_KEY"),
 		apiURL:                          fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
 		grpcURL:                         grpcURL,
@@ -455,6 +490,18 @@ func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
 // ApiURL is the base URL without any path segment or query strings (scheme://host:port)
 func (c Config) ApiURL() string  { return c.apiURL }
 func (c Config) GrpcURL() string { return c.grpcURL }
+
+// AppMode reports which component this process runs as. An unloaded config
+// reads as the gateway, so the mode is never the empty string.
+func (c Config) AppMode() AppMode {
+	if c.appMode == "" {
+		return AppModeGateway
+	}
+	return c.appMode
+}
+
+// IsControlPlane reports whether this process runs as the control plane.
+func (c Config) IsControlPlane() bool { return c.AppMode() == AppModeControlPlane }
 
 // WebappStaticUiPath returns the explicitly configured STATIC_UI_PATH, or
 // empty when unset (the web UI source is then resolved by gateway/webappui).
