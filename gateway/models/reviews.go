@@ -247,9 +247,44 @@ func (r *Review) GetBlobInput() (string, error) {
 	return result[0], nil
 }
 
+// ReviewViewer is the user a review is read for.
+type ReviewViewer struct {
+	UserID           string
+	Groups           []string
+	IsAuditorOrAdmin bool
+}
+
+// reviewVisibilityCondition is the Sessions rule: the requester or a reviewer
+// group member. A sidecar review's owner_id is the sidecar, so only its groups count.
+const reviewVisibilityCondition = `
+	AND (
+		(COALESCE(rv.listener_name, '') = '' AND rv.owner_id = ?)
+		OR EXISTS (
+			SELECT 1 FROM private.review_groups AS vg
+			WHERE vg.review_id = rv.id AND vg.group_name = ANY((?)::text[])
+		)
+	)`
+
+func (v *ReviewViewer) condition() (string, []any) {
+	if v == nil || v.IsAuditorOrAdmin {
+		return "", nil
+	}
+	return reviewVisibilityCondition, []any{v.UserID, pq.StringArray(append([]string{}, v.Groups...))}
+}
+
 func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
+	return getReviewByIdOrSid(DB, orgID, id, nil)
+}
+
+// GetReviewByIdOrSidForViewer returns ErrNotFound for a review the viewer cannot see.
+func GetReviewByIdOrSidForViewer(db *gorm.DB, orgID, id string, viewer ReviewViewer) (*Review, error) {
+	return getReviewByIdOrSid(db, orgID, id, &viewer)
+}
+
+func getReviewByIdOrSid(db *gorm.DB, orgID, id string, viewer *ReviewViewer) (*Review, error) {
+	visibility, visibilityArgs := viewer.condition()
 	var review Review
-	err := DB.Raw(`
+	err := db.Raw(`
 	SELECT
 		id, org_id, session_id, connection_name, connection_id, sidecar_id, listener_name,
 		type, access_duration_sec, status,
@@ -274,7 +309,8 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
 	FROM private.reviews rv
-	WHERE org_id = ? AND (id = ? OR session_id = ?)`, orgID, id, id).
+	WHERE org_id = ? AND (id = ? OR session_id = ?)`+visibility,
+		append([]any{orgID, id, id}, visibilityArgs...)...).
 		First(&review).
 		Error
 	if err == gorm.ErrRecordNotFound {
@@ -286,9 +322,10 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 	return &review, err
 }
 
-func ListReviews(orgID string) (*[]Review, error) {
+func ListReviews(db *gorm.DB, orgID string, viewer ReviewViewer) (*[]Review, error) {
+	visibility, visibilityArgs := viewer.condition()
 	var reviews []Review
-	err := DB.Raw(`
+	err := db.Raw(`
 	SELECT
 		id, org_id, session_id, connection_name, connection_id, sidecar_id, listener_name,
 		type, access_duration_sec, status,
@@ -313,7 +350,7 @@ func ListReviews(orgID string) (*[]Review, error) {
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
 	FROM private.reviews rv
-	WHERE org_id = ?`, orgID).
+	WHERE org_id = ?`+visibility, append([]any{orgID}, visibilityArgs...)...).
 		Find(&reviews).
 		Error
 	if err != nil {

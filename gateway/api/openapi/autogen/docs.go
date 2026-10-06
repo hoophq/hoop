@@ -7293,7 +7293,7 @@ const docTemplate = `{
         },
         "/reviews": {
             "get": {
-                "description": "Get all reviews resource",
+                "description": "Get the reviews the user requested or can decide. Admins and auditors get all reviews.",
                 "produces": [
                     "application/json"
                 ],
@@ -7328,7 +7328,7 @@ const docTemplate = `{
         },
         "/reviews/{id}": {
             "get": {
-                "description": "Get review resource by the id or session id",
+                "description": "Get review resource by the id or session id. A review the user did not request and cannot decide answers 404; admins and auditors get any review.",
                 "produces": [
                     "application/json"
                 ],
