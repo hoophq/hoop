@@ -36,6 +36,16 @@ import {
 
 export const MAIN_ITEMS = [
   { label: 'Resources', path: '/resources', icon: Package, adminOnly: false },
+  // The sidecar pages exist in both products (Router.jsx); the gateway lists
+  // them once the org manages its sidecar listeners as resources.
+  {
+    label: 'Sidecars',
+    path: '/sidecars',
+    icon: Container,
+    adminOnly: true,
+    badge: { text: 'BETA', color: 'indigo' },
+    sidecars: true
+  },
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, adminOnly: true },
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false, licenseFeature: 'runbooks' },
@@ -84,16 +94,6 @@ export const DISCOVER_ITEMS = [
 
 export const ORGANIZATION_ITEMS = [
   { label: 'Agents', path: '/agents', icon: BrainCog, adminOnly: true },
-  // The sidecar pages exist in both products (Router.jsx); the gateway lists
-  // them once the org manages its sidecar listeners as resources.
-  {
-    label: 'Sidecars',
-    path: '/sidecars',
-    icon: Container,
-    adminOnly: true,
-    badge: { text: 'BETA', color: 'indigo' },
-    sidecars: true
-  },
   {
     label: 'Integrations',
     icon: Puzzle,
