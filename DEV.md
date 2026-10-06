@@ -45,6 +45,35 @@ To build the Webapp into the gateway
 make build-dev-webapp
 ```
 
+### Run more than one stack
+
+`make run-dev` runs one stack per host. To run one stack per git worktree, give each worktree a slot from 1 to 9. Slot 0 is the default and does not change.
+
+| | Slot 0 | Slot N |
+|---|---|---|
+| Container and image | `hoopdev` | `hoopdev-N` |
+| Host ports | 8009, 8010, 15432, 12222, 13389, 18888, 2225 | each port + N*100 |
+
+In the worktree's `.env`, set the slot's URLs. `run.sh` stops if they do not match the slot. Use the `POSTGRES_DB_URI` of slot 0 with a different database name, so that each branch runs its own migrations.
+
+```sh
+API_URL=http://127.0.0.1:8109    # 8009 + N*100
+GRPC_URL=grpc://127.0.0.1:8110   # 8010 + N*100
+```
+
+Create the database once, then start the slot:
+
+```sh
+docker exec hoopdevpg createdb hoopdev_slot1
+HOOPDEV_SLOT=1 make run-dev
+```
+
+- The gateway proxies (Postgres, SSH, RDP, HTTP) are off on a new database. In slot N, give them the slot's ports, for example `0.0.0.0:15532` for Postgres in slot 1. Credentials carry this port, so a proxy left on 15432 sends clients to slot 0.
+- Start `make run-dev-postgres` from one checkout only. It stops and replaces the `hoopdevpg` container.
+- Slot N reads the Alcatraz model cache but does not fill it. Fill it from slot 0 first.
+- The control plane takes its port from the shell: `PORT=8119 make run-dev-control-plane`.
+- The SPIFFE scripts target slot 0 only.
+
 ### Build Dev Client
 
 By default versioned clients are builded to strict connect via TLS. In order to build a client that permits connecting to remote hosts without TLS, execute the instruction below:

@@ -39,7 +39,7 @@ standard flow.
 
 ## 4. Validate
 
-- Go changes: `make test-oss` (it runs `libhoop-map` + `generate-wasm`
+- Go changes: `make test-oss` (it runs `generate-wasm` + `test-sidecar`
   itself). Fix failures caused by your change; never skip or weaken tests.
 - `webapp_v2/` changes: `npm run lint` and `npm run build` must pass.
 - New gateway endpoints/migrations: check `migration-check` /
