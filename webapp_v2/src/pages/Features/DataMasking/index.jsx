@@ -141,7 +141,7 @@ export default function DataMasking() {
           disabled={atFreeLimit}
           blocked={agentBlocked ? { [TRAFFIC_AGENT]: 'Needs a DLP provider' } : undefined}
         >
-          Create new
+          Create new rule
         </NewRuleButton>
       </Group>
 

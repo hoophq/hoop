@@ -151,7 +151,7 @@ export default function Guardrails() {
           disabled={atFreeLimit}
           blocked={agentBlocked ? { [TRAFFIC_AGENT]: 'Needs a DLP provider' } : undefined}
         >
-          Create a new Guardrail
+          Create new rule
         </NewRuleButton>
       </Group>
 

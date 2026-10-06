@@ -31,7 +31,7 @@ const DLP_REQUIRED_INFO =
 
 export default function GuardrailsPromotion({ dlpAvailable, onCreate }) {
   const providerProps = dlpAvailable
-    ? { onPrimaryClick: onCreate, primaryText: 'Create new Guardrails' }
+    ? { onPrimaryClick: onCreate, primaryText: 'Create new rule' }
     : {
         docsHref: docsUrl.features.guardrails,
         docsText: 'Go to Guardrails documentation',

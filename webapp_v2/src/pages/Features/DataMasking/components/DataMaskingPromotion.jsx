@@ -4,7 +4,7 @@ import { docsUrl } from '@/utils/docsUrl'
 import { RULE_DRIVEN_PROVIDERS } from '../helpers'
 
 // Empty-state behavior is gated by the server's DLP `redact_provider`:
-//   - mspresidio / alcatraz → "Configure" CTA into the create flow, since
+//   - mspresidio / alcatraz → "Create new rule" CTA into the create flow, since
 //     both drive masking from data-masking rules.
 //   - gcp → docs link + deprecated-provider warning, no create path.
 //   - unset → docs link only; there is no provider to call deprecated.
@@ -44,7 +44,7 @@ export default function DataMaskingPromotion({
   const providerProps = canConfigure
     ? {
         onPrimaryClick: onConfigure,
-        primaryText: 'Configure Live Data Masking',
+        primaryText: 'Create new rule',
       }
     : {
         docsHref: docsUrl.features.aiDatamasking,
