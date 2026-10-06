@@ -171,12 +171,45 @@ const (
 type Reviewer interface {
 	// File files the statement for approval, or answers from the review
 	// already filed for these exact bytes. It receives the RAW statement
-	// text, never the model input. See hold.
+	// text, never the model input. See hold. Its context carries the
+	// verdict that caused the hold; see HoldDetailFrom.
 	File(ctx context.Context, statement string) (ReviewResult, error)
 
 	// Claim answers about one review by id, spending it when it is
 	// approved. It never files.
 	Claim(ctx context.Context, reviewID string) (ReviewResult, error)
+}
+
+// HoldDetail is the verdict that put a statement on hold: what the analyzer
+// rated it and why. It reaches the reviewer's context, not the review
+// request, so a backend that shows a person the statement can show the
+// reason beside it.
+//
+// It never reaches the audit trail or the control plane. Title and
+// Explanation are model prose, and the trail keeps them out because a model
+// that quotes the statement back would write its values into the record
+// (see Evaluate). The plane's reviewer sends what it always sent; only a
+// reviewer that already shows the statement to the person deciding, the
+// terminal one, reads this.
+type HoldDetail struct {
+	// Rule names the analyzer rule, or the listener for a block.
+	Rule        string
+	RiskLevel   RiskLevel
+	Title       string
+	Explanation string
+}
+
+type holdDetailKey struct{}
+
+func withHoldDetail(ctx context.Context, d HoldDetail) context.Context {
+	return context.WithValue(ctx, holdDetailKey{}, d)
+}
+
+// HoldDetailFrom returns the verdict a reviewer's call was made for. ok is
+// false for a call made without one.
+func HoldDetailFrom(ctx context.Context) (HoldDetail, bool) {
+	d, ok := ctx.Value(holdDetailKey{}).(HoldDetail)
+	return d, ok
 }
 
 // How long a held statement waits on its connection, and how often it asks.
@@ -191,6 +224,24 @@ const (
 	ReviewWait = 30 * time.Minute
 	reviewPoll = 5 * time.Second
 )
+
+// requestHold hands the hold to the Chain that owns ec, which runs it after
+// every evaluator placed after this one allowed (ADR-0030). Holding here
+// would file and spend the approval before a decide-phase OPA could deny.
+//
+// With no Chain to hand it to, it holds at once: nothing runs after a bare
+// evaluator, so here is already last.
+func (e *Evaluator) requestHold(ctx context.Context, stmt inspect.Statement,
+	ec *policy.EvalContext, notes map[string]string) policy.Verdict {
+	mode, source := e.reviewMode(ctx, stmt)
+	resolve := func() policy.Verdict { return e.hold(ctx, stmt, notes, mode, source) }
+	if ec.RequestReview(policy.ReviewRequest{
+		Mode: string(mode), ModeSource: source, Resolve: resolve,
+	}) {
+		return policy.Verdict{Annotations: notes}
+	}
+	return resolve()
+}
 
 // hold resolves an ActionRequireReview verdict: it files the statement for
 // human approval, waits on the connection while the review is pending (or, in
@@ -209,8 +260,8 @@ const (
 //
 // ctx is the connection's. It ends the wait when the client or the upstream
 // goes away, so an approval is never spent on a statement that cannot run.
-func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string) policy.Verdict {
-	mode, source := e.reviewMode(ctx, stmt)
+func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string,
+	mode ReviewMode, source string) policy.Verdict {
 	notes[MetadataReviewMode] = string(mode)
 	notes[MetadataReviewModeSource] = source
 
@@ -220,24 +271,24 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		// other lane reaching here has no way to file, and a hold that
 		// cannot file has to deny. It never waits: a rehearsal must not
 		// stall on a human.
-		return e.denyHold(notes, "", "no review backend is configured")
+		return e.denyHold(notes, "", "", "no review backend is configured")
 	}
 	if err := ctx.Err(); err != nil {
 		// Gone before anything was filed: paging a human for a statement
 		// that can no longer run is noise.
-		return e.denyEnded(ctx, notes, "", "the connection ended before the review was filed")
+		return e.denyEnded(ctx, notes, "", "", "the connection ended before the review was filed")
 	}
 
 	text, err := reviewText(stmt)
 	if err != nil {
-		return e.denyHold(notes, "", err.Error())
+		return e.denyHold(notes, "", "", err.Error())
 	}
 	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
 		return e.cfg.Review.File(c, text)
 	})
 	if err != nil {
 		e.errs.Add(1)
-		v := e.denyHold(notes, res.ID, "the review could not be filed")
+		v := e.denyHold(notes, res.ID, res.Status, "the review could not be filed")
 		v.Err = err
 		return v
 	}
@@ -248,7 +299,7 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		return e.release(ctx, notes, res.ID)
 	}
 	if res.Status != reviewPending || res.ID == "" {
-		return e.denyHold(notes, res.ID, reviewReason(res.Status))
+		return e.denyHold(notes, res.ID, res.Status, reviewReason(res.Status))
 	}
 	if mode == ReviewReturn {
 		return e.denyReturn(notes, res.ID)
@@ -306,7 +357,7 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 		// Checked after the select too: both cases can be ready at once,
 		// and a claim started for a gone connection can spend the approval.
 		if ctx.Err() != nil {
-			return e.denyEnded(ctx, notes, reviewID, "the connection ended while waiting for approval")
+			return e.denyEnded(ctx, notes, reviewID, reviewPending, "the connection ended while waiting for approval")
 		}
 
 		res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
@@ -314,7 +365,7 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 		})
 		if err != nil {
 			e.errs.Add(1)
-			v := e.denyHold(notes, reviewID, "the review could not be checked")
+			v := e.denyHold(notes, reviewID, "", "the review could not be checked")
 			v.Err = err
 			return v
 		}
@@ -322,12 +373,12 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 			return e.release(ctx, notes, reviewID)
 		}
 		if res.Status != reviewPending {
-			return e.denyHold(notes, reviewID, reviewReason(res.Status))
+			return e.denyHold(notes, reviewID, res.Status, reviewReason(res.Status))
 		}
 
 		left := time.Until(deadline)
 		if left <= 0 {
-			return e.denyHold(notes, reviewID, fmt.Sprintf(
+			return e.denyHold(notes, reviewID, reviewPending, fmt.Sprintf(
 				"still waiting for approval after %s; run the statement again once it is approved",
 				e.reviewWait))
 		}
@@ -353,7 +404,7 @@ func (e *Evaluator) ask(ctx context.Context, call func(context.Context) (ReviewR
 // either way; the record says so, and names the review that was spent.
 func (e *Evaluator) release(ctx context.Context, notes map[string]string, reviewID string) policy.Verdict {
 	if ctx.Err() != nil {
-		return e.denyEnded(ctx, notes, reviewID,
+		return e.denyEnded(ctx, notes, reviewID, reviewExecuted,
 			"the approval was used, but the connection ended before the statement could run")
 	}
 	// The backend consumed an approved review for these exact bytes, which
@@ -365,9 +416,9 @@ func (e *Evaluator) release(ctx context.Context, notes map[string]string, review
 // denyEnded refuses a statement whose connection ended during the hold. The
 // client rarely reads this; the audit record does, so the cause travels in
 // the message and on Err.
-func (e *Evaluator) denyEnded(ctx context.Context, notes map[string]string, reviewID, reason string) policy.Verdict {
+func (e *Evaluator) denyEnded(ctx context.Context, notes map[string]string, reviewID, status, reason string) policy.Verdict {
 	cause := context.Cause(ctx)
-	v := e.denyHold(notes, reviewID, reason+": "+cause.Error())
+	v := e.denyHold(notes, reviewID, status, reason+": "+cause.Error())
 	v.Err = cause
 	return v
 }
@@ -378,8 +429,15 @@ func (e *Evaluator) denyEnded(ctx context.Context, notes map[string]string, revi
 // operator's message rather than instead of it, because the two answer
 // different questions: the operator says what to do about it, the reason says
 // what the statement is waiting on.
-func (e *Evaluator) denyHold(notes map[string]string, reviewID, reason string) policy.Verdict {
-	return e.deny(notes, holdMessage(e.cfg.Message, reviewID, reason))
+//
+// status is the review's last known status, or empty when the backend did not
+// answer.
+func (e *Evaluator) denyHold(notes map[string]string, reviewID, status, reason string) policy.Verdict {
+	v := e.deny(notes, holdMessage(e.cfg.Message, reviewID, reason))
+	if reviewID != "" {
+		v.Review = &policy.Review{ID: reviewID, Status: status}
+	}
+	return v
 }
 
 func (e *Evaluator) deny(notes map[string]string, msg string) policy.Verdict {
@@ -397,11 +455,15 @@ func (e *Evaluator) deny(notes map[string]string, msg string) policy.Verdict {
 // only the first 512 bytes of an error (MYSQL_ERRMSG_SIZE), and the operator
 // message has no length limit.
 func (e *Evaluator) denyReturn(notes map[string]string, reviewID string) policy.Verdict {
+	var v policy.Verdict
 	if e.cfg.ReturnNext == "" {
-		return e.denyHold(notes, reviewID, returnReason)
+		v = e.denyHold(notes, reviewID, reviewPending, returnReason)
+	} else {
+		v = e.deny(notes, fmt.Sprintf("review %s: %s; %s, then %s (%s)",
+			reviewID, returnWaiting, e.cfg.ReturnNext, returnResend, operatorMessage(e.cfg.Message)))
 	}
-	return e.deny(notes, fmt.Sprintf("review %s: %s; %s, then %s (%s)",
-		reviewID, returnWaiting, e.cfg.ReturnNext, returnResend, operatorMessage(e.cfg.Message)))
+	v.Review = &policy.Review{ID: reviewID, Status: reviewPending, Return: true}
+	return v
 }
 
 // holdMessage renders what the developer reads in their client.

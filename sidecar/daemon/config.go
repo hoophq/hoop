@@ -79,7 +79,7 @@ type Config struct {
 	// MCP serves review status to agents over MCP (ADR-0021). Absent means
 	// off. The server lives in the nested sidecar/mcp module; checkMCP
 	// refuses the block in a build that did not link it.
-	MCP *MCPConfig `json:"mcp,omitempty"`
+	MCP *MCPConfig `json:"mcp,omitempty" cap:"mcp" since:"1.199.0"`
 
 	// PII configures the optional detector plugin. This package decodes it
 	// without interpreting it: knowing what an alcatraz Options looks like
@@ -110,7 +110,7 @@ type Config struct {
 	// Trust adds CA certificates to the host trust store for every outbound
 	// TLS client this process builds. See TrustConfig. Absent is the host
 	// trust store alone, which is every config written before the key.
-	Trust *TrustConfig `json:"trust,omitempty"`
+	Trust *TrustConfig `json:"trust,omitempty" cap:"trust" since:"1.198.0"`
 
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level,omitempty"`
@@ -176,6 +176,10 @@ type Config struct {
 	// config key: the file names a URL and does not carry a token or a
 	// verdict about reachability.
 	cp *controlPlane
+
+	// localReviewer files held statements with whoever runs this process,
+	// when it has no control plane. WithLocalReviewer fills it; see there.
+	localReviewer LocalReviewer
 
 	// entrypoint, deprecatedAlias and configFormat are facts the entry
 	// point learned about its own invocation, carried here so Run can
@@ -305,7 +309,7 @@ type ListenerConfig struct {
 	// would otherwise need ext_authz just to learn the name the token
 	// already holds. The upstream still authorizes the request; this names
 	// who sent it.
-	GoogleIdentity *GoogleIdentityConfig `json:"google_identity,omitempty" ui:"-"`
+	GoogleIdentity *GoogleIdentityConfig `json:"google_identity,omitempty" cap:"google_identity" since:"1.198.0" ui:"-"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
@@ -373,7 +377,7 @@ type ListenerConfig struct {
 	// Postgres configures what a postgres lane reads from the client's
 	// StartupMessage beyond the user. Only valid on a postgres lane. See
 	// PostgresConfig.
-	Postgres *PostgresConfig `json:"postgres,omitempty" ui:"-"`
+	Postgres *PostgresConfig `json:"postgres,omitempty" cap:"postgres_startup_metadata" since:"1.201.0" ui:"-"`
 
 	// GRPC configures what this lane's gRPC transport decodes and exposes.
 	// Only valid on a grpc lane. See GRPCCodecConfig.
@@ -1555,6 +1559,10 @@ type Plugin interface {
 // both sides: once to decide whether to spend, once to decide what the
 // answer means.
 //
+// A review a risk level asks for is not a position in this list. The Chain
+// runs it after every evaluator here allowed, decide included, so a denial
+// files nothing and spends no approval (ADR-0030).
+//
 // A lane with NO OPA cannot consume a finding at all, so deferring rules deny
 // instead of reporting. `defer` means "hand this to a decision-maker"; with no
 // decision-maker the safe reading is refusal, and the alternative of refusing
@@ -1716,6 +1724,11 @@ type analyzerDeps struct {
 	// edited approval_rule reaches the lane on the next heartbeat.
 	cp *controlPlane
 
+	// local files reviews with the person running this process, used only
+	// when cp is nil. Held here for the same reason as cp: a reload that
+	// adds require_review to a lane gets a reviewer without a restart.
+	local LocalReviewer
+
 	// det builds each evaluator's redactor from its EFFECTIVE send mode:
 	// a lane overriding `send` gets its own rewrite function while every
 	// other lane keeps the default. Held here rather than a prebuilt
@@ -1738,9 +1751,15 @@ type analyzerDeps struct {
 	// builds, then only the heartbeat) needs no lock.
 	budgets map[string]*analyzer.Budget
 
-	// log is the process logger, for the rate-limit edges an evaluator
-	// reports. Nil in a build that never serves, which logs nothing.
+	// log is the process logger, for the rate-limit edges and the per-call
+	// debug line an evaluator reports. Nil in a build that never serves,
+	// which logs nothing.
 	log *slog.Logger
+
+	// metrics is what GET /metrics renders for the analyzer. Shared by every
+	// generation of every evaluator, so a reload does not reset a counter.
+	// Nil in tests that build deps by hand, which then count nothing.
+	metrics *analyzerMetrics
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.
@@ -1820,15 +1839,27 @@ func (t *TLSConfig) downstreamKeypairNamed() error {
 // analyzerTriggerOperations lists every operation a lane's analyzer is
 // triggered on, in BOTH spellings: the listener's analyzer block and any
 // deprecated ai_analysis rule still carrying its own trigger.
+//
+// Exclude items are left out: excluding what the lane never classifies is
+// harmless, while selecting it is a trigger that silently never fires.
 func analyzerTriggerOperations(lc ListenerConfig, aiRules []policy.Rule) []inspect.Operation {
 	var ops []inspect.Operation
-	if lc.Analyzer != nil && lc.Analyzer.Trigger != nil {
-		ops = append(ops, lc.Analyzer.Trigger.Operations...)
+	if lc.Analyzer != nil {
+		ops = append(ops, triggerOperations(lc.Analyzer.Trigger)...)
 	}
 	for _, r := range aiRules {
-		if r.Trigger != nil {
-			ops = append(ops, r.Trigger.Operations...)
-		}
+		ops = append(ops, triggerOperations(r.Trigger)...)
+	}
+	return ops
+}
+
+func triggerOperations(t *policy.AITrigger) []inspect.Operation {
+	if t == nil {
+		return nil
+	}
+	ops := slices.Clone(t.Operations)
+	for _, item := range t.Any {
+		ops = append(ops, item.Operations...)
 	}
 	return ops
 }

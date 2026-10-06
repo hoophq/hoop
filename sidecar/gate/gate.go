@@ -195,6 +195,14 @@ type Config struct {
 	// CredentialSource, and New refuses a codec that does not, because a
 	// resolver handed nothing would resolve every request to anonymous.
 	RequestIdentity RequestIdentity
+
+	// Answer lets the lane reply to a request itself, for a route the
+	// sidecar reserves (the review status path). It sees each decoded http
+	// request before identity and policy. It returns nil for a route it
+	// does not own, or the function that renders the reply, which the gate
+	// calls only when the reply can be sent (see Decision.Hangup). Nil
+	// answers nothing, which is every lane but http.
+	Answer func(stmt inspect.Statement) func(ctx context.Context) []byte
 }
 
 // CredentialSource is implemented by a codec that lifts a caller credential
@@ -280,6 +288,24 @@ type Decision struct {
 	// not decode a statement.
 	DeniedStatement *inspect.Statement
 
+	// Review names the human review a denial waits on, so a transport
+	// with structured fields can carry it beside Message. Nil unless the
+	// denying verdict named one.
+	Review *policy.Review
+
+	// Reply is a response the lane wrote itself, through Config.Answer.
+	// The caller sends it to the client and forwards nothing. It is not a
+	// denial: the request named a route the sidecar owns. Allowed is false
+	// alongside it, so a caller that ignores Reply still forwards nothing.
+	Reply []byte
+
+	// Hangup ends the connection with nothing written. It is set when a
+	// reserved route follows another request on the connection: HTTP/1.1
+	// pairs responses with requests by order, so a reply sent now could
+	// overtake the earlier response. The client resends on a fresh
+	// connection, where the request comes first.
+	Hangup bool
+
 	// Payload is the bytes to forward. It differs from the input only when
 	// masking rewrote something; otherwise it aliases the input.
 	Payload []byte
@@ -351,6 +377,10 @@ type Gate struct {
 	// rotating under it would file that response under the next caller.
 	creds       CredentialSource
 	outstanding int
+
+	// requests counts the http requests this connection has judged. Only
+	// the client direction touches it, so it needs no lock.
+	requests int
 
 	// oneExchange says this gate lives exactly as long as one request and
 	// the responses that answer it, which is true of a gate from
@@ -729,7 +759,28 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	if g.creds != nil && dir == inspect.FromServer {
 		defer func() { g.releaseResponses(finals) }()
 	}
+	// Before any request in the chunk is judged: the reply closes the
+	// connection, so a pipelined request judged first would be audited as
+	// run and never forwarded.
+	if g.cfg.Answer != nil {
+		earlier := g.requests
+		for _, stmt := range stmts {
+			if !isHTTPRequest(stmt) {
+				continue
+			}
+			if reply := g.cfg.Answer(stmt); reply != nil {
+				if earlier > 0 {
+					return Decision{Statements: stmts, Hangup: true}
+				}
+				return Decision{Statements: stmts, Reply: reply(ctx)}
+			}
+			earlier++
+		}
+	}
 	for i, stmt := range stmts {
+		if isHTTPRequest(stmt) {
+			g.requests++
+		}
 		if g.creds != nil {
 			switch {
 			case isHTTPRequest(stmt):
@@ -757,6 +808,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			d.Allowed = false
 			d.Message = j.message
 			d.Rule = j.rule
+			d.Review = j.review
 			denied := stmt
 			d.DeniedStatement = &denied
 			d.Payload = nil // nothing may be forwarded
@@ -787,6 +839,7 @@ type judgment struct {
 	denied  bool
 	rule    string
 	message string
+	review  *policy.Review
 
 	// err carries the non-fatal failures (a failed audit write under
 	// fail-open, an evaluator's infrastructure error) for logging.
@@ -854,6 +907,7 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 		denied:  verdict.Denied,
 		rule:    verdict.Rule,
 		message: verdict.Message,
+		review:  verdict.Review,
 		err:     errors.Join(auditErr, verdict.Err),
 	}
 }
@@ -908,6 +962,7 @@ func (g *Gate) EvaluateStatement(ctx context.Context, stmt inspect.Statement) De
 	if j.denied {
 		d.Message = j.message
 		d.Rule = j.rule
+		d.Review = j.review
 		denied := stmt
 		d.DeniedStatement = &denied
 	}

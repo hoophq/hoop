@@ -86,6 +86,7 @@ type setupOptions struct {
 	token           string
 	entrypoint      string
 	deprecatedAlias bool
+	localReviewer   LocalReviewer
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -177,6 +178,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	}
 	cfg.entrypoint = o.entrypoint
 	cfg.deprecatedAlias = o.deprecatedAlias
+	cfg.localReviewer = o.localReviewer
 	cfg.configPath = path
 	setConfigFormat(cfg, path)
 	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
@@ -818,11 +820,16 @@ func Run(cfg *Config, det Plugin) error {
 		"guardrail_rules", capText(limit.guardrails),
 		"mask_rules", capText(limit.mask))
 
-	ac, err := buildAudit(cfg.Audit)
+	ac, err := buildAudit(cfg.Audit, cfg.cp, log)
 	if err != nil {
 		return err
 	}
 	auditSink := ac.sink
+	if cfg.cp != nil {
+		// Set before the heartbeat starts, which is what lets the heartbeat
+		// read it without a lock.
+		cfg.cp.events = ac.events
+	}
 	defer func() {
 		// Close flushes buffered events, so shutdown does not drop the tail of
 		// the audit trail.
@@ -917,7 +924,7 @@ func Run(cfg *Config, det Plugin) error {
 			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
 			swappers[ln.name] = rules
 		default:
-			srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
+			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), log)
 			if serr != nil {
 				return serr
 			}
@@ -1010,8 +1017,12 @@ func Run(cfg *Config, det Plugin) error {
 	go rl.watchFile(ctx, log)
 
 	if cfg.Admin.Listen != "" {
+		var am *analyzerMetrics
+		if analyzerDeps != nil {
+			am = analyzerDeps.metrics
+		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, cfg.Analyzer, licState, log)
+			view, ac, cfg.Analyzer, am, licState, log)
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
@@ -1173,8 +1184,9 @@ type lane struct {
 	// through cfg.Analyzer instead.
 	analyzed []string
 
-	// captureBody reports whether this lane's codec exposes request bodies,
-	// which decides whether HTTP analysis has anything to read.
+	// captureBody is the configured http.capture_body, which the
+	// lanes-capture-body metric counts. A holding lane captures request
+	// bodies without it; see capturesRequestBodies.
 	captureBody bool
 
 	// observing is true when the lane evaluates everything and denies
@@ -1200,6 +1212,14 @@ type lane struct {
 	// rather than read from the config at each use so one build of the
 	// lanes sees one read of the bundle.
 	trustRoots *x509.CertPool
+}
+
+// capturesRequestBodies reports whether the lane's codec exposes request
+// bodies, which /config publishes as what leaves this process. It follows
+// newHTTPCodec.
+func (ln lane) capturesRequestBodies() bool {
+	return ln.captureBody ||
+		inspect.Protocol(ln.cfg.Protocol) == inspect.HTTP && analyzerHolds(ln.cfg.Analyzer)
 }
 
 // buildLanes resolves and builds every listener's stack.
@@ -1236,12 +1256,8 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		if holdsWithoutAPlane(cfg, lc.Analyzer, ac) {
-			problems = append(problems, fmt.Sprintf(
-				"%s: the analyzer block asks for %q and this sidecar has no control "+
-					"plane; the review is filed with the plane named by %s or the "+
-					"control_plane_url key, and there is nowhere else to file it",
-				name, analyzer.ActionRequireReview, ControlPlaneURLEnv))
+		if why := holdRefusal(cfg, lc.Analyzer, ac); why != "" {
+			problems = append(problems, name+": "+why)
 			continue
 		}
 
@@ -1256,13 +1272,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		proto := inspect.Protocol(lc.Protocol)
 		ln := lane{
 			cfg:          lc,
 			name:         name,
 			policy:       pol,
 			masker:       masker,
-			codecFactory: laneCodecFactory(proto, lc.HTTP, lc.ClickHouse, lc.credentialHeader()),
+			codecFactory: laneCodecFactory(lc),
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
@@ -1329,16 +1344,18 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if !(opa.enabled() && opa.Gate) {
 			if lc.Analyzer != nil && lc.Analyzer.Trigger.IsZero() {
 				ln.notes = append(ln.notes,
-					"the analyzer block has no trigger, so every statement on this "+
-						"lane is classified: a model call per statement shape, bounded "+
-						"only by the cache, max_calls and rate_limit. Add a trigger to narrow it")
+					"the analyzer block has no trigger condition, so every statement on "+
+						"this lane that no trigger.exclude item names is classified: a model "+
+						"call per statement shape, bounded only by the cache, max_calls and "+
+						"rate_limit. Add a trigger to narrow it")
 			}
 			for _, r := range gc.Rules {
 				if r.Type == policy.MatchAIAnalysis && r.Trigger.IsZero() {
 					ln.notes = append(ln.notes, fmt.Sprintf(
-						"ai_analysis rule %q has no trigger, so every statement on this "+
-							"lane is classified: a model call per statement shape, bounded "+
-							"only by the cache, max_calls and rate_limit. Add a trigger to narrow it", r.Name))
+						"ai_analysis rule %q has no trigger condition, so every statement on "+
+							"this lane that no trigger.exclude item names is classified: a model "+
+							"call per statement shape, bounded only by the cache, max_calls and "+
+							"rate_limit. Add a trigger to narrow it", r.Name))
 				}
 			}
 		}
@@ -1403,10 +1420,14 @@ func checkPIIEntities(rules []policy.Rule, det Plugin) []string {
 }
 
 // buildServer turns one resolved lane into a running-capable Server.
+//
+// reviews answers the reserved review status path on an http lane; nil in a
+// process with no control plane.
 func buildServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
+	reviews ReviewStatusReader,
 	log *slog.Logger,
 ) (*proxy.Server, error) {
 	lc := ln.cfg
@@ -1467,6 +1488,7 @@ func buildServer(
 		Masker:              ln.masker,
 		FailOnAuditError:    ac.failOnAuditError(),
 		DenyWriter:          proxy.ProtocolDenyWriter{},
+		Answer:              reviewStatusAnswer(lc, ln.name, reviews, log.With("listener", ln.name)),
 		CredentialHeader:    lc.credentialHeader(),
 		RequestIdentity:     requestIdentity,
 		CodecFactory:        ln.codecFactory,
@@ -1553,13 +1575,19 @@ type auditChain struct {
 	sink  audit.Sink
 	mem   *audit.MemorySink
 	query *store.MemoryStore
+	// events sends the trail to the control plane. Nil without one.
+	events *sessionEventSink
 }
 
 // buildAudit assembles the sink chain.
 //
 // Order matters: the durable JSONL sink is first so it records even if a
 // later sink errors, and MultiSink attempts every sink regardless.
-func buildAudit(cfg AuditConfig) (auditChain, error) {
+//
+// A process connected to a control plane also gets the session events sink,
+// last. It sends nothing until a handshake answers SessionEventsHeader, and
+// it never fails a write, so it cannot change what the sinks before it do.
+func buildAudit(cfg AuditConfig, cp *controlPlane, log *slog.Logger) (auditChain, error) {
 	opts := audit.SinkOptions{
 		RedactStatements:  cfg.RedactStatements,
 		MaxStatementBytes: cfg.MaxStatementBytes,
@@ -1594,6 +1622,16 @@ func buildAudit(cfg AuditConfig) (auditChain, error) {
 		sinks = append(sinks, out.query)
 	}
 
+	// The same options as the JSONL sink, so the plane never receives a
+	// statement the file redacted or a longer one than the file kept.
+	if cp != nil {
+		out.events = newSessionEventSink(cp, opts, cp.sessionEvents, log)
+		sinks = append(sinks, out.events)
+		if cp.sessionEvents {
+			log.Info("the control plane takes session events; sending them", "url", cp.url)
+		}
+	}
+
 	out.sink = audit.NewMultiSink(sinks...)
 	if cfg.AsyncQueueSize > 0 {
 		out.sink = audit.NewAsyncSink(out.sink, cfg.AsyncQueueSize)
@@ -1615,6 +1653,7 @@ func serveAdmin(
 	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
+	analyzerMetrics *analyzerMetrics,
 	licState *licenseState,
 	log *slog.Logger,
 ) {
@@ -1659,11 +1698,30 @@ func serveAdmin(
 				Active: active, Total: total, Denied: denied,
 			})
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		resp := map[string]any{
 			"version":   Version,
 			"listeners": out,
-		})
+		}
+		// Only a plane-connected process has the sink. Its drop count is
+		// how an operator learns the plane's copy of the trail has holes
+		// the local file does not.
+		if ac.events != nil {
+			resp["session_events"] = ac.events.snapshot()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	// Prometheus text exposition. The analyzer families only, so far: the
+	// other counters this process keeps are served as JSON by /stats. A
+	// process with no analyzer answers an empty, valid document rather than
+	// 404, so a scrape job pointed at every sidecar does not mark this one
+	// down.
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", metricsContentType)
+		if err := analyzerMetrics.writeTo(w); err != nil {
+			log.Debug("metrics write failed", "error", err)
+		}
 	})
 
 	// The resolved enforcement stack, per lane.
@@ -1729,7 +1787,7 @@ func serveAdmin(
 				Masking:     ln.masker != nil,
 				Analyzer:    ln.cfg.Analyzer != nil,
 				AIRules:     ln.analyzed,
-				CaptureBody: ln.captureBody,
+				CaptureBody: ln.capturesRequestBodies(),
 				Observing:   ln.observing,
 				Guardrails:  mode,
 				OPAURL:      ln.opaURL,

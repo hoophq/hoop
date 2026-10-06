@@ -790,7 +790,7 @@ func testReviewTTLMigrationRollsBack(t *testing.T) {
 		t.Fatalf("count: %v", err)
 	}
 
-	down, err := migrations.FS.ReadFile("000128_sidecar_review_ttl.down.sql")
+	down, err := migrations.FS.ReadFile("000132_sidecar_review_ttl.down.sql")
 	if err != nil {
 		t.Fatalf("read the down migration: %v", err)
 	}

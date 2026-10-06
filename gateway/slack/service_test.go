@@ -206,7 +206,8 @@ func TestRebuildReviewBlocks(t *testing.T) {
 // Terminal updates must consume the tracked entry (no stale rewrites) and
 // untracked reviews must be a silent no-op even without an api client.
 func TestUpdateReviewMessageTracking(t *testing.T) {
-	s := &SlackService{sentReviewItems: make(map[string][]sentReviewMessage)}
+	s := &SlackService{}
+	s.mem.items = make(map[string][]sentReviewMessage)
 
 	// untracked review: no-op, no network
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "unknown", IsApproved: true}); err != nil {
@@ -226,7 +227,7 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	defer srv.Close()
 	s.apiClient = slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))
 
-	s.sentReviewItems["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
+	s.mem.items["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
 	req := &UpdateReviewMessageRequest{ReviewID: "rev-1", IsApproved: true}
 	if err := s.UpdateReviewMessage(req); err != nil {
 		t.Fatalf("tracked terminal update failed: %v", err)
@@ -243,18 +244,18 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	if final := s.trackSentReviewMessage("rev-1", sentReviewMessage{channelID: "C3", timestamp: "3.0"}); final == nil || !final.IsApproved {
 		t.Fatalf("a post after settlement must get the terminal state, got %+v", final)
 	}
-	if _, ok := s.sentReviewItems["rev-1"]; ok {
+	if _, ok := s.mem.items["rev-1"]; ok {
 		t.Errorf("a settled review must not be tracked again")
 	}
 
 	// eviction drops entries older than the retention window on new sends
 	stale := time.Now().UTC().Add(-sentReviewRetention - time.Hour)
-	s.sentReviewItems["rev-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: stale}}
+	s.mem.items["rev-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: stale}}
 	s.trackSentReviewMessage("rev-new", sentReviewMessage{channelID: "C2", timestamp: "2.0", sentAt: time.Now().UTC()})
-	if _, ok := s.sentReviewItems["rev-old"]; ok {
+	if _, ok := s.mem.items["rev-old"]; ok {
 		t.Errorf("expired entry survived eviction")
 	}
-	if _, ok := s.sentReviewItems["rev-new"]; !ok {
+	if _, ok := s.mem.items["rev-new"]; !ok {
 		t.Errorf("fresh entry was not tracked")
 	}
 
@@ -262,32 +263,32 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	// the deadline, so an expiry recorded after it still finds the message
 	recent := time.Now().UTC().Add(-time.Hour)
 	longPast := time.Now().UTC().Add(-sentReviewRetention - time.Hour)
-	s.sentReviewItems["rev-ttl"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.1", sentAt: stale, deadline: &recent}}
-	s.sentReviewItems["rev-ttl-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.2", sentAt: stale, deadline: &longPast}}
-	s.settledReviews["rev-approved"] = settledReview{at: stale, deadline: &recent}
+	s.mem.items["rev-ttl"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.1", sentAt: stale, deadline: &recent}}
+	s.mem.items["rev-ttl-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.2", sentAt: stale, deadline: &longPast}}
+	s.mem.settledReviews["rev-approved"] = settledReview{at: stale, deadline: &recent}
 	s.trackSentReviewMessage("rev-new-2", sentReviewMessage{channelID: "C2", timestamp: "2.1", sentAt: time.Now().UTC()})
-	if _, ok := s.sentReviewItems["rev-ttl"]; !ok {
+	if _, ok := s.mem.items["rev-ttl"]; !ok {
 		t.Errorf("a message whose deadline passed an hour ago was evicted")
 	}
-	if _, ok := s.sentReviewItems["rev-ttl-old"]; ok {
+	if _, ok := s.mem.items["rev-ttl-old"]; ok {
 		t.Errorf("a message past its deadline and the window survived eviction")
 	}
-	if _, ok := s.settledReviews["rev-approved"]; !ok {
+	if _, ok := s.mem.settledReviews["rev-approved"]; !ok {
 		t.Errorf("an approval's messages were evicted inside the window after its deadline")
 	}
 	approvalDeadline := time.Now().UTC().Add(time.Hour)
-	s.sentReviewItems["rev-approve"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.3", sentAt: time.Now().UTC()}}
+	s.mem.items["rev-approve"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.3", sentAt: time.Now().UTC()}}
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-approve", IsApproved: true,
 		ExpiresAt: &approvalDeadline}); err != nil {
 		t.Fatalf("tracked approval failed: %v", err)
 	}
-	if d := s.settledReviews["rev-approve"].deadline; d == nil || !d.Equal(approvalDeadline) {
+	if d := s.mem.settledReviews["rev-approve"].deadline; d == nil || !d.Equal(approvalDeadline) {
 		t.Errorf("an approval kept deadline %v, want %v", d, approvalDeadline)
 	}
 
 	// an expiry is terminal: it consumes the entry, and a late post gets it
 	updateCalls = 0
-	s.sentReviewItems["rev-exp"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: time.Now().UTC()}}
+	s.mem.items["rev-exp"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: time.Now().UTC()}}
 	expired := &UpdateReviewMessageRequest{ReviewID: "rev-exp", IsExpired: true}
 	if err := s.UpdateReviewMessage(expired); err != nil {
 		t.Fatalf("tracked expiry failed: %v", err)
@@ -478,7 +479,7 @@ func TestPostMessageReviewTracksTheDeadline(t *testing.T) {
 	if res := s.PostMessageReview(msg); res.Posted != 1 {
 		t.Fatalf("post result = %+v, want one post", res)
 	}
-	items := s.sentReviewItems[msg.ID]
+	items := s.mem.items[msg.ID]
 	if len(items) != 1 || items[0].deadline == nil || !items[0].deadline.Equal(reviewDeadline) {
 		t.Fatalf("tracked %+v, want the deadline %v", items, reviewDeadline)
 	}
@@ -601,10 +602,11 @@ func TestUpdateReviewMessageRevokeAfterApproval(t *testing.T) {
 		fmt.Fprint(w, `{"ok":true,"channel":"C1","ts":"1.0"}`)
 	}))
 	defer srv.Close()
-	s := &SlackService{sentReviewItems: make(map[string][]sentReviewMessage),
+	s := &SlackService{
 		apiClient: slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))}
+	s.mem.items = make(map[string][]sentReviewMessage)
 
-	s.sentReviewItems["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
+	s.mem.items["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-1", IsApproved: true}); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -621,7 +623,7 @@ func TestUpdateReviewMessageRevokeAfterApproval(t *testing.T) {
 		t.Errorf("a second revoke rewrote again: calls=%d err=%v", updates, err)
 	}
 
-	s.sentReviewItems["rev-2"] = []sentReviewMessage{{channelID: "C1", timestamp: "2.0"}}
+	s.mem.items["rev-2"] = []sentReviewMessage{{channelID: "C1", timestamp: "2.0"}}
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-2", IsRejected: true}); err != nil {
 		t.Fatalf("reject: %v", err)
 	}
@@ -639,10 +641,11 @@ func TestUpdateReviewMessageExpiryAfterApproval(t *testing.T) {
 		fmt.Fprint(w, `{"ok":true,"channel":"C1","ts":"1.0"}`)
 	}))
 	defer srv.Close()
-	s := &SlackService{sentReviewItems: make(map[string][]sentReviewMessage),
+	s := &SlackService{
 		apiClient: slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))}
+	s.mem.items = make(map[string][]sentReviewMessage)
 
-	s.sentReviewItems["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
+	s.mem.items["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-1", IsApproved: true}); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -654,5 +657,39 @@ func TestUpdateReviewMessageExpiryAfterApproval(t *testing.T) {
 	}
 	if final := s.settledReview("rev-1"); final == nil || !final.IsExpired {
 		t.Errorf("settled state = %+v, want the expiry", final)
+	}
+}
+
+// A service shutting down after a restart removes itself only. Removing by org
+// alone dropped the service that replaced it, and Slack went quiet until the
+// next restart.
+func TestRemoveServiceInstanceIfKeepsTheReplacement(t *testing.T) {
+	const org = "org-restart"
+	old, replacement := &SlackService{}, &SlackService{}
+	SetServiceInstance(org, replacement)
+	t.Cleanup(func() { RemoveServiceInstance(org) })
+
+	RemoveServiceInstanceIf(org, old)
+	if GetServiceInstance(org) != replacement {
+		t.Fatal("the old service removed its replacement")
+	}
+	RemoveServiceInstanceIf(org, replacement)
+	if GetServiceInstance(org) != nil {
+		t.Fatal("the current service was not removed")
+	}
+	(&SlackService{}).Close() // a zero service closes without a panic
+}
+
+// A reject submitted on a replica that did not open the modal carries the
+// modal submission, with no button in it. The fallback rewrite refuses it
+// rather than index an empty action list on the response goroutine.
+func TestTheFallbackRewriteRefusesAnInteractionWithoutAButton(t *testing.T) {
+	s := &SlackService{}
+	msg := &MessageReviewResponse{ID: "rev-1", Status: "rejected"}
+	if err := s.UpdateMessage(msg, false); err == nil {
+		t.Error("UpdateMessage accepted an interaction with no button")
+	}
+	if err := s.UpdateMessagePartialApproval(msg, 1, 2); err == nil {
+		t.Error("UpdateMessagePartialApproval accepted an interaction with no button")
 	}
 }

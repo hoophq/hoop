@@ -145,6 +145,24 @@ func (s *scanner) next() (Token, bool) {
 		s.pos++
 		return s.escapedString(), true
 
+	// Ahead of N'...' and the word case: q, Q and nq are ordinary
+	// identifier bytes unless a quote follows, and the prefix decides
+	// which close ends the literal. See lexRules.altQuote.
+	case s.rules.altQuote && (c == 'q' || c == 'Q') && s.peek(1) == '\'':
+		s.pos++
+		return s.altQuoteString(), true
+
+	case s.rules.altQuote && (c == 'n' || c == 'N') && (s.peek(1) == 'q' || s.peek(1) == 'Q') && s.peek(2) == '\'':
+		s.pos += 2
+		return s.altQuoteString(), true
+
+	// A bind's name is the client's choice and may spell a keyword, so it
+	// is one opaque value token, never a Word. `:=` falls through.
+	case s.rules.colonBind && c == ':' && isWordByte(s.peek(1)):
+		s.pos++
+		s.word()
+		return Token{Kind: Literal}, true
+
 	case s.rules.nationalString && (c == 'N' || c == 'n') && s.peek(1) == '\'':
 		s.pos++
 		return s.plainString('\''), true
@@ -469,6 +487,52 @@ func (s *scanner) escapedString() Token {
 	return Token{Kind: Literal}
 }
 
+// altQuoteString consumes the body of Oracle's q'X...X'. The cursor sits on
+// the quote after the q prefix.
+//
+// The delimiter is one CHARACTER, not one byte: Oracle accepts a multibyte
+// delimiter (verified on 23ai with q'ÄxÄ'), and matching only its lead
+// byte would close the literal on the first other character sharing it.
+// The four brackets close with their mirror, anything else with itself,
+// and only when a quote follows: q'(a(b)c)' is a(b)c.
+//
+// Whitespace and the quote itself are rejected by the server, and so here:
+// a delimiter Oracle refuses has no close to look for, and guessing one
+// would decide where a statement ends from nothing.
+func (s *scanner) altQuoteString() Token {
+	s.pos++ // opening quote
+	if s.pos >= len(s.src) {
+		s.fail("unterminated alternative-quote string")
+		return Token{Kind: Literal}
+	}
+	// The close is built from the delimiter's own BYTES rather than from
+	// the decoded rune: an invalid UTF-8 byte decodes to U+FFFD, and
+	// searching for that would miss the byte the server actually closes on.
+	_, size := utf8.DecodeRuneInString(s.src[s.pos:])
+	end := s.src[s.pos:s.pos+size] + "'"
+	switch s.src[s.pos] {
+	case ' ', '\t', '\n', '\r', '\'':
+		s.fail("invalid alternative-quote delimiter")
+		return Token{Kind: Literal}
+	case '[':
+		end = "]'"
+	case '{':
+		end = "}'"
+	case '(':
+		end = ")'"
+	case '<':
+		end = ">'"
+	}
+	s.pos += size
+	if i := strings.Index(s.src[s.pos:], end); i >= 0 {
+		s.pos += i + len(end)
+		return Token{Kind: Literal}
+	}
+	s.fail("unterminated alternative-quote string")
+	s.pos = len(s.src)
+	return Token{Kind: Literal}
+}
+
 // delimitedIdent consumes a quoted identifier, honouring the doubled-close
 // escape: "a""b", [a]]b]. Under backtickBackslashEscape a backtick
 // identifier instead escapes with a backslash and a doubled backtick is
@@ -654,7 +718,8 @@ func (s *scanner) number() Token {
 
 func (s *scanner) word() Token {
 	start := s.pos
-	for s.pos < len(s.src) && isWordByte(s.src[s.pos]) {
+	for s.pos < len(s.src) && (isWordByte(s.src[s.pos]) ||
+		(s.rules.identDollarHash && (s.src[s.pos] == '$' || s.src[s.pos] == '#'))) {
 		s.pos++
 	}
 	return Token{Kind: Word, Text: strings.ToLower(s.src[start:s.pos])}
@@ -693,9 +758,21 @@ func isTagByte(c byte) bool {
 //
 // A semicolon inside a literal, a comment, a quoted identifier or a
 // dollar-quoted body is not a separator. Empty statements are dropped.
+//
+// Oracle runs one statement per call, so its text is never split: a call
+// with two statements fails with ORA-00933 and runs neither (verified on
+// 21c). Its only inner semicolons belong to PL/SQL, and a fragment of a
+// block loses the context Analyze needs: `FORALL i IN 1 .. n DELETE FROM t`
+// alone reports no delete. Analyze reads the whole text instead.
 func Split(sql string, d Dialect) []string {
-	if d == MySQL {
+	switch d {
+	case MySQL:
 		return splitMySQL(sql)
+	case Oracle:
+		if t := strings.TrimSpace(sql); t != "" {
+			return []string{t}
+		}
+		return nil
 	}
 	return splitWith(sql, d.rules())
 }

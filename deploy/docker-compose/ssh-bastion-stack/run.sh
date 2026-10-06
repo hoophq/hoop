@@ -190,7 +190,7 @@ c_ok "wrote known_hosts for 3 hosts; legacy-01 starts empty (accept_new)"
 h "Build"
 
 # A stamp over the two source trees, so a stale image cannot pass for a
-# current one. The bastion is built from local source because ADR-0021 is not
+# current one. The bastion is built from local source because ADR-0027 is not
 # in a release yet.
 # -L follows symlinks, and that is not optional: ../../../libhoop is usually a
 # SYMLINK to a checkout beside the repo, and plain `find` reports the link

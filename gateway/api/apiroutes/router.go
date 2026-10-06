@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/externaljwt"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
@@ -33,6 +34,9 @@ func routeTypeFromContext(c *gin.Context) string {
 type Router struct {
 	*gin.RouterGroup
 	apiURL string
+	// sidecarIdentity verifies the service account tokens sidecars send. One
+	// per process: it caches each issuer's keys.
+	sidecarIdentity *externaljwt.OIDCVerifier
 }
 
 func New(route *gin.RouterGroup) *Router {
@@ -47,8 +51,9 @@ func New(route *gin.RouterGroup) *Router {
 	))
 	route.Use(contextTracerMiddleware())
 	return &Router{
-		RouterGroup: route,
-		apiURL:      appconfig.Get().ApiURL(),
+		RouterGroup:     route,
+		apiURL:          appconfig.Get().ApiURL(),
+		sidecarIdentity: externaljwt.NewOIDCVerifier(externaljwt.OIDCOptions{}),
 	}
 }
 

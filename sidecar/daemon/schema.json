@@ -25,6 +25,10 @@
       "label": "MySQL"
     },
     {
+      "value": "oracle",
+      "label": "Oracle"
+    },
+    {
       "value": "postgres",
       "label": "PostgreSQL"
     },
@@ -208,7 +212,7 @@
           "key": "capture_body",
           "type": "boolean",
           "label": "Capture the request body",
-          "help": "Lets policy and the AI analyzer read what a POST or PUT carries."
+          "help": "Lets policy and the AI analyzer read what a POST or PUT carries. A listener that holds for review captures request bodies without it."
         },
         {
           "key": "max_body_bytes",

@@ -387,6 +387,7 @@ func validateComposedAnalyzers(cfg daemon.Config) error {
 	for _, l := range cfg.Listeners {
 		problems = append(problems, daemon.ValidateLaneAnalyzerBlock(l.Analyzer, l.Name)...)
 	}
+	problems = append(problems, daemon.ValidateLaneTriggers(cfg)...)
 	if len(problems) > 0 {
 		return ErrSidecarAnalyzerInvalid{Reason: strings.Join(problems, "; ")}
 	}

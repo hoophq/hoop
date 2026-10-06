@@ -18,6 +18,10 @@ type rejectModalMetadata struct {
 	EventKind string `json:"event_kind"`
 	GroupName string `json:"group_name"`
 	SlackID   string `json:"slack_id"`
+	// ChannelID is where the review message is, so the replica that gets
+	// the modal submission can answer the user there even when another
+	// replica opened the modal and holds the original callback.
+	ChannelID string `json:"channel_id,omitempty"`
 }
 
 // ProcessEvents start the websocket connection and process the events
@@ -89,6 +93,7 @@ func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev
 				EventKind: fmt.Sprintf("%v", cb.Message.Metadata.EventType),
 				GroupName: groupName,
 				SlackID:   cb.User.ID,
+				ChannelID: cb.Channel.ID,
 			}
 			metaJSON, err := json.Marshal(meta)
 			// OpenRejectModal must be called before Ack() — TriggerID expires ~3s after interaction.
@@ -144,9 +149,13 @@ func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev
 		}
 		s.pendingRejectMu.Unlock()
 
+		// Without the original callback (another replica opened the modal),
+		// the submission is the item: it names the user but not the channel.
 		item := cb
 		if hasPending {
 			item = originalCb
+		} else if item.Channel.ID == "" {
+			item.Channel.ID = meta.ChannelID
 		}
 
 		reviewResponse := MessageReviewResponse{

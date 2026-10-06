@@ -93,16 +93,20 @@ function maskDetail(rule) {
 // A lane's `analyzer` block and a deprecated `ai_analysis` rule carry the same
 // six keys (specFromRule, sidecar/daemon/analyzer.go), so one reader serves both.
 function analyzerDetail(spec) {
+  const any = spec.trigger?.any?.length
+  const exclude = spec.trigger?.exclude?.length
   const trigger = [spec.trigger?.operations, spec.trigger?.tables, spec.trigger?.resources]
     .map(join)
+    .concat(any ? `${any} combined condition${any > 1 ? 's' : ''}` : null)
     .filter(Boolean)
     .join(', ')
+  const excluded = exclude ? `${exclude} exclusion${exclude > 1 ? 's' : ''}` : null
   const risks = ['high', 'medium', 'low']
     .filter((level) => spec[level])
     .map((level) => `${level} ${RISK_ACTIONS[spec[level]] ?? spec[level]}`)
   const prompt = spec.prompt ? 'custom prompt' : null
   // An omitted trigger is not "nothing": declaring the analyzer is the opt-in.
-  return [trigger || 'Every statement', ...risks, prompt].filter(Boolean).join(' · ')
+  return [trigger || 'Every statement', excluded, ...risks, prompt].filter(Boolean).join(' · ')
 }
 
 // Where distributed rules are read from: the whole sidecar when there is no
@@ -184,12 +188,6 @@ const ROWS = {
   guardrails: guardrailRows,
 }
 
-const EMPTY = {
-  'ai-analyzer': 'Not used. Nothing is sent to a model.',
-  'data-masking': 'No rules. Responses are returned unchanged.',
-  guardrails: 'No rules. Everything passes.',
-}
-
 function summary(key, rules) {
   if (rules.length === 0) return 'No rule configured'
   if (key === 'ai-analyzer' && rules.length === 1 && rules[0].id === 'analyzer-block') return 'Configured'
@@ -203,7 +201,6 @@ export function featureList(listener, config, boundRules) {
       ...FEATURES[key],
       rules,
       summary: summary(key, rules),
-      empty: EMPTY[key],
       mode: key === 'guardrails' ? guardrailMode(listener, config) : null,
     }
   })

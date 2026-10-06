@@ -33,7 +33,7 @@
 # database clients including an SSPL-licensed MongoDB shell, and deriving from
 # it would put those layers into this repository permanently. The control plane
 # execs no database client: it opens no gRPC transport, brokers no session, and
-# every route that would need one fails with an HTTP error (ADR-0013).
+# every route that would need one fails with an HTTP error (ADR-0024).
 #
 # Do NOT add a stage here that derives from agent-tools, or that installs
 # database clients, without first checking the license policy in
@@ -46,7 +46,7 @@
 # API and the web app and administers a fleet of inspection sidecars. It
 # carries no traffic — no gRPC on :8010, no protocol proxies, no agent
 # controller, and of the six transport plugins only Slack is started. See
-# ADR-0013 for the mode and for the 21 routes that answer with an error here.
+# ADR-0024 for the mode and for the 21 routes that answer with an error here.
 #
 # The `hoop` binary is the same one hoophq/hoop ships; only the default command
 # and the installed packages differ. This image exists so a deployment that

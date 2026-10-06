@@ -167,12 +167,38 @@ license: ''
 # the plane holds a configuration of its own. A plane holding none is seeded
 # with the file's document on that first handshake.
 #
-# The token is shown once when the sidecar is created; a lost one means
-# registering a new sidecar. In this mode the chart cannot know which ports
-# the plane will hand out: set `ports` and `probe.port` to match.
+# Exactly one credential: `token`, or `identity`.
+#
+# `token` is shown once when the sidecar is created; a lost one means
+# registering a new sidecar.
+#
+# `identity` uses the pod's own service account instead, so nothing is issued
+# before deploy. The control plane matches it against a sidecar
+# service account entry and creates the sidecar on first contact. It sets
+# HOOP_SIDECAR_IDENTITY_TYPE:
+#   kubernetes: the chart mounts a projected service account token whose
+#               audience is `identityAudience` and points
+#               HOOP_SIDECAR_IDENTITY_TOKEN_FILE at it
+#   gcp:        a Google ID token from the metadata server (GKE Workload
+#               Identity, GCE) for `identityAudience`
+# Set `serviceAccount` to the account the entry's pattern names.
+#
+# In this mode the chart cannot know which ports the plane will hand out: set
+# `ports` and `probe.port` to match.
 controlPlane:
   url: ''
   token: ''
+  # '', kubernetes or gcp
+  identity: ''
+  # Audience of the identity token under `identity`. Empty means `url`. Set
+  # it when one control plane serves several organizations: each one needs
+  # its own audience, and its sidecar service account entry names the same
+  # value. Under gcp → HOOP_SIDECAR_IDENTITY_AUDIENCE.
+  identityAudience: ''
+  # Lifetime of the projected token under `identity: kubernetes`; the kubelet
+  # rotates it before it ends and the relay re-reads it on every request.
+  # An integer, at least 600: Kubernetes refuses less.
+  tokenExpirationSeconds: 3600
 
 # -- Usage analytics. A release build reports anonymous usage to Segment —
 # counts and config shape, never statement text, identities, rule names or

@@ -179,6 +179,9 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ExtensionsOnDisconnectFn: transportext.OnDisconnect,
 	}
 
+	if err := refuseSidecarMirror(gwctx.Connection.Name, gwctx.Connection.SidecarID); err != nil {
+		return err
+	}
 	if err := validateConnectionAccessMode(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {
 		return err
 	}
@@ -193,6 +196,17 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 
 func (s *Server) HealthCheck(ctx context.Context, req *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) {
 	return &pb.HealthCheckResponse{Status: "OK"}, nil
+}
+
+// refuseSidecarMirror refuses a session on a connection that mirrors a
+// sidecar listener. The gateway has no route to a sidecar: the mirror holds
+// the listener's rules, and a client connects to the listener itself.
+func refuseSidecarMirror(connectionName, sidecarID string) error {
+	if sidecarID == "" {
+		return nil
+	}
+	return status.Errorf(codes.FailedPrecondition,
+		"connection %q mirrors a sidecar listener; connect to the sidecar listener instead", connectionName)
 }
 
 func validateConnectionAccessMode(clientVerb, clientOrigin string, connInfo types.ConnectionInfo) error {

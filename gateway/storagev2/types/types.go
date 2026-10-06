@@ -96,4 +96,7 @@ type ConnectionInfo struct {
 	// JiraSkipTransitionOnNonZeroExitCode, when enabled, prevents transitioning
 	// the issue on session close if the session finished with a non-zero exit code.
 	JiraSkipTransitionOnNonZeroExitCode bool
+	// SidecarID is set when the connection mirrors a sidecar listener. The
+	// gateway has no route to a sidecar, so no session opens on it.
+	SidecarID string
 }

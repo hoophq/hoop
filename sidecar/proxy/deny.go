@@ -3,12 +3,16 @@ package proxy
 import (
 	"encoding/binary"
 	"fmt"
+	"net/http"
 	"strconv"
+	"strings"
 	"unicode/utf16"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 	codecclickhouse "github.com/hoophq/libhoop/v2/codec/clickhouse"
 	codecmongodb "github.com/hoophq/libhoop/v2/codec/mongodb"
+	codecoracle "github.com/hoophq/libhoop/v2/codec/oracle"
 )
 
 // ProtocolDenyWriter renders a denial in each protocol's native error frame.
@@ -68,16 +72,26 @@ func (ProtocolDenyWriter) Deny(proto inspect.Protocol, dir inspect.Direction, ms
 // DenyStatement renders a denial that can use the statement's wire metadata.
 // MongoDB drivers multiplex requests and accept a reply only when responseTo
 // matches the denied request id; the older Deny interface does not carry it.
-func (w ProtocolDenyWriter) DenyStatement(statement inspect.Statement, msg string) []byte {
-	if statement.Protocol != inspect.MongoDB {
+//
+// An HTTP denial that names a review carries it in headers, so a client finds
+// the review without parsing the body. Every other protocol already carries
+// the id in the message, and its error frame has no field for it.
+func (w ProtocolDenyWriter) DenyStatement(statement inspect.Statement, msg string, review *policy.Review) []byte {
+	switch {
+	case statement.Protocol == inspect.HTTP && review != nil:
+		return HTTPReviewForbidden(msg, *review)
+	case statement.Protocol == inspect.Oracle:
+		return codecoracle.DenyResponse(statement.Metadata, msg)
+	case statement.Protocol == inspect.MongoDB:
+		requestID, err := strconv.ParseInt(
+			statement.Metadata[codecmongodb.MetadataRequestID], 10, 32)
+		if err != nil {
+			return nil
+		}
+		return codecmongodb.DenyResponse(int32(requestID), msg)
+	default:
 		return w.Deny(statement.Protocol, statement.Direction, msg)
 	}
-	requestID, err := strconv.ParseInt(
-		statement.Metadata[codecmongodb.MetadataRequestID], 10, 32)
-	if err != nil {
-		return nil
-	}
-	return codecmongodb.DenyResponse(int32(requestID), msg)
 }
 
 // TDS token-stream constants for a synthesized server error.
@@ -299,12 +313,83 @@ const mysqlHeaderLen = 4
 // Without that header a keep-alive client waits for a second response that
 // never comes.
 func HTTPForbidden(msg string) []byte {
+	return httpForbidden(msg, "X-Hoop-Denied: policy\r\n")
+}
+
+// ReviewRetryAfter is the Retry-After a return-mode denial sends, in seconds.
+// It is the hold's own poll interval: a resend sooner asks the control plane
+// a question it answered a moment ago.
+const ReviewRetryAfter = 5
+
+// ReviewStatusPending is the control plane's status for an undecided review.
+const ReviewStatusPending = "PENDING"
+
+// HTTPReviewForbidden builds the 403 for a denial that names a review.
+//
+// It stays a 403: a client that knows nothing of reviews still reads a
+// refusal. The headers are ReviewHeaders.
+func HTTPReviewForbidden(msg string, review policy.Review) []byte {
+	h := ReviewHeaders(review)
+	var b strings.Builder
+	for _, k := range reviewHeaderOrder {
+		if v := h.Get(k); v != "" {
+			b.WriteString(k + ": " + v + "\r\n")
+		}
+	}
+	return httpForbidden(msg, b.String())
+}
+
+// reviewHeaderOrder is the order HTTPReviewForbidden writes ReviewHeaders in,
+// so a response is the same bytes on every run.
+var reviewHeaderOrder = []string{"X-Hoop-Denied", "X-Hoop-Review-Id", "X-Hoop-Review-Status", "Retry-After"}
+
+// ReviewHeaders are the markers a denial that names a review carries: http
+// lanes send them as headers, grpc lanes as trailers.
+//
+// X-Hoop-Denied says review rather than policy, and the id and status let a
+// client poll or wait without parsing the message. Retry-After is set only in
+// return mode while the review is pending, because only then does a resend
+// after approval run the statement.
+//
+// The id and status come from the control plane. A value that is not a plain
+// token is dropped rather than written, so a reply cannot inject a header.
+func ReviewHeaders(review policy.Review) http.Header {
+	h := http.Header{"X-Hoop-Denied": {"review"}}
+	if headerToken(review.ID) {
+		h.Set("X-Hoop-Review-Id", review.ID)
+	}
+	if headerToken(review.Status) {
+		h.Set("X-Hoop-Review-Status", review.Status)
+	}
+	if review.Return && review.Status == ReviewStatusPending {
+		h.Set("Retry-After", strconv.Itoa(ReviewRetryAfter))
+	}
+	return h
+}
+
+func httpForbidden(msg, headers string) []byte {
 	body := msg + "\n"
 	return []byte(fmt.Sprintf(
 		"HTTP/1.1 403 Forbidden\r\n"+
 			"Content-Type: text/plain; charset=utf-8\r\n"+
 			"Content-Length: %d\r\n"+
-			"X-Hoop-Denied: policy\r\n"+
+			"%s"+
 			"Connection: close\r\n"+
-			"\r\n%s", len(body), body))
+			"\r\n%s", len(body), headers, body))
+}
+
+// headerToken reports a non-empty value made of letters, digits, '-' and '_'
+// only: every review id and status the plane issues.
+func headerToken(v string) bool {
+	if v == "" {
+		return false
+	}
+	for _, c := range v {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }

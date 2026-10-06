@@ -397,3 +397,21 @@ func TestAComposedBlockTheSidecarRefusesIsReported(t *testing.T) {
 		t.Fatalf("the composed block was accepted: %v", err)
 	}
 }
+
+// A rule whose trigger has only exclude, bound to a lane that inherits
+// opa.gate, composes into a document the sidecar refuses as a whole.
+func TestAGatedExcludeOnlyTriggerIsReported(t *testing.T) {
+	cfg := daemon.Config{
+		OPA: &daemon.OPAConfig{URL: "http://opa:8181/v1/data/hoop", Gate: true},
+		Listeners: []daemon.ListenerConfig{{
+			Name: "api",
+			Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: "block", Trigger: &policy.AITrigger{
+				Exclude: []policy.AITriggerItem{{Resources: []string{"/healthz"}}},
+			}},
+		}},
+	}
+	err := validateComposedAnalyzers(cfg)
+	if err == nil || !strings.Contains(err.Error(), "trigger.exclude narrows nothing") {
+		t.Fatalf("the gated exclude-only trigger was accepted: %v", err)
+	}
+}

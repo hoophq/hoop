@@ -58,10 +58,11 @@ type DenyWriter interface {
 }
 
 // statementDenyWriter renders protocols whose native error must be correlated
-// with the denied request. Kept optional so existing DenyWriter implementations
-// remain source-compatible.
+// with the denied request, or that carry the review a denial waits on. Kept
+// optional so existing DenyWriter implementations remain source-compatible.
+// review is nil unless the denial named one.
 type statementDenyWriter interface {
-	DenyStatement(statement inspect.Statement, message string) []byte
+	DenyStatement(statement inspect.Statement, message string, review *policy.Review) []byte
 }
 
 // Config configures a Server.
@@ -120,6 +121,10 @@ type Config struct {
 	// DenyWriter renders denials in-protocol. Optional.
 	DenyWriter DenyWriter
 
+	// Answer replies to a request on a route the sidecar reserves; see
+	// gate.Config.Answer. Optional, and read on http lanes only.
+	Answer func(stmt inspect.Statement) func(ctx context.Context) []byte
+
 	// IdentityFn derives the caller's identity from the accepted connection.
 	// Optional; the default records only the peer address, producing an
 	// anonymous session.
@@ -150,7 +155,7 @@ type Config struct {
 	// CodecFactory overrides how each connection's Gate builds its codecs.
 	// Nil uses the registry. See gate.Config.CodecFactory: it exists so a
 	// lane can turn on HTTP body capture, which the argument-free registry
-	// factory cannot express.
+	// factory cannot express. SwapLane replaces it.
 	CodecFactory func() inspect.Codec
 
 	// StartupMetadata lifts values the client sent in its pgwire
@@ -190,9 +195,12 @@ type Config struct {
 // laneRules bundles the enforcement facts a connection captures at accept
 // time, so a swap replaces them as one unit: a policy from one config
 // generation must never run beside a masker from another.
+//
+// The codec factory rides here so it swaps with the policy.
 type laneRules struct {
-	policy policy.Evaluator
-	masker gate.Masker
+	policy       policy.Evaluator
+	masker       gate.Masker
+	codecFactory func() inspect.Codec
 }
 
 // Server accepts connections and relays them through a Gate.
@@ -306,7 +314,7 @@ func NewServer(cfg Config) (*Server, error) {
 		mysqlAuth:           mysqlAuth,
 		mysqlHandshakeSlots: mysqlHandshakeSlots,
 	}
-	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker})
+	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker, codecFactory: cfg.CodecFactory})
 	if cfg.Protocol == inspect.HTTP {
 		s.h2 = newH2Lane(s)
 	}
@@ -331,16 +339,21 @@ func (s *Server) releaseMySQLHandshake() {
 	}
 }
 
-// SwapRules replaces the policy evaluator and masker for every connection
-// accepted from now on. Connections already open keep the Gate they
-// captured at accept time and drain under the rules they started with;
+// SwapLane replaces the policy evaluator, masker and codec factory for every
+// connection accepted from now on. Connections already open keep the Gate
+// they captured at accept time and drain under the rules they started with;
 // nothing rebinds and nothing closes.
 //
-// This is the seam a control-plane config reload swaps through. Both fields
-// travel together on purpose: rules and masking come from one config
-// document, and mixing generations would enforce a config nobody wrote.
-func (s *Server) SwapRules(pol policy.Evaluator, masker gate.Masker) {
-	s.rules.Store(&laneRules{policy: pol, masker: masker})
+// This is the seam a control-plane config reload swaps through. The three
+// travel together on purpose: they come from one config document, and mixing
+// generations would enforce a config nobody wrote. A holding policy beside a
+// codec that drops the body would file reviews without it.
+//
+// The factory must lift the header NewServer checked. The daemon keeps that
+// true: a change to a listener's credential header or http block is
+// restart-bound, so a reload never reaches here with one.
+func (s *Server) SwapLane(pol policy.Evaluator, masker gate.Masker, codecFactory func() inspect.Codec) {
+	s.rules.Store(&laneRules{policy: pol, masker: masker, codecFactory: codecFactory})
 }
 
 // reclaimStaleSocket removes a leftover unix socket file so a restart can
@@ -604,9 +617,10 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		Audit:            s.cfg.Audit,
 		Masker:           rules.masker,
 		FailOnAuditError: s.cfg.FailOnAuditError,
-		CodecFactory:     s.cfg.CodecFactory,
+		CodecFactory:     rules.codecFactory,
 		Metrics:          s.cfg.Metrics,
 		RequestIdentity:  requestIdentity,
+		Answer:           s.cfg.Answer,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)
@@ -888,6 +902,18 @@ func (s *Server) pump(
 				log.Warn("inspection reported an error", "direction", string(dir), "error", d.Err)
 			}
 
+			// The lane answered a route it owns, or refused to answer it
+			// out of order. Nothing was denied, so nothing is counted; the
+			// connection ends the way it does after a deny frame.
+			if d.Hangup {
+				return
+			}
+			if len(d.Reply) > 0 {
+				_ = src.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				_, _ = src.Write(d.Reply)
+				return
+			}
+
 			if !d.Allowed {
 				if dir == inspect.FromServer {
 					discardResponse = true
@@ -908,7 +934,7 @@ func (s *Server) pump(
 					var frame []byte
 					if d.DeniedStatement != nil {
 						if writer, ok := s.cfg.DenyWriter.(statementDenyWriter); ok {
-							frame = writer.DenyStatement(*d.DeniedStatement, d.Message)
+							frame = writer.DenyStatement(*d.DeniedStatement, d.Message, d.Review)
 						}
 					}
 					if len(frame) == 0 {

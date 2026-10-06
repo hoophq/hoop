@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
@@ -24,10 +24,6 @@ import (
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"gorm.io/gorm"
 )
-
-// reservedNames would shadow the static routes registered beside
-// /sidecars/:nameOrID.
-var reservedNames = []string{"handshake", "configuration"}
 
 // licenseIsNotASidecarKey refuses a license authored per sidecar. One
 // organization runs under one license, stored on the organization row and
@@ -141,6 +137,11 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 				return err
 			}
 		}
+		// After the checks: a write they refuse never touches connections,
+		// and a binding error outranks a mirror error.
+		if err := services.SyncSidecarListenerConnectionsTx(tx, sc); err != nil {
+			return err
+		}
 		item = sc
 		return nil
 	})
@@ -156,6 +157,9 @@ func answerSidecarWrite(c *gin.Context, err error) {
 	var configInvalid services.ErrSidecarConfigInvalid
 	var missing services.ErrSidecarCapabilityMissing
 	var invalid services.ErrSidecarAnalyzerInvalid
+	var unmirrored services.ErrSidecarListenerInvalid
+	var nameTaken models.ErrSidecarConnectionNameTaken
+	var inUse models.ErrSidecarConnectionInUse
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
@@ -171,6 +175,12 @@ func answerSidecarWrite(c *gin.Context, err error) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid.Error()})
 	case errors.Is(err, errSwitchNeedsPatch):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+	case errors.As(err, &unmirrored):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": unmirrored.Error()})
+	case errors.As(err, &nameTaken):
+		c.JSON(http.StatusConflict, gin.H{"message": nameTaken.Error()})
+	case errors.As(err, &inUse):
+		c.JSON(http.StatusConflict, gin.H{"message": inUse.Error()})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed writing sidecar configuration")
 	}
@@ -215,7 +225,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	if slices.Contains(reservedNames, req.Name) {
+	if services.IsReservedSidecarName(req.Name) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "name \"" + req.Name + "\" is reserved"})
 		return
 	}
@@ -250,7 +260,13 @@ func Post(c *gin.Context) {
 		CreatedBy:     ctx.UserEmail,
 	}
 
-	switch err := models.CreateSidecar(models.DB, sidecar); {
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateSidecar(tx, sidecar); err != nil {
+			return err
+		}
+		return services.SyncSidecarListenerConnectionsTx(tx, sidecar)
+	})
+	switch {
 	case err == nil:
 		c.JSON(http.StatusCreated, openapi.SidecarCreateResponse{
 			SidecarResponse: toResponse(*sidecar),
@@ -259,7 +275,7 @@ func Post(c *gin.Context) {
 	case errors.Is(err, models.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"message": "a sidecar with this name already exists"})
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar")
+		answerSidecarWrite(c, err)
 	}
 }
 
@@ -353,22 +369,59 @@ func Get(c *gin.Context) {
 // Delete Sidecar
 //
 //	@Summary		Delete Sidecar
-//	@Description	Delete a sidecar. The token stops working immediately.
+//	@Description	Delete a sidecar. The token stops working immediately. A sidecar a service account identity reached has its name recorded, so the identity does not create it again; clear it with DELETE /sidecar-deleted-names/{name}.
+//	@Tags			Sidecars
+//	@Produce		json
+//	@Param			nameOrID	path	string	true	"Name or UUID of the sidecar"
+//	@Success		204
+//	@Failure		403,404,409,500	{object}	openapi.HTTPError
+//	@Router			/sidecars/{nameOrID} [delete]
+func Delete(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	// One transaction: a sidecar deleted without its name recorded would be
+	// created again by the next heartbeat of its identity.
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		deleted, err := models.DeleteSidecarByNameOrID(tx, ctx.OrgID, c.Param("nameOrID"))
+		if err != nil {
+			return err
+		}
+		if !deleted.IdentityReached {
+			return nil
+		}
+		return models.InsertSidecarDeletedName(tx, ctx.OrgID, deleted.Name, ctx.UserEmail)
+	})
+	var inUse models.ErrSidecarConnectionInUse
+	switch {
+	case err == nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, models.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+	case errors.As(err, &inUse):
+		c.JSON(http.StatusConflict, gin.H{"message": inUse.Error()})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting sidecar")
+	}
+}
+
+// Clear Sidecar Identity
+//
+//	@Summary		Clear Sidecar Identity
+//	@Description	Remove the binding of a sidecar to the service account identity that reached it first. The next identity a sidecar service account allows is bound to it on its next handshake; a sidecar created with a token is bound again only through a sidecar service account with adopt_existing_sidecars. A token the sidecar has keeps working.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"Name or UUID of the sidecar"
 //	@Success		204
 //	@Failure		403,404,500	{object}	openapi.HTTPError
-//	@Router			/sidecars/{nameOrID} [delete]
-func Delete(c *gin.Context) {
+//	@Router			/sidecars/{nameOrID}/identity [delete]
+func ClearIdentity(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	_, err := models.DeleteSidecarByNameOrID(models.DB, ctx.OrgID, c.Param("nameOrID"))
+	err := models.ClearSidecarIdentity(models.DB, ctx.OrgID, c.Param("nameOrID"))
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
 			return
 		}
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting sidecar")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed clearing the sidecar identity")
 		return
 	}
 	c.Writer.WriteHeader(http.StatusNoContent)
@@ -384,7 +437,7 @@ func Delete(c *gin.Context) {
 //	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
 //	@Param			request				body		openapi.SidecarUpdateRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarResponse
-//	@Failure		400,403,404,500		{object}	openapi.HTTPError
+//	@Failure		400,403,404,409,500	{object}	openapi.HTTPError
 //	@Failure		422					{object}	openapi.SidecarConfigError
 //	@Router			/sidecars/{nameOrID} [put]
 func Put(c *gin.Context) {
@@ -449,7 +502,7 @@ func Put(c *gin.Context) {
 //	@Param			nameOrID			path		string						true	"Name or UUID of the sidecar"
 //	@Param			request				body		openapi.SidecarPatchRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarResponse
-//	@Failure		400,403,404,500		{object}	openapi.HTTPError
+//	@Failure		400,403,404,409,500	{object}	openapi.HTTPError
 //	@Failure		422					{object}	openapi.SidecarConfigError
 //	@Router			/sidecars/{nameOrID} [patch]
 func Patch(c *gin.Context) {
@@ -544,15 +597,17 @@ func usesConfigFile(cfg models.SidecarConfiguration) bool {
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
-//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
+//	@Description	Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token			header		string							true	"The token returned when the sidecar was created"
-//	@Param			hoop-sidecar-capabilities	header		string							false	"Comma-separated served-document features this sidecar decodes, such as review_mode. Absent means a build too old to report."
+//	@Param			hoop-sidecar-token			header		string							false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity		header		string							false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
+//	@Param			hoop-sidecar-capabilities	header		string							false	"Comma-separated served-document features this sidecar decodes, such as review_mode, and behaviours it has, such as session_events. Absent means a build too old to report."
 //	@Param			request						body		openapi.SidecarHandshakeRequest	true	"The request body resource"
 //	@Success		200							{object}	map[string]interface{}
 //	@Header			200							{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
+//	@Header			200							{string}	hoop-sidecar-session-events		"Present, as true, when the organization records sidecar sessions (experimental.sidecar_session_events). The sidecar then sends its audit events to POST /sidecars/events, and stops when an answer omits it."
 //	@Failure		400,401,403,412,422,500		{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
@@ -581,6 +636,7 @@ func Handshake(c *gin.Context) {
 		// load_from_disk instead.
 		recordHandshake(sidecar.ID, req, "", capabilities)
 		c.Header(licenseManagedHeader, "true")
+		offerSessionEvents(c, sidecar)
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
@@ -612,7 +668,16 @@ func Handshake(c *gin.Context) {
 	recordHandshake(sidecar.ID, req, revision, capabilities)
 	c.Header(licenseManagedHeader, "true")
 	c.Header(daemon.ConfigRevisionHeader, revision)
+	offerSessionEvents(c, sidecar)
 	c.JSON(http.StatusOK, served)
+}
+
+// offerSessionEvents answers SessionEventsHeader while the org flag is on; the
+// sidecar follows it on every heartbeat.
+func offerSessionEvents(c *gin.Context, sc *models.Sidecar) {
+	if featureflag.IsEnabled(sc.OrgID, services.SidecarSessionEventsFlag) {
+		c.Header(daemon.SessionEventsHeader, "true")
+	}
 }
 
 // withOrgLicense answers the config a sidecar must serve, carrying the
@@ -700,11 +765,12 @@ func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) 
 // Import Sidecar Configuration
 //
 //	@Summary		Import Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
+//	@Description	Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token		header		string	true	"The token returned when the sidecar was created"
+//	@Param			hoop-sidecar-token		header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			request					body		object	true	"The configuration document, the same shape the handshake answers"
 //	@Success		200						{object}	map[string]interface{}
 //	@Failure		400,401,403,409,422,500	{object}	openapi.HTTPError
@@ -771,13 +837,26 @@ func ImportConfiguration(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		// Mirrors before rules: a rule binds to a mirror once the bindings
+		// move to connections.
+		if err := services.SyncSidecarListenerConnectionsTx(tx, item); err != nil {
+			return err
+		}
 		return services.ImportSidecarRulesTx(tx, sidecar.OrgID, sidecar.ID, rules)
 	})
+	var unmirrored services.ErrSidecarListenerInvalid
+	var nameTaken models.ErrSidecarConnectionNameTaken
 	switch {
 	case err == nil:
 		c.JSON(http.StatusOK, item.Configuration)
 	case errors.As(err, &invalid):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid.Error()})
+	// Both 422: the sidecar reads an import 409 as "the plane already holds
+	// a configuration" and fetches it, which would hide the reason.
+	case errors.As(err, &unmirrored):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": unmirrored.Error()})
+	case errors.As(err, &nameTaken):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": nameTaken.Error()})
 	case errors.Is(err, services.ErrImportedRuleConflict):
 		c.JSON(http.StatusConflict, gin.H{"message": services.ErrImportedRuleConflict.Error()})
 	case errors.Is(err, models.ErrAlreadyExists):
@@ -790,10 +869,11 @@ func ImportConfiguration(c *gin.Context) {
 // Sidecar Configuration
 //
 //	@Summary		Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, carrying the organization's license in its "license" key, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
+//	@Description	Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Returns the configuration the sidecar must serve, carrying the organization's license in its "license" key, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
 //	@Tags			Sidecars
 //	@Produce		json
-//	@Param			hoop-sidecar-token			header		string	true	"The token returned when the sidecar was created"
+//	@Param			hoop-sidecar-token			header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity		header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			hoop-sidecar-capabilities	header		string	false	"See the handshake."
 //	@Success		200							{object}	map[string]interface{}
 //	@Header			200							{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision; see the handshake."
@@ -872,6 +952,8 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp.LastError = derefOrEmpty(s.LastError)
 	resp.ConfigState = configState(s, time.Now().UTC())
 	resp.Deprecations = configDeprecations(s.Configuration)
+	resp.IdentityIssuer = derefOrEmpty(s.IdentityIssuer)
+	resp.IdentitySubject = derefOrEmpty(s.IdentitySubject)
 	return resp
 }
 

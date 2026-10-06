@@ -198,3 +198,57 @@ func TestGetReviewAnswersNotFound(t *testing.T) {
 		})
 	}
 }
+
+func listReviews(sc *models.Sidecar, query string) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("sidecar-auth", sc)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/sidecars/reviews"+query, nil)
+	ListReviews(c)
+	return rec
+}
+
+func TestListReviewsListsOnlyThisSidecarsReviews(t *testing.T) {
+	startStatusTestDB(t)
+	owner := seedStatusSidecar(t, "lister")
+	other := seedStatusSidecar(t, "neighbour")
+	pending := seedStatusReview(t, owner, models.ReviewStatusPending)
+	rejected := seedStatusReview(t, owner, models.ReviewStatusRejected)
+	foreign := seedStatusReview(t, other, models.ReviewStatusPending)
+	before := reviewSnapshot(t, pending)
+
+	ids := func(rec *httptest.ResponseRecorder) []string {
+		t.Helper()
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var got []openapi.SidecarReviewStatus
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		out := []string{}
+		for _, r := range got {
+			out = append(out, r.ID)
+		}
+		assert.NotContains(t, rec.Body.String(), "DELETE FROM")
+		assert.NotContains(t, rec.Body.String(), "reviewer@example.com")
+		return out
+	}
+
+	all := ids(listReviews(owner, ""))
+	assert.ElementsMatch(t, []string{pending.ID, rejected.ID}, all)
+	assert.NotContains(t, all, foreign.ID)
+	assert.Equal(t, []string{pending.ID}, ids(listReviews(owner, "?status=pending")))
+	assert.Len(t, ids(listReviews(owner, "?limit=1")), 1)
+	assert.JSONEq(t, before, reviewSnapshot(t, pending))
+
+	empty := listReviews(seedStatusSidecar(t, "quiet"), "")
+	assert.JSONEq(t, `[]`, empty.Body.String())
+}
+
+func TestListReviewsRefusesABadQuery(t *testing.T) {
+	startStatusTestDB(t)
+	sc := seedStatusSidecar(t, "bad-query")
+	for _, q := range []string{"?status=DONE", "?limit=0", "?limit=201", "?limit=ten"} {
+		t.Run(q, func(t *testing.T) {
+			assert.Equal(t, http.StatusBadRequest, listReviews(sc, q).Code)
+		})
+	}
+}

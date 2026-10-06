@@ -174,16 +174,17 @@ listeners:
           # this is a question Envoy structurally cannot ask.
           statuses: ["5xx"]
           message: upstream failure suppressed by policy
-    # Needs the http block below: without capture_body the analyzer sees
-    # "POST /anything" and no payload, which tells a model nothing.
+    # Without the http block below the analyzer judges "POST /anything" from
+    # the request line alone. capture_body adds the payload, and headers the
+    # allowlisted headers. A level set to require_review captures the request
+    # body without it, so the reviewer reads what the approval releases.
     # analyzer:
     #   trigger: {resources: ["/anything"]}
     #   high: block
     #   medium: warn
     # Off by default: everything captured reaches policy, the audit trail and,
-    # with an analyzer configured, a third party. authorization, cookie and
-    # proxy-authorization cannot be allowlisted, and no header ever reaches
-    # the model.
+    # with an analyzer configured, a third party. authorization, cookie,
+    # proxy-authorization and set-cookie cannot be allowlisted.
     # http:
     #   capture_body: true
     #   max_body_bytes: 8192

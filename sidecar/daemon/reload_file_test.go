@@ -37,7 +37,7 @@ func testFileReloader(t *testing.T, raw string) (*reloader, string, *bytes.Buffe
 	}
 	servers := map[string]ruleSwapper{}
 	for _, ln := range lanes {
-		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
+		srv, serr := buildServer(ln, cfg.Audit, nil, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}
@@ -205,17 +205,20 @@ func TestSIGHUPRereadsTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := self.Signal(syscall.SIGHUP); err != nil {
-		t.Fatal(err)
-	}
+	// Sent again until the edit lands: watchFile registers its handler on
+	// its own goroutine, and a signal delivered before that reaches only
+	// the guard above, where it is lost.
 	deadline := time.After(5 * time.Second)
-	for rl.view.Load().gen != 1 {
+	for rl.view.Load().gen == 0 {
+		if err := self.Signal(syscall.SIGHUP); err != nil {
+			t.Fatal(err)
+		}
 		select {
 		case <-deadline:
 			cancel()
 			<-done
 			t.Fatalf("SIGHUP did not apply the edit; log:\n%s", buf)
-		case <-time.After(5 * time.Millisecond):
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 	cancel()

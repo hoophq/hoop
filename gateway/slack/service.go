@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
+	"gorm.io/gorm"
 )
 
 type SlackService struct {
@@ -33,35 +34,29 @@ type SlackService struct {
 	pendingRejectMu    sync.Mutex
 	pendingRejectItems map[string]slack.InteractionCallback
 
-	// sentReviewItems tracks review messages posted by SendMessageReview so they
-	// can be updated when the review state changes outside of a Slack
-	// interaction (API, webapp or MCP review). Key is review_id. Entries are
-	// removed on terminal updates and expire after sentReviewRetention.
-	sentReviewMu    sync.Mutex
-	sentReviewItems map[string][]sentReviewMessage
-	// settledReviews keeps the terminal rewrite of a review, so a message a
-	// post loop still sends after the review settled is rewritten, and the
-	// loop posts no more active buttons. Guarded by sentReviewMu.
-	settledReviews map[string]settledReview
+	// store tracks the review messages this service posted, so they can be
+	// rewritten when the review state changes. Nil means mem, the gateway's
+	// in-process store; a control plane passes the database store, because
+	// the replica that rewrites a message is rarely the one that posted it.
+	store messageStore
+	mem   memoryMessageStore
 }
 
-// settledReview is the terminal state UpdateReviewMessage applied.
-type settledReview struct {
-	req *UpdateReviewMessageRequest
-	at  time.Time
-	// items are the messages an approval rewrote, kept so a revoke or an expiry
-	// can rewrite them again. Empty for every other terminal state.
-	items []sentReviewMessage
-	// deadline is the approval deadline, so the items outlive it.
-	deadline *time.Time
+// Option configures a SlackService built by New.
+type Option func(*SlackService)
+
+// WithMessageStoreIn keeps the posted review messages in db instead of in
+// process memory, so every process sharing db can rewrite them.
+func WithMessageStoreIn(db *gorm.DB) Option {
+	return func(s *SlackService) { s.store = &dbMessageStore{db: db, orgID: s.instanceID} }
 }
 
-// trackedUntil: from + sentReviewRetention, counted from the deadline when it is later.
-func trackedUntil(from time.Time, deadline *time.Time) time.Time {
-	if deadline != nil && deadline.After(from) {
-		from = *deadline
+// messages is the store in use: the configured one, else process memory.
+func (s *SlackService) messages() messageStore {
+	if s.store != nil {
+		return s.store
 	}
-	return from.Add(sentReviewRetention)
+	return &s.mem
 }
 
 // instances tracks the running SlackService per organization. Registered by
@@ -92,6 +87,17 @@ func RemoveServiceInstance(orgID string) {
 	delete(instances, orgID)
 }
 
+// RemoveServiceInstanceIf removes the org's service only while it is still
+// svc. A service shutting down after a restart must not remove the one that
+// replaced it.
+func RemoveServiceInstanceIf(orgID string, svc *SlackService) {
+	instancesMu.Lock()
+	defer instancesMu.Unlock()
+	if instances[orgID] == svc {
+		delete(instances, orgID)
+	}
+}
+
 const (
 	reviewIDMetadataKey  = "review_id"
 	sessionIDMetadataKey = "session_id"
@@ -113,7 +119,7 @@ const (
 	expiredReviewText = "*Review expired.* Nothing was released. Running the statement again files a new review."
 )
 
-func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) (*SlackService, error) {
+func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string, opts ...Option) (*SlackService, error) {
 	apiClient := slack.New(
 		slackBotToken,
 		// slack.OptionDebug(true),
@@ -130,7 +136,7 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 		// socketmode.OptionLog(log.New(os.Stdout, "socketmode: ", log.Lshortfile|log.LstdFlags)),
 	)
 	ctx, cancelFn := context.WithCancel(context.Background())
-	return &SlackService{
+	s := &SlackService{
 		apiClient:          apiClient,
 		socketClient:       socketClient,
 		teamID:             auth.TeamID,
@@ -142,9 +148,11 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 		ctx:                ctx,
 		cancelFn:           cancelFn,
 		pendingRejectItems: make(map[string]slack.InteractionCallback),
-		sentReviewItems:    make(map[string][]sentReviewMessage),
-	}, nil
-
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s, nil
 }
 
 // NewWithAPIClient builds a service that calls the Web API through apiClient
@@ -159,11 +167,17 @@ func NewWithAPIClient(apiClient *slack.Client, teamID, slackChannel string) *Sla
 		ctx:                ctx,
 		cancelFn:           cancelFn,
 		pendingRejectItems: make(map[string]slack.InteractionCallback),
-		sentReviewItems:    make(map[string][]sentReviewMessage),
 	}
 }
 
-func (s *SlackService) Close()           { s.cancelFn() }
+// Close stops the socket. Safe on a zero SlackService, which OnUpdate closes
+// when the org had no running service yet.
+func (s *SlackService) Close() {
+	if s.cancelFn != nil {
+		s.cancelFn()
+	}
+}
+
 func (s *SlackService) BotToken() string { return s.slackBotToken }
 
 // DefaultChannel is where a message with no channels of its own is posted.
@@ -511,43 +525,26 @@ type sentReviewMessage struct {
 
 // trackSentReviewMessage adds one posted message to the review's tracked set.
 // It returns the terminal state instead when the review already settled: the
-// caller rewrites the message with it, and it is not tracked.
+// caller rewrites the message with it. A store that fails leaves the message
+// untracked, which is what a gateway restart does too.
 func (s *SlackService) trackSentReviewMessage(reviewID string, m sentReviewMessage) *UpdateReviewMessageRequest {
 	if reviewID == "" {
 		return nil
 	}
-	now := time.Now().UTC()
-	s.sentReviewMu.Lock()
-	defer s.sentReviewMu.Unlock()
-	// lazy eviction keeps the maps bounded without a janitor goroutine
-	for id, items := range s.sentReviewItems {
-		if len(items) > 0 && now.After(trackedUntil(items[0].sentAt, items[0].deadline)) {
-			delete(s.sentReviewItems, id)
-		}
+	final, err := s.messages().track(reviewID, m)
+	if err != nil {
+		log.Warnf("failed tracking a slack review message, review=%s, err=%v", reviewID, err)
 	}
-	for id, sr := range s.settledReviews {
-		if now.After(trackedUntil(sr.at, sr.deadline)) {
-			delete(s.settledReviews, id)
-		}
-	}
-	if sr, ok := s.settledReviews[reviewID]; ok {
-		return sr.req
-	}
-	if s.sentReviewItems == nil {
-		s.sentReviewItems = make(map[string][]sentReviewMessage)
-	}
-	s.sentReviewItems[reviewID] = append(s.sentReviewItems[reviewID], m)
-	return nil
+	return final
 }
 
 // settledReview returns the terminal state of a review that settled, or nil.
 func (s *SlackService) settledReview(reviewID string) *UpdateReviewMessageRequest {
-	s.sentReviewMu.Lock()
-	defer s.sentReviewMu.Unlock()
-	if sr, ok := s.settledReviews[reviewID]; ok {
-		return sr.req
+	final, err := s.messages().settled(reviewID)
+	if err != nil {
+		log.Warnf("failed reading a slack review settlement, review=%s, err=%v", reviewID, err)
 	}
-	return nil
+	return final
 }
 
 // ReviewedGroup describes one approver group's recorded outcome, used to
@@ -587,38 +584,24 @@ func (r *UpdateReviewMessageRequest) isDone() bool {
 // holding an interaction callback use it to decide between relying on the
 // tracked rewrite or falling back to a callback-based update.
 func (s *SlackService) HasTrackedReviewMessages(reviewID string) bool {
-	s.sentReviewMu.Lock()
-	defer s.sentReviewMu.Unlock()
-	return len(s.sentReviewItems[reviewID]) > 0
+	tracked, err := s.messages().hasTracked(reviewID)
+	if err != nil {
+		log.Warnf("failed reading the tracked slack review messages, review=%s, err=%v", reviewID, err)
+	}
+	return tracked
 }
 
 // UpdateReviewMessage rewrites the review messages previously posted by
 // SendMessageReview whenever the review state changes: API, webapp, MCP or a
 // Slack button click (the slack plugin skips its callback-based update when
 // the messages are tracked, so this is the single renderer). It is best
-// effort: messages posted by another gateway instance or before a restart are
-// not tracked and are silently skipped.
+// effort: with the in-process store, messages posted by another gateway
+// instance or before a restart are not tracked and are silently skipped.
 func (s *SlackService) UpdateReviewMessage(req *UpdateReviewMessageRequest) error {
-	done := req.isDone()
-	s.sentReviewMu.Lock()
-	items := s.sentReviewItems[req.ReviewID]
-	if req.IsRevoked || req.IsExpired {
-		// An approval already consumed the tracked messages.
-		items = append(items, s.settledReviews[req.ReviewID].items...)
+	items, err := s.messages().update(req)
+	if err != nil {
+		return fmt.Errorf("failed reading the tracked review messages: %w", err)
 	}
-	if done {
-		delete(s.sentReviewItems, req.ReviewID)
-		if s.settledReviews == nil {
-			s.settledReviews = make(map[string]settledReview)
-		}
-		settled := settledReview{req: req, at: time.Now().UTC()}
-		if req.IsApproved {
-			settled.items = items
-			settled.deadline = req.ExpiresAt
-		}
-		s.settledReviews[req.ReviewID] = settled
-	}
-	s.sentReviewMu.Unlock()
 	return s.rewriteReviewMessages(items, req)
 }
 
@@ -778,6 +761,11 @@ func reviewGroupFromBlockID(blockID, reviewID string) string {
 }
 
 func (s *SlackService) UpdateMessage(msg *MessageReviewResponse, isApproved bool) error {
+	// A reject submitted on a replica that did not open the modal carries the
+	// submission, which has no button to rewrite.
+	if len(msg.item.ActionCallback.BlockActions) == 0 {
+		return fmt.Errorf("review %s: the interaction carries no button to rewrite", msg.ID)
+	}
 	blockID := msg.item.ActionCallback.BlockActions[0].BlockID
 	blocks := msg.item.Message.Blocks.BlockSet
 	for i, b := range blocks {
@@ -817,6 +805,11 @@ func (s *SlackService) UpdateMessage(msg *MessageReviewResponse, isApproved bool
 // UpdateMessagePartialApproval updates just the action block for a specific group
 // when a partial approval occurs (review still pending other approvals)
 func (s *SlackService) UpdateMessagePartialApproval(msg *MessageReviewResponse, approvedCount, totalCount int) error {
+	// A reject submitted on a replica that did not open the modal carries the
+	// submission, which has no button to rewrite.
+	if len(msg.item.ActionCallback.BlockActions) == 0 {
+		return fmt.Errorf("review %s: the interaction carries no button to rewrite", msg.ID)
+	}
 	blockID := msg.item.ActionCallback.BlockActions[0].BlockID
 	blocks := msg.item.Message.Blocks.BlockSet
 

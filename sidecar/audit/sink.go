@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -88,6 +89,14 @@ func (o SinkOptions) now() time.Time {
 		return time.Now()
 	}
 	return o.Now()
+}
+
+// Apply returns ev as a sink built with these options persists it: the
+// redaction, the statement cap and the UTC timestamp. A sink outside this
+// package calls it so its copy of the trail never holds more than the JSONL
+// file does.
+func (o SinkOptions) Apply(ev Event) Event {
+	return o.apply(ev)
 }
 
 // apply returns ev with the statement policy and timestamp normalization
@@ -260,12 +269,34 @@ func (s *JSONLSink) Close() error {
 			errs = append(errs, fmt.Errorf("audit: flushing sink: %w", err))
 		}
 	}
-	if sy, ok := s.w.(syncer); ok {
+	if sy, ok := s.w.(syncer); ok && syncable(s.w) {
 		if err := sy.Sync(); err != nil {
 			errs = append(errs, fmt.Errorf("audit: syncing sink: %w", err))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// statter is satisfied by *os.File.
+type statter interface{ Stat() (os.FileInfo, error) }
+
+// syncable reports whether Sync means anything for w: only a regular file has
+// a disk to persist to. On a pipe or a terminal, fsync fails (EBADF on darwin,
+// EINVAL on linux) although every byte was delivered, and the default
+// audit.file is stdout, which a container or `| tee` makes a pipe. Reporting
+// that as "audit sink close failed" at every shutdown makes an operator doubt
+// a trail that is complete. A writer that cannot say what it is gets synced,
+// as before.
+func syncable(w io.Writer) bool {
+	st, ok := w.(statter)
+	if !ok {
+		return true
+	}
+	fi, err := st.Stat()
+	if err != nil {
+		return true
+	}
+	return fi.Mode().IsRegular()
 }
 
 // MultiSink fans one event out to several sinks, typically a local JSONL

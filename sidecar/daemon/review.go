@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -73,6 +74,54 @@ func (cp *controlPlane) reviewer(listener, rule string) analyzer.Reviewer {
 		return nil
 	}
 	return planReviewer{cp: cp, listener: listener, rule: rule}
+}
+
+// LocalReviewer returns the backend one lane files held statements with when
+// the process has no control plane: the person running it, at its terminal.
+//
+// The listener names the lane, so one reviewer can tell an operator which
+// database a statement is waiting at. It never receives an approval_rule:
+// that names a rule stored in a control plane, and there is none to ask.
+type LocalReviewer func(listener string) analyzer.Reviewer
+
+// WithLocalReviewer lets a process without a control plane hold statements
+// for review: require_review files with r instead of refusing to start, and
+// such a lane needs no approval_rule.
+//
+// For an entry point that has a person in front of it, which is why only
+// `hoop start sidecar` on a terminal passes it. A control plane, when one is
+// configured, always wins: its rule decides who approves, and a local
+// reviewer never releases a statement the plane would have to authorize.
+func WithLocalReviewer(r LocalReviewer) Option {
+	return func(o *setupOptions) { o.localReviewer = r }
+}
+
+// holdRefusal is why a lane that holds statements cannot be built, or "".
+//
+// Two refusals, both at build rather than in Config.Validate for the reason
+// holdsWithoutAPlane gives. With a control plane, require_review needs an
+// approval_rule: the plane refuses a review that names none. Without one, it
+// needs a local reviewer, or there is nowhere to file the review at all.
+func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
+	if !analyzerHolds(la) {
+		return ""
+	}
+	if holdsWithoutAPlane(cfg, la, ac) {
+		if ac != nil && ac.local != nil {
+			return ""
+		}
+		return fmt.Sprintf("the analyzer block asks for %q and this sidecar has no control "+
+			"plane; the review is filed with the plane named by %s or the "+
+			"control_plane_url key, or with the person running `hoop start sidecar` "+
+			"in a terminal, and there is neither",
+			analyzer.ActionRequireReview, ControlPlaneURLEnv)
+	}
+	if la.ApprovalRule == "" {
+		return fmt.Sprintf("the analyzer block asks for %q and names no approval_rule; the "+
+			"rule is what decides who may release a held statement, and the control "+
+			"plane refuses a review that does not name one", analyzer.ActionRequireReview)
+	}
+	return ""
 }
 
 // holdsWithoutAPlane reports a lane that holds statements for approval in a
@@ -186,21 +235,37 @@ func (cp *controlPlane) claimReview(ctx context.Context, reviewID string) (analy
 // answer, bounded. The status is the caller's to interpret: reviewAnswer
 // handles what every review call shares.
 func (cp *controlPlane) reviewRequest(ctx context.Context, method string, body []byte, elem ...string) (*http.Response, []byte, error) {
+	return cp.reviewRoundTrip(ctx, method, body, nil, elem...)
+}
+
+// reviewQuery is a GET under the reviews path with a query string.
+func (cp *controlPlane) reviewQuery(ctx context.Context, query url.Values, elem ...string) (*http.Response, []byte, error) {
+	return cp.reviewRoundTrip(ctx, http.MethodGet, nil, query, elem...)
+}
+
+func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body []byte, query url.Values, elem ...string) (*http.Response, []byte, error) {
 	// The base was validated by checkControlPlaneURL; JoinPath keeps a
 	// path prefix (a plane behind /hoop) and normalizes trailing slashes.
 	u, err := url.Parse(cp.url)
 	if err != nil {
 		return nil, nil, fmt.Errorf("control plane URL %q: %w", cp.url, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, method,
-		u.JoinPath(elem...).String(), bytes.NewReader(body))
+	u = u.JoinPath(elem...)
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, fmt.Errorf("control plane request: %w", err)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set(sidecarTokenHeader, cp.token)
+	// ctx bounds a metadata server fetch too: refreshing a Google ID token
+	// is part of this review call's budget, not a second one.
+	header, value, err := cp.cred.present(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set(header, value)
 
 	resp, err := controlPlaneHTTPClient().Do(req)
 	if err != nil {
@@ -218,6 +283,12 @@ func (cp *controlPlane) reviewRequest(ctx context.Context, method string, body [
 		return nil, nil, fmt.Errorf("the control plane at %s answered a review with more than "+
 			"%d bytes; check that the URL is the control plane and not something in "+
 			"front of it", cp.url, maxReviewResponse)
+	}
+	// Answered here rather than in reviewError, because only this function
+	// still holds the identity the plane refused, and the message names it.
+	// The token path keeps reviewError's wording.
+	if resp.StatusCode == http.StatusUnauthorized && header == SidecarIdentityHeader {
+		return nil, nil, identityRejected(cp.url, value, raw)
 	}
 	return resp, raw, nil
 }
@@ -256,6 +327,43 @@ func (cp *controlPlane) ReviewStatus(ctx context.Context, reviewID string) (Revi
 		return ReviewStatus{}, ErrPlaneTooOld
 	}
 	return ReviewStatus{}, cp.reviewError(resp, raw)
+}
+
+// ListReviews implements ReviewStatusReader with one GET /api/sidecars/reviews,
+// read-only like ReviewStatus. The plane scopes the list to this sidecar's
+// token, which is the whole of its authorization: every listener and replica
+// sharing the token sees the same list.
+func (cp *controlPlane) ListReviews(ctx context.Context, status string, limit int) ([]ReviewStatus, error) {
+	if limit < 1 || limit > MaxReviewListLimit {
+		return nil, fmt.Errorf("limit must be from 1 to %d", MaxReviewListLimit)
+	}
+	q := url.Values{"limit": {strconv.Itoa(limit)}}
+	if status != "" {
+		q.Set("status", status)
+	}
+	resp, raw, err := cp.reviewQuery(ctx, q, controlPlaneReviewsPath)
+	if err != nil {
+		return nil, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var out []ReviewStatus
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return nil, fmt.Errorf("the review list could not be read: %w", err)
+		}
+		return out, nil
+	case http.StatusNotFound:
+		// The route never answers 404; Gin's own does, on a plane older
+		// than the route.
+		return nil, ErrPlaneTooOld
+	case http.StatusUnauthorized, http.StatusForbidden:
+		// An older plane routes this GET to the admin GET /sidecars/:name,
+		// which refuses a sidecar token. A wrong token reads the same.
+		return nil, fmt.Errorf("%w, or it rejected the token", ErrPlaneTooOld)
+	case http.StatusBadRequest:
+		return nil, fmt.Errorf("the control plane refused the list: %s", controlPlaneMessage(raw))
+	}
+	return nil, cp.reviewError(resp, raw)
 }
 
 // canonicalUUID reports a lowercase 8-4-4-4-12 hex UUID, the only form the

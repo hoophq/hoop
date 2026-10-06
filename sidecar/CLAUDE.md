@@ -206,11 +206,16 @@ done
   of `daemon.Config`, and a build that predates a key refuses the whole
   document over it (ADR-0022). `omitempty` on scalars, pointers, slices and
   maps; `omitzero` on structs, and on `rules`, where `[]` is an opt-out.
-  `TestEveryConfigFieldOmitsItsZeroValue` refuses a field with neither. A
-  field that is safe when absent needs nothing more. One whose value an
-  older build cannot decode gets `cap:"<name>"`: the header the sidecar
+  `TestEveryConfigFieldOmitsItsZeroValue` refuses a field with neither.
+  Every new field also gets `cap:"<name>"`, unless it ships in the same
+  release as a tagged block around it: omitting the zero value hides an
+  unset key, but an older build still refuses the key once an admin sets
+  it. That missing tag let `google_identity`, `trust`, `mcp`, `postgres`
+  and `ssh.relay` crash older sidecars (EVL-338). The header the sidecar
   sends on its handshake is generated from the tag, and the plane refuses
-  to serve a document that sets it to a build without the entry. A field
+  to serve a document that sets it to a build without the entry. `make test-sidecar-compat` (CI job
+  `sidecar-compat`) decodes a document with every field set using the
+  previous release, and fails on a new field without the tag. A field
   that already shipped also carries `since:"<release>"`, the release read
   from the git tags, so a build from before the header is refused it by
   its reported version; a new field leaves `since` off until its release

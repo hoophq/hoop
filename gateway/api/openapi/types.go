@@ -414,6 +414,12 @@ type SidecarResponse struct {
 	// still uses, phrased for an operator. The sidecar folds them on load,
 	// where nobody reads the warning.
 	Deprecations []string `json:"deprecations,omitempty"`
+	// IdentityIssuer and IdentitySubject name the service account identity
+	// this sidecar is bound to: the first that reached it through
+	// hoop-sidecar-identity. Empty for a sidecar no identity reached, or
+	// whose binding an admin cleared.
+	IdentityIssuer  string `json:"identity_issuer,omitempty" example:"https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu"`
+	IdentitySubject string `json:"identity_subject,omitempty" example:"system:serviceaccount:ws-123:hoop-sidecar"`
 }
 
 // SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one
@@ -446,6 +452,37 @@ type SidecarCreateResponse struct {
 	// The generated token, sent in the hoop-sidecar-token header. This is the
 	// only time it is shown; it is stored hashed and cannot be recovered.
 	Token string `json:"token" example:"hsc_Ab3fX9kL..."`
+}
+
+// SidecarSessionEventsRequest carries a sidecar's audit events.
+//
+// It documents daemon.SessionEventsRequest, which the handler decodes: that
+// type is the contract, shared with the sidecar that encodes it.
+type SidecarSessionEventsRequest struct {
+	// The events, in the order the sidecar numbered them. At most 500, and
+	// the body at most 4 MiB; above either the answer is 413
+	Events []SidecarSessionEvent `json:"events"`
+}
+
+// SidecarSessionEvent is one audit event and its place in its session.
+type SidecarSessionEvent struct {
+	// The event's number in its sidecar session: 1 for the first, one more
+	// for each after it. An event at or below the last one applied is
+	// ignored, which makes a resend safe
+	Seq int64 `json:"seq" example:"1"`
+	// The audit record exactly as the sidecar's JSONL audit file holds it
+	// (sidecar/audit.Event): kind, timestamp, session_id, principal,
+	// protocol, connection (the listener), statement, allowed, rule,
+	// message, error, masked_entities, masked_count and the session totals
+	Event map[string]any `json:"event"`
+}
+
+// SidecarSessionEventsResponse reports what a batch did.
+type SidecarSessionEventsResponse struct {
+	// Events applied by this request, the ignored kinds included
+	Accepted int `json:"accepted" example:"42"`
+	// Events at or below their session's last applied seq, ignored
+	Duplicates int `json:"duplicates" example:"0"`
 }
 
 // SidecarReviewRequest registers a statement a sidecar held for human approval.
@@ -584,6 +621,69 @@ type AgentSPIFFEMapping struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true"`
 	// Last update timestamp
 	UpdatedAt time.Time `json:"updated_at" readonly:"true"`
+}
+
+// SidecarServiceAccount lets a sidecar authenticate with a platform service
+// account token in the hoop-sidecar-identity header, instead of a token the
+// control plane issued. The token must come from Issuer, be valid
+// for Audience, and carry a Claim that matches SubjectPattern. The sidecar it
+// reaches is the one named by NameTemplate, created on its first handshake
+// when no sidecar has that name. A sidecar is bound to the first identity
+// that reaches it; another identity is refused until an admin clears the
+// binding with DELETE /sidecars/{nameOrID}/identity.
+type SidecarServiceAccount struct {
+	// The unique identifier of this resource
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// A label for this mapping, unique in the organization
+	Name string `json:"name" binding:"required" example:"gke-eu"`
+	// The exact iss of the tokens. An https URL, where the control plane
+	// fetches the keys through OIDC discovery, unless jwks is set
+	Issuer string `json:"issuer" binding:"required" example:"https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu"`
+	// The aud the tokens must carry: the control plane URL the sidecar uses.
+	// An issuer and audience pair belongs to one organization
+	Audience string `json:"audience" binding:"required" example:"https://hoop.example.com"`
+	// The claim matched against subject_pattern
+	// * sub - The subject, for a Kubernetes service account
+	// * email - The email, for a Google service account. The token must carry email_verified true
+	Claim string `json:"claim" binding:"required" enums:"sub,email" example:"sub"`
+	// An exact value, or one with a single * that matches one or more
+	// characters. A bare * needs allow_any_subject. For the issuer
+	// https://accounts.google.com it must end in a literal
+	// @<project>.iam.gserviceaccount.com
+	SubjectPattern string `json:"subject_pattern" binding:"required" example:"system:serviceaccount:*:hoop-sidecar"`
+	// The name of the sidecar a matching token reaches. {1} is the text the *
+	// matched. A sidecar that exists with this name is used when it is bound
+	// to the same identity, or to none (see adopt_existing_sidecars)
+	NameTemplate string `json:"name_template" binding:"required" example:"gke-eu-{1}"`
+	// A static JWKS for an issuer the control plane cannot reach. Omitted
+	// means OIDC discovery at {issuer}/.well-known/openid-configuration
+	JWKS json.RawMessage `json:"jwks,omitempty" swaggertype:"object"`
+	// Allows the bare * pattern, which admits every subject of the issuer
+	AllowAnySubject bool `json:"allow_any_subject" example:"false"`
+	// Lets a matching token reach a sidecar an admin created with a token,
+	// that no identity is bound to yet, and binds it. The sidecar's token
+	// keeps working. Without it the token is refused there
+	AdoptExistingSidecars bool `json:"adopt_existing_sidecars" example:"false"`
+	// The admin who created this mapping
+	CreatedBy string `json:"created_by" readonly:"true"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at" readonly:"true"`
+	// Last update timestamp
+	UpdatedAt time.Time `json:"updated_at" readonly:"true"`
+}
+
+// SidecarDeletedName is the name of a deleted sidecar a service account
+// identity had reached. Its next handshake is refused, and nothing is
+// created, until an admin clears the name.
+type SidecarDeletedName struct {
+	// The sidecar name
+	Name string `json:"name" example:"gke-eu-ws-123"`
+	// The admin who deleted the sidecar
+	DeletedBy string `json:"deleted_by" example:"admin@hoop.dev"`
+	// When the sidecar was deleted
+	DeletedAt time.Time `json:"deleted_at"`
 }
 
 type AgentRequest struct {
@@ -1308,7 +1408,8 @@ type Session struct {
 	// The type of identity that created this session
 	// * user - a human user
 	// * machine - a machine identity (non-human identity)
-	IdentityType string `json:"identity_type" enums:"user,machine" example:"user"`
+	// * sidecar - a principal a sidecar resolved on the wire
+	IdentityType string `json:"identity_type" enums:"user,machine,sidecar" example:"user"`
 	// The machine identity ID if this session was created by a machine identity
 	MachineIdentityID *string `json:"machine_identity_id,omitempty" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
 }

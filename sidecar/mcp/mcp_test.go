@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -25,6 +26,7 @@ type fakeReviews struct {
 	statuses []string
 	err      error
 	asked    []string
+	listed   []string
 	// expiresAt is on every answer.
 	expiresAt *time.Time
 }
@@ -42,6 +44,19 @@ func (f *fakeReviews) ReviewStatus(_ context.Context, id string) (daemon.ReviewS
 	}
 	return daemon.ReviewStatus{ID: id, Status: status, ListenerName: "appdb", ApprovalRule: "dba",
 		ExpiresAt: f.expiresAt}, nil
+}
+
+// ListReviews answers the next status for one review, the way ReviewStatus
+// does, and records the filter it was asked with.
+func (f *fakeReviews) ListReviews(ctx context.Context, status string, limit int) ([]daemon.ReviewStatus, error) {
+	f.mu.Lock()
+	f.listed = append(f.listed, fmt.Sprintf("%s/%d", status, limit))
+	f.mu.Unlock()
+	rev, err := f.ReviewStatus(ctx, "9f97c0de-0000-0000-0000-000000000001")
+	if err != nil {
+		return nil, err
+	}
+	return []daemon.ReviewStatus{rev}, nil
 }
 
 // connect serves the handler over real streamable HTTP and returns a client
@@ -108,8 +123,8 @@ func TestAClientListsBothTools(t *testing.T) {
 			t.Errorf("%s is not marked read-only", tool.Name)
 		}
 	}
-	if strings.Join(names, ",") != "review_status,review_wait" {
-		t.Errorf("tools %v, want review_status and review_wait", names)
+	if strings.Join(names, ",") != "review_list,review_status,review_wait" {
+		t.Errorf("tools %v, want review_list, review_status and review_wait", names)
 	}
 }
 
@@ -119,14 +134,14 @@ func TestAnAgentFollowsOneReviewFromPendingToApproved(t *testing.T) {
 	cs, progress := connect(t, reviews)
 
 	out, _ := call(t, cs, &sdk.CallToolParams{Name: "review_status", Arguments: map[string]any{"id": "r1"}})
-	if out.Status != statusPending || out.Next != nextWait {
+	if out.Status != statusPending || out.Next != daemon.ReviewNextWait {
 		t.Fatalf("review_status answered %+v", out)
 	}
 
 	params := &sdk.CallToolParams{Name: "review_wait", Arguments: map[string]any{"id": "r1"}}
 	params.SetProgressToken("p1")
 	out, _ = call(t, cs, params)
-	if out.Status != statusApproved || out.Next != nextResend {
+	if out.Status != statusApproved || out.Next != daemon.ReviewNextResend {
 		t.Fatalf("review_wait answered %+v", out)
 	}
 	if out.TimedOut == nil || *out.TimedOut {
@@ -153,7 +168,7 @@ func TestAWaitThatTimesOutIsNotAnError(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("a timeout was an error: %s", errorText(res))
 	}
-	if out.TimedOut == nil || !*out.TimedOut || out.Status != statusPending || out.Next != nextWait {
+	if out.TimedOut == nil || !*out.TimedOut || out.Status != statusPending || out.Next != daemon.ReviewNextWait {
 		t.Errorf("a timed-out wait answered %+v", out)
 	}
 }
@@ -178,14 +193,14 @@ func TestAMissingReviewAndAnOldPlaneReadDifferently(t *testing.T) {
 
 func TestEveryStatusSaysWhatToDoNext(t *testing.T) {
 	for status, next := range map[string]string{
-		statusPending:  nextWait,
-		statusApproved: nextResend,
-		statusRejected: nextStop,
-		statusRevoked:  nextStop,
-		statusExecuted: nextStop,
-		statusExpired:  nextStop,
-		"PROCESSING":   nextStop,
-		"":             nextStop,
+		statusPending:  daemon.ReviewNextWait,
+		statusApproved: daemon.ReviewNextResend,
+		statusRejected: daemon.ReviewNextStop,
+		statusRevoked:  daemon.ReviewNextStop,
+		statusExecuted: daemon.ReviewNextStop,
+		statusExpired:  daemon.ReviewNextStop,
+		"PROCESSING":   daemon.ReviewNextStop,
+		"":             daemon.ReviewNextStop,
 	} {
 		out := describe(daemon.ReviewStatus{Status: status})
 		if out.Next != next || out.Instruction == "" {
@@ -208,7 +223,7 @@ func TestAnExpiredReviewEndsTheWait(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("an expiry was an error: %s", errorText(res))
 	}
-	if out.Status != statusExpired || out.Next != nextStop || out.TimedOut == nil || *out.TimedOut {
+	if out.Status != statusExpired || out.Next != daemon.ReviewNextStop || out.TimedOut == nil || *out.TimedOut {
 		t.Fatalf("review_wait answered %+v, want a stop on EXPIRED", out)
 	}
 	if !strings.Contains(out.Instruction, "only if a human asks") {
@@ -329,5 +344,36 @@ func TestShutdownStopsAWaitInFlight(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if n := asked(); n != after {
 		t.Errorf("the wait polled %d more times after shutdown", n-after)
+	}
+}
+
+// An agent lists this sidecar's reviews and reads what to do about each.
+func TestAnAgentListsTheSidecarsReviews(t *testing.T) {
+	reviews := &fakeReviews{statuses: []string{statusPending}}
+	cs, _ := connect(t, reviews)
+	res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{
+		Name: "review_list", Arguments: map[string]any{"status": "pending", "limit": 500}})
+	if err != nil || res.IsError {
+		t.Fatalf("review_list: %v %s", err, errorText(res))
+	}
+	var out listOutput
+	raw, _ := json.Marshal(res.StructuredContent)
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Reviews) != 1 || out.Reviews[0].Next != daemon.ReviewNextWait {
+		t.Errorf("reviews = %+v, want one pending review to wait on", out.Reviews)
+	}
+	if got := strings.Join(reviews.listed, ","); got != "PENDING/200" {
+		t.Errorf("the plane was asked for %q, want PENDING/200: the limit is capped", got)
+	}
+}
+
+// A plane without the list route sends the agent back to review_status.
+func TestReviewListOnAnOldPlanePointsAtReviewStatus(t *testing.T) {
+	cs, _ := connect(t, &fakeReviews{err: daemon.ErrPlaneTooOld})
+	_, res := call(t, cs, &sdk.CallToolParams{Name: "review_list"})
+	if !res.IsError || !strings.Contains(errorText(res), "review_status") {
+		t.Errorf("result %s, want an error naming review_status", errorText(res))
 	}
 }

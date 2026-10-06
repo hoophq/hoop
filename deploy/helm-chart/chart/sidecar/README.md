@@ -145,7 +145,10 @@ under `deploy/docker-compose/` binds:
 | `configRevision` | Rollout trigger for `existingConfigMap`. Change it whenever that ConfigMap's content changes, or the pods never pick it up |
 | `license` | License document or a path to one → `HOOP_LICENSE` |
 | `controlPlane.url` | Control Plane to take the running config from → `HOOP_CONTROL_PLANE_URL` |
-| `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN` |
+| `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN`. Exclusive with `controlPlane.identity` |
+| `controlPlane.identity` | Authenticate with the pod's service account instead of a token → `HOOP_SIDECAR_IDENTITY_TYPE`. `kubernetes` mounts a projected token with audience `controlPlane.identityAudience` and sets `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` to it; `gcp` reads a Google ID token from the metadata server. The control plane creates the sidecar on first contact; see "Service account identity" below |
+| `controlPlane.identityAudience` | Audience of the identity token. Default: `controlPlane.url`. Set it when one control plane serves several organizations; see "Several organizations on one control plane" below. Under `gcp` → `HOOP_SIDECAR_IDENTITY_AUDIENCE`. Refused without `controlPlane.identity` |
+| `controlPlane.tokenExpirationSeconds` | Lifetime of the projected token under `identity: kubernetes`. Default `3600`. An integer, minimum `600`: the chart refuses to render otherwise. The kubelet rotates it |
 | `analytics.enabled` | Usage analytics to Segment. `false` → `HOOP_SIDECAR_ANALYTICS=off`. Default `true` |
 | `analytics.sidecarId` | Stable install identity → `HOOP_SIDECAR_ID`. Default: the release's full name. Hashed before it is sent |
 | `analytics.hostId` | Machine identity → `HOOP_HOST_ID`. Default: the node name via the downward API. Hashed before it is sent |
@@ -251,7 +254,7 @@ unnecessary. Without any of these,
 
 ## Environment variables
 
-The relay reads seven. Six come from the Secret `sidecar-config`; the seventh
+The relay reads nine. Eight come from the Secret `sidecar-config`; the ninth
 is set directly on the container because it defaults to a downward-API field,
 which a Secret cannot express:
 
@@ -261,6 +264,9 @@ which a Secret cannot express:
 | `HOOP_LICENSE` | `license` |
 | `HOOP_CONTROL_PLANE_URL` | `controlPlane.url` |
 | `HOOP_SIDECAR_TOKEN` | `controlPlane.token` |
+| `HOOP_SIDECAR_IDENTITY_TYPE` | `controlPlane.identity`: empty, `kubernetes` or `gcp` |
+| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `/var/run/hoop-sidecar/token` when `controlPlane.identity: kubernetes`, else empty |
+| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `controlPlane.identityAudience` when `controlPlane.identity: gcp`, else empty. Empty means the control plane URL |
 | `HOOP_SIDECAR_ANALYTICS` | `off` when `analytics.enabled: false`, else empty |
 | `HOOP_SIDECAR_ID` | `analytics.sidecarId`, defaulting to the release's full name |
 | `HOOP_HOST_ID` | `analytics.hostId`, defaulting to `fieldRef: spec.nodeName` on the container |
@@ -357,4 +363,64 @@ Two, both deliberate:
 
 There is no `spiffe` block. SPIFFE authenticates an agent to the gateway; this
 process does not dial the gateway. It authenticates to a control plane with
-`controlPlane.token`, or to nothing at all when it runs standalone.
+`controlPlane.token` or `controlPlane.identity`, or to nothing at all when it
+runs standalone.
+
+## Service account identity
+
+With `controlPlane.identity`, no token is created before deploy. An admin adds
+one sidecar service account entry per cluster in the control plane
+(`POST /api/sidecar-service-accounts`), and every release whose service
+account matches its pattern enrolls on its first handshake:
+
+```yaml
+serviceAccount:
+  create: true
+  name: hoop-sidecar        # the name the entry's pattern matches
+controlPlane:
+  url: https://hoop.example.com
+  identity: kubernetes
+```
+
+The sidecar's name comes from the entry's template, for example
+`gke-eu-{1}` with pattern `system:serviceaccount:ws-*:hoop-sidecar` makes
+`gke-eu-acme` for namespace `ws-acme`. Restarts, rollouts and replicas reach
+the same sidecar; it is never created twice. A sidecar deleted in the
+control plane stays deleted until an admin clears its name.
+
+When the control plane cannot verify the token (not a JWT, an issuer no
+entry names, a bad signature, an expired token, or keys it could not fetch),
+the pod logs a 401 that says only `the service account token failed
+verification`. The reason is in the control plane log, with the issuer.
+
+### Several organizations on one control plane
+
+The control plane maps one (issuer, audience) pair to one organization. Two
+organizations whose sidecars run in one cluster, or both use
+`identity: gcp`, share an issuer. With the default audience (the URL) the
+second organization cannot add its entry. Give each organization its own
+audience, and put the same value in its sidecar service account entry:
+
+```yaml
+controlPlane:
+  url: https://hoop.example.com
+  identity: kubernetes
+  identityAudience: hoop-org-acme
+```
+
+One organization on a control plane leaves `identityAudience` empty.
+
+### A sidecar keeps the first service account that reached it
+
+The first service account that reaches a sidecar binds to it. Replicas,
+restarts and rollouts present the same account, so they reach it too. A
+different service account whose entry renders the same sidecar name gets a
+401 until an admin clears the binding with
+`DELETE /api/sidecars/<name>/identity`; the next service account to reach
+the sidecar then binds to it.
+
+A sidecar registered with `controlPlane.token` has no binding. To move it to
+`controlPlane.identity`, set `adopt_existing_sidecars: true` on the sidecar
+service account entry. Without it the control plane refuses the identity.
+The first service account to reach the sidecar binds to it, and the token
+keeps working.

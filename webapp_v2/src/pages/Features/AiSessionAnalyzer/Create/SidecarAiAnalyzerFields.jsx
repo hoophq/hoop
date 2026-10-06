@@ -12,6 +12,7 @@ import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
 import { REVIEW_MODE_HOLD, REVIEW_MODES } from '@/pages/sidecarRuleVocabulary'
+import TriggerItemsInput from './sections/TriggerItemsInput'
 
 // Provider, model and credential are not here: they live in the sidecar's own
 // analyzer section, a file path the control plane cannot supply.
@@ -116,9 +117,29 @@ export default function SidecarAiAnalyzerFields({ editor }) {
               />
             </>
           )}
+          <TriggerItemsInput
+            label="Combined conditions (optional)"
+            description="Classify a statement that matches every field of one condition."
+            addLabel="Add condition"
+            value={form.trigger_any}
+            onChange={(v) => set({ trigger_any: v })}
+            operations={operations}
+            isHTTP={isHTTP}
+          />
+          <TriggerItemsInput
+            label="Exclusions (optional)"
+            description="Never classify a statement that matches every field of one exclusion."
+            addLabel="Add exclusion"
+            value={form.trigger_exclude}
+            onChange={(v) => set({ trigger_exclude: v })}
+            operations={operations}
+            isHTTP={isHTTP}
+          />
           {noTrigger && (
             <Alert color="amber" variant="light" icon={<Info size={16} />} radius="md">
-              With no trigger, every statement on this listener is sent to the model.
+              {form.trigger_exclude.length > 0
+                ? 'With no trigger, every statement on this listener except the excluded ones is sent to the model.'
+                : 'With no trigger, every statement on this listener is sent to the model.'}
             </Alert>
           )}
           <NumberInput

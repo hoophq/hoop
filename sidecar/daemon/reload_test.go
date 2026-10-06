@@ -60,7 +60,7 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 			t.Fatalf("UseLicense: %v", lerr)
 		}
 	}
-	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(raw),
+	cfg.cp = &controlPlane{url: "http://plane", cred: tokenCredential("hsc_x"), lastRaw: []byte(raw),
 		license: cfg.License, licenseManaged: true}
 
 	lanes, err := buildLanes(cfg, nil, nil)
@@ -75,7 +75,7 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 			servers[ln.name] = newLiveRules(ln)
 			continue
 		}
-		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
+		srv, serr := buildServer(ln, cfg.Audit, nil, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}
@@ -403,7 +403,7 @@ func TestAGRPCRuleEditReachesTheNextRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(base)}
+	cfg.cp = &controlPlane{url: "http://plane", cred: tokenCredential("hsc_x"), lastRaw: []byte(base)}
 	lanes, err := buildLanes(cfg, nil, nil)
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
@@ -503,7 +503,7 @@ func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
 	}
 	det0 := &stubPlugin{entities: []string{"US_SSN"}}
 	det1 := &stubPlugin{entities: []string{"CREDIT_CARD"}}
-	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(reloadBase)}
+	cfg.cp = &controlPlane{url: "http://plane", cred: tokenCredential("hsc_x"), lastRaw: []byte(reloadBase)}
 	cfg.build = func(json.RawMessage) (Plugin, error) { return det1, nil }
 	ac := &analyzerDeps{
 		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"},
@@ -516,7 +516,7 @@ func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
 	}
 	servers := map[string]ruleSwapper{}
 	for _, ln := range lanes {
-		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
+		srv, serr := buildServer(ln, cfg.Audit, nil, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}
@@ -616,7 +616,7 @@ func TestTurningMaskingOnOnAnSSHLaneKeepsTheRestartPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(base)}
+	cfg.cp = &controlPlane{url: "http://plane", cred: tokenCredential("hsc_x"), lastRaw: []byte(base)}
 	det := &stubPlugin{entities: []string{"EMAIL_ADDRESS"}}
 	lanes, err := buildLanes(cfg, det, nil)
 	if err != nil {
@@ -920,7 +920,7 @@ func TestAnUnreachablePlaneKeepsTheLicenseInUse(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	cp := &controlPlane{url: srv.URL, token: "hsc_x", every: time.Millisecond}
+	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_x"), every: time.Millisecond}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -1033,7 +1033,7 @@ func TestAHeartbeat412InDiskModeImportsTheFile(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	cp := &controlPlane{url: srv.URL, token: "hsc_x", every: time.Millisecond}
+	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_x"), every: time.Millisecond}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -1068,7 +1068,7 @@ func TestAHeartbeat412WhenPlaneOwnedDoesNotImport(t *testing.T) {
 		w.WriteHeader(http.StatusPreconditionFailed)
 	}))
 	defer srv.Close()
-	cp := &controlPlane{url: srv.URL, token: "hsc_x", every: time.Millisecond}
+	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_x"), every: time.Millisecond}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()

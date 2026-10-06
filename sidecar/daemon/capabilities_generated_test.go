@@ -9,7 +9,8 @@ import (
 )
 
 // The header is generated from what the build links: every cap-tagged field,
-// every rule type and every protocol. Nobody lists an entry by hand.
+// every rule type and every protocol. Only behaviourCapabilities is listed by
+// hand, because a behaviour has no type to generate it from.
 func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 	caps := SidecarCapabilities()
 	if !slices.IsSorted(caps) {

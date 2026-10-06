@@ -864,7 +864,7 @@ func TestNewServerValidatesConfig(t *testing.T) {
 		"no upstream": {Listen: ":0", Protocol: inspect.Postgres},
 		"no protocol": {Listen: ":0", Upstream: "h:1"},
 		"bad protocol": {
-			Listen: ":0", Upstream: "h:1", Protocol: "oracle",
+			Listen: ":0", Upstream: "h:1", Protocol: "unsupported",
 		},
 	}
 	for name, cfg := range cases {
@@ -1020,7 +1020,7 @@ func TestMongoDBDenyFrameUsesRequestID(t *testing.T) {
 		Protocol:  inspect.MongoDB,
 		Direction: inspect.FromClient,
 		Metadata:  map[string]string{"mongodb.request_id": "-42"},
-	}, "destructive commands are not permitted")
+	}, "destructive commands are not permitted", nil)
 	if len(frame) < 21 {
 		t.Fatalf("MongoDB denial frame is %d bytes", len(frame))
 	}

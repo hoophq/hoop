@@ -76,6 +76,28 @@ type Verdict struct {
 	// redact_statements and lands in the trail verbatim. Never put a value
 	// the statement contained here.
 	Annotations map[string]string
+
+	// Review is set on a denial that names a human review, so a protocol
+	// with structured fields (HTTP headers, gRPC trailers) can carry the
+	// id and status a client acts on without parsing Message. Nil on
+	// every other verdict.
+	Review *Review
+}
+
+// Review is the review a denied statement waits on, or the one that ended
+// it.
+type Review struct {
+	// ID is the review's id. Never empty.
+	ID string
+
+	// Status is the backend's own word (PENDING, REJECTED, ...), or empty
+	// when the sidecar could not learn it.
+	Status string
+
+	// Return is true when the client was denied at once to resend the
+	// identical statement after approval, rather than held on its
+	// connection.
+	Return bool
 }
 
 // Allow is the zero verdict.
@@ -86,6 +108,10 @@ func Allow() Verdict { return Verdict{} }
 const (
 	SourceOPA      = "opa"
 	SourceAnalyzer = "analyzer"
+
+	// SourceReview is a Chain refusal over the review step itself, such as
+	// two producers asking for one statement.
+	SourceReview = "review"
 )
 
 // Deny builds a denial carrying a user-facing message. The caller sets
@@ -174,6 +200,57 @@ type EvalContext struct {
 	// this struct already lives for exactly one statement. The analyzer's
 	// hold reads it, so a wait for a human ends with the connection.
 	ConnCtx context.Context
+
+	// review is the hold a producer asked for, run by the outermost Chain
+	// after every evaluator allowed (ADR-0030). depth is how many Chains
+	// are evaluating on this context; only the outermost runs the review,
+	// so a nested chain cannot run it before a decision placed after it.
+	// requests counts every ask: more than one denies, see RequestReview.
+	review   *ReviewRequest
+	requests int
+	depth    int
+}
+
+// ReviewRequest asks that a human release the statement before it runs.
+//
+// A producer records it instead of filing at once, because filing pages
+// approvers and a hold spends the approval: both must wait until nothing
+// placed after the producer can still deny.
+type ReviewRequest struct {
+	// Mode and ModeSource reach the decide phase as input.review.
+	Mode       string
+	ModeSource string
+
+	// Resolve files the review and waits on it. Its verdict is the
+	// statement's.
+	Resolve func() Verdict
+}
+
+// RequestReview records r for the outermost Chain to run last. False means
+// no Chain owns this context: the caller then resolves r itself, as the only
+// safe order left to it.
+//
+// A second ask is accepted and denies the statement at the chain's end, with
+// nothing filed. Holding it in place would file and spend an approval before
+// a later decision could deny, and running both reviews in turn would spend
+// the first approval before the second could be rejected.
+func (e *EvalContext) RequestReview(r ReviewRequest) bool {
+	if e == nil || e.depth == 0 {
+		return false
+	}
+	e.requests++
+	if e.review == nil {
+		e.review = &r
+	}
+	return true
+}
+
+// PendingReview returns the review a producer asked for, if any.
+func (e *EvalContext) PendingReview() (ReviewRequest, bool) {
+	if e == nil || e.review == nil {
+		return ReviewRequest{}, false
+	}
+	return *e.review, true
 }
 
 // Finding is one producer's contribution to a decision it does not make.
@@ -422,11 +499,38 @@ type AITrigger struct {
 	// Resources matches an HTTP resource glob, using the same matcher an
 	// http_resource rule uses.
 	Resources []string `json:"resources,omitempty"`
+
+	// Any matches a statement that meets EVERY field one item names. The
+	// flat lists above OR each value, so "patch, under /api only" could
+	// not be written with them (ADR-0030). Items OR with each other and
+	// with the flat lists.
+	Any []AITriggerItem `json:"any,omitempty" cap:"analyzer_trigger_items"`
+
+	// Exclude drops a statement that meets every field one item names,
+	// whatever matched it above.
+	Exclude []AITriggerItem `json:"exclude,omitempty" cap:"analyzer_trigger_items"`
 }
 
-// IsZero reports whether the trigger names nothing.
+// AITriggerItem is one condition of AITrigger.Any or AITrigger.Exclude. Every
+// field it names must match; a field it leaves empty is not checked.
+type AITriggerItem struct {
+	Operations []inspect.Operation `json:"operations,omitempty"`
+	Tables     []string            `json:"tables,omitempty"`
+	Resources  []string            `json:"resources,omitempty"`
+}
+
+// IsZero reports whether the item names no field. Such an item would match
+// every statement by checking nothing, so a config carrying one is refused.
+func (i AITriggerItem) IsZero() bool {
+	return len(i.Operations) == 0 && len(i.Tables) == 0 && len(i.Resources) == 0
+}
+
+// IsZero reports whether the trigger names nothing that selects a statement.
+// Exclude alone selects nothing: it only narrows what something else
+// selected, so a trigger carrying only Exclude is zero here.
 func (t *AITrigger) IsZero() bool {
-	return t == nil || (len(t.Operations) == 0 && len(t.Tables) == 0 && len(t.Resources) == 0)
+	return t == nil || (len(t.Operations) == 0 && len(t.Tables) == 0 &&
+		len(t.Resources) == 0 && len(t.Any) == 0)
 }
 
 // Rule is one local matcher.
@@ -871,7 +975,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 	// MatchOperation is excluded because there the field IS the matcher;
 	// narrowing it by itself would be a tautology.
 	if len(r.Operations) > 0 && r.Type != MatchOperation {
-		if !slices.Contains(r.Operations, stmt.Operation) {
+		if !slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }) {
 			return false, nil
 		}
 	}
@@ -904,12 +1008,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return r.compiled.MatchString(stmt.Text), nil
 
 	case MatchOperation:
-		for _, op := range r.Operations {
-			if stmt.Operation == op {
-				return true, nil
-			}
-		}
-		return false, nil
+		return slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }), nil
 
 	case MatchTable:
 		if len(stmt.Relations) == 0 && len(stmt.Tables) == 0 {
@@ -943,6 +1042,13 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("policy: unknown rule type %q", r.Type)
+}
+
+// performs reports whether stmt performs op. An unknown statement still
+// performs the effects the scanner saw: a PL/SQL block's DELETE is a delete,
+// and its operation alone would let a rule naming delete miss it.
+func performs(stmt inspect.Statement, op inspect.Operation) bool {
+	return stmt.Operation == op || stmt.Operation == inspect.OpUnknown && slices.Contains(stmt.Effects, op)
 }
 
 // accessMatches reports whether a relation's access satisfies the rule.
@@ -1091,7 +1197,14 @@ func (c Chain) Evaluate(stmt inspect.Statement) Verdict {
 // Evaluators inside see what the ones before them established, which is how a
 // producer's finding reaches a policy and how a policy reaches back to
 // request a producer that would not otherwise have run.
+//
+// The outermost chain runs a requested review after its last evaluator
+// allowed, so a decision placed after the producer that asked for it denies
+// before anything is filed or spent (ADR-0030).
 func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
+	ec.depth++
+	defer func() { ec.depth-- }()
+
 	var errs error
 	for _, e := range c {
 		var v Verdict
@@ -1110,6 +1223,23 @@ func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 			return v
 		}
 		errs = errors.Join(errs, v.Err)
+	}
+	if r := ec.review; r != nil && ec.depth == 1 {
+		requests := ec.requests
+		ec.review, ec.requests = nil, 0
+		if requests > 1 {
+			v := Deny("review", "more than one evaluator asked for a human review "+
+				"of this statement; denying")
+			v.Source = SourceReview
+			v.Err = errs
+			v.Annotations = ec.Annotations
+			return v
+		}
+		v := r.Resolve()
+		ec.Annotations = mergeAnnotations(ec.Annotations, v.Annotations)
+		v.Err = errors.Join(errs, v.Err)
+		v.Annotations = ec.Annotations
+		return v
 	}
 	return Verdict{Err: errs, Annotations: ec.Annotations}
 }

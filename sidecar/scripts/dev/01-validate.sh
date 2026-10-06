@@ -98,9 +98,8 @@ listeners:
     protocol: http
     listen: 127.0.0.1:${HTTP_RELAY_PORT}
     upstream: 127.0.0.1:${HTTP_UPSTREAM_PORT}
-    # Required. Without it the codec captures no body, the analyzer sees
-    # "POST /anything" and nothing else, and every request is skipped. The
-    # relay refuses this config at startup when it is missing.
+    # capture_body is what puts the payload in front of the model. Without
+    # it the analyzer judges "POST /anything" from the request line alone.
     http:
       capture_body: true
       max_body_bytes: 8192
@@ -150,8 +149,6 @@ src, dst, edit = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(src).read()
 if edit == "no-trigger":
     s = s.replace("          trigger: {operations: [update, delete]}\n", "")
-elif edit == "no-capture":
-    s = s.replace("      capture_body: true\n", "      capture_body: false\n")
 elif edit == "negative-budget":
     s = s.replace("  max_calls: 50", "  max_calls: -1")
 elif edit == "review":
@@ -189,9 +186,8 @@ PY
 
 FAILED=0
 refuse "ai rule with no trigger"                "has no trigger"            no-trigger
-refuse "http ai rule without capture_body"      "capture_body"              no-capture
 refuse "negative max_calls"                     "max_calls is negative"     negative-budget
-refuse "require_review, which this build cannot honor" "require_review"     review
+refuse "require_review with no control plane"  "require_review"            review
 refuse "a provider the binary does not link"    "not linked"                bad-provider
 refuse "Authorization in the header allowlist"  "may not be exposed"        auth-header
 refuse "a second guardrail rule"                "2 guardrail rules"         second-guardrail

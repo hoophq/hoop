@@ -3,6 +3,7 @@ package analyzer
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,7 +32,8 @@ const DefaultMaxInputBytes = 8 << 10
 // only thing that spends money — Rego's silence must keep meaning "skip",
 // or a policy that answers nothing would start paying for every statement.
 type Trigger struct {
-	// All classifies every statement, overriding the three lists below.
+	// All classifies every statement, overriding the lists below. Exclude
+	// still narrows it.
 	All bool
 
 	// Operations matches the statement's normalized verb.
@@ -47,39 +49,106 @@ type Trigger struct {
 	// Resources matches an HTTP resource with a glob, using the same
 	// matcher as an http_resource policy rule.
 	Resources []string
+
+	// Any matches a statement that meets every field of one item. Items
+	// OR with each other and with the three lists above.
+	Any []TriggerItem
+
+	// Exclude drops a statement that meets every field of one item,
+	// whatever matched it. It narrows All too.
+	Exclude []TriggerItem
 }
 
-// IsZero reports whether the trigger names nothing.
+// TriggerItem is one condition of Trigger.Any or Trigger.Exclude: every field
+// it names must match. New refuses an item that names none, because it would
+// match every statement by checking nothing.
+type TriggerItem struct {
+	Operations []inspect.Operation
+	Tables     []string
+	Resources  []string
+}
+
+func (i TriggerItem) isZero() bool {
+	return len(i.Operations) == 0 && len(i.Tables) == 0 && len(i.Resources) == 0
+}
+
+func (i TriggerItem) matches(stmt inspect.Statement) bool {
+	return (len(i.Operations) == 0 || matchOperation(i.Operations, stmt)) &&
+		(len(i.Tables) == 0 || matchTable(i.Tables, stmt)) &&
+		(len(i.Resources) == 0 || matchResource(i.Resources, stmt))
+}
+
+// IsZero reports whether the trigger selects nothing. Exclude alone selects
+// nothing, so a trigger carrying only Exclude is zero.
 func (t Trigger) IsZero() bool {
-	return !t.All && len(t.Operations) == 0 && len(t.Tables) == 0 && len(t.Resources) == 0
+	return !t.All && len(t.Operations) == 0 && len(t.Tables) == 0 &&
+		len(t.Resources) == 0 && len(t.Any) == 0
+}
+
+// validate refuses an item that names no field.
+func (t Trigger) validate() error {
+	for _, list := range [...]struct {
+		name  string
+		items []TriggerItem
+	}{{"any", t.Any}, {"exclude", t.Exclude}} {
+		for i, item := range list.items {
+			if item.isZero() {
+				return fmt.Errorf("sidecar/analyzer: trigger %s[%d] names no "+
+					"operations, tables or resources", list.name, i)
+			}
+		}
+	}
+	return nil
 }
 
 // matches reports whether stmt should be classified.
 func (t Trigger) matches(stmt inspect.Statement) bool {
-	if t.All {
+	for _, item := range t.Exclude {
+		if item.matches(stmt) {
+			return false
+		}
+	}
+	if t.All || matchOperation(t.Operations, stmt) || matchTable(t.Tables, stmt) ||
+		matchResource(t.Resources, stmt) {
 		return true
 	}
-	for _, op := range t.Operations {
-		if stmt.Operation == op {
+	for _, item := range t.Any {
+		if item.matches(stmt) {
 			return true
 		}
 	}
-	for _, want := range t.Tables {
+	return false
+}
+
+func matchOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
+	return slices.Contains(ops, stmt.Operation)
+}
+
+func matchTable(tables []string, stmt inspect.Statement) bool {
+	for _, want := range tables {
 		for _, got := range stmt.Tables {
 			if strings.EqualFold(want, got) {
 				return true
 			}
 		}
 	}
-	if stmt.HTTP != nil {
-		target := stmt.HTTP.Resource
-		if target == "" {
-			target = stmt.HTTP.Path
-		}
-		for _, pattern := range t.Resources {
-			if policy.MatchResource(pattern, target) {
-				return true
-			}
+	return false
+}
+
+// matchResource matches an HTTP target. A statement with no HTTP detail
+// never matches, so an item pairing resources with operations stays on the
+// http lane.
+func matchResource(patterns []string, stmt inspect.Statement) bool {
+	if stmt.HTTP == nil {
+		return false
+	}
+	target := stmt.HTTP.Resource
+	if target == "" {
+		target = stmt.HTTP.Path
+	}
+	for _, pattern := range patterns {
+		if policy.MatchResource(pattern, target) {
+			return true
 		}
 	}
 	return false
@@ -131,6 +200,14 @@ type Config struct {
 	// Timeout bounds one classification. Zero uses DefaultTimeout.
 	Timeout time.Duration
 
+	// MaxRetries is how many times a classification is re-sent after a
+	// retryable provider answer (408, 429, 500, 502, 503, 504). Zero sends
+	// once. Every attempt shares Timeout, so retries never hold a
+	// connection longer than one call could. A retry is not charged to
+	// MaxCalls or the rate limit: those count classifications, and
+	// providers do not bill a refused request.
+	MaxRetries int
+
 	// FailOpen allows a statement whose classification failed.
 	//
 	// Default false matches the policy package's convention, but the
@@ -170,6 +247,14 @@ type Config struct {
 	// many it refused meanwhile). Edges only, so a throttled lane logs two
 	// lines rather than one per statement. Nil reports nothing.
 	OnRateLimit func(limited bool, refused int64)
+
+	// OnCall is told about every classification sent to the provider,
+	// after its last attempt. Nil reports nothing.
+	OnCall func(Call)
+
+	// OnOutcome is told what happened to every eligible statement, cache
+	// hits and skips included. Nil reports nothing.
+	OnOutcome func(Outcome)
 
 	// Budget optionally supplies the purse itself. A hot reload that
 	// rebuilds an evaluator hands the replacement the SAME Budget, so the
@@ -233,6 +318,10 @@ type Evaluator struct {
 	reviewWait time.Duration
 	reviewPoll time.Duration
 
+	// retryBase and retryCap pace retries. Fields for the same reason.
+	retryBase time.Duration
+	retryCap  time.Duration
+
 	// holds reports that some risk level on this lane waits for a human.
 	//
 	// It is read where a statement could NOT be classified (a spent
@@ -267,10 +356,16 @@ func New(cfg Config) (*Evaluator, error) {
 	if cfg.MaxInputBytes <= 0 {
 		cfg.MaxInputBytes = DefaultMaxInputBytes
 	}
+	if cfg.MaxRetries < 0 {
+		return nil, fmt.Errorf("sidecar/analyzer: max retries %d is negative", cfg.MaxRetries)
+	}
 	if !cfg.ReviewMode.Valid() {
 		return nil, fmt.Errorf("sidecar/analyzer: unknown review mode %q", cfg.ReviewMode)
 	}
 	if err := cfg.RateLimit.validate(); err != nil {
+		return nil, err
+	}
+	if err := cfg.Trigger.validate(); err != nil {
 		return nil, err
 	}
 	holds := false
@@ -299,6 +394,8 @@ func New(cfg Config) (*Evaluator, error) {
 		budget:     budget,
 		reviewWait: ReviewWait,
 		reviewPoll: reviewPoll,
+		retryBase:  retryBase,
+		retryCap:   retryCap,
 	}, nil
 }
 
@@ -335,6 +432,11 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	if status == StatusOK || status == StatusCached {
 		level = res.RiskLevel
 		action = e.cfg.Actions.actionFor(level)
+	}
+	if status == StatusRefused {
+		e.observe(status, "", ActionBlock)
+	} else {
+		e.observe(status, level, action)
 	}
 	e.report(ec, status, level)
 	// The trail's ai_status is the folded one, not this evaluation's own.
@@ -408,7 +510,13 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// collapses classifications, not approvals: the statement in
 		// front of us has not been released, whatever a previous one of
 		// the same shape cost.
-		return e.hold(connContext(ec), stmt, notes)
+		ctx := withHoldDetail(connContext(ec), HoldDetail{
+			Rule:        e.cfg.Rule,
+			RiskLevel:   level,
+			Title:       res.Title,
+			Explanation: res.Explanation,
+		})
+		return e.requestHold(ctx, stmt, ec, notes)
 	}
 
 	if action != ActionBlock {
@@ -626,15 +734,10 @@ func (e *Evaluator) classify(
 	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
 	defer cancel()
 
-	res, err := e.cfg.Provider.Classify(callCtx, e.prompt, text)
+	res, err := e.call(callCtx, text)
 	if err != nil {
 		e.errs.Add(1)
 		return Result{}, StatusError, err
-	}
-	if res == nil || !res.RiskLevel.Valid() {
-		e.errs.Add(1)
-		return Result{}, StatusError, fmt.Errorf(
-			"provider returned no usable risk level")
 	}
 
 	e.cache.put(cacheKey, *res)

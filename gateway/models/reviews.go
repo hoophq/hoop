@@ -637,6 +637,28 @@ func GetSidecarReview(db *gorm.DB, orgID, sidecarID, reviewID string) (*Review, 
 	return &review, nil
 }
 
+// ListSidecarReviews returns the reviews this sidecar filed, newest first, at
+// most limit of them. An empty status lists every status.
+//
+// The sidecar scope is the authorization, as in GetSidecarReview.
+func ListSidecarReviews(db *gorm.DB, orgID, sidecarID string, status ReviewStatusType, limit int) ([]Review, error) {
+	query := sidecarReviewSelect + `
+	WHERE org_id = ? AND sidecar_id = ?`
+	args := []any{orgID, sidecarID}
+	if status != "" {
+		query += ` AND status = ?`
+		args = append(args, status)
+	}
+	query += ` ORDER BY created_at DESC, id LIMIT ?`
+	args = append(args, limit)
+
+	var reviews []Review
+	if err := db.Raw(query, args...).Find(&reviews).Error; err != nil {
+		return nil, err
+	}
+	return reviews, nil
+}
+
 // ClaimApprovedSidecarReview consumes an approved review exactly once.
 //
 // Concurrent retries all read APPROVED, but only one conditional UPDATE matches
