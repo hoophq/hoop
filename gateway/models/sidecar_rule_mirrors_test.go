@@ -256,7 +256,73 @@ func TestRulesOnMirrorsMigrationServesTheSameConfig(t *testing.T) {
 		if after := servedDocument(t, f.sc); after != before {
 			t.Fatalf("the served document changed after a rollback and a new copy\nbefore: %s\nafter:  %s", before, after)
 		}
+		// An older gateway removes g-b after the migration: it deletes the
+		// listener row only.
+		execSQL(t, `DELETE FROM private.guardrail_rules_listeners WHERE guardrail_rule_name = 'g-b'`)
+		oldView = oldGatewayView(t)
 	})
+	// The rollback must not bring the removed binding back.
+	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(beforeRulesOnMirrorsVersion) })
+	withSession(t, inst, func() {
+		if got := oldGatewayView(t); !equalStrings(got, oldView) {
+			t.Errorf("the rollback changed what an older gateway reads\nwant: %v\ngot:  %v", oldView, got)
+		}
+	})
+}
+
+// During a rolling deploy an older gateway writes only the listener rows. Its
+// changes must count here at once, and the mirror writer repairs the mirror.
+func TestAnOlderGatewayWriteCounts(t *testing.T) {
+	startTestDB(t)
+	f := seedMirrorFixture(t)
+	seedListenerBindings(t, f)
+	featureflag.Set(testOrgID, featureflag.FlagSidecarListeners, true)
+	t.Cleanup(func() { featureflag.Set(testOrgID, featureflag.FlagSidecarListeners, false) })
+	sync := func() {
+		t.Helper()
+		err := models.DB.Transaction(func(tx *gorm.DB) error {
+			return services.SyncSidecarListenerConnectionsTx(tx, f.sc)
+		})
+		if err != nil {
+			t.Fatalf("sync mirrors: %v", err)
+		}
+	}
+	sync()
+	onAppdb := func() int {
+		return countRows(t, `SELECT count(*) FROM private.guardrail_rules_connections WHERE connection_id = ?`, f.mirrorID)
+	}
+	if n := onAppdb(); n != 2 {
+		t.Fatalf("want g-b and g-a on the appdb mirror, got %d", n)
+	}
+
+	// The older gateway unbinds g-b and binds g-c to appdb.
+	execSQL(t, `DELETE FROM private.guardrail_rules_listeners WHERE guardrail_rule_name = 'g-b'`)
+	execSQL(t, `INSERT INTO private.guardrail_rules_listeners (org_id, guardrail_rule_name, sidecar_id, listener_name, position)
+		VALUES (?, 'g-c', ?, 'appdb', 5)`, testOrgID, f.sc.ID)
+
+	doc := servedDocument(t, f.sc)
+	lane := composedLane(t, f.sc, "appdb")
+	if lane.Guardrails == nil || len(lane.Guardrails.Rules) != 2 || strings.Contains(doc, `"g-b"`) {
+		t.Errorf("want g-a and g-c served on appdb and g-b gone, got %s", doc)
+	}
+	targets, err := models.ListGuardrailRuleTargets(models.DB, uuid.MustParse(testOrgID), "g-b")
+	if err != nil {
+		t.Fatalf("list targets: %v", err)
+	}
+	if len(targets) != 0 {
+		t.Errorf("want g-b bound nowhere, got %+v", targets)
+	}
+
+	sync()
+	var onMirror []struct {
+		Name     string
+		Position int
+	}
+	execScan(t, &onMirror, `SELECT r.name, g.position FROM private.guardrail_rules_connections g
+		JOIN private.guardrail_rules r ON r.id = g.rule_id WHERE g.connection_id = ? ORDER BY g.position`, f.mirrorID)
+	if len(onMirror) != 2 || onMirror[0].Name != "g-a" || onMirror[1].Name != "g-c" || onMirror[1].Position != 5 {
+		t.Errorf("want the mirror to follow the listener rows, g-a then g-c at 5, got %+v", onMirror)
+	}
 }
 
 // A mirror made after 000132 (a fallback name, an org that turns the flag on)

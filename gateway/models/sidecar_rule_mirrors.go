@@ -9,16 +9,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// Where a sidecar rule binding is stored. A listener with a mirror connection
-// keeps its bindings on the mirror, in the rule's connection junction. A
-// listener without one (an org with beta.sidecar_listeners off) keeps them in
-// the *_rules_listeners table only.
+// Where a sidecar rule binding is stored. Expand phase of a move from the
+// listener name to the listener's mirror connection (000132):
 //
-// Expand phase: a binding on a mirror is ALSO written to *_rules_listeners. A
-// gateway older than 000132 reads only that table, and during a rolling deploy
-// or after an image rollback it must go on serving every rule. Every read
-// unions both stores and keeps one row per rule and listener, the mirror's
-// first, so the shadow row never counts twice.
+//   - *_rules_listeners is the source of truth. A gateway older than 000132
+//     reads and writes only that table, and during a rolling deploy or after
+//     an image rollback its writes must count, a removed binding included.
+//     The served document and every read come from it.
+//   - The rule's connection junction holds the same binding on the mirror, the
+//     resource the admin sees. Every write here keeps it in step, and
+//     SyncSidecarBindingsToMirrorsTx repairs what an older gateway changed.
+//
+// The contract phase, once no older gateway runs, reads the mirror rows and
+// drops the listener rows of mirrored listeners.
 
 // ErrSidecarMirrorRuleBinding is a write that changes the rules of a mirror
 // connection through a connection list. The sidecar path owns those rows: it
@@ -34,8 +37,9 @@ type sidecarRuleJunction struct {
 	listenerCol string
 	attributes  string
 	// mirrors is the connection junction. mirrorJoin joins its row m to the
-	// rule row r; mirrorRuleCol and mirrorRuleValue are the rule key it holds.
-	mirrors, mirrorJoin, mirrorRuleCol, mirrorRuleValue string
+	// rule row r; mirrorRuleCol and mirrorRuleValue are the rule key it holds,
+	// and mirrorConflict is its unique key.
+	mirrors, mirrorJoin, mirrorRuleCol, mirrorRuleValue, mirrorConflict string
 	// rulepackFree and namedConnections are SQL over r for the detach.
 	rulepackFree, namedConnections string
 }
@@ -51,6 +55,7 @@ var (
 		mirrorJoin:       "r.id = m.rule_id",
 		mirrorRuleCol:    "rule_id",
 		mirrorRuleValue:  "r.id",
+		mirrorConflict:   "rule_id, connection_id",
 		rulepackFree:     "r.rulepack_id IS NULL",
 		namedConnections: "FALSE",
 	}
@@ -64,6 +69,7 @@ var (
 		mirrorJoin:       "r.id = m.rule_id",
 		mirrorRuleCol:    "rule_id",
 		mirrorRuleValue:  "r.id",
+		mirrorConflict:   "rule_id, connection_id",
 		rulepackFree:     "r.rulepack_id IS NULL",
 		namedConnections: "FALSE",
 	}
@@ -77,6 +83,7 @@ var (
 		mirrorJoin:      "r.org_id = m.org_id AND r.name = m.analyzer_rule_name",
 		mirrorRuleCol:   "analyzer_rule_name",
 		mirrorRuleValue: "r.name",
+		mirrorConflict:  "org_id, analyzer_rule_name, connection_id",
 		rulepackFree:    "TRUE",
 		// The gateway binds an analyzer by connection name, not by junction.
 		namedConnections: "COALESCE(array_length(r.connection_names, 1), 0) > 0",
@@ -84,30 +91,14 @@ var (
 	sidecarRuleJunctions = []sidecarRuleJunction{guardrailJunction, datamaskingJunction, analyzerJunction}
 )
 
-// boundRows is every sidecar binding of this kind in the org @org, from both
-// stores: sidecar_id, listener_name, position, rule_name, sidecar_spec.
-//
-// One row per rule and listener. The mirror row wins over the listener row;
-// the listener row alone still counts, so a binding an older gateway wrote
-// during a rolling deploy is served by this one too.
+// boundRows is every sidecar binding of this kind in the org @org:
+// sidecar_id, listener_name, position, rule_name, sidecar_spec.
 func (j sidecarRuleJunction) boundRows() string {
 	return `
-	SELECT DISTINCT ON (sidecar_id, listener_name, rule_name)
-		sidecar_id, listener_name, position, rule_name, sidecar_spec
-	FROM (
-		SELECT 0 AS src, c.sidecar_id::text AS sidecar_id, c.sidecar_listener AS listener_name,
-			m.position, r.name AS rule_name, r.sidecar_spec
-		FROM ` + j.mirrors + ` m
-		JOIN ` + j.rules + ` r ON ` + j.mirrorJoin + `
-		JOIN private.connections c ON c.id = m.connection_id AND c.org_id = r.org_id
-		WHERE r.org_id = @org AND c.sidecar_id IS NOT NULL
-		UNION ALL
-		SELECT 1, b.sidecar_id::text, b.listener_name, b.position, r.name, r.sidecar_spec
-		FROM ` + j.listeners + ` b
-		JOIN ` + j.rules + ` r ON r.org_id = b.org_id AND r.name = b.` + j.listenerCol + `
-		WHERE b.org_id = @org
-	) u
-	ORDER BY sidecar_id, listener_name, rule_name, src`
+	SELECT b.sidecar_id::text AS sidecar_id, b.listener_name, b.position, r.name AS rule_name, r.sidecar_spec
+	FROM ` + j.listeners + ` b
+	JOIN ` + j.rules + ` r ON r.org_id = b.org_id AND r.name = b.` + j.listenerCol + `
+	WHERE b.org_id = @org`
 }
 
 // listRulesForSidecar returns every rule of this kind bound to one sidecar.
@@ -194,9 +185,6 @@ func (j sidecarRuleJunction) setTargetsTx(tx *gorm.DB, orgID uuid.UUID, ruleName
 			pos = *t.Position
 		case ok:
 			pos = p
-		case mirrorID != "":
-			err = tx.Raw(`SELECT COALESCE(MAX(position), -1) + 1 FROM `+j.mirrors+` WHERE connection_id = ?`,
-				mirrorID).Scan(&pos).Error
 		default:
 			err = tx.Raw(`SELECT COALESCE(MAX(position), -1) + 1 FROM `+j.listeners+
 				` WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?`,
@@ -205,9 +193,9 @@ func (j sidecarRuleJunction) setTargetsTx(tx *gorm.DB, orgID uuid.UUID, ruleName
 		if err != nil {
 			return err
 		}
-		// The listener row is the only one an older gateway reads. Its
-		// foreign key also refuses a rule that does not exist, which the
-		// INSERT ... SELECT on the mirror would skip without a word.
+		// The listener row first: its foreign key refuses a rule that does
+		// not exist, which the INSERT ... SELECT on the mirror would skip
+		// without a word.
 		err = tx.Exec(`INSERT INTO `+j.listeners+` (org_id, `+j.listenerCol+`, sidecar_id, listener_name, position)
 		VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`, orgID, ruleName, t.SidecarID, t.ListenerName, pos).Error
 		if err != nil {
@@ -226,10 +214,19 @@ func (j sidecarRuleJunction) setTargetsTx(tx *gorm.DB, orgID uuid.UUID, ruleName
 	return nil
 }
 
-// copyToMirrorsTx copies the listener bindings of one sidecar whose listener
-// has a mirror onto that mirror, with their positions. The listener rows stay
-// for gateways older than 000132.
-func (j sidecarRuleJunction) copyToMirrorsTx(tx *gorm.DB, orgID, sidecarID string) error {
+// syncMirrorsTx makes the mirror rows of one sidecar match its listener
+// rows: it adds a missing one, takes the listener row's position, and deletes
+// one whose listener row is gone (an older gateway removed the binding).
+func (j sidecarRuleJunction) syncMirrorsTx(tx *gorm.DB, orgID, sidecarID string) error {
+	err := tx.Exec(`
+	DELETE FROM `+j.mirrors+` m USING `+j.rules+` r, private.connections c
+	WHERE `+j.mirrorJoin+` AND c.id = m.connection_id AND c.org_id = ? AND c.sidecar_id = ?
+	  AND NOT EXISTS (SELECT 1 FROM `+j.listeners+` b
+		WHERE b.org_id = r.org_id AND b.`+j.listenerCol+` = r.name
+		  AND b.sidecar_id = c.sidecar_id AND b.listener_name = c.sidecar_listener)`, orgID, sidecarID).Error
+	if err != nil {
+		return err
+	}
 	return tx.Exec(`
 	INSERT INTO `+j.mirrors+` (org_id, `+j.mirrorRuleCol+`, connection_id, position)
 	SELECT b.org_id, `+j.mirrorRuleValue+`, c.id, b.position
@@ -238,17 +235,17 @@ func (j sidecarRuleJunction) copyToMirrorsTx(tx *gorm.DB, orgID, sidecarID strin
 	JOIN private.connections c
 	  ON c.org_id = b.org_id AND c.sidecar_id = b.sidecar_id AND c.sidecar_listener = b.listener_name
 	WHERE b.org_id = ? AND b.sidecar_id = ?
-	ON CONFLICT DO NOTHING`, orgID, sidecarID).Error
+	ON CONFLICT (`+j.mirrorConflict+`) DO UPDATE SET position = EXCLUDED.position`, orgID, sidecarID).Error
 }
 
-// CopySidecarBindingsToMirrorsTx copies every rule binding of one sidecar onto
-// the mirror of its listener, where the listener has one. The mirror writer
-// calls it after each write, so a mirror made after migration 000132 (a
-// fallback name, an org that turns beta.sidecar_listeners on) takes the
-// bindings of its listener too.
-func CopySidecarBindingsToMirrorsTx(tx *gorm.DB, orgID, sidecarID string) error {
+// SyncSidecarBindingsToMirrorsTx makes the mirror rows of one sidecar match
+// its listener rows, for every rule kind. The mirror writer calls it after
+// each write, so a mirror made after 000132 (a fallback name, an org that
+// turns beta.sidecar_listeners on) takes the bindings of its listener, and a
+// change an older gateway made reaches the mirror.
+func SyncSidecarBindingsToMirrorsTx(tx *gorm.DB, orgID, sidecarID string) error {
 	for _, j := range sidecarRuleJunctions {
-		if err := j.copyToMirrorsTx(tx, orgID, sidecarID); err != nil {
+		if err := j.syncMirrorsTx(tx, orgID, sidecarID); err != nil {
 			return err
 		}
 	}

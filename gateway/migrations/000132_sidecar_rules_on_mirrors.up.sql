@@ -2,14 +2,12 @@ BEGIN;
 
 SET search_path TO private;
 
--- A sidecar rule binding is bound to the listener's mirror connection (000128),
--- the resource the admin sees. A listener with no mirror (beta.sidecar_listeners
--- off) keeps its bindings in *_rules_listeners only;
--- services.SyncSidecarListenerConnectionsTx copies them when the mirror comes.
---
--- Expand phase: this COPIES and keeps every *_rules_listeners row. A gateway
--- older than this migration reads only those rows, and during a rolling deploy
--- or after an image rollback it must go on serving every rule.
+-- A sidecar rule binding gets a copy on the listener's mirror connection
+-- (000128), the resource the admin sees. Expand phase: *_rules_listeners stays
+-- the source of truth and keeps every row. A gateway older than this migration
+-- reads and writes only those rows, during a rolling deploy or after an image
+-- rollback. services.SyncSidecarListenerConnectionsTx keeps the copies in step,
+-- and makes them for a mirror that comes later.
 
 -- The analyzer has no connection junction, only connection_names. Keyed by
 -- the rule name as the listener and attribute junctions are, so a rename
@@ -29,8 +27,8 @@ CREATE INDEX idx_analyzer_rules_connections_connection
 
 -- A row on a mirror written through a rule's connection list protects
 -- nothing: no agent session runs on a mirror, and no sidecar read it. From
--- here on a row on a mirror is served, so one that skipped the sidecar write
--- checks must not stay.
+-- here on a row on a mirror is a sidecar binding, so one that skipped the
+-- sidecar write checks must not stay.
 DELETE FROM guardrail_rules_connections g USING connections c
 WHERE c.id = g.connection_id AND c.sidecar_id IS NOT NULL;
 DELETE FROM datamasking_rules_connections d USING connections c
