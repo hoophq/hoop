@@ -4,6 +4,7 @@ import Tabs from '@/components/Tabs'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import { useMinDelay } from '@/hooks/useMinDelay'
+import { useUserStore } from '@/stores/useUserStore'
 import { isSidecarMirror } from '@/utils/connectionPolicy'
 import { usePlugin } from '../usePlugin'
 import PluginConnectionsList from '../components/PluginConnectionsList'
@@ -33,9 +34,13 @@ function GatewaySlack({ showListeners = false }) {
     setTab(slackAppConfigured(plugin) ? 'connections' : 'configurations')
   }
   const [configConnection, setConfigConnection] = useState(null)
-  const agentConnections = useMemo(
-    () => connections.filter((connection) => !isSidecarMirror(connection)),
-    [connections],
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const serverInfoLoaded = useUserStore((s) => s.serverInfoLoaded)
+  // The sidecar API answers 403 without an Enterprise license.
+  const listeners = showListeners && !(serverInfoLoaded && isFreeLicense)
+  const listedConnections = useMemo(
+    () => (listeners ? connections.filter((connection) => !isSidecarMirror(connection)) : connections),
+    [connections, listeners],
   )
 
   const showLoader = useMinDelay(status === 'loading')
@@ -55,14 +60,14 @@ function GatewaySlack({ showListeners = false }) {
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
           <Tabs.Tab value="connections">Connections</Tabs.Tab>
-          {showListeners && <Tabs.Tab value="listeners">Listeners</Tabs.Tab>}
+          {listeners && <Tabs.Tab value="listeners">Listeners</Tabs.Tab>}
           <Tabs.Tab value="configurations">Configurations</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="connections" pt="md">
           <PluginConnectionsList
             plugin={plugin}
-            connections={agentConnections}
+            connections={listedConnections}
             mutating={mutating}
             onToggle={toggleConnection}
             renderAction={(connection, enabled) => (
@@ -78,7 +83,7 @@ function GatewaySlack({ showListeners = false }) {
           />
         </Tabs.Panel>
 
-        {showListeners && (
+        {listeners && (
           <Tabs.Panel value="listeners" pt="md">
             <SidecarSlackChannelsTab />
           </Tabs.Panel>

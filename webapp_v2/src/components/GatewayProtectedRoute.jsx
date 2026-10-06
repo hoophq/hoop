@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom'
-import ProtectedRoute from './ProtectedRoute'
 import { connectionsService } from '@/services/connections'
 import { sidecarsEnabled } from '@/modes/sidecars'
+import ProtectedRoute from './ProtectedRoute'
 
 // The gateway's gate: the shared ProtectedRoute plus the onboarding redirect.
 // An admin with no connections must go through onboarding, unless the org
