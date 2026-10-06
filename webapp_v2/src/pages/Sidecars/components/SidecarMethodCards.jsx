@@ -28,7 +28,7 @@ const METHODS = [
   },
 ]
 
-function MethodCard({ method, onPick }) {
+function MethodCard({ method, onPick, disabled }) {
   const Icon = method.icon
   return (
     <Paper bg="gray.0" radius="xl" p="md">
@@ -44,7 +44,7 @@ function MethodCard({ method, onPick }) {
             {method.description}
           </Text>
         </Stack>
-        <Button size="xs" onClick={() => onPick(method)}>
+        <Button size="xs" disabled={disabled} onClick={() => onPick(method)}>
           {method.action}
         </Button>
       </Stack>
@@ -52,7 +52,7 @@ function MethodCard({ method, onPick }) {
   )
 }
 
-export default function SidecarMethodCards({ onPick }) {
+export default function SidecarMethodCards({ onPick, disabled = false }) {
   const navigate = useNavigate()
   const pick = (method) => {
     onPick?.(method)
@@ -61,7 +61,7 @@ export default function SidecarMethodCards({ onPick }) {
   return (
     <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
       {METHODS.map((method) => (
-        <MethodCard key={method.id} method={method} onPick={pick} />
+        <MethodCard key={method.id} method={method} onPick={pick} disabled={disabled} />
       ))}
     </SimpleGrid>
   )
