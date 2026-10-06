@@ -1,11 +1,5 @@
 # sidecar
 
-> **0.1.0**: the API is settling. The config schema moved in this release.
-> `policy` split into `guardrails` and `opa`, `mask.enabled` went away, and two
-> defaults reversed. [Deprecated fields](#deprecated-fields) carries the
-> migration table and the three behaviour changes that can move traffic. The
-> Go interfaces will keep moving.
-
 Turn wire protocols into structured statements, and structured statements
 into allow/deny verdicts.
 
@@ -708,8 +702,8 @@ which is the guard: production code calling one would have to import
 
 ### Deprecated fields
 
-0.1.0 renamed six keys, removed one, and reversed two defaults. Both
-spellings load for two minor releases and the old one prints a warning.
+The schema renamed six keys, removed one, and reversed two defaults. Both
+spellings load and the old one prints a warning.
 Setting both spellings of one field at one scope refuses the config, because
 picking a winner silently would contradict the rule the decoder already
 enforces: a typo in a key must not disable a control. Read this before the
@@ -1379,8 +1373,8 @@ skip the review. A library caller that runs `analyzer.Evaluator` outside a
 its connection for up to 30 minutes, on every protocol. Every 5 seconds the relay asks the plane
 about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never
 files a review. An approval that lands in time runs the statement on the same
-connection, late. A rejection, a revocation, or an approval another connection
-already used ends the wait at once and denies. The review id is in every
+connection, late. A rejection, a revocation, an expiry, or an approval another
+connection already used ends the wait at once and denies. The review id is in every
 denial:
 
 ```
@@ -1410,6 +1404,17 @@ Slack message says the approval was revoked. Once the sidecar uses the
 approval, the review is `EXECUTED` and a revoke answers 400: the statement
 already ran. Any decision that loses that race to the sidecar answers 400
 the same way.
+
+**A review can expire.** The control plane's approval rule may set two limits
+on the analyzer rule form: `pending_ttl_sec`, the time to decide, and
+`approval_ttl_sec`, the time to use an approval, counted from the approval.
+Past either limit the review is `EXPIRED`: nothing is released, the relay
+denies with `the review expired; running the statement again files a new
+review`, and the next run of the statement files a new review. The limits are
+copied into the review when it is filed, so a later rule change does not move
+them. A pending limit above the 30-minute hold does not make a hold wait
+longer. A relay older than the limits says `the statement was not released`
+instead. The sidecar has no setting for either limit.
 
 The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first
@@ -3936,6 +3941,24 @@ grpc or spanner lane, because libhoop builds that pool from
 so. Nor does it reach OPA, the Control Plane or the analytics client. A
 missing file, or one with no certificate in it, fails validation naming the
 path. The section is bound at startup; a change needs a restart.
+
+### What the sidecar calls itself
+
+Every outbound HTTP request identifies this process, so a provider's logs
+can be filtered on one prefix instead of on Go's default
+`Go-http-client/1.1`. In Cloud Logging the header is `httpRequest.userAgent`;
+in the audit log it is `requestMetadata.callerSuppliedUserAgent`:
+
+```
+hoop-sidecar/1.212.0 (analyzer/vertex; linux/amd64; go1.26.0)
+```
+
+The release is the hoop release the binary was built from, the same one
+`hoop version` prints. The comment names the component that made the call:
+`analyzer/<provider>`, `descriptors` (the `gs://` fetch), `identity/google`
+(tokeninfo), `controlplane`, `policy/opa` and `credential/gcp` (the metadata
+server). Vertex and GCS token mints carry it too, because oauth2 sends them
+over the same client. A build nobody stamped reports `unknown`.
 
 ## Limits
 

@@ -306,12 +306,12 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 			return
 		}
 		out.SidecarTargets = targets
-		reviewers, err := storedHoldReviewers(orgID, rule.Name)
+		hold, err := storedHold(orgID, rule.Name)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the reviewer groups of the rule")
 			return
 		}
-		out.ReviewersGroups = reviewers
+		setHold(&out, hold)
 		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI session analyzer rule: %v", err)
@@ -327,7 +327,7 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 //	@Produce		json
 //	@Param			request		body		openapi.AISessionAnalyzerRuleRequest	true	"The request body resource"
 //	@Success		201			{object}	openapi.AISessionAnalyzerRule
-//	@Failure		400,409,500	{object}	openapi.HTTPError
+//	@Failure		400,409,422,500	{object}	openapi.HTTPError
 //	@Router			/ai/session-analyzer/rules [post]
 func CreateSessionAnalyzerRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -402,11 +402,21 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec, holdReviewers(req)); holdErr != nil {
 			return holdErr
 		}
+		pending, approval := holdTTLs(req)
+		if err := services.ApplyAnalyzerApprovalTTLs(tx, orgID, rule.Name, pending, approval); err != nil {
+			return err
+		}
 		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
 		return bindErr
 	})
 	if holdErr != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": holdErr.Error()})
+		return
+	}
+	// A limit out of bounds is the caller's; a database error reads as 500.
+	var limitErr *services.SidecarReviewTTLError
+	if errors.As(err, &limitErr) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 	if bindErr != nil {
@@ -430,12 +440,12 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 			return
 		}
 		out.SidecarTargets = targets
-		reviewers, err := storedHoldReviewers(orgID, rule.Name)
+		hold, err := storedHold(orgID, rule.Name)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)
 			return
 		}
-		out.ReviewersGroups = reviewers
+		setHold(&out, hold)
 		c.JSON(http.StatusCreated, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating AI session analyzer rule: %v", err)
@@ -452,7 +462,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 //	@Param			name	path		string									true	"The name of the resource"
 //	@Param			request	body		openapi.AISessionAnalyzerRuleRequest	true	"The request body resource"
 //	@Success		200		{object}	openapi.AISessionAnalyzerRule
-//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/ai/session-analyzer/rules/{name} [put]
 func UpdateSessionAnalyzerRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -541,11 +551,21 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec, holdReviewers(req)); holdErr != nil {
 			return holdErr
 		}
+		pending, approval := holdTTLs(req)
+		if err := services.ApplyAnalyzerApprovalTTLs(tx, orgID, rule.Name, pending, approval); err != nil {
+			return err
+		}
 		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
 		return bindErr
 	})
 	if holdErr != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": holdErr.Error()})
+		return
+	}
+	// A limit out of bounds is the caller's; a database error reads as 500.
+	var limitErr *services.SidecarReviewTTLError
+	if errors.As(err, &limitErr) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 	if bindErr != nil {
@@ -570,12 +590,12 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 			return
 		}
 		out.SidecarTargets = targets
-		reviewers, err := storedHoldReviewers(orgID, rule.Name)
+		hold, err := storedHold(orgID, rule.Name)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)
 			return
 		}
-		out.ReviewersGroups = reviewers
+		setHold(&out, hold)
 		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating AI session analyzer rule: %v", err)
@@ -716,11 +736,30 @@ func holdReviewers(req openapi.AISessionAnalyzerRuleRequest) *[]string {
 	return req.ReviewersGroups
 }
 
-// storedHoldReviewers reads back who may release what the rule holds, for
-// the response. Only the control plane stores reviewer groups on a rule.
-func storedHoldReviewers(orgID uuid.UUID, ruleName string) ([]string, error) {
+// holdTTLs is the review limits the request names for the rule's hold.
+// Only a control plane holds statements; a gateway always passes nil.
+func holdTTLs(req openapi.AISessionAnalyzerRuleRequest) (pending, approval *int) {
 	if !appconfig.Get().IsControlPlane() {
 		return nil, nil
 	}
-	return services.AnalyzerApprovalReviewers(models.DB, orgID, ruleName)
+	return req.PendingTTLSec, req.ApprovalTTLSec
+}
+
+// storedHold reads back the approval rule of the rule's hold, for the
+// response. Only the control plane stores one.
+func storedHold(orgID uuid.UUID, ruleName string) (*models.AccessRequestRule, error) {
+	if !appconfig.Get().IsControlPlane() {
+		return nil, nil
+	}
+	return services.AnalyzerApprovalRule(models.DB, orgID, ruleName)
+}
+
+// setHold copies who may release a held statement, and the limits, to the response.
+func setHold(out *openapi.AISessionAnalyzerRule, hold *models.AccessRequestRule) {
+	if hold == nil {
+		return
+	}
+	out.ReviewersGroups = []string(hold.ReviewersGroups)
+	out.PendingTTLSec = hold.PendingTTLSec
+	out.ApprovalTTLSec = hold.ApprovalTTLSec
 }

@@ -150,6 +150,63 @@ func TestTheDatabaseStoreSharesReviewMessagesAcrossReplicas(t *testing.T) {
 		}
 	})
 
+	t.Run("an expiry on a third replica rewrites what the approval did", func(t *testing.T) {
+		id := post(t)
+		before := len(f.rewrites())
+		if err := clicker.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsApproved: true}); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
+		if err := replica(f, srv).UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsExpired: true}); err != nil {
+			t.Fatalf("expire: %v", err)
+		}
+		got := f.rewrites()[before:]
+		if len(got) != 2 || !strings.Contains(got[1], "Review expired.") {
+			t.Fatalf("rewrites = %v, want the approval then the expiry", got)
+		}
+		if err := poster.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsApproved: true}); err != nil ||
+			len(f.rewrites()) != before+2 {
+			t.Errorf("a late approval rewrote an expired message: err=%v", err)
+		}
+	})
+
+	// The prune runs on every post. A row past the retention survives it
+	// while its approval deadline is inside the retention.
+	t.Run("an approval deadline keeps the messages past the retention", func(t *testing.T) {
+		id := post(t)
+		deadline := time.Now().UTC().Add(time.Hour)
+		if err := clicker.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsApproved: true,
+			ExpiresAt: &deadline}); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
+		stale := time.Now().UTC().Add(-sentReviewRetention - time.Hour)
+		if err := models.DB.Exec(`UPDATE private.slack_review_messages SET sent_at = ? WHERE review_id = ?`,
+			stale, id).Error; err != nil {
+			t.Fatalf("age the message: %v", err)
+		}
+		if err := models.DB.Exec(`UPDATE private.slack_review_settlements SET settled_at = ? WHERE review_id = ?`,
+			stale, id).Error; err != nil {
+			t.Fatalf("age the settlement: %v", err)
+		}
+		post(t)
+		before := len(f.rewrites())
+		if err := clicker.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsExpired: true}); err != nil {
+			t.Fatalf("expire: %v", err)
+		}
+		if got := f.rewrites()[before:]; len(got) != 1 || !strings.Contains(got[0], "Review expired.") {
+			t.Fatalf("rewrites = %v, want one expiry rewrite", got)
+		}
+
+		gone := post(t)
+		if err := models.DB.Exec(`UPDATE private.slack_review_messages SET sent_at = ? WHERE review_id = ?`,
+			stale, gone).Error; err != nil {
+			t.Fatalf("age the message: %v", err)
+		}
+		post(t)
+		if clicker.HasTrackedReviewMessages(gone) {
+			t.Error("a message past the retention with no deadline survived the prune")
+		}
+	})
+
 	t.Run("an approval rewrite that lands after the revoke changes nothing", func(t *testing.T) {
 		id := post(t)
 		if err := clicker.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsRevoked: true}); err != nil {

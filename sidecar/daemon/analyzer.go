@@ -719,7 +719,7 @@ func buildAnalyzer(cfg *AnalyzerConfig, roots *x509.CertPool) (analyzer.Provider
 		Extra:           cfg.Extra,
 		MaxOutputTokens: cfg.MaxOutputTokens,
 		Sampling:        cfg.sampling(),
-		HTTPClient:      outboundHTTPClient(roots),
+		HTTPClient:      outboundHTTPClient(roots, "analyzer/"+cfg.Provider),
 	})
 }
 

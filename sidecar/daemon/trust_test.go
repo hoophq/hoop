@@ -269,13 +269,13 @@ func TestOutboundHTTPClientVerifiesAgainstTheTrustRoots(t *testing.T) {
 	ca := newTestCA(t, "egress-proxy-ca")
 	srv := ca.server(t)
 
-	resp, err := outboundHTTPClient(mustTrustRoots(t, ca.pemFile)).Get(srv.URL)
+	resp, err := outboundHTTPClient(mustTrustRoots(t, ca.pemFile), "test").Get(srv.URL)
 	if err != nil {
 		t.Fatalf("GET through the trust roots: %v", err)
 	}
 	_ = resp.Body.Close()
 
-	if resp, err := outboundHTTPClient(nil).Get(srv.URL); err == nil {
+	if resp, err := outboundHTTPClient(nil, "test").Get(srv.URL); err == nil {
 		_ = resp.Body.Close()
 		t.Error("a client with no trust roots accepted a certificate the host does not trust")
 	}
