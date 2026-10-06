@@ -1,13 +1,10 @@
 package http_test
 
 import (
-	"reflect"
-	"slices"
 	"testing"
 
 	codechttp "github.com/hoophq/hoop/sidecar/codec/http"
 	"github.com/hoophq/hoop/sidecar/inspect"
-	libhttp "github.com/hoophq/libhoop/v2/codec/http"
 )
 
 // CaptureRequestBody keeps what the client sends and drops what the server
@@ -39,17 +36,20 @@ func TestCaptureRequestBodyKeepsOnlyTheRequestSide(t *testing.T) {
 	}
 }
 
-// Pins the reason for dropResponseBody: libhoop has one switch for both
-// directions. A new option means libhoop may now capture requests alone;
-// use it and delete the shim (EVL-375).
-func TestLibhoopStillCapturesBothDirectionsOrNeither(t *testing.T) {
-	want := []string{"CaptureBody", "MaxBodyBytes", "Headers", "SensitiveQueryParams", "MaxMessageBytes"}
-	typ := reflect.TypeOf(libhttp.Options{})
-	var got []string
-	for i := range typ.NumField() {
-		got = append(got, typ.Field(i).Name)
+// A holding lane leaves server WebSocket messages compressed, so a corrupt
+// one passes instead of failing the server stream (EVL-375).
+func TestCaptureRequestBodyDoesNotInflateServerMessages(t *testing.T) {
+	c := codechttp.New(codechttp.Options{CaptureRequestBody: true})
+	decodeRequest(t, c, "GET /ws HTTP/1.1\r\nHost: h\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"+
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n")
+	accept := "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+		"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
+	if _, _, err := c.Decode(inspect.FromServer, []byte(accept)); err != nil {
+		t.Fatalf("101: %v", err)
 	}
-	if !slices.Equal(got, want) {
-		t.Errorf("libhoop codec options are %v, want %v; if one captures request bodies alone, use it and delete dropResponseBody", got, want)
+	// FIN, RSV1 (compressed), text; the payload is not valid DEFLATE.
+	stmts, _, err := c.Decode(inspect.FromServer, []byte{0xc1, 3, 0xff, 0xff, 0xff})
+	if err != nil || len(stmts) != 1 || stmts[0].HTTP.Body != "" {
+		t.Fatalf("Decode: %+v, %v; want one message without a body", stmts, err)
 	}
 }
