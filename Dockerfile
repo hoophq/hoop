@@ -30,8 +30,10 @@ COPY rootfs /
 # SQL migrations are embedded in the gateway binary; the on-disk copy is
 # kept for deployments that point MIGRATION_PATH_FILES at it.
 COPY gateway/migrations/ /app/migrations/
-COPY dist/binaries/ /tmp/
-RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
+# Extract from a bind mount. A COPY layer keeps every platform's tarball in
+# the image (~1.3 GB) even after a later rm.
+RUN --mount=type=bind,source=dist/binaries,target=/mnt/hoop-binaries \
+    tar -xf /mnt/hoop-binaries/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
     chown -R hoop:hoop /app /opt/hoop && \
     chmod 755 /app/hoop* && \
     rm -rf /tmp/* && \

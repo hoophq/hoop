@@ -253,6 +253,8 @@ this codebase.
 - Run with `make test-oss` (sets `CGO_ENABLED=0`, outputs JSON).
 - Tests live alongside source files (`_test.go` suffix).
 - The `generate-wasm` and `test-sidecar` steps are prerequisites, and the Makefile handles them automatically.
+- A test that needs a migrated embedded database calls `pglitetest.StartMigrated(t)` (`gateway/pglite/pglitetest`), and its package's `TestMain` calls `pglitetest.Main(m)`. It boots a copy of one migrated template, ~5x faster than migrating per test.
+- Schema-qualify SQL in tests (`private.enum_access_status`). A resumed embedded database does not keep the `search_path` that the migrations set.
 
 ### API Changes
 - Add Swagger annotations (swag comments) on new/modified handlers.

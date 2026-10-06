@@ -49,15 +49,57 @@ jobs:
       - name: Download modules over HTTP/1.1
         run: go mod download
 
+      # The per-module sidecar loop runs in the Sidecar Module Test job.
       - name: Test
         env:
           GODEBUG: http2client=1
-        run: make test-oss
+        run: make test-unit
+
+  # The test-sidecar half of `make test-oss`, beside Unit Test: it enters
+  # each nested sidecar module to prove its go.mod builds on its own.
+  sidecar-modules:
+    name: Sidecar Module Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      # Same GODEBUG split as Unit Test: sidecar/daemon's gRPC tests need
+      # client HTTP/2 (h2c), the module downloads need HTTP/1.1.
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
+      - name: Sidecar Module Test
+        env:
+          GODEBUG: http2client=1
+        run: make test-sidecar
 
   integration-test:
-    name: Integration Test
+    name: Integration Test (${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # One shard per upstream; containers start lazily, so each shard boots
+    # only its own. "rest" skips the other shards' prefixes, so a test with
+    # a new prefix still runs somewhere.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: postgres
+            run: "^TestPG_"
+          - shard: mysql
+            run: "^TestMy"
+          - shard: mssql
+            run: "^TestMSSQL"
+          - shard: mongodb
+            run: "^TestMongo"
+          - shard: rest
+            skip: "^(TestPG_|TestMy|TestMSSQL|TestMongo)"
 
     steps:
       - name: Checkout Hoop
@@ -96,6 +138,9 @@ jobs:
       # so no services: block is required. See:
       # https://golang.testcontainers.org/system_requirements/
       - name: Integration Test
+        env:
+          INTEGRATION_RUN: ${{ matrix.run }}
+          INTEGRATION_SKIP: ${{ matrix.skip }}
         run: make test-integration
 
   transport-test:

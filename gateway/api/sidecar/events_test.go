@@ -2,7 +2,6 @@ package apisidecar
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -16,8 +15,7 @@ import (
 	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
-	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
-	"github.com/hoophq/hoop/gateway/pglite"
+	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/session/eventbroker"
 	"github.com/hoophq/hoop/sidecar/audit"
@@ -70,15 +68,7 @@ func startEventsDB(t *testing.T, orgID string) {
 	if testing.Short() {
 		t.Skip("skipping embedded database test in -short mode")
 	}
-	ctx := context.Background()
-	inst, err := pglite.Start(ctx, t.TempDir())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		if err := inst.Close(ctx); err != nil {
-			t.Errorf("close embedded database: %v", err)
-		}
-	})
-	require.NoError(t, modelsbootstrap.MigrateDB(inst.MigrateDSN(), ""))
+	inst := pglitetest.StartMigrated(t)
 	// The embedded backend serves one session at a time.
 	require.NoError(t, models.InitDatabaseConnection(inst.DSN(), 1))
 	require.NoError(t, models.DB.Exec(

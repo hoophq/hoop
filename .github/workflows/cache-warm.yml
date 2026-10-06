@@ -1,0 +1,51 @@
+# Fills the Go module and build cache from main.
+#
+# A run can restore only caches saved on its own ref or on the default
+# branch. Release runs start on a new tag every time and nothing else
+# builds Go on main, so every release job started cold ("Cache is not
+# found"), and every PR's first run did too. This job saves the cache on
+# main under the same key setup-go computes everywhere else (OS, arch, Go
+# version, go.sum hash).
+name: Cache Warm
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Only the newest main commit's cache matters.
+concurrency:
+  group: cache-warm
+  cancel-in-progress: true
+
+# Same HTTP/1.1 workaround for module downloads as the other workflows.
+env:
+  GODEBUG: http2client=0
+
+jobs:
+  go:
+    name: Warm Go cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          libhoop-pr: "false"
+
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
+      # Compile, do not run: -exec true stands in for each test binary. The
+      # flags match the jobs that read this cache: make test-unit (CGO off)
+      # and the -race integration suites (CGO on).
+      - name: Compile unit test binaries
+        run: env CGO_ENABLED=0 go test -exec /usr/bin/true github.com/hoophq/hoop/... > /dev/null
+
+      - name: Compile integration test binaries
+        run: env CGO_ENABLED=1 go test -tags integration -race -exec /usr/bin/true ./agent/integration/... ./gateway/integration/... > /dev/null

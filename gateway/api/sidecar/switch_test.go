@@ -2,7 +2,6 @@ package apisidecar
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
-	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
-	"github.com/hoophq/hoop/gateway/pglite"
+	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/assert"
@@ -35,11 +33,7 @@ func startSwitchDB(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping embedded database test in -short mode")
 	}
-	ctx := context.Background()
-	inst, err := pglite.Start(ctx, t.TempDir())
-	require.NoError(t, err)
-	t.Cleanup(func() { inst.Close(ctx) })
-	require.NoError(t, modelsbootstrap.MigrateDB(inst.MigrateDSN(), ""))
+	inst := pglitetest.StartMigrated(t)
 	// The embedded backend serves one session at a time.
 	require.NoError(t, models.InitDatabaseConnection(inst.DSN(), 1))
 	require.NoError(t, models.DB.Exec(`INSERT INTO private.orgs (id, name) VALUES (?, 'switch-test')`, switchOrgID).Error)

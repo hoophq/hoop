@@ -105,9 +105,12 @@ generate-wasm:
 
 test: test-oss
 
-# gateway/models starts an isolated PGlite instance and runs migrations per test.
+test-oss: generate-wasm test-sidecar test-unit
+
+# The unit suite without the per-module sidecar loop; CI runs the two in
+# parallel jobs. gateway/models starts an isolated PGlite instance per test.
 # Its full suite can exceed Go's default 10-minute per-package timeout in CI.
-test-oss: generate-wasm test-sidecar
+test-unit: generate-wasm
 	env CGO_ENABLED=0 go test -timeout 15m -json -v github.com/hoophq/hoop/...
 
 # `github.com/hoophq/hoop/...` now matches the sidecar module too, since it
@@ -190,8 +193,14 @@ prepare-mssql-jdbc:
 # github.com/hoophq/libhoop module, resolved from the module proxy; a build
 # without credentials for it fails outright rather than degrading to no-op
 # protocol handling.
+#
+# CI shards the suite by test name with INTEGRATION_RUN / INTEGRATION_SKIP
+# (go test -run / -skip). Both empty runs every test.
+INTEGRATION_RUN ?=
+INTEGRATION_SKIP ?=
 test-integration: generate-wasm prepare-mssql-jdbc
-	env CGO_ENABLED=1 MSSQL_JDBC_CLASSPATH_FILE="$(MSSQL_JDBC_CLASSPATH_FILE)" go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
+	env CGO_ENABLED=1 MSSQL_JDBC_CLASSPATH_FILE="$(MSSQL_JDBC_CLASSPATH_FILE)" go test -tags integration -race -v -timeout 10m -count=1 \
+		$(if $(INTEGRATION_RUN),-run '$(INTEGRATION_RUN)') $(if $(INTEGRATION_SKIP),-skip '$(INTEGRATION_SKIP)') ./agent/integration/...
 
 # Agent↔gateway transport harness. Runs against the real gateway gRPC
 # transport; the PG round-trip goes through the proxy implementation in the
@@ -436,4 +445,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
