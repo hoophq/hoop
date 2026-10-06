@@ -18,10 +18,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// Before 000132 and after it, the rows that bind a sidecar rule.
+// Before 000133 and after it, the rows that bind a sidecar rule.
 const (
-	beforeRulesOnMirrorsVersion = 131
-	rulesOnMirrorsVersion       = 132
+	beforeRulesOnMirrorsVersion = 132
+	rulesOnMirrorsVersion       = 133
 )
 
 // mirrorFixture is one sidecar with two listeners. appdb has a mirror and
@@ -61,7 +61,7 @@ func seedMirrorFixture(t *testing.T) mirrorFixture {
 }
 
 // seedListenerBindings writes rules bound by listener name, as every gateway
-// before 000132 stored them. Positions run against name order, so a copy that
+// before 000133 stored them. Positions run against name order, so a copy that
 // drops them reorders the lane.
 func seedListenerBindings(t *testing.T, f mirrorFixture) {
 	t.Helper()
@@ -129,7 +129,7 @@ func execScan(t *testing.T, dest any, query string, args ...any) {
 	}
 }
 
-// oldGatewayView is every row a gateway older than 000132 reads to compose a
+// oldGatewayView is every row a gateway older than 000133 reads to compose a
 // sidecar's rules: the listener tables, nothing else.
 func oldGatewayView(t *testing.T) []string {
 	t.Helper()
@@ -162,7 +162,7 @@ func withSession(t *testing.T, inst *pglite.Instance, fn func()) {
 	})
 }
 
-// 000132 copies every binding whose listener has a mirror onto the mirror. The
+// 000133 copies every binding whose listener has a mirror onto the mirror. The
 // sidecar must receive the same document before the copy, after it, and after
 // the rollback.
 func TestRulesOnMirrorsMigrationServesTheSameConfig(t *testing.T) {
@@ -325,7 +325,7 @@ func TestAnOlderGatewayWriteCounts(t *testing.T) {
 	}
 }
 
-// A mirror made after 000132 (a fallback name, an org that turns the flag on)
+// A mirror made after 000133 (a fallback name, an org that turns the flag on)
 // takes the bindings of its listener when the mirror writer runs.
 func TestTheMirrorWriterCopiesBindingsOntoANewMirror(t *testing.T) {
 	startTestDB(t)

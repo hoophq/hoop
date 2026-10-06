@@ -2,7 +2,7 @@ BEGIN;
 
 SET search_path TO private;
 
--- The listener rows hold every binding: 000132 keeps them and the gateway
+-- The listener rows hold every binding: 000133 keeps them and the gateway
 -- writes them on every change. Only the copies on the mirrors go.
 DELETE FROM guardrail_rules_connections g USING connections c
 WHERE c.id = g.connection_id AND c.sidecar_id IS NOT NULL;

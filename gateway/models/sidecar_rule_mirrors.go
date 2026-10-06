@@ -10,9 +10,9 @@ import (
 )
 
 // Where a sidecar rule binding is stored. Expand phase of a move from the
-// listener name to the listener's mirror connection (000132):
+// listener name to the listener's mirror connection (000133):
 //
-//   - *_rules_listeners is the source of truth. A gateway older than 000132
+//   - *_rules_listeners is the source of truth. A gateway older than 000133
 //     reads and writes only that table, and during a rolling deploy or after
 //     an image rollback its writes must count, a removed binding included.
 //     The served document and every read come from it.
@@ -240,7 +240,7 @@ func (j sidecarRuleJunction) syncMirrorsTx(tx *gorm.DB, orgID, sidecarID string)
 
 // SyncSidecarBindingsToMirrorsTx makes the mirror rows of one sidecar match
 // its listener rows, for every rule kind. The mirror writer calls it after
-// each write, so a mirror made after 000132 (a fallback name, an org that
+// each write, so a mirror made after 000133 (a fallback name, an org that
 // turns beta.sidecar_listeners on) takes the bindings of its listener, and a
 // change an older gateway made reaches the mirror.
 func SyncSidecarBindingsToMirrorsTx(tx *gorm.DB, orgID, sidecarID string) error {
