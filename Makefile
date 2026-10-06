@@ -40,13 +40,16 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/sidecar/analytics.writeKey=${SEGMENT_API_KEY} \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
+# scripts/dev/run.sh sets HOOP_RS_OUT for HOOPDEV_SLOT > 0, so that slots do not share one binary.
+HOOP_RS_OUT ?= ${HOME}/.hoop/bin/hoop_rs
+
 build-dev-rust:
 	# since we are in osx machine cross needs to be used to build linux binary because some crypto libs does not have cross compilation
 	echo "Building hoop_rs for dev"
 	cd agentrs && cross build --release --target aarch64-unknown-linux-gnu
-	mkdir -p ${HOME}/.hoop/bin
-	cp agentrs/target/aarch64-unknown-linux-gnu/release/agentrs ${HOME}/.hoop/bin/hoop_rs
-	chmod +x ${HOME}/.hoop/bin/hoop_rs
+	mkdir -p $(patsubst %/,%,$(dir ${HOOP_RS_OUT}))
+	cp agentrs/target/aarch64-unknown-linux-gnu/release/agentrs ${HOOP_RS_OUT}
+	chmod +x ${HOOP_RS_OUT}
 
 install-rust:
 	./scripts/install-rust.sh

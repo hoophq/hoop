@@ -7,7 +7,8 @@ cd /app/
 echo "--> STARTING GATEWAY ..."
 /app/bin/hooplinux start gateway &
 
-until curl -s -f -k -o /dev/null "$API_URL/api/healthz"
+# run.sh sets HOOPDEV_HEALTHZ_URL when HOOPDEV_SLOT shifts the host port in API_URL.
+until curl -s -f -k -o /dev/null "${HOOPDEV_HEALTHZ_URL:-$API_URL/api/healthz}"
 do
   sleep 1
 done

@@ -37,14 +37,14 @@ run `claude` inside it.
 
 ### hoop-specific worktree notes
 
-- **`make libhoop-map` is per-checkout**: the `libhoop` symlink is untracked,
-  so a fresh worktree doesn't have it. The `test-*` targets run it for you;
-  only run it manually if you need `go build` before any test.
+- **libhoop needs nothing per worktree**: it resolves from the Go module
+  proxy (`GOPRIVATE` and credentials are set once per machine). Only
+  `make libhoop-dev`, for a local clone, is per checkout.
 - **`webapp_v2` needs its own `npm install`** in each worktree (node_modules
   is untracked).
-- **Only one dev stack at a time**: `make run-dev` binds :8009/:8010 —
-  parallel worktrees can build and unit-test freely, but only one can run the
-  full gateway+agent stack. Coordinate or use different ports.
+- **One dev stack per slot**: `make run-dev` binds :8009/:8010. To run a
+  stack in another worktree, use `HOOPDEV_SLOT` (see "Run more than one
+  stack" in `DEV.md`).
 - Hygiene: worktree name = ticket ID; remove after merge
   (`git worktree remove <path>`, `git worktree prune` weekly).
 
