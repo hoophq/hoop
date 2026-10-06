@@ -1,6 +1,7 @@
 package apiconnections
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -71,6 +72,10 @@ func UpdateDataMaskingRuleConnection(c *gin.Context) {
 		})
 	}
 	_, err = models.UpdateDataMaskingRuleConnection(ctx.GetOrgID(), conn.ID, dbItems)
+	if errors.Is(err, models.ErrSidecarMirrorRuleBinding) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating data masking rule connection: %v", err)
 		return

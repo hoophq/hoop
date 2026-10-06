@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -72,20 +73,16 @@ type SidecarRuleBinding struct {
 // shows a listener enforcing nothing while the sidecar enforces the rule --
 // the control plane hiding its own work.
 //
-// One query over the three junctions rather than three per sidecar: the list
+// One query over every junction rather than three per sidecar: the list
 // page renders every sidecar at once.
 func ListSidecarRuleBindings(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]SidecarRuleBinding, error) {
+	parts := make([]string, 0, len(sidecarRuleJunctions))
+	for _, j := range sidecarRuleJunctions {
+		parts = append(parts, `SELECT sidecar_id, '`+j.kind+`' AS kind, rule_name, listener_name FROM (`+
+			j.boundRows()+`) b WHERE @sc = '' OR sidecar_id = @sc`)
+	}
 	var out []SidecarRuleBinding
-	err := db.Raw(`
-	SELECT sidecar_id, 'guardrail' AS kind, guardrail_rule_name AS rule_name, listener_name
-	FROM private.guardrail_rules_listeners WHERE org_id = @org AND (@sc = '' OR sidecar_id::text = @sc)
-	UNION ALL
-	SELECT sidecar_id, 'datamasking', datamasking_rule_name, listener_name
-	FROM private.datamasking_rules_listeners WHERE org_id = @org AND (@sc = '' OR sidecar_id::text = @sc)
-	UNION ALL
-	SELECT sidecar_id, 'analyzer', analyzer_rule_name, listener_name
-	FROM private.ai_session_analyzer_rules_listeners WHERE org_id = @org AND (@sc = '' OR sidecar_id::text = @sc)
-	ORDER BY sidecar_id, listener_name, kind, rule_name`,
+	err := db.Raw(strings.Join(parts, " UNION ALL ")+` ORDER BY sidecar_id, listener_name, kind, rule_name`,
 		sql.Named("org", orgID), sql.Named("sc", sidecarID)).Scan(&out).Error
 	return out, err
 }
@@ -103,55 +100,52 @@ type DetachedSidecarRules struct {
 	}
 }
 
-// DetachSidecarRulesTx removes every binding to one sidecar. It deletes a
-// rule only when that sidecar's config file brought it (imported_from_sidecar),
-// no rulepack owns it, and no target is left: no other listener, no
-// connection and no attribute. Every other rule is only unbound, so a rule an
-// admin wrote survives the switch.
+// DetachSidecarRulesTx removes every binding to one sidecar, on its listeners
+// and on its mirrors. It deletes a rule only when that sidecar's config file
+// brought it (imported_from_sidecar), no rulepack owns it, and no target is
+// left: no other listener, no connection and no attribute. Every other rule is
+// only unbound, so a rule an admin wrote survives the switch.
 func DetachSidecarRulesTx(tx *gorm.DB, orgID uuid.UUID, sidecarID string) (DetachedSidecarRules, error) {
 	var out DetachedSidecarRules
-	type junction struct {
-		listeners, column, rules, attributes, attrColumn, connections, rulepack string
-		deleted, unbound                                                       *[]string
+	outputs := map[string][2]*[]string{
+		"guardrail":   {&out.Guardrails, &out.Unbound.Guardrails},
+		"datamasking": {&out.Masking, &out.Unbound.Masking},
+		"analyzer":    {&out.Analyzers, &out.Unbound.Analyzers},
 	}
-	for _, j := range []junction{
-		{"private.guardrail_rules_listeners", "guardrail_rule_name", "private.guardrail_rules",
-			"private.guardrail_rules_attributes", "guardrail_rule_name",
-			"EXISTS (SELECT 1 FROM private.guardrail_rules_connections c WHERE c.rule_id = r.id)",
-			"r.rulepack_id IS NULL", &out.Guardrails, &out.Unbound.Guardrails},
-		{"private.datamasking_rules_listeners", "datamasking_rule_name", "private.datamasking_rules",
-			"private.datamasking_rules_attributes", "datamasking_rule_name",
-			"EXISTS (SELECT 1 FROM private.datamasking_rules_connections c WHERE c.rule_id = r.id)",
-			"r.rulepack_id IS NULL", &out.Masking, &out.Unbound.Masking},
-		{"private.ai_session_analyzer_rules_listeners", "analyzer_rule_name", "private.ai_session_analyzer_rules",
-			"private.ai_session_analyzer_rules_attributes", "analyzer_rule_name",
-			"COALESCE(array_length(r.connection_names, 1), 0) > 0",
-			"TRUE", &out.Analyzers, &out.Unbound.Analyzers},
-	} {
-		var unbound []string
-		err := tx.Raw(`DELETE FROM `+j.listeners+` WHERE org_id = ? AND sidecar_id = ? RETURNING `+j.column,
+	for _, j := range sidecarRuleJunctions {
+		var unbound, onMirrors []string
+		err := tx.Raw(`DELETE FROM `+j.listeners+` WHERE org_id = ? AND sidecar_id = ? RETURNING `+j.listenerCol,
 			orgID, sidecarID).Scan(&unbound).Error
 		if err != nil {
 			return out, err
 		}
+		err = tx.Raw(`DELETE FROM `+j.mirrors+` m USING `+j.rules+` r, private.connections c
+		WHERE `+j.mirrorJoin+` AND c.id = m.connection_id AND c.org_id = ? AND c.sidecar_id = ?
+		RETURNING r.name`, orgID, sidecarID).Scan(&onMirrors).Error
+		if err != nil {
+			return out, err
+		}
+		unbound = append(unbound, onMirrors...)
 		if len(unbound) == 0 {
 			continue
 		}
 		var deleted []string
 		err = tx.Raw(`
 		DELETE FROM `+j.rules+` r
-		WHERE r.org_id = ? AND r.name IN ? AND r.imported_from_sidecar = ? AND `+j.rulepack+`
-		  AND NOT EXISTS (SELECT 1 FROM `+j.listeners+` l WHERE l.org_id = r.org_id AND l.`+j.column+` = r.name)
-		  AND NOT EXISTS (SELECT 1 FROM `+j.attributes+` a WHERE a.org_id = r.org_id AND a.`+j.attrColumn+` = r.name)
-		  AND NOT (`+j.connections+`)
+		WHERE r.org_id = ? AND r.name IN ? AND r.imported_from_sidecar = ? AND `+j.rulepackFree+`
+		  AND NOT EXISTS (SELECT 1 FROM `+j.listeners+` l WHERE l.org_id = r.org_id AND l.`+j.listenerCol+` = r.name)
+		  AND NOT EXISTS (SELECT 1 FROM `+j.mirrors+` m WHERE `+j.mirrorJoin+`)
+		  AND NOT EXISTS (SELECT 1 FROM `+j.attributes+` a WHERE a.org_id = r.org_id AND a.`+j.listenerCol+` = r.name)
+		  AND NOT (`+j.namedConnections+`)
 		RETURNING r.name`, orgID, unbound, sidecarID).Scan(&deleted).Error
 		if err != nil {
 			return out, err
 		}
+		deletedOut, unboundOut := outputs[j.kind][0], outputs[j.kind][1]
 		// Sorted, so the answer the admin reads is stable.
 		slices.Sort(deleted)
 		slices.Sort(unbound)
-		*j.deleted = deleted
+		*deletedOut = deleted
 		gone := map[string]bool{}
 		for _, n := range deleted {
 			gone[n] = true
@@ -160,7 +154,7 @@ func DetachSidecarRulesTx(tx *gorm.DB, orgID uuid.UUID, sidecarID string) (Detac
 		for _, n := range unbound {
 			if !gone[n] && !seen[n] {
 				seen[n] = true
-				*j.unbound = append(*j.unbound, n)
+				*unboundOut = append(*unboundOut, n)
 			}
 		}
 	}
@@ -171,52 +165,4 @@ func DetachSidecarRulesTx(tx *gorm.DB, orgID uuid.UUID, sidecarID string) (Detac
 func MarkImportedRuleTx(tx *gorm.DB, table string, orgID uuid.UUID, ruleName, sidecarID string) error {
 	return tx.Exec(`UPDATE `+table+` SET imported_from_sidecar = ? WHERE org_id = ? AND name = ?`,
 		sidecarID, orgID, ruleName).Error
-}
-
-// setRuleListenersTx replaces one rule's targets in one junction table.
-//
-// A target the rule already had keeps its position, so saving a rule does not
-// move it to the end of its listener. A new target without a position goes
-// last. The junction column names come from the callers, never from input.
-func setRuleListenersTx(tx *gorm.DB, table, ruleColumn string, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
-	var stored []struct {
-		SidecarID    string
-		ListenerName string
-		Position     int
-	}
-	err := tx.Raw(`SELECT sidecar_id, listener_name, position FROM `+table+
-		` WHERE org_id = ? AND `+ruleColumn+` = ?`, orgID, ruleName).Scan(&stored).Error
-	if err != nil {
-		return err
-	}
-	kept := map[string]int{}
-	for _, s := range stored {
-		kept[s.SidecarID+"/"+s.ListenerName] = s.Position
-	}
-	err = tx.Exec(`DELETE FROM `+table+` WHERE org_id = ? AND `+ruleColumn+` = ?`, orgID, ruleName).Error
-	if err != nil {
-		return err
-	}
-	for _, t := range targets {
-		var pos int
-		switch p, ok := kept[t.SidecarID+"/"+t.ListenerName]; {
-		case t.Position != nil:
-			pos = *t.Position
-		case ok:
-			pos = p
-		default:
-			err = tx.Raw(`SELECT COALESCE(MAX(position), -1) + 1 FROM `+table+
-				` WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?`,
-				orgID, t.SidecarID, t.ListenerName).Scan(&pos).Error
-			if err != nil {
-				return err
-			}
-		}
-		err = tx.Exec(`INSERT INTO `+table+` (org_id, `+ruleColumn+`, sidecar_id, listener_name, position)
-		VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`, orgID, ruleName, t.SidecarID, t.ListenerName, pos).Error
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }

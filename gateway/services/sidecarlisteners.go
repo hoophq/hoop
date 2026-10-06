@@ -23,13 +23,13 @@ func (e ErrSidecarListenerInvalid) Error() string { return e.Err.Error() }
 func (e ErrSidecarListenerInvalid) Unwrap() error { return e.Err }
 
 // SyncSidecarListenerConnectionsTx writes the mirror of every listener of sc,
-// in the transaction that stored its configuration. Every write of the
-// configuration must call it: a listener without a mirror is one no rule can
-// bind to.
+// in the transaction that stored its configuration, then moves the rule
+// bindings of each mirrored listener onto its mirror. Every write of the
+// configuration must call it.
 //
-// It does nothing while the org has beta.sidecar_listeners off. Nothing reads
-// a mirror yet, and an org that has not opted in must keep its connection
-// list, its sidecar writes and its imports exactly as before. A mirror
+// It does nothing while the org has beta.sidecar_listeners off: an org that
+// has not opted in must keep its connection list, its sidecar writes and its
+// imports exactly as before, and its bindings stay on the listeners. A mirror
 // written while the flag was on stays until a write with the flag on, or
 // until the sidecar is deleted.
 func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
@@ -40,7 +40,11 @@ func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
 	if err != nil {
 		return ErrSidecarListenerInvalid{err}
 	}
-	return models.SyncSidecarConnectionsTx(tx, sc.OrgID, sc.ID, mirrors)
+	if err := models.SyncSidecarConnectionsTx(tx, sc.OrgID, sc.ID, mirrors); err != nil {
+		return err
+	}
+	// A listener that just got its mirror takes its rule bindings with it.
+	return models.MoveSidecarBindingsToMirrorsTx(tx, sc.OrgID, sc.ID)
 }
 
 // ReconcileSidecarListenerConnections writes the mirrors of every sidecar of

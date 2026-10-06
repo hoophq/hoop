@@ -474,8 +474,12 @@ func UpsertBatchConnections(db *gorm.DB, connections []*Connection) error {
 
 func updateGuardRailRules(tx *gorm.DB, c *Connection) error {
 	rulesAssocList := dedupeResourceNames(c.GuardRailRules)
+	mirror, err := mirrorRulesUnchangedTx(tx, tableGuardRailRulesConnections, c.OrgID, c.ID, rulesAssocList)
+	if err != nil || mirror {
+		return err
+	}
 	// remove all rules association
-	err := tx.Exec(`DELETE FROM private.guardrail_rules_connections WHERE org_id = ? AND connection_id = ?`,
+	err = tx.Exec(`DELETE FROM private.guardrail_rules_connections WHERE org_id = ? AND connection_id = ?`,
 		c.OrgID, c.ID).Error
 	if err != nil {
 		return fmt.Errorf("failed cleaning guard rail rules connections, reason=%v", err)

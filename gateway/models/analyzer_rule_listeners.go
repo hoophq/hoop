@@ -25,14 +25,7 @@ func (AnalyzerRuleListener) TableName() string {
 }
 
 func ListAnalyzerRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]BoundRule, error) {
-	var out []BoundRule
-	err := db.Raw(`
-	SELECT b.listener_name, r.name AS rule_name, r.sidecar_spec
-	FROM private.ai_session_analyzer_rules_listeners b
-	JOIN private.ai_session_analyzer_rules r ON r.org_id = b.org_id AND r.name = b.analyzer_rule_name
-	WHERE b.org_id = ? AND b.sidecar_id = ?
-	ORDER BY b.listener_name, b.position, r.name`, orgID, sidecarID).Scan(&out).Error
-	return out, err
+	return analyzerJunction.listRulesForSidecar(db, orgID, sidecarID)
 }
 
 func SetAnalyzerRuleListeners(db *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
@@ -42,21 +35,13 @@ func SetAnalyzerRuleListeners(db *gorm.DB, orgID uuid.UUID, ruleName string, tar
 }
 
 func SetAnalyzerRuleListenersTx(tx *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
-	return setRuleListenersTx(tx, "private.ai_session_analyzer_rules_listeners", "analyzer_rule_name", orgID, ruleName, targets)
+	return analyzerJunction.setTargetsTx(tx, orgID, ruleName, targets)
 }
 
 func ListAnalyzerRuleTargets(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]SidecarRuleTarget, error) {
-	var out []SidecarRuleTarget
-	err := db.Raw(`
-	SELECT sidecar_id, listener_name FROM private.ai_session_analyzer_rules_listeners
-	WHERE org_id = ? AND analyzer_rule_name = ?
-	ORDER BY sidecar_id, listener_name`, orgID, ruleName).Scan(&out).Error
-	return out, err
+	return analyzerJunction.ruleTargets(db, orgID, ruleName)
 }
 
 func SidecarsBoundToAnalyzerRule(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]string, error) {
-	var out []string
-	err := db.Raw(`SELECT DISTINCT sidecar_id FROM private.ai_session_analyzer_rules_listeners
-	WHERE org_id = ? AND analyzer_rule_name = ?`, orgID, ruleName).Scan(&out).Error
-	return out, err
+	return analyzerJunction.sidecarsBoundToRule(db, orgID, ruleName)
 }

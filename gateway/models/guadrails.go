@@ -78,7 +78,7 @@ func ListGuardRailRules(orgID string, opts ...GuardRailListOption) ([]*GuardRail
 
 	err = DB.Table(tableGuardRailsConnections).
 		Select("rule_id, connection_id").
-		Where("org_id = ? AND rule_id IN (?)", orgID, getGuardrailIDs(rules)).
+		Where("org_id = ? AND rule_id IN (?) AND "+notMirrorConnection, orgID, getGuardrailIDs(rules)).
 		Scan(&connections).Error
 
 	if err != nil {
@@ -152,7 +152,7 @@ func GetGuardRailRules(orgID, ruleID string) (*GuardRailRules, error) {
 	var connectionIDs []string
 	err := DB.Table(tableGuardRailsConnections).
 		Select("connection_id").
-		Where("org_id = ? AND rule_id = ?", orgID, ruleID).
+		Where("org_id = ? AND rule_id = ? AND "+notMirrorConnection, orgID, ruleID).
 		Pluck("connection_id", &connectionIDs).Error
 
 	if err != nil {
@@ -286,9 +286,13 @@ func UpsertGuardRailRuleWithConnectionsTx(tx *gorm.DB, rule *GuardRailRules, con
 		}
 	}
 
-	// 2. Delete existing connections
+	// 2. Delete existing connections. The rows on sidecar mirrors stay: the
+	// rule's sidecar targets own them.
+	if err := refuseMirrorConnectionsTx(tx, rule.OrgID, connectionIDs); err != nil {
+		return err
+	}
 	if err := tx.Table(tableGuardRailsConnections).
-		Where("org_id = ? AND rule_id = ?", rule.OrgID, rule.ID).
+		Where("org_id = ? AND rule_id = ? AND "+notMirrorConnection, rule.OrgID, rule.ID).
 		Delete(&GuardRailConnection{}).Error; err != nil {
 		return err
 	}

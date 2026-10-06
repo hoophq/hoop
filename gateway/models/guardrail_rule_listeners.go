@@ -27,14 +27,7 @@ func (GuardrailRuleListener) TableName() string { return "private.guardrail_rule
 // document is byte-stable across calls: the served revision is a hash of it,
 // and an unstable order would report every sidecar as lagging forever.
 func ListGuardrailRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]BoundRule, error) {
-	var out []BoundRule
-	err := db.Raw(`
-	SELECT b.listener_name, r.name AS rule_name, r.sidecar_spec
-	FROM private.guardrail_rules_listeners b
-	JOIN private.guardrail_rules r ON r.org_id = b.org_id AND r.name = b.guardrail_rule_name
-	WHERE b.org_id = ? AND b.sidecar_id = ?
-	ORDER BY b.listener_name, b.position, r.name`, orgID, sidecarID).Scan(&out).Error
-	return out, err
+	return guardrailJunction.listRulesForSidecar(db, orgID, sidecarID)
 }
 
 // SetGuardrailRuleListeners replaces the whole target set for one rule.
@@ -57,29 +50,18 @@ func SetGuardrailRuleListeners(db *gorm.DB, orgID uuid.UUID, ruleName string, ta
 // commits before its bindings fail leaves the OLD bindings serving the NEW
 // spec -- the one combination the gate refuses.
 func SetGuardrailRuleListenersTx(tx *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
-	return setRuleListenersTx(tx, "private.guardrail_rules_listeners", "guardrail_rule_name", orgID, ruleName, targets)
+	return guardrailJunction.setTargetsTx(tx, orgID, ruleName, targets)
 }
 
 // ListGuardrailRuleTargets returns where one rule is bound, for the API to
 // render back what was saved.
 func ListGuardrailRuleTargets(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]SidecarRuleTarget, error) {
-	var out []SidecarRuleTarget
-	err := db.Raw(`
-	SELECT sidecar_id, listener_name
-	FROM private.guardrail_rules_listeners
-	WHERE org_id = ? AND guardrail_rule_name = ?
-	ORDER BY sidecar_id, listener_name`, orgID, ruleName).Scan(&out).Error
-	return out, err
+	return guardrailJunction.ruleTargets(db, orgID, ruleName)
 }
 
 // SidecarsBoundToGuardrailRule names the sidecars a rule reaches. The write
 // guards re-run against each of them whenever the rule changes, so a rule
 // edited out of what a sidecar can enforce is refused rather than served.
 func SidecarsBoundToGuardrailRule(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]string, error) {
-	var out []string
-	err := db.Raw(`
-	SELECT DISTINCT sidecar_id
-	FROM private.guardrail_rules_listeners
-	WHERE org_id = ? AND guardrail_rule_name = ?`, orgID, ruleName).Scan(&out).Error
-	return out, err
+	return guardrailJunction.sidecarsBoundToRule(db, orgID, ruleName)
 }

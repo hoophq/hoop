@@ -238,6 +238,10 @@ func Put(c *gin.Context) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		default:
+			if errors.Is(err, models.ErrSidecarMirrorRuleBinding) {
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+				return
+			}
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating connection: %v", err)
 		}
 		return
@@ -376,6 +380,10 @@ func Patch(c *gin.Context) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		default:
+			if errors.Is(err, models.ErrSidecarMirrorRuleBinding) {
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+				return
+			}
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed patching connection: %v", err)
 		}
 		return
