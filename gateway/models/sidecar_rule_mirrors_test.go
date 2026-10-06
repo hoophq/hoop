@@ -84,7 +84,7 @@ func seedListenerBindings(t *testing.T, f mirrorFixture) {
 	}
 	analyzer := &models.AISessionAnalyzerRules{OrgID: org, Name: "an-deletes",
 		ConnectionNames: pq.StringArray{},
-		SidecarSpec:     json.RawMessage(`{"trigger":{"operations":["delete"]},"high":"deny"}`)}
+		SidecarSpec:     json.RawMessage(`{"trigger":{"operations":["delete"]},"high":"block"}`)}
 	if err := models.CreateAISessionAnalyzerRule(analyzer); err != nil {
 		t.Fatalf("seed analyzer: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestRulesOnMirrorsMigrationServesTheSameConfig(t *testing.T) {
 	// The comparison proves nothing over a document that carries no rule.
 	gb, ga := strings.Index(before, `"g-b"`), strings.Index(before, `"g-a"`)
 	if gb < 0 || ga < 0 || gb > ga || !strings.Contains(before, `"g-c"`) ||
-		!strings.Contains(before, "EMAIL_ADDRESS") || !strings.Contains(before, `"high":"deny"`) {
+		!strings.Contains(before, "EMAIL_ADDRESS") || !strings.Contains(before, `"high":"block"`) {
 		t.Fatalf("want every seeded rule served, g-b before g-a, got %s", before)
 	}
 
