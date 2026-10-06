@@ -436,6 +436,7 @@ function Router() {
           <Page adminOnly licenseFeature="data-masking">
             <ByRuleTraffic
               kind={RULE_KIND_DATAMASKING}
+              listPath="/features/data-masking"
               fetchRule={dataMaskingService.get}
               agent={<GatewayDataMaskingForm />}
               sidecar={<ControlPlaneDataMaskingForm />}
@@ -449,6 +450,7 @@ function Router() {
           <Page adminOnly licenseFeature="data-masking">
             <ByRuleTraffic
               kind={RULE_KIND_DATAMASKING}
+              listPath="/features/data-masking"
               fetchRule={dataMaskingService.get}
               agent={<GatewayDataMaskingForm />}
               sidecar={<ControlPlaneDataMaskingForm />}
@@ -548,6 +550,7 @@ function Router() {
           <Page adminOnly licenseFeature="ai-session-analyzer">
             <ByRuleTraffic
               kind={RULE_KIND_ANALYZER}
+              listPath="/features/ai-session-analyzer"
               fetchRule={aiSessionAnalyzerService.getRule}
               param="ruleName"
               agent={<GatewayAiAnalyzerForm />}
@@ -562,6 +565,7 @@ function Router() {
           <Page adminOnly licenseFeature="ai-session-analyzer">
             <ByRuleTraffic
               kind={RULE_KIND_ANALYZER}
+              listPath="/features/ai-session-analyzer"
               fetchRule={aiSessionAnalyzerService.getRule}
               param="ruleName"
               agent={<GatewayAiAnalyzerForm />}
@@ -586,6 +590,7 @@ function Router() {
           <Page adminOnly licenseFeature="guardrails">
             <ByRuleTraffic
               kind={RULE_KIND_GUARDRAIL}
+              listPath="/guardrails"
               fetchRule={guardrailsService.get}
               agent={<GatewayGuardrailForm />}
               sidecar={<ControlPlaneGuardrailForm />}
@@ -599,6 +604,7 @@ function Router() {
           <Page adminOnly licenseFeature="guardrails">
             <ByRuleTraffic
               kind={RULE_KIND_GUARDRAIL}
+              listPath="/guardrails"
               fetchRule={guardrailsService.get}
               agent={<GatewayGuardrailForm />}
               sidecar={<ControlPlaneGuardrailForm />}

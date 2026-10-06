@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
-import { Text } from '@mantine/core'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import PageLoader from '@/components/PageLoader'
+import EmptyState from '@/layout/EmptyState'
 import {
   TRAFFIC_AGENT,
   TRAFFIC_BOTH,
@@ -14,13 +14,14 @@ import { useRuleTraffics } from './index'
  * Picks the agent or the sidecar form of a guardrail, masking or analyzer rule.
  * Used in Router.jsx only, like ByProduct:
  *
- *   <ByRuleTraffic kind="guardrail" fetchRule={guardrailsService.get}
+ *   <ByRuleTraffic kind="guardrail" fetchRule={guardrailsService.get} listPath="/guardrails"
  *     agent={<GatewayGuardrailForm />} sidecar={<ControlPlaneGuardrailForm />} />
  *
  * With one traffic available it renders that form. With both, an edit reads the
  * rule first and a new rule takes `?traffic=sidecar`.
  */
-export default function ByRuleTraffic({ kind, fetchRule, param = 'id', agent, sidecar }) {
+export default function ByRuleTraffic({ kind, fetchRule, listPath, param = 'id', agent, sidecar }) {
+  const navigate = useNavigate()
   const traffics = useRuleTraffics()
   const key = useParams()[param]
   const [searchParams] = useSearchParams()
@@ -45,13 +46,15 @@ export default function ByRuleTraffic({ kind, fetchRule, param = 'id', agent, si
     return traffic === TRAFFIC_SIDECAR ? sidecar : agent
   }
   if (probe?.key !== key) return <PageLoader h={400} />
-  if (probe.failed) return <Text c="red">Failed to load the rule.</Text>
+  if (probe.failed) return <PageLoader error h={400} message="Failed to load the rule." />
   // The sidecar form saves empty agent fields, so it would erase the agent half.
   if (probe.traffic === TRAFFIC_BOTH) {
     return (
-      <Text c="red">
-        This rule protects agent and sidecar traffic, and this page cannot edit both yet.
-      </Text>
+      <EmptyState
+        title="This rule protects agent and sidecar traffic"
+        description="This page edits one kind of traffic per rule, so it cannot open this rule yet. The rule keeps running unchanged."
+        action={{ label: 'Back to rules', onClick: () => navigate(listPath) }}
+      />
     )
   }
   return probe.traffic === TRAFFIC_SIDECAR ? sidecar : agent

@@ -8,7 +8,7 @@ import {
   ruleTraffic,
 } from '@/utils/ruleTraffic'
 
-const LABELS = { Agent: TRAFFIC_AGENT, Sidecar: TRAFFIC_SIDECAR }
+const LABELS = { 'Agent traffic': TRAFFIC_AGENT, 'Sidecar traffic': TRAFFIC_SIDECAR }
 const VALUES = Object.keys(LABELS)
 
 // The traffic filter of a rule list, and which of the other filters apply under
