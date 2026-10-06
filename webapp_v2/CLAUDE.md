@@ -83,7 +83,7 @@ what a product shows, and ClojureScript exists only in the gateway.**
   controlPlane={…} />` (`modes/ByProduct.jsx`, the one component that reads the
   product). `grep ByProduct src/Router.jsx` lists every such page. A shared page may
   take a prop (`AccessRequest/Create` takes `defaultReviewerRoles`, passed through
-  `BySidecars`), never know the mode.
+  `ByProduct`), never know the mode.
 - **Sidecar features follow `useSidecarsEnabled()`** (`modes/sidecars.js`): true in
   the control plane or with the `beta.sidecar_listeners` flag. A route picks its
   variant with `<BySidecars on={…} off={…} />`, and a nav or palette item with
