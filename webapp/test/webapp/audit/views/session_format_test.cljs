@@ -12,6 +12,14 @@
                  {:type "custom" :connection_subtype "rdp"})))
   (is (= "pty" (session-format/recording-format {:type "application"}))))
 
+(deftest historical-ssh-sessions-use-the-ssh-viewer
+  ;; The ssh viewer replays streams that are not SSH frames as a PTY.
+  (doseq [subtype ["ssh" "ssh-local" "git" "github"]]
+    (is (= "ssh" (session-format/recording-format
+                   {:type "application" :connection_subtype subtype}))))
+  (is (= "pty" (session-format/recording-format
+                 {:type "custom" :connection_subtype "ssh"}))))
+
 (deftest persisted-format-overrides-legacy-type
   (is (= "raw" (session-format/recording-format
                  {:type "custom" :connection_subtype "kubernetes"

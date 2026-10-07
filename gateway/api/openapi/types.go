@@ -1190,8 +1190,10 @@ const (
 	SessionRecordingFormatExec SessionRecordingFormat = "exec"
 	// RDP frames.
 	SessionRecordingFormatRDP SessionRecordingFormat = "rdp"
-	// Protocol bytes (HTTP, SSH, TCP, databases): never a terminal stream.
+	// Protocol bytes (HTTP, TCP, databases): never a terminal stream.
 	SessionRecordingFormatRaw SessionRecordingFormat = "raw"
+	// Hoop SSH frames: terminal output in the data of pty channels.
+	SessionRecordingFormatSSH SessionRecordingFormat = "ssh"
 )
 
 type SessionGetByIDParams struct {
@@ -1370,7 +1372,8 @@ type Session struct {
 	// * exec - plain text output of a command without a TTY
 	// * rdp - RDP frames
 	// * raw - protocol bytes, do not interpret them as terminal output
-	RecordingFormat *SessionRecordingFormat `json:"recording_format,omitempty" enums:"pty,exec,rdp,raw"`
+	// * ssh - hoop SSH frames; pty channels carry terminal output
+	RecordingFormat *SessionRecordingFormat `json:"recording_format,omitempty" enums:"pty,exec,rdp,raw,ssh"`
 	// Status of the resource
 	// * ready - the resource is ready to be executed, after being approved by a user
 	// * open - the session started and it's running

@@ -20,6 +20,7 @@
    [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.audit.views.pg-wire :as pg-wire]
    [webapp.audit.views.session-format :as session-format]
+   [webapp.audit.views.ssh-decoder :as ssh-decoder]
    [webapp.audit.views.terminal-decoder :as terminal-decoder]
    [webapp.utilities :as utilities]))
 
@@ -320,7 +321,7 @@
               postgres? (= connection-subtype "postgres")
               ;; Historical sessions keep the viewer selected before the
               ;; recording format was persisted.
-              terminal? (= "pty" (session-format/recording-format session))
+              recording-format (session-format/recording-format session)
               ;; Derive the stream pill state. We prefer whatever the SSE
               ;; effect handler wrote, but if the session has already moved
               ;; to "done" (e.g. we re-opened a previously-live modal) we
@@ -335,11 +336,24 @@
               event-stream (or (:event_stream session) [])
               rows (mark-denied (guardrails-info/denied-at (:guardrails_info session))
                                 (expand-stream postgres? event-stream))
+              finalize? (= stream-state :ended)
+              ssh-recording (when (= "ssh" recording-format)
+                              (ssh-decoder/terminal-recording event-stream))
+              terminal-events (cond
+                                (or (= "pty" recording-format)
+                                    ;; Not SSH frames: recorded as a PTY.
+                                    (and (= "ssh" recording-format)
+                                         (seq event-stream)
+                                         (nil? ssh-recording)))
+                                (terminal-decoder/decode-events event-stream finalize?)
+
+                                (:terminal? ssh-recording)
+                                (terminal-decoder/decode-byte-events (:events ssh-recording) finalize?))
+              terminal? (some? terminal-events)
               ;; Concatenate output frames only ("o"/"e"); the PTY echoes input
               ;; back as output, so including "i" would duplicate every keystroke.
               terminal-text (when terminal?
-                              (->> (terminal-decoder/decode-events event-stream
-                                                                    (= stream-state :ended))
+                              (->> terminal-events
                                    (filter #(contains? #{"o" "e"} (second %)))
                                    (map #(nth % 2))
                                    (string/join "")))
