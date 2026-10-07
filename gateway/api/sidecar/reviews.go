@@ -707,8 +707,8 @@ func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, 
 // filed for the same bytes first, and the ids of the lapsed reviews it expired.
 //
 // Both rows point at the listener's mirror connection when the org has one,
-// so the review and the session show the resource the admin sees. An org
-// without mirrors (beta.sidecar_listeners off) files them as before, with the
+// so the review and the session show the resource the admin sees. A listener
+// without a mirror (a row that fell behind the reconcile) files them with the
 // listener alone.
 func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) (*models.Review, []string, error) {
 	sessionID := uuid.NewString()

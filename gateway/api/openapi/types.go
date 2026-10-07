@@ -1939,9 +1939,12 @@ type PublicServerInfo struct {
 	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
 	// Whether the server requires initial setup (no users have been registered yet)
 	SetupRequired bool `json:"setup_required" example:"true"`
-	// Which component this process runs as
-	ApplicationMode string `json:"application_mode" enums:"gateway,control-plane" example:"gateway"`
+	// Always "gateway". Kept for clients that read it while the control plane was a separate mode
+	ApplicationMode string `json:"application_mode" enums:"gateway" example:"gateway"`
 }
+
+// ApplicationModeGateway is the only value application_mode takes.
+const ApplicationModeGateway = "gateway"
 
 type IdpProviderNameType string
 
@@ -2015,8 +2018,8 @@ type ServerInfo struct {
 	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
 	// Effective feature flags for the caller's organization
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
-	// Which component this process runs as
-	ApplicationMode string `json:"application_mode" enums:"gateway,control-plane" example:"gateway"`
+	// Always "gateway". Kept for clients that read it while the control plane was a separate mode
+	ApplicationMode string `json:"application_mode" enums:"gateway" example:"gateway"`
 }
 
 // ServerLogEntry is one runtime log record from the gateway process or a

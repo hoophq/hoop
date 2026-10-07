@@ -54,14 +54,13 @@ import (
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 )
 
-// Run boots the binary as mode. The caller is the subcommand the operator
-// typed, so the deployment picks a component by picking a command line.
-func Run(mode appconfig.AppMode) {
+// Run boots the gateway.
+func Run() {
 	bootstrap.Start()
 	ver := version.Get()
 	bootstrap.Header(ver.Version, ver.Platform, ver.GitCommit)
 
-	if err := appconfig.Load(mode); err != nil {
+	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
 
@@ -106,7 +105,6 @@ func Run(mode appconfig.AppMode) {
 
 	services.WarmFeatureFlagCache()
 	analytics.WarmModeCache()
-	// After the flag cache: it mirrors only orgs with the flag on.
 	services.ReconcileAllSidecarListenerConnections(models.DB)
 
 	if err := externaljwt.Init(context.Background()); err != nil {
@@ -239,6 +237,7 @@ func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTe
 	a := &api.Api{
 		ReleaseConnectionFn: g.ReleaseConnectionOnReview,
 		TLSConfig:           tlsConfig,
+		DefaultOrgID:        defaultOrgID,
 	}
 	startPlugins(gatewayPlugins(apiURL, g.ReleaseConnectionOnReview))
 

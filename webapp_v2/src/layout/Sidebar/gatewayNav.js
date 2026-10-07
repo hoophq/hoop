@@ -82,16 +82,7 @@ export const DISCOVER_ITEMS = [
 
 export const ORGANIZATION_ITEMS = [
   { label: 'Agents', path: '/agents', icon: BrainCog, adminOnly: true },
-  // The sidecar pages exist in both products (Router.jsx); the gateway lists
-  // them once the org manages its sidecar listeners as resources.
-  {
-    label: 'Sidecars',
-    path: '/sidecars',
-    icon: Container,
-    adminOnly: true,
-    badge: { text: 'BETA', color: 'indigo' },
-    featureFlag: 'beta.sidecar_listeners'
-  },
+  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true, badge: { text: 'BETA', color: 'indigo' } },
   {
     label: 'Integrations',
     icon: Puzzle,
@@ -142,7 +133,7 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'access-control', label: 'Access Control', description: 'Manage access control rules', icon: UserRoundCheck, path: '/features/access-control', adminOnly: true, licenseFeature: 'access-control' },
   { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect', adminOnly: true, licenseFeature: 'resource-discovery' },
   { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents', adminOnly: true },
-  { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true, featureFlag: 'beta.sidecar_listeners' },
+  { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true },
   { id: 'authentication', label: 'Authentication', description: 'Configure authentication', icon: ShieldCheck, path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
   { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },
   { id: 'jira-templates', label: 'Jira Templates', description: 'Manage Jira issue templates', icon: Layers, path: '/jira-templates', adminOnly: true, licenseFeature: 'jira-integration' },

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
@@ -42,11 +41,10 @@ type (
 	}
 
 	// runningService is how an org's service was started: with which config,
-	// in which mode, and whether it opened a socket.
+	// and whether it opened a socket.
 	runningService struct {
-		cfg     slackConfig
-		replica bool
-		socket  bool
+		cfg    slackConfig
+		socket bool
 	}
 )
 
@@ -61,15 +59,6 @@ const (
 	socketSlotTTL = 3 * replicaSyncEvery
 )
 
-// replicaMode reports whether the org's Slack service runs replica-safe: the
-// posted review messages kept in the database, and a socket opened only by
-// the replicas holding a slot. It follows beta.sidecar_listeners, the flag
-// that moves a control plane install onto the gateway; an org without it
-// keeps the single-process service the gateway always ran.
-func replicaMode(orgID string) bool {
-	return featureflag.IsEnabled(orgID, featureflag.FlagSidecarListeners)
-}
-
 func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *slackPlugin {
 	return &slackPlugin{
 		TransportReleaseConnection: releaseConnFn,
@@ -83,18 +72,13 @@ func (p *slackPlugin) Name() string { return plugintypes.PluginSlackName }
 // startSlackServiceInstance starts the org's service, replacing the running
 // one. Callers hold p.mu.
 //
-// In replica mode the posted review messages live in the database, and only
-// the replicas holding a socket slot open a socket; the rest post through the
-// Web API. Slack hands each click to one open socket, so the replica handling
-// a click is rarely the one that posted the message it rewrites.
+// The posted review messages live in the database, and only the replicas
+// holding a socket slot open a socket; the rest post through the Web API.
+// Slack hands each click to one open socket, so the replica handling a click
+// is rarely the one that posted the message it rewrites.
 func (p *slackPlugin) startSlackServiceInstance(orgID string, cfg *slackConfig) error {
-	replica := replicaMode(orgID)
-	socket := true
-	var opts []slack.Option
-	if replica {
-		opts = append(opts, slack.WithMessageStoreIn(models.DB))
-		socket = p.holdSocketSlot(orgID)
-	}
+	opts := []slack.Option{slack.WithMessageStoreIn(models.DB)}
+	socket := p.holdSocketSlot(orgID)
 	log.Infof("starting slack service instance for org %v, socket=%v", orgID, socket)
 	ss, err := slack.New(
 		cfg.slackBotToken,
@@ -117,7 +101,7 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, cfg *slackConfig) 
 	if p.running == nil {
 		p.running = map[string]runningService{}
 	}
-	p.running[orgID] = runningService{cfg: *cfg, replica: replica, socket: socket}
+	p.running[orgID] = runningService{cfg: *cfg, socket: socket}
 	if !socket {
 		return nil
 	}
@@ -201,9 +185,7 @@ func slackConfigsByOrg() (configs map[string]slackConfig, unreadable map[string]
 // syncReplicas makes this replica run each org's stored Slack config: it
 // starts what is new, restarts what changed and stops what was removed. It
 // also renews the socket slot, and restarts the service when the slot was won
-// or lost, or when the org's mode changed. A config that fails to start is
-// retried on the next tick. Outside replica mode the tick finds nothing to do
-// unless a config changed under it.
+// or lost. A config that fails to start is retried on the next tick.
 func (p *slackPlugin) syncReplicas() {
 	configs, unreadable, err := slackConfigsByOrg()
 	if err != nil {
@@ -214,12 +196,8 @@ func (p *slackPlugin) syncReplicas() {
 	defer p.mu.Unlock()
 	for orgID, cfg := range configs {
 		cur, ok := p.running[orgID]
-		replica := replicaMode(orgID)
-		wantSocket := true
-		if replica {
-			wantSocket = p.holdSocketSlot(orgID)
-		}
-		if ok && cur.cfg == cfg && cur.replica == replica && cur.socket == wantSocket {
+		wantSocket := p.holdSocketSlot(orgID)
+		if ok && cur.cfg == cfg && cur.socket == wantSocket {
 			continue
 		}
 		log.Infof("slack config or socket slot changed, (re)starting slack instance %v", orgID)

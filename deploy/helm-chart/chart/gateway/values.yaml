@@ -174,8 +174,8 @@ config:
   # redact_and_kill.
   # RDP_PII_GUARD_POLICY: 'redact'
   #
-  # Replicas that open a Slack socket per organization in replica mode (orgs
-  # with beta.sidecar_listeners on), 1 to 9. Slack allows 10 sockets per app.
+  # Replicas that open a Slack socket per organization, 1 to 9. Slack allows
+  # 10 sockets per app.
   # SLACK_SOCKET_SLOTS: '3'
   #
   # Optional OCR sidecar (RapidOCR/PaddleOCR HTTP server) used instead of the

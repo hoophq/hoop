@@ -7,7 +7,6 @@ import (
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -19,12 +18,9 @@ import (
 )
 
 // seedMirroredSidecar stores a sidecar whose appdb listener files reviews
-// under payments-approvers and, with beta.sidecar_listeners on, has a mirror
-// connection named <sidecar>-appdb.
+// under payments-approvers and has a mirror connection named <sidecar>-appdb.
 func seedMirroredSidecar(t *testing.T, name string) (*models.Sidecar, *models.SidecarMirror) {
 	t.Helper()
-	featureflag.Set(statusTestOrgID, featureflag.FlagSidecarListeners, true)
-	t.Cleanup(func() { featureflag.Set(statusTestOrgID, featureflag.FlagSidecarListeners, false) })
 
 	sc := &models.Sidecar{
 		OrgID:     statusTestOrgID,

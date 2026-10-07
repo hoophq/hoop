@@ -3877,7 +3877,7 @@ const docTemplate = `{
         },
         "/healthz": {
             "get": {
-                "description": "Reports if the service is working properly",
+                "description": "Reports if the service is working properly. The gRPC transport is checked only while experimental.agents is enabled for the organization",
                 "produces": [
                     "application/json"
                 ],
@@ -17559,11 +17559,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "application_mode": {
-                    "description": "Which component this process runs as",
+                    "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
                     "type": "string",
                     "enum": [
-                        "gateway",
-                        "control-plane"
+                        "gateway"
                     ],
                     "example": "gateway"
                 },
@@ -19601,11 +19600,10 @@ const docTemplate = `{
                     "example": "https://api.johnwick.org"
                 },
                 "application_mode": {
-                    "description": "Which component this process runs as",
+                    "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
                     "type": "string",
                     "enum": [
-                        "gateway",
-                        "control-plane"
+                        "gateway"
                     ],
                     "example": "gateway"
                 },

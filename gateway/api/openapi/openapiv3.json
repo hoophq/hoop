@@ -5453,10 +5453,9 @@
       "openapi.PublicServerInfo": {
         "properties": {
           "application_mode": {
-            "description": "Which component this process runs as",
+            "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
             "enum": [
-              "gateway",
-              "control-plane"
+              "gateway"
             ],
             "example": "gateway",
             "type": "string"
@@ -7495,10 +7494,9 @@
             "type": "string"
           },
           "application_mode": {
-            "description": "Which component this process runs as",
+            "description": "Always \"gateway\". Kept for clients that read it while the control plane was a separate mode",
             "enum": [
-              "gateway",
-              "control-plane"
+              "gateway"
             ],
             "example": "gateway",
             "type": "string"
@@ -14629,7 +14627,7 @@
     },
     "/healthz": {
       "get": {
-        "description": "Reports if the service is working properly",
+        "description": "Reports if the service is working properly. The gRPC transport is checked only while experimental.agents is enabled for the organization",
         "responses": {
           "200": {
             "content": {

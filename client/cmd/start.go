@@ -1,14 +1,12 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/hoophq/hoop/agent"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/spf13/cobra"
 )
@@ -74,17 +72,16 @@ var startGatewayCmd = &cobra.Command{
 	Short:        "Runs the gateway component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		gateway.Run(appconfig.AppModeGateway)
+		gateway.Run()
 	},
 }
 
 var startControlPlaneCmd = &cobra.Command{
 	Use:   "control-plane",
 	Short: "Runs the gateway as the control plane",
-	Long: `Runs the gateway with the application mode set to "control-plane".
-
-It reads the same configuration the gateway does and reports the mode in
-/api/publicserverinfo and /api/serverinfo as application_mode.`,
+	Long: `Runs the same gateway as "hoop start gateway". The control plane image
+mounts no session volume, so PLUGIN_AUDIT_PATH defaults to a temporary
+directory when it is not set.`,
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
 		// PLUGIN_AUDIT_PATH is consumed at package init time, so the resolved
@@ -92,11 +89,11 @@ It reads the same configuration the gateway does and reports the mode in
 		if os.Getenv("PLUGIN_AUDIT_PATH") == "" {
 			auditPath := filepath.Join(os.TempDir(), "hoop_sessions")
 			if err := os.MkdirAll(auditPath, 0o700); err != nil {
-				panic(fmt.Sprintf("failed creating the session storage directory %v: %v", auditPath, err))
+				log.Fatalf("failed creating the session storage directory %v: %v", auditPath, err)
 			}
 			plugintypes.AuditPath = auditPath
 		}
-		gateway.Run(appconfig.AppModeControlPlane)
+		gateway.Run()
 	},
 }
 

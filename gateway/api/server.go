@@ -72,7 +72,9 @@ import (
 type Api struct {
 	ReleaseConnectionFn reviewapi.TransportReleaseConnectionFunc
 	TLSConfig           *tls.Config
-	logger              *zap.Logger
+	// DefaultOrgID is the single-tenant organization; empty in multi-tenant deployments.
+	DefaultOrgID string
+	logger       *zap.Logger
 }
 
 //	@title			Hoop Api
@@ -403,7 +405,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	loginOidcApiHandler := loginoidcapi.New()
 	loginSamlApiHandler := loginsamlapi.New()
 
-	r.GET("/healthz", apihealthz.LivenessHandler())
+	r.GET("/healthz", apihealthz.LivenessHandler(api.DefaultOrgID))
 	r.GET("/openapiv2.json", openapi.Handler)
 	r.GET("/openapiv3.json", openapi.HandlerV3)
 

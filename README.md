@@ -137,7 +137,7 @@ The control plane is the admin surface for that. Connect your sidecars. Set Data
 | Review queue: approve, reject, retry | Not built |
 | Pushing configuration to the fleet | The API is built: the plane stores each sidecar's configuration and serves it on the handshake, and rule edits reload without a restart. Authoring that configuration in the UI is not built, so it goes through `PUT /api/sidecars/:nameOrID`. |
 
-The control plane is the gateway. `hoop start control-plane` starts it with `application_mode: "control-plane"`, and the sidecar pages show in the gateway's web app ([`webapp_v2/`](webapp_v2/)) for an organization with the `beta.sidecar_listeners` flag on. To run it:
+The control plane is the gateway: `hoop start control-plane` starts the same binary as `hoop start gateway`, with the session storage defaulting to a temporary directory. The web app ([`webapp_v2/`](webapp_v2/)) renders the control plane product for an organization with `experimental.agents` off, and the gateway product with it on. To run it:
 
 ```bash
 make run-dev-postgres
