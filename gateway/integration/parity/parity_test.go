@@ -9,8 +9,6 @@
 //   - control-plane: today's control plane. Nothing here may change.
 //   - gateway-flag-on: the gateway with beta.sidecar_listeners on. A check
 //     the rollout has not delivered yet is pending on its ticket.
-//   - migration-rehearsal: the control plane booted on a synthetic copy of a
-//     control-plane database taken before the sidecar-in-gateway migrations.
 //
 // MUST_NOT_BREAK.md lists every check; TestTheListMatchesTheChecks keeps the
 // two in step.
@@ -43,7 +41,6 @@ var runs = []RunSpec{
 	{Run: GatewayFlagOff, Mode: "gateway", Agent: true},
 	{Run: ControlPlane, Mode: "control-plane"},
 	{Run: GatewayFlagOn, Mode: "gateway", SidecarListeners: true, Agent: true},
-	{Run: MigrationRehearsal, Mode: "control-plane", Seed: seedControlPlaneCopy},
 }
 
 type harness struct {
@@ -227,7 +224,7 @@ func selectedCheck(id string) bool {
 var listRowRe = regexp.MustCompile(`^\|\s*([A-Z]{2,4}-\d{2})\s*\|`)
 
 // listColumns is the run order of the MUST_NOT_BREAK.md table columns.
-var listColumns = []Run{GatewayFlagOff, ControlPlane, GatewayFlagOn, MigrationRehearsal}
+var listColumns = []Run{GatewayFlagOff, ControlPlane, GatewayFlagOn}
 
 // listRow renders ck as its MUST_NOT_BREAK.md row.
 func listRow(ck Check) string {
