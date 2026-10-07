@@ -87,7 +87,7 @@ const SUGGESTION_ITEMS = [
 const QUICK_ACCESS_ITEMS = [
   { id: 'data-masking', label: 'Data Masking', description: 'Configure data masking', icon: VenetianMask, path: '/features/data-masking', adminOnly: true, licenseFeature: 'data-masking' },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
-  { id: 'ai-analyzer', label: 'AI Analyzer', description: 'Configure the AI session analyzer', icon: Sparkles, path: '/features/ai-session-analyzer', adminOnly: true, licenseFeature: 'ai-session-analyzer' },
+  { id: 'ai-analyzer', label: 'AI Analyzer', description: 'Configure the AI session analyzer', icon: Sparkles, path: `${AI_ANALYZER}?tab=configure`, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
   { id: 'review-slack', label: 'Slack', description: 'Where approvals are delivered', icon: MessageSquare, path: '/integrations/slack', adminOnly: true },
   { id: 'users', label: 'Users', description: 'Invite and manage administrators and approvers', icon: Users, path: '/organization/users', adminOnly: true },
   { id: 'settings-api-keys', label: 'API Keys', description: 'Manage API keys', icon: Key, path: '/settings/api-keys', adminOnly: true },

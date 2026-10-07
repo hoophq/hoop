@@ -50,7 +50,7 @@ export function SidebarCollapsed({ nav }) {
           alt="Hoop"
           width={24}
           height={24}
-          style={{ display: 'block' }}
+          className={classes.logoImage}
         />
       </Box>
 

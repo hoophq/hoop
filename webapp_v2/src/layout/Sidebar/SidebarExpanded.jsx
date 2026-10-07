@@ -25,15 +25,14 @@ export function SidebarExpanded({ nav, navKey, top }) {
       component="nav"
       aria-label="Primary"
       gap={0}
-      h="100%"
-      style={{ boxSizing: 'border-box', overflow: 'hidden' }}
+      className={classes.expandedNav}
     >
       <Box mb="xl" mt="xl" className={classes.logoExpanded}>
         <img
           src="/images/hoop-branding/PNG/hoop-symbol+text_black@4x.png"
           alt="Hoop"
           width={135}
-          style={{ display: 'block' }}
+          className={classes.logoImage}
         />
       </Box>
 

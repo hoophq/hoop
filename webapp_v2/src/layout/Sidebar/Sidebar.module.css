@@ -251,6 +251,16 @@
   padding: 0 var(--mantine-spacing-lg);
 }
 
+.logoImage {
+  display: block;
+}
+
+.expandedNav {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
 .expandedScrollArea {
   flex: 1;
   min-height: 0;
