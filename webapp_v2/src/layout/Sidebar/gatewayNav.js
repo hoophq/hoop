@@ -29,6 +29,7 @@ import {
   Tags,
   FlaskConical,
   ScrollText,
+  View,
 } from 'lucide-react';
 
 // ─── Nav items ─────────────────────────────────────────────────────────────
@@ -39,7 +40,8 @@ export const MAIN_ITEMS = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, adminOnly: true },
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false, licenseFeature: 'runbooks' },
-  { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false }
+  { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false },
+  { label: 'Reviews', path: '/reviews', icon: View, adminOnly: false }
   // No Search entry: the global header owns that affordance now (layout/Header/
   // HeaderSearch.jsx), and it opens the very same command palette.
 ]
@@ -127,6 +129,7 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', description: 'Overview dashboard', icon: LayoutDashboard, path: '/dashboard', adminOnly: true },
   { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks' },
   { id: 'sessions', label: 'Sessions', description: 'View session history', icon: GalleryVerticalEnd, path: '/sessions' },
+  { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: View, path: '/reviews' },
   { id: 'access-request', label: 'Access Request', description: 'Manage access requests', icon: CircleCheckBig, path: '/features/access-request', adminOnly: true, licenseFeature: 'access-requests' },
   { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup', adminOnly: true, licenseFeature: 'runbooks' },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },

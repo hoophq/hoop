@@ -51,7 +51,7 @@ func NewHandler(transportReleaseConnectionFn TransportReleaseConnectionFunc) *ha
 // GetReviewByIdOrSid
 //
 //	@Summary		Get Review
-//	@Description	Get review resource by the id or session id
+//	@Description	Get review resource by the id or session id. A review the user did not request and cannot decide answers 404; admins and auditors get any review.
 //	@Tags			Reviews
 //	@Param			id	path	string	true	"Resource identifier of the review"
 //	@Produce		json
@@ -62,7 +62,7 @@ func (h *handler) GetByIdOrSid(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	id := c.Param("id")
-	review, err := models.GetReviewByIdOrSid(ctx.GetOrgID(), id)
+	review, err := models.GetReviewByIdOrSidForViewer(models.DB, ctx.GetOrgID(), id, Viewer(ctx))
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
@@ -78,7 +78,7 @@ func (h *handler) GetByIdOrSid(c *gin.Context) {
 // List
 //
 //	@Summary		Get Review List,
-//	@Description	Get all reviews resource
+//	@Description	Get the reviews the user requested or can decide. Admins and auditors get all reviews.
 //	@Tags			Reviews
 //	@Produce		json
 //	@Success		200		{object}	[]openapi.Review
@@ -87,8 +87,7 @@ func (h *handler) GetByIdOrSid(c *gin.Context) {
 func (h *handler) List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	reviews, err := models.ListReviews(ctx.GetOrgID())
-
+	reviews, err := models.ListReviews(models.DB, ctx.GetOrgID(), Viewer(ctx))
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching reviews: %v", err)
 		return
@@ -100,6 +99,15 @@ func (h *handler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, openapiReviews)
+}
+
+// Viewer takes the request's groups: the ones DoReview checks to decide.
+func Viewer(ctx *storagev2.Context) models.ReviewViewer {
+	return models.ReviewViewer{
+		UserID:           ctx.UserID,
+		Groups:           ctx.UserGroups,
+		IsAuditorOrAdmin: ctx.IsAuditorOrAdminUser(),
+	}
 }
 
 func ParseTimeWindow(timeWindow *openapi.ReviewSessionTimeWindow) (*models.ReviewTimeWindow, error) {
@@ -534,16 +542,17 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 
 			rev.ReviewGroups = append(rev.ReviewGroups,
 				models.ReviewGroups{
-					OrgID:        ctx.OrgID,
-					ID:           uuid.NewString(),
-					ReviewID:     rev.ID,
-					GroupName:    groupName,
-					Status:       status,
-					OwnerID:      ptr.String(ctx.UserID),
-					OwnerEmail:   ptr.String(ctx.UserEmail),
-					OwnerName:    ptr.String(ctx.UserName),
-					OwnerSlackID: ptr.String(ctx.SlackID),
-					ReviewedAt:   &reviewedAt,
+					OrgID:         ctx.OrgID,
+					ID:            uuid.NewString(),
+					ReviewID:      rev.ID,
+					GroupName:     groupName,
+					Status:        status,
+					OwnerID:       ptr.String(ctx.UserID),
+					OwnerEmail:    ptr.String(ctx.UserEmail),
+					OwnerName:     ptr.String(ctx.UserName),
+					OwnerSlackID:  ptr.String(ctx.SlackID),
+					ReviewedAt:    &reviewedAt,
+					AddedOnDenial: true,
 				},
 			)
 		}

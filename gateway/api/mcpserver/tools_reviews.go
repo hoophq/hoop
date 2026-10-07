@@ -51,7 +51,7 @@ func registerReviewTools(server *mcp.Server, releaseConnFn reviewapi.TransportRe
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "reviews_list",
-		Description: "List all reviews (access requests) for the organization",
+		Description: "List the reviews (access requests) you requested or your groups can decide. Admins and auditors get all of them",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
 	}, reviewsListHandler)
 
@@ -261,7 +261,7 @@ func reviewsListHandler(ctx context.Context, _ *mcp.CallToolRequest, _ reviewsLi
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
 
-	reviews, err := models.ListReviews(sc.GetOrgID())
+	reviews, err := models.ListReviews(models.DB, sc.GetOrgID(), reviewapi.Viewer(sc))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed listing reviews: %w", err)
 	}
@@ -279,7 +279,7 @@ func reviewsGetHandler(ctx context.Context, _ *mcp.CallToolRequest, args reviews
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
 
-	review, err := models.GetReviewByIdOrSid(sc.GetOrgID(), args.ID)
+	review, err := models.GetReviewByIdOrSidForViewer(models.DB, sc.GetOrgID(), args.ID, reviewapi.Viewer(sc))
 	switch err {
 	case models.ErrNotFound:
 		return errResult("review not found"), nil, nil
@@ -366,8 +366,9 @@ func reviewsWaitHandler(ctx context.Context, req *mcp.CallToolRequest, args revi
 	orgID := sc.GetOrgID()
 
 	// Eager fetch: a non-existent review fails fast and never enters the
-	// poll loop. Org-scoping is enforced by GetReviewByIdOrSid.
-	initial, err := models.GetReviewByIdOrSid(orgID, args.ID)
+	// poll loop.
+	viewer := reviewapi.Viewer(sc)
+	initial, err := models.GetReviewByIdOrSidForViewer(models.DB, orgID, args.ID, viewer)
 	switch err {
 	case models.ErrNotFound:
 		return errResult("review not found"), nil, nil
@@ -385,7 +386,7 @@ func reviewsWaitHandler(ctx context.Context, req *mcp.CallToolRequest, args revi
 	timeout := resolveWaitTimeout(args.TimeoutSeconds)
 	rev, timedOut, waited, err := waitUntil(ctx, timeout,
 		func() (*models.Review, bool, error) {
-			r, err := models.GetReviewByIdOrSid(orgID, args.ID)
+			r, err := models.GetReviewByIdOrSidForViewer(models.DB, orgID, args.ID, viewer)
 			if err != nil {
 				return nil, false, err
 			}

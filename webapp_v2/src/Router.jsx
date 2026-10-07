@@ -172,27 +172,10 @@ function Router() {
         }
       />
       {/* Both render the list; the session id opens its drawer, so the Slack
-          link resolves to one review. In the control plane every signed-in
-          user reaches it: a reviewer's groups come from the identity provider,
-          not from a role. */}
-      <Route
-        path="/reviews"
-        element={
-          <ByProduct
-            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
-            controlPlane={<Page><Reviews /></Page>}
-          />
-        }
-      />
-      <Route
-        path="/reviews/:sessionId"
-        element={
-          <ByProduct
-            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
-            controlPlane={<Page><Reviews /></Page>}
-          />
-        }
-      />
+          link resolves to one review. Every signed-in user reaches it: a
+          reviewer's groups come from the identity provider, not from a role. */}
+      <Route path="/reviews" element={<Page><Reviews /></Page>} />
+      <Route path="/reviews/:sessionId" element={<Page><Reviews /></Page>} />
 
       {/* React pages — fully migrated */}
       <Route
