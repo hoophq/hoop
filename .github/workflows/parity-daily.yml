@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   parity:
-    name: Parity (gateway flag off, control plane, gateway flag on, migration rehearsal)
+    name: Parity (gateway flag off, control plane, gateway flag on)
     runs-on: ubuntu-latest
     # The job holds GH_TOKEN and runs repository code. A manual dispatch may
     # pick any branch, so run only the default branch's code.

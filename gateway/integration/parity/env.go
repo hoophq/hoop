@@ -40,8 +40,6 @@ type RunSpec struct {
 	SidecarListeners bool
 	// Agent starts a real agent; only a gateway can accept one.
 	Agent bool
-	// Seed runs against the empty run database before the process boots.
-	Seed func(dbURI string) error
 }
 
 // Env is a booted process under test.
@@ -81,11 +79,6 @@ func startEnv(t *testing.T, h *harness, spec RunSpec) *Env {
 	dbURI, err := h.createDatabase(string(spec.Run))
 	if err != nil {
 		t.Fatalf("creating run database: %v", err)
-	}
-	if spec.Seed != nil {
-		if err := spec.Seed(dbURI); err != nil {
-			t.Fatalf("seeding run database: %v", err)
-		}
 	}
 	db, err := sql.Open("postgres", dbURI)
 	if err != nil {
@@ -184,10 +177,9 @@ func (p *proc) running() bool {
 	}
 }
 
-// Shutdown terminates every process, newest first, so the agent leaves
-// before its gateway. Later checks on the run can then reach only the
-// database. Calling it again does nothing.
-func (e *Env) Shutdown() {
+// stop terminates every process, newest first, so the agent leaves before
+// its gateway, then releases the run's resources.
+func (e *Env) stop(t *testing.T) {
 	for i := len(e.procs) - 1; i >= 0; i-- {
 		p := e.procs[i]
 		if !p.running() {
@@ -201,10 +193,6 @@ func (e *Env) Shutdown() {
 			<-p.exited
 		}
 	}
-}
-
-func (e *Env) stop(t *testing.T) {
-	e.Shutdown()
 	for _, f := range e.logFiles {
 		_ = f.Close()
 	}

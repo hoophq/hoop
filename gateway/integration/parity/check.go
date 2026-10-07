@@ -22,10 +22,6 @@ const (
 	// GatewayFlagOn is the target: the gateway with beta.sidecar_listeners on
 	// serves what the control plane serves today.
 	GatewayFlagOn Run = "gateway-flag-on"
-	// MigrationRehearsal boots the control plane on a synthetic copy of a
-	// control-plane database seeded at the last schema version before the
-	// sidecar-in-gateway migrations.
-	MigrationRehearsal Run = "migration-rehearsal"
 )
 
 // Expect is what a run expects of a check. A pending check names the ticket

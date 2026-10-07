@@ -234,8 +234,7 @@ test-standalone-e2e:
 
 # Daily parity acceptance (ENG-529): builds the hoop CLI, boots it as
 # today's gateway (flag off), today's control plane, the gateway with
-# beta.sidecar_listeners on, and the control plane on a synthetic
-# control-plane database, then checks MUST_NOT_BREAK.md over HTTP. Needs
+# beta.sidecar_listeners on, then checks MUST_NOT_BREAK.md over HTTP. Needs
 # Docker (Postgres) and a free port 8010. Narrow a local run with
 # PARITY_RUNS=control-plane and PARITY_CHECKS=SC-,RV-01; PARITY_LOG_DIR keeps
 # the process logs and report.md. Own CI workflow: parity-daily.yml.
