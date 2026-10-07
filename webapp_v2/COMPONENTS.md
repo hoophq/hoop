@@ -331,6 +331,15 @@ The current product manifest (`modes/gateway.jsx` or `modes/controlPlane.jsx`): 
 ### `ByProduct` (`src/modes/`)
 `<ByProduct gateway={<GatewayDataMaskingForm />} controlPlane={<ControlPlaneDataMaskingForm />} />` — renders one of two elements by product. Used in `Router.jsx` only; `grep ByProduct` lists every page that differs between the products.
 
+### `useRuleTraffics` (`src/modes/`)
+Built on `useSidecarsEnabled()`. Answers which traffic a guardrail, masking or analyzer rule can protect: `['agent']`, `['sidecar']` or both.
+
+### `ByRuleTraffic` (`src/modes/`)
+`<ByRuleTraffic kind={RULE_KIND_GUARDRAIL} fetchRule={guardrailsService.get} listPath="/guardrails" agent={<GatewayGuardrailForm />} sidecar={<ControlPlaneGuardrailForm />} />` — picks a rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Used in `Router.jsx` only.
+
+### `RuleTrafficBadge` / `NewRuleButton`
+`<RuleTrafficBadge traffic="sidecar" />` marks a rule as agent, sidecar or both. `<NewRuleButton traffics={traffics} onCreate={(traffic) => …} blocked={{ agent: 'Needs a DLP provider' }}>Create</NewRuleButton>` is a button with one traffic and a menu with two.
+
 ### `ModeThemeProvider` (`src/modes/`)
 The app's `MantineProvider`, fed by the product's `theme` slot. Mounted once in `main.jsx`.
 
@@ -834,6 +843,9 @@ Reference: `pages/Settings/Infrastructure/index.jsx`.
 ---
 
 ## Hooks (`src/hooks/`)
+
+### `useRuleTrafficFilter(kind)`
+The Traffic filter of the guardrail, masking and analyzer lists: `filterProps` for a `ValueFilter`, `matches(rule)`, `trafficOf(rule)` for the badge, and `showAgentFilters` / `showSidecarFilter`. `classifiable` is false where the list response carries no `sidecar_spec` (guardrails today).
 
 ### `useMinDelay(value, ms = 500)`
 Returns `true` for at least `ms` milliseconds even if `value` goes `false` sooner. Prevents loading flash.

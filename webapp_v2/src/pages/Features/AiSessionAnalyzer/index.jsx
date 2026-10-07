@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Group, Stack, Text, Title } from '@mantine/core'
-import Button from '@/components/Button'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
+import NewRuleButton from '@/components/NewRuleButton'
 import PageLoader from '@/components/PageLoader'
 import Tabs from '@/components/Tabs'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import FullBleed from '@/layout/FullBleed'
+import { useRuleTraffics } from '@/modes'
 import { useUserStore } from '@/stores/useUserStore'
+import { TRAFFIC_AGENT, newRulePath } from '@/utils/ruleTraffic'
 import { useAiSessionAnalyzerStore } from './store'
 import { FREE_LICENSE_LIMIT_MESSAGE } from './helpers'
 import RulesTab from './RulesTab'
@@ -17,24 +19,20 @@ import AiSessionAnalyzerPromotion from './components/AiSessionAnalyzerPromotion'
 // what "seen" means.
 const PROMOTION_SEEN_STORAGE_KEY = 'ai-session-analyzer-promotion-seen'
 
-// ConfigureTab, orgWideProvider and filterBySidecar come from Router.jsx
-// through <ByProduct>, so this page serves both products without reading the
-// mode.
+// ConfigureTab and orgWideProvider come from Router.jsx through <ByProduct>, so
+// this page serves both products without reading the mode.
 //
 // orgWideProvider is false where the provider is a property of each sidecar
 // rather than of the organization. The empty state reads it: pushing a control
 // plane admin at "Configure AI Session Analyzer" would send them to a tab that
-// has nothing to save. filterBySidecar filters the rules by sidecar and
-// listener, where they bind, instead of by resource role.
-export default function AiSessionAnalyzer({
-  ConfigureTab,
-  orgWideProvider = true,
-  filterBySidecar = false,
-}) {
+// has nothing to save.
+export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true }) {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const traffics = useRuleTraffics()
+  const mixed = traffics.length > 1
 
   const list = useAiSessionAnalyzerStore((s) => s.list)
   const listStatus = useAiSessionAnalyzerStore((s) => s.listStatus)
@@ -104,13 +102,21 @@ export default function AiSessionAnalyzer({
             Monitor terminal sessions and resource usage in real time.
           </Text>
         </Stack>
-        {list.length > 0 && (
-          <Button
-            onClick={() => navigate('/features/ai-session-analyzer/rules/new')}
+        {(list.length > 0 || mixed) && (
+          <NewRuleButton
+            traffics={traffics}
+            onCreate={(kind) =>
+              navigate(newRulePath('/features/ai-session-analyzer/rules/new', traffics, kind))
+            }
             disabled={atFreeLimit}
+            blocked={
+              orgWideProvider && !provider
+                ? { [TRAFFIC_AGENT]: 'Configure the provider first' }
+                : undefined
+            }
           >
             Create new rule
-          </Button>
+          </NewRuleButton>
         )}
       </Group>
 
@@ -128,10 +134,15 @@ export default function AiSessionAnalyzer({
           <RulesTab
             providerConfigured={!orgWideProvider || Boolean(provider)}
             onGoConfigure={() => setTab('configure')}
-            filterBySidecar={filterBySidecar}
           />
         </Tabs.Panel>
         <Tabs.Panel value="configure" pt="xl">
+          {mixed && (
+            <Text size="sm" c="dimmed" mb="lg">
+              This provider analyzes agent sessions. Each sidecar uses the provider in its own
+              configuration.
+            </Text>
+          )}
           <ConfigureTab onSaved={() => setTab('rules')} />
         </Tabs.Panel>
       </Tabs>

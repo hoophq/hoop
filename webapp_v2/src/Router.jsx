@@ -4,7 +4,12 @@ import PageLoader from '@/components/PageLoader'
 import NotImplemented from '@/components/NotImplemented'
 import { useModeConfig } from '@/modes'
 import ByProduct from '@/modes/ByProduct'
+import ByRuleTraffic from '@/modes/ByRuleTraffic'
 import BySidecars from '@/modes/BySidecars'
+import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
+import { dataMaskingService } from '@/services/dataMasking'
+import { guardrailsService } from '@/services/guardrails'
+import { RULE_KIND_ANALYZER, RULE_KIND_DATAMASKING, RULE_KIND_GUARDRAIL } from '@/utils/ruleTraffic'
 import { ROLE_APPROVER } from '@/utils/roles'
 
 // Auth pages
@@ -93,7 +98,8 @@ const CONTROL_PLANE_REVIEWER_ROLES = [ROLE_APPROVER]
  *
  * A page that differs between the products is a pair of sibling files
  * (Gateway*, ControlPlane*) chosen here with <ByProduct>. `grep ByProduct` in
- * this file lists every such page.
+ * this file lists every such page. Guardrail, masking and analyzer forms are
+ * chosen per rule with <ByRuleTraffic>, since one org can have both.
  *
  * To migrate a page from Clojure to React:
  *   1. Import the React component
@@ -420,12 +426,7 @@ function Router() {
         path="/features/data-masking"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            {/* Sidecars mask in-process, so the control plane needs no DLP
-                provider, and its rules bind to listeners, so it filters by them. */}
-            <ByProduct
-              gateway={<DataMasking />}
-              controlPlane={<DataMasking providerRequired={false} filterBySidecar />}
-            />
+            <DataMasking />
           </Page>
         }
       />
@@ -433,9 +434,12 @@ function Router() {
         path="/features/data-masking/new"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <ByProduct
-              gateway={<GatewayDataMaskingForm />}
-              controlPlane={<ControlPlaneDataMaskingForm />}
+            <ByRuleTraffic
+              kind={RULE_KIND_DATAMASKING}
+              listPath="/features/data-masking"
+              fetchRule={dataMaskingService.get}
+              agent={<GatewayDataMaskingForm />}
+              sidecar={<ControlPlaneDataMaskingForm />}
             />
           </Page>
         }
@@ -444,9 +448,12 @@ function Router() {
         path="/features/data-masking/edit/:id"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <ByProduct
-              gateway={<GatewayDataMaskingForm />}
-              controlPlane={<ControlPlaneDataMaskingForm />}
+            <ByRuleTraffic
+              kind={RULE_KIND_DATAMASKING}
+              listPath="/features/data-masking"
+              fetchRule={dataMaskingService.get}
+              agent={<GatewayDataMaskingForm />}
+              sidecar={<ControlPlaneDataMaskingForm />}
             />
           </Page>
         }
@@ -531,7 +538,6 @@ function Router() {
                 <AiSessionAnalyzer
                   ConfigureTab={ControlPlaneAiAnalyzerConfigureTab}
                   orgWideProvider={false}
-                  filterBySidecar
                 />
               }
             />
@@ -542,9 +548,13 @@ function Router() {
         path="/features/ai-session-analyzer/rules/new"
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
-            <ByProduct
-              gateway={<GatewayAiAnalyzerForm />}
-              controlPlane={<ControlPlaneAiAnalyzerForm />}
+            <ByRuleTraffic
+              kind={RULE_KIND_ANALYZER}
+              listPath="/features/ai-session-analyzer"
+              fetchRule={aiSessionAnalyzerService.getRule}
+              param="ruleName"
+              agent={<GatewayAiAnalyzerForm />}
+              sidecar={<ControlPlaneAiAnalyzerForm />}
             />
           </Page>
         }
@@ -553,9 +563,13 @@ function Router() {
         path="/features/ai-session-analyzer/rules/edit/:ruleName"
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
-            <ByProduct
-              gateway={<GatewayAiAnalyzerForm />}
-              controlPlane={<ControlPlaneAiAnalyzerForm />}
+            <ByRuleTraffic
+              kind={RULE_KIND_ANALYZER}
+              listPath="/features/ai-session-analyzer"
+              fetchRule={aiSessionAnalyzerService.getRule}
+              param="ruleName"
+              agent={<GatewayAiAnalyzerForm />}
+              sidecar={<ControlPlaneAiAnalyzerForm />}
             />
           </Page>
         }
@@ -566,12 +580,7 @@ function Router() {
         path="/guardrails"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            {/* Sidecars enforce guardrails without a DLP provider, and the
-                rules bind to listeners, so the list filters by them. */}
-            <ByProduct
-              gateway={<Guardrails />}
-              controlPlane={<Guardrails providerRequired={false} filterBySidecar />}
-            />
+            <Guardrails />
           </Page>
         }
       />
@@ -579,9 +588,12 @@ function Router() {
         path="/guardrails/new"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <ByProduct
-              gateway={<GatewayGuardrailForm />}
-              controlPlane={<ControlPlaneGuardrailForm />}
+            <ByRuleTraffic
+              kind={RULE_KIND_GUARDRAIL}
+              listPath="/guardrails"
+              fetchRule={guardrailsService.get}
+              agent={<GatewayGuardrailForm />}
+              sidecar={<ControlPlaneGuardrailForm />}
             />
           </Page>
         }
@@ -590,9 +602,12 @@ function Router() {
         path="/guardrails/edit/:id"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <ByProduct
-              gateway={<GatewayGuardrailForm />}
-              controlPlane={<ControlPlaneGuardrailForm />}
+            <ByRuleTraffic
+              kind={RULE_KIND_GUARDRAIL}
+              listPath="/guardrails"
+              fetchRule={guardrailsService.get}
+              agent={<GatewayGuardrailForm />}
+              sidecar={<ControlPlaneGuardrailForm />}
             />
           </Page>
         }
