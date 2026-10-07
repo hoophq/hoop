@@ -78,7 +78,7 @@ func TestReviewVisibilityIgnoresTheRowAddedOnDenial(t *testing.T) {
 	require.NoError(t, err)
 	decided, err := doIndividualReview(requester, stored, &models.Connection{}, models.ReviewStatusRejected)
 	require.NoError(t, err)
-	require.NoError(t, persistDecision(decided, &models.Connection{}, models.ReviewStatusPending))
+	require.NoError(t, persistDecision(decided, models.ReviewStatusPending))
 
 	got, err := models.GetReviewByIdOrSid(decisionTestOrgID, rev.ID)
 	require.NoError(t, err)
