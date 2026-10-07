@@ -172,27 +172,10 @@ function Router() {
         }
       />
       {/* Both render the list; the session id opens its drawer, so the Slack
-          link resolves to one review. With sidecars every signed-in user
-          reaches it: a reviewer's groups come from the identity provider,
-          not from a role. */}
-      <Route
-        path="/reviews"
-        element={
-          <BySidecars
-            on={<Page><Reviews /></Page>}
-            off={<Page role={ROLE_APPROVER}><Reviews /></Page>}
-          />
-        }
-      />
-      <Route
-        path="/reviews/:sessionId"
-        element={
-          <BySidecars
-            on={<Page><Reviews /></Page>}
-            off={<Page role={ROLE_APPROVER}><Reviews /></Page>}
-          />
-        }
-      />
+          link resolves to one review. Every signed-in user reaches it: a
+          reviewer's groups come from the identity provider, not from a role. */}
+      <Route path="/reviews" element={<Page><Reviews /></Page>} />
+      <Route path="/reviews/:sessionId" element={<Page><Reviews /></Page>} />
 
       {/* React pages — fully migrated */}
       <Route
