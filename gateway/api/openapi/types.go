@@ -1287,6 +1287,8 @@ type SessionGuardRailsInfo struct {
 	MatchedWords []string `json:"matched_words,omitempty" example:"password,secret"`
 	// Message is the admin-defined message configured on the matched rule entry, when present
 	Message string `json:"message,omitempty" example:"This query was blocked by your organization's data policy"`
+	// Elapsed is the event stream time, in seconds, of the statement the rule denied. Set by sidecar sessions only
+	Elapsed *float64 `json:"elapsed,omitempty" example:"12.5"`
 }
 
 type SessionAIAnalysis struct {

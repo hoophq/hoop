@@ -8229,6 +8229,11 @@
             "example": "input",
             "type": "string"
           },
+          "elapsed": {
+            "description": "Elapsed is the event stream time, in seconds, of the statement the rule denied. Set by sidecar sessions only",
+            "example": 12.5,
+            "type": "number"
+          },
           "matched_words": {
             "description": "MatchedWords are the words that matched the rule",
             "example": [

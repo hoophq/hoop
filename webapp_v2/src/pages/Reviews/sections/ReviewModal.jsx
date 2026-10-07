@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Box, Group, Stack, Text } from '@mantine/core'
 import {
   BadgeCheck,
@@ -9,6 +10,7 @@ import {
   Hash,
   Hourglass,
   OctagonX,
+  ScrollText,
   Timer,
   Package,
   Users,
@@ -121,6 +123,20 @@ function Statement({ sessionId }) {
   return <CodeSnippet code={statement} />
 }
 
+// SidecarSession links the review to the session its statement ran in. The
+// sidecar reports that session after the review settles, so it can be absent.
+function SidecarSession({ sessionId, onOpen }) {
+  const sidecarSession = useReviewStore((s) => s.sidecarSessions[sessionId])
+  if (!sidecarSession) return null
+  return (
+    <DetailRow icon={ScrollText} label="Session">
+      <Button variant="subtle" size="compact-sm" onClick={() => onOpen(sidecarSession)}>
+        {sidecarSession}
+      </Button>
+    </DetailRow>
+  )
+}
+
 export default function ReviewModal({
   review,
   sidecarsById,
@@ -132,6 +148,7 @@ export default function ReviewModal({
   onRevoke,
   submitting,
 }) {
+  const navigate = useNavigate()
   if (!review) return null
 
   const source = reviewSource(review, sidecarsById)
@@ -221,6 +238,11 @@ export default function ReviewModal({
               {review.id}
             </Text>
           </DetailRow>
+
+          <SidecarSession
+            sessionId={review.session}
+            onOpen={(id) => navigate(`/sessions/${encodeURIComponent(id)}`)}
+          />
         </Stack>
 
         {review.rejection_reason && (

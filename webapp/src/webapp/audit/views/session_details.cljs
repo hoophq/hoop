@@ -78,7 +78,47 @@
 
 (defmethod ^:private session-event-stream :default
   [session]
-  [session-data-raw/main (:event_stream session) (:start_date session)])
+  [session-data-raw/main (:event_stream session) (:start_date session)
+   (guardrails-info/denied-at (:guardrails_info session))])
+
+(def ^:private sidecar-metadata-keys
+  "Metadata keys a sidecar writes; sidecar-links renders them."
+  [:sidecar :sidecar_session_id])
+
+(defn- metadata-row [label content]
+  [:div {:class "flex gap-small items-center py-small border-t last:border-b"}
+   [:header {:class "w-32 px-small text-sm font-bold"}
+    label]
+   [:section {:class "w-full text-xs border-l p-small"}
+    content]])
+
+(defn- sidecar-links
+  "Links a sidecar session to the reviews that held its statements, and a
+  review's session to the sidecar session it held."
+  [metadata]
+  (let [{:keys [name listener review_sessions]} (:sidecar metadata)
+        sidecar-session-id (:sidecar_session_id metadata)]
+    [:<>
+     (when name
+       [metadata-row "sidecar"
+        [:span (cond-> name listener (str " · " listener))]])
+     (when (seq review_sessions)
+       [metadata-row "reviews"
+        [:> Flex {:gap "3" :wrap "wrap"}
+         (for [review-session review_sessions]
+           ^{:key review-session}
+           [:a {:href (str "/reviews/" (js/encodeURIComponent review-session))
+                :class "text-blue-600 underline font-mono"}
+            review-session])]])
+     (when sidecar-session-id
+       [metadata-row "sidecar session"
+        [:a {:href "#"
+             :class "text-blue-600 underline font-mono"
+             :on-click (fn [e]
+                         (.preventDefault e)
+                         (rf/dispatch [:navigate :session-details {}
+                                       :session-id sidecar-session-id]))}
+         sidecar-session-id]])]))
 
 (defmulti ^:private review-status-icon identity)
 (defmethod ^:private review-status-icon "PENDING" [] "waiting-circle-yellow")
@@ -299,11 +339,13 @@
                                     :credentials_revoked_at
                                     :credential_session)))
               [:div
+               [sidecar-links metadata]
                (doall
-                (for [[metadata-key metadata-value] (dissoc metadata
-                                                            :credentials_expire_at
-                                                            :credentials_revoked_at
-                                                            :credential_session)]
+                (for [[metadata-key metadata-value] (apply dissoc metadata
+                                                           :credentials_expire_at
+                                                           :credentials_revoked_at
+                                                           :credential_session
+                                                           sidecar-metadata-keys)]
                   ^{:key metadata-key}
                   [:div {:class "flex gap-small items-center py-small border-t last:border-b"}
                    [:header {:class "w-32 px-small text-sm font-bold"}

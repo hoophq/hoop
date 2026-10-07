@@ -20335,6 +20335,11 @@ const docTemplate = `{
                     ],
                     "example": "input"
                 },
+                "elapsed": {
+                    "description": "Elapsed is the event stream time, in seconds, of the statement the rule denied. Set by sidecar sessions only",
+                    "type": "number",
+                    "example": 12.5
+                },
                 "matched_words": {
                     "description": "MatchedWords are the words that matched the rule",
                     "type": "array",

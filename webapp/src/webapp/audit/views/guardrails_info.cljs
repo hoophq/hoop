@@ -1,7 +1,7 @@
 (ns webapp.audit.views.guardrails-info
   (:require
    ["@radix-ui/react-accordion" :as Accordion]
-   ["@radix-ui/themes" :refer [Badge Box Flex Text]]
+   ["@radix-ui/themes" :refer [Badge Box Flex Text Tooltip]]
    ["lucide-react" :refer [ChevronDown ShieldCheck]]
    [clojure.string :as cs]))
 
@@ -103,6 +103,25 @@
         (map-indexed (fn [idx entry]
                        ^{:key idx} [multi-entry entry (= idx 0)])
                      guardrails-info)]]]]))
+
+(defn denied-at
+  "Maps the stream time of each denied statement to its rule name. Only
+  entries with :elapsed (sidecar sessions) point at a stream row."
+  [guardrails-info]
+  (into {}
+        (keep (fn [{:keys [elapsed rule_name]}]
+                (when (number? elapsed) [elapsed (or rule_name "")])))
+        guardrails-info))
+
+(defn denied-badge
+  "Marks a stream row whose statement a guardrail denied."
+  [rule-name]
+  [:> Tooltip {:content (if (cs/blank? rule-name)
+                          "Denied by a guardrail"
+                          (str "Denied by rule " rule-name))}
+   [:> Badge {:color "red" :variant "solid" :size "1"
+              :class "shrink-0 mt-[2px]"}
+    "Denied"]])
 
 (defn main [{:keys [guardrails-info]}]
   (when (seq guardrails-info)

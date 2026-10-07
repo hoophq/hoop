@@ -31,6 +31,7 @@ import (
 	_ "github.com/hoophq/hoop/gateway/federation/gcpoauth"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/jobs/credentialsweeper"
+	"github.com/hoophq/hoop/gateway/jobs/sidecarsessionreaper"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
@@ -260,6 +261,9 @@ func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTe
 	// the credential endpoints, where a read scoped to one org closed sessions
 	// for every tenant on the deployment.
 	go credentialsweeper.Run(context.Background(), models.DB)
+
+	// End the sidecar sessions whose sidecar stopped sending their events.
+	go sidecarsessionreaper.Run(context.Background(), models.DB)
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()

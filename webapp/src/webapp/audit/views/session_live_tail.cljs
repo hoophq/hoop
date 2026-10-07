@@ -17,6 +17,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
+   [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.audit.views.pg-wire :as pg-wire]
    [webapp.audit.views.session-format :as session-format]
    [webapp.audit.views.terminal-decoder :as terminal-decoder]
@@ -109,6 +110,19 @@
        (apply concat)
        vec))
 
+(defn- mark-denied
+  "Flags the statement rows a guardrail denied. The denial's own error row
+  shares no time with its statement, so only statements match."
+  [denied rows]
+  (if (empty? denied)
+    rows
+    (mapv (fn [row]
+            (if (and (not= "e" (:event-type row))
+                     (contains? denied (:seconds row)))
+              (assoc row :denied-rule (get denied (:seconds row)))
+              row))
+          rows)))
+
 ;; ─── Sub-components ────────────────────────────────────────────────────────
 
 (defn- status-pill [state]
@@ -174,7 +188,7 @@
          [:> Text {:size "2" :class "text-[--gray-11]"}
           "Only queries"]]])]]])
 
-(defn- query-row [{:keys [seconds sql pg-type-name absolute]}]
+(defn- query-row [{:keys [seconds sql pg-type-name absolute denied-rule]}]
   [:> Flex {:gap "3" :align "start"
             :class (str "px-radix-4 py-radix-2 "
                         "border-b border-[--gray-a3] "
@@ -184,9 +198,11 @@
               :class (str "text-[--gray-10] tabular-nums "
                           "shrink-0 pt-1 w-20 font-mono")}
      (format-relative seconds)]]
-   [:> Badge {:color "iris" :variant "soft" :size "1"
-              :class "shrink-0 mt-[2px]"}
-    pg-type-name]
+   (if denied-rule
+     [guardrails-info/denied-badge denied-rule]
+     [:> Badge {:color "iris" :variant "soft" :size "1"
+                :class "shrink-0 mt-[2px]"}
+      pg-type-name])
    [:> Box {:class "min-w-0 grow"}
     [:pre {:class (str "whitespace-pre-wrap break-words "
                        "text-[12px] leading-relaxed "
@@ -206,7 +222,7 @@
     [:> Text {:size "1" :class "italic"}
      (str pg-type-name (when pg-type (str " (" pg-type ")")))]]])
 
-(defn- text-row [{:keys [seconds event-type text absolute]}]
+(defn- text-row [{:keys [seconds event-type text absolute denied-rule]}]
   (let [tone (case event-type
                "o" "text-[--gray-12]"
                "e" "text-[--red-11]"
@@ -219,6 +235,8 @@
       [:> Text {:size "1" :class (str "text-[--gray-10] tabular-nums "
                                       "shrink-0 pt-1 w-20 font-mono")}
        (format-relative seconds)]]
+     (when denied-rule
+       [guardrails-info/denied-badge denied-rule])
      [:> Box {:class "min-w-0 grow"}
       [:pre {:class (str "whitespace-pre-wrap break-words "
                          "text-[12px] leading-relaxed font-mono m-0 "
@@ -315,7 +333,8 @@
                              raw-state raw-state
                              :else :connecting)
               event-stream (or (:event_stream session) [])
-              rows (expand-stream postgres? event-stream)
+              rows (mark-denied (guardrails-info/denied-at (:guardrails_info session))
+                                (expand-stream postgres? event-stream))
               ;; Concatenate output frames only ("o"/"e"); the PTY echoes input
               ;; back as output, so including "i" would duplicate every keystroke.
               terminal-text (when terminal?
