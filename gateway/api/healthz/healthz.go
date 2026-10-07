@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 )
 
 // LivenessHandler
@@ -22,10 +23,11 @@ import (
 //	@Router			/healthz [get]
 func LivenessHandler() func(_ *gin.Context) {
 	return func(c *gin.Context) {
-		grpcLivenessErr := checkAddrLiveness(grpc.LocalhostAddr)
-		if grpcLivenessErr != nil {
-			c.JSON(http.StatusBadRequest, openapi.LivenessCheck{Liveness: "ERR"})
-			return
+		if !appconfig.Get().IsControlPlane() {
+			if err := checkAddrLiveness(grpc.LocalhostAddr); err != nil {
+				c.JSON(http.StatusBadRequest, openapi.LivenessCheck{Liveness: "ERR"})
+				return
+			}
 		}
 		c.JSON(http.StatusOK, openapi.LivenessCheck{Liveness: "OK"})
 	}
