@@ -251,7 +251,7 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 	var review Review
 	err := DB.Raw(`
 	SELECT
-		id, org_id, session_id, connection_name, sidecar_id, listener_name,
+		id, org_id, session_id, connection_name, connection_id, sidecar_id, listener_name,
 		type, access_duration_sec, status,
 		blob_input_id, input_env_vars, input_client_args, time_window, access_request_rule_name,
 		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,
@@ -290,7 +290,7 @@ func ListReviews(orgID string) (*[]Review, error) {
 	var reviews []Review
 	err := DB.Raw(`
 	SELECT
-		id, org_id, session_id, connection_name, sidecar_id, listener_name,
+		id, org_id, session_id, connection_name, connection_id, sidecar_id, listener_name,
 		type, access_duration_sec, status,
 		blob_input_id, input_env_vars, input_client_args, access_request_rule_name,
 		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,
@@ -572,7 +572,7 @@ func SetReviewStatusExecutedIfFinished(db *gorm.DB, orgID, sessionID string) (bo
 // answers with the same policy a fresh review carries. Callers add the WHERE.
 const sidecarReviewSelect = `
 	SELECT
-		id, org_id, session_id, connection_name, sidecar_id, listener_name,
+		id, org_id, session_id, connection_name, connection_id, sidecar_id, listener_name,
 		statement_hash, type, access_duration_sec, status,
 		blob_input_id, input_env_vars, input_client_args, time_window, access_request_rule_name,
 		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,

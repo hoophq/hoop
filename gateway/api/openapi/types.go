@@ -1596,6 +1596,8 @@ type Review struct {
 	SidecarID *string `json:"sidecar_id,omitempty" format:"uuid" readonly:"true" example:"5F5E5C6E-6C3A-4E9A-9E8B-2D6A7F1B0C4D"`
 	// The sidecar listener this review is bound to. Absent on a review that came from a connection
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
+	// The connection the review was filed against. On a sidecar review, the resource that mirrors the listener; absent while the organization has no mirror for it
+	Connection *ReviewConnection `json:"connection,omitempty" readonly:"true"`
 	// The deadline of a sidecar review: to decide while PENDING, to use the
 	// approval once APPROVED. Absent with no limit or on a review from a connection
 	ExpiresAt *time.Time `json:"expires_at,omitempty" readonly:"true" example:"2024-07-25T16:11:35.000Z"`
@@ -1937,9 +1939,12 @@ type PublicServerInfo struct {
 	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
 	// Whether the server requires initial setup (no users have been registered yet)
 	SetupRequired bool `json:"setup_required" example:"true"`
-	// Which component this process runs as
-	ApplicationMode string `json:"application_mode" enums:"gateway,control-plane" example:"gateway"`
+	// Always "gateway". Kept for clients that read it while the control plane was a separate mode
+	ApplicationMode string `json:"application_mode" enums:"gateway" example:"gateway"`
 }
+
+// ApplicationModeGateway is the only value application_mode takes.
+const ApplicationModeGateway = "gateway"
 
 type IdpProviderNameType string
 
@@ -2013,8 +2018,8 @@ type ServerInfo struct {
 	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
 	// Effective feature flags for the caller's organization
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
-	// Which component this process runs as
-	ApplicationMode string `json:"application_mode" enums:"gateway,control-plane" example:"gateway"`
+	// Always "gateway". Kept for clients that read it while the control plane was a separate mode
+	ApplicationMode string `json:"application_mode" enums:"gateway" example:"gateway"`
 }
 
 // ServerLogEntry is one runtime log record from the gateway process or a
@@ -2294,7 +2299,7 @@ type GuardRailRuleRequest struct {
 	// and `action: defer` to hand the verdict to a Rego policy. It holds the
 	// guardrails block the listener receives: {"rules": [...]}.
 	//
-	// A control plane field. A gateway has no sidecars and refuses it.
+	// Omitted on a rule no sidecar runs.
 	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
 
 	// SidecarTargets names the sidecar LISTENERS that must enforce this rule,
@@ -2365,7 +2370,7 @@ type GuardRailRuleResponse struct {
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
 	// SidecarSpec is this rule in the sidecar's own vocabulary; see the
-	// request type. Present only in a control plane.
+	// request type. Present when the rule carries one.
 	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
 	// The sidecar listeners this rule is bound to, and therefore distributed to
 	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
@@ -2758,7 +2763,7 @@ type DataMaskingRuleRequest struct {
 	// partial, hash) and a keep_last. It holds the mask block the listener
 	// receives: {"rules": [...]}.
 	//
-	// A control plane field. A gateway has no sidecars and refuses it.
+	// Omitted on a rule no sidecar runs.
 	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
 
 	// SidecarTargets names the sidecar LISTENERS that must apply this rule.
@@ -3986,9 +3991,9 @@ type AccessRequestRuleRequest struct {
 	Name string `json:"name" binding:"required" example:"default-access-request-rule"`
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access request rule for production databases"`
-	// The access type. A control plane accepts only sidecar; a gateway accepts jit, command or jit_command
+	// The access type. sidecar names a rule that releases statements a sidecar holds; jit, command and jit_command gate connections
 	AccessType string `json:"access_type" binding:"required" enums:"jit,command,jit_command,sidecar" example:"command"`
-	// Connection names that this rule applies to. Required by a gateway, refused by a control plane
+	// Connection names that this rule applies to. Required unless access_type is sidecar, which refuses it
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
 	Attributes []string `json:"attributes" example:"production,pii"`
@@ -4092,7 +4097,7 @@ type AISessionAnalyzerRuleRequest struct {
 	// defer, and the per-lane cost overrides. It IS the analyzer block the
 	// listener receives.
 	//
-	// A control plane field. A gateway has no sidecars and refuses it.
+	// Omitted on a rule no sidecar runs.
 	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
 
 	// SidecarTargets names the sidecar LISTENERS that must run this analysis.
@@ -4110,7 +4115,7 @@ type AISessionAnalyzerRuleRequest struct {
 	// this rule holds for approval. Absent keeps the groups already set; with
 	// none set the admin group reviews.
 	//
-	// A control plane field, read only while sidecar_spec holds a statement.
+	// Read only while sidecar_spec holds a statement.
 	ReviewersGroups *[]string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 
 	// Seconds a held statement's review may wait for a decision, 60 to 604800. Control plane, read only while
@@ -4138,12 +4143,12 @@ type AISessionAnalyzerRule struct {
 	Agentic bool `json:"agentic" example:"false"`
 
 	// SidecarSpec is this rule in the sidecar's own vocabulary; see the
-	// request type. Present only in a control plane.
+	// request type. Present when the rule carries one.
 	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
 	// The sidecar listeners this rule is bound to, and therefore distributed to
 	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 	// The groups whose members may release a statement this rule holds.
-	// Present only in a control plane, while the rule holds.
+	// Present while the rule holds.
 	ReviewersGroups []string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 	// Seconds a held statement's review may wait for a decision. Present only in a control plane, while the
 	// rule holds and the limit is set

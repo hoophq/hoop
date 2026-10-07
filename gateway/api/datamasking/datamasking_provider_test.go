@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 )
 
@@ -22,7 +23,7 @@ func loadNoProviderConfig(t *testing.T) {
 	t.Setenv("MSPRESIDIO_ANALYZER_URL", "")
 	t.Setenv("MSPRESIDIO_ANONYMIZER_URL", "")
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS_JSON", "")
-	if err := appconfig.Load(appconfig.AppModeGateway); err != nil {
+	if err := appconfig.Load(); err != nil {
 		t.Fatalf("appconfig.Load: %v", err)
 	}
 	if appconfig.Get().HasRedactCredentials() {
@@ -38,62 +39,38 @@ func testContext() (*gin.Context, *httptest.ResponseRecorder) {
 	return c, rec
 }
 
-func TestRequireRedactProviderRejectsWithoutProvider(t *testing.T) {
+// A rule the gateway enforces (no sidecar spec, or connections/attributes
+// bound) needs the server's DLP provider; a rule only a sidecar runs needs
+// none.
+func TestRequireRedactProvider(t *testing.T) {
 	loadNoProviderConfig(t)
+	spec := json.RawMessage(`{"rules":[{"name":"email"}]}`)
 
-	c, rec := testContext()
-	if requireRedactProvider(c) {
-		t.Fatal("expected requireRedactProvider to reject when no provider is configured")
+	refused := []struct {
+		name string
+		req  *openapi.DataMaskingRuleRequest
+		spec json.RawMessage
+	}{
+		{"no spec", &openapi.DataMaskingRuleRequest{}, nil},
+		{"null spec", &openapi.DataMaskingRuleRequest{}, json.RawMessage("null")},
+		{"spec and connections", &openapi.DataMaskingRuleRequest{ConnectionIDs: []string{"c1"}}, spec},
+		{"spec and attributes", &openapi.DataMaskingRuleRequest{Attributes: []string{"pii"}}, spec},
 	}
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("expected 422, got %d (body: %s)", rec.Code, rec.Body.String())
-	}
-}
-
-// The guard must run before any payload parsing or database access, so the
-// full handlers are safe to invoke with no body and no database in this
-// state.
-func TestHandlersRejectedBeforeTouchingDatabase(t *testing.T) {
-	loadNoProviderConfig(t)
-
-	c, rec := testContext()
-	Post(c)
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("Post without provider: expected 422, got %d (body: %s)", rec.Code, rec.Body.String())
-	}
-
-	c, rec = testContext()
-	Put(c)
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("Put without provider: expected 422, got %d (body: %s)", rec.Code, rec.Body.String())
-	}
-}
-
-// On the control plane, a rule with a sidecar spec needs no DLP provider. A
-// rule without one keeps the check.
-func TestControlPlaneProviderError(t *testing.T) {
-	loadNoProviderConfig(t)
-
-	if err := controlPlaneProviderError(json.RawMessage(`{"rules":[{"name":"email"}]}`)); err != nil {
-		t.Errorf("rule with a sidecar spec: expected no error, got %v", err)
-	}
-	for _, spec := range []json.RawMessage{nil, json.RawMessage("null")} {
-		if err := controlPlaneProviderError(spec); err == nil {
-			t.Errorf("sidecar spec %q: expected an error without a DLP provider", spec)
+	for _, tt := range refused {
+		c, rec := testContext()
+		if requireRedactProvider(c, tt.req, tt.spec) {
+			t.Fatalf("%s: expected a refusal without a DLP provider", tt.name)
+		}
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s: expected 422, got %d (body: %s)", tt.name, rec.Code, rec.Body.String())
 		}
 	}
-}
-
-// The control plane check must not change the gateway: it writes nothing and
-// lets the handler continue.
-func TestControlPlaneProviderIsNoOpOnGateway(t *testing.T) {
-	loadNoProviderConfig(t)
 
 	c, rec := testContext()
-	if !requireControlPlaneProvider(c, nil) {
-		t.Fatal("expected requireControlPlaneProvider to pass on the gateway")
+	if !requireRedactProvider(c, &openapi.DataMaskingRuleRequest{}, spec) {
+		t.Fatal("sidecar-only rule: expected to pass without a DLP provider")
 	}
 	if c.Writer.Written() || rec.Body.Len() > 0 {
-		t.Errorf("expected no response on the gateway, got %d (body: %s)", rec.Code, rec.Body.String())
+		t.Errorf("expected no response, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
 }

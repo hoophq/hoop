@@ -96,7 +96,7 @@ func TestPersistDecisionLosesToTheClaim(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, claimed)
 
-		assert.Equal(t, ErrWrongState, persistDecision(decided, nil, fromStatus))
+		assert.Equal(t, ErrWrongState, persistDecision(decided, fromStatus))
 		got, err := models.GetReviewByIdOrSid(decisionTestOrgID, rev.ID)
 		require.NoError(t, err)
 		assert.Equal(t, models.ReviewStatusExecuted, got.Status)
@@ -110,7 +110,7 @@ func TestPersistDecisionLosesToTheClaim(t *testing.T) {
 		decided, err := doReview(admin, rev, nil, models.ReviewStatusRevoked, false)
 		require.NoError(t, err)
 
-		require.NoError(t, persistDecision(decided, nil, fromStatus))
+		require.NoError(t, persistDecision(decided, fromStatus))
 		got, err := models.GetReviewByIdOrSid(decisionTestOrgID, rev.ID)
 		require.NoError(t, err)
 		assert.Equal(t, models.ReviewStatusRevoked, got.Status)
@@ -166,7 +166,7 @@ func TestPersistDecisionRefusesAnExpiredReview(t *testing.T) {
 				decided.ExpiresAt = &past
 			}
 
-			assert.Equal(t, ErrExpired, persistDecision(decided, nil, fromStatus))
+			assert.Equal(t, ErrExpired, persistDecision(decided, fromStatus))
 			status, hash := storedDecisionRow(t, seeded.ID)
 			assert.Equal(t, string(models.ReviewStatusExpired), status)
 			assert.False(t, hash.Valid, "an expired review frees its statement")

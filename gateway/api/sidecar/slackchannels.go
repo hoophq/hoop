@@ -9,20 +9,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
 
 // slackChannelsSidecar returns the sidecar the path names, or answers the
-// request and returns nil. Only a control plane files sidecar reviews, so a
-// gateway answers 412, as it does for /sidecars/reviews.
+// request and returns nil.
 func slackChannelsSidecar(c *gin.Context) *models.Sidecar {
-	if !appconfig.Get().IsControlPlane() {
-		c.JSON(http.StatusPreconditionFailed, gin.H{"message": "sidecar slack channels are served by the control plane"})
-		return nil
-	}
 	ctx := storagev2.ParseContext(c)
 	item, err := models.GetSidecarByNameOrID(models.DB, ctx.OrgID, c.Param("nameOrID"))
 	if err != nil {
@@ -96,7 +90,7 @@ func slackChannelRows(sidecar *models.Sidecar, req openapi.SidecarSlackChannels)
 //	@Produce		json
 //	@Param			nameOrID		path		string	true	"Name or UUID of the sidecar"
 //	@Success		200				{object}	openapi.SidecarSlackChannels
-//	@Failure		404,412,500		{object}	openapi.HTTPError
+//	@Failure		404,500			{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID}/slack-channels [get]
 func GetSlackChannels(c *gin.Context) {
 	sidecar := slackChannelsSidecar(c)
@@ -121,7 +115,7 @@ func GetSlackChannels(c *gin.Context) {
 //	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
 //	@Param			request				body		openapi.SidecarSlackChannels	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarSlackChannels
-//	@Failure		400,404,412,422,500	{object}	openapi.HTTPError
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID}/slack-channels [put]
 func PutSlackChannels(c *gin.Context) {
 	sidecar := slackChannelsSidecar(c)

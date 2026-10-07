@@ -171,20 +171,20 @@ func ApplyAnalyzerApprovalTTLs(tx *gorm.DB, orgID uuid.UUID, ruleName string, pe
 	if pending == nil && approval == nil {
 		return nil
 	}
-	pending, err := NormalizeSidecarReviewTTL("pending_ttl_sec", pending)
-	if err != nil {
-		return err
-	}
-	approval, err = NormalizeSidecarReviewTTL("approval_ttl_sec", approval)
-	if err != nil {
-		return err
-	}
 	rule, err := AnalyzerApprovalRule(tx, orgID, ruleName)
 	if err != nil {
 		return fmt.Errorf("failed reading the approval rule for analyzer rule %q: %w", ruleName, err)
 	}
 	if rule == nil {
 		return nil
+	}
+	pending, err = NormalizeSidecarReviewTTL("pending_ttl_sec", pending)
+	if err != nil {
+		return err
+	}
+	approval, err = NormalizeSidecarReviewTTL("approval_ttl_sec", approval)
+	if err != nil {
+		return err
 	}
 	rule.PendingTTLSec = ApplySidecarReviewTTL(rule.PendingTTLSec, pending)
 	rule.ApprovalTTLSec = ApplySidecarReviewTTL(rule.ApprovalTTLSec, approval)

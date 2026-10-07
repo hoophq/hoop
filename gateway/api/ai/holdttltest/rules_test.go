@@ -1,4 +1,4 @@
-package controlplanetest
+package holdttltest
 
 import (
 	"context"
@@ -24,7 +24,7 @@ import (
 const orgID = "00000000-0000-0000-0000-0000000000d3"
 
 func TestMain(m *testing.M) {
-	if err := appconfig.Load(appconfig.AppModeControlPlane); err != nil {
+	if err := appconfig.Load(); err != nil {
 		panic(err)
 	}
 	os.Exit(m.Run())

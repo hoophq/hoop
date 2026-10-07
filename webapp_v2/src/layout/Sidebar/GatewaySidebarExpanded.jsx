@@ -2,7 +2,6 @@ import { Stack, Box, Text, ScrollArea } from '@mantine/core'
 import { ChevronsLeft } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
-import { useSidecarsEnabled } from '@/modes/sidecars'
 import { NavItem } from './NavItem'
 import { ConfigStatus } from './ConfigStatus'
 import { shouldHide } from './helpers'
@@ -24,7 +23,6 @@ export function SidebarExpanded({ navKey }) {
   const { isAdmin, isSelfHosted } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
-  const sidecarsEnabled = useSidecarsEnabled()
 
   const navItemProps = { isAdmin, isSelfHosted }
 
@@ -33,7 +31,7 @@ export function SidebarExpanded({ navKey }) {
   // gap where Dashboard sits between Resources and Terminal. Filter here, like
   // the collapsed rail already does.
   const visible = (items) =>
-    items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, null, sidecarsEnabled))
+    items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
 
   // No profile block here any more: the user menu lives in the global header
   // (layout/Header/UserMenu.jsx), so user/gatewayVersion/logout moved with it.

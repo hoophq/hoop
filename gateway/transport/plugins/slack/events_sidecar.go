@@ -15,9 +15,8 @@ import (
 
 const slackAPITimeout = 10 * time.Second
 
-// Refusals a control plane click can answer with. The gateway's association
-// page does not exist in the control plane web app, so each one names what the
-// user or an admin can do instead: log in once, or change the Users page.
+// Refusals a click on a sidecar review can answer with. Each one names what
+// the user or an admin can do: log in once, or change the Users page.
 const (
 	cpNotLinkedMsg = "Hoop could not read the email of your Slack user. " +
 		"Ask an admin to add the users:read.email scope to the Slack app, " +
@@ -37,7 +36,7 @@ const (
 	cpNotInGroupFormat   = "You do not belong to group %q. If you joined it recently, log in to Hoop to refresh your groups."
 )
 
-// resolveControlPlaneApprover names the approver of a control plane click.
+// resolveSidecarApprover names the approver of a click on a sidecar review.
 //
 // The Slack ID link comes first: an admin sets it on the Users page for a user
 // whose Slack email differs. Otherwise the email Slack holds for the clicking
@@ -47,7 +46,7 @@ const (
 // Slack vouches for the clicking user on both paths: a link does not outlive
 // the Slack account being deactivated, made a guest, or moved out of the
 // workspace.
-func (p *slackPlugin) resolveControlPlaneApprover(ev *event) *storagev2.Context {
+func (p *slackPlugin) resolveSidecarApprover(ev *event) *storagev2.Context {
 	sid := ev.msg.SessionID
 	linked, err := models.GetUserByOrgIDAndSlackID(ev.orgID, ev.msg.SlackID)
 	if err != nil {
@@ -66,7 +65,7 @@ func (p *slackPlugin) resolveControlPlaneApprover(ev *event) *storagev2.Context 
 			_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", cpInactiveMsg)
 			return nil
 		}
-		return p.controlPlaneApproverContext(ev, linked)
+		return p.sidecarApproverContext(ev, linked)
 	}
 	return p.resolveEmailApprover(ev, slackUser)
 }
@@ -123,7 +122,7 @@ func (p *slackPlugin) resolveEmailApprover(ev *event, slackUser *slackservice.Sl
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", refusal)
 		return nil
 	}
-	return p.controlPlaneApproverContext(ev, approver)
+	return p.sidecarApproverContext(ev, approver)
 }
 
 // checkSlackUser returns why Slack does not vouch for the clicking user, or ""
@@ -191,10 +190,10 @@ func pickApprover(users []models.User, email, loginURL string) (*models.User, st
 	}
 }
 
-// controlPlaneApproverContext checks that the hoop user belongs to the clicked
+// sidecarApproverContext checks that the hoop user belongs to the clicked
 // group and builds the context DoReview reads. SlackID is the clicking user's,
 // which is the one a link on the Users page would hold anyway.
-func (p *slackPlugin) controlPlaneApproverContext(ev *event, approver *models.User) *storagev2.Context {
+func (p *slackPlugin) sidecarApproverContext(ev *event, approver *models.User) *storagev2.Context {
 	sid := ev.msg.SessionID
 	rows, err := models.GetUserGroupsByUserID(approver.ID)
 	if err != nil {
@@ -222,8 +221,8 @@ func (p *slackPlugin) controlPlaneApproverContext(ev *event, approver *models.Us
 	return userContext
 }
 
-// loginURL is the control plane's login page, where a login creates the hoop
-// user or refreshes their groups. Empty when the plugin has no API URL.
+// loginURL is the login page, where a login creates the hoop user or
+// refreshes their groups. Empty when the plugin has no API URL.
 func (p *slackPlugin) loginURL() string {
 	if p.apiURL == "" {
 		return ""

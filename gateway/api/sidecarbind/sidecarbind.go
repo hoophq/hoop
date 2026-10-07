@@ -1,14 +1,10 @@
-// Package sidecarbind is the write path shared by the three rule APIs a
-// control plane distributes to sidecars.
+// Package sidecarbind is the write path shared by the three rule APIs the
+// gateway distributes to sidecars.
 //
 // Guardrails, data masking and the AI analyzer differ in what a rule SAYS and
 // not at all in how it is bound, checked and delivered, so the binding lives
 // here once instead of three times. The kind parameter is the only thing that
 // varies, and it selects the junction table and the validator.
-//
-// It is the control plane's path. In gateway mode these fields are refused
-// rather than stored: a gateway has no sidecars, and a rule silently carrying
-// a sidecar block would be a shape nothing reads and nothing maintains.
 package sidecarbind
 
 import (
@@ -21,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"gorm.io/gorm"
@@ -75,19 +70,6 @@ func (r Request) EffectiveSpec() json.RawMessage {
 // walk straight past it. And it runs before the rule row is written, so a
 // refused rule is not half-saved.
 func Refuse(c *gin.Context, orgID string, req Request) bool {
-	if !appconfig.Get().IsControlPlane() {
-		// Point of order rather than a check: a gateway has no sidecars, so a
-		// request carrying either field is a client aimed at the wrong
-		// deployment. Storing it silently would leave a column nothing reads.
-		if req.Spec != nil || req.Targets != nil {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "sidecar_spec and " +
-				"sidecar_targets are control plane fields; this deployment is a gateway and " +
-				"has no sidecars to distribute a rule to"})
-			return true
-		}
-		return false
-	}
-
 	org, err := uuid.Parse(orgID)
 	if err != nil {
 		abort(c, err)
@@ -178,7 +160,7 @@ func bindingName(req Request) string {
 // a write that says nothing about sidecars changes nothing about them. An
 // explicit [] is the admin unbinding the rule.
 func PersistTx(tx *gorm.DB, orgID string, kind services.SidecarRuleKind, ruleName string, targets *[]openapi.SidecarRuleTarget) error {
-	if targets == nil || !appconfig.Get().IsControlPlane() {
+	if targets == nil {
 		return nil
 	}
 	org, err := uuid.Parse(orgID)
@@ -207,9 +189,6 @@ func PersistTx(tx *gorm.DB, orgID string, kind services.SidecarRuleKind, ruleNam
 // A failed read is returned, never an empty list: an empty list is that same
 // empty picker, and the same unbinding save.
 func Load(db *gorm.DB, orgID string, kind services.SidecarRuleKind, ruleName string) ([]openapi.SidecarRuleTarget, error) {
-	if !appconfig.Get().IsControlPlane() {
-		return nil, nil
-	}
 	org, err := uuid.Parse(orgID)
 	if err != nil {
 		return nil, err

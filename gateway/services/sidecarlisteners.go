@@ -27,15 +27,9 @@ func (e ErrSidecarListenerInvalid) Unwrap() error { return e.Err }
 // configuration must call it: a listener without a mirror is one no rule can
 // bind to.
 //
-// It does nothing while the org has beta.sidecar_listeners off. Nothing reads
-// a mirror yet, and an org that has not opted in must keep its connection
-// list, its sidecar writes and its imports exactly as before. A mirror
-// written while the flag was on stays until a write with the flag on, or
-// until the sidecar is deleted.
+// A mirror stays until the next write of the sidecar, or until the sidecar is
+// deleted.
 func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
-	if !SidecarListenersEnabled(sc.OrgID) {
-		return nil
-	}
 	mirrors, err := ProjectListeners(sc.OrgID, sc)
 	if err != nil {
 		return ErrSidecarListenerInvalid{err}
@@ -44,17 +38,10 @@ func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
 }
 
 // ReconcileSidecarListenerConnections writes the mirrors of every sidecar of
-// orgID, one transaction per sidecar. The write path mirrors a sidecar only
-// while the flag is on, so a sidecar written while it was off has none until
-// this runs: when the org turns the flag on, and at startup.
-//
-// A sidecar it cannot mirror is skipped and returned, never fatal: turning the
-// flag on must not fail on one sidecar, and that sidecar's next write answers
-// the same error to the admin.
+// orgID, one transaction per sidecar, for the rows that fell behind the write
+// path. A sidecar it cannot mirror is skipped and returned, never fatal: its
+// next write answers the same error to the admin.
 func ReconcileSidecarListenerConnections(db *gorm.DB, orgID string) []error {
-	if !SidecarListenersEnabled(orgID) {
-		return nil
-	}
 	sidecars, err := models.ListSidecars(db, orgID)
 	if err != nil {
 		return []error{fmt.Errorf("failed listing sidecars, reason=%v", err)}
@@ -80,10 +67,10 @@ func ReconcileSidecarListenerConnections(db *gorm.DB, orgID string) []error {
 	return failed
 }
 
-// ReconcileAllSidecarListenerConnections runs the reconcile for every org
-// with the flag on. Called at startup, after the flag cache is warm: it
-// covers an org whose mirrors fell behind while this gateway was not running,
-// such as a redeploy after a rollback. It logs and never stops the startup.
+// ReconcileAllSidecarListenerConnections runs the reconcile for every org.
+// Called at startup: it covers an org whose mirrors fell behind while this
+// gateway was not running, such as a redeploy after a rollback. It logs and
+// never stops the startup.
 func ReconcileAllSidecarListenerConnections(db *gorm.DB) {
 	orgs, err := models.ListAllOrganizations()
 	if err != nil {
@@ -130,8 +117,7 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 // every feature reads it, so it must have one: a listener left out would be
 // left out of those features with no error. Writes already refuse the first
 // two for every org (ValidateListenerNames); here they guard rows stored
-// before that check. The third is refused only with the flag on, and every
-// message names the listener by position.
+// before that check. Every message names the listener by position.
 //
 // Every access mode is disabled: the gateway has no route to a sidecar, so a
 // client connects to the listener itself, and exec, runbooks and the schema

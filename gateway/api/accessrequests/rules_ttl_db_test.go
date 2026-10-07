@@ -139,3 +139,31 @@ func TestSidecarRuleHandlersStoreTheTTLs(t *testing.T) {
 	assert.Equal(t, float64(600), out["approval_ttl_sec"])
 	assertTTLs(t, "a managed rule keeps its limits", "hold-writes", 900, 600)
 }
+
+// A connection rule has no review limit: the keys are accepted, not stored,
+// not checked and not echoed, so connection rules answer as they always did.
+func TestAConnectionRuleIgnoresTheTTLs(t *testing.T) {
+	startRulesTestDB(t)
+	const rule = `"access_type":"jit","connection_names":["pg-prod"],"approval_required_groups":[],` +
+		`"reviewers_groups":["sre"],"force_approval_groups":[],"min_approvals":1`
+
+	for _, step := range []struct {
+		name    string
+		handler gin.HandlerFunc
+		method  string
+		want    int
+		body    string
+	}{
+		{"create", CreateAccessRequestRule, http.MethodPost, http.StatusCreated,
+			`{"name":"jit-rule",` + rule + `,"pending_ttl_sec":900,"approval_ttl_sec":600}`},
+		// Out of bounds too: a connection rule never reads the keys, so it never refuses them.
+		{"update", UpdateAccessRequestRule, http.MethodPut, http.StatusOK,
+			`{"name":"jit-rule",` + rule + `,"pending_ttl_sec":30,"approval_ttl_sec":604801}`},
+	} {
+		rec, _ := callRule(t, step.handler, step.method, "jit-rule", step.body)
+		require.Equal(t, step.want, rec.Code, "%s: %s", step.name, rec.Body)
+		assert.NotContains(t, rec.Body.String(), "ttl_sec", step.name)
+		pending, approval := storedTTLs(t, "jit-rule")
+		assert.False(t, pending.Valid || approval.Valid, "%s: a connection rule stored a limit", step.name)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/integration/testutil"
 )
@@ -55,8 +56,8 @@ func TestPublicServerInfo(t *testing.T) {
 	if _, ok := body["auth_method"]; !ok {
 		t.Errorf("publicserverinfo: missing auth_method field, got %v", body)
 	}
-	// The web app reads this before login to render as the gateway or the
-	// control plane. The harness boots in gateway mode.
+	// Kept for clients that read it while the control plane was a separate
+	// mode; it only ever says gateway now.
 	if got := body["application_mode"]; got != "gateway" {
 		t.Errorf("publicserverinfo: application_mode = %v, want gateway", got)
 	}
@@ -457,20 +458,35 @@ func TestRoleEnforcement(t *testing.T) {
 	}
 }
 
-// T12 — healthz reports degraded liveness when no gRPC server is running, as
-// in this in-process harness. Asserts the documented degraded contract (400 +
-// liveness=ERR) and that the route is reachable without auth.
+// T12 — healthz probes the gRPC transport only while experimental.agents is
+// on for the default org. This in-process harness runs no gRPC server, so the
+// flag off answers 200 and the flag on answers the documented degraded
+// contract (400 + liveness=ERR). The route is reachable without auth.
 func TestHealthzDegraded(t *testing.T) {
 	resp := testServer.Get(t, "/healthz", "")
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("healthz (no gRPC): expected 400 degraded, got %d (body: %s)",
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("healthz (agents off): expected 200, got %d (body: %s)",
 			resp.StatusCode, testutil.ReadBody(t, resp))
 	}
 	var body map[string]any
 	testutil.DecodeJSON(t, resp, &body)
+	if body["liveness"] != "OK" {
+		t.Errorf("healthz (agents off): expected liveness=OK, got %v", body["liveness"])
+	}
+
+	featureflag.Set(testGateway.OrgID, featureflag.FlagAgents, true)
+	t.Cleanup(func() { featureflag.Set(testGateway.OrgID, featureflag.FlagAgents, false) })
+	degraded := testServer.Get(t, "/healthz", "")
+	defer degraded.Body.Close()
+	if degraded.StatusCode != http.StatusBadRequest {
+		t.Fatalf("healthz (agents on, no gRPC): expected 400 degraded, got %d (body: %s)",
+			degraded.StatusCode, testutil.ReadBody(t, degraded))
+	}
+	body = nil
+	testutil.DecodeJSON(t, degraded, &body)
 	if body["liveness"] != "ERR" {
-		t.Errorf("healthz (no gRPC): expected liveness=ERR, got %v", body["liveness"])
+		t.Errorf("healthz (agents on, no gRPC): expected liveness=ERR, got %v", body["liveness"])
 	}
 }
 

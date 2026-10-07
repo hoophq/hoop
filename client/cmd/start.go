@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/hoophq/hoop/agent"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway"
-	"github.com/hoophq/hoop/gateway/appconfig"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/spf13/cobra"
 )
 
@@ -71,27 +72,28 @@ var startGatewayCmd = &cobra.Command{
 	Short:        "Runs the gateway component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		gateway.Run(appconfig.AppModeGateway)
+		gateway.Run()
 	},
 }
 
 var startControlPlaneCmd = &cobra.Command{
 	Use:   "control-plane",
-	Short: "Runs the control plane component",
-	Long: `Runs the control plane: the HTTP API used to administer a fleet of
-sidecars.
-
-It shares the gateway binary, its database, its HTTP API and its web UI, and
-starts none of the gateway's data plane: no gRPC transport on :8010, no
-protocol proxies and no transport plugins. A route that needs an agent or a
-client stream is still registered and fails per request.
-
-It reads the same database and API configuration the gateway does
-(POSTGRES_DB_URI, API_URL, AUTH_METHOD, ...); nothing in it is agent- or
-connection-shaped.`,
+	Short: "Runs the gateway as the control plane",
+	Long: `Runs the same gateway as "hoop start gateway". The control plane image
+mounts no session volume, so PLUGIN_AUDIT_PATH defaults to a temporary
+directory when it is not set.`,
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		gateway.Run(appconfig.AppModeControlPlane)
+		// PLUGIN_AUDIT_PATH is consumed at package init time, so the resolved
+		// variable is adjusted directly when the env was not provided.
+		if os.Getenv("PLUGIN_AUDIT_PATH") == "" {
+			auditPath := filepath.Join(os.TempDir(), "hoop_sessions")
+			if err := os.MkdirAll(auditPath, 0o700); err != nil {
+				log.Fatalf("failed creating the session storage directory %v: %v", auditPath, err)
+			}
+			plugintypes.AuditPath = auditPath
+		}
+		gateway.Run()
 	},
 }
 

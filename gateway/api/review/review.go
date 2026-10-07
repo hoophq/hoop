@@ -17,7 +17,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
@@ -229,7 +228,7 @@ func slackReviewUpdate(rev *models.Review) *slackservice.UpdateReviewMessageRequ
 		models.ReviewStatusExpired:
 	case models.ReviewStatusRevoked:
 		// A gateway message keeps its approval; only a sidecar revokes one.
-		if !rev.ListenerName.Valid || rev.ListenerName.String == "" {
+		if !IsSidecarReview(rev) {
 			return nil
 		}
 	default:
@@ -288,18 +287,23 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
 	}
 
-	// The control plane does not model reviews against connections, so there is
-	// nothing to look up there. The gateway is unchanged.
-	//
-	// Everything below reads the connection rather than the mode, because a nil
-	// connection is exactly what this decided.
+	// A sidecar review carries its own policy (groups, minimum, force groups)
+	// and authorizes one statement, so it needs no connection; everything below
+	// reads the connection and takes the sidecar path when it is nil.
 	var connection *models.Connection
-	if appconfig.Get().IsControlPlane() {
-		// UpdateReview syncs the session's status and private.sessions.id is a
-		// uuid, so a review with no session fails there on a cast rather than
-		// here on the thing that is actually wrong.
+	if IsSidecarReview(rev) {
+		// UpdateSidecarReview syncs the session's status and private.sessions.id
+		// is a uuid, so a review with no session fails there on a cast rather
+		// than here on the thing that is actually wrong.
 		if rev.SessionID == "" {
 			return nil, fmt.Errorf("sidecar review %s has no session", rev.ID)
+		}
+		// A time window says when a session may run against a connection; a
+		// review bound to a listener authorizes a single statement that has
+		// already been named. Refused rather than dropped, so a caller that asks
+		// for one is told instead of having it silently persisted.
+		if timeWindow != nil {
+			return nil, ErrNoTimeWindow
 		}
 	} else {
 		connection, err = models.GetConnectionByNameOrID(models.NewAdminContext(ctx.OrgID), rev.ConnectionName)
@@ -310,22 +314,9 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 
 	// A lapsed sidecar review never takes a decision. The read reports EXPIRED
 	// before the row records it.
-	if isSidecarDecision(rev, connection) && rev.Status == models.ReviewStatusExpired {
+	if IsSidecarReview(rev) && rev.Status == models.ReviewStatusExpired {
 		return nil, refuseExpiredSidecarDecision(ctx, rev, status)
 	}
-
-	// A time window says when a session may run against a connection, so a
-	// review bound to a listener has no use for one: it authorizes a single
-	// statement that has already been named. Refused rather than dropped, so a
-	// caller that asks for one is told, instead of having it silently persisted.
-	//
-	// This asks the review, not the mode. In the control plane no review has a
-	// connection, so `connection == nil` would also refuse a window for an
-	// ordinary review created there, which the update contract allows.
-	if timeWindow != nil && rev.ListenerName.Valid && rev.ListenerName.String != "" {
-		return nil, ErrNoTimeWindow
-	}
-
 	if timeWindow != nil {
 		if rev.TimeWindow != nil {
 			return nil, fmt.Errorf("time window can only be set once")
@@ -348,7 +339,7 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		rev.RejectionReason = &rejectionReason
 	}
 
-	if err := persistDecision(rev, connection, fromStatus); err != nil {
+	if err := persistDecision(rev, fromStatus); err != nil {
 		return nil, err
 	}
 
@@ -379,8 +370,8 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 // persistDecision writes the decision. On a sidecar review it loses to the
 // sidecar's claim with ErrWrongState, never success on a statement that ran,
 // and to an expiry with ErrExpired.
-func persistDecision(rev *models.Review, connection *models.Connection, fromStatus models.ReviewStatusType) error {
-	if !isSidecarDecision(rev, connection) {
+func persistDecision(rev *models.Review, fromStatus models.ReviewStatusType) error {
+	if !IsSidecarReview(rev) {
 		if err := models.UpdateReview(rev); err != nil {
 			return fmt.Errorf("failed updating review state, reason=%v", err)
 		}
@@ -397,14 +388,15 @@ func persistDecision(rev *models.Review, connection *models.Connection, fromStat
 	return nil
 }
 
-// isSidecarDecision: only the control plane has no connection, and only a
-// sidecar review has a listener (it outlives the sidecar row).
-func isSidecarDecision(rev *models.Review, connection *models.Connection) bool {
-	return connection == nil && rev != nil && rev.ListenerName.Valid && rev.ListenerName.String != ""
+// IsSidecarReview reports a review a sidecar filed: only it has a listener,
+// which outlives the sidecar row. It is the one place that decides the
+// sidecar path, for this package and for the Slack plugin.
+func IsSidecarReview(rev *models.Review) bool {
+	return rev != nil && rev.ListenerName.Valid && rev.ListenerName.String != ""
 }
 
 func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType, force bool) (*models.Review, error) {
-	err := validateReviewStatusTransition(ctx, rev, status, isSidecarDecision(rev, connection))
+	err := validateReviewStatusTransition(ctx, rev, status, IsSidecarReview(rev))
 	if err != nil {
 		return nil, err
 	}
@@ -661,9 +653,19 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		RejectionReason:       r.RejectionReason,
 		SidecarID:             nullStringPtr(r.SidecarID),
 		ListenerName:          nullStringPtr(r.ListenerName),
+		Connection:            reviewConnection(r),
 		ExpiresAt:             r.SidecarExpiresAt(),
 		ApprovalTTLSec:        r.SidecarApprovalTTLSec(),
 	}
+}
+
+// reviewConnection is absent, not empty, on a sidecar review the org has no
+// mirror for.
+func reviewConnection(r *models.Review) *openapi.ReviewConnection {
+	if r.ConnectionName == "" {
+		return nil
+	}
+	return &openapi.ReviewConnection{ID: r.ConnectionID.String, Name: r.ConnectionName}
 }
 
 // nullStringPtr keeps an unset column out of the response body rather than

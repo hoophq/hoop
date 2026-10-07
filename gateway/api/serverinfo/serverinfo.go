@@ -94,7 +94,7 @@ func Get(c *gin.Context) {
 		tenancyType = "multitenant"
 	}
 
-	serverInfoData.ApplicationMode = string(appc.AppMode())
+	serverInfoData.ApplicationMode = openapi.ApplicationModeGateway
 	serverInfoData.IdpProviderName = parseIdpProviderName(serverConfig)
 	serverInfoData.TenancyType = tenancyType
 	serverInfoData.AuthMethod = string(ctx.ProviderType)

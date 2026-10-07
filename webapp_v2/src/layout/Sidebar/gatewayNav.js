@@ -35,16 +35,7 @@ import {
 
 export const MAIN_ITEMS = [
   { label: 'Resources', path: '/resources', icon: Package, adminOnly: false },
-  // The sidecar pages exist in both products (Router.jsx); the gateway lists
-  // them once the org manages its sidecar listeners as resources.
-  {
-    label: 'Sidecars',
-    path: '/sidecars',
-    icon: Container,
-    adminOnly: true,
-    badge: { text: 'BETA', color: 'indigo' },
-    sidecars: true
-  },
+  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true, badge: { text: 'BETA', color: 'indigo' } },
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, adminOnly: true },
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false, licenseFeature: 'runbooks' },
@@ -92,6 +83,7 @@ export const DISCOVER_ITEMS = [
 
 export const ORGANIZATION_ITEMS = [
   { label: 'Agents', path: '/agents', icon: BrainCog, adminOnly: true },
+
   {
     label: 'Integrations',
     icon: Puzzle,
@@ -123,7 +115,7 @@ export const ORGANIZATION_ITEMS = [
 ]
 
 // ─── Command palette ────────────────────────────────────────────────────────
-// Gating flags (adminOnly / selfhostedOnly / featureFlag / licenseFeature / sidecars)
+// Gating flags (adminOnly / selfhostedOnly / featureFlag / licenseFeature)
 // mirror the sidebar entries above and are applied with the same shouldHide()
 // helper — keep both lists in sync when a page's gating changes.
 export const SUGGESTION_ITEMS = [
@@ -142,7 +134,7 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'access-control', label: 'Access Control', description: 'Manage access control rules', icon: UserRoundCheck, path: '/features/access-control', adminOnly: true, licenseFeature: 'access-control' },
   { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect', adminOnly: true, licenseFeature: 'resource-discovery' },
   { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents', adminOnly: true },
-  { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true, sidecars: true },
+  { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true },
   { id: 'authentication', label: 'Authentication', description: 'Configure authentication', icon: ShieldCheck, path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
   { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },
   { id: 'jira-templates', label: 'Jira Templates', description: 'Manage Jira issue templates', icon: Layers, path: '/jira-templates', adminOnly: true, licenseFeature: 'jira-integration' },

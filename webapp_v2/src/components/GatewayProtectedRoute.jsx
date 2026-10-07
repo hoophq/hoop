@@ -1,19 +1,20 @@
 import { useLocation } from 'react-router-dom'
 import { connectionsService } from '@/services/connections'
-import { sidecarsEnabled } from '@/modes/sidecars'
+import { agentsEnabled } from '@/modes/agents'
 import ProtectedRoute from './ProtectedRoute'
 
 // The gateway's gate: the shared ProtectedRoute plus the onboarding redirect.
-// An admin with no connections must go through onboarding, unless the org
-// runs sidecars: that onboarding sets up an agent. Skipped on the onboarding
-// routes themselves to avoid a redirect loop. The control plane has no
-// onboarding to send anyone to, so it renders ProtectedRoute directly.
+// An admin with no connections must go through onboarding, which sets up an
+// agent, so only the agents product (experimental.agents) sends anyone there.
+// Skipped on the onboarding routes themselves to avoid a redirect loop. The
+// control plane has no onboarding to send anyone to, so it renders
+// ProtectedRoute directly.
 function GatewayProtectedRoute(props) {
   const location = useLocation()
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')
 
   const onReady = async (user) => {
-    if (!user.is_admin || isOnboardingRoute || sidecarsEnabled()) return null
+    if (!user.is_admin || isOnboardingRoute || !agentsEnabled()) return null
     try {
       const { pages } = await connectionsService.getConnectionsPaginated({ pageSize: 1 })
       if ((pages?.total ?? 0) === 0) {

@@ -72,7 +72,9 @@ import (
 type Api struct {
 	ReleaseConnectionFn reviewapi.TransportReleaseConnectionFunc
 	TLSConfig           *tls.Config
-	logger              *zap.Logger
+	// DefaultOrgID is the single-tenant organization; empty in multi-tenant deployments.
+	DefaultOrgID string
+	logger       *zap.Logger
 }
 
 //	@title			Hoop Api
@@ -140,19 +142,7 @@ type Api struct {
 // It performs no network I/O, so StartAPI and the integration/smoke tests
 // share the exact same handler — tests exercise the production middleware
 // chain and validators rather than a stripped-down router.
-//
-// The control plane gets the same engine (ADR-0024): every route, the web
-// UI included. The routes it does not need are cheaper to leave in than to
-// list, so a route added to the gateway reaches the control plane by
-// construction; one that needs the gRPC transport that mode never starts
-// fails per request instead. The one handler that differs is /healthz.
 func (a *Api) BuildEngine() *gin.Engine {
-	return a.buildEngine(appconfig.Get().AppMode())
-}
-
-// buildEngine takes the mode as a parameter so a test can build both
-// surfaces in one process and diff them.
-func (a *Api) buildEngine(mode appconfig.AppMode) *gin.Engine {
 	route := a.newEngine()
 	baseURL := appconfig.Get().ApiURLPath()
 
@@ -183,7 +173,7 @@ func (a *Api) buildEngine(mode appconfig.AppMode) *gin.Engine {
 	ironRdpInstance := rdp.GetIronServerInstance()
 	ironRdpInstance.AttachHandlers(ironRdpGroup)
 
-	a.buildRoutes(a.newAPIRouter(route, baseURL), mode)
+	a.buildRoutes(a.newAPIRouter(route, baseURL))
 	openapi.RegisterGinValidators()
 
 	return route
@@ -410,19 +400,12 @@ func (api *Api) buildSidecarServiceAccountRoutes(r *apiroutes.Router) {
 		sidecarserviceaccountsapi.ClearDeletedName)
 }
 
-func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
+func (api *Api) buildRoutes(r *apiroutes.Router) {
 	reviewHandler := reviewapi.NewHandler(api.ReleaseConnectionFn)
 	loginOidcApiHandler := loginoidcapi.New()
 	loginSamlApiHandler := loginsamlapi.New()
 
-	// The gateway's probe dials the gRPC port to prove the transport is up.
-	// The control plane never opens that port, so its probe answers without
-	// dialing; otherwise no control plane would ever pass a health check.
-	liveness := apihealthz.LivenessHandler()
-	if mode == appconfig.AppModeControlPlane {
-		liveness = apihealthz.ControlPlaneLivenessHandler()
-	}
-	r.GET("/healthz", liveness)
+	r.GET("/healthz", apihealthz.LivenessHandler(api.DefaultOrgID))
 	r.GET("/openapiv2.json", openapi.Handler)
 	r.GET("/openapiv3.json", openapi.HandlerV3)
 

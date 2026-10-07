@@ -5,7 +5,6 @@ import NotImplemented from '@/components/NotImplemented'
 import { useModeConfig } from '@/modes'
 import ByProduct from '@/modes/ByProduct'
 import ByRuleTraffic from '@/modes/ByRuleTraffic'
-import BySidecars from '@/modes/BySidecars'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
@@ -699,7 +698,7 @@ function Router() {
         element={
           <Page adminOnly>
             <ByProduct
-              gateway={<BySidecars on={<GatewaySlack showListeners />} off={<GatewaySlack />} />}
+              gateway={<GatewaySlack showListeners />}
               controlPlane={<ControlPlaneSlack />}
             />
           </Page>

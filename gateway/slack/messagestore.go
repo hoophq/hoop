@@ -15,8 +15,8 @@ import (
 // messageStore tracks the review messages a SlackService posted, and the
 // terminal rewrite each review got.
 //
-// Two implementations with one contract. memoryMessageStore is the gateway's,
-// in process; dbMessageStore is the control plane's, shared by every replica.
+// Two implementations with one contract. memoryMessageStore lives in process;
+// dbMessageStore is shared by every replica of an org in replica mode.
 type messageStore interface {
 	// track records a posted message. It returns the terminal state instead
 	// when the review already settled, for the caller to rewrite it with.

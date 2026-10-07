@@ -988,6 +988,11 @@ func TestTheHoldSwitchSetsItsTTLs(t *testing.T) {
 	if err := apply("hold-other", n(300), n(300)); err != nil {
 		t.Fatalf("limits on a hold of another rule: %v", err)
 	}
+	// Nothing holds the limits, so nothing validates them: the gateway ignored
+	// these fields before, and a save must not start refusing them.
+	if err := apply("hold-other", n(30), n(604801)); err != nil {
+		t.Fatalf("out-of-range limits on a hold of another rule must be ignored, got %v", err)
+	}
 	if _, err := models.GetAccessRequestRuleByName(models.DB, "hold-other", orgID); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("the limits created a rule for a hold on another rule, err = %v", err)
 	}

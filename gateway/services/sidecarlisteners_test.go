@@ -224,17 +224,6 @@ func TestProjectListenersRefusesListenersNoMirrorCanAddress(t *testing.T) {
 	}
 }
 
-// With the flag off the sync must not touch the database at all: an org that
-// has not opted in keeps its sidecar writes and imports as they were. A nil
-// transaction proves it.
-func TestSyncSidecarListenerConnectionsIsOffWithTheFlag(t *testing.T) {
-	sc := sidecarWith("pay", daemon.ListenerConfig{Name: "app db", Protocol: "redis"})
-	sc.OrgID = "org-sync-flag-off"
-	if err := SyncSidecarListenerConnectionsTx(nil, sc); err != nil {
-		t.Errorf("want no-op with the flag off, got %v", err)
-	}
-}
-
 func TestProjectListenersWithoutListeners(t *testing.T) {
 	for _, sc := range []*models.Sidecar{
 		sidecarWith("pay"),

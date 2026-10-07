@@ -85,10 +85,10 @@ func (e ruleNotAuthorized) Error() string {
 //	@Param			request				body		openapi.SidecarReviewRequest	true	"The request body resource"
 //	@Success		200						{object}	openapi.SidecarReviewResponse
 //	@Success		201						{object}	openapi.SidecarReviewResponse
-//	@Failure		400,401,412,413,422,500	{object}	openapi.HTTPError
+//	@Failure		400,401,413,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [post]
 func PostReview(c *gin.Context) {
-	sidecar := controlPlaneSidecar(c)
+	sidecar := authenticatedSidecar(c)
 	if sidecar == nil {
 		return
 	}
@@ -216,10 +216,10 @@ func PostReview(c *gin.Context) {
 //	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			id					path		string	true	"The review id"
 //	@Success		200					{object}	openapi.SidecarReviewResponse
-//	@Failure		401,404,412,500		{object}	openapi.HTTPError
+//	@Failure		401,404,500			{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews/{id}/claim [post]
 func ClaimReview(c *gin.Context) {
-	sidecar := controlPlaneSidecar(c)
+	sidecar := authenticatedSidecar(c)
 	if sidecar == nil {
 		return
 	}
@@ -256,10 +256,10 @@ func ClaimReview(c *gin.Context) {
 //	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
 //	@Param			id					path		string	true	"The review id"
 //	@Success		200					{object}	openapi.SidecarReviewStatus
-//	@Failure		401,404,412,500		{object}	openapi.HTTPError
+//	@Failure		401,404,500			{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews/{id} [get]
 func GetReview(c *gin.Context) {
-	sidecar := controlPlaneSidecar(c)
+	sidecar := authenticatedSidecar(c)
 	if sidecar == nil {
 		return
 	}
@@ -301,10 +301,10 @@ const (
 //	@Param			status				query		string	false	"Only reviews in this status"	Enums(PENDING, APPROVED, REJECTED, REVOKED, PROCESSING, EXECUTED, EXPIRED, UNKNOWN)
 //	@Param			limit				query		int		false	"The most reviews to return, 1 to 200"	default(50)
 //	@Success		200					{array}		openapi.SidecarReviewStatus
-//	@Failure		400,401,412,500		{object}	openapi.HTTPError
+//	@Failure		400,401,500			{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [get]
 func ListReviews(c *gin.Context) {
-	sidecar := controlPlaneSidecar(c)
+	sidecar := authenticatedSidecar(c)
 	if sidecar == nil {
 		return
 	}
@@ -341,23 +341,12 @@ func ListReviews(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// controlPlaneSidecar returns the sidecar the token named, or answers the
+// authenticatedSidecar returns the sidecar the token named, or answers the
 // request and returns nil.
-//
-// A gateway would take a review and then never be able to settle it: approval
-// there resolves a connection, and a sidecar review has none. The mode is
-// checked after authentication, so an unauthenticated caller learns nothing
-// about the deployment.
-func controlPlaneSidecar(c *gin.Context) *models.Sidecar {
+func authenticatedSidecar(c *gin.Context) *models.Sidecar {
 	sidecar := apiroutes.SidecarFromContext(c)
 	if sidecar == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
-		return nil
-	}
-	if !appconfig.Get().IsControlPlane() {
-		c.JSON(http.StatusPreconditionFailed, gin.H{
-			"message": "sidecar reviews are served by the control plane",
-		})
 		return nil
 	}
 	return sidecar
@@ -536,6 +525,12 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 // newSlackReviewRequest is what a reviewer ends up reading. Split out so the
 // message can be asserted without a Slack workspace.
 func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) *slackservice.MessageReviewRequest {
+	// The resource the admin sees when the listener has a mirror, else the
+	// listener itself.
+	connection := rev.ConnectionName
+	if connection == "" {
+		connection = listenerName
+	}
 	return &slackservice.MessageReviewRequest{
 		// ID is load bearing: it becomes the message metadata and the button
 		// ids, and it is how a click finds its way back to this review.
@@ -550,7 +545,7 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		Name:           sidecar.Name,
 		UserGroups:     slackplugin.ParseGroups(rev.ReviewGroups),
 		Email:          reviewOwnerEmail,
-		Connection:     listenerName,
+		Connection:     connection,
 		ConnectionType: reviewSlackType,
 
 		ApprovalGroups: slackplugin.ParseGroups(rev.ReviewGroups),
@@ -710,8 +705,18 @@ func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, 
 // createSidecarReview writes the session and the review one statement needs to
 // wait for a human. It returns gorm.ErrDuplicatedKey when a racing request
 // filed for the same bytes first, and the ids of the lapsed reviews it expired.
+//
+// Both rows point at the listener's mirror connection when the org has one,
+// so the review and the session show the resource the admin sees. A listener
+// without a mirror (a row that fell behind the reconcile) files them with the
+// listener alone.
 func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) (*models.Review, []string, error) {
 	sessionID := uuid.NewString()
+
+	mirror, err := models.GetSidecarMirror(models.DB, sidecar.OrgID, sidecar.ID, listenerName)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil, fmt.Errorf("failed reading the listener's mirror connection: %w", err)
+	}
 
 	// A review is one per session (private.reviews is UNIQUE on org and
 	// session), and UpdateReview syncs the session's status when the review
@@ -719,6 +724,11 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 	sess := newSidecarSession(sidecar, sessionID, display, now)
 
 	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
+	if mirror != nil {
+		sess.Connection = mirror.Name
+		rev.ConnectionName = mirror.Name
+		rev.ConnectionID = sql.NullString{String: mirror.ID, Valid: true}
+	}
 	expiredIDs, err := models.CreateSidecarReview(models.DB, sess, rev, display)
 	if err != nil {
 		return nil, nil, err
@@ -732,7 +742,6 @@ func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, now t
 		ID:             sessionID,
 		OrgID:          sidecar.OrgID,
 		BlobInput:      models.BlobInputType(display),
-		Connection:     "",
 		ConnectionType: reviewConnectionType,
 		Verb:           pb.ClientVerbExec,
 		Status:         string(openapi.SessionStatusOpen),
@@ -755,10 +764,11 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		Status:    models.ReviewStatusPending,
 		SessionID: sessionID,
 
-		// The listener this statement arrived on, in place of a connection.
-		// connection_name is NOT NULL and stays empty: a sidecar review never
-		// resolves one, and a listener name in that column could collide with
-		// a real connection of the same name.
+		// The listener this statement arrived on. It is what the review is
+		// about and what decides the sidecar path; the connection, when set,
+		// is the listener's mirror and never a listener name standing in for
+		// one (connection_name is NOT NULL, and a bare listener name could
+		// collide with a real connection of the same name).
 		SidecarID:    sql.NullString{String: sidecar.ID, Valid: true},
 		ListenerName: sql.NullString{String: listenerName, Valid: listenerName != ""},
 
@@ -792,8 +802,8 @@ func copyInt(v *int) *int {
 }
 
 // toOpenApiSidecarReview renders what the sidecar needs to recognise the review
-// later. The connection fields are left out rather than sent empty: this review
-// has none, and an empty string invites a client to read meaning into it.
+// later. The connection fields are left out: the sidecar acts on the listener
+// and the statement, and the mirror, when there is one, is for the admin.
 func toOpenApiSidecarReview(r *models.Review) *openapi.Review {
 	groups := make([]openapi.ReviewGroup, 0, len(r.ReviewGroups))
 	for _, rg := range r.ReviewGroups {
