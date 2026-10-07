@@ -68,6 +68,32 @@ func listedReviewIDs(t *testing.T, userID string, groups []string) []string {
 	return ids
 }
 
+func TestReviewVisibilityIgnoresTheRowAddedOnDenial(t *testing.T) {
+	startDecisionTestDB(t)
+	rev := seedGatewayReview(t, "user-requester", "dba")
+
+	requester := newFakeContext("user-requester", "requester@hoop.dev", []string{"finance"})
+	requester.OrgID = decisionTestOrgID
+	stored, err := models.GetReviewByIdOrSid(decisionTestOrgID, rev.ID)
+	require.NoError(t, err)
+	decided, err := doIndividualReview(requester, stored, &models.Connection{}, models.ReviewStatusRejected)
+	require.NoError(t, err)
+	require.NoError(t, persistDecision(decided, &models.Connection{}, models.ReviewStatusPending))
+
+	got, err := models.GetReviewByIdOrSid(decisionTestOrgID, rev.ID)
+	require.NoError(t, err)
+	var recorded bool
+	for _, rg := range got.ReviewGroups {
+		recorded = recorded || (rg.GroupName == "finance" && rg.AddedOnDenial)
+	}
+	require.True(t, recorded, "the denial is recorded under the requester's group")
+
+	assert.Empty(t, listedReviewIDs(t, "user-peer", []string{"finance"}))
+	assert.Equal(t, http.StatusNotFound, serveReviews("user-peer", []string{"finance"}, rev.ID).Code)
+	assert.Equal(t, []string{rev.ID}, listedReviewIDs(t, "user-requester", []string{"finance"}))
+	assert.Equal(t, []string{rev.ID}, listedReviewIDs(t, "user-dba", []string{"dba"}))
+}
+
 func TestReviewVisibility(t *testing.T) {
 	startDecisionTestDB(t)
 

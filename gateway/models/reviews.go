@@ -167,17 +167,18 @@ type ReviewTimeWindow struct {
 }
 
 type ReviewGroups struct {
-	ID           string           `json:"id"`
-	OrgID        string           `json:"org_id"`
-	ReviewID     string           `json:"review_id"`
-	GroupName    string           `json:"group_name"`
-	Status       ReviewStatusType `json:"status"`
-	OwnerID      *string          `json:"owner_id"`
-	OwnerEmail   *string          `json:"owner_email"`
-	OwnerName    *string          `json:"owner_name"`
-	OwnerSlackID *string          `json:"owner_slack_id"`
-	ReviewedAt   *time.Time       `json:"reviewed_at"`
-	ForcedReview bool             `json:"forced_review"`
+	ID            string           `json:"id"`
+	OrgID         string           `json:"org_id"`
+	ReviewID      string           `json:"review_id"`
+	GroupName     string           `json:"group_name"`
+	Status        ReviewStatusType `json:"status"`
+	OwnerID       *string          `json:"owner_id"`
+	OwnerEmail    *string          `json:"owner_email"`
+	OwnerName     *string          `json:"owner_name"`
+	OwnerSlackID  *string          `json:"owner_slack_id"`
+	ReviewedAt    *time.Time       `json:"reviewed_at"`
+	ForcedReview  bool             `json:"forced_review"`
+	AddedOnDenial bool             `json:"added_on_denial"`
 }
 
 // RejectedByEmail returns the email of the reviewer whose group rejected the
@@ -261,7 +262,8 @@ const reviewVisibilityCondition = `
 		(COALESCE(rv.listener_name, '') = '' AND rv.owner_id = ?)
 		OR EXISTS (
 			SELECT 1 FROM private.review_groups AS vg
-			WHERE vg.review_id = rv.id AND vg.group_name = ANY((?)::text[])
+			WHERE vg.review_id = rv.id AND NOT vg.added_on_denial
+				AND vg.group_name = ANY((?)::text[])
 		)
 	)`
 
@@ -301,7 +303,8 @@ func getReviewByIdOrSid(db *gorm.DB, orgID, id string, viewer *ReviewViewer) (*R
 					'owner_email', rg.owner_email,
 					'owner_name', rg.owner_name,
 					'owner_slack_id', rg.owner_slack_id,
-					'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+					'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+					'added_on_denial', rg.added_on_denial
 				)
 			)
 			FROM private.review_groups AS rg
@@ -342,7 +345,8 @@ func ListReviews(db *gorm.DB, orgID string, viewer ReviewViewer) (*[]Review, err
 					'owner_email', rg.owner_email,
 					'owner_name', rg.owner_name,
 					'owner_slack_id', rg.owner_slack_id,
-					'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+					'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+					'added_on_denial', rg.added_on_denial
 				)
 			)
 			FROM private.review_groups AS rg
@@ -624,7 +628,8 @@ const sidecarReviewSelect = `
 					'owner_email', rg.owner_email,
 					'owner_name', rg.owner_name,
 					'owner_slack_id', rg.owner_slack_id,
-					'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+					'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+					'added_on_denial', rg.added_on_denial
 				)
 			)
 			FROM private.review_groups AS rg

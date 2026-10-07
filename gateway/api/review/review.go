@@ -542,16 +542,17 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 
 			rev.ReviewGroups = append(rev.ReviewGroups,
 				models.ReviewGroups{
-					OrgID:        ctx.OrgID,
-					ID:           uuid.NewString(),
-					ReviewID:     rev.ID,
-					GroupName:    groupName,
-					Status:       status,
-					OwnerID:      ptr.String(ctx.UserID),
-					OwnerEmail:   ptr.String(ctx.UserEmail),
-					OwnerName:    ptr.String(ctx.UserName),
-					OwnerSlackID: ptr.String(ctx.SlackID),
-					ReviewedAt:   &reviewedAt,
+					OrgID:         ctx.OrgID,
+					ID:            uuid.NewString(),
+					ReviewID:      rev.ID,
+					GroupName:     groupName,
+					Status:        status,
+					OwnerID:       ptr.String(ctx.UserID),
+					OwnerEmail:    ptr.String(ctx.UserEmail),
+					OwnerName:     ptr.String(ctx.UserName),
+					OwnerSlackID:  ptr.String(ctx.SlackID),
+					ReviewedAt:    &reviewedAt,
+					AddedOnDenial: true,
 				},
 			)
 		}
