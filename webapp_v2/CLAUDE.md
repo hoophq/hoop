@@ -84,6 +84,12 @@ what a product shows, and ClojureScript exists only in the gateway.**
   product). `grep ByProduct src/Router.jsx` lists every such page. A shared page may
   take a prop (`AccessRequest/Create` takes `defaultReviewerRoles`, passed through
   `ByProduct`), never know the mode.
+- **Sidecar features are always on.** Every gateway serves sidecars, so the Sidecars
+  pages, nav and palette items and the sidecar traffic of a rule carry no gate. The
+  agents product follows `agentsEnabled()` (`modes/agents.js`, the `experimental.agents`
+  flag): today it decides only whether `GatewayProtectedRoute` sends an admin with no
+  connection to the agent onboarding. Guardrail, masking and analyzer forms are picked
+  per rule with `<ByRuleTraffic>`.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`) serves both. Each product adds its own
   redirect through the `onReady` hook: `GatewayProtectedRoute` the onboarding,

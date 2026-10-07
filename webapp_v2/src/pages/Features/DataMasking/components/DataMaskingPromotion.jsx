@@ -1,9 +1,10 @@
 import { Combine, FolderLock, SlidersHorizontal } from 'lucide-react'
 import FeaturePromotion from '@/components/FeaturePromotion'
 import { docsUrl } from '@/utils/docsUrl'
+import { RULE_DRIVEN_PROVIDERS } from '../helpers'
 
 // Empty-state behavior is gated by the server's DLP `redact_provider`:
-//   - mspresidio / alcatraz → "Configure" CTA into the create flow, since
+//   - mspresidio / alcatraz → "Create new rule" CTA into the create flow, since
 //     both drive masking from data-masking rules.
 //   - gcp → docs link + deprecated-provider warning, no create path.
 //   - unset → docs link only; there is no provider to call deprecated.
@@ -33,10 +34,6 @@ const FEATURE_ITEMS = [
 const DEPRECATED_GCP_INFO =
   'Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of Live Data Masking setup in your environment.'
 
-// Providers whose masking is driven by data-masking rules, so the org can be
-// sent straight into the create flow.
-const RULE_DRIVEN_PROVIDERS = ['mspresidio', 'alcatraz']
-
 export default function DataMaskingPromotion({
   redactProvider,
   providerRequired = true,
@@ -47,7 +44,7 @@ export default function DataMaskingPromotion({
   const providerProps = canConfigure
     ? {
         onPrimaryClick: onConfigure,
-        primaryText: 'Configure Live Data Masking',
+        primaryText: 'Create new rule',
       }
     : {
         docsHref: docsUrl.features.aiDatamasking,

@@ -1,10 +1,11 @@
-import { Box, Flex, Stack, Text } from '@mantine/core'
+import { Box, Flex, Group, Stack, Text } from '@mantine/core'
 import Button from '@/components/Button'
+import RuleTrafficBadge from '@/components/RuleTrafficBadge'
 import classes from './GuardrailListItem.module.css'
 
 // One row of the guardrails list. Rows stack into a single bordered block, so
 // only the first and last ones carry the outer corners.
-export default function GuardrailListItem({ guardrail, isFirst, isLast, onConfigure }) {
+export default function GuardrailListItem({ guardrail, traffic, isFirst, isLast, onConfigure }) {
   return (
     <Box
       className={classes.row}
@@ -13,9 +14,12 @@ export default function GuardrailListItem({ guardrail, isFirst, isLast, onConfig
     >
       <Flex p="lg" align="center" justify="space-between" gap="md">
         <Stack gap="xs" flex={1} miw={0}>
-          <Text fw={500} fz="lg">
-            {guardrail.name}
-          </Text>
+          <Group gap="sm">
+            <Text fw={500} fz="lg">
+              {guardrail.name}
+            </Text>
+            {traffic && <RuleTrafficBadge traffic={traffic} />}
+          </Group>
           {guardrail.description && (
             <Text size="sm" c="dimmed">
               {guardrail.description}

@@ -1,6 +1,6 @@
 (ns webapp.resources.main
   (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Search]]
-            ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
+            ["@radix-ui/themes" :refer [IconButton Badge Box Button DropdownMenu
                                         Flex Text Popover TextField Link Tabs Heading Select]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
@@ -11,7 +11,8 @@
             [webapp.connections.constants :as connection-constants]
             [webapp.resources.helpers :refer [can-open-web-terminal?
                                               can-test-connection? is-connection-testing?
-                                              can-connect? can-hoop-cli? can-access-native-client?]]
+                                              can-connect? can-hoop-cli? can-access-native-client?
+                                              sidecar-mirror?]]
             [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
             [webapp.connections.views.tag-selector :as tag-selector]
             [webapp.connections.views.test-connection-modal :as test-connection-modal]
@@ -160,11 +161,14 @@
                :class "w-6"
                :loading "lazy"}]
         [:> Box
-         [:> Heading {:as "h3"
-                      :size "3"
-                      :weight "medium"
-                      :class "text-gray-12"}
-          (:name connection)]
+         [:> Flex {:align "center" :gap "2"}
+          [:> Heading {:as "h3"
+                       :size "3"
+                       :weight "medium"
+                       :class "text-gray-12"}
+           (:name connection)]
+          (when (sidecar-mirror? connection)
+            [:> Badge {:variant "soft" :color "gray" :size "1"} "via sidecar"])]
          [:> Text {:as "p" :size "1" :class "text-gray-11"}
           (:resource_name connection)]
          [:> Text {:size "1" :class "flex items-center gap-1 text-gray-11"}
@@ -225,24 +229,25 @@
                                      (fn []
                                        (rf/dispatch [:navigate :configure-role {:from_page "roles-list"} :connection-name (:name connection)]))}
                "Configure"])
-            [:> DropdownMenu.Item {:color "red"
-                                   :on-click (fn []
-                                               (rf/dispatch [:dialog->open
-                                                             {:title "Delete role?"
-                                                              :type :danger
-                                                              :text-action-button "Confirm and delete"
-                                                              :action-button? true
-                                                              :text [:> Box {:class "space-y-radix-4"}
-                                                                     [:> Text {:as "p"}
-                                                                      "This action will instantly remove your access to "
-                                                                      (:name connection)
-                                                                      " and can not be undone."]
-                                                                     [:> Text {:as "p"}
-                                                                      "Are you sure you want to delete this role?"]]
-                                                              :on-success (fn []
-                                                                            (rf/dispatch [:connections->delete-connection (:name connection)])
-                                                                            (rf/dispatch [:modal->close]))}]))}
-             "Delete"]]])]]))])
+            (when-not (sidecar-mirror? connection)
+              [:> DropdownMenu.Item {:color "red"
+                                     :on-click (fn []
+                                                 (rf/dispatch [:dialog->open
+                                                               {:title "Delete role?"
+                                                                :type :danger
+                                                                :text-action-button "Confirm and delete"
+                                                                :action-button? true
+                                                                :text [:> Box {:class "space-y-radix-4"}
+                                                                       [:> Text {:as "p"}
+                                                                        "This action will instantly remove your access to "
+                                                                        (:name connection)
+                                                                        " and can not be undone."]
+                                                                       [:> Text {:as "p"}
+                                                                        "Are you sure you want to delete this role?"]]
+                                                                :on-success (fn []
+                                                                              (rf/dispatch [:connections->delete-connection (:name connection)])
+                                                                              (rf/dispatch [:modal->close]))}]))}
+               "Delete"])]])]]))])
 
 
 ;; Main component with custom tabs and filters in same row

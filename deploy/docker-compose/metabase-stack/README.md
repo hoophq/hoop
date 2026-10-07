@@ -1,7 +1,5 @@
 # Metabase + hoop-inspect
 
-> hoop-inspect 0.1.0
-
 A control on the **warehouse**, demonstrated through Metabase. Masking, policy
 and a per-statement audit trail live on the wire, so they apply to every client
 that speaks the protocol. Metabase here, and equally dbt, DBeaver, a notebook

@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout PR head
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # PAT so the regen commit pushed later fires downstream workflows
           # (pullrequest.yml, pullrequest-release.yml). Same precedent as
@@ -42,23 +42,16 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
 
-      - name: setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: '**/go.sum'
-
       # The gateway's Go sources now import github.com/hoophq/libhoop, a
       # private module, so swag cannot parse them without credentials. Without
       # this the failure is indirect and misleading: the fetch fails, swag
       # carries on, and the error it prints is "cannot find type definition:
       # orgtypes.AccountStatus" — a type that is perfectly fine.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          libhoop-pr: "false"
 
       - name: regenerate OpenAPI docs
         run: make generate-openapi-docs
@@ -106,7 +99,7 @@ jobs:
 
       - name: update PR comments
         if: always()
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           CHANGELOG_OUTPUT: ${{ steps.changelog.outputs.changelog }}
           STALE: ${{ steps.diff.outputs.stale }}

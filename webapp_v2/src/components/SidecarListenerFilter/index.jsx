@@ -7,7 +7,7 @@ import { usesConfigFile } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import classes from './SidecarListenerFilter.module.css'
 
-const LABEL = 'Sidecar / Listener'
+const LABEL = 'Sidecar'
 
 // One node per sidecar, its named listeners under it. A nameless listener is
 // left out: a rule binds to a listener by name, so none can target it.

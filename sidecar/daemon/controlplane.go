@@ -512,7 +512,8 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 // handed to whoever answered the Location.
 func controlPlaneHTTPClient() *http.Client {
 	return &http.Client{
-		Timeout: controlPlaneTimeout,
+		Transport: withUserAgent(nil, "controlplane"),
+		Timeout:   controlPlaneTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

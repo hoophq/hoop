@@ -24,7 +24,7 @@ const STATUS = {
     key: SIDECAR_STATUS.WAITING,
     label: 'Waiting',
     badge: 'inactive',
-    hint: 'Has not checked in with this control plane yet.',
+    hint: 'Has not checked in yet.',
   },
   // Checked in, but nothing has been served: the plane holds no configuration
   // for it, or the sidecar runs its own config file.
@@ -32,7 +32,7 @@ const STATUS = {
     key: SIDECAR_STATUS.CONNECTED,
     label: 'Active',
     badge: 'active',
-    hint: 'Last check-in with this control plane. The sidecar asks for its configuration; nothing is pushed to it.',
+    hint: 'Last check-in. The sidecar asks for its configuration; nothing is pushed to it.',
   },
 }
 
@@ -44,7 +44,7 @@ const CONFIG_STATE = {
     label: 'Active',
     badge: 'active',
     config: 'Applied',
-    hint: 'Runs the configuration this control plane last served. It checks in every minute; nothing is pushed to it.',
+    hint: 'Runs the configuration Hoop last served. It checks in every minute; nothing is pushed to it.',
   },
   [SIDECAR_STATUS.APPLYING]: {
     key: SIDECAR_STATUS.APPLYING,
@@ -74,7 +74,7 @@ const CONFIG_STATE = {
     label: 'Config refused',
     badge: 'danger',
     config: 'Refused',
-    hint: 'This sidecar build cannot read the configuration, so the control plane did not serve it. The sidecar keeps running its previous rules.',
+    hint: 'This sidecar build cannot read the configuration, so Hoop did not serve it. The sidecar keeps running its previous rules.',
     showsError: true,
     refusal: true,
   },

@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +32,7 @@ func TestMain(m *testing.M) {
 	if err := appconfig.Load(); err != nil {
 		panic(err)
 	}
-	os.Exit(m.Run())
+	os.Exit(pglitetest.Main(m))
 }
 
 // approvalRule is the policy every test here files against: two reviewer

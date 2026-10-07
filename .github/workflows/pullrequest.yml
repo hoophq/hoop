@@ -2,6 +2,11 @@ name: Test
 
 on: pull_request
 
+# A newer run for the same PR makes this one stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 # proxy.golang.org intermittently resets HTTP/2 streams mid-download
 # ("stream error: stream ID N; INTERNAL_ERROR; received from peer"). cmd/go
 # turns that into a hard build failure after a ~60s stall: it does not retry,
@@ -18,28 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.work
-          # This is a go.work workspace with no root go.mod, so setup-go
-          # cannot find a manifest on its own and silently caches nothing.
-          cache-dependency-path: "**/go.sum"
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, test
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
       - name: Setup Rust
@@ -64,15 +49,57 @@ jobs:
       - name: Download modules over HTTP/1.1
         run: go mod download
 
+      # The per-module sidecar loop runs in the Sidecar Module Test job.
       - name: Test
         env:
           GODEBUG: http2client=1
-        run: make test-oss
+        run: make test-unit
+
+  # The test-sidecar half of `make test-oss`, beside Unit Test: it enters
+  # each nested sidecar module to prove its go.mod builds on its own.
+  sidecar-modules:
+    name: Sidecar Module Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      # Same GODEBUG split as Unit Test: sidecar/daemon's gRPC tests need
+      # client HTTP/2 (h2c), the module downloads need HTTP/1.1.
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
+      - name: Sidecar Module Test
+        env:
+          GODEBUG: http2client=1
+        run: make test-sidecar
 
   integration-test:
-    name: Integration Test
+    name: Integration Test (${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # One shard per upstream; containers start lazily, so each shard boots
+    # only its own. "rest" skips the other shards' prefixes, so a test with
+    # a new prefix still runs somewhere.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: postgres
+            run: "^TestPG_"
+          - shard: mysql
+            run: "^TestMy"
+          - shard: mssql
+            run: "^TestMSSQL"
+          - shard: mongodb
+            run: "^TestMongo"
+          - shard: rest
+            skip: "^(TestPG_|TestMy|TestMSSQL|TestMongo)"
 
     steps:
       - name: Checkout Hoop
@@ -80,36 +107,16 @@ jobs:
 
       # Integration tests drive the real controller.Agent against real upstream
       # containers via libhoop. Protocol proxying lives in the private
-      # github.com/hoophq/libhoop module, which the Authenticate step below
+      # github.com/hoophq/libhoop module, which the Go setup step below
       # makes fetchable; without those credentials the build fails outright
       # rather than degrading to no-op protocol handling. Matches the build
       # jobs in pullrequest-release.yml.
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.work
-          # This is a go.work workspace with no root go.mod, so setup-go
-          # cannot find a manifest on its own and silently caches nothing.
-          cache-dependency-path: "**/go.sum"
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, test
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -131,6 +138,9 @@ jobs:
       # so no services: block is required. See:
       # https://golang.testcontainers.org/system_requirements/
       - name: Integration Test
+        env:
+          INTEGRATION_RUN: ${{ matrix.run }}
+          INTEGRATION_SKIP: ${{ matrix.skip }}
         run: make test-integration
 
   transport-test:
@@ -145,35 +155,15 @@ jobs:
       # The transport harness drives the real gateway gRPC transport end to end
       # (real agent controller + real Postgres). Its PostgreSQL protocol
       # round-trip needs the enterprise proxy from the private
-      # github.com/hoophq/libhoop module, which the Authenticate step below
+      # github.com/hoophq/libhoop module, which the Go setup step below
       # makes fetchable; without those credentials the build fails outright
       # rather than degrading to no-op protocol handling.
       #
       # This runs as its own job (not folded into Integration Test) so its
       # Postgres containers do not contend on one runner with the heavy agent
       # suite's containers, which caused timeouts when the two ran in parallel.
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.work
-          # This is a go.work workspace with no root go.mod, so setup-go
-          # cannot find a manifest on its own and silently caches nothing.
-          cache-dependency-path: "**/go.sum"
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, test
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
       - name: Setup Rust
@@ -205,29 +195,8 @@ jobs:
       # needs credentials for it. No Rust toolchain either: the committed
       # rdp_parser.wasm is embedded via go:embed, so make test-gateway does
       # not regenerate it.
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.work
-          # This is a go.work workspace with no root go.mod, so setup-go
-          # cannot find a manifest on its own and silently caches nothing.
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, test
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
 
@@ -251,29 +220,8 @@ jobs:
       # deadlocks the pool capped at one connection, both invisible on
       # regular PostgreSQL. Runs entirely in-process: no Docker, no
       # testcontainers.
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.work
-          # This is a go.work workspace with no root go.mod, so setup-go
-          # cannot find a manifest on its own and silently caches nothing.
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, test
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
 
@@ -295,29 +243,8 @@ jobs:
       # real agent controller. Runs entirely in-process: no Docker, no
       # protocol proxying, no Rust toolchain. The build still links the
       # private github.com/hoophq/libhoop module, so it needs credentials.
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.work
-          # This is a go.work workspace with no root go.mod, so setup-go
-          # cannot find a manifest on its own and silently caches nothing.
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, test
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
 
@@ -338,29 +265,8 @@ jobs:
       # provisioning) and resume boot (cluster resume + persisted
       # credentials). The only job that tests the shipped artifact itself —
       # go:embed assets, CLI wiring, and the single-process composition.
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.work
-          # This is a go.work workspace with no root go.mod, so setup-go
-          # cannot find a manifest on its own and silently caches nothing.
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, test
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
 
@@ -392,29 +298,8 @@ jobs:
       # github.com/hoophq/libhoop module, so the build needs credentials for
       # it. No Rust or Java toolchain: this job does not run generate-wasm and
       # does not touch the MSSQL JDBC fixtures.
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.work
-          # This is a go.work workspace with no root go.mod, so setup-go
-          # cannot find a manifest on its own and silently caches nothing.
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, test
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
 
@@ -448,23 +333,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.work
-          cache-dependency-path: "**/go.sum"
-
       # Both trees link the private github.com/hoophq/libhoop module.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
       # Only HEAD follows a libhoop PR branch; the release tree keeps its pin.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
 

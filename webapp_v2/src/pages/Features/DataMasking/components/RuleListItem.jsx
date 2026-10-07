@@ -3,6 +3,7 @@ import { Box, Flex, Group, Image, Loader, Stack, Text } from '@mantine/core'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
+import RuleTrafficBadge from '@/components/RuleTrafficBadge'
 import { connectionsService } from '@/services/connections'
 import { getConnectionIcon } from '@/utils/connectionIcons'
 import { ruleEntityBadges } from '../helpers'
@@ -85,6 +86,7 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
 
 export default function RuleListItem({
   rule,
+  traffic,
   isFirst,
   isLast,
   onConfigure,
@@ -124,9 +126,12 @@ export default function RuleListItem({
     >
       <Flex p="lg" align="center" justify="space-between" gap="md">
         <Stack gap="xs" flex={1} miw={0}>
-          <Text fw={500} fz="lg">
-            {rule.name}
-          </Text>
+          <Group gap="sm">
+            <Text fw={500} fz="lg">
+              {rule.name}
+            </Text>
+            {traffic && <RuleTrafficBadge traffic={traffic} />}
+          </Group>
           {rule.description && (
             <Text size="sm" c="dimmed">
               {rule.description}

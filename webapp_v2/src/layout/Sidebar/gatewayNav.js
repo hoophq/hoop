@@ -35,6 +35,7 @@ import {
 
 export const MAIN_ITEMS = [
   { label: 'Resources', path: '/resources', icon: Package, adminOnly: false },
+  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true, badge: { text: 'BETA', color: 'indigo' } },
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, adminOnly: true },
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false, licenseFeature: 'runbooks' },
@@ -82,7 +83,7 @@ export const DISCOVER_ITEMS = [
 
 export const ORGANIZATION_ITEMS = [
   { label: 'Agents', path: '/agents', icon: BrainCog, adminOnly: true },
-  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true, badge: { text: 'BETA', color: 'indigo' } },
+
   {
     label: 'Integrations',
     icon: Puzzle,

@@ -1,13 +1,11 @@
 package models_test
 
 import (
-	"context"
 	"errors"
 	"testing"
 
 	"github.com/hoophq/hoop/gateway/models"
-	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
-	"github.com/hoophq/hoop/gateway/pglite"
+	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/gorm"
 )
@@ -24,16 +22,7 @@ func startTestDB(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping embedded database test in -short mode")
 	}
-	ctx := context.Background()
-	inst, err := pglite.Start(ctx, t.TempDir())
-	if err != nil {
-		t.Fatalf("start embedded database: %v", err)
-	}
-	t.Cleanup(func() { inst.Close(ctx) })
-
-	if err := modelsbootstrap.MigrateDB(inst.MigrateDSN(), ""); err != nil {
-		t.Fatalf("migrations failed: %v", err)
-	}
+	inst := pglitetest.StartMigrated(t)
 	// The embedded backend serves one session at a time.
 	if err := models.InitDatabaseConnection(inst.DSN(), 1); err != nil {
 		t.Fatalf("open gorm connection: %v", err)

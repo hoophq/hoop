@@ -74,7 +74,7 @@ func buildRequestIdentity(l ListenerConfig, roots *x509.CertPool) (gate.RequestI
 	case l.credentialHeader() == "":
 		return nil, nil
 	case l.GoogleIdentity != nil:
-		client := *outboundHTTPClient(roots)
+		client := *outboundHTTPClient(roots, "identity/google")
 		client.Timeout = googleTokenInfoTimeout
 		r, err := googleidentity.New(googleidentity.Options{
 			TokenInfoURL: l.GoogleIdentity.TokenInfoURL,

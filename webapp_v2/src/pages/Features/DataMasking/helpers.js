@@ -1,5 +1,9 @@
 // Constants and transforms for Live Data Masking rules.
 
+// Providers whose masking is driven by data-masking rules, so the org can be
+// sent straight into the create flow.
+export const RULE_DRIVEN_PROVIDERS = ['mspresidio', 'alcatraz']
+
 // Preset categories: key -> { text, values[] }
 export const PRESET_DEFINITIONS = {
   CONTACT_INFORMATION: {

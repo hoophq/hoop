@@ -137,7 +137,7 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
   }
 
   blocks.push(
-    <NumberedBlock key="url" n={blocks.length + 1} title="Point the sidecar at the control plane">
+    <NumberedBlock key="url" n={blocks.length + 1} title="Point the sidecar at Hoop">
       <SourceTabs
         sources={[
           { value: 'file', label: 'config.yaml', code: `control_plane_url: ${controlPlaneUrl}` },
@@ -184,7 +184,7 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
       />
       <Text size="xs" c="dimmed">
         {
-          'Run this on the host that reaches your resources. Listeners come from its local file; guardrails, masking and analyzer settings arrive from the control plane.'
+          'Run this on the host that reaches your resources. Listeners come from its local file; guardrails, masking and analyzer settings come from Hoop.'
         }
       </Text>
     </NumberedBlock>
@@ -194,7 +194,7 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
     <Grid columns={7} gutter="xl">
       <Grid.Col span={2}>
         <Stack gap="xs">
-          <Title order={4}>Connect it to this control plane</Title>
+          <Title order={4}>Connect it to Hoop</Title>
           <Text size="sm" c="dimmed">
             {isConnect
               ? 'Name the sidecar you already run to issue its token, then work through each block in order.'

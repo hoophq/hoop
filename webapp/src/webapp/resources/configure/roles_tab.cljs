@@ -1,12 +1,12 @@
 (ns webapp.resources.configure.roles-tab
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Text]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Text]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.loaders :as loaders]
    [webapp.components.infinite-scroll :refer [infinite-scroll]]
    [webapp.connections.constants :as connection-constants]
-   [webapp.resources.helpers :refer [is-connection-testing?]]
+   [webapp.resources.helpers :refer [is-connection-testing? sidecar-mirror?]]
    [webapp.connections.views.test-connection-modal :as test-connection-modal]))
 
 (defn empty-roles-view []
@@ -56,7 +56,8 @@
               :has-more? has-more?
               :loading? roles-loading?}
              (doall
-              (for [connection roles]
+              (for [connection roles
+                    :let [mirror? (sidecar-mirror? connection)]]
                 ^{:key (:id connection)}
                 [:> Box {:class (str "bg-white border border-[--gray-3] "
                                      "text-[--gray-12] "
@@ -70,8 +71,11 @@
                            :class "w-9"
                            :loading "lazy"}]]]
                   [:div
-                   [:> Text {:as "p" :size "3" :weight "medium" :class "text-gray-12"}
-                    (:name connection)]
+                   [:> Flex {:align "center" :gap "2"}
+                    [:> Text {:as "p" :size "3" :weight "medium" :class "text-gray-12"}
+                     (:name connection)]
+                    (when mirror?
+                      [:> Badge {:variant "soft" :color "gray" :size "1"} "via sidecar"])]
                    [:> Text {:as "p" :size "1" :class "text-gray-11"}
                     (:resource_name connection)]
                    [:> Text {:size "1" :class "flex items-center gap-1 text-gray-11"}
@@ -82,36 +86,38 @@
                     (cs/capitalize (:status connection))]]]
 
                  [:> Flex {:gap "3" :justify "between" :align "center"}
-                  [:> Button {:size "2"
-                              :variant "outline"
-                              :color "red"
-                              :on-click (fn []
-                                          (rf/dispatch [:dialog->open
-                                                        {:title "Delete role?"
-                                                         :type :danger
-                                                         :text-action-button "Confirm and delete"
-                                                         :action-button? true
-                                                         :text [:> Box {:class "space-y-radix-4"}
-                                                                [:> Text {:as "p"}
-                                                                 "This action will instantly remove your access to "
-                                                                 (:name connection)
-                                                                 " and can not be undone."]
-                                                                [:> Text {:as "p"}
-                                                                 "Are you sure you want to delete this role?"]]
-                                                         :on-success (fn []
-                                                                       (rf/dispatch [:connections->delete-connection (:name connection)])
-                                                                       (rf/dispatch [:resources->get-resource-roles resource-id {:force-refresh? true}])
-                                                                       (rf/dispatch [:modal->close]))}]))}
-                   "Delete"]
+                  (when-not mirror?
+                    [:> Button {:size "2"
+                                :variant "outline"
+                                :color "red"
+                                :on-click (fn []
+                                            (rf/dispatch [:dialog->open
+                                                          {:title "Delete role?"
+                                                           :type :danger
+                                                           :text-action-button "Confirm and delete"
+                                                           :action-button? true
+                                                           :text [:> Box {:class "space-y-radix-4"}
+                                                                  [:> Text {:as "p"}
+                                                                   "This action will instantly remove your access to "
+                                                                   (:name connection)
+                                                                   " and can not be undone."]
+                                                                  [:> Text {:as "p"}
+                                                                   "Are you sure you want to delete this role?"]]
+                                                           :on-success (fn []
+                                                                         (rf/dispatch [:connections->delete-connection (:name connection)])
+                                                                         (rf/dispatch [:resources->get-resource-roles resource-id {:force-refresh? true}])
+                                                                         (rf/dispatch [:modal->close]))}]))}
+                     "Delete"])
                   [:> Button {:size "2"
                               :variant "outline"
                               :color "gray"
                               :on-click (fn []
                                           (rf/dispatch [:navigate :configure-role {:from_page "resource-configure"} :connection-name (:name connection)]))}
                    "Configure"]
-                  [:> Button {:size "2"
-                              :variant "soft"
-                              :color "indigo"
-                              :on-click #(rf/dispatch [:connections->test-connection (:name connection)])
-                              :disabled (is-connection-testing? @test-connection-state (:name connection))}
-                   "Test Connection"]]]))]])]))))
+                  (when-not mirror?
+                    [:> Button {:size "2"
+                                :variant "soft"
+                                :color "indigo"
+                                :on-click #(rf/dispatch [:connections->test-connection (:name connection)])
+                                :disabled (is-connection-testing? @test-connection-state (:name connection))}
+                     "Test Connection"])]]))]])]))))

@@ -173,3 +173,9 @@ export function canHoopCli(connection) {
   if (!connection || connection.access_mode_connect !== 'enabled') return false
   return !(connection.type === 'custom' && connection.subtype === 'rdp')
 }
+
+// A connection that mirrors a sidecar listener. The sidecar's configuration
+// owns it: the API refuses to update or delete it.
+export function isSidecarMirror(connection) {
+  return connection?.managed_by === 'sidecar'
+}

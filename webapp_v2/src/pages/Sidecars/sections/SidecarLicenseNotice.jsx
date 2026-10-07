@@ -6,7 +6,7 @@ import AddLicenseModal from '@/features/ProtectionProfiles/AddLicenseModal'
 import { useUserStore } from '@/stores/useUserStore'
 
 const MESSAGE =
-  'The control plane is part of the Enterprise plan. Add your license to create and connect sidecars.'
+  'Sidecars are part of the Enterprise plan. Add your license to create and connect them.'
 
 /**
  * Free-plan callout on the sidecars page, with the same "Add your license here"

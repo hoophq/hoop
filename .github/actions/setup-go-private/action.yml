@@ -1,0 +1,50 @@
+# Set up Go for a job that builds against the private libhoop module.
+#
+# One definition of the three steps every Go job repeated: setup-go,
+# private module auth, and (on PRs) the libhoop PR branch switch.
+#
+# Prerequisite: actions/checkout (go.work and the go.sum files are read).
+
+name: Setup Go with private modules
+description: >-
+  Install Go from go.work with the module cache, authenticate the private
+  github.com/hoophq/libhoop module, and optionally build against a matching
+  libhoop PR branch.
+
+inputs:
+  token:
+    description: Token that can read hoophq/libhoop
+    required: true
+  libhoop-pr:
+    description: '"true" to build against a same-named open hoophq/libhoop PR branch'
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: go.work
+        # This is a go.work workspace with no root go.mod, so setup-go
+        # cannot find a manifest on its own and silently caches nothing.
+        cache-dependency-path: "**/go.sum"
+
+    # GOPRIVATE keeps libhoop off proxy.golang.org and sum.golang.org; the
+    # credential rewrite lets the direct fetch authenticate as the token.
+    - name: Authenticate private modules
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
+        git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+    # When this PR's branch is also open as a hoophq/libhoop PR, build against
+    # that branch instead of the pinned release. See use-libhoop-pr.
+    - name: Use libhoop PR branch when one is open
+      if: inputs.libhoop-pr == 'true'
+      uses: ./.github/actions/use-libhoop-pr
+      with:
+        token: ${{ inputs.token }}

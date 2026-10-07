@@ -1,7 +1,5 @@
 # Postgres + Kerberos
 
-> hoop-inspect 0.1.0
-
 An overlay on the stack in the parent directory. A client authenticates with a
 Kerberos ticket its own OS minted, and hoop-inspect inspects, masks and audits
 each statement without holding a credential or reading the ticket.

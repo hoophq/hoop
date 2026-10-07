@@ -411,7 +411,7 @@ func loadGRPCSchema(entries DescriptorPaths, roots *x509.CertPool) (*codecgrpc.S
 		return nil, nil
 	}
 	sources := make([]codecgrpc.SchemaSource, 0, len(entries))
-	client := outboundHTTPClient(roots)
+	client := outboundHTTPClient(roots, "descriptors")
 	for _, entry := range entries {
 		var blob []byte
 		var err error

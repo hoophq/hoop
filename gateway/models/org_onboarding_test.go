@@ -40,7 +40,7 @@ func seedConnection(t *testing.T, name, accessModeExec string) {
 	execSQL(t, `INSERT INTO private.resources (org_id, name, type, subtype)
 		VALUES (?, ?, 'database', 'postgres')`, testOrgID, name)
 	execSQL(t, `INSERT INTO private.connections (org_id, name, type, resource_name, access_mode_exec)
-		VALUES (?, ?, 'postgres', ?, ?::enum_access_status)`, testOrgID, name, name, accessModeExec)
+		VALUES (?, ?, 'postgres', ?, ?::private.enum_access_status)`, testOrgID, name, name, accessModeExec)
 }
 
 // Each step is seeded one at a time so a subquery wired to the wrong table

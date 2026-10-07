@@ -1,7 +1,5 @@
 # SQL Server 2019: login-only encryption
 
-> hoop-inspect 0.1.0
-
 A TDS 7.4 lane. The 2022 stack next door proves Kerberos crosses the relay;
 this one proves the relay reads a session whose login it cannot read.
 

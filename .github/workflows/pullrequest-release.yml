@@ -9,6 +9,11 @@ on:
       - 'LICENSE'
       - '.env.sample'
 
+# A newer run for the same PR makes this one stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 # proxy.golang.org intermittently resets HTTP/2 streams mid-download
 # ("stream error: stream ID N; INTERNAL_ERROR; received from peer"). cmd/go
 # turns that into a hard build failure after a ~60s stall: it does not retry,
@@ -16,22 +21,26 @@ on:
 # are HTTP/2-only, so fetch modules over HTTP/1.1.
 env:
   GODEBUG: http2client=0
+  # build-push-action v6+ adds a job summary, a build record artifact and
+  # Dockerfile check annotations by default. Off, to keep the v4 output.
+  DOCKER_BUILD_SUMMARY: "false"
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  DOCKER_BUILD_CHECKS_ANNOTATIONS: "false"
 
 jobs:
-  build-rust-binaries-darwin:
+  build-rust-darwin:
     runs-on: macos-latest
     name: Build Darwin Rust Binaries
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           components: rustfmt, clippy
-          override: true
 
       - name: Add Darwin Rust targets
         run: |
@@ -46,29 +55,38 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: make build-rust-darwin-all
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: dist-artifacts-${{ github.job }}
+          name: dist-artifacts-rust-darwin
           path: dist/
 
-  build-rust-binary-linux-amd64:
-    runs-on: ubuntu-latest
-    name: Build Linux Rust Binaries Amd64
+  build-rust-linux:
+    runs-on: ${{ matrix.runner }}
+    name: Build Linux Rust Binaries ${{ matrix.name }}
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            name: Amd64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - goarch: arm64
+            name: Arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           components: rustfmt, clippy
-          override: true
 
-      - name: Add Linux Rust targets
-        run: |
-          rustup target add x86_64-unknown-linux-gnu
+      - name: Add Linux Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
@@ -76,75 +94,35 @@ jobs:
       - name: Build Linux Rust Binaries
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=linux GOARCH=amd64 make build-rust-single
+        run: GOOS=linux GOARCH=${{ matrix.goarch }} make build-rust-single
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: dist-artifacts-${{ github.job }}
+          name: dist-artifacts-rust-linux-${{ matrix.goarch }}
           path: dist/
 
-  build-rust-binary-linux-arm64:
-    runs-on: ubuntu-24.04-arm
-    name: Build Linux Rust Binaries Arm64
-
-    steps:
-      - name: Checkout Hoop
-        uses: actions/checkout@v3
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-          override: true
-
-      - name: Add Linux Rust targets
-        run: |
-          rustup target add aarch64-unknown-linux-gnu
-
-      - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
-
-      - name: Build Linux Rust Binaries
-        env:
-          GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=linux GOARCH=arm64 make build-rust-single
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-artifacts-${{ github.job }}
-          path: dist/
-
-  darwin-amd64:
-    needs: [build-webapp]
+  # Linux and the other targets are separate jobs so the image jobs can
+  # start after the Linux builds without waiting for darwin and windows.
+  # Only Linux builds receive the telemetry keys, as before.
+  build-go-linux:
     runs-on: ubuntu-latest
-    name: Build Darwin Amd64
-
+    name: Build Linux ${{ matrix.name }}
+    needs: [build-webapp]
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            name: Amd64
+          - goos: linux
+            goarch: arm64
+            name: Arm64
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, build
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
 
@@ -158,263 +136,7 @@ jobs:
         run: make generate-wasm
 
       - name: Download Webapp
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-build-webapp
-          path: dist/
-
-      - name: Embed Webapp
-        run: make embed-webapp
-
-      - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
-
-      - name: amd64
-        env:
-          GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=darwin GOARCH=amd64 make build-go
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-artifacts-${{ github.job }}
-          path: dist/
-
-  darwin-arm64:
-    needs: [build-webapp]
-    runs-on: ubuntu-latest
-    name: Build Darwin Arm64
-
-    steps:
-      - name: Checkout Hoop
-        uses: actions/checkout@v3
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, build
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
-        with:
-          token: ${{ secrets.GH_TOKEN }}
-
-      - name: Setup Rust for WASM
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-
-      - name: Generate WASM
-        run: make generate-wasm
-
-      - name: Download Webapp
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-build-webapp
-          path: dist/
-
-      - name: Embed Webapp
-        run: make embed-webapp
-
-      - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
-
-      - name: Build
-        env:
-          GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=darwin GOARCH=arm64 make build-go
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-artifacts-${{ github.job }}
-          path: dist/
-
-  windows-amd64:
-    needs: [build-webapp]
-    runs-on: ubuntu-latest
-    name: Build Windows Amd64
-
-    steps:
-      - name: Checkout Hoop
-        uses: actions/checkout@v3
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, build
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
-        with:
-          token: ${{ secrets.GH_TOKEN }}
-
-      - name: Setup Rust for WASM
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-
-      - name: Generate WASM
-        run: make generate-wasm
-
-      - name: Download Webapp
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-build-webapp
-          path: dist/
-
-      - name: Embed Webapp
-        run: make embed-webapp
-
-      - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
-
-      - name: Build
-        env:
-          GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=windows GOARCH=amd64 make build-go
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-artifacts-${{ github.job }}
-          path: dist/
-
-  windows-arm64:
-    needs: [build-webapp]
-    runs-on: ubuntu-latest
-    name: Build Windows Arm64
-
-    steps:
-      - name: Checkout Hoop
-        uses: actions/checkout@v3
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, build
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
-        with:
-          token: ${{ secrets.GH_TOKEN }}
-
-      - name: Setup Rust for WASM
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-
-      - name: Generate WASM
-        run: make generate-wasm
-
-      - name: Download Webapp
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-build-webapp
-          path: dist/
-
-      - name: Embed Webapp
-        run: make embed-webapp
-
-      - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
-
-      - name: Build
-        env:
-          GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=windows GOARCH=arm64 make build-go
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-artifacts-${{ github.job }}
-          path: dist/
-
-  linux-amd64:
-    needs: [build-webapp]
-    runs-on: ubuntu-latest
-    name: Build Linux Amd64
-
-    steps:
-      - name: Checkout Hoop
-        uses: actions/checkout@v3
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, build
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
-        with:
-          token: ${{ secrets.GH_TOKEN }}
-
-      - name: Setup Rust for WASM
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-
-      - name: Generate WASM
-        run: make generate-wasm
-
-      - name: Download Webapp
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist-artifacts-build-webapp
           path: dist/
@@ -432,43 +154,42 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
-        run: GOOS=linux GOARCH=amd64 make build-go
+        run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} make build-go
 
-      - uses: actions/upload-artifact@v4
+      # Everything but the webapp, which has its own artifact. A path
+      # under dist/ would drop the binaries/ prefix merge-artifacts.sh reads.
+      - uses: actions/upload-artifact@v7
         with:
-          name: dist-artifacts-${{ github.job }}
-          path: dist/
+          name: dist-artifacts-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/
+            !dist/webapp.tar.gz
 
-  linux-arm64:
-    needs: [build-webapp]
+  build-go-other:
     runs-on: ubuntu-latest
-    name: Build Linux Arm64
-
+    name: Build ${{ matrix.name }}
+    needs: [build-webapp]
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            name: Darwin Amd64
+          - goos: darwin
+            goarch: arm64
+            name: Darwin Arm64
+          - goos: windows
+            goarch: amd64
+            name: Windows Amd64
+          - goos: windows
+            goarch: arm64
+            name: Windows Arm64
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: "**/go.sum"
-
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
-      - name: Authenticate private modules
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
-
-      # When this PR's branch is also open as a hoophq/libhoop PR, build
-      # against that branch instead of the pinned release. No match keeps
-      # the pin; see .github/actions/use-libhoop-pr.
-      - name: Use libhoop PR branch when one is open
-        uses: ./.github/actions/use-libhoop-pr
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
         with:
           token: ${{ secrets.GH_TOKEN }}
 
@@ -482,7 +203,7 @@ jobs:
         run: make generate-wasm
 
       - name: Download Webapp
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist-artifacts-build-webapp
           path: dist/
@@ -496,16 +217,16 @@ jobs:
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
-          INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
-        run: GOOS=linux GOARCH=arm64 make build-go
+        run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} make build-go
 
-      - uses: actions/upload-artifact@v4
+      # Everything but the webapp, which has its own artifact. A path
+      # under dist/ would drop the binaries/ prefix merge-artifacts.sh reads.
+      - uses: actions/upload-artifact@v7
         with:
-          name: dist-artifacts-${{ github.job }}
-          path: dist/
+          name: dist-artifacts-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/
+            !dist/webapp.tar.gz
 
   build-webapp:
     runs-on: ubuntu-latest
@@ -514,52 +235,44 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Setup Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v6
         with:
           distribution: "zulu"
           java-version: "21"
       - name: Install clojure tools
-        uses: DeLaGuardo/setup-clojure@12.5
+        uses: DeLaGuardo/setup-clojure@13.7.0
         with:
           cli: 1.12.0.1479 # releases: https://clojure.org/releases/tools
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: "npm"
           cache-dependency-path: webapp/package-lock.json
       - name: Build
         run: make build-webapp
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
 
-  build-tar-files:
+  # The image jobs read only these Linux tarballs.
+  build-tar-files-linux:
     runs-on: ubuntu-latest
-    name: Build Tar Files
-    needs: 
-      - build-webapp
-      - darwin-amd64
-      - darwin-arm64
-      - windows-amd64
-      - windows-arm64
-      - linux-amd64
-      - linux-arm64
-      - build-rust-binaries-darwin
-      - build-rust-binary-linux-amd64
-      - build-rust-binary-linux-arm64
+    name: Build Tar Files (Linux)
+    needs: [build-go-linux, build-rust-linux]
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v3
-        
-      - name: Download Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/checkout@v7
+
+      # No merge-multiple: scripts/merge-artifacts.sh expects one
+      # sub-folder per artifact.
+      - name: Download dist-artifacts-*linux-*
+        uses: actions/download-artifact@v8
         with:
-          pattern: dist-artifacts-*
-          merge-archive: true
+          pattern: dist-artifacts-*linux-*
           path: dist/
 
       - name: Set Git Tag
@@ -569,8 +282,63 @@ jobs:
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: make merge-artifacts
-          
-      - name: Build Tar Files for All Architectures
+
+      - name: Build Tar Files
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |
+          GOOS=linux GOARCH=amd64 make build-tar-files
+          GOOS=linux GOARCH=arm64 make build-tar-files
+
+      # Only the tarballs and checksums, kept under binaries/ so a download
+      # into dist/ lands them in dist/binaries/ as before.
+      - name: Stage tarballs
+        run: mkdir -p stage && mv dist/binaries stage/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-artifacts-build-tar-files-linux
+          path: stage/
+
+  build-tar-files-other:
+    runs-on: ubuntu-latest
+    name: Build Tar Files (Darwin, Windows)
+    needs: [build-go-other, build-rust-darwin]
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v7
+
+      # No merge-multiple: scripts/merge-artifacts.sh expects one
+      # sub-folder per artifact.
+      - name: Download dist-artifacts-darwin-*
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dist-artifacts-darwin-*
+          path: dist/
+
+      - name: Download dist-artifacts-windows-*
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dist-artifacts-windows-*
+          path: dist/
+
+      # One artifact: by name into its own folder, like the pattern
+      # downloads above (a single pattern match would skip the folder).
+      - name: Download dist-artifacts-rust-darwin
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-artifacts-rust-darwin
+          path: dist/dist-artifacts-rust-darwin/
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+
+      - name: Merge Artifacts into dist/
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: make merge-artifacts
+
+      - name: Build Tar Files
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: |
@@ -578,43 +346,46 @@ jobs:
           GOOS=darwin GOARCH=arm64 make build-tar-files
           GOOS=windows GOARCH=amd64 make build-tar-files
           GOOS=windows GOARCH=arm64 make build-tar-files
-          GOOS=linux GOARCH=amd64 make build-tar-files
-          GOOS=linux GOARCH=arm64 make build-tar-files
-        
-      - uses: actions/upload-artifact@v4
+
+      # Only the tarballs and checksums, kept under binaries/ so a download
+      # into dist/ lands them in dist/binaries/ as before.
+      - name: Stage tarballs
+        run: mkdir -p stage && mv dist/binaries stage/
+
+      - uses: actions/upload-artifact@v7
         with:
-          name: dist-artifacts-${{ github.job }}
-          path: dist/
+          name: dist-artifacts-build-tar-files-other
+          path: stage/
 
   docker-publish-hoopgateway-arm64:
-    runs-on: GitHub-Linux-Arm-Runner
+    runs-on: ubuntu-24.04-arm
     name: Dck Publish Gateway (arm64)
     needs:
-      - build-tar-files
+      - build-tar-files-linux
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: hoophq/hoop
+        uses: actions/checkout@v7
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v4
+      - name: Download Linux tarballs
+        uses: actions/download-artifact@v8
         with:
-          pattern: dist-artifacts-*
-          merge-multiple: true
+          name: dist-artifacts-build-tar-files-linux
+          path: dist/
+      - name: Download Webapp
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-artifacts-build-webapp
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
       - name: Build and Push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile
           context: '.'
@@ -629,31 +400,31 @@ jobs:
     runs-on: ubuntu-latest
     name: Dck Publish Gateway (amd64)
     needs:
-      - build-tar-files
+      - build-tar-files-linux
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: hoophq/hoop
+        uses: actions/checkout@v7
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v4
+      - name: Download Linux tarballs
+        uses: actions/download-artifact@v8
         with:
-          pattern: dist-artifacts-*
-          merge-multiple: true
+          name: dist-artifacts-build-tar-files-linux
+          path: dist/
+      - name: Download Webapp
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-artifacts-build-webapp
           path: dist/
       - name: Extract Webapp
         run: make extract-webapp
       - name: Build and push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile
           context: '.'
@@ -672,16 +443,11 @@ jobs:
       - docker-publish-hoopgateway-arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: hoophq/hoop
+        uses: actions/checkout@v7
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -698,32 +464,27 @@ jobs:
 
 
   docker-publish-hoopagent-arm64:
-    runs-on: GitHub-Linux-Arm-Runner
+    runs-on: ubuntu-24.04-arm
     name: Dck Publish Agent (arm64)
     needs:
-      - build-tar-files
+      - build-tar-files-linux
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: hoophq/hoopdev
+        uses: actions/checkout@v7
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v4
+      - name: Download Linux tarballs
+        uses: actions/download-artifact@v8
         with:
-          pattern: dist-artifacts-*
-          merge-multiple: true
+          name: dist-artifacts-build-tar-files-linux
           path: dist/
       - name: Build and Push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.dev
           context: '.'
@@ -738,29 +499,24 @@ jobs:
     runs-on: ubuntu-latest
     name: Dck Publish Agent (amd64)
     needs:
-      - build-tar-files
+      - build-tar-files-linux
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: hoophq/hoopdev
+        uses: actions/checkout@v7
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v4
+      - name: Download Linux tarballs
+        uses: actions/download-artifact@v8
         with:
-          pattern: dist-artifacts-*
-          merge-multiple: true
+          name: dist-artifacts-build-tar-files-linux
           path: dist/
       - name: Build and push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.dev
           context: '.'
@@ -779,16 +535,11 @@ jobs:
       - docker-publish-hoopagent-arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: hoophq/hoopdev
+        uses: actions/checkout@v7
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -814,28 +565,28 @@ jobs:
     runs-on: ubuntu-latest
     name: Publish Agent Image (hoopagent)
     needs:
-      - build-tar-files
+      - build-tar-files-linux
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v4
+      - name: Download Linux tarballs
+        uses: actions/download-artifact@v8
         with:
-          pattern: dist-artifacts-*
-          merge-multiple: true
+          name: dist-artifacts-build-tar-files-linux
           path: dist/
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
       - name: Build and push (minimal)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.agent
           context: '.'
@@ -847,7 +598,7 @@ jobs:
           tags: |
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal
       - name: Build and push (distroless)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.agent
           context: '.'
@@ -859,7 +610,7 @@ jobs:
           tags: |
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
       - name: Build and push (minimal-alcatraz)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.agent
           context: '.'
@@ -871,7 +622,7 @@ jobs:
           tags: |
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz
       - name: Build and push (distroless-alcatraz)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.agent
           context: '.'
@@ -912,28 +663,28 @@ jobs:
     runs-on: ubuntu-latest
     name: Publish Sidecar Image (hoopsidecar)
     needs:
-      - build-tar-files
+      - build-tar-files-linux
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v4
+      - name: Download Linux tarballs
+        uses: actions/download-artifact@v8
         with:
-          pattern: dist-artifacts-*
-          merge-multiple: true
+          name: dist-artifacts-build-tar-files-linux
           path: dist/
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
       - name: Build and push (default)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.sidecar
           context: '.'
@@ -945,7 +696,7 @@ jobs:
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}
       - name: Build and push (distroless)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.sidecar
           context: '.'
@@ -971,28 +722,28 @@ jobs:
     runs-on: ubuntu-latest
     name: Publish Control Plane Image (hoopcontrolplane)
     needs:
-      - build-tar-files
+      - build-tar-files-linux
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v4
+      - name: Download Linux tarballs
+        uses: actions/download-artifact@v8
         with:
-          pattern: dist-artifacts-*
-          merge-multiple: true
+          name: dist-artifacts-build-tar-files-linux
           path: dist/
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
       - name: Build and push (default)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.controlplane
           context: '.'
@@ -1004,7 +755,7 @@ jobs:
           tags: |
             hoophq/hoopcontrolplane:${{ env.GIT_TAG }}
       - name: Build and push (distroless)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.controlplane
           context: '.'
@@ -1020,6 +771,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Publish Release
     needs:
+      # The darwin and windows tarballs go to S3 too; the image jobs
+      # below cover only Linux.
+      - build-tar-files-other
       - docker-publish-hoopgateway-multiarch
       - docker-publish-hoopagent-multiarch
       # build-helm-chart packages hoopsidecar-chart, whose image default is
@@ -1032,9 +786,9 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         id: download
         with:
           pattern: dist-artifacts-*
@@ -1118,7 +872,7 @@ jobs:
           done
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check for forbidden licenses
         id: check

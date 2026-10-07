@@ -1,7 +1,5 @@
 # Envoy → hoop-inspect over unix domain sockets
 
-> hoop-inspect 0.1.0
-
 An overlay on the stack in the parent directory. Same two lanes, same policy,
 same masking, same TLS hop to `appdb`. The only change is what carries the
 bytes between Envoy and the relay: a filesystem socket instead of a TCP port.

@@ -12,7 +12,7 @@ import SidecarGuardrailFields from './SidecarGuardrailFields'
 import { useSidecarGuardrailEditor } from './useSidecarGuardrailEditor'
 import classes from './Create.module.css'
 
-// Page shell around SidecarGuardrailFields; Router.jsx picks this or the Gateway sibling with <ByProduct>.
+// Page shell around SidecarGuardrailFields; Router.jsx picks this or the Gateway sibling with <ByRuleTraffic>.
 
 function FormFields({ guardrail, id, isEdit }) {
   const navigate = useNavigate()
