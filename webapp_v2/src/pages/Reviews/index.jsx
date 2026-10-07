@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Stack, Text, Title } from '@mantine/core'
 import PageLoader from '@/components/PageLoader'
-import SegmentedControl from '@/components/SegmentedControl'
 import EmptyState from '@/layout/EmptyState'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { showSnackbar } from '@/utils/snackbar'
 import { useReviewStore } from './store'
-import { STATUS, STATUS_FILTERS, isSidecarReview, sortByNewest } from './helpers'
+import { STATUS, STATUS_FILTERS, filterFromSearch, isSidecarReview, sortByNewest } from './helpers'
 import ReviewsTable from './sections/ReviewsTable'
 import ReviewModal from './sections/ReviewModal'
 import RejectModal from './sections/RejectModal'
@@ -27,16 +26,15 @@ const EMPTY = {
       'A sidecar files a review when a listener holds a statement for approval. Approve one here or from Slack.',
   },
   settled: { title: 'No review has been decided yet' },
-  all: {
-    title: 'No reviews yet',
-    description:
-      'A sidecar files a review when a listener holds a statement for approval.',
-  },
 }
 
 export default function Reviews() {
   const navigate = useNavigate()
   const { sessionId } = useParams()
+  const [searchParams] = useSearchParams()
+  const filter = filterFromSearch(searchParams)
+  // Opening and closing a review keeps the list the sidebar picked.
+  const search = searchParams.toString() ? `?${searchParams}` : ''
 
   const reviews = useReviewStore((s) => s.reviews)
   const reviewsStatus = useReviewStore((s) => s.reviewsStatus)
@@ -55,7 +53,6 @@ export default function Reviews() {
   const approverRoleName = useUserStore((s) => s.approverRoleName)
   const user = { role, isAdmin, groups, adminRoleName, approverRoleName }
 
-  const [filter, setFilter] = useState('all')
   // The review being rejected, held here rather than read from `selected` at
   // confirm time: the reject modal sits over the detail one, and a click in it
   // counts as a click outside the one below.
@@ -78,8 +75,7 @@ export default function Reviews() {
   )
 
   const visible = useMemo(() => {
-    const match = STATUS_FILTERS.find((f) => f.value === filter)?.match ?? (() => true)
-    return sortByNewest(reviews.filter(match))
+    return sortByNewest(reviews.filter(STATUS_FILTERS[filter]))
   }, [reviews, filter])
 
   const selected = useMemo(
@@ -90,8 +86,8 @@ export default function Reviews() {
   const loading = reviewsStatus === 'idle' || reviewsStatus === 'loading'
   const showLoader = useMinDelay(loading, 500)
 
-  const open = (review) => navigate(`/reviews/${encodeURIComponent(review.session)}`)
-  const close = () => navigate('/reviews')
+  const open = (review) => navigate(`/reviews/${encodeURIComponent(review.session)}${search}`)
+  const close = () => navigate(`/reviews${search}`)
 
   const settle = async (target, status, rejectionReason) => {
     if (!target) return
@@ -166,13 +162,6 @@ export default function Reviews() {
             {`No review found for session ${sessionId}.`}
           </Text>
         )}
-
-        <SegmentedControl
-          value={filter}
-          onChange={setFilter}
-          data={STATUS_FILTERS.map(({ value, label }) => ({ value, label }))}
-          w="fit-content"
-        />
 
         {visible.length === 0 ? (
           <EmptyState compact {...EMPTY[filter]} />

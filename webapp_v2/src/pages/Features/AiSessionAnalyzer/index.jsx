@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Group, Stack, Text, Title } from '@mantine/core'
+import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import NewRuleButton from '@/components/NewRuleButton'
 import PageLoader from '@/components/PageLoader'
-import Tabs from '@/components/Tabs'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import FullBleed from '@/layout/FullBleed'
 import { useRuleTraffics } from '@/modes'
@@ -102,7 +101,7 @@ export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true
             Monitor terminal sessions and resource usage in real time.
           </Text>
         </Stack>
-        {(list.length > 0 || mixed) && (
+        {tab === 'rules' && (list.length > 0 || mixed) && (
           <NewRuleButton
             traffics={traffics}
             onCreate={(kind) =>
@@ -124,19 +123,8 @@ export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true
         <FreeLicenseCallout message={FREE_LICENSE_LIMIT_MESSAGE} variant="limit" />
       )}
 
-      <Tabs value={tab} onChange={setTab}>
-        <Tabs.List aria-label="AI Session Analyzer tabs">
-          <Tabs.Tab value="rules">Rules</Tabs.Tab>
-          <Tabs.Tab value="configure">Configure</Tabs.Tab>
-        </Tabs.List>
-
-        <Tabs.Panel value="rules" pt="md">
-          <RulesTab
-            providerConfigured={!orgWideProvider || Boolean(provider)}
-            onGoConfigure={() => setTab('configure')}
-          />
-        </Tabs.Panel>
-        <Tabs.Panel value="configure" pt="xl">
+      {tab === 'configure' ? (
+        <Box>
           {mixed && (
             <Text size="sm" c="dimmed" mb="lg">
               This provider analyzes agent sessions. Each sidecar uses the provider in its own
@@ -144,8 +132,13 @@ export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true
             </Text>
           )}
           <ConfigureTab onSaved={() => setTab('rules')} />
-        </Tabs.Panel>
-      </Tabs>
+        </Box>
+      ) : (
+        <RulesTab
+          providerConfigured={!orgWideProvider || Boolean(provider)}
+          onGoConfigure={() => setTab('configure')}
+        />
+      )}
     </Stack>
   )
 }
