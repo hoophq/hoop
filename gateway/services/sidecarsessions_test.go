@@ -840,6 +840,18 @@ func TestPlanSidecarSessionRefusals(t *testing.T) {
 		assert.Equal(t, "edge-"+listener, plan.Create.Connection)
 	})
 
+	t.Run("a mirror name fits where <sidecar>-<listener> would not", func(t *testing.T) {
+		listener := strings.Repeat("l", 200)
+		sc := testSidecarIdent
+		sc.Mirrors = map[string]string{listener: "edge-short-1a2b3c4d"}
+		plan, err := planSidecarSession(sc, testSidecarSessionID, nil, []daemon.SessionEvent{
+			sidecarEvent(1, audit.KindSessionStart, 0, func(e *audit.Event) { e.Connection = listener }),
+		})
+		require.NoError(t, err)
+		require.NotNil(t, plan.Create)
+		assert.Equal(t, "edge-short-1a2b3c4d", plan.Create.Connection)
+	})
+
 	t.Run("an ended session refuses what comes after its end", func(t *testing.T) {
 		prior := existingSidecarSession(6)
 		prior.Done = true

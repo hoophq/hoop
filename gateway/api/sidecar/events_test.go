@@ -41,6 +41,7 @@ const (
 	eventsColumnsOrgID   = "00000000-0000-0000-0000-0000000000ea"
 	eventsPoisonOrgID    = "00000000-0000-0000-0000-0000000000eb"
 	eventsLiveOrgID      = "00000000-0000-0000-0000-0000000000ec"
+	eventsNameTakenOrgID = "00000000-0000-0000-0000-0000000000f1"
 )
 
 // eventsT0 is when every test session starts. Whole seconds, so the elapsed
@@ -565,6 +566,45 @@ func TestPostEventsCreatesASessionFromAStatement(t *testing.T) {
 	require.NotEqual(t, id, otherID)
 	assert.Equal(t, "edge-other-appdb", getSidecarSessionRow(t, eventsNoStartOrgID, otherID).Connection)
 	assert.Equal(t, "done", getSidecarSessionRow(t, eventsNoStartOrgID, id).Status)
+}
+
+// A connection that only holds the name <sidecar>-<listener>, and is not that
+// listener's mirror, never receives its sessions: the mirror is found by
+// sidecar and listener.
+func TestPostEventsSkipsAConnectionThatOnlySharesTheName(t *testing.T) {
+	startEventsDB(t, eventsNameTakenOrgID)
+	enableSessionEvents(t, eventsNameTakenOrgID)
+	// An admin's connection holds the name the mirror would take.
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.resources (org_id, name, type, subtype)
+		VALUES (?, 'edge-mirror-appdb', 'database', 'postgres')`, eventsNameTakenOrgID).Error)
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.connections (org_id, name, type, subtype, resource_name)
+		VALUES (?, 'edge-mirror-appdb', 'database', 'postgres', 'edge-mirror-appdb')`, eventsNameTakenOrgID).Error)
+
+	sc := seedEventsSidecar(t, eventsNameTakenOrgID, "edge-mirror")
+	sc.Configuration = models.SidecarConfiguration{Listeners: []daemon.ListenerConfig{
+		{Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432"},
+	}}
+	require.NoError(t, services.SyncSidecarListenerConnectionsTx(models.DB, sc))
+	mirror, err := models.GetSidecarMirror(models.DB, eventsNameTakenOrgID, sc.ID, "appdb")
+	require.NoError(t, err)
+	require.Equal(t, models.SidecarMirrorFallbackName("edge-mirror-appdb", sc.ID, "appdb"), mirror.Name,
+		"the name is taken, so the mirror carries its fallback name")
+
+	got := decodeEventsResponse(t, postEvents(sc, eventsBody(t,
+		sessionEvent(1, "s-mirror", 0, audit.KindSessionStart, nil),
+		sessionEvent(1, "s-unmirrored", 0, audit.KindSessionStart, func(e *audit.Event) { e.Connection = "cache" }),
+	)))
+	assert.Equal(t, 2, got.Accepted)
+
+	row := getSidecarSessionRow(t, eventsNameTakenOrgID, services.SidecarSessionID(sc.ID, "s-mirror"))
+	assert.Equal(t, mirror.Name, row.Connection)
+	assert.Equal(t, "database", row.ConnectionType)
+	assert.Equal(t, "postgres", row.ConnectionSubtype)
+	assert.Equal(t, "appdb", sidecarMetadata(t, row)["listener"])
+
+	// A listener without a mirror keeps the name sessions had before mirrors.
+	row = getSidecarSessionRow(t, eventsNameTakenOrgID, services.SidecarSessionID(sc.ID, "s-unmirrored"))
+	assert.Equal(t, "edge-mirror-cache", row.Connection)
 }
 
 // A session the gateway can never record answers 422, so the sidecar does not
