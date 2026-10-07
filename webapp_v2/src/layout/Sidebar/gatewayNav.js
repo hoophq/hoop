@@ -48,6 +48,7 @@ const MAIN_ITEMS = [
     label: 'Runbooks',
     icon: BookUp2,
     licenseFeature: 'runbooks',
+    linkWhenSingle: true,
     children: [
       { label: 'Library', path: '/runbooks', icon: ListVideo },
       { label: 'Setup', path: '/features/runbooks/setup', icon: NotebookPen, adminOnly: true },

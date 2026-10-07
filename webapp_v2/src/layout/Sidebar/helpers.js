@@ -14,13 +14,20 @@ export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEna
   return false
 }
 
+// A `linkWhenSingle` group left with one child renders as a link to that child.
+function visibleGroup(item, children) {
+  if (!item.linkWhenSingle || children.length !== 1) return { ...item, children }
+  const { children: _, linkWhenSingle: __, ...link } = item
+  return { ...link, path: children[0].path }
+}
+
 // Drops hidden items, empty groups and empty sections. `block` keeps a rule
 // between two blocks when the section that opens one is hidden.
 export function visibleNav(sections, hide) {
   const visibleItems = (items) =>
     items
       .filter((item) => !hide(item))
-      .map((item) => (item.children ? { ...item, children: visibleItems(item.children) } : item))
+      .map((item) => (item.children ? visibleGroup(item, visibleItems(item.children)) : item))
       .filter((item) => !item.children || item.children.length > 0)
 
   let block = 0
