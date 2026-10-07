@@ -8,16 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/sidecar/daemon"
-	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
 // seedReviewingSidecar stores a sidecar whose appdb listener files reviews
@@ -35,22 +31,7 @@ func seedReviewingSidecar(t *testing.T, name string) *models.Sidecar {
 		}}},
 	}
 	require.NoError(t, models.CreateSidecar(models.DB, sc))
-	_, err := models.GetAccessRequestRuleByName(models.DB, "payments-approvers", uuid.MustParse(statusTestOrgID))
-	if err == nil {
-		return sc
-	}
-	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
-	require.NoError(t, models.CreateAccessRequestRule(models.DB, &models.AccessRequestRule{
-		OrgID:                  uuid.MustParse(statusTestOrgID),
-		Name:                   "payments-approvers",
-		AccessType:             models.AccessTypeSidecar,
-		ReviewersGroups:        pq.StringArray{"dba"},
-		MinApprovals:           ptr.Int(1),
-		ConnectionNames:        pq.StringArray{},
-		ApprovalRequiredGroups: pq.StringArray{},
-		ForceApprovalGroups:    pq.StringArray{},
-		SkipReviewGroups:       pq.StringArray{},
-	}))
+	seedApprovalRule(t)
 	return sc
 }
 

@@ -39,31 +39,6 @@ func TestGatewayPluginsOrder(t *testing.T) {
 	}
 }
 
-// The control plane carries no packets, so a plugin here earns its place by
-// what it starts. Slack owns the socket an approver clicks a button on. The
-// other five would be dead weight, and one of them, audit, writes to disk.
-func TestControlPlanePluginsIsSlackOnly(t *testing.T) {
-	got := names(controlPlanePlugins(nil))
-	want := []string{plugintypes.PluginSlackName}
-	if len(got) != len(want) || got[0] != want[0] {
-		t.Errorf("control plane chain = %v, want %v", got, want)
-	}
-}
-
-// A control plane must never run a plugin the gateway does not, or the two
-// modes disagree about what a plugin name means.
-func TestControlPlanePluginsAreASubsetOfTheGatewayChain(t *testing.T) {
-	inGateway := map[string]bool{}
-	for _, name := range names(gatewayPlugins("http://localhost:8009", nil)) {
-		inGateway[name] = true
-	}
-	for _, name := range names(controlPlanePlugins(nil)) {
-		if !inGateway[name] {
-			t.Errorf("control plane starts %q, which the gateway chain does not contain", name)
-		}
-	}
-}
-
 // stubPlugin records that it was started. The real chain is not usable here:
 // Slack's OnStartup reads organizations from the database, and startPlugins
 // treats a failure as fatal.

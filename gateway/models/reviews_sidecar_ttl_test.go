@@ -684,7 +684,7 @@ func testReadsReportAnExpiredSidecarReview(t *testing.T) {
 		noListener.ID:     string(models.ReviewStatusPending),
 	}
 
-	list, err := models.ListReviews(testOrgID)
+	list, err := models.ListReviews(models.DB, testOrgID, models.ReviewViewer{IsAuditorOrAdmin: true})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

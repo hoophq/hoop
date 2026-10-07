@@ -14,7 +14,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/api/sidecarbind"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -399,11 +398,10 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		// The rule that says who may release a statement this one holds. In
 		// the same transaction, because a rule that holds and cannot release
 		// denies every matching statement with no review anyone can approve.
-		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec, holdReviewers(req)); holdErr != nil {
+		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec, req.ReviewersGroups); holdErr != nil {
 			return holdErr
 		}
-		pending, approval := holdTTLs(req)
-		if err := services.ApplyAnalyzerApprovalTTLs(tx, orgID, rule.Name, pending, approval); err != nil {
+		if err := services.ApplyAnalyzerApprovalTTLs(tx, orgID, rule.Name, req.PendingTTLSec, req.ApprovalTTLSec); err != nil {
 			return err
 		}
 		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
@@ -548,11 +546,10 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		// Present while the rule holds, gone once it stops: switching the hold
 		// off has to take the approval rule with it, or the fleet keeps a
 		// reviewer list for a statement nothing holds any more.
-		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec, holdReviewers(req)); holdErr != nil {
+		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec, req.ReviewersGroups); holdErr != nil {
 			return holdErr
 		}
-		pending, approval := holdTTLs(req)
-		if err := services.ApplyAnalyzerApprovalTTLs(tx, orgID, rule.Name, pending, approval); err != nil {
+		if err := services.ApplyAnalyzerApprovalTTLs(tx, orgID, rule.Name, req.PendingTTLSec, req.ApprovalTTLSec); err != nil {
 			return err
 		}
 		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
@@ -626,8 +623,8 @@ func DeleteSessionAnalyzerRule(c *gin.Context) {
 	}
 
 	// The approval rule goes with it. Left behind it would be a reviewer list
-	// in a control plane with no page to remove it from, and the next analyzer
-	// rule of the same name would refuse to save over it.
+	// with no page to remove it from, and the next analyzer rule of the same
+	// name would refuse to save over it.
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
 		if err := models.DeleteAISessionAnalyzerRuleTx(tx, orgID, c.Param("name")); err != nil {
 			return err
@@ -727,30 +724,9 @@ func GetSessionAnalyzerSystemPrompt(c *gin.Context) {
 	})
 }
 
-// holdReviewers is the reviewer groups the request names for the rule's hold.
-// Only a control plane holds statements; a gateway always passes nil.
-func holdReviewers(req openapi.AISessionAnalyzerRuleRequest) *[]string {
-	if !appconfig.Get().IsControlPlane() {
-		return nil
-	}
-	return req.ReviewersGroups
-}
-
-// holdTTLs is the review limits the request names for the rule's hold.
-// Only a control plane holds statements; a gateway always passes nil.
-func holdTTLs(req openapi.AISessionAnalyzerRuleRequest) (pending, approval *int) {
-	if !appconfig.Get().IsControlPlane() {
-		return nil, nil
-	}
-	return req.PendingTTLSec, req.ApprovalTTLSec
-}
-
 // storedHold reads back the approval rule of the rule's hold, for the
-// response. Only the control plane stores one.
+// response. Nil when the rule holds nothing.
 func storedHold(orgID uuid.UUID, ruleName string) (*models.AccessRequestRule, error) {
-	if !appconfig.Get().IsControlPlane() {
-		return nil, nil
-	}
 	return services.AnalyzerApprovalRule(models.DB, orgID, ruleName)
 }
 

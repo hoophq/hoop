@@ -266,3 +266,25 @@ func deleteOrphanResource(tx *gorm.DB, orgID, name string) error {
 	}
 	return nil
 }
+
+// SidecarMirror is the identity of a mirror: what another row records to
+// point at it.
+type SidecarMirror struct {
+	ID   string `gorm:"column:id"`
+	Name string `gorm:"column:name"`
+}
+
+// GetSidecarMirror returns the mirror of one listener, or
+// gorm.ErrRecordNotFound while the org has none for it (the flag off, or a
+// write the sync refused). Looked up by the key, never by rebuilding the
+// name: a mirror can carry its fallback name.
+func GetSidecarMirror(db *gorm.DB, orgID, sidecarID, listener string) (*SidecarMirror, error) {
+	var m SidecarMirror
+	err := db.Raw(`SELECT id, name FROM private.connections
+		WHERE org_id = ? AND sidecar_id = ? AND sidecar_listener = ?`, orgID, sidecarID, listener).
+		First(&m).Error
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}

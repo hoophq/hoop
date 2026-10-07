@@ -74,13 +74,23 @@ const EXPIRY_LABEL = {
 export const expiryLabel = (review) =>
   (review?.expires_at && EXPIRY_LABEL[review.status]) || null
 
-// The review carries no connection name, so a review filed against one has
-// nothing to show here. A control plane stores none; the gateway is where they
-// exist, and this page is not its queue.
+// What the review was filed against. `resource` is the mirror connection when
+// the org has one, else the listener, else the connection of a connection
+// review. `sidecar` and `listener` are set on a sidecar review; `listener` is
+// only reported separately when the resource is not already the listener.
+// `detail` is the table's subline.
 export function reviewSource(review, sidecarsById) {
-  const listener = review?.listener_name
-  if (!listener) return { primary: '—', secondary: null }
-  return { primary: listener, secondary: sidecarsById.get(review.sidecar_id)?.name ?? null }
+  const connection = review?.connection?.name
+  const listenerName = review?.listener_name
+  if (!listenerName) return { resource: connection ?? '—', sidecar: null, listener: null, detail: null }
+  const sidecar = sidecarsById.get(review.sidecar_id)?.name ?? null
+  const listener = connection ? listenerName : null
+  return {
+    resource: connection ?? listenerName,
+    sidecar,
+    listener,
+    detail: [sidecar, listener].filter(Boolean).join(' · ') || null,
+  }
 }
 
 export function sortByNewest(reviews) {

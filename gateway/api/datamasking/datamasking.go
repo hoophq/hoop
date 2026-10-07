@@ -16,7 +16,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/api/sidecarbind"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -24,41 +23,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// requireRedactProvider aborts rule creation/updates with 422 when the
-// server has no DLP provider configured (the invariant and remediation text
-// live in services.CheckRedactProvider). Read/list/delete stay available so
-// existing rules remain visible and removable.
-//
-// The control plane skips it here and runs requireControlPlaneProvider once
-// the rule's sidecar spec is known.
-func requireRedactProvider(c *gin.Context) bool {
-	if appconfig.Get().IsControlPlane() {
-		return true
-	}
-	if err := services.CheckRedactProvider(); err != nil {
+// requireRedactProvider aborts a rule write with 422 when the rule needs the
+// server's DLP provider and none is configured (the invariant and remediation
+// text live in services.CheckRedactProvider). A rule needs it when it binds
+// gateway targets (connections or attributes), or when it carries no sidecar
+// spec at all; a rule that only a sidecar runs masks in-process and needs
+// none. Read/list/delete stay available so existing rules remain visible and
+// removable.
+func requireRedactProvider(c *gin.Context, req *openapi.DataMaskingRuleRequest, spec json.RawMessage) bool {
+	if err := redactProviderError(req, spec); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return false
 	}
 	return true
 }
 
-// requireControlPlaneProvider is the control plane's provider check. It does
-// nothing on the gateway.
-func requireControlPlaneProvider(c *gin.Context, spec json.RawMessage) bool {
-	if !appconfig.Get().IsControlPlane() {
-		return true
-	}
-	if err := controlPlaneProviderError(spec); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return false
-	}
-	return true
-}
-
-// controlPlaneProviderError lets a rule with a sidecar spec skip the DLP
-// check, because sidecars mask in-process. A rule without one keeps it.
-func controlPlaneProviderError(spec json.RawMessage) error {
-	if len(spec) > 0 && string(spec) != "null" {
+func redactProviderError(req *openapi.DataMaskingRuleRequest, spec json.RawMessage) error {
+	sidecarOnly := len(spec) > 0 && string(spec) != "null" &&
+		len(req.ConnectionIDs) == 0 && len(req.Attributes) == 0
+	if sidecarOnly {
 		return nil
 	}
 	return services.CheckRedactProvider()
@@ -239,12 +222,12 @@ func validateOssRulesLimitations(req *openapi.DataMaskingRuleRequest) error {
 //	@Failure		400,409,422,500	{object}	openapi.HTTPError
 //	@Router			/datamasking-rules [post]
 func Post(c *gin.Context) {
-	if !requireRedactProvider(c) {
-		return
-	}
 	ctx := storagev2.ParseContext(c)
 	req, payload := parseRequestPayload(c)
 	if req == nil {
+		return
+	}
+	if !requireRedactProvider(c, req, req.SidecarSpec) {
 		return
 	}
 
@@ -270,9 +253,6 @@ func Post(c *gin.Context) {
 	supportedEntityTypes := payload.SupportedEntityTypes
 	customEntityTypes := payload.CustomEntityTypes
 
-	if !requireControlPlaneProvider(c, req.SidecarSpec) {
-		return
-	}
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
 		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: "",
 		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
@@ -362,9 +342,6 @@ func Post(c *gin.Context) {
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/datamasking-rules/{id} [put]
 func Put(c *gin.Context) {
-	if !requireRedactProvider(c) {
-		return
-	}
 	ctx := storagev2.ParseContext(c)
 	req, payload := parseRequestPayload(c)
 	if req == nil {
@@ -410,7 +387,7 @@ func Put(c *gin.Context) {
 		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: existing.Name,
 		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
 	}
-	if !requireControlPlaneProvider(c, bind.EffectiveSpec()) {
+	if !requireRedactProvider(c, req, bind.EffectiveSpec()) {
 		return
 	}
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {

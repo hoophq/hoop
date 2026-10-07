@@ -35,9 +35,9 @@ type SlackService struct {
 	pendingRejectItems map[string]slack.InteractionCallback
 
 	// store tracks the review messages this service posted, so they can be
-	// rewritten when the review state changes. Nil means mem, the gateway's
-	// in-process store; a control plane passes the database store, because
-	// the replica that rewrites a message is rarely the one that posted it.
+	// rewritten when the review state changes. Nil means mem, the in-process
+	// store; an org in replica mode passes the database store, because the
+	// replica that rewrites a message is rarely the one that posted it.
 	store messageStore
 	mem   memoryMessageStore
 }
@@ -255,8 +255,8 @@ type MessageReviewRequest struct {
 	AISummary     string
 	AIExplanation string
 	// DefaultChannelAsFallback posts to the default channel only when
-	// SlackChannels is empty. The control plane sets it; the gateway posts to
-	// the default channel always.
+	// SlackChannels is empty. A sidecar review sets it; a connection review
+	// posts to the default channel always.
 	DefaultChannelAsFallback bool
 	// ExpiresAt is a sidecar review's decision deadline. The gateway never sets it.
 	ExpiresAt *time.Time

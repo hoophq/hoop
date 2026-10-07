@@ -137,12 +137,12 @@ The control plane is the admin surface for that. Connect your sidecars. Set Data
 | Review queue: approve, reject, retry | Not built |
 | Pushing configuration to the fleet | The API is built: the plane stores each sidecar's configuration and serves it on the handshake, and rule edits reload without a restart. Authoring that configuration in the UI is not built, so it goes through `PUT /api/sidecars/:nameOrID`. |
 
-The UI is [`webapp_v2/`](webapp_v2/), the same web app the gateway serves: it renders as the control plane when the backend reports `application_mode: "control-plane"`. To run it:
+The control plane is the gateway: `hoop start control-plane` starts the same binary as `hoop start gateway`, with the session storage defaulting to a temporary directory. The web app ([`webapp_v2/`](webapp_v2/)) renders the control plane product for an organization with `experimental.agents` off, and the gateway product with it on. To run it:
 
 ```bash
 make run-dev-postgres
-make run-dev-control-plane                                      # control plane on :8019
-cd webapp_v2 && API_URL=http://localhost:8019 npm run dev       # UI on :5173
+make run-dev                                                    # gateway on :8009
+cd webapp_v2 && npm run dev                                     # UI on :5173
 ```
 
 Routes with no backend behind them say so and name the work they wait on. You will not find an empty table pretending to be loaded.

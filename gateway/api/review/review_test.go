@@ -534,22 +534,6 @@ func TestErrDoReview(t *testing.T) {
 			expectedError: ErrNotFound,
 		},
 		{
-			// A gateway review always has a connection, so it never takes the
-			// sidecar rule even when the row carries a listener name.
-			name: "revoke onetime with a connection and a listener should fail",
-			input: inputData{
-				ctx: newFakeContext("user1", "user1@example.com", []string{"issuing"}),
-				rev: func() *models.Review {
-					r := newFakeReview("user1", "APPROVED", "onetime", nil, nil)
-					r.ListenerName = sql.NullString{String: "appdb", Valid: true}
-					return r
-				}(),
-				con:    &models.Connection{},
-				status: models.ReviewStatusRevoked,
-			},
-			expectedError: ErrNotFound,
-		},
-		{
 			name: "non-eligible reviewer without admin or owner privileges",
 			input: inputData{
 				ctx: newFakeContext("user2", "user2@example.com", []string{"banking"}),
@@ -822,23 +806,22 @@ func TestRevokeSidecarReview(t *testing.T) {
 	}
 }
 
-func TestIsSidecarDecision(t *testing.T) {
+func TestIsSidecarReview(t *testing.T) {
 	listener := sql.NullString{String: "appdb", Valid: true}
 	tests := []struct {
 		name     string
 		rev      *models.Review
-		conn     *models.Connection
 		expected bool
 	}{
-		{"a listener and no connection", &models.Review{ListenerName: listener}, nil, true},
-		{"a listener and a connection", &models.Review{ListenerName: listener}, &models.Connection{}, false},
-		{"no listener and no connection", &models.Review{}, nil, false},
-		{"an empty listener and no connection", &models.Review{ListenerName: sql.NullString{Valid: true}}, nil, false},
-		{"no review", nil, nil, false},
+		{"a listener", &models.Review{ListenerName: listener}, true},
+		{"a listener and a mirror connection", &models.Review{ListenerName: listener, ConnectionName: "edge-appdb"}, true},
+		{"no listener", &models.Review{ConnectionName: "pg-prod"}, false},
+		{"an empty listener", &models.Review{ListenerName: sql.NullString{Valid: true}}, false},
+		{"no review", nil, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, isSidecarDecision(tt.rev, tt.conn))
+			assert.Equal(t, tt.expected, IsSidecarReview(tt.rev))
 		})
 	}
 }

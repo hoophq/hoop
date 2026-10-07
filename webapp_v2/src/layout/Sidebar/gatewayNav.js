@@ -33,15 +33,15 @@ import {
   History,
   Clock,
   SlidersHorizontal,
+  View,
 } from 'lucide-react';
-import { ROLE_APPROVER } from '@/utils/roles';
 
 // ─── Nav items ─────────────────────────────────────────────────────────────
 
 const AI_ANALYZER = '/features/ai-session-analyzer';
 
 const MAIN_ITEMS = [
-  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true, sidecars: true },
+  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
   { label: 'Resources', path: '/resources', icon: Package },
   { label: 'Terminal', path: '/client', icon: SquareCode },
   {
@@ -60,8 +60,8 @@ const MAIN_ITEMS = [
     icon: Sparkles,
     children: [
       { label: 'Rules', path: AI_ANALYZER, icon: List, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
-      { label: 'Approval History', path: '/reviews?status=settled', icon: History, role: ROLE_APPROVER, sidecars: true },
-      { label: 'Pending Approvals', path: '/reviews', icon: Clock, role: ROLE_APPROVER, sidecars: true },
+      { label: 'Approval History', path: '/reviews?status=settled', icon: History },
+      { label: 'Pending Approvals', path: '/reviews', icon: Clock },
       { label: 'Configuration', path: `${AI_ANALYZER}?tab=configure`, icon: SlidersHorizontal, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
     ],
   },
@@ -135,7 +135,7 @@ export const NAV = [
 ];
 
 // ─── Command palette ────────────────────────────────────────────────────────
-// Gating flags (adminOnly / selfhostedOnly / featureFlag / licenseFeature / sidecars)
+// Gating flags (adminOnly / selfhostedOnly / featureFlag / licenseFeature)
 // mirror the sidebar entries above and are applied with the same shouldHide()
 // helper — keep both lists in sync when a page's gating changes.
 export const SUGGESTION_ITEMS = [
@@ -147,6 +147,7 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', description: 'Overview dashboard', icon: LayoutDashboard, path: '/dashboard', adminOnly: true },
   { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks' },
   { id: 'sessions', label: 'Sessions', description: 'View session history', icon: GalleryVerticalEnd, path: '/sessions' },
+  { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: View, path: '/reviews' },
   { id: 'access-request', label: 'Access Request', description: 'Manage access requests', icon: CircleCheckBig, path: '/features/access-request', adminOnly: true, licenseFeature: 'access-requests' },
   { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup', adminOnly: true, licenseFeature: 'runbooks' },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
@@ -154,7 +155,7 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'access-control', label: 'Access Control', description: 'Manage access control rules', icon: UserRoundCheck, path: '/features/access-control', adminOnly: true, licenseFeature: 'access-control' },
   { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect', adminOnly: true, licenseFeature: 'resource-discovery' },
   { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents', adminOnly: true },
-  { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true, sidecars: true },
+  { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true },
   { id: 'authentication', label: 'Authentication', description: 'Configure authentication', icon: ShieldCheck, path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
   { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },
   { id: 'jira-templates', label: 'Jira Templates', description: 'Manage Jira issue templates', icon: Layers, path: '/jira-templates', adminOnly: true, licenseFeature: 'jira-integration' },

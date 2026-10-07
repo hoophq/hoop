@@ -30,9 +30,9 @@ type Flag struct {
 	Components  []Component
 }
 
-// FlagSidecarListeners is the one place the flag name is spelled: the catalog
-// key and every IsEnabled call read it from here.
-const FlagSidecarListeners = "beta.sidecar_listeners"
+// FlagAgents is the one place the flag name is spelled: the catalog key and
+// every IsEnabled call read it from here.
+const FlagAgents = "experimental.agents"
 
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
@@ -142,11 +142,11 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
-	FlagSidecarListeners: {
-		Name:        FlagSidecarListeners,
-		Description: "Manage sidecar listeners from Resources, with the same guardrails, data masking, reviews and access rules as any other resource.",
+	FlagAgents: {
+		Name:        FlagAgents,
+		Description: "Render the gateway product in the web app: agents, resources, terminal, sessions, runbooks. When off the web app renders the control plane product: sidecars, policies, reviews. Turned on once for every organization that already had an agent.",
 		Default:     false,
-		Stability:   StabilityBeta,
+		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
 }

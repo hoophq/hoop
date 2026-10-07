@@ -28,10 +28,3 @@ func WarmFeatureFlagCache() {
 	}
 	log.Infof("featureflag: warmed cache for %d orgs", len(orgs))
 }
-
-// SidecarListenersEnabled reports whether the org shows sidecar listeners as
-// connections. It gates what the UI shows, not enforcement: enforcement
-// follows the data (sidecar_id on the connection).
-func SidecarListenersEnabled(orgID string) bool {
-	return featureflag.IsEnabled(orgID, featureflag.FlagSidecarListeners)
-}

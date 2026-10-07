@@ -5,7 +5,6 @@ import NotImplemented from '@/components/NotImplemented'
 import { useModeConfig } from '@/modes'
 import ByProduct from '@/modes/ByProduct'
 import ByRuleTraffic from '@/modes/ByRuleTraffic'
-import BySidecars from '@/modes/BySidecars'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
@@ -173,27 +172,10 @@ function Router() {
         }
       />
       {/* Both render the list; the session id opens its drawer, so the Slack
-          link resolves to one review. In the control plane every signed-in
-          user reaches it: a reviewer's groups come from the identity provider,
-          not from a role. */}
-      <Route
-        path="/reviews"
-        element={
-          <ByProduct
-            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
-            controlPlane={<Page><Reviews /></Page>}
-          />
-        }
-      />
-      <Route
-        path="/reviews/:sessionId"
-        element={
-          <ByProduct
-            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
-            controlPlane={<Page><Reviews /></Page>}
-          />
-        }
-      />
+          link resolves to one review. Every signed-in user reaches it: a
+          reviewer's groups come from the identity provider, not from a role. */}
+      <Route path="/reviews" element={<Page><Reviews /></Page>} />
+      <Route path="/reviews/:sessionId" element={<Page><Reviews /></Page>} />
 
       {/* React pages — fully migrated */}
       <Route
@@ -699,7 +681,7 @@ function Router() {
         element={
           <Page adminOnly>
             <ByProduct
-              gateway={<BySidecars on={<GatewaySlack showListeners />} off={<GatewaySlack />} />}
+              gateway={<GatewaySlack showListeners />}
               controlPlane={<ControlPlaneSlack />}
             />
           </Page>

@@ -159,7 +159,7 @@ func StartGateway(ctx context.Context, opts GatewayOptions) (gw *Gateway, err er
 		}
 	}
 
-	if err = appconfig.Load(appconfig.AppModeGateway); err != nil {
+	if err = appconfig.Load(); err != nil {
 		return nil, fmt.Errorf("appconfig.Load: %w", err)
 	}
 
@@ -207,7 +207,7 @@ func StartGateway(ctx context.Context, opts GatewayOptions) (gw *Gateway, err er
 	}
 
 	if opts.WithHTTP {
-		gw.HTTP = NewGatewayTestServer(buildEngine())
+		gw.HTTP = NewGatewayTestServer(buildEngine(gw.OrgID))
 	}
 
 	if opts.WithGRPC {
@@ -347,10 +347,11 @@ func bootstrapDefaultOrg() (string, error) {
 // therefore exercise the production HTTP stack rather than a stripped-down
 // router. ReleaseConnectionFn is a no-op because the review-approval transport
 // path is not exercised through the HTTP server.
-func buildEngine() *gin.Engine {
+func buildEngine(orgID string) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	a := &api.Api{
 		ReleaseConnectionFn: func(_, _, _, _, _, _ string) {},
+		DefaultOrgID:        orgID,
 	}
 	return a.BuildEngine()
 }

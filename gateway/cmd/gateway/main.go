@@ -1,10 +1,7 @@
 package main
 
-import (
-	"github.com/hoophq/hoop/gateway"
-	"github.com/hoophq/hoop/gateway/appconfig"
-)
+import "github.com/hoophq/hoop/gateway"
 
 func main() {
-	gateway.Run(appconfig.AppModeGateway)
+	gateway.Run()
 }

@@ -1,6 +1,5 @@
 import { useLocation } from 'react-router-dom'
 import { useUserStore } from '@/stores/useUserStore'
-import { useSidecarsEnabled } from '@/modes/sidecars'
 import { findActivePath, shouldHide, visibleNav } from './helpers'
 
 // The sections the signed-in user may see, and the path of the active item.
@@ -9,10 +8,9 @@ export function useSidebarNav(nav) {
   const { isAdmin, isSelfHosted, role } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
-  const sidecarsEnabled = useSidecarsEnabled()
 
   const sections = visibleNav(nav, (item) =>
-    shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role, sidecarsEnabled),
+    shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role),
   )
   const activePath = findActivePath(sections, location.pathname, location.search)
 
