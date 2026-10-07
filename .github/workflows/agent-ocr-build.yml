@@ -24,6 +24,18 @@ on:
       - 'scripts/dev/ocr-poc/entrypoint-embedded.sh'
       - '.github/workflows/agent-ocr-build.yml'
 
+# A newer run for the same PR makes this one stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # build-push-action v6+ adds a job summary, a build record artifact and
+  # Dockerfile check annotations by default. Off, to keep the v4 output.
+  DOCKER_BUILD_SUMMARY: "false"
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  DOCKER_BUILD_CHECKS_ANNOTATIONS: "false"
+
 jobs:
   build-agent-ocr:
     name: Build Agent OCR Image (CPU)
@@ -31,13 +43,13 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Build (CPU, multiarch, no push)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.agent-ocr
           context: '.'
@@ -50,7 +62,7 @@ jobs:
       # Multiarch builds cannot be --load'ed; rebuild amd64 from the warm
       # buildx cache to run the runtime-privilege assertion below.
       - name: Build (CPU, amd64, load for runtime check)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.agent-ocr
           context: '.'
@@ -77,11 +89,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: Build (GPU, amd64-only, no push)
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           file: ./Dockerfile.agent-ocr-gpu
           context: '.'
