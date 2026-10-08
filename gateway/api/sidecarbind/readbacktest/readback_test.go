@@ -98,16 +98,21 @@ func seed(t *testing.T) map[string]rule {
 	}
 }
 
-func get(t *testing.T, r rule) (*httptest.ResponseRecorder, map[string]any) {
-	t.Helper()
+func serve(handler gin.HandlerFunc, params gin.Params) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 	c.Set(storagev2.ContextKey, storagev2.NewContext("user-1", orgID).
 		WithUserInfo("Admin", "admin@hoop.dev", "active", "", nil))
-	c.Params = gin.Params{{Key: r.param, Value: r.key}}
-	r.handler(c)
+	c.Params = params
+	handler(c)
+	return w
+}
+
+func get(t *testing.T, r rule) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	w := serve(r.handler, gin.Params{{Key: r.param, Value: r.key}})
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body), "body: %s", w.Body)
 	return w, body
@@ -139,6 +144,32 @@ func TestARuleWhoseBindingsCannotBeReadIsNotServedUnbound(t *testing.T) {
 			w, body := get(t, r)
 			assert.Equal(t, http.StatusInternalServerError, w.Code, "body: %s", w.Body)
 			assert.NotContains(t, body, "sidecar_targets")
+		})
+	}
+}
+
+// The web app shows which traffic a rule protects from the sidecar_spec of
+// each list row.
+func TestARuleListCarriesTheSidecarSpec(t *testing.T) {
+	seed(t)
+	lists := map[string]gin.HandlerFunc{
+		"guardrail":    apiguardrails.List,
+		"data masking": apidatamasking.List,
+		"analyzer":     apiai.ListSessionAnalyzerRules,
+	}
+	for kind, list := range lists {
+		t.Run(kind, func(t *testing.T) {
+			w := serve(list, nil)
+			require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+			// The analyzer list is paginated; the other two are bare arrays.
+			var rows []map[string]any
+			var page struct{ Data []map[string]any }
+			if json.Unmarshal(w.Body.Bytes(), &rows) != nil {
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page), "body: %s", w.Body)
+				rows = page.Data
+			}
+			require.Len(t, rows, 1, "body: %s", w.Body)
+			assert.NotEmpty(t, rows[0]["sidecar_spec"], "body: %s", w.Body)
 		})
 	}
 }

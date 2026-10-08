@@ -313,8 +313,10 @@ func List(c *gin.Context) {
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    rule.Attributes,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
+			// The web app reads it to show which traffic the rule protects.
+			SidecarSpec: rule.SidecarSpec,
+			CreatedAt:   rule.CreatedAt,
+			UpdatedAt:   rule.UpdatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, rules)
