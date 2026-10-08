@@ -24,7 +24,8 @@ export default {
   id: 'gateway',
   theme: { theme, cssVariablesResolver },
   // The web terminal is the landing page of a signed-in user. A new local org
-  // continues in the CLJS onboarding.
+  // continues in the CLJS onboarding. With experimental.agents off,
+  // GatewayProtectedRoute sends both to Sidecars or Reviews.
   postLoginPath: '/client',
   postSetupPath: '/onboarding/setup',
   Page: GatewayPage,
