@@ -4,6 +4,7 @@ import { useAgentsEnabled } from '@/modes/agents'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { TRAFFIC_AGENT, TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 
+const NONE = []
 const AGENT_ONLY = [TRAFFIC_AGENT]
 const SIDECAR_ONLY = [TRAFFIC_SIDECAR]
 const AGENT_AND_SIDECAR = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
@@ -13,7 +14,9 @@ const AGENT_AND_SIDECAR = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
 export function useNewRuleTraffics() {
   const traffics = useRuleTraffics()
   const agentsEnabled = useAgentsEnabled()
-  const hasSidecar = useSidecarStore((s) => s.sidecars.length > 0)
+  const sidecarCount = useSidecarStore((s) => s.sidecars.length)
+  const sidecarsLoading = useSidecarStore((s) => s.loading)
+  const sidecarsFailed = useSidecarStore((s) => s.error !== null)
   const fetchSidecars = useSidecarStore((s) => s.fetchSidecars)
   const countsSidecars = agentsEnabled && traffics.length > 1
 
@@ -23,5 +26,7 @@ export function useNewRuleTraffics() {
 
   if (traffics.length === 1) return traffics
   if (!agentsEnabled) return SIDECAR_ONLY
-  return hasSidecar ? AGENT_AND_SIDECAR : AGENT_ONLY
+  // A failed count keeps both choices; a pending one offers none yet.
+  if (sidecarCount > 0 || sidecarsFailed) return AGENT_AND_SIDECAR
+  return sidecarsLoading ? NONE : AGENT_ONLY
 }

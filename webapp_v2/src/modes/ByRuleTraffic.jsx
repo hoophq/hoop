@@ -8,7 +8,7 @@ import {
   TRAFFIC_SIDECAR,
   resolveRuleTraffic,
 } from '@/utils/ruleTraffic'
-import { useAgentsEnabled } from './agents'
+import { useAgentsEnabled } from '@/modes/agents'
 import { useRuleTraffics } from './index'
 
 const NEW_RULE_TRAFFICS = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
