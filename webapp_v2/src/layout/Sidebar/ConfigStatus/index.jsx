@@ -5,6 +5,7 @@ import { useClickOutside } from '@mantine/hooks'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import RingProgress from '@/components/RingProgress'
+import { useAgentsEnabled } from '@/modes/agents'
 import { useUserStore } from '@/stores/useUserStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useConfigStatusStore } from '@/stores/useConfigStatusStore'
@@ -29,8 +30,10 @@ export function ConfigStatus() {
   // The userId guard is for the window before /userinfo resolves: no key of the
   // map may stand in for "no user yet".
   const dismissed = useUIStore((s) => userId !== null && userId in s.configStatusDismiss)
+  // The steps walk agent onboarding; a sidecar-only org has none to take yet.
+  const agentsEnabled = useAgentsEnabled()
 
-  if (!isAdmin || !showSetupChecklist || completed || dismissed) return null
+  if (!isAdmin || !showSetupChecklist || completed || dismissed || !agentsEnabled) return null
   return <ConfigStatusWidget />
 }
 
