@@ -23,6 +23,9 @@ type sidecarSessionHook struct {
 	// Closed is set on the batch, or the reap, that ended it.
 	Closed bool
 	Reaped bool
+	// Republish re-runs the close events only. They are idempotent; the
+	// webhook is not, so it is not sent again.
+	Republish bool
 }
 
 // runSidecarSessionHooks fires in the background: a slow webhook endpoint
@@ -33,7 +36,7 @@ var runSidecarSessionHooks = func(h sidecarSessionHook) { go fireSidecarSessionH
 // session.close when one batch holds both. Failures are logged: an agent
 // session drops them the same way.
 func fireSidecarSessionHooks(h sidecarSessionHook) {
-	if !h.Opened && !h.Closed {
+	if !h.Opened && !h.Closed && !h.Republish {
 		return
 	}
 	logger := log.With("sid", h.SessionID)
@@ -61,6 +64,9 @@ func fireSidecarSessionHooks(h sidecarSessionHook) {
 				logger.Warn(err)
 			}
 		}
+	}
+	if h.Republish && !h.Closed {
+		events.DeriveFromSessionEnd(h.OrgID, sess)
 	}
 	if h.Closed {
 		events.DeriveFromSessionEnd(h.OrgID, sess)

@@ -9,7 +9,7 @@
 
 (defn- event-item []
   (let [is-open? (r/atom false)]
-    (fn [event-type data parsed-date denied-rule]
+    (fn [event-type data parsed-date denied-rules]
       [:div
        {:class (str "flex flex-col gap-small transition"
                     (when (= event-type "i") " bg-gray-50 hover:bg-gray-100")
@@ -19,8 +19,8 @@
        [:div
         {:class "flex items-center gap-small cursor-pointer py-regular"
          :on-click #(reset! is-open? (not @is-open?))}
-        (when denied-rule
-          [guardrails-info/denied-badge denied-rule])
+        (when denied-rules
+          [guardrails-info/denied-badge denied-rules])
         [:span {:class "font-mono truncate text-xs flex-1"}
          (str (when (= event-type "i") "> ") data)]
         [:span
@@ -89,7 +89,7 @@
               (when (not= "e" event-type) (get denied seconds))]))]]))))
 
 (defn main
-  "denied maps a stream time to the rule that denied its statement; see
+  "denied maps a stream time to the rules that denied there; see
   guardrails-info/denied-at."
   ([event-stream session-start-date]
    (main event-stream session-start-date {}))

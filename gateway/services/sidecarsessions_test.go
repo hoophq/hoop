@@ -1084,6 +1084,9 @@ func TestPlanSidecarSessionFeedsTheLivePage(t *testing.T) {
 	assert.Equal(t, "i", plan.Live[0].Type)
 	assert.Equal(t, []byte("SELECT 1"), plan.Live[0].Payload)
 	assert.Equal(t, testSidecarT0.Add(time.Second), plan.Live[0].Time)
+	if assert.NotNil(t, plan.Live[0].Elapsed, "the live row carries its stored time") {
+		assert.Equal(t, 1.0, *plan.Live[0].Elapsed)
+	}
 	assert.Equal(t, "e", plan.Live[1].Type)
 	assert.Equal(t, []byte("reset"), plan.Live[1].Payload)
 }
@@ -1122,6 +1125,19 @@ func TestPlanSidecarSessionAfterTheReaper(t *testing.T) {
 		assert.Len(t, decodeSidecarEntries(t, plan.Entries), 1)
 		assert.Nil(t, plan.Done)
 		assert.False(t, plan.Ended)
+		assert.False(t, plan.Republish, "a plain statement adds nothing the close events read")
+	})
+
+	t.Run("a late denial republishes the close events", func(t *testing.T) {
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, reaped, []daemon.SessionEvent{
+			sidecarEvent(7, audit.KindViolation, time.Second, func(e *audit.Event) {
+				e.Statement = "DROP TABLE t"
+				e.Rule = "no-drop"
+			}),
+		})
+		require.NoError(t, err)
+		assert.True(t, plan.Republish)
+		assert.False(t, plan.Ended)
 	})
 
 	t.Run("its late session_end corrects the end and fires nothing", func(t *testing.T) {
@@ -1132,6 +1148,7 @@ func TestPlanSidecarSessionAfterTheReaper(t *testing.T) {
 		require.NotNil(t, plan.Done)
 		assert.Equal(t, testSidecarT0.Add(time.Hour), *plan.Done.EndSession)
 		assert.False(t, plan.Ended, "the reap fired the close hooks already")
+		assert.True(t, plan.Republish, "event routing catches up on what came after the reap")
 		assert.Contains(t, plan.Sidecar, "reaped_at")
 		assert.Nil(t, plan.Sidecar["reaped_at"], "a real end clears the reap, so stray events are refused again")
 	})
@@ -1141,6 +1158,7 @@ func TestPlanSidecarSessionAfterTheReaper(t *testing.T) {
 			[]daemon.SessionEvent{sidecarEvent(7, audit.KindSessionEnd, time.Minute)})
 		require.NoError(t, err)
 		assert.True(t, plan.Ended)
+		assert.False(t, plan.Republish)
 	})
 }
 

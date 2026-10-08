@@ -105,20 +105,25 @@
                      guardrails-info)]]]]))
 
 (defn denied-at
-  "Maps the stream time of each denied statement to its rule name. Only
-  entries with :elapsed (sidecar sessions) point at a stream row."
+  "Maps the stream time of each denied statement to the names of the rules
+  that denied there; two denials can share a time. Only entries with
+  :elapsed (sidecar sessions) point at a stream row."
   [guardrails-info]
-  (into {}
-        (keep (fn [{:keys [elapsed rule_name]}]
-                (when (number? elapsed) [elapsed (or rule_name "")])))
-        guardrails-info))
+  (reduce (fn [acc {:keys [elapsed rule_name]}]
+            (if (number? elapsed)
+              (update acc elapsed (fnil conj []) (or rule_name ""))
+              acc))
+          {}
+          guardrails-info))
 
 (defn denied-badge
   "Marks a stream row whose statement a guardrail denied."
-  [rule-name]
-  [:> Tooltip {:content (if (cs/blank? rule-name)
-                          "Denied by a guardrail"
-                          (str "Denied by rule " rule-name))}
+  [rule-names]
+  [:> Tooltip {:content (let [named (distinct (remove cs/blank? rule-names))]
+                          (if (empty? named)
+                            "Denied by a guardrail"
+                            (str "Denied by " (if (next named) "rules " "rule ")
+                                 (cs/join ", " named))))}
    [:> Badge {:color "red" :variant "solid" :size "1"
               :class "shrink-0 mt-[2px]"}
     "Denied"]])

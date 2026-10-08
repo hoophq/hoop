@@ -13,6 +13,9 @@ type Event struct {
 	Time    time.Time
 	Type    string // "i" input, "o" output, "e" error
 	Payload []byte
+	// Elapsed is the entry's time in the stored stream, when the publisher
+	// knows it. A viewer then keys the live row as the stored one.
+	Elapsed *float64
 }
 
 type subscriber struct {

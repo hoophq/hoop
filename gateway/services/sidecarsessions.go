@@ -157,6 +157,9 @@ type sidecarSessionPlan struct {
 	Done *models.SessionDone
 	// Ended is set when Done ends an open session; it fires the close hooks.
 	Ended bool
+	// Republish is set when a reaped session records what its close events
+	// derive from; event routing publishes what it lacks.
+	Republish bool
 	// ReviewIDs are the reviews that held a statement of this batch.
 	ReviewIDs []string
 	// ReviewSessions are the review sessions linked before this batch.
@@ -296,6 +299,8 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		}
 	}
 	plan.Sidecar["last_seq"] = lastSeq
+	plan.Republish = prior != nil && prior.Reaped &&
+		(len(plan.GuardRails) > 0 || len(plan.Masked) > 0 || plan.Done != nil)
 
 	if len(stream.entries) > 0 {
 		plan.Entries = json.RawMessage("[" + strings.Join(stream.entries, ",") + "]")
@@ -462,7 +467,7 @@ func (s *sidecarStream) add(at time.Time, kind, text string) (float64, bool) {
 		return 0, false
 	}
 	s.entries = append(s.entries, string(entry))
-	s.live = append(s.live, eventbroker.Event{Time: at, Type: kind, Payload: []byte(text)})
+	s.live = append(s.live, eventbroker.Event{Time: at, Type: kind, Payload: []byte(text), Elapsed: &elapsed})
 	s.size += int64(len(entry))
 	if s.size >= maxSidecarSessionStreamBytes {
 		s.truncated = true
@@ -621,9 +626,9 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 			result.Accepted += plan.Accepted
 			result.Duplicates += plan.Duplicates
 			publishSidecarSession(plan)
-			if plan.Create != nil || plan.Ended {
+			if plan.Create != nil || plan.Ended || plan.Republish {
 				runSidecarSessionHooks(sidecarSessionHook{DB: db, OrgID: ident.OrgID, SessionID: plan.SessionID,
-					Opened: plan.Create != nil, Closed: plan.Ended})
+					Opened: plan.Create != nil, Closed: plan.Ended, Republish: plan.Republish})
 			}
 		}
 	}

@@ -119,7 +119,7 @@
     (mapv (fn [row]
             (if (and (not= "e" (:event-type row))
                      (contains? denied (:seconds row)))
-              (assoc row :denied-rule (get denied (:seconds row)))
+              (assoc row :denied-rules (get denied (:seconds row)))
               row))
           rows)))
 
@@ -188,7 +188,7 @@
          [:> Text {:size "2" :class "text-[--gray-11]"}
           "Only queries"]]])]]])
 
-(defn- query-row [{:keys [seconds sql pg-type-name absolute denied-rule]}]
+(defn- query-row [{:keys [seconds sql pg-type-name absolute denied-rules]}]
   [:> Flex {:gap "3" :align "start"
             :class (str "px-radix-4 py-radix-2 "
                         "border-b border-[--gray-a3] "
@@ -198,8 +198,8 @@
               :class (str "text-[--gray-10] tabular-nums "
                           "shrink-0 pt-1 w-20 font-mono")}
      (format-relative seconds)]]
-   (if denied-rule
-     [guardrails-info/denied-badge denied-rule]
+   (if denied-rules
+     [guardrails-info/denied-badge denied-rules]
      [:> Badge {:color "iris" :variant "soft" :size "1"
                 :class "shrink-0 mt-[2px]"}
       pg-type-name])
@@ -222,7 +222,7 @@
     [:> Text {:size "1" :class "italic"}
      (str pg-type-name (when pg-type (str " (" pg-type ")")))]]])
 
-(defn- text-row [{:keys [seconds event-type text absolute denied-rule]}]
+(defn- text-row [{:keys [seconds event-type text absolute denied-rules]}]
   (let [tone (case event-type
                "o" "text-[--gray-12]"
                "e" "text-[--red-11]"
@@ -235,8 +235,8 @@
       [:> Text {:size "1" :class (str "text-[--gray-10] tabular-nums "
                                       "shrink-0 pt-1 w-20 font-mono")}
        (format-relative seconds)]]
-     (when denied-rule
-       [guardrails-info/denied-badge denied-rule])
+     (when denied-rules
+       [guardrails-info/denied-badge denied-rules])
      [:> Box {:class "min-w-0 grow"}
       [:pre {:class (str "whitespace-pre-wrap break-words "
                          "text-[12px] leading-relaxed font-mono m-0 "

@@ -205,3 +205,27 @@ func TestReapSkipsASessionRevivedSinceItWasListed(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, "open", readRow(t, id).Status)
 }
+
+// The reap already published session.closed. A denial that arrives later
+// must still reach event routing; the close itself is not published twice.
+func TestALateDenialReachesEventRouting(t *testing.T) {
+	sc := startReaperDB(t)
+	id := openSession(t, sc, "s-late-deny")
+	setLastSeen(t, sc, time.Now().Add(-services.SidecarUnseenAfter-time.Minute))
+	require.Equal(t, 1, reapNow(t))
+
+	deny := event(3, "s-late-deny", audit.KindViolation, time.Now().UTC(), "DROP TABLE users")
+	deny.Event.Rule = "no-drop"
+	_, err := services.ApplySidecarSessionEvents(models.DB, sc, []daemon.SessionEvent{deny})
+	require.NoError(t, err)
+
+	count := func(producerID string) int64 {
+		var n int64
+		require.NoError(t, models.DB.Raw(`SELECT count(*) FROM private.events WHERE producer_event_id = ?`,
+			producerID).Scan(&n).Error)
+		return n
+	}
+	require.Eventually(t, func() bool { return count(id+":session.guardrail_violation:no-drop") == 1 },
+		10*time.Second, 50*time.Millisecond, "the late denial is published")
+	assert.Equal(t, int64(1), count(id+":session.closed"))
+}

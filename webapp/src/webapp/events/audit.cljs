@@ -764,15 +764,49 @@
                  ev-time (:time parsed)
                  start-ms (when start-date (.getTime (js/Date. start-date)))
                  ev-ms (when ev-time (.getTime (js/Date. ev-time)))
-                 seconds (if (and start-ms ev-ms (pos? start-ms))
-                           (/ (- ev-ms start-ms) 1000.0)
-                           0)
-                 entry [seconds (:type parsed) (:payload parsed)]]
-             {:db (update-in db [:audit->session-details :session :event_stream]
-                             (fnil conj []) entry)})
+                 ;; A sidecar sends the stored row's time, which a denial
+                 ;; in guardrails_info points at; the clock math is ms only.
+                 seconds (cond
+                           (number? (:elapsed parsed)) (:elapsed parsed)
+                           (and start-ms ev-ms (pos? start-ms)) (/ (- ev-ms start-ms) 1000.0)
+                           :else 0)
+                 entry [seconds (:type parsed) (:payload parsed)]
+                 refresh? (and (= "e" (:type parsed))
+                               (= "sidecar" (:identity_type current-session))
+                               (not (get-in db [:audit->session-stream session-id
+                                                :guardrails-refresh-pending?])))]
+             (cond-> {:db (cond-> (update-in db [:audit->session-details :session :event_stream]
+                                             (fnil conj []) entry)
+                            refresh? (assoc-in [:audit->session-stream session-id
+                                                :guardrails-refresh-pending?] true))}
+               ;; A sidecar denial writes an "e" row; its guardrails_info
+               ;; entry is only in the session. One refresh covers a burst.
+               refresh? (assoc :fx [[:dispatch-later
+                                     {:ms 1500
+                                      :dispatch [:audit->refresh-session-guardrails session-id]}]])))
            {}))
 
        :else {}))))
+
+(rf/reg-event-fx
+ :audit->refresh-session-guardrails
+ (fn [{:keys [db]} [_ session-id]]
+   ;; Cleared before the fetch: a denial that arrives during it schedules
+   ;; the next one, so none is missed.
+   {:db (assoc-in db [:audit->session-stream session-id :guardrails-refresh-pending?] false)
+    :fx [[:dispatch [:fetch
+                     {:method "GET"
+                      :uri (str "/sessions/" session-id)
+                      :on-success #(rf/dispatch [:audit->set-session-guardrails
+                                                 session-id (:guardrails_info %)])
+                      :on-failure (fn [_])}]]]}))
+
+(rf/reg-event-db
+ :audit->set-session-guardrails
+ (fn [db [_ session-id guardrails-info]]
+   (if (= session-id (-> db :audit->session-details :session :id))
+     (assoc-in db [:audit->session-details :session :guardrails_info] guardrails-info)
+     db)))
 
 (rf/reg-event-fx
  :audit->session-stream-ended
