@@ -509,7 +509,7 @@
             "type": "string"
           },
           "pending_ttl_sec": {
-            "description": "Seconds a held statement's review may wait for a decision. Present only in a control plane, while the\nrule holds and the limit is set",
+            "description": "Seconds a held statement's review may wait for a decision. Present only while the rule holds and the\nlimit is set",
             "example": 900,
             "type": "integer"
           },
@@ -590,7 +590,7 @@
             "type": "string"
           },
           "pending_ttl_sec": {
-            "description": "Seconds a held statement's review may wait for a decision, 60 to 604800. Control plane, read only while\nsidecar_spec holds under its own approval rule. Absent keeps, 0 clears",
+            "description": "Seconds a held statement's review may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds under its own approval rule. Absent keeps, 0 clears",
             "example": 900,
             "type": "integer"
           },
@@ -1070,7 +1070,7 @@
             "type": "string"
           },
           "pending_ttl_sec": {
-            "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules\nonly; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule",
+            "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type\nsidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule",
             "example": 900,
             "type": "integer"
           },
@@ -1191,7 +1191,7 @@
             "type": "string"
           },
           "pending_ttl_sec": {
-            "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules\nonly; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule",
+            "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type\nsidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule",
             "example": 900,
             "type": "integer"
           },
@@ -8480,6 +8480,12 @@
             "readOnly": true,
             "type": "string"
           },
+          "listener_name": {
+            "description": "The sidecar listener this review is bound to. Absent on a review that came from a connection.\nOnly GET /sessions/{session_id} returns it",
+            "example": "appdb",
+            "readOnly": true,
+            "type": "string"
+          },
           "min_approvals": {
             "description": "The minimum number of approvals required for this review",
             "example": 2,
@@ -8658,7 +8664,7 @@
           },
           "last_error": {
             "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
-            "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
+            "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\"",
             "type": "string"
           },
           "last_outcome": {
@@ -8748,7 +8754,7 @@
           },
           "last_error": {
             "description": "LastError is the reason, when LastOutcome is refused, restart or\nnot_served. Shown on the sidecar page so an admin reads it without the\nsidecar's log.\n\nOptional. A build from before the field sends nothing.",
-            "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
+            "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\"",
             "type": "string"
           },
           "last_outcome": {
@@ -8882,7 +8888,7 @@
           },
           "last_error": {
             "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
-            "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
+            "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\"",
             "type": "string"
           },
           "last_outcome": {

@@ -12615,7 +12615,7 @@ const docTemplate = `{
                     "example": "block-dangerous-queries"
                 },
                 "pending_ttl_sec": {
-                    "description": "Seconds a held statement's review may wait for a decision. Present only in a control plane, while the\nrule holds and the limit is set",
+                    "description": "Seconds a held statement's review may wait for a decision. Present only while the rule holds and the\nlimit is set",
                     "type": "integer",
                     "example": 900
                 },
@@ -12701,7 +12701,7 @@ const docTemplate = `{
                     "example": "block-dangerous-queries"
                 },
                 "pending_ttl_sec": {
-                    "description": "Seconds a held statement's review may wait for a decision, 60 to 604800. Control plane, read only while\nsidecar_spec holds under its own approval rule. Absent keeps, 0 clears",
+                    "description": "Seconds a held statement's review may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds under its own approval rule. Absent keeps, 0 clears",
                     "type": "integer",
                     "example": 900
                 },
@@ -13176,7 +13176,7 @@ const docTemplate = `{
                     "example": "default-access-request-rule"
                 },
                 "pending_ttl_sec": {
-                    "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules\nonly; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule",
+                    "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type\nsidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule",
                     "type": "integer",
                     "example": 900
                 },
@@ -13305,7 +13305,7 @@ const docTemplate = `{
                     "example": "default-access-request-rule"
                 },
                 "pending_ttl_sec": {
-                    "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules\nonly; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule",
+                    "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type\nsidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule",
                     "type": "integer",
                     "example": 900
                 },
@@ -20586,6 +20586,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
                 },
+                "listener_name": {
+                    "description": "The sidecar listener this review is bound to. Absent on a review that came from a connection.\nOnly GET /sessions/{session_id} returns it",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "appdb"
+                },
                 "min_approvals": {
                     "description": "The minimum number of approvals required for this review",
                     "type": "integer",
@@ -20765,7 +20771,7 @@ const docTemplate = `{
                 "last_error": {
                     "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
                     "type": "string",
-                    "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""
+                    "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\""
                 },
                 "last_outcome": {
                     "description": "LastOutcome is what the sidecar did with the last configuration it\nhandled: applied, unchanged, restart, refused or retry.\n\nIt is the field that separates a sidecar enforcing the current rules\nfrom one that refused them and kept the old ones. A refusal, or a\ndocument needing a restart, leaves the sidecar handshaking on time\nwith stale rules, and nothing else tells the two apart.\n\nEmpty for a sidecar that has handled nothing yet, or one too old to\nreport. Empty must read as unknown, never as converged.",
@@ -20858,7 +20864,7 @@ const docTemplate = `{
                 "last_error": {
                     "description": "LastError is the reason, when LastOutcome is refused, restart or\nnot_served. Shown on the sidecar page so an admin reads it without the\nsidecar's log.\n\nOptional. A build from before the field sends nothing.",
                     "type": "string",
-                    "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""
+                    "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\""
                 },
                 "last_outcome": {
                     "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time. One more value\nis the control plane's own: not_served, when it refused to serve this\nbuild the configuration, with LastError saying why.\n\nOptional, for the same reason as AppliedRevision.",
@@ -20989,7 +20995,7 @@ const docTemplate = `{
                 "last_error": {
                     "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
                     "type": "string",
-                    "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""
+                    "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\""
                 },
                 "last_outcome": {
                     "description": "LastOutcome is what the sidecar did with the last configuration it\nhandled: applied, unchanged, restart, refused or retry.\n\nIt is the field that separates a sidecar enforcing the current rules\nfrom one that refused them and kept the old ones. A refusal, or a\ndocument needing a restart, leaves the sidecar handshaking on time\nwith stale rules, and nothing else tells the two apart.\n\nEmpty for a sidecar that has handled nothing yet, or one too old to\nreport. Empty must read as unknown, never as converged.",
