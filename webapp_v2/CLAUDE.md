@@ -41,11 +41,13 @@ src/
 
 ## Application modes — gateway and control plane
 
-One bundle renders as one of two products. The backend decides which: `hoop start
-control-plane` reports `application_mode: "control-plane"` on `/api/publicserverinfo`
-(read once at boot, `main.jsx`) and on `/api/serverinfo` (read after login). The store
-keeps it in `useUserStore.appMode`, default `'gateway'`, and `src/modes/` is the only
-reader (ESLint: `appMode` anywhere else is an error).
+One bundle renders as one of two products. `application_mode` is always `"gateway"`
+(`hoop start control-plane` is the gateway), so `useUserStore.appMode` is `'gateway'` and
+no backend field selects the control-plane manifest today. The per-org
+`experimental.agents` flag (`feature_flags` on `/api/serverinfo`; off by default, set by
+migration for orgs that have an agent of their own) gates only the admin onboarding
+redirect (`GatewayProtectedRoute`). `src/modes/` is the only reader of `appMode` (ESLint:
+`appMode` anywhere else is an error).
 
 **The rule, in one sentence: every React route exists in both products, the sidebar says
 what a product shows, and ClojureScript exists only in the gateway.**
