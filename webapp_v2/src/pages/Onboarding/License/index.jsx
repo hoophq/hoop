@@ -83,7 +83,7 @@ function LicenseIntro() {
             <Title order={1} className={classes.heading}>
               License
             </Title>
-            <Text size="md">Insert the license token you have received to activate your Control Plane</Text>
+            <Text size="md">Insert the license token you have received to activate your gateway</Text>
           </Stack>
 
           <form onSubmit={handleSubmit}>

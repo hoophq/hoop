@@ -144,7 +144,7 @@ var catalog = map[string]Flag{
 	},
 	FlagAgents: {
 		Name:        FlagAgents,
-		Description: "Render the gateway product in the web app: agents, resources, terminal, sessions, runbooks. When off the web app renders the control plane product: sidecars, policies, reviews. Turned on once for every organization that already had an agent.",
+		Description: "Show the agent pages in the web app: agents, terminal, runbooks and the agent onboarding. When off, the web app hides them and opens on Sidecars for admins and on Reviews for other users. Agents and their sessions keep working. Turned on once for every organization that already had an agent.",
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},

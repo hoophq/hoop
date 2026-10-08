@@ -13,17 +13,22 @@ import ReviewsTable from './sections/ReviewsTable'
 import ReviewModal from './sections/ReviewModal'
 import RejectModal from './sections/RejectModal'
 
-// What a settled decision did. Anything else settled is a rejection.
+// What a settled decision did. Anything else settled is a rejection. Only a
+// sidecar review holds a statement, and only its approval can be revoked.
 const SETTLED_TEXT = {
-  [STATUS.APPROVED]: 'Statement released.',
-  [STATUS.REVOKED]: 'Approval revoked. Running the statement again files a new review.',
+  sidecar: {
+    [STATUS.APPROVED]: 'Statement released.',
+    [STATUS.REVOKED]: 'Approval revoked. Running the statement again files a new review.',
+    rejected: 'Statement rejected.',
+  },
+  agent: { [STATUS.APPROVED]: 'Review approved.', rejected: 'Review rejected.' },
 }
 
 const EMPTY = {
   waiting: {
     title: 'Nothing waiting for a decision',
     description:
-      'A sidecar files a review when a listener holds a statement for approval. Approve one here or from Slack.',
+      'A review is filed when a session on a resource or a statement on a sidecar listener needs approval. Approve one here or from Slack.',
   },
   settled: { title: 'No review has been decided yet' },
 }
@@ -109,10 +114,11 @@ export default function Reviews() {
     closeReject()
     // A review below its minimum stays pending, so the message says what changed.
     const settled = review.status !== STATUS.PENDING
+    const settledText = SETTLED_TEXT[isSidecarReview(target) ? 'sidecar' : 'agent']
     showSnackbar({
       level: 'success',
       text: settled
-        ? (SETTLED_TEXT[review.status] ?? 'Statement rejected.')
+        ? (settledText[review.status] ?? settledText.rejected)
         : 'Your approval was recorded. The review still needs another one.',
     })
     if (settled) close()
@@ -142,6 +148,7 @@ export default function Reviews() {
       />
       <RejectModal
         opened={rejecting != null}
+        sidecar={isSidecarReview(rejecting)}
         onClose={closeReject}
         onConfirm={(reason) => settle(rejecting, STATUS.REJECTED, reason)}
         loading={submitting}
@@ -153,7 +160,7 @@ export default function Reviews() {
         <Stack gap="sm">
           <Title order={1}>Reviews</Title>
           <Text size="lg" c="dimmed">
-            The statements your sidecars are holding, and what was decided about them.
+            The sessions and statements waiting for approval, and what was decided about them.
           </Text>
         </Stack>
 

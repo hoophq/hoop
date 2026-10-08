@@ -290,7 +290,7 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	r.GET("/sidecars/reviews/:id", r.SidecarAuthMiddleware, apisidecar.GetReview)
 	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apisidecar.ClaimReview)
 	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.ImportConfiguration)
-	// No TrackRequest, for the reason above. 412 while the flag is off.
+	// No TrackRequest, for the reason above. 412 while experimental.sidecar_session_events is off.
 	r.POST("/sidecars/events", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.PostEvents)
 
 	r.POST("/sidecars",
@@ -338,8 +338,7 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventClearSidecarIdentity),
 		apisidecar.ClearIdentity)
-	// Where the sidecar's reviews are posted in Slack. Both modes register
-	// them; a gateway answers 412.
+	// Where the sidecar's reviews are posted in Slack.
 	r.GET("/sidecars/:nameOrID/slack-channels",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

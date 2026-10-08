@@ -152,7 +152,7 @@ export default function ReviewModal({
   if (!review) return null
 
   const source = reviewSource(review, sidecarsById)
-  const status = statusLabel(review.status)
+  const status = statusLabel(review)
   const decided = decidedGroups(review)
   const settled = isSettled(review)
   const mayApprove = canApprove(review, user)

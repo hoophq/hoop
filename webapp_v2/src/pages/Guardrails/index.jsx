@@ -145,7 +145,7 @@ export default function Guardrails() {
         <Stack gap="sm">
           <Title order={1}>Guardrails</Title>
           <Text size="md" c="dimmed">
-            Create custom rules to guide and protect usage within your resource roles
+            Create custom rules to guide and protect usage of your resource roles and sidecar listeners
           </Text>
         </Stack>
         <NewRuleButton

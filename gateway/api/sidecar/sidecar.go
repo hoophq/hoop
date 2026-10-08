@@ -650,7 +650,7 @@ func Handshake(c *gin.Context) {
 	// that cannot run from showing up as recently seen.
 	if len(sidecar.Configuration.Listeners) == 0 {
 		c.JSON(http.StatusPreconditionFailed, gin.H{"message": "no configuration is assigned to this sidecar; " +
-			"start the sidecar with its config file to import it, or author the configuration in the control plane"})
+			"start the sidecar with its config file to import it, or author the configuration in the web app"})
 		return
 	}
 	served, err := withOrgLicense(sidecar, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
@@ -864,7 +864,7 @@ func ImportConfiguration(c *gin.Context) {
 	case errors.Is(err, services.ErrImportedRuleConflict):
 		c.JSON(http.StatusConflict, gin.H{"message": services.ErrImportedRuleConflict.Error()})
 	case errors.Is(err, models.ErrAlreadyExists):
-		c.JSON(http.StatusConflict, gin.H{"message": "the control plane already holds a configuration for this sidecar; edit it there"})
+		c.JSON(http.StatusConflict, gin.H{"message": "the gateway already holds a configuration for this sidecar; edit it in the web app"})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed importing sidecar configuration")
 	}
