@@ -101,7 +101,7 @@ func (m menu) view(w, h int) string {
 		var row string
 		switch {
 		case it.button && focused:
-			row = "  " + badge("▶ "+it.label, colPrimary)
+			row = "  " + badge(buttonGlyph(it.id)+it.label, colPrimary)
 		case it.button && it.dim:
 			row = "  " + stFaint.Render("  "+it.label)
 		case it.button:
@@ -130,6 +130,15 @@ func (m menu) view(w, h int) string {
 		rows = append(rows, row)
 	}
 	return window(rows, curRow, h)
+}
+
+// buttonGlyph leads a focused button: an arrow pointing where it goes, so
+// Back points back.
+func buttonGlyph(id string) string {
+	if id == "back" {
+		return "◀ "
+	}
+	return "▶ "
 }
 
 // window shows h rows of rows, scrolled so row cur is in view.
@@ -403,7 +412,7 @@ func (f *form) view(w, h int) string {
 				}
 			}
 			if focused {
-				rows = append(rows, "  "+badge("▶ "+x.label, colPrimary))
+				rows = append(rows, "  "+badge(buttonGlyph(x.id)+x.label, colPrimary))
 			} else {
 				rows = append(rows, "  "+stPrimary.Render("  "+x.label))
 			}

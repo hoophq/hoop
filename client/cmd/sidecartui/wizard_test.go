@@ -300,6 +300,9 @@ func TestOverviewLeadsWithItsActions(t *testing.T) {
 	if w.overview.selected() != "back" {
 		t.Errorf("up from listener landed on %q, want back", w.overview.selected())
 	}
+	if out := ansi.Strip(w.overview.view(80, 20)); !strings.Contains(out, "◀ Back") || strings.Contains(out, "▶ Back") {
+		t.Errorf("a focused Back must point back:\n%s", out)
+	}
 	w.update(wkey("enter"))
 	if w.page != pgProtocol {
 		t.Errorf("Back went to page %v, want the protocol list", w.page)
