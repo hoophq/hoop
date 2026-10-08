@@ -177,8 +177,9 @@ func newDraft(protocol string, demo bool, m machine) (*draft, error) {
 		d.protocol = "http"
 	} else {
 		upstream := defaultUpstream[protocol]
+		var source string
 		if f, ok := m.foundFor(protocol); ok {
-			upstream = f.addr
+			upstream, source = f.addr, f.source
 		}
 		prefill := map[string]string{"name": protocol, "upstream": upstream}
 		if l, err := configyaml.StarterListen(upstream); err == nil {
@@ -189,7 +190,7 @@ func newDraft(protocol string, demo bool, m machine) (*draft, error) {
 		if protocol == "spanner" {
 			prefill["upstream_tls"] = "on"
 		}
-		lf, err := newListenerForm(protocol, prefill)
+		lf, err := newListenerForm(protocol, prefill, source)
 		if err != nil {
 			return nil, err
 		}

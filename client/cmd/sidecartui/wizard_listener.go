@@ -75,7 +75,10 @@ type listenerForm struct {
 // newListenerForm builds the form for protocol, with prefill keyed by
 // dotted path ("upstream", "ssh.host_key"). A presence object is switched
 // on by prefilling its path with "on".
-func newListenerForm(protocol string, prefill map[string]string) (*listenerForm, error) {
+//
+// source says how the upstream was found on this machine, "" when the
+// prefill is a default; the note at the top of the form says which.
+func newListenerForm(protocol string, prefill map[string]string, source string) (*listenerForm, error) {
 	schema, err := loadListenerSchema()
 	if err != nil {
 		return nil, err
@@ -164,7 +167,29 @@ func newListenerForm(protocol string, prefill map[string]string) (*listenerForm,
 		}
 	}
 	walk(schema, nil, "", func() bool { return true }, true)
-	fields = append(fields, lf.advanced, &field{id: "done", label: "Continue", kind: fButton})
+	// The actions lead, as on the overview: the defaults come from this
+	// machine and usually fit, so Continue is where the cursor starts.
+	head := []*field{
+		{id: "done", label: "Continue", kind: fButton},
+		{id: "back", label: "Back", kind: fButton},
+		{id: "note", kind: fNote, note: func() string {
+			// Says where the values came from, and asks for the ones no
+			// default can fill (an ssh host key) until they are there.
+			lf.form.store()
+			for _, x := range lf.fields {
+				if x.schema.Required && x.f.visible() && strings.TrimSpace(x.f.text) == "" && x.f.kind == fText {
+					return "\n" + stText.Render("Fill in the empty fields below; ") +
+						stFaint.Render("the rest has defaults you can change by moving to them and typing.") + "\n"
+				}
+			}
+			from := "Filled in with common defaults."
+			if source != "" {
+				from = "Filled in from what was found: " + source + "."
+			}
+			return "\n" + stFaint.Render(from+" To change a value, move to it and type.") + "\n"
+		}},
+	}
+	fields = append(append(head, fields...), lf.advanced)
 	lf.form = newForm("Listener", fields...)
 	return lf, nil
 }

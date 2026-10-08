@@ -394,7 +394,9 @@ func (f *form) view(w, h int) string {
 			}
 			continue
 		case fButton:
-			if i == 0 || f.fields[i-1].kind != fButton {
+			// A button group after fields is set off by a blank line;
+			// one at the top of the form needs none.
+			if i > 0 && f.fields[i-1].kind != fButton && f.fields[i-1].kind != fNote {
 				rows = append(rows, "")
 				if focused {
 					curRow++

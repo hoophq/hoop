@@ -313,6 +313,43 @@ func TestOverviewLeadsWithItsActions(t *testing.T) {
 	}
 }
 
+// The listener page leads with Continue and Back like the overview, and
+// the note under them is skipped by the cursor.
+func TestListenerPageLeadsWithItsActions(t *testing.T) {
+	w := newWizard(machine{found: []found{{"postgres", "127.0.0.1:5432", "test"}}}, validateFile, t.TempDir(), time.Now)
+	for w.protos.selected() != "postgres" {
+		w.update(wkey("down"))
+	}
+	w.update(wkey("enter"))
+	f := w.d.listener.form
+	if f.focused().id != "done" || f.fields[1].id != "back" || f.fields[2].kind != fNote {
+		t.Fatalf("listener page starts with %q, %q; want Continue, Back, then the note", f.fields[0].id, f.fields[1].id)
+	}
+	w.update(wkey("down"))
+	w.update(wkey("down"))
+	if f.focused().id != "name" {
+		t.Errorf("two downs from Continue landed on %q, want name past the note", f.focused().id)
+	}
+	out := ansi.Strip(f.view(90, 24))
+	if i, j := strings.Index(out, "Back"), strings.Index(out, "Upstream"); i < 0 || j < 0 || i > j {
+		t.Errorf("Back is not drawn above the fields:\n%s", out)
+	}
+	w.update(wkey("up"))
+	w.update(wkey("enter"))
+	if w.page != pgProtocol {
+		t.Errorf("Back went to page %v, want the protocol list", w.page)
+	}
+	w.update(wkey("enter"))
+	if f.focused().id != "back" {
+		t.Errorf("returning keeps the cursor where it was, got %q", f.focused().id)
+	}
+	f.cur = 0
+	w.update(wkey("enter"))
+	if w.page != pgOverview {
+		t.Errorf("Continue went to page %v, want the overview", w.page)
+	}
+}
+
 // A draft that does not validate is never written: the person would boot
 // a file the sidecar refuses.
 func TestWizardDoesNotSaveAnInvalidConfig(t *testing.T) {
