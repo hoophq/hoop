@@ -11,6 +11,7 @@ import SidecarListenerFilter from '@/components/SidecarListenerFilter'
 import ValueFilter from '@/components/ValueFilter'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
+import { useNewRuleTraffics } from '@/hooks/useNewRuleTraffics'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
@@ -21,6 +22,7 @@ import {
   RULE_KIND_GUARDRAIL,
   TRAFFIC_AGENT,
   TRAFFIC_SIDECAR,
+  newRuleHint,
   newRulePath,
 } from '@/utils/ruleTraffic'
 import { useGuardrailsStore } from './store'
@@ -59,6 +61,7 @@ export default function Guardrails() {
   const agentRules = traffics.includes(TRAFFIC_AGENT)
   const sidecarRules = traffics.includes(TRAFFIC_SIDECAR)
   const agentBlocked = agentRules && !hasRedactCredentials
+  const newTraffics = useNewRuleTraffics()
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [selectedAttribute, setSelectedAttribute] = useState(null)
@@ -105,7 +108,7 @@ export default function Guardrails() {
   const activeFilterCount =
     (role ? 1 : 0) + (attribute ? 1 : 0) + (target ? 1 : 0) + (traffic.active ? 1 : 0)
 
-  const goCreate = (kind) => navigate(newRulePath('/guardrails/new', traffics, kind))
+  const goCreate = (kind) => navigate(newRulePath('/guardrails/new', kind))
 
   if (showLoader) {
     return <PageLoader h={300} />
@@ -123,7 +126,7 @@ export default function Guardrails() {
   if (!sidecarRules && !hasRedactCredentials) {
     return (
       <FullBleed>
-        <GuardrailsPromotion dlpAvailable={false} onCreate={() => goCreate(traffics[0])} />
+        <GuardrailsPromotion dlpAvailable={false} onCreate={() => goCreate(newTraffics[0])} />
       </FullBleed>
     )
   }
@@ -131,7 +134,7 @@ export default function Guardrails() {
   if (list.length === 0 && !mixed) {
     return (
       <FullBleed>
-        <GuardrailsPromotion dlpAvailable onCreate={() => goCreate(traffics[0])} />
+        <GuardrailsPromotion dlpAvailable onCreate={() => goCreate(newTraffics[0])} />
       </FullBleed>
     )
   }
@@ -146,7 +149,7 @@ export default function Guardrails() {
           </Text>
         </Stack>
         <NewRuleButton
-          traffics={traffics}
+          traffics={newTraffics}
           onCreate={goCreate}
           disabled={atFreeLimit}
           blocked={agentBlocked ? { [TRAFFIC_AGENT]: 'Needs a DLP provider' } : undefined}
@@ -209,7 +212,7 @@ export default function Guardrails() {
         <EmptyState
           compact
           title="No Guardrails yet"
-          description="Create one for agent resources or for sidecar listeners."
+          description={newRuleHint(newTraffics)}
         />
       ) : filteredGuardrails.length === 0 ? (
         <EmptyState

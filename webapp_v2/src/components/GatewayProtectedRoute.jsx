@@ -14,7 +14,12 @@ function GatewayProtectedRoute(props) {
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')
 
   const onReady = async (user) => {
-    if (!user.is_admin || isOnboardingRoute || !agentsEnabled()) return null
+    // The web terminal, where login lands, needs an agent.
+    if (!agentsEnabled()) {
+      if (location.pathname !== '/client') return null
+      return user.is_admin ? '/sidecars' : '/reviews'
+    }
+    if (!user.is_admin || isOnboardingRoute) return null
     try {
       const { pages } = await connectionsService.getConnectionsPaginated({ pageSize: 1 })
       if ((pages?.total ?? 0) === 0) {

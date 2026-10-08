@@ -6,6 +6,7 @@ import NewRuleButton from '@/components/NewRuleButton'
 import PageLoader from '@/components/PageLoader'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import FullBleed from '@/layout/FullBleed'
+import { useNewRuleTraffics } from '@/hooks/useNewRuleTraffics'
 import { useRuleTraffics } from '@/modes'
 import { useUserStore } from '@/stores/useUserStore'
 import { TRAFFIC_AGENT, newRulePath } from '@/utils/ruleTraffic'
@@ -32,6 +33,7 @@ export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   const traffics = useRuleTraffics()
   const mixed = traffics.length > 1
+  const newTraffics = useNewRuleTraffics()
 
   const list = useAiSessionAnalyzerStore((s) => s.list)
   const listStatus = useAiSessionAnalyzerStore((s) => s.listStatus)
@@ -103,10 +105,8 @@ export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true
         </Stack>
         {tab === 'rules' && (list.length > 0 || mixed) && (
           <NewRuleButton
-            traffics={traffics}
-            onCreate={(kind) =>
-              navigate(newRulePath('/features/ai-session-analyzer/rules/new', traffics, kind))
-            }
+            traffics={newTraffics}
+            onCreate={(kind) => navigate(newRulePath('/features/ai-session-analyzer/rules/new', kind))}
             disabled={atFreeLimit}
             blocked={
               orgWideProvider && !provider
@@ -137,6 +137,7 @@ export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true
         <RulesTab
           providerConfigured={!orgWideProvider || Boolean(provider)}
           onGoConfigure={() => setTab('configure')}
+          newTraffics={newTraffics}
         />
       )}
     </Stack>
