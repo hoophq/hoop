@@ -74,6 +74,8 @@ func Get(c *gin.Context) {
 			Search:   searchTerm,
 			Page:     1,
 			PageSize: 0,
+			// Sidecar mirrors belong to the Sidecars page: no list shows them.
+			ExcludeManagedBy: models.ConnectionManagedBySidecar,
 		}
 
 		resourcesFound, _, err = models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin() || ctx.IsAuditor(), opts)

@@ -292,6 +292,8 @@ func ListResources(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	// Sidecar mirrors belong to the Sidecars page: no list shows them.
+	opts.ExcludeManagedBy = models.ConnectionManagedBySidecar
 
 	resources, total, err := models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin() || ctx.IsAuditor(), opts)
 	if err != nil {
@@ -303,7 +305,7 @@ func ListResources(c *gin.Context) {
 	for i, r := range resources {
 		resourceNames[i] = r.Name
 	}
-	connsByResource, err := models.GetConnectionsByResourceNames(models.DB, ctx.OrgID, resourceNames)
+	connsByResource, err := models.GetConnectionsByResourceNames(models.DB, ctx.OrgID, resourceNames, models.ConnectionManagedBySidecar)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching resources roles: %v", err)
 		return

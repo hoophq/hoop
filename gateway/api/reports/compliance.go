@@ -40,7 +40,10 @@ func collectComplianceSnapshot(ctx *storagev2.Context) (*complianceSnapshot, err
 		return nil, fmt.Errorf("failed loading server auth config: %v", err)
 	}
 
-	connections, err := models.ListConnections(ctx, models.ConnectionFilterOption{})
+	// Sidecar mirrors belong to the Sidecars page: no list shows them.
+	connections, err := models.ListConnections(ctx, models.ConnectionFilterOption{
+		ExcludeManagedBy: models.ConnectionManagedBySidecar,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed listing connections: %v", err)
 	}

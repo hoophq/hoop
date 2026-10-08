@@ -817,6 +817,9 @@ type ConnectionFilterOption struct {
 	ConnectionIDs []string
 	ResourceName  string
 	Attributes    []string
+	// ExcludeManagedBy leaves out the connections with this managed_by, such
+	// as sidecar mirrors, which no list shows.
+	ExcludeManagedBy string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -977,6 +980,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		COALESCE(c.subtype, '') LIKE ? AND
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
+		((?)::text = '' OR c.managed_by IS DISTINCT FROM (?)::text) AND
 		COALESCE(c.resource_name::text, '') LIKE ? AND
 		COALESCE(c.name::text, '') LIKE ? AND
 		-- connection ids filter
@@ -1035,6 +1039,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
+		opts.ExcludeManagedBy, opts.ExcludeManagedBy,
 		resourceNamePattern,
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
@@ -1090,8 +1095,11 @@ func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm
 				c.name ILIKE ? OR
 				c.type::text ILIKE ? OR
 				c.subtype ILIKE ?
-			)
-		ORDER BY c.name ASC`, orgID, orgID, isAdmin, userGroupsPgArray, userGroupsPgArray, likeQuery, likeQuery, likeQuery).Find(&items).Error
+			) AND
+			-- sidecar mirrors belong to the Sidecars page: no list shows them
+			c.managed_by IS DISTINCT FROM ?
+		ORDER BY c.name ASC`, orgID, orgID, isAdmin, userGroupsPgArray, userGroupsPgArray, likeQuery, likeQuery, likeQuery,
+		ConnectionManagedBySidecar).Find(&items).Error
 
 	if err != nil {
 		return nil, err
@@ -1227,6 +1235,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		COALESCE(c.subtype, '') LIKE ? AND
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
+		((?)::text = '' OR c.managed_by IS DISTINCT FROM (?)::text) AND
 		COALESCE(c.resource_name::text, '') LIKE ? AND
 		COALESCE(c.name::text, '') LIKE ? AND
 		-- connection ids filter
@@ -1286,6 +1295,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
+		opts.ExcludeManagedBy, opts.ExcludeManagedBy,
 		resourceNamePattern,
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,

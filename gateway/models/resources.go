@@ -49,6 +49,10 @@ type ResourceFilterOption struct {
 	Search   string
 	Name     string
 	SubType  string
+	// ExcludeManagedBy leaves out a resource unless the user may see one of
+	// its connections without this managed_by, such as a sidecar mirror's
+	// resource. A resource with no connection is listed as before.
+	ExcludeManagedBy string
 }
 
 func setResourceOptionDefaults(opts *ResourceFilterOption) {
@@ -115,6 +119,9 @@ func ListResources(db *gorm.DB, orgID string, userGroups []string, isAdminOrInte
 		END AND
 		r.name LIKE @name AND
 		r.subtype LIKE @subtype AND
+		-- per joined connection, so a resource stays only through a connection
+		-- the user may see
+		(@exclude_managed_by = '' OR c.managed_by IS DISTINCT FROM @exclude_managed_by) AND
 		(
 			r.name LIKE @search OR
 			COALESCE(r.subtype, '') LIKE @search OR
@@ -127,6 +134,7 @@ func ListResources(db *gorm.DB, orgID string, userGroups []string, isAdminOrInte
 		"search":               searchQuery,
 		"name":                 nameQuery,
 		"subtype":              opts.SubType,
+		"exclude_managed_by":   opts.ExcludeManagedBy,
 		"page_size":            opts.PageSize,
 		"offset":               offset,
 	}).Find(&results).Error
@@ -191,13 +199,14 @@ func GetResourceConnections(db *gorm.DB, orgID, resourceName string) ([]Connecti
 	return connections, err
 }
 
-func GetConnectionsByResourceNames(db *gorm.DB, orgID string, resourceNames []string) (map[string][]Connection, error) {
+func GetConnectionsByResourceNames(db *gorm.DB, orgID string, resourceNames []string, excludeManagedBy string) (map[string][]Connection, error) {
 	if len(resourceNames) == 0 {
 		return map[string][]Connection{}, nil
 	}
 	var connections []Connection
 	err := db.Table(tableConnections).
-		Where("org_id = ? AND resource_name IN (?)", orgID, resourceNames).
+		Where("org_id = ? AND resource_name IN (?) AND (? = '' OR managed_by IS DISTINCT FROM ?)",
+			orgID, resourceNames, excludeManagedBy, excludeManagedBy).
 		Find(&connections).Error
 	if err != nil {
 		return nil, err

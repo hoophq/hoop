@@ -124,6 +124,8 @@ func connectionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args co
 		Tags:        args.Tags,
 		Name:        args.Name,
 		Search:      args.Search,
+		// Sidecar mirrors belong to the Sidecars page: no list shows them.
+		ExcludeManagedBy: models.ConnectionManagedBySidecar,
 	}
 
 	connections, err := models.ListConnections(sc, filterOpts)
