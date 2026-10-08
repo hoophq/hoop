@@ -58,11 +58,18 @@ func configRevision(served daemon.Config) string {
 // served. A failure to record is logged and never fails the handshake: the
 // sidecar needs its configuration more than the fleet view needs a row, and
 // the next tick is a minute away.
-func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
-	err := models.RecordSidecarHandshake(models.DB, sidecarID,
+//
+// It also sets the sidecar's mirrors online; the sidecarmirrorstatus job sets
+// them offline when the handshakes stop.
+func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
+	err := models.RecordSidecarHandshake(models.DB, sc.ID,
 		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
 	if err != nil {
-		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
+		log.With("sidecar", sc.ID).Warnf("failed recording the sidecar handshake, reason=%v", err)
+		return
+	}
+	if err := models.MarkSidecarConnectionsOnline(models.DB, sc.OrgID, sc.ID); err != nil {
+		log.With("sidecar", sc.ID).Warnf("%v", err)
 	}
 }
 
@@ -631,7 +638,7 @@ func Handshake(c *gin.Context) {
 		// No revision: the plane does not own this sidecar's document, so it
 		// has nothing to be converged with. The state renders from
 		// load_from_disk instead.
-		recordHandshake(sidecar.ID, req, "", capabilities)
+		recordHandshake(sidecar, req, "", capabilities)
 		c.Header(licenseManagedHeader, "true")
 		offerSessionEvents(c, sidecar)
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
@@ -662,7 +669,7 @@ func Handshake(c *gin.Context) {
 		return
 	}
 	revision := configRevision(served)
-	recordHandshake(sidecar.ID, req, revision, capabilities)
+	recordHandshake(sidecar, req, revision, capabilities)
 	c.Header(licenseManagedHeader, "true")
 	c.Header(daemon.ConfigRevisionHeader, revision)
 	offerSessionEvents(c, sidecar)

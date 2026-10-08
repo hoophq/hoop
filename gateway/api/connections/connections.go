@@ -465,6 +465,8 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	// Sidecar mirrors belong to the Sidecars page: no list shows them.
+	filterOpts.ExcludeManagedBy = models.ConnectionManagedBySidecar
 
 	urlValues := c.Request.URL.Query()
 	pageStr := urlValues.Get("page")
