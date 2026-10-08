@@ -48,6 +48,18 @@ export function resolveRuleTraffic(traffics, kind, rule) {
   return traffics.length === 1 ? traffics[0] : ruleTraffic(kind, rule)
 }
 
-export function newRulePath(basePath, traffics, traffic) {
-  return traffics.length > 1 ? `${basePath}?traffic=${traffic}` : basePath
+export function newRulePath(basePath, traffic) {
+  return `${basePath}?traffic=${traffic}`
+}
+
+const NEW_RULE_HINTS = {
+  [TRAFFIC_AGENT]: 'Create one for agent resources.',
+  [TRAFFIC_SIDECAR]: 'Create one for sidecar listeners.',
+}
+
+// `traffics` is what useNewRuleTraffics() answers.
+export function newRuleHint(traffics) {
+  return traffics.length === 1
+    ? NEW_RULE_HINTS[traffics[0]]
+    : 'Create one for agent resources or for sidecar listeners.'
 }

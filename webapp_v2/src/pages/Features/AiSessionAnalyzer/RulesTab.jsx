@@ -12,20 +12,20 @@ import { boundRuleNames } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { docsUrl } from '@/utils/docsUrl'
-import { RULE_KIND_ANALYZER, newRulePath } from '@/utils/ruleTraffic'
+import { RULE_KIND_ANALYZER, newRuleHint, newRulePath } from '@/utils/ruleTraffic'
 import { useAiSessionAnalyzerStore } from './store'
 import RuleListItem from './components/RuleListItem'
 
 // A sidecar rule reaches listeners, never a resource role, so each traffic has
 // its own filter.
-export default function RulesTab({ providerConfigured, onGoConfigure }) {
+export default function RulesTab({ providerConfigured, onGoConfigure, newTraffics }) {
   const navigate = useNavigate()
 
   const list = useAiSessionAnalyzerStore((s) => s.list)
   const sidecars = useSidecarStore((s) => s.sidecars)
 
   const traffic = useRuleTrafficFilter(RULE_KIND_ANALYZER)
-  const { traffics, mixed, showAgentFilters, showSidecarFilter, matches } = traffic
+  const { mixed, showAgentFilters, showSidecarFilter, matches } = traffic
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [selectedTarget, setSelectedTarget] = useState(null)
@@ -62,14 +62,14 @@ export default function RulesTab({ providerConfigured, onGoConfigure }) {
   const activeFilterCount = (role ? 1 : 0) + (target ? 1 : 0) + (traffic.active ? 1 : 0)
 
   const goCreate = () =>
-    navigate(newRulePath('/features/ai-session-analyzer/rules/new', traffics, traffics[0]))
+    navigate(newRulePath('/features/ai-session-analyzer/rules/new', newTraffics[0]))
 
   // The header's create menu covers both traffics.
   if (list.length === 0 && mixed) {
     return (
       <EmptyState
         title="No rules in your organization yet"
-        description="Create one for agent resources or for sidecar listeners."
+        description={newRuleHint(newTraffics)}
         docsUrl={docsUrl.features.aiSessionAnalyzer}
         docsLabel="AI Session Analyzer Configuration"
       />

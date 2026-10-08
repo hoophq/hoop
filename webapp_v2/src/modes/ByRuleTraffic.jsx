@@ -8,7 +8,10 @@ import {
   TRAFFIC_SIDECAR,
   resolveRuleTraffic,
 } from '@/utils/ruleTraffic'
+import { useAgentsEnabled } from './agents'
 import { useRuleTraffics } from './index'
+
+const NEW_RULE_TRAFFICS = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
 
 /**
  * Picks the agent or the sidecar form of a guardrail, masking or analyzer rule.
@@ -18,11 +21,12 @@ import { useRuleTraffics } from './index'
  *     agent={<GatewayGuardrailForm />} sidecar={<ControlPlaneGuardrailForm />} />
  *
  * With one traffic available it renders that form. With both, an edit reads the
- * rule first and a new rule takes `?traffic=sidecar`.
+ * rule first and a new rule takes `?traffic=`; without it, the agents flag picks.
  */
 export default function ByRuleTraffic({ kind, fetchRule, listPath, param = 'id', agent, sidecar }) {
   const navigate = useNavigate()
   const traffics = useRuleTraffics()
+  const agentsEnabled = useAgentsEnabled()
   const key = useParams()[param]
   const [searchParams] = useSearchParams()
   const probeNeeded = traffics.length > 1 && Boolean(key)
@@ -41,8 +45,9 @@ export default function ByRuleTraffic({ kind, fetchRule, listPath, param = 'id',
   }, [probeNeeded, key, fetchRule, traffics, kind])
 
   if (!probeNeeded) {
-    const asked = searchParams.get('traffic') === TRAFFIC_SIDECAR ? TRAFFIC_SIDECAR : TRAFFIC_AGENT
-    const traffic = traffics.length === 1 ? traffics[0] : asked
+    const asked = searchParams.get('traffic')
+    const fallback = agentsEnabled ? TRAFFIC_AGENT : TRAFFIC_SIDECAR
+    const traffic = traffics.length === 1 ? traffics[0] : NEW_RULE_TRAFFICS.includes(asked) ? asked : fallback
     return traffic === TRAFFIC_SIDECAR ? sidecar : agent
   }
   if (probe?.key !== key) return <PageLoader h={400} />
