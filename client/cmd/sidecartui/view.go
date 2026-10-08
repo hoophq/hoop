@@ -144,6 +144,8 @@ func (m model) hints() string {
 		keys = []keyHint{{"↑↓", "choose a section"}, {"enter/→", "go in"}, {"/", "filter"}, {"q", "quit"}}
 	case m.zoom:
 		keys = []keyHint{{"esc", "back to the list"}, {"↑↓", "previous / next"}, {"←", "sections"}, {"q", "quit"}}
+	case m.tab == tabTour && m.tour != nil:
+		keys = m.tour.hints()
 	case m.tab == tabSystem:
 		keys = []keyHint{{"↑↓", "scroll"}, {"←/esc", "sections"}, {"q", "quit"}}
 	default:
@@ -189,6 +191,9 @@ func (m model) hints() string {
 // details when there is room for both, stacked when not, and the details
 // alone once enter opened them.
 func (m model) content(w, h int) string {
+	if m.tab == tabTour && m.tour != nil {
+		return pane("", m.tour.view(w-4, h-2, m.now()), w, h)
+	}
 	if m.tab == tabSystem {
 		return pane("", m.systemView(w-4, h-2, m.cur[tabSystem].off), w, h)
 	}

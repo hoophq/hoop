@@ -24,13 +24,81 @@ const Addr = "127.0.0.1:18081"
 // ListenAddr is where the demo config's http listener accepts clients.
 const ListenAddr = "127.0.0.1:18080"
 
-// TryCommands are what a person runs against the demo listener to see each
-// feature act. Shown on the first-run screen and written into the config.
-var TryCommands = []string{
-	"curl -s http://" + ListenAddr + "/users            # emails come back masked",
-	"curl -s -X DELETE http://" + ListenAddr + "/users/1  # refused by the guardrail",
-	"curl -s -X POST http://" + ListenAddr + "/users -d '{\"name\":\"Ada\",\"email\":\"ada@example.com\"}'",
+// Step is one beat of the guided demo: a request, what to look for in the
+// answer, and what the sidecar did to produce it.
+type Step struct {
+	Title        string
+	Method, Path string
+	Body         string
+	// Direct sends the request to the API itself, around the sidecar, so
+	// the person can compare.
+	Direct bool
+	// Expect is what the answer shows; Why is what the sidecar did.
+	Expect, Why string
+	// SeenKind and SeenOp name the audit event the step produces, so a
+	// request sent from another terminal ticks the step too. Empty for a
+	// direct request, which the sidecar never sees.
+	SeenKind, SeenOp string
 }
+
+// URL is where the step sends its request.
+func (s Step) URL() string {
+	host := ListenAddr
+	if s.Direct {
+		host = Addr
+	}
+	return "http://" + host + s.Path
+}
+
+// Curl is the step as a command to paste into another terminal.
+func (s Step) Curl() string {
+	c := "curl -s"
+	if s.Method != "GET" {
+		c += " -X " + s.Method
+	}
+	if s.Body != "" {
+		c += " -H 'content-type: application/json' -d '" + s.Body + "'"
+	}
+	return c + " " + s.URL()
+}
+
+// Steps is the guided demo, in the order a person should take it.
+var Steps = []Step{
+	{
+		Title: "See masking", Method: "GET", Path: "/users",
+		Expect:   "Every email comes back as [REDACTED:EMAIL_ADDRESS].",
+		Why:      "The masking rule \"emails\" found each address in the response and rewrote it before the client saw it.",
+		SeenKind: "masked",
+	},
+	{
+		Title: "See a guardrail", Method: "DELETE", Path: "/users/1",
+		Expect:   "403: the request never reaches the API.",
+		Why:      "The guardrail \"no-deletes\" matched the DELETE operation and the sidecar answered for the API.",
+		SeenKind: "violation", SeenOp: "delete",
+	},
+	{
+		Title: "Write through it", Method: "POST", Path: "/users",
+		Body:     `{"name":"Ada Lovelace","email":"ada@example.com"}`,
+		Expect:   "201 with the new user, its email masked on the way back.",
+		Why:      "Allowed writes pass through and are recorded in the audit trail like every statement.",
+		SeenKind: "statement", SeenOp: "post",
+	},
+	{
+		Title: "Compare: no sidecar", Method: "GET", Path: "/users/2", Direct: true,
+		Expect: "The real email address, because this request went around the sidecar.",
+		Why:    "This is the API itself on " + Addr + ". Only traffic sent to " + ListenAddr + " is inspected.",
+	},
+}
+
+// TryCommands are the steps as commands, for the config's header and the
+// setup screen.
+var TryCommands = func() []string {
+	out := make([]string, 0, len(Steps))
+	for _, s := range Steps {
+		out = append(out, s.Curl())
+	}
+	return out
+}()
 
 type user struct {
 	ID    int    `json:"id"`

@@ -231,6 +231,7 @@ needs a restart.`,
 		// as its upstream; the CLI serves it for as long as the sidecar
 		// runs, so the demo config works on every boot, not only the first.
 		var notes []string
+		var demo *sidecartui.DemoOptions
 		if sidecarConfigFlag != "" {
 			stopDemo, demoNotes, err := startSidecarDemo(sidecarConfigFlag)
 			if err != nil {
@@ -238,6 +239,9 @@ needs a restart.`,
 			}
 			defer stopDemo()
 			notes = demoNotes
+			if demoNotes != nil {
+				demo = &sidecartui.DemoOptions{OpenURL: openBrowser}
+			}
 		}
 
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
@@ -250,6 +254,7 @@ needs a restart.`,
 			Operator:  sidecarOperator(),
 			SaveDir:   sidecarSaveDir(),
 			Notes:     notes,
+			Demo:      demo,
 		}, func() error { return daemon.Run(cfg, det) })
 	},
 }

@@ -308,7 +308,7 @@ func (m model) menu(w, h int) string {
 	inner := w - 4
 	items := make([]list.Item, 0, tabCount)
 	lines := make([]string, 0, tabCount)
-	for i := range tabCount {
+	for i := range m.numTabs() {
 		items = append(items, section{i})
 		label := fmt.Sprintf("%d %s", i+1, tabNames[i])
 		count := ""
@@ -329,6 +329,14 @@ func (m model) menu(w, h int) string {
 			if len(m.st.Warnings) > 0 {
 				count = "⚠"
 			}
+		case tabTour:
+			done := 0
+			for _, d := range m.tour.done {
+				if d {
+					done++
+				}
+			}
+			count = fmt.Sprintf("%d/%d", done, len(m.tour.done))
 		}
 		gap := strings.Repeat(" ", max(inner-1-lipgloss.Width(label)-lipgloss.Width(count), 1))
 		text := label + gap + count
