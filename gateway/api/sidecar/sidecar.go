@@ -769,7 +769,7 @@ func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) 
 // Import Sidecar Configuration
 //
 //	@Summary		Import Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
+//	@Description	Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the gateway already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json

@@ -82,7 +82,7 @@ type User struct {
 	Verified bool `json:"verified" readonly:"true"`
 	// Permission related to the user
 	// * admin - Has super privileges and has access to any resource in the system
-	// * approver - Grant access to review routes. Control plane only.
+	// * approver - Grant access to review routes.
 	// * standard - Grant access to standard routes.
 	// * unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.
 	// This state is only available for multi tenant environments

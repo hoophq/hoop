@@ -145,7 +145,7 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 				return err
 			}
 			if !held[t.SidecarID+"/"+t.ListenerName] {
-				return fmt.Errorf("sidecar %q uses its config file; the control plane cannot "+
+				return fmt.Errorf("sidecar %q uses its config file; the gateway cannot "+
 					"manage its rules", sc.Name)
 			}
 		}

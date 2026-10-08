@@ -10413,7 +10413,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
+                "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the gateway already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
                 "consumes": [
                     "application/json"
                 ],
@@ -11248,7 +11248,7 @@ const docTemplate = `{
         },
         "/sidecars/{nameOrID}/slack-channels": {
             "get": {
-                "description": "Where the reviews of each listener of the sidecar are posted in Slack. Control plane only.",
+                "description": "Where the reviews of each listener of the sidecar are posted in Slack.",
                 "produces": [
                     "application/json"
                 ],
@@ -11287,7 +11287,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels. Control plane only.",
+                "description": "Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels.",
                 "consumes": [
                     "application/json"
                 ],
@@ -21466,7 +21466,7 @@ const docTemplate = `{
                     "example": ""
                 },
                 "role": {
-                    "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes. Control plane only.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
+                    "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
                     "type": "string",
                     "enum": [
                         "admin",
@@ -21608,7 +21608,7 @@ const docTemplate = `{
                     "example": ""
                 },
                 "role": {
-                    "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes. Control plane only.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
+                    "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
                     "type": "string",
                     "enum": [
                         "admin",
