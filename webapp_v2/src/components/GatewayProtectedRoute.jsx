@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom'
 import { connectionsService } from '@/services/connections'
 import { agentsEnabled } from '@/modes/agents'
+import { LICENSE_INTRO_PATH } from '@/utils/licenseIntro'
 import ProtectedRoute from './ProtectedRoute'
 
 // The gateway's gate: the shared ProtectedRoute plus the onboarding redirect.
@@ -14,9 +15,13 @@ function GatewayProtectedRoute(props) {
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')
 
   const onReady = async (user) => {
-    // The web terminal, where login lands, needs an agent.
+    // Without agents, the terminal (where login lands), the home and the agent
+    // onboarding (where setup lands) give way to the pages a sidecar org uses.
     if (!agentsEnabled()) {
-      if (location.pathname !== '/client') return null
+      const { pathname } = location
+      const agentLanding =
+        pathname === '/' || pathname === '/client' || (isOnboardingRoute && pathname !== LICENSE_INTRO_PATH)
+      if (!agentLanding) return null
       return user.is_admin ? '/sidecars' : '/reviews'
     }
     if (!user.is_admin || isOnboardingRoute) return null
