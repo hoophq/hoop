@@ -1,11 +1,13 @@
 package models
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -265,6 +267,62 @@ func deleteOrphanResource(tx *gorm.DB, orgID, name string) error {
 		return fmt.Errorf("failed deleting resource %q, reason=%v", name, err)
 	}
 	return nil
+}
+
+// SidecarMirrorOfflineAfter is how long a mirror stays online after its
+// sidecar's last handshake. A sidecar handshakes every minute, with 20%
+// jitter (heartbeatEvery, sidecar/daemon), so this is three missed polls.
+const SidecarMirrorOfflineAfter = 3 * time.Minute
+
+// MarkSidecarConnectionsOnline sets every mirror of one sidecar online. The
+// handshake calls it after it records last_seen_at;
+// MarkStaleSidecarConnectionsOffline undoes it.
+func MarkSidecarConnectionsOnline(db *gorm.DB, orgID, sidecarID string) error {
+	err := db.Exec(`UPDATE private.connections SET status = ?
+		WHERE org_id = ? AND sidecar_id = ? AND status <> ?`,
+		ConnectionStatusOnline, orgID, sidecarID, ConnectionStatusOnline).Error
+	if err != nil {
+		return fmt.Errorf("failed marking sidecar connections online, reason=%v", err)
+	}
+	return nil
+}
+
+// MarkStaleSidecarConnectionsOffline sets offline, in every org, each online
+// mirror whose sidecar has not handshaked within SidecarMirrorOfflineAfter.
+// It returns how many it changed.
+//
+// The stale sidecars are locked before their mirrors, in the order the config
+// writers lock them. A handshake that refreshes last_seen_at meanwhile either
+// commits first, and the locked read skips its sidecar, or waits for this
+// transaction and then sets the mirrors online again.
+func MarkStaleSidecarConnectionsOffline(ctx context.Context, db *gorm.DB) (int64, error) {
+	var changed int64
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var stale []string
+		err := tx.Raw(`SELECT s.id FROM private.sidecars s
+			WHERE (s.last_seen_at IS NULL OR s.last_seen_at < NOW() - make_interval(secs => ?))
+			  AND EXISTS (SELECT 1 FROM private.connections c WHERE c.sidecar_id = s.id AND c.status = ?)
+			ORDER BY s.id
+			FOR UPDATE OF s`,
+			SidecarMirrorOfflineAfter.Seconds(), ConnectionStatusOnline).Scan(&stale).Error
+		if err != nil {
+			return fmt.Errorf("failed locking stale sidecars, reason=%v", err)
+		}
+		if len(stale) == 0 {
+			return nil
+		}
+		res := tx.Exec(`UPDATE private.connections SET status = ? WHERE sidecar_id IN ? AND status = ?`,
+			ConnectionStatusOffline, stale, ConnectionStatusOnline)
+		if res.Error != nil {
+			return fmt.Errorf("failed marking stale sidecar connections offline, reason=%v", res.Error)
+		}
+		changed = res.RowsAffected
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return changed, nil
 }
 
 // SidecarMirror is the identity of a mirror: what another row records to
