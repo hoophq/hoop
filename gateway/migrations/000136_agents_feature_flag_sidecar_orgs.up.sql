@@ -6,9 +6,9 @@ SET search_path TO private;
 -- `_default` agent key for the default org at every boot, so every
 -- single-tenant install matched, control-plane installs included. An org that
 -- has a sidecar and no agent of its own is a control-plane install: turn
--- experimental.agents back off. A `_default` key with a connection bound to
--- it serves `hoop run` agents and counts. updated_by: an admin's own setting
--- wins.
+-- experimental.agents back off. A `_default` key that a connection or a
+-- resource binds to serves `hoop run` agents and counts. updated_by: an
+-- admin's own setting wins.
 UPDATE org_feature_flags f
 SET enabled = false, updated_at = now()
 WHERE f.name = 'experimental.agents'
@@ -19,6 +19,7 @@ WHERE f.name = 'experimental.agents'
     SELECT 1 FROM agents a
     WHERE a.org_id = f.org_id
       AND (a.name <> '_default'
-           OR EXISTS (SELECT 1 FROM connections c WHERE c.org_id = a.org_id AND c.agent_id = a.id)));
+           OR EXISTS (SELECT 1 FROM connections c WHERE c.org_id = a.org_id AND c.agent_id = a.id)
+           OR EXISTS (SELECT 1 FROM resources r WHERE r.org_id = a.org_id AND r.agent_id = a.id)));
 
 COMMIT;
