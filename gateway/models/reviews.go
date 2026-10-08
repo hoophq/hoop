@@ -255,8 +255,8 @@ type ReviewViewer struct {
 	IsAuditorOrAdmin bool
 }
 
-// reviewVisibilityCondition is the Sessions rule: the requester or a reviewer
-// group member. A sidecar review's owner_id is the sidecar, so only its groups count.
+// reviewVisibilityCondition: the requester, a reviewer group member, or a force approver as
+// doForcedReview resolves one. A sidecar review has no requester and reads no connection.
 const reviewVisibilityCondition = `
 	AND (
 		(COALESCE(rv.listener_name, '') = '' AND rv.owner_id = ?)
@@ -265,13 +265,23 @@ const reviewVisibilityCondition = `
 			WHERE vg.review_id = rv.id AND NOT vg.added_on_denial
 				AND vg.group_name = ANY((?)::text[])
 		)
+		OR CASE
+			WHEN rv.access_request_rule_name IS NOT NULL AND rv.force_approval_groups IS NOT NULL
+				THEN rv.force_approval_groups && (?)::text[]
+			ELSE COALESCE(rv.listener_name, '') = '' AND EXISTS (
+				SELECT 1 FROM private.connections AS fc
+				WHERE fc.org_id = rv.org_id AND fc.name = rv.connection_name
+					AND fc.force_approve_groups && (?)::text[]
+			)
+		END
 	)`
 
 func (v *ReviewViewer) condition() (string, []any) {
 	if v == nil || v.IsAuditorOrAdmin {
 		return "", nil
 	}
-	return reviewVisibilityCondition, []any{v.UserID, pq.StringArray(append([]string{}, v.Groups...))}
+	groups := pq.StringArray(append([]string{}, v.Groups...))
+	return reviewVisibilityCondition, []any{v.UserID, groups, groups, groups}
 }
 
 func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
