@@ -26,11 +26,15 @@ const STATUS_LABEL = {
 export const statusLabel = (status) =>
   STATUS_LABEL[status] ?? { label: status ?? 'Unknown', color: 'gray' }
 
-export const STATUS_FILTERS = [
-  { value: 'all', label: 'All', match: () => true },
-  { value: 'waiting', label: 'Waiting', match: (r) => r.status === STATUS.PENDING },
-  { value: 'settled', label: 'Settled', match: (r) => r.status !== STATUS.PENDING },
-]
+// The sidebar picks one: Pending Approvals (/reviews) or Approval History
+// (/reviews?status=settled).
+export const STATUS_FILTERS = {
+  waiting: (r) => r.status === STATUS.PENDING,
+  settled: (r) => r.status !== STATUS.PENDING,
+}
+
+export const filterFromSearch = (searchParams) =>
+  searchParams.get('status') === 'settled' ? 'settled' : 'waiting'
 
 export const isSidecarReview = (review) => Boolean(review?.listener_name)
 

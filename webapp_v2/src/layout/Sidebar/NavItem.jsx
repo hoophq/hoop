@@ -1,71 +1,63 @@
-import { Link, useLocation } from 'react-router-dom'
-import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
-import { useUserStore } from '@/stores/useUserStore'
 import { ItemBadge } from './ItemBadge'
 import { SidebarNavLink } from './SidebarNavLink'
-import { shouldHide, isActive } from './helpers'
+import { containsPath } from './helpers'
 
-// ─── Collapsible nav item (Integrations / Settings) ───────────────────────
-// Separate component so useEffect can run on mount to clear pendingOpenSection.
+const ICON_SIZE = 18
 
-export function CollapsibleNavItem({ item, isAdmin, isSelfHosted, role, defaultOpened, onMount }) {
+const childrenVariant = (item) => {
+  if (!item.icon) return 'nested'
+  return item.children.some((child) => child.icon) ? 'guide' : 'label'
+}
+
+// Opens on the active page, or when the collapsed rail asked for it.
+function NavGroup({ item, activePath }) {
+  const { pendingOpenSection, clearPendingOpenSection } = useUIStore()
+  const requested = pendingOpenSection === item.label
+  const hasActive = containsPath(item, activePath)
+
+  const [opened, setOpened] = useState(hasActive || requested)
+  const [hadActive, setHadActive] = useState(hasActive)
+  if (hasActive !== hadActive) {
+    setHadActive(hasActive)
+    if (hasActive) setOpened(true)
+  }
+
+  const ref = useRef(null)
   useEffect(() => {
-    onMount?.()
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!requested) return
+    clearPendingOpenSection()
+    ref.current?.scrollIntoView({ block: 'start' })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <SidebarNavLink
+      ref={ref}
       label={item.label}
       aria-label={item.label}
-      leftSection={<item.icon size={18} aria-hidden="true" />}
-      defaultOpened={defaultOpened}
+      leftSection={item.icon ? <item.icon size={ICON_SIZE} aria-hidden="true" /> : undefined}
+      rightSection={<ChevronDown size={16} aria-hidden="true" />}
+      opened={opened}
+      onChange={setOpened}
+      childrenVariant={childrenVariant(item)}
     >
       {item.children.map((child) => (
-        <NavItem key={child.path} item={child} isAdmin={isAdmin} isSelfHosted={isSelfHosted} role={role} />
+        <NavItem key={child.path || child.label} item={child} activePath={activePath} />
       ))}
     </SidebarNavLink>
   )
 }
 
-// ─── Single expanded nav item ──────────────────────────────────────────────
+// `item` is already filtered by the user's gates (useSidebarNav).
+export function NavItem({ item, activePath }) {
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
 
-export function NavItem({ item, isAdmin, isSelfHosted, role }) {
-  const location = useLocation()
-  const { setSidebarOpen, pendingOpenSection, clearPendingOpenSection } = useUIStore()
-  const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
-  const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
+  if (item.children) return <NavGroup item={item} activePath={activePath} />
 
-  if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role)) return null
-
-  const active = item.path ? isActive(item.path, location.pathname, location.search) : false
-  const closeMobile = () => setSidebarOpen(false)
-
-  if (item.children) {
-    const shouldOpen = pendingOpenSection === item.label
-    return (
-      <CollapsibleNavItem
-        item={item}
-        isAdmin={isAdmin}
-        role={role}
-        isSelfHosted={isSelfHosted}
-        defaultOpened={shouldOpen}
-        onMount={shouldOpen ? clearPendingOpenSection : undefined}
-      />
-    )
-  }
-
-  if (item.action) {
-    return (
-      <SidebarNavLink
-        label={item.label}
-        aria-label={item.label}
-        leftSection={item.icon ? <item.icon size={18} aria-hidden="true" /> : undefined}
-        rightSection={<ItemBadge badge={item.badge} shortcut={item.shortcut} />}
-        onClick={() => { item.action(); closeMobile(); }}
-      />
-    )
-  }
+  const active = item.path === activePath
 
   return (
     <SidebarNavLink
@@ -74,10 +66,10 @@ export function NavItem({ item, isAdmin, isSelfHosted, role }) {
       label={item.label}
       aria-label={item.label}
       aria-current={active ? 'page' : undefined}
-      leftSection={item.icon ? <item.icon size={18} aria-hidden="true" /> : undefined}
+      leftSection={item.icon ? <item.icon size={ICON_SIZE} aria-hidden="true" /> : undefined}
       rightSection={<ItemBadge badge={item.badge} shortcut={item.shortcut} />}
       active={active}
-      onClick={closeMobile}
+      onClick={() => setSidebarOpen(false)}
     />
   )
 }

@@ -1,11 +1,15 @@
 import {
+  Clock,
   Container,
+  History,
   Key,
   KeyRound,
+  List,
   Logs,
   MessageSquare,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Users,
   VenetianMask,
@@ -13,59 +17,65 @@ import {
 } from 'lucide-react'
 
 /**
- * The control plane navigation: an admin manages a fleet of sidecars, configures
- * policies once for all of them and approves reviews.
- *
- * Sections follow the Figma (Control-Plane-UI, "Side menu"): Infrastructure,
- * Policies, Activity, and a Settings group pinned to the foot of the sidebar.
- * The paths are the gateway's own: Slack is the integration page, License the
- * license page. Every path here has a <Route> in Router.jsx. Its sibling is
- * ./gatewayNav.js.
+ * The control plane navigation: the sections of ./gatewayNav.js, with the
+ * pages the control plane serves. Every path here has a <Route> in Router.jsx.
  *
  * Gating flags (adminOnly / role / featureFlag / licenseFeature) are applied by
  * ./helpers.js#shouldHide, for the sidebar and the palette alike.
  */
 
-const INFRASTRUCTURE_ITEMS = [
+const AI_ANALYZER = '/features/ai-session-analyzer'
+
+// Admin reaches every page. Every signed-in user reaches the reviews.
+const MAIN_ITEMS = [
   { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
+  {
+    label: 'AI Analyzer',
+    icon: Sparkles,
+    children: [
+      { label: 'Rules', path: AI_ANALYZER, icon: List, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
+      { label: 'Approval History', path: '/reviews?status=settled', icon: History },
+      { label: 'Pending Approvals', path: '/reviews', icon: Clock },
+      { label: 'Configuration', path: `${AI_ANALYZER}?tab=configure`, icon: SlidersHorizontal, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
+    ],
+  },
 ]
 
 const POLICY_ITEMS = [
-  { label: 'Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true, licenseFeature: 'data-masking' },
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, adminOnly: true, licenseFeature: 'guardrails' },
+  { label: 'Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true, licenseFeature: 'data-masking' },
 ]
 
-// Admin reaches every page. Every signed-in user reaches Reviews.
-const ACTIVITY_ITEMS = [
-  { label: 'AI Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
-  { label: 'Reviews', path: '/reviews', icon: View },
+const ACCESS_ITEMS = [
+  { label: 'API Keys', path: '/settings/api-keys', icon: Key, adminOnly: true },
 ]
 
-// The Settings group: where approvals are delivered (Slack), the organization
-// (Users, License — an attribute of the org, PUT /orgs/license), programmatic
-// access (API Keys) and the control plane's own logs (Server Logs).
+// License is an attribute of the org (PUT /orgs/license).
 const SETTINGS_ITEMS = [
-  { label: 'Slack', path: '/integrations/slack', adminOnly: true },
-  { label: 'Users', path: '/organization/users', adminOnly: true },
-  { label: 'API Keys', path: '/settings/api-keys', adminOnly: true },
-  { label: 'License', path: '/settings/license', adminOnly: true },
-  { label: 'Server Logs', path: '/settings/server-logs', adminOnly: true },
+  {
+    label: 'Settings',
+    icon: Settings,
+    adminOnly: true,
+    children: [
+      {
+        label: 'Integrations',
+        adminOnly: true,
+        children: [{ label: 'Slack', path: '/integrations/slack', adminOnly: true }],
+      },
+      { label: 'License', path: '/settings/license', adminOnly: true },
+      { label: 'Server Logs', path: '/settings/server-logs', adminOnly: true },
+      { label: 'Users', path: '/organization/users', adminOnly: true },
+    ],
+  },
 ]
 
-// Sidebar sections, top to bottom. A section whose items are all hidden by
-// shouldHide() is skipped, heading and divider included.
+// Sidebar sections, top to bottom; `divider` draws a rule above a section.
 export const NAV = [
-  { id: 'infrastructure', label: 'Infrastructure', items: INFRASTRUCTURE_ITEMS },
-  { id: 'policies', label: 'Policies', items: POLICY_ITEMS },
-  { id: 'activity', label: 'Activity', items: ACTIVITY_ITEMS },
+  { id: 'main', label: 'Main', heading: false, items: MAIN_ITEMS },
+  { id: 'policies', label: 'Policies', divider: true, items: POLICY_ITEMS },
+  { id: 'access', label: 'Access', items: ACCESS_ITEMS },
+  { id: 'settings', label: 'Settings', heading: false, divider: true, items: SETTINGS_ITEMS },
 ]
-
-// Pinned to the foot of the sidebar, above the collapse bar. One collapsible
-// group; the collapsed rail expands the sidebar with it open.
-export const FOOTER_NAV = {
-  id: 'settings',
-  items: [{ label: 'Settings', icon: Settings, adminOnly: true, children: SETTINGS_ITEMS }],
-}
 
 // ─── Command palette ────────────────────────────────────────────────────────
 // Gating flags mirror the nav entries above — keep both lists in sync.
@@ -77,7 +87,7 @@ const SUGGESTION_ITEMS = [
 const QUICK_ACCESS_ITEMS = [
   { id: 'data-masking', label: 'Data Masking', description: 'Configure data masking', icon: VenetianMask, path: '/features/data-masking', adminOnly: true, licenseFeature: 'data-masking' },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
-  { id: 'ai-analyzer', label: 'AI Analyzer', description: 'Configure the AI session analyzer', icon: Sparkles, path: '/features/ai-session-analyzer', adminOnly: true, licenseFeature: 'ai-session-analyzer' },
+  { id: 'ai-analyzer', label: 'AI Analyzer', description: 'Configure the AI session analyzer', icon: Sparkles, path: `${AI_ANALYZER}?tab=configure`, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
   { id: 'review-slack', label: 'Slack', description: 'Where approvals are delivered', icon: MessageSquare, path: '/integrations/slack', adminOnly: true },
   { id: 'users', label: 'Users', description: 'Invite and manage administrators and approvers', icon: Users, path: '/organization/users', adminOnly: true },
   { id: 'settings-api-keys', label: 'API Keys', description: 'Manage API keys', icon: Key, path: '/settings/api-keys', adminOnly: true },

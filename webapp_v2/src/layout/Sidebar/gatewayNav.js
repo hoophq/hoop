@@ -2,7 +2,6 @@
 // sibling is ./controlPlaneNav.js.
 import {
   Package,
-  FileCheck,
   LayoutDashboard,
   SquareCode,
   BookUp2,
@@ -17,104 +16,125 @@ import {
   UserRoundCheck,
   PackageSearch,
   BrainCog,
-  Puzzle,
   Settings,
   WandSparkles,
   Layers,
+  Key,
   KeyRound,
-  Webhook,
   Bot,
   ExternalLink,
   Users,
   Tags,
   FlaskConical,
   ScrollText,
+  ListVideo,
+  NotebookPen,
+  List,
+  History,
+  Clock,
+  SlidersHorizontal,
   View,
 } from 'lucide-react';
+import { AGENTS_FLAG } from '@/modes/agents';
 
 // ─── Nav items ─────────────────────────────────────────────────────────────
 
-export const MAIN_ITEMS = [
-  { label: 'Resources', path: '/resources', icon: Package, adminOnly: false },
-  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true, badge: { text: 'BETA', color: 'indigo' } },
-  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, adminOnly: true },
-  { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
-  { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false, licenseFeature: 'runbooks' },
-  { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false },
-  { label: 'Reviews', path: '/reviews', icon: View, adminOnly: false }
-  // No Search entry: the global header owns that affordance now (layout/Header/
-  // HeaderSearch.jsx), and it opens the very same command palette.
-]
+const AI_ANALYZER = '/features/ai-session-analyzer';
 
-// Alphabetical, mirroring the sidebar component in Figma (Components | Custom).
-export const DISCOVER_ITEMS = [
-  { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true, licenseFeature: 'access-control' },
-  { label: 'Access Request', path: '/features/access-request', icon: CircleCheckBig, adminOnly: true, licenseFeature: 'access-requests' },
-  { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true, licenseFeature: 'ai-agents' },
-  { label: 'AI Session Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
+const MAIN_ITEMS = [
+  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
+  { label: 'Resources', path: '/resources', icon: Package },
+  { label: 'Terminal', path: '/client', icon: SquareCode, featureFlag: AGENTS_FLAG },
   {
-    label: 'Event Routing',
-    path: '/features/event-routing',
-    icon: Webhook,
-    adminOnly: true,
-    licenseFeature: 'event-routing'
+    label: 'Runbooks',
+    icon: BookUp2,
+    licenseFeature: 'runbooks',
+    featureFlag: AGENTS_FLAG,
+    linkWhenSingle: true,
+    children: [
+      { label: 'Library', path: '/runbooks', icon: ListVideo },
+      { label: 'Setup', path: '/features/runbooks/setup', icon: NotebookPen, adminOnly: true },
+    ],
   },
+  { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd },
+  {
+    label: 'AI Analyzer',
+    icon: Sparkles,
+    children: [
+      { label: 'Rules', path: AI_ANALYZER, icon: List, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
+      { label: 'Approval History', path: '/reviews?status=settled', icon: History },
+      { label: 'Pending Approvals', path: '/reviews', icon: Clock },
+      { label: 'Configuration', path: `${AI_ANALYZER}?tab=configure`, icon: SlidersHorizontal, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
+    ],
+  },
+];
+
+const POLICY_ITEMS = [
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, adminOnly: true, licenseFeature: 'guardrails' },
-  { label: 'Jira Templates', path: '/jira-templates', icon: Layers, adminOnly: true, licenseFeature: 'jira-integration' },
-  { label: 'Live Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true, licenseFeature: 'data-masking' },
-  { label: 'Machine Identities', path: '/features/machine-identities', icon: KeyRound, adminOnly: true, licenseFeature: 'machine-identities' },
-  { label: 'Provisioning Hub', path: '/provisioning', icon: Boxes, adminOnly: true, licenseFeature: 'provisioning-hub' },
+  { label: 'Data Masking', path: '/features/data-masking', icon: VenetianMask, adminOnly: true, licenseFeature: 'data-masking' },
   {
-    label: 'Resource Discovery',
-    path: '/integrations/aws-connect',
-    icon: PackageSearch,
-    adminOnly: true,
-    badge: { text: 'BETA', color: 'indigo' },
-    licenseFeature: 'resource-discovery'
-  },
-  {
-    label: 'Rulepacks',
+    label: 'Compliance Packs',
     path: '/rulepacks',
     icon: WandSparkles,
     adminOnly: true,
     featureFlag: 'experimental.rulepacks',
-    licenseFeature: 'rulepacks'
+    licenseFeature: 'rulepacks',
   },
-  { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, adminOnly: true, licenseFeature: 'runbooks' }
-]
+];
 
-export const ORGANIZATION_ITEMS = [
-  { label: 'Agents', path: '/agents', icon: BrainCog, adminOnly: true },
+const ACCESS_ITEMS = [
+  { label: 'Approval rules', path: '/features/access-request', icon: CircleCheckBig, adminOnly: true, licenseFeature: 'access-requests' },
+  { label: 'API Keys', path: '/settings/api-keys', icon: Key, adminOnly: true },
+  { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true, licenseFeature: 'access-control' },
+  { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true, licenseFeature: 'ai-agents' },
+  { label: 'Machine Identities', path: '/features/machine-identities', icon: KeyRound, adminOnly: true, licenseFeature: 'machine-identities', featureFlag: AGENTS_FLAG },
+  { label: 'Agents', path: '/agents', icon: BrainCog, adminOnly: true, featureFlag: AGENTS_FLAG },
+];
 
-  {
-    label: 'Integrations',
-    icon: Puzzle,
-    adminOnly: true,
-    children: [
-      { label: 'Authentication', path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
-      { label: 'Jira', path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },
-      { label: 'Webhooks', path: '/integrations/webhooks', adminOnly: true },
-      { label: 'Slack', path: '/integrations/slack', adminOnly: true }
-    ]
-  },
+const INFRASTRUCTURE_ITEMS = [
+  { label: 'Provisioning Hub', path: '/provisioning', icon: Boxes, adminOnly: true, licenseFeature: 'provisioning-hub', featureFlag: AGENTS_FLAG },
+  { label: 'Resource Discovery', path: '/integrations/aws-connect', icon: PackageSearch, adminOnly: true, licenseFeature: 'resource-discovery', featureFlag: AGENTS_FLAG },
+];
+
+const SETTINGS_ITEMS = [
   {
     label: 'Settings',
     icon: Settings,
     adminOnly: true,
     children: [
-      { label: 'API Keys', path: '/settings/api-keys', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
-      { label: 'Attributes', path: '/settings/attributes', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
-      { label: 'Protection Rules', path: '/settings/protection-rules', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
-      { label: 'Infrastructure', path: '/settings/infrastructure', adminOnly: true, selfhostedOnly: true },
+      { label: 'Attributes', path: '/settings/attributes', adminOnly: true },
+      { label: 'Audit Logs', path: '/settings/audit-logs', adminOnly: true },
+      { label: 'Compliance Report', path: '/compliance-report', adminOnly: true },
       { label: 'Experimental', path: '/settings/experimental', adminOnly: true },
+      { label: 'Event Routing', path: '/features/event-routing', adminOnly: true, licenseFeature: 'event-routing', featureFlag: AGENTS_FLAG },
+      { label: 'Infrastructure', path: '/settings/infrastructure', adminOnly: true, selfhostedOnly: true },
+      {
+        label: 'Integrations',
+        adminOnly: true,
+        children: [
+          { label: 'Authentication', path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
+          { label: 'Slack', path: '/integrations/slack', adminOnly: true },
+          { label: 'Jira', path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },
+          { label: 'Jira Templates', path: '/jira-templates', adminOnly: true, licenseFeature: 'jira-integration' },
+          { label: 'Webhooks', path: '/integrations/webhooks', adminOnly: true },
+        ],
+      },
       { label: 'License', path: '/settings/license', adminOnly: true },
-      { label: 'Internal Audit Logs', path: '/settings/audit-logs', adminOnly: true },
-      { label: 'Server Logs', path: '/settings/server-logs', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
-      { label: 'Compliance Report', path: '/compliance-report', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
-      { label: 'Users', path: '/organization/users', adminOnly: true }
-    ]
-  }
-]
+      { label: 'Protection Rules', path: '/settings/protection-rules', adminOnly: true },
+      { label: 'Server Logs', path: '/settings/server-logs', adminOnly: true },
+      { label: 'Users', path: '/organization/users', adminOnly: true },
+    ],
+  },
+];
+
+// Sidebar sections, top to bottom; `divider` draws a rule above a section.
+export const NAV = [
+  { id: 'main', label: 'Main', heading: false, items: MAIN_ITEMS },
+  { id: 'policies', label: 'Policies', divider: true, items: POLICY_ITEMS },
+  { id: 'access', label: 'Access', items: ACCESS_ITEMS },
+  { id: 'infrastructure', label: 'Infrastructure', items: INFRASTRUCTURE_ITEMS },
+  { id: 'settings', label: 'Settings', heading: false, divider: true, items: SETTINGS_ITEMS },
+];
 
 // ─── Command palette ────────────────────────────────────────────────────────
 // Gating flags (adminOnly / selfhostedOnly / featureFlag / licenseFeature)
@@ -122,21 +142,21 @@ export const ORGANIZATION_ITEMS = [
 // helper — keep both lists in sync when a page's gating changes.
 export const SUGGESTION_ITEMS = [
   { id: 'resources', label: 'Resources', description: 'Manage resources', icon: Package, path: '/resources' },
-  { id: 'terminal', label: 'Terminal', description: 'Open terminal', icon: SquareCode, path: '/client' },
+  { id: 'terminal', label: 'Terminal', description: 'Open terminal', icon: SquareCode, path: '/client', featureFlag: AGENTS_FLAG },
 ]
 
 export const QUICK_ACCESS_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', description: 'Overview dashboard', icon: LayoutDashboard, path: '/dashboard', adminOnly: true },
-  { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks' },
+  { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks', featureFlag: AGENTS_FLAG },
   { id: 'sessions', label: 'Sessions', description: 'View session history', icon: GalleryVerticalEnd, path: '/sessions' },
   { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: View, path: '/reviews' },
   { id: 'access-request', label: 'Access Request', description: 'Manage access requests', icon: CircleCheckBig, path: '/features/access-request', adminOnly: true, licenseFeature: 'access-requests' },
-  { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup', adminOnly: true, licenseFeature: 'runbooks' },
+  { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup', adminOnly: true, licenseFeature: 'runbooks', featureFlag: AGENTS_FLAG },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
   { id: 'data-masking', label: 'Live Data Masking', description: 'Configure live data masking', icon: VenetianMask, path: '/features/data-masking', adminOnly: true, licenseFeature: 'data-masking' },
   { id: 'access-control', label: 'Access Control', description: 'Manage access control rules', icon: UserRoundCheck, path: '/features/access-control', adminOnly: true, licenseFeature: 'access-control' },
-  { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect', adminOnly: true, licenseFeature: 'resource-discovery' },
-  { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents', adminOnly: true },
+  { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect', adminOnly: true, licenseFeature: 'resource-discovery', featureFlag: AGENTS_FLAG },
+  { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents', adminOnly: true, featureFlag: AGENTS_FLAG },
   { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true },
   { id: 'authentication', label: 'Authentication', description: 'Configure authentication', icon: ShieldCheck, path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
   { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },

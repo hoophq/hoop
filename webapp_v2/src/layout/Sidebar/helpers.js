@@ -12,15 +12,58 @@ export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEna
   return false
 }
 
-export function isActive(path, pathname, search = '') {
-  if (!path) return false
-  if (path === '/dashboard') return pathname === '/dashboard' || pathname === '/'
-  // Items may target a query state of a page (e.g. /jira-templates?tab=configuration).
-  // Match the pathname against the base path, then require every query param the
-  // item declares to be present in the current URL.
-  const [basePath, queryString] = path.split('?')
-  const pathMatches = pathname === basePath || pathname.startsWith(basePath + '/')
-  if (!pathMatches || !queryString) return pathMatches
-  const current = new URLSearchParams(search)
-  return [...new URLSearchParams(queryString)].every(([key, value]) => current.get(key) === value)
+// A `linkWhenSingle` group left with one child renders as a link to that child.
+function visibleGroup(item, children) {
+  if (!item.linkWhenSingle || children.length !== 1) return { ...item, children }
+  const { children: _, linkWhenSingle: __, ...link } = item
+  return { ...link, path: children[0].path }
 }
+
+// Drops hidden items, empty groups and empty sections. `block` keeps a rule
+// between two blocks when the section that opens one is hidden.
+export function visibleNav(sections, hide) {
+  const visibleItems = (items) =>
+    items
+      .filter((item) => !hide(item))
+      .map((item) => (item.children ? visibleGroup(item, visibleItems(item.children)) : item))
+      .filter((item) => !item.children || item.children.length > 0)
+
+  let block = 0
+  return sections
+    .map((section, index) => {
+      if (index > 0 && section.divider) block += 1
+      return { ...section, block, items: visibleItems(section.items) }
+    })
+    .filter((section) => section.items.length > 0)
+}
+
+// The base path must match and every query param the item declares must be in
+// the URL. A longer path, then more params, scores higher.
+function matchScore(path, pathname, search) {
+  if (!path) return 0
+  const [basePath, queryString] = path.split('?')
+  if (pathname !== basePath && !pathname.startsWith(basePath + '/')) return 0
+  const params = [...new URLSearchParams(queryString)]
+  const current = new URLSearchParams(search)
+  if (!params.every(([key, value]) => current.get(key) === value)) return 0
+  return basePath.length * 100 + params.length + 1
+}
+
+const leaves = (items) => items.flatMap((item) => (item.children ? leaves(item.children) : [item]))
+
+// The most specific match wins: `/reviews?status=settled` over `/reviews`.
+export function findActivePath(sections, pathname, search = '') {
+  let best = null
+  let bestScore = 0
+  for (const item of leaves(sections.flatMap((section) => section.items))) {
+    const score = matchScore(item.path, pathname, search)
+    if (score > bestScore) {
+      best = item.path
+      bestScore = score
+    }
+  }
+  return best
+}
+
+export const containsPath = (item, path) =>
+  Boolean(path) && leaves(item.children ?? [item]).some((leaf) => leaf.path === path)

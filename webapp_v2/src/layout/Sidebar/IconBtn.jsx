@@ -1,13 +1,10 @@
 import { Tooltip } from '@mantine/core';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { isActive } from './helpers';
+import { useNavigate } from 'react-router-dom';
 import classes from './Sidebar.module.css';
 
-export function IconBtn({ icon, label, path, action, onClick }) {
+export function IconBtn({ icon, label, path, active = false, onClick }) {
   const Icon = icon;
-  const location = useLocation();
   const navigate = useNavigate();
-  const active = path ? isActive(path, location.pathname, location.search) : false;
 
   return (
     <Tooltip label={label} position="right" withArrow>
@@ -17,7 +14,6 @@ export function IconBtn({ icon, label, path, action, onClick }) {
         className={`${classes.iconBtn} ${active ? classes.iconBtnActive : ''}`}
         onClick={() => {
           if (onClick) { onClick(); return; }
-          if (action) { action(); return; }
           if (path) navigate(path);
         }}
       >
