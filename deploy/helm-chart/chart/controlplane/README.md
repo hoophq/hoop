@@ -1,13 +1,22 @@
 # hoopcontrolplane-chart
 
-Deploys the **hoop control plane**: the gateway binary started with
-`hoop start control-plane` (see [ADR-0024](https://github.com/hoophq/adr/blob/main/0024-gateway-control-plane-mode.md)).
-It serves the HTTP API and the web app, and administers a fleet of inspection
-sidecars.
+Deploys the **hoop control plane**: the gateway, for an install that runs
+sidecars and no agents. `hoop start control-plane` starts the same binary as
+`hoop start gateway`; the one difference is that `PLUGIN_AUDIT_PATH` defaults
+to a temporary directory, because this chart mounts no session volume.
+(ADR-0024, the control-plane mode, is superseded.)
 
-It carries **no traffic**. No gRPC on `:8010`, no protocol proxies, no agent
-controller, and of the six transport plugins only Slack is started. The 21
-routes that need the transport answer with an HTTP error rather than hanging.
+The process is the whole gateway: gRPC on `:8010`, the six transport plugins,
+the proxies configured in `serverconfig`. The chart publishes only HTTP 8009,
+which is all a sidecar fleet needs.
+
+The per-org `experimental.agents` flag (`common/featureflag`) is off by default
+and turned on by migration for every organization that has an agent of its own.
+Today it gates the admin onboarding redirect in the web app and whether
+`/api/healthz` dials the gRPC port. Admins flip it at Settings → Experimental.
+
+Upgrading from a release that still had the mode needs no change to values:
+the chart name, keys, Deployment selector and Service name are the same.
 
 ## Install
 
@@ -47,23 +56,22 @@ runtime.
 - **Gateway API CRDs**, only if you set `gatewayApi.enabled`. Without them, set
   `service.type: LoadBalancer` instead.
 
-## The image and the mode
+## The image
 
 The chart sets no `command` and no `args`, and **neither can be configured** —
 both are refused at render. `hoophq/hoopcontrolplane` runs
 `hoop start control-plane` from its own `CMD`, behind a `tini` `ENTRYPOINT`.
-
-That subcommand is the only way to select the mode — there is no `APP_MODE`
-variable — so letting the image own it keeps exactly one place able to get it
-wrong. A command here could boot a full gateway instead: gRPC on `:8010`, every
-protocol proxy, all six transport plugins, from a chart named controlplane.
-Overriding the entrypoint would also drop tini, and the control plane installs
-no signal handler of its own (`gateway/api/server.go` ends in gin's blocking
+Overriding the entrypoint would drop tini, and the gateway installs no signal
+handler of its own (`gateway/api/server.go` ends in gin's blocking
 `route.Run()` with no `http.Server.Shutdown`), so it would then ignore
 `SIGTERM` and every pod delete would wait out the kill timeout.
 
 To run a different build, point `repository` and `tag` at an image whose `CMD`
-already starts the control plane.
+already starts the gateway.
+
+The image is the `hoop` binary on a stock rootfs, without `./Dockerfile`'s
+agent tooling (tesseract, database clients). A sidecar-only install never
+exercises the paths that need them.
 
 Two flavours, same as `hoopsidecar-chart`:
 
@@ -115,15 +123,9 @@ For the upgrade **into** this release, keep `deploymentStrategy: Recreate`. An
 older pod tracks review messages in memory, so a message it posts during a
 rolling update is not rewritten when the review settles.
 
-Two related constraints the chart also cannot see:
-
-- A gateway and a control plane pointed at **the same database** both read the
-  Slack plugin row and both open a socket. One organization must not have Slack configured
-  on both at once.
-- `GET /api/ws` registers a WebSocket agent in the in-process broker, and
-  `/rdpproxy/*` relays RDP through it — so such an agent turns a control plane
-  into an RDP data plane. A deployment that must carry no traffic must not
-  expose `/api/ws`. The default HTTPRoute matches `/` and therefore does.
+One constraint the chart also cannot see: two deployments pointed at **the
+same database** both read the Slack plugin row and both open a socket. One
+organization must not have Slack configured on both at once.
 
 ## Probes
 
@@ -140,10 +142,11 @@ against a TLS listener gets a `400` and the pod never becomes ready. Trust is
 not the issue — kubelet HTTPS probes always skip certificate verification and
 there is no field to change that.
 
-Health is `GET /api/healthz` on 8009, under `API_URL`'s path if it has one. In
-control-plane mode that route is a static `200` that checks nothing, but
-`StartAPI()` runs last — after migrations, the org bootstrap and the IdP — so
-an answer at all means bootstrap finished.
+Health is `GET /api/healthz` on 8009, under `API_URL`'s path if it has one. It
+answers once the API listens — after migrations, the org bootstrap and the IdP
+— so an answer at all means bootstrap finished. It also dials the local gRPC
+port, but only while `experimental.agents` is on for the default organization,
+or in multi-tenant mode.
 
 ```yaml
 # plaintext listener
@@ -184,7 +187,7 @@ mount the file with `extraVolumes`.
 
 `USE_TLS` and `HOOP_TLSCA` are not rendered. Nothing reads `USE_TLS` any
 longer, and `HOOP_TLSCA` is the CA the in-process gRPC clients verify the
-gateway's certificate with — clients that only run in gateway mode.
+gateway's certificate with, which a sidecar-only install does not use.
 
 ## Exposing it
 
@@ -232,29 +235,27 @@ every route is mounted under it; the chart refuses that.
 
 ## What this chart does not render
 
-The control plane reads a fraction of what the gateway does. The keys below are
-the gateway's; this chart does not render them, and naming one under `config`
-does nothing. Use `extraSecret` if you have a reason to set one anyway.
+The gateway reads more keys than a sidecar-only install needs. The keys below
+are rendered by the gateway chart and not by this one; naming one under
+`config` does nothing. Use `extraSecret` to set one anyway.
 
-| Key | Why not |
+| Key | Note |
 |---|---|
-| `GRPC_URL`, `DEFAULT_AGENT_GRPC_*` | no gRPC listener and no default agent container |
-| `USE_TLS`, `HOOP_TLSCA` | nothing reads `USE_TLS` any more; `HOOP_TLSCA` is the gRPC client's verify CA, and those clients are gateway-only |
-| `HOOP_TLS_SKIP_VERIFY`, `GATEWAY_ALLOW_PLAINTEXT` | gRPC transport settings |
-| `TLS_CA` | read nowhere in `gateway/`; the gateway chart's key is a typo for `HOOP_TLSCA` |
-| `HOOP_SPIFFE_*` | agent JWT-SVID validation. No agent authenticates here |
+| `GRPC_URL`, `DEFAULT_AGENT_GRPC_*` | the Service publishes no gRPC port and the chart runs no default agent container |
+| `USE_TLS`, `HOOP_TLSCA`, `HOOP_TLS_SKIP_VERIFY`, `GATEWAY_ALLOW_PLAINTEXT`, `TLS_CA` | gRPC transport settings; `TLS_CA` is read nowhere in `gateway/` |
+| `HOOP_SPIFFE_*` | agent JWT-SVID validation |
 | `DLP_*`, `MSPRESIDIO_*`, `GOOGLE_APPLICATION_CREDENTIALS_JSON` | masking runs on the agent and in the sidecar |
-| `RDP_*`, `SSH_CLIENT_HOST_KEY` | protocol proxies, not started |
-| `PLUGIN_AUDIT_PATH`, `PLUGIN_INDEX_PATH` | the audit plugin is not started; this chart mounts no WAL volume |
-| `AGENTCONTROLLER_CREDENTIALS` | the agent controller is not started |
+| `RDP_*`, `SSH_CLIENT_HOST_KEY` | protocol proxies |
+| `PLUGIN_AUDIT_PATH`, `PLUGIN_INDEX_PATH` | this chart mounts no session volume; `hoop start control-plane` defaults the audit path to a temporary directory |
+| `AGENTCONTROLLER_CREDENTIALS` | multi-tenant agent controller |
 | `ASK_AI_CREDENTIALS` | the analyzer credential belongs with the process that calls the model |
-| `WEBHOOK_APPKEY`, `WEBHOOK_APPURL` | the webhooks plugin is a transport plugin and is not started |
-| `LICENSE_SIGNING_KEY` | issuer-side. ADR-0016 has the control plane hand down the signed document it reads from the database; it never signs one |
+| `WEBHOOK_APPKEY`, `WEBHOOK_APPURL` | webhooks plugin credentials |
+| `LICENSE_SIGNING_KEY` | issuer-side. The gateway hands sidecars the signed document it reads from the database; it never signs one |
 | `INTEGRATION_AWS_INSTANCE_ROLE_ALLOW` | agent-side credential resolution |
-| `EVENT_ROUTING_WORKERS` | falls back to a default; nobody has needed to tune it here |
+| `EVENT_ROUTING_WORKERS` | falls back to a default |
 | `API_KEY` | deprecated |
 | `IDP_URI`, `URL_TOKEN_EXCHANGE`, `ORG_MULTI_TENANT` | not exposed by this chart |
-| `WEBAPP_USERS_MANAGEMENT`, `DISABLE_SESSIONS_DOWNLOAD`, `DISABLE_CLIPBOARD_COPY_CUT` | web app toggles, out of scope |
+| `WEBAPP_USERS_MANAGEMENT`, `DISABLE_SESSIONS_DOWNLOAD`, `DISABLE_CLIPBOARD_COPY_CUT` | web app toggles |
 | `AUTH_METHOD` | inferred: any `IDP_*` key selects OIDC, none leaves local. SAML is configured in the database and cannot be selected by environment |
 | `STATIC_UI_PATH` | the web UI is compiled into the binary; any path here serves API-only with a 404 at `/` while the pod stays ready. Setting it through `extraSecret` breaks the UI |
 | `ANALYTICS_TRACKING`, `PGREST_ROLE`, `ADMIN_USERNAME` | dead keys in the gateway chart. Nothing reads the first two by those names; `ADMIN_USERNAME` is a constant default in `gateway/storagev2/types/const.go` |

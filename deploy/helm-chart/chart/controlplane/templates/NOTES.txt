@@ -7,13 +7,12 @@ Control plane deployed.
   kubectl port-forward deploy/{{ include "hoopcontrolplane.fullname" . }} 8009:8009
 {{- end }}
 
-Confirm the mode — application_mode must read "control-plane":
+Confirm it answers:
 
-  curl -s http://127.0.0.1:8009{{ include "hoopcontrolplane.basePath" . }}/api/publicserverinfo | grep application_mode
+  curl -s http://127.0.0.1:8009{{ include "hoopcontrolplane.basePath" . }}/api/healthz
 
-This deployment carries no traffic: no gRPC on :8010, no protocol proxies, and
-of the six transport plugins only Slack is started. The routes that need the
-transport answer with an error rather than hanging; see ADR-0024.
+This is the gateway. Only HTTP 8009 is published; gRPC on :8010 stays inside
+the pod. Sidecars need nothing else.
 
 Register a sidecar at {{ .Values.config.API_URL }}, copy the token it shows
 once, and install hoopsidecar-chart with controlPlane.url and

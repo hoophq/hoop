@@ -66,8 +66,8 @@ npm run dev
 
 Access the app at `http://localhost:5173`.
 
-**Against the control plane** (the same bundle, rendered as the control plane
-because `/api/publicserverinfo` reports `application_mode: "control-plane"`):
+**Against the control plane** (the same bundle; `hoop start control-plane` is the
+gateway, with sidecars and no agents):
 
 ```bash
 make run-dev-control-plane                                 # repo root, control plane on :8019

@@ -102,13 +102,13 @@ upstream in the same namespace is safe.
 
 ## Installing the control plane
 
-`hoopcontrolplane-chart` deploys the control plane: the gateway binary started
-with `hoop start control-plane`. It serves the HTTP API and the web app, and
-administers a fleet of inspection sidecars. It carries no traffic — no gRPC on
-`:8010`, no protocol proxies, no agent controller — so it renders only the
-environment that mode reads and refuses the rest. See
+`hoopcontrolplane-chart` deploys the control plane: the gateway, started with
+`hoop start control-plane`. It is the same process as `hoop start gateway`;
+sidecars reach it over HTTP, so the Service publishes 8009 only. The chart
+renders a fixed set of environment keys and ignores the rest; that set is the
+frozen contract of existing installs. See
 [chart/controlplane/README.md](./chart/controlplane/README.md) for the full
-reference and the list of gateway keys it declines.
+reference and the list of keys it does not render.
 
 It needs an external PostgreSQL: `pglite://` is refused, being single-node and
 one connection at a time.
@@ -118,7 +118,6 @@ cat - > ./controlplane-values.yaml <<EOF
 config:
   POSTGRES_DB_URI: 'postgres://<user>:<pwd>@<db-host>:5432/<dbname>'
   API_URL: 'https://cp.yourdomain.tld'
-  AUTH_METHOD: 'oidc'
   IDP_ISSUER: 'https://idp-issuer-url'
   IDP_CLIENT_ID: 'client-id'
   IDP_CLIENT_SECRET: 'client-secret'

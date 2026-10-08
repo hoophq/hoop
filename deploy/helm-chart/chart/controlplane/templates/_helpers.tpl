@@ -85,7 +85,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
 {{- if or (hasKey .Values.image "command") (hasKey .Values.image "args") -}}
-{{- fail "image.command and image.args are not supported by this chart: the image runs `hoop start control-plane` from its own CMD behind a tini ENTRYPOINT. Overriding the command can boot a full gateway instead, and overriding the entrypoint drops tini, which this process needs in order to stop on SIGTERM. Point image.repository/image.tag at an image whose CMD is already correct" -}}
+{{- fail "image.command and image.args are not supported by this chart: the image runs `hoop start control-plane` from its own CMD behind a tini ENTRYPOINT. Overriding the entrypoint drops tini, which this process needs in order to stop on SIGTERM. Point image.repository/image.tag at an image whose CMD already starts the gateway" -}}
 {{- end -}}
 
 {{- if and .Values.gatewayApi.enabled (not .Values.gatewayApi.createGateway) (not .Values.gatewayApi.httpRoute.parentRefs) -}}

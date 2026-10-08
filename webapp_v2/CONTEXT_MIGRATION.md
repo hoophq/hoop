@@ -58,8 +58,9 @@ Gateway backend (port 8009)
 
 ### Application modes
 
-The same bundle is the gateway UI and the control plane UI. `useUserStore.appMode`
-(`'gateway'` | `'control-plane'`, from `/publicserverinfo` and `/serverinfo`) selects a
+The same bundle is the gateway UI and the control plane UI. `application_mode` is always
+`"gateway"`, so `useUserStore.appMode` is `'gateway'` today; the per-org `experimental.agents`
+flag gates only the admin onboarding redirect. `appMode` (`'gateway'` | `'control-plane'`) selects a
 product manifest in `src/modes/` (the shell a page renders in and the three leaves `/`,
 `/onboarding/*`, `/*`). Every React route below exists in both products; the sidebar of
 each product says what it shows. ClojureScript exists only in the gateway: the control
