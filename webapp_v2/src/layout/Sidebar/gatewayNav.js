@@ -35,6 +35,7 @@ import {
   SlidersHorizontal,
   View,
 } from 'lucide-react';
+import { AGENTS_FLAG } from '@/modes/agents';
 
 // ─── Nav items ─────────────────────────────────────────────────────────────
 
@@ -43,11 +44,12 @@ const AI_ANALYZER = '/features/ai-session-analyzer';
 const MAIN_ITEMS = [
   { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
   { label: 'Resources', path: '/resources', icon: Package },
-  { label: 'Terminal', path: '/client', icon: SquareCode },
+  { label: 'Terminal', path: '/client', icon: SquareCode, featureFlag: AGENTS_FLAG },
   {
     label: 'Runbooks',
     icon: BookUp2,
     licenseFeature: 'runbooks',
+    featureFlag: AGENTS_FLAG,
     linkWhenSingle: true,
     children: [
       { label: 'Library', path: '/runbooks', icon: ListVideo },
@@ -85,13 +87,13 @@ const ACCESS_ITEMS = [
   { label: 'API Keys', path: '/settings/api-keys', icon: Key, adminOnly: true },
   { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true, licenseFeature: 'access-control' },
   { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true, licenseFeature: 'ai-agents' },
-  { label: 'Machine Identities', path: '/features/machine-identities', icon: KeyRound, adminOnly: true, licenseFeature: 'machine-identities' },
-  { label: 'Agents', path: '/agents', icon: BrainCog, adminOnly: true },
+  { label: 'Machine Identities', path: '/features/machine-identities', icon: KeyRound, adminOnly: true, licenseFeature: 'machine-identities', featureFlag: AGENTS_FLAG },
+  { label: 'Agents', path: '/agents', icon: BrainCog, adminOnly: true, featureFlag: AGENTS_FLAG },
 ];
 
 const INFRASTRUCTURE_ITEMS = [
-  { label: 'Provisioning Hub', path: '/provisioning', icon: Boxes, adminOnly: true, licenseFeature: 'provisioning-hub' },
-  { label: 'Resource Discovery', path: '/integrations/aws-connect', icon: PackageSearch, adminOnly: true, licenseFeature: 'resource-discovery' },
+  { label: 'Provisioning Hub', path: '/provisioning', icon: Boxes, adminOnly: true, licenseFeature: 'provisioning-hub', featureFlag: AGENTS_FLAG },
+  { label: 'Resource Discovery', path: '/integrations/aws-connect', icon: PackageSearch, adminOnly: true, licenseFeature: 'resource-discovery', featureFlag: AGENTS_FLAG },
 ];
 
 const SETTINGS_ITEMS = [
@@ -104,7 +106,7 @@ const SETTINGS_ITEMS = [
       { label: 'Audit Logs', path: '/settings/audit-logs', adminOnly: true },
       { label: 'Compliance Report', path: '/compliance-report', adminOnly: true },
       { label: 'Experimental', path: '/settings/experimental', adminOnly: true },
-      { label: 'Event Routing', path: '/features/event-routing', adminOnly: true, licenseFeature: 'event-routing' },
+      { label: 'Event Routing', path: '/features/event-routing', adminOnly: true, licenseFeature: 'event-routing', featureFlag: AGENTS_FLAG },
       { label: 'Infrastructure', path: '/settings/infrastructure', adminOnly: true, selfhostedOnly: true },
       {
         label: 'Integrations',
@@ -140,21 +142,21 @@ export const NAV = [
 // helper — keep both lists in sync when a page's gating changes.
 export const SUGGESTION_ITEMS = [
   { id: 'resources', label: 'Resources', description: 'Manage resources', icon: Package, path: '/resources' },
-  { id: 'terminal', label: 'Terminal', description: 'Open terminal', icon: SquareCode, path: '/client' },
+  { id: 'terminal', label: 'Terminal', description: 'Open terminal', icon: SquareCode, path: '/client', featureFlag: AGENTS_FLAG },
 ]
 
 export const QUICK_ACCESS_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', description: 'Overview dashboard', icon: LayoutDashboard, path: '/dashboard', adminOnly: true },
-  { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks' },
+  { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks', featureFlag: AGENTS_FLAG },
   { id: 'sessions', label: 'Sessions', description: 'View session history', icon: GalleryVerticalEnd, path: '/sessions' },
   { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: View, path: '/reviews' },
   { id: 'access-request', label: 'Access Request', description: 'Manage access requests', icon: CircleCheckBig, path: '/features/access-request', adminOnly: true, licenseFeature: 'access-requests' },
-  { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup', adminOnly: true, licenseFeature: 'runbooks' },
+  { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup', adminOnly: true, licenseFeature: 'runbooks', featureFlag: AGENTS_FLAG },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
   { id: 'data-masking', label: 'Live Data Masking', description: 'Configure live data masking', icon: VenetianMask, path: '/features/data-masking', adminOnly: true, licenseFeature: 'data-masking' },
   { id: 'access-control', label: 'Access Control', description: 'Manage access control rules', icon: UserRoundCheck, path: '/features/access-control', adminOnly: true, licenseFeature: 'access-control' },
-  { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect', adminOnly: true, licenseFeature: 'resource-discovery' },
-  { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents', adminOnly: true },
+  { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', icon: PackageSearch, path: '/integrations/aws-connect', adminOnly: true, licenseFeature: 'resource-discovery', featureFlag: AGENTS_FLAG },
+  { id: 'agents', label: 'Agents', description: 'Manage agents', icon: BrainCog, path: '/agents', adminOnly: true, featureFlag: AGENTS_FLAG },
   { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true },
   { id: 'authentication', label: 'Authentication', description: 'Configure authentication', icon: ShieldCheck, path: '/integrations/authentication', adminOnly: true, selfhostedOnly: true },
   { id: 'jira', label: 'Jira', description: 'Configure Jira integration', icon: ExternalLink, path: '/jira-templates?tab=configuration', adminOnly: true, licenseFeature: 'jira-integration' },

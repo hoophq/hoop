@@ -1,4 +1,5 @@
 import { Box, Group } from '@mantine/core'
+import { useAgentsEnabled } from '@/modes/agents'
 import { HeaderSearch } from './GatewayHeaderSearch'
 import { NativeConnectionsButton } from './NativeConnectionsButton'
 import { UserMenu } from './UserMenu'
@@ -12,6 +13,8 @@ import { UserMenu } from './UserMenu'
  * the mobile sidebar Drawer that also lives there.
  */
 function AppHeader({ burger }) {
+  const agentsEnabled = useAgentsEnabled()
+
   return (
     <Group h="100%" px="md" gap="md" wrap="nowrap">
       {burger}
@@ -23,7 +26,7 @@ function AppHeader({ burger }) {
       </Box>
 
       <Group gap="sm" wrap="nowrap">
-        <NativeConnectionsButton />
+        {agentsEnabled && <NativeConnectionsButton />}
         <UserMenu />
       </Group>
     </Group>
