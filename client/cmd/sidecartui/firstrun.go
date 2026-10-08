@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -15,12 +17,14 @@ import (
 // FirstRunOptions is what the first-run screen needs from the CLI.
 type FirstRunOptions struct {
 	Version string
-	// Validate checks a written config the way --validate would and
-	// returns its one-line summary. The CLI injects it, since it links the
-	// YAML loader and the PII plugin and this package does not decide that.
+	// Validate checks a config file the way the boot that follows will
+	// load it, and returns a one-line summary. The CLI injects it: it
+	// links the YAML loader, the PII plugin and the license resolution.
 	Validate func(path string) (string, error)
-	// Getenv reads the environment for Detect; os.Getenv when nil.
+	// Getenv reads the environment for detection; os.Getenv when nil.
 	Getenv func(string) string
+	// Dir is where the config is saved; the current directory when "".
+	Dir string
 }
 
 // Messages first-run mode sends the screen.
@@ -29,9 +33,9 @@ type (
 		url      string
 		fellBack bool
 	}
-	frVisitMsg   time.Time
-	frFrameMsg   time.Time
-	frWrittenMsg StarterResult
+	frVisitMsg    time.Time
+	frFrameMsg    time.Time
+	frDetectedMsg machine
 )
 
 // frFrame is the animation step: fast enough that the wordmark's band and a
@@ -57,24 +61,32 @@ type firstRunModel struct {
 	// pulses are the start times of visits whose pulse is still crossing.
 	pulses []time.Time
 
-	// write runs the w action off the UI goroutine; nil in tests that
-	// drive frWrittenMsg directly.
-	write   func() StarterResult
-	writing bool
-	result  *StarterResult
+	// detect learns the machine for the setup screens; validate and dir
+	// are handed to them. detecting is drawn while detect runs.
+	detect    func() machine
+	validate  func(string) (string, error)
+	dir       string
+	detecting bool
+	wiz       *wizard
+	// saved is the config a "save only" wrote, shown on the home screen.
+	saved string
+	// boot is set when the person chose to start the sidecar on a saved
+	// config; the screen quits and the caller boots it.
+	boot *Boot
 
-	stop     func() error
-	stopErr  error
+	stop     func()
 	stopping bool
 	done     bool
 	err      error
 }
 
-func newFirstRunModel(version string, now func() time.Time, stop func() error, write func() StarterResult) firstRunModel {
+func newFirstRunModel(version string, now func() time.Time, stop func(), detect func() machine,
+	validate func(string) (string, error), dir string) firstRunModel {
 	if version == "" || version == "unknown" {
 		version = "dev"
 	}
-	return firstRunModel{now: now, version: version, started: now(), stop: stop, write: write}
+	return firstRunModel{now: now, version: version, started: now(), stop: stop,
+		detect: detect, validate: validate, dir: dir}
 }
 
 func frTick() tea.Cmd {
@@ -87,12 +99,15 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		return m, nil
 	case frReadyMsg:
 		m.url, m.fellBack, m.ready = msg.url, msg.fellBack, true
+		return m, nil
 	case frVisitMsg:
 		m.visits++
 		m.lastVisit = time.Time(msg)
 		m.pulses = append(m.pulses, time.Time(msg))
+		return m, nil
 	case frFrameMsg:
 		now := time.Time(msg)
 		live := m.pulses[:0]
@@ -103,65 +118,76 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pulses = live
 		return m, frTick()
-	case frWrittenMsg:
-		r := StarterResult(msg)
-		m.writing, m.result = false, &r
+	case frDetectedMsg:
+		m.detecting = false
+		m.wiz = newWizard(machine(msg), m.validate, m.dir, m.now)
+		return m, nil
 	case doneMsg:
 		m.done, m.err = true, msg.err
 		return m, tea.Quit
-	case tea.KeyPressMsg:
-		return m.key(msg)
+	}
+	if m.wiz != nil {
+		if k, ok := msg.(tea.KeyPressMsg); ok && k.String() == "ctrl+c" {
+			return m.quit()
+		}
+		cmd, ev := m.wiz.update(msg)
+		switch ev {
+		case wizExit:
+			m.wiz = nil
+		case wizSavedOnly:
+			m.saved, m.wiz = m.wiz.saved, nil
+		case wizBoot:
+			m.boot = &Boot{ConfigPath: m.wiz.saved}
+			return m, tea.Quit
+		}
+		return m, cmd
+	}
+	if k, ok := msg.(tea.KeyPressMsg); ok {
+		switch k.String() {
+		case "q", "ctrl+c", "esc":
+			return m.quit()
+		case "w", "s", "enter":
+			if m.detecting || m.detect == nil {
+				return m, nil
+			}
+			m.detecting = true
+			detect := m.detect
+			return m, func() tea.Msg { return frDetectedMsg(detect()) }
+		}
 	}
 	return m, nil
 }
 
-func (m firstRunModel) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case "q", "ctrl+c", "esc":
-		if m.stopping {
-			// A second press leaves without waiting for the server.
-			return m, tea.Quit
-		}
-		m.stopping = true
-		if err := m.stop(); err != nil {
-			m.stopErr = err
-			return m, tea.Quit
-		}
-	case "w":
-		if m.writing || m.write == nil || (m.result != nil && m.result.Path != "") {
-			return m, nil
-		}
-		m.writing = true
-		write := m.write
-		return m, func() tea.Msg { return frWrittenMsg(write()) }
+func (m firstRunModel) quit() (tea.Model, tea.Cmd) {
+	if m.stopping {
+		// A second press leaves without waiting for the listener.
+		return m, tea.Quit
 	}
+	m.stopping = true
+	m.stop()
 	return m, nil
 }
 
-// RunFirstRun draws first-run mode: serve is daemon.FirstRun with the
-// observer this screen hands it, and it blocks until SIGINT, like the
-// daemon. q sends that signal; the daemon's handler stops the listener.
-func RunFirstRun(opts FirstRunOptions, serve func(daemon.FirstRunObserver) error) error {
+// RunFirstRun draws first-run mode. serve is daemon.FirstRunContext with
+// the observer this screen hands it; it stops when ctx does. The returned
+// Boot is non-nil when the person saved a config and chose to start it:
+// the listener has stopped by then, and the caller boots that config.
+func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstRunObserver) error) (*Boot, error) {
 	getenv := opts.Getenv
 	if getenv == nil {
 		getenv = os.Getenv
 	}
-	stop := func() error {
-		self, err := os.FindProcess(os.Getpid())
-		if err != nil {
-			return err
-		}
-		return self.Signal(os.Interrupt)
+	// SIGTERM from outside still stops the listener; SIGINT arrives as
+	// ctrl+c in raw mode and goes through the screen.
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	detect := func() machine {
+		dctx, dcancel := context.WithTimeout(ctx, 3*time.Second)
+		defer dcancel()
+		return detect(dctx, getenv)
 	}
-	write := func() StarterResult {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return WriteStarter(ctx, "", getenv, opts.Validate)
-	}
-	m := newFirstRunModel(opts.Version, time.Now, stop, write)
-	p := tea.NewProgram(m, tea.WithOutput(os.Stdout), tea.WithInput(os.Stdin),
-		// The daemon owns SIGINT, as in runTUI.
-		tea.WithoutSignalHandler())
+	m := newFirstRunModel(opts.Version, time.Now, cancel, detect, opts.Validate, opts.Dir)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stdout), tea.WithInput(os.Stdin), tea.WithoutSignalHandler())
 
 	obs := daemon.FirstRunObserver{
 		Ready: func(url string, fellBack bool) { p.Send(frReadyMsg{url: url, fellBack: fellBack}) },
@@ -171,48 +197,46 @@ func RunFirstRun(opts FirstRunOptions, serve func(daemon.FirstRunObserver) error
 	}
 	runErr := make(chan error, 1)
 	go func() {
-		err := serve(obs)
+		err := serve(ctx, obs)
 		runErr <- err
 		p.Send(doneMsg{err: err})
 	}()
 
 	final, perr := p.Run()
+	cancel()
 	var derr error
 	select {
 	case derr = <-runErr:
-	default:
-		if serr := stop(); serr != nil {
-			derr = fmt.Errorf("the first-run listener could not be stopped: %w", serr)
-			break
-		}
-		select {
-		case derr = <-runErr:
-		case <-time.After(10 * time.Second):
-			derr = errors.New("the first-run listener did not stop within 10s")
-		}
+	case <-time.After(10 * time.Second):
+		derr = errors.New("the first-run listener did not stop within 10s")
 	}
 	if perr != nil {
-		return errors.Join(fmt.Errorf("tui: %w", perr), derr)
+		return nil, errors.Join(fmt.Errorf("tui: %w", perr), derr)
 	}
-	if fm, ok := final.(firstRunModel); ok {
-		fmt.Fprint(os.Stdout, fm.farewell())
+	fm, ok := final.(firstRunModel)
+	if !ok {
+		return nil, derr
 	}
-	return derr
+	if fm.boot != nil {
+		if derr != nil {
+			return nil, fmt.Errorf("stopping the first-run listener before boot: %w", derr)
+		}
+		fmt.Fprintf(os.Stdout, "hoop sidecar: booting %s\n", fm.boot.ConfigPath)
+		return fm.boot, nil
+	}
+	fmt.Fprint(os.Stdout, fm.farewell())
+	return nil, derr
 }
 
-// farewell is what stays in the scrollback once the screen is gone: the
-// file that was written and the one command to run next.
+// farewell is what stays in the scrollback once the screen is gone.
 func (m firstRunModel) farewell() string {
 	s := fmt.Sprintf("hoop sidecar first run stopped after %s", short(m.now().Sub(m.started)))
 	if m.visits > 0 {
 		s += fmt.Sprintf(", %d visit(s) to %s", m.visits, m.url)
 	}
 	s += "\n"
-	switch r := m.result; {
-	case r != nil && r.Path != "":
-		s += fmt.Sprintf("  wrote %s\n  next: hoop start sidecar --config %s\n", r.Path, r.Path)
-	default:
-		s += "  next: write a config and run hoop start sidecar --config config.yaml\n"
+	if m.saved != "" {
+		return s + fmt.Sprintf("  saved %s\n  next: hoop start sidecar --config %s\n", m.saved, m.saved)
 	}
-	return s
+	return s + "  next: run hoop start sidecar and press w to set up a config\n"
 }

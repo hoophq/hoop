@@ -8,8 +8,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 )
 
 // wordmark is "hoop" in block letters. The solid cells carry the brand blue
@@ -182,61 +180,24 @@ func (m firstRunModel) frSteps(now time.Time) string {
 	if url == "" {
 		url = "…"
 	}
-	written := m.result != nil && m.result.Path != ""
-	step2 := stText.Render("Press ") + stKey.Render("w") + stText.Render(" to write ") +
-		stStrong.Render(configyaml.StarterFile) + stFaint.Render(", inferred from this machine")
-	if m.writing {
-		step2 = shimmer("looking for databases on this machine…", now)
+	step2 := stText.Render("Press ") + stKey.Render("w") + stText.Render(" to set up a config: ") +
+		stFaint.Render("the demo, or your own database or API")
+	if m.detecting {
+		step2 = shimmer("looking at this machine…", now)
 	}
-	file := configyaml.StarterFile
+	if m.saved != "" {
+		step2 = stText.Render("Saved ") + stStrong.Render(m.saved) + stFaint.Render("  w to set up another")
+	}
+	step3 := stText.Render("Save and boot it, or run ") + stStrong.Render("hoop start sidecar --config <file>")
+	if m.saved != "" {
+		step3 = stText.Render("Run ") + stStrong.Render("hoop start sidecar --config "+m.saved)
+	}
 	lines := []string{
 		mark(1, m.visits > 0) + "  " + stText.Render("Open ") + stPrimary.Underline(true).Render(url) +
 			stFaint.Render("  the getting-started guide"),
-		mark(2, written) + "  " + step2,
-		mark(3, false) + "  " + stText.Render("Run ") + stStrong.Render("hoop start sidecar --config "+file),
+		mark(2, m.saved != "") + "  " + step2,
+		mark(3, false) + "  " + step3,
 	}
-	return strings.Join(lines, "\n")
-}
-
-// frResult is what w wrote and why, in place of the steps once it ran.
-func (m firstRunModel) frResult() string {
-	r := m.result
-	if r.Err != nil {
-		return stDanger.Bold(true).Render("✕ "+r.Err.Error()) + "\n\n" +
-			stFaint.Render("Move the file away, or edit it and run:") + "\n" +
-			stStrong.Render("  hoop start sidecar --config "+configyaml.StarterFile+" --validate")
-	}
-	in := r.Input
-	row := func(k, v string) string { return stLabel.Render(fmt.Sprintf("  %-10s", k)) + v }
-	// Starter already accepted this address, so this cannot fail here.
-	listen, _ := configyaml.StarterListen(in.Primary.Addr)
-	lines := []string{
-		stPrimary.Render("✓ wrote ") + stStrong.Render(r.Path),
-		"",
-		row("listener", stStrong.Render(in.Primary.Protocol)+"  "+stText.Render(listen+" → "+in.Primary.Addr)),
-		row("", stFaint.Render(in.Primary.Source)),
-	}
-	for _, o := range in.Others {
-		lines = append(lines, row("also", stText.Render(o.Protocol+" "+o.Addr)+stFaint.Render("  commented, one uncomment away")))
-	}
-	lines = append(lines,
-		row("guardrail", stText.Render("no destructive statements")+stFaint.Render("  1 of 1 on the free tier")),
-		row("masking", stText.Render("EMAIL_ADDRESS → redact")+stFaint.Render("  1 of 1 on the free tier")),
-	)
-	switch in.AnalyzerProvider {
-	case "":
-		lines = append(lines, row("analyzer", stFaint.Render("ready to enable: the file shows how")))
-	default:
-		lines = append(lines, row("analyzer", stText.Render(in.AnalyzerProvider)+stFaint.Render(" credential found; commented until its key file exists")))
-	}
-	lines = append(lines, "")
-	if r.ValidateErr != nil {
-		lines = append(lines, stDanger.Bold(true).Render("✕ does not validate: ")+stDanger.Render(r.ValidateErr.Error()))
-	} else {
-		lines = append(lines, stPrimary.Render("✓ valid")+stFaint.Render("  "+r.Summary))
-	}
-	lines = append(lines, "",
-		stText.Render("Next: ")+stStrong.Render("hoop start sidecar --config "+r.Path))
 	return strings.Join(lines, "\n")
 }
 
@@ -253,6 +214,9 @@ func (m firstRunModel) render() string {
 	if m.width < 60 || m.height < 14 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
 			ansiClamp(stFaint.Render("hoop sidecar: make the terminal at least 60×14"), m.width))
+	}
+	if m.wiz != nil {
+		return m.wizardFrame()
 	}
 	now := m.now()
 	w := min(m.width-2, 92)
@@ -272,20 +236,11 @@ func (m firstRunModel) render() string {
 		intro += "\n" + wrap.Inherit(stFaint).Render("Port 15321 was busy; a free port was bound instead.")
 	}
 
-	var body string
-	switch {
-	case m.result != nil:
-		body = pane(stTitle.Render("Your starter config"), m.frResult(), w, strings.Count(m.frResult(), "\n")+4)
-	default:
-		body = pane(stTitle.Render("Get started"), m.frSteps(now), w, 6)
-	}
+	body := pane(stTitle.Render("Get started"), m.frSteps(now), w, 6)
 
-	hints := stKey.Render("w") + stFaint.Render(" write starter config   ") + stKey.Render("q") + stFaint.Render(" quit")
+	hints := stKey.Render("w") + stFaint.Render(" set up a config   ") + stKey.Render("q") + stFaint.Render(" quit")
 	if m.stopping {
 		hints = stStrong.Render("stopping…") + stFaint.Render("  q again to leave now")
-	}
-	if m.stopErr != nil {
-		hints = stDanger.Render("could not stop: " + m.stopErr.Error())
 	}
 
 	blocks := []string{head, "", intro, "", m.frFlow(now), "", m.frStatus(now), "", body, "", hints}
@@ -297,6 +252,34 @@ func (m firstRunModel) render() string {
 	}
 	page = ansiClamp(page, m.width)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, page)
+}
+
+// wizardFrame draws the setup screens: a header with where the person is,
+// one line on what this screen is for, the screen, and its keys. The
+// default listener keeps answering behind it, and the header says so.
+func (m firstRunModel) wizardFrame() string {
+	wz := m.wiz
+	w := min(m.width-4, 100)
+	live := stFaint.Render("guide at " + strings.TrimPrefix(m.url, "http://"))
+	if m.visits > 0 {
+		live = stPrimary.Render("✓ ") + live
+	}
+	left := stBrand.Render("hoop") + " " + stStrong.Render("sidecar") + "  " + stPrimary.Render(wz.crumbs())
+	gap := max(w-ansi.StringWidth(left)-ansi.StringWidth(live), 2)
+	header := left + strings.Repeat(" ", gap) + live
+	intro := lipgloss.NewStyle().Width(w).Inherit(stText).Render(wz.intro())
+	hints := wz.hints()
+	if m.stopping {
+		hints = stStrong.Render("stopping…")
+	}
+	used := 1 + 1 + lipgloss.Height(intro) + 1 + 2 + 1 + 1
+	body := pane("", wz.view(w-4, max(m.height-used-2, 4)), w, max(m.height-used, 6))
+	page := lipgloss.JoinVertical(lipgloss.Left, header, "", intro, "", body, hints)
+	if lines := strings.Split(page, "\n"); len(lines) > m.height {
+		page = strings.Join(lines[:m.height], "\n")
+	}
+	page = ansiClamp(page, m.width)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, page)
 }
 
 // ansiClamp cuts every line of s to width cells, keeping its colors.

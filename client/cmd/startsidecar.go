@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 
+	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/client/cmd/sidecartui"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/version"
@@ -70,10 +74,10 @@ Run with nothing at all — no config, no flags — and a built-in default
 starts instead: one loopback URL that forwards to the getting-started
 guide. It inspects no traffic; it exists so the first run after the
 install works. Write a config to replace it. On an interactive terminal it
-draws a screen instead of the banner, and pressing w there writes
-hoop-sidecar.yaml: a starter config inferred from this machine (a
-DATABASE_URL, or a database port open on loopback) with one guardrail and one
-masking rule, validated before it is shown.
+draws a screen instead of the banner, and pressing w there sets up a config:
+pick the demo (an invented API the CLI serves) or a protocol, say where the
+backend is, adjust the default guardrail, masking, analyzer and detection,
+then save it, or save and boot the sidecar on it without restarting.
 
 This command was named "inspect". That name still works as a deprecated
 alias.
@@ -133,28 +137,35 @@ needs a restart.`,
 		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv)
 
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
-			if sidecarBareInvocation(cmd, args) {
-				firstRunOpts := []daemon.Option{
-					daemon.WithEntrypoint(analytics.EntrypointCLI),
-					daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
-				}
-				// A person at a terminal gets the first-run screen; a
-				// pipe, CI or NO_COLOR keeps the prose banner.
-				if format == sidecartui.FormatTUI && sidecartui.Interactive(stdoutTTY, stdinTTY) {
-					return sidecartui.RunFirstRun(sidecartui.FirstRunOptions{
-						Version:  daemon.Version,
-						Validate: validateStarter,
-					}, func(obs daemon.FirstRunObserver) error {
-						return daemon.FirstRun(io.Discard, "hoop start sidecar --config "+configyaml.StarterFile,
-							append(firstRunOpts, daemon.WithFirstRunObserver(obs))...)
-					})
-				}
+			if !sidecarBareInvocation(cmd, args) {
+				// The one genuine usage error here, so let cobra show the flags.
+				cmd.SilenceUsage = false
+				return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG or %s)",
+					daemon.ControlPlaneURLEnv)
+			}
+			firstRunOpts := []daemon.Option{
+				daemon.WithEntrypoint(analytics.EntrypointCLI),
+				daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
+			}
+			// A pipe, CI or NO_COLOR keeps the prose banner.
+			if format != sidecartui.FormatTUI || !sidecartui.Interactive(stdoutTTY, stdinTTY) {
 				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml", firstRunOpts...)
 			}
-			// The one genuine usage error here, so let cobra show the flags.
-			cmd.SilenceUsage = false
-			return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG or %s)",
-				daemon.ControlPlaneURLEnv)
+			// A person at a terminal gets the first-run screen, where they
+			// can set up a config and boot it without restarting.
+			boot, err := sidecartui.RunFirstRun(sidecartui.FirstRunOptions{
+				Version:  daemon.Version,
+				Validate: validateSidecarConfig,
+			}, func(ctx context.Context, obs daemon.FirstRunObserver) error {
+				return daemon.FirstRunContext(ctx, io.Discard, "hoop start sidecar --config "+configyaml.StarterFile,
+					append(firstRunOpts, daemon.WithFirstRunObserver(obs))...)
+			})
+			if err != nil || boot == nil {
+				return err
+			}
+			// Booted from the setup screen: from here on this is the run
+			// `hoop start sidecar --config <file>` would have been.
+			sidecarConfigFlag = boot.ConfigPath
 		}
 		if sidecarMigrateFlag {
 			if sidecarConfigFlag == "" {
@@ -216,6 +227,19 @@ needs a restart.`,
 			return daemon.PrintLanes(os.Stdout, cfg.Licensing(), lanes)
 		}
 
+		// A config written by the setup screen's demo names the demo API
+		// as its upstream; the CLI serves it for as long as the sidecar
+		// runs, so the demo config works on every boot, not only the first.
+		var notes []string
+		if sidecarConfigFlag != "" {
+			stopDemo, demoNotes, err := startSidecarDemo(sidecarConfigFlag)
+			if err != nil {
+				return err
+			}
+			defer stopDemo()
+			notes = demoNotes
+		}
+
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
 		// The format only changes how its output reaches the terminal: a
 		// pipe, a file, a container or CI keeps the JSON it always wrote.
@@ -225,8 +249,43 @@ needs a restart.`,
 			Reviewer:  reviewer,
 			Operator:  sidecarOperator(),
 			SaveDir:   sidecarSaveDir(),
+			Notes:     notes,
 		}, func() error { return daemon.Run(cfg, det) })
 	},
+}
+
+// startSidecarDemo serves the demo API when the config at path carries
+// configyaml.DemoAPIKey, and returns what stops it. A config without the key
+// starts nothing. The address must be loopback: the demo API answers anyone
+// who reaches it, and invented data is still not something to expose.
+func startSidecarDemo(path string) (func(), []string, error) {
+	noop := func() {}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return noop, nil, err
+	}
+	addr, ok, err := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
+	if err != nil || !ok {
+		return noop, nil, err
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return noop, nil, fmt.Errorf("%s: %w", configyaml.DemoAPIKey, err)
+	}
+	if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return noop, nil, fmt.Errorf("%s: %s is not a loopback address; the demo API only serves this machine",
+			configyaml.DemoAPIKey, addr)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if _, err := sidecardemo.Serve(ctx, addr); err != nil {
+		cancel()
+		return noop, nil, err
+	}
+	notes := []string{"demo API served at " + addr + "; try, from another terminal:"}
+	for _, c := range sidecardemo.TryCommands {
+		notes = append(notes, "  "+c)
+	}
+	return cancel, notes, nil
 }
 
 // warnDeprecatedSidecarAlias renders the rename notice to w when the command
@@ -270,15 +329,16 @@ func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
 	return !changed
 }
 
-// validateStarter checks a starter config the way --validate does, under the
-// free tier: no license is loaded, so a starter that exceeded the one-rule
-// caps fails here instead of on the user's first real run.
-func validateStarter(path string) (string, error) {
-	cfg, err := configyaml.Load(path)
-	if err != nil {
-		return "", err
-	}
-	det, err := buildSidecarPlugin(cfg.PII)
+// validateSidecarConfig checks a config the way the boot that follows the
+// setup screen loads it: Setup resolves the license from --license,
+// HOOP_LICENSE or the file, so the rule caps are the ones that will apply,
+// and a terminal reviewer is attached, as the dashboard attaches one, so
+// require_review validates. Then the same Validate --validate runs.
+func validateSidecarConfig(path string) (string, error) {
+	cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildSidecarPlugin,
+		daemon.WithLicense(sidecarLicenseFlag),
+		daemon.WithEntrypoint(analytics.EntrypointCLI),
+		daemon.WithLocalReviewer(sidecartui.NewReviewer().For))
 	if err != nil {
 		return "", err
 	}
@@ -290,7 +350,8 @@ func validateStarter(path string) (string, error) {
 	if len(lanes) == 1 {
 		noun = "listener"
 	}
-	return fmt.Sprintf("%d %s · within the free tier · checked like --validate", len(lanes), noun), nil
+	return fmt.Sprintf("%d %s · %s", len(lanes), noun,
+		strings.TrimPrefix(daemon.LimitsSummary(cfg.Licensing()), "limits: ")), nil
 }
 
 // sidecarOperator names the person reviewing at this terminal: the OS

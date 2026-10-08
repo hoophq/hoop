@@ -40,6 +40,9 @@ type Options struct {
 	// both exist only on the screen and are gone at exit, so the CLI always
 	// sets it (~/.hoop/sidecar); empty is for tests.
 	SaveDir string
+	// Notes are facts the caller set up around the daemon (the demo API),
+	// shown with the capture's own on the System section.
+	Notes []string
 }
 
 // Run starts the daemon through run and presents its output in format f.
@@ -52,6 +55,9 @@ func Run(f Format, opts Options, run func() error) error {
 	case FormatTUI:
 		return runTUI(opts, run)
 	case FormatText:
+		for _, n := range opts.Notes {
+			fmt.Fprintln(os.Stderr, n)
+		}
 		return runText(run)
 	case FormatJSON:
 		return run()
@@ -296,7 +302,7 @@ func runTUI(opts Options, run func() error) error {
 		}
 		return self.Signal(os.Interrupt)
 	}
-	m := newModel(opts.Version, notes, time.Now, stop)
+	m := newModel(opts.Version, append(opts.Notes, notes...), time.Now, stop)
 	m.reviewer, m.operator = opts.Reviewer, opts.Operator
 	if opts.Reviewer != nil {
 		m.notes = append(m.notes, "held statements wait for approval in this terminal, decided by "+opts.Operator)

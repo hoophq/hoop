@@ -2,7 +2,6 @@ package sidecartui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -11,8 +10,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 )
 
 // probeTimeout bounds one loopback dial. A local port answers in well under
@@ -20,8 +17,9 @@ import (
 // that drops instead of refusing.
 const probeTimeout = 150 * time.Millisecond
 
-// probes are the default ports a database listens on, in the order a tie is
-// broken: the first open one becomes the starter's listener.
+// probes are the default ports a backend listens on, in the order a tie is
+// broken: the first one found is the protocol the setup list puts its
+// cursor on.
 var probes = []struct {
 	protocol string
 	port     int
@@ -49,18 +47,44 @@ var urlSchemes = map[string]struct {
 	"clickhouse": {"clickhouse", "8123"},
 }
 
-// Detect infers the starter config's input from this machine: the backend a
-// URL in the environment names, the database ports open on loopback, and
-// which model provider has a credential set.
-//
-// The environment wins over a probe: DATABASE_URL is a statement of intent,
-// an open port is a guess. Nothing found falls back to Postgres on its
-// default port, labelled as a default so the file says it was not seen.
-// Detect reads environment variable NAMES only. It never reads a key's value.
-func Detect(ctx context.Context, getenv func(string) string) configyaml.StarterInput {
-	var found []configyaml.Upstream
-	if u, ok := fromDatabaseURL(getenv("DATABASE_URL")); ok {
-		found = append(found, u)
+// found is one backend seen on this machine, and how it was seen, so the
+// setup screen can say why it suggests it.
+type found struct {
+	protocol string
+	addr     string
+	source   string
+}
+
+// machine is what the setup screen learns from this machine before it asks
+// anything.
+type machine struct {
+	// found lists backends, the environment's first, then open ports.
+	found []found
+	// provider names the model provider whose credential is set, "" for
+	// none. Read from variable NAMES only: a key's value is never read.
+	provider string
+	// keyDir is where the analyzer's key file is suggested, absolute
+	// because credentials_file is read as written and "~" is not expanded.
+	keyDir string
+}
+
+// foundFor returns the first backend seen for protocol.
+func (m machine) foundFor(protocol string) (found, bool) {
+	for _, f := range m.found {
+		if f.protocol == protocol {
+			return f, true
+		}
+	}
+	return found{}, false
+}
+
+// detect reads the environment and dials the default ports on loopback.
+// The environment comes first: DATABASE_URL is a statement of intent, an
+// open port is a guess.
+func detect(ctx context.Context, getenv func(string) string) machine {
+	var m machine
+	if f, ok := fromDatabaseURL(getenv("DATABASE_URL")); ok {
+		m.found = append(m.found, f)
 	}
 	if h, p := getenv("PGHOST"), getenv("PGPORT"); h != "" || p != "" {
 		if h == "" || h[0] == '/' {
@@ -69,57 +93,55 @@ func Detect(ctx context.Context, getenv func(string) string) configyaml.StarterI
 		if p == "" {
 			p = "5432"
 		}
-		found = append(found, configyaml.Upstream{Protocol: "postgres", Addr: net.JoinHostPort(h, p), Source: "PGHOST/PGPORT"})
-	}
-	found = append(found, probeLoopback(ctx)...)
-
-	in := configyaml.StarterInput{AnalyzerProvider: analyzerProvider(getenv)}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		in.KeyDir = filepath.Join(home, ".hoop", "sidecar")
+		m.found = append(m.found, found{"postgres", net.JoinHostPort(h, p), "PGHOST/PGPORT"})
 	}
 	seen := map[string]bool{}
-	for _, u := range found {
-		if seen[u.Addr] {
-			continue
-		}
-		seen[u.Addr] = true
-		if in.Primary.Protocol == "" {
-			in.Primary = u
-			continue
-		}
-		in.Others = append(in.Others, u)
+	for _, f := range m.found {
+		seen[f.addr] = true
 	}
-	if in.Primary.Protocol == "" {
-		in.Primary = configyaml.Upstream{Protocol: "postgres", Addr: "127.0.0.1:5432",
-			Source: "default, nothing was found listening; edit upstream to point at your database"}
+	for _, f := range probeLoopback(ctx) {
+		if !seen[f.addr] {
+			m.found = append(m.found, f)
+		}
 	}
-	return in
+	switch {
+	case getenv("ANTHROPIC_API_KEY") != "":
+		m.provider = "anthropic"
+	case getenv("OPENAI_API_KEY") != "":
+		m.provider = "openai"
+	case getenv("GOOGLE_APPLICATION_CREDENTIALS") != "":
+		m.provider = "vertex"
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		m.keyDir = filepath.Join(home, ".hoop", "sidecar")
+	}
+	return m
 }
 
 // fromDatabaseURL reads the protocol and host:port out of a connection URL.
-// The credentials in it are not looked at: the starter has no use for them.
-func fromDatabaseURL(raw string) (configyaml.Upstream, bool) {
+// The credentials in it are not looked at.
+func fromDatabaseURL(raw string) (found, bool) {
 	if raw == "" {
-		return configyaml.Upstream{}, false
+		return found{}, false
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" {
-		return configyaml.Upstream{}, false
+		return found{}, false
 	}
 	s, ok := urlSchemes[u.Scheme]
-	if !ok || !configyaml.StarterProtocol(s.protocol) {
-		return configyaml.Upstream{}, false
+	if !ok {
+		return found{}, false
 	}
 	port := u.Port()
 	if port == "" {
 		port = s.port
 	}
-	return configyaml.Upstream{Protocol: s.protocol, Addr: net.JoinHostPort(u.Hostname(), port), Source: "DATABASE_URL"}, true
+	return found{s.protocol, net.JoinHostPort(u.Hostname(), port), "DATABASE_URL"}, true
 }
 
 // probeLoopback dials every default port at once and returns the open ones
-// in probe order. A dial that is refused or times out is a port nobody holds.
-func probeLoopback(ctx context.Context) []configyaml.Upstream {
+// in probe order.
+func probeLoopback(ctx context.Context) []found {
 	open := make([]bool, len(probes))
 	var wg sync.WaitGroup
 	for i, p := range probes {
@@ -128,12 +150,11 @@ func probeLoopback(ctx context.Context) []configyaml.Upstream {
 		})
 	}
 	wg.Wait()
-	var out []configyaml.Upstream
+	var out []found
 	for i, p := range probes {
 		if open[i] {
-			out = append(out, configyaml.Upstream{Protocol: p.protocol,
-				Addr:   net.JoinHostPort("127.0.0.1", strconv.Itoa(p.port)),
-				Source: fmt.Sprintf("port %d is open on this machine", p.port)})
+			out = append(out, found{p.protocol, net.JoinHostPort("127.0.0.1", strconv.Itoa(p.port)),
+				fmt.Sprintf("port %d is open on this machine", p.port)})
 		}
 	}
 	return out
@@ -148,75 +169,4 @@ func dialOpen(ctx context.Context, addr string) bool {
 	}
 	_ = c.Close()
 	return true
-}
-
-// analyzerProvider names the provider whose credential is set, checking
-// presence only.
-func analyzerProvider(getenv func(string) string) string {
-	switch {
-	case getenv("ANTHROPIC_API_KEY") != "":
-		return "anthropic"
-	case getenv("OPENAI_API_KEY") != "":
-		return "openai"
-	case getenv("GOOGLE_APPLICATION_CREDENTIALS") != "":
-		return "vertex"
-	}
-	return ""
-}
-
-// StarterResult is what pressing w produced, for the screen.
-type StarterResult struct {
-	Input configyaml.StarterInput
-	// Path is the file written, "" when nothing was.
-	Path string
-	// Err is why nothing was written.
-	Err error
-	// Summary is the validator's one line, and ValidateErr its refusal.
-	Summary     string
-	ValidateErr error
-}
-
-// errStarterExists names the file a second w would have overwritten.
-var errStarterExists = errors.New("already exists; nothing was overwritten")
-
-// WriteStarter detects, renders and writes the starter config into dir, then
-// validates what it wrote. An existing file is never replaced: the person
-// may have edited it.
-func WriteStarter(ctx context.Context, dir string, getenv func(string) string,
-	validate func(path string) (string, error)) StarterResult {
-	in := Detect(ctx, getenv)
-	res := StarterResult{Input: in}
-	body, err := configyaml.Starter(in)
-	if err != nil {
-		res.Err = err
-		return res
-	}
-	path := configyaml.StarterFile
-	if dir != "" {
-		path = dir + string(os.PathSeparator) + configyaml.StarterFile
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			err = fmt.Errorf("%s %w", path, errStarterExists)
-		}
-		res.Err = err
-		return res
-	}
-	_, werr := f.Write(body)
-	if cerr := f.Close(); werr == nil {
-		werr = cerr
-	}
-	if werr != nil {
-		_ = os.Remove(path)
-		res.Err = fmt.Errorf("writing %s: %w", path, werr)
-		return res
-	}
-	res.Path = path
-	if validate != nil {
-		res.Summary, res.ValidateErr = validate(path)
-	} else {
-		res.ValidateErr = errors.New("this build has no validator")
-	}
-	return res
 }

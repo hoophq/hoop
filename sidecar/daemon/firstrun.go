@@ -83,6 +83,14 @@ func FirstRun(out io.Writer, restartCmd string, opts ...Option) error {
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	return FirstRunContext(ctx, out, restartCmd, opts...)
+}
+
+// FirstRunContext is FirstRun stopped by ctx instead of a signal. The CLI's
+// first-run screen uses it to stop the default listener and boot the
+// config the person just wrote, in the same process: a signal there would
+// race the handler the booted sidecar installs next.
+func FirstRunContext(ctx context.Context, out io.Writer, restartCmd string, opts ...Option) error {
 	var o setupOptions
 	for _, apply := range opts {
 		apply(&o)
