@@ -3,11 +3,13 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -238,5 +240,71 @@ func TestFirstRunListenBindsLoopback(t *testing.T) {
 	}
 	if host != "127.0.0.1" {
 		t.Errorf("bound host = %q, want 127.0.0.1", host)
+	}
+}
+
+// The terminal UI draws first-run mode from the observer, not the banner:
+// Ready must carry the URL that answers, and each page load must reach
+// Visit. A favicon fetch is the browser's, not the person's, and is skipped.
+func TestFirstRunObserverReportsTheURLAndEachVisit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ready := make(chan string, 1)
+	var visits atomic.Int64
+	obs := FirstRunObserver{
+		Ready: func(url string, _ bool) { ready <- url },
+		Visit: func() { visits.Add(1) },
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- firstRunServe(ctx, io.Discard, "hoop start sidecar --config config.yaml",
+			setupOptions{firstRun: obs})
+	}()
+
+	var url string
+	select {
+	case url = <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Ready was never called")
+	}
+	if !strings.HasPrefix(url, "http://127.0.0.1:") {
+		t.Fatalf("Ready url = %q, want a loopback http URL", url)
+	}
+
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Timeout:       5 * time.Second,
+	}
+	for _, path := range []string{"/", "/favicon.ico", "/anything"} {
+		resp, err := client.Get(url + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+	}
+	if got := visits.Load(); got != 2 {
+		t.Errorf("visits = %d, want 2 (the favicon fetch is not a visit)", got)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("a cancelled first run returned %v, want nil", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("firstRunServe did not stop after the context was cancelled")
+	}
+}
+
+func TestProtocolLabelNamesEveryProtocol(t *testing.T) {
+	for _, p := range Protocols() {
+		if ProtocolLabel(p) == p {
+			t.Errorf("protocol %q has no label in protocolLabels", p)
+		}
+	}
+	if got := ProtocolLabel("nope"); got != "nope" {
+		t.Errorf("ProtocolLabel(unknown) = %q, want it back unchanged", got)
 	}
 }

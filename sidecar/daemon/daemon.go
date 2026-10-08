@@ -91,6 +91,7 @@ type setupOptions struct {
 	entrypoint      string
 	deprecatedAlias bool
 	localReviewer   LocalReviewer
+	firstRun        FirstRunObserver
 }
 
 // WithLicense supplies a license from the command line, which outranks

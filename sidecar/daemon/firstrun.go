@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -45,6 +46,29 @@ const firstRunAddr = "127.0.0.1:15321"
 // a port and binding it somebody else can take it, and :0 has no such
 // window.
 const firstRunFallbackAddr = "127.0.0.1:0"
+
+// FirstRunObserver lets an entry point draw first-run mode itself instead
+// of reading the banner: the CLI's terminal UI renders the URL and reacts to
+// each visit. The banner is still written to FirstRun's out, so a caller
+// that draws its own screen passes io.Discard there. A nil func is skipped.
+//
+// Both funcs run on the server's goroutines, Visit once per request, so they
+// must not block.
+type FirstRunObserver struct {
+	// Ready receives the URL the listener bound and whether the preferred
+	// port was busy, once, before the first request is served.
+	Ready func(url string, fellBack bool)
+	// Visit is called for each request the redirect answers. A browser's
+	// favicon fetch is not a visit and is not reported.
+	Visit func()
+}
+
+// WithFirstRunObserver hands first-run mode's facts to obs (see
+// FirstRunObserver). Setup ignores it, since a config run has no first-run
+// lane.
+func WithFirstRunObserver(obs FirstRunObserver) Option {
+	return func(o *setupOptions) { o.firstRun = obs }
+}
 
 // FirstRun binds one loopback HTTP listener, redirects every request to the
 // getting-started guide, prints where it bound and what to do next, and
@@ -75,6 +99,9 @@ func firstRunServe(ctx context.Context, out io.Writer, restartCmd string, o setu
 	}
 
 	firstRunBanner(out, ln.Addr().String(), fellBack, restartCmd)
+	if o.firstRun.Ready != nil {
+		o.firstRun.Ready("http://"+ln.Addr().String(), fellBack)
+	}
 
 	// The one event a process with no config can send: that the install
 	// happened and somebody ran the binary. Emitted when the page stops
@@ -86,6 +113,7 @@ func firstRunServe(ctx context.Context, out io.Writer, restartCmd string, o setu
 	}
 	tel := analytics.New(analytics.Options{Version: Version, Entrypoint: entry})
 	started := time.Now()
+	var visits atomic.Int64
 	defer tel.Close()
 	defer func() {
 		tel.Track(analytics.EventFirstRun, analytics.Properties{
@@ -93,11 +121,12 @@ func firstRunServe(ctx context.Context, out io.Writer, restartCmd string, o setu
 			"port":             portOf(ln.Addr().String()),
 			"port-fell-back":   fellBack,
 			"duration-seconds": int64(time.Since(started).Seconds()),
+			"visits":           visits.Load(),
 		})
 	}()
 
 	srv := &http.Server{
-		Handler:           firstRunRedirect(),
+		Handler:           firstRunCount(firstRunRedirect(), &visits, o.firstRun.Visit),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errc := make(chan error, 1)
@@ -145,6 +174,21 @@ func firstRunListenAt(preferred, fallback string) (ln net.Listener, fellBack boo
 			preferred, fbErr)
 	}
 	return ln, true, nil
+}
+
+// firstRunCount counts each request next answers, and reports it to visit
+// when set. The favicon fetch a browser sends after the first page is not a
+// visit: counting it would report two for every person who opened the URL.
+func firstRunCount(next http.Handler, visits *atomic.Int64, visit func()) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/favicon.ico" {
+			visits.Add(1)
+			if visit != nil {
+				visit()
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // firstRunRedirect answers every path with a redirect to the guide.

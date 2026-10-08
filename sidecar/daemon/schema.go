@@ -103,6 +103,15 @@ func ListenerSchema() ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// ProtocolLabel is the name a person reads for protocol p: "PostgreSQL"
+// for postgres. A protocol with no label returns p itself.
+func ProtocolLabel(p string) string {
+	if l, ok := protocolLabels[p]; ok {
+		return l
+	}
+	return p
+}
+
 var protocolLabels = map[string]string{
 	"clickhouse": "ClickHouse",
 	"grpc":       "gRPC",

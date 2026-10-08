@@ -69,7 +69,11 @@ extension picks the parser.
 Run with nothing at all — no config, no flags — and a built-in default
 starts instead: one loopback URL that forwards to the getting-started
 guide. It inspects no traffic; it exists so the first run after the
-install works. Write a config to replace it.
+install works. Write a config to replace it. On an interactive terminal it
+draws a screen instead of the banner, and pressing w there writes
+hoop-sidecar.yaml: a starter config inferred from this machine (a
+DATABASE_URL, or a database port open on loopback) with one guardrail and one
+masking rule, validated before it is shown.
 
 This command was named "inspect". That name still works as a deprecated
 alias.
@@ -120,11 +124,32 @@ needs a restart.`,
 			return err
 		}
 
+		// Resolved before Setup: in the TUI the person at the terminal
+		// reviews held statements, which is what lets a sidecar with no
+		// control plane load require_review at all. Everywhere else
+		// (a pipe, CI, a container) nobody could answer, and Setup keeps
+		// refusing such a config.
+		stdoutTTY, stdinTTY := term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd()))
+		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv)
+
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
 			if sidecarBareInvocation(cmd, args) {
-				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml",
+				firstRunOpts := []daemon.Option{
 					daemon.WithEntrypoint(analytics.EntrypointCLI),
-					daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias))
+					daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
+				}
+				// A person at a terminal gets the first-run screen; a
+				// pipe, CI or NO_COLOR keeps the prose banner.
+				if format == sidecartui.FormatTUI && sidecartui.Interactive(stdoutTTY, stdinTTY) {
+					return sidecartui.RunFirstRun(sidecartui.FirstRunOptions{
+						Version:  daemon.Version,
+						Validate: validateStarter,
+					}, func(obs daemon.FirstRunObserver) error {
+						return daemon.FirstRun(io.Discard, "hoop start sidecar --config "+configyaml.StarterFile,
+							append(firstRunOpts, daemon.WithFirstRunObserver(obs))...)
+					})
+				}
+				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml", firstRunOpts...)
 			}
 			// The one genuine usage error here, so let cobra show the flags.
 			cmd.SilenceUsage = false
@@ -159,13 +184,6 @@ needs a restart.`,
 			return daemon.WriteMigrated(cfg, configyaml.IsYAML(target), out, os.Stderr)
 		}
 
-		// Resolved before Setup: in the TUI the person at the terminal
-		// reviews held statements, which is what lets a sidecar with no
-		// control plane load require_review at all. Everywhere else
-		// (a pipe, CI, a container) nobody could answer, and Setup keeps
-		// refusing such a config.
-		stdoutTTY, stdinTTY := term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd()))
-		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv)
 		setupOpts := []daemon.Option{
 			daemon.WithLicense(sidecarLicenseFlag),
 			daemon.WithControlPlaneToken(sidecarTokenFlag),
@@ -250,6 +268,29 @@ func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
 	cmd.Flags().VisitAll(seen)
 	cmd.InheritedFlags().VisitAll(seen)
 	return !changed
+}
+
+// validateStarter checks a starter config the way --validate does, under the
+// free tier: no license is loaded, so a starter that exceeded the one-rule
+// caps fails here instead of on the user's first real run.
+func validateStarter(path string) (string, error) {
+	cfg, err := configyaml.Load(path)
+	if err != nil {
+		return "", err
+	}
+	det, err := buildSidecarPlugin(cfg.PII)
+	if err != nil {
+		return "", err
+	}
+	lanes, err := daemon.Validate(cfg, det)
+	if err != nil {
+		return "", err
+	}
+	noun := "listeners"
+	if len(lanes) == 1 {
+		noun = "listener"
+	}
+	return fmt.Sprintf("%d %s · within the free tier · checked like --validate", len(lanes), noun), nil
 }
 
 // sidecarOperator names the person reviewing at this terminal: the OS

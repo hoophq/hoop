@@ -2,11 +2,93 @@ package cmd
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/spf13/cobra"
 )
+
+// The starter config is the free tier's front door: it must pass the full
+// --validate path, caps included, with no license, for every protocol the
+// first-run screen can infer and with each analyzer hint.
+func TestStarterConfigPassesValidateOnTheFreeTier(t *testing.T) {
+	addrs := map[string]string{
+		"postgres": "127.0.0.1:5432", "mysql": "127.0.0.1:3306", "mssql": "127.0.0.1:1433",
+		"oracle": "127.0.0.1:1521", "clickhouse": "127.0.0.1:8123", "mongodb": "127.0.0.1:27017",
+		"http": "127.0.0.1:8080",
+	}
+	for p, addr := range addrs {
+		for _, provider := range []string{"", "anthropic", "vertex"} {
+			b, err := configyaml.Starter(configyaml.StarterInput{
+				Primary:          configyaml.Upstream{Protocol: p, Addr: addr, Source: "test"},
+				AnalyzerProvider: provider,
+			})
+			if err != nil {
+				t.Fatalf("Starter(%s): %v", p, err)
+			}
+			path := filepath.Join(t.TempDir(), configyaml.StarterFile)
+			if err := os.WriteFile(path, b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := validateStarter(path); err != nil {
+				t.Errorf("Starter(%s, %q) fails --validate: %v\n%s", p, provider, err, b)
+			}
+		}
+	}
+}
+
+// The file promises the analyzer is one uncomment away. Hold it to that:
+// store a key where the comment says, uncomment both blocks, and the
+// result must pass --validate with the provider built.
+func TestStarterAnalyzerIsOneUncommentAway(t *testing.T) {
+	keyDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(keyDir, "anthropic.key"), []byte("sk-test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b, err := configyaml.Starter(configyaml.StarterInput{
+		Primary:          configyaml.Upstream{Protocol: "postgres", Addr: "127.0.0.1:5432", Source: "test"},
+		AnalyzerProvider: "anthropic",
+		KeyDir:           keyDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	inLane, inTop := false, false
+	for _, l := range strings.Split(string(b), "\n") {
+		switch {
+		case l == "    # analyzer:":
+			inLane = true
+		case l == "# analyzer:":
+			inTop = true
+		}
+		switch {
+		case inLane && strings.HasPrefix(l, "    # "):
+			l = "    " + strings.TrimPrefix(l, "    # ")
+			inLane = !strings.Contains(l, "low:")
+		case inTop && strings.HasPrefix(l, "# "):
+			l = strings.TrimPrefix(l, "# ")
+		}
+		out = append(out, l)
+	}
+	path := filepath.Join(t.TempDir(), configyaml.StarterFile)
+	if err := os.WriteFile(path, []byte(strings.Join(out, "\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := configyaml.Load(path)
+	if err != nil {
+		t.Fatalf("uncommented starter does not load: %v\n%s", err, strings.Join(out, "\n"))
+	}
+	if cfg.Analyzer == nil || cfg.Analyzer.Provider != "anthropic" || cfg.Listeners[0].Analyzer == nil {
+		t.Fatalf("the uncommented analyzer did not reach the config:\n%s", strings.Join(out, "\n"))
+	}
+	if _, err := validateStarter(path); err != nil {
+		t.Errorf("uncommented starter fails --validate: %v", err)
+	}
+}
 
 func TestStartSidecarCommandNames(t *testing.T) {
 	for _, name := range []string{"sidecar", "inspect"} {
