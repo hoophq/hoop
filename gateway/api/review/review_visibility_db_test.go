@@ -2,8 +2,10 @@ package reviewapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -172,8 +174,33 @@ func TestReviewVisibilityForceApprovers(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			assertVisibleReviews(t, all, "user-"+tt.groups[0], tt.groups, tt.visible)
+			for _, r := range all {
+				assert.Equal(t, slices.Contains(tt.visible, r), mayForceApprove(t, r, tt.groups),
+					"visibility and doForcedReview disagree on review %s", r.ID)
+			}
 		})
 	}
+}
+
+// mayForceApprove runs doForcedReview with the connection DoReview loads. It writes nothing.
+func mayForceApprove(t *testing.T, r *models.Review, groups []string) bool {
+	t.Helper()
+	rev, err := models.GetReviewByIdOrSid(decisionTestOrgID, r.ID)
+	require.NoError(t, err)
+	var conn *models.Connection
+	if !IsSidecarReview(rev) {
+		conn, err = models.GetConnectionByNameOrID(models.NewAdminContext(decisionTestOrgID), rev.ConnectionName)
+		require.NoError(t, err)
+		require.NotNil(t, conn)
+	}
+	ctx := newFakeContext("user-"+groups[0], groups[0]+"@hoop.dev", groups)
+	ctx.OrgID = decisionTestOrgID
+	_, err = doForcedReview(ctx, rev, conn, models.ReviewStatusApproved)
+	if errors.Is(err, ErrNotEligible) {
+		return false
+	}
+	require.NoError(t, err)
+	return true
 }
 
 func assertVisibleReviews(t *testing.T, all []*models.Review, userID string, groups []string, visible []*models.Review) {
