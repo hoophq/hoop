@@ -260,6 +260,8 @@ type SessionReview struct {
 	ForceApprovalGroups   pq.StringArray    `json:"force_approval_groups" gorm:"force_approval_groups;serializer:json;"`
 	MinApprovals          *int              `json:"min_approvals"`
 	RejectionReason       *string           `json:"rejection_reason"`
+	// Set on a sidecar review only. GetSessionByID reads it; the list does not.
+	ListenerName *string `json:"listener_name"`
 }
 
 func (r *SessionReview) Scan(value any) error {
@@ -345,6 +347,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'min_approvals', rv.min_approvals,
 				'force_approval_groups', rv.force_approval_groups,
 				'rejection_reason', rv.rejection_reason,
+				'listener_name', rv.listener_name,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'review_groups', (

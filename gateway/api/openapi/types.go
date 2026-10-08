@@ -1550,6 +1550,9 @@ type SessionReview struct {
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
 	// The reason provided by the reviewer when rejecting this review
 	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
+	// The sidecar listener this review is bound to. Absent on a review that came from a connection.
+	// Only GET /sessions/{session_id} returns it
+	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
 }
 
 type ReviewSessionTimeWindow struct {
