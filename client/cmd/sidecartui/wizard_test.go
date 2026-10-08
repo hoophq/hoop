@@ -249,6 +249,29 @@ func TestWizardDemoSaveAndBoot(t *testing.T) {
 	if ev := drive(t, w, cmd); ev != wizBoot {
 		t.Errorf("after y: event = %v, saveErr = %v", ev, w.saveErr)
 	}
+
+	// The question is a dialog with Replace focused: enter replaces.
+	cmd, _ = w.update(wkey("enter"))
+	drive(t, w, cmd)
+	out := ansi.Strip(w.overviewView(100, 30))
+	if !strings.Contains(out, "Replace "+configyaml.StarterFile+"?") || !strings.Contains(out, "Yes, replace it") {
+		t.Fatalf("the replace dialog is not drawn:\n%s", out)
+	}
+	cmd, _ = w.update(wkey("enter"))
+	if ev := drive(t, w, cmd); ev != wizBoot {
+		t.Errorf("enter on the focused Replace: event = %v, saveErr = %v", ev, w.saveErr)
+	}
+
+	// No keeps the file and puts the cursor on File, to rename it.
+	cmd, _ = w.update(wkey("enter"))
+	drive(t, w, cmd)
+	w.update(wkey("right"))
+	if cmd, _ = w.update(wkey("enter")); cmd != nil || w.existsAsk {
+		t.Fatalf("No did not close the dialog without saving")
+	}
+	if w.overview.selected() != "file" {
+		t.Errorf("cursor on %q after No, want file", w.overview.selected())
+	}
 }
 
 // A draft that does not validate is never written: the person would boot

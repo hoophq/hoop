@@ -92,7 +92,10 @@ type wizard struct {
 	saving    bool
 	saveErr   error
 	existsAsk bool
-	saved     string
+	// replaceYes is the focused button of the replace dialog.
+	replaceYes bool
+	existsPath string
+	saved      string
 }
 
 func newWizard(mach machine, validate func(string) (string, error), dir string, now func() time.Time) *wizard {
@@ -130,6 +133,10 @@ func (w *wizard) update(msg tea.Msg) (tea.Cmd, wizEvent) {
 		w.saving = false
 		if msg.err != nil {
 			w.saveErr, w.existsAsk = msg.err, msg.exists
+			w.existsPath = shownDir(msg.path)
+			// Replacing is what the person most likely wants: they asked
+			// to save, and the file is usually the one the last run wrote.
+			w.replaceYes = true
 			return nil, wizNone
 		}
 		w.saved, w.saveErr, w.vsummary, w.verr = msg.path, nil, msg.summary, nil
@@ -227,12 +234,33 @@ func (w *wizard) buildOverview() {
 
 func (w *wizard) overviewKey(k tea.KeyPressMsg) (tea.Cmd, wizEvent) {
 	if w.existsAsk {
-		switch k.String() {
-		case "y", "o":
-			w.existsAsk = false
-			return w.save(w.pendingBoot(), true), wizNone
-		case "n", "esc":
+		replace := func() (tea.Cmd, wizEvent) {
 			w.existsAsk, w.saveErr = false, nil
+			return w.save(w.pendingBoot(), true), wizNone
+		}
+		keep := func() (tea.Cmd, wizEvent) {
+			// Back on the overview with the cursor on File, so a new
+			// name is one enter away.
+			w.existsAsk, w.saveErr = false, nil
+			for i, it := range w.overview.items {
+				if it.id == "file" {
+					w.overview.cur = i
+				}
+			}
+			return nil, wizNone
+		}
+		switch k.String() {
+		case "y":
+			return replace()
+		case "n", "esc":
+			return keep()
+		case "left", "right", "tab", "shift+tab", "h", "l":
+			w.replaceYes = !w.replaceYes
+		case "enter", "space":
+			if w.replaceYes {
+				return replace()
+			}
+			return keep()
 		}
 		return nil, wizNone
 	}
@@ -493,7 +521,7 @@ func (w *wizard) save(boot, overwrite bool) tea.Cmd {
 		f, err := os.OpenFile(path, flags, 0o644)
 		if err != nil {
 			if errors.Is(err, os.ErrExist) {
-				return wizSavedMsg{err: fmt.Errorf("%s already exists", path), exists: true, boot: boot}
+				return wizSavedMsg{err: fmt.Errorf("%s already exists", path), path: path, exists: true, boot: boot}
 			}
 			return wizSavedMsg{err: err, boot: boot}
 		}
@@ -566,14 +594,60 @@ func (w *wizard) view(width, height int) string {
 	return body
 }
 
+// replaceView is the dialog shown when the file to save already exists: a
+// question, not an error. The person asked to save, and the file is most
+// often the one an earlier run wrote, so Replace has the focus.
+func (w *wizard) replaceView(width, height int) string {
+	bw := min(max(width-4, 30), 64)
+	yesText, noText := "Yes, replace it", "No, keep it"
+	yes := stPrimary.Padding(0, 2).Render(yesText)
+	no := stFaint.Bold(true).Padding(0, 2).Render(noText)
+	if w.replaceYes {
+		yes = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 2).Render(yesText)
+	} else {
+		no = lipgloss.NewStyle().Bold(true).Foreground(colStrong).Background(colNeutral).Padding(0, 2).Render(noText)
+	}
+	action := "Saving"
+	if w.pendingBoot() {
+		action = "Saving and booting"
+	}
+	text := lipgloss.NewStyle().Width(bw - 4)
+	body := []string{
+		stStrong.Render("Replace " + w.d.file + "?"),
+		"",
+		text.Inherit(stText).Render("A file with this name is already in " + w.existsPath + ". " +
+			action + " replaces it with the config you just set up."),
+		"",
+		text.Inherit(stFaint).Render("To keep both, choose No and change the name under File."),
+		"",
+		lipgloss.PlaceHorizontal(bw-4, lipgloss.Right, no+"  "+yes),
+	}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colPrimary).
+		Padding(0, 1).Width(bw).Render(strings.Join(body, "\n"))
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// shownDir names the folder a file is in the way a person reads it: "this
+// folder" for the current directory, the path otherwise.
+func shownDir(path string) string {
+	dir := filepath.Dir(path)
+	if abs, err := filepath.Abs(dir); err == nil {
+		if wd, err := os.Getwd(); err == nil && abs == wd {
+			return "this folder"
+		}
+		dir = abs
+	}
+	return dir
+}
+
 func (w *wizard) overviewView(width, height int) string {
+	if w.existsAsk {
+		return w.replaceView(width, height)
+	}
 	var status []string
 	switch {
 	case w.saving:
 		status = append(status, shimmer("validating and saving…", w.now()))
-	case w.existsAsk:
-		status = append(status, stDanger.Bold(true).Render("✕ "+w.saveErr.Error()),
-			stText.Render("Replace it? ")+stKey.Render("y")+stFaint.Render(" replace  ")+stKey.Render("n")+stFaint.Render(" keep it, then rename under File"))
 	case w.saveErr != nil:
 		status = append(status, wrapLines(stDanger.Bold(true), "✕ "+w.saveErr.Error(), width)...)
 	case w.vrunning:
@@ -614,6 +688,9 @@ func (w *wizard) hints() string {
 	case pgProtocol:
 		return k("↑↓", "move") + k("enter", "choose") + k("esc", "back")
 	case pgOverview:
+		if w.existsAsk {
+			return k("‹ ›", "choose") + k("enter", "confirm") + k("esc", "keep the file")
+		}
 		return k("↑↓", "move") + k("enter", "open") + k("esc", "back")
 	case pgRules, pgMasks:
 		return k("↑↓", "move") + k("enter", "edit") + k("d", "delete") + k("esc", "done")
