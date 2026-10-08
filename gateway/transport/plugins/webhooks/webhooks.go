@@ -258,7 +258,7 @@ func (p *plugin) processSessionOpenEvent(ctx plugintypes.Context, pkt *pb.Packet
 
 func (p *plugin) processSessionCloseEvent(ctx plugintypes.Context, pkt *pb.Packet) {
 	appID := ctx.OrgID
-	exitCode := -100
+	exitCode := ExitCodeUnknown
 	exitCodeInt, err := strconv.Atoi(string(pkt.Spec[pb.SpecClientExitCodeKey]))
 	if err == nil {
 		exitCode = exitCodeInt

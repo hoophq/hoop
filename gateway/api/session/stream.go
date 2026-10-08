@@ -20,9 +20,10 @@ import (
 const sseKeepaliveInterval = 30 * time.Second
 
 type sessionStreamEvent struct {
-	Time    string `json:"time"`
-	Type    string `json:"type"`
-	Payload string `json:"payload"`
+	Time    string   `json:"time"`
+	Type    string   `json:"type"`
+	Payload string   `json:"payload"`
+	Elapsed *float64 `json:"elapsed,omitempty"`
 }
 
 // StreamSession streams session events via Server-Sent Events.
@@ -103,6 +104,7 @@ func StreamSession(c *gin.Context) {
 				Time:    ev.Time.UTC().Format(time.RFC3339Nano),
 				Type:    ev.Type,
 				Payload: base64.StdEncoding.EncodeToString(ev.Payload),
+				Elapsed: ev.Elapsed,
 			})
 			if _, err := fmt.Fprintf(c.Writer, "event: event\ndata: %s\n\n", payload); err != nil {
 				log.With("sid", sessionID).Debugf("sse: client write failed: %v", err)

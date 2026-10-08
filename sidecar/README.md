@@ -467,6 +467,13 @@ answers 413 makes the batches smaller (ingress-nginx allows 1 MiB unless
 `audit.file` setting is: an `audit.file` of `/dev/null` keeps nothing locally
 and still sends.
 
+The plane ends a session whose `session_end` never comes: when its sidecar
+misses five heartbeats, or after 24 hours without an event. Events that
+arrive later are still recorded, and a late `session_end` sets the end.
+
+A statement held for review carries the review's id (`review_id` in the
+event metadata). The plane links that review and the session both ways.
+
 ### Usage analytics
 
 A release build reports usage to Segment: that the process started, what

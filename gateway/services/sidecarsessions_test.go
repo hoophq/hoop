@@ -14,6 +14,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -163,6 +164,7 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 					Direction:    "input",
 					MatchedWords: []string{},
 					Message:      "drop is not allowed",
+					Elapsed:      new(3.0),
 				}},
 				sidecar: map[string]any{"last_seq": int64(2)},
 			},
@@ -184,6 +186,7 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 					Rule:         models.SessionGuardRailMatchedRule{Type: "sidecar"},
 					Direction:    "output",
 					MatchedWords: []string{},
+					Elapsed:      new(1.0),
 				}},
 				sidecar: map[string]any{"last_seq": int64(2)},
 			},
@@ -204,6 +207,7 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 					Direction:    "input",
 					MatchedWords: []string{},
 					Message:      "ask a DBA",
+					Elapsed:      new(1.0),
 				}},
 				sidecar: map[string]any{"last_seq": int64(2)},
 			},
@@ -219,6 +223,24 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 					{Elapsed: 1.000001, Type: "e", Text: "denied"},
 				},
 				guardRails: []models.SessionGuardRailsInfo{{
+					Rule:         models.SessionGuardRailMatchedRule{Type: "sidecar"},
+					Direction:    "input",
+					MatchedWords: []string{},
+					Elapsed:      new(1.0),
+				}},
+				sidecar: map[string]any{"last_seq": int64(2)},
+			},
+		},
+		{
+			// No statement row to point at, so the viewer marks none.
+			name: "violation without text",
+			event: sidecarEvent(2, audit.KindViolation, time.Second, func(e *audit.Event) {
+				e.Rule = "no-drop"
+			}),
+			want: want{
+				entries: []sidecarStreamEntry{{Elapsed: 1.000001, Type: "e", Text: `denied by rule "no-drop"`}},
+				guardRails: []models.SessionGuardRailsInfo{{
+					RuleName:     "no-drop",
 					Rule:         models.SessionGuardRailMatchedRule{Type: "sidecar"},
 					Direction:    "input",
 					MatchedWords: []string{},
@@ -851,6 +873,7 @@ func TestPlanSidecarSessionRefusals(t *testing.T) {
 }
 
 func TestSidecarMirrorConnection(t *testing.T) {
+	edge := sidecarIdentity{Name: "edge"}
 	for _, tt := range []struct {
 		protocol    string
 		wantType    string
@@ -868,7 +891,7 @@ func TestSidecarMirrorConnection(t *testing.T) {
 		{"spanner", "custom", "spanner"},
 	} {
 		t.Run(tt.protocol, func(t *testing.T) {
-			got, err := sidecarMirrorConnection("edge", "lst", tt.protocol)
+			got, err := sidecarMirrorConnection(edge, "lst", tt.protocol)
 			require.NoError(t, err)
 			assert.Equal(t, sidecarMirror{Name: "edge-lst", Type: tt.wantType, Subtype: tt.wantSubtype}, got)
 		})
@@ -879,19 +902,26 @@ func TestSidecarMirrorConnection(t *testing.T) {
 		inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB, inspect.Oracle, inspect.SSH,
 		inspect.HTTP, inspect.ClickHouse, inspect.GRPC, inspect.Spanner,
 	} {
-		_, err := sidecarMirrorConnection("edge", "lst", string(p))
+		_, err := sidecarMirrorConnection(edge, "lst", string(p))
 		assert.NoError(t, err, "protocol %q", p)
 	}
 
-	t.Run("name is <sidecar>-<listener>", func(t *testing.T) {
-		got, err := sidecarMirrorConnection("prod-sidecar", "billing-db", "postgres")
+	t.Run("name is <sidecar>-<listener> without a mirror", func(t *testing.T) {
+		got, err := sidecarMirrorConnection(sidecarIdentity{Name: "prod-sidecar"}, "billing-db", "postgres")
 		require.NoError(t, err)
 		assert.Equal(t, "prod-sidecar-billing-db", got.Name)
 	})
 
+	t.Run("name is the mirror's, a fallback name included", func(t *testing.T) {
+		sc := sidecarIdentity{Name: "prod sidecar", Mirrors: map[string]string{"billing db": "prod-sidecar-billing-db-1a2b3c4d"}}
+		got, err := sidecarMirrorConnection(sc, "billing db", "postgres")
+		require.NoError(t, err)
+		assert.Equal(t, "prod-sidecar-billing-db-1a2b3c4d", got.Name)
+	})
+
 	for _, protocol := range []string{"", "redis", "tcp", "Postgres", "POSTGRES"} {
 		t.Run("refuses "+protocol, func(t *testing.T) {
-			got, err := sidecarMirrorConnection("edge", "lst", protocol)
+			got, err := sidecarMirrorConnection(edge, "lst", protocol)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "has no connection type")
 			assert.Equal(t, sidecarMirror{}, got)
@@ -1054,6 +1084,9 @@ func TestPlanSidecarSessionFeedsTheLivePage(t *testing.T) {
 	assert.Equal(t, "i", plan.Live[0].Type)
 	assert.Equal(t, []byte("SELECT 1"), plan.Live[0].Payload)
 	assert.Equal(t, testSidecarT0.Add(time.Second), plan.Live[0].Time)
+	if assert.NotNil(t, plan.Live[0].Elapsed, "the live row carries its stored time") {
+		assert.Equal(t, 1.0, *plan.Live[0].Elapsed)
+	}
 	assert.Equal(t, "e", plan.Live[1].Type)
 	assert.Equal(t, []byte("reset"), plan.Live[1].Payload)
 }
@@ -1077,4 +1110,89 @@ func TestPermanentDBError(t *testing.T) {
 	} {
 		assert.Equal(t, tc.want, permanentDBError(tc.err), "%v", tc.err)
 	}
+}
+
+func TestPlanSidecarSessionAfterTheReaper(t *testing.T) {
+	reaped := existingSidecarSession(6)
+	reaped.Done, reaped.Reaped = true, true
+
+	t.Run("a reaped session takes late events", func(t *testing.T) {
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, reaped, []daemon.SessionEvent{
+			sidecarEvent(7, audit.KindStatement, time.Second, func(e *audit.Event) { e.Statement = "SELECT 2" }),
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 1, plan.Accepted)
+		assert.Len(t, decodeSidecarEntries(t, plan.Entries), 1)
+		assert.Nil(t, plan.Done)
+		assert.False(t, plan.Ended)
+		assert.False(t, plan.Republish, "a plain statement adds nothing the close events read")
+	})
+
+	t.Run("a late denial republishes the close events", func(t *testing.T) {
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, reaped, []daemon.SessionEvent{
+			sidecarEvent(7, audit.KindViolation, time.Second, func(e *audit.Event) {
+				e.Statement = "DROP TABLE t"
+				e.Rule = "no-drop"
+			}),
+		})
+		require.NoError(t, err)
+		assert.True(t, plan.Republish)
+		assert.False(t, plan.Ended)
+	})
+
+	t.Run("its late session_end corrects the end and fires nothing", func(t *testing.T) {
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, reaped, []daemon.SessionEvent{
+			sidecarEvent(7, audit.KindSessionEnd, time.Hour),
+		})
+		require.NoError(t, err)
+		require.NotNil(t, plan.Done)
+		assert.Equal(t, testSidecarT0.Add(time.Hour), *plan.Done.EndSession)
+		assert.False(t, plan.Ended, "the reap fired the close hooks already")
+		assert.True(t, plan.Republish, "event routing catches up on what came after the reap")
+		assert.Contains(t, plan.Sidecar, "reaped_at")
+		assert.Nil(t, plan.Sidecar["reaped_at"], "a real end clears the reap, so stray events are refused again")
+	})
+
+	t.Run("a session_end of an open session ends it", func(t *testing.T) {
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, existingSidecarSession(6),
+			[]daemon.SessionEvent{sidecarEvent(7, audit.KindSessionEnd, time.Minute)})
+		require.NoError(t, err)
+		assert.True(t, plan.Ended)
+		assert.False(t, plan.Republish)
+	})
+}
+
+func TestPlanSidecarSessionReviewIDs(t *testing.T) {
+	review1, review2 := uuid.NewString(), uuid.NewString()
+	held := func(seq int64, kind audit.Kind, reviewID string) daemon.SessionEvent {
+		return sidecarEvent(seq, kind, time.Second, func(e *audit.Event) {
+			e.Statement = "UPDATE t SET x = 1"
+			e.Metadata = map[string]string{analyzer.MetadataReviewID: reviewID}
+		})
+	}
+	prior := existingSidecarSession(1)
+	prior.ReviewSessions = []string{"review-session-0"}
+
+	plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, prior, []daemon.SessionEvent{
+		held(2, audit.KindStatement, review1),
+		held(3, audit.KindViolation, strings.ToUpper(review2)),
+		held(4, audit.KindStatement, review1),
+		held(5, audit.KindStatement, "not-a-uuid"),
+		held(6, audit.KindError, uuid.NewString()),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{review1, review2}, plan.ReviewIDs,
+		"a released and a denied hold link once each, in canonical form; a non-id or a non-statement links none")
+	assert.Equal(t, []string{"review-session-0"}, plan.ReviewSessions)
+}
+
+func TestMergeReviewSessions(t *testing.T) {
+	assert.Equal(t, []string{"a", "b", "c"}, mergeReviewSessions([]string{"a", "b"}, []string{"b", "c"}))
+	assert.Equal(t, []string{"a"}, mergeReviewSessions(nil, []string{"a"}))
+
+	full := make([]string, maxSidecarReviewSessions)
+	for i := range full {
+		full[i] = fmt.Sprint(i)
+	}
+	assert.Equal(t, full, mergeReviewSessions(full, []string{"late"}), "past the cap, the first links stay")
 }

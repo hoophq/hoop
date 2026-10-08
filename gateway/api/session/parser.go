@@ -94,6 +94,7 @@ func toOpenApiSessionGuardRailsInfo(items []models.SessionGuardRailsInfo) []open
 			Direction:    item.Direction,
 			MatchedWords: item.MatchedWords,
 			Message:      item.Message,
+			Elapsed:      item.Elapsed,
 		}
 	}
 	return out

@@ -776,6 +776,10 @@ func TestPostEventsFeedsTheLiveSessionPage(t *testing.T) {
 		require.True(t, ok, "the stream closed before the entry arrived")
 		assert.Equal(t, "i", ev.Type)
 		assert.Equal(t, "SELECT 1", string(ev.Payload))
+		// The stored row's time, so the viewer keys a denial on it live too.
+		if assert.NotNil(t, ev.Elapsed) {
+			assert.Equal(t, 1.0, *ev.Elapsed)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the live page got no entry")
 	}

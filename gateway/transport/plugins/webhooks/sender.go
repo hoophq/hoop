@@ -3,6 +3,7 @@ package webhooks
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
@@ -16,15 +17,48 @@ import (
 var (
 	orgStore   = memory.New()
 	svixClient *svix.Svix
+	// clientMu guards svixClient: sidecar sessions send from many goroutines.
+	clientMu sync.Mutex
 )
 
 func SendMessage(orgID, eventType string, payload map[string]any) error {
-	// client initialization
+	client, err := svixClientFor(orgID, eventType)
+	if client == nil || err != nil {
+		return err
+	}
+
+	// handle sending messages
+	appID := orgID
+	eventID := uuid.NewString()
+	ctxtimeout, cancelFn := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancelFn()
+	out, err := client.Message.Create(ctxtimeout, appID, &svix.MessageIn{
+		EventType: eventType,
+		EventId:   *svix.NullableString(ptr.String(eventID)),
+		Payload:   payload,
+	})
+	if err != nil {
+		return fmt.Errorf("failed sending webhook event to remote source, event=%s, err=%v",
+			eventType, err)
+	}
+
+	if out != nil {
+		log.With("appid", appID).Infof("sent webhook with success, id=%s, event=%s, eventid=%s",
+			out.Id, out.EventType, eventID)
+	}
+	return nil
+}
+
+// svixClientFor returns the client once the org's app exists, or nil when no
+// webhook key is set. The lock covers the setup only, not the send.
+func svixClientFor(orgID, eventType string) (*svix.Svix, error) {
+	clientMu.Lock()
+	defer clientMu.Unlock()
 	if svixClient == nil {
 		webhookAppKey := appconfig.Get().WebhookAppKey()
 		if webhookAppKey == "" {
 			log.With("appid", orgID, "eventtype", eventType).Debugf("svix client was not initialized because it's not set")
-			return nil
+			return nil, nil
 		}
 		webhookAppUrl := appconfig.Get().WebhookAppURL()
 		svixClient = svix.New(webhookAppKey, &svix.SvixOptions{ServerUrl: webhookAppUrl})
@@ -42,31 +76,11 @@ func SendMessage(orgID, eventType string, payload map[string]any) error {
 			Uid:  *svix.NullableString(&orgID),
 		})
 		if err != nil {
-			return fmt.Errorf("failed creating webhook plugin application, reason=%v", err)
+			return nil, fmt.Errorf("failed creating webhook plugin application, reason=%v", err)
 		}
 		log.With("appid", orgID, "eventtype", eventType).Infof("application created with success, id=%s, uid=%v",
 			orgID, out.Uid)
 		orgStore.Set(orgID, nil)
 	}
-
-	// handle sending messages
-	appID := orgID
-	eventID := uuid.NewString()
-	ctxtimeout, cancelFn := context.WithTimeout(context.Background(), time.Second*3)
-	defer cancelFn()
-	out, err := svixClient.Message.Create(ctxtimeout, appID, &svix.MessageIn{
-		EventType: eventType,
-		EventId:   *svix.NullableString(ptr.String(eventID)),
-		Payload:   payload,
-	})
-	if err != nil {
-		return fmt.Errorf("failed sending webhook event to remote source, event=%s, err=%v",
-			eventType, err)
-	}
-
-	if out != nil {
-		log.With("appid", appID).Infof("sent webhook with success, id=%s, event=%s, eventid=%s",
-			out.Id, out.EventType, eventID)
-	}
-	return nil
+	return svixClient, nil
 }

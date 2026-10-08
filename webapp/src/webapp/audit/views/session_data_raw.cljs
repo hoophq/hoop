@@ -1,6 +1,7 @@
 (ns webapp.audit.views.session-data-raw
   (:require [reagent.core :as r]
             [webapp.audit.views.empty-event-stream :as empty-event-stream]
+            [webapp.audit.views.guardrails-info :as guardrails-info]
             [webapp.components.icon :as icon]
             [webapp.components.searchbox :as searchbox]
             [webapp.formatters :as formatters]
@@ -8,7 +9,7 @@
 
 (defn- event-item []
   (let [is-open? (r/atom false)]
-    (fn [event-type data parsed-date]
+    (fn [event-type data parsed-date denied-rules]
       [:div
        {:class (str "flex flex-col gap-small transition"
                     (when (= event-type "i") " bg-gray-50 hover:bg-gray-100")
@@ -18,6 +19,8 @@
        [:div
         {:class "flex items-center gap-small cursor-pointer py-regular"
          :on-click #(reset! is-open? (not @is-open?))}
+        (when denied-rules
+          [guardrails-info/denied-badge denied-rules])
         [:span {:class "font-mono truncate text-xs flex-1"}
          (str (when (= event-type "i") "> ") data)]
         [:span
@@ -47,14 +50,14 @@
      :event-type event-type
      :event-data (utilities/decode-b64 event-data)}))
 
-(defn event-stream-content [_event-stream _session-start-date]
+(defn event-stream-content [_event-stream _session-start-date _denied]
   ;; Form-2 closure state. `event-stream-map` and `searched-events-atom`
   ;; are kept reactive so that SSE-driven appends to event-stream show up
   ;; live. We only honor the searched subset while the user is actively
   ;; filtering — otherwise we render the current full stream.
   (let [searched-events-atom (r/atom nil)
         search-focused? (r/atom false)]
-    (fn [event-stream session-start-date]
+    (fn [event-stream session-start-date denied]
       (let [event-stream-map (build-event-stream-map event-stream session-start-date)
             visible-events (or @searched-events-atom event-stream-map)]
         [:section {:class "grid gap-small"}
@@ -82,10 +85,16 @@
           (doall
            (for [{:keys [seconds event-type event-data parsed-date]} visible-events]
              ^{:key seconds}
-             [event-item event-type event-data parsed-date]))]]))))
+             [event-item event-type event-data parsed-date
+              (when (not= "e" event-type) (get denied seconds))]))]]))))
 
-(defn main [event-stream session-start-date]
-  (if (empty? event-stream)
-    [empty-event-stream/main]
-    [event-stream-content event-stream session-start-date]))
+(defn main
+  "denied maps a stream time to the rules that denied there; see
+  guardrails-info/denied-at."
+  ([event-stream session-start-date]
+   (main event-stream session-start-date {}))
+  ([event-stream session-start-date denied]
+   (if (empty? event-stream)
+     [empty-event-stream/main]
+     [event-stream-content event-stream session-start-date denied])))
 

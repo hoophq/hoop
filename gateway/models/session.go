@@ -175,6 +175,9 @@ type SessionGuardRailsInfo struct {
 	// Message is the admin-defined message configured on the matched rule entry,
 	// resolved gateway-side. Empty when the matched rule has no custom message.
 	Message string `json:"message"`
+	// Elapsed is the stream time of the denied statement, so a viewer marks
+	// that row. Set by sidecar sessions only.
+	Elapsed *float64 `json:"elapsed,omitempty"`
 }
 
 type Session struct {

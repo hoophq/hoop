@@ -10,6 +10,9 @@ const EMPTY = {
   // Keyed by session id: the statement the sidecar held, fetched per modal.
   statements: {},
   statementStatus: {},
+  // Keyed by session id: the sidecar session the held statement ran in, once
+  // the sidecar reported it.
+  sidecarSessions: {},
   submitting: false,
 }
 
@@ -44,6 +47,10 @@ export const useReviewStore = create((set, get) => ({
       const { data } = await sessionsService.get(sessionId)
       set((s) => ({
         statements: { ...s.statements, [sessionId]: data?.script?.data ?? '' },
+        sidecarSessions: {
+          ...s.sidecarSessions,
+          [sessionId]: data?.metadata?.sidecar_session_id ?? null,
+        },
         statementStatus: { ...s.statementStatus, [sessionId]: 'success' },
       }))
     } catch {

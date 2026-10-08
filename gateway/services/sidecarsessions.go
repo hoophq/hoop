@@ -20,6 +20,7 @@ import (
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -43,6 +44,10 @@ const (
 	maxSessionConnectionChars = 128 // sessions.connection VARCHAR(128)
 	maxSessionUserChars       = 255 // sessions.user_name, user_email VARCHAR(255)
 )
+
+// maxSidecarReviewSessions caps metadata.sidecar.review_sessions. A session
+// past it keeps its first links; each review still links to the session.
+const maxSidecarReviewSessions = 100
 
 // maxSidecarGuardRails caps guardrails_info per session. The stream keeps every
 // denial; metadata.sidecar.guardrails_omitted counts the rest.
@@ -73,25 +78,19 @@ type sidecarMirror struct {
 	Subtype string
 }
 
-// sidecarMirrorConnection names a listener's mirror connection and its type.
-// Dia 0 owns these rules; replace this copy with its function after it merges.
-func sidecarMirrorConnection(sidecarName, listener, protocol string) (sidecarMirror, error) {
-	out := sidecarMirror{Name: sidecarName + "-" + listener}
-	switch protocol {
-	case "postgres", "mysql", "mssql", "mongodb":
-		out.Type, out.Subtype = "database", protocol
-	case "oracle":
-		out.Type, out.Subtype = "database", string(pb.ConnectionTypeOracleDB)
-	case "ssh":
-		out.Type, out.Subtype = "application", "ssh"
-	case "http":
-		out.Type, out.Subtype = "httpproxy", "httpproxy"
-	case "clickhouse", "grpc", "spanner":
-		out.Type, out.Subtype = "custom", protocol
-	default:
+// sidecarMirrorConnection names a listener's mirror connection and its type,
+// as ProjectListeners does. The name is the mirror's own, which can be its
+// fallback name; a listener with no mirror yet takes <sidecar>-<listener>.
+func sidecarMirrorConnection(sc sidecarIdentity, listener, protocol string) (sidecarMirror, error) {
+	kind, ok := listenerConnectionKind[inspect.Protocol(protocol)]
+	if !ok {
 		return sidecarMirror{}, fmt.Errorf("protocol %q has no connection type", protocol)
 	}
-	return out, nil
+	name, ok := sc.Mirrors[listener]
+	if !ok {
+		name = sc.Name + "-" + listener
+	}
+	return sidecarMirror{Name: name, Type: kind.typ, Subtype: kind.subtype}, nil
 }
 
 // SidecarEventsRefused is a batch, or part of one, the gateway can never
@@ -130,6 +129,8 @@ type sidecarIdentity struct {
 	ID    string
 	Name  string
 	OrgID string
+	// Mirrors maps a listener to its mirror connection's name.
+	Mirrors map[string]string
 }
 
 // sidecarSessionPlan is the writes one session's events turn into, applied in
@@ -152,8 +153,17 @@ type sidecarSessionPlan struct {
 	User *sidecarUser
 	// Live feeds the open session page on this replica, after commit.
 	Live []eventbroker.Event
-	// Done ends the session.
+	// Done ends the session, or corrects the end of a reaped one.
 	Done *models.SessionDone
+	// Ended is set when Done ends an open session; it fires the close hooks.
+	Ended bool
+	// Republish is set when a reaped session records what its close events
+	// derive from; event routing publishes what it lacks.
+	Republish bool
+	// ReviewIDs are the reviews that held a statement of this batch.
+	ReviewIDs []string
+	// ReviewSessions are the review sessions linked before this batch.
+	ReviewSessions []string
 
 	Accepted   int
 	Duplicates int
@@ -183,8 +193,9 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		return plan, nil
 	}
 	// A done session never grows. The sidecar sends nothing after
-	// session_end, so this refuses only stray events.
-	if prior != nil && prior.Done {
+	// session_end, so this refuses only stray events. A reaped session
+	// still takes them: the reaper guessed, and the trail must not lose them.
+	if prior != nil && prior.Done && !prior.Reaped {
 		return plan, SidecarEventsRefused{Reason: fmt.Sprintf(
 			"session %s has ended; %d events after its end are not recorded", sessionID, len(fresh))}
 	}
@@ -235,18 +246,25 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 	if prior != nil {
 		guardRailsRoom -= prior.GuardRails
 		omitted = prior.GuardRailsOmitted
+		plan.ReviewSessions = prior.ReviewSessions
 	}
 	for _, e := range fresh {
 		ev := e.Event
 		switch ev.Kind {
 		case audit.KindStatement:
 			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
+			plan.addReview(ev)
 		case audit.KindViolation:
-			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
+			elapsed, added := stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
 			// 1µs later: the raw view keys rows by elapsed time.
 			stream.add(ev.Timestamp.Add(time.Microsecond), streamError, denialText(ev))
+			plan.addReview(ev)
 			if len(plan.GuardRails) < guardRailsRoom {
-				plan.GuardRails = append(plan.GuardRails, sidecarGuardRail(ev))
+				rail := sidecarGuardRail(ev)
+				if added {
+					rail.Elapsed = &elapsed
+				}
+				plan.GuardRails = append(plan.GuardRails, rail)
 			} else {
 				omitted++
 				plan.Sidecar["guardrails_omitted"] = omitted
@@ -262,6 +280,11 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 			}
 			plan.Masked[maskedInfoType(ev.MaskedEntities)] += int64(ev.MaskedCount)
 		case audit.KindSessionEnd:
+			plan.Ended = prior == nil || !prior.Done
+			if prior != nil && prior.Reaped {
+				// The sidecar's own end: refuse stray events again.
+				plan.Sidecar["reaped_at"] = nil
+			}
 			end := ev.Timestamp.UTC()
 			plan.Done = &models.SessionDone{
 				ID:         plan.SessionID,
@@ -276,6 +299,8 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		}
 	}
 	plan.Sidecar["last_seq"] = lastSeq
+	plan.Republish = prior != nil && prior.Reaped &&
+		(len(plan.GuardRails) > 0 || len(plan.Masked) > 0 || plan.Done != nil)
 
 	if len(stream.entries) > 0 {
 		plan.Entries = json.RawMessage("[" + strings.Join(stream.entries, ",") + "]")
@@ -288,6 +313,32 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 	}
 	plan.Metrics = metrics
 	return plan, nil
+}
+
+// addReview records the review that held a statement. The sidecar files the
+// review on the gateway, so its id is the gateway review's.
+func (p *sidecarSessionPlan) addReview(ev audit.Event) {
+	id, err := uuid.Parse(ev.Metadata[analyzer.MetadataReviewID])
+	if err != nil {
+		return
+	}
+	if s := id.String(); !slices.Contains(p.ReviewIDs, s) {
+		p.ReviewIDs = append(p.ReviewIDs, s)
+	}
+}
+
+// mergeReviewSessions adds linked to prior, in order, up to the cap.
+func mergeReviewSessions(prior, linked []string) []string {
+	out := slices.Clone(prior)
+	for _, id := range linked {
+		if len(out) >= maxSidecarReviewSessions {
+			break
+		}
+		if !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // statementEntryType: a server statement (a CommandComplete tag reads
@@ -307,7 +358,7 @@ func newSidecarSession(sc sidecarIdentity, id, sidecarSessionID string, ev audit
 		return nil, SidecarEventsRefused{Reason: fmt.Sprintf(
 			"session %s names no listener in its connection", sidecarSessionID)}
 	}
-	mirror, err := sidecarMirrorConnection(sc.Name, listener, string(ev.Protocol))
+	mirror, err := sidecarMirrorConnection(sc, listener, string(ev.Protocol))
 	if err != nil {
 		return nil, SidecarEventsRefused{Reason: fmt.Sprintf(
 			"session %s on listener %q: %v", sidecarSessionID, listener, err)}
@@ -403,22 +454,25 @@ type sidecarStream struct {
 	truncated bool
 }
 
-func (s *sidecarStream) add(at time.Time, kind, text string) {
+// add appends an entry and returns its elapsed time; false when it was not
+// appended.
+func (s *sidecarStream) add(at time.Time, kind, text string) (float64, bool) {
 	if text == "" || s.truncated {
-		return
+		return 0, false
 	}
 	// A clock step on the sidecar is not a negative duration.
 	elapsed := max(at.Sub(s.startedAt).Seconds(), 0)
 	entry, err := json.Marshal([]any{elapsed, kind, base64.StdEncoding.EncodeToString([]byte(text))})
 	if err != nil {
-		return
+		return 0, false
 	}
 	s.entries = append(s.entries, string(entry))
-	s.live = append(s.live, eventbroker.Event{Time: at, Type: kind, Payload: []byte(text)})
+	s.live = append(s.live, eventbroker.Event{Time: at, Type: kind, Payload: []byte(text), Elapsed: &elapsed})
 	s.size += int64(len(entry))
 	if s.size >= maxSidecarSessionStreamBytes {
 		s.truncated = true
 	}
+	return elapsed, true
 }
 
 // denialText is the error entry after a denied statement.
@@ -515,7 +569,12 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 	if err := ValidateSidecarSessionEvents(events); err != nil {
 		return result, err
 	}
-	ident := sidecarIdentity{ID: sc.ID, Name: sc.Name, OrgID: sc.OrgID}
+	mirrors, err := models.ListSidecarMirrorNames(db, sc.OrgID, sc.ID)
+	if err != nil {
+		return result, fmt.Errorf("failed reading the sidecar's mirror connections: %w", err)
+	}
+	ident := sidecarIdentity{ID: sc.ID, Name: sc.Name, OrgID: sc.OrgID, Mirrors: mirrors}
+	receivedAt := time.Now().UTC()
 
 	// Grouped by session; the sidecar's order holds within a group.
 	var order []string
@@ -547,7 +606,11 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 			if err != nil {
 				return err
 			}
-			return applySidecarSessionPlan(tx, ident.OrgID, plan)
+			if plan.Accepted > 0 {
+				// The reaper reads it: when the gateway last heard of the session.
+				plan.Sidecar["last_event_at"] = receivedAt.Format(time.RFC3339Nano)
+			}
+			return applySidecarSessionPlan(tx, ident, plan)
 		})
 		var permanent SidecarEventsRefused
 		switch {
@@ -563,6 +626,10 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 			result.Accepted += plan.Accepted
 			result.Duplicates += plan.Duplicates
 			publishSidecarSession(plan)
+			if plan.Create != nil || plan.Ended || plan.Republish {
+				runSidecarSessionHooks(sidecarSessionHook{DB: db, OrgID: ident.OrgID, SessionID: plan.SessionID,
+					Opened: plan.Create != nil, Closed: plan.Ended, Republish: plan.Republish})
+			}
 		}
 	}
 	if len(failed) > 0 {
@@ -604,10 +671,11 @@ func permanentDBError(err error) bool {
 }
 
 // applySidecarSessionPlan writes a plan inside tx.
-func applySidecarSessionPlan(tx *gorm.DB, orgID string, plan sidecarSessionPlan) error {
+func applySidecarSessionPlan(tx *gorm.DB, sc sidecarIdentity, plan sidecarSessionPlan) error {
 	if plan.Accepted == 0 {
 		return nil
 	}
+	orgID := sc.OrgID
 	if plan.Create != nil {
 		if err := models.UpsertSessionTx(tx, *plan.Create); err != nil {
 			return fmt.Errorf("creating the session: %w", err)
@@ -634,6 +702,15 @@ func applySidecarSessionPlan(tx *gorm.DB, orgID string, plan sidecarSessionPlan)
 	if plan.User != nil {
 		if err := models.SetSidecarSessionUser(tx, orgID, plan.SessionID, plan.User.Name, plan.User.Email); err != nil {
 			return fmt.Errorf("recording the principal: %w", err)
+		}
+	}
+	if len(plan.ReviewIDs) > 0 {
+		linked, err := models.LinkSidecarReviewsToSession(tx, orgID, sc.ID, plan.SessionID, plan.ReviewIDs)
+		if err != nil {
+			return fmt.Errorf("linking the reviews to the session: %w", err)
+		}
+		if merged := mergeReviewSessions(plan.ReviewSessions, linked); len(merged) > len(plan.ReviewSessions) {
+			plan.Sidecar["review_sessions"] = merged
 		}
 	}
 	if err := models.SetSidecarSessionProgress(tx, orgID, plan.SessionID, plan.Sidecar, plan.Metrics); err != nil {
