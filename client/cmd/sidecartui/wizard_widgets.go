@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -24,6 +25,9 @@ type menuItem struct {
 	// button rows are drawn as actions, not records.
 	button bool
 	dim    bool
+	// note rows are a line of text between groups: drawn faint, with a
+	// blank line around them, and skipped by the cursor.
+	note bool
 }
 
 type menu struct {
@@ -31,14 +35,28 @@ type menu struct {
 	cur   int
 }
 
+// step moves the cursor by delta, past note rows.
+func (m *menu) step(delta int) {
+	n := len(m.items)
+	for range n {
+		m.cur = ((m.cur+delta)%n + n) % n
+		if !m.items[m.cur].note {
+			return
+		}
+	}
+}
+
 // update moves the cursor and returns the id of the row enter chose, or
 // "back" for esc. Any other key comes back as "key:<name>" for the page.
 func (m *menu) update(k tea.KeyPressMsg) string {
+	if len(m.items) == 0 {
+		return ""
+	}
 	switch k.String() {
 	case "up", "k", "shift+tab":
-		m.cur = (m.cur + len(m.items) - 1) % max(len(m.items), 1)
+		m.step(-1)
 	case "down", "j", "tab":
-		m.cur = (m.cur + 1) % max(len(m.items), 1)
+		m.step(1)
 	case "enter", "right", "l":
 		if m.cur < len(m.items) {
 			return m.items[m.cur].id
@@ -61,14 +79,25 @@ func (m menu) selected() string {
 func (m menu) view(w, h int) string {
 	labelW := 0
 	for _, it := range m.items {
-		if !it.button {
+		if !it.button && !it.note {
 			labelW = max(labelW, ansi.StringWidth(it.label))
 		}
 	}
 	labelW = min(labelW, w/2)
 	var rows []string
+	curRow := 0
 	for i, it := range m.items {
 		focused := i == m.cur
+		if it.note {
+			if len(rows) > 0 {
+				rows = append(rows, "")
+			}
+			for _, l := range strings.Split(lipgloss.NewStyle().Width(max(w-2, 10)).Render(it.label), "\n") {
+				rows = append(rows, "  "+stFaint.Render(l))
+			}
+			rows = append(rows, "")
+			continue
+		}
 		var row string
 		switch {
 		case it.button && focused:
@@ -91,24 +120,16 @@ func (m menu) view(w, h int) string {
 		if focused && !it.button {
 			row = withBackground(row, w)
 		}
-		if it.button && (i == 0 || !m.items[i-1].button) {
+		// A button group that follows records is set off by a blank line.
+		if it.button && i > 0 && !m.items[i-1].button && !m.items[i-1].note {
 			rows = append(rows, "")
+		}
+		if focused {
+			curRow = len(rows)
 		}
 		rows = append(rows, row)
 	}
-	return window(rows, m.cursorRow(), h)
-}
-
-// cursorRow is the rendered row of the cursor, counting the blank line that
-// separates the buttons from the records.
-func (m menu) cursorRow() int {
-	row := m.cur
-	for i := 0; i <= m.cur && i < len(m.items); i++ {
-		if m.items[i].button && (i == 0 || !m.items[i-1].button) {
-			row++
-		}
-	}
-	return row
+	return window(rows, curRow, h)
 }
 
 // window shows h rows of rows, scrolled so row cur is in view.

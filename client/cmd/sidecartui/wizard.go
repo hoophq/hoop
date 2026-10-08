@@ -12,7 +12,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
@@ -219,15 +218,20 @@ func (w *wizard) buildOverview() {
 		ldetail += "  (the demo API)"
 	}
 	cur := w.overview.cur
+	// The actions come first: the defaults below are meant to work as they
+	// are, so the person who trusts them is one enter away from a running
+	// sidecar, and the one who does not reads on.
 	w.overview.items = []menuItem{
+		{id: "boot", label: "Save and boot", button: true},
+		{id: "save", label: "Save only", button: true},
+		{id: "back", label: "Back", button: true},
+		{note: true, label: "These are set up for you. To change one, move to it and press enter."},
 		{id: "listener", label: "Listener", detail: ldetail},
 		{id: "rules", label: "Guardrails", detail: w.d.rulesSummary()},
 		{id: "masks", label: "Data masking", detail: w.d.masksSummary()},
 		{id: "analyzer", label: "AI analyzer", detail: w.d.analyzerSummary()},
 		{id: "pii", label: "Sensitive data", detail: w.d.piiSummary()},
 		{id: "file", label: "File", detail: w.d.file},
-		{id: "boot", label: "Save and boot", button: true},
-		{id: "save", label: "Save only", button: true},
 	}
 	w.overview.cur = min(cur, len(w.overview.items)-1)
 }
@@ -564,7 +568,7 @@ func (w *wizard) intro() string {
 	case pgListener:
 		return "Where the backend is, and where clients reach the sidecar instead. Defaults come from this machine."
 	case pgOverview:
-		return "These are on by default. Enter on any of them to change it, then save and boot."
+		return "Your config is ready. Save and boot starts the sidecar on it now; Save only writes the file."
 	case pgRules:
 		return "Rules decide what may run. Enter edits, d deletes. The free tier enforces one rule; a license lifts it."
 	case pgMasks:
@@ -658,10 +662,8 @@ func (w *wizard) overviewView(width, height int) string {
 		status = append(status, stPrimary.Render("✓ valid")+stFaint.Render("  "+w.vsummary))
 	}
 	if w.d.demo {
-		status = append(status, "", stFaint.Render("Once it boots, try it from another terminal:"))
-		for _, c := range sidecardemo.TryCommands {
-			status = append(status, stText.Render("  "+ansi.Truncate(c, width-2, "…")))
-		}
+		status = append(status, "", stFaint.Render(ansi.Truncate(
+			"Once it boots, the dashboard opens on Try it, a guided tour of the demo.", width, "…")))
 	}
 	room := max(height-len(status)-1, 4)
 	return w.overview.view(width, room) + "\n\n" + strings.Join(status, "\n")

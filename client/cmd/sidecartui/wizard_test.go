@@ -274,6 +274,45 @@ func TestWizardDemoSaveAndBoot(t *testing.T) {
 	}
 }
 
+// The overview leads with its actions: Save and boot is where the cursor
+// starts, Back sits under Save only, and the note between them and the
+// fields is text the cursor never lands on.
+func TestOverviewLeadsWithItsActions(t *testing.T) {
+	w := newWizard(noMachine(), validateFile, t.TempDir(), time.Now)
+	w.update(wkey("enter")) // the demo
+	var ids []string
+	for _, it := range w.overview.items {
+		ids = append(ids, it.id)
+	}
+	if got := strings.Join(ids, ","); got != "boot,save,back,,listener,rules,masks,analyzer,pii,file" {
+		t.Fatalf("overview order = %s", got)
+	}
+	if w.overview.selected() != "boot" {
+		t.Errorf("cursor starts on %q, want boot", w.overview.selected())
+	}
+	w.update(wkey("down"))
+	w.update(wkey("down"))
+	w.update(wkey("down"))
+	if w.overview.selected() != "listener" {
+		t.Errorf("three downs from boot landed on %q, want listener past the note", w.overview.selected())
+	}
+	w.update(wkey("up"))
+	if w.overview.selected() != "back" {
+		t.Errorf("up from listener landed on %q, want back", w.overview.selected())
+	}
+	w.update(wkey("enter"))
+	if w.page != pgProtocol {
+		t.Errorf("Back went to page %v, want the protocol list", w.page)
+	}
+	out := ansi.Strip(func() string { w.update(wkey("enter")); return w.overviewView(100, 30) }())
+	if i, j := strings.Index(out, "Save only"), strings.Index(out, "Listener"); i < 0 || j < 0 || i > j {
+		t.Errorf("Save only is not drawn above the fields:\n%s", out)
+	}
+	if !strings.Contains(out, "To change one, move to it and press enter") {
+		t.Errorf("the note is not drawn:\n%s", out)
+	}
+}
+
 // A draft that does not validate is never written: the person would boot
 // a file the sidecar refuses.
 func TestWizardDoesNotSaveAnInvalidConfig(t *testing.T) {
