@@ -13,6 +13,8 @@ const EMPTY = {
   // Keyed by session id: the sidecar session the held statement ran in, once
   // the sidecar reported it.
   sidecarSessions: {},
+  // Keyed by session id: who opened the session. On a sidecar review, the sidecar.
+  requesters: {},
   submitting: false,
 }
 
@@ -50,6 +52,10 @@ export const useReviewStore = create((set, get) => ({
         sidecarSessions: {
           ...s.sidecarSessions,
           [sessionId]: data?.metadata?.sidecar_session_id ?? null,
+        },
+        requesters: {
+          ...s.requesters,
+          [sessionId]: data?.user_name || data?.user_email || null,
         },
         statementStatus: { ...s.statementStatus, [sessionId]: 'success' },
       }))
