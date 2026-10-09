@@ -160,7 +160,7 @@ export default function DataMasking() {
 
       {list.length > 0 && (
         <Group gap="sm">
-          {traffic.classifiable && <ValueFilter icon={Network} {...traffic.filterProps} />}
+          {traffic.showTrafficFilter && <ValueFilter icon={Network} {...traffic.filterProps} />}
           {showSidecarFilter && (
             <SidecarListenerFilter
               selected={selectedTarget}

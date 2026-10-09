@@ -43,7 +43,7 @@ const AI_ANALYZER = '/features/ai-session-analyzer';
 
 const MAIN_ITEMS = [
   { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
-  { label: 'Resources', path: '/resources', icon: Package },
+  { label: 'Resources', path: '/resources', icon: Package, featureFlag: AGENTS_FLAG },
   { label: 'Terminal', path: '/client', icon: SquareCode, featureFlag: AGENTS_FLAG },
   {
     label: 'Runbooks',
@@ -141,7 +141,7 @@ export const NAV = [
 // mirror the sidebar entries above and are applied with the same shouldHide()
 // helper — keep both lists in sync when a page's gating changes.
 export const SUGGESTION_ITEMS = [
-  { id: 'resources', label: 'Resources', description: 'Manage resources', icon: Package, path: '/resources' },
+  { id: 'resources', label: 'Resources', description: 'Manage resources', icon: Package, path: '/resources', featureFlag: AGENTS_FLAG },
   { id: 'terminal', label: 'Terminal', description: 'Open terminal', icon: SquareCode, path: '/client', featureFlag: AGENTS_FLAG },
 ]
 
