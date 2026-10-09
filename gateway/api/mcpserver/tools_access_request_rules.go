@@ -27,9 +27,9 @@ type accessRequestRulesCreateInput struct {
 	AccessType             string   `json:"access_type" jsonschema:"access type: jit (connect verbs), command (exec verbs), or jit_command (both)"`
 	ConnectionNames        []string `json:"connection_names,omitempty" jsonschema:"target connection names"`
 	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
-	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
+	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"approver groups: groups that can approve"`
 	ForceApprovalGroups    []string `json:"force_approval_groups,omitempty" jsonschema:"groups that can force approve"`
-	SkipReviewGroups       []string `json:"skip_review_groups,omitempty" jsonschema:"groups whose members skip the approval review; only allowed when approval_required_groups is empty"`
+	SkipReviewGroups       []string `json:"skip_review_groups,omitempty" jsonschema:"groups whose members skip the approval; only allowed when approval_required_groups is empty"`
 	AllGroupsMustApprove   bool     `json:"all_groups_must_approve" jsonschema:"whether all groups must approve"`
 	MinApprovals           *int     `json:"min_approvals,omitempty" jsonschema:"minimum number of approvals required"`
 	AccessMaxDuration      *int     `json:"access_max_duration,omitempty" jsonschema:"maximum access duration in seconds"`
@@ -42,9 +42,9 @@ type accessRequestRulesUpdateInput struct {
 	AccessType             string   `json:"access_type" jsonschema:"access type: jit (connect verbs), command (exec verbs), or jit_command (both)"`
 	ConnectionNames        []string `json:"connection_names,omitempty" jsonschema:"target connection names"`
 	ApprovalRequiredGroups []string `json:"approval_required_groups" jsonschema:"user groups whose members require approval to access; empty applies to all users"`
-	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"groups that can review"`
+	ReviewersGroups        []string `json:"reviewers_groups" jsonschema:"approver groups: groups that can approve"`
 	ForceApprovalGroups    []string `json:"force_approval_groups,omitempty" jsonschema:"groups that can force approve"`
-	SkipReviewGroups       []string `json:"skip_review_groups,omitempty" jsonschema:"groups whose members skip the approval review; only allowed when approval_required_groups is empty"`
+	SkipReviewGroups       []string `json:"skip_review_groups,omitempty" jsonschema:"groups whose members skip the approval; only allowed when approval_required_groups is empty"`
 	AllGroupsMustApprove   bool     `json:"all_groups_must_approve" jsonschema:"whether all groups must approve"`
 	MinApprovals           *int     `json:"min_approvals,omitempty" jsonschema:"minimum number of approvals required"`
 	AccessMaxDuration      *int     `json:"access_max_duration,omitempty" jsonschema:"maximum access duration in seconds"`
@@ -73,7 +73,7 @@ func registerAccessRequestRuleTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "access_request_rules_create",
 		Description: "Create an approval / just-in-time access workflow rule for one or more connections — matches the webapp 'Access Request' page. " +
-			"Use this when access requires review or time-bound approval. " +
+			"Use this when access requires approval, one-time or time-bound. " +
 			"For simple 'this group can access this connection' visibility (no approval), use access_control_set or access_control_create_group instead. " +
 			"Do NOT set the deprecated reviewers field on the connection itself. " +
 			"Requires admin access.",

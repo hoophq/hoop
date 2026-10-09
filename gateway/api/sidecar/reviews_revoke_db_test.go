@@ -109,7 +109,7 @@ func TestPutReviewOnASidecarReview(t *testing.T) {
 
 			rec := putReview(t, rev.ID, `{"status":"revoked"}`, []string{types.GroupAdmin})
 			assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-			assert.JSONEq(t, `{"message":"review is in wrong state"}`, rec.Body.String())
+			assert.JSONEq(t, `{"message":"approval request is in wrong state"}`, rec.Body.String())
 			assert.JSONEq(t, before, reviewSnapshot(t, rev))
 		})
 	}
@@ -175,7 +175,7 @@ func TestPutReviewOnASidecarReview(t *testing.T) {
 		rec := putReview(t, rev.ID, `{"status":"revoked"}`, []string{types.GroupAdmin})
 		require.True(t, fired, "the claim did not run between the read and the write")
 		assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-		assert.JSONEq(t, `{"message":"review is in wrong state"}`, rec.Body.String())
+		assert.JSONEq(t, `{"message":"approval request is in wrong state"}`, rec.Body.String())
 
 		got, err := models.GetSidecarReview(models.DB, statusTestOrgID, sc.ID, rev.ID)
 		require.NoError(t, err)

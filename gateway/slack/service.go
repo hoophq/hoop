@@ -116,7 +116,7 @@ const (
 	// reviewDeadlineBlockID marks the decision deadline block, so a terminal rewrite drops it.
 	reviewDeadlineBlockID = "review-deadline"
 	// expiredReviewText closes a sidecar review that passed its deadline.
-	expiredReviewText = "*Review expired.* Nothing was released. Running the statement again files a new review."
+	expiredReviewText = "*Approval request expired.* Nothing was released. Running the statement again files a new approval request."
 )
 
 func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string, opts ...Option) (*SlackService, error) {
@@ -354,7 +354,7 @@ func reviewChannels(msg *MessageReviewRequest, defaultChannel string) []string {
 // PostMessageReview is SendMessageReview, returning the counts so a caller can
 // tell a review nobody received from one that reached its channels.
 func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostResult {
-	title := "Hoop Review"
+	title := "Hoop Approval"
 
 	header := slack.NewHeaderBlock(&slack.TextBlockObject{
 		Type: slack.PlainTextType,
@@ -388,7 +388,7 @@ func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostRe
 	if msg.ExpiresAt != nil {
 		blocks = append(blocks, slack.NewContextBlock(reviewDeadlineBlockID,
 			slack.NewTextBlockObject(slack.MarkdownType,
-				fmt.Sprintf("_Decide before %s; after it the review expires._", msg.ExpiresAt.UTC().Format(time.RFC1123)), false, false)))
+				fmt.Sprintf("_Decide before %s; after it the approval request expires._", msg.ExpiresAt.UTC().Format(time.RFC1123)), false, false)))
 	}
 	// script at the maximum slack allowed size
 	if script != "" {
@@ -624,7 +624,7 @@ func (s *SlackService) rewriteReviewMessages(items []sentReviewMessage, req *Upd
 		}
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("failed updating review message on channels %v", errs)
+		return fmt.Errorf("failed updating approval message on channels %v", errs)
 	}
 	return nil
 }
@@ -726,7 +726,7 @@ func rebuildReviewBlocks(m *sentReviewMessage, req *UpdateReviewMessageRequest, 
 			slack.NewDividerBlock(),
 			slack.NewSectionBlock(&slack.TextBlockObject{
 				Type: slack.MarkdownType,
-				Text: "*Approval revoked.* Running the statement again files a new review.\n",
+				Text: "*Approval revoked.* Running the statement again files a new approval request.\n",
 			}, nil, nil))
 	default:
 		blocks = append(blocks, slack.NewContextBlock("",

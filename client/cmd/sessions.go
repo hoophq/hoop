@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	cmdutils "github.com/hoophq/hoop/client/cmd/utils"
 	"io"
 	"net/http"
 	"net/url"
@@ -59,7 +60,7 @@ var sessionsCmd = &cobra.Command{
 var sessionsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List sessions",
-	Long:  "List sessions you have access to, with optional filters for connection, type, review status, and date range.",
+	Long:  "List sessions you have access to, with optional filters for connection, type, approval status, and date range.",
 	Example: `  # List sessions (default fields: id, user, role, type, start_date, status)
   hoop sessions list
 
@@ -84,8 +85,8 @@ var sessionsListCmd = &cobra.Command{
   # Find sessions for a specific role and pipe to jq
   hoop sessions list --role prod-db --quiet | jq '.data[].id'
 
-  # List sessions with a review pending approval
-  hoop sessions list --review-status pending
+  # List sessions pending approval
+  hoop sessions list --approval-status pending
 
   # Get the precise total instead of the default capped one
   hoop sessions list --count exact
@@ -104,8 +105,9 @@ func init() {
 	f.StringVar(&sessionsFlags.user, "user", "", "Filter by user subject ID")
 	f.StringVar(&sessionsFlags.role, "role", "", "Filter by role name")
 	f.StringVar(&sessionsFlags.connType, "type", "", "Filter by connection type")
-	f.StringVar(&sessionsFlags.reviewApprover, "review-approver", "", "Filter by review approver email")
-	f.StringVar(&sessionsFlags.reviewStatus, "review-status", "", "Filter by review status")
+	f.StringVar(&sessionsFlags.reviewApprover, "approver", "", "Filter by approver email")
+	f.StringVar(&sessionsFlags.reviewStatus, "approval-status", "", "Filter by approval status")
+	cmdutils.FlagAliases(f, map[string]string{"review-approver": "approver", "review-status": "approval-status"})
 	f.StringVar(&sessionsFlags.jiraIssueKey, "jira-issue-key", "", "Filter by Jira issue key")
 	f.StringVar(&sessionsFlags.startDate, "start-date", "", "Filter from date (RFC3339, e.g. 2024-01-01T00:00:00Z)")
 	f.StringVar(&sessionsFlags.endDate, "end-date", "", "Filter until date (RFC3339, e.g. 2024-12-31T23:59:59Z)")
@@ -312,7 +314,7 @@ func displaySessions(resp *sessionsResponse) {
 	fmt.Fprintln(os.Stderr, "  hoop sessions get <id>                               # inspect a specific session")
 	fmt.Fprintln(os.Stderr, "  hoop sessions get <id> --json                        # full detail as JSON")
 	fmt.Fprintln(os.Stderr, "  hoop sessions list --role <name>                     # filter by role")
-	fmt.Fprintln(os.Stderr, "  hoop sessions list --review-status pending           # sessions pending approval")
+	fmt.Fprintln(os.Stderr, "  hoop sessions list --approval-status pending         # sessions pending approval")
 	fmt.Fprintln(os.Stderr, "  hoop sessions list --quiet | jq '.data[].id'         # pipe IDs to jq")
 }
 
@@ -541,7 +543,7 @@ func displaySession(s map[string]any) {
 	// Review section.
 	if review, ok := s["review"].(map[string]any); ok {
 		sep()
-		fmt.Fprintln(w, "  Review")
+		fmt.Fprintln(w, "  Approval")
 		reviewStatus := toStr(review["status"])
 		reviewType := toStr(review["type"])
 		minApprovals := toStr(review["min_approvals"])

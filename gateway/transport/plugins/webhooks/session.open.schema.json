@@ -70,18 +70,18 @@
       },
       "review": {
         "type": "object",
-        "description": "When this attribute is set, indicates the session has a review",
+        "description": "When this attribute is set, indicates the session has an approval request",
         "properties": {
           "owner_email": {
             "description": "The user email that created the session",
             "type": "string"
           },
           "status": {
-            "description": "The status of the review",
+            "description": "The status of the approval request",
             "type": "string"
           },
           "type": {
-            "description": "The type of the review (onetime, jit)",
+            "description": "The type of the approval request (onetime, jit)",
             "type": "string"
           }
         },

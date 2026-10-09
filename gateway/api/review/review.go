@@ -27,15 +27,15 @@ import (
 )
 
 var (
-	ErrNotFound             = errors.New("review not found")
-	ErrWrongState           = errors.New("review is in wrong state")
-	ErrNotEligible          = errors.New("not eligible for review")
-	ErrSelfApproval         = errors.New("unable to self approve review")
-	ErrGroupAlreadyReviewed = errors.New("it was already reviewed")
+	ErrNotFound             = errors.New("approval request not found")
+	ErrWrongState           = errors.New("approval request is in wrong state")
+	ErrNotEligible          = errors.New("not eligible to approve")
+	ErrSelfApproval         = errors.New("unable to approve your own request")
+	ErrGroupAlreadyReviewed = errors.New("it was already approved or rejected")
 	ErrForbidden            = errors.New("forbidden")
 	ErrUnknownStatus        = errors.New("unknown status")
-	ErrNoTimeWindow         = errors.New("a review bound to a listener takes no time window")
-	ErrExpired              = errors.New("review expired")
+	ErrNoTimeWindow         = errors.New("an approval request bound to a listener takes no time window")
+	ErrExpired              = errors.New("approval request expired")
 )
 
 type TransportReleaseConnectionFunc func(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason, rejectedBy string)
@@ -50,13 +50,14 @@ func NewHandler(transportReleaseConnectionFn TransportReleaseConnectionFunc) *ha
 
 // GetReviewByIdOrSid
 //
-//	@Summary		Get Review
-//	@Description	Get review resource by the id or session id. A review the user did not request and cannot decide answers 404; admins and auditors get any review.
-//	@Tags			Reviews
-//	@Param			id	path	string	true	"Resource identifier of the review"
+//	@Summary		Get Approval
+//	@Description	Get an approval request by the id or session id. An approval request the user did not make and cannot decide answers 404; admins and auditors get any approval request. `/reviews/{id}` is an alias.
+//	@Tags			Approvals
+//	@Param			id	path	string	true	"Resource identifier of the approval request"
 //	@Produce		json
 //	@Success		200		{object}	openapi.Review
 //	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/approvals/{id} [get]
 //	@Router			/reviews/{id} [get]
 func (h *handler) GetByIdOrSid(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -70,26 +71,27 @@ func (h *handler) GetByIdOrSid(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toOpenApiReview(review))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching review: %v", err)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching approval request: %v", err)
 		return
 	}
 }
 
 // List
 //
-//	@Summary		Get Review List,
-//	@Description	Get the reviews the user requested or can decide. Admins and auditors get all reviews.
-//	@Tags			Reviews
+//	@Summary		Get Approval List
+//	@Description	Get the approval requests the user made or can decide. Admins and auditors get all approval requests. `/reviews` is an alias.
+//	@Tags			Approvals
 //	@Produce		json
 //	@Success		200		{object}	[]openapi.Review
 //	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/approvals [get]
 //	@Router			/reviews [get]
 func (h *handler) List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	reviews, err := models.ListReviews(models.DB, ctx.GetOrgID(), Viewer(ctx))
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching reviews: %v", err)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching approval requests: %v", err)
 		return
 	}
 
@@ -140,15 +142,16 @@ func ParseTimeWindow(timeWindow *openapi.ReviewSessionTimeWindow) (*models.Revie
 
 // UpdateReview
 //
-//	@Summary				Update Review Status
+//	@Summary				Update Approval Status
 //	@description.markdown	api-update-review
-//	@Tags					Reviews
-//	@Param					id	path	string	true	"Resource identifier of the review"
+//	@Tags					Approvals
+//	@Param					id	path	string	true	"Resource identifier of the approval request"
 //	@Accept					json
 //	@Produce				json
 //	@Param					request			body		openapi.ReviewRequest	true	"The request body resource"
 //	@Success				200				{object}	openapi.Review
 //	@Failure				400,403,404,500	{object}	openapi.HTTPError
+//	@Router					/approvals/{id} [put]
 //	@Router					/reviews/{id} [put]
 func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -193,21 +196,22 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, toOpenApiReview(rev))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating review status: %v", err)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating approval status: %v", err)
 	}
 }
 
 // UpdateReviewBySid
 //
-//	@Summary				Update Review Status By Sid
+//	@Summary				Update Approval Status By Sid
 //	@description.markdown	api-update-review
-//	@Tags					Reviews
+//	@Tags					Approvals
 //	@Param					session_id	path	string	true	"Resource identifier of the session"
 //	@Accept					json
 //	@Produce				json
 //	@Param					request			body		openapi.ReviewRequest	true	"The request body resource"
 //	@Success				200				{object}	openapi.Review
 //	@Failure				400,403,404,500	{object}	openapi.HTTPError
+//	@Router					/sessions/{session_id}/approval [put]
 //	@Router					/sessions/{session_id}/review [put]
 func (h *handler) ReviewBySid(c *gin.Context) { h.ReviewByIdOrSid(c) }
 
@@ -292,7 +296,7 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 			rev.ID, rev.SessionID, rev.Type, rev.Status, status, hasForced, ctx.UserEmail,
 			rev.OwnerEmail, len(rev.ReviewGroups), rev.CreatedAt.Format(time.RFC3339))
 	default:
-		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
+		return nil, fmt.Errorf("failed obtaining approval request, err=%v", err)
 	}
 
 	// A sidecar review carries its own policy (groups, minimum, force groups)
@@ -304,7 +308,7 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		// is a uuid, so a review with no session fails there on a cast rather
 		// than here on the thing that is actually wrong.
 		if rev.SessionID == "" {
-			return nil, fmt.Errorf("sidecar review %s has no session", rev.ID)
+			return nil, fmt.Errorf("sidecar approval request %s has no session", rev.ID)
 		}
 		// A time window says when a session may run against a connection; a
 		// review bound to a listener authorizes a single statement that has
@@ -316,7 +320,7 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	} else {
 		connection, err = models.GetConnectionByNameOrID(models.NewAdminContext(ctx.OrgID), rev.ConnectionName)
 		if connection == nil || err != nil {
-			return nil, fmt.Errorf("failed fetching connection for review, err=%v", err)
+			return nil, fmt.Errorf("failed fetching connection for approval request, err=%v", err)
 		}
 	}
 
@@ -381,7 +385,7 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 func persistDecision(rev *models.Review, fromStatus models.ReviewStatusType) error {
 	if !IsSidecarReview(rev) {
 		if err := models.UpdateReview(rev); err != nil {
-			return fmt.Errorf("failed updating review state, reason=%v", err)
+			return fmt.Errorf("failed updating approval state, reason=%v", err)
 		}
 		return nil
 	}
@@ -391,7 +395,7 @@ func persistDecision(rev *models.Review, fromStatus models.ReviewStatusType) err
 		return expireSidecarDecision(rev.OrgID, rev.ID, "")
 	}
 	if err != nil {
-		return fmt.Errorf("failed updating review state, reason=%v", err)
+		return fmt.Errorf("failed updating approval state, reason=%v", err)
 	}
 	return nil
 }

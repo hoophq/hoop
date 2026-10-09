@@ -60,7 +60,7 @@ func OpenSession(sid, connID string, grpcClient pb.ClientTransport, ctx context.
 				resultCh <- result{}
 				return
 			case pbclient.SessionOpenWaitingApproval:
-				resultCh <- result{err: fmt.Errorf("session with review is not supported")}
+				resultCh <- result{err: fmt.Errorf("session that requires approval is not supported")}
 				return
 			case pbclient.TCPConnectionClose, pbclient.SessionClose:
 				resultCh <- result{err: fmt.Errorf("connection closed by server: %s", pkt.Payload)}

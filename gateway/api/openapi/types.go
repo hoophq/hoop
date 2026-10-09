@@ -82,7 +82,7 @@ type User struct {
 	Verified bool `json:"verified" readonly:"true"`
 	// Permission related to the user
 	// * admin - Has super privileges and has access to any resource in the system
-	// * approver - Grant access to review routes.
+	// * approver - Grant access to approval routes.
 	// * standard - Grant access to standard routes.
 	// * unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.
 	// This state is only available for multi tenant environments
@@ -301,7 +301,7 @@ type SidecarRequest struct {
 	Configuration json.RawMessage `json:"configuration,omitempty" swaggertype:"object"`
 }
 
-// SidecarSlackChannels is where the reviews of each listener of a sidecar are
+// SidecarSlackChannels is where the approval requests of each listener of a sidecar are
 // posted in Slack. A listener with no channel falls back to the org's default channel.
 type SidecarSlackChannels struct {
 	// The channels of each listener; a listener left out has none
@@ -488,7 +488,7 @@ type SidecarSessionEventsResponse struct {
 // SidecarReviewRequest registers a statement a sidecar held for human approval.
 //
 // The sidecar is not in the body and must not be: the token identifies it, so a
-// field here would let one sidecar file a review as another.
+// field here would let one sidecar file an approval request as another.
 type SidecarReviewRequest struct {
 	// The sidecar listener the statement arrived on
 	//
@@ -496,12 +496,12 @@ type SidecarReviewRequest struct {
 	// name would reach Postgres and fail the write, rather than being told at
 	// the door that it is too long.
 	ListenerName string `json:"listener_name" binding:"required,max=255" example:"appdb"`
-	// The statement to review, base64 encoded
+	// The statement to approve, base64 encoded
 	Payload string `json:"payload" binding:"required" example:"REVMRVRFIEZST00gdXNlcnM7"`
 	// The access request rule that decides who may approve this statement
 	//
 	// It must be the rule the sidecar's stored configuration names for this
-	// listener. The rule carries the reviewer groups, the approval count and
+	// listener. The rule carries the approver groups, the approval count and
 	// the force-approval list; the sidecar holds none of that policy and only
 	// names it.
 	//
@@ -509,48 +509,48 @@ type SidecarReviewRequest struct {
 	ApprovalRule string `json:"approval_rule" binding:"required,max=254" example:"payments-approvers"`
 }
 
-// SidecarReviewResponse answers a sidecar that asked to review a statement.
+// SidecarReviewResponse answers a sidecar that asked for approval of a statement.
 //
-// Forward is separate from the review status deliberately. When two retries of
+// Forward is separate from the approval status deliberately. When two retries of
 // one approved statement race, both read APPROVED and both see EXECUTED
-// afterwards; only the request that consumed the review may release the
+// afterwards; only the request that consumed the approval request may release the
 // statement, and no status tells it apart from the one that lost. A sidecar
 // reads Forward and nothing else to decide.
 type SidecarReviewResponse struct {
 	// Whether the sidecar may release the statement it held
 	//
-	// True only on the request that consumed an approved review, and only
-	// once per review. False while the review waits, and false forever once
+	// True only on the request that consumed an approved request, and only
+	// once per approval request. False while the approval request waits, and false forever once
 	// it is rejected, revoked or expired.
 	Forward bool `json:"forward" example:"false"`
-	// The review the statement is waiting on, or the one that released it
+	// The approval request the statement is waiting on, or the one that released it
 	Review *Review `json:"review"`
 }
 
-// SidecarReviewStatus is a read-only view of one sidecar review.
+// SidecarReviewStatus is a read-only view of one sidecar approval request.
 //
-// It has no forward flag, no statement text and no reviewer identities: a status
+// It has no forward flag, no statement text and no approver identities: a status
 // read never releases a statement, and an agent polling it needs neither.
 type SidecarReviewStatus struct {
 	// Resource identifier
 	ID string `json:"id" format:"uuid" readonly:"true" example:"9F9745B4-C77B-4D52-84D3-E24F67E3623C"`
-	// The status of the review
-	// * PENDING - Waiting for a reviewer
+	// The status of the approval request
+	// * PENDING - Waiting for an approver
 	// * APPROVED - Approved and not yet consumed; resend the identical statement
 	// * REJECTED - Rejected; the statement will not run
 	// * REVOKED - Revoked after approval
 	// * EXECUTED - The approval was consumed by a resent statement
-	// * EXPIRED - The review passed its deadline; it never releases the statement
+	// * EXPIRED - The approval request passed its deadline; it never releases the statement
 	Status ReviewStatusType `json:"status" readonly:"true"`
-	// The sidecar listener this review is bound to
+	// The sidecar listener this approval request is bound to
 	ListenerName string `json:"listener_name" readonly:"true" example:"appdb"`
-	// The access request rule the review was filed under
+	// The access request rule the approval request was filed under
 	ApprovalRule string `json:"approval_rule" readonly:"true" example:"payments-approvers"`
-	// The time the review was created
+	// The time the approval request was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
-	// The time of the last reviewer decision. Null while the review is pending
+	// The time of the last approver decision. Null while the approval request is pending
 	DecidedAt *time.Time `json:"decided_at" readonly:"true" example:"2024-07-25T16:01:12.000Z"`
-	// The reason the reviewer gave when rejecting the review
+	// The reason the approver gave when rejecting the approval request
 	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"Not during business hours."`
 	// The decision deadline while PENDING, the approval deadline once APPROVED,
 	// the deadline that passed when EXPIRED. Absent with no limit
@@ -777,7 +777,7 @@ type Connection struct {
 	// * online - The agent is connected and alive
 	// * offline - The agent is not connected
 	Status string `json:"status" readonly:"true" enums:"online,offline"`
-	// Reviewers is a list of groups that will review the connection before the user could execute it
+	// Reviewers is a list of groups that must approve access to the connection before the user can execute it
 	Reviewers []string `json:"reviewers" example:"dba-group"`
 	// When this option is enabled it will allow managing the redact types through the attribute `redact_types`
 	RedactEnabled bool `json:"redact_enabled"`
@@ -813,11 +813,11 @@ type Connection struct {
 	GuardRailRules []string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// The jira issue templates ids associated to the connection
 	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
-	// Groups that can force approve reviews for this connection
+	// Groups that can force approve requests for this connection
 	ForceApproveGroups []string `json:"force_approve_groups" example:"sre-team"`
 	// Maximum duration in seconds for JIT access sessions on this connection
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
-	// Minimum number of review approvals required to execute this connection
+	// Minimum number of approvals required to execute this connection
 	MinReviewApprovals *int `json:"min_review_approvals" example:"2"`
 	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
 	MandatoryMetadataFields []string `json:"mandatory_metadata_fields" example:"environment,tier"`
@@ -933,7 +933,7 @@ type ConnectionAccessRequestFeatures struct {
 	// Jit is true when an access request rule of type "jit" resolves. The duration it
 	// enforces, when any, is reported by the connection's jit_access_duration_sec.
 	Jit bool `json:"jit" example:"false"`
-	// LegacyReviewers is true when the pre-rules review plugin has reviewer groups
+	// LegacyReviewers is true when the pre-rules review plugin has approver groups
 	// configured. It still applies on top of both access types.
 	LegacyReviewers bool `json:"legacy_reviewers" example:"false"`
 }
@@ -970,7 +970,7 @@ type ConnectionPatch struct {
 	Secrets *map[string]any `json:"secret"`
 	// The agent associated with this connection
 	AgentId *string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
-	// Reviewers is a list of groups that will review the connection before the user could execute it
+	// Reviewers is a list of groups that must approve access to the connection before the user can execute it
 	Reviewers *[]string `json:"reviewers" example:"dba-group"`
 	// Redact Types is a list of info types that will used to redact the output of the connection.
 	// Possible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference
@@ -1063,7 +1063,7 @@ type ExecRequest struct {
 }
 
 type ExecResponse struct {
-	// Inform if the connection has review enabled
+	// Inform if the connection requires approval
 	HasReview bool `json:"has_review" example:"false"`
 	// Each execution creates a unique session id
 	SessionID string `json:"session_id" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
@@ -1302,7 +1302,7 @@ type SessionAIAnalysis struct {
 	// * `allow_execution` - allow the session to execute
 	// * `block_execution` - block the session from executing
 	Action string `json:"action" enums:"allow_execution,block_execution" example:"allow_execution"`
-	// Summary is a reviewer-facing impact summary produced by the agentic analyzer. Empty for single-shot analysis.
+	// Summary is an approver-facing impact summary produced by the agentic analyzer. Empty for single-shot analysis.
 	Summary string `json:"summary,omitempty"`
 	// Model is the AI model that produced the analysis. Set by the agentic analyzer.
 	Model string `json:"model,omitempty"`
@@ -1362,7 +1362,7 @@ type Session struct {
 	RoleName string `json:"role_name" example:"pgdemo"`
 	// The tags of the connection resource
 	ConnectionTags map[string]string `json:"connection_tags" example:"team:banking;environment:prod"`
-	// Review of this session. In case the review doesn't exist this field will be null
+	// Approval request of this session. In case it doesn't exist this field will be null
 	Review *SessionReview `json:"review"`
 	// Verb is how the client has interacted with this resource
 	// * exec - Is an ad-hoc shell execution
@@ -1506,10 +1506,10 @@ const (
 )
 
 type ReviewRequest struct {
-	// The reviewed status
-	// * APPROVED - Approve the review resource
-	// * REJECTED - Reject the review resource
-	// * REVOKED - Revoke an approved review
+	// The approval status
+	// * APPROVED - Approve the approval request
+	// * REJECTED - Reject the approval request
+	// * REVOKED - Revoke an approved request
 	Status          ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
 	TimeWindow      *ReviewSessionTimeWindow `json:"time_window"`
 	ForceReview     bool                     `json:"force_review" example:"false"`
@@ -1519,38 +1519,38 @@ type ReviewRequest struct {
 type SessionReview struct {
 	// Resource identifier
 	ID string `json:"id" format:"uuid" readonly:"true" example:"9F9745B4-C77B-4D52-84D3-E24F67E3623C"`
-	// The type of the review
+	// The type of the approval request
 	// * onetime - Represents a one time execution
-	// * jit - Represents a time based review
+	// * jit - Represents a time based approval
 	Type ReviewType `json:"type" enums:"onetime,jit" readonly:"true"`
-	// The amount of time (nanoseconds) to allow access to the connection. It's valid only for `jit` type reviews
+	// The amount of time (nanoseconds) to allow access to the connection. It's valid only for `jit` type approval requests
 	AccessDuration time.Duration `json:"access_duration" swaggertype:"integer" readonly:"true" default:"1800000000000" example:"0"`
-	// The status of the review
-	// * PENDING - The resource is waiting to be reviewed
+	// The status of the approval request
+	// * PENDING - The resource is waiting for approval
 	// * APPROVED - The resource is fully approved
 	// * REJECTED - The resource is fully rejected
 	// * REVOKED - The resource was revoked after being approved
-	// * PROCESSING - The review is being executed
-	// * EXECUTED - The review was executed
-	// * UNKNOWN - Unable to know the status of the review
+	// * PROCESSING - The approval request is being executed
+	// * EXECUTED - The approval request was executed
+	// * UNKNOWN - Unable to know the status of the approval request
 	Status ReviewStatusType `json:"status"`
-	// The time when this review was revoked
+	// The time when this approval request was revoked
 	RevokeAt *time.Time `json:"revoke_at" readonly:"true" example:""`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
-	// Contains the groups that requires to approve this review
+	// Contains the groups that must approve this request
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
 	// The time window configuration that can execute the session
 	TimeWindow *ReviewSessionTimeWindow `json:"time_window" readonly:"true"`
-	// The name of the access request rule that triggered this review, if null means it was triggered by the review plugin
+	// The name of the access request rule that triggered this approval request, if null means it was triggered by the review plugin
 	AccessRequestRuleName *string `json:"access_request_rule_name" readonly:"true" example:"default-access-request-rule"`
-	// The minimum number of approvals required for this review
+	// The minimum number of approvals required for this approval request
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
-	// Groups that can force approve sessions for this review
+	// Groups that can force approve sessions for this approval request
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
-	// The reason provided by the reviewer when rejecting this review
+	// The reason provided by the approver when rejecting this approval request
 	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
-	// The sidecar listener this review is bound to. Absent on a review that came from a connection.
+	// The sidecar listener this approval request is bound to. Absent on an approval request that came from a connection.
 	// Only GET /sessions/{session_id} returns it
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
 }
@@ -1565,49 +1565,49 @@ type Review struct {
 	ID string `json:"id" format:"uuid" readonly:"true" example:"9F9745B4-C77B-4D52-84D3-E24F67E3623C"`
 	// The id of session
 	Session string `json:"session" format:"uuid" readonly:"true" example:"35DB0A2F-E5CE-4AD8-A308-55C3108956E5"`
-	// The type of the review
+	// The type of the approval request
 	// * onetime - Represents a one time execution
-	// * jit - Represents a time based review
+	// * jit - Represents a time based approval
 	Type ReviewType `json:"type" enums:"onetime,jit" readonly:"true"`
-	// The amount of time (nanoseconds) to allow access to the connection. It's valid only for `jit` type reviews
+	// The amount of time (nanoseconds) to allow access to the connection. It's valid only for `jit` type approval requests
 	AccessDuration time.Duration `json:"access_duration" swaggertype:"integer" readonly:"true" default:"1800000000000" example:"0"`
-	// The status of the review
-	// * PENDING - The resource is waiting to be reviewed
+	// The status of the approval request
+	// * PENDING - The resource is waiting for approval
 	// * APPROVED - The resource is fully approved
 	// * REJECTED - The resource is fully rejected
 	// * REVOKED - The resource was revoked after being approved
-	// * PROCESSING - The review is being executed
-	// * EXECUTED - The review was executed
-	// * UNKNOWN - Unable to know the status of the review
-	// * EXPIRED - A sidecar review passed its deadline; it never releases the statement
+	// * PROCESSING - The approval request is being executed
+	// * EXECUTED - The approval request was executed
+	// * UNKNOWN - Unable to know the status of the approval request
+	// * EXPIRED - A sidecar approval request passed its deadline; it never releases the statement
 	Status ReviewStatusType `json:"status"`
-	// The time when this review was revoked
+	// The time when this approval request was revoked
 	RevokeAt *time.Time `json:"revoke_at" readonly:"true" example:""`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
-	// Contains the groups that requires to approve this review
+	// Contains the groups that must approve this request
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
 	// The time window configuration that can execute the session
 	TimeWindow *ReviewSessionTimeWindow `json:"time_window" readonly:"true"`
-	// The name of the access request rule that triggered this review, if null means it was triggered by the review plugin
+	// The name of the access request rule that triggered this approval request, if null means it was triggered by the review plugin
 	AccessRequestRuleName *string `json:"access_request_rule_name" readonly:"true" example:"default-access-request-rule"`
-	// The minimum number of approvals required for this review
+	// The minimum number of approvals required for this approval request
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
-	// Groups that can force approve sessions for this review
+	// Groups that can force approve sessions for this approval request
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
-	// The reason provided by the reviewer when rejecting this review
+	// The reason provided by the approver when rejecting this approval request
 	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
-	// The sidecar that filed this review. Absent on a review that came from a connection
+	// The sidecar that filed this approval request. Absent on an approval request that came from a connection
 	SidecarID *string `json:"sidecar_id,omitempty" format:"uuid" readonly:"true" example:"5F5E5C6E-6C3A-4E9A-9E8B-2D6A7F1B0C4D"`
-	// The sidecar listener this review is bound to. Absent on a review that came from a connection
+	// The sidecar listener this approval request is bound to. Absent on an approval request that came from a connection
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
-	// The connection the review was filed against. On a sidecar review, the resource that mirrors the listener; absent while the organization has no mirror for it
+	// The connection the approval request was filed against. On a sidecar approval request, the resource that mirrors the listener; absent while the organization has no mirror for it
 	Connection *ReviewConnection `json:"connection,omitempty" readonly:"true"`
-	// The deadline of a sidecar review: to decide while PENDING, to use the
-	// approval once APPROVED. Absent with no limit or on a review from a connection
+	// The deadline of a sidecar approval request: to decide while PENDING, to use the
+	// approval once APPROVED. Absent with no limit or on an approval request from a connection
 	ExpiresAt *time.Time `json:"expires_at,omitempty" readonly:"true" example:"2024-07-25T16:11:35.000Z"`
 	// The time a sidecar approval lasts, in seconds, copied from the rule at
-	// filing. Absent with no limit or on a review from a connection
+	// filing. Absent with no limit or on an approval request from a connection
 	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" readonly:"true" example:"600"`
 }
 
@@ -1632,18 +1632,18 @@ type ReviewConnection struct {
 type ReviewGroup struct {
 	// The resource identifier
 	ID string `json:"id" format:"uuid" readonly:"true" example:"20A5AABE-C35D-4F04-A5A7-C856EE6C7703"`
-	// The group to approve this review
+	// The group to approve this request
 	Group string `json:"group" readonly:"true" example:"sre"`
-	// The reviewed status
-	// * APPROVED - Approve the review resource
-	// * REJECTED - Reject the review resource
-	// * REVOKED - Revoke an approved review
+	// The approval status
+	// * APPROVED - Approve the approval request
+	// * REJECTED - Reject the approval request
+	// * REVOKED - Revoke an approved request
 	Status ReviewRequestStatusType `json:"status" example:"APPROVED"`
-	// The review owner
+	// The approver
 	ReviewedBy *ReviewOwner `json:"reviewed_by" readonly:"true"`
-	// The date which this review was performed
+	// The date of this decision
 	ReviewDate *time.Time `json:"review_date" readonly:"true" example:"2024-07-25T19:36:41Z"`
-	// Indicates if this group is forcing the review
+	// Indicates if this group forced the approval
 	ForcedReview bool `json:"forced_review" readonly:"true" example:"false"`
 }
 
@@ -1655,9 +1655,9 @@ type Plugin struct {
 	// * access_control - Enable access control by groups
 	// * dlp - Enable Google Data Loss Prevention (requires further configuration)
 	// * indexer - Enable indexing session contents
-	// * review - Enable reviewing executions
+	// * review - Enable approval of executions
 	// * runbooks - Enable configuring runbooks
-	// * slack - Enable reviewing execution through Slack
+	// * slack - Enable approval of executions through Slack
 	// * webhooks - Send events via webhooks
 	Name string `json:"name" binding:"required" enums:"audit,access_control,dlp,indexer,review,runbooks,slack,webhooks" example:"slack"`
 	// The list of connections configured for a specific plugin
@@ -1709,7 +1709,7 @@ type ProxyManagerRequest struct {
 	ConnectionName string `json:"connection_name" binding:"required" example:"pgdemo"`
 	// The port to listen in the client
 	Port string `json:"port" binding:"required" example:"5432"`
-	// The access duration (in nanoseconds) of a session in case the connect has a review.
+	// The access duration (in nanoseconds) of a session in case the connect requires approval.
 	// Default to 30 minutes
 	AccessDuration time.Duration `json:"access_duration" swaggertype:"integer" example:"1800000000000"`
 }
@@ -1740,11 +1740,11 @@ type ProxyManagerResponse struct {
 	RequestConnectionType string `json:"connection_type" readonly:"true"`
 	// The requested connection subtype
 	RequestConnectionSubType string `json:"connection_subtype" readonly:"true"`
-	// Report if the connection has a review
+	// Report if the connection requires approval
 	HasReview bool `json:"has_review" readonly:"true"`
 	// The requested client port to listen
 	RequestPort string `json:"port"`
-	// The request access duration in case of review
+	// The request access duration in case of approval
 	RequestAccessDuration time.Duration `json:"access_duration" swaggertype:"integer" example:"1800000000000"`
 	// Metadata information about the client
 	ClientMetadata map[string]string `json:"metadata" example:"session:15B3C616-6B43-4F85-B4FD-B83378A866C2,version:1.23.4,go-version:1.22.4,platform:amd64,hostname:johnwick.local"`
@@ -3266,9 +3266,9 @@ type ConnectionCredentialsResponse struct {
 	ConnectionCredentials any `json:"connection_credentials,omitempty"`
 	// The session ID associated with this credential access
 	SessionID string `json:"session_id" format:"uuid" example:"2CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
-	// Whether this credential request requires review/JIT approval
+	// Whether this credential request requires approval (JIT)
 	HasReview bool `json:"has_review" example:"false"`
-	// The review ID if review is required
+	// The approval request ID if approval is required
 	ReviewID string `json:"review_id,omitempty" format:"uuid" example:"3CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
 	// When the database access connection expires. Null when the credential
 	// has no expiration (persistent native-client credentials issued without
@@ -3964,18 +3964,18 @@ type AccessRequestRule struct {
 	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
 	// Whether all groups must approve
 	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`
-	// Groups that can review sessions
+	// Groups that can approve sessions
 	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" example:"admin"`
-	// Groups whose members skip the approval review. Only honored when
+	// Groups whose members skip the approval. Only honored when
 	// approval_required_groups is empty
 	SkipReviewGroups []string `json:"skip_review_groups" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals" example:"2"`
-	// Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type
+	// Seconds a sidecar approval request may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type
 	// sidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule
 	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
 	// Seconds a sidecar approval lasts from the approval, 60 to 604800, or 0 for none. The same rules as
@@ -4007,18 +4007,18 @@ type AccessRequestRuleRequest struct {
 	ApprovalRequiredGroups []string `json:"approval_required_groups" binding:"required" example:"developers,analysts"`
 	// Whether all groups must approve
 	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`
-	// Groups that can review sessions
+	// Groups that can approve sessions
 	ReviewersGroups []string `json:"reviewers_groups" binding:"required" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" binding:"required" example:"admin"`
-	// Groups whose members skip the approval review. Only allowed when
+	// Groups whose members skip the approval. Only allowed when
 	// approval_required_groups is empty
 	SkipReviewGroups []string `json:"skip_review_groups,omitempty" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
-	// Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type
+	// Seconds a sidecar approval request may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type
 	// sidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule
 	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
 	// Seconds a sidecar approval lasts from the approval, 60 to 604800, or 0 for none. The same rules as
@@ -4118,12 +4118,12 @@ type AISessionAnalyzerRuleRequest struct {
 
 	// ReviewersGroups are the groups whose members may release a statement
 	// this rule holds for approval. Absent keeps the groups already set; with
-	// none set the admin group reviews.
+	// none set the admin group approves.
 	//
 	// Read only while sidecar_spec holds a statement.
 	ReviewersGroups *[]string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 
-	// Seconds a held statement's review may wait for a decision, 60 to 604800. Read only while sidecar_spec
+	// Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec
 	// holds under its own approval rule. Absent keeps, 0 clears
 	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
 	// Seconds an approval lasts from the approval, 60 to 604800. The same rules as pending_ttl_sec
@@ -4155,7 +4155,7 @@ type AISessionAnalyzerRule struct {
 	// The groups whose members may release a statement this rule holds.
 	// Present while the rule holds.
 	ReviewersGroups []string `json:"reviewers_groups,omitempty" example:"dba-leads"`
-	// Seconds a held statement's review may wait for a decision. Present only while the rule holds and the
+	// Seconds a held statement's approval request may wait for a decision. Present only while the rule holds and the
 	// limit is set
 	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
 	// Seconds an approval lasts from the approval. Present as pending_ttl_sec is

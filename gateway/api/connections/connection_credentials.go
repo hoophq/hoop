@@ -114,7 +114,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 	requiresReview, accessRule, err := checkConnectionRequiresReview(ctx, conn)
 	if err != nil {
 		log.Errorf("failed checking review requirement for connection %s, err=%v", conn.Name, err)
-		c.AbortWithStatusJSON(500, gin.H{"message": "failed checking review requirements"})
+		c.AbortWithStatusJSON(500, gin.H{"message": "failed checking approval requirements"})
 		return
 	}
 
@@ -141,7 +141,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 	// last of which the review branch was not checking at all, so a JIT rule
 	// capped at 30 minutes happily accepted a 48-hour request.
 	if requiresReview && req.AccessDurationSec <= 0 {
-		c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for review-required connections"})
+		c.AbortWithStatusJSON(400, gin.H{"message": "access_duration_seconds is required for connections that require approval"})
 		return
 	}
 	if req.AccessDurationSec > 0 {
@@ -209,7 +209,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		reviewID, err := createConnectionCredentialsReview(ctx, conn, accessRule, sid, req.AccessDurationSec)
 		if err != nil {
 			log.Errorf("failed creating review, err=%v", err)
-			c.AbortWithStatusJSON(500, gin.H{"message": "failed creating review"})
+			c.AbortWithStatusJSON(500, gin.H{"message": "failed creating approval request"})
 			return
 		}
 
@@ -344,14 +344,14 @@ func issueOrRefreshCredential(
 // ResumeConnectionCredentials
 //
 //	@Summary		Resume Connection Credentials Request
-//	@Description	Resume a connection credentials request after review approval
+//	@Description	Resume a connection credentials request after approval
 //	@Tags			Connections
 //	@Accept			json
 //	@Produce		json
-//	@Param			nameOrID	path		string									true	"Name or UUID of the connection"
-//	@Param			sessionID	path		string									true	"Session ID from the initial request"
-//	@Param			request		body		openapi.ConnectionCredentialsRequest	true	"The request body resource"
-//	@Success		201			{object}	openapi.ConnectionCredentialsResponse
+//	@Param			nameOrID		path		string									true	"Name or UUID of the connection"
+//	@Param			sessionID		path		string									true	"Session ID from the initial request"
+//	@Param			request			body		openapi.ConnectionCredentialsRequest	true	"The request body resource"
+//	@Success		201				{object}	openapi.ConnectionCredentialsResponse
 //	@Failure		400,403,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/credentials/{sessionID} [post]
 func ResumeConnectionCredentials(c *gin.Context) {
@@ -388,11 +388,11 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	review, err := models.GetReviewByIdOrSid(ctx.OrgID, sessionID)
 	if err != nil && err != models.ErrNotFound {
 		log.Errorf("failed fetching review, err=%v", err)
-		c.AbortWithStatusJSON(500, gin.H{"message": "failed fetching review"})
+		c.AbortWithStatusJSON(500, gin.H{"message": "failed fetching approval request"})
 		return
 	}
 	if review == nil {
-		c.AbortWithStatusJSON(404, gin.H{"message": "review not found for this session"})
+		c.AbortWithStatusJSON(404, gin.H{"message": "approval request not found for this session"})
 		return
 	}
 
@@ -400,19 +400,19 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	switch review.Status {
 	case models.ReviewStatusPending:
 		c.JSON(202, gin.H{
-			"message":    "review is still pending approval",
+			"message":    "approval request is still pending",
 			"session_id": sessionID,
 			"review_id":  review.ID,
 			"status":     review.Status,
 		})
 		return
 	case models.ReviewStatusRejected:
-		c.AbortWithStatusJSON(403, gin.H{"message": "review was rejected"})
+		c.AbortWithStatusJSON(403, gin.H{"message": "approval request was rejected"})
 		return
 	case models.ReviewStatusApproved:
 		// continue — use session status as the source of truth below
 	default:
-		c.AbortWithStatusJSON(400, gin.H{"message": fmt.Sprintf("invalid review status: %s", review.Status)})
+		c.AbortWithStatusJSON(400, gin.H{"message": fmt.Sprintf("invalid approval status: %s", review.Status)})
 		return
 	}
 
@@ -478,7 +478,7 @@ func ResumeConnectionCredentials(c *gin.Context) {
 
 	// Verify connection matches the review
 	if conn.Name != review.ConnectionName {
-		c.AbortWithStatusJSON(400, gin.H{"message": "connection name does not match review"})
+		c.AbortWithStatusJSON(400, gin.H{"message": "connection name does not match approval request"})
 		return
 	}
 
@@ -597,9 +597,9 @@ func ResumeConnectionCredentials(c *gin.Context) {
 //	@Description	Revokes a connection credential, invalidating the stored token and disconnecting any active sessions. The next credential request for the same (user, connection) pair will issue a fresh token.
 //	@Tags			Connections
 //	@Produce		json
-//	@Param			nameOrID		path		string	true	"Name or UUID of the connection"
-//	@Param			credentialID	path		string	true	"UUID of the credential to revoke"
-//	@Success		204			"No content"
+//	@Param			nameOrID		path	string	true	"Name or UUID of the connection"
+//	@Param			credentialID	path	string	true	"UUID of the credential to revoke"
+//	@Success		204				"No content"
 //	@Failure		400,403,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/credentials/{credentialID}/revoke [post]
 func RevokeConnectionCredentials(c *gin.Context) {
@@ -646,9 +646,9 @@ func RevokeConnectionCredentials(c *gin.Context) {
 //	@Description	Ends the current audit session for a credential and tears down any active proxy connections, but keeps the credential itself usable. The stored token is preserved so the next credential request for the same (user, connection) pair returns the same value. For explicit token invalidation use the revoke endpoint.
 //	@Tags			Connections
 //	@Produce		json
-//	@Param			nameOrID		path		string	true	"Name or UUID of the connection"
-//	@Param			credentialID	path		string	true	"UUID of the credential"
-//	@Success		204			"No content"
+//	@Param			nameOrID		path	string	true	"Name or UUID of the connection"
+//	@Param			credentialID	path	string	true	"UUID of the credential"
+//	@Success		204				"No content"
 //	@Failure		400,403,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/credentials/{credentialID}/close [post]
 func CloseConnectionCredentials(c *gin.Context) {
@@ -687,7 +687,7 @@ func CloseConnectionCredentials(c *gin.Context) {
 //	@Description	Returns the current active, non-expired credentials for the authenticated user on the given connection without creating a new session. Returns 404 if no active credentials exist or they have expired.
 //	@Tags			Connections
 //	@Produce		json
-//	@Param			nameOrID	path		string									true	"Name or UUID of the connection"
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
 //	@Success		200			{object}	openapi.ConnectionCredentialsResponse
 //	@Failure		404			{object}	openapi.HTTPError
 //	@Failure		400,500		{object}	openapi.HTTPError
@@ -745,7 +745,7 @@ func GetConnectionCredentials(c *gin.Context) {
 // ListActiveConnectionCredentials
 //
 //	@Summary		List Active Connection Credentials
-//	@Description	Returns the authenticated user's active (non-revoked, non-expired) credentials, AT MOST ONE PER CONNECTION. Several rows can be live for the same connection — issuing reuses the existing credential while resuming an approved review mints a parallel one — so the list resolves them the same way the rest of the API does: the credential still attached to a session first, then the most recently created. Use GET /connections/{nameOrID}/credentials for the full set on a single connection. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens).
+//	@Description	Returns the authenticated user's active (non-revoked, non-expired) credentials, AT MOST ONE PER CONNECTION. Several rows can be live for the same connection — issuing reuses the existing credential while resuming an approved approval request mints a parallel one — so the list resolves them the same way the rest of the API does: the credential still attached to a session first, then the most recently created. Use GET /connections/{nameOrID}/credentials for the full set on a single connection. The response is secret-less: it never includes the connection_credentials payload (hostnames, usernames, passwords, proxy tokens).
 //	@Tags			Connections
 //	@Produce		json
 //	@Success		200	{object}	openapi.ConnectionCredentialsList
@@ -1135,7 +1135,7 @@ func createConnectionCredentialsReview(ctx *storagev2.Context, conn *models.Conn
 	} else if len(conn.Reviewers) > 0 {
 		reviewerGroups = conn.Reviewers
 	} else {
-		return "", fmt.Errorf("no reviewers configured for connection")
+		return "", fmt.Errorf("no approvers configured for connection")
 	}
 
 	// Create review groups
@@ -1182,7 +1182,7 @@ func createConnectionCredentialsReview(ctx *storagev2.Context, conn *models.Conn
 
 	// Create review with empty session input (credentials don't have input)
 	if err := models.CreateReview(newRev, ""); err != nil {
-		return "", fmt.Errorf("failed saving review: %w", err)
+		return "", fmt.Errorf("failed saving approval request: %w", err)
 	}
 
 	return reviewID, nil

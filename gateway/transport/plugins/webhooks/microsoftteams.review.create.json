@@ -3,7 +3,7 @@
   "$id": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "title": "",
-  "description": "This event is triggered when a review is created. Refer to this documentation: https://hoop.dev/docs/features/microsoft-teams",
+  "description": "This event is triggered when an approval request is created. Refer to this documentation: https://hoop.dev/docs/features/microsoft-teams",
   "properties": {
     "type": {
       "type": "string"
