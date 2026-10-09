@@ -571,7 +571,8 @@
                                   end-time
                                   force-review
                                   rejection-reason]}]]
-   (let [body (cond-> {:status (string/upper-case status)}
+   (let [rejected? (= (string/upper-case status) "REJECTED")
+         body (cond-> {:status (string/upper-case status)}
                 (and start-time end-time)
                 (assoc :time_window {:type "time_range"
                                      :configuration {:start_time (formatters/local-time->utc-time start-time)
@@ -590,13 +591,15 @@
                      (fn []
                        (rf/dispatch [:show-snackbar
                                      {:level :success
-                                      :text "Your review was added"}])
+                                      :text (if rejected?
+                                              "Your rejection was recorded"
+                                              "Your approval was recorded")}])
                        (js/setTimeout
                         (fn []
                           (rf/dispatch [:audit->get-sessions])
                           (rf/dispatch [:audit->get-session-by-id session]))
                         500))
-                     :on-failure #(rf/dispatch [:show-snackbar {:text "Failed to add review"
+                     :on-failure #(rf/dispatch [:show-snackbar {:text (if rejected? "Failed to reject" "Failed to approve")
                                                                 :level :error
                                                                 :details %}])}]]]})))
 

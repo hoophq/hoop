@@ -345,7 +345,7 @@ export const useNativeAccessStore = create((set, get) => ({
         // Start watching straight away: the review exists but the credential
         // does not, and only a later resume will create it.
         get().syncReviewWatcher()
-        showSnackbar({ level: 'info', text: 'This connection requires review approval' })
+        showSnackbar({ level: 'info', text: 'This connection requires approval' })
         return
       }
 
@@ -422,7 +422,7 @@ export const useNativeAccessStore = create((set, get) => ({
         if (!silent) {
           showSnackbar({
             level: 'info',
-            text: 'This connection is still waiting for review approval',
+            text: 'This connection is still waiting for approval',
           })
         }
         return

@@ -12,7 +12,7 @@ const FEATURE_ITEMS = [
     icon: <ListCheck size={20} />,
     title: 'Multi-Level Approval Workflows',
     description:
-      'Configure approval chains with multiple reviewer groups to match your compliance requirements. Commands execute only after all designated approvers grant permission.',
+      'Configure approval chains with multiple approver groups to match your compliance requirements. Commands execute only after all designated approvers grant permission.',
   },
   {
     icon: <Settings2 size={20} />,

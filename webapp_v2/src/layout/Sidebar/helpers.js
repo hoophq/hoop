@@ -51,7 +51,7 @@ function matchScore(path, pathname, search) {
 
 const leaves = (items) => items.flatMap((item) => (item.children ? leaves(item.children) : [item]))
 
-// The most specific match wins: `/reviews?status=settled` over `/reviews`.
+// The most specific match wins: `/approvals?status=settled` over `/approvals`.
 export function findActivePath(sections, pathname, search = '') {
   let best = null
   let bestScore = 0
