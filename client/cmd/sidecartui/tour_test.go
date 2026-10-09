@@ -7,6 +7,8 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/hoophq/hoop/client/cmd/sidecardemo"
+
 	"github.com/hoophq/hoop/sidecar/audit"
 )
 
@@ -36,7 +38,7 @@ func TestTourShowsTheAnswerAndWhatTheSidecarDid(t *testing.T) {
 	tr.apply(tourResult{step: 0, status: 200, dur: 3 * time.Millisecond,
 		body: "[\n  {\"email\": \"[REDACTED:EMAIL_ADDRESS]\"}\n]"})
 	out := ansi.Strip(tr.view(90, 40, time.Now()))
-	for _, want := range []string{"200 OK", tr.steps[0].Why, "[REDACTED:EMAIL_ADDRESS]", "1 of 4 done", tr.steps[0].Curl()} {
+	for _, want := range []string{"200 OK", tr.steps[0].Why, "[REDACTED:EMAIL_ADDRESS]", "1 of 4 done", tr.steps[0].Curl(sidecardemo.DefaultPorts)} {
 		if !strings.Contains(strings.Join(strings.Fields(out), " "), strings.Join(strings.Fields(want), " ")) {
 			t.Errorf("the view lacks %q:\n%s", want, out)
 		}

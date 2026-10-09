@@ -44,11 +44,19 @@ func TestStartSidecarDemoServesTheAPIAConfigNames(t *testing.T) {
 	addr := ln.Addr().String()
 	ln.Close()
 
-	stop, notes, err := startSidecarDemo(writeDemoConfig(t, addr))
+	path := writeDemoConfig(t, addr)
+	cfg, err := configyaml.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, ports, notes, err := startSidecarDemo(path, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stop()
+	if ports == nil || ports.API != addr || ports.Listen != cfg.Listeners[0].Listen {
+		t.Errorf("ports = %+v, want the API %s and the listener in front of it", ports, addr)
+	}
 	if len(notes) == 0 || !strings.Contains(notes[0], addr) {
 		t.Errorf("notes = %v, want them to name %s", notes, addr)
 	}
@@ -63,7 +71,7 @@ func TestStartSidecarDemoServesTheAPIAConfigNames(t *testing.T) {
 }
 
 func TestStartSidecarDemoRefusesANonLoopbackAddress(t *testing.T) {
-	if _, _, err := startSidecarDemo(writeDemoConfig(t, "0.0.0.0:18081")); err == nil {
+	if _, _, _, err := startSidecarDemo(writeDemoConfig(t, "0.0.0.0:18081"), &daemon.Config{}); err == nil {
 		t.Fatal("the demo API was allowed to listen beyond loopback")
 	}
 }
@@ -73,8 +81,8 @@ func TestStartSidecarDemoIgnoresAConfigWithoutTheKey(t *testing.T) {
 	if err := os.WriteFile(path, []byte("listeners: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	stop, notes, err := startSidecarDemo(path)
-	if err != nil || notes != nil {
+	stop, ports, notes, err := startSidecarDemo(path, &daemon.Config{})
+	if err != nil || notes != nil || ports != nil {
 		t.Fatalf("notes %v, err %v; want nothing started", notes, err)
 	}
 	stop()

@@ -42,6 +42,9 @@ type (
 	frCheckedMsg struct {
 		path string
 		err  error
+		// conflicts are ports the config binds that another program
+		// holds; the boot waits on the person's answer.
+		conflicts []portConflict
 	}
 )
 
@@ -89,6 +92,10 @@ type firstRunModel struct {
 	// file that failed, shown until the next choice.
 	checking string
 	invalid  string
+	// ports is the "port in use" question while it is open; portErr is a
+	// port fix that could not be written.
+	ports   *portAsk
+	portErr string
 
 	stop     func()
 	stopping bool
@@ -137,17 +144,83 @@ func (m *firstRunModel) buildHome() {
 	}
 }
 
-// check validates path off the UI goroutine before it is booted.
+// check readies path for a boot, off the UI goroutine: it validates the
+// config, then tries every port it binds, because a valid config whose
+// port another program holds still fails the moment it boots.
 func (m *firstRunModel) check(path string) tea.Cmd {
-	m.checking, m.invalid = path, ""
+	m.checking, m.invalid, m.portErr = path, "", ""
 	validate := m.validate
 	return func() tea.Msg {
 		if validate == nil {
 			return frCheckedMsg{path: path, err: errors.New("this build has no validator")}
 		}
-		_, err := validate(path)
-		return frCheckedMsg{path: path, err: err}
+		if _, err := validate(path); err != nil {
+			return frCheckedMsg{path: path, err: err}
+		}
+		conflicts, err := portConflicts(path)
+		return frCheckedMsg{path: path, err: err, conflicts: conflicts}
 	}
+}
+
+// usePortsAndRetry moves the config to the offered ports and checks it
+// again, so what boots is what was checked.
+func (m *firstRunModel) usePortsAndRetry() tea.Cmd {
+	path, conflicts := m.ports.path, m.ports.conflicts
+	m.ports = nil
+	if err := usePorts(path, conflicts); err != nil {
+		if m.wiz != nil {
+			m.wiz.saveErr = fmt.Errorf("not booted: %w", err)
+		} else {
+			m.portErr = err.Error()
+		}
+		return nil
+	}
+	return m.check(path)
+}
+
+// portAsk is the dialog that offers free ports for the ones in use.
+type portAsk struct {
+	path      string
+	conflicts []portConflict
+	// yes is the focused answer: use the free ports.
+	yes bool
+}
+
+// fixable is whether every conflict has a free port to offer.
+func (p *portAsk) fixable() bool {
+	for _, c := range p.conflicts {
+		if c.free == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// portKey answers the dialog: use the free ports and boot, or go back.
+func (m firstRunModel) portKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "ctrl+c":
+		return m.quit()
+	case "left", "right", "tab", "shift+tab", "h", "l":
+		if m.ports.fixable() {
+			m.ports.yes = !m.ports.yes
+		}
+	case "y":
+		if m.ports.fixable() {
+			return m, m.usePortsAndRetry()
+		}
+	case "n", "esc":
+		m.ports = nil
+	case "enter", "space":
+		if m.ports.yes && m.ports.fixable() {
+			return m, m.usePortsAndRetry()
+		}
+		m.ports = nil
+	}
+	if m.ports == nil && m.wiz != nil {
+		m.wiz.saveErr = errors.New("not booted: a port it listens on is in use. Change it under Listener, then boot again")
+	}
+	return m, nil
 }
 
 // startSetup learns the machine, then opens the setup screens.
@@ -202,6 +275,12 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.checking = ""
 		if msg.err != nil {
+			if m.wiz != nil {
+				// The setup screens validated this file before saving it;
+				// say what changed under them, where the person is.
+				m.wiz.saveErr = fmt.Errorf("not booted: %w", msg.err)
+				return m, nil
+			}
 			// Not the validator's text: the person chose a file to run,
 			// and the answer is that it cannot be. The reason is one
 			// command away, named on the screen.
@@ -209,9 +288,23 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.buildHome()
 			return m, nil
 		}
+		if len(msg.conflicts) > 0 {
+			m.ports = &portAsk{path: msg.path, conflicts: msg.conflicts, yes: true}
+			return m, nil
+		}
 		m.picker = nil
 		m.boot = &Boot{ConfigPath: msg.path}
 		return m, tea.Quit
+	}
+	if k, ok := msg.(tea.KeyPressMsg); ok {
+		if m.ports != nil {
+			return m.portKey(k)
+		}
+		// A boot is being checked: a key now would act on a screen that
+		// is about to go away.
+		if m.checking != "" && k.String() != "ctrl+c" {
+			return m, nil
+		}
 	}
 	if m.wiz != nil {
 		if k, ok := msg.(tea.KeyPressMsg); ok && k.String() == "ctrl+c" {
@@ -226,8 +319,8 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.saved, m.wiz = m.wiz.saved, nil
 			m.buildHome()
 		case wizBoot:
-			m.boot = &Boot{ConfigPath: m.wiz.saved}
-			return m, tea.Quit
+			// Saved and valid; the ports are checked like any other boot.
+			return m, m.check(m.wiz.saved)
 		}
 		return m, cmd
 	}

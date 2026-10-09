@@ -169,7 +169,7 @@ func TestChoosingAnInvalidConfigStaysAndSaysSo(t *testing.T) {
 func TestChoosingAValidConfigBootsIt(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "good.yaml")
-	writeFile(t, path, "x: 1\n")
+	writeFile(t, path, sampleConfig("127.0.0.1:0"))
 	m := homeModel(t, dir, func(string) (string, error) { return "ok", nil })
 	var tm tea.Model = m
 	for tm.(firstRunModel).home.selected() != "file:"+path {
@@ -187,7 +187,7 @@ func TestChoosingAValidConfigBootsIt(t *testing.T) {
 func TestOpenAConfigFileByBrowsing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "deploy", "sidecar", "prod.yaml")
-	writeFile(t, path, "x: 1\n")
+	writeFile(t, path, sampleConfig("127.0.0.1:0"))
 	writeFile(t, filepath.Join(dir, "deploy", "notes.txt"), "no")
 	m := homeModel(t, dir, func(string) (string, error) { return "ok", nil })
 	var tm tea.Model = m

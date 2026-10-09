@@ -26,6 +26,9 @@ type draft struct {
 	demo     bool
 	protocol string
 	listener *listenerForm // nil for the demo, whose listener is fixed
+	// demoPorts are the demo's listener and API, moved off the preferred
+	// ones when another program holds them.
+	demoPorts sidecardemo.Ports
 
 	guardMode string
 	rules     []policy.Rule
@@ -175,6 +178,12 @@ func newDraft(protocol string, demo bool, m machine) (*draft, error) {
 	d := &draft{demo: demo, protocol: protocol, file: configyaml.StarterFile}
 	if demo {
 		d.protocol = "http"
+		// Free ports, chosen now: a demo that cannot bind fails at boot,
+		// after the person was told it was ready.
+		taken := map[string]bool{}
+		d.demoPorts.Listen = freeFrom(sidecardemo.ListenAddr, taken)
+		taken[d.demoPorts.Listen] = true
+		d.demoPorts.API = freeFrom(sidecardemo.Addr, taken)
 	} else {
 		upstream := defaultUpstream[protocol]
 		var source string
@@ -187,6 +196,9 @@ func newDraft(protocol string, demo bool, m machine) (*draft, error) {
 		} else if protocol == "ssh" {
 			prefill["listen"] = "127.0.0.1:12222"
 		}
+		// The suggested port moves when another program holds it, so the
+		// default boots on this machine as it is.
+		prefill["listen"] = freeFrom(prefill["listen"], map[string]bool{})
 		if protocol == "spanner" {
 			prefill["upstream_tls"] = "on"
 		}
@@ -268,7 +280,7 @@ func keyFileStatus(path string) error {
 func (d *draft) listenerValue() (daemon.ListenerConfig, error) {
 	if d.demo {
 		return daemon.ListenerConfig{Name: "demo", Protocol: "http",
-			Listen: sidecardemo.ListenAddr, Upstream: sidecardemo.Addr}, nil
+			Listen: d.demoPorts.Listen, Upstream: d.demoPorts.API}, nil
 	}
 	return d.listener.value()
 }
@@ -369,12 +381,12 @@ func (d *draft) renderOptions(l daemon.ListenerConfig) configyaml.RenderOptions 
 		},
 	}
 	if d.demo {
-		o.Header = append(o.Header, "", "This is the demo: the hoop CLI serves an invented API at "+sidecardemo.Addr,
+		o.Header = append(o.Header, "", "This is the demo: the hoop CLI serves an invented API at "+d.demoPorts.API,
 			"while the sidecar runs, because of the "+configyaml.DemoAPIKey+" key below. Try:", "")
-		for _, c := range sidecardemo.TryCommands {
+		for _, c := range sidecardemo.TryCommands(d.demoPorts) {
 			o.Header = append(o.Header, "  "+c)
 		}
-		o.Extensions = []configyaml.Extension{{Key: configyaml.DemoAPIKey, Value: sidecardemo.Addr}}
+		o.Extensions = []configyaml.Extension{{Key: configyaml.DemoAPIKey, Value: d.demoPorts.API}}
 	}
 	if !d.an.on {
 		o.Footer = analyzerHint(d.an, l.Name)

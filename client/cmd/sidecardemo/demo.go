@@ -17,12 +17,20 @@ import (
 	"time"
 )
 
-// Addr is where the demo API listens: loopback, beside the demo listener
-// (18080) that fronts it.
+// Addr is where the demo API prefers to listen: loopback, beside the demo
+// listener that fronts it. The setup screen moves both to free ports when
+// another program holds these.
 const Addr = "127.0.0.1:18081"
 
-// ListenAddr is where the demo config's http listener accepts clients.
+// ListenAddr is where the demo listener prefers to accept clients.
 const ListenAddr = "127.0.0.1:18080"
+
+// Ports are where one demo actually runs: the sidecar listener clients
+// send to, and the API behind it.
+type Ports struct{ Listen, API string }
+
+// DefaultPorts are the preferred addresses.
+var DefaultPorts = Ports{Listen: ListenAddr, API: Addr}
 
 // Step is one beat of the guided demo: a request, what to look for in the
 // answer, and what the sidecar did to produce it.
@@ -42,16 +50,16 @@ type Step struct {
 }
 
 // URL is where the step sends its request.
-func (s Step) URL() string {
-	host := ListenAddr
+func (s Step) URL(p Ports) string {
+	host := p.Listen
 	if s.Direct {
-		host = Addr
+		host = p.API
 	}
 	return "http://" + host + s.Path
 }
 
 // Curl is the step as a command to paste into another terminal.
-func (s Step) Curl() string {
+func (s Step) Curl(p Ports) string {
 	c := "curl -s"
 	if s.Method != "GET" {
 		c += " -X " + s.Method
@@ -59,7 +67,7 @@ func (s Step) Curl() string {
 	if s.Body != "" {
 		c += " -H 'content-type: application/json' -d '" + s.Body + "'"
 	}
-	return c + " " + s.URL()
+	return c + " " + s.URL(p)
 }
 
 // Steps is the guided demo, in the order a person should take it.
@@ -86,19 +94,19 @@ var Steps = []Step{
 	{
 		Title: "Compare: no sidecar", Method: "GET", Path: "/users/2", Direct: true,
 		Expect: "The real email address, because this request went around the sidecar.",
-		Why:    "This is the API itself on " + Addr + ". Only traffic sent to " + ListenAddr + " is inspected.",
+		Why:    "This request went straight to the API. Only traffic sent to the sidecar listener is inspected.",
 	},
 }
 
-// TryCommands are the steps as commands, for the config's header and the
-// setup screen.
-var TryCommands = func() []string {
+// TryCommands are the steps as commands, for the config header and the
+// dashboard notes.
+func TryCommands(p Ports) []string {
 	out := make([]string, 0, len(Steps))
 	for _, s := range Steps {
-		out = append(out, s.Curl())
+		out = append(out, s.Curl(p))
 	}
 	return out
-}()
+}
 
 type user struct {
 	ID    int    `json:"id"`
@@ -164,7 +172,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"about": "hoop sidecar demo API: invented users behind an inspecting sidecar",
-			"try":   TryCommands,
+			"try":   "send requests through the sidecar listener in front of this API",
 		})
 	})
 	mux.HandleFunc("GET /users", func(w http.ResponseWriter, _ *http.Request) {

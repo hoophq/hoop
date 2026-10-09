@@ -26,6 +26,8 @@ import (
 type DemoOptions struct {
 	// OpenURL opens a URL in the person's browser. Nil hides the key.
 	OpenURL func(string) error
+	// Ports are where this demo runs; the zero value means the defaults.
+	Ports sidecardemo.Ports
 }
 
 type tourResult struct {
@@ -46,10 +48,16 @@ type tour struct {
 	result  *tourResult
 	open    func(string) error
 	flash   string
+	ports   sidecardemo.Ports
 }
 
 func newTour(o *DemoOptions) *tour {
-	return &tour{steps: sidecardemo.Steps, done: make([]bool, len(sidecardemo.Steps)), running: -1, open: o.OpenURL}
+	p := o.Ports
+	if p.Listen == "" || p.API == "" {
+		p = sidecardemo.DefaultPorts
+	}
+	return &tour{steps: sidecardemo.Steps, done: make([]bool, len(sidecardemo.Steps)), running: -1,
+		open: o.OpenURL, ports: p}
 }
 
 // see ticks the step an audit event shows happened.
@@ -75,7 +83,7 @@ func (t *tour) run(i int) tea.Cmd {
 		if s.Body != "" {
 			body = strings.NewReader(s.Body)
 		}
-		req, err := http.NewRequestWithContext(ctx, s.Method, s.URL(), body)
+		req, err := http.NewRequestWithContext(ctx, s.Method, s.URL(t.ports), body)
 		if err != nil {
 			return tourResultMsg{step: i, err: err}
 		}
@@ -120,15 +128,15 @@ func (t *tour) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 		case s.Method != "GET":
 			t.flash = "a browser can only send GET; run this one with enter or curl"
 		default:
-			if err := t.open(s.URL()); err != nil {
+			if err := t.open(s.URL(t.ports)); err != nil {
 				t.flash = "could not open a browser: " + err.Error()
 			} else {
-				t.flash = "opened " + s.URL() + " in your browser"
+				t.flash = "opened " + s.URL(t.ports) + " in your browser"
 			}
 		}
 	case "c":
 		t.flash = "copied the curl command"
-		return tea.SetClipboard(t.steps[t.cur].Curl()), true
+		return tea.SetClipboard(t.steps[t.cur].Curl(t.ports)), true
 	default:
 		return nil, false
 	}
@@ -153,7 +161,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 	text := lipgloss.NewStyle().Width(w)
 	lines := []string{
 		stStrong.Render("Try the demo") + stFaint.Render(fmt.Sprintf("   %d of %d done", done, len(t.steps))),
-		text.Inherit(stText).Render("Requests to " + sidecardemo.ListenAddr + " go through the sidecar to an invented API. " +
+		text.Inherit(stText).Render("Requests to " + t.ports.Listen + " go through the sidecar to an invented API. " +
 			"Run each step here, or paste its curl into another terminal, then open Wire to see what the sidecar recorded."),
 		"",
 	}
@@ -172,7 +180,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 		}
 		target := s.Method + " " + s.Path
 		if s.Direct {
-			target += stFaint.Render("  (" + sidecardemo.Addr + ", no sidecar)")
+			target += stFaint.Render("  (" + t.ports.API + ", no sidecar)")
 		}
 		row := cursor + mark + "  " + title + "  " + stFaint.Render(target)
 		if i == t.cur {
@@ -184,7 +192,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 	s := t.steps[t.cur]
 	lines = append(lines, "", stLabel.Render(strings.ToUpper(s.Title)),
 		text.Inherit(stText).Render("Expect: "+s.Expect),
-		stFaint.Render("$ ")+stKey.Render(ansi.Truncate(s.Curl(), w-2, "…")))
+		stFaint.Render("$ ")+stKey.Render(ansi.Truncate(s.Curl(t.ports), w-2, "…")))
 	if t.flash != "" {
 		lines = append(lines, stPrimary.Render(t.flash))
 	}

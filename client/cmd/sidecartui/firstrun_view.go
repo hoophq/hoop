@@ -229,6 +229,54 @@ func fitBlocks(blocks [][]string, sel, h int) string {
 	return strings.Join(rows, "\n")
 }
 
+// portView asks about ports another program holds, before the boot that
+// would fail on them. The free ports are focused: the person asked to
+// start the sidecar, and a different port is what lets it start.
+func (m firstRunModel) portView(width int) string {
+	p := m.ports
+	bw := min(max(width-4, 30), 72)
+	text := lipgloss.NewStyle().Width(bw - 4)
+	title := "A port this config uses is taken"
+	if len(p.conflicts) > 1 {
+		title = "Ports this config uses are taken"
+	}
+	body := []string{stStrong.Render(title), ""}
+	for _, c := range p.conflicts {
+		why := "is in use by another program on this machine."
+		if !c.inUse {
+			why = "cannot be opened by this user."
+		}
+		body = append(body, text.Inherit(stText).Render(stStrong.Render(c.addr)+" ("+c.what+") "+why))
+		if c.free != "" {
+			body = append(body, stFaint.Render("  free instead: ")+stPrimary.Render(c.free))
+		}
+	}
+	body = append(body, "")
+	if p.fixable() {
+		body = append(body, text.Inherit(stFaint).Render("Using the free port updates "+shortPath(p.path)+
+			" (only the address changes), then boots."), "")
+		yesText, noText := "Use the free port and boot", "Go back"
+		if len(p.conflicts) > 1 {
+			yesText = "Use the free ports and boot"
+		}
+		yes := stPrimary.Padding(0, 2).Render(yesText)
+		no := stFaint.Bold(true).Padding(0, 2).Render(noText)
+		if p.yes {
+			yes = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 2).Render(yesText)
+		} else {
+			no = lipgloss.NewStyle().Bold(true).Foreground(colStrong).Background(colNeutral).Padding(0, 2).Render(noText)
+		}
+		body = append(body, lipgloss.PlaceHorizontal(bw-4, lipgloss.Right, no+"  "+yes))
+	} else {
+		body = append(body, text.Inherit(stText).Render("No free port was found nearby. Stop the program using it, "+
+			"or change the address in "+shortPath(p.path)+"."), "",
+			lipgloss.PlaceHorizontal(bw-4, lipgloss.Right,
+				lipgloss.NewStyle().Bold(true).Foreground(colStrong).Background(colNeutral).Padding(0, 2).Render("Go back")))
+	}
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colPrimary).
+		Padding(0, 1).Width(bw).Render(strings.Join(body, "\n"))
+}
+
 // getStarted is the Get started panel: the home list, or the file picker
 // while it is open, with what the last choice came to under it.
 func (m firstRunModel) getStarted(w, h int, now time.Time) (title, body string) {
@@ -242,6 +290,8 @@ func (m firstRunModel) getStarted(w, h int, now time.Time) (title, body string) 
 			stDanger.Bold(true).Render("✕ "+name+" is not a valid sidecar config."),
 			stText.Render("Pick another file, or set one up. To see what is wrong:"),
 			stKey.Render(ansi.Truncate("  hoop start sidecar --validate --config "+shortPath(m.invalid), w, "…")))
+	case m.portErr != "":
+		status = append(status, stDanger.Bold(true).Render("✕ the port could not be changed: ")+stText.Render(m.portErr))
 	case m.saved != "":
 		status = append(status, stPrimary.Render("✓ saved "+m.saved)+stFaint.Render("  it is in the list above"))
 	}
@@ -271,6 +321,9 @@ func (m firstRunModel) render() string {
 	if m.width < 60 || m.height < 14 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
 			ansiClamp(stFaint.Render("hoop sidecar: make the terminal at least 60×14"), m.width))
+	}
+	if m.ports != nil {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.portView(m.width))
 	}
 	if m.wiz != nil {
 		return m.wizardFrame()

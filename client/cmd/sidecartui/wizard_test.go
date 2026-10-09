@@ -389,6 +389,11 @@ func TestFirstRunModelBootsWhatTheWizardSaved(t *testing.T) {
 	}
 	fm := tm.(firstRunModel)
 	cmd = fm.wiz.save(true, false)
+	// Saved; the boot is checked like any other, ports included.
+	tm, cmd = tm.Update(cmd())
+	if cmd == nil {
+		t.Fatal("Save and boot did not check the saved config before booting")
+	}
 	tm, quit := tm.Update(cmd())
 	if b := tm.(firstRunModel).boot; b == nil || b.ConfigPath != filepath.Join(dir, configyaml.StarterFile) {
 		t.Fatalf("boot = %+v", b)

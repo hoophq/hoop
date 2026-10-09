@@ -233,14 +233,14 @@ needs a restart.`,
 		var notes []string
 		var demo *sidecartui.DemoOptions
 		if sidecarConfigFlag != "" {
-			stopDemo, demoNotes, err := startSidecarDemo(sidecarConfigFlag)
+			stopDemo, demoPorts, demoNotes, err := startSidecarDemo(sidecarConfigFlag, cfg)
 			if err != nil {
 				return err
 			}
 			defer stopDemo()
 			notes = demoNotes
-			if demoNotes != nil {
-				demo = &sidecartui.DemoOptions{OpenURL: openBrowser}
+			if demoPorts != nil {
+				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Ports: *demoPorts}
 			}
 		}
 
@@ -263,34 +263,43 @@ needs a restart.`,
 // configyaml.DemoAPIKey, and returns what stops it. A config without the key
 // starts nothing. The address must be loopback: the demo API answers anyone
 // who reaches it, and invented data is still not something to expose.
-func startSidecarDemo(path string) (func(), []string, error) {
+func startSidecarDemo(path string, cfg *daemon.Config) (func(), *sidecardemo.Ports, []string, error) {
 	noop := func() {}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return noop, nil, err
+		return noop, nil, nil, err
 	}
 	addr, ok, err := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
 	if err != nil || !ok {
-		return noop, nil, err
+		return noop, nil, nil, err
 	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		return noop, nil, fmt.Errorf("%s: %w", configyaml.DemoAPIKey, err)
+		return noop, nil, nil, fmt.Errorf("%s: %w", configyaml.DemoAPIKey, err)
 	}
 	if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return noop, nil, fmt.Errorf("%s: %s is not a loopback address; the demo API only serves this machine",
+		return noop, nil, nil, fmt.Errorf("%s: %s is not a loopback address; the demo API only serves this machine",
 			configyaml.DemoAPIKey, addr)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	if _, err := sidecardemo.Serve(ctx, addr); err != nil {
 		cancel()
-		return noop, nil, err
+		return noop, nil, nil, err
+	}
+	// The demo listener is the one in front of the API; the tour sends
+	// its requests there.
+	ports := &sidecardemo.Ports{API: addr, Listen: sidecardemo.ListenAddr}
+	for _, l := range cfg.Listeners {
+		if l.Upstream == addr {
+			ports.Listen = l.Listen
+			break
+		}
 	}
 	notes := []string{"demo API served at " + addr + "; try, from another terminal:"}
-	for _, c := range sidecardemo.TryCommands {
+	for _, c := range sidecardemo.TryCommands(*ports) {
 		notes = append(notes, "  "+c)
 	}
-	return cancel, notes, nil
+	return cancel, ports, notes, nil
 }
 
 // warnDeprecatedSidecarAlias renders the rename notice to w when the command
