@@ -9,7 +9,7 @@ import (
 	"github.com/hoophq/hoop/gateway/pglite"
 )
 
-const sshRecordingFormatVersion = 135
+const sshRecordingFormatVersion = 139
 
 func TestBackfillSSHRecordingFormat(t *testing.T) {
 	if testing.Short() {
@@ -26,25 +26,27 @@ func TestBackfillSSHRecordingFormat(t *testing.T) {
 
 	type row struct {
 		id, connType, subtype, verb string
-		format                      any
+		format, origin              any
 	}
 	seed := []row{
-		{"00000000-0000-0000-0000-0000000005a1", "application", "ssh", "connect", "raw"},
-		{"00000000-0000-0000-0000-0000000005a2", "application", "ssh-local", "connect", "raw"},
-		{"00000000-0000-0000-0000-0000000005a3", "application", "git", "connect", "raw"},
-		{"00000000-0000-0000-0000-0000000005a4", "application", "github", "connect", "raw"},
+		{"00000000-0000-0000-0000-0000000005a1", "application", "ssh", "connect", "raw", "client"},
+		{"00000000-0000-0000-0000-0000000005a2", "application", "ssh-local", "connect", "raw", nil},
+		{"00000000-0000-0000-0000-0000000005a3", "application", "git", "connect", "raw", nil},
+		{"00000000-0000-0000-0000-0000000005a4", "application", "github", "connect", "raw", nil},
 		// Not SSH frames: keep raw.
-		{"00000000-0000-0000-0000-0000000005b1", "application", "tcp", "connect", "raw"},
-		{"00000000-0000-0000-0000-0000000005b2", "custom", "ssh", "connect", "raw"},
+		{"00000000-0000-0000-0000-0000000005b1", "application", "tcp", "connect", "raw", nil},
+		{"00000000-0000-0000-0000-0000000005b2", "custom", "ssh", "connect", "raw", nil},
+		// A sidecar records statements on its SSH listener's mirror connection.
+		{"00000000-0000-0000-0000-0000000005b5", "application", "ssh", "connect", "raw", "sidecar"},
 		// Recorded before 000126: the viewer selects these by type.
-		{"00000000-0000-0000-0000-0000000005b3", "application", "ssh", "connect", nil},
-		{"00000000-0000-0000-0000-0000000005b4", "application", "ssh", "exec", "exec"},
+		{"00000000-0000-0000-0000-0000000005b3", "application", "ssh", "connect", nil, nil},
+		{"00000000-0000-0000-0000-0000000005b4", "application", "ssh", "exec", "exec", nil},
 	}
 	withDB(t, inst, func() {
 		execSQL(t, `INSERT INTO private.orgs (id, name) VALUES (?, 'ssh-format-backfill')`, testOrgID)
 		for _, r := range seed {
-			execSQL(t, `INSERT INTO private.sessions (id, org_id, connection, connection_type, connection_subtype, verb, status, created_at, recording_format)
-				VALUES (?, ?, 'conn', ?, ?, ?, 'done', now(), ?)`, r.id, testOrgID, r.connType, r.subtype, r.verb, r.format)
+			execSQL(t, `INSERT INTO private.sessions (id, org_id, connection, connection_type, connection_subtype, verb, status, created_at, recording_format, origin)
+				VALUES (?, ?, 'conn', ?, ?, ?, 'done', now(), ?, ?)`, r.id, testOrgID, r.connType, r.subtype, r.verb, r.format, r.origin)
 		}
 	})
 
@@ -80,6 +82,7 @@ func TestBackfillSSHRecordingFormat(t *testing.T) {
 		"00000000-0000-0000-0000-0000000005a4": "ssh",
 		"00000000-0000-0000-0000-0000000005b1": "raw",
 		"00000000-0000-0000-0000-0000000005b2": "raw",
+		"00000000-0000-0000-0000-0000000005b5": "raw",
 		"00000000-0000-0000-0000-0000000005b3": "",
 		"00000000-0000-0000-0000-0000000005b4": "exec",
 	})
@@ -92,6 +95,7 @@ func TestBackfillSSHRecordingFormat(t *testing.T) {
 		"00000000-0000-0000-0000-0000000005a4": "raw",
 		"00000000-0000-0000-0000-0000000005b1": "raw",
 		"00000000-0000-0000-0000-0000000005b2": "raw",
+		"00000000-0000-0000-0000-0000000005b5": "raw",
 		"00000000-0000-0000-0000-0000000005b3": "",
 		"00000000-0000-0000-0000-0000000005b4": "exec",
 	})

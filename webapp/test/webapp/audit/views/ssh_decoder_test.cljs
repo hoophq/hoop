@@ -103,6 +103,31 @@
     (is (some? recording))
     (is (not (:terminal? recording)))))
 
+(deftest concurrent-terminals-are-not-replayed
+  ;; One connection with two shells open at once (ssh ControlMaster).
+  (let [recording (ssh-decoder/terminal-recording
+                   [(open 0 1 "session")
+                    (pty-req 0 1 80 24)
+                    (open 1 2 "session")
+                    (pty-req 1 2 80 24)
+                    (data 2 "o" 1 "first")
+                    (data 3 "o" 2 "second")])]
+    (is (some? recording))
+    (is (not (:terminal? recording)))))
+
+(deftest sequential-terminals-replay
+  (let [recording (ssh-decoder/terminal-recording
+                   [(open 0 1 "session")
+                    (pty-req 0 1 80 24)
+                    (data 1 "o" 1 "first")
+                    (close 2 1)
+                    (open 3 2 "session")
+                    (pty-req 3 2 80 24)
+                    (data 4 "o" 2 "second")])]
+    (is (:terminal? recording))
+    ;; the second shell's pty-req sets its own size
+    (is (= [[1 "o" "first"] [3 "r" "80x24"] [4 "o" "second"]] (texts recording)))))
+
 (deftest a-channel-opened-before-the-stream-is-not-a-terminal
   ;; A live viewer subscribed after the channel was opened: nothing tells
   ;; whether it is a shell, an exec or a port forward.

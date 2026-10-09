@@ -74,7 +74,8 @@
 
 (defn- on-request
   "Apply a channel request: pty-req makes a session channel a terminal;
-  pty-req and window-change set the terminal size."
+  pty-req and window-change set the terminal size. Two terminals open at
+  once cannot be replayed as one, so a second one counts as an overlap."
   [state seconds channel request ^js payload]
   (let [{:keys [session? pty?]} (get-in state [:channels channel])
         pty-req? (and session? (= "pty-req" request))
@@ -83,11 +84,13 @@
                (and pty? (= "window-change" request)) (window-change-size payload))]
     (cond-> (note-unopened state channel)
       pty-req? (assoc-in [:channels channel :pty?] true)
+      (and pty-req? (some :pty? (vals (dissoc (:channels state) channel))))
+      (assoc :overlapping? true)
       (and size (:size state)) (update :events conj (resize-event seconds size))
       (and size (nil? (:size state))) (assoc :size size))))
 
 (defn- on-data [state seconds event-type ^js data channel]
-  (cond-> (note-unopened state channel)
+  (cond-> (assoc (note-unopened state channel) :data? true)
     (get-in state [:channels channel :pty?])
     (update :events conj [seconds event-type (.subarray data 3)])))
 
@@ -124,8 +127,9 @@
   "Read an audit stream of [seconds type base64] events as an SSH recording.
   Returns nil when the stream is not SSH frames: a session of a subtype that
   was a PTY connection when it was recorded. Otherwise returns
-  {:terminal? :width :height :events}. terminal? is true when a channel is a
-  terminal and no two connections overlap; events are [seconds type
+  {:terminal? :data? :width :height :events}. terminal? is true when a
+  channel is a terminal and no two terminals or connections overlap; data?
+  is true once any channel carried data. events are [seconds type
   Uint8Array] for the data of terminal channels, the gateway's error events,
   and [seconds \"r\" \"COLSxROWS\"] for terminal size changes."
   [event-stream]
@@ -149,4 +153,5 @@
         (merge (or (:size state) default-size)
                ;; every pty-req sets the size
                {:terminal? (and (some? (:size state)) (not (:overlapping? state)))
+                :data? (boolean (:data? state))
                 :events (:events state)})))))

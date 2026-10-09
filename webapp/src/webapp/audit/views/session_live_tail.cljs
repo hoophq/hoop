@@ -268,6 +268,24 @@
                    :class "shadow-lg"}
     [:> ArrowDown {:size 18}]]])
 
+(defn live-terminal-events
+  "Decoded terminal events for the live view, or nil to render event rows."
+  [recording-format event-stream finalize?]
+  (let [ssh? (= "ssh" recording-format)
+        ssh-recording (when ssh? (ssh-decoder/terminal-recording event-stream))]
+    (cond
+      (or (= "pty" recording-format)
+          ;; Not SSH frames: recorded as a PTY.
+          (and ssh? (seq event-stream) (nil? ssh-recording)))
+      (terminal-decoder/decode-events event-stream finalize?)
+
+      (or (:terminal? ssh-recording)
+          ;; No channel carried data yet: an interactive shell is the likely
+          ;; start, so wait as a terminal. The events then hold only the
+          ;; gateway's errors.
+          (and ssh? (or (empty? event-stream) (not (:data? ssh-recording)))))
+      (terminal-decoder/decode-byte-events (or (:events ssh-recording) []) finalize?))))
+
 ;; ─── Main component ────────────────────────────────────────────────────────
 
 (defn main
@@ -336,19 +354,8 @@
               event-stream (or (:event_stream session) [])
               rows (mark-denied (guardrails-info/denied-at (:guardrails_info session))
                                 (expand-stream postgres? event-stream))
-              finalize? (= stream-state :ended)
-              ssh-recording (when (= "ssh" recording-format)
-                              (ssh-decoder/terminal-recording event-stream))
-              terminal-events (cond
-                                (or (= "pty" recording-format)
-                                    ;; Not SSH frames: recorded as a PTY.
-                                    (and (= "ssh" recording-format)
-                                         (seq event-stream)
-                                         (nil? ssh-recording)))
-                                (terminal-decoder/decode-events event-stream finalize?)
-
-                                (:terminal? ssh-recording)
-                                (terminal-decoder/decode-byte-events (:events ssh-recording) finalize?))
+              terminal-events (live-terminal-events recording-format event-stream
+                                                    (= stream-state :ended))
               terminal? (some? terminal-events)
               ;; Concatenate output frames only ("o"/"e"); the PTY echoes input
               ;; back as output, so including "i" would duplicate every keystroke.
