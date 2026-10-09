@@ -128,6 +128,8 @@ func TestPlaneURLAndTokenGoTogether(t *testing.T) {
 		{"https://cp.example.com", "", "sidecar token too"},
 		{"", "hsc_x", "Control Plane URL too"},
 		{"cp.example.com", "hsc_x", "not a web address"},
+		// The token would cross the network in the clear.
+		{"http://cp.example.com", "hsc_x", "unencrypted"},
 	} {
 		m = typeInto(t, m, "url", c.url)
 		m = typeInto(t, m, "token", c.token)
@@ -139,6 +141,12 @@ func TestPlaneURLAndTokenGoTogether(t *testing.T) {
 	}
 	if sent {
 		t.Error("an incomplete pair was sent to the plane")
+	}
+	// http stays for a plane on this machine.
+	m = typeInto(t, m, "url", "http://127.0.0.1:8009")
+	m = typeInto(t, m, "token", "hsc_x")
+	if _, cmd := press(t, m, "continue"); cmd == nil {
+		t.Errorf("a loopback http plane was refused: %q", m.connect.status)
 	}
 }
 
@@ -232,6 +240,27 @@ func TestLeavingSetUpForgetsThePendingPlane(t *testing.T) {
 	tm, _ = tm.Update(wkey("esc"))
 	if fm := tm.(firstRunModel); fm.wiz != nil || fm.plane != nil {
 		t.Errorf("wiz %v, plane %v after leaving the setup", fm.wiz != nil, fm.plane)
+	}
+}
+
+// Save only ends the setup too: the plane goes with it, so a file booted
+// later from the list does not connect, or seed the plane, unasked.
+func TestSaveOnlyForgetsThePendingPlane(t *testing.T) {
+	dir := t.TempDir()
+	m, cmd := continuePlane(t, homeModel(t, dir, validateFile), func(string, string) (*daemon.Config, error) {
+		return nil, daemon.ErrPlaneHasNoConfig
+	})
+	var tm tea.Model = m
+	tm, _ = tm.Update(cmd())
+	tm, _ = tm.Update(wkey("enter")) // the demo
+	fm := tm.(firstRunModel)
+	tm, _ = tm.Update(fm.wiz.save(false, false)())
+	fm = tm.(firstRunModel)
+	if fm.wiz != nil || fm.saved == "" {
+		t.Fatalf("Save only did not save and return home (wiz %v, saved %q, err %v)", fm.wiz != nil, fm.saved, fm.wiz)
+	}
+	if fm.plane != nil {
+		t.Errorf("the pending plane %+v outlived Save only", fm.plane)
 	}
 }
 

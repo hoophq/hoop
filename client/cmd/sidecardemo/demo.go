@@ -76,7 +76,7 @@ var Steps = []Step{
 		Title: "See masking", Method: "GET", Path: "/users",
 		Expect:   "Every email comes back as [REDACTED:EMAIL_ADDRESS].",
 		Why:      "The masking rule \"emails\" found each address in the response and rewrote it before the client saw it.",
-		SeenKind: "masked",
+		SeenKind: "masked", SeenOp: "get",
 	},
 	{
 		Title: "See a guardrail", Method: "DELETE", Path: "/users/1",

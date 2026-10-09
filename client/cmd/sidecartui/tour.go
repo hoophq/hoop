@@ -49,6 +49,9 @@ type tour struct {
 	open    func(string) error
 	flash   string
 	ports   sidecardemo.Ports
+	// lastOp is each session's last recorded operation, which a masked
+	// event (it names none) is matched by.
+	lastOp map[string]string
 }
 
 func newTour(o *DemoOptions) *tour {
@@ -61,12 +64,27 @@ func newTour(o *DemoOptions) *tour {
 }
 
 // see ticks the step an audit event shows happened.
+//
+// A masked event names no operation: it is the response's, and the request
+// it answers was recorded just before it on the same session. Its operation
+// is that statement's, so the POST step's masked reply does not pass for
+// the GET that "See masking" asks for.
 func (t *tour) see(ev audit.Event) {
+	op := string(ev.Operation)
+	if ev.Kind == audit.KindStatement || ev.Kind == "violation" {
+		if t.lastOp == nil {
+			t.lastOp = map[string]string{}
+		}
+		t.lastOp[string(ev.SessionID)] = op
+	}
+	if op == "" {
+		op = t.lastOp[string(ev.SessionID)]
+	}
 	for i, s := range t.steps {
 		if s.SeenKind == "" || string(ev.Kind) != s.SeenKind {
 			continue
 		}
-		if s.SeenOp == "" || strings.EqualFold(string(ev.Operation), s.SeenOp) {
+		if s.SeenOp == "" || strings.EqualFold(op, s.SeenOp) {
 			t.done[i] = true
 		}
 	}

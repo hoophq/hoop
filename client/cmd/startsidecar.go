@@ -3,13 +3,16 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/client/cmd/sidecartui"
@@ -247,15 +250,16 @@ needs a restart.`,
 		// runs, so the demo config works on every boot, not only the first.
 		var notes []string
 		var demo *sidecartui.DemoOptions
+		running := &sidecarDemo{stop: func() {}}
 		if sidecarConfigFlag != "" {
-			stopDemo, demoPorts, demoNotes, err := startSidecarDemo(sidecarConfigFlag, cfg)
+			running, err = startSidecarDemo(sidecarConfigFlag, cfg)
 			if err != nil {
 				return err
 			}
-			defer stopDemo()
-			notes = demoNotes
-			if demoPorts != nil {
-				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Ports: *demoPorts}
+			defer running.stop()
+			notes = running.notes
+			if running.ports != nil {
+				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Ports: *running.ports}
 			}
 		}
 
@@ -275,7 +279,7 @@ needs a restart.`,
 			Demo:         demo,
 			ControlPlane: plane,
 			OpenURL:      openBrowser,
-		}, func() error { return daemon.Run(cfg, det) })
+		}, func() error { return errors.Join(daemon.Run(cfg, det), running.err()) })
 	},
 }
 
@@ -283,43 +287,99 @@ needs a restart.`,
 // configyaml.DemoAPIKey, and returns what stops it. A config without the key
 // starts nothing. The address must be loopback: the demo API answers anyone
 // who reaches it, and invented data is still not something to expose.
-func startSidecarDemo(path string, cfg *daemon.Config) (func(), *sidecardemo.Ports, []string, error) {
-	noop := func() {}
+func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
+	none := &sidecarDemo{stop: func() {}}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return noop, nil, nil, err
+		return none, err
 	}
 	addr, ok, err := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
 	if err != nil || !ok {
-		return noop, nil, nil, err
+		return none, err
 	}
-	host, _, err := net.SplitHostPort(addr)
+	bind, err := loopbackBind(addr)
 	if err != nil {
-		return noop, nil, nil, fmt.Errorf("%s: %w", configyaml.DemoAPIKey, err)
-	}
-	if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return noop, nil, nil, fmt.Errorf("%s: %s is not a loopback address; the demo API only serves this machine",
-			configyaml.DemoAPIKey, addr)
+		return none, fmt.Errorf("%s: %w", configyaml.DemoAPIKey, err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	if _, err := sidecardemo.Serve(ctx, addr); err != nil {
+	errc, err := sidecardemo.Serve(ctx, bind)
+	if err != nil {
 		cancel()
-		return noop, nil, nil, err
+		return none, err
 	}
-	// The demo listener is the one in front of the API; the tour sends
-	// its requests there.
-	ports := &sidecardemo.Ports{API: addr, Listen: sidecardemo.ListenAddr}
+	d := &sidecarDemo{stop: cancel}
+	go d.watch(errc)
+	// The tour sends its requests through the listener in front of the
+	// API. Without one, there is nothing to tour: a default port would
+	// reach another service, or nothing at all.
 	for _, l := range cfg.Listeners {
 		if l.Upstream == addr {
-			ports.Listen = l.Listen
+			d.ports = &sidecardemo.Ports{API: addr, Listen: l.Listen}
 			break
 		}
 	}
-	notes := []string{"demo API served at " + addr + "; try, from another terminal:"}
-	for _, c := range sidecardemo.TryCommands(*ports) {
-		notes = append(notes, "  "+c)
+	if d.ports == nil {
+		d.notes = []string{"demo API served at " + addr + ", but no listener forwards to it: " +
+			"set a listener's upstream to " + addr + " to try the demo"}
+		return d, nil
 	}
-	return cancel, ports, notes, nil
+	d.notes = []string{"demo API served at " + addr + "; try, from another terminal:"}
+	for _, c := range sidecardemo.TryCommands(*d.ports) {
+		d.notes = append(d.notes, "  "+c)
+	}
+	return d, nil
+}
+
+// sidecarDemo is the demo API running beside the sidecar.
+type sidecarDemo struct {
+	stop func()
+	// ports is where the tour sends requests, nil when no listener fronts
+	// the API and the tour stays off.
+	ports *sidecardemo.Ports
+	notes []string
+
+	mu     sync.Mutex
+	failed error
+}
+
+// watch reports a demo API that stops serving while the sidecar runs. The
+// log line reaches the dashboard's Logs and System; err() hands it to the
+// run's result, so it is not lost when the screen closes.
+func (d *sidecarDemo) watch(errc <-chan error) {
+	err := <-errc
+	if err == nil {
+		return
+	}
+	d.mu.Lock()
+	d.failed = err
+	d.mu.Unlock()
+	slog.Error("the demo API stopped serving; the demo listener has nothing to forward to", "error", err.Error())
+}
+
+func (d *sidecarDemo) err() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.failed == nil {
+		return nil
+	}
+	return fmt.Errorf("the demo API stopped: %w", d.failed)
+}
+
+// loopbackBind is the address the demo API binds for addr, which must be
+// this machine's: a literal loopback IP, or localhost bound as 127.0.0.1
+// rather than whatever the resolver maps the name to.
+func loopbackBind(addr string) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", err
+	}
+	if host == "localhost" {
+		return net.JoinHostPort("127.0.0.1", port), nil
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		return "", fmt.Errorf("%s is not a loopback address; the demo API only serves this machine", addr)
+	}
+	return addr, nil
 }
 
 // warnDeprecatedSidecarAlias renders the rename notice to w when the command

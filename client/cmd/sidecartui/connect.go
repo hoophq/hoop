@@ -3,6 +3,7 @@ package sidecartui
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -113,7 +114,24 @@ func (p *connectPage) planeInput() (planeURL, token string, err error) {
 	if perr != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", "", fmt.Errorf("%q is not a web address; it starts with https:// and names a host", planeURL)
 	}
+	// The token travels in the handshake's headers: over plain http a
+	// remote plane would receive it in the clear. http stays for a plane on
+	// this machine, which is how one is run in development.
+	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+		return "", "", fmt.Errorf("%s would send the sidecar token unencrypted; use https:// "+
+			"(http:// is accepted only for a Control Plane on this machine)", planeURL)
+	}
 	return planeURL, token, nil
+}
+
+// isLoopbackHost is whether host names this machine: localhost, or a
+// loopback IP.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // connectConflicts lists the ports the plane's listeners want that another

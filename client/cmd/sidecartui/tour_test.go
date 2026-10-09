@@ -16,13 +16,19 @@ import (
 // guide follows the person whichever way they try it.
 func TestTourTicksStepsFromTheAuditTrail(t *testing.T) {
 	tr := newTour(&DemoOptions{})
-	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "get"})
+	// The POST's reply is masked too, but that is the write step, not the
+	// masking one: a masked event takes its session's last operation.
+	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "post", SessionID: "s1"})
+	tr.see(audit.Event{Kind: "masked", SessionID: "s1"})
+	if tr.done[0] {
+		t.Fatal("the POST's masked reply ticked See masking")
+	}
+	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "get", SessionID: "s2"})
 	if tr.done[0] || tr.done[1] {
 		t.Fatal("a plain GET ticked masking or the guardrail")
 	}
-	tr.see(audit.Event{Kind: "masked"})
-	tr.see(audit.Event{Kind: "violation", Operation: "delete"})
-	tr.see(audit.Event{Kind: audit.KindStatement, Operation: "post"})
+	tr.see(audit.Event{Kind: "masked", SessionID: "s2"})
+	tr.see(audit.Event{Kind: "violation", Operation: "delete", SessionID: "s3"})
 	for i := 0; i < 3; i++ {
 		if !tr.done[i] {
 			t.Errorf("step %d (%s) not ticked", i+1, tr.steps[i].Title)

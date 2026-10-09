@@ -462,6 +462,34 @@ func fakeEnv(kv map[string]string) func(string) string {
 	return func(k string) string { return kv[k] }
 }
 
+func TestFromDatabaseURL(t *testing.T) {
+	for _, c := range []struct {
+		in       string
+		ok       bool
+		protocol string
+		addr     string
+	}{
+		{"postgres://u:p@db.internal/app", true, "postgres", "db.internal:5432"},
+		{"postgresql://db:6543/app", true, "postgres", "db:6543"},
+		{"mysql://root@127.0.0.1/app", true, "mysql", "127.0.0.1:3306"},
+		{"sqlserver://sa@mssql:14330?database=x", true, "mssql", "mssql:14330"},
+		{"mssql://h/db", true, "mssql", "h:1433"},
+		{"mongodb://m1/db", true, "mongodb", "m1:27017"},
+		{"clickhouse://ch/db", true, "clickhouse", "ch:8123"},
+		{"postgres://[::1]:5433/app", true, "postgres", "[::1]:5433"},
+		{"", false, "", ""},
+		{"redis://cache:6379", false, "", ""},        // a scheme the sidecar does not front
+		{"postgres:///app?host=/tmp", false, "", ""}, // no host: a socket path
+		{"not a url at all", false, "", ""},          // no scheme, no host
+		{"postgres://%zz@db/app", false, "", ""},     // malformed escape
+	} {
+		f, ok := fromDatabaseURL(c.in)
+		if ok != c.ok || (ok && (f.protocol != c.protocol || f.addr != c.addr || f.source != "DATABASE_URL")) {
+			t.Errorf("fromDatabaseURL(%q) = %+v, %v; want %s %s, %v", c.in, f, ok, c.protocol, c.addr, c.ok)
+		}
+	}
+}
+
 func TestDetectPrefersDatabaseURLOverAnOpenPort(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

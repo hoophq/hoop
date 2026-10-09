@@ -458,7 +458,9 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.wiz, m.plane = nil, nil
 			m.buildHome()
 		case wizSavedOnly:
-			m.saved, m.wiz = m.wiz.saved, nil
+			// The pending plane went with the setup: the saved file is
+			// booted later from the list, on its own, unless it says otherwise.
+			m.saved, m.wiz, m.plane = m.wiz.saved, nil, nil
 			m.buildHome()
 		case wizBoot:
 			// Saved and valid; the ports are checked like any other boot.
@@ -543,11 +545,33 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 	m.connectCheck, m.openURL, m.licenseDir, m.useLicense = opts.ConnectCheck, opts.OpenURL, opts.LicenseDir, opts.UseLicense
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout), tea.WithInput(os.Stdin), tea.WithoutSignalHandler())
 
+	// The listener's callbacks never wait on the screen. Program.Send blocks
+	// until the screen takes the message, and once the screen has quit (to
+	// boot a config) nothing takes it: a visit in flight would hold its HTTP
+	// handler, the listener's shutdown would time out, and the boot would be
+	// lost. Messages go through a buffer a separate goroutine drains; a
+	// visit that finds it full is dropped, as it only feeds an animation.
+	screenDone := make(chan struct{})
+	toScreen := make(chan tea.Msg, 64)
+	go func() {
+		for {
+			select {
+			case <-screenDone:
+				return
+			case msg := <-toScreen:
+				p.Send(msg)
+			}
+		}
+	}()
+	offer := func(msg tea.Msg) {
+		select {
+		case toScreen <- msg:
+		default:
+		}
+	}
 	obs := daemon.FirstRunObserver{
-		Ready: func(url string, fellBack bool) { p.Send(frReadyMsg{url: url, fellBack: fellBack}) },
-		// Send blocks until the screen takes it; the visit is a browser
-		// waiting on a redirect, so a slow screen costs it milliseconds.
-		Visit: func() { p.Send(frVisitMsg(time.Now())) },
+		Ready: func(url string, fellBack bool) { offer(frReadyMsg{url: url, fellBack: fellBack}) },
+		Visit: func() { offer(frVisitMsg(time.Now())) },
 	}
 	runErr := make(chan error, 1)
 	go func() {
@@ -557,6 +581,7 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 	}()
 
 	final, perr := p.Run()
+	close(screenDone)
 	cancel()
 	var derr error
 	select {
