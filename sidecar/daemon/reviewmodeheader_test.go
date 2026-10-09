@@ -53,7 +53,7 @@ func TestAGRPCLaneThatHoldsNothingCapturesNoReviewModeHeader(t *testing.T) {
 // operator's metadata stays on the request statement, as before.
 func TestAHoldingGRPCLaneCarriesTheReviewModeOntoRequestMessages(t *testing.T) {
 	allow := grpcMetadataAllowlist(GRPCCodecConfig{Metadata: []string{"X-Tenant"}}, analyzerHolds(holdingBlock()))
-	if !slices.Equal(allow, []string{"x-tenant", analyzer.HeaderReviewMode}) {
+	if !slices.Equal(allow, []string{"x-tenant", analyzer.HeaderReviewMode, analyzer.HeaderApprovalMode}) {
 		t.Fatalf("grpc allowlist is %v", allow)
 	}
 

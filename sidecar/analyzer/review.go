@@ -75,16 +75,38 @@ func (m ReviewMode) Valid() bool {
 // moves.
 const HeaderReviewMode = "x-hoop-review-mode"
 
+// HeaderApprovalMode is HeaderReviewMode under the product's name for the
+// concept. A client may send either. Both sent and different is no request at
+// all: see clientMode.
+const HeaderApprovalMode = "x-hoop-approval-mode"
+
+// ClientModeHeaders are the header names a client opts in with, in both
+// spellings. A lane that captures one captures both.
+func ClientModeHeaders() []string {
+	return []string{HeaderReviewMode, HeaderApprovalMode}
+}
+
+// IsClientModeHeader reports whether name, lower-cased, is one of
+// ClientModeHeaders.
+func IsClientModeHeader(name string) bool {
+	return name == HeaderReviewMode || name == HeaderApprovalMode
+}
+
 // ConnectAttrReviewMode is the same opt-in for a MySQL connection: a
 // connection attribute in the handshake, since MySQL has no per-statement
 // header. It applies to every statement on the connection. sidecar/codec/mysql
 // keeps it on every MySQL lane.
 const ConnectAttrReviewMode = "hoop_review_mode"
 
-// applicationNameToken is how a SQL client picks its review mode: the token,
-// then hold or return, at the end of its application_name. At the end, so a
-// client keeps its own name in front of it.
-const applicationNameToken = "hoop-review="
+// ConnectAttrApprovalMode is ConnectAttrReviewMode under the product's name.
+// sidecar/codec/mysql keeps both.
+const ConnectAttrApprovalMode = "hoop_approval_mode"
+
+// applicationNameTokens are how a SQL client picks its approval mode: a
+// token, then hold or return, at the end of its application_name. At the
+// end, so a client keeps its own name in front of it. Two spellings, the
+// product's name first.
+var applicationNameTokens = [...]string{"hoop-approval=", "hoop-review="}
 
 // ApplicationNameReviewMode reads the mode a Postgres client asked for in its
 // application_name, or "" when it asked for none.
@@ -92,17 +114,53 @@ const applicationNameToken = "hoop-review="
 // The token is the whole value, or follows a space or ";". A name that only
 // contains the token inside a word, like "xhoop-review=return", is the
 // client's own name and not a request.
+//
+// A name that carries both spellings asks for nothing. Only one of them can
+// be at the end, so the two can never agree, and a mode picked from a name
+// that says two things is a guess.
 func ApplicationNameReviewMode(name string) ReviewMode {
 	name = strings.ToLower(strings.TrimSpace(name))
-	i := strings.LastIndex(name, applicationNameToken)
-	if i < 0 || (i > 0 && !strings.ContainsRune(" ;", rune(name[i-1]))) {
+	var found []string
+	for _, token := range applicationNameTokens {
+		i := strings.LastIndex(name, token)
+		if i < 0 || (i > 0 && !strings.ContainsRune(" ;", rune(name[i-1]))) {
+			continue
+		}
+		found = append(found, name[i+len(token):])
+	}
+	if len(found) != 1 {
 		return ""
 	}
-	switch m := ReviewMode(name[i+len(applicationNameToken):]); m {
+	switch m := ReviewMode(found[0]); m {
 	case ReviewHold, ReviewReturn:
 		return m
 	}
 	return ""
+}
+
+// clientMode resolves what a client asked for across the spellings of one
+// opt-in, the header or the connection attribute. Values are trimmed and
+// lower-cased; an empty one was not sent.
+//
+// Every value sent must be hold or return, and all of them must agree.
+// Anything else is no request, and the listener decides: the same answer a
+// single unknown value gets, so a client that says two things cannot pick
+// the one it likes better.
+func clientMode(values ...string) (ReviewMode, bool) {
+	var out ReviewMode
+	for _, v := range values {
+		m := ReviewMode(strings.ToLower(strings.TrimSpace(v)))
+		switch {
+		case m == "":
+			continue
+		case m != ReviewHold && m != ReviewReturn:
+			return "", false
+		case out != "" && out != m:
+			return "", false
+		}
+		out = m
+	}
+	return out, out != ""
 }
 
 type clientReviewModeKey struct{}
@@ -129,15 +187,17 @@ const (
 // A client value outside hold and return falls back to the listener: a typo
 // must not turn an agent's call into one that waits for a human.
 func (e *Evaluator) reviewMode(ctx context.Context, stmt inspect.Statement) (ReviewMode, string) {
-	var asked string
+	var asked []string
 	switch {
 	case stmt.HTTP != nil:
-		asked = stmt.HTTP.Headers[HeaderReviewMode]
+		asked = []string{stmt.HTTP.Headers[HeaderApprovalMode], stmt.HTTP.Headers[HeaderReviewMode]}
 	case stmt.Protocol == inspect.MySQL:
-		asked = stmt.Metadata[inspect.MetadataMySQLConnectAttrPrefix+ConnectAttrReviewMode]
+		asked = []string{
+			stmt.Metadata[inspect.MetadataMySQLConnectAttrPrefix+ConnectAttrApprovalMode],
+			stmt.Metadata[inspect.MetadataMySQLConnectAttrPrefix+ConnectAttrReviewMode],
+		}
 	}
-	switch m := ReviewMode(strings.ToLower(strings.TrimSpace(asked))); m {
-	case ReviewHold, ReviewReturn:
+	if m, ok := clientMode(asked...); ok {
 		return m, reviewModeClient
 	}
 	if m, ok := ctx.Value(clientReviewModeKey{}).(ReviewMode); ok {
@@ -271,12 +331,12 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		// other lane reaching here has no way to file, and a hold that
 		// cannot file has to deny. It never waits: a rehearsal must not
 		// stall on a human.
-		return e.denyHold(notes, "", "", "no review backend is configured")
+		return e.denyHold(notes, "", "", "no approval backend is configured")
 	}
 	if err := ctx.Err(); err != nil {
 		// Gone before anything was filed: paging a human for a statement
 		// that can no longer run is noise.
-		return e.denyEnded(ctx, notes, "", "", "the connection ended before the review was filed")
+		return e.denyEnded(ctx, notes, "", "", "the connection ended before the approval request was filed")
 	}
 
 	text, err := reviewText(stmt)
@@ -288,7 +348,7 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	})
 	if err != nil {
 		e.errs.Add(1)
-		v := e.denyHold(notes, res.ID, res.Status, "the review could not be filed")
+		v := e.denyHold(notes, res.ID, res.Status, "the approval request could not be filed")
 		v.Err = err
 		return v
 	}
@@ -327,7 +387,7 @@ func reviewText(stmt inspect.Statement) (string, error) {
 			budget = "grpc.max_payload_bytes"
 		}
 		return "", fmt.Errorf("the request body is larger than %s, "+
-			"so a reviewer could not read all of it", budget)
+			"so an approver could not read all of it", budget)
 	}
 	if stmt.Protocol != inspect.HTTP || stmt.HTTP.Body == "" {
 		return stmt.Text, nil
@@ -365,7 +425,7 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 		})
 		if err != nil {
 			e.errs.Add(1)
-			v := e.denyHold(notes, reviewID, "", "the review could not be checked")
+			v := e.denyHold(notes, reviewID, "", "the approval request could not be checked")
 			v.Err = err
 			return v
 		}
@@ -459,7 +519,7 @@ func (e *Evaluator) denyReturn(notes map[string]string, reviewID string) policy.
 	if e.cfg.ReturnNext == "" {
 		v = e.denyHold(notes, reviewID, reviewPending, returnReason)
 	} else {
-		v = e.deny(notes, fmt.Sprintf("review %s: %s; %s, then %s (%s)",
+		v = e.deny(notes, fmt.Sprintf("approval %s: %s; %s, then %s (%s)",
 			reviewID, returnWaiting, e.cfg.ReturnNext, returnResend, operatorMessage(e.cfg.Message)))
 	}
 	v.Review = &policy.Review{ID: reviewID, Status: reviewPending, Return: true}
@@ -477,7 +537,7 @@ func holdMessage(operator, reviewID, reason string) string {
 	if reviewID == "" {
 		return msg + ": " + reason
 	}
-	return fmt.Sprintf("%s: %s (review %s)", msg, reason, reviewID)
+	return fmt.Sprintf("%s: %s (approval %s)", msg, reason, reviewID)
 }
 
 // operatorMessage is the operator's message, or the default when none is set.
@@ -500,16 +560,16 @@ func reviewReason(status string) string {
 	case reviewPending:
 		return "waiting for approval"
 	case reviewRejected:
-		return "the review was rejected"
+		return "the approval request was rejected"
 	case reviewRevoked:
-		return "the review was revoked"
+		return "the approval was revoked"
 	case reviewExecuted:
 		// Reached by the loser of a claim race: another connection
 		// consumed this approval a moment ago. An approval releases one
 		// statement once, so this one needs a new review.
 		return "the approval was already used"
 	case reviewExpired:
-		return "the review expired; running the statement again files a new review"
+		return "the approval request expired; running the statement again files a new approval request"
 	}
 	return "the statement was not released"
 }

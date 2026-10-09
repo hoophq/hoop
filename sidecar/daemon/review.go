@@ -110,16 +110,16 @@ func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
 		if ac != nil && ac.local != nil {
 			return ""
 		}
-		return fmt.Sprintf("the analyzer block asks for %q and this sidecar has no control "+
-			"plane; the review is filed with the plane named by %s or the "+
+		return fmt.Sprintf("the analyzer block asks for %s and this sidecar has no control "+
+			"plane; the approval request is filed with the plane named by %s or the "+
 			"control_plane_url key, or with the person running `hoop start sidecar` "+
 			"in a terminal, and there is neither",
-			analyzer.ActionRequireReview, ControlPlaneURLEnv)
+			holdAction, ControlPlaneURLEnv)
 	}
 	if la.ApprovalRule == "" {
-		return fmt.Sprintf("the analyzer block asks for %q and names no approval_rule; the "+
-			"rule is what decides who may release a held statement, and the control "+
-			"plane refuses a review that does not name one", analyzer.ActionRequireReview)
+		return fmt.Sprintf("the analyzer block asks for %s and names no approval_rule; the "+
+			"rule is what decides who may approve a held statement, and the control "+
+			"plane refuses an approval request that does not name one", holdAction)
 	}
 	return ""
 }
@@ -176,7 +176,7 @@ func (cp *controlPlane) fileReview(ctx context.Context, listener, rule, statemen
 		"payload":       base64.StdEncoding.EncodeToString([]byte(statement)),
 	})
 	if err != nil {
-		return out, fmt.Errorf("encoding the review request: %w", err)
+		return out, fmt.Errorf("encoding the approval request: %w", err)
 	}
 
 	resp, raw, err := cp.reviewRequest(ctx, http.MethodPost, body, controlPlaneReviewsPath)
@@ -186,12 +186,12 @@ func (cp *controlPlane) fileReview(ctx context.Context, listener, rule, statemen
 	switch resp.StatusCode {
 	case http.StatusRequestEntityTooLarge:
 		return out, fmt.Errorf("the control plane at %s refused the statement as too "+
-			"large to review: %s", cp.url, controlPlaneMessage(raw))
+			"large for an approval request: %s", cp.url, controlPlaneMessage(raw))
 	case http.StatusUnprocessableEntity:
 		// The plane authorizes each review against the configuration it
 		// stored for this sidecar, so a listener whose approval_rule was
 		// edited locally, or a rule with no reviewers, lands here.
-		return out, fmt.Errorf("the control plane at %s refused a review for listener %q "+
+		return out, fmt.Errorf("the control plane at %s refused an approval request for listener %q "+
 			"under rule %q: %s", cp.url, listener, rule, controlPlaneMessage(raw))
 	}
 	return cp.reviewAnswer(resp, raw)
@@ -216,7 +216,7 @@ func (cp *controlPlane) claimReview(ctx context.Context, reviewID string) (analy
 		// Also what a control plane older than this sidecar answers: it
 		// has no claim route. The hold denies either way, and the retry
 		// path still works against it.
-		return out, fmt.Errorf("the control plane at %s has no review %s to claim; "+
+		return out, fmt.Errorf("the control plane at %s has no approval request %s to claim; "+
 			"a control plane older than this sidecar cannot answer a waiting hold: %s",
 			cp.url, reviewID, controlPlaneMessage(raw))
 	}
@@ -226,7 +226,7 @@ func (cp *controlPlane) claimReview(ctx context.Context, reviewID string) (analy
 	}
 	if out.ID != reviewID {
 		return analyzer.ReviewResult{}, fmt.Errorf(
-			"the control plane answered about review %q when asked about %q", out.ID, reviewID)
+			"the control plane answered about approval %q when asked about %q", out.ID, reviewID)
 	}
 	return out, nil
 }
@@ -277,10 +277,10 @@ func (cp *controlPlane) reviewRoundTrip(ctx context.Context, method string, body
 	// on bad JSON. Same move the handshake makes.
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxReviewResponse+1))
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading the review answer from %s: %w", cp.url, err)
+		return nil, nil, fmt.Errorf("reading the approval answer from %s: %w", cp.url, err)
 	}
 	if len(raw) > maxReviewResponse {
-		return nil, nil, fmt.Errorf("the control plane at %s answered a review with more than "+
+		return nil, nil, fmt.Errorf("the control plane at %s answered an approval request with more than "+
 			"%d bytes; check that the URL is the control plane and not something in "+
 			"front of it", cp.url, maxReviewResponse)
 	}
@@ -313,11 +313,11 @@ func (cp *controlPlane) ReviewStatus(ctx context.Context, reviewID string) (Revi
 	case http.StatusOK:
 		var out ReviewStatus
 		if err := json.Unmarshal(raw, &out); err != nil {
-			return ReviewStatus{}, fmt.Errorf("the review status could not be read: %w", err)
+			return ReviewStatus{}, fmt.Errorf("the approval status could not be read: %w", err)
 		}
 		if out.ID != reviewID {
 			return ReviewStatus{}, fmt.Errorf(
-				"the control plane answered about review %q when asked about %q", out.ID, reviewID)
+				"the control plane answered about approval %q when asked about %q", out.ID, reviewID)
 		}
 		return out, nil
 	case http.StatusNotFound:
@@ -349,7 +349,7 @@ func (cp *controlPlane) ListReviews(ctx context.Context, status string, limit in
 	case http.StatusOK:
 		var out []ReviewStatus
 		if err := json.Unmarshal(raw, &out); err != nil {
-			return nil, fmt.Errorf("the review list could not be read: %w", err)
+			return nil, fmt.Errorf("the approval list could not be read: %w", err)
 		}
 		return out, nil
 	case http.StatusNotFound:
@@ -416,14 +416,14 @@ func (cp *controlPlane) reviewError(resp *http.Response, raw []byte) error {
 		// The gateway authenticated the token and does not serve
 		// reviews: it is running as a gateway, not as a control plane.
 		// Startup cannot catch this, because the handshake works.
-		return fmt.Errorf("the gateway at %s does not serve sidecar reviews; "+
-			"require_review needs a control plane: %s", cp.url, controlPlaneMessage(raw))
+		return fmt.Errorf("the gateway at %s does not serve sidecar approvals; "+
+			"require_approval needs a control plane: %s", cp.url, controlPlaneMessage(raw))
 	}
 
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		// Same reasoning as the handshake: the token rides a custom
 		// header that Go would forward across origins.
-		return fmt.Errorf("the control plane at %s redirected to %q; the review "+
+		return fmt.Errorf("the control plane at %s redirected to %q; the approval request "+
 			"never follows one, so the token was not re-sent. Configure the final URL",
 			cp.url, resp.Header.Get("Location"))
 	}
@@ -446,7 +446,7 @@ func decodeReview(raw []byte) (analyzer.ReviewResult, error) {
 		} `json:"review"`
 	}
 	if err := json.Unmarshal(raw, &answer); err != nil {
-		return analyzer.ReviewResult{}, fmt.Errorf("the review answer could not be read: %w", err)
+		return analyzer.ReviewResult{}, fmt.Errorf("the approval answer could not be read: %w", err)
 	}
 	out := analyzer.ReviewResult{Forward: answer.Forward}
 	if answer.Review != nil {
@@ -461,7 +461,7 @@ func decodeReview(raw []byte) (analyzer.ReviewResult, error) {
 	// human decision, which is the one record this feature exists to write.
 	if out.Forward && out.ID == "" {
 		return analyzer.ReviewResult{}, fmt.Errorf(
-			"the control plane released a statement without naming a review")
+			"the control plane released a statement without naming an approval")
 	}
 	return out, nil
 }

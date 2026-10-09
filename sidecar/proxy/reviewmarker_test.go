@@ -39,24 +39,28 @@ func TestAnHTTPReviewDenyCarriesTheReviewHeaders(t *testing.T) {
 			name:    "return mode pending",
 			verdict: reviewDeny(&policy.Review{ID: "9f97", Status: "PENDING", Return: true}),
 			want: http.Header{"X-Hoop-Denied": {"review"}, "X-Hoop-Review-Id": {"9f97"},
-				"X-Hoop-Review-Status": {"PENDING"}, "Retry-After": {"5"}},
+				"X-Hoop-Review-Status": {"PENDING"}, "X-Hoop-Approval-Id": {"9f97"},
+				"X-Hoop-Approval-Status": {"PENDING"}, "Retry-After": {"5"}},
 		},
 		{
 			name:    "hold mode rejected",
 			verdict: reviewDeny(&policy.Review{ID: "9f97", Status: "REJECTED"}),
 			want: http.Header{"X-Hoop-Denied": {"review"}, "X-Hoop-Review-Id": {"9f97"},
-				"X-Hoop-Review-Status": {"REJECTED"}, "Retry-After": nil},
+				"X-Hoop-Review-Status": {"REJECTED"}, "X-Hoop-Approval-Id": {"9f97"},
+				"X-Hoop-Approval-Status": {"REJECTED"}, "Retry-After": nil},
 		},
 		{
 			name:    "status unknown",
 			verdict: reviewDeny(&policy.Review{ID: "9f97"}),
 			want: http.Header{"X-Hoop-Denied": {"review"}, "X-Hoop-Review-Id": {"9f97"},
-				"X-Hoop-Review-Status": nil, "Retry-After": nil},
+				"X-Hoop-Review-Status": nil, "X-Hoop-Approval-Id": {"9f97"},
+				"X-Hoop-Approval-Status": nil, "Retry-After": nil},
 		},
 		{
 			name:    "no review",
 			verdict: policy.Deny("rule", "nope"),
-			want:    http.Header{"X-Hoop-Denied": {"policy"}, "X-Hoop-Review-Id": nil},
+			want: http.Header{"X-Hoop-Denied": {"policy"}, "X-Hoop-Review-Id": nil,
+				"X-Hoop-Approval-Id": nil},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -98,7 +102,8 @@ func TestAnHTTPReviewDenyCarriesTheReviewHeaders(t *testing.T) {
 // out of its header line is dropped, never written.
 func TestAReviewHeaderRefusesAValueThatInjects(t *testing.T) {
 	h := proxy.ReviewHeaders(policy.Review{ID: "9f97\r\nSet-Cookie: x=1", Status: "PENDING\n"})
-	if h.Get("X-Hoop-Review-Id") != "" || h.Get("X-Hoop-Review-Status") != "" {
+	if h.Get("X-Hoop-Review-Id") != "" || h.Get("X-Hoop-Review-Status") != "" ||
+		h.Get("X-Hoop-Approval-Id") != "" || h.Get("X-Hoop-Approval-Status") != "" {
 		t.Errorf("an unsafe value reached a header: %v", h)
 	}
 	frame := string(proxy.HTTPReviewForbidden("held", policy.Review{ID: "9f97\r\nSet-Cookie: x=1"}))

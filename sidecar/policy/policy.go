@@ -1228,7 +1228,7 @@ func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 		requests := ec.requests
 		ec.review, ec.requests = nil, 0
 		if requests > 1 {
-			v := Deny("review", "more than one evaluator asked for a human review "+
+			v := Deny("review", "more than one evaluator asked for human approval "+
 				"of this statement; denying")
 			v.Source = SourceReview
 			v.Err = errs

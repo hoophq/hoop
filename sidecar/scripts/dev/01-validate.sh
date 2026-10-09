@@ -151,9 +151,9 @@ if edit == "no-trigger":
     s = s.replace("          trigger: {operations: [update, delete]}\n", "")
 elif edit == "negative-budget":
     s = s.replace("  max_calls: 50", "  max_calls: -1")
-elif edit == "review":
+elif edit == "approval":
     s = s.replace("          high: block\n          medium: warn\n          low: allow",
-                  "          high: require_review\n          medium: warn\n          low: allow")
+                  "          high: require_approval\n          medium: warn\n          low: allow")
 elif edit == "bad-provider":
     s = s.replace("  provider: vertex", "  provider: bedrock")
 elif edit == "auth-header":
@@ -187,7 +187,7 @@ PY
 FAILED=0
 refuse "ai rule with no trigger"                "has no trigger"            no-trigger
 refuse "negative max_calls"                     "max_calls is negative"     negative-budget
-refuse "require_review with no control plane"  "require_review"            review
+refuse "require_approval with no control plane" "require_approval"         approval
 refuse "a provider the binary does not link"    "not linked"                bad-provider
 refuse "Authorization in the header allowlist"  "may not be exposed"        auth-header
 refuse "a second guardrail rule"                "2 guardrail rules"         second-guardrail
