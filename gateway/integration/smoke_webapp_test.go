@@ -436,13 +436,15 @@ func TestDefaultPluginsAndUpdateContract(t *testing.T) {
 	}
 }
 
-// T19 — reviews listing (webapp Reviews page) returns an array without
-// error on an org with no reviews.
+// T19 — approvals listing (webapp Approvals page) returns an array without
+// error on an org with no approval requests, under both paths.
 func TestReviewsListing(t *testing.T) {
 	token := adminToken(t)
-	resp := testServer.Get(t, "/reviews", token)
-	defer resp.Body.Close()
-	testutil.RequireStatus(t, resp, http.StatusOK)
+	for _, path := range []string{"/approvals", "/reviews"} {
+		resp := testServer.Get(t, path, token)
+		testutil.RequireStatus(t, resp, http.StatusOK)
+		resp.Body.Close()
+	}
 }
 
 // T20 — feature flag toggle round trip (webapp admin Feature Flags page):

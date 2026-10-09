@@ -160,7 +160,7 @@ func TestTheDatabaseStoreSharesReviewMessagesAcrossReplicas(t *testing.T) {
 			t.Fatalf("expire: %v", err)
 		}
 		got := f.rewrites()[before:]
-		if len(got) != 2 || !strings.Contains(got[1], "Review expired.") {
+		if len(got) != 2 || !strings.Contains(got[1], "Approval request expired.") {
 			t.Fatalf("rewrites = %v, want the approval then the expiry", got)
 		}
 		if err := poster.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsApproved: true}); err != nil ||
@@ -192,7 +192,7 @@ func TestTheDatabaseStoreSharesReviewMessagesAcrossReplicas(t *testing.T) {
 		if err := clicker.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: id, IsExpired: true}); err != nil {
 			t.Fatalf("expire: %v", err)
 		}
-		if got := f.rewrites()[before:]; len(got) != 1 || !strings.Contains(got[0], "Review expired.") {
+		if got := f.rewrites()[before:]; len(got) != 1 || !strings.Contains(got[0], "Approval request expired.") {
 			t.Fatalf("rewrites = %v, want one expiry rewrite", got)
 		}
 

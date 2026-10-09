@@ -54,7 +54,7 @@ var complianceChecks = []complianceCheckDef{
 	// access_control
 	{"rbac_groups", "User Groups Defined", categoryAccessControl},
 	{"role_based_access", "Role-Based Access", categoryAccessControl},
-	{"jit_reviews", "Just-in-Time Access Reviews", categoryAccessControl},
+	{"jit_reviews", "Just-in-Time Access Approvals", categoryAccessControl},
 	{"service_accounts_managed", "Service Accounts Managed", categoryAccessControl},
 	{"least_privilege", "Least Privilege", categoryAccessControl},
 	{"user_access_reviews", "User Access Reviews", categoryAccessControl},
@@ -78,7 +78,7 @@ var complianceChecks = []complianceCheckDef{
 	{"automated_log_review", "Automated Log Review", categoryMonitoringResponse},
 	{"activity_monitoring", "Activity Monitoring", categoryMonitoringResponse},
 	{"security_event_alerts", "Security Event Alerts", categoryMonitoringResponse},
-	{"review_response_sla", "Review Response SLA", categoryMonitoringResponse},
+	{"review_response_sla", "Approval Response SLA", categoryMonitoringResponse},
 	{"activity_review", "Information System Activity Review", categoryMonitoringResponse},
 	{"sensitive_data_discovery", "Sensitive Data Discovery", categoryMonitoringResponse},
 	// infrastructure
@@ -176,7 +176,7 @@ var (
 	actionAppWebhooks           = complianceAction{Label: "Go to Webhooks ↗", Type: "app", Target: "/integrations/webhooks"}
 	actionAppGuardrails         = complianceAction{Label: "Go to Guardrails ↗", Type: "app", Target: "/guardrails"}
 	actionAppServiceAccounts    = complianceAction{Label: "Go to Service Accounts ↗", Type: "app", Target: "/organization/service-accounts"}
-	actionAppReviews            = complianceAction{Label: "Go to Reviews ↗", Type: "app", Target: "/reviews"}
+	actionAppReviews            = complianceAction{Label: "Go to Approvals ↗", Type: "app", Target: "/approvals"}
 	actionExternalIdP           = complianceAction{Label: "Verify in IdP ↗", Type: "external", Target: ""}
 	actionExternalInfra         = complianceAction{Label: "Verify in Infrastructure ↗", Type: "external", Target: ""}
 	actionNone                  = complianceAction{Label: "—", Type: "none", Target: ""}
@@ -212,7 +212,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 				ID:    "CC8",
 				Title: "Change Management",
 				Controls: []complianceControlDef{
-					{"CC8.1", "Change Authorization", "Just-in-time reviews require approval before accessing sensitive resources", "jit_reviews", actionAppResources},
+					{"CC8.1", "Change Authorization", "Just-in-time approvals are required before access to sensitive resources", "jit_reviews", actionAppResources},
 				},
 			},
 			{
@@ -453,7 +453,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 				Title: "Monitoring & Response",
 				Controls: []complianceControlDef{
 					{"BP-MR-01", "Active Monitoring", "Sessions are being recorded, indicating active usage monitoring", "activity_monitoring", actionAppSessions},
-					{"BP-MR-02", "Review Response SLA", "Pending access reviews are responded to within acceptable timeframes", "review_response_sla", actionAppReviews},
+					{"BP-MR-02", "Approval Response SLA", "Pending approval requests get an answer within acceptable timeframes", "review_response_sla", actionAppReviews},
 					{"BP-MR-03", "Data Discovery", "Sensitive data types detected during sessions are tracked for discovery purposes", "sensitive_data_discovery", actionAppSessions},
 				},
 			},

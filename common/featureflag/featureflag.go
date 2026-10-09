@@ -151,7 +151,7 @@ var catalog = map[string]Flag{
 	},
 	FlagAgents: {
 		Name:        FlagAgents,
-		Description: "Show the agent pages in the web app menu (agents, terminal, runbooks, machine identities, provisioning, resource discovery, event routing) and the agent onboarding. When off, the menu hides them, and the web app opens on Sidecars for admins and on Reviews for other users. Agents and their sessions keep working. Turned on once for every organization that already had an agent.",
+		Description: "Show the agent pages in the web app menu (agents, terminal, runbooks, machine identities, provisioning, resource discovery, event routing) and the agent onboarding. When off, the menu hides them, and the web app opens on Sidecars for admins and on Approvals for other users. Agents and their sessions keep working. Turned on once for every organization that already had an agent.",
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},

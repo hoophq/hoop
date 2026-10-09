@@ -65,7 +65,7 @@ var Catalog = map[string]EventType{
 	"access.jit_approved": {
 		Name:     "access.jit_approved",
 		Category: "Access",
-		Description: "Fires when a review is approved via the API, Slack, or MCP. `reviewer` is " +
+		Description: "Fires when an approval request is approved via the API, Slack, or MCP. `reviewer` is " +
 			"the email of the approving group; if several groups approve, the first one is reported.",
 		Schema: []SchemaField{
 			{Name: "session_id", Type: "string", Required: true},
@@ -87,7 +87,7 @@ var Catalog = map[string]EventType{
 	"access.jit_denied": {
 		Name:     "access.jit_denied",
 		Category: "Access",
-		Description: "Fires when a review is rejected via the API, Slack, or MCP. `reason` is the " +
+		Description: "Fires when an approval request is rejected via the API, Slack, or MCP. `reason` is the " +
 			"free-form text supplied at decision time (empty when none was given). Does not fire " +
 			"on auto-expiration or force-rejection.",
 		Schema: []SchemaField{

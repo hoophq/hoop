@@ -10,7 +10,7 @@ import (
 
 // newWaitHeartbeat builds a waitUntil tick callback that emits MCP progress
 // notifications on the request's own POST stream while a long-running wait tool
-// (reviews_wait, sessions_wait_analysis) polls.
+// (approvals_wait, sessions_wait_analysis) polls.
 //
 // Why this exists: the streamable-HTTP POST that carries a wait tool call sits
 // silent for as long as the wait runs. Intermediate proxies and some MCP

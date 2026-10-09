@@ -187,13 +187,13 @@ func requestPersistentCredential(config *clientconfig.Config, connectionName str
 }
 
 func renderReviewRequired(config *clientconfig.Config, resp *credentialsResponse) {
-	reviewURL := fmt.Sprintf("%s/reviews/%s", config.ApiURL, resp.ReviewID)
+	reviewURL := fmt.Sprintf("%s/approvals/%s", config.ApiURL, resp.ReviewID)
 	fmt.Println()
-	fmt.Printf("  %s requires review approval.\n", styles.Keyword(fmt.Sprintf(" %s ", resp.ConnectionName)))
+	fmt.Printf("  %s requires approval.\n", styles.Keyword(fmt.Sprintf(" %s ", resp.ConnectionName)))
 	fmt.Println()
 	fmt.Printf("  Approve at: %s\n", reviewURL)
 	fmt.Println()
-	fmt.Println(styles.Fainted("  Re-run this command once the review has been approved."))
+	fmt.Println(styles.Fainted("  Re-run this command once the request has been approved."))
 	fmt.Println()
 }
 

@@ -43,7 +43,7 @@ type connectionsCreateInput struct {
 	AccessModeExec          string            `json:"access_mode_exec,omitempty" jsonschema:"access mode for exec (enabled or disabled)"`
 	AccessModeConnect       string            `json:"access_mode_connect,omitempty" jsonschema:"access mode for connect (enabled or disabled)"`
 	GuardRailRules          []string          `json:"guardrail_rules,omitempty" jsonschema:"list of guardrail rule IDs to apply"`
-	Reviewers               []string          `json:"reviewers,omitempty" jsonschema:"DEPRECATED legacy per-connection reviewer list, kept for backwards compatibility. For approval/JIT workflows use access_request_rules_create. For restricting which user groups can access a connection use access_control_set. Do not set this field in new automation."`
+	Reviewers               []string          `json:"reviewers,omitempty" jsonschema:"DEPRECATED legacy per-connection approver list, kept for backwards compatibility. For approval/JIT workflows use access_request_rules_create. For restricting which user groups can access a connection use access_control_set. Do not set this field in new automation."`
 	RedactTypes             []string          `json:"redact_types,omitempty" jsonschema:"list of data types to redact"`
 	MandatoryMetadataFields []string          `json:"mandatory_metadata_fields,omitempty" jsonschema:"required metadata fields for sessions"`
 }
@@ -58,7 +58,7 @@ type connectionsUpdateInput struct {
 	AccessModeExec          string            `json:"access_mode_exec,omitempty" jsonschema:"access mode for exec (enabled or disabled)"`
 	AccessModeConnect       string            `json:"access_mode_connect,omitempty" jsonschema:"access mode for connect (enabled or disabled)"`
 	GuardRailRules          []string          `json:"guardrail_rules,omitempty" jsonschema:"list of guardrail rule IDs to apply"`
-	Reviewers               []string          `json:"reviewers,omitempty" jsonschema:"DEPRECATED legacy per-connection reviewer list, kept for backwards compatibility. For approval/JIT workflows use access_request_rules_create. For restricting which user groups can access a connection use access_control_set. Do not set this field in new automation."`
+	Reviewers               []string          `json:"reviewers,omitempty" jsonschema:"DEPRECATED legacy per-connection approver list, kept for backwards compatibility. For approval/JIT workflows use access_request_rules_create. For restricting which user groups can access a connection use access_control_set. Do not set this field in new automation."`
 	RedactTypes             []string          `json:"redact_types,omitempty" jsonschema:"list of data types to redact"`
 	MandatoryMetadataFields []string          `json:"mandatory_metadata_fields,omitempty" jsonschema:"required metadata fields for sessions"`
 }

@@ -24,7 +24,7 @@ import (
 func getValidatedJitReview(pctx plugintypes.Context) (*plugintypes.ConnectResponse, error) {
 	jitr, err := models.GetApprovedReviewJit(pctx.OrgID, pctx.UserID, pctx.ConnectionID)
 	if err != nil && err != models.ErrNotFound {
-		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
+		return nil, plugintypes.InternalErr("failed listing time based approval requests", err)
 	}
 
 	if jitr != nil {
@@ -53,7 +53,7 @@ func getValidatedOneTimeReview(pctx plugintypes.Context) (bool, *plugintypes.Con
 	otrev, err := models.GetReviewByIdOrSid(pctx.OrgID, pctx.SID)
 	if err != nil && err != models.ErrNotFound {
 		log.With("sid", pctx.SID).Error("failed fetching session, err=%v", err)
-		return false, nil, plugintypes.InternalErr("failed fetching review", err)
+		return false, nil, plugintypes.InternalErr("failed fetching approval request", err)
 	}
 
 	if otrev != nil && otrev.Type == models.ReviewTypeOneTime {
@@ -71,7 +71,7 @@ func getValidatedOneTimeReview(pctx plugintypes.Context) (bool, *plugintypes.Con
 
 		if otrev.Status == models.ReviewStatusApproved {
 			if err := models.UpdateReviewStatus(otrev.OrgID, otrev.ID, models.ReviewStatusProcessing); err != nil {
-				return false, nil, plugintypes.InternalErr("failed updating approved review", err)
+				return false, nil, plugintypes.InternalErr("failed updating the approved request", err)
 			}
 		}
 
@@ -133,7 +133,7 @@ func createReview(pctx plugintypes.Context, isJitReview bool, accessRequestRule 
 		Infof("creating review")
 
 	if err := models.CreateReview(newRev, sessionInput); err != nil {
-		return nil, plugintypes.InternalErr("failed saving review", err)
+		return nil, plugintypes.InternalErr("failed saving approval request", err)
 	}
 
 	// update session input when executing ad-hoc executions via cli

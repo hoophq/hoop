@@ -75,7 +75,7 @@ func init() {
 	execCmd.Flags().BoolVar(&autoExec, "auto-approve", false, "Automatically run after a command is approved")
 	execCmd.Flags().BoolVarP(&silentMode, "silent", "s", false, "Silent mode")
 	execCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One of: (json)")
-	execCmd.Flags().StringVar(&execSessionID, "session", "", "Execute an approved reviewed session by its ID")
+	execCmd.Flags().StringVar(&execSessionID, "session", "", "Execute an approved session by its ID")
 	execCmd.Flags().StringVar(&execCorrelationID, "correlation-id", "", "External workflow/task id to group related sessions")
 	rootCmd.AddCommand(execCmd)
 }
@@ -205,7 +205,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 		case pbclient.SessionOpenWaitingApproval:
 			if !autoExec && isStdinInput {
 				loader.Stop()
-				msg := "require use of --auto-approve option. It's a review command with an invalid device to prompt for execution"
+				msg := "require use of --auto-approve option. It is a command that requires approval, and the device cannot prompt for execution"
 				c.processGracefulExit(errors.New(msg))
 			}
 			if jsonMode {

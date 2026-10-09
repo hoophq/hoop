@@ -87,7 +87,7 @@ func ApplyAIAnalysisDecision(
 
 	case string(models.RequireAccessRequest):
 		if accessRule == nil {
-			return AIDecisionProceed, nil, fmt.Errorf("ai analyzer requested review without resolving access request rule")
+			return AIDecisionProceed, nil, fmt.Errorf("ai analyzer requested approval without resolving access request rule")
 		}
 		orgID, err := uuid.Parse(ctx.GetOrgID())
 		if err != nil {
@@ -108,7 +108,7 @@ func ApplyAIAnalysisDecision(
 			},
 			accessRule, string(session.BlobInput), inputEnvVars, inputClientArgs, analysis)
 		if err != nil {
-			return AIDecisionProceed, nil, fmt.Errorf("failed creating ai-driven review: %w", err)
+			return AIDecisionProceed, nil, fmt.Errorf("failed creating ai-driven approval request: %w", err)
 		}
 
 		events.DeriveFromSessionStart(ctx.OrgID, session, conn)

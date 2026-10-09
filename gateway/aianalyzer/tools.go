@@ -144,7 +144,7 @@ func InvestigationTools() []laia.Tool {
 		},
 		{
 			Name: "get_connection_context",
-			Description: "Fetch governance context for the target connection: resource type/subtype, environment tags, reviewer groups, data masking, guardrails, and access modes. " +
+			Description: "Fetch governance context for the target connection: resource type/subtype, environment tags, approver groups, data masking, guardrails, and access modes. " +
 				"Works for any connection type. Use it to judge resource sensitivity (e.g. production vs demo) when classifying.",
 			InputSchema: laia.ToolInputSchema{Properties: map[string]laia.ToolProperty{}},
 		},

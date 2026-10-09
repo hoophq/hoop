@@ -35,7 +35,7 @@ func registerAccessControlTools(server *mcp.Server) {
 			"Use this for 'give group X access to connection Y' requests. " +
 			"Enables the access_control plugin if needed and REPLACES any existing group list for this connection. " +
 			"Admins and auditors always bypass the restriction. " +
-			"For approval / just-in-time workflows (require review before access), use access_request_rules_create instead. " +
+			"For approval / just-in-time workflows (require approval before access), use access_request_rules_create instead. " +
 			"Do NOT set the deprecated reviewers field on the connection itself.",
 		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
 	}, accessControlSetHandler)

@@ -1,9 +1,11 @@
 package mcpserver
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"maps"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -85,10 +87,10 @@ func TestReviewsUpdateAnswersExpired(t *testing.T) {
 		err  error
 		want string
 	}{
-		{reviewapi.ErrExpired, "review expired"},
-		{reviewapi.ErrWrongState, "review is in wrong state"},
+		{reviewapi.ErrExpired, "approval request expired"},
+		{reviewapi.ErrWrongState, "approval request is in wrong state"},
 		{reviewapi.ErrForbidden, "access denied"},
-		{reviewapi.ErrNotFound, "review not found"},
+		{reviewapi.ErrNotFound, "approval request not found"},
 	} {
 		res := reviewsUpdateRefusal(tt.err)
 		if res == nil || !res.IsError || len(res.Content) != 1 {
@@ -101,6 +103,43 @@ func TestReviewsUpdateAnswersExpired(t *testing.T) {
 	for _, err := range []error{nil, errors.New("db down")} {
 		if res := reviewsUpdateRefusal(err); res != nil {
 			t.Errorf("reviewsUpdateRefusal(%v) = %+v, want nil", err, res)
+		}
+	}
+}
+
+// Both the approvals_* tools and their reviews_* aliases are listed.
+func TestApprovalToolsKeepReviewAliases(t *testing.T) {
+	ctx := context.Background()
+	server := mcp.NewServer(&mcp.Implementation{Name: "hoop-test", Version: "test"}, nil)
+	registerReviewTools(server, nil)
+	serverT, clientT := mcp.NewInMemoryTransports()
+	if _, err := server.Connect(ctx, serverT, nil); err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "test"}, nil).Connect(ctx, clientT, nil)
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	res, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	tools := map[string]*mcp.Tool{}
+	for _, tool := range res.Tools {
+		tools[tool.Name] = tool
+	}
+	for _, name := range []string{"list", "get", "update", "execute", "wait"} {
+		approval, alias := tools["approvals_"+name], tools["reviews_"+name]
+		if approval == nil || alias == nil {
+			t.Fatalf("%s: approvals tool %v, reviews alias %v, want both", name, approval != nil, alias != nil)
+		}
+		if want := "Alias of approvals_" + name + ". " + approval.Description; alias.Description != want {
+			t.Errorf("reviews_%s description = %q, want %q", name, alias.Description, want)
+		}
+		if !reflect.DeepEqual(approval.InputSchema, alias.InputSchema) {
+			t.Errorf("reviews_%s input schema differs from approvals_%s", name, name)
 		}
 	}
 }

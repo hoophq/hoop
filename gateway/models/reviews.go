@@ -36,7 +36,7 @@ const (
 )
 
 // ErrSidecarReviewExpired is a decision on a sidecar review past its deadline.
-var ErrSidecarReviewExpired = errors.New("the review expired")
+var ErrSidecarReviewExpired = errors.New("the approval request expired")
 
 func (t ReviewStatusType) Str() string { return string(t) }
 

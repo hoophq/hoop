@@ -33,7 +33,7 @@ var getLongDesc = `Display one or many resources. Available ones:
 * connections (tabview)
 * orgkeys (tabview)
 * plugins (tabview)
-* reviews
+* approvals (alias: reviews)
 * runbooks (tabview)
 * serviceaccounts (tabview)
 * sessions (tabview)
