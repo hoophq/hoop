@@ -1,3 +1,4 @@
+// Package featureflagstate holds the feature flags one gateway stream sent.
 package featureflagstate
 
 import (
@@ -8,13 +9,16 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 )
 
-var (
+// State is the flag snapshot of one gateway stream. The zero value has every
+// flag off, so a stream that sends no snapshot fails closed (DEP-289).
+type State struct {
 	mu    sync.RWMutex
-	flags = map[string]bool{}
-)
+	flags map[string]bool
+}
 
 // Update replaces the entire flag state from a FeatureFlagUpdate packet spec.
-func Update(spec map[string][]byte) {
+// A spec without the flags key leaves the state unchanged.
+func (s *State) Update(spec map[string][]byte) {
 	raw, ok := spec[pb.SpecFeatureFlagsKey]
 	if !ok || len(raw) == 0 {
 		return
@@ -24,27 +28,16 @@ func Update(spec map[string][]byte) {
 		log.Warnf("featureflagstate: failed to unmarshal flags: %v", err)
 		return
 	}
-	mu.Lock()
-	flags = snapshot
-	mu.Unlock()
+	s.mu.Lock()
+	s.flags = snapshot
+	s.mu.Unlock()
 	log.Infof("featureflagstate: updated %d flags", len(snapshot))
 }
 
 // IsEnabled returns whether the named flag is enabled.
 // Returns false for unknown flags.
-func IsEnabled(name string) bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return flags[name]
-}
-
-// Snapshot returns a copy of the current flag state.
-func Snapshot() map[string]bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	cp := make(map[string]bool, len(flags))
-	for k, v := range flags {
-		cp[k] = v
-	}
-	return cp
+func (s *State) IsEnabled(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.flags[name]
 }
