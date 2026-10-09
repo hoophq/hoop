@@ -524,14 +524,14 @@ func TestErrDoReview(t *testing.T) {
 			expectedError: ErrWrongState,
 		},
 		{
-			name: "revoke JIT type should fail",
+			name: "revoke a onetime review should fail",
 			input: inputData{
 				ctx:    newFakeContext("user1", "user1@example.com", []string{"issuing"}),
 				rev:    newFakeReview("user1", "APPROVED", "onetime", nil, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusRevoked,
 			},
-			expectedError: ErrNotFound,
+			expectedError: ErrWrongState,
 		},
 		{
 			name: "non-eligible reviewer without admin or owner privileges",
