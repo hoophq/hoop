@@ -1,6 +1,7 @@
 package sidecartui
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -115,6 +116,25 @@ type model struct {
 	// tour is the demo's guided section, nil when the sidecar does not
 	// front the demo API.
 	tour *tour
+
+	// controlPlane is the plane this sidecar is connected to, "" when it
+	// runs on its own; approvals are then decided there. openURL opens a
+	// link in the browser, and cpFlash says what the last open did.
+	controlPlane string
+	openURL      func(string) error
+	cpFlash      string
+}
+
+// reviewsURL is where the control plane shows the reviews this sidecar
+// files: its web app's Reviews page. The plane's URL may carry the API's
+// /api suffix or a path prefix; the prefix stays, the suffix goes.
+func reviewsURL(plane string) string {
+	u, err := url.Parse(plane)
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(plane, "/") + "/reviews"
+	}
+	p := strings.TrimSuffix(strings.TrimRight(u.Path, "/"), "/api")
+	return u.Scheme + "://" + u.Host + p + "/reviews"
 }
 
 // numTabs is how many sections the menu shows: Try it only with the demo.
@@ -252,6 +272,26 @@ func (m model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.tab == tabTour && m.tour != nil {
 		if cmd, used := m.tour.key(k); used {
 			return m, cmd
+		}
+	}
+	if m.tab == tabReviews && m.controlPlane != "" {
+		link := reviewsURL(m.controlPlane)
+		switch k.String() {
+		case "o":
+			switch {
+			case m.openURL == nil:
+				m.cpFlash = "no browser opener on this system; copy the link with c"
+			default:
+				if err := m.openURL(link); err != nil {
+					m.cpFlash = "could not open a browser: " + err.Error()
+				} else {
+					m.cpFlash = "opened " + link + " in your browser"
+				}
+			}
+			return m, nil
+		case "c":
+			m.cpFlash = "copied " + link
+			return m, tea.SetClipboard(link)
 		}
 	}
 

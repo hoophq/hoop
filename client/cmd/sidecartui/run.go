@@ -46,6 +46,12 @@ type Options struct {
 	// Demo, when set, adds the Try it section and opens the dashboard on
 	// it: the sidecar fronts the demo API.
 	Demo *DemoOptions
+	// ControlPlane is the control plane URL this sidecar is connected to,
+	// "" when it runs on its own. Approvals are then decided there, and the
+	// Approvals section says so and links to them.
+	ControlPlane string
+	// OpenURL opens a URL in the person's browser; nil hides that key.
+	OpenURL func(string) error
 }
 
 // Run starts the daemon through run and presents its output in format f.
@@ -307,6 +313,7 @@ func runTUI(opts Options, run func() error) error {
 	}
 	m := newModel(opts.Version, append(opts.Notes, notes...), time.Now, stop)
 	m.reviewer, m.operator = opts.Reviewer, opts.Operator
+	m.controlPlane, m.openURL = opts.ControlPlane, opts.OpenURL
 	if opts.Demo != nil {
 		// The demo opens on its guide: a person who just booted it has
 		// not sent anything yet, and the empty Wire tells them nothing.

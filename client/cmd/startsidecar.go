@@ -247,14 +247,19 @@ needs a restart.`,
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
 		// The format only changes how its output reaches the terminal: a
 		// pipe, a file, a container or CI keeps the JSON it always wrote.
+		// Connected to a control plane, approvals are decided there; the
+		// dashboard's Approvals section links to them instead.
+		plane, _, _ := cfg.ControlPlane()
 		return sidecartui.Run(format, sidecartui.Options{
-			Version:   daemon.Version,
-			AuditFile: cfg.Audit.File,
-			Reviewer:  reviewer,
-			Operator:  sidecarOperator(),
-			SaveDir:   sidecarSaveDir(),
-			Notes:     notes,
-			Demo:      demo,
+			Version:      daemon.Version,
+			AuditFile:    cfg.Audit.File,
+			Reviewer:     reviewer,
+			Operator:     sidecarOperator(),
+			SaveDir:      sidecarSaveDir(),
+			Notes:        notes,
+			Demo:         demo,
+			ControlPlane: plane,
+			OpenURL:      openBrowser,
 		}, func() error { return daemon.Run(cfg, det) })
 	},
 }
