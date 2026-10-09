@@ -76,7 +76,14 @@ func setup(m *testing.M) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	bin, err := buildHoop(logDir, &key.PublicKey)
+	// The test build trusts a throwaway license key; keep it out of logDir,
+	// which CI uploads as an artifact.
+	buildDir, err := os.MkdirTemp("", "parity-build-")
+	if err != nil {
+		return 0, err
+	}
+	defer os.RemoveAll(buildDir)
+	bin, err := buildHoop(buildDir, &key.PublicKey)
 	if err != nil {
 		return 0, err
 	}

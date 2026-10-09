@@ -268,26 +268,36 @@ func (e *Env) startAgent(t *testing.T, bin, home string) {
 		t.Fatalf("decoding agent key: %v body=%s", err, truncate(r.Body))
 	}
 	e.start(t, bin, "agent", []string{"start", "agent"}, append(baseEnv(home), "HOOP_KEY="+created.Token))
+	// The gateway can answer an error while the agent registers; keep
+	// polling until the deadline and report the last answer.
 	deadline := time.Now().Add(90 * time.Second)
+	last := "no answer"
 	for time.Now().Before(deadline) {
-		r := e.mustAPI(t, http.MethodGet, "/agents", nil, http.StatusOK)
+		r, err := e.Admin().do(http.MethodGet, "/agents", nil)
 		var agents []struct {
 			ID     string `json:"id"`
 			Name   string `json:"name"`
 			Status string `json:"status"`
 		}
-		if err := json.Unmarshal(r.Body, &agents); err != nil {
-			t.Fatalf("decoding agents: %v", err)
-		}
-		for _, a := range agents {
-			if a.Name == agentName && a.Status == "CONNECTED" {
-				e.AgentID = a.ID
-				return
+		switch {
+		case err != nil:
+			last = err.Error()
+		case r.Status != http.StatusOK:
+			last = fmt.Sprintf("status %d: %s", r.Status, truncate(r.Body))
+		case json.Unmarshal(r.Body, &agents) != nil:
+			last = "undecodable body: " + truncate(r.Body)
+		default:
+			last = "agent not CONNECTED"
+			for _, a := range agents {
+				if a.Name == agentName && a.Status == "CONNECTED" {
+					e.AgentID = a.ID
+					return
+				}
 			}
 		}
 		time.Sleep(time.Second)
 	}
-	t.Fatalf("agent not CONNECTED within 90s; see %s", e.logDir)
+	t.Fatalf("agent not CONNECTED within 90s (last: %s); see %s", last, e.logDir)
 }
 
 // mustAPI is the boot-time call: it fails the run, not a check.
