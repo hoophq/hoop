@@ -58,6 +58,48 @@ func TestGetStartedListsSetupOpenThenTheFolderConfigs(t *testing.T) {
 	}
 }
 
+// The welcome page greets the person and points at the docs; it no longer
+// talks about the default listener's port or its redirect.
+func TestWelcomePageText(t *testing.T) {
+	m := homeModel(t, t.TempDir(), validateFile)
+	m.fellBack = true
+	out := ansi.Strip(m.render())
+	flat := strings.Join(strings.Fields(out), " ")
+	for _, want := range []string{"hoop sidecar", "Welcome to hoop sidecar", "Client", "any resource",
+		"See documentation: " + QuickstartURL} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("the welcome page lacks %q:\n%s", want, out)
+		}
+	}
+	for _, gone := range []string{"inspection sidecar", "No config given", "was busy", "302", "hoop.dev/docs ", "browser", "GET /"} {
+		if strings.Contains(out, gone) {
+			t.Errorf("the welcome page still says %q:\n%s", gone, out)
+		}
+	}
+}
+
+// On a short terminal the cards scroll whole: the selected one is shown
+// complete, and no card is cut through its border.
+func TestGetStartedCardsScrollWhole(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"a.yaml", "b.yaml", "c.yaml", "d.yaml"} {
+		writeFile(t, filepath.Join(dir, n), "x: 1\n")
+	}
+	m := homeModel(t, dir, validateFile)
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 80, Height: 26})
+	for tm.(firstRunModel).home.selected() != "file:"+filepath.Join(dir, "d.yaml") {
+		tm, _ = tm.Update(wkey("down"))
+	}
+	out := ansi.Strip(tm.(firstRunModel).render())
+	if !strings.Contains(out, "› d.yaml") {
+		t.Errorf("the selected card is not in view:\n%s", out)
+	}
+	if strings.Count(out, "╭") != strings.Count(out, "╰") {
+		t.Errorf("a card is cut through its border:\n%s", out)
+	}
+}
+
 func TestGetStartedSaysWhenTheFolderHasNoConfig(t *testing.T) {
 	m := homeModel(t, t.TempDir(), validateFile)
 	if out := ansi.Strip(m.render()); !strings.Contains(out, "No config in this directory") {

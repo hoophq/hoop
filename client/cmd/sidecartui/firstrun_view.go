@@ -64,13 +64,16 @@ func frWordmark(now time.Time) string {
 	return strings.Join(rows, "\n")
 }
 
+// QuickstartURL is the guide the welcome page sends a reader to.
+const QuickstartURL = "https://hoop.dev/docs/introduction/quickstart"
+
 // The flow diagram's fixed parts, in cells: the three nodes and the spaces
 // around both arrows. Each arrow is frSegment(width) dashes plus its head.
 const (
-	frNodeBrowser = len("o browser")
-	frNodeSidecar = len("o sidecar")
-	frNodeDocs    = len("o hoop.dev/docs")
-	frFlowFixed   = frNodeBrowser + frNodeSidecar + frNodeDocs + 4 + 2
+	frNodeClient   = len("o Client")
+	frNodeSidecar  = len("o sidecar")
+	frNodeResource = len("o any resource")
+	frFlowFixed    = frNodeClient + frNodeSidecar + frNodeResource + 4 + 2
 )
 
 // frSegment is the length of each arrow: as long as 16, and shorter on a
@@ -79,24 +82,23 @@ func frSegment(width int) int {
 	return max(min((width-4-frFlowFixed)/2, 16), 3)
 }
 
-// frFlow draws browser -> sidecar -> guide, with a dot crossing both arrows
-// for every visit still in flight. It is the screen's answer to "did it
-// work": the person opens the URL and watches the request go through.
+// frAmbient is how long the idle dot takes to cross the diagram. It keeps
+// the picture of traffic moving while nothing is sent.
+const frAmbient = 2400 * time.Millisecond
+
+// frFlow draws Client -> sidecar -> any resource, what the sidecar is for,
+// with a dot crossing it: one always, on a slow loop, and one per request
+// the default listener answered.
 func (m firstRunModel) frFlow(now time.Time) string {
 	seg := frSegment(m.width)
 	cells := make([]string, 2*seg)
-	track := stFaint
-	if m.visits > 0 {
-		track = stKey
-	}
 	for i := range cells {
-		cells[i] = track.Render("─")
+		cells[i] = stFaint.Render("─")
 	}
 	dot := lipgloss.NewStyle().Foreground(colPrimary).Bold(true)
-	for _, p := range m.pulses {
-		f := float64(now.Sub(p)) / float64(pulseLife)
+	place := func(f float64) {
 		if f < 0 || f >= 1 {
-			continue
+			return
 		}
 		pos := int(f * float64(len(cells)))
 		cells[pos] = dot.Render("●")
@@ -104,62 +106,15 @@ func (m firstRunModel) frFlow(now time.Time) string {
 			cells[pos-1] = stKey.Render("•")
 		}
 	}
-	arrow := func(c []string) string { return strings.Join(c, "") + track.Render("▶") }
-	node := func(icon, label string, lit bool) string {
-		st := stText
-		if lit {
-			st = stStrong
-		}
-		return stKey.Render(icon) + " " + st.Render(label)
+	place(float64(now.UnixMilli()%frAmbient.Milliseconds()) / float64(frAmbient.Milliseconds()))
+	for _, p := range m.pulses {
+		place(float64(now.Sub(p)) / float64(pulseLife))
 	}
-	row := node("◉", "browser", m.visits > 0) + " " + arrow(cells[:seg]) + " " +
-		node("◆", "sidecar", true) + " " + arrow(cells[seg:]) + " " +
-		node("◎", "hoop.dev/docs", m.visits > 0)
-
-	addr := strings.TrimPrefix(m.url, "http://")
-	if addr == "" {
-		addr = "binding…"
-	}
-	// Under each element: what crosses the arrows, and where the sidecar
-	// listens. Each label is centered on the element above it.
-	arrow1 := frNodeBrowser + 1 + (seg+1)/2
-	sidecar := frNodeBrowser + 1 + seg + 1 + 1 + frNodeSidecar/2
-	arrow2 := sidecar + frNodeSidecar/2 + 1 + 1 + (seg+1)/2
-	// As wide as the row above, or centering the two would shift one.
-	under := []rune(strings.Repeat(" ", frFlowFixed+2*seg))
-	// put writes label centered on center, unless it would run into a
-	// label already there: the address wins, and an arrow's label is left
-	// out on a terminal too narrow for both.
-	put := func(center int, label string) {
-		r := []rune(label)
-		start := max(center-len(r)/2, 0)
-		if start+len(r) > len(under) {
-			return
-		}
-		for i := max(start-1, 0); i < min(start+len(r)+1, len(under)); i++ {
-			if under[i] != ' ' {
-				return
-			}
-		}
-		copy(under[start:], r)
-	}
-	put(sidecar, addr)
-	put(arrow1, "GET /")
-	put(arrow2, "302 → guide")
-	return row + "\n" + stFaint.Render(string(under))
-}
-
-// frStatus is one line: what the screen is waiting for, or that it happened.
-func (m firstRunModel) frStatus(now time.Time) string {
-	switch {
-	case !m.ready:
-		return shimmer("binding a loopback port…", now)
-	case m.visits == 0:
-		return shimmer("waiting for your browser…", now)
-	}
-	ago := short(now.Sub(m.lastVisit))
-	return stPrimary.Render("✓ opened") + stFaint.Render(fmt.Sprintf("  ·  %d visit%s  ·  last %s ago",
-		m.visits, plural(m.visits), ago))
+	arrow := func(c []string) string { return strings.Join(c, "") + stFaint.Render("▶") }
+	node := func(icon, label string) string { return stKey.Render(icon) + " " + stStrong.Render(label) }
+	row := node("◉", "Client") + " " + arrow(cells[:seg]) + " " +
+		node("◆", "sidecar") + " " + arrow(cells[seg:]) + " " + node("◎", "any resource")
+	return row + "\n\n" + stFaint.Render("See documentation: ") + stPrimary.Underline(true).Render(QuickstartURL)
 }
 
 func plural(n int) string {
@@ -167,6 +122,92 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// homeCards draws the Get started list as one bordered card per choice,
+// with space between them. The selected card keeps the › marker and takes
+// the brand border and the selection background, so it reads as the one
+// enter acts on. A note row is a small heading between groups.
+//
+// It returns blocks, one per card or heading with its spacing, and the
+// selected card's index, so a short terminal scrolls by whole cards and
+// never shows half a border.
+func (m firstRunModel) homeCards(w int) (blocks [][]string, sel int) {
+	inner := max(w-4, 10)
+	// File names share one column, so their details line up.
+	nameW := 0
+	for _, it := range m.home.items {
+		if strings.HasPrefix(it.id, "file:") {
+			nameW = max(nameW, ansi.StringWidth(it.label))
+		}
+	}
+	for i, it := range m.home.items {
+		if it.note {
+			blocks = append(blocks, []string{"", "  " + stLabel.Render(it.label)})
+			continue
+		}
+		on := i == m.home.cur
+		name := it.label
+		if strings.HasPrefix(it.id, "file:") {
+			name = fmt.Sprintf("%-*s", nameW, name)
+		}
+		mark, label := "  ", stText.Bold(true).Render(name)
+		if on {
+			mark, label = stPrimary.Render("› "), stPrimary.Render(name)
+		}
+		// The two actions get their explanation on a line of its own; a
+		// file is one line, so a folder of configs stays scannable.
+		lines := []string{mark + label + "  " + stFaint.Render(it.detail)}
+		if !strings.HasPrefix(it.id, "file:") {
+			lines = []string{mark + label, "  " + stFaint.Render(it.detail)}
+		}
+		box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBorder).Padding(0, 1).Width(w)
+		for j, l := range lines {
+			lines[j] = ansi.Truncate(l, inner, "…")
+			if on {
+				lines[j] = withBackground(lines[j], inner)
+			}
+		}
+		if on {
+			box = box.BorderForeground(colPrimary).Background(colSelBg)
+			sel = len(blocks)
+		}
+		block := strings.Split(box.Render(strings.Join(lines, "\n")), "\n")
+		if len(blocks) > 0 {
+			block = append([]string{""}, block...)
+		}
+		blocks = append(blocks, block)
+	}
+	return blocks, sel
+}
+
+// fitBlocks joins the blocks that fit in h rows, keeping block sel in view
+// and starting as near the top as that allows.
+func fitBlocks(blocks [][]string, sel, h int) string {
+	size := func(from, to int) int {
+		n := 0
+		for _, b := range blocks[from : to+1] {
+			n += len(b)
+		}
+		return n
+	}
+	start := 0
+	for start < sel && size(start, sel) > h {
+		start++
+	}
+	end := sel
+	for end+1 < len(blocks) && size(start, end+1) <= h {
+		end++
+	}
+	var rows []string
+	for _, b := range blocks[start : end+1] {
+		rows = append(rows, b...)
+	}
+	// A block cut from the top keeps its card whole by dropping the gap.
+	if len(rows) > 0 && rows[0] == "" {
+		rows = rows[1:]
+	}
+	return strings.Join(rows, "\n")
 }
 
 // getStarted is the Get started panel: the home list, or the file picker
@@ -189,7 +230,8 @@ func (m firstRunModel) getStarted(w, h int, now time.Time) (title, body string) 
 	if m.picker != nil {
 		title, body = "Open a config file", m.picker.view(w, room)
 	} else {
-		title, body = "Get started", m.home.view(w, room)
+		blocks, sel := m.homeCards(w)
+		title, body = "Get started", fitBlocks(blocks, sel, room)
 	}
 	if len(status) > 0 {
 		body += "\n\n" + strings.Join(status, "\n")
@@ -218,25 +260,31 @@ func (m firstRunModel) render() string {
 	w := min(m.width-2, 92)
 
 	var head string
-	if m.width >= 70 && m.height >= 28 {
-		head = frWordmark(now) + "\n" + stFaint.Render("the inspection sidecar · "+m.version)
+	if m.width >= 70 && m.height >= 34 {
+		head = frWordmark(now) + "\n" + stStrong.Render("hoop sidecar")
 	} else {
-		head = stBrand.Render("hoop") + " " + stStrong.Render("sidecar") + stFaint.Render("  "+m.version)
+		head = stBrand.Render("hoop") + " " + stStrong.Render("sidecar")
 	}
 
 	// Wrapped to the frame, so a narrow terminal breaks the sentence
 	// instead of cutting it.
 	wrap := lipgloss.NewStyle().Width(w).Align(lipgloss.Center)
-	intro := wrap.Inherit(stText).Render("No config given, so a built-in default is running. It inspects no traffic.")
-	if m.fellBack {
-		intro += "\n" + wrap.Inherit(stFaint).Render("Port 15321 was busy; a free port was bound instead.")
-	}
+	intro := wrap.Inherit(stText).Render("Welcome to hoop sidecar. Let's get it running: " +
+		"set up a config in a few steps, or start from one you already have.")
+	flow := m.frFlow(now)
 
 	// The panel takes what the screen has left under the header, at most
 	// what it needs: the picker can list a long folder.
-	headH := strings.Count(head, "\n") + 1 + 1 + lipgloss.Height(intro) + 1 + 2 + 1 + 1 + 1 + 1 + 1
-	title, gs := m.getStarted(w-4, max(m.height-headH-2, 4), now)
-	body := pane(stTitle.Render(title), gs, w, min(strings.Count(gs, "\n")+4, max(m.height-headH, 6)))
+	headH := lipgloss.Height(head) + 1 + lipgloss.Height(intro) + 1 + lipgloss.Height(flow) + 1 + 1 + 1
+	room := max(m.height-headH, 6)
+	var body string
+	if m.picker != nil {
+		title, gs := m.getStarted(w-4, room-2, now)
+		body = pane(stTitle.Render(title), gs, w, min(strings.Count(gs, "\n")+4, room))
+	} else {
+		title, gs := m.getStarted(w, room-1, now)
+		body = lipgloss.NewStyle().Width(w).Render(stTitle.Render(title) + "\n" + gs)
+	}
 
 	k := func(key, what string) string { return stKey.Render(key) + stFaint.Render(" "+what+"   ") }
 	hints := k("↑↓", "move") + k("enter", "choose") + k("w", "set up") + k("o", "open a file") + k("q", "quit")
@@ -247,7 +295,7 @@ func (m firstRunModel) render() string {
 		hints = stStrong.Render("stopping…") + stFaint.Render("  q again to leave now")
 	}
 
-	blocks := []string{head, "", intro, "", m.frFlow(now), "", m.frStatus(now), "", body, "", hints}
+	blocks := []string{head, "", intro, "", flow, "", body, "", hints}
 	page := lipgloss.JoinVertical(lipgloss.Center, blocks...)
 	// A frame taller than the terminal would scroll the top away; cut it
 	// at the bottom instead, where only the hints live.
