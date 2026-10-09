@@ -17,13 +17,14 @@ import (
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // A load test of POST /api/sidecars/events: several sidecars, each sending
 // its sessions' statements in batches the way the sink does (500 events, one
 // sender per sidecar). It reports batch latency by how large the sessions'
-// streams have grown, since each batch rewrites the stream blob.
+// streams have grown, and fails when the last fifth is over twice the first.
 //
 // Skipped unless HOOP_SIDECAR_LOAD_PG names an EMPTY Postgres database; the
 // test migrates it and refuses one that holds an organization.
@@ -78,17 +79,23 @@ func TestLoadSessionEvents(t *testing.T) {
 	t.Logf("%d sidecars x %d sessions x %d statements of %d bytes: %d events in %s, %.0f events/s, %d batches",
 		sidecars, sessions, statements, stmtBytes, events, elapsed.Round(time.Millisecond),
 		float64(events)/elapsed.Seconds(), len(samples))
-	reportLoad(t, samples, statements)
+	p50 := reportLoad(t, samples, statements)
+	// The floor keeps scheduler noise on fast batches from failing the test.
+	first, last := p50[0], p50[len(p50)-1]
+	assert.LessOrEqual(t, last, max(2*first, 25*time.Millisecond),
+		"a batch at the end of a session takes %s, at its start %s: the cost grows with the session", last, first)
 
 	var stream struct {
 		Disk int64
 		Text int64
 	}
-	require.NoError(t, models.DB.Raw(`SELECT avg(pg_column_size(b.blob_stream))::bigint AS disk,
-		avg(octet_length(b.blob_stream::text))::bigint AS text
+	require.NoError(t, models.DB.Raw(`SELECT avg(pg_column_size(b.blob_stream) + coalesce(c.disk, 0))::bigint AS disk,
+		avg(octet_length(b.blob_stream::text) + coalesce(c.text, 0))::bigint AS text
 		FROM private.blobs b JOIN private.sessions s ON s.blob_stream_id = b.id
+		LEFT JOIN (SELECT blob_id, sum(pg_column_size(entries)) AS disk, sum(octet_length(entries::text)) AS text
+			FROM private.session_stream_chunks GROUP BY blob_id) c ON c.blob_id = b.id
 		WHERE s.org_id = ?`, orgID).Scan(&stream).Error)
-	t.Logf("stream blob per session: %d KiB as text, %d KiB on disk", stream.Text>>10, stream.Disk>>10)
+	t.Logf("stream per session: %d KiB as text, %d KiB on disk", stream.Text>>10, stream.Disk>>10)
 
 	var open int64
 	require.NoError(t, models.DB.Raw(`SELECT count(*) FROM private.sessions WHERE org_id = ? AND status <> 'done'`,
@@ -142,9 +149,10 @@ func sendLoad(t *testing.T, sc *models.Sidecar, sessions, statements, stmtBytes 
 	return out
 }
 
-// reportLoad logs latency percentiles per fifth of the session depth. A flat
-// table means a batch costs the same at the end of a session as at its start.
-func reportLoad(t *testing.T, samples []loadSample, statements int) {
+// reportLoad logs latency percentiles per fifth of the session depth and
+// returns the p50 of each fifth. A flat table means a batch costs the same at
+// the end of a session as at its start.
+func reportLoad(t *testing.T, samples []loadSample, statements int) []time.Duration {
 	const buckets = 5
 	byBucket := make([][]time.Duration, buckets)
 	for _, s := range samples {
@@ -152,16 +160,20 @@ func reportLoad(t *testing.T, samples []loadSample, statements int) {
 		byBucket[b] = append(byBucket[b], s.Took)
 	}
 	t.Logf("%-22s %8s %10s %10s %10s", "statements per session", "batches", "p50", "p95", "p99")
+	var p50 []time.Duration
 	for b, took := range byBucket {
 		if len(took) == 0 {
 			continue
 		}
 		slices.Sort(took)
-		pct := func(p float64) time.Duration { return took[int(p*float64(len(took)-1))].Round(time.Millisecond) }
+		pct := func(p float64) time.Duration { return took[int(p*float64(len(took)-1))] }
 		t.Logf("%-22s %8d %10s %10s %10s",
 			fmt.Sprintf("%d-%d", b*statements/buckets, (b+1)*statements/buckets),
-			len(took), pct(0.50), pct(0.95), pct(0.99))
+			len(took), pct(0.50).Round(time.Millisecond), pct(0.95).Round(time.Millisecond), pct(0.99).Round(time.Millisecond))
+		p50 = append(p50, pct(0.50))
 	}
+	require.NotEmpty(t, p50, "no batch was sent")
+	return p50
 }
 
 // loadStatement is stmtBytes of SQL that compresses like real statements do,

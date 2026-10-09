@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -32,6 +33,10 @@ import (
 // SidecarSessionEventsFlag turns on POST /api/sidecars/events and the
 // handshake header that tells a sidecar to use it.
 const SidecarSessionEventsFlag = "experimental.sidecar_session_events"
+
+// SidecarStreamChunksFlag appends each batch to the stream as a chunk row
+// instead of rewriting the stream blob (ENG-590).
+const SidecarStreamChunksFlag = "experimental.sidecar_stream_chunks"
 
 // sidecarGuardRailRuleType: the event names the rule, not its type; a known
 // type would make the session page promise matched words.
@@ -670,6 +675,23 @@ func permanentDBError(err error) bool {
 		errors.Is(err, gorm.ErrCheckConstraintViolated)
 }
 
+// appendSidecarSessionStream appends a chunk, whose cost does not grow with
+// the session. A session that has chunks keeps them when the flag goes off:
+// a blob append would land before them.
+func appendSidecarSessionStream(tx *gorm.DB, orgID, sessionID string, entries json.RawMessage) error {
+	chunks := featureflag.IsEnabled(orgID, SidecarStreamChunksFlag)
+	if !chunks {
+		var err error
+		if chunks, err = models.HasSessionStreamChunksTx(tx, orgID, sessionID); err != nil {
+			return err
+		}
+	}
+	if chunks {
+		return models.AppendSessionStreamChunkTx(tx, orgID, sessionID, entries)
+	}
+	return models.AppendSessionStreamTx(tx, orgID, sessionID, entries)
+}
+
 // applySidecarSessionPlan writes a plan inside tx.
 func applySidecarSessionPlan(tx *gorm.DB, sc sidecarIdentity, plan sidecarSessionPlan) error {
 	if plan.Accepted == 0 {
@@ -686,7 +708,7 @@ func applySidecarSessionPlan(tx *gorm.DB, sc sidecarIdentity, plan sidecarSessio
 		}
 	}
 	if len(plan.Entries) > 0 {
-		if err := models.AppendSessionStreamTx(tx, orgID, plan.SessionID, plan.Entries); err != nil {
+		if err := appendSidecarSessionStream(tx, orgID, plan.SessionID, plan.Entries); err != nil {
 			return fmt.Errorf("appending to the session stream: %w", err)
 		}
 	}

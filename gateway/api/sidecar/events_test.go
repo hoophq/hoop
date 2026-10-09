@@ -227,19 +227,15 @@ type streamEntry struct {
 	Text    string
 }
 
-// readStream reads the stream blob of a session: its raw text, its format
-// and its decoded entries.
+// readStream reads the stream of a session as the session API does: its raw
+// text, its format and its decoded entries.
 func readStream(t *testing.T, orgID, sessionID string) (string, *string, []streamEntry) {
 	t.Helper()
-	var blob struct {
-		BlobStream string
-		Format     *string
-	}
-	require.NoError(t, models.DB.Raw(
-		`SELECT blob_stream::text AS blob_stream, format FROM private.blobs WHERE org_id = ? AND id = ?`,
-		orgID, models.SessionStreamBlobID(sessionID)).Take(&blob).Error)
+	blob, err := (&models.Session{OrgID: orgID, ID: sessionID}).GetBlobStream()
+	require.NoError(t, err)
+	require.NotNil(t, blob, "session %s has no stream", sessionID)
 	var raw [][]any
-	require.NoError(t, json.Unmarshal([]byte(blob.BlobStream), &raw))
+	require.NoError(t, json.Unmarshal(blob.BlobStream, &raw))
 	entries := make([]streamEntry, 0, len(raw))
 	for _, e := range raw {
 		require.Len(t, e, 3, "entry %v is not [elapsed, type, base64]", e)
@@ -253,7 +249,7 @@ func readStream(t *testing.T, orgID, sessionID string) (string, *string, []strea
 		require.NoError(t, err)
 		entries = append(entries, streamEntry{Elapsed: elapsed, Kind: kind, Text: string(text)})
 	}
-	return blob.BlobStream, blob.Format, entries
+	return string(blob.BlobStream), blob.BlobFormat, entries
 }
 
 // streamSize is the size the audit plugin counts for entries: the bytes of

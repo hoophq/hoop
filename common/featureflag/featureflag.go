@@ -93,6 +93,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.sidecar_stream_chunks": {
+		Name:        "experimental.sidecar_stream_chunks",
+		Description: "Write each batch of sidecar session events as a new row instead of rewriting the whole session stream, so a batch takes the same time at the end of a long session as at its start. When off, new sessions rewrite the stream on each batch; a session that already has rows keeps writing rows, so its entries stay in order. Session pages and downloads read both layouts.",
+		Default:     true,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 	"experimental.ssh_guardrails": {
 		Name:        "experimental.ssh_guardrails",
 		Description: "Enforce guardrails on native SSH connections: exec commands are validated against input rules before they run, and session-channel output (interactive shell/exec) is validated against output rules before it reaches the client. Port-forward (direct-tcpip) channels are not inspected. Interactive shell stdin is validated separately by experimental.ssh_input_guardrails. Requires a DLP provider (Presidio) to be configured.",
