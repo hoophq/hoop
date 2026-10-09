@@ -81,6 +81,7 @@ import (
 	// module so the root does not carry it.
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/gemini"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"

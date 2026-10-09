@@ -17,6 +17,7 @@ import (
 	// different binary.
 	"github.com/hoophq/hoop/sidecar/analytics"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
@@ -195,6 +196,7 @@ needs a restart.`,
 			if err != nil {
 				return err
 			}
+			daemon.ReportHostedAnalyzer(os.Stderr, cfg)
 			return daemon.PrintLanes(os.Stdout, cfg.Licensing(), lanes)
 		}
 

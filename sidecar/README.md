@@ -1744,6 +1744,21 @@ to the audit trail.
 | `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global); `thinking_level`, `thinking_budget` |
 | `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi`; with `publisher: google`, also `thinking_level`, `thinking_budget`, `labels` |
 
+**The model Hoop hosts.** Without an LLM of your own, set
+`use_hoop_llm_provider: true` instead of `provider` and `model`:
+
+```yaml
+analyzer:
+  use_hoop_llm_provider: true
+```
+
+The statement text, which can contain PII, is then sent to Hoop. The sidecar
+logs that warning at startup and in `-validate`, and the control plane shows
+it on the sidecar's page. It is never a default: an `analyzer` section with no
+provider is refused, with both options named. No key is needed: each request
+is signed and expires after 30 seconds. `provider`, `credentials_file` and
+`use_hoop_llm_provider` are exclusive.
+
 **Gemini** with an API key goes through `provider: gemini`. `api: developer`
 is the Gemini Developer API on `generativelanguage.googleapis.com`, billed to
 a Google account. `api: vertex` is Vertex AI in express mode on
@@ -1836,7 +1851,7 @@ rather than send a setting that does nothing:
 | | `temperature` | `top_p` | `top_k` | `seed` |
 |---|---|---|---|---|
 | `anthropic`, `vertex` + `anthropic` | sent | sent | sent | refused |
-| `openai`, `vertex` + `openapi` | sent | sent | refused | sent |
+| `openai`, `use_hoop_llm_provider`, `vertex` + `openapi` | sent | sent | refused | sent |
 | `gemini`, `vertex` + `google` | sent | sent | sent | sent |
 
 Gemini 3 and later models accept `temperature`, `top_p` and `top_k` and

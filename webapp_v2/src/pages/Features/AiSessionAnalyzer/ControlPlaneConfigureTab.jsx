@@ -27,6 +27,10 @@ import SectionRow from './components/SectionRow'
 
 const FIELDS = [
   ['provider', 'vertex, anthropic or openai — whichever the binary links'],
+  [
+    'use_hoop_llm_provider',
+    'true uses the model Hoop hosts instead of a provider: no key needed, but statement text, which can contain personal data, is sent to Hoop',
+  ],
   ['model', 'provider-specific, e.g. claude-sonnet-4-5@20250929'],
   ['credentials_file', 'a path on the sidecar. Omit it where the platform resolves credentials'],
   ['extra', 'provider settings, such as Vertex project and region'],

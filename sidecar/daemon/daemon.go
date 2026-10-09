@@ -413,6 +413,7 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		if err != nil {
 			return err
 		}
+		ReportHostedAnalyzer(os.Stderr, cfg)
 		return PrintLanes(os.Stdout, cfg.lic, lanes)
 	}
 
@@ -856,10 +857,13 @@ func Run(cfg *Config, det Plugin) error {
 	if analyzerDeps != nil {
 		analyzerDeps.log = log
 		log.Info("risk analyzer attached",
-			"provider", cfg.Analyzer.Provider,
-			"model", cfg.Analyzer.Model,
+			"provider", cfg.Analyzer.providerName(),
+			"model", cfg.Analyzer.modelName(),
 			"send", sendModeOrDefault(cfg.Analyzer.Send),
 			"fail_open", cfg.Analyzer.failOpen())
+		if cfg.Analyzer.UseHoopLLMProvider {
+			log.Warn(hostedPIINotice)
+		}
 	}
 
 	lanes, err := buildLanes(cfg, det, analyzerDeps)
@@ -1836,8 +1840,8 @@ func serveAdmin(
 		// and which the config only ever named by file path.
 		if analyzerCfg != nil {
 			resp["analyzer"] = map[string]any{
-				"provider":      analyzerCfg.Provider,
-				"model":         analyzerCfg.Model,
+				"provider":      analyzerCfg.providerName(),
+				"model":         analyzerCfg.modelName(),
 				"endpoint_host": analyzerCfg.endpointHost(),
 				"send":          sendModeOrDefault(analyzerCfg.Send),
 				"fail_open":     analyzerCfg.failOpen(),

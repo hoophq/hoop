@@ -10,6 +10,7 @@ import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
 import { listenerPath } from '../listeners'
 import DeleteSidecarModal from '../sections/DeleteSidecarModal'
+import HostedAnalyzerNotice from '../sections/HostedAnalyzerNotice'
 
 // /sidecars/:id — the details card on its own page, and the listener controls.
 // The request, its error and its cancellation live in useSidecarStore; this
@@ -92,6 +93,7 @@ export default function SidecarDetailsPage() {
         selected && (
           <>
             <Title order={1}>{`${selected.name} details`}</Title>
+            <HostedAnalyzerNotice configuration={selected.configuration} />
             <SidecarDetails
               sidecar={selected}
               editable

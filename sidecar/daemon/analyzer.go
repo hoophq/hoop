@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/url"
 	"slices"
@@ -140,10 +141,18 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 // is a DEFAULT a listener's own analyzer block overrides per lane.
 type AnalyzerConfig struct {
 	// Provider names a registered provider: anthropic, openai, gemini,
-	// vertex. Availability depends on what the binary links.
+	// vertex. Availability depends on what the binary links. Empty when
+	// UseHoopLLMProvider is set.
 	Provider string `json:"provider,omitempty"`
 
-	// Model names the model. Provider-specific format.
+	// UseHoopLLMProvider selects the small model Hoop hosts, so analysis
+	// works without an LLM of your own. Statement text, which can contain
+	// PII, is sent to Hoop. Never a default: a section with no provider is
+	// refused rather than sent to Hoop silently.
+	UseHoopLLMProvider bool `json:"use_hoop_llm_provider,omitempty" cap:"analyzer_hoop_llm_provider"`
+
+	// Model names the model. Provider-specific format. Optional with
+	// UseHoopLLMProvider.
 	Model string `json:"model,omitempty"`
 
 	// Endpoint overrides the provider's default URL. Empty uses the
@@ -576,14 +585,36 @@ func (a *AnalyzerConfig) validate(hasScanner, onHost bool) []string {
 	}
 	var problems []string
 
-	if a.Provider == "" {
-		problems = append(problems, "analyzer: no provider set")
-	} else if onHost && !providerLinked(a.Provider) {
+	switch {
+	case a.UseHoopLLMProvider:
+		// The hosted model is one fixed service: nothing here picks a
+		// different one, and a credential has nowhere to go.
+		if a.Provider != "" {
+			problems = append(problems, fmt.Sprintf(
+				"analyzer: use_hoop_llm_provider and provider %q are exclusive; remove one", a.Provider))
+		}
+		if a.CredentialsFile != "" {
+			problems = append(problems,
+				"analyzer: use_hoop_llm_provider takes no credentials_file; its requests are signed")
+		}
+		if onHost && !providerLinked(hostedProvider) {
+			problems = append(problems, "analyzer: use_hoop_llm_provider is set but this binary does not link the hosted provider")
+		}
+	case a.Provider == hostedProvider:
+		problems = append(problems, fmt.Sprintf(
+			"analyzer: provider %q is not set directly; set use_hoop_llm_provider: true", hostedProvider))
+	case a.Provider == "":
+		problems = append(problems, "analyzer: no provider set. Set provider and model "+
+			"to use your own LLM, or set use_hoop_llm_provider: true to use the model Hoop "+
+			"hosts (statement text, which can contain PII, is then sent to Hoop)")
+	case onHost && !providerLinked(a.Provider):
 		problems = append(problems, fmt.Sprintf(
 			"analyzer: provider %q is not linked into this binary (linked: %s)",
 			a.Provider, strings.Join(analyzer.RegisteredProviders(), ", ")))
 	}
-	if a.Model == "" {
+	// Only once a real provider is named: before that, the provider error
+	// above is the one to fix.
+	if a.Model == "" && !a.UseHoopLLMProvider && a.Provider != "" && a.Provider != hostedProvider {
 		problems = append(problems, "analyzer: no model set")
 	}
 
@@ -683,10 +714,17 @@ func providerLinked(name string) bool {
 // endpointHost renders the endpoint for /config: host only, never the path or
 // anything that could carry a token.
 func (a *AnalyzerConfig) endpointHost() string {
-	if a == nil || a.Endpoint == "" {
+	if a == nil {
 		return ""
 	}
-	u, err := url.Parse(a.Endpoint)
+	endpoint := a.Endpoint
+	if endpoint == "" && a.UseHoopLLMProvider {
+		endpoint = analyzer.HostedEndpoint
+	}
+	if endpoint == "" {
+		return ""
+	}
+	u, err := url.Parse(endpoint)
 	if err != nil {
 		return ""
 	}
@@ -712,15 +750,50 @@ func buildAnalyzer(cfg *AnalyzerConfig, roots *x509.CertPool) (analyzer.Provider
 		}
 	}
 
-	return analyzer.NewProvider(cfg.Provider, analyzer.Options{
+	provider := cfg.providerName()
+	return analyzer.NewProvider(provider, analyzer.Options{
 		Model:           cfg.Model,
 		Endpoint:        cfg.Endpoint,
 		Credential:      cred,
 		Extra:           cfg.Extra,
 		MaxOutputTokens: cfg.MaxOutputTokens,
 		Sampling:        cfg.sampling(),
-		HTTPClient:      outboundHTTPClient(roots, "analyzer/"+cfg.Provider),
+		HTTPClient:      outboundHTTPClient(roots, "analyzer/"+provider),
 	})
+}
+
+// hostedProvider is the registered name of the provider for the model Hoop
+// hosts. Config never names it: use_hoop_llm_provider selects it, so the
+// choice to send statements to Hoop is a flag of its own.
+const hostedProvider = "hoop"
+
+// hostedPIINotice is logged whenever the hosted model is in use.
+const hostedPIINotice = "analyzer uses the model Hoop hosts: statement text, which can contain PII, is sent to Hoop for classification"
+
+// providerName is the provider the section selects.
+func (a *AnalyzerConfig) providerName() string {
+	if a.UseHoopLLMProvider {
+		return hostedProvider
+	}
+	return a.Provider
+}
+
+// modelName is the model in use, the hosted default when the hosted model
+// is selected with no model named.
+func (a *AnalyzerConfig) modelName() string {
+	if a.Model == "" && a.UseHoopLLMProvider {
+		return analyzer.HostedModel
+	}
+	return a.Model
+}
+
+// ReportHostedAnalyzer writes the PII notice to w when the config uses the
+// model Hoop hosts. Both validate entry points call it, on stderr: stdout
+// carries the -validate report.
+func ReportHostedAnalyzer(w io.Writer, cfg *Config) {
+	if cfg != nil && cfg.Analyzer != nil && cfg.Analyzer.UseHoopLLMProvider {
+		fmt.Fprintln(w, "warn:", hostedPIINotice)
+	}
 }
 
 // splitAnalyzerRules separates ai_analysis rules from the local rule set.
@@ -1092,7 +1165,7 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 		local:    cfg.localReviewer,
 		det:      det,
 		mcp:      cfg.MCP != nil,
-		metrics:  newAnalyzerMetrics(cfg.Analyzer.Provider, cfg.Analyzer.Model),
+		metrics:  newAnalyzerMetrics(cfg.Analyzer.providerName(), cfg.Analyzer.modelName()),
 	}, nil
 }
 
