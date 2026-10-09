@@ -46,6 +46,10 @@ const (
 	// CapabilityReviewMode means this build decodes an analyzer block's
 	// review_mode.
 	CapabilityReviewMode = "review_mode"
+	// CapabilityApprovalMode means this build decodes an analyzer block's
+	// approval_mode, the alias of review_mode. ServedForm serves the
+	// canonical key, so a plane refuses it only when the two disagree.
+	CapabilityApprovalMode = "approval_mode"
 	// CapabilityAnalyzerRateLimit means this build decodes analyzer
 	// rate_limit, on the top-level section and on a listener's block.
 	CapabilityAnalyzerRateLimit = "analyzer_rate_limit"
@@ -337,21 +341,89 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 // lane serves the same document an older build decodes. It copies what it
 // changes: cfg may share listeners with a stored row.
 //
-// The one hand-written case: "hold" is a value, and every other default is
+// The one hand-written default: "hold" is a value, and every other default is
 // the zero value, which the field's own tag omits.
+//
+// It also serves the approval spellings an admin may have written in their
+// canonical form: approval_mode as review_mode, and require_approval as
+// require_review on every risk level. An older build decodes neither alias
+// and refuses the whole document over one, and the canonical form is what
+// every build reads. approval_mode that disagrees with review_mode is served
+// as written: normalize refuses it, and picking one here would hide that.
 func ServedForm(cfg Config) Config {
 	listeners := make([]ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
 	for i, l := range listeners {
-		if l.Analyzer == nil || l.Analyzer.ReviewMode != "hold" {
+		listeners[i].Guardrails = servedGuardrails(l.Guardrails)
+		listeners[i].Policy = servedPolicy(l.Policy)
+		if l.Analyzer == nil {
 			continue
 		}
 		block := *l.Analyzer
-		block.ReviewMode = ""
-		listeners[i].Analyzer = &block
+		if block.ApprovalMode != "" && (block.ReviewMode == "" || block.ReviewMode == block.ApprovalMode) {
+			block.ReviewMode, block.ApprovalMode = block.ApprovalMode, ""
+		}
+		if block.ReviewMode == "hold" {
+			block.ReviewMode = ""
+		}
+		block.HighRisk = canonicalAction(block.HighRisk)
+		block.MediumRisk = canonicalAction(block.MediumRisk)
+		block.LowRisk = canonicalAction(block.LowRisk)
+		if !reflect.DeepEqual(block, *l.Analyzer) {
+			listeners[i].Analyzer = &block
+		}
 	}
 	cfg.Listeners = listeners
+	cfg.Guardrails = servedGuardrails(cfg.Guardrails)
+	cfg.Policy = servedPolicy(cfg.Policy)
 	return cfg
+}
+
+// servedRules returns rules with require_approval served as require_review on
+// the deprecated ai_analysis rule form. It returns rules itself when nothing
+// changes, and a copy otherwise.
+func servedRules(rules []policy.Rule) ([]policy.Rule, bool) {
+	var out []policy.Rule
+	for i, r := range rules {
+		high, medium, low := canonicalAction(r.HighRisk), canonicalAction(r.MediumRisk), canonicalAction(r.LowRisk)
+		if high == r.HighRisk && medium == r.MediumRisk && low == r.LowRisk {
+			continue
+		}
+		if out == nil {
+			out = slices.Clone(rules)
+		}
+		out[i].HighRisk, out[i].MediumRisk, out[i].LowRisk = high, medium, low
+	}
+	if out == nil {
+		return rules, false
+	}
+	return out, true
+}
+
+func servedGuardrails(g *GuardrailsConfig) *GuardrailsConfig {
+	if g == nil {
+		return nil
+	}
+	rules, changed := servedRules(g.Rules)
+	if !changed {
+		return g
+	}
+	out := *g
+	out.Rules = rules
+	return &out
+}
+
+func servedPolicy(p *PolicyConfig) *PolicyConfig {
+	if p == nil {
+		return nil
+	}
+	rules, changed := servedRules(p.Rules)
+	if !changed {
+		return p
+	}
+	out := *p
+	out.Rules = rules
+	return &out
 }
 
 // walkConfigType visits every JSON field reachable from t, depth first, each

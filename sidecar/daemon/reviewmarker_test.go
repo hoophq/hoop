@@ -41,10 +41,12 @@ func TestAGRPCReviewDenyCarriesTheReviewTrailers(t *testing.T) {
 		t.Fatalf("grpc-status = %q, want 7", got)
 	}
 	for k, want := range map[string]string{
-		"X-Hoop-Denied":        "review",
-		"X-Hoop-Review-Id":     "9f97",
-		"X-Hoop-Review-Status": "PENDING",
-		"Retry-After":          "5",
+		"X-Hoop-Denied":          "review",
+		"X-Hoop-Review-Id":       "9f97",
+		"X-Hoop-Review-Status":   "PENDING",
+		"X-Hoop-Approval-Id":     "9f97",
+		"X-Hoop-Approval-Status": "PENDING",
+		"Retry-After":            "5",
 	} {
 		got := resp.Trailer.Get(k)
 		if got == "" {

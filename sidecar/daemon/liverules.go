@@ -58,7 +58,7 @@ type ruleSet struct {
 	policy policy.Evaluator
 	masker gate.Masker
 	// holds reports that the lane's analyzer block holds for review. A grpc
-	// lane then exposes analyzer.HeaderReviewMode to policy; it rides here
+	// lane then exposes analyzer.ClientModeHeaders to policy; it rides here
 	// because the analyzer block swaps with the rules.
 	holds bool
 

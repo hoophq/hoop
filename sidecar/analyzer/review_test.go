@@ -140,7 +140,7 @@ func TestAnUnreleasedReviewDeniesAndNamesIt(t *testing.T) {
 		{"rejected", "REJECTED", "was rejected"},
 		{"revoked", "REVOKED", "was revoked"},
 		{"claim lost", "EXECUTED", "already used"},
-		{"expired", "EXPIRED", "review expired; running the statement again files a new review"},
+		{"expired", "EXPIRED", "approval request expired; running the statement again files a new approval request"},
 		{"unknown status", "SOMETHING_NEW", "not released"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -191,7 +191,7 @@ func TestNoReviewBackendDenies(t *testing.T) {
 	if !v.Denied {
 		t.Fatal("a hold with no review backend forwarded the statement")
 	}
-	if strings.Contains(v.Message, "(review ") {
+	if strings.Contains(v.Message, "(approval ") {
 		t.Errorf("the denial quotes a review id that was never filed: %q", v.Message)
 	}
 	if v.Review != nil {
@@ -507,7 +507,7 @@ func TestASettledReviewEndsTheWait(t *testing.T) {
 		{"rejected", "REJECTED", "was rejected"},
 		{"revoked", "REVOKED", "was revoked"},
 		{"spent elsewhere", "EXECUTED", "already used"},
-		{"expired", "EXPIRED", "review expired"},
+		{"expired", "EXPIRED", "approval request expired"},
 		{"unknown status", "SOMETHING_NEW", "not released"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -700,13 +700,13 @@ func TestReturnModeDeniesAPendingReviewAtOnce(t *testing.T) {
 	}
 }
 
-// With the MCP tools served, the return-mode denial names review_wait, and
+// With the MCP tools served, the return-mode denial names approval_wait, and
 // the id and the instruction survive a client that keeps 512 bytes.
 func TestReturnModeNamesTheMCPToolWhenServed(t *testing.T) {
 	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
 	v := holdingEvaluator(t, rev, func(c *analyzer.Config) {
 		returnMode(c)
-		c.ReturnNext = "call the MCP tool review_wait with the review id"
+		c.ReturnNext = "call the MCP tool approval_wait with the approval id"
 		c.Message = strings.Repeat("x", 600)
 	}).Evaluate(deleteStatement())
 
@@ -715,10 +715,10 @@ func TestReturnModeNamesTheMCPToolWhenServed(t *testing.T) {
 	}
 	// The mysql client keeps 512 bytes; the long operator message goes last.
 	kept := v.Message[:min(len(v.Message), 512)]
-	if !strings.HasPrefix(kept, "review 9f97: ") {
+	if !strings.HasPrefix(kept, "approval 9f97: ") {
 		t.Errorf("denial %q does not lead with the review id", kept)
 	}
-	for _, want := range []string{"review_wait", "resend the identical statement once it is approved"} {
+	for _, want := range []string{"approval_wait", "resend the identical statement once it is approved"} {
 		if !strings.Contains(kept, want) {
 			t.Errorf("the first 512 bytes %q do not say %q", kept, want)
 		}
@@ -742,10 +742,10 @@ func TestOnlyAPendingReturnNamesTheMCPTool(t *testing.T) {
 			}
 			v := holdingEvaluator(t, rev, func(c *analyzer.Config) {
 				c.ReviewMode = tc.mode
-				c.ReturnNext = "call the MCP tool review_wait with the review id"
+				c.ReturnNext = "call the MCP tool approval_wait with the approval id"
 			}).Evaluate(deleteStatement())
 
-			if !v.Denied || strings.Contains(v.Message, "review_wait") {
+			if !v.Denied || strings.Contains(v.Message, "approval_wait") {
 				t.Errorf("denied=%v message=%q, want a denial without the MCP clause", v.Denied, v.Message)
 			}
 		})
@@ -757,7 +757,7 @@ func TestReturnModeNamesASettledReview(t *testing.T) {
 	for status, want := range map[string]string{
 		"REJECTED": "was rejected",
 		"REVOKED":  "was revoked",
-		"EXPIRED":  "review expired",
+		"EXPIRED":  "approval request expired",
 	} {
 		t.Run(status, func(t *testing.T) {
 			rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: status}}

@@ -37,7 +37,7 @@ type HTTPCodecConfig struct {
 	// Optional for the analyzer: it judges a bodiless request from its path
 	// and headers, and without this never sees what a POST or a PUT
 	// carries. A lane that holds for review captures request bodies anyway.
-	CaptureBody bool `json:"capture_body,omitempty" label:"Capture the request body" help:"Lets policy and the AI analyzer read what a POST or PUT carries. A listener that holds for review captures request bodies without it."`
+	CaptureBody bool `json:"capture_body,omitempty" label:"Capture the request body" help:"Lets policy and the AI analyzer read what a POST or PUT carries. A listener that holds for approval captures request bodies without it."`
 
 	// MaxBodyBytes truncates a captured body. Zero uses the codec default.
 	MaxBodyBytes int `json:"max_body_bytes,omitempty" label:"Max body bytes" help:"0 uses the codec default of 64 KiB."`
@@ -532,6 +532,14 @@ type LaneAnalyzerConfig struct {
 	// deleting it.
 	ReviewMode analyzer.ReviewMode `json:"review_mode,omitempty" cap:"review_mode" since:"1.196.0"`
 
+	// ApprovalMode is the operator spelling of ReviewMode, after the
+	// product renamed review to approval. normalize folds it onto
+	// ReviewMode and clears it, so everything past the decode reads one
+	// field, and the plane keeps serving review_mode: a sidecar older than
+	// this field never receives approval_mode. Both set and different is a
+	// conflict, the same as any field written in two spellings.
+	ApprovalMode analyzer.ReviewMode `json:"approval_mode,omitempty" cap:"approval_mode"`
+
 	// The rest override the top-level analyzer defaults for this lane.
 	// A zero value inherits; see the field of the same name on
 	// AnalyzerConfig for what each bounds.
@@ -1001,7 +1009,7 @@ func returnNext(mcp bool) string {
 	if !mcp {
 		return ""
 	}
-	return "call the MCP tool " + ReviewWaitTool + " with the review id"
+	return "call the MCP tool " + ApprovalWaitTool + " with the approval id"
 }
 
 func triggerFrom(t *policy.AITrigger) analyzer.Trigger {
@@ -1055,6 +1063,7 @@ func actionMap(la LaneAnalyzerConfig, hasOPA bool) (analyzer.ActionMap, error) {
 		if !a.Valid() {
 			return nil, fmt.Errorf("unknown action %q for %s risk", raw, level)
 		}
+		a = a.Canonical()
 		if a == analyzer.ActionDefer && !hasOPA {
 			a = analyzer.ActionBlock
 		}
@@ -1254,6 +1263,10 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	return problems
 }
 
+// holdAction names the hold action in an operator error, in both spellings
+// a config may use: the product's name first, the canonical one after.
+const holdAction = `"require_approval" (or "require_review")`
+
 // refuseRuleFormHold refuses require_review on the DEPRECATED ai_analysis
 // rule, which the listener analyzer block supports.
 //
@@ -1266,14 +1279,14 @@ func refuseRuleFormHold(high, medium, low, where string) []string {
 	for _, level := range [...]struct{ name, action string }{
 		{"high", high}, {"medium", medium}, {"low", low},
 	} {
-		if analyzer.Action(level.action) != analyzer.ActionRequireReview {
+		if analyzer.Action(level.action).Canonical() != analyzer.ActionRequireReview {
 			continue
 		}
 		return []string{fmt.Sprintf(
-			"%s asks for %q on %s risk, which a deprecated ai_analysis rule cannot "+
-				"do: it carries no approval_rule to name who may release a held "+
+			"%s asks for %s on %s risk, which a deprecated ai_analysis rule cannot "+
+				"do: it carries no approval_rule to name who may approve a held "+
 				"statement. Move this lane to a listener \"analyzer\" block, which "+
-				"takes both", where, level.action, level.name)}
+				"takes both", where, holdAction, level.name)}
 	}
 	return nil
 }
@@ -1312,9 +1325,9 @@ func ValidateHoldOnLane(la *LaneAnalyzerConfig, lc ListenerConfig, where string)
 		return nil
 	}
 	return []string{fmt.Sprintf(
-		"%s asks for %q on an ssh lane that admits shell, and a shell sends no "+
+		"%s asks for %s on an ssh lane that admits shell, and a shell sends no "+
 			"statements, so nothing typed in it is held; drop shell from "+
-			"ssh.capabilities_allowed", where, analyzer.ActionRequireReview)}
+			"ssh.capabilities_allowed", where, holdAction)}
 }
 
 // validateLaneBlock checks one listener's analyzer block in isolation. The
@@ -1368,9 +1381,9 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 	switch {
 	case la.ApprovalRule == "" && holds && holdNeedsRule:
 		problems = append(problems, fmt.Sprintf(
-			"%s asks for %q and names no approval_rule; the rule is what decides who "+
-				"may release a held statement, and the control plane refuses a review "+
-				"that does not name one", where, analyzer.ActionRequireReview))
+			"%s asks for %s and names no approval_rule; the rule is what decides who "+
+				"may approve a held statement, and the control plane refuses an approval "+
+				"request that does not name one", where, holdAction))
 	case la.ApprovalRule == "":
 	case strings.TrimSpace(la.ApprovalRule) == "":
 		problems = append(problems, where+
@@ -1378,8 +1391,8 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 	case !holds:
 		problems = append(problems, fmt.Sprintf(
 			"%s: approval_rule %q names who may approve a statement, and no risk "+
-				"level asks for %q, so nothing on this lane would hold one",
-			where, la.ApprovalRule, analyzer.ActionRequireReview))
+				"level asks for %s, so nothing on this lane would hold one",
+			where, la.ApprovalRule, holdAction))
 	}
 
 	// Same pairing as approval_rule: a mode on a lane that holds nothing is
@@ -1387,12 +1400,12 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 	switch {
 	case !la.ReviewMode.Valid():
 		problems = append(problems, fmt.Sprintf(
-			"%s: unknown review_mode %q (hold or return)", where, la.ReviewMode))
+			"%s: unknown review_mode (or approval_mode) %q (hold or return)", where, la.ReviewMode))
 	case la.ReviewMode != "" && !holds:
 		problems = append(problems, fmt.Sprintf(
-			"%s: review_mode %q decides how a held statement waits, and no risk "+
-				"level asks for %q, so nothing on this lane would hold one",
-			where, la.ReviewMode, analyzer.ActionRequireReview))
+			"%s: review_mode (or approval_mode) %q decides how a held statement waits, "+
+				"and no risk level asks for %s, so nothing on this lane would hold one",
+			where, la.ReviewMode, holdAction))
 	}
 	return problems
 }
@@ -1486,7 +1499,7 @@ func validateRiskActions(high, medium, low, where string) []string {
 		if !a.Valid() {
 			problems = append(problems, fmt.Sprintf(
 				"%s: unknown action %q for %s risk "+
-					"(allow, warn, block, defer or require_review)", where, raw, level))
+					"(allow, warn, block, defer or require_review, also spelled require_approval)", where, raw, level))
 			continue
 		}
 		// `defer` with no OPA is not a refusal. actionMap degrades it

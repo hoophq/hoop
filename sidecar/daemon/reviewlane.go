@@ -21,9 +21,25 @@ import (
 // added later cannot start shadowing an upstream that had begun to use it.
 const ReservedPathPrefix = "/.well-known/hoop/"
 
-// ReviewStatusPath answers one review's status by id, under the reserved
-// prefix: GET /.well-known/hoop/reviews/<id>.
+// ReviewStatusPath answers one approval request's status by id, under the
+// reserved prefix: GET /.well-known/hoop/reviews/<id>. It is the spelling
+// from before the product renamed review to approval, kept for the clients
+// that already poll it.
 const ReviewStatusPath = ReservedPathPrefix + "reviews/"
+
+// ApprovalStatusPath is the same answer under the product's name:
+// GET /.well-known/hoop/approvals/<id>.
+const ApprovalStatusPath = ReservedPathPrefix + "approvals/"
+
+// statusID returns the id a status request names, under either spelling.
+func statusID(path string) (string, bool) {
+	for _, prefix := range [...]string{ApprovalStatusPath, ReviewStatusPath} {
+		if id, ok := strings.CutPrefix(path, prefix); ok {
+			return id, true
+		}
+	}
+	return "", false
+}
 
 // What a client does next about a review. Every status answer carries one,
 // so a client never has to interpret a status on its own.
@@ -89,13 +105,13 @@ func answerReviewStatus(ctx context.Context, req *inspect.HTTPDetail, listener s
 		return laneReply(http.StatusMethodNotAllowed, false, http.Header{"Allow": {"GET, HEAD"}},
 			message("only GET and HEAD are served under "+ReservedPathPrefix))
 	}
-	id, ok := strings.CutPrefix(req.Path, ReviewStatusPath)
+	id, ok := statusID(req.Path)
 	if !ok || id == "" {
 		return laneReply(http.StatusNotFound, head, nil, message("not found"))
 	}
 	if reviews == nil {
 		return laneReply(http.StatusServiceUnavailable, head, nil,
-			message("review status comes from the control plane, and this sidecar has none"))
+			message("approval status comes from the control plane, and this sidecar has none"))
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, reviewStatusTimeout)
@@ -106,15 +122,15 @@ func answerReviewStatus(ctx context.Context, req *inspect.HTTPDetail, listener s
 	}
 	switch {
 	case errors.Is(err, ErrReviewNotFound):
-		return laneReply(http.StatusNotFound, head, nil, message("review not found on this sidecar"))
+		return laneReply(http.StatusNotFound, head, nil, message("approval not found on this sidecar"))
 	case errors.Is(err, ErrPlaneTooOld):
 		return laneReply(http.StatusBadGateway, head, nil, message(err.Error()))
 	case err != nil:
 		// The cause can name the plane's address, which a data port
 		// has no reason to tell its callers. The log keeps it.
-		log.Warn("review status read failed", "review", id, "error", err)
+		log.Warn("approval status read failed", "review", id, "error", err)
 		return laneReply(http.StatusBadGateway, head, nil,
-			message("the control plane could not report the review"))
+			message("the control plane could not report the approval"))
 	}
 	return laneReply(http.StatusOK, head, nil, laneReview{ReviewStatus: rev, Next: ReviewNext(rev.Status)})
 }
@@ -157,5 +173,5 @@ func laneReply(code int, head bool, h http.Header, body any) []byte {
 
 // laneReplyFailed is the answer when a reply cannot be rendered.
 const laneReplyFailed = "HTTP/1.1 500 Internal Server Error\r\n" +
-	"Content-Type: application/json\r\nContent-Length: 49\r\nConnection: close\r\n\r\n" +
-	`{"message":"the review status could not be read"}`
+	"Content-Type: application/json\r\nContent-Length: 51\r\nConnection: close\r\n\r\n" +
+	`{"message":"the approval status could not be read"}`

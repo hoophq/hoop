@@ -360,7 +360,7 @@ func New(cfg Config) (*Evaluator, error) {
 		return nil, fmt.Errorf("sidecar/analyzer: max retries %d is negative", cfg.MaxRetries)
 	}
 	if !cfg.ReviewMode.Valid() {
-		return nil, fmt.Errorf("sidecar/analyzer: unknown review mode %q", cfg.ReviewMode)
+		return nil, fmt.Errorf("sidecar/analyzer: unknown approval mode %q", cfg.ReviewMode)
 	}
 	if err := cfg.RateLimit.validate(); err != nil {
 		return nil, err
@@ -369,6 +369,12 @@ func New(cfg Config) (*Evaluator, error) {
 		return nil, err
 	}
 	holds := false
+	// A copy in the canonical spelling, so the caller's map keeps what it
+	// wrote and Evaluate compares and records one value per behaviour.
+	var actions ActionMap
+	if cfg.Actions != nil {
+		actions = make(ActionMap, len(cfg.Actions))
+	}
 	for level, action := range cfg.Actions {
 		if !level.Valid() {
 			return nil, fmt.Errorf("sidecar/analyzer: unknown risk level %q", level)
@@ -376,10 +382,13 @@ func New(cfg Config) (*Evaluator, error) {
 		if !action.Valid() {
 			return nil, fmt.Errorf("sidecar/analyzer: unknown action %q for risk %q", action, level)
 		}
+		action = action.Canonical()
 		if action == ActionRequireReview {
 			holds = true
 		}
+		actions[level] = action
 	}
+	cfg.Actions = actions
 	prompt := BuildSystemPrompt(cfg.Guidance)
 	budget := cfg.Budget
 	if budget == nil {

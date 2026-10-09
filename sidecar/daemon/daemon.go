@@ -1325,7 +1325,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		// nobody filed cannot be approved later either.
 		if gc.observing() && analyzerHolds(lc.Analyzer) {
 			ln.notes = append(ln.notes,
-				"observe mode files no review: a held statement is recorded as "+
+				"observe mode files no approval request: a held statement is recorded as "+
 					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
@@ -1334,7 +1334,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
 			ln.notes = append(ln.notes, fmt.Sprintf(
 				"idle_timeout_sec %d ends a held statement's wait before the %s "+
-					"review wait does", lc.IdleTimeoutSec, analyzer.ReviewWait))
+					"approval wait does", lc.IdleTimeoutSec, analyzer.ReviewWait))
 		}
 		if !opa.enabled() && (anyDeferred(gc.Rules) || analyzerDefers(lc.Analyzer)) {
 			ln.notes = append(ln.notes,

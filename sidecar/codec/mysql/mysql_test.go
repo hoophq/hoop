@@ -58,3 +58,23 @@ func TestNewKeepsTheReviewModeAttribute(t *testing.T) {
 		t.Error("kept _client_name, which nothing asked for")
 	}
 }
+
+// The approval spelling of the attribute is kept too, beside the review one.
+func TestNewKeepsTheApprovalModeAttribute(t *testing.T) {
+	c := mysql.New()
+	decode(t, c, inspect.FromServer, pkt(0, append([]byte{10}, make([]byte, 40)...)))
+	decode(t, c, inspect.FromClient, handshake(analyzer.ConnectAttrApprovalMode, "return",
+		analyzer.ConnectAttrReviewMode, "return"))
+	decode(t, c, inspect.FromServer, pkt(2, []byte{0, 0, 0, 2, 0, 0, 0}))
+	stmts := decode(t, c, inspect.FromClient, pkt(0, []byte("\x03DELETE FROM users")))
+
+	if len(stmts) != 1 {
+		t.Fatalf("got %d statements, want 1", len(stmts))
+	}
+	for _, attr := range []string{analyzer.ConnectAttrApprovalMode, analyzer.ConnectAttrReviewMode} {
+		key := inspect.MetadataMySQLConnectAttrPrefix + attr
+		if got := stmts[0].Metadata[key]; got != "return" {
+			t.Errorf("%s = %q, want return", key, got)
+		}
+	}
+}

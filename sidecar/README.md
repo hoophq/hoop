@@ -471,8 +471,9 @@ The plane ends a session whose `session_end` never comes: when its sidecar
 misses five heartbeats, or after 24 hours without an event. Events that
 arrive later are still recorded, and a late `session_end` sets the end.
 
-A statement held for review carries the review's id (`review_id` in the
-event metadata). The plane links that review and the session both ways.
+A statement held for approval carries the approval id (`review_id` in the
+event metadata, a name kept for compatibility). The plane links that approval
+request and the session both ways.
 
 ### Usage analytics
 
@@ -808,7 +809,7 @@ license: /etc/hoop-inspect/license.json
 admin:
   listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*
 
-# Review status for agents; needs a control plane. See "Agents over MCP".
+# Approval status for agents; needs a control plane. See "Agents over MCP".
 # mcp:
 #   listen: 127.0.0.1:8765
 
@@ -1228,7 +1229,7 @@ a provider; `authorization`, `cookie`, `proxy-authorization` and
 `set-cookie` cannot be allowlisted at all. `capture_body` is optional:
 `true` puts a POST's payload in front of the model; without it a write is
 judged from its request line alone. A lane where a level asks for
-`require_review` captures request bodies without it (see Reviews). A
+`require_approval` captures request bodies without it (see "Holding a statement for a human"). A
 bodiless RESPONSE (a 204, a 101) is never classified: there is nothing to
 judge but a status line.
 
@@ -1338,7 +1339,7 @@ runtime lets one file serve a deployment with OPA and a deployment without
 one. See [Guardrails and OPA](#guardrails-and-opa) for what the two phases
 send and what the gate may answer.
 
-**Holding a statement for a human.** The fourth action is `require_review`:
+**Holding a statement for a human.** The fourth action is `require_approval`:
 the statement is refused until a person approves it.
 
 ```yaml
@@ -1347,45 +1348,52 @@ listeners:
     # ...
     analyzer:
       trigger: {operations: [delete, update]}
-      high: require_review
+      high: require_approval
       approval_rule: payments-approvers
 ```
 
+`require_review` is the earlier spelling of `require_approval`, and still
+accepted: the sidecar folds one onto the other on load, and the control plane
+serves `require_review`, so a sidecar older than the new spelling still
+decodes it.
+
 `approval_rule` names the control plane access request rule that decides who
-may approve. The rule holds the reviewer groups, the approval count and the
+may approve. The rule holds the approver groups, the approval count and the
 force-approval list; the lane holds only its name, and the control plane
-authorizes each review against the config it stored for that sidecar.
+authorizes each approval request against the config it stored for that sidecar.
 
 **Approving in the terminal.** A sidecar with no control plane, started with
 `hoop start sidecar` in a terminal (stdin and stdout both a TTY), files each
-review with the person running it: the TUI's Approvals section shows the
+approval request with the person running it: the TUI's Approvals section shows the
 statement, the analyzer's risk level and explanation, and the decision is
 theirs. Such a lane needs no `approval_rule`, since there is no plane to hold
 one. The same rules hold as on the plane: an approval releases one
-statement, a resend of the same bytes answers from the same review, and a
-review nobody decided expires after the 30-minute wait. A control plane,
+statement, a resend of the same bytes answers from the same approval
+request, and an approval request nobody decided expires after the 30-minute
+wait. A control plane,
 when one is configured, always wins: its `approval_rule` decides, and the
 terminal never releases a statement the plane governs. An embedder offers the
 same with `daemon.WithLocalReviewer`.
 
-**The review runs last.** The lane files the review only after every other
-evaluator allowed the statement, the decide-phase OPA call included
-(ADR-0030). A decide denial files nothing, pages nobody and spends no
-approval. Decide sees the pending review as `input.review` (see [Guardrails
+**The approval runs last.** The lane files the approval request only after
+every other evaluator allowed the statement, the decide-phase OPA call
+included (ADR-0030). A decide denial files nothing, pages nobody and spends no
+approval. Decide sees the pending approval as `input.review` (the key keeps
+its name, so existing Rego keeps working; see [Guardrails
 and OPA](#guardrails-and-opa)), and it can deny the statement but cannot
-skip the review. A library caller that runs `analyzer.Evaluator` outside a
+skip the approval. A library caller that runs `analyzer.Evaluator` outside a
 `policy.Chain` holds at once, because nothing runs after it.
 
-**A hold waits, then gives up (ADR-0028).** A pending review holds the statement on
+**A hold waits, then gives up (ADR-0028).** A pending approval request holds the statement on
 its connection for up to 30 minutes, on every protocol. Every 5 seconds the relay asks the plane
-about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never
-files a review. An approval that lands in time runs the statement on the same
+about that one approval request (`POST /api/sidecars/reviews/<id>/claim`); the ask never
+files a new one. An approval that lands in time runs the statement on the same
 connection, late. A rejection, a revocation, an expiry, or an approval another
-connection already used ends the wait at once and denies. The review id is in every
+connection already used ends the wait at once and denies. The approval id is in every
 denial:
 
 ```
-ERROR:  statement held for human approval: still waiting for approval after 30m0s; run the statement again once it is approved (review 9f97…)
+ERROR:  statement held for human approval: still waiting for approval after 30m0s; run the statement again once it is approved (approval 9f97…)
 ```
 
 The wait ends early when the connection does. A client that hangs up, or an
@@ -1399,26 +1407,26 @@ http client behind Envoy gives up after the 15s default route timeout.
 
 After a timeout the developer asks an approver, then runs the statement again.
 That retry collects the approval. The relay files nothing on the second
-attempt: the plane recognizes the same statement, consumes the approved review
+attempt: the plane recognizes the same statement, consumes the approval
 and answers that this one may go through. It answers that ONCE, since the
-third run of the same statement files a fresh review. A rejection or a
-revocation ends that one review: running the statement again files a new one.
+third run of the same statement files a fresh approval request. A rejection or a
+revocation ends that one approval request: running the statement again files a new one.
 
-**Revoking an approval.** An approved review can be revoked until the sidecar
-uses it, from the review page or with `PUT /api/reviews/<id>` and status
+**Revoking an approval.** An approval can be revoked until the sidecar
+uses it, from the Approvals page or with `PUT /api/reviews/<id>` and status
 `REVOKED`. A hold that is still waiting denies on its next poll, and the
 Slack message says the approval was revoked. Once the sidecar uses the
-approval, the review is `EXECUTED` and a revoke answers 400: the statement
+approval, the approval request is `EXECUTED` and a revoke answers 400: the statement
 already ran. Any decision that loses that race to the sidecar answers 400
 the same way.
 
-**A review can expire.** The control plane's approval rule may set two limits
+**An approval request can expire.** The control plane's approval rule may set two limits
 on the analyzer rule form: `pending_ttl_sec`, the time to decide, and
 `approval_ttl_sec`, the time to use an approval, counted from the approval.
-Past either limit the review is `EXPIRED`: nothing is released, the relay
-denies with `the review expired; running the statement again files a new
-review`, and the next run of the statement files a new review. The limits are
-copied into the review when it is filed, so a later rule change does not move
+Past either limit the approval request is `EXPIRED`: nothing is released, the relay
+denies with `the approval request expired; running the statement again files a
+new approval request`, and the next run of the statement files a new one. The limits are
+copied into the approval request when it is filed, so a later rule change does not move
 them. A pending limit above the 30-minute hold does not make a hold wait
 longer. A relay older than the limits says `the statement was not released`
 instead. The sidecar has no setting for either limit.
@@ -1427,34 +1435,38 @@ The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first
 poll, as it did before it could wait.
 
-**`review_mode: return` denies at once.** It files the review and denies
-without waiting, so an agent whose tool call ends in seconds gets the review
+**`approval_mode: return` denies at once.** It files the approval request and denies
+without waiting, so an agent whose tool call ends in seconds gets the approval
 id instead of a hang (ADR-0021). The client resends the identical statement
 after approval.
 
 ```yaml
     analyzer:
       trigger: {operations: [delete, update]}
-      high: require_review
+      high: require_approval
       approval_rule: payments-approvers
-      review_mode: return   # hold (the default) or return
+      approval_mode: return   # hold (the default) or return
 ```
 
+`review_mode` is the earlier spelling of `approval_mode`, and still accepted.
+Setting both to the same value loads; setting them to different values is
+refused at startup. The control plane serves `review_mode`.
+
 ```
-ERROR:  statement held for human approval: waiting for approval; resend the identical statement once it is approved (review 9f97…)
+ERROR:  statement held for human approval: waiting for approval; resend the identical statement once it is approved (approval 9f97…)
 ```
 
-If the config has an `mcp:` block, the denial leads with the review id and
+If the config has an `mcp:` block, the denial leads with the approval id and
 names the MCP tool that waits:
 
 ```
-ERROR:  review 9f97…: waiting for approval; call the MCP tool review_wait with the review id, then resend the identical statement once it is approved (statement held for human approval)
+ERROR:  approval 9f97…: waiting for approval; call the MCP tool approval_wait with the approval id, then resend the identical statement once it is approved (statement held for human approval)
 ```
 
 The operator message goes last because the mysql client keeps only the
 first 512 bytes of an error.
 
-`review_mode` is valid only where a risk level asks for `require_review`;
+`approval_mode` is valid only where a risk level asks for `require_approval`;
 elsewhere startup refuses it. A control plane serves `return` only to a
 sidecar at 1.196.0 or later, and refuses the config for an older one.
 
@@ -1462,7 +1474,7 @@ sidecar at 1.196.0 or later, and refuses the config for an older one.
 developer in psql gets the denial too, and has to run the statement again
 after approval. Pick one:
 
-- Give agents their own listener with `review_mode: return`.
+- Give agents their own listener with `approval_mode: return`.
 - Keep `hold` on a shared listener and let each agent opt in.
 
 **A client can pick its own mode.** It asks for `hold` or `return`, and that
@@ -1470,18 +1482,24 @@ overrides the listener for its statements:
 
 | Protocol | How the client asks | Scope |
 |---|---|---|
-| http | header `x-hoop-review-mode: return` | one request |
-| grpc, spanner | metadata `x-hoop-review-mode: return` | one call |
-| postgres | `application_name` ends in `hoop-review=return` | the connection |
-| mysql | connection attribute `hoop_review_mode=return` | the connection |
+| http | header `x-hoop-approval-mode: return` | one request |
+| grpc, spanner | metadata `x-hoop-approval-mode: return` | one call |
+| postgres | `application_name` ends in `hoop-approval=return` | the connection |
+| mysql | connection attribute `hoop_approval_mode=return` | the connection |
 
 ```bash
-PGAPPNAME='billing-agent hoop-review=return' psql -h relay -p 15432 appdb
+PGAPPNAME='billing-agent hoop-approval=return' psql -h relay -p 15432 appdb
 ```
 
 ```
-user:pass@tcp(relay:13306)/appdb?connectionAttributes=hoop_review_mode:return
+user:pass@tcp(relay:13306)/appdb?connectionAttributes=hoop_approval_mode:return
 ```
+
+The earlier spellings, `x-hoop-review-mode`, `hoop-review=` and
+`hoop_review_mode`, are still accepted. A client that sends both spellings
+must send the same value in each; two different values are ignored, and the
+listener mode applies. A postgres `application_name` that carries both
+tokens is ignored the same way, since only one of them can end the name.
 
 The postgres token is the whole `application_name`, or follows a space or a
 `;`, so the client keeps its own name in front. A value other than `hold` or
@@ -1490,35 +1508,37 @@ agent's call into one that waits for a human.
 
 Leaving the choice to the client is safe: both modes need the approval, only
 the wait moves. The audit record carries `review_mode` and
-`review_mode_source` (`listener` or `client`). Every http lane captures the
-header, even with no `http:` block; a grpc or spanner lane that holds adds it
-to the metadata allowlist. The header reaches policy and audit. It is kept
+`review_mode_source` (`listener` or `client`), names kept for compatibility.
+Every http lane captures both headers, even with no `http:` block; a grpc or
+spanner lane that holds adds them to the metadata allowlist. The header reaches policy and audit. It is kept
 out of the analyzer prompt and the verdict cache key, so hold and return
 share one classification.
 
-**Find the review without parsing text.** On http and grpc a review
-denial also carries the review in structured fields. http sends headers on
+**Find the approval without parsing text.** On http and grpc an approval
+denial also carries the approval in structured fields. http sends headers on
 the 403; grpc sends the same keys, lowercase, as trailing metadata beside
 `PERMISSION_DENIED`.
 
 | Field | Value |
 |---|---|
 | `X-Hoop-Denied` | `review`; any other denial says `policy` |
-| `X-Hoop-Review-Id` | the review id |
-| `X-Hoop-Review-Status` | the plane's status, such as `PENDING` or `REJECTED`; absent when the sidecar could not read it |
-| `Retry-After` | `5`, in return mode while the review is pending only |
+| `X-Hoop-Approval-Id` | the approval id |
+| `X-Hoop-Approval-Status` | the plane's status, such as `PENDING` or `REJECTED`; absent when the sidecar could not read it |
+| `X-Hoop-Review-Id`, `X-Hoop-Review-Status` | the same values under the earlier names, kept for existing clients |
+| `Retry-After` | `5`, in return mode while the approval request is pending only |
 
-The body stays the text message, so a client that knows nothing of reviews
+The body stays the text message, so a client that knows nothing of approvals
 still reads it. kubectl prints it as `Error from server (Forbidden): ...`.
 
 **Read the status on the lane.** An http lane answers
-`GET /.well-known/hoop/reviews/<id>` itself for a review filed on that lane,
-with the `review_status` fields and `next` (see
-[Agents over MCP](#agents-over-mcp)), never the statement. Another lane's
-review reads as not found:
+`GET /.well-known/hoop/approvals/<id>` itself for an approval request filed on
+that lane, with the `approval_status` fields and `next` (see
+[Agents over MCP](#agents-over-mcp)), never the statement. The earlier path,
+`/.well-known/hoop/reviews/<id>`, answers the same. Another lane's
+approval request reads as not found:
 
 ```bash
-curl -s http://relay:18080/.well-known/hoop/reviews/9f97…
+curl -s http://relay:18080/.well-known/hoop/approvals/9f97…
 ```
 
 The whole `/.well-known/hoop/` prefix belongs to the sidecar on every http
@@ -1527,7 +1547,7 @@ upstream serves. GET and HEAD only. It is answered only as the first request
 on a connection: behind another one, the lane closes the connection
 unanswered, because HTTP/1.1 pairs responses by order. curl and Go clients
 resend on a fresh connection. A sidecar with no control plane answers
-503. Like the MCP endpoint, it needs no credential: it answers by review id
+503. Like the MCP endpoint, it needs no credential: it answers by approval id
 only, and never with the statement. Other protocols read the status over
 MCP.
 
@@ -1535,12 +1555,12 @@ MCP.
 
 1. **Resend the identical bytes.** The plane matches an approval on the exact
    statement. A reformatted statement (other whitespace, other quoting, a new
-   comment, a new trace id) files a new review and pages the approvers again.
-2. **Resend once, after approval.** Wait with the MCP tool `review_wait`, or
-   poll `review_status` (see [Agents over MCP](#agents-over-mcp)). An
+   comment, a new trace id) files a new approval request and pages the approvers again.
+2. **Resend once, after approval.** Wait with the MCP tool `approval_wait`, or
+   poll `approval_status` (see [Agents over MCP](#agents-over-mcp)). An
    approval releases one run.
-3. **Do not resend a rejected or revoked review.** The decision is final for
-   that review. A resend files a new review and pages the approvers again, so
+3. **Do not resend a rejected or revoked approval request.** The decision is final for
+   that request. A resend files a new approval request and pages the approvers again, so
    only a person asks again.
 4. **Run a holdable statement in autocommit.** On postgres, mysql, mssql and
    mongodb a denial closes the connection, and the database rolls back any
@@ -1552,20 +1572,20 @@ Matching is on the exact bytes, so the retry must be the same statement, not
 an equivalent one. Two consequences worth knowing: a client using prepared
 statements sends the query with its parameters unbound, so an approval
 releases that query shape rather than one set of values, and a statement
-larger than 100 KB is refused by the plane rather than reviewed.
+larger than 100 KB is refused by the plane rather than filed for approval.
 
 A statement that is not printable text, such as the protobuf body kubectl
-sends for create, auth can-i and auth whoami, reaches the reviewer as a notice
+sends for create, auth can-i and auth whoami, reaches the approver as a notice
 line with its byte count, then the bytes: each byte that is not printable shows
 as `\xNN` and a backslash as `\\`. The match stays on the raw bytes.
 
 On an http lane the relay files the method, the target and the body, as
-`POST /transfers?dry_run=false`, a blank line, then the body. The reviewer
+`POST /transfers?dry_run=false`, a blank line, then the body. The approver
 reads that. The body is filed with `http.capture_body` off too: a lane where a
-level asks for `require_review` captures request bodies by itself, and they
+level asks for `require_approval` captures request bodies by itself, and they
 reach the analyzer, policy and the audit trail as `capture_body` would send
 them. Response bodies still need `capture_body`. A statement that is not
-printable text, such as a kubectl protobuf body, reaches the reviewer as a
+printable text, such as a kubectl protobuf body, reaches the approver as a
 notice line, then `\xNN` for each byte that is not printable; the match
 stays on the raw bytes. Five consequences:
 
@@ -1575,17 +1595,17 @@ stays on the raw bytes. Five consequences:
 - A query value the codec redacts (a token, a password) is filed redacted, so
   requests differing only in that value match one approval (EVL-310).
 - A request carrying a trace id, a nonce or a timestamp never matches twice.
-  Every attempt files its own review and pages the approvers again.
+  Every attempt files its own approval request and pages the approvers again.
 - A client that retries on its own timeout leaves two attempts in flight, and
   the approval releases whichever claims it first.
 - A request that arrives in more than one read reaches the upstream in part
   before the gate decides: the request line, the headers and the start of the
   body. A denial does not recall them, so a route that acts on headers alone
-  runs whatever the reviewer decides (EVL-309).
+  runs whatever the approver decides (EVL-309).
 
 On a grpc lane the relay files the method path, a newline, then the message
 as protojson. A spanner lane files the SQL alone when it reads SQL from the
-message, and the grpc form otherwise. The reviewer reads that SQL, not its
+message, and the grpc form otherwise. The approver reads that SQL, not its
 parameters or the database it runs against, so an approval releases the
 query on any bound values, as with prepared statements on postgres.
 A hold needs `grpc.capture_payload`:
@@ -1606,7 +1626,7 @@ in one is held. A holding ssh lane must drop `shell` from
 on the statement SHAPE with literals stripped, so two statements differing
 only in a literal share one classification. On a holding lane that cuts both
 ways: a shape the model rated high holds every statement of that shape, each
-filing its own review, while a shape it rated low is forwarded without a hold
+filing its own approval request, while a shape it rated low is forwarded without a hold
 even when a later literal makes it the dangerous one. `WHERE tenant = 'test'`
 and `WHERE tenant = 'prod'` are one shape. The cache is off unless the config
 turns it on; set `cache: {size: 0}` on a lane where every statement has to be
@@ -1617,10 +1637,10 @@ than at the first held statement:
 
 | | |
 |---|---|
-| a level asks for `require_review` | otherwise `approval_rule` names reviewers nobody consults |
-| with a control plane, `approval_rule` is set, and not blank | the plane refuses a review naming no rule, and spaces match none |
+| a level asks for `require_approval` | otherwise `approval_rule` names approvers nobody consults |
+| with a control plane, `approval_rule` is set, and not blank | the plane refuses an approval request naming no rule, and spaces match none |
 | an ssh lane does not admit `shell` | a shell sends no statements, so what is typed in it walks around the hold |
-| the sidecar has a control plane, or runs in a terminal | there is nowhere else to file a review (see Approving in the terminal) |
+| the sidecar has a control plane, or runs in a terminal | there is nowhere else to file an approval request (see Approving in the terminal) |
 
 Everything else fails CLOSED, `fail_open` included: it answers for a model
 vendor's outage, not for a human gate. A control plane that times out, refuses
@@ -1638,13 +1658,13 @@ It is per lane on purpose: the people who may release a statement against the
 payments database are not the people who may release one against a reporting
 replica, and a process-wide default would make the looser of the two the
 accident. Editing it is a hot reload, not a restart: the block swaps with the
-lane's rules, so a corrected reviewer group reaches the lane on the next
+lane's rules, so a corrected approver group reaches the lane on the next
 heartbeat.
 
 The deprecated `type: ai_analysis` rule cannot hold. It carries no
-`approval_rule`, so a review filed from one would name nobody who could
-release it; a rule naming `require_review` is refused with a message pointing
-at the listener block.
+`approval_rule`, so an approval request filed from one would name nobody who could
+release it; a rule naming `require_approval` (or `require_review`) is refused
+with a message pointing at the listener block.
 
 **Writing your own prompt.** Risk depends on what you are protecting, so the
 risk guidance is replaceable at two levels.
@@ -1978,7 +1998,7 @@ mcp:
 ```
 
 - `listen` is required. Remove the block to turn the server off.
-- It needs a control plane, because review status comes from there. A config
+- It needs a control plane, because approval status comes from there. A config
   with the block and no plane is refused at startup, and so is a build that
   does not link the server. `hoop-inspect` and `hoop start sidecar` link it;
   a relay you embed through `daemon.Run` imports `sidecar/mcp` itself.
@@ -1990,7 +2010,7 @@ mcp:
 - A bind failure stops the process, as a listener's does.
 
 **The endpoint has no authentication**, the same as the listener ports. A
-caller reads every review of this sidecar: its id, status, listener name and
+caller reads every approval request of this sidecar: its id, status, listener name and
 approval rule, never the statement. Bind it where only the agent reaches it: loopback when
 the agent runs on the same host, a ClusterIP Service on Kubernetes, never a
 public load balancer. The server refuses cross-origin browser requests, so a
@@ -2000,12 +2020,17 @@ web page cannot drive it from a victim's browser.
 
 | Tool | Input | Does |
 |---|---|---|
-| `review_list` | `status`, `limit` (default 20, max 200) | lists this sidecar's reviews, newest first, across every listener |
-| `review_status` | `id` | reads the review once |
-| `review_wait` | `id`, `timeout_seconds` (default 60, max 300) | reads every 2 seconds until a person decides or the timeout ends |
+| `approval_list` | `status`, `limit` (default 20, max 200) | lists this sidecar's approval requests, newest first, across every listener |
+| `approval_status` | `id` | reads the approval request once |
+| `approval_wait` | `id`, `timeout_seconds` (default 60, max 300) | reads every 2 seconds until a person decides or the timeout ends |
 
-`review_status` and `review_wait` return one review and what to do next.
-`review_list` returns `{"reviews": [...]}` of the same shape:
+Each tool is also served under its earlier name, `review_list`,
+`review_status` and `review_wait`, with the same input and output. An agent
+configured against those names keeps working.
+
+`approval_status` and `approval_wait` return one approval request and what to
+do next. `approval_list` returns `{"reviews": [...]}` of the same shape (the
+key keeps its name):
 
 ```json
 {
@@ -2024,22 +2049,22 @@ web page cannot drive it from a victim's browser.
 
 | `status` | `next` |
 |---|---|
-| `PENDING` | `wait`: call `review_wait` again, do not resend |
+| `PENDING` | `wait`: call `approval_wait` again, do not resend |
 | `APPROVED` | `resend_identical_statement` |
 | `REJECTED`, `REVOKED`, `EXECUTED`, any other | `stop` |
 
 `rejection_reason` is set on a rejection that gave one. `timed_out` and
-`waited_seconds` come from `review_wait` only, and `timed_out: true` is not
+`waited_seconds` come from `approval_wait` only, and `timed_out: true` is not
 an error: call again. Keep the 60 second default, because some clients drop
-a tool call that blocks past 60 to 120 seconds. `review_wait` sends a
+a tool call that blocks past 60 to 120 seconds. `approval_wait` sends a
 progress notification every 2 seconds to a client that asks for them.
 
 Two answers are errors. "Not found on this sidecar" means stop: the plane
-scopes the read to this sidecar's token, so another sidecar's review reads
+scopes the read to this sidecar's token, so another sidecar's approval request reads
 the same as a wrong id. "The control plane is older than this sidecar" means
-a person checks the review in the control plane.
+a person checks the approval request in the control plane.
 
-The server never approves or claims a review. The resend runs
+The server never approves or claims an approval request. The resend runs
 through the lane like any statement, so the analyzer, audit and masking
 apply, and the resend spends the approval.
 
@@ -2049,12 +2074,12 @@ server keeps no session, so it can sit behind a load balancer.
 
 | The agent connects to | The agent's MCP entry |
 |---|---|
-| `postgres://agent@payments-sidecar:15432/payments?application_name=claude%20hoop-review%3Dreturn` | `hoop-reviews` at `http://payments-sidecar:8765/mcp` |
+| `postgres://agent@payments-sidecar:15432/payments?application_name=claude%20hoop-approval%3Dreturn` | `hoop-approvals` at `http://payments-sidecar:8765/mcp` |
 
 Claude Code, for one developer:
 
 ```bash
-claude mcp add --transport http hoop-reviews http://payments-sidecar:8765/mcp
+claude mcp add --transport http hoop-approvals http://payments-sidecar:8765/mcp
 ```
 
 For a team, commit `.mcp.json` at the repository root
@@ -2063,7 +2088,7 @@ For a team, commit `.mcp.json` at the repository root
 ```json
 {
   "mcpServers": {
-    "hoop-reviews": {
+    "hoop-approvals": {
       "type": "http",
       "url": "http://payments-sidecar:8765/mcp"
     }
@@ -2076,7 +2101,7 @@ project or `~/.cursor/mcp.json`. Any other client that speaks the Streamable
 HTTP transport takes the same URL.
 
 An agent that uses two sidecars needs two entries, for example
-`hoop-reviews-payments` and `hoop-reviews-ledger`. The denial does not name
+`hoop-approvals-payments` and `hoop-approvals-ledger`. The denial does not name
 the sidecar, so name each entry after the DSN it pairs with, and tell the
 agent to call the entry of the sidecar that denied.
 
@@ -3231,8 +3256,10 @@ keys as `ai_analysis`. Every entry has one shape:
   type, or the listener for its analyzer block.
 
 `review` rides the decide phase only, and only when a risk level asked for
-`require_review`. The lane files the review after decide allows, so the key
-says what will happen and carries no id or status:
+`require_approval` (or `require_review`). The key keeps its name after the
+rename to approval, so Rego written against it keeps working. The lane files
+the approval request after decide allows, so the key says what will happen
+and carries no id or status:
 
 ```json
 "review": {"required": true, "mode": "hold", "mode_source": "listener"}

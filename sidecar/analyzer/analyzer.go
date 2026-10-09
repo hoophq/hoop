@@ -209,15 +209,32 @@ const (
 	// review is the raw text rather than the model's input: both sides
 	// have to be comparing the same bytes.
 	ActionRequireReview Action = "require_review"
+
+	// ActionRequireApproval is ActionRequireReview spelled the way the
+	// product names the concept. It is an alias an operator may write, and
+	// Canonical turns it into ActionRequireReview: the control plane serves
+	// require_review, every released sidecar decodes it, and the audit
+	// record keeps one value for one behaviour.
+	ActionRequireApproval Action = "require_approval"
 )
 
 // Valid reports whether a is a known action.
 func (a Action) Valid() bool {
 	switch a {
-	case ActionAllow, ActionWarn, ActionBlock, ActionDefer, ActionRequireReview:
+	case ActionAllow, ActionWarn, ActionBlock, ActionDefer, ActionRequireReview, ActionRequireApproval:
 		return true
 	}
 	return false
+}
+
+// Canonical folds an alias onto the action it spells, so a comparison
+// against ActionRequireReview holds for both spellings. Any other value,
+// unknown ones included, comes back as is.
+func (a Action) Canonical() Action {
+	if a == ActionRequireApproval {
+		return ActionRequireReview
+	}
+	return a
 }
 
 // Result is one classification, before any action is applied.

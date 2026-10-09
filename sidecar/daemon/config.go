@@ -874,13 +874,67 @@ func (c *Config) normalize() error {
 		lc.Mask = normalizeMask(where+": mask", lc.Mask, warn)
 		if lc.Guardrails != nil {
 			warnAIRules(where+": guardrails", lc.Guardrails.Rules, warn)
+			foldRuleApprovalActions(lc.Guardrails.Rules)
 		}
+		foldApprovalSpellings(where, lc.Analyzer, conflict)
+	}
+	if c.Guardrails != nil {
+		foldRuleApprovalActions(c.Guardrails.Rules)
 	}
 
 	if len(conflicts) > 0 {
 		return ConfigProblems(conflicts)
 	}
 	return nil
+}
+
+// foldApprovalSpellings folds the approval spellings of an analyzer block
+// onto the canonical review ones: approval_mode onto review_mode, and
+// require_approval onto require_review on every risk level.
+//
+// Aliases, not deprecations: the product calls the concept approval, and an
+// operator who writes it that way is not behind. No warning, then. The
+// canonical names stay because the plane serves them and every released
+// sidecar decodes them; after this, nothing reads the alias.
+//
+// Both keys set and equal is the same setting written twice, and loads.
+// Both set and different is refused, for the reason normalize gives.
+func foldApprovalSpellings(where string, la *LaneAnalyzerConfig, conflict func(string, ...any)) {
+	if la == nil {
+		return
+	}
+	if la.ApprovalMode != "" {
+		switch la.ReviewMode {
+		case "":
+			la.ReviewMode = la.ApprovalMode
+		case la.ApprovalMode:
+		default:
+			conflict("%s: analyzer: set approval_mode or review_mode, not both "+
+				"(approval_mode %q, review_mode %q)", where, la.ApprovalMode, la.ReviewMode)
+		}
+		la.ApprovalMode = ""
+	}
+	la.HighRisk = canonicalAction(la.HighRisk)
+	la.MediumRisk = canonicalAction(la.MediumRisk)
+	la.LowRisk = canonicalAction(la.LowRisk)
+}
+
+// foldRuleApprovalActions folds require_approval onto require_review on the
+// deprecated ai_analysis rule form, so refuseRuleFormHold names the hold
+// whatever the spelling.
+func foldRuleApprovalActions(rules []policy.Rule) {
+	for i := range rules {
+		r := &rules[i]
+		r.HighRisk = canonicalAction(r.HighRisk)
+		r.MediumRisk = canonicalAction(r.MediumRisk)
+		r.LowRisk = canonicalAction(r.LowRisk)
+	}
+}
+
+// canonicalAction is analyzer.Action.Canonical over the config's string.
+// An unknown action passes through, for validation to name as written.
+func canonicalAction(raw string) string {
+	return string(analyzer.Action(raw).Canonical())
 }
 
 // warnAIRules records a deprecation for every ai_analysis rule in one
@@ -1706,7 +1760,7 @@ func analyzerHolds(la *LaneAnalyzerConfig) bool {
 		return false
 	}
 	for _, raw := range [...]string{la.HighRisk, la.MediumRisk, la.LowRisk} {
-		if analyzer.Action(raw) == analyzer.ActionRequireReview {
+		if analyzer.Action(raw).Canonical() == analyzer.ActionRequireReview {
 			return true
 		}
 	}
