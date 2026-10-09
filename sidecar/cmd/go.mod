@@ -37,7 +37,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
-	github.com/hoophq/libhoop v0.0.0-20261008153213-ab3b65b7965f // indirect
+	github.com/hoophq/libhoop v0.0.0-20261009183538-7a017a32f649 // indirect
 	github.com/hoophq/libhoop-ica v0.3.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/knights-analytics/hugot v0.7.7 // indirect

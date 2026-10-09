@@ -601,3 +601,50 @@ func TestSamplingRangesAreChecked(t *testing.T) {
 		}
 	}
 }
+
+// Sending statements to Hoop is an explicit choice: a section that names no
+// provider is refused with both ways out, and the hosted provider cannot be
+// reached by naming it.
+func TestHostedProviderNeedsExplicitOptIn(t *testing.T) {
+	joined := func(c *AnalyzerConfig) string { return strings.Join(c.validate(false, false), "\n") }
+
+	if got := joined(&AnalyzerConfig{}); !strings.Contains(got, "use_hoop_llm_provider: true") ||
+		!strings.Contains(got, "Set provider and model") {
+		t.Errorf("no provider: %q, want both the own-LLM and the hosted option named", got)
+	}
+	if got := joined(&AnalyzerConfig{Provider: hostedProvider, Model: "m"}); !strings.Contains(got, "use_hoop_llm_provider") {
+		t.Errorf("provider %q accepted directly: %q", hostedProvider, got)
+	}
+	if got := joined(&AnalyzerConfig{UseHoopLLMProvider: true}); got != "" {
+		t.Errorf("opt-in without model or endpoint refused: %q", got)
+	}
+	for name, c := range map[string]*AnalyzerConfig{
+		"with provider":    {UseHoopLLMProvider: true, Provider: "openai", Model: "m"},
+		"with credentials": {UseHoopLLMProvider: true, CredentialsFile: "/k"},
+	} {
+		if joined(c) == "" {
+			t.Errorf("opt-in %s accepted", name)
+		}
+	}
+}
+
+// The hosted model is named everywhere an operator looks: the validate
+// notice, and the provider, model and host the admin view reports.
+func TestHostedProviderIsReported(t *testing.T) {
+	cfg := &Config{Analyzer: &AnalyzerConfig{UseHoopLLMProvider: true}}
+	var b strings.Builder
+	ReportHostedAnalyzer(&b, cfg)
+	if !strings.Contains(b.String(), "PII") {
+		t.Errorf("validate notice = %q, want the PII warning", b.String())
+	}
+	a := cfg.Analyzer
+	if a.providerName() != hostedProvider || a.modelName() != analyzer.HostedModel || a.endpointHost() != "ai-session-analyzer-default.hoop.dev" {
+		t.Errorf("reported %q %q %q", a.providerName(), a.modelName(), a.endpointHost())
+	}
+
+	b.Reset()
+	ReportHostedAnalyzer(&b, &Config{Analyzer: &AnalyzerConfig{Provider: "openai", Model: "m"}})
+	if b.Len() != 0 {
+		t.Errorf("own provider got the hosted notice: %q", b.String())
+	}
+}

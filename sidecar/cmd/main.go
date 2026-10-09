@@ -82,6 +82,7 @@ import (
 	// module so the root does not carry it.
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/gemini"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	// The codec plug-in host, same rule: a `plugins` block must not need a

@@ -382,7 +382,7 @@ func shapeProperties(cfg *Config, lanes []lane, det Plugin) analytics.Properties
 	// the model is free text the operator typed, so it stays out. Same
 	// rule as the prompt: whether one is set, never what it says.
 	if a := cfg.Analyzer; a != nil {
-		p["analyzer-provider"] = a.Provider
+		p["analyzer-provider"] = a.providerName()
 		p["analyzer-send"] = string(sendModeOrDefault(a.Send))
 		p["analyzer-fail-open"] = a.failOpen()
 		p["analyzer-custom-prompt"] = a.Prompt != ""
