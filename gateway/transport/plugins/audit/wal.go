@@ -106,6 +106,9 @@ func (p *auditPlugin) writeOnConnect(pctx plugintypes.Context) error {
 		StartDate:       pctx.ParamsData.GetTime("start_date"),
 	})
 	if err != nil {
+		if dirErr := plugintypes.CheckAuditPath(); dirErr != nil {
+			return dirErr
+		}
 		return fmt.Errorf("failed opening wal file, err=%v", err)
 	}
 	p.walSessionStore.Set(pctx.SID, &walLogRWMutex{

@@ -273,6 +273,26 @@ jobs:
       - name: Standalone Single-Binary E2E
         run: make test-standalone-e2e
 
+  controlplane-readonly:
+    name: Control Plane Read-only Boot
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Builds both Dockerfile.controlplane flavours and boots each with
+      # --read-only against a throwaway PostgreSQL (ENG-602). Fails when the
+      # boot needs a writable path that the image does not provide.
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Control Plane Read-only Boot
+        run: make test-controlplane-readonly
+
   sidecar-e2e:
     name: Sidecar E2E Test
     runs-on: ubuntu-latest
