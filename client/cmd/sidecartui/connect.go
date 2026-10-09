@@ -12,12 +12,11 @@ import (
 	"github.com/hoophq/hoop/sidecar/license"
 )
 
-// The Connect page: point this sidecar at a Control Plane, or start it
-// with a license. A Control Plane is the Enterprise way to run sidecars,
-// so the page says what it unlocks and where to ask for one, then takes
-// the plane's URL and this sidecar's token. Connecting is checked here, the
-// handshake included, so a wrong token or an unreachable plane is a line on
-// this page, not an error after it closes.
+// The Connect page: unlock what the free tier caps, with a Control Plane
+// (its URL and this sidecar's token) or with a license. It is the
+// Enterprise way to run sidecars, so the page says what it unlocks and
+// where to ask for it, and Talk to us is where the cursor starts. Continue
+// checks the choice and leads on to setting up the config, as Set up does.
 
 // MeetURL is where "Talk to us" sends the person.
 const MeetURL = "https://hoop.dev/meet"
@@ -25,6 +24,12 @@ const MeetURL = "https://hoop.dev/meet"
 // LicenseFile is the name the page saves a license under, in the folder
 // FirstRunOptions.LicenseDir names.
 const LicenseFile = "license.json"
+
+// The two ways to unlock, as the choice field's values.
+const (
+	unlockPlane   = "plane"
+	unlockLicense = "license"
+)
 
 type connectPage struct {
 	form *form
@@ -40,38 +45,44 @@ func newConnectPage(licenseDir string) *connectPage {
 	if licenseDir != "" {
 		where = shortPath(filepath.Join(licenseDir, LicenseFile))
 	}
+	how := &field{id: "how", label: "Unlock with", kind: fChoice, options: []string{unlockPlane, unlockLicense},
+		text:     unlockPlane,
+		optLabel: map[string]string{unlockPlane: "Control Plane", unlockLicense: "License"},
+		optDesc: map[string]string{
+			unlockPlane:   "Its URL and this sidecar's token. The plane holds your license and manages this sidecar from the web app.",
+			unlockLicense: "A license file on this machine. Unlimited rules here, without a Control Plane.",
+		},
+		help: "‹ › or space chooses how to unlock it."}
+	notPlane := func() bool { return how.text != unlockPlane }
+	notLicense := func() bool { return how.text != unlockLicense }
 	f := newForm("Connect to a Control Plane",
-		&field{id: "connect", label: "Connect and boot", kind: fButton},
+		&field{id: "continue", label: "Continue", kind: fButton},
 		&field{id: "meet", label: "Talk to us", kind: fButton},
 		&field{id: "back", label: "Back", kind: fButton},
 		&field{id: "about", kind: fNote, note: func() string {
 			return "\n" + badge("ENTERPRISE", colPrimary) + "\n\n" + strings.Join([]string{
 				stText.Render("A Control Plane runs your sidecars from the hoop web app: their"),
 				stText.Render("listeners, their license, and the approval of what they hold."),
-				stText.Render("With a license it unlocks ") + stStrong.Render("unlimited AI analyzer, guardrails and data"),
-				stStrong.Render("masking") + stText.Render(", reviews in the web app, and much more."),
+				stText.Render("A license unlocks ") + stStrong.Render("unlimited AI analyzer, guardrails and data"),
+				stStrong.Render("masking") + stText.Render(", and much more."),
 				"",
-				stFaint.Render("No Control Plane with a license yet? Choose ") + stPrimary.Render("Talk to us") + stFaint.Render("."),
+				stFaint.Render("No Control Plane or license yet? Choose ") + stPrimary.Render("Talk to us") + stFaint.Render("."),
 			}, "\n") + "\n"
 		}},
+		how,
 		&field{id: "url", label: "Control Plane URL", kind: fText, placeholder: "https://hoop.example.com",
-			help: "The address of your hoop Control Plane."},
+			help: "The address of your hoop Control Plane. It goes with the sidecar token.", hidden: notPlane},
 		&field{id: "token", label: "Sidecar token", kind: fText, secret: true, placeholder: "hsc_…",
-			help: "Shown once when the sidecar is registered in the Control Plane; a lost one means registering it again."},
-		&field{id: "or", kind: fNote, note: func() string {
-			return "\n" + stLabel.Render("OR START WITH A LICENSE") + "\n" + strings.Join([]string{
-				stFaint.Render("Paste your license, or the path to its file. It is saved to " + where),
-				stFaint.Render("and set as the license of the configs you set up from here."),
-			}, "\n") + "\n"
-		}},
+			help:   "Shown once when the sidecar is registered in the Control Plane; a lost one means registering it again.",
+			hidden: notPlane},
 		&field{id: "license", label: "License", kind: fText, placeholder: `{"payload": …} or /path/to/license.json`,
-			help: "Checked before it is saved: an invalid or expired license is not written."},
-		&field{id: "savelicense", label: "Save license", kind: fButton},
+			help:   "Paste it, or give the path to its file. It is checked, then saved to " + where + ".",
+			hidden: notLicense},
 	)
-	// The person came to type an address: start there, not on a button
-	// that needs one.
+	// Talk to us is where the cursor starts: most people who open this
+	// page do not have a plane or a license yet.
 	for i, x := range f.fields {
-		if x.id == "url" {
+		if x.id == "meet" {
 			f.store()
 			f.cur = i
 			f.load()
@@ -80,13 +91,22 @@ func newConnectPage(licenseDir string) *connectPage {
 	return &connectPage{form: f}
 }
 
-// connectInput reads and checks the URL and token before anything is sent.
-func (p *connectPage) connectInput() (planeURL, token string, err error) {
+// unlock is the chosen way: unlockPlane or unlockLicense.
+func (p *connectPage) unlock() string { return p.form.byID("how").text }
+
+// planeInput reads the Control Plane URL and the sidecar token, which go
+// together: one without the other is the half of a connection.
+func (p *connectPage) planeInput() (planeURL, token string, err error) {
 	p.form.store()
 	planeURL = strings.TrimRight(strings.TrimSpace(p.form.byID("url").text), "/")
 	token = strings.TrimSpace(p.form.byID("token").text)
-	if planeURL == "" || token == "" {
-		return "", "", errors.New("enter the Control Plane URL and the sidecar token")
+	switch {
+	case planeURL == "" && token == "":
+		return "", "", errors.New("enter the Control Plane URL and the sidecar token, or choose License")
+	case planeURL == "":
+		return "", "", errors.New("enter the Control Plane URL too: it goes with the sidecar token")
+	case token == "":
+		return "", "", errors.New("enter the sidecar token too: it goes with the Control Plane URL")
 	}
 	u, perr := url.Parse(planeURL)
 	if perr != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {

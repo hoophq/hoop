@@ -3,6 +3,7 @@ package sidecartui
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,9 +78,12 @@ type wizard struct {
 	// license is the license file saved on the Connect page, "" for none;
 	// every draft started here carries it as its license key.
 	license string
-	page    wizPage
-	mach    machine
-	d       *draft
+	// plane is the Control Plane the config booted from here goes to, ""
+	// for a standalone sidecar; the overview says so.
+	plane string
+	page  wizPage
+	mach  machine
+	d     *draft
 
 	protos   menu
 	overview menu
@@ -576,6 +580,14 @@ func (w *wizard) intro() string {
 	case pgListener:
 		return "Where the backend is, and where clients reach the sidecar instead. Defaults come from this machine."
 	case pgOverview:
+		if w.plane != "" {
+			host := w.plane
+			if u, err := url.Parse(w.plane); err == nil && u.Host != "" {
+				host = u.Host
+			}
+			return "Your config is ready. Save and boot sends it to your Control Plane at " + host +
+				", which manages this sidecar from then on."
+		}
 		return "Your config is ready. Save and boot starts the sidecar on it now; Save only writes the file."
 	case pgRules:
 		return "Rules decide what may run. Enter edits, d deletes. The free tier enforces one rule; a license lifts it."

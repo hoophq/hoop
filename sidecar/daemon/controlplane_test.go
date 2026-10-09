@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -319,6 +320,24 @@ func newAdoptivePlane(t *testing.T, stored string, legacy bool) *adoptivePlane {
 	}))
 	t.Cleanup(p.srv.Close)
 	return p
+}
+
+// With no file to import, an empty plane is reported as ErrPlaneHasNoConfig,
+// not as a failure: an entry point checking the connection first (the CLI's
+// first-run screen) tells "connected, waiting for a config" from a refused
+// token or an unreachable plane by this, and nothing is pushed.
+func TestAnEmptyPlaneWithNoFileIsErrPlaneHasNoConfig(t *testing.T) {
+	plane := newAdoptivePlane(t, "", false)
+	t.Setenv(ControlPlaneURLEnv, plane.srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	_, _, err := SetupWith("", nil, nil)
+	if !errors.Is(err, ErrPlaneHasNoConfig) {
+		t.Fatalf("err = %v, want ErrPlaneHasNoConfig", err)
+	}
+	if len(plane.puts) != 0 {
+		t.Errorf("imports = %d, want none: there was no file to send", len(plane.puts))
+	}
 }
 
 // The connect journey: a standalone sidecar's file, plus the URL and the

@@ -334,7 +334,7 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	// 200 with a document naming no listeners. Same fact, same move: seed
 	// the plane with the file's document, so the connect journey never
 	// asks anyone to translate their YAML into an API call by hand.
-	if errors.Is(err, errPlaneHasNoConfig) || (err == nil && !rawDeclaresListeners(raw)) {
+	if errors.Is(err, ErrPlaneHasNoConfig) || (err == nil && !rawDeclaresListeners(raw)) {
 		answer, imported, err = importLocalConfig(planeURL, cred, local)
 		raw, managed = answer.raw, answer.managed
 	}
@@ -487,7 +487,7 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 		// The plane authenticated the token and holds nothing to serve.
 		// resolveConfigSource turns this into an import when the local
 		// file can supply the document; the heartbeat only logs it.
-		return handshakeAnswer{}, fmt.Errorf("%w (at %s): %s", errPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
+		return handshakeAnswer{}, fmt.Errorf("%w (at %s): %s", ErrPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
 	case http.StatusUnprocessableEntity:
 		// An operator misconfiguration on the plane side (say, a connection
 		// type no codec speaks). Retrying never fixes it; the message names
@@ -526,7 +526,7 @@ func controlPlaneHTTPClient() *http.Client {
 // has no file to push that the plane did not already refuse, so it only logs.
 func (cp *controlPlane) reimport(log *slog.Logger, rl *reloader) (handshakeAnswer, error) {
 	if !rl.diskMode || rl.configPath == "" || rl.load == nil {
-		return handshakeAnswer{}, fmt.Errorf("%w (at %s)", errPlaneHasNoConfig, cp.url)
+		return handshakeAnswer{}, fmt.Errorf("%w (at %s)", ErrPlaneHasNoConfig, cp.url)
 	}
 	local, err := rl.load(rl.configPath)
 	if err != nil {
@@ -541,10 +541,13 @@ func (cp *controlPlane) reimport(log *slog.Logger, rl *reloader) (handshakeAnswe
 	return answer, nil
 }
 
-// errPlaneHasNoConfig marks the handshake's 412: the plane authenticated the
+// ErrPlaneHasNoConfig marks the handshake's 412: the plane authenticated the
 // token and holds nothing to serve. resolveConfigSource turns it into an
-// import when the local file can supply the document.
-var errPlaneHasNoConfig = errors.New("the control plane has no configuration for this sidecar")
+// import when the local file can supply the document, and returns it,
+// wrapped, when there is no file to import. Exported so an entry point can
+// tell "connected, and the plane is waiting for a config" from a failure:
+// the CLI's first-run screen then helps write the config to import.
+var ErrPlaneHasNoConfig = errors.New("the control plane has no configuration for this sidecar")
 
 // errPlaneAlreadyConfigured marks the import's 409: a configuration landed
 // on the plane between the handshake and the push. The concurrent author
@@ -578,9 +581,9 @@ func rawDeclaresListeners(raw []byte) bool {
 // ever being reached.
 func importLocalConfig(planeURL string, cred credential, local *Config) (answer handshakeAnswer, pushed bool, err error) {
 	if local == nil || len(local.Listeners) == 0 {
-		return handshakeAnswer{}, false, fmt.Errorf("the control plane at %s has no configuration for this sidecar; "+
+		return handshakeAnswer{}, false, fmt.Errorf("%w (at %s); "+
 			"author one in the control plane, or restart with a config file whose listeners this "+
-			"process can import", planeURL)
+			"process can import", ErrPlaneHasNoConfig, planeURL)
 	}
 	doc := *local
 	doc.ControlPlaneURL = ""
@@ -740,7 +743,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			LastOutcome:     cp.outcome,
 			LastError:       cp.reason,
 		})
-		if errors.Is(err, errPlaneHasNoConfig) {
+		if errors.Is(err, ErrPlaneHasNoConfig) {
 			answer, err = cp.reimport(log, rl)
 		}
 		if err != nil {

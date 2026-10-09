@@ -158,7 +158,7 @@ needs a restart.`,
 				Validate:     validateSidecarConfig,
 				ConnectCheck: checkControlPlane,
 				OpenURL:      openBrowser,
-				LicenseDir:   sidecarSaveDir(),
+				LicenseDir:   hoopLicenseDir(),
 				// A license saved on the Connect page is this run's
 				// --license: what is validated and booted next uses it.
 				UseLicense: func(path string) { sidecarLicenseFlag = path },
@@ -172,14 +172,15 @@ needs a restart.`,
 			// Booted from the first-run screen: from here on this is the
 			// run `hoop start sidecar --config <file>` would have been, or,
 			// connected to a Control Plane, the run with its URL and token.
+			// Both may be set: a plane with no config yet takes the file's on
+			// this first handshake, and manages it from then on.
 			if boot.ControlPlaneURL != "" {
 				if err := os.Setenv(daemon.ControlPlaneURLEnv, boot.ControlPlaneURL); err != nil {
 					return err
 				}
 				sidecarTokenFlag = boot.Token
-			} else {
-				sidecarConfigFlag = boot.ConfigPath
 			}
+			sidecarConfigFlag = boot.ConfigPath
 		}
 		if sidecarMigrateFlag {
 			if sidecarConfigFlag == "" {
@@ -439,6 +440,18 @@ func sidecarSaveDir() string {
 		return ""
 	}
 	return filepath.Join(home, ".hoop", "sidecar")
+}
+
+// hoopLicenseDir is where a license entered on the first-run screen is
+// kept: ~/.hoop/license. Not under sidecar/, because a hoop license is the
+// organization's, not this sidecar's. Empty when the home directory is
+// unknown; the screen then says it has nowhere to save one.
+func hoopLicenseDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".hoop", "license")
 }
 
 // sidecarConfigFromEnv reads the config path from the environment. It prefers

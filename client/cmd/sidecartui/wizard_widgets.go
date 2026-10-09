@@ -162,6 +162,7 @@ const (
 	fMulti                   // several of options, picked in a checklist
 	fButton                  // an action: enter returns its id
 	fNote                    // a line of text, not editable
+	fChoice                  // one of options, drawn as cards side by side
 )
 
 type field struct {
@@ -170,11 +171,13 @@ type field struct {
 	help  string
 	kind  fieldKind
 
-	text        string
-	on          bool
-	multi       []string
-	options     []string
-	optLabel    map[string]string
+	text     string
+	on       bool
+	multi    []string
+	options  []string
+	optLabel map[string]string
+	// optDesc is a choice card's line under its label.
+	optDesc     map[string]string
 	placeholder string
 	// secret masks a text field's value, on screen and off it: a token.
 	secret bool
@@ -333,6 +336,14 @@ func (f *form) update(k tea.KeyPressMsg) (tea.Cmd, string) {
 		if k.String() == "enter" || k.String() == "space" || k.String() == "right" {
 			f.pick = newChecklist(x.label, x.options, x.optLabel, x.multi)
 		}
+	case fChoice:
+		i := max(slices.Index(x.options, x.text), 0)
+		switch k.String() {
+		case "right", "l", "space", "enter", "tab":
+			x.text = x.options[(i+1)%len(x.options)]
+		case "left", "h", "shift+tab":
+			x.text = x.options[(i+len(x.options)-1)%len(x.options)]
+		}
 	case fButton:
 		if k.String() == "enter" || k.String() == "space" {
 			f.store()
@@ -415,6 +426,10 @@ func (f *form) view(w, h int) string {
 				rows = append(rows, "  "+l)
 			}
 			continue
+		case fChoice:
+			rows = append(rows, choiceCards(x, w-2, focused)...)
+			rows = append(rows, "")
+			continue
 		case fButton:
 			// A button group after fields is set off by a blank line;
 			// one at the top of the form needs none.
@@ -447,6 +462,58 @@ func (f *form) view(w, h int) string {
 		foot = append(foot, "")
 	}
 	return window(rows, curRow, max(h-len(foot), 3)) + "\n" + strings.Join(foot, "\n")
+}
+
+// choiceCards draws a choice field's options as cards side by side, the
+// chosen one filled and in the brand border, like the Get started cards.
+// The › before the row says the arrows are on it.
+func choiceCards(x *field, w int, focused bool) []string {
+	n := max(len(x.options), 1)
+	cw := max((w-2-(n-1))/n, 16)
+	contents := make([][]string, len(x.options))
+	tall := 0
+	for i, o := range x.options {
+		title := x.optLabel[o]
+		if title == "" {
+			title = o
+		}
+		mark, st := "○ ", stText.Bold(true)
+		if o == x.text {
+			mark, st = "● ", stPrimary
+		}
+		lines := []string{st.Render(mark + title)}
+		for _, d := range strings.Split(lipgloss.NewStyle().Width(cw-6).Render(x.optDesc[o]), "\n") {
+			lines = append(lines, "  "+stFaint.Render(d))
+		}
+		contents[i] = lines
+		tall = max(tall, len(lines))
+	}
+	// Cards of one row share a height, padded inside the frame, so the
+	// borders line up and the chosen card's fill reaches its bottom.
+	joined := make([]string, 0, 2*len(contents))
+	for i, lines := range contents {
+		for len(lines) < tall {
+			lines = append(lines, "")
+		}
+		if i > 0 {
+			joined = append(joined, " ")
+		}
+		joined = append(joined, strings.Join(card(lines, cw, x.options[i] == x.text), "\n"))
+	}
+	row := lipgloss.JoinHorizontal(lipgloss.Top, joined...)
+	mark := "  "
+	if focused {
+		mark = stPrimary.Render("› ")
+	}
+	out := strings.Split(row, "\n")
+	for i := range out {
+		if i == lipgloss.Height(row)/2 {
+			out[i] = mark + out[i]
+		} else {
+			out[i] = "  " + out[i]
+		}
+	}
+	return out
 }
 
 // ---- checklist ------------------------------------------------------------

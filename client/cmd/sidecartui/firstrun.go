@@ -64,6 +64,8 @@ type (
 		planeURL, token string
 		err             error
 		conflicts       []string
+		// empty is a plane that took the token and holds no config yet.
+		empty bool
 	}
 )
 
@@ -125,6 +127,9 @@ type firstRunModel struct {
 	// licensePath is the license saved on the Connect page, and
 	// licenseNote what it is; the configs set up from here carry it.
 	licensePath string
+	// plane is a connected Control Plane waiting for its first config,
+	// nil otherwise; the config booted next goes to it.
+	plane       *pendingPlane
 	licenseNote string
 
 	stop     func()
@@ -209,8 +214,8 @@ func (m *firstRunModel) usePortsAndRetry() tea.Cmd {
 	return m.check(path)
 }
 
-// connectKey drives the Connect page: connect and boot, talk to us, save a
-// license, or go back.
+// connectKey drives the Connect page: Continue with the chosen way to
+// unlock, Talk to us, or Back.
 func (m firstRunModel) connectKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	p := m.connect
 	if p.busy != "" {
@@ -228,14 +233,17 @@ func (m firstRunModel) connectKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		} else if err := m.openURL(MeetURL); err != nil {
 			p.status, p.bad = "Could not open a browser; go to "+MeetURL+" to talk to us.", true
 		}
-	case "connect":
-		planeURL, token, err := p.connectInput()
+	case "continue":
+		if p.unlock() == unlockLicense {
+			return m.continueWithLicense()
+		}
+		planeURL, token, err := p.planeInput()
 		if err != nil {
-			p.status, p.bad = err.Error(), true
+			p.status, p.bad = "✕ "+err.Error(), true
 			return m, cmd
 		}
 		if m.connectCheck == nil {
-			p.status, p.bad = "this build cannot connect to a Control Plane", true
+			p.status, p.bad = "✕ this build cannot connect to a Control Plane", true
 			return m, cmd
 		}
 		host := planeURL
@@ -247,28 +255,39 @@ func (m firstRunModel) connectKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			cfg, err := check(planeURL, token)
 			msg := frConnectedMsg{planeURL: planeURL, token: token, err: err}
-			if err == nil {
+			if errors.Is(err, daemon.ErrPlaneHasNoConfig) {
+				msg.err, msg.empty = nil, true
+			} else if err == nil {
 				msg.conflicts = connectConflicts(cfg)
 			}
 			return msg
 		}
-	case "savelicense":
-		p.form.store()
-		path, st, err := saveLicense(p.form.byID("license").text, m.licenseDir)
-		if err != nil {
-			p.status, p.bad = "✕ "+err.Error(), true
-			return m, cmd
-		}
-		m.licensePath, m.licenseNote = path, licenseLine(st)
-		if m.useLicense != nil {
-			m.useLicense(path)
-		}
-		p.form.byID("license").text = ""
-		p.status, p.bad = "✓ Saved the "+m.licenseNote+" to "+shortPath(path)+
-			". Configs you set up or open from here now run under it.", false
 	}
 	return m, cmd
 }
+
+// continueWithLicense checks and saves the license, then leads on to
+// setting up a config that runs under it.
+func (m firstRunModel) continueWithLicense() (tea.Model, tea.Cmd) {
+	p := m.connect
+	p.form.store()
+	path, st, err := saveLicense(p.form.byID("license").text, m.licenseDir)
+	if err != nil {
+		p.status, p.bad = "✕ "+err.Error(), true
+		return m, nil
+	}
+	m.licensePath, m.licenseNote = path, licenseLine(st)
+	if m.useLicense != nil {
+		m.useLicense(path)
+	}
+	m.connect, m.plane = nil, nil
+	return m, m.startSetup()
+}
+
+// pendingPlane is a Control Plane connected on the Connect page that holds
+// no config yet: the config set up next is booted on it, and the plane
+// takes it as its own on that first handshake.
+type pendingPlane struct{ url, token string }
 
 // portAsk is the dialog that offers free ports for the ones in use.
 type portAsk struct {
@@ -358,6 +377,9 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detecting = false
 		m.wiz = newWizard(machine(msg), m.validate, m.dir, m.now)
 		m.wiz.license = m.licensePath
+		if m.plane != nil {
+			m.wiz.plane = m.plane.url
+		}
 		return m, nil
 	case doneMsg:
 		m.done, m.err = true, msg.err
@@ -371,6 +393,11 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case msg.err != nil:
 			p.status, p.bad = "✕ Could not connect: "+firstLine(msg.err), true
+		case msg.empty:
+			// Connected, and the plane is waiting for a config: set one up,
+			// and booting it hands it to the plane.
+			m.connect, m.plane = nil, &pendingPlane{url: msg.planeURL, token: msg.token}
+			return m, m.startSetup()
 		case len(msg.conflicts) > 0:
 			p.status, p.bad = "✕ Connected, but "+strings.Join(msg.conflicts, "; ")+
 				". Change it in the Control Plane, or stop that program, then connect again.", true
@@ -404,6 +431,9 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.picker = nil
 		m.boot = &Boot{ConfigPath: msg.path}
+		if m.plane != nil {
+			m.boot.ControlPlaneURL, m.boot.Token = m.plane.url, m.plane.token
+		}
 		return m, tea.Quit
 	}
 	if k, ok := msg.(tea.KeyPressMsg); ok {
@@ -423,7 +453,9 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd, ev := m.wiz.update(msg)
 		switch ev {
 		case wizExit:
-			m.wiz = nil
+			// Leaving the setup drops the pending plane: a file opened
+			// from the list later must not connect by surprise.
+			m.wiz, m.plane = nil, nil
 			m.buildHome()
 		case wizSavedOnly:
 			m.saved, m.wiz = m.wiz.saved, nil
