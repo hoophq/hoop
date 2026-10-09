@@ -66,10 +66,19 @@
    [access-request-badge (:status group)]
    [review-reviewer-info group]])
 
+(defn- status-key [{:keys [status guardrails_info]}]
+  (if (and (= "done" status) (seq guardrails_info))
+    :blocked
+    status))
+
 (defmulti ^:private status-badge identity)
 (defmethod ^:private status-badge "done" [_]
   [:> Badge {:color "green" :size "2"}
    "Success"])
+
+(defmethod ^:private status-badge :blocked [_]
+  [:> Badge {:color "orange" :size "2"}
+   "Blocked"])
 
 (defmethod ^:private status-badge "ready" [_]
   [:> Badge {:color "blue" :size "2"}
@@ -110,7 +119,6 @@
               ["Listener" (:listener sidecar) "Sidecar" (:name sidecar)]
               ["Resource" (:resource_name session) "Role" (:role_name session)])
             connection-type (:connection_subtype session)
-            session-status (:status session)
             start-date (:start_date session)
             end-date (:end_date session)
             user-name (:user_name session)
@@ -165,7 +173,7 @@
           [detail-row {:label "Status"
                        :icon [:> BadgeCheck {:size 20}]
                        :show-gradient? (not @expanded?)
-                       :value [status-badge session-status]}]
+                       :value [status-badge (status-key session)]}]
 
           ;; Conditionally visible fields (when expanded) with animation
           [:> Box {:class (str "overflow-hidden transition-all duration-300 ease-in-out "
