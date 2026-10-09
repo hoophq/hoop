@@ -491,11 +491,7 @@ type SidecarSessionEventsResponse struct {
 // field here would let one sidecar file a review as another.
 type SidecarReviewRequest struct {
 	// The sidecar listener the statement arrived on
-	//
-	// Bounded because private.reviews.listener_name is VARCHAR(255): a longer
-	// name would reach Postgres and fail the write, rather than being told at
-	// the door that it is too long.
-	ListenerName string `json:"listener_name" binding:"required,max=255" example:"appdb"`
+	ListenerName string `json:"listener_name" binding:"required" example:"appdb"`
 	// The statement to review, base64 encoded
 	Payload string `json:"payload" binding:"required" example:"REVMRVRFIEZST00gdXNlcnM7"`
 	// The access request rule that decides who may approve this statement

@@ -21044,9 +21044,8 @@ const docTemplate = `{
                     "example": "payments-approvers"
                 },
                 "listener_name": {
-                    "description": "The sidecar listener the statement arrived on\n\nBounded because private.reviews.listener_name is VARCHAR(255): a longer\nname would reach Postgres and fail the write, rather than being told at\nthe door that it is too long.",
+                    "description": "The sidecar listener the statement arrived on",
                     "type": "string",
-                    "maxLength": 255,
                     "example": "appdb"
                 },
                 "payload": {

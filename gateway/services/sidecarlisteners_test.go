@@ -199,9 +199,6 @@ func TestProjectListenersRefusesListenersNoMirrorCanAddress(t *testing.T) {
 	}{
 		{"no name", []daemon.ListenerConfig{appdb, {Protocol: "postgres"}}, "listeners[1]: no name"},
 		{"a repeated name", []daemon.ListenerConfig{appdb, {Name: "appdb", Protocol: "mysql"}}, `listeners[1]: the name "appdb" repeats listeners[0]`},
-		// One over connections.sidecar_listener: the insert would fail.
-		{"a name the column cannot hold", []daemon.ListenerConfig{{Name: strings.Repeat("a", models.MaxSidecarListenerNameLength+1), Protocol: "postgres"}},
-			"listeners[0]: the name is 256 characters, over 255"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -215,12 +212,23 @@ func TestProjectListenersRefusesListenersNoMirrorCanAddress(t *testing.T) {
 		})
 	}
 
-	// The width counts characters, as VARCHAR does: a multibyte name that
-	// fits keeps its mirror.
-	wide := strings.Repeat("é", models.MaxSidecarListenerNameLength)
-	got, err := ProjectListeners("org-1", sidecarWith("pay", daemon.ListenerConfig{Name: wide, Protocol: "postgres"}))
-	if err != nil || len(got) != 1 || got[0].SidecarListener.String != wide {
-		t.Errorf("a %d-character name fits the column and must be mirrored: %v, %d mirrors", models.MaxSidecarListenerNameLength, err, len(got))
+}
+
+// The sidecar sets no limit on a listener name, so a long one keeps its full
+// name as the listener and takes the fallback name as the mirror.
+func TestProjectListenersMirrorsALongName(t *testing.T) {
+	for _, long := range []string{strings.Repeat("a", 300), strings.Repeat("é", 300)} {
+		sc := sidecarWith("pay", daemon.ListenerConfig{Name: long, Protocol: "postgres"})
+		got, err := ProjectListeners("org-1", sc)
+		if err != nil || len(got) != 1 {
+			t.Fatalf("a 300-character name must be mirrored: %v, %d mirrors", err, len(got))
+		}
+		if got[0].SidecarListener.String != long {
+			t.Errorf("the listener name is cut to %d characters", len([]rune(got[0].SidecarListener.String)))
+		}
+		if want := models.SidecarMirrorFallbackName("pay-"+long, sc.ID, long); got[0].Name != want {
+			t.Errorf("mirror name = %q, want the fallback name %q", got[0].Name, want)
+		}
 	}
 }
 
