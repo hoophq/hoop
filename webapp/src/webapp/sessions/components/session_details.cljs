@@ -66,7 +66,7 @@
    [access-request-badge (:status group)]
    [review-reviewer-info group]])
 
-(defn status-key [{:keys [status guardrails_info]}]
+(defn- status-key [{:keys [status guardrails_info]}]
   (if (and (= "done" status) (seq guardrails_info))
     :blocked
     status))
