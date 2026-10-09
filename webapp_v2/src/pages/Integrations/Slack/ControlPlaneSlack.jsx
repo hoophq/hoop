@@ -31,7 +31,7 @@ function ControlPlaneSlack() {
     <Stack gap="xl">
       <Stack gap="xs">
         <Title order={1}>Slack</Title>
-        <Text c="dimmed">Send sidecar reviews to Slack. Reviewers approve there without signing in.</Text>
+        <Text c="dimmed">Send sidecar approval requests to Slack. Approvers decide there without signing in.</Text>
       </Stack>
 
       <Tabs value={tab} onChange={setTab}>
@@ -50,7 +50,7 @@ function ControlPlaneSlack() {
             saving={mutating}
             onSave={saveEnvvars}
             channelLabel="Fallback channel"
-            channelDescription="Receives reviews from listeners with no channel."
+            channelDescription="Receives approval requests from listeners with no channel."
             docsHref={docsUrl.controlPlane.slack}
           />
         </Tabs.Panel>

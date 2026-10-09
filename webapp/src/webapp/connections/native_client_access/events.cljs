@@ -91,7 +91,7 @@
                                                      :maxWidth "95vw"
                                                      :content [session-details/main {:id (:session_id response) :verb "connect"}]}]}]
            [:dispatch [:show-snackbar {:level :info
-                                       :text "This connection requires review approval"}]]]}
+                                       :text "This connection requires approval"}]]]}
      ;; No review - existing flow
      (let [connection-name-key (:connection_name response)]
        ;; Save to localStorage (add to sessions map)
