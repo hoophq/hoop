@@ -135,7 +135,7 @@
         "This resource has just-in-time approval enabled. "
         "You can only request a window of "
         [:strong (format-duration-sec jit-duration-sec)]
-        ". An approver must approve before you can connect."]]
+        ". You can connect once the request is approved."]]
       ;; Normal mode: show duration selector
       [:> Box {:class "space-y-4"}
        [:> Box

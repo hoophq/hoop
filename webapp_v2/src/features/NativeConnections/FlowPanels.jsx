@@ -69,8 +69,8 @@ export function PendingReviewPanel({
   return (
     <Stack gap="sm">
       <Alert color="amber" icon={<Clock size={16} />} title="Waiting for approval" classNames={{ title: classes.amberText, icon: classes.amberText }}>
-        An approver has to approve this request before the credentials are issued. This row picks
-        them up on its own once that happens.
+        The credentials are issued once this request is approved. This row picks them up on its
+        own.
       </Alert>
       {/* A failed check does not end the wait — the review is still open — so
           the message is a hint here rather than an error panel that would take
@@ -83,7 +83,7 @@ export function PendingReviewPanel({
       {sessionId && (
         <Group justify="flex-end" gap="sm">
           <Button variant="default" size="sm" onClick={viewReview}>
-            View request
+            View approval request
           </Button>
           <Button
             size="sm"

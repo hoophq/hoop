@@ -37,7 +37,7 @@ function RequestAccessForm({ connectionName, connection, onCancel }) {
           Mantine's stock palette, outside the product's identity. */}
       {jitSec ? (
         <Alert color="sky" icon={<ShieldCheck size={16} />}>
-          {`This resource role has a fixed just-in-time window of ${formatDurationSec(jitSec)}. An approver must approve the request before the credentials are issued.`}
+          {`This resource role has a fixed just-in-time window of ${formatDurationSec(jitSec)}. The credentials are issued once the request is approved.`}
         </Alert>
       ) : (
         <Stack gap="xs">
