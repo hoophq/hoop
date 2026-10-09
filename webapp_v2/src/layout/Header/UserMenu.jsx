@@ -9,9 +9,7 @@ import { GITHUB_DISCUSSIONS_URL } from '@/utils/support'
 import { UserAvatar } from './UserAvatar'
 import classes from './Header.module.css'
 
-// `versionLabel` names the product in the footer: the gateway header keeps the
-// default, the control plane header passes its own. The menu itself is shared.
-export function UserMenu({ versionLabel = 'Gateway' }) {
+export function UserMenu() {
   const navigate = useNavigate()
   const { user, gatewayVersion, analyticsTracking } = useUserStore()
   const { logout } = useAuthStore()
@@ -76,7 +74,7 @@ export function UserMenu({ versionLabel = 'Gateway' }) {
 
       {gatewayVersion && (
         <Text fz="xs" className={classes.menuFooter}>
-          {`${versionLabel} ${gatewayVersion}`}
+          {`Gateway ${gatewayVersion}`}
         </Text>
       )}
     </ActionMenu>

@@ -1,5 +1,4 @@
-// The gateway navigation: sidebar sections and command palette items. Its
-// sibling is ./controlPlaneNav.js.
+// The gateway navigation: sidebar sections and command palette items.
 import {
   Package,
   LayoutDashboard,

@@ -12,7 +12,7 @@ import AuthPageLoader from '@/components/AuthPageLoader'
 // approver passes the routes that name it) and `licenseFeature`. `onReady(user)`
 // is the product's extra step once all of that is known; a path it returns is
 // where the user goes instead. The gateway uses it for onboarding
-// (GatewayProtectedRoute); the control plane renders this one directly.
+// (GatewayProtectedRoute).
 function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeature = null, onReady = null }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()

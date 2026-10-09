@@ -7,7 +7,7 @@ import GatewayCommandPalette from '@/features/CommandPalette/GatewayCommandPalet
 // redirect, the gateway Layout, the padded body. The palette is mounted here, not
 // in PageLayout, so it exists on every migrated page and never on the ClojureApp
 // leaves (modes/gateway.jsx). `adminOnly`, `role` and `licenseFeature` go to the
-// gate. Its sibling is ControlPlanePage.jsx.
+// gate.
 export default function GatewayPage({ children, ...gate }) {
   return (
     <GatewayProtectedRoute {...gate}>

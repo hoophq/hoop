@@ -7,7 +7,6 @@ import { UserMenu } from './UserMenu'
 /**
  * The gateway header. Rendered by layout/GatewayLayout.jsx inside
  * AppShell.Header, so it sits above React routes AND the ClojureApp catch-all.
- * Its sibling is ControlPlaneHeader.jsx.
  *
  * `burger` is the mobile navigation toggle, owned by Layout because it drives
  * the mobile sidebar Drawer that also lives there.

@@ -13,9 +13,8 @@ import SlackChannelsModal from './components/SlackChannelsModal'
 import SlackConfigurationsTab from './components/SlackConfigurationsTab'
 import { slackAppConfigured } from './helpers'
 
-// The gateway's Slack page, sibling of ControlPlaneSlack.jsx: reviews reach
-// the channels set on each connection, and a sidecar's reviews the channels
-// set on each listener. A mirror takes its channels from its listener.
+// Reviews reach the channels set on each connection, and a sidecar's reviews
+// the channels set on each listener. A mirror takes its channels from its listener.
 function GatewaySlack({ showListeners = false }) {
   const {
     plugin,

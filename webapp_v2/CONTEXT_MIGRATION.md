@@ -58,27 +58,22 @@ Gateway backend (port 8009)
 
 ### Application modes
 
-The same bundle is the gateway UI and the control plane UI. `application_mode` is always
-`"gateway"`, so `useUserStore.appMode` is `'gateway'` today; the per-org `experimental.agents`
-flag gates only the admin onboarding redirect. `appMode` (`'gateway'` | `'control-plane'`) selects a
-product manifest in `src/modes/` (the shell a page renders in and the three leaves `/`,
-`/onboarding/*`, `/*`). Every React route below exists in both products; the sidebar of
-each product says what it shows. ClojureScript exists only in the gateway: the control
-plane answers `/onboarding/*` and `/*` with a 404 and never loads the CLJS bundle. Where
-the products differ, a file is a `Gateway*`/`ControlPlane*` pair chosen in `Router.jsx`
-with `<ByProduct>`. See `CLAUDE.md`, "Application modes".
+One product: the gateway. `application_mode` is always `"gateway"`, and `src/modes/gateway.jsx`
+is the only manifest (the shell a page renders in and the three CLJS leaves `/`,
+`/onboarding/*`, `/*`). The per-org `experimental.agents` flag gates the agent pages. Rule
+forms come in an agent and a sidecar variant, chosen in `Router.jsx` with `<ByRuleTraffic>`.
+See `CLAUDE.md`, "Application modes".
 
 ### Routing Split (Router.jsx)
 
-One table for both products. The three product leaves: `/` (gateway: CLJS; control
-plane: admin → `/sidecars`, everyone else → `/reviews`), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
+The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 
 | Route | Handler | Status |
 |-------|---------|--------|
-| `/sidecars`, `/sidecars/connect`, `/sidecars/new`, `/sidecars/:id` | React | Done — control plane fleet on `/api/sidecars` (list, connect/create wizard with the one-time token, details) |
-| `/onboarding/license` | React | Done — control plane first-access license screen (`ControlPlaneProtectedRoute` sends a free-plan admin with no sidecar there) |
-| `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane page; `NotImplemented`) |
-| `/organization/users` | React | Done — one page for both products, with free-form groups |
+| `/sidecars`, `/sidecars/connect`, `/sidecars/new`, `/sidecars/:id` | React | Done — sidecar fleet on `/api/sidecars` (list, connect/create wizard with the one-time token, details) |
+| `/onboarding/license` | React | Done — first-access license screen; reached by URL only |
+| `/reviews`, `/reviews/:sessionId` | React | Done — agent and sidecar reviews |
+| `/organization/users` | React | Done — with free-form groups |
 | `/login` | React | Done |
 | `/register` | React | Done (local auth signup) |
 | `/signup` | React | Done (IDP org setup) |
@@ -120,7 +115,7 @@ plane: admin → `/sidecars`, everyone else → `/reviews`), `/onboarding/*` and
 | `/jira-templates/new` | React | Done |
 | `/jira-templates/edit/:id` | React | Done |
 | `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
-| `/integrations/slack` | React | Done — `GatewaySlack` / `ControlPlaneSlack` via `ByProduct` |
+| `/integrations/slack` | React | Done — `GatewaySlack` |
 | `/integrations/webhooks` | React | Done |
 | `/guardrails` | React | Done |
 | `/guardrails/new` | React | Done |
@@ -137,7 +132,7 @@ plane: admin → `/sidecars`, everyone else → `/reviews`), `/onboarding/*` and
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
-| `/`, `/onboarding/*`, `/*` (catch-all) | Product leaves (`modes/`) | Gateway: ClojureApp (CLJS), ongoing — see `MIGRATION_ROADMAP.md` for the wave plan. Control plane: landing by role, then 404 |
+| `/`, `/onboarding/*`, `/*` (catch-all) | Product leaves (`modes/`) | ClojureApp (CLJS), ongoing — see `MIGRATION_ROADMAP.md` for the wave plan |
 
 ---
 

@@ -26,9 +26,7 @@ function WithoutAgents({ children }) {
 // The gateway's gate: the shared ProtectedRoute plus the onboarding redirect.
 // An admin with no connections must go through onboarding, which sets up an
 // agent, so only the agents product (experimental.agents) sends anyone there.
-// Skipped on the onboarding routes themselves to avoid a redirect loop. The
-// control plane has no onboarding to send anyone to, so it renders
-// ProtectedRoute directly.
+// Skipped on the onboarding routes themselves to avoid a redirect loop.
 function GatewayProtectedRoute({ children, ...props }) {
   const location = useLocation()
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')

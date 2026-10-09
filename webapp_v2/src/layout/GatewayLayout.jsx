@@ -43,8 +43,6 @@ const MOBILE_DRAWER_STYLES = {
   body: { padding: 0, height: '100%' },
 };
 
-// The gateway shell. Its sibling is ControlPlaneLayout.jsx: same geometry, no
-// Native Connections drawer, its own Sidebar and Header.
 function GatewayLayout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
 

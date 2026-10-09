@@ -1,29 +1,22 @@
 import { useUserStore } from '@/stores/useUserStore'
 import { TRAFFIC_AGENT, TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 import gateway from './gateway'
-import controlPlane from './controlPlane'
 
 /**
- * Application modes.
- *
- * One bundle renders as one of two products. The backend decides which through
- * `application_mode` (/publicserverinfo before login, /serverinfo after), the
- * store keeps it in `useUserStore.appMode`, and this module is the only reader.
+ * The product manifest. The backend names it through `application_mode`
+ * (/publicserverinfo before login, /serverinfo after), the store keeps it in
+ * `useUserStore.appMode`, and this module is the only reader. The gateway is
+ * the only mode; an unknown value falls back to it.
  *
  * A mode is `{ id, theme, postLoginPath, postSetupPath, Page, Guard, Home,
- * Onboarding, CatchAll }` (./gateway.jsx, ./controlPlane.jsx): the shell a page
- * renders in and the three leaves that differ. Every other difference is a
- * pair of sibling files (Gateway…, ControlPlane…) picked in Router.jsx through
- * <ByProduct>.
- * Pages never read `appMode`.
+ * Onboarding, CatchAll }` (./gateway.jsx). Pages never read `appMode`.
  */
 
 export const DEFAULT_APP_MODE = 'gateway'
 
-const MODES = { gateway, 'control-plane': controlPlane }
+const MODES = { gateway }
 
-// Non-hook getter for callbacks and effects (auth pages). Unknown values fall
-// back to the gateway, like a missing field does.
+// Non-hook getter for callbacks and effects (auth pages).
 export function getModeConfig(mode = useUserStore.getState().appMode) {
   return MODES[mode] ?? MODES[DEFAULT_APP_MODE]
 }
@@ -41,12 +34,10 @@ export async function postAuthPath(kind = 'postLoginPath') {
   return getModeConfig()[kind]
 }
 
-const SIDECAR_ONLY = [TRAFFIC_SIDECAR]
 const AGENT_AND_SIDECAR = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
 
-// Which traffic a guardrail, masking or analyzer rule can protect here. A control
-// plane has no agents; every gateway serves sidecars.
+// Which traffic a guardrail, masking or analyzer rule can protect. Every
+// gateway serves sidecars.
 export function useRuleTraffics() {
-  const { id } = useModeConfig()
-  return id === 'control-plane' ? SIDECAR_ONLY : AGENT_AND_SIDECAR
+  return AGENT_AND_SIDECAR
 }

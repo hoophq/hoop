@@ -1,8 +1,7 @@
 import { hasRole } from '@/utils/roles'
 
-// `adminOnly` is the gate both products share; `role` (utils/roles) is the
-// control plane's. An item may carry either. hasRole lets an admin through every
-// role gate; the gateway never passes a role, so nothing changes there.
+// An item may carry `adminOnly` or `role` (utils/roles). hasRole lets an admin
+// through every role gate.
 export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEnabled = null, isLicenseFeatureEnabled = null, userRole = null) {
   if (item.adminOnly && !isAdmin) return true
   if (item.role && !hasRole(userRole, item.role)) return true
