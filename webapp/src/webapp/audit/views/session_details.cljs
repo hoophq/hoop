@@ -464,8 +464,10 @@
                   "Approve"
                   [:> ChevronDown {:size 16}]]]
                 [:> DropdownMenu.Content
+                 ;; A sidecar review (it has a listener) takes no time window.
                  (when-not
                   (or (= (:verb session) "connect")
+                      (get-in session [:review :listener_name])
                       (and (get-in session [:review :time_window :configuration :start_time])
                            (get-in session [:review :time_window :configuration :end_time])))
                    [:> DropdownMenu.Item {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"

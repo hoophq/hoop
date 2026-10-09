@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useRuleTraffics } from '@/modes'
 import {
-  LIST_CARRIES_SIDECAR_SPEC,
   TRAFFIC_AGENT,
   TRAFFIC_BOTH,
   TRAFFIC_SIDECAR,
@@ -16,7 +15,9 @@ const VALUES = Object.keys(LABELS)
 export function useRuleTrafficFilter(kind) {
   const traffics = useRuleTraffics()
   const mixed = traffics.length > 1
-  const classifiable = mixed && LIST_CARRIES_SIDECAR_SPEC[kind]
+  // Every rule list carries sidecar_spec, so a row is classified whenever both
+  // traffics exist.
+  const classifiable = mixed
   const [label, setLabel] = useState(null)
   const selected = classifiable ? (LABELS[label] ?? null) : null
 

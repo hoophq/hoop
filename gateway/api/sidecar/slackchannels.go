@@ -85,7 +85,7 @@ func slackChannelRows(sidecar *models.Sidecar, req openapi.SidecarSlackChannels)
 // GetSlackChannels
 //
 //	@Summary		Get Sidecar Slack Channels
-//	@Description	Where the reviews of each listener of the sidecar are posted in Slack. Control plane only.
+//	@Description	Where the reviews of each listener of the sidecar are posted in Slack.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			nameOrID		path		string	true	"Name or UUID of the sidecar"
@@ -108,7 +108,7 @@ func GetSlackChannels(c *gin.Context) {
 // PutSlackChannels
 //
 //	@Summary		Set Sidecar Slack Channels
-//	@Description	Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels. Control plane only.
+//	@Description	Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json

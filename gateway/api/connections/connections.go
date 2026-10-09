@@ -160,9 +160,9 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
-	// when the connection is managed by the agent, make sure to deny any change
+	// when the connection is managed by its agent or a sidecar, make sure to deny any change
 	if conn.ManagedBy.String != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to update a connection managed by its agent"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": managedConnectionMessage(conn.ManagedBy.String)})
 		return
 	}
 
@@ -284,9 +284,9 @@ func Patch(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
-	// when the connection is managed by the agent, make sure to deny any change
+	// when the connection is managed by its agent or a sidecar, make sure to deny any change
 	if conn.ManagedBy.String != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to update a connection managed by its agent"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": managedConnectionMessage(conn.ManagedBy.String)})
 		return
 	}
 

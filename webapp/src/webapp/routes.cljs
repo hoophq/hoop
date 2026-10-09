@@ -124,17 +124,30 @@
 (defonce history
   (pushy/pushy dispatch parse))
 
+(defn- in-charge?
+  "False while the React shell shows one of its own pages and this app is
+   parked. Same signals as the command palette's keydown guard; CLJS-only mode
+   is always in charge."
+  []
+  (or (not (.-__hoopReactShellPresent js/window))
+      (boolean (.-__hoopReactShellCljsVisible js/window))))
+
 (defn navigate!
   [config]
-  (let [uri (str (url-for (:handler config) (or (:params config) []))
-                 (:query-params config))]
-    (pushy/set-token! history uri)
-    ;; Notify the React shell that the URL changed. Pushy uses pushState,
-    ;; which does not fire popstate, so React Router v7 would otherwise
-    ;; miss the transition — the Layout/Sidebar wrapper wouldn't mount
-    ;; until a full page refresh.
-    (when (.getItem js/localStorage "react-shell")
-      (.dispatchEvent js/window (js/PopStateEvent. "popstate")))))
+  ;; A parked app does not move the URL. React never asks it to (the shell
+  ;; navigates itself), so this is a late redirect of a page the user left: a
+  ;; timer, a fetch, the home that sends to onboarding. React Router would not
+  ;; see it, and the address bar would name a page nobody sees.
+  (when (in-charge?)
+    (let [uri (str (url-for (:handler config) (or (:params config) []))
+                   (:query-params config))]
+      (pushy/set-token! history uri)
+      ;; Notify the React shell that the URL changed. Pushy uses pushState,
+      ;; which does not fire popstate, so React Router v7 would otherwise
+      ;; miss the transition — the Layout/Sidebar wrapper wouldn't mount
+      ;; until a full page refresh.
+      (when (.getItem js/localStorage "react-shell")
+        (.dispatchEvent js/window (js/PopStateEvent. "popstate"))))))
 
 (defn start!
   []

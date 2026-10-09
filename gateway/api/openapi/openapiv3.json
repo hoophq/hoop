@@ -509,7 +509,7 @@
             "type": "string"
           },
           "pending_ttl_sec": {
-            "description": "Seconds a held statement's review may wait for a decision. Present only in a control plane, while the\nrule holds and the limit is set",
+            "description": "Seconds a held statement's review may wait for a decision. Present only while the rule holds and the\nlimit is set",
             "example": 900,
             "type": "integer"
           },
@@ -590,7 +590,7 @@
             "type": "string"
           },
           "pending_ttl_sec": {
-            "description": "Seconds a held statement's review may wait for a decision, 60 to 604800. Control plane, read only while\nsidecar_spec holds under its own approval rule. Absent keeps, 0 clears",
+            "description": "Seconds a held statement's review may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds under its own approval rule. Absent keeps, 0 clears",
             "example": 900,
             "type": "integer"
           },
@@ -1070,7 +1070,7 @@
             "type": "string"
           },
           "pending_ttl_sec": {
-            "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules\nonly; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule",
+            "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type\nsidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule",
             "example": 900,
             "type": "integer"
           },
@@ -1191,7 +1191,7 @@
             "type": "string"
           },
           "pending_ttl_sec": {
-            "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules\nonly; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule",
+            "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type\nsidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule",
             "example": 900,
             "type": "integer"
           },
@@ -8480,6 +8480,12 @@
             "readOnly": true,
             "type": "string"
           },
+          "listener_name": {
+            "description": "The sidecar listener this review is bound to. Absent on a review that came from a connection.\nOnly GET /sessions/{session_id} returns it",
+            "example": "appdb",
+            "readOnly": true,
+            "type": "string"
+          },
           "min_approvals": {
             "description": "The minimum number of approvals required for this review",
             "example": 2,
@@ -8658,7 +8664,7 @@
           },
           "last_error": {
             "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
-            "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
+            "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\"",
             "type": "string"
           },
           "last_outcome": {
@@ -8748,7 +8754,7 @@
           },
           "last_error": {
             "description": "LastError is the reason, when LastOutcome is refused, restart or\nnot_served. Shown on the sidecar page so an admin reads it without the\nsidecar's log.\n\nOptional. A build from before the field sends nothing.",
-            "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
+            "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\"",
             "type": "string"
           },
           "last_outcome": {
@@ -8882,7 +8888,7 @@
           },
           "last_error": {
             "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
-            "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
+            "example": "the config file sent a config this build refuses: parse config: json: unknown field \"future_key\"",
             "type": "string"
           },
           "last_outcome": {
@@ -9351,7 +9357,7 @@
             "type": "string"
           },
           "role": {
-            "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes. Control plane only.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
+            "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
             "enum": [
               "admin",
               "approver",
@@ -9493,7 +9499,7 @@
             "type": "string"
           },
           "role": {
-            "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes. Control plane only.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
+            "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
             "enum": [
               "admin",
               "approver",
@@ -22987,7 +22993,7 @@
         ]
       },
       "put": {
-        "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
+        "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the gateway already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
@@ -24102,7 +24108,7 @@
     },
     "/sidecars/{nameOrID}/slack-channels": {
       "get": {
-        "description": "Where the reviews of each listener of the sidecar are posted in Slack. Control plane only.",
+        "description": "Where the reviews of each listener of the sidecar are posted in Slack.",
         "parameters": [
           {
             "description": "Name or UUID of the sidecar",
@@ -24152,7 +24158,7 @@
         ]
       },
       "put": {
-        "description": "Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels. Control plane only.",
+        "description": "Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels.",
         "parameters": [
           {
             "description": "Name or UUID of the sidecar",
