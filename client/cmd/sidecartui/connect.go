@@ -56,7 +56,6 @@ func newConnectPage(licenseDir string) *connectPage {
 	notPlane := func() bool { return how.text != unlockPlane }
 	notLicense := func() bool { return how.text != unlockLicense }
 	f := newForm("Connect to a Control Plane",
-		&field{id: "continue", label: "Continue", kind: fButton},
 		&field{id: "meet", label: "Talk to us", kind: fButton},
 		&field{id: "back", label: "Back", kind: fButton},
 		&field{id: "about", kind: fNote, note: func() string {
@@ -78,6 +77,8 @@ func newConnectPage(licenseDir string) *connectPage {
 		&field{id: "license", label: "License", kind: fText, placeholder: `{"payload": …} or /path/to/license.json`,
 			help:   "Paste it, or give the path to its file. It is checked, then saved to " + where + ".",
 			hidden: notLicense},
+		// Continue follows the choice and its fields: it acts on them.
+		&field{id: "continue", label: "Continue", kind: fButton},
 	)
 	// Talk to us is where the cursor starts: most people who open this
 	// page do not have a plane or a license yet.

@@ -70,6 +70,19 @@ func TestConnectPageExplainsAndStartsOnTalkToUs(t *testing.T) {
 	if m.connect.form.focused().id != "meet" {
 		t.Errorf("the page starts on %q, want Talk to us", m.connect.form.focused().id)
 	}
+	order := map[string]int{}
+	for i, x := range m.connect.form.fields {
+		order[x.id] = i
+	}
+	if !(order["continue"] > order["how"] && order["continue"] > order["token"] && order["continue"] > order["license"]) {
+		t.Errorf("Continue is not below the cards and their fields: %v", order)
+	}
+	focusOn(m, "token")
+	m.connect.form.update(wkey("enter"))
+	if m.connect.form.focused().id != "continue" {
+		t.Errorf("enter on the token goes to %q, want Continue", m.connect.form.focused().id)
+	}
+	focusOn(m, "meet")
 	for _, gone := range []string{"connect", "savelicense"} {
 		if m.connect.form.byID(gone) != nil {
 			t.Errorf("the page still has a %q button", gone)
