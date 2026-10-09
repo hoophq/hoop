@@ -45,15 +45,17 @@ func seedMirroredSidecar(t *testing.T, name string) (*models.Sidecar, *models.Si
 
 // seedApprovalRule stores the payments-approvers rule when the database has
 // none yet.
-func seedApprovalRule(t *testing.T) {
+func seedApprovalRule(t *testing.T) { seedApprovalRuleIn(t, statusTestOrgID) }
+
+func seedApprovalRuleIn(t *testing.T, orgID string) {
 	t.Helper()
-	_, err := models.GetAccessRequestRuleByName(models.DB, "payments-approvers", uuid.MustParse(statusTestOrgID))
+	_, err := models.GetAccessRequestRuleByName(models.DB, "payments-approvers", uuid.MustParse(orgID))
 	if err == nil {
 		return
 	}
 	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 	require.NoError(t, models.CreateAccessRequestRule(models.DB, &models.AccessRequestRule{
-		OrgID:                  uuid.MustParse(statusTestOrgID),
+		OrgID:                  uuid.MustParse(orgID),
 		Name:                   "payments-approvers",
 		AccessType:             models.AccessTypeSidecar,
 		ReviewersGroups:        pq.StringArray{"dba"},

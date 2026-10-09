@@ -128,7 +128,7 @@ function SidecarSlackChannelsTab() {
     <Stack gap="md">
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <Text size="sm" c="dimmed">
-          Reviews go to each listener's channels. A listener without one uses the fallback channel.
+          Approval requests go to each listener's channels. A listener without one uses the fallback channel.
         </Text>
         <TextInput
           placeholder="Search listeners"

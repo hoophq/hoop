@@ -202,7 +202,7 @@
                                     (rf/dispatch
                                      [:show-snackbar
                                       {:level :info
-                                       :text "Runbook sent for review"
+                                       :text "Runbook sent for approval"
                                        :description (str "The AI Session Analyzer flagged this runbook. "
                                                          "It needs approval before it runs.")}])
 

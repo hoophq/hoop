@@ -17,9 +17,9 @@ import (
 // resources.name. A mirror's resource carries the mirror's name.
 const MaxSidecarMirrorNameLength = 128
 
-// MaxSidecarListenerNameLength is the width of connections.sidecar_listener,
-// in characters.
-const MaxSidecarListenerNameLength = 255
+// MaxSidecarListenerNameBytes is the longest listener name that every index on
+// a listener name holds, beside the widest rule name (btree entries: 2704 bytes).
+const MaxSidecarListenerNameBytes = 1024
 
 // sidecarMirrorSuffixLength is "-" plus eight hex digits.
 const sidecarMirrorSuffixLength = 9

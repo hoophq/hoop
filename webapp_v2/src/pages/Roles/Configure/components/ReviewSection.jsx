@@ -61,7 +61,7 @@ export default function ReviewSection({ kind = 'command' }) {
     }
   }
 
-  const title = kind === 'jit' ? 'Just-in-Time Review' : 'Review by Command'
+  const title = kind === 'jit' ? 'Just-in-Time Approval' : 'Approval by Command'
 
   return (
     <ToggleSection
@@ -135,8 +135,8 @@ export default function ReviewSection({ kind = 'command' }) {
           {isFreeLicense && (
             <Alert variant="light" color="indigo" icon={<Star size={16} />} w="100%">
               {kind === 'jit'
-                ? 'Enable Just-in-Time Reviews by upgrading your plan.'
-                : 'Enable Review by Command by upgrading your plan.'}
+                ? 'Enable Just-in-Time Approvals by upgrading your plan.'
+                : 'Enable Approval by Command by upgrading your plan.'}
             </Alert>
           )}
           <Anchor
@@ -147,7 +147,7 @@ export default function ReviewSection({ kind = 'command' }) {
             display="inline-flex"
           >
             <ArrowUpRight size={14} />
-            {kind === 'jit' ? 'Learn more about Just-in-Time Reviews' : 'Learn more about Reviews'}
+            {kind === 'jit' ? 'Learn more about Just-in-Time Approvals' : 'Learn more about Approvals'}
           </Anchor>
         </Stack>
       }

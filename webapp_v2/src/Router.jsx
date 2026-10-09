@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import PageLoader from '@/components/PageLoader'
 import NotImplemented from '@/components/NotImplemented'
 import { useModeConfig } from '@/modes'
@@ -80,6 +80,14 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'))
 // A review rule created in the control plane names the approver group as
 // reviewer; the form maps the role to the group name through /serverinfo.
 const CONTROL_PLANE_REVIEWER_ROLES = [ROLE_APPROVER]
+
+// /reviews is the old path of /approvals. Keep the session id and the query.
+function ReviewsRedirect() {
+  const { sessionId } = useParams()
+  const { search } = useLocation()
+  const path = sessionId ? `/approvals/${encodeURIComponent(sessionId)}` : '/approvals'
+  return <Navigate to={`${path}${search}`} replace />
+}
 
 /**
  * One route table for both products (src/modes). Every React route below exists
@@ -173,10 +181,12 @@ function Router() {
         }
       />
       {/* Both render the list; the session id opens its drawer, so the Slack
-          link resolves to one review. Every signed-in user reaches it: a
-          reviewer's groups come from the identity provider, not from a role. */}
-      <Route path="/reviews" element={<Page><Reviews /></Page>} />
-      <Route path="/reviews/:sessionId" element={<Page><Reviews /></Page>} />
+          link resolves to one approval. Every signed-in user reaches it: an
+          approver's groups come from the identity provider, not from a role. */}
+      <Route path="/approvals" element={<Page><Reviews /></Page>} />
+      <Route path="/approvals/:sessionId" element={<Page><Reviews /></Page>} />
+      <Route path="/reviews" element={<ReviewsRedirect />} />
+      <Route path="/reviews/:sessionId" element={<ReviewsRedirect />} />
 
       {/* React pages — fully migrated */}
       <Route

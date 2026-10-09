@@ -75,7 +75,7 @@
          ;; Keep this section visible for backward compatibility with previously configured reviews.
          (when has-existing-review-config?
            [toggle-section
-            {:title "Just-in-Time Review"
+            {:title "Just-in-Time Approval"
              :description "Require approval prior to resource role execution."
              :checked @review?
              :on-change #(rf/dispatch [:connection-setup/toggle-review])
@@ -134,7 +134,7 @@
                [:> Callout.Icon
                 [:> ArrowUpRight {:size 16}]]
                [:> Callout.Text
-                "Learn more about Just-in-Time Reviews"]]]}])
+                "Learn more about Just-in-Time Approvals"]]]}])
 
          ;; Live Data Masking
          [toggle-section

@@ -196,7 +196,7 @@ When implementing a new feature, behavior change, or non-trivial code path, **as
 
 2. **Gate every code path** — wrap the new behavior so it only runs when the flag is on:
    - **Gateway**: `featureflag.IsEnabled(orgID, "experimental.my_feature")` (import `common/featureflag`).
-   - **Agent**: `featureflagstate.IsEnabled("experimental.my_feature")` (import `agent/controller/featureflagstate`).
+   - **Agent**: `a.flags.IsEnabled("experimental.my_feature")` inside an `*Agent` method in `agent/controller/`. Flags are per gateway stream; a new stream starts with all flags off.
    - **Webapp**: check `feature_flags` from the `/serverinfo` response.
    - Always preserve the existing behavior in the `else` branch.
 

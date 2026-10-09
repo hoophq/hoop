@@ -81,7 +81,7 @@
          ;; Keep this section visible for backward compatibility with previously configured reviews.
          (when has-existing-review-config?
            [toggle-section
-            {:title "Review by Command"
+            {:title "Approval by Command"
              :description "Require approval prior to resource role execution."
              :checked @review?
              :on-change #(rf/dispatch [:connection-setup/toggle-review])
@@ -124,7 +124,7 @@
                 [:> Callout.Icon
                  [:> Star {:size 16}]]
                 [:> Callout.Text {:class "text-gray-12"}
-                 "Enable Command reviews by "
+                 "Enable Approval by Command by "
                  [:> Link {:href "#"
                            :underline "always"
                            :class "text-primary-10"
@@ -142,7 +142,7 @@
                [:> Callout.Icon
                 [:> ArrowUpRight {:size 16}]]
                [:> Callout.Text
-                "Learn more about Reviews"]]]}])
+                "Learn more about Approvals"]]]}])
 
          [toggle-section
           {:title "Live Data Masking"

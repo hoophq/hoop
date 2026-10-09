@@ -116,7 +116,7 @@ function Statement({ sessionId }) {
   if (!statement) {
     return (
       <Text size="sm" c="dimmed">
-        This review carries no statement.
+        This approval request carries no statement.
       </Text>
     )
   }
@@ -161,7 +161,7 @@ export default function ReviewModal({
   const expiry = expiryLabel(review)
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Review Details" size="xl">
+    <Modal opened={opened} onClose={onClose} title="Approval Details" size="xl">
       <Stack gap="xl">
         <Stack gap="md">
           <DetailRow icon={Package} label="Resource">
@@ -194,7 +194,7 @@ export default function ReviewModal({
             </DetailRow>
           )}
 
-          <DetailRow icon={CircleCheckBig} label="Review">
+          <DetailRow icon={CircleCheckBig} label="Approval">
             <Badge variant="light" color={status.color} fullLabel>
               {status.label}
             </Badge>
@@ -252,8 +252,8 @@ export default function ReviewModal({
         )}
 
         {review.status === STATUS.EXPIRED && (
-          <Alert color="gray" variant="light" radius="md" title="Review expired">
-            Nothing was released. Running the statement again files a new review.
+          <Alert color="gray" variant="light" radius="md" title="Approval request expired">
+            Nothing was released. Running the statement again files a new approval request.
           </Alert>
         )}
 
@@ -290,7 +290,7 @@ export default function ReviewModal({
             )}
             {review.status === STATUS.PENDING && (
               <Tooltip
-                label={`Only ${(review.review_groups_data ?? []).map((g) => g.group).join(' or ')} can approve this review`}
+                label={`Only ${(review.review_groups_data ?? []).map((g) => g.group).join(' or ')} can approve this request`}
                 disabled={mayApprove}
               >
                 <span>

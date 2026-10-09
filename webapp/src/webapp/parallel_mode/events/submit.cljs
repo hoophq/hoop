@@ -78,7 +78,7 @@
        {:fx [[:dispatch [:dialog->open
                          {:title "Cannot Execute in Parallel Mode"
                           :action-button? false
-                          :text "All selected roles have restrictions (Jira Templates, Review Required, or Required Metadata) that prevent parallel execution."}]]]}
+                          :text "All selected roles have restrictions (Jira Templates, Approval Required, or Required Metadata) that prevent parallel execution."}]]]}
 
        ;; Execute immediately (no preview)
        :else

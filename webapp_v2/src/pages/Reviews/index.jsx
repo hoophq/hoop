@@ -18,19 +18,19 @@ import RejectModal from './sections/RejectModal'
 const SETTLED_TEXT = {
   sidecar: {
     [STATUS.APPROVED]: 'Statement released.',
-    [STATUS.REVOKED]: 'Approval revoked. Running the statement again files a new review.',
+    [STATUS.REVOKED]: 'Approval revoked. Running the statement again files a new approval request.',
     rejected: 'Statement rejected.',
   },
-  agent: { [STATUS.APPROVED]: 'Review approved.', rejected: 'Review rejected.' },
+  agent: { [STATUS.APPROVED]: 'Request approved.', rejected: 'Request rejected.' },
 }
 
 const EMPTY = {
   waiting: {
     title: 'Nothing waiting for a decision',
     description:
-      'A review is filed when a session on a resource or a statement on a sidecar listener needs approval. Approve one here or from Slack.',
+      'An approval request is filed when a session on a resource or a statement on a sidecar listener needs approval. Approve one here or from Slack.',
   },
-  settled: { title: 'No review has been decided yet' },
+  settled: { title: 'No approval request has been decided yet' },
 }
 
 export default function Reviews() {
@@ -91,8 +91,8 @@ export default function Reviews() {
   const loading = reviewsStatus === 'idle' || reviewsStatus === 'loading'
   const showLoader = useMinDelay(loading, 500)
 
-  const open = (review) => navigate(`/reviews/${encodeURIComponent(review.session)}${search}`)
-  const close = () => navigate(`/reviews${search}`)
+  const open = (review) => navigate(`/approvals/${encodeURIComponent(review.session)}${search}`)
+  const close = () => navigate(`/approvals${search}`)
 
   const settle = async (target, status, rejectionReason) => {
     if (!target) return
@@ -119,7 +119,7 @@ export default function Reviews() {
       level: 'success',
       text: settled
         ? (settledText[review.status] ?? settledText.rejected)
-        : 'Your approval was recorded. The review still needs another one.',
+        : 'Your approval was recorded. The request still needs another one.',
     })
     if (settled) close()
   }
@@ -127,7 +127,7 @@ export default function Reviews() {
   if (showLoader) return <PageLoader h={400} />
 
   if (reviewsStatus === 'error') {
-    return <PageLoader error h={400} message="Failed to load reviews." />
+    return <PageLoader error h={400} message="Failed to load approvals." />
   }
 
   // A session id that matches nothing would otherwise open an empty modal.
@@ -158,7 +158,7 @@ export default function Reviews() {
 
       <Stack gap="xl">
         <Stack gap="sm">
-          <Title order={1}>Reviews</Title>
+          <Title order={1}>Approvals</Title>
           <Text size="lg" c="dimmed">
             The sessions and statements waiting for approval, and what was decided about them.
           </Text>
@@ -166,7 +166,7 @@ export default function Reviews() {
 
         {missing && (
           <Text size="sm" c="red">
-            {`No review found for session ${sessionId}.`}
+            {`No approval request found for session ${sessionId}.`}
           </Text>
         )}
 

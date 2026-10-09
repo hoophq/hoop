@@ -36,7 +36,7 @@
   [{:id :access-request
     :name "Access Requests"
     :category :blocks-execution
-    :description "Sends the query for reviewer approval before it executes."
+    :description "Sends the query for approval before it executes."
     :icon [:> UserCheck {:size 16}]
     :tile-class "bg-[--indigo-11] text-white"
     ;; The Terminal executes, so the gateway resolves the "command" rule — "jit"

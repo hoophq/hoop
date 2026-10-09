@@ -110,11 +110,11 @@ function Dashboard() {
           <Group justify="space-between" align="flex-start" gap="lgAlt" wrap="wrap">
             <StatBlock
               title="Sessions"
-              caption="reviewed and safely executed"
+              caption="audited and safely executed"
               value={todaySessionsTotal}
             />
             <StatBlock
-              title="Reviews"
+              title="Approvals"
               caption="sent via safe channels"
               value={todayReviewsTotal}
             />
@@ -135,7 +135,7 @@ function Dashboard() {
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 6 }}>
           <ChartCard
-            title="Reviews"
+            title="Approvals"
             subtitle={reviewRangeLabel}
             minH={CHART_HEIGHT}
             error={reviewsError}

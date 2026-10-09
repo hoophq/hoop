@@ -741,4 +741,12 @@ func TestSlackChannelRows(t *testing.T) {
 		Listeners: []openapi.SidecarListenerSlackChannels{{Name: ""}},
 	})
 	assert.NotEmpty(t, msg)
+
+	// A listener stored before the limit, with a name no index holds.
+	over := strings.Repeat("l", models.MaxSidecarListenerNameBytes+1)
+	sc.Configuration.Listeners = append(sc.Configuration.Listeners, daemon.ListenerConfig{Name: over})
+	_, msg = slackChannelRows(sc, openapi.SidecarSlackChannels{
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: over, Channels: []string{"C1"}}},
+	})
+	assert.Contains(t, msg, "listener name is 1025 bytes, over 1024")
 }

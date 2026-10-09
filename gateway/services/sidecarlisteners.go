@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"unicode/utf8"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
@@ -113,7 +112,7 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 // that works today.
 //
 // A listener with no name, with the name of an earlier listener, or with a
-// name wider than connections.sidecar_listener is refused. Its mirror is how
+// name longer than MaxSidecarListenerNameBytes is refused. Its mirror is how
 // every feature reads it, so it must have one: a listener left out would be
 // left out of those features with no error. Writes already refuse the first
 // two for every org (ValidateListenerNames); here they guard rows stored
@@ -134,9 +133,9 @@ func ProjectListeners(orgID string, sc *models.Sidecar) ([]models.Connection, er
 		if l.Name == "" {
 			return nil, fmt.Errorf("listeners[%d]: no name; name the listener to manage it as a resource", i)
 		}
-		if n := utf8.RuneCountInString(l.Name); n > models.MaxSidecarListenerNameLength {
-			return nil, fmt.Errorf("listeners[%d]: the name is %d characters, over %d; shorten it to manage it as a resource",
-				i, n, models.MaxSidecarListenerNameLength)
+		if n := len(l.Name); n > models.MaxSidecarListenerNameBytes {
+			return nil, fmt.Errorf("listeners[%d]: the name is %d bytes, over %d; shorten it to manage it as a resource",
+				i, n, models.MaxSidecarListenerNameBytes)
 		}
 		if first, ok := seen[l.Name]; ok {
 			return nil, fmt.Errorf("listeners[%d]: the name %q repeats listeners[%d]; give each listener its own name to manage it as a resource",
