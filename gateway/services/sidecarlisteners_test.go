@@ -199,6 +199,9 @@ func TestProjectListenersRefusesListenersNoMirrorCanAddress(t *testing.T) {
 	}{
 		{"no name", []daemon.ListenerConfig{appdb, {Protocol: "postgres"}}, "listeners[1]: no name"},
 		{"a repeated name", []daemon.ListenerConfig{appdb, {Name: "appdb", Protocol: "mysql"}}, `listeners[1]: the name "appdb" repeats listeners[0]`},
+		// One byte over what every listener name index holds.
+		{"a name no index can hold", []daemon.ListenerConfig{appdb, {Name: strings.Repeat("a", models.MaxSidecarListenerNameBytes+1), Protocol: "postgres"}},
+			"listeners[1]: the name is 1025 bytes, over 1024"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -214,14 +217,15 @@ func TestProjectListenersRefusesListenersNoMirrorCanAddress(t *testing.T) {
 
 }
 
-// The sidecar sets no limit on a listener name, so a long one keeps its full
-// name as the listener and takes the fallback name as the mirror.
+// A name over 255 characters keeps its full name as the listener and takes
+// the fallback name as the mirror, up to MaxSidecarListenerNameBytes.
 func TestProjectListenersMirrorsALongName(t *testing.T) {
-	for _, long := range []string{strings.Repeat("a", 300), strings.Repeat("é", 300)} {
+	for _, long := range []string{strings.Repeat("a", 300), strings.Repeat("é", 300),
+		strings.Repeat("a", models.MaxSidecarListenerNameBytes)} {
 		sc := sidecarWith("pay", daemon.ListenerConfig{Name: long, Protocol: "postgres"})
 		got, err := ProjectListeners("org-1", sc)
 		if err != nil || len(got) != 1 {
-			t.Fatalf("a 300-character name must be mirrored: %v, %d mirrors", err, len(got))
+			t.Fatalf("a %d-byte name must be mirrored: %v, %d mirrors", len(long), err, len(got))
 		}
 		if got[0].SidecarListener.String != long {
 			t.Errorf("the listener name is cut to %d characters", len([]rune(got[0].SidecarListener.String)))

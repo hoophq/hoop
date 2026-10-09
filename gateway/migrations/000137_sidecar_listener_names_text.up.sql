@@ -2,8 +2,8 @@ BEGIN;
 
 SET search_path TO private;
 
--- The sidecar sets no limit on a listener name, so these columns set none.
--- VARCHAR(255) to TEXT is binary compatible: no table rewrite, no index rebuild.
+-- The gateway bounds a listener name in bytes (MaxSidecarListenerNameBytes),
+-- what the indexes hold. VARCHAR(255) to TEXT rewrites no table and no index.
 ALTER TABLE connections ALTER COLUMN sidecar_listener TYPE TEXT;
 ALTER TABLE reviews ALTER COLUMN listener_name TYPE TEXT;
 ALTER TABLE guardrail_rules_listeners ALTER COLUMN listener_name TYPE TEXT;

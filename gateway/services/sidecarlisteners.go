@@ -111,14 +111,12 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 // daemon accepts those names, so refusing them would refuse a sidecar config
 // that works today.
 //
-// A listener with no name, or with the name of an earlier listener, is
-// refused. Its mirror is how every feature reads it, so it must have one: a
-// listener left out would be left out of those features with no error. Writes
-// already refuse both for every org (ValidateListenerNames); here they guard
-// rows stored before that check. Every message names the listener by position.
-//
-// The name length is not checked: the sidecar sets no limit, and the listener
-// columns are TEXT. Only the Postgres index limit (about 2.6 KB) fails a write.
+// A listener with no name, with the name of an earlier listener, or with a
+// name longer than MaxSidecarListenerNameBytes is refused. Its mirror is how
+// every feature reads it, so it must have one: a listener left out would be
+// left out of those features with no error. Writes already refuse the first
+// two for every org (ValidateListenerNames); here they guard rows stored
+// before that check. Every message names the listener by position.
 //
 // Every access mode is disabled: the gateway has no route to a sidecar, so a
 // client connects to the listener itself, and exec, runbooks and the schema
@@ -134,6 +132,10 @@ func ProjectListeners(orgID string, sc *models.Sidecar) ([]models.Connection, er
 		}
 		if l.Name == "" {
 			return nil, fmt.Errorf("listeners[%d]: no name; name the listener to manage it as a resource", i)
+		}
+		if n := len(l.Name); n > models.MaxSidecarListenerNameBytes {
+			return nil, fmt.Errorf("listeners[%d]: the name is %d bytes, over %d; shorten it to manage it as a resource",
+				i, n, models.MaxSidecarListenerNameBytes)
 		}
 		if first, ok := seen[l.Name]; ok {
 			return nil, fmt.Errorf("listeners[%d]: the name %q repeats listeners[%d]; give each listener its own name to manage it as a resource",

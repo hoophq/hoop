@@ -95,6 +95,17 @@ func TestReviewDecisionAnswers404WhereTheReadDoes(t *testing.T) {
 		assert.Contains(t, w.Body.String(), ErrSelfApproval.Error())
 	})
 
+	t.Run("a revoke of an approved one-time review is refused, not hidden", func(t *testing.T) {
+		rev := plain(t)
+		require.Equal(t, http.StatusOK, decide("user-dba", []string{"dba"}, "id", rev.ID, approve).Code)
+		for _, groups := range [][]string{{"dba"}, {types.GroupAdmin}} {
+			require.Equal(t, http.StatusOK, serveReviews("user-"+groups[0], groups, rev.ID).Code)
+			w := decide("user-"+groups[0], groups, "id", rev.ID, revoke)
+			assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body)
+			assert.Contains(t, w.Body.String(), ErrWrongState.Error())
+		}
+	})
+
 	t.Run("a hidden review reads as one that does not exist", func(t *testing.T) {
 		rev := plain(t)
 		hidden := decide("user-outsider", []string{"finance"}, "id", rev.ID, approve)

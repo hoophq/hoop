@@ -608,8 +608,9 @@ func validateReviewStatusTransition(ctx *storagev2.Context, rev *models.Review, 
 
 		// A sidecar review is onetime; a revoke withdraws the approval until
 		// the sidecar claims it.
+		// Not ErrNotFound: the caller can see this review.
 		if rev.Type != models.ReviewTypeJit && !sidecar {
-			return ErrNotFound
+			return ErrWrongState
 		}
 	}
 

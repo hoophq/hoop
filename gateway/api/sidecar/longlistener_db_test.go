@@ -2,20 +2,25 @@ package apisidecar
 
 import (
 	"bytes"
+	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,6 +52,14 @@ func TestAListenerNameOver255CharactersIsMirrored(t *testing.T) {
 		assert.Equal(t, mirror.ID, got.ID, "the edit keeps the mirror")
 	})
 
+	t.Run("a name one byte over the limit is refused", func(t *testing.T) {
+		over := strings.Repeat("l", models.MaxSidecarListenerNameBytes+1)
+		w, _ := postSidecar(t, "edge4", `{"listeners": [
+			{"name": "`+over+`", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`)
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
+		assert.Contains(t, w.Body.String(), "listeners[0]: the name is 1025 bytes, over 1024")
+	})
+
 	t.Run("the startup reconcile mirrors it after the upgrade", func(t *testing.T) {
 		// As 1.214.0 left it: the listener stored, no mirror.
 		require.NoError(t, models.DB.Exec(`DELETE FROM private.connections WHERE org_id = ? AND id = ?`, switchOrgID, mirror.ID).Error)
@@ -60,29 +73,7 @@ func TestAListenerNameOver255CharactersIsMirrored(t *testing.T) {
 
 	t.Run("rules bind to it", func(t *testing.T) {
 		org := uuid.MustParse(switchOrgID)
-		target := []models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: long}}
-		now := time.Now().UTC()
-		guardrail := &models.GuardRailRules{ID: uuid.NewString(), OrgID: switchOrgID, Name: "no-drop",
-			CreatedAt: now, UpdatedAt: now, Input: map[string]any{}, Output: map[string]any{},
-			SidecarSpec: json.RawMessage(`{"rules":[{"name":"d","type":"deny_words_list","words":["drop"]}]}`)}
-		require.NoError(t, models.UpsertGuardRailRuleWithConnections(guardrail, nil, true))
-		require.NoError(t, models.SetGuardrailRuleListenersTx(models.DB, org, guardrail.Name, target))
-		mask := &models.DataMaskingRule{ID: uuid.NewString(), OrgID: switchOrgID, Name: "mask-pii", UpdatedAt: now,
-			SupportedEntityTypes: models.SupportedEntityTypesList{}, CustomEntityTypes: models.CustomEntityTypesList{},
-			SidecarSpec: json.RawMessage(`{"rules":[{"name":"e","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}`)}
-		_, err := models.CreateDataMaskingRule(mask)
-		require.NoError(t, err)
-		require.NoError(t, models.SetDataMaskingRuleListenersTx(models.DB, org, mask.Name, target))
-		analyzer := &models.AISessionAnalyzerRules{OrgID: org, Name: "risky", ConnectionNames: []string{},
-			SidecarSpec: json.RawMessage(`{"high":"block"}`),
-			RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
-				LowRisk:    &models.AISessionAnalyzerRiskTier{Action: models.AllowExecution},
-				MediumRisk: &models.AISessionAnalyzerRiskTier{Action: models.AllowExecution},
-				HighRisk:   &models.AISessionAnalyzerRiskTier{Action: models.AllowExecution},
-			}}
-		require.NoError(t, models.CreateAISessionAnalyzerRuleTx(models.DB, analyzer))
-		require.NoError(t, models.SetAnalyzerRuleListenersTx(models.DB, org, analyzer.Name, target))
-
+		bindEveryRuleKind(t, sc.ID, long, "no-drop", "mask-pii", "risky")
 		for kind, list := range map[string]func() ([]models.BoundRule, error){
 			"guardrail": func() ([]models.BoundRule, error) { return models.ListGuardrailRulesForSidecar(models.DB, org, sc.ID) },
 			"data masking": func() ([]models.BoundRule, error) {
@@ -154,4 +145,84 @@ func putSlackChannels(t *testing.T, nameOrID, body string) *httptest.ResponseRec
 	c.Params = gin.Params{{Key: "nameOrID", Value: nameOrID}}
 	PutSlackChannels(c)
 	return w
+}
+
+// bindEveryRuleKind stores one guardrail, one data masking and one analyzer
+// rule under the given names, each bound to one listener of a sidecar.
+func bindEveryRuleKind(t *testing.T, sidecarID, listener, guardrailName, maskName, analyzerName string) {
+	t.Helper()
+	org := uuid.MustParse(switchOrgID)
+	target := []models.SidecarRuleTarget{{SidecarID: sidecarID, ListenerName: listener}}
+	now := time.Now().UTC()
+	guardrail := &models.GuardRailRules{ID: uuid.NewString(), OrgID: switchOrgID, Name: guardrailName,
+		CreatedAt: now, UpdatedAt: now, Input: map[string]any{}, Output: map[string]any{},
+		SidecarSpec: json.RawMessage(`{"rules":[{"name":"d","type":"deny_words_list","words":["drop"]}]}`)}
+	require.NoError(t, models.UpsertGuardRailRuleWithConnections(guardrail, nil, true))
+	require.NoError(t, models.SetGuardrailRuleListenersTx(models.DB, org, guardrail.Name, target))
+	mask := &models.DataMaskingRule{ID: uuid.NewString(), OrgID: switchOrgID, Name: maskName, UpdatedAt: now,
+		SupportedEntityTypes: models.SupportedEntityTypesList{}, CustomEntityTypes: models.CustomEntityTypesList{},
+		SidecarSpec: json.RawMessage(`{"rules":[{"name":"e","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}`)}
+	_, err := models.CreateDataMaskingRule(mask)
+	require.NoError(t, err)
+	require.NoError(t, models.SetDataMaskingRuleListenersTx(models.DB, org, mask.Name, target))
+	analyzer := &models.AISessionAnalyzerRules{OrgID: org, Name: analyzerName, ConnectionNames: []string{},
+		SidecarSpec: json.RawMessage(`{"high":"block"}`),
+		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
+			LowRisk:    &models.AISessionAnalyzerRiskTier{Action: models.AllowExecution},
+			MediumRisk: &models.AISessionAnalyzerRiskTier{Action: models.AllowExecution},
+			HighRisk:   &models.AISessionAnalyzerRiskTier{Action: models.AllowExecution},
+		}}
+	require.NoError(t, models.CreateAISessionAnalyzerRuleTx(models.DB, analyzer))
+	require.NoError(t, models.SetAnalyzerRuleListenersTx(models.DB, org, analyzer.Name, target))
+}
+
+// Every index on a listener name holds MaxSidecarListenerNameBytes of a name
+// that does not compress, beside the widest rule name its table allows.
+func TestTheLongestListenerNameFitsEveryIndex(t *testing.T) {
+	startSwitchDB(t)
+	random := make([]byte, models.MaxSidecarListenerNameBytes)
+	_, err := rand.Read(random)
+	require.NoError(t, err)
+	long := base64.RawURLEncoding.EncodeToString(random)[:models.MaxSidecarListenerNameBytes]
+	// Random four-byte characters at each column's width: a repeated one
+	// compresses in the index and proves nothing.
+	wide := func(chars int) string {
+		var b strings.Builder
+		for range chars {
+			n, err := rand.Int(rand.Reader, big.NewInt(0x10FFFF-0x10000))
+			require.NoError(t, err)
+			b.WriteRune(rune(0x10000 + n.Int64()))
+		}
+		return b.String()
+	}
+
+	w, created := postSidecar(t, "edge-max", `{"listeners": [
+		{"name": "`+long+`", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`)
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	_, err = models.GetSidecarMirror(models.DB, switchOrgID, created.ID, long)
+	require.NoError(t, err)
+
+	bindEveryRuleKind(t, created.ID, long, wide(128), wide(128), wide(254))
+	require.NoError(t, models.SetSidecarSlackChannels(models.DB, switchOrgID, created.ID,
+		[]models.SidecarSlackChannels{{ListenerName: long, Channels: pq.StringArray{"C0123"}}}))
+
+	sessionID := uuid.NewString()
+	statement := "DELETE FROM users;"
+	rev := &models.Review{ID: uuid.NewString(), OrgID: switchOrgID, Type: models.ReviewTypeOneTime,
+		Status: models.ReviewStatusPending, SessionID: sessionID,
+		SidecarID:             sql.NullString{String: created.ID, Valid: true},
+		ListenerName:          sql.NullString{String: long, Valid: true},
+		StatementHash:         sql.NullString{String: models.HashStatement([]byte(statement)), Valid: true},
+		OwnerID:               created.ID,
+		OwnerEmail:            "hoop@hoop.dev",
+		AccessRequestRuleName: ptr.String(wide(254)),
+		MinApprovals:          ptr.Int(1),
+		CreatedAt:             time.Now().UTC()}
+	rev.ReviewGroups = []models.ReviewGroups{{ID: uuid.NewString(), OrgID: switchOrgID, ReviewID: rev.ID,
+		GroupName: "dba", Status: models.ReviewStatusPending}}
+	sess := models.Session{ID: sessionID, OrgID: switchOrgID, BlobInput: models.BlobInputType(statement),
+		ConnectionType: "custom", Verb: "exec", Status: "open", UserID: created.ID, UserName: "edge-max",
+		UserEmail: "hoop@hoop.dev", CreatedAt: time.Now().UTC()}
+	_, err = models.CreateSidecarReview(models.DB, sess, rev, statement)
+	require.NoError(t, err)
 }
