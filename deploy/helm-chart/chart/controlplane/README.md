@@ -6,6 +6,12 @@ sidecars and no agents. `hoop start control-plane` starts the same binary as
 to a temporary directory, because this chart mounts no session volume.
 (ADR-0024, the control-plane mode, is superseded.)
 
+With `securityContext.readOnlyRootFilesystem: true` that directory is not
+writable. The gateway logs a warning, waits 10 seconds and starts; sessions
+through an agent fail with an error that names the directory. To record them,
+mount an `emptyDir` on `/tmp` (`extraVolumes` / `extraVolumeMounts`) or set
+`PLUGIN_AUDIT_PATH` to a writable volume.
+
 The process is the whole gateway: gRPC on `:8010`, the six transport plugins,
 the proxies configured in `serverconfig`. The chart publishes only HTTP 8009,
 which is all a sidecar fleet needs.

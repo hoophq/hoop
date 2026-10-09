@@ -1,6 +1,9 @@
 package plugintypes
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 const (
 	defaultAuditPath = "/opt/hoop/sessions"
@@ -30,4 +33,23 @@ func init() {
 		AuditPath = defaultAuditPath
 	}
 	_ = os.MkdirAll(AuditPath, 0755)
+}
+
+// CheckAuditPath creates AuditPath when it is missing and proves that this
+// process can write to it. The error names the directory and PLUGIN_AUDIT_PATH.
+func CheckAuditPath() error {
+	if err := os.MkdirAll(AuditPath, 0o700); err != nil {
+		return auditPathError(err)
+	}
+	f, err := os.CreateTemp(AuditPath, ".write-check-*")
+	if err != nil {
+		return auditPathError(err)
+	}
+	_ = f.Close()
+	_ = os.Remove(f.Name())
+	return nil
+}
+
+func auditPathError(err error) error {
+	return fmt.Errorf("session storage directory %s is not writable, set PLUGIN_AUDIT_PATH to a writable directory: %w", AuditPath, err)
 }
