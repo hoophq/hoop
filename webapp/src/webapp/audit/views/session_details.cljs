@@ -103,11 +103,11 @@
        [metadata-row "sidecar"
         [:span (cond-> name listener (str " · " listener))]])
      (when (seq review_sessions)
-       [metadata-row "reviews"
+       [metadata-row "approvals"
         [:> Flex {:gap "3" :wrap "wrap"}
          (for [review-session review_sessions]
            ^{:key review-session}
-           [:a {:href (str "/reviews/" (js/encodeURIComponent review-session))
+           [:a {:href (str "/approvals/" (js/encodeURIComponent review-session))
                 :class "text-blue-600 underline font-mono"}
             review-session])]])
      (when sidecar-session-id

@@ -250,7 +250,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
               label="Agentic analysis (investigate past sessions & resource metadata before classifying)"
             />
             <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
-              {"When enabled, the analyzer runs a tool-calling loop over the user's past sessions and read-only database metadata (query plans, table size, index usage) before assigning a risk level. This is slower but produces a richer, reviewer-facing analysis."}
+              {"When enabled, the analyzer runs a tool-calling loop over the user's past sessions and read-only database metadata (query plans, table size, index usage) before assigning a risk level. This is slower but produces a richer, approver-facing analysis."}
             </Alert>
           </Stack>
         </SectionRow>

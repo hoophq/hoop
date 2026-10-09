@@ -123,7 +123,7 @@
       "Configure session"]
      [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
       (if jit-duration-sec
-        "This resource requires just-in-time review approval before access is granted."
+        "This resource requires just-in-time approval before access is granted."
         "Specify how long you need access to this resource role.")]]
 
     (if jit-duration-sec
@@ -132,10 +132,10 @@
        [:> Callout.Icon
         [:> ShieldCheck {:size 16}]]
        [:> Callout.Text
-        "This resource has just-in-time access review enabled. "
+        "This resource has just-in-time approval enabled. "
         "You can only request a window of "
         [:strong (format-duration-sec jit-duration-sec)]
-        ". A reviewer must approve before you can connect."]]
+        ". An approver must approve before you can connect."]]
       ;; Normal mode: show duration selector
       [:> Box {:class "space-y-4"}
        [:> Box

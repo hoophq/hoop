@@ -26,7 +26,7 @@ import {
 
 const AI_ANALYZER = '/features/ai-session-analyzer'
 
-// Admin reaches every page. Every signed-in user reaches the reviews.
+// Admin reaches every page. Every signed-in user reaches the approvals.
 const MAIN_ITEMS = [
   { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
   {
@@ -34,8 +34,8 @@ const MAIN_ITEMS = [
     icon: Sparkles,
     children: [
       { label: 'Rules', path: AI_ANALYZER, icon: List, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
-      { label: 'Approval History', path: '/reviews?status=settled', icon: History },
-      { label: 'Pending Approvals', path: '/reviews', icon: Clock },
+      { label: 'Approval History', path: '/approvals?status=settled', icon: History },
+      { label: 'Pending Approvals', path: '/approvals', icon: Clock },
       { label: 'Configuration', path: `${AI_ANALYZER}?tab=configure`, icon: SlidersHorizontal, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
     ],
   },
@@ -81,7 +81,7 @@ export const NAV = [
 // Gating flags mirror the nav entries above — keep both lists in sync.
 const SUGGESTION_ITEMS = [
   { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true },
-  { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: View, path: '/reviews' },
+  { id: 'reviews', label: 'Approvals', description: 'Decide pending requests', icon: View, path: '/approvals' },
 ]
 
 const QUICK_ACCESS_ITEMS = [

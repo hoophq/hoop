@@ -53,7 +53,7 @@ function GatewaySlack({ showListeners = false }) {
       <Stack gap="xs">
         <Title order={1}>Slack</Title>
         <Text c="dimmed">
-          Enable Slack on your connections and configure your Slack App to receive reviews.
+          Enable Slack on your connections and configure your Slack App to receive approval requests.
         </Text>
       </Stack>
 

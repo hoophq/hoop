@@ -65,7 +65,8 @@
      "/login" :login-hoop
      "/logout" :logout-hoop
      "/plugins" [["/manage/jira" :manage-jira]
-                 [["/reviews/" :review-id] :reviews-plugin-details]]
+                 [["/reviews/" :review-id] :reviews-plugin-details]
+                 [["/approvals/" :review-id] :reviews-plugin-details]]
      "/organization" [["/users" :users]]
      "/onboarding" [["" :onboarding]
                     ["/aws-connect" :onboarding-aws-connect]

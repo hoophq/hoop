@@ -9,5 +9,5 @@ import { ROLE_ADMIN } from '@/utils/roles'
  */
 export default function Home() {
   const role = useUserStore((s) => s.role)
-  return <Navigate to={role === ROLE_ADMIN ? '/sidecars' : '/reviews'} replace />
+  return <Navigate to={role === ROLE_ADMIN ? '/sidecars' : '/approvals'} replace />
 }

@@ -27,7 +27,7 @@ function SlackChannelsModal({ connection, plugin, saving, onSave, onClose }) {
       <Stack gap="md">
         <TextInput
           label="Slack channels"
-          description="Provide slack channels to receive connection reviews."
+          description="Provide slack channels to receive connection approval requests."
           placeholder="C039AQNN5DF, C031T9LDGAH"
           value={channels}
           onChange={(e) => setChannels(e.currentTarget.value)}

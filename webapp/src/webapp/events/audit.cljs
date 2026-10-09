@@ -590,13 +590,13 @@
                      (fn []
                        (rf/dispatch [:show-snackbar
                                      {:level :success
-                                      :text "Your review was added"}])
+                                      :text "Your decision was recorded"}])
                        (js/setTimeout
                         (fn []
                           (rf/dispatch [:audit->get-sessions])
                           (rf/dispatch [:audit->get-session-by-id session]))
                         500))
-                     :on-failure #(rf/dispatch [:show-snackbar {:text "Failed to add review"
+                     :on-failure #(rf/dispatch [:show-snackbar {:text "Failed to record decision"
                                                                 :level :error
                                                                 :details %}])}]]]})))
 

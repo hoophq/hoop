@@ -154,7 +154,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
 
       <SectionRow
         title="What happens per risk level"
-        description="A level you leave unset allows. Hold for approval waits up to 30 minutes for a review, unless a time limit ends it sooner; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
+        description="A level you leave unset allows. Hold for approval waits up to 30 minutes for a decision, unless a time limit ends it sooner; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
       >
         <Stack gap="md">
           {LEVELS.map(([level, label]) => (
@@ -170,7 +170,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
           {holds && (
             <Select
               label="While held for approval"
-              description="Return denies the statement at once with the review id; after approval, the client must send the identical statement again. A client can also ask for either mode itself."
+              description="Return denies the statement at once with the approval id; after approval, the client must send the identical statement again. A client can also ask for either mode itself."
               data={REVIEW_MODES}
               value={form.review_mode || REVIEW_MODE_HOLD}
               onChange={(v) => set({ review_mode: !v || v === REVIEW_MODE_HOLD ? '' : v })}
@@ -180,7 +180,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
           {ownHold && (
             <>
               <MultiSelect
-                label="Reviewers"
+                label="Approvers"
                 description="Groups whose members may approve. Empty leaves it to the administrators."
                 placeholder="Select groups"
                 searchable
@@ -191,7 +191,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
               />
               <NumberInput
                 label="Time to decide (minutes, optional)"
-                description="A review nobody decides in this time expires; the statement is not released."
+                description="An approval request nobody decides in this time expires; the statement is not released."
                 placeholder="No limit"
                 min={1}
                 max={10080}
@@ -201,7 +201,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
               />
               <NumberInput
                 label="Time to use an approval (minutes, optional)"
-                description="Counts from the approval. After it, running the statement again files a new review."
+                description="Counts from the approval. After it, running the statement again files a new approval request."
                 placeholder="No limit"
                 min={1}
                 max={10080}

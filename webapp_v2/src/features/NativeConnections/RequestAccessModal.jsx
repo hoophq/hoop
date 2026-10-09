@@ -29,7 +29,7 @@ function RequestAccessForm({ connectionName, connection, onCancel }) {
     <Stack gap="lg">
       <Text fz="sm" c="dimmed">
         {jitSec
-          ? `Access to "${connectionName}" is gated on just-in-time review approval.`
+          ? `Access to "${connectionName}" is gated on just-in-time approval.`
           : `Specify how long you need access to "${connectionName}".`}
       </Text>
 
@@ -37,7 +37,7 @@ function RequestAccessForm({ connectionName, connection, onCancel }) {
           Mantine's stock palette, outside the product's identity. */}
       {jitSec ? (
         <Alert color="sky" icon={<ShieldCheck size={16} />}>
-          {`This resource role has a fixed just-in-time window of ${formatDurationSec(jitSec)}. A reviewer must approve the request before the credentials are issued.`}
+          {`This resource role has a fixed just-in-time window of ${formatDurationSec(jitSec)}. An approver must approve the request before the credentials are issued.`}
         </Alert>
       ) : (
         <Stack gap="xs">
