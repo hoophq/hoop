@@ -1,10 +1,12 @@
 package sidecartui
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -204,6 +206,11 @@ func replaceKeyValues(data []byte, keys map[string]bool, old, new string) ([]byt
 		}
 	}
 	walk(&doc)
+	// Last place first: a replacement of another length moves what follows
+	// it on the same line, and the parser's columns are for the text as read.
+	slices.SortFunc(hits, func(a, b at) int {
+		return cmp.Or(cmp.Compare(b.line, a.line), cmp.Compare(b.col, a.col))
+	})
 	lines := strings.Split(string(data), "\n")
 	done := 0
 	for _, h := range hits {
@@ -219,6 +226,11 @@ func replaceKeyValues(data []byte, keys map[string]bool, old, new string) ([]byt
 		}
 		lines[h.line-1] = l[:start+i] + new + l[start+i+len(old):]
 		done++
+	}
+	// Half a move is worse than none: a demo key moved without its
+	// upstream sends the listener to the old port.
+	if done != len(hits) {
+		return nil, 0, fmt.Errorf("%s is written in a way this screen cannot change; edit it there", old)
 	}
 	return []byte(strings.Join(lines, "\n")), done, nil
 }

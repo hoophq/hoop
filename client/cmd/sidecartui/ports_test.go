@@ -115,6 +115,17 @@ func TestUsePortsMovesTheDemoAPIEverywhereItIsNamed(t *testing.T) {
 	}
 }
 
+// Two places on one line, moved to an address of another length: each is
+// still found, or nothing changes.
+func TestReplaceKeyValuesOnOneLine(t *testing.T) {
+	keys := map[string]bool{"upstream": true, configyaml.DemoAPIKey: true}
+	in := `{"` + configyaml.DemoAPIKey + `":"127.0.0.1:18081","listeners":[{"name":"demo","upstream":"127.0.0.1:18081"}]}`
+	out, n, err := replaceKeyValues([]byte(in), keys, "127.0.0.1:18081", "127.0.0.1:81")
+	if err != nil || n != 2 || strings.Contains(string(out), "18081") {
+		t.Errorf("n = %d, err = %v, out = %s; want both moved", n, err, out)
+	}
+}
+
 // Booting a file whose port is taken asks instead of failing, with the free
 // port focused; enter takes it, and the boot that follows is on the fixed
 // file.
