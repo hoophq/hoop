@@ -46,7 +46,12 @@ func runFetch(args []string) error {
 		CanvasHeight *int            `gorm:"column:canvas_height"`
 	}
 	tx := db.Raw(`
-		SELECT b.blob_stream,
+		SELECT b.blob_stream || COALESCE((
+		           -- Sidecar sessions append to chunk rows (ENG-590).
+		           SELECT jsonb_agg(e.entry ORDER BY c.id, e.ord)
+		           FROM private.session_stream_chunks c,
+		                jsonb_array_elements(c.entries) WITH ORDINALITY AS e(entry, ord)
+		           WHERE c.org_id = b.org_id AND c.blob_id = b.id), '[]'::jsonb) AS blob_stream,
 		       (s.metrics->>'canvas_width')::int  AS canvas_width,
 		       (s.metrics->>'canvas_height')::int AS canvas_height
 		FROM private.sessions s

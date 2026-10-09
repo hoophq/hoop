@@ -306,7 +306,8 @@ func (s *Session) GetBlobInput() (BlobInputType, error) {
 	return BlobInputType(result[0]), nil
 }
 
-// GetBlobStream retrieves the blob stream associated with the session
+// GetBlobStream retrieves the blob stream associated with the session,
+// followed by its chunks (AppendSessionStreamChunkTx).
 // It returns nil if the session does not have a blob stream associated with it.
 func (s *Session) GetBlobStream() (*Blob, error) {
 	var blob Blob
@@ -319,7 +320,13 @@ func (s *Session) GetBlobStream() (*Blob, error) {
 	if err == gorm.ErrRecordNotFound {
 		return nil, nil
 	}
-	return &blob, err
+	if err != nil {
+		return nil, err
+	}
+	if err := withStreamChunks(DB, &blob); err != nil {
+		return nil, err
+	}
+	return &blob, nil
 }
 
 // Report if the blob is stored as database wire protocol format
@@ -1069,6 +1076,12 @@ func UpdateSessionEventStream(sess SessionDone) error {
 
 		if res.Error != nil {
 			return fmt.Errorf("failed creating session blob stream, reason=%v", res.Error)
+		}
+		// The blob replaces the whole stream: chunks would follow it.
+		err := tx.Exec(`DELETE FROM private.session_stream_chunks WHERE org_id = ? AND blob_id = ?`,
+			sess.OrgID, blobStreamID.String).Error
+		if err != nil {
+			return fmt.Errorf("failed removing session stream chunks, reason=%v", err)
 		}
 
 		// update: status, labels, metrics, end_date, exit_code, event_stream
