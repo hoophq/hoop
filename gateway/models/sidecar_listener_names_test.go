@@ -12,7 +12,7 @@ import (
 )
 
 // listenerNamesTextVersion makes every listener name column TEXT.
-const listenerNamesTextVersion = 137
+const listenerNamesTextVersion = 138
 
 // assertListenerColumns checks that every column storing a listener name has
 // type typ.
