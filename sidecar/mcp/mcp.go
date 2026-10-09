@@ -1,6 +1,7 @@
-// Package mcp is the sidecar's MCP server (ADR-0021): two read-only tools an
-// agent uses to follow a review after a return-mode lane denied its statement
-// with the review id.
+// Package mcp is the sidecar's MCP server (ADR-0021): read-only tools an
+// agent uses to follow an approval request after a return-mode lane denied
+// its statement with the approval id. Each tool is served as approval_* and,
+// for agents configured before the rename, as the review_* alias.
 //
 // It carries status only. The statement still runs through the lane when the
 // agent resends it, so the analyzer, audit and masking apply as they do for

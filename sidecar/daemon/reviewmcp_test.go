@@ -45,9 +45,9 @@ func returnMCPPolicy(t *testing.T, mcp bool) (policy.Evaluator, *[]reviewCall) {
 // wantMCPClause checks the text a client decoded from its error frame.
 func wantMCPClause(t *testing.T, got string) {
 	t.Helper()
-	if !strings.HasPrefix(got, "review 9f97: ") || !strings.Contains(got, "call the MCP tool review_wait") ||
+	if !strings.HasPrefix(got, "approval 9f97: ") || !strings.Contains(got, "call the MCP tool approval_wait") ||
 		!strings.Contains(got, "resend the identical statement") {
-		t.Errorf("the client read %q, want the review id and the review_wait clause", got)
+		t.Errorf("the client read %q, want the approval id and the approval_wait clause", got)
 	}
 }
 
@@ -58,7 +58,7 @@ func TestAReturnDenyWithoutMCPNamesNoTool(t *testing.T) {
 		Protocol: inspect.Postgres, Direction: inspect.FromClient,
 		Text: "DELETE FROM users", Operation: inspect.OpDelete, Tables: []string{"users"},
 	})
-	if !v.Denied || strings.Contains(v.Message, "review_wait") || !strings.Contains(v.Message, "9f97") {
+	if !v.Denied || strings.Contains(v.Message, "approval_wait") || !strings.Contains(v.Message, "9f97") {
 		t.Errorf("denied=%v message=%q, want today's denial with the id and no tool", v.Denied, v.Message)
 	}
 }

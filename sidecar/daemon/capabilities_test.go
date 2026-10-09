@@ -24,7 +24,7 @@ func TestReviewModeIsValidated(t *testing.T) {
 	}
 
 	err := reviewModeLane("later").Validate()
-	if err == nil || !strings.Contains(err.Error(), `unknown review_mode "later"`) {
+	if err == nil || !strings.Contains(err.Error(), `unknown review_mode (or approval_mode) "later"`) {
 		t.Errorf("an unknown review_mode was not refused: %v", err)
 	}
 

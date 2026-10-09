@@ -131,20 +131,20 @@ func TestEveryRefusalIsAnError(t *testing.T) {
 	}{
 		{"unauthorized", http.StatusUnauthorized, `{"message":"access denied"}`, "rejected the token"},
 		{"not a control plane", http.StatusPreconditionFailed,
-			`{"message":"sidecar reviews are served by the control plane"}`, "does not serve sidecar reviews"},
+			`{"message":"sidecar reviews are served by the control plane"}`, "does not serve sidecar approvals"},
 		{"too large", http.StatusRequestEntityTooLarge,
-			`{"message":"statement is larger than 100000 bytes"}`, "too large to review"},
+			`{"message":"statement is larger than 100000 bytes"}`, "too large for an approval request"},
 		{"rule not authorized", http.StatusUnprocessableEntity,
 			`{"message":"listener \"payments\" is not configured to use approval rule \"x\""}`,
-			"refused a review for listener"},
+			"refused an approval request for listener"},
 		{"server error", http.StatusInternalServerError, `{"message":"boom"}`, "500"},
 		{"unreadable body", http.StatusOK, `not json`, "could not be read"},
 		// A release names the review it spent, always. These two are what
 		// something that is not the control plane answers, and a statement
 		// must not go through on them.
-		{"forward with no review", http.StatusOK, `{"forward":true}`, "without naming a review"},
+		{"forward with no review", http.StatusOK, `{"forward":true}`, "without naming an approval"},
 		{"forward with an empty review id", http.StatusOK,
-			`{"forward":true,"review":{"id":"","status":"EXECUTED"}}`, "without naming a review"},
+			`{"forward":true,"review":{"id":"","status":"EXECUTED"}}`, "without naming an approval"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp, _ := reviewPlane(t, tc.code, tc.body)
@@ -267,7 +267,7 @@ func TestEveryClaimRefusalIsAnError(t *testing.T) {
 		{"older plane or unknown review", http.StatusNotFound, `404 page not found`, "older than this sidecar"},
 		{"unauthorized", http.StatusUnauthorized, `{"message":"access denied"}`, "rejected the token"},
 		{"not a control plane", http.StatusPreconditionFailed,
-			`{"message":"sidecar reviews are served by the control plane"}`, "does not serve sidecar reviews"},
+			`{"message":"sidecar reviews are served by the control plane"}`, "does not serve sidecar approvals"},
 		{"another review", http.StatusOK,
 			`{"forward":true,"review":{"id":"other","status":"EXECUTED"}}`, "when asked about"},
 		{"server error", http.StatusInternalServerError, `{"message":"boom"}`, "500"},
