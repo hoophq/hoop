@@ -100,6 +100,34 @@ func TestGetStartedCardsScrollWhole(t *testing.T) {
 	}
 }
 
+// The selected card is filled edge to edge: every cell between its borders
+// is painted, including the padding and the spans the content colors.
+func TestSelectedCardIsFilledEdgeToEdge(t *testing.T) {
+	bg := selectionSequence()
+	if bg == "" {
+		t.Skip("this renderer emits no background sequence")
+	}
+	rows := card([]string{stPrimary.Render("› Set up") + "  " + stFaint.Render("detail")}, 40, true)
+	for _, r := range rows[1 : len(rows)-1] {
+		first := strings.Index(r, "│")
+		last := strings.LastIndex(r, "│")
+		// Each border glyph is wrapped in its own color and reset, so the
+		// inside starts after the first border's reset.
+		inside := r[first+len("│") : last]
+		inside = inside[strings.Index(inside, "\x1b[m")+len("\x1b[m"):]
+		if !strings.HasPrefix(inside, bg) {
+			t.Errorf("the inside does not start painted: %q", inside)
+		}
+		resets := strings.Count(inside, "\x1b[m")
+		if repaint := strings.Count(inside, "\x1b[m"+bg); repaint != resets-1 {
+			t.Errorf("%d resets but %d repaints: a span ends the fill early in %q", resets, repaint, inside)
+		}
+		if w := ansi.StringWidth(r); w != 40 {
+			t.Errorf("row is %d wide, want 40", w)
+		}
+	}
+}
+
 func TestGetStartedSaysWhenTheFolderHasNoConfig(t *testing.T) {
 	m := homeModel(t, t.TempDir(), validateFile)
 	if out := ansi.Strip(m.render()); !strings.Contains(out, "No config in this directory") {

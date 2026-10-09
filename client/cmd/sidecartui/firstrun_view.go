@@ -133,7 +133,6 @@ func plural(n int) string {
 // selected card's index, so a short terminal scrolls by whole cards and
 // never shows half a border.
 func (m firstRunModel) homeCards(w int) (blocks [][]string, sel int) {
-	inner := max(w-4, 10)
 	// File names share one column, so their details line up.
 	nameW := 0
 	for _, it := range m.home.items {
@@ -161,24 +160,44 @@ func (m firstRunModel) homeCards(w int) (blocks [][]string, sel int) {
 		if !strings.HasPrefix(it.id, "file:") {
 			lines = []string{mark + label, "  " + stFaint.Render(it.detail)}
 		}
-		box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBorder).Padding(0, 1).Width(w)
-		for j, l := range lines {
-			lines[j] = ansi.Truncate(l, inner, "…")
-			if on {
-				lines[j] = withBackground(lines[j], inner)
-			}
-		}
 		if on {
-			box = box.BorderForeground(colPrimary).Background(colSelBg)
 			sel = len(blocks)
 		}
-		block := strings.Split(box.Render(strings.Join(lines, "\n")), "\n")
+		block := card(lines, w, on)
 		if len(blocks) > 0 {
 			block = append([]string{""}, block...)
 		}
 		blocks = append(blocks, block)
 	}
 	return blocks, sel
+}
+
+// card frames lines in a rounded border w cells wide, one cell of padding
+// each side. A selected card is filled edge to edge with the selection
+// background and takes the brand border.
+//
+// The frame is drawn here rather than by a lipgloss border: lipgloss paints
+// its padding cells with the style's background, but the content's own
+// color resets end the fill partway, so the selected card showed stripes of
+// the terminal's background beside the text. Filling each inside row whole,
+// padding included, before the border goes on leaves nothing unpainted.
+func card(lines []string, w int, selected bool) []string {
+	inner := max(w-2, 4)
+	border := lipgloss.NewStyle().Foreground(colBorder)
+	if selected {
+		border = lipgloss.NewStyle().Foreground(colPrimary)
+	}
+	out := []string{border.Render("╭" + strings.Repeat("─", inner) + "╮")}
+	for _, l := range lines {
+		row := " " + ansi.Truncate(l, inner-2, "…")
+		if selected {
+			row = withBackground(row, inner)
+		} else {
+			row += strings.Repeat(" ", max(inner-ansi.StringWidth(row), 0))
+		}
+		out = append(out, border.Render("│")+row+border.Render("│"))
+	}
+	return append(out, border.Render("╰"+strings.Repeat("─", inner)+"╯"))
 }
 
 // fitBlocks joins the blocks that fit in h rows, keeping block sel in view
