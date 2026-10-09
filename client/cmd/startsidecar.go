@@ -81,21 +81,21 @@ prints a warning naming its replacement. Use --strict to fail on one.
 Without a license the process caps guardrail and data masking rules at one
 each and says so at startup. A license lifts the caps for the features it
 names. It may be a path or the document itself. A sidecar connected to a
-control plane that manages licensing runs under the plane's license only,
+gateway that manages licensing runs under the gateway's license only,
 and every local source is ignored with a warning. Otherwise --license
 outranks HOOP_LICENSE, which outranks the "license" key in the config file.
 
-A sidecar may connect to a Control Plane instead of carrying its own
-listeners: set HOOP_CONTROL_PLANE_URL or the "control_plane_url" config key
-(the env var outranks the key), and pass the token from the sidecar's
-registration with --token, which outranks HOOP_SIDECAR_TOKEN. The handshake
-then supplies the whole running config and --config becomes optional. A
-Control Plane holding no configuration is seeded with the config file's
-document on that first handshake, so an existing sidecar connects by adding
-the URL and passing the token, nothing else; once the plane holds a config
-it owns it, and listeners still in the file are ignored with a warning. The
-token is shown once when the sidecar is created; a lost one means
-registering a new sidecar. A sidecar whose control plane entry says
+A sidecar may connect to a gateway instead of carrying its own listeners:
+set HOOP_CONTROL_PLANE_URL or the "control_plane_url" config key to the
+gateway URL (the env var outranks the key), and pass the token from the
+sidecar's registration with --token, which outranks HOOP_SIDECAR_TOKEN. The
+handshake then supplies the whole running config and --config becomes
+optional. A gateway holding no configuration for the sidecar is seeded with
+the config file's document on that first handshake, so an existing sidecar
+connects by adding the URL and passing the token, nothing else; once the
+gateway holds a config it owns it, and listeners still in the file are
+ignored with a warning. The token is shown once when the sidecar is created;
+a lost one means registering a new sidecar. A sidecar whose gateway entry says
 "load_from_disk" runs the listeners in its own config file and receives only
 its license; moving that entry either way reaches a running sidecar on its
 next check-in, which applies what a live process can change and logs what
@@ -105,7 +105,7 @@ needs a restart.`,
   hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
   hoop start sidecar --config config.yaml --validate
   hoop start sidecar --config config.yaml --validate --strict
-  HOOP_CONTROL_PLANE_URL=https://cp.example.com hoop start sidecar --token hsc_...`,
+  HOOP_CONTROL_PLANE_URL=https://gateway.example.com hoop start sidecar --token hsc_...`,
 	// A bad config is not a usage error, and dumping the flag list under one
 	// buries the message that says which field is wrong.
 	SilenceUsage: true,
@@ -135,7 +135,7 @@ needs a restart.`,
 			if sidecarConfigFlag == "" {
 				cmd.SilenceUsage = false
 				return fmt.Errorf("--migrate needs --config: it rewrites a file, " +
-					"and a control-plane config has no file to rewrite")
+					"and a config the gateway serves has no file to rewrite")
 			}
 			cfg, err := configyaml.Load(sidecarConfigFlag)
 			if err != nil {
@@ -321,7 +321,7 @@ func init() {
 	// setup holds the precedence in one place and the token stays out of
 	// --help output.
 	startSidecarCmd.Flags().StringVar(&sidecarTokenFlag, "token", "",
-		"The token identifying this sidecar to the control plane. Overrides "+
+		"The token identifying this sidecar to the gateway. Overrides "+
 			daemon.SidecarTokenEnv+". Exclusive with "+daemon.SidecarIdentityTypeEnv)
 	startSidecarCmd.Flags().BoolVar(&sidecarValidateFlag, "validate", false,
 		"Validate the config, report what each listener resolved to, and exit")
