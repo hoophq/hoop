@@ -21,8 +21,8 @@ import (
 // RunReviewedExec
 // TODO: Refactor to use sessionapi.RunExec
 //
-//	@Summary		Reviewed Exec
-//	@Description	Run an execution in a reviewed session
+//	@Summary		Approved Exec
+//	@Description	Run an execution in an approved session
 //	@Tags			Sessions
 //	@Accept			json
 //	@Produce		json
@@ -38,12 +38,12 @@ func RunReviewedExec(c *gin.Context) {
 	apiroutes.SetSidSpanAttr(c, sessionId)
 	review, err := models.GetReviewByIdOrSid(ctx.OrgID, sessionId)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving review")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving approval request")
 		return
 	}
 
 	if review == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "reviewed session not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "approved session not found"})
 		return
 	}
 
@@ -86,7 +86,7 @@ func RunReviewedExec(c *gin.Context) {
 	// after the execution, this will ensure that a review is executed only once.
 	p, err := models.GetPluginByName(models.DB, ctx.OrgID, plugintypes.PluginReviewName)
 	if err != nil && err != models.ErrNotFound {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving review plugin")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving approval plugin")
 		return
 	}
 	hasReviewPlugin := false
@@ -168,7 +168,7 @@ func canExecReviewedSession(ctx *storagev2.Context, session *models.Session, rev
 	}
 
 	if review.Status != models.ReviewStatusApproved {
-		return fmt.Errorf("review not approved or already executed")
+		return fmt.Errorf("approval request not approved or already executed")
 	}
 
 	if review.TimeWindow != nil {

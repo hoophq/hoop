@@ -41,9 +41,9 @@ func registerExecTools(server *mcp.Server) {
 		Name: "exec",
 		Description: "Run a one-shot command or query against a Hoop connection on behalf of the authenticated user. " +
 			"Mirrors `hoop exec`. Returns one of three envelopes: `status=completed` with output, " +
-			"`status=pending_approval` with a review_id (call reviews_wait to long-poll; once APPROVED call reviews_execute), " +
+			"`status=pending_approval` with a review_id (call approvals_wait to long-poll; once APPROVED call approvals_execute), " +
 			"or `status=running` with a session_id (after a 50s timeout; poll sessions_get). " +
-			"Authorization, data masking, guardrails, and review gates are enforced by the gateway — " +
+			"Authorization, data masking, guardrails, and approval gates are enforced by the gateway — " +
 			"this tool does not bypass any of them.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
 	}, execHandler)
@@ -199,7 +199,7 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 
 	if needsAiReview {
 		if aiAccessRule == nil {
-			return nil, nil, fmt.Errorf("ai analyzer requested review without resolving access request rule")
+			return nil, nil, fmt.Errorf("ai analyzer requested approval without resolving access request rule")
 		}
 		review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, sessionID, conn,
 			sessionapi.AIReviewRequester{
@@ -211,7 +211,7 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 			},
 			aiAccessRule, args.Input, args.EnvVars, args.Args, analyzeRes)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed creating ai-driven review: %v", err)
+			return nil, nil, fmt.Errorf("failed creating ai-driven approval request: %v", err)
 		}
 		events.DeriveFromSessionStart(sc.OrgID, &newSession, conn)
 		return execResponseToEnvelope(&clientexec.Response{
@@ -285,7 +285,7 @@ func execResponseToEnvelope(resp *clientexec.Response, sessionID string) (*mcp.C
 			"review_id":  sessionID,
 			"review_url": resp.Output,
 			"message":    "Approval required before this execution can run",
-			"next_step":  "call reviews_wait with review_id (long-polls until status changes); once status=APPROVED call reviews_execute",
+			"next_step":  "call approvals_wait with review_id (long-polls until status changes); once status=APPROVED call approvals_execute",
 		})
 	}
 

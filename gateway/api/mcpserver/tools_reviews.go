@@ -21,7 +21,7 @@ import (
 type reviewsListInput struct{}
 
 type reviewsGetInput struct {
-	ID string `json:"id" jsonschema:"review ID or session ID"`
+	ID string `json:"id" jsonschema:"approval request ID or session ID"`
 }
 
 type reviewTimeWindowInput struct {
@@ -30,57 +30,81 @@ type reviewTimeWindowInput struct {
 }
 
 type reviewsUpdateInput struct {
-	ID              string                 `json:"id" jsonschema:"review ID or session ID"`
+	ID              string                 `json:"id" jsonschema:"approval request ID or session ID"`
 	Status          string                 `json:"status" jsonschema:"new status: APPROVED, REJECTED, or REVOKED"`
-	TimeWindow      *reviewTimeWindowInput `json:"time_window,omitempty" jsonschema:"optional time window for approved JIT reviews"`
-	ForceReview     bool                   `json:"force_review,omitempty" jsonschema:"force the review (requires force approval group membership)"`
-	RejectionReason string                 `json:"rejection_reason,omitempty" jsonschema:"reason recorded on the review when status is REJECTED"`
+	TimeWindow      *reviewTimeWindowInput `json:"time_window,omitempty" jsonschema:"optional time window for approved JIT approval requests"`
+	ForceReview     bool                   `json:"force_review,omitempty" jsonschema:"force the approval (requires force approval group membership)"`
+	RejectionReason string                 `json:"rejection_reason,omitempty" jsonschema:"reason recorded on the approval request when status is REJECTED"`
 }
 
 type reviewsExecuteInput struct {
-	ID string `json:"id" jsonschema:"review ID or session ID of an APPROVED one-time review"`
+	ID string `json:"id" jsonschema:"approval request ID or session ID of an APPROVED one-time approval request"`
 }
 
 type reviewsWaitInput struct {
-	ID             string `json:"id" jsonschema:"review ID or session ID to wait on"`
+	ID             string `json:"id" jsonschema:"approval request ID or session ID to wait on"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"max wait in seconds (default 60, max 300). Timeout is not an error: the response carries timed_out=true and the current status — call again to keep waiting."`
+}
+
+// approvalToolAliases maps each approvals_* tool to the reviews_* name it
+// replaces. Both names are registered with the same handler.
+var approvalToolAliases = map[string]string{
+	"approvals_list":    "reviews_list",
+	"approvals_get":     "reviews_get",
+	"approvals_update":  "reviews_update",
+	"approvals_execute": "reviews_execute",
+	"approvals_wait":    "reviews_wait",
+}
+
+// addApprovalTool registers tool under its approvals_* name and under its
+// reviews_* alias, with the same handler.
+func addApprovalTool[In any](server *mcp.Server, tool *mcp.Tool, h mcp.ToolHandlerFor[In, any]) {
+	alias, ok := approvalToolAliases[tool.Name]
+	if !ok {
+		panic("mcpserver: approval tool without a reviews_* alias: " + tool.Name)
+	}
+	mcp.AddTool(server, tool, h)
+	aliasTool := *tool
+	aliasTool.Name = alias
+	aliasTool.Description = "Alias of " + tool.Name + ". " + tool.Description
+	mcp.AddTool(server, &aliasTool, h)
 }
 
 func registerReviewTools(server *mcp.Server, releaseConnFn reviewapi.TransportReleaseConnectionFunc) {
 	openWorld := false
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "reviews_list",
-		Description: "List the reviews (access requests) you requested or your groups can decide. Admins and auditors get all of them",
+	addApprovalTool(server, &mcp.Tool{
+		Name:        "approvals_list",
+		Description: "List the approval requests (access requests) you made or your groups can decide. Admins and auditors get all of them",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
 	}, reviewsListHandler)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "reviews_get",
-		Description: "Get a single review by its ID or session ID",
+	addApprovalTool(server, &mcp.Tool{
+		Name:        "approvals_get",
+		Description: "Get a single approval request by its ID or session ID",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
 	}, reviewsGetHandler)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "reviews_update",
-		Description: "Update a review status (approve, reject, or revoke). Requires membership in a reviewer group",
+	addApprovalTool(server, &mcp.Tool{
+		Name:        "approvals_update",
+		Description: "Update an approval request status (approve, reject, or revoke). Requires membership in an approver group",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
 	}, makeReviewsUpdateHandler(releaseConnFn))
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "reviews_execute",
-		Description: "Execute a query that was blocked on an approved one-time review. Runs the originally " +
-			"submitted query (no drift from what the reviewer approved). Only the session owner or an " +
-			"admin/auditor can execute; the review must be in status=APPROVED. Returns the same envelope " +
+	addApprovalTool(server, &mcp.Tool{
+		Name: "approvals_execute",
+		Description: "Execute a query that was blocked on an approved one-time approval request. Runs the originally " +
+			"submitted query (no drift from what the approver approved). Only the session owner or an " +
+			"admin/auditor can execute; the approval request must be in status=APPROVED. Returns the same envelope " +
 			"shape as exec: completed, or status=running after a 50s timeout (poll sessions_get).",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
 	}, reviewsExecuteHandler)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "reviews_wait",
-		Description: "Long-poll a review until it reaches a terminal status (APPROVED, REJECTED, REVOKED, " +
+	addApprovalTool(server, &mcp.Tool{
+		Name: "approvals_wait",
+		Description: "Long-poll an approval request until it reaches a terminal status (APPROVED, REJECTED, REVOKED, " +
 			"EXECUTED) or the timeout elapses. Use after exec returns status=pending_approval. The response " +
-			"shape mirrors reviews_get and adds timed_out (true when the timeout was reached without a " +
+			"shape mirrors approvals_get and adds timed_out (true when the timeout was reached without a " +
 			"terminal status — call again to keep waiting) and waited_seconds.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
 	}, reviewsWaitHandler)
@@ -109,16 +133,16 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 	review, err := models.GetReviewByIdOrSid(sc.GetOrgID(), args.ID)
 	switch err {
 	case models.ErrNotFound:
-		return errResult("review not found"), nil, nil
+		return errResult("approval request not found"), nil, nil
 	case nil:
 	default:
-		return nil, nil, fmt.Errorf("failed retrieving review: %w", err)
+		return nil, nil, fmt.Errorf("failed retrieving approval request: %w", err)
 	}
 	if review == nil {
-		return errResult("review not found"), nil, nil
+		return errResult("approval request not found"), nil, nil
 	}
 	if review.Type != models.ReviewTypeOneTime {
-		return errResult("review is not a one-time review"), nil, nil
+		return errResult("approval request is not a one-time approval request"), nil, nil
 	}
 
 	sid := review.SessionID
@@ -223,7 +247,7 @@ func canExecReviewedSessionMCP(ctx *storagev2.Context, session *models.Session, 
 		return fmt.Errorf("unable to execute session")
 	}
 	if review.Status != models.ReviewStatusApproved {
-		return fmt.Errorf("review not approved or already executed")
+		return fmt.Errorf("approval request not approved or already executed")
 	}
 	if review.TimeWindow == nil {
 		return nil
@@ -263,7 +287,7 @@ func reviewsListHandler(ctx context.Context, _ *mcp.CallToolRequest, _ reviewsLi
 
 	reviews, err := models.ListReviews(models.DB, sc.GetOrgID(), reviewapi.Viewer(sc))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed listing reviews: %w", err)
+		return nil, nil, fmt.Errorf("failed listing approval requests: %w", err)
 	}
 
 	result := make([]map[string]any, 0, len(*reviews))
@@ -282,11 +306,11 @@ func reviewsGetHandler(ctx context.Context, _ *mcp.CallToolRequest, args reviews
 	review, err := models.GetReviewByIdOrSidForViewer(models.DB, sc.GetOrgID(), args.ID, reviewapi.Viewer(sc))
 	switch err {
 	case models.ErrNotFound:
-		return errResult("review not found"), nil, nil
+		return errResult("approval request not found"), nil, nil
 	case nil:
 		return jsonResult(reviewToMap(review))
 	default:
-		return nil, nil, fmt.Errorf("failed fetching review: %w", err)
+		return nil, nil, fmt.Errorf("failed fetching approval request: %w", err)
 	}
 }
 
@@ -336,7 +360,7 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 			}
 			return jsonResult(reviewToMap(rev))
 		default:
-			return nil, nil, fmt.Errorf("failed updating review: %w", err)
+			return nil, nil, fmt.Errorf("failed updating approval request: %w", err)
 		}
 	}
 }
@@ -350,7 +374,7 @@ func reviewsUpdateRefusal(err error) *mcp.CallToolResult {
 	case reviewapi.ErrForbidden:
 		return errResult("access denied")
 	case reviewapi.ErrNotFound:
-		return errResult("review not found")
+		return errResult("approval request not found")
 	}
 	return nil
 }
@@ -371,13 +395,13 @@ func reviewsWaitHandler(ctx context.Context, req *mcp.CallToolRequest, args revi
 	initial, err := models.GetReviewByIdOrSidForViewer(models.DB, orgID, args.ID, viewer)
 	switch err {
 	case models.ErrNotFound:
-		return errResult("review not found"), nil, nil
+		return errResult("approval request not found"), nil, nil
 	case nil:
 		if initial == nil {
-			return errResult("review not found"), nil, nil
+			return errResult("approval request not found"), nil, nil
 		}
 	default:
-		return nil, nil, fmt.Errorf("failed fetching review: %w", err)
+		return nil, nil, fmt.Errorf("failed fetching approval request: %w", err)
 	}
 	if isReviewTerminal(initial.Status) {
 		return reviewsWaitResult(initial, false, 0), nil, nil
@@ -404,9 +428,9 @@ func reviewsWaitHandler(ctx context.Context, req *mcp.CallToolRequest, args revi
 			return reviewsWaitResult(rev, false, waited), nil, nil
 		}
 		if errors.Is(err, models.ErrNotFound) {
-			return errResult("review not found"), nil, nil
+			return errResult("approval request not found"), nil, nil
 		}
-		return nil, nil, fmt.Errorf("failed waiting on review: %w", err)
+		return nil, nil, fmt.Errorf("failed waiting on approval request: %w", err)
 	}
 	if rev == nil {
 		rev = initial

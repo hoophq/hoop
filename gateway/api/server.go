@@ -117,7 +117,7 @@ type Api struct {
 
 //	@tag.name	Guard Rails
 
-//	@tag.name	Reviews
+//	@tag.name	Approvals
 
 //	@tag.name	Sessions
 
@@ -397,6 +397,25 @@ func (api *Api) buildSidecarServiceAccountRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventClearSidecarDeletedName),
 		sidecarserviceaccountsapi.ClearDeletedName)
+}
+
+// approvalRouteAliases maps each review route to its approval path. Approval
+// is the current name; the review paths stay for older clients.
+var approvalRouteAliases = map[string]string{
+	"/reviews":                     "/approvals",
+	"/reviews/:id":                 "/approvals/:id",
+	"/sessions/:session_id/review": "/sessions/:session_id/approval",
+}
+
+// withApprovalAlias registers handlers on path and on its approval alias, so
+// both share the role middleware, auth and analytics events.
+func withApprovalAlias(register func(string, ...gin.HandlerFunc) gin.IRoutes, path string, handlers ...gin.HandlerFunc) {
+	alias, ok := approvalRouteAliases[path]
+	if !ok {
+		panic("api: no approval alias for route " + path)
+	}
+	register(path, handlers...)
+	register(alias, handlers...)
 }
 
 func (api *Api) buildRoutes(r *apiroutes.Router) {
@@ -821,19 +840,21 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiproxymanager.Get)
 
-	r.GET("/reviews",
+	// Each review route is also served under its approval path; see
+	// withApprovalAlias.
+	withApprovalAlias(r.GET, "/reviews",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.List,
 	)
-	r.GET("/reviews/:id",
+	withApprovalAlias(r.GET, "/reviews/:id",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.GetByIdOrSid,
 	)
-	r.PUT("/reviews/:id",
+	withApprovalAlias(r.PUT, "/reviews/:id",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateReview),
 		reviewHandler.ReviewByIdOrSid,
@@ -1046,7 +1067,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,
 		sessionapi.Kill)
-	r.PUT("/sessions/:session_id/review",
+	withApprovalAlias(r.PUT, "/sessions/:session_id/review",
 		r.AuthMiddleware,
 		reviewHandler.ReviewBySid,
 	)
