@@ -191,7 +191,7 @@ func card(lines []string, w int, selected bool) []string {
 	for _, l := range lines {
 		row := " " + ansi.Truncate(l, inner-2, "…")
 		if selected {
-			row = withBackground(row, inner)
+			row = withBackground(paintedBlank+ansi.Truncate(l, inner-2, "…"), inner)
 		} else {
 			row += strings.Repeat(" ", max(inner-ansi.StringWidth(row), 0))
 		}

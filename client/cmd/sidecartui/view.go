@@ -284,7 +284,7 @@ func pane(title, content string, w, h int) string {
 // from there on, so the row would show it only up to its first color. The
 // background is re-applied after every reset instead.
 func withBackground(row string, width int) string {
-	pad := strings.Repeat(" ", max(width-ansi.StringWidth(row), 0))
+	pad := strings.Repeat(paintedBlank, max(width-ansi.StringWidth(row), 0))
 	bg := selectionSequence()
 	if bg == "" {
 		return row + pad
@@ -297,6 +297,19 @@ func withBackground(row string, width int) string {
 // selectionSequence is the escape sequence that sets the selection
 // background, taken from what lipgloss renders for it so the two can never
 // disagree. Bubble Tea downsamples it to the terminal's colors on output.
+// paintedBlank pads a painted row: a no-break space, which a terminal draws
+// as a space, one cell wide.
+//
+// Compatibility shim for Bubble Tea v2's renderer (charm.land/bubbletea/v2
+// v2.0.x): it sends a run of trailing blanks as ECH (CSI n X, "erase
+// characters") and a cursor move instead of the blanks themselves. A
+// terminal with background-color erase fills erased cells with the current
+// background; one without (several do) clears them to its default, so a
+// selected row showed its fill only as far as its text. The renderer treats
+// only U+0020 as blank, so U+00A0 is printed, painted, everywhere.
+// TestPaintedPaddingIsNotErased pins the renderer behavior this works around.
+const paintedBlank = " "
+
 func selectionSequence() string {
 	const mark = "\x00"
 	painted := lipgloss.NewStyle().Background(colSelBg).Render(mark)
