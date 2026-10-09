@@ -82,7 +82,7 @@ type User struct {
 	Verified bool `json:"verified" readonly:"true"`
 	// Permission related to the user
 	// * admin - Has super privileges and has access to any resource in the system
-	// * approver - Grant access to review routes. Control plane only.
+	// * approver - Grant access to review routes.
 	// * standard - Grant access to standard routes.
 	// * unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.
 	// This state is only available for multi tenant environments
@@ -400,7 +400,7 @@ type SidecarResponse struct {
 	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
 	// LastError is the reason the sidecar gave with a refused or restart
 	// outcome. Empty otherwise.
-	LastError string `json:"last_error,omitempty" example:"the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""`
+	LastError string `json:"last_error,omitempty" example:"the config file sent a config this build refuses: parse config: json: unknown field \"future_key\""`
 	// ConfigState is what the sidecar runs, read from the fields above and
 	// the clock: applied, applying (served under a heartbeat ago, not
 	// reported yet), not_applied (served longer ago and never reported, the
@@ -583,7 +583,7 @@ type SidecarHandshakeRequest struct {
 	// sidecar's log.
 	//
 	// Optional. A build from before the field sends nothing.
-	LastError string `json:"last_error,omitempty" example:"the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""`
+	LastError string `json:"last_error,omitempty" example:"the config file sent a config this build refuses: parse config: json: unknown field \"future_key\""`
 }
 
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
@@ -1550,6 +1550,9 @@ type SessionReview struct {
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
 	// The reason provided by the reviewer when rejecting this review
 	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
+	// The sidecar listener this review is bound to. Absent on a review that came from a connection.
+	// Only GET /sessions/{session_id} returns it
+	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
 }
 
 type ReviewSessionTimeWindow struct {
@@ -3972,8 +3975,8 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals" example:"2"`
-	// Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules
-	// only; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule
+	// Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type
+	// sidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule
 	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
 	// Seconds a sidecar approval lasts from the approval, 60 to 604800, or 0 for none. The same rules as
 	// pending_ttl_sec
@@ -4015,8 +4018,8 @@ type AccessRequestRuleRequest struct {
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
-	// Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules
-	// only; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule
+	// Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Sidecar rules (access_type
+	// sidecar) only; on update absent keeps. A managed rule ignores it: set it on the analyzer rule
 	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
 	// Seconds a sidecar approval lasts from the approval, 60 to 604800, or 0 for none. The same rules as
 	// pending_ttl_sec
@@ -4120,8 +4123,8 @@ type AISessionAnalyzerRuleRequest struct {
 	// Read only while sidecar_spec holds a statement.
 	ReviewersGroups *[]string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 
-	// Seconds a held statement's review may wait for a decision, 60 to 604800. Control plane, read only while
-	// sidecar_spec holds under its own approval rule. Absent keeps, 0 clears
+	// Seconds a held statement's review may wait for a decision, 60 to 604800. Read only while sidecar_spec
+	// holds under its own approval rule. Absent keeps, 0 clears
 	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
 	// Seconds an approval lasts from the approval, 60 to 604800. The same rules as pending_ttl_sec
 	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" example:"600"`
@@ -4152,8 +4155,8 @@ type AISessionAnalyzerRule struct {
 	// The groups whose members may release a statement this rule holds.
 	// Present while the rule holds.
 	ReviewersGroups []string `json:"reviewers_groups,omitempty" example:"dba-leads"`
-	// Seconds a held statement's review may wait for a decision. Present only in a control plane, while the
-	// rule holds and the limit is set
+	// Seconds a held statement's review may wait for a decision. Present only while the rule holds and the
+	// limit is set
 	PendingTTLSec *int `json:"pending_ttl_sec,omitempty" example:"900"`
 	// Seconds an approval lasts from the approval. Present as pending_ttl_sec is
 	ApprovalTTLSec *int `json:"approval_ttl_sec,omitempty" example:"600"`

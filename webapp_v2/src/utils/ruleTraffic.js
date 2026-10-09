@@ -30,14 +30,6 @@ const AGENT_FIELDS = {
     RISK_ACTIONS.some((key) => (r.risk_evaluation?.[key] ?? DEFAULT_RISK_ACTION) !== DEFAULT_RISK_ACTION),
 }
 
-// GET /guardrails drops sidecar_spec (gateway/api/guardrails List), so a guardrail
-// row cannot be classified until the list returns it.
-export const LIST_CARRIES_SIDECAR_SPEC = {
-  [RULE_KIND_GUARDRAIL]: false,
-  [RULE_KIND_DATAMASKING]: true,
-  [RULE_KIND_ANALYZER]: true,
-}
-
 export function ruleTraffic(kind, rule) {
   if (rule?.sidecar_spec == null) return TRAFFIC_AGENT
   return AGENT_FIELDS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
@@ -48,6 +40,18 @@ export function resolveRuleTraffic(traffics, kind, rule) {
   return traffics.length === 1 ? traffics[0] : ruleTraffic(kind, rule)
 }
 
-export function newRulePath(basePath, traffics, traffic) {
-  return traffics.length > 1 ? `${basePath}?traffic=${traffic}` : basePath
+export function newRulePath(basePath, traffic) {
+  return `${basePath}?traffic=${traffic}`
+}
+
+const NEW_RULE_HINTS = {
+  [TRAFFIC_AGENT]: 'Create one for agent resources.',
+  [TRAFFIC_SIDECAR]: 'Create one for sidecar listeners.',
+}
+
+// `traffics` is what useNewRuleTraffics() answers.
+export function newRuleHint(traffics) {
+  return traffics.length === 1
+    ? NEW_RULE_HINTS[traffics[0]]
+    : 'Create one for agent resources or for sidecar listeners.'
 }

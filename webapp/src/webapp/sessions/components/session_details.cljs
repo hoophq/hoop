@@ -98,8 +98,17 @@
 (defn main []
   (let [expanded? (r/atom false)]
     (fn [{:keys [session review-groups]}]
-      (let [connection-resource-name (:resource_name session)
-            connection-role-name (:role_name session)
+      (let [;; A listener session carries its sidecar in the metadata. The
+            ;; session a sidecar review waits in is filed under the sidecar as
+            ;; its user, and the review names the listener.
+            sidecar (if (= "sidecar" (:identity_type session))
+                      (get-in session [:metadata :sidecar])
+                      (when-let [listener (get-in session [:review :listener_name])]
+                        {:listener listener :name (:user_name session)}))
+            [first-label first-name second-label second-name]
+            (if sidecar
+              ["Listener" (:listener sidecar) "Sidecar" (:name sidecar)]
+              ["Resource" (:resource_name session) "Role" (:role_name session)])
             connection-type (:connection_subtype session)
             session-status (:status session)
             start-date (:start_date session)
@@ -118,7 +127,7 @@
          [:> Box {:class "space-y-radix-4"}
 
           ;; Always visible fields
-          [detail-row {:label "Resource"
+          [detail-row {:label first-label
                        :icon [:> Package {:size 20}]
                        :value [:> Badge {:color "gray" :size "3"}
                                [:> Flex {:gap "2" :align "center"}
@@ -127,9 +136,9 @@
                                   [:img {:src  (connection-constants/get-connection-icon {:subtype connection-type})
                                          :alt (str connection-type " icon")
                                          :class "w-9"}]]]
-                                connection-resource-name]]}]
+                                first-name]]}]
 
-          [detail-row {:label "Role"
+          [detail-row {:label second-label
                        :icon [:> Rotate3d {:size 20}]
                        :value [:> Badge {:color "gray" :size "3"}
                                [:> Flex {:gap "2" :align "center"}
@@ -138,7 +147,7 @@
                                   [:img {:src  (connection-constants/get-connection-icon {:subtype connection-type})
                                          :alt (str connection-type " icon")
                                          :class "w-9"}]]]
-                                connection-role-name]]}]
+                                second-name]]}]
 
           (when has-review?
             [:<>

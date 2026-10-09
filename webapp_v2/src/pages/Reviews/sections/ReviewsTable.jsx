@@ -19,7 +19,7 @@ export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSele
       <Table.Tbody>
         {reviews.map((review) => {
           const source = reviewSource(review, sidecarsById)
-          const status = statusLabel(review.status)
+          const status = statusLabel(review)
           const live = review.status === STATUS.PENDING || review.status === STATUS.APPROVED
           return (
             <Table.Tr

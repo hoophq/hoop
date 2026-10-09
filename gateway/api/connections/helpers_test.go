@@ -1378,3 +1378,12 @@ func TestParseCloudWatchTables(t *testing.T) {
 		})
 	}
 }
+
+// A mirror answers that a sidecar owns it; a connection an agent synced keeps
+// naming its agent.
+func TestManagedConnectionMessageNamesTheOwner(t *testing.T) {
+	assert.Equal(t, "unable to update a connection managed by a sidecar",
+		managedConnectionMessage(models.ConnectionManagedBySidecar))
+	assert.Equal(t, "unable to update a connection managed by its agent",
+		managedConnectionMessage("hoopagent"))
+}

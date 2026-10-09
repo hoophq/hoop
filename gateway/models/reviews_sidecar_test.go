@@ -352,3 +352,48 @@ func TestUpdateSidecarReview(t *testing.T) {
 		}
 	})
 }
+
+// The session page offers a time window on a connection review only. It tells
+// the two apart by the listener name of the session's review.
+func TestGetSessionByIDNamesTheListenerOfASidecarReview(t *testing.T) {
+	startTestDB(t)
+	sidecarReview := seedSidecarReview(t, seedSidecar(t, "session-page"), "DELETE FROM x;")
+
+	connectionSession := models.Session{
+		ID: uuid.NewString(), OrgID: testOrgID, Connection: "pgdemo", ConnectionType: "database",
+		Verb: "exec", Status: "open", UserID: "user-1", UserEmail: "user@hoop.dev", CreatedAt: time.Now().UTC(),
+	}
+	if err := models.UpsertSession(connectionSession); err != nil {
+		t.Fatalf("seed connection session: %v", err)
+	}
+	connectionReview := &models.Review{
+		ID: uuid.NewString(), OrgID: testOrgID, Type: models.ReviewTypeOneTime, Status: models.ReviewStatusPending,
+		SessionID: connectionSession.ID, ConnectionName: "pgdemo", OwnerID: "user-1", OwnerEmail: "user@hoop.dev",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := models.CreateReview(connectionReview, ""); err != nil {
+		t.Fatalf("seed connection review: %v", err)
+	}
+
+	for name, tc := range map[string]struct{ sessionID, want string }{
+		"sidecar review":    {sidecarReview.SessionID, "appdb"},
+		"connection review": {connectionSession.ID, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sess, err := models.GetSessionByID(testOrgID, tc.sessionID)
+			if err != nil {
+				t.Fatalf("get session: %v", err)
+			}
+			if sess.Review == nil {
+				t.Fatal("the session has no review")
+			}
+			got := ""
+			if sess.Review.ListenerName != nil {
+				got = *sess.Review.ListenerName
+			}
+			if got != tc.want {
+				t.Errorf("listener = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

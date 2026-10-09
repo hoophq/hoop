@@ -93,6 +93,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.sidecar_stream_chunks": {
+		Name:        "experimental.sidecar_stream_chunks",
+		Description: "Write each batch of sidecar session events as a new row instead of rewriting the whole session stream, so a batch takes the same time at the end of a long session as at its start. When off, new sessions rewrite the stream on each batch; a session that already has rows keeps writing rows, so its entries stay in order. Session pages and downloads read both layouts.",
+		Default:     true,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 	"experimental.ssh_guardrails": {
 		Name:        "experimental.ssh_guardrails",
 		Description: "Enforce guardrails on native SSH connections: exec commands are validated against input rules before they run, and session-channel output (interactive shell/exec) is validated against output rules before it reaches the client. Port-forward (direct-tcpip) channels are not inspected. Interactive shell stdin is validated separately by experimental.ssh_input_guardrails. Requires a DLP provider (Presidio) to be configured.",
@@ -144,7 +151,7 @@ var catalog = map[string]Flag{
 	},
 	FlagAgents: {
 		Name:        FlagAgents,
-		Description: "Render the gateway product in the web app: agents, resources, terminal, sessions, runbooks. When off the web app renders the control plane product: sidecars, policies, reviews. Turned on once for every organization that already had an agent.",
+		Description: "Show the agent pages in the web app menu (agents, terminal, runbooks, machine identities, provisioning, resource discovery, event routing) and the agent onboarding. When off, the menu hides them, and the web app opens on Sidecars for admins and on Reviews for other users. Agents and their sessions keep working. Turned on once for every organization that already had an agent.",
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},

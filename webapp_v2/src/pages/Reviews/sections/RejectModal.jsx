@@ -3,8 +3,10 @@ import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 import Textarea from '@/components/Textarea'
 
+// A sidecar review holds a statement; any other review holds a session.
 export default function RejectModal({
   opened,
+  sidecar,
   onClose,
   onConfirm,
   loading,
@@ -13,10 +15,12 @@ export default function RejectModal({
 }) {
   return (
     // Above Mantine's default 200: this one opens over the review detail.
-    <Modal opened={opened} onClose={onClose} title="Reject statement" zIndex={400}>
+    <Modal opened={opened} onClose={onClose} title={sidecar ? 'Reject statement' : 'Reject review'} zIndex={400}>
       <Stack gap="lg">
         <Text size="sm">
-          The sidecar denies this statement and the reason reaches whoever asks about it.
+          {sidecar
+            ? 'The sidecar denies this statement and the reason reaches whoever asks about it.'
+            : 'The request is denied, and the reason reaches the requester.'}
         </Text>
         <Textarea
           label="Reason (optional)"

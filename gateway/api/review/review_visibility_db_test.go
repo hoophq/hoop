@@ -2,23 +2,33 @@ package reviewapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func seedGatewayReview(t *testing.T, ownerID string, groups ...string) *models.Review {
 	t.Helper()
+	rev := newGatewayReview(ownerID, groups...)
+	require.NoError(t, models.CreateReview(rev, ""))
+	return rev
+}
+
+func newGatewayReview(ownerID string, groups ...string) *models.Review {
 	rev := &models.Review{
 		ID:             uuid.NewString(),
 		OrgID:          decisionTestOrgID,
@@ -34,8 +44,15 @@ func seedGatewayReview(t *testing.T, ownerID string, groups ...string) *models.R
 		rev.ReviewGroups = append(rev.ReviewGroups, models.ReviewGroups{
 			ID: uuid.NewString(), OrgID: decisionTestOrgID, GroupName: g, Status: models.ReviewStatusPending})
 	}
-	require.NoError(t, models.CreateReview(rev, ""))
 	return rev
+}
+
+func seedForceApproveConnection(t *testing.T, name string, forceGroups ...string) {
+	t.Helper()
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.resources (org_id, name, type, subtype)
+		VALUES (?, ?, 'custom', 'redis')`, decisionTestOrgID, name).Error)
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.connections (org_id, name, type, subtype, resource_name, force_approve_groups)
+		VALUES (?, ?, 'custom', 'redis', ?, ?)`, decisionTestOrgID, name, name, pq.StringArray(forceGroups)).Error)
 }
 
 func serveReviews(userID string, groups []string, id string) *httptest.ResponseRecorder {
@@ -117,22 +134,91 @@ func TestReviewVisibility(t *testing.T) {
 		{"a sidecar review has no requester", sidecarID, nil, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			want := []string{}
-			for _, r := range tt.visible {
-				want = append(want, r.ID)
-			}
-			assert.ElementsMatch(t, want, listedReviewIDs(t, tt.userID, tt.groups))
+			assertVisibleReviews(t, all, tt.userID, tt.groups, tt.visible)
+		})
+	}
+}
 
+func TestReviewVisibilityForceApprovers(t *testing.T) {
+	startDecisionTestDB(t)
+	seedForceApproveConnection(t, "pg-ruled", "oncall")
+	seedForceApproveConnection(t, "pg-plain", "oncall")
+
+	ruled := newGatewayReview("user-requester", "dba")
+	ruled.ConnectionName = "pg-ruled"
+	ruled.AccessRequestRuleName = ptr.String("prod-writes")
+	ruled.ForceApprovalGroups = pq.StringArray{"sre"}
+	require.NoError(t, models.CreateReview(ruled, ""))
+
+	plain := newGatewayReview("user-requester", "dba")
+	plain.ConnectionName = "pg-plain"
+	require.NoError(t, models.CreateReview(plain, ""))
+
+	sidecarRev := seedApprovedSidecarReview(t, func(r *models.Review) {
+		r.ForceApprovalGroups = pq.StringArray{"security"}
+	})
+	sidecarOnMirror := seedApprovedSidecarReview(t, func(r *models.Review) {
+		r.ConnectionName = "pg-plain"
+	})
+	all := []*models.Review{ruled, plain, sidecarRev, sidecarOnMirror}
+
+	for _, tt := range []struct {
+		name    string
+		groups  []string
+		visible []*models.Review
+	}{
+		{"a rule's force group sees the review", []string{"sre"}, []*models.Review{ruled}},
+		{"a connection's force group sees only reviews without rule force groups", []string{"oncall"}, []*models.Review{plain}},
+		{"a sidecar rule's force group sees the review", []string{"security"}, []*models.Review{sidecarRev}},
+		{"a user outside every force group sees none", []string{"finance"}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assertVisibleReviews(t, all, "user-"+tt.groups[0], tt.groups, tt.visible)
 			for _, r := range all {
-				wantCode := http.StatusNotFound
-				for _, v := range tt.visible {
-					if v.ID == r.ID {
-						wantCode = http.StatusOK
-					}
-				}
-				assert.Equal(t, wantCode, serveReviews(tt.userID, tt.groups, r.ID).Code, "get by id %s", r.ID)
-				assert.Equal(t, wantCode, serveReviews(tt.userID, tt.groups, r.SessionID).Code, "get by session %s", r.SessionID)
+				assert.Equal(t, slices.Contains(tt.visible, r), mayForceApprove(t, r, tt.groups),
+					"visibility and doForcedReview disagree on review %s", r.ID)
 			}
 		})
+	}
+}
+
+// mayForceApprove runs doForcedReview with the connection DoReview loads. It writes nothing.
+func mayForceApprove(t *testing.T, r *models.Review, groups []string) bool {
+	t.Helper()
+	rev, err := models.GetReviewByIdOrSid(decisionTestOrgID, r.ID)
+	require.NoError(t, err)
+	var conn *models.Connection
+	if !IsSidecarReview(rev) {
+		conn, err = models.GetConnectionByNameOrID(models.NewAdminContext(decisionTestOrgID), rev.ConnectionName)
+		require.NoError(t, err)
+		require.NotNil(t, conn)
+	}
+	ctx := newFakeContext("user-"+groups[0], groups[0]+"@hoop.dev", groups)
+	ctx.OrgID = decisionTestOrgID
+	_, err = doForcedReview(ctx, rev, conn, models.ReviewStatusApproved)
+	if errors.Is(err, ErrNotEligible) {
+		return false
+	}
+	require.NoError(t, err)
+	return true
+}
+
+func assertVisibleReviews(t *testing.T, all []*models.Review, userID string, groups []string, visible []*models.Review) {
+	t.Helper()
+	want := []string{}
+	for _, r := range visible {
+		want = append(want, r.ID)
+	}
+	assert.ElementsMatch(t, want, listedReviewIDs(t, userID, groups))
+
+	for _, r := range all {
+		wantCode := http.StatusNotFound
+		for _, v := range visible {
+			if v.ID == r.ID {
+				wantCode = http.StatusOK
+			}
+		}
+		assert.Equal(t, wantCode, serveReviews(userID, groups, r.ID).Code, "get by id %s", r.ID)
+		assert.Equal(t, wantCode, serveReviews(userID, groups, r.SessionID).Code, "get by session %s", r.SessionID)
 	}
 }

@@ -39,7 +39,7 @@ func startDecisionTestDB(t *testing.T) {
 }
 
 // seedApprovedSidecarReview files a sidecar review a dba approved.
-func seedApprovedSidecarReview(t *testing.T) *models.Review {
+func seedApprovedSidecarReview(t *testing.T, edits ...func(*models.Review)) *models.Review {
 	t.Helper()
 	sc := &models.Sidecar{OrgID: decisionTestOrgID, Name: "sc-" + uuid.NewString()[:8],
 		KeyHash: models.HashAPIKey(uuid.NewString()), CreatedBy: "tests@hoop.dev"}
@@ -65,6 +65,9 @@ func seedApprovedSidecarReview(t *testing.T) *models.Review {
 	}
 	rev.ReviewGroups = []models.ReviewGroups{{ID: uuid.NewString(), OrgID: decisionTestOrgID, ReviewID: rev.ID,
 		GroupName: "dba", Status: models.ReviewStatusApproved, ReviewedAt: &reviewedAt}}
+	for _, edit := range edits {
+		edit(rev)
+	}
 	sess := models.Session{ID: sessionID, OrgID: decisionTestOrgID, BlobInput: models.BlobInputType(statement),
 		ConnectionType: "custom", Verb: "exec", Status: "open", UserID: sc.ID, UserName: sc.Name,
 		UserEmail: "hoop@hoop.dev", CreatedAt: time.Now().UTC()}

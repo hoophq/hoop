@@ -7,6 +7,9 @@ set -eo pipefail
 
 # legacy mongo cli
 MONGO_BIN=/usr/local/bin/mongo
+# The 5.0 shell runs stdin as a REPL and saves it to ~/.dbshell. One entry over
+# 4095 bytes makes every later run print a WARNING on stdout.
+ln -sfnT /dev/null ~/.dbshell 2>/dev/null || true
 if [ ! -f "$HOME/.mongoshrc.js" ]; then
     # https://www.mongodb.com/docs/mongodb-shell/reference/customize-prompt/#std-label-customize-the-mongosh-prompt
     echo 'prompt = function() { return ""; }' > $HOME/.mongoshrc.js

@@ -23,8 +23,14 @@ const STATUS_LABEL = {
   [STATUS.EXPIRED]: { label: 'Expired', color: 'gray' },
 }
 
-export const statusLabel = (status) =>
-  STATUS_LABEL[status] ?? { label: status ?? 'Unknown', color: 'gray' }
+// A sidecar's EXECUTED is a statement it released; any other, a session that ran.
+const EXECUTED_SESSION = { label: 'Executed', color: 'green' }
+
+export function statusLabel(review) {
+  const status = review?.status
+  if (status === STATUS.EXECUTED && !isSidecarReview(review)) return EXECUTED_SESSION
+  return STATUS_LABEL[status] ?? { label: status ?? 'Unknown', color: 'gray' }
+}
 
 // The sidebar picks one: Pending Approvals (/reviews) or Approval History
 // (/reviews?status=settled).

@@ -41,11 +41,13 @@ src/
 
 ## Application modes — gateway and control plane
 
-One bundle renders as one of two products. The backend decides which: `hoop start
-control-plane` reports `application_mode: "control-plane"` on `/api/publicserverinfo`
-(read once at boot, `main.jsx`) and on `/api/serverinfo` (read after login). The store
-keeps it in `useUserStore.appMode`, default `'gateway'`, and `src/modes/` is the only
-reader (ESLint: `appMode` anywhere else is an error).
+One bundle renders as one of two products. `application_mode` is always `"gateway"`
+(`hoop start control-plane` is the gateway), so `useUserStore.appMode` is `'gateway'` and
+no backend field selects the control-plane manifest today. The per-org
+`experimental.agents` flag (`feature_flags` on `/api/serverinfo`; off by default, set by
+migration for orgs that have an agent of their own) gates the agent pages and where
+`GatewayProtectedRoute` lands a user. `src/modes/` is the only reader of `appMode` (ESLint:
+`appMode` anywhere else is an error).
 
 **The rule, in one sentence: every React route exists in both products, the sidebar says
 what a product shows, and ClojureScript exists only in the gateway.**
@@ -87,8 +89,10 @@ what a product shows, and ClojureScript exists only in the gateway.**
 - **Sidecar features are always on.** Every gateway serves sidecars, so the Sidecars
   pages, nav and palette items and the sidecar traffic of a rule carry no gate. The
   agents product follows `agentsEnabled()` (`modes/agents.js`, the `experimental.agents`
-  flag): today it decides only whether `GatewayProtectedRoute` sends an admin with no
-  connection to the agent onboarding. Guardrail, masking and analyzer forms are picked
+  flag). On, `GatewayProtectedRoute` sends an admin with no connection to the agent
+  onboarding. Off, it turns `/`, `/client` and the agent onboarding into the landing by
+  role (`pages/Home`) on every route change, and the CLJS app does not move the URL
+  while it is parked (`routes/navigate!`). Guardrail, masking and analyzer forms are picked
   per rule with `<ByRuleTraffic>`.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`) serves both. Each product adds its own

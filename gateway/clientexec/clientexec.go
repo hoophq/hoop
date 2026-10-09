@@ -28,15 +28,17 @@ import (
 )
 
 var (
-	walLogPath       = filepath.Join(plugintypes.AuditPath, "clientexec")
-	walFolderTmpl    = `%s/%s-%s-wal`
 	maxResponseBytes = sessionwal.DefaultMaxRead
 
 	// PlainExecSecretKey is a key to execute plain executions in the gateway securely by this package
 	PlainExecSecretKey string = generateSecureRandomKeyOrDie()
 )
 
-func init() { _ = os.MkdirAll(walLogPath, 0755) }
+// walFolder reads plugintypes.AuditPath on every call: `hoop start control-plane`
+// and `standalone` reassign it after package init.
+func walFolder(orgID, sessionID string) string {
+	return filepath.Join(plugintypes.AuditPath, "clientexec", orgID+"-"+sessionID+"-wal")
+}
 
 const nilExitCode int = -2
 
@@ -134,7 +136,7 @@ func New(opts *Options) (*clientExec, error) {
 		}
 	}
 
-	folderName := fmt.Sprintf(walFolderTmpl, walLogPath, opts.OrgID, opts.SessionID)
+	folderName := walFolder(opts.OrgID, opts.SessionID)
 	wlog, err := wal.Open(folderName, wal.DefaultOptions)
 	if err != nil {
 		return nil, err

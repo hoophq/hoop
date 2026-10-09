@@ -1,7 +1,27 @@
 import { useLocation } from 'react-router-dom'
 import { connectionsService } from '@/services/connections'
-import { agentsEnabled } from '@/modes/agents'
+import { agentsEnabled, useAgentsEnabled } from '@/modes/agents'
+import Home from '@/pages/Home'
+import { LICENSE_INTRO_PATH } from '@/utils/licenseIntro'
 import ProtectedRoute from './ProtectedRoute'
+
+// The terminal (where login lands), the home and the agent onboarding (where
+// setup lands).
+const isAgentLanding = (pathname) =>
+  pathname === '/' ||
+  pathname === '/client' ||
+  (pathname.startsWith('/onboarding') && pathname !== LICENSE_INTRO_PATH)
+
+// Without agents, an agent landing gives way to the pages a sidecar org uses
+// (pages/Home: Sidecars or Reviews). Checked on every location change, not once:
+// the gate stays mounted while the CLJS app navigates (its home to the
+// onboarding, its onboarding to the terminal). Renders after the gate loaded
+// the flags.
+function WithoutAgents({ children }) {
+  const { pathname } = useLocation()
+  const agents = useAgentsEnabled()
+  return !agents && isAgentLanding(pathname) ? <Home /> : children
+}
 
 // The gateway's gate: the shared ProtectedRoute plus the onboarding redirect.
 // An admin with no connections must go through onboarding, which sets up an
@@ -9,7 +29,7 @@ import ProtectedRoute from './ProtectedRoute'
 // Skipped on the onboarding routes themselves to avoid a redirect loop. The
 // control plane has no onboarding to send anyone to, so it renders
 // ProtectedRoute directly.
-function GatewayProtectedRoute(props) {
+function GatewayProtectedRoute({ children, ...props }) {
   const location = useLocation()
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')
 
@@ -29,7 +49,11 @@ function GatewayProtectedRoute(props) {
     return null
   }
 
-  return <ProtectedRoute {...props} onReady={onReady} />
+  return (
+    <ProtectedRoute {...props} onReady={onReady}>
+      <WithoutAgents>{children}</WithoutAgents>
+    </ProtectedRoute>
+  )
 }
 
 export default GatewayProtectedRoute

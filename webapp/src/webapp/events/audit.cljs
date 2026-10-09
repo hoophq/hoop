@@ -296,14 +296,40 @@
          updated-session (merge cached-session details)
          session-details-state (:audit->session-details db)
          has-large-payload? (:has-large-payload? session-details-state)
-         has-large-input? (:has-large-input? session-details-state)]
+         has-large-input? (:has-large-input? session-details-state)
+         review-id (get-in updated-session [:review :id])]
      {:db (assoc db
                  :audit->session-details
                  {:session updated-session
                   :status :success
                   :has-large-payload? has-large-payload?
                   :has-large-input? has-large-input?
-                  :session-logs (:session-logs session-details-state)})})))
+                  :session-logs (:session-logs session-details-state)})
+      :fx (if review-id
+            [[:dispatch [:audit->get-session-review-source (:id updated-session) review-id]]]
+            [])})))
+
+;; The review inside a session says nothing about where a sidecar review came
+;; from; the review API reports its listener_name and sidecar_id.
+(rf/reg-event-fx
+ :audit->get-session-review-source
+ (fn
+   [_ [_ session-id review-id]]
+   {:fx [[:dispatch [:fetch
+                     {:method "GET"
+                      :uri (str "/reviews/" review-id)
+                      :on-success #(rf/dispatch [:audit->set-session-review-source session-id %])
+                      :on-failure (fn [_])}]]]}))
+
+(rf/reg-event-db
+ :audit->set-session-review-source
+ (fn
+   [db [_ session-id {:keys [listener_name sidecar_id]}]]
+   (if (and listener_name
+            (= session-id (-> db :audit->session-details :session :id)))
+     (update-in db [:audit->session-details :session :review]
+                assoc :listener_name listener_name :sidecar_id sidecar_id)
+     db)))
 
 (rf/reg-event-fx
  :audit->get-session-stream-result

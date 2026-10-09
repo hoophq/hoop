@@ -703,3 +703,12 @@ func upsertConnectionAttributes(ctx *storagev2.Context, connectionName string, a
 	orgID := uuid.MustParse(ctx.OrgID)
 	return models.UpsertConnectionAttributes(models.DB, orgID, connectionName, attributeNames)
 }
+
+// managedConnectionMessage refuses a write to a connection its agent or a
+// sidecar owns, naming the owner.
+func managedConnectionMessage(managedBy string) string {
+	if managedBy == models.ConnectionManagedBySidecar {
+		return "unable to update a connection managed by a sidecar"
+	}
+	return "unable to update a connection managed by its agent"
+}

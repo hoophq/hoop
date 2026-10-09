@@ -6,6 +6,7 @@ import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
+import { useNewRuleTraffics } from '@/hooks/useNewRuleTraffics'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
@@ -21,6 +22,7 @@ import {
   RULE_KIND_DATAMASKING,
   TRAFFIC_AGENT,
   TRAFFIC_SIDECAR,
+  newRuleHint,
   newRulePath,
 } from '@/utils/ruleTraffic'
 import { useDataMaskingStore } from './store'
@@ -57,6 +59,7 @@ export default function DataMasking() {
   const { traffics, mixed, showAgentFilters, showSidecarFilter, matches } = traffic
   const agentRules = traffics.includes(TRAFFIC_AGENT)
   const sidecarRules = traffics.includes(TRAFFIC_SIDECAR)
+  const newTraffics = useNewRuleTraffics()
   const agentBlocked = agentRules && !RULE_DRIVEN_PROVIDERS.includes(redactProvider)
 
   const [selectedRole, setSelectedRole] = useState(null)
@@ -100,7 +103,7 @@ export default function DataMasking() {
   const activeFilterCount =
     (role ? 1 : 0) + (attribute ? 1 : 0) + (target ? 1 : 0) + (traffic.active ? 1 : 0)
 
-  const goCreate = (kind) => navigate(newRulePath('/features/data-masking/new', traffics, kind))
+  const goCreate = (kind) => navigate(newRulePath('/features/data-masking/new', kind))
 
   if (showLoader) {
     return <PageLoader h={300} />
@@ -120,7 +123,7 @@ export default function DataMasking() {
         <DataMaskingPromotion
           redactProvider={redactProvider}
           providerRequired={!sidecarRules}
-          onConfigure={() => goCreate(traffics[0])}
+          onConfigure={() => goCreate(newTraffics[0])}
         />
       </FullBleed>
     )
@@ -136,7 +139,7 @@ export default function DataMasking() {
           </Text>
         </Stack>
         <NewRuleButton
-          traffics={traffics}
+          traffics={newTraffics}
           onCreate={goCreate}
           disabled={atFreeLimit}
           blocked={agentBlocked ? { [TRAFFIC_AGENT]: 'Needs a DLP provider' } : undefined}
@@ -199,7 +202,7 @@ export default function DataMasking() {
         <EmptyState
           compact
           title="No Live Data Masking rules yet"
-          description="Create one for agent resources or for sidecar listeners."
+          description={newRuleHint(newTraffics)}
         />
       ) : filteredRules.length === 0 ? (
         <EmptyState
