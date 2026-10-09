@@ -339,9 +339,6 @@ func withBackground(row string, width int) string {
 	return bg + strings.ReplaceAll(row, "\x1b[m", "\x1b[m"+bg) + pad + "\x1b[m"
 }
 
-// selectionSequence is the escape sequence that sets the selection
-// background, taken from what lipgloss renders for it so the two can never
-// disagree. Bubble Tea downsamples it to the terminal's colors on output.
 // paintedBlank pads a painted row: a no-break space, which a terminal draws
 // as a space, one cell wide.
 //
@@ -353,8 +350,11 @@ func withBackground(row string, width int) string {
 // selected row showed its fill only as far as its text. The renderer treats
 // only U+0020 as blank, so U+00A0 is printed, painted, everywhere.
 // TestPaintedPaddingIsNotErased pins the renderer behavior this works around.
-const paintedBlank = " "
+const paintedBlank = "\u00a0"
 
+// selectionSequence is the escape sequence that sets the selection
+// background, taken from what lipgloss renders for it so the two can never
+// disagree. Bubble Tea downsamples it to the terminal's colors on output.
 func selectionSequence() string {
 	const mark = "\x00"
 	painted := lipgloss.NewStyle().Background(colSelBg).Render(mark)

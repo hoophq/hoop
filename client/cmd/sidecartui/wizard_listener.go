@@ -186,7 +186,12 @@ func newListenerForm(protocol string, prefill map[string]string, source string) 
 			if source != "" {
 				from = "Filled in from what was found: " + source + "."
 			}
-			return "\n" + stFaint.Render(from+" To change a value, move to it and type.") + "\n"
+			note := "\n" + stFaint.Render(from+" To change a value, move to it and type.")
+			if sw := lf.presence["upstream_tls"]; sw != nil && sw.on && source != "" {
+				note += "\n" + stFaint.Render("Upstream TLS is on: the backend is on another machine, "+
+					"so what clients send is encrypted on the way to it.")
+			}
+			return note + "\n"
 		}},
 	}
 	fields = append(append(head, fields...), lf.advanced)

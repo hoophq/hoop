@@ -67,6 +67,37 @@ func TestUsePortsChangesOnlyTheAddress(t *testing.T) {
 	}
 }
 
+// Only a listen key's value moves: the same text inside a block scalar is
+// the person's prose, and stays word for word.
+func TestUsePortsLeavesABlockScalarAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "c.yaml")
+	body := "listeners:\n  - name: api\n    protocol: http\n    listen: 127.0.0.1:15432\n    upstream: 127.0.0.1:1\n" +
+		"guardrails:\n  rules:\n    - name: r\n      type: deny_words_list\n      words: [drop]\n      message: |\n" +
+		"        Use the sidecar.\n        listen: 127.0.0.1:15432\n"
+	writeFile(t, path, body)
+	c := []portConflict{{portUse: portUse{what: "listener api", addr: "127.0.0.1:15432"}, free: "127.0.0.1:15433"}}
+	if err := usePorts(path, c); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	want := strings.Replace(body, "    listen: 127.0.0.1:15432\n", "    listen: 127.0.0.1:15433\n", 1)
+	if string(b) != want {
+		t.Errorf("file =\n%s\nwant\n%s", b, want)
+	}
+}
+
+func TestUsePortsRewritesAJSONConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "c.json")
+	writeFile(t, path, `{"listeners":[{"name":"api","protocol":"http","listen":"127.0.0.1:15432","upstream":"127.0.0.1:1"}]}`)
+	c := []portConflict{{portUse: portUse{what: "listener api", addr: "127.0.0.1:15432"}, free: "127.0.0.1:15433"}}
+	if err := usePorts(path, c); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), `"listen":"127.0.0.1:15433"`) || !strings.Contains(string(b), `"upstream":"127.0.0.1:1"`) {
+		t.Errorf("file = %s", b)
+	}
+}
+
 // The demo API's address is named twice: by the demo key and as the demo
 // listener's upstream. Moving it moves both, or the listener would front
 // nothing.

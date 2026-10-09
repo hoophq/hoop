@@ -91,6 +91,7 @@ type setupOptions struct {
 	entrypoint      string
 	deprecatedAlias bool
 	localReviewer   LocalReviewer
+	planeURL        string
 	firstRun        FirstRunObserver
 }
 
@@ -159,7 +160,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 			return nil, nil, err
 		}
 	}
-	cfg, err := resolveConfigSource(local, o.token)
+	cfg, err := resolveConfigSource(local, o.token, o.planeURL)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -204,9 +204,22 @@ func (c *Config) ControlPlane() (planeURL, source string, ok bool) {
 	return c.cp.url, c.cp.urlSource, true
 }
 
+// WithControlPlaneURL supplies the Control Plane URL from the caller, which
+// outranks HOOP_CONTROL_PLANE_URL and the config file's key. It exists so an
+// entry point can connect for one call without setting a process-wide
+// environment variable another goroutine would also read. An empty value
+// falls through.
+func WithControlPlaneURL(planeURL string) Option {
+	return func(o *setupOptions) { o.planeURL = planeURL }
+}
+
 // resolveControlPlaneURL picks the URL, highest precedence first: the
-// environment, then the config file's key. Empty everywhere means standalone.
-func resolveControlPlaneURL(fileValue string) (value, source string, err error) {
+// caller's option, the environment, then the config file's key. Empty
+// everywhere means standalone.
+func resolveControlPlaneURL(flagValue, fileValue string) (value, source string, err error) {
+	if flagValue != "" {
+		return checkControlPlaneURL(flagValue, "the Control Plane URL given to this process")
+	}
 	if v := os.Getenv(ControlPlaneURLEnv); v != "" {
 		return checkControlPlaneURL(v, ControlPlaneURLEnv)
 	}
@@ -266,7 +279,7 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // A plane answering "load_from_disk" hands the document back to the file:
 // the file's listeners serve, while the connection and the license stay
 // plane-side facts (see licenseManaged).
-func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
+func resolveConfigSource(local *Config, tokenFlag, planeFlag string) (*Config, error) {
 	if local != nil && local.LoadFromDisk != nil {
 		return nil, errors.New(`"load_from_disk" is not a config file key; ` +
 			`it is set on the control plane's sidecar configuration, and the file cannot answer for the plane`)
@@ -276,7 +289,7 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	if local != nil {
 		fileURL = local.ControlPlaneURL
 	}
-	planeURL, urlSource, err := resolveControlPlaneURL(fileURL)
+	planeURL, urlSource, err := resolveControlPlaneURL(planeFlag, fileURL)
 	if err != nil {
 		return nil, err
 	}
@@ -549,6 +562,19 @@ func (cp *controlPlane) reimport(log *slog.Logger, rl *reloader) (handshakeAnswe
 // the CLI's first-run screen then helps write the config to import.
 var ErrPlaneHasNoConfig = errors.New("the control plane has no configuration for this sidecar")
 
+// planeHasNoConfigError is the empty plane with no file to import. It keeps
+// the sentence an operator has always read, naming the plane first, and
+// unwraps to ErrPlaneHasNoConfig for callers that branch on it.
+type planeHasNoConfigError struct{ planeURL string }
+
+func (e planeHasNoConfigError) Error() string {
+	return fmt.Sprintf("the control plane at %s has no configuration for this sidecar; "+
+		"author one in the control plane, or restart with a config file whose listeners this "+
+		"process can import", e.planeURL)
+}
+
+func (e planeHasNoConfigError) Unwrap() error { return ErrPlaneHasNoConfig }
+
 // errPlaneAlreadyConfigured marks the import's 409: a configuration landed
 // on the plane between the handshake and the push. The concurrent author
 // wins; the caller re-fetches and serves their document.
@@ -581,9 +607,7 @@ func rawDeclaresListeners(raw []byte) bool {
 // ever being reached.
 func importLocalConfig(planeURL string, cred credential, local *Config) (answer handshakeAnswer, pushed bool, err error) {
 	if local == nil || len(local.Listeners) == 0 {
-		return handshakeAnswer{}, false, fmt.Errorf("%w (at %s); "+
-			"author one in the control plane, or restart with a config file whose listeners this "+
-			"process can import", ErrPlaneHasNoConfig, planeURL)
+		return handshakeAnswer{}, false, planeHasNoConfigError{planeURL: planeURL}
 	}
 	doc := *local
 	doc.ControlPlaneURL = ""

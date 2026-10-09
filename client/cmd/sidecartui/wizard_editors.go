@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -203,6 +204,13 @@ func newDraft(protocol string, demo bool, m machine) (*draft, error) {
 		// default boots on this machine as it is.
 		prefill["listen"] = freeFrom(prefill["listen"], map[string]bool{})
 		if protocol == "spanner" {
+			prefill["upstream_tls"] = "on"
+		}
+		// A backend found on another machine (an RDS host in DATABASE_URL)
+		// is reached across a network: the relay originates TLS to it by
+		// default, so the credentials a client sends do not cross it in
+		// the clear. The person can still turn it off.
+		if host, _, err := net.SplitHostPort(upstream); err == nil && source != "" && !isLoopbackHost(host) {
 			prefill["upstream_tls"] = "on"
 		}
 		lf, err := newListenerForm(protocol, prefill, source)

@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"gopkg.in/yaml.v3"
 )
 
 // Validation reads a config; it binds nothing. A config can therefore be
@@ -158,16 +159,66 @@ func usePorts(path string, conflicts []portConflict) error {
 		if c.free == "" {
 			return fmt.Errorf("no free port was found near %s", c.addr)
 		}
-		keys := "listen"
+		keys := map[string]bool{"listen": true}
 		if c.demo {
-			keys = "upstream|" + regexp.QuoteMeta(configyaml.DemoAPIKey)
+			keys = map[string]bool{"upstream": true, configyaml.DemoAPIKey: true}
 		}
-		re := regexp.MustCompile(`(?m)^(\s*(?:-\s+)?(?:` + keys + `):\s*["']?)` + regexp.QuoteMeta(c.addr) + `(["']?\s*(?:#.*)?)$`)
-		next := re.ReplaceAll(data, []byte("${1}"+c.free+"${2}"))
-		if string(next) == string(data) {
+		next, n, err := replaceKeyValues(data, keys, c.addr, c.free)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		if n == 0 {
 			return fmt.Errorf("%s does not name %s on a line it can change; edit it there", path, c.addr)
 		}
 		data = next
 	}
 	return replaceFile(path, data, fi.Mode().Perm())
+}
+
+// replaceKeyValues swaps old for new where a mapping key in keys holds
+// exactly old, and nowhere else. The places come from the parsed document,
+// not a pattern over the text: a block scalar (a message: | body) that
+// happens to read "listen: 127.0.0.1:15432" is the person's prose, and a
+// line pattern would rewrite it too. Each value is replaced at the line and
+// column the parser reports, so comments, quoting and layout stay as they
+// were, in YAML and in JSON alike.
+func replaceKeyValues(data []byte, keys map[string]bool, old, new string) ([]byte, int, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, 0, err
+	}
+	type at struct{ line, col int }
+	var hits []at
+	var walk func(n *yaml.Node)
+	walk = func(n *yaml.Node) {
+		if n.Kind == yaml.MappingNode {
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				k, v := n.Content[i], n.Content[i+1]
+				if keys[k.Value] && v.Kind == yaml.ScalarNode && v.Value == old {
+					hits = append(hits, at{v.Line, v.Column})
+				}
+			}
+		}
+		for _, c := range n.Content {
+			walk(c)
+		}
+	}
+	walk(&doc)
+	lines := strings.Split(string(data), "\n")
+	done := 0
+	for _, h := range hits {
+		if h.line < 1 || h.line > len(lines) {
+			continue
+		}
+		l := lines[h.line-1]
+		start := min(max(h.col-1, 0), len(l))
+		// The column is the value's start, its quote included when quoted.
+		i := strings.Index(l[start:], old)
+		if i < 0 {
+			continue
+		}
+		lines[h.line-1] = l[:start+i] + new + l[start+i+len(old):]
+		done++
+	}
+	return []byte(strings.Join(lines, "\n")), done, nil
 }

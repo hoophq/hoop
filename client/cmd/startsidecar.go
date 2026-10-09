@@ -446,21 +446,14 @@ func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
 // checkControlPlane connects to a Control Plane the way the boot that
 // follows the Connect page will: the same Setup, so the handshake runs and
 // a wrong token or an unreachable plane is reported on the page, then the
-// same Validate over the config the plane serves. The URL is set for the
-// call only; the boot sets it for good.
+// same Validate over the config the plane serves. The URL is passed to this
+// Setup only; the boot sets it for good.
 func checkControlPlane(planeURL, token string) (*daemon.Config, error) {
-	prev, had := os.LookupEnv(daemon.ControlPlaneURLEnv)
-	if err := os.Setenv(daemon.ControlPlaneURLEnv, planeURL); err != nil {
-		return nil, err
-	}
-	defer func() {
-		if had {
-			_ = os.Setenv(daemon.ControlPlaneURLEnv, prev)
-		} else {
-			_ = os.Unsetenv(daemon.ControlPlaneURLEnv)
-		}
-	}()
+	// The URL is passed for this call only: it runs on a screen goroutine,
+	// and a process-wide env var would reach a validation running beside
+	// it, which could then handshake or import its draft.
 	cfg, det, err := daemon.SetupWith("", configyaml.Load, buildSidecarPlugin,
+		daemon.WithControlPlaneURL(planeURL),
 		daemon.WithControlPlaneToken(token),
 		daemon.WithEntrypoint(analytics.EntrypointCLI),
 		daemon.WithLocalReviewer(sidecartui.NewReviewer().For))

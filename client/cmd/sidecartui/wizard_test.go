@@ -462,6 +462,38 @@ func fakeEnv(kv map[string]string) func(string) string {
 	return func(k string) string { return kv[k] }
 }
 
+// A backend found on another machine is reached with TLS by default, and the
+// config that writes still validates for every protocol a URL can name. One
+// found on this machine, or a default, stays plain.
+func TestARemoteFoundUpstreamDefaultsToTLS(t *testing.T) {
+	for _, p := range []string{"postgres", "mysql", "mssql", "mongodb", "clickhouse"} {
+		remote := machine{found: []found{{p, "db.example.com:" + map[string]string{
+			"postgres": "5432", "mysql": "3306", "mssql": "1433", "mongodb": "27017", "clickhouse": "8123"}[p], "DATABASE_URL"}}}
+		d, err := newDraft(p, false, remote)
+		if err != nil {
+			t.Fatal(err)
+		}
+		l, err := d.listener.value()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l.UpstreamTLS == nil {
+			t.Errorf("%s: a remote upstream defaults to plain", p)
+		}
+		if err := validateDraft(t, d); err != nil {
+			t.Errorf("%s: the TLS default does not validate: %v", p, err)
+		}
+		if !strings.Contains(ansi.Strip(d.listener.form.view(100, 30)), "Upstream TLS is on") {
+			t.Errorf("%s: the listener page does not say why TLS is on", p)
+		}
+	}
+	local := machine{found: []found{{"postgres", "127.0.0.1:5432", "port 5432 is open"}}}
+	d, _ := newDraft("postgres", false, local)
+	if l, _ := d.listener.value(); l.UpstreamTLS != nil {
+		t.Error("a backend on this machine defaults to TLS")
+	}
+}
+
 func TestFromDatabaseURL(t *testing.T) {
 	for _, c := range []struct {
 		in       string
