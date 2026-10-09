@@ -1,6 +1,7 @@
 package plugintypes
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -45,8 +46,10 @@ func CheckAuditPath() error {
 	if err != nil {
 		return auditPathError(err)
 	}
-	_ = f.Close()
-	_ = os.Remove(f.Name())
+	closeErr := f.Close()
+	if err := errors.Join(closeErr, os.Remove(f.Name())); err != nil {
+		return auditPathError(err)
+	}
 	return nil
 }
 

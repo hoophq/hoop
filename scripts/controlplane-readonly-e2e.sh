@@ -20,7 +20,7 @@ RUN_ID="cp-readonly-$$"
 NET="$RUN_ID-net"
 PG="$RUN_ID-pg"
 CP="$RUN_ID-cp"
-BOOT_TIMEOUT=${BOOT_TIMEOUT:-90}
+BOOT_TIMEOUT=90
 
 cleanup() {
   docker rm -f "$CP" "$PG" >/dev/null 2>&1 || true
