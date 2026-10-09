@@ -162,7 +162,7 @@ func (m *firstRunModel) buildHome() {
 	}
 	files := configsIn(m.dir)
 	for _, f := range files {
-		label := filepath.Base(f)
+		label := clean(filepath.Base(f))
 		if f == m.invalid {
 			items = append(items, menuItem{id: "file:" + f, label: label, detail: "not a valid sidecar config"})
 			continue

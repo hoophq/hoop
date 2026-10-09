@@ -530,11 +530,14 @@ func (w *wizard) save(boot, overwrite bool) tea.Cmd {
 		if verr != nil {
 			return wizSavedMsg{err: fmt.Errorf("not saved, the config does not validate: %w", verr), boot: boot}
 		}
-		flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
 		if overwrite {
-			flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+			if err := replaceFile(path, b, 0o644); err != nil {
+				return wizSavedMsg{err: fmt.Errorf("writing %s: %w", path, err), boot: boot}
+			}
+			return wizSavedMsg{path: path, summary: summary, boot: boot}
 		}
-		f, err := os.OpenFile(path, flags, 0o644)
+		// O_EXCL also refuses a symlink, dangling or not.
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if err != nil {
 			if errors.Is(err, os.ErrExist) {
 				return wizSavedMsg{err: fmt.Errorf("%s already exists", path), path: path, exists: true, boot: boot}
@@ -673,7 +676,7 @@ func (w *wizard) overviewView(width, height int) string {
 	case w.saving:
 		status = append(status, shimmer("validating and saving…", w.now()))
 	case w.saveErr != nil:
-		status = append(status, wrapLines(stDanger.Bold(true), "✕ "+w.saveErr.Error(), width)...)
+		status = append(status, wrapLines(stDanger.Bold(true), "✕ "+clean(w.saveErr.Error()), width)...)
 	case w.vrunning:
 		status = append(status, shimmer("checking the config like --validate…", w.now()))
 	case w.verr != nil:

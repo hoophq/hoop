@@ -183,6 +183,11 @@ needs a restart.`,
 				}
 				sidecarTokenFlag = boot.Token
 			}
+			if boot.ConfigPath != "" {
+				if err := refusePlainPlane(boot.ConfigPath); err != nil {
+					return err
+				}
+			}
 			sidecarConfigFlag = boot.ConfigPath
 		}
 		if sidecarMigrateFlag {
@@ -289,6 +294,12 @@ needs a restart.`,
 // who reaches it, and invented data is still not something to expose.
 func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
 	none := &sidecarDemo{stop: func() {}}
+	// The setup screens write the demo key only into YAML. A JSON config
+	// is not parsed as YAML: valid JSON (a \/ escape, a repeated key) can
+	// fail that parse, and would then stop a boot that works without it.
+	if !configyaml.IsYAML(path) {
+		return none, nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return none, err
@@ -313,6 +324,15 @@ func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
 	// API. Without one, there is nothing to tour: a default port would
 	// reach another service, or nothing at all.
 	for _, l := range cfg.Listeners {
+		// Listen goes into the curl commands shown and copied: only a tcp
+		// loopback address, never a socket path a config could fill with
+		// shell syntax.
+		if l.Network != "" && l.Network != "tcp" {
+			continue
+		}
+		if _, err := loopbackBind(l.Listen); err != nil {
+			continue
+		}
 		if l.Upstream == addr {
 			d.ports = &sidecardemo.Ports{API: addr, Listen: l.Listen}
 			break
@@ -459,6 +479,9 @@ func checkControlPlane(planeURL, token string) (*daemon.Config, error) {
 // and a terminal reviewer is attached, as the dashboard attaches one, so
 // require_review validates. Then the same Validate --validate runs.
 func validateSidecarConfig(path string) (string, error) {
+	if err := refusePlainPlane(path); err != nil {
+		return "", err
+	}
 	cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildSidecarPlugin,
 		daemon.WithLicense(sidecarLicenseFlag),
 		daemon.WithEntrypoint(analytics.EntrypointCLI),
@@ -476,6 +499,21 @@ func validateSidecarConfig(path string) (string, error) {
 	}
 	return fmt.Sprintf("%d %s · %s", len(lanes), noun,
 		strings.TrimPrefix(daemon.LimitsSummary(cfg.Licensing()), "limits: ")), nil
+}
+
+// refusePlainPlane refuses a file whose control_plane_url would send the
+// sidecar token in the clear. The first-run screen lists every config in
+// the folder, and checking one runs the handshake: a file in a cloned
+// repository must not take a token exported in this shell.
+func refusePlainPlane(path string) error {
+	cfg, err := configyaml.Load(path)
+	if err != nil || cfg.ControlPlaneURL == "" {
+		return nil // SetupWith reports a file it cannot load
+	}
+	if err := sidecartui.PlaneTransportError(cfg.ControlPlaneURL); err != nil {
+		return fmt.Errorf("%s: control_plane_url: %w", path, err)
+	}
+	return nil
 }
 
 // sidecarOperator names the person reviewing at this terminal: the OS

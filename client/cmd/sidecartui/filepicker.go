@@ -239,7 +239,7 @@ func (p *filePicker) view(w, h int) string {
 	head := []string{p.input.View(), ""}
 	var rows []string
 	for i, e := range p.entries {
-		name := e.name
+		name := clean(e.name)
 		st := stText
 		icon := stFaint.Render("  ")
 		if e.dir {

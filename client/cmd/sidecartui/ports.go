@@ -143,9 +143,12 @@ func freeFrom(addr string, taken map[string]bool) string {
 // (listen, and for the demo API its key and the upstream that points at
 // it), so the person's comments and layout survive.
 func usePorts(path string, conflicts []portConflict) error {
-	fi, err := os.Stat(path)
+	fi, err := os.Lstat(path)
 	if err != nil {
 		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file; change its ports there", path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -166,5 +169,5 @@ func usePorts(path string, conflicts []portConflict) error {
 		}
 		data = next
 	}
-	return os.WriteFile(path, data, fi.Mode().Perm())
+	return replaceFile(path, data, fi.Mode().Perm())
 }

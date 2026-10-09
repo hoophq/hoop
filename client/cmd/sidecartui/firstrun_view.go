@@ -394,9 +394,9 @@ func (m firstRunModel) connectFrame() string {
 	case p.busy != "":
 		status = append(status, shimmer(p.busy, m.now()))
 	case p.status != "" && p.bad:
-		status = append(status, lipgloss.NewStyle().Width(w).Inherit(stDanger).Render(p.status))
+		status = append(status, lipgloss.NewStyle().Width(w).Inherit(stDanger).Render(clean(p.status)))
 	case p.status != "":
-		status = append(status, lipgloss.NewStyle().Width(w).Inherit(stPrimary).Render(p.status))
+		status = append(status, lipgloss.NewStyle().Width(w).Inherit(stPrimary).Render(clean(p.status)))
 	}
 	k := func(key, what string) string { return stKey.Render(key) + stFaint.Render(" "+what+"   ") }
 	hints := k("↑↓", "move") + k("type", "a value") + k("enter", "choose") + k("esc", "back")

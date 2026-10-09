@@ -114,14 +114,31 @@ func (p *connectPage) planeInput() (planeURL, token string, err error) {
 	if perr != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", "", fmt.Errorf("%q is not a web address; it starts with https:// and names a host", planeURL)
 	}
-	// The token travels in the handshake's headers: over plain http a
-	// remote plane would receive it in the clear. http stays for a plane on
-	// this machine, which is how one is run in development.
-	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
-		return "", "", fmt.Errorf("%s would send the sidecar token unencrypted; use https:// "+
-			"(http:// is accepted only for a Control Plane on this machine)", planeURL)
+	if err := PlaneTransportError(planeURL); err != nil {
+		return "", "", err
 	}
 	return planeURL, token, nil
+}
+
+// PlaneTransportError refuses a Control Plane URL that would expose the
+// sidecar token: plain http to another machine, or a user and password in
+// the URL, which the reconnect hint would print. http stays for a plane on
+// this machine, which is how one is run in development.
+func PlaneTransportError(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%q is not a web address", raw)
+	}
+	if u.User != nil {
+		return fmt.Errorf("%s holds a user name or password; remove it, the sidecar token is the credential", u.Redacted())
+	}
+	// The token travels in the handshake's headers: over plain http a
+	// remote plane would receive it in the clear.
+	if strings.EqualFold(u.Scheme, "http") && !isLoopbackHost(u.Hostname()) {
+		return fmt.Errorf("%s would send the sidecar token unencrypted; use https:// "+
+			"(http:// is accepted only for a Control Plane on this machine)", raw)
+	}
+	return nil
 }
 
 // isLoopbackHost is whether host names this machine: localhost, or a
@@ -177,6 +194,11 @@ func saveLicense(input, dir string) (string, license.Status, error) {
 			return "", license.Status{}, fmt.Errorf("that is not a license, and no file is at %s", v)
 		}
 		doc = strings.TrimSpace(string(b))
+		// license.Load reads a value that is not a document as a path.
+		// Saved, that path would stand in for the license it names.
+		if !strings.HasPrefix(doc, "{") {
+			return "", license.Status{}, fmt.Errorf("%s does not hold a license document", v)
+		}
 	}
 	st := license.Load(license.Ref{Value: doc, Source: "the license you entered"})
 	switch st.State() {
@@ -194,12 +216,12 @@ func saveLicense(input, dir string) (string, license.Status, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", st, err
 	}
-	path := filepath.Join(dir, LicenseFile)
-	if err := os.WriteFile(path, []byte(doc+"\n"), 0o600); err != nil {
+	// MkdirAll keeps the mode of a folder that was already there.
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return "", st, err
 	}
-	// WriteFile keeps the mode of a file that was already there.
-	if err := os.Chmod(path, 0o600); err != nil {
+	path := filepath.Join(dir, LicenseFile)
+	if err := replaceFile(path, []byte(doc+"\n"), 0o600); err != nil {
 		return "", st, err
 	}
 	return path, st, nil
