@@ -56,14 +56,11 @@ export function PendingReviewPanel({
   const resumeAfterReview = useNativeAccessStore((s) => s.resumeAfterReview)
   const closeDrawer = useNativeConnectionsStore((s) => s.close)
 
-  // Client-side navigation: the legacy panel used to ignore a param-only move
-  // like /sessions/A → /sessions/B, which is why this briefly did a full page
-  // load. That is fixed at the source now — webapp/src/webapp/events.cljs
-  // records the pathname and main-panel keys the panel on it — so the drawer
-  // can navigate without throwing away the app's state.
+  // The requester sees their own request on /approvals (owner visibility in
+  // gateway/models/reviews.go), so the button opens the approval itself.
   const viewReview = () => {
     closeDrawer()
-    navigate(`/sessions/${sessionId}`)
+    navigate(`/approvals/${encodeURIComponent(sessionId)}`)
   }
 
   return (

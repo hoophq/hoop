@@ -81,7 +81,7 @@ export const NAV = [
 // Gating flags mirror the nav entries above — keep both lists in sync.
 const SUGGESTION_ITEMS = [
   { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true },
-  { id: 'reviews', label: 'Approvals', description: 'Decide pending requests', icon: View, path: '/approvals' },
+  { id: 'reviews', label: 'Pending Approvals', description: 'Approve or reject requests', icon: View, path: '/approvals' },
 ]
 
 const QUICK_ACCESS_ITEMS = [
