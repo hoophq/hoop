@@ -183,6 +183,7 @@ func TestViewRenders(t *testing.T) {
 			m.st.ApplyLog(rec)
 		}
 	}
+	m.tour = newTour(&DemoOptions{})
 	for _, size := range [][2]int{{60, 14}, {80, 24}, {109, 30}, {140, 40}, {220, 60}} {
 		var tm tea.Model = m
 		tm, _ = tm.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})

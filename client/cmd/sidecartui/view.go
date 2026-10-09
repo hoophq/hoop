@@ -3,6 +3,7 @@ package sidecartui
 import (
 	"fmt"
 	"image/color"
+	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -101,7 +102,10 @@ func (m model) header() string {
 		chip("✕", num(m.st.Denied), "denied", stDanger, m.st.Denied > 0),
 		chip("▒", num(m.st.Masked), "masked", stStrong, m.st.Masked > 0),
 	}
-	if n := m.st.PendingReviews(); n > 0 && m.tab != tabReviews {
+	if m.controlPlane != "" {
+		// Reviews are decided in the control plane; a count here would
+		// ask the person to come approve what they cannot.
+	} else if n := m.st.PendingReviews(); n > 0 && m.tab != tabReviews {
 		// The one moving thing in the header: something is waiting on a
 		// person, and the hint says where to go.
 		chips = append(chips, shimmer(fmt.Sprintf("⧗ %d awaiting approval · press 3", n), m.now()))
@@ -144,6 +148,14 @@ func (m model) hints() string {
 		keys = []keyHint{{"↑↓", "choose a section"}, {"enter/→", "go in"}, {"/", "filter"}, {"q", "quit"}}
 	case m.zoom:
 		keys = []keyHint{{"esc", "back to the list"}, {"↑↓", "previous / next"}, {"←", "sections"}, {"q", "quit"}}
+	case m.tab == tabTour && m.tour != nil:
+		keys = m.tour.hints()
+	case m.tab == tabReviews && m.controlPlane != "":
+		keys = []keyHint{}
+		if m.openURL != nil {
+			keys = append(keys, keyHint{"o", "open in browser"})
+		}
+		keys = append(keys, keyHint{"c", "copy link"}, keyHint{"←/esc", "sections"}, keyHint{"q", "quit"})
 	case m.tab == tabSystem:
 		keys = []keyHint{{"↑↓", "scroll"}, {"←/esc", "sections"}, {"q", "quit"}}
 	default:
@@ -189,6 +201,12 @@ func (m model) hints() string {
 // details when there is room for both, stacked when not, and the details
 // alone once enter opened them.
 func (m model) content(w, h int) string {
+	if m.tab == tabTour && m.tour != nil {
+		return pane("", m.tour.view(w-4, h-2, m.now()), w, h)
+	}
+	if m.tab == tabReviews && m.controlPlane != "" {
+		return pane("", m.controlPlaneReviews(w-4), w, h)
+	}
 	if m.tab == tabSystem {
 		return pane("", m.systemView(w-4, h-2, m.cur[tabSystem].off), w, h)
 	}
@@ -208,6 +226,38 @@ func (m model) content(w, h int) string {
 	list := pane(m.listTitle(len(keys)), m.list(keys, sel, w-4, lh-3), w, lh)
 	det := pane("", m.detailView(keys, sel, w-4, h-lh-2), w, h-lh)
 	return lipgloss.JoinVertical(lipgloss.Left, list, det)
+}
+
+// controlPlaneReviews is the Approvals section of a sidecar connected to a
+// control plane. Held statements are filed with the plane and decided by
+// its reviewers, so there is nothing to approve here: the section says
+// where approvals happen and links to them.
+func (m model) controlPlaneReviews(w int) string {
+	link := reviewsURL(m.controlPlane)
+	text := lipgloss.NewStyle().Width(w)
+	host := m.controlPlane
+	if u, err := url.Parse(m.controlPlane); err == nil && u.Host != "" {
+		host = u.Host
+	}
+	lines := []string{
+		stStrong.Render("Approvals are managed by the control plane"),
+		"",
+		text.Inherit(stText).Render("This sidecar is connected to " + host + ". Statements held for review are " +
+			"filed there, and approved or rejected there by its reviewers; this terminal cannot decide them."),
+		"",
+		stLabel.Render("REVIEWS FOR THIS SIDECAR"),
+		stPrimary.Underline(true).Render(ansi.Truncate(link, w, "…")),
+		"",
+	}
+	keys := stKey.Render("c") + stFaint.Render(" copy the link")
+	if m.openURL != nil {
+		keys = stKey.Render("o") + stFaint.Render(" open it in your browser   ") + keys
+	}
+	lines = append(lines, keys)
+	if m.cpFlash != "" {
+		lines = append(lines, "", stPrimary.Render(m.cpFlash))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // confirmView asks before stopping the sidecar. No is focused, and filled
@@ -279,7 +329,7 @@ func pane(title, content string, w, h int) string {
 // from there on, so the row would show it only up to its first color. The
 // background is re-applied after every reset instead.
 func withBackground(row string, width int) string {
-	pad := strings.Repeat(" ", max(width-ansi.StringWidth(row), 0))
+	pad := strings.Repeat(paintedBlank, max(width-ansi.StringWidth(row), 0))
 	bg := selectionSequence()
 	if bg == "" {
 		return row + pad
@@ -288,6 +338,19 @@ func withBackground(row string, width int) string {
 	row = strings.ReplaceAll(row, "\x1b[0m", "\x1b[m")
 	return bg + strings.ReplaceAll(row, "\x1b[m", "\x1b[m"+bg) + pad + "\x1b[m"
 }
+
+// paintedBlank pads a painted row: a no-break space, which a terminal draws
+// as a space, one cell wide.
+//
+// Compatibility shim for Bubble Tea v2's renderer (charm.land/bubbletea/v2
+// v2.0.x): it sends a run of trailing blanks as ECH (CSI n X, "erase
+// characters") and a cursor move instead of the blanks themselves. A
+// terminal with background-color erase fills erased cells with the current
+// background; one without (several do) clears them to its default, so a
+// selected row showed its fill only as far as its text. The renderer treats
+// only U+0020 as blank, so U+00A0 is printed, painted, everywhere.
+// TestPaintedPaddingIsNotErased pins the renderer behavior this works around.
+const paintedBlank = "\u00a0"
 
 // selectionSequence is the escape sequence that sets the selection
 // background, taken from what lipgloss renders for it so the two can never

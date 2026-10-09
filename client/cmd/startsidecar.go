@@ -1,13 +1,20 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
+	"sync"
 
+	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/client/cmd/sidecartui"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/version"
@@ -69,7 +76,11 @@ extension picks the parser.
 Run with nothing at all — no config, no flags — and a built-in default
 starts instead: one loopback URL that forwards to the getting-started
 guide. It inspects no traffic; it exists so the first run after the
-install works. Write a config to replace it.
+install works. Write a config to replace it. On an interactive terminal it
+draws a screen instead of the banner, and pressing w there sets up a config:
+pick the demo (an invented API the CLI serves) or a protocol, say where the
+backend is, adjust the default guardrail, masking, analyzer and detection,
+then save it, or save and boot the sidecar on it without restarting.
 
 This command was named "inspect". That name still works as a deprecated
 alias.
@@ -120,16 +131,64 @@ needs a restart.`,
 			return err
 		}
 
+		// Resolved before Setup: in the TUI the person at the terminal
+		// reviews held statements, which is what lets a sidecar with no
+		// control plane load require_review at all. Everywhere else
+		// (a pipe, CI, a container) nobody could answer, and Setup keeps
+		// refusing such a config.
+		stdoutTTY, stdinTTY := term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd()))
+		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv)
+
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
-			if sidecarBareInvocation(cmd, args) {
-				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml",
-					daemon.WithEntrypoint(analytics.EntrypointCLI),
-					daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias))
+			if !sidecarBareInvocation(cmd, args) {
+				// The one genuine usage error here, so let cobra show the flags.
+				cmd.SilenceUsage = false
+				return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG or %s)",
+					daemon.ControlPlaneURLEnv)
 			}
-			// The one genuine usage error here, so let cobra show the flags.
-			cmd.SilenceUsage = false
-			return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG or %s)",
-				daemon.ControlPlaneURLEnv)
+			firstRunOpts := []daemon.Option{
+				daemon.WithEntrypoint(analytics.EntrypointCLI),
+				daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
+			}
+			// A pipe, CI or NO_COLOR keeps the prose banner.
+			if format != sidecartui.FormatTUI || !sidecartui.Interactive(stdoutTTY, stdinTTY) {
+				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml", firstRunOpts...)
+			}
+			// A person at a terminal gets the first-run screen, where they
+			// can set up a config and boot it without restarting.
+			boot, err := sidecartui.RunFirstRun(sidecartui.FirstRunOptions{
+				Version:      daemon.Version,
+				Validate:     validateSidecarConfig,
+				ConnectCheck: checkControlPlane,
+				OpenURL:      openBrowser,
+				LicenseDir:   hoopLicenseDir(),
+				// A license saved on the Connect page is this run's
+				// --license: what is validated and booted next uses it.
+				UseLicense: func(path string) { sidecarLicenseFlag = path },
+			}, func(ctx context.Context, obs daemon.FirstRunObserver) error {
+				return daemon.FirstRunContext(ctx, io.Discard, "hoop start sidecar --config "+configyaml.StarterFile,
+					append(firstRunOpts, daemon.WithFirstRunObserver(obs))...)
+			})
+			if err != nil || boot == nil {
+				return err
+			}
+			// Booted from the first-run screen: from here on this is the
+			// run `hoop start sidecar --config <file>` would have been, or,
+			// connected to a Control Plane, the run with its URL and token.
+			// Both may be set: a plane with no config yet takes the file's on
+			// this first handshake, and manages it from then on.
+			if boot.ControlPlaneURL != "" {
+				if err := os.Setenv(daemon.ControlPlaneURLEnv, boot.ControlPlaneURL); err != nil {
+					return err
+				}
+				sidecarTokenFlag = boot.Token
+			}
+			if boot.ConfigPath != "" {
+				if err := refusePlainPlane(boot.ConfigPath); err != nil {
+					return err
+				}
+			}
+			sidecarConfigFlag = boot.ConfigPath
 		}
 		if sidecarMigrateFlag {
 			if sidecarConfigFlag == "" {
@@ -159,13 +218,6 @@ needs a restart.`,
 			return daemon.WriteMigrated(cfg, configyaml.IsYAML(target), out, os.Stderr)
 		}
 
-		// Resolved before Setup: in the TUI the person at the terminal
-		// reviews held statements, which is what lets a sidecar with no
-		// control plane load require_review at all. Everywhere else
-		// (a pipe, CI, a container) nobody could answer, and Setup keeps
-		// refusing such a config.
-		stdoutTTY, stdinTTY := term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd()))
-		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv)
 		setupOpts := []daemon.Option{
 			daemon.WithLicense(sidecarLicenseFlag),
 			daemon.WithControlPlaneToken(sidecarTokenFlag),
@@ -198,17 +250,156 @@ needs a restart.`,
 			return daemon.PrintLanes(os.Stdout, cfg.Licensing(), lanes)
 		}
 
+		// A config written by the setup screen's demo names the demo API
+		// as its upstream; the CLI serves it for as long as the sidecar
+		// runs, so the demo config works on every boot, not only the first.
+		var notes []string
+		var demo *sidecartui.DemoOptions
+		running := &sidecarDemo{stop: func() {}}
+		if sidecarConfigFlag != "" {
+			running, err = startSidecarDemo(sidecarConfigFlag, cfg)
+			if err != nil {
+				return err
+			}
+			defer running.stop()
+			notes = running.notes
+			if running.ports != nil {
+				demo = &sidecartui.DemoOptions{OpenURL: openBrowser, Ports: *running.ports}
+			}
+		}
+
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
 		// The format only changes how its output reaches the terminal: a
 		// pipe, a file, a container or CI keeps the JSON it always wrote.
+		// Connected to a control plane, approvals are decided there; the
+		// dashboard's Approvals section links to them instead.
+		plane, _, _ := cfg.ControlPlane()
 		return sidecartui.Run(format, sidecartui.Options{
-			Version:   daemon.Version,
-			AuditFile: cfg.Audit.File,
-			Reviewer:  reviewer,
-			Operator:  sidecarOperator(),
-			SaveDir:   sidecarSaveDir(),
-		}, func() error { return daemon.Run(cfg, det) })
+			Version:      daemon.Version,
+			AuditFile:    cfg.Audit.File,
+			Reviewer:     reviewer,
+			Operator:     sidecarOperator(),
+			SaveDir:      sidecarSaveDir(),
+			Notes:        notes,
+			Demo:         demo,
+			ControlPlane: plane,
+			OpenURL:      openBrowser,
+		}, func() error { return errors.Join(daemon.Run(cfg, det), running.err()) })
 	},
+}
+
+// startSidecarDemo serves the demo API when the config at path carries
+// configyaml.DemoAPIKey, and returns what stops it. A config without the key
+// starts nothing. The address must be loopback: the demo API answers anyone
+// who reaches it, and invented data is still not something to expose.
+func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
+	none := &sidecarDemo{stop: func() {}}
+	// The setup screens write the demo key only into YAML. A JSON config
+	// is not parsed as YAML: valid JSON (a \/ escape, a repeated key) can
+	// fail that parse, and would then stop a boot that works without it.
+	if !configyaml.IsYAML(path) {
+		return none, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return none, err
+	}
+	addr, ok, err := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
+	if err != nil || !ok {
+		return none, err
+	}
+	bind, err := loopbackBind(addr)
+	if err != nil {
+		return none, fmt.Errorf("%s: %w", configyaml.DemoAPIKey, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	errc, err := sidecardemo.Serve(ctx, bind)
+	if err != nil {
+		cancel()
+		return none, err
+	}
+	d := &sidecarDemo{stop: cancel}
+	go d.watch(errc)
+	// The tour sends its requests through the listener in front of the
+	// API. Without one, there is nothing to tour: a default port would
+	// reach another service, or nothing at all.
+	for _, l := range cfg.Listeners {
+		// Listen goes into the curl commands shown and copied: only a tcp
+		// loopback address, never a socket path a config could fill with
+		// shell syntax.
+		if l.Network != "" && l.Network != "tcp" {
+			continue
+		}
+		if _, err := loopbackBind(l.Listen); err != nil {
+			continue
+		}
+		if l.Upstream == addr {
+			d.ports = &sidecardemo.Ports{API: addr, Listen: l.Listen}
+			break
+		}
+	}
+	if d.ports == nil {
+		d.notes = []string{"demo API served at " + addr + ", but no listener forwards to it: " +
+			"set a listener's upstream to " + addr + " to try the demo"}
+		return d, nil
+	}
+	d.notes = []string{"demo API served at " + addr + "; try, from another terminal:"}
+	for _, c := range sidecardemo.TryCommands(*d.ports) {
+		d.notes = append(d.notes, "  "+c)
+	}
+	return d, nil
+}
+
+// sidecarDemo is the demo API running beside the sidecar.
+type sidecarDemo struct {
+	stop func()
+	// ports is where the tour sends requests, nil when no listener fronts
+	// the API and the tour stays off.
+	ports *sidecardemo.Ports
+	notes []string
+
+	mu     sync.Mutex
+	failed error
+}
+
+// watch reports a demo API that stops serving while the sidecar runs. The
+// log line reaches the dashboard's Logs and System; err() hands it to the
+// run's result, so it is not lost when the screen closes.
+func (d *sidecarDemo) watch(errc <-chan error) {
+	err := <-errc
+	if err == nil {
+		return
+	}
+	d.mu.Lock()
+	d.failed = err
+	d.mu.Unlock()
+	slog.Error("the demo API stopped serving; the demo listener has nothing to forward to", "error", err.Error())
+}
+
+func (d *sidecarDemo) err() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.failed == nil {
+		return nil
+	}
+	return fmt.Errorf("the demo API stopped: %w", d.failed)
+}
+
+// loopbackBind is the address the demo API binds for addr, which must be
+// this machine's: a literal loopback IP, or localhost bound as 127.0.0.1
+// rather than whatever the resolver maps the name to.
+func loopbackBind(addr string) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", err
+	}
+	if host == "localhost" {
+		return net.JoinHostPort("127.0.0.1", port), nil
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		return "", fmt.Errorf("%s is not a loopback address; the demo API only serves this machine", addr)
+	}
+	return addr, nil
 }
 
 // warnDeprecatedSidecarAlias renders the rename notice to w when the command
@@ -252,6 +443,72 @@ func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
 	return !changed
 }
 
+// checkControlPlane connects to a Control Plane the way the boot that
+// follows the Connect page will: the same Setup, so the handshake runs and
+// a wrong token or an unreachable plane is reported on the page, then the
+// same Validate over the config the plane serves. The URL is passed to this
+// Setup only; the boot sets it for good.
+func checkControlPlane(planeURL, token string) (*daemon.Config, error) {
+	// The URL is passed for this call only: it runs on a screen goroutine,
+	// and a process-wide env var would reach a validation running beside
+	// it, which could then handshake or import its draft.
+	cfg, det, err := daemon.SetupWith("", configyaml.Load, buildSidecarPlugin,
+		daemon.WithControlPlaneURL(planeURL),
+		daemon.WithControlPlaneToken(token),
+		daemon.WithEntrypoint(analytics.EntrypointCLI),
+		daemon.WithLocalReviewer(sidecartui.NewReviewer().For))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := daemon.Validate(cfg, det); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// validateSidecarConfig checks a config the way the boot that follows the
+// setup screen loads it: Setup resolves the license from --license,
+// HOOP_LICENSE or the file, so the rule caps are the ones that will apply,
+// and a terminal reviewer is attached, as the dashboard attaches one, so
+// require_review validates. Then the same Validate --validate runs.
+func validateSidecarConfig(path string) (string, error) {
+	if err := refusePlainPlane(path); err != nil {
+		return "", err
+	}
+	cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildSidecarPlugin,
+		daemon.WithLicense(sidecarLicenseFlag),
+		daemon.WithEntrypoint(analytics.EntrypointCLI),
+		daemon.WithLocalReviewer(sidecartui.NewReviewer().For))
+	if err != nil {
+		return "", err
+	}
+	lanes, err := daemon.Validate(cfg, det)
+	if err != nil {
+		return "", err
+	}
+	noun := "listeners"
+	if len(lanes) == 1 {
+		noun = "listener"
+	}
+	return fmt.Sprintf("%d %s · %s", len(lanes), noun,
+		strings.TrimPrefix(daemon.LimitsSummary(cfg.Licensing()), "limits: ")), nil
+}
+
+// refusePlainPlane refuses a file whose control_plane_url would send the
+// sidecar token in the clear. The first-run screen lists every config in
+// the folder, and checking one runs the handshake: a file in a cloned
+// repository must not take a token exported in this shell.
+func refusePlainPlane(path string) error {
+	cfg, err := configyaml.Load(path)
+	if err != nil || cfg.ControlPlaneURL == "" {
+		return nil // SetupWith reports a file it cannot load
+	}
+	if err := sidecartui.PlaneTransportError(cfg.ControlPlaneURL); err != nil {
+		return fmt.Errorf("%s: control_plane_url: %w", path, err)
+	}
+	return nil
+}
+
 // sidecarOperator names the person reviewing at this terminal: the OS
 // account that started the process, which is who the decision is recorded
 // against.
@@ -274,6 +531,18 @@ func sidecarSaveDir() string {
 		return ""
 	}
 	return filepath.Join(home, ".hoop", "sidecar")
+}
+
+// hoopLicenseDir is where a license entered on the first-run screen is
+// kept: ~/.hoop/license. Not under sidecar/, because a hoop license is the
+// organization's, not this sidecar's. Empty when the home directory is
+// unknown; the screen then says it has nowhere to save one.
+func hoopLicenseDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".hoop", "license")
 }
 
 // sidecarConfigFromEnv reads the config path from the environment. It prefers

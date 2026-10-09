@@ -308,7 +308,7 @@ func (m model) menu(w, h int) string {
 	inner := w - 4
 	items := make([]list.Item, 0, tabCount)
 	lines := make([]string, 0, tabCount)
-	for i := range tabCount {
+	for i := range m.numTabs() {
 		items = append(items, section{i})
 		label := fmt.Sprintf("%d %s", i+1, tabNames[i])
 		count := ""
@@ -318,8 +318,14 @@ func (m model) menu(w, h int) string {
 				count = num(n)
 			}
 		case tabReviews:
-			if n := m.st.PendingReviews(); n > 0 {
+			// Under a control plane the reviews are decided there, so
+			// nothing here is waiting on this person: no count, and no
+			// shimmer asking them to come.
+			if n := m.st.PendingReviews(); n > 0 && m.controlPlane == "" {
 				count = num(n)
+			}
+			if m.controlPlane != "" {
+				count = "↗"
 			}
 		case tabLanes:
 			if n := len(m.st.LaneOrder); n > 0 {
@@ -329,10 +335,29 @@ func (m model) menu(w, h int) string {
 			if len(m.st.Warnings) > 0 {
 				count = "⚠"
 			}
+		case tabTour:
+			done := 0
+			for _, d := range m.tour.done {
+				if d {
+					done++
+				}
+			}
+			count = fmt.Sprintf("%d/%d", done, len(m.tour.done))
 		}
 		gap := strings.Repeat(" ", max(inner-1-lipgloss.Width(label)-lipgloss.Width(count), 1))
 		text := label + gap + count
+		// Approvals belong to the control plane when there is one: the
+		// entry stays, dimmed, so the person can still go there and read
+		// where they are handled.
+		dim := i == tabReviews && m.controlPlane != ""
 		switch {
+		case dim && i == m.tab && m.menuFocus:
+			lines = append(lines, stPrimary.Background(colSelBg).Render("▌")+
+				stFaint.Background(colSelBg).Width(inner-1).Render(text))
+		case dim && i == m.tab:
+			lines = append(lines, " "+stFaint.Background(colSelBg).Width(inner-1).Render(text))
+		case dim:
+			lines = append(lines, " "+stFaint.Render(text))
 		case i == m.tab && m.menuFocus:
 			lines = append(lines, stPrimary.Background(colSelBg).Render("▌")+
 				stPrimary.Background(colSelBg).Width(inner-1).Render(text))
