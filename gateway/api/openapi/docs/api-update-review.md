@@ -67,6 +67,7 @@ These states are managed automatically by the gateway:
 
 ### Review Permissions
 
+- A review the user cannot get with `GET /reviews/{id}` answers `404`, the same as a review that does not exist
 - Reviews can only be performed when the resource status is `PENDING` or `APPROVED`
 - **Resource owners cannot self-approve** - approval requires another member of the same group
 - Users are only eligible to review if they are **not the resource owner** or are **administrators**

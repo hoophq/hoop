@@ -175,6 +175,9 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	req.Status = openapi.ReviewRequestStatusType(strings.ToUpper(string(req.Status)))
 	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow, req.ForceReview, req.RejectionReason)
 	switch err {
+	case ErrNotFound:
+		// The GET answer, so a hidden review reads as one that does not exist.
+		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
 	case ErrNotEligible, ErrSelfApproval, ErrWrongState, ErrNoTimeWindow, ErrExpired:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	case ErrForbidden:
@@ -283,7 +286,8 @@ func slackReviewUpdate(rev *models.Review) *slackservice.UpdateReviewMessageRequ
 // same transaction as the status change, so any downstream consumers (events, API responses,
 // Slack/MCP flows) observe a consistent state.
 func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.ReviewStatusType, timeWindow *models.ReviewTimeWindow, hasForced bool, rejectionReason string) (*models.Review, error) {
-	rev, err := models.GetReviewByIdOrSid(ctx.OrgID, reviewIdOrSid)
+	// Read as the GET reads it: a review the user cannot see does not exist.
+	rev, err := models.GetReviewByIdOrSidForViewer(models.DB, ctx.OrgID, reviewIdOrSid, Viewer(ctx))
 	switch err {
 	case models.ErrNotFound:
 		return nil, ErrNotFound
