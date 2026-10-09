@@ -2,6 +2,7 @@ package sidecartui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -154,7 +155,7 @@ func (m firstRunModel) frStatus(now time.Time) string {
 	case !m.ready:
 		return shimmer("binding a loopback port…", now)
 	case m.visits == 0:
-		return shimmer("waiting for your browser…", now) + stFaint.Render("  open the URL below")
+		return shimmer("waiting for your browser…", now)
 	}
 	ago := short(now.Sub(m.lastVisit))
 	return stPrimary.Render("✓ opened") + stFaint.Render(fmt.Sprintf("  ·  %d visit%s  ·  last %s ago",
@@ -168,37 +169,32 @@ func plural(n int) string {
 	return "s"
 }
 
-// frSteps is the getting-started path, each step ticking off as it happens.
-func (m firstRunModel) frSteps(now time.Time) string {
-	mark := func(n int, done bool) string {
-		if done {
-			return stPrimary.Render(" ✓ ")
-		}
-		return badge(fmt.Sprint(n), colPrimary)
+// getStarted is the Get started panel: the home list, or the file picker
+// while it is open, with what the last choice came to under it.
+func (m firstRunModel) getStarted(w, h int, now time.Time) (title, body string) {
+	var status []string
+	switch {
+	case m.checking != "":
+		status = append(status, shimmer("checking "+filepath.Base(m.checking)+"…", now))
+	case m.invalid != "":
+		name := filepath.Base(m.invalid)
+		status = append(status,
+			stDanger.Bold(true).Render("✕ "+name+" is not a valid sidecar config."),
+			stText.Render("Pick another file, or set one up. To see what is wrong:"),
+			stKey.Render(ansi.Truncate("  hoop start sidecar --validate --config "+shortPath(m.invalid), w, "…")))
+	case m.saved != "":
+		status = append(status, stPrimary.Render("✓ saved "+m.saved)+stFaint.Render("  it is in the list above"))
 	}
-	url := m.url
-	if url == "" {
-		url = "…"
+	room := max(h-len(status)-1, 3)
+	if m.picker != nil {
+		title, body = "Open a config file", m.picker.view(w, room)
+	} else {
+		title, body = "Get started", m.home.view(w, room)
 	}
-	step2 := stText.Render("Press ") + stKey.Render("w") + stText.Render(" to set up a config: ") +
-		stFaint.Render("the demo, or your own database or API")
-	if m.detecting {
-		step2 = shimmer("looking at this machine…", now)
+	if len(status) > 0 {
+		body += "\n\n" + strings.Join(status, "\n")
 	}
-	if m.saved != "" {
-		step2 = stText.Render("Saved ") + stStrong.Render(m.saved) + stFaint.Render("  w to set up another")
-	}
-	step3 := stText.Render("Save and boot it, or run ") + stStrong.Render("hoop start sidecar --config <file>")
-	if m.saved != "" {
-		step3 = stText.Render("Run ") + stStrong.Render("hoop start sidecar --config "+m.saved)
-	}
-	lines := []string{
-		mark(1, m.visits > 0) + "  " + stText.Render("Open ") + stPrimary.Underline(true).Render(url) +
-			stFaint.Render("  the getting-started guide"),
-		mark(2, m.saved != "") + "  " + step2,
-		mark(3, false) + "  " + step3,
-	}
-	return strings.Join(lines, "\n")
+	return title, body
 }
 
 func (m firstRunModel) View() tea.View {
@@ -236,9 +232,17 @@ func (m firstRunModel) render() string {
 		intro += "\n" + wrap.Inherit(stFaint).Render("Port 15321 was busy; a free port was bound instead.")
 	}
 
-	body := pane(stTitle.Render("Get started"), m.frSteps(now), w, 6)
+	// The panel takes what the screen has left under the header, at most
+	// what it needs: the picker can list a long folder.
+	headH := strings.Count(head, "\n") + 1 + 1 + lipgloss.Height(intro) + 1 + 2 + 1 + 1 + 1 + 1 + 1
+	title, gs := m.getStarted(w-4, max(m.height-headH-2, 4), now)
+	body := pane(stTitle.Render(title), gs, w, min(strings.Count(gs, "\n")+4, max(m.height-headH, 6)))
 
-	hints := stKey.Render("w") + stFaint.Render(" set up a config   ") + stKey.Render("q") + stFaint.Render(" quit")
+	k := func(key, what string) string { return stKey.Render(key) + stFaint.Render(" "+what+"   ") }
+	hints := k("↑↓", "move") + k("enter", "choose") + k("w", "set up") + k("o", "open a file") + k("q", "quit")
+	if m.picker != nil {
+		hints = k("type", "a path") + k("↑↓", "move") + k("tab/→", "into a folder") + k("enter", "open") + k("esc", "back")
+	}
 	if m.stopping {
 		hints = stStrong.Render("stopping…") + stFaint.Render("  q again to leave now")
 	}

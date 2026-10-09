@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,6 +38,11 @@ type (
 	frVisitMsg    time.Time
 	frFrameMsg    time.Time
 	frDetectedMsg machine
+	// frCheckedMsg is a chosen config's validation: nil err boots it.
+	frCheckedMsg struct {
+		path string
+		err  error
+	}
 )
 
 // frFrame is the animation step: fast enough that the wordmark's band and a
@@ -74,6 +81,15 @@ type firstRunModel struct {
 	// config; the screen quits and the caller boots it.
 	boot *Boot
 
+	// home is the Get started list: set up, open a file, then the
+	// configs found in dir. picker is the file navigator while it is open.
+	home   menu
+	picker *filePicker
+	// checking is the file being validated before a boot; invalid is the
+	// file that failed, shown until the next choice.
+	checking string
+	invalid  string
+
 	stop     func()
 	stopping bool
 	done     bool
@@ -85,8 +101,63 @@ func newFirstRunModel(version string, now func() time.Time, stop func(), detect 
 	if version == "" || version == "unknown" {
 		version = "dev"
 	}
-	return firstRunModel{now: now, version: version, started: now(), stop: stop,
+	m := firstRunModel{now: now, version: version, started: now(), stop: stop,
 		detect: detect, validate: validate, dir: dir}
+	m.buildHome()
+	return m
+}
+
+// buildHome lists what the person can do, in the order they most likely
+// want it: write a config, point at one they have, or pick one of the
+// configs already in this folder. The folder is read again each time, so a
+// config the setup screens just saved appears in it.
+func (m *firstRunModel) buildHome() {
+	items := []menuItem{
+		{id: "setup", label: "Set up a config file", detail: "pick the demo or a protocol, adjust the defaults, boot"},
+		{id: "open", label: "Open a config file", detail: "browse to a config you already have and boot it"},
+		{note: true, label: "Config files in this folder"},
+	}
+	files := configsIn(m.dir)
+	for _, f := range files {
+		label := filepath.Base(f)
+		if f == m.invalid {
+			items = append(items, menuItem{id: "file:" + f, label: label, detail: "not a valid sidecar config"})
+			continue
+		}
+		items = append(items, menuItem{id: "file:" + f, label: label, detail: "boot the sidecar with it"})
+	}
+	if len(files) == 0 {
+		items = append(items, menuItem{note: true, label: "No config in this directory"})
+	}
+	cur := m.home.cur
+	m.home.items = items
+	m.home.cur = min(cur, len(items)-1)
+	if m.home.items[m.home.cur].note {
+		m.home.cur = 0
+	}
+}
+
+// check validates path off the UI goroutine before it is booted.
+func (m *firstRunModel) check(path string) tea.Cmd {
+	m.checking, m.invalid = path, ""
+	validate := m.validate
+	return func() tea.Msg {
+		if validate == nil {
+			return frCheckedMsg{path: path, err: errors.New("this build has no validator")}
+		}
+		_, err := validate(path)
+		return frCheckedMsg{path: path, err: err}
+	}
+}
+
+// startSetup learns the machine, then opens the setup screens.
+func (m *firstRunModel) startSetup() tea.Cmd {
+	if m.detecting || m.detect == nil {
+		return nil
+	}
+	m.detecting, m.invalid = true, ""
+	detect := m.detect
+	return func() tea.Msg { return frDetectedMsg(detect()) }
 }
 
 func frTick() tea.Cmd {
@@ -125,6 +196,22 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doneMsg:
 		m.done, m.err = true, msg.err
 		return m, tea.Quit
+	case frCheckedMsg:
+		if msg.path != m.checking {
+			return m, nil
+		}
+		m.checking = ""
+		if msg.err != nil {
+			// Not the validator's text: the person chose a file to run,
+			// and the answer is that it cannot be. The reason is one
+			// command away, named on the screen.
+			m.invalid = msg.path
+			m.buildHome()
+			return m, nil
+		}
+		m.picker = nil
+		m.boot = &Boot{ConfigPath: msg.path}
+		return m, tea.Quit
 	}
 	if m.wiz != nil {
 		if k, ok := msg.(tea.KeyPressMsg); ok && k.String() == "ctrl+c" {
@@ -134,26 +221,52 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch ev {
 		case wizExit:
 			m.wiz = nil
+			m.buildHome()
 		case wizSavedOnly:
 			m.saved, m.wiz = m.wiz.saved, nil
+			m.buildHome()
 		case wizBoot:
 			m.boot = &Boot{ConfigPath: m.wiz.saved}
 			return m, tea.Quit
 		}
 		return m, cmd
 	}
-	if k, ok := msg.(tea.KeyPressMsg); ok {
-		switch k.String() {
-		case "q", "ctrl+c", "esc":
-			return m.quit()
-		case "w", "s", "enter":
-			if m.detecting || m.detect == nil {
-				return m, nil
-			}
-			m.detecting = true
-			detect := m.detect
-			return m, func() tea.Msg { return frDetectedMsg(detect()) }
+	k, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return m, nil
+	}
+	if k.String() == "ctrl+c" {
+		return m.quit()
+	}
+	if m.checking != "" {
+		return m, nil
+	}
+	if m.picker != nil {
+		switch path := m.picker.update(k); path {
+		case "":
+		case "back":
+			m.picker, m.invalid = nil, ""
+		default:
+			return m, m.check(path)
 		}
+		return m, nil
+	}
+	switch k.String() {
+	case "q", "esc":
+		return m.quit()
+	case "w", "s":
+		return m, m.startSetup()
+	case "o":
+		m.picker, m.invalid = newFilePicker(m.dir), ""
+		return m, nil
+	}
+	switch id := m.home.update(k); {
+	case id == "setup":
+		return m, m.startSetup()
+	case id == "open":
+		m.picker, m.invalid = newFilePicker(m.dir), ""
+	case strings.HasPrefix(id, "file:"):
+		return m, m.check(strings.TrimPrefix(id, "file:"))
 	}
 	return m, nil
 }
