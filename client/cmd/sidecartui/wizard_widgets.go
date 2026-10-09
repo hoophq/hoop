@@ -176,6 +176,8 @@ type field struct {
 	options     []string
 	optLabel    map[string]string
 	placeholder string
+	// secret masks a text field's value, on screen and off it: a token.
+	secret bool
 
 	// hidden is evaluated on every draw and move, so a field can depend
 	// on another one's value (a rule type, a presence toggle).
@@ -255,6 +257,10 @@ func (f *form) load() {
 	if x := f.focused(); x != nil && (x.kind == fText || x.kind == fInt) {
 		f.input.SetValue(x.text)
 		f.input.Placeholder = x.placeholder
+		f.input.EchoMode = textinput.EchoNormal
+		if x.secret {
+			f.input.EchoMode = textinput.EchoPassword
+		}
 		f.input.CursorEnd()
 		f.input.Focus()
 		return
@@ -345,6 +351,9 @@ func (f *form) valueView(x *field, focused bool) string {
 		if x.text == "" {
 			return stFaint.Render(orDash(x.placeholder))
 		}
+		if x.secret {
+			return stText.Render(strings.Repeat("•", min(len([]rune(x.text)), 24)))
+		}
 		return stText.Render(x.text)
 	case fBool:
 		if x.on {
@@ -384,6 +393,10 @@ func (f *form) view(w, h int) string {
 		}
 	}
 	labelW = min(labelW, max(w/3, 12))
+	// The input gets the room right of the label. Without a width it shows
+	// only the first character of its placeholder, so an empty field read
+	// "h" where it meant https://hoop.example.com.
+	f.input.SetWidth(max(w-labelW-6, 10))
 	var rows []string
 	curRow := 0
 	var help string

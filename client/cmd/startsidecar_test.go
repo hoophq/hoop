@@ -88,6 +88,25 @@ func TestStartSidecarDemoIgnoresAConfigWithoutTheKey(t *testing.T) {
 	stop()
 }
 
+// The Connect page's check is the boot's own handshake: an unreachable
+// plane fails it, and the URL it set for the call does not outlive it.
+func TestCheckControlPlaneReportsAnUnreachablePlane(t *testing.T) {
+	t.Setenv(daemon.ControlPlaneURLEnv, "")
+	t.Setenv("HOOP_LICENSE", "")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close() // nothing answers here now
+	if _, err := checkControlPlane("http://"+addr, "hsc_test"); err == nil {
+		t.Fatal("a plane nobody answers for passed the check")
+	}
+	if v := os.Getenv(daemon.ControlPlaneURLEnv); v != "" {
+		t.Errorf("%s = %q after the check, want it restored", daemon.ControlPlaneURLEnv, v)
+	}
+}
+
 // The setup screen's validator is the boot's own path: Setup, then
 // Validate. It must accept the demo config the screen writes.
 func TestValidateSidecarConfigAcceptsTheDemo(t *testing.T) {

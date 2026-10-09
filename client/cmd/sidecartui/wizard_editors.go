@@ -29,6 +29,9 @@ type draft struct {
 	// demoPorts are the demo's listener and API, moved off the preferred
 	// ones when another program holds them.
 	demoPorts sidecardemo.Ports
+	// license is the license file the config names under its license key,
+	// "" for the free tier.
+	license string
 
 	guardMode string
 	rules     []policy.Rule
@@ -291,7 +294,7 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 	if err != nil {
 		return nil, configyaml.RenderOptions{}, err
 	}
-	cfg := &daemon.Config{}
+	cfg := &daemon.Config{License: d.license}
 	if d.an.on {
 		cfg.Analyzer = &daemon.AnalyzerConfig{Provider: d.an.provider, Model: d.an.model}
 		if d.an.provider == "vertex" {
@@ -374,6 +377,7 @@ func (d *draft) renderOptions(l daemon.ListenerConfig) configyaml.RenderOptions 
 		},
 		Comments: map[string][]string{
 			"listeners":  {"Clients connect to `listen`; the sidecar forwards to `upstream`."},
+			"license":    {"The license this sidecar runs under: the file holding the document hoop issued.", "It lifts the free tier's one-rule caps."},
 			"guardrails": {"What may run. Without a license a sidecar enforces one guardrail rule", "and one data masking rule; a license lifts both caps."},
 			"mask":       {"Rewrites sensitive values in results before the client sees them."},
 			"pii":        {"Which sensitive-data types the detector knows. Absent means all of them."},

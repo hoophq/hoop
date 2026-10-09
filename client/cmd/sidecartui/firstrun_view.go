@@ -290,6 +290,8 @@ func (m firstRunModel) getStarted(w, h int, now time.Time) (title, body string) 
 			stDanger.Bold(true).Render("✕ "+name+" is not a valid sidecar config."),
 			stText.Render("Pick another file, or set one up. To see what is wrong:"),
 			stKey.Render(ansi.Truncate("  hoop start sidecar --validate --config "+shortPath(m.invalid), w, "…")))
+	case m.licenseNote != "":
+		status = append(status, stPrimary.Render("✓ ")+stText.Render(ansi.Truncate("Running under your "+m.licenseNote+".", w-2, "…")))
 	case m.portErr != "":
 		status = append(status, stDanger.Bold(true).Render("✕ the port could not be changed: ")+stText.Render(m.portErr))
 	case m.saved != "":
@@ -327,6 +329,9 @@ func (m firstRunModel) render() string {
 	}
 	if m.wiz != nil {
 		return m.wizardFrame()
+	}
+	if m.connect != nil {
+		return m.connectFrame()
 	}
 	now := m.now()
 	w := min(m.width-2, 92)
@@ -376,6 +381,41 @@ func (m firstRunModel) render() string {
 	}
 	page = ansiClamp(page, m.width)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, page)
+}
+
+// connectFrame draws the Connect page over the whole screen: it is taller
+// than the space under the welcome, and it is a page of its own.
+func (m firstRunModel) connectFrame() string {
+	p := m.connect
+	w := min(m.width-4, 100)
+	header := stBrand.Render("hoop") + " " + stStrong.Render("sidecar") + "  " + stPrimary.Render("Connect to a Control Plane")
+	var status []string
+	switch {
+	case p.busy != "":
+		status = append(status, shimmer(p.busy, m.now()))
+	case p.status != "" && p.bad:
+		status = append(status, lipgloss.NewStyle().Width(w).Inherit(stDanger).Render(p.status))
+	case p.status != "":
+		status = append(status, lipgloss.NewStyle().Width(w).Inherit(stPrimary).Render(p.status))
+	}
+	k := func(key, what string) string { return stKey.Render(key) + stFaint.Render(" "+what+"   ") }
+	hints := k("↑↓", "move") + k("type", "a value") + k("enter", "choose") + k("esc", "back")
+	statusH := 0
+	if len(status) > 0 {
+		statusH = lipgloss.Height(strings.Join(status, "\n")) + 1
+	}
+	room := max(m.height-1-1-statusH-1-2, 6)
+	body := pane("", p.form.view(w-4, room), w, room+2)
+	parts := []string{header, "", body}
+	if len(status) > 0 {
+		parts = append(parts, strings.Join(status, "\n"))
+	}
+	parts = append(parts, hints)
+	page := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	if lines := strings.Split(page, "\n"); len(lines) > m.height {
+		page = strings.Join(lines[:m.height], "\n")
+	}
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, ansiClamp(page, m.width))
 }
 
 // wizardFrame draws the setup screens: a header with where the person is,

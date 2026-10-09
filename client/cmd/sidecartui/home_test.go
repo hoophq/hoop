@@ -32,7 +32,7 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
-// Get started is set up first, open a file second, then the folder's own
+// Get started is set up first, connect second, open a file third, then the folder's own
 // configs, and it never shows the guide's link.
 func TestGetStartedListsSetupOpenThenTheFolderConfigs(t *testing.T) {
 	dir := t.TempDir()
@@ -45,7 +45,7 @@ func TestGetStartedListsSetupOpenThenTheFolderConfigs(t *testing.T) {
 	for _, it := range m.home.items {
 		ids = append(ids, it.id)
 	}
-	want := "setup,open,,file:" + filepath.Join(dir, "a.yml") + ",file:" + filepath.Join(dir, "b.yaml")
+	want := "setup,connect,open,,file:" + filepath.Join(dir, "a.yml") + ",file:" + filepath.Join(dir, "b.yaml")
 	if got := strings.Join(ids, ","); got != want {
 		t.Errorf("home = %s\nwant   %s", got, want)
 	}

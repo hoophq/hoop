@@ -45,8 +45,12 @@ var pageTitle = map[wizPage]string{
 // Boot is what the setup screens hand back when the person chose to start
 // the sidecar on what they wrote.
 type Boot struct {
-	// ConfigPath is the saved config.
+	// ConfigPath is the saved config, "" when booting on a Control Plane.
 	ConfigPath string
+	// ControlPlaneURL and Token connect the sidecar to a Control Plane,
+	// which then supplies its whole config; set instead of ConfigPath.
+	ControlPlaneURL string
+	Token           string
 }
 
 type (
@@ -69,10 +73,13 @@ type (
 var errDraft = errors.New("the config is incomplete")
 
 type wizard struct {
-	now  func() time.Time
-	page wizPage
-	mach machine
-	d    *draft
+	now func() time.Time
+	// license is the license file saved on the Connect page, "" for none;
+	// every draft started here carries it as its license key.
+	license string
+	page    wizPage
+	mach    machine
+	d       *draft
 
 	protos   menu
 	overview menu
@@ -192,6 +199,7 @@ func (w *wizard) choose(id string) (tea.Cmd, wizEvent) {
 			w.saveErr = err
 			return nil, wizNone
 		}
+		d.license = w.license
 		w.d = d
 	}
 	if demo {

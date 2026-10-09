@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -27,6 +28,17 @@ type FirstRunOptions struct {
 	Getenv func(string) string
 	// Dir is where the config is saved; the current directory when "".
 	Dir string
+	// ConnectCheck connects to a Control Plane the way the boot that
+	// follows will (the handshake included) and returns the config the
+	// plane serves. The CLI injects it, as it does Validate.
+	ConnectCheck func(planeURL, token string) (*daemon.Config, error)
+	// OpenURL opens a link in the person's browser; nil hides the option.
+	OpenURL func(string) error
+	// LicenseDir is where a license entered on the Connect page is saved.
+	LicenseDir string
+	// UseLicense tells the CLI a license was saved at path, so what it
+	// validates and boots from here on runs under it.
+	UseLicense func(path string)
 }
 
 // Messages first-run mode sends the screen.
@@ -45,6 +57,13 @@ type (
 		// conflicts are ports the config binds that another program
 		// holds; the boot waits on the person's answer.
 		conflicts []portConflict
+	}
+	// frConnectedMsg is a Control Plane connection's check: nil err and
+	// no conflicts boots on it.
+	frConnectedMsg struct {
+		planeURL, token string
+		err             error
+		conflicts       []string
 	}
 )
 
@@ -97,6 +116,17 @@ type firstRunModel struct {
 	ports   *portAsk
 	portErr string
 
+	// connect is the Connect to a Control Plane page while it is open.
+	connect      *connectPage
+	connectCheck func(planeURL, token string) (*daemon.Config, error)
+	openURL      func(string) error
+	licenseDir   string
+	useLicense   func(path string)
+	// licensePath is the license saved on the Connect page, and
+	// licenseNote what it is; the configs set up from here carry it.
+	licensePath string
+	licenseNote string
+
 	stop     func()
 	stopping bool
 	done     bool
@@ -121,6 +151,7 @@ func newFirstRunModel(version string, now func() time.Time, stop func(), detect 
 func (m *firstRunModel) buildHome() {
 	items := []menuItem{
 		{id: "setup", label: "Set up a config file", detail: "pick the demo or a protocol, adjust the defaults, boot"},
+		{id: "connect", label: "Connect to a Control Plane", detail: "Enterprise: manage this sidecar from the hoop web app, or start with a license"},
 		{id: "open", label: "Open a config file", detail: "browse to a config you already have and boot it"},
 		{note: true, label: "Config files in this folder"},
 	}
@@ -176,6 +207,67 @@ func (m *firstRunModel) usePortsAndRetry() tea.Cmd {
 		return nil
 	}
 	return m.check(path)
+}
+
+// connectKey drives the Connect page: connect and boot, talk to us, save a
+// license, or go back.
+func (m firstRunModel) connectKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	p := m.connect
+	if p.busy != "" {
+		return m, nil
+	}
+	cmd, ev := p.form.update(k)
+	switch ev {
+	case "back":
+		m.connect = nil
+		m.buildHome()
+	case "meet":
+		p.status, p.bad = "Opened "+MeetURL+" in your browser.", false
+		if m.openURL == nil {
+			p.status = "Open " + MeetURL + " in your browser to talk to us."
+		} else if err := m.openURL(MeetURL); err != nil {
+			p.status, p.bad = "Could not open a browser; go to "+MeetURL+" to talk to us.", true
+		}
+	case "connect":
+		planeURL, token, err := p.connectInput()
+		if err != nil {
+			p.status, p.bad = err.Error(), true
+			return m, cmd
+		}
+		if m.connectCheck == nil {
+			p.status, p.bad = "this build cannot connect to a Control Plane", true
+			return m, cmd
+		}
+		host := planeURL
+		if u, err := url.Parse(planeURL); err == nil {
+			host = u.Host
+		}
+		p.busy, p.status = "connecting to "+host+"…", ""
+		check := m.connectCheck
+		return m, func() tea.Msg {
+			cfg, err := check(planeURL, token)
+			msg := frConnectedMsg{planeURL: planeURL, token: token, err: err}
+			if err == nil {
+				msg.conflicts = connectConflicts(cfg)
+			}
+			return msg
+		}
+	case "savelicense":
+		p.form.store()
+		path, st, err := saveLicense(p.form.byID("license").text, m.licenseDir)
+		if err != nil {
+			p.status, p.bad = "✕ "+err.Error(), true
+			return m, cmd
+		}
+		m.licensePath, m.licenseNote = path, licenseLine(st)
+		if m.useLicense != nil {
+			m.useLicense(path)
+		}
+		p.form.byID("license").text = ""
+		p.status, p.bad = "✓ Saved the "+m.licenseNote+" to "+shortPath(path)+
+			". Configs you set up or open from here now run under it.", false
+	}
+	return m, cmd
 }
 
 // portAsk is the dialog that offers free ports for the ones in use.
@@ -265,10 +357,28 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case frDetectedMsg:
 		m.detecting = false
 		m.wiz = newWizard(machine(msg), m.validate, m.dir, m.now)
+		m.wiz.license = m.licensePath
 		return m, nil
 	case doneMsg:
 		m.done, m.err = true, msg.err
 		return m, tea.Quit
+	case frConnectedMsg:
+		p := m.connect
+		if p == nil {
+			return m, nil
+		}
+		p.busy = ""
+		switch {
+		case msg.err != nil:
+			p.status, p.bad = "✕ Could not connect: "+firstLine(msg.err), true
+		case len(msg.conflicts) > 0:
+			p.status, p.bad = "✕ Connected, but "+strings.Join(msg.conflicts, "; ")+
+				". Change it in the Control Plane, or stop that program, then connect again.", true
+		default:
+			m.boot = &Boot{ControlPlaneURL: msg.planeURL, Token: msg.token}
+			return m, tea.Quit
+		}
+		return m, nil
 	case frCheckedMsg:
 		if msg.path != m.checking {
 			return m, nil
@@ -334,6 +444,9 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.checking != "" {
 		return m, nil
 	}
+	if m.connect != nil {
+		return m.connectKey(k)
+	}
 	if m.picker != nil {
 		switch path := m.picker.update(k); path {
 		case "":
@@ -356,6 +469,8 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch id := m.home.update(k); {
 	case id == "setup":
 		return m, m.startSetup()
+	case id == "connect":
+		m.connect, m.invalid = newConnectPage(m.licenseDir), ""
 	case id == "open":
 		m.picker, m.invalid = newFilePicker(m.dir), ""
 	case strings.HasPrefix(id, "file:"):
@@ -393,6 +508,7 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 		return detect(dctx, getenv)
 	}
 	m := newFirstRunModel(opts.Version, time.Now, cancel, detect, opts.Validate, opts.Dir)
+	m.connectCheck, m.openURL, m.licenseDir, m.useLicense = opts.ConnectCheck, opts.OpenURL, opts.LicenseDir, opts.UseLicense
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout), tea.WithInput(os.Stdin), tea.WithoutSignalHandler())
 
 	obs := daemon.FirstRunObserver{
@@ -427,7 +543,13 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 		if derr != nil {
 			return nil, fmt.Errorf("stopping the first-run listener before boot: %w", derr)
 		}
-		fmt.Fprintf(os.Stdout, "hoop sidecar: booting %s\n", fm.boot.ConfigPath)
+		if fm.boot.ControlPlaneURL != "" {
+			fmt.Fprintf(os.Stdout, "hoop sidecar: connecting to %s\n", fm.boot.ControlPlaneURL)
+			fmt.Fprintf(os.Stdout, "  to reconnect later: %s=%s hoop start sidecar --token <your token>\n",
+				daemon.ControlPlaneURLEnv, fm.boot.ControlPlaneURL)
+		} else {
+			fmt.Fprintf(os.Stdout, "hoop sidecar: booting %s\n", fm.boot.ConfigPath)
+		}
 		return fm.boot, nil
 	}
 	fmt.Fprint(os.Stdout, fm.farewell())
