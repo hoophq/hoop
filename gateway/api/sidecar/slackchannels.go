@@ -70,6 +70,11 @@ func slackChannelRows(sidecar *models.Sidecar, req openapi.SidecarSlackChannels)
 	seen := map[string]bool{}
 	for _, l := range req.Listeners {
 		name := strings.TrimSpace(l.Name)
+		// Such a listener has no mirror, and the index cannot hold its name.
+		if n := len(name); n > models.MaxSidecarListenerNameBytes {
+			return nil, fmt.Sprintf("listener name is %d bytes, over %d; rename the listener to set its channels",
+				n, models.MaxSidecarListenerNameBytes)
+		}
 		if !known[name] {
 			return nil, fmt.Sprintf("sidecar %s has no listener named %q", sidecar.Name, name)
 		}
