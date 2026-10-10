@@ -75,7 +75,7 @@ func TestPluginBuilderDelegatesToTheCodec(t *testing.T) {
 
 // A plug-in loads once per process in production, but -validate and Run in
 // one test process, or an embedder loading twice, must not crash on a
-// second registration — while a shipped protocol stays unreplaceable.
+// second registration; a shipped protocol stays unreplaceable.
 func TestSetPluginBuilderReplacesAndRefusesShippedNames(t *testing.T) {
 	p := inspect.Protocol("x-replace-me")
 	if err := analyzer.SetPluginBuilder(p, analyzer.GenericBuilder{Protocol_: p}); err != nil {

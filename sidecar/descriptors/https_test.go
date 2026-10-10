@@ -34,8 +34,8 @@ func TestHTTPSFetchesThroughTheGivenClient(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// The server's own client trusts its certificate; the stock client does
-	// not, which is the point: the fetch rides the client it is handed.
+	// The server's own client trusts its certificate and the stock client
+	// does not: the fetch rides the client it is handed.
 	blob, err := Fetch(context.Background(), srv.URL+"/ok.pb", srv.Client())
 	if err != nil || string(blob) != "descriptor bytes" {
 		t.Fatalf("fetch = %q, %v", blob, err)

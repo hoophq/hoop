@@ -50,7 +50,7 @@ func TestPartialFrameWaitsAndBadOpcodeFailsAtOnce(t *testing.T) {
 		t.Fatalf("frame plus dangling header: %+v %v", d, err)
 	}
 	if _, err := a.Decode(codec.Client, []byte("X")); err == nil {
-		t.Fatal("opcode is judged before the length arrives")
+		t.Fatal("the codec judges the opcode before the length arrives")
 	}
 	if _, err := a.Decode(codec.Client, encode('C', nil)); err == nil {
 		t.Fatal("a server opcode from the client")
@@ -127,7 +127,7 @@ func TestRewriteMasksCellsByColumnAndRecomputesLengths(t *testing.T) {
 	row := rowFrame([]byte("2"), []byte("c@d"))
 	first, _ := a.Rewrite(row[:7], func(_ string, v []byte) []byte { return v })
 	if len(first.Bytes) != 0 {
-		t.Fatal("a split frame is held")
+		t.Fatal("the codec holds a split frame")
 	}
 	second, _ := a.Rewrite(row[7:], func(string, []byte) []byte { return []byte("x") })
 	if !bytes.Equal(second.Bytes, rowFrame([]byte("x"), []byte("x"))) {

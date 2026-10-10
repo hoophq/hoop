@@ -85,7 +85,7 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	// The codec plug-in host, same rule: a `plugins` block must not need a
-	// different binary. wazero is confined to codec/wasm's own module.
+	// different binary. wazero stays in codec/wasm's own module.
 	"github.com/hoophq/hoop/sidecar/codec/wasm"
 	"github.com/hoophq/hoop/sidecar/codec/wasm/conformance"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
@@ -110,7 +110,7 @@ func main() {
 	// same way the Loader is.
 	daemon.YAMLFromJSON = configyaml.FromJSON
 	// The daemon cannot import the wasm host (its module carries wazero),
-	// so the loader and the -codec-test runner are injected the same way.
+	// so main injects the loader and the -codec-test runner the same way.
 	daemon.LoadCodecPlugin = func(ctx context.Context, module []byte) (daemon.CodecPlugin, error) {
 		return wasm.Load(ctx, module)
 	}

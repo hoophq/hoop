@@ -7,10 +7,10 @@
 //! token). The server answers with `C` (column names separated by 0x00),
 //! `D` (one row: cells of `u32 length + bytes`), `R` (a `u32` row count)
 //! and `E` (an error message). Either side may pad with 0x00 bytes between
-//! frames as a keepalive. Every capability of the ABI is exercised: `deny`
-//! renders an `E` frame, `filter` strips the padding, `rewrite` masks `D`
-//! cells, `credential` lifts the `A` token, `content` renders for the
-//! analyzer.
+//! frames as a keepalive. The example exercises every capability of the
+//! ABI: `deny` renders an `E` frame, `filter` strips the padding, `rewrite`
+//! masks `D` cells, `credential` lifts the `A` token, `content` renders
+//! for the analyzer.
 
 use std::collections::BTreeMap;
 
@@ -62,7 +62,7 @@ pub struct AcmeWire {
     columns: Vec<String>,
 }
 
-/// Where the filter is in the current frame of one direction.
+/// The filter's position in the current frame of one direction.
 #[derive(Default)]
 struct FrameCursor {
     /// Header bytes seen so far, fewer than HEADER_LEN.
@@ -105,9 +105,9 @@ fn encode(opcode: u8, payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// The opcodes each side may send. Checked on the first byte, so a bogus
-/// opcode with a huge length fails now instead of after the host buffered
-/// `max_reassembly` bytes waiting for it.
+/// The opcodes each side may send. The codec checks the first byte, so a
+/// bogus opcode with a huge length fails now instead of after the host
+/// buffered `max_reassembly` bytes waiting for it.
 fn known(dir: Direction, opcode: u8) -> bool {
     match dir {
         Direction::Client => matches!(opcode, b'Q' | b'P' | b'A'),
@@ -256,8 +256,8 @@ impl Codec for AcmeWire {
     /// any chunking: the cursor remembers how much of the current frame is
     /// still to come, so a zero inside a payload passes through and a
     /// zero between frames does not, whether the two arrive in one read
-    /// or one byte at a time. Up to four header bytes are held until the
-    /// length is known.
+    /// or one byte at a time. The cursor holds up to four header bytes
+    /// until it knows the length.
     fn filter(&mut self, dir: Direction, data: &[u8]) -> Vec<u8> {
         let cursor = &mut self.filter[dir as usize];
         let mut out = Vec::with_capacity(data.len());
@@ -292,7 +292,8 @@ impl Codec for AcmeWire {
 
     /// Rebuilds every complete `D` frame with masked cells and forwards the
     /// other frames untouched. A frame split across chunks waits in
-    /// `rewrite_buf` for its tail; nothing is held once it is complete.
+    /// `rewrite_buf` for its tail; the buffer holds nothing once the frame
+    /// is complete.
     fn rewrite(&mut self, data: &[u8], mask: &mut dyn FnMut(&str, &[u8]) -> Vec<u8>) -> Result<Rewritten, String> {
         self.rewrite_buf.extend_from_slice(data);
         let mut out = Rewritten::default();
@@ -323,10 +324,10 @@ impl Codec for AcmeWire {
         Ok(out)
     }
 
-    /// Nothing is ever held but an incomplete frame, and a frame without
-    /// its tail cannot be rebuilt or safely forwarded: forwarding it would
-    /// leak the cells `mask` never saw. The connection is ending, so the
-    /// fragment is dropped.
+    /// The buffer holds at most one incomplete frame, and a frame without
+    /// its tail cannot be rebuilt: forwarding it would leak the cells
+    /// `mask` never saw. The connection is ending, so `flush` drops the
+    /// fragment.
     fn flush(&mut self, _mask: &mut dyn FnMut(&str, &[u8]) -> Vec<u8>) -> Result<Rewritten, String> {
         self.rewrite_buf.clear();
         Ok(Rewritten::default())
@@ -401,7 +402,7 @@ mod tests {
         let d = c.decode(Direction::Client, &two).unwrap();
         assert_eq!((d.consumed, d.statements.len()), (11, 1));
 
-        assert!(c.decode(Direction::Client, b"X").is_err(), "opcode is judged before the length arrives");
+        assert!(c.decode(Direction::Client, b"X").is_err(), "the codec judges the opcode before the length arrives");
         assert!(c.decode(Direction::Client, &encode(b'C', b"")).is_err(), "a server opcode from the client");
     }
 
@@ -465,7 +466,7 @@ mod tests {
         let untouched = c.rewrite(&row_frame(&[b"3", b"e@f"]), &mut |_, v| v.to_vec()).unwrap();
         assert_eq!((untouched.cells, untouched.rows), (0, 0));
 
-        // A frame split across two chunks is held, then rebuilt whole.
+        // The codec holds a frame split across two chunks, then rebuilds it whole.
         let row = row_frame(&[b"2", b"c@d"]);
         let first = c.rewrite(&row[..7], &mut |_, v| v.to_vec()).unwrap();
         assert!(first.bytes.is_empty());

@@ -21,7 +21,7 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	// The codec plug-in host, same rule: a `plugins` block must not need
-	// the standalone binary. wazero is confined to codec/wasm's own module.
+	// the standalone binary. wazero stays in codec/wasm's own module.
 	"github.com/hoophq/hoop/sidecar/codec/wasm"
 	"github.com/hoophq/hoop/sidecar/codec/wasm/conformance"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
@@ -126,8 +126,8 @@ needs a restart.`,
 			return err
 		}
 
-		// Same branch as the standalone binary's -codec-test: no config,
-		// no sidecar, just the ABI report for a plug-in author.
+		// Same branch as the standalone binary's -codec-test: it prints
+		// the ABI report for a plug-in author and starts no sidecar.
 		if sidecarCodecTestFlag != "" {
 			return daemon.CodecTest(cmd.Context(), sidecarCodecTestFlag, args, os.Stdout)
 		}
@@ -321,7 +321,7 @@ func init() {
 	// daemon package cannot import it, so the renderer is injected.
 	daemon.YAMLFromJSON = configyaml.FromJSON
 	// The daemon cannot import the wasm host (its module carries wazero),
-	// so the plug-in loader and the --codec-test runner are injected too.
+	// so init injects the plug-in loader and the --codec-test runner too.
 	daemon.LoadCodecPlugin = func(ctx context.Context, module []byte) (daemon.CodecPlugin, error) {
 		return wasm.Load(ctx, module)
 	}

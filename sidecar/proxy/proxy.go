@@ -250,10 +250,10 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 	// Fail at construction rather than on the first connection: an
 	// unsupported protocol is a config error and must surface at startup.
-	// A lane with a CodecFactory speaks whatever the factory builds — a
-	// plug-in protocol the registry never saw — so the factory is probed
-	// instead, and the gate refuses a codec whose protocol is not the
-	// lane's on every connection.
+	// A lane with a CodecFactory speaks whatever the factory builds (a
+	// plug-in protocol the registry never saw), so NewServer probes the
+	// factory, and the gate refuses on every connection a codec whose
+	// protocol is not the lane's.
 	if cfg.CodecFactory != nil {
 		c := cfg.CodecFactory()
 		if c == nil {

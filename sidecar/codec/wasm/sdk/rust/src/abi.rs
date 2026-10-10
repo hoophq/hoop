@@ -30,8 +30,8 @@ pub fn alloc(len: u32) -> u32 {
     ptr as usize as u32
 }
 
-/// Releases a region of exactly `len` bytes that `alloc` or `give` handed
-/// out; the `free` export.
+/// Releases a region of `len` bytes that `alloc` or `give` handed out;
+/// the `free` export.
 ///
 /// # Safety
 /// `ptr` must come from `alloc(len)` or from a `give` of `len` bytes, and
@@ -48,7 +48,7 @@ pub fn give(bytes: Vec<u8>) -> u64 {
         return 0;
     }
     // into_boxed_slice makes capacity == len, which `free` relies on to
-    // rebuild the Vec with the layout it was allocated under.
+    // rebuild the Vec with the layout the allocator handed out.
     let boxed = bytes.into_boxed_slice();
     let len = boxed.len() as u32;
     let ptr = Box::into_raw(boxed) as *mut u8 as usize as u32;
@@ -56,8 +56,8 @@ pub fn give(bytes: Vec<u8>) -> u64 {
 }
 
 /// Takes ownership of a region a host import returned. The host allocated
-/// it through our `alloc`, so the buffer is a Vec of exactly `len` bytes
-/// and dropping it is the `free` the ABI asks for.
+/// it through our `alloc`, so the buffer is a Vec of `len` bytes and
+/// dropping it is the `free` the ABI asks for.
 ///
 /// # Safety
 /// `packed` must be the untouched return value of a host import.
@@ -83,8 +83,8 @@ pub unsafe fn borrow<'a>(ptr: u32, len: u32) -> &'a [u8] {
 }
 
 /// Standard base64 with padding, as RewriteResult carries its bytes.
-/// Written out rather than pulled in: it is twenty lines, and the SDK's
-/// dependency list is part of what a plug-in author audits.
+/// Written out here: it is twenty lines, and the SDK's dependency list
+/// is part of what a plug-in author audits.
 pub fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);

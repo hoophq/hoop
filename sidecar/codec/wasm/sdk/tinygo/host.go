@@ -21,9 +21,9 @@ const (
 type MaskFunc func(column string, value []byte) []byte
 
 // AnalyzeSQL classifies SQL text with the host lexer in the manifest's
-// sql_dialect. The classifier stays in the relay on purpose: one
-// auditable copy serves every plug-in. Copy the result onto a statement
-// with Statement.WithAnalysis.
+// sql_dialect. The classifier stays in the relay: one auditable copy
+// serves every plug-in. Copy the result onto a statement with
+// Statement.WithAnalysis.
 func AnalyzeSQL(sql string) SQLAnalysis {
 	var a SQLAnalysis
 	raw := take(hostAnalyzeSQL(stringRegion(sql)))

@@ -1159,10 +1159,9 @@ func (c *Config) validate(onHost bool) error {
 			// bytes for a registry decoder to be handed. The lane terminates
 			// the handshake and enters at statements the endpoint reports.
 		} else if isPluginLane(l) {
-			// A plug-in protocol is declared by the config, not by the
-			// registry: the module loads on the sidecar host, after this
-			// runs, and the control plane never loads one at all. The
-			// entry is what both can check.
+			// The config declares a plug-in protocol: the module loads on
+			// the sidecar host, after this runs, and the control plane
+			// never loads one at all. Both can check the entry.
 			if !c.pluginDeclared(l.Protocol) {
 				problems = append(problems, fmt.Sprintf(
 					"%s: protocol %q is a plug-in protocol, and no plugins entry declares it",
@@ -1176,7 +1175,7 @@ func (c *Config) validate(onHost bool) error {
 		// nothing.
 		if l.Plugin != nil && !isPluginLane(l) {
 			problems = append(problems, fmt.Sprintf(
-				"%s: a \"plugin\" block is only valid on a listener whose protocol a plugins entry declares, not %s",
+				"%s: a \"plugin\" block is only valid on a listener whose protocol a plugins entry declares, and no entry declares %s",
 				name, l.Protocol))
 		}
 		if l.Listen == "" {
@@ -1450,10 +1449,10 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	// check exists for, and it covers any protocol that relays without
 	// decoding.
 	//
-	// A plug-in lane is exempt: loading its module installs a builder —
-	// the module's own rendering or the generic one — so the check would
+	// A plug-in lane is exempt: loading its module installs a builder (the
+	// module's own rendering or the generic one), so the check would
 	// refuse every plug-in lane on the control plane, which loads nothing,
-	// and on the host it runs before the module is loaded.
+	// and on the host it runs before the host loads the module.
 	if p := inspect.Protocol(lc.Protocol); analyzing && p != "" && !isPluginLane(lc) {
 		if _, ok := analyzer.BuilderFor(p); !ok {
 			problems = append(problems, fmt.Sprintf(
@@ -1521,8 +1520,8 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 					name, lc.Protocol))
 			}
 		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !gate.MaskSupported(p) {
-			// A plug-in lane is answered by its loaded module (the rewrite
-			// capability), which buildMasker asks through the factory; the
+			// The loaded module answers for a plug-in lane (the rewrite
+			// capability), and buildMasker asks it through the factory; the
 			// config alone cannot say, and the plane never loads one.
 			problems = append(problems, fmt.Sprintf(
 				"%s: masking is not supported on %s (its rows are length-prefixed binary "+

@@ -13,10 +13,10 @@ import (
 // directions. The embedded struct supplies libhoop's JSON names; the
 // shadowing Protocol field takes the key away from it. Decoding a guest
 // statement, a non-nil Protocol means the guest wrote the key the host
-// owns, and the statement is refused: a module must not impersonate
-// another protocol. Encoding a host statement for the guest, the nil
-// pointer omits the key, so the guest may hand the same object back
-// untouched.
+// owns, and adoptStatement refuses the statement: a module must not
+// impersonate another protocol. Encoding a host statement for the guest,
+// the nil pointer omits the key, so the guest may hand the same object
+// back untouched.
 type wireStatement struct {
 	inspect.Statement
 	Protocol *string `json:"protocol,omitempty"`
@@ -43,8 +43,8 @@ type contentResult struct {
 	OK       bool   `json:"ok"`
 }
 
-// rewriteResult is RewriteResult of ABI.md. Bytes is base64 in the JSON
-// and decoded by encoding/json on the way in.
+// rewriteResult is RewriteResult of ABI.md. Bytes is base64 in the JSON;
+// encoding/json decodes it on the way in.
 type rewriteResult struct {
 	Bytes []byte `json:"bytes,omitempty"`
 	Cells int    `json:"cells,omitempty"`
@@ -52,9 +52,9 @@ type rewriteResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-// decodeStrict parses one guest payload. Unknown fields are refused, as
-// ABI.md says: a misspelt key silently dropped is a statement a policy
-// never sees.
+// decodeStrict parses one guest payload. It refuses unknown fields, as
+// ABI.md says: a misspelt key dropped without an error is a statement a
+// policy never sees.
 func decodeStrict(raw []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()

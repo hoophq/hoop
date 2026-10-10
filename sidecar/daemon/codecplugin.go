@@ -40,9 +40,10 @@ type CodecPlugin interface {
 }
 
 // LoadCodecPlugin instantiates a plug-in from its module bytes. Nil means
-// this build loads no plug-ins: a config with a `plugins` list is then
-// refused at startup rather than served with lanes that decode nothing.
-// sidecar/cmd/main.go and client/cmd/startsidecar.go set it.
+// this build loads no plug-ins: the daemon then refuses a config with a
+// `plugins` list at startup, because a lane without its module would bind
+// a port and decode nothing. sidecar/cmd/main.go and
+// client/cmd/startsidecar.go set it.
 var LoadCodecPlugin func(ctx context.Context, module []byte) (CodecPlugin, error)
 
 // CodecTester drives `-codec-test`: the ABI's conformance run over a module
@@ -53,11 +54,10 @@ var CodecTester func(ctx context.Context, module []byte, fixtures [][]byte, out 
 // CodecPluginConfig is one `plugins` entry: a module and the protocol it
 // must declare.
 //
-// The protocol is named here, not merely read from the module, so a lane
-// can be validated against the config alone — on the control plane, which
-// never loads a module — and so a module swapped behind a URL cannot
-// quietly retarget a lane: the loader refuses a module whose manifest
-// disagrees with the entry.
+// The entry names the protocol so the validator can check a lane against
+// the config alone (the control plane never loads a module), and so a
+// module swapped behind a URL cannot retarget a lane: the loader refuses a
+// module whose manifest disagrees with the entry.
 type CodecPluginConfig struct {
 	// Protocol is the plug-in's protocol name, `x-` then [a-z0-9_-]. A
 	// listener declares it the way it declares postgres.
@@ -66,9 +66,9 @@ type CodecPluginConfig struct {
 	// descriptors registry resolves (https in every build, gs when linked).
 	Module string `json:"module,omitempty"`
 	// SHA256 is the hex digest of the module bytes. Required for a URL,
-	// because code fetched over the network is run in this process and the
-	// URL alone does not pin what it returns; optional for a file, checked
-	// whenever set.
+	// because this process runs the code it fetched over the network and
+	// the URL alone does not pin what it returns; optional for a file, and
+	// the loader checks it whenever set.
 	SHA256 string `json:"sha256,omitempty"`
 }
 
@@ -77,9 +77,9 @@ type CodecPluginConfig struct {
 // by the `plugins` capability alone.
 var pluginProtocolName = regexp.MustCompile(`^x-[a-z0-9_-]+$`)
 
-// codecPluginFetchTimeout bounds one module download, as the grpc
-// descriptor fetch is bounded: a stall is a startup that never completes,
-// which an operator sees either way.
+// codecPluginFetchTimeout bounds one module download, the way the daemon
+// bounds a grpc descriptor fetch: a stall is a startup that never
+// completes, which an operator sees either way.
 const codecPluginFetchTimeout = 2 * time.Minute
 
 // errNoCodecPluginLoader is the refusal for a `plugins` list in a build
@@ -87,8 +87,8 @@ const codecPluginFetchTimeout = 2 * time.Minute
 var errNoCodecPluginLoader = errors.New("config has a \"plugins\" list but this build loads no codec plug-ins; " +
 	"build github.com/hoophq/hoop/sidecar/cmd, or remove the list")
 
-// validate checks the entries that the config alone can answer for. The
-// module itself is read by loadCodecPlugins, on the sidecar host.
+// validate checks the entries that the config alone can answer for.
+// loadCodecPlugins reads the module itself, on the sidecar host.
 func (p CodecPluginConfig) validate(i int) []string {
 	where := fmt.Sprintf("plugins[%d]", i)
 	if p.Protocol != "" {
@@ -191,8 +191,8 @@ func (i CodecPluginInfo) String() string {
 // knowing which of them ran first. The set is baseline (restart-bound) for
 // the reloader, which carries the running instances onto each new document.
 //
-// Every entry is tried before the first failure is reported, so a config
-// with two broken modules reports both in one restart.
+// The loop tries every entry before it reports the first failure, so a
+// config with two broken modules reports both in one restart.
 func (c *Config) loadCodecPlugins(ctx context.Context) error {
 	if c.codecPlugins != nil || len(c.Plugins) == 0 {
 		return nil
@@ -252,8 +252,8 @@ func loadCodecPlugin(ctx context.Context, entry CodecPluginConfig, client *http.
 	if got := string(plugin.Protocol()); got != entry.Protocol {
 		_ = plugin.Close()
 		return nil, CodecPluginInfo{}, fmt.Errorf(
-			"the module declares protocol %q, not %q; the entry names the protocol its lanes run, "+
-				"so a module for another one is refused rather than retargeting them", got, entry.Protocol)
+			"the module declares protocol %q; the entry expects %q and names the protocol its lanes run, "+
+				"so the loader refuses a module for another one", got, entry.Protocol)
 	}
 	info, err := describeCodecPlugin(plugin, digest)
 	if err != nil {
@@ -268,7 +268,8 @@ func loadCodecPlugin(ctx context.Context, entry CodecPluginConfig, client *http.
 }
 
 // readCodecModule reads the module bytes from a path or a URL the
-// descriptors registry resolves, the way a grpc lane's descriptor set is.
+// descriptors registry resolves, the way the daemon reads a grpc lane's
+// descriptor set.
 func readCodecModule(ctx context.Context, module string, client *http.Client) ([]byte, error) {
 	if descriptors.Scheme(module) == "" {
 		return os.ReadFile(module)
@@ -279,8 +280,8 @@ func readCodecModule(ctx context.Context, module string, client *http.Client) ([
 }
 
 // describeCodecPlugin reads the manifest facts the log reports. The host
-// verified the manifest at load; a manifest this cannot decode is a host
-// bug, and refusing the module says so rather than logging a blank line.
+// verified the manifest at load, so a manifest this cannot decode is a host
+// bug: the loader refuses the module and reports it.
 func describeCodecPlugin(plugin CodecPlugin, digest string) (CodecPluginInfo, error) {
 	var m struct {
 		Version      string   `json:"version"`
@@ -304,8 +305,8 @@ func describeCodecPlugin(plugin CodecPlugin, digest string) (CodecPluginInfo, er
 // refuses an analyzer on such a lane; a plug-in lane always has one, so
 // that check passes for it on the strength of this call.
 //
-// The codec kept for rendering is built with no options and never sees a
-// byte; it is closed with the plug-in.
+// The loader builds the codec kept for rendering with no options; it never
+// sees a byte, and the plug-in's Close releases it.
 func installCodecPluginBuilder(plugin CodecPlugin) error {
 	p := plugin.Protocol()
 	codec := plugin.NewCodec(nil)
@@ -322,7 +323,7 @@ func installCodecPluginBuilder(plugin CodecPlugin) error {
 }
 
 // closeCodecPlugins releases every loaded module, after the lanes that run
-// them are down. Every error is reported; the first is returned.
+// them are down. It joins every error into the one it returns.
 func (c *Config) closeCodecPlugins() error {
 	var errs []error
 	for p, plugin := range c.codecPlugins {
@@ -373,8 +374,8 @@ var errNoCodecTester = errors.New("this build cannot test codec plug-ins; " +
 	"build github.com/hoophq/hoop/sidecar/cmd")
 
 // CodecTest runs the ABI conformance checks over the module at path and the
-// fixture files, writing the report to out. It is what -codec-test calls;
-// exported so `hoop start sidecar` can offer the same flag.
+// fixture files, writing the report to out. The -codec-test flag calls it,
+// and `hoop start sidecar` offers the same flag through the export.
 func CodecTest(ctx context.Context, path string, fixturePaths []string, out io.Writer) error {
 	if CodecTester == nil {
 		return errNoCodecTester

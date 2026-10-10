@@ -93,8 +93,8 @@ const (
 	AccessWrite Access = "write"
 )
 
-// Relation is one relation a statement touches, and how. Names are
-// lowercased by the guest.
+// Relation is one relation a statement touches, and how. The guest
+// lowercases names.
 type Relation struct {
 	Name   string `json:"name"`
 	Access Access `json:"access"`
@@ -117,8 +117,8 @@ type ResultDetail struct {
 // evaluates. Field names are inspect.Statement's. There is no Protocol:
 // the host fills it and refuses a guest that sets it.
 //
-// Direction may be left empty on a decoded statement; the host fills it
-// with the direction of the decode call.
+// A codec may leave Direction empty on a decoded statement; the host
+// fills it with the direction of the decode call.
 type Statement struct {
 	Direction Direction         `json:"direction,omitempty"`
 	Text      string            `json:"text"`
@@ -192,7 +192,7 @@ type Rewritten struct {
 // Content is what ContentRenderer renders for the AI analyzer.
 type Content struct {
 	Text string
-	// CacheKey names the statement's SHAPE with literals stripped, so one
+	// CacheKey names the statement's shape with literals stripped, so one
 	// verdict serves repeats. Empty means never cache.
 	CacheKey string
 }
@@ -223,8 +223,8 @@ type OptionSpec struct {
 const ABIVersion = 1
 
 // Manifest is what describe returns. Serve sets ABI; the rest is the
-// plug-in's to fill. Capabilities must name exactly the build tags the
-// module was built with, and describe traps when they differ.
+// plug-in's to fill. Capabilities must name the same set as the build
+// tags the build turned on, and describe traps when they differ.
 type Manifest struct {
 	ABI              int          `json:"abi"`
 	Protocol         string       `json:"protocol"`

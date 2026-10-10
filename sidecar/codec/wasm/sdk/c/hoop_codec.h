@@ -6,7 +6,7 @@
  *   clang --target=wasm32-unknown-unknown -nostdlib -fno-builtin -O2 \
  *     -Wl,--no-entry -o plugin.wasm plugin.c
  *
- * HOOP_EXPORT marks a function exported, so no --export flag is needed and
+ * HOOP_EXPORT marks a function exported, so you need no --export flag and
  * nothing else leaks into the export list. -fno-builtin keeps the
  * optimizer from turning a copy loop into a memcpy call there is no libc
  * to satisfy. Linking needs wasm-ld (LLVM's lld).
@@ -40,7 +40,7 @@ enum hoop_log_level { HOOP_LOG_DEBUG = 0, HOOP_LOG_INFO = 1, HOOP_LOG_WARN = 2, 
 
 /* Marks a function as the export `name`. The wasm name is the ABI's; the
  * C name is yours, so `free` and `alloc` need not shadow libc's even when
- * one is linked. */
+ * you link one. */
 #define HOOP_EXPORT(name) __attribute__((export_name(name), visibility("default")))
 
 /* Marks a declaration as the import `name` of module `hoop`. */
@@ -49,8 +49,9 @@ enum hoop_log_level { HOOP_LOG_DEBUG = 0, HOOP_LOG_INFO = 1, HOOP_LOG_WARN = 2, 
 /*
  * Imports. Each returns a packed region (see hoop_pack) the host wrote
  * through your `alloc`; read it, then release it with your `free`. A
- * module calls only what it needs: an unreferenced import is not emitted,
- * and a module that never calls analyze_sql owes the host no sql_dialect.
+ * module calls only what it needs: the linker drops an unreferenced
+ * import, and a module that never calls analyze_sql owes the host no
+ * sql_dialect.
  */
 
 /* Classify SQL with the host lexer in the manifest's sql_dialect; returns
@@ -73,7 +74,7 @@ HOOP_IMPORT("log") void hoop_log(uint32_t level, const char *message, uint32_t l
  * Packed regions. Every export that returns bytes returns one u64:
  * (ptr << 32) | len, and 0 means no output. The host reads len bytes at
  * ptr and then calls free(ptr, len), so the region must come from your
- * allocator and must not be freed by you.
+ * allocator and you must not free it.
  */
 
 /* HOOP_NONE is the packed "no output". */
@@ -103,7 +104,7 @@ static inline uint32_t hoop_strlen(const char *s) {
 /*
  * An arena allocator for the ABI buffers, when the plug-in links no libc.
  *
- * Define HOOP_CODEC_ARENA in exactly one translation unit to get the
+ * Define HOOP_CODEC_ARENA in a single translation unit to get the
  * `alloc` and `free` exports. It is a bump allocator that rewinds when
  * nothing is outstanding: the host frees an export's input right after
  * the export returns and an export's output right after reading it, so
@@ -171,15 +172,15 @@ static inline const uint8_t *hoop_take(uint64_t packed, uint32_t *len) {
 /*
  * Skeleton. A complete plug-in for a protocol whose every frame is one
  * length byte and that many bytes of text; it declares the deny
- * capability and nothing else, so it exports exactly: memory, alloc,
+ * capability and nothing else, so its export list is: memory, alloc,
  * free, describe, decode, open, close, deny. Build it with the clang line
  * at the top of this file.
  *
  *   #define HOOP_CODEC_ARENA
  *   #include "hoop_codec.h"
  *
- *   // JSON is written by hand here; a real plug-in links a JSON encoder
- *   // and escapes its strings. Everything the host reads is UTF-8 JSON.
+ *   // This skeleton writes JSON by hand; a real plug-in links a JSON
+ *   // encoder and escapes its strings. Everything the host reads is UTF-8 JSON.
  *   static const char MANIFEST[] =
  *       "{\"abi\":1,\"protocol\":\"x-skel\",\"label\":\"Skeleton\","
  *       "\"capabilities\":[\"deny\"]}";
@@ -206,8 +207,8 @@ static inline const uint8_t *hoop_take(uint64_t packed, uint32_t *len) {
  *
  *   HOOP_EXPORT("decode") uint64_t skel_decode(uint32_t conn, uint32_t dir, const uint8_t *data, uint32_t len) {
  *       (void)conn; (void)dir;
- *       // One frame: length byte, then text. An incomplete frame is not
- *       // an error; report consumed = 0 and the host retries with more.
+ *       // One frame: length byte, then text. On an incomplete frame,
+ *       // report consumed = 0 and the host retries with more.
  *       if (len == 0 || len < 1u + data[0]) {
  *           static const char EMPTY[] = "{\"statements\":[],\"consumed\":0}";
  *           return hoop_pack(EMPTY, sizeof EMPTY - 1);

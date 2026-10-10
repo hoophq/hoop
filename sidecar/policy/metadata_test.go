@@ -29,8 +29,9 @@ func TestMetadataRuleValidation(t *testing.T) {
 	}
 }
 
-// Keys are ANDed, values ORed, and a key the statement lacks never matches,
-// so a rule written for one protocol's keys stays silent on another lane.
+// The rule ANDs keys and ORs values, and a key the statement lacks never
+// matches, so a rule written for one protocol's keys stays silent on another
+// lane.
 func TestMetadataRuleMatching(t *testing.T) {
 	rules, err := NewRules([]Rule{{
 		Name: "no-purge", Type: MatchMetadata,

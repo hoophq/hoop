@@ -830,8 +830,8 @@ func (*closingCodec) DenyFrame(_ inspect.Direction, message string) []byte {
 
 // A codec that holds a WASM instance or a subprocess leaks it unless the
 // gate closes it with the connection. Both directions share one instance
-// when the codec is Duplex, so the close must not run twice on it; a
-// per-direction codec is closed once per direction.
+// when the codec is Duplex, so the close must not run twice on it; the
+// gate closes a per-direction codec once per direction.
 func TestCloseReleasesEveryCodecOnce(t *testing.T) {
 	var built []*closingCodec
 	g, err := gate.New(newSession(), gate.Config{
@@ -857,14 +857,14 @@ func TestCloseReleasesEveryCodecOnce(t *testing.T) {
 	}
 	for i, c := range built {
 		if c.closed != 1 {
-			t.Errorf("codec %d closed %d times, want exactly once", i, c.closed)
+			t.Errorf("codec %d closed %d times, want once", i, c.closed)
 		}
 	}
 }
 
 // A denial on a protocol the deny writer does not know is a bare socket
 // close unless the codec frames it. The gate asks the codec and supplies
-// the generic text when the rule had none, so the codec never invents one.
+// the generic text when the rule had none, so the codec does not invent one.
 func TestDenyFrameComesFromTheCodec(t *testing.T) {
 	g, err := gate.New(newSession(), gate.Config{
 		Protocol:     inspect.Postgres,
@@ -894,9 +894,9 @@ func TestDenyFrameComesFromTheCodec(t *testing.T) {
 	}
 }
 
-// MaskSupportedBy answers for the codec a factory builds, so a lane with a
-// CodecFactory is refused masking at load by the same test the gate applies
-// at construction. The probe codec is closed, not leaked.
+// MaskSupportedBy answers for the codec a factory builds, so the daemon
+// refuses masking at load on a lane with a CodecFactory by the same test
+// the gate applies at construction. MaskSupportedBy closes the probe codec.
 func TestMaskSupportedByAsksTheFactoryCodec(t *testing.T) {
 	if gate.MaskSupportedBy(nil) {
 		t.Error("a nil factory supports masking")
@@ -909,7 +909,7 @@ func TestMaskSupportedByAsksTheFactoryCodec(t *testing.T) {
 		t.Error("a codec without Reframer supports masking")
 	}
 	if probe == nil || probe.closed != 1 {
-		t.Errorf("the probe codec was not closed exactly once: %+v", probe)
+		t.Errorf("the probe codec was not closed once: %+v", probe)
 	}
 	if !gate.MaskSupportedBy(func() inspect.Codec { return &activatingCodec{} }) {
 		t.Error("a re-framing codec does not support masking")

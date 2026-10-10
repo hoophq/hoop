@@ -7,7 +7,7 @@
 /// `AcmeWire` implements `Codec` (and `Default`); `manifest` is a
 /// `fn() -> Manifest`; the list names the capabilities whose exports
 /// exist. The host refuses a capability without its export and an export
-/// without its capability, so the list IS the set of optional exports, and
+/// without its capability, so the list is the set of optional exports, and
 /// `describe` traps when the manifest's `capabilities` disagree with it.
 ///
 /// Always emitted: `memory` (by the toolchain), `alloc`, `free`,

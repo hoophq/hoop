@@ -12,8 +12,8 @@ import (
 // drops it at close.
 //
 // The optional capabilities are the interfaces below. The export for each
-// exists only when the module is built with its tag, so an unimplemented
-// one is never reached; describe traps when a declared capability's
+// exists only when the build turns on its tag, so the host never reaches
+// an unimplemented one; describe traps when a declared capability's
 // interface is missing on the codec.
 type Codec interface {
 	// Open begins a connection. options is the listener's settings, keyed
@@ -45,8 +45,8 @@ type Rewriter interface {
 	// lane has a masker.
 	EnableRewrite()
 	// Rewrite receives every server chunk after Decode saw it, hands each
-	// cell it can name to mask, and returns the rebuilt frames. Rows may
-	// be held until they can be rebuilt.
+	// cell it can name to mask, and returns the rebuilt frames. The codec
+	// may hold rows until it can rebuild them.
 	Rewrite(data []byte, mask MaskFunc) (Rewritten, error)
 	// Flush releases every row Rewrite held; called when the connection
 	// ends.
@@ -71,8 +71,8 @@ type ContentRenderer interface {
 
 // registry is the codecs of one instance keyed by the conn the host
 // passes: one entry under per_connection instancing, one per open
-// connection under per_lane. Calls into an instance are serialized by the
-// ABI, so a plain map is enough.
+// connection under per_lane. The ABI serializes calls into an instance,
+// so a plain map is enough.
 type registry struct {
 	factory  func() Codec
 	manifest Manifest
@@ -168,8 +168,9 @@ func (r *registry) decode(conn, dir uint32, data []byte) []byte {
 	d := directionOf(dir)
 	c, ok := r.conns[conn]
 	if !ok {
-		// A host bug. A decode error drops that connection alone, which
-		// is the proportionate failure under per_lane.
+		// A decode on a connection the host never opened is a host bug.
+		// Reporting it as a decode error drops that connection alone,
+		// the proportionate failure under per_lane.
 		return errorJSON(fmt.Sprintf("hoop-codec: connection %d was not opened", conn))
 	}
 	decoded, err := c.Decode(d, data)
@@ -233,7 +234,7 @@ func parseStatement(stmtJSON []byte) Statement {
 	var s Statement
 	if err := json.Unmarshal(stmtJSON, &s); err != nil {
 		// The host wrote it from its own Statement: a failure is version
-		// skew between host and SDK, not a protocol condition.
+		// skew between host and SDK.
 		panic("hoop-codec: the host passed a Statement this SDK cannot read: " + err.Error())
 	}
 	return s

@@ -32,8 +32,8 @@ type instance struct {
 	// Per-call state the host imports read through the call's context.
 	// conn tags log lines; mask is non-nil only inside rewrite and flush,
 	// which is how a mask import anywhere else becomes a trap; hostErr
-	// carries the reason a host import aborted the call, so the error the
-	// codec reports names the rule rather than wazero's panic text.
+	// carries the reason a host import aborted the call, which the codec
+	// reports in place of wazero's panic text.
 	conn    uint32
 	mask    func(column string, value []byte) []byte
 	hostErr error
@@ -48,7 +48,7 @@ type ctxKey struct{}
 var errDead = errors.New("codec plug-in instance is closed")
 
 // instantiate builds one instance from the plug-in's compiled module and
-// runs _initialize when the module exports it. The module is closed again
+// runs _initialize when the module exports it. It closes the module again
 // on any error, so a failed instance holds no memory.
 func (p *Plugin) instantiate(ctx context.Context) (*instance, error) {
 	cfg := wazero.NewModuleConfig().
@@ -56,8 +56,8 @@ func (p *Plugin) instantiate(ctx context.Context) (*instance, error) {
 		WithStartFunctions()
 	if p.manifest.WASI {
 		// No FS, no env, no args: the defaults. Clocks and randomness are
-		// the one thing a sandboxed codec may legitimately want (a
-		// per-connection nonce, a timestamp in a log line).
+		// the one thing a sandboxed codec may want (a per-connection
+		// nonce, a timestamp in a log line).
 		cfg = cfg.WithSysWalltime().WithSysNanotime().WithRandSource(randReader).
 			WithStdout(p.wasiLog(1)).WithStderr(p.wasiLog(2))
 	}
@@ -110,13 +110,14 @@ func (in *instance) callInOut(conn uint32, name string, input []byte, args ...ui
 	return out, err
 }
 
-// runLocked calls export name under one deadline. With hasInput the input
-// is placed in guest memory and passed as the trailing (ptr, len) pair,
-// (0, 0) when empty so the guest never allocates for nothing; packed says
-// the export returns a (ptr << 32 | len) u64 the host must read and free.
+// runLocked calls export name under one deadline. With hasInput it
+// places the input in guest memory and passes it as the trailing (ptr,
+// len) pair, (0, 0) when empty so the guest never allocates for nothing;
+// packed says the export returns a (ptr << 32 | len) u64 the host must
+// read and free.
 //
-// Any error from wazero — a trap, the deadline, a module closed by
-// proc_exit — kills the instance: the guest's memory is in a state nobody
+// Any error from wazero (a trap, the deadline, a module closed by
+// proc_exit) kills the instance: the guest's memory is in a state nobody
 // can reason about, and ABI.md says the connection drops. Every later call
 // returns the same error so a caller that ignores one failure cannot keep
 // feeding a corpse.
@@ -127,7 +128,8 @@ func (in *instance) runLocked(conn uint32, name string, input []byte, hasInput, 
 	fn := in.fns[name]
 	if fn == nil {
 		// Only reachable through a host bug: every caller checks the
-		// capability before dispatching. Loud rather than nil.
+		// capability before dispatching, so a missing export kills the
+		// instance with a named error.
 		return nil, nil, in.die(fmt.Errorf("%s: export %q is not present", in.p.name(), name))
 	}
 
@@ -146,7 +148,7 @@ func (in *instance) runLocked(conn uint32, name string, input []byte, hasInput, 
 				return nil, nil, in.die(fmt.Errorf("%s: alloc returned %d for %d bytes, outside guest memory", in.p.name(), ptr, len(input)))
 			}
 			defer func() {
-				// Free after the call, as the ABI promises; skipped once
+				// Free after the call, as the ABI promises; skip it once
 				// the instance is dead, because its module is closed.
 				if in.dead != nil {
 					return
@@ -175,9 +177,9 @@ func (in *instance) runLocked(conn uint32, name string, input []byte, hasInput, 
 }
 
 // callError turns wazero's error into one that names the ABI rule broken.
-// A trap's stack trace goes to the log at debug and not into the error:
-// the error becomes the deny message the client reads and one line of a
-// warning, and neither has room for a wasm backtrace.
+// A trap's stack trace goes to the log at debug: the error becomes the
+// deny message the client reads and one line of a warning, and neither
+// has room for a wasm backtrace.
 func (in *instance) callError(name string, err error) error {
 	if in.hostErr != nil {
 		return fmt.Errorf("%s: %s: %w", in.p.name(), name, in.hostErr)
@@ -202,7 +204,7 @@ func (in *instance) callError(name string, err error) error {
 
 // die records the first fatal error and closes the module. The call that
 // died gets the cause; every later call gets the cause behind errDead,
-// so a log reads "closed: <why>" rather than the same trap again.
+// so a log line reads "closed: <why>".
 func (in *instance) die(err error) error {
 	if in.dead != nil {
 		return in.dead
@@ -213,9 +215,9 @@ func (in *instance) die(err error) error {
 	return err
 }
 
-// close releases the instance. A call in flight on another goroutine is
-// terminated by the module closing (WithCloseOnContextDone), and every
-// later call reports the instance closed.
+// close releases the instance. Closing the module terminates a call in
+// flight on another goroutine (WithCloseOnContextDone), and every later
+// call reports the instance closed.
 func (in *instance) close() {
 	in.mu.Lock()
 	defer in.mu.Unlock()
@@ -225,7 +227,7 @@ func (in *instance) close() {
 	}
 }
 
-// isDead reports whether a call would fail. Used by per_lane codecs to
+// isDead reports whether a call would fail. per_lane codecs use it to
 // tell the plug-in it must rebuild the shared instance.
 func (in *instance) isDead() bool {
 	in.mu.Lock()
@@ -233,8 +235,8 @@ func (in *instance) isDead() bool {
 	return in.dead != nil
 }
 
-// alloc asks the guest for n bytes. Called for export input and, from the
-// host imports, for import output.
+// alloc asks the guest for n bytes. runLocked calls it for export input;
+// the host imports call it for import output.
 func (in *instance) alloc(ctx context.Context, n uint32) (uint32, error) {
 	res, err := in.fns[expAlloc].Call(ctx, uint64(n))
 	if err != nil {
@@ -266,7 +268,7 @@ func (in *instance) readPacked(ctx context.Context, name string, v uint64) ([]by
 }
 
 // writeOut places data in guest memory for an import's return value and
-// packs it. The guest frees it. Used only by host imports, on the stack of
+// packs it. The guest frees it. Only host imports call it, on the stack of
 // the export that called them, so ctx carries the call's deadline.
 func (in *instance) writeOut(ctx context.Context, data []byte) (uint64, error) {
 	if len(data) == 0 {

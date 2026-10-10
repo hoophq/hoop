@@ -9,10 +9,10 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-// The export and import names of abi/ABI.md. They are compared against the
-// compiled module BEFORE anything runs: a wrong signature found at the first
-// call would be a connection dropped in production for a mistake the author
-// could have been told about at load.
+// The export and import names of abi/ABI.md. Load compares them against
+// the compiled module before anything runs: a wrong signature found at the
+// first call would be a connection dropped in production for a mistake the
+// author could have been told about at load.
 const (
 	expMemory        = "memory"
 	expAlloc         = "alloc"
@@ -52,8 +52,8 @@ var (
 	sigLen4Packed = signature{[]api.ValueType{i32, i32, i32, i32}, []api.ValueType{i64}}
 	sigLen3Packed = signature{[]api.ValueType{i32, i32, i32}, []api.ValueType{i64}}
 
-	// exportSignatures is every export the ABI names. Required ones are
-	// listed in requiredExports; the rest are checked only when present.
+	// exportSignatures is every export the ABI names. requiredExports lists
+	// the required ones; inspectModule checks the rest only when present.
 	exportSignatures = map[string]signature{
 		expAlloc:         {[]api.ValueType{i32}, []api.ValueType{i32}},
 		expFree:          {[]api.ValueType{i32, i32}, nil},
@@ -73,8 +73,8 @@ var (
 	requiredExports = []string{expAlloc, expFree, expDescribe, expDecode}
 
 	// capabilityExports maps a manifest capability to the exports that
-	// announce it. Both directions are enforced: a capability needs all of
-	// its exports, and any of these exports needs its capability.
+	// announce it. checkCapabilities enforces both directions: a capability
+	// needs all of its exports, and any of these exports needs its capability.
 	capabilityExports = map[string][]string{
 		CapDeny:       {expDeny},
 		CapFilter:     {expFilter},
@@ -138,7 +138,7 @@ func inspectModule(c wazero.CompiledModule) (moduleShape, error) {
 		want, ok := exportSignatures[name]
 		if !ok {
 			// Toolchains add their own (cabi_realloc, __main_void, ...);
-			// only the ABI's names are held to a signature.
+			// inspectModule holds only the ABI's names to a signature.
 			continue
 		}
 		if err := checkSignature(def, want); err != nil {

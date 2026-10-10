@@ -13,10 +13,10 @@ use crate::types::*;
 /// `Default`, calls `open` with the listener's options, and drops it at
 /// `close`.
 ///
-/// Only `decode` is required. The other methods back the optional
-/// capabilities, and the export for each exists only when the
-/// `export_codec!` list names the capability, so an unlisted method is
-/// never reached.
+/// `decode` is the one required method. The other methods back the
+/// optional capabilities, and the export for each exists only when the
+/// `export_codec!` list names the capability, so the host never reaches an
+/// unlisted method.
 pub trait Codec: Default {
     /// A connection begins. `options` is the listener's settings, keyed by
     /// the manifest's option names. An `Err` refuses the connection.
@@ -53,8 +53,8 @@ pub trait Codec: Default {
 
     /// Receives every server chunk after `decode` saw it, hands each cell
     /// it can name to `mask(column, value)`, and returns the rebuilt
-    /// frames. Rows may be held until they can be rebuilt. Capability
-    /// `rewrite`.
+    /// frames. The codec may hold rows until it can rebuild them.
+    /// Capability `rewrite`.
     fn rewrite(
         &mut self,
         data: &[u8],
@@ -94,7 +94,7 @@ pub trait Codec: Default {
 /// connection 0; under `per_lane` one entry per open connection. The
 /// `RefCell` is enough synchronization: the ABI serializes every call into
 /// an instance, and wasm32-unknown-unknown has no threads to race it. The
-/// `Sync` impl below states exactly that assumption, which is also why
+/// `Sync` impl below states that assumption, which is also why
 /// `export_codec!` is the only intended user of this type.
 pub struct Connections<C: Codec> {
     conns: RefCell<BTreeMap<u32, C>>,
@@ -235,7 +235,7 @@ impl<C: Codec> Connections<C> {
         }
     }
 
-    /// How many connections are open; for tests.
+    /// The count of open connections; for tests.
     pub fn len(&self) -> usize {
         self.conns.borrow().len()
     }
@@ -268,7 +268,7 @@ pub fn describe(manifest: &Manifest, exported: &[Capability]) -> Vec<u8> {
 
 fn parse_statement(stmt_json: &[u8]) -> Statement {
     // The host wrote it from its own Statement, so a parse failure is a
-    // version skew between host and SDK, not a protocol condition.
+    // version skew between host and SDK.
     serde_json::from_slice(stmt_json)
         .unwrap_or_else(|err| panic!("hoop-codec: the host passed a Statement this SDK cannot read: {err}"))
 }

@@ -9,7 +9,7 @@
 //! plug-in and the template to copy.
 //!
 //! The SDK speaks to the relay through [`host`]: the SQL classifier lives
-//! there, not here, so a plug-in for a SQL-carrying protocol calls
+//! in the relay, so a plug-in for a SQL-carrying protocol calls
 //! `host::analyze_sql` and copies the result onto its statement.
 
 pub mod abi;
