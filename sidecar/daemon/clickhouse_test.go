@@ -49,10 +49,10 @@ func TestClickHouseCodecConfigValidation(t *testing.T) {
 }
 
 func TestLaneCodecFactoryKeepsRegistryDefaults(t *testing.T) {
-	if f := laneCodecFactory(ListenerConfig{Protocol: "clickhouse"}); f != nil {
+	if f := laneCodecFactory(ListenerConfig{Protocol: "clickhouse"}, nil); f != nil {
 		t.Fatal("unconfigured ClickHouse lane bypassed the registry default")
 	}
-	if f := laneCodecFactory(ListenerConfig{Protocol: "postgres", ClickHouse: &ClickHouseCodecConfig{}}); f != nil {
+	if f := laneCodecFactory(ListenerConfig{Protocol: "postgres", ClickHouse: &ClickHouseCodecConfig{}}, nil); f != nil {
 		t.Fatal("ClickHouse options affected a postgres lane")
 	}
 }

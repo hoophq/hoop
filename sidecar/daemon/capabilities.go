@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -55,6 +57,12 @@ const (
 	// CapabilitySessionEvents means this build sends its audit events to
 	// the plane when the handshake answers with SessionEventsHeader.
 	CapabilitySessionEvents = "session_events"
+	// CapabilityPlugins means this build decodes the plugins list and a
+	// listener's plugin options, and so runs any lane on an x- protocol:
+	// a plug-in protocol is never a protocol: entry, because no build
+	// links it. The field tag is the source of truth; this names it for
+	// CheckServable's listener rule.
+	CapabilityPlugins = "plugins"
 
 	capabilityRulePrefix     = "rule:"
 	capabilityProtocolPrefix = "protocol:"
@@ -235,9 +243,17 @@ func CheckServable(cfg Config, hs Handshake) error {
 		}
 	})
 	for _, l := range served.Listeners {
-		if l.Protocol != "" {
-			need(fmt.Sprintf("listener %q", l.Name), "speaks "+l.Protocol, capabilityProtocolPrefix+l.Protocol)
+		if l.Protocol == "" {
+			continue
 		}
+		where := fmt.Sprintf("listener %q", l.Name)
+		// A plug-in protocol is no build's: the header never lists it, and
+		// the build that decodes a plugins list decodes any lane on one.
+		if analyzer.IsPluginProtocol(inspect.Protocol(l.Protocol)) {
+			need(where, "speaks the plug-in protocol "+l.Protocol, CapabilityPlugins)
+			continue
+		}
+		need(where, "speaks "+l.Protocol, capabilityProtocolPrefix+l.Protocol)
 	}
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))

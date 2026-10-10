@@ -277,11 +277,11 @@ func TestMaskRulesOnUnmaskableProtocolAreRefused(t *testing.T) {
 	det := stubPlugin{entities: []string{"US_SSN"}}
 
 	for _, p := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.MongoDB, inspect.HTTP} {
-		if _, err := buildMasker(mc, det, p, false); err != nil {
+		if _, err := buildMasker(mc, det, p, false, nil); err != nil {
 			t.Errorf("buildMasker refused %s, which can re-frame or re-tag: %v", p, err)
 		}
 	}
-	if _, err := buildMasker(mc, det, inspect.Protocol("cassandra"), false); err == nil {
+	if _, err := buildMasker(mc, det, inspect.Protocol("cassandra"), false, nil); err == nil {
 		t.Error("buildMasker accepted a protocol with neither masking mechanism")
 	}
 }
@@ -326,7 +326,7 @@ func TestEmptyMaskRulesOptOutOfAnInheritedSet(t *testing.T) {
 func TestMaskWithoutPluginIsRefused(t *testing.T) {
 	mc := MaskConfig{Rules: []byte(`[{"name":"r","entities":["US_SSN"],"strategy":"redact"}]`)}
 
-	m, err := buildMasker(mc, nil, inspect.HTTP, false)
+	m, err := buildMasker(mc, nil, inspect.HTTP, false, nil)
 	if err == nil {
 		t.Fatal("masking without a plugin must fail, not forward responses unmasked")
 	}
