@@ -9,8 +9,8 @@
 //! and `E` (an error message). Either side may pad with 0x00 bytes between
 //! frames as a keepalive. The example exercises every capability of the
 //! ABI: `deny` renders an `E` frame, `filter` strips the padding, `rewrite`
-//! masks `D` cells, `credential` lifts the `A` token, `content` renders
-//! for the analyzer.
+//! masks `D` cells, `credential` trades the handle an `A` frame left on its
+//! statement for the token, `content` renders for the analyzer.
 
 use std::collections::BTreeMap;
 
@@ -21,9 +21,14 @@ use hoop_codec::{
 
 const PROTOCOL: &str = "x-acmewire";
 const VERB_KEY: &str = "x-acmewire.verb";
-const TOKEN_KEY: &str = "x-acmewire.token";
+const CREDENTIAL_KEY: &str = "x-acmewire.credential";
 const DEFAULT_DENY_PREFIX: &str = "ACME";
 const HEADER_LEN: usize = 5;
+/// Bound on tokens lifted and not yet taken. The host trades each
+/// handle back only on a lane with per-request identity; elsewhere every
+/// `A` frame would otherwise hold one more token for the life of the
+/// connection.
+const MAX_HELD_CREDENTIALS: usize = 1024;
 
 pub fn manifest() -> Manifest {
     let mut m = Manifest::new(PROTOCOL, "Acme Wire");
@@ -53,13 +58,17 @@ hoop_codec::export_codec!(AcmeWire, manifest, [deny, filter, rewrite, credential
 /// One connection. The filter keeps a frame cursor per direction so it can
 /// tell padding from payload bytes that happen to be zero; the rewrite
 /// path keeps its own buffer and column list because it frames the server
-/// stream a second time, on the chunks the host forwards.
+/// stream a second time, on the chunks the host forwards. Tokens stay
+/// here, keyed by the handle `decode` put on the statement: audit, policy
+/// and the analyzer see the statement, so the token must not be on it.
 #[derive(Default)]
 pub struct AcmeWire {
     deny_prefix: String,
     filter: [FrameCursor; 2],
     rewrite_buf: Vec<u8>,
     columns: Vec<String>,
+    credentials: BTreeMap<String, String>,
+    next_handle: u64,
 }
 
 /// The filter's position in the current frame of one direction.
@@ -161,10 +170,14 @@ impl AcmeWire {
         stmt
     }
 
-    fn auth(&self, payload: &[u8]) -> Statement {
-        Statement::new(Operation::Other, "AUTH")
-            .with_metadata(VERB_KEY, "AUTH")
-            .with_metadata(TOKEN_KEY, text(payload))
+    fn auth(&mut self, payload: &[u8]) -> Result<Statement, String> {
+        if self.credentials.len() >= MAX_HELD_CREDENTIALS {
+            return Err(format!("x-acmewire: {MAX_HELD_CREDENTIALS} credentials were lifted and never taken"));
+        }
+        self.next_handle += 1;
+        let handle = self.next_handle.to_string();
+        self.credentials.insert(handle.clone(), text(payload));
+        Ok(Statement::new(Operation::Other, "AUTH").with_metadata(VERB_KEY, "AUTH").with_metadata(CREDENTIAL_KEY, handle))
     }
 
     fn column_names(&self, payload: &[u8]) -> Statement {
@@ -235,7 +248,7 @@ impl Codec for AcmeWire {
             let stmts = match frame.opcode {
                 b'Q' => self.query(frame.payload),
                 b'P' => vec![self.purge(frame.payload)],
-                b'A' => vec![self.auth(frame.payload)],
+                b'A' => vec![self.auth(frame.payload)?],
                 b'C' => vec![self.column_names(frame.payload)],
                 b'D' => vec![self.row(frame.payload)?],
                 b'R' => vec![self.done(frame.payload)?],
@@ -333,8 +346,12 @@ impl Codec for AcmeWire {
         Ok(Rewritten::default())
     }
 
+    /// Trades the handle for the token and forgets it, so the token is
+    /// handed out once; a handle this connection never issued, or one
+    /// already taken, is `None`.
     fn take_credential(&mut self, mut stmt: Statement) -> Option<(String, Statement)> {
-        let token = stmt.metadata.remove(TOKEN_KEY)?;
+        let handle = stmt.metadata.remove(CREDENTIAL_KEY)?;
+        let token = self.credentials.remove(&handle)?;
         Some((token, stmt))
     }
 
@@ -485,14 +502,30 @@ mod tests {
     }
 
     #[test]
-    fn credential_is_lifted_and_scrubbed() {
+    fn credential_stays_off_the_statement_until_taken_once() {
         let mut c = opened();
         let auth = c.decode(Direction::Client, &encode(b'A', b"s3cret")).unwrap().statements.remove(0);
+        assert_eq!(auth.metadata, BTreeMap::from([(VERB_KEY.into(), "AUTH".into()), (CREDENTIAL_KEY.into(), "1".into())]));
         let (token, scrubbed) = c.take_credential(auth.clone()).unwrap();
         assert_eq!(token, "s3cret");
-        assert!(!scrubbed.metadata.contains_key(TOKEN_KEY));
-        assert_eq!(scrubbed.metadata[VERB_KEY], "AUTH");
+        assert_eq!(scrubbed.metadata, BTreeMap::from([(VERB_KEY.into(), "AUTH".into())]));
+        // The handle is spent: the same statement lifts nothing twice.
+        assert!(c.take_credential(auth).is_none());
         assert!(c.take_credential(scrubbed).is_none());
+        // Handles count up per connection, and another connection does not know them.
+        let second = c.decode(Direction::Client, &encode(b'A', b"other")).unwrap().statements.remove(0);
+        assert_eq!(second.metadata[CREDENTIAL_KEY], "2");
+        assert!(opened().take_credential(second.clone()).is_none());
+        assert_eq!(c.take_credential(second).unwrap().0, "other");
+    }
+
+    #[test]
+    fn decode_refuses_to_hold_unbounded_credentials() {
+        let mut c = opened();
+        for _ in 0..MAX_HELD_CREDENTIALS {
+            c.decode(Direction::Client, &encode(b'A', b"t")).unwrap();
+        }
+        assert!(c.decode(Direction::Client, &encode(b'A', b"t")).is_err());
     }
 
     #[test]

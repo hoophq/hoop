@@ -53,11 +53,19 @@ type Rewriter interface {
 	Flush(mask MaskFunc) (Rewritten, error)
 }
 
-// CredentialSource lifts the credential out of a request statement. Tag
-// hoop_credential.
+// CredentialSource trades the handle a request statement carries for the
+// credential it stands for. Tag hoop_credential.
+//
+// Decode keeps the credential in the codec's state and puts only an
+// opaque handle under metadata["<protocol>.credential"], because the host
+// calls TakeCredential on a lane with per-request identity only; audit,
+// policy and the analyzer on every other lane see the statement Decode
+// returned.
 type CredentialSource interface {
-	// TakeCredential returns the credential and the statement scrubbed of
-	// every trace of it; ok is false when the request carries none.
+	// TakeCredential returns the credential the handle stands for and
+	// the statement with the key removed, and forgets the entry; ok is
+	// false when the request carried none or the handle was taken
+	// already.
 	TakeCredential(stmt Statement) (credential string, scrubbed Statement, ok bool)
 }
 

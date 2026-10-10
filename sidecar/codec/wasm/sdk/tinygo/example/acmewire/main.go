@@ -17,17 +17,23 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	codec "github.com/hoophq/hoop/sidecar/codec/wasm/sdk/tinygo"
 )
 
 const (
-	protocol    = "x-acmewire"
-	verbKey     = "x-acmewire.verb"
-	tokenKey    = "x-acmewire.token"
-	denyPrefix  = "ACME"
-	headerBytes = 5
+	protocol      = "x-acmewire"
+	verbKey       = "x-acmewire.verb"
+	credentialKey = "x-acmewire.credential"
+	denyPrefix    = "ACME"
+	headerBytes   = 5
+	// maxHeldCredentials bounds the tokens lifted and not yet taken. The
+	// host trades each handle back only on a lane with per-request
+	// identity; elsewhere every A frame would otherwise hold one more
+	// token for the life of the connection.
+	maxHeldCredentials = 1024
 )
 
 func init() {
@@ -48,11 +54,16 @@ func init() {
 // main never runs under wasm-unknown; Serve is called from init.
 func main() {}
 
+// acmeWire is one connection. Tokens stay here, keyed by the handle
+// Decode put on the statement: audit, policy and the analyzer see the
+// statement, so the token must not be on it.
 type acmeWire struct {
-	denyPrefix string
-	filter     [2]frameCursor
-	rewriteBuf []byte
-	columns    []string
+	denyPrefix  string
+	filter      [2]frameCursor
+	rewriteBuf  []byte
+	columns     []string
+	credentials map[string]string
+	nextHandle  uint64
 }
 
 // frameCursor is where the filter is in the current frame of one
@@ -176,7 +187,16 @@ func (a *acmeWire) Decode(dir codec.Direction, data []byte) (codec.Decoded, erro
 			}
 			stmts = []codec.Statement{stmt.WithMetadata(verbKey, "PURGE")}
 		case 'A':
-			stmts = []codec.Statement{other("AUTH", "AUTH", nil).WithMetadata(tokenKey, string(f.payload))}
+			if len(a.credentials) >= maxHeldCredentials {
+				return codec.Decoded{}, fmt.Errorf("x-acmewire: %d credentials were lifted and never taken", maxHeldCredentials)
+			}
+			if a.credentials == nil {
+				a.credentials = make(map[string]string)
+			}
+			a.nextHandle++
+			handle := strconv.FormatUint(a.nextHandle, 10)
+			a.credentials[handle] = string(f.payload)
+			stmts = []codec.Statement{other("AUTH", "AUTH", nil).WithMetadata(credentialKey, handle)}
 		case 'C':
 			var cols []codec.Column
 			for _, name := range columnNames(f.payload) {
@@ -295,14 +315,22 @@ func (a *acmeWire) Flush(mask codec.MaskFunc) (codec.Rewritten, error) {
 	return codec.Rewritten{}, nil
 }
 
+// TakeCredential trades the handle for the token and forgets it, so the
+// token is handed out once; a handle this connection never issued, or
+// one already taken, lifts nothing.
 func (a *acmeWire) TakeCredential(stmt codec.Statement) (string, codec.Statement, bool) {
-	token, ok := stmt.Metadata[tokenKey]
+	handle, ok := stmt.Metadata[credentialKey]
 	if !ok {
 		return "", stmt, false
 	}
-	scrubbed := make(map[string]string, len(stmt.Metadata))
+	token, ok := a.credentials[handle]
+	if !ok {
+		return "", stmt, false
+	}
+	delete(a.credentials, handle)
+	scrubbed := make(map[string]string, len(stmt.Metadata)-1)
 	for k, v := range stmt.Metadata {
-		if k != tokenKey {
+		if k != credentialKey {
 			scrubbed[k] = v
 		}
 	}

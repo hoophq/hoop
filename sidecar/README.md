@@ -2267,7 +2267,13 @@ options once per connection. The gate reads the optional capabilities off
 the codec by type assertion, so the relay accepts masking on a plug-in lane
 when the module declares `rewrite` (`gate.MaskSupportedBy` asks the
 factory), the native deny frame is the module's `deny` export, and
-`filter`, `credential` and `content` each light one more seam.
+`filter`, `credential` and `content` each light one more seam. A module
+with `credential` keeps the secret in its own connection state and puts
+only an opaque handle under `metadata["<protocol>.credential"]`, the way
+the HTTP codec does with `hoop.credential`: the gate trades the handle
+back through `take_credential` only on a lane with per-request identity,
+and audit, policy and the analyzer on every other lane see the statement
+as `decode` returned it.
 
 ### Failure semantics
 
