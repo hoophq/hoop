@@ -99,7 +99,7 @@
     ]
   },
   {
-    "name": "auth carries the token in metadata",
+    "name": "auth carries a credential handle in metadata",
     "steps": [
       {
         "dir": "client",
@@ -112,7 +112,7 @@
               "text": "AUTH",
               "metadata": {
                 "x-acmewire.verb": "AUTH",
-                "x-acmewire.token": "s3cret"
+                "x-acmewire.credential": "1"
               }
             }
           ]

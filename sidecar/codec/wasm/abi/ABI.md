@@ -47,7 +47,7 @@ capability, fails load:
 | `deny` | `deny` | `(conn, dir, ptr, len) -> u64` | render the UTF-8 message at `(ptr,len)` as the protocol's native error frame, bytes out |
 | `filter` | `filter` | `(conn, dir, ptr, len) -> u64` | transform bytes before inspection and forwarding; bytes out. May hold a prefix and return nothing |
 | `rewrite` | `enable_rewrite`, `rewrite`, `flush` | `enable_rewrite(conn)`, `rewrite(conn, ptr, len) -> u64`, `flush(conn) -> u64` | response masking; see Masking |
-| `credential` | `take_credential` | `(conn, ptr, len) -> u64` | lift the credential of the request statement at `(ptr,len)` (Statement JSON); returns CredentialResult JSON |
+| `credential` | `take_credential` | `(conn, ptr, len) -> u64` | trade the handle under `metadata["<protocol>.credential"]` of the request statement at `(ptr,len)` (Statement JSON) for the credential it stands for; returns CredentialResult JSON |
 | `content` | `content` | `(conn, ptr, len) -> u64` | render a Statement JSON for the AI analyzer; returns ContentResult JSON |
 
 Optional, not a capability:
@@ -163,6 +163,12 @@ DecodeResult, from `decode`:
   passes it again, prefixed to the next read, until `max_reassembly`.
 - `error` non-empty means the bytes are malformed for this protocol. The
   host drops the connection and ignores `consumed` and `statements`.
+- A request that carries a credential MUST NOT put it on the statement.
+  The guest keeps the value in its connection state and puts an opaque
+  handle (a counter is enough) under `metadata["<protocol>.credential"]`.
+  The host calls `take_credential` only on a lane with per-request
+  identity; audit, policy and the analyzer on every other lane see the
+  statement as `decode` returned it.
 
 SQLAnalysis, from `analyze_sql`:
 
@@ -178,12 +184,16 @@ SQLAnalysis, from `analyze_sql`:
 CredentialResult, from `take_credential`:
 
 ```json
-{"credential": "Bearer eyJ...", "ok": true, "statement": { ...the statement with the credential removed... }}
+{"credential": "Bearer eyJ...", "ok": true, "statement": { ...the statement with the handle removed... }}
 ```
 
-`ok: false` means the request carried none. When `ok` is true `statement`
-MUST be present and MUST carry no trace of the credential; the host
-replaces the statement with it before policy, audit or the analyzer see it.
+The guest reads the handle under `metadata["<protocol>.credential"]`,
+returns the credential it stands for, removes the key from `statement` and
+forgets the entry, so a second call with the same handle answers
+`ok: false`. `ok: false` also means the request carried none. When `ok`
+is true `statement` MUST be present and MUST carry neither the handle nor
+the credential; the host replaces the statement with it before policy,
+audit or the analyzer see it.
 
 ContentResult, from `content`:
 
@@ -237,6 +247,12 @@ lane:
   instance.
 - Malformed output (not JSON, unknown field, an `operation` outside the
   list, `protocol` present) is a decode error for that connection.
+- `take_credential` failing, or answering `ok: true` with a malformed or
+  missing `statement`, has no error to return through: the host reduces
+  the statement to operation `unknown` carrying only the failure text, so
+  nothing the guest put on it reaches policy, audit or the analyzer, and
+  a rule naming `unknown` refuses it. A credential the module still holds
+  dies with the instance.
 - `describe` failing, a capability without its export, an export without
   its capability, an undeclared import, a `protocol` without the `x-`
   prefix, or a sha256 mismatch refuses the module at load, so the lane

@@ -8,6 +8,7 @@ package wasm
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -138,6 +139,20 @@ func TestAcmewireRewriteThroughTheGate(t *testing.T) {
 	}
 }
 
+// noTokenText fails when any field of s, in its JSON form, carries the
+// credential text: the statement is what audit, policy and the analyzer
+// see, so the module must leave only a handle on it.
+func noTokenText(t *testing.T, s inspect.Statement, token string) {
+	t.Helper()
+	raw, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), token) {
+		t.Fatalf("credential text on the statement: %s", raw)
+	}
+}
+
 func TestAcmewireCredential(t *testing.T) {
 	p := acmewire(t)
 	c := p.NewCodec(nil)
@@ -146,15 +161,25 @@ func TestAcmewireCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := stmts[0]
-	if s.Text != "AUTH" || s.Metadata["x-acmewire.token"] != "s3cret" {
+	if s.Text != "AUTH" || s.Metadata["x-acmewire.credential"] != "1" {
 		t.Fatalf("auth statement %+v", s)
 	}
+	noTokenText(t, s, "s3cret")
 	cred, ok := c.(gate.CredentialSource).TakeCredential(&s)
 	if !ok || cred != "s3cret" {
 		t.Fatalf("TakeCredential: %q %v", cred, ok)
 	}
-	if _, present := s.Metadata["x-acmewire.token"]; present || s.Protocol != "x-acmewire" || s.Direction != inspect.FromClient || s.Text != "AUTH" {
+	if _, present := s.Metadata["x-acmewire.credential"]; present || s.Protocol != "x-acmewire" || s.Direction != inspect.FromClient || s.Text != "AUTH" {
 		t.Fatalf("statement after lift %+v", s)
+	}
+	// The handle is spent: a second lift of the same statement, with the
+	// handle put back, yields nothing and leaves the statement alone.
+	again := stmts[0]
+	if cred, ok := c.(gate.CredentialSource).TakeCredential(&again); ok || cred != "" {
+		t.Fatalf("second lift returned %q %v", cred, ok)
+	}
+	if again.Metadata["x-acmewire.credential"] != "1" || again.Text != "AUTH" {
+		t.Fatalf("statement after the refused lift %+v", again)
 	}
 	// A statement without a credential lifts nothing.
 	q, _, _ := c.Decode(inspect.FromClient, aw('Q', "SELECT 1"))
@@ -195,10 +220,12 @@ func TestAcmewireCredentialThroughTheGate(t *testing.T) {
 	if got := g.Session().Identity.Subject; got != "user-of-s3cret" {
 		t.Fatalf("session identity %q", got)
 	}
-	// The token never reaches the statement the gate records.
+	// The token never reaches the statement the gate records, and the
+	// spent handle leaves with it.
 	for _, s := range d.Statements {
-		if _, present := s.Metadata["x-acmewire.token"]; present {
-			t.Fatalf("token survived the lift: %+v", s)
+		noTokenText(t, s, "s3cret")
+		if _, present := s.Metadata["x-acmewire.credential"]; present {
+			t.Fatalf("handle survived the lift: %+v", s)
 		}
 	}
 }

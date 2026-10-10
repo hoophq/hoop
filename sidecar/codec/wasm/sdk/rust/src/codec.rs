@@ -71,9 +71,15 @@ pub trait Codec: Default {
         Ok(Rewritten::default())
     }
 
-    /// Lifts the credential out of a request statement and returns it with
-    /// the statement scrubbed of every trace. `None` when the request
-    /// carries none. Capability `credential`.
+    /// Trades the handle under `metadata["<protocol>.credential"]` of a
+    /// request statement for the credential it stands for, and returns it
+    /// with the key removed. `decode` keeps the credential in the codec's
+    /// state and puts only the handle on the statement, because the host
+    /// calls this on a lane with per-request identity only; audit, policy
+    /// and the analyzer on every other lane see the statement `decode`
+    /// returned. Forget the entry on the way out: a second call with the
+    /// same handle, or a request that carried none, is `None`.
+    /// Capability `credential`.
     fn take_credential(&mut self, stmt: Statement) -> Option<(String, Statement)> {
         let _ = stmt;
         None

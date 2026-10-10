@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"reflect"
 	"testing"
 
 	codec "github.com/hoophq/hoop/sidecar/codec/wasm/sdk/tinygo"
@@ -150,13 +151,33 @@ func TestDenyCredentialAndContent(t *testing.T) {
 		t.Fatal("an empty prefix is refused")
 	}
 
-	d, _ := opened(t).Decode(codec.Client, encode('A', []byte("s3cret")))
-	token, scrubbed, ok := a.TakeCredential(d.Statements[0])
-	if !ok || token != "s3cret" || scrubbed.Metadata[tokenKey] != "" || scrubbed.Metadata[verbKey] != "AUTH" {
+	a = opened(t)
+	d, _ := a.Decode(codec.Client, encode('A', []byte("s3cret")))
+	auth := d.Statements[0]
+	if !reflect.DeepEqual(auth.Metadata, map[string]string{verbKey: "AUTH", credentialKey: "1"}) {
+		t.Fatalf("auth statement carries %v, want the handle only", auth.Metadata)
+	}
+	token, scrubbed, ok := a.TakeCredential(auth)
+	if !ok || token != "s3cret" || !reflect.DeepEqual(scrubbed.Metadata, map[string]string{verbKey: "AUTH"}) {
 		t.Fatalf("%q %+v", token, scrubbed)
+	}
+	// The handle is spent: the same statement lifts nothing twice.
+	if _, _, ok := a.TakeCredential(auth); ok {
+		t.Fatal("a spent handle lifted a token")
 	}
 	if _, _, ok := a.TakeCredential(scrubbed); ok {
 		t.Fatal("scrubbed statement carries no credential")
+	}
+	// Handles count up per connection, and another connection does not know them.
+	d, _ = a.Decode(codec.Client, encode('A', []byte("other")))
+	if d.Statements[0].Metadata[credentialKey] != "2" {
+		t.Fatalf("second handle %v", d.Statements[0].Metadata)
+	}
+	if _, _, ok := opened(t).TakeCredential(d.Statements[0]); ok {
+		t.Fatal("another connection resolved the handle")
+	}
+	if token, _, ok := a.TakeCredential(d.Statements[0]); !ok || token != "other" {
+		t.Fatalf("second lift %q %v", token, ok)
 	}
 
 	stmt := codec.Statement{Operation: codec.OpDelete, Text: "PURGE orders2024"}.WithMetadata(verbKey, "PURGE")
@@ -167,5 +188,17 @@ func TestDenyCredentialAndContent(t *testing.T) {
 	stmt.Direction = codec.Server
 	if _, ok := a.Content(stmt); ok {
 		t.Fatal("server statements render nothing")
+	}
+}
+
+func TestDecodeRefusesToHoldUnboundedCredentials(t *testing.T) {
+	a := opened(t)
+	for i := range maxHeldCredentials {
+		if _, err := a.Decode(codec.Client, encode('A', []byte("t"))); err != nil {
+			t.Fatalf("frame %d: %v", i, err)
+		}
+	}
+	if _, err := a.Decode(codec.Client, encode('A', []byte("t"))); err == nil {
+		t.Fatal("one more token than the bound was held")
 	}
 }
