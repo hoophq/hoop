@@ -638,9 +638,9 @@ type Rule struct {
 	Prompt string `json:"prompt,omitempty"`
 
 	// Metadata for MatchMetadata: statement metadata key to the values
-	// that match it, ANDed across keys and ORed within one. Both sides
-	// are lowercased and compared exactly; there is no wildcard, because
-	// metadata values are codec-chosen tokens, not free text. A key the
+	// that match it, ANDed across keys and ORed within one. The rule
+	// lowercases both sides and compares them for equality; there is no
+	// wildcard, because metadata values are codec-chosen tokens. A key the
 	// statement does not carry never matches. Plug-in codecs record their
 	// wire verb under `<protocol>.verb`, so a rule reads
 	// `{x-acmewire.verb: [PURGE]}`.
@@ -993,8 +993,8 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		}
 	}
 
-	// HTTP rule types are handled in http.go, gRPC rule types in grpc.go,
-	// the metadata type in metadata.go; ok=false means "not mine".
+	// http.go handles the HTTP rule types, grpc.go the gRPC ones and
+	// metadata.go the metadata type; ok=false means "not mine".
 	if matched, ok := r.matchesHTTP(stmt); ok {
 		return matched, nil
 	}

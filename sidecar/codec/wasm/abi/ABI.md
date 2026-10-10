@@ -8,7 +8,7 @@ the imports below.
 
 The ABI is a C ABI over linear memory with JSON payloads. Every language
 with a wasm32 target implements it: the SDKs under `../sdk/` are
-conveniences, not requirements.
+conveniences.
 
 ## Memory and calling convention
 
@@ -61,7 +61,7 @@ Optional, not a capability:
 `dir` is `0` for bytes from the client and `1` for bytes from the server.
 
 `conn` identifies a connection within one instance. Under
-`instances: per_connection` (the default) every instance serves exactly one
+`instances: per_connection` (the default) every instance serves one
 connection and `conn` is always `0`. Under `instances: per_lane` one
 instance serves every connection of the lane and the guest keys its state
 by `conn`; `open` and `close` bracket each one.
@@ -106,7 +106,7 @@ functions work.
 | key | required | meaning |
 |---|---|---|
 | `abi` | yes | must be `1` |
-| `protocol` | yes | the protocol name; MUST start with `x-`, then `[a-z0-9_-]+`. A built-in name is refused at load, and the control plane grants `x-` protocols by the `plugins` capability alone |
+| `protocol` | yes | the protocol name; MUST start with `x-`, then `[a-z0-9_-]+`. The host refuses a built-in name at load, and the control plane grants `x-` protocols by the `plugins` capability alone |
 | `label` | yes | human name for the listener form |
 | `version` | no | the plug-in's own version, for the startup log |
 | `capabilities` | no | the optional exports present; see above |
@@ -121,7 +121,7 @@ functions work.
 ## Payloads
 
 Field names are the JSON names of `inspect.Statement`, which are libhoop's.
-Unknown fields are refused.
+The host refuses unknown fields.
 
 DecodeResult, from `decode`:
 
@@ -145,7 +145,7 @@ DecodeResult, from `decode`:
 }
 ```
 
-- `protocol` is filled by the host and refused if present: a module cannot
+- The host fills `protocol` and refuses it when present: a module cannot
   impersonate another protocol.
 - `direction` defaults to the call's `dir`; `client` or `server`.
 - `operation` MUST be one of the values `inspect.Operations()` lists
@@ -155,14 +155,14 @@ DecodeResult, from `decode`:
   `trace`, `exec_line`, `env_set`, `sftp_*`, `ws_message`, `ws_close`,
   `other`, `unknown`). Anything else is a decode error. Put the native verb
   in `metadata["<protocol>.verb"]`; a `metadata` rule matches it.
-- Table and relation names are lowercased by the guest; the policy compares
+- The guest lowercases table and relation names; the policy compares
   as-is on the statement side.
 - `consumed` counts bytes of the input the guest finished with. An
   incomplete trailing message is NOT an error: return the statements before
   it and stop `consumed` at its first byte. The host retains the rest and
   passes it again, prefixed to the next read, until `max_reassembly`.
 - `error` non-empty means the bytes are malformed for this protocol. The
-  host drops the connection. `consumed` and `statements` are ignored.
+  host drops the connection and ignores `consumed` and `statements`.
 
 SQLAnalysis, from `analyze_sql`:
 
@@ -201,8 +201,8 @@ RewriteResult, from `rewrite` and `flush`:
 {"bytes": "<base64 of the bytes to forward>", "cells": 12, "rows": 3}
 ```
 
-`bytes` MAY be empty: rows are held until the guest can rebuild them.
-`flush` releases everything held and is called when the connection ends.
+`bytes` MAY be empty: the guest holds rows until it can rebuild them.
+`flush` releases everything held; the host calls it when the connection ends.
 `cells` counts the values `mask` returned CHANGED (compare the bytes it
 returned with the bytes it was given); `rows` counts the rows holding at
 least one of them. They feed the audit trail's masked counts, so a cell
@@ -221,8 +221,8 @@ receives every server chunk through `rewrite` AFTER `decode` saw it, calls
 `mask(column, value)` for each cell it can name, and returns rebuilt
 frames. Column is empty when the protocol does not name one. The returned
 value may differ in length: the guest recomputes every length prefix.
-Values the guest does not pass through `mask` are forwarded unmasked; the
-guest, not the host, decides which bytes are data.
+The host forwards values the guest does not pass through `mask` unmasked;
+the guest decides which bytes are data.
 
 ## Failure semantics
 
@@ -277,7 +277,7 @@ Generic checks, every module:
    fail.
 3. `deny`, when declared, returns at least one byte for a message.
 4. Every `operation` a fixture produces is in the allowed list.
-5. A trap in the guest surfaces as an error, not a hang or a host panic.
+5. A trap in the guest surfaces as an error; the host neither hangs nor panics.
 
 Fixture-driven checks:
 
@@ -285,5 +285,5 @@ Fixture-driven checks:
 7. Each script, replayed one byte at a time with the host's reassembly,
    produces the same statements: the partial-input rule.
 8. Two scripts interleaved step by step on two connections produce, per
-   connection, exactly what each produces alone: no state leaks between
+   connection, what each produces alone: no state leaks between
    connections, under either instancing mode.

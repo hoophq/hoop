@@ -29,32 +29,32 @@ tags did not turn on, or one the codec's type does not implement.
 | `hoop_content` | `content` | `ContentRenderer` | `content` |
 
 `-target wasm-unknown` is the freestanding target: no WASI, no scheduler,
-and `main` never runs, which is why `Serve` is called from `init`. TinyGo
-exports `_initialize`, which the host calls first and which runs those
-`init` functions. `-opt=z -no-debug` shrinks the artifact.
+and `main` never runs, so you call `Serve` from `init`. TinyGo exports
+`_initialize`, which the host calls first and which runs those `init`
+functions. `-opt=z -no-debug` shrinks the artifact.
 
 ## Not in go.work
 
-This module is deliberately absent from the repository's `go.work`: the
-workspace pins a Go version TinyGo does not follow, and `make test-sidecar`
-filters its module walk against `go.work` on purpose. Under the workspace
-`go` refuses to work here, so every command needs `GOWORK=off`:
+This module is absent from the repository's `go.work`: the workspace pins
+a Go version TinyGo does not follow, and `make test-sidecar` filters its
+module walk against `go.work`. Under the workspace `go` refuses to work
+here, so every command needs `GOWORK=off`:
 
 ```sh
 GOWORK=off go test ./...
 GOWORK=off go vet -tags hoop_deny,hoop_filter,hoop_rewrite,hoop_credential,hoop_content ./...
 ```
 
-The package compiles and its tests run with the standard toolchain: the
-`hoop` imports are declared only under the `tinygo` build tag
-(`host_tinygo.go`), and off the relay the data-returning ones panic
-naming the import while `Log` goes to stderr. That is what lets a plug-in
-unit-test its codec on the host.
+The package compiles and its tests run with the standard toolchain:
+`host_tinygo.go` declares the `hoop` imports under the `tinygo` build tag
+only, and off the relay the data-returning ones panic naming the import
+while `Log` goes to stderr. This lets a plug-in unit-test its codec on the
+host.
 
 ## TinyGo is not installed on the dev box
 
-`command -v tinygo` finds nothing here, so no `.wasm` is checked in for
-this SDK and the wasm build above is unverified on this machine. The
+`command -v tinygo` finds nothing here, so this SDK ships no `.wasm` and
+the wasm build above is unverified on this machine. The
 checked-in conformance fixture is the Rust example
 (`../../testdata/acmewire.wasm`); `example/acmewire` implements the same
 protocol and the same fixtures apply to it once built. Install TinyGo

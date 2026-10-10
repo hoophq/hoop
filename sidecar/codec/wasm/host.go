@@ -17,12 +17,12 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-// randReader feeds WASI's random_get. crypto/rand rather than math/rand
-// because a guest may derive something it treats as a secret from it.
+// randReader feeds WASI's random_get. It is crypto/rand because a guest
+// may derive something it treats as a secret from it.
 var randReader = crand.Reader
 
 // sqlAnalysis is SQLAnalysis in ABI.md's spelling. libhoop's struct carries
-// no JSON tags, so the wire form is declared here, once, and the Rust and
+// no JSON tags, so this struct declares the wire form once; the Rust and
 // Go SDKs decode this shape.
 type sqlAnalysis struct {
 	Operation inspect.Operation   `json:"operation"`
@@ -159,7 +159,7 @@ func logLevel(level uint32) slog.Level {
 }
 
 // wasiLog forwards a guest's stdout (fd 1) or stderr (fd 2) to the log one
-// line at a time. A partial line is held until its newline arrives.
+// line at a time. The writer holds a partial line until its newline arrives.
 func (p *Plugin) wasiLog(fd int) io.Writer {
 	level := slog.LevelInfo
 	if fd == 2 {

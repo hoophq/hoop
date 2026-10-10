@@ -5,8 +5,8 @@ import "unsafe"
 // live holds every buffer the host may still touch, keyed by its address.
 //
 // TinyGo's collector is non-moving but it does reclaim unreferenced
-// memory, and a buffer handed to the host is referenced by nothing on the
-// Go side. The map is that reference. alloc and give insert; free, which
+// memory, and nothing on the Go side references a buffer handed to the
+// host. The map is that reference. alloc and give insert; free, which
 // the host calls when it is done, deletes. The same map answers "which
 // buffer is at ptr" for the pointer-taking exports, so no export turns an
 // integer back into a pointer.

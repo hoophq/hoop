@@ -10,14 +10,14 @@ import (
 // The protocol-agnostic rule type. Every other local type reads a field the
 // Statement has a name for: text, operation, relations, HTTP detail. A codec
 // for a protocol this module never heard of has none of those to offer beyond
-// text and operation, and what it does know — the verb on its own wire, a
-// flag the frame carried — goes in Statement.Metadata. This type lets a rule
-// read that map, so a plug-in codec gets a policy surface without a rule type
-// of its own in this package for every protocol it adds.
+// text and operation, and its own facts (the verb on its wire, a flag the
+// frame carried) go in Statement.Metadata. This type lets a rule read that
+// map, so a plug-in codec gets a policy surface without a rule type of its
+// own in this package for every protocol it adds.
 const (
 	// MatchMetadata matches when the statement carries every key in
-	// Metadata with one of that key's values. Keys are ANDed, values under
-	// one key are ORed, and both sides are lowercased before an exact
+	// Metadata with one of that key's values. The rule ANDs keys, ORs the
+	// values under one key, and lowercases both sides before an exact
 	// comparison, so `X-Acmewire.Verb: [Purge]` reads the same as
 	// `x-acmewire.verb: [purge]`. A key the statement lacks never matches:
 	// a rule written for one protocol's keys stays silent on every other
@@ -32,8 +32,8 @@ const (
 // validateMetadata checks the fields of a metadata rule at construction. A
 // key with no values would match on presence alone; that is what http_header
 // means by an empty list, but here a codec documents each key's values, so
-// a rule naming none has most likely lost them to a YAML mistake, and it
-// would fire on every statement of that protocol.
+// a rule naming none is a YAML mistake, and it would fire on every statement
+// of that protocol.
 func (r Rule) validateMetadata() error {
 	if len(r.Metadata) == 0 {
 		return fmt.Errorf("%s: metadata rule with no keys", r.Name)
@@ -76,10 +76,10 @@ func (r Rule) matchesMetadata(stmt inspect.Statement) (matched, ok bool) {
 }
 
 // metadataValue looks key up in metadata without regard to case. Codecs
-// write their keys lowercased by convention, but a rule is typed by hand,
-// and a map lookup cannot fold case, so this walks the map; a statement
-// carries a handful of keys and the walk is cheaper than normalizing a
-// copy per statement.
+// write their keys lowercased by convention, but an operator types a rule by
+// hand, and a map lookup cannot fold case, so this walks the map; a
+// statement carries a handful of keys and the walk is cheaper than
+// normalizing a copy per statement.
 func metadataValue(metadata map[string]string, key string) (string, bool) {
 	key = strings.TrimSpace(key)
 	if v, present := metadata[key]; present {

@@ -133,8 +133,8 @@ type reassemblySizer interface {
 // DenyFramer renders a policy denial in the codec's native error frame.
 //
 // proxy.ProtocolDenyWriter knows the frames of the shipped protocols by
-// name. A codec the registry did not ship — a plug-in, or a codec linked by
-// a custom binary — is the only thing that knows its own error frame, so the
+// name. A codec the registry did not ship (a plug-in, or a codec a custom
+// binary links) is the only thing that knows its own error frame, so the
 // gate asks it first and the relay falls back to the writer. Without it a
 // denial on such a protocol is a bare socket close, the outcome the writer
 // exists to prevent.
@@ -150,10 +150,10 @@ type Labeled interface {
 	Label() string
 }
 
-// A codec that implements io.Closer is closed with the gate, once, even when
-// one instance serves both directions. A codec backed by a resource the
-// garbage collector does not reclaim — a WASM instance, a subprocess — needs
-// it; the shipped codecs are plain memory and do not.
+// Close closes a codec that implements io.Closer once, even when one
+// instance serves both directions. A codec backed by a resource the garbage
+// collector does not reclaim (a WASM instance, a subprocess) needs it; the
+// shipped codecs are plain memory and do not.
 
 // Config assembles a Gate.
 type Config struct {
@@ -821,10 +821,10 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 				finals++
 			case isFrameRequest(stmt) && lifted[i]:
 				// A frame protocol names its caller on the frames that
-				// carry a credential — a handshake, a re-auth — and on
-				// no other, so a frame that lifted nothing is the running
-				// session's, not a refusal. Nothing is outstanding on such
-				// a lane: the codec does not pair responses to requests,
+				// carry a credential (a handshake, a re-auth) and on no
+				// other, so a frame that lifted nothing belongs to the
+				// running session. Nothing is outstanding on such a
+				// lane: the codec does not pair responses to requests,
 				// so a caller change applies from this frame on.
 				if r := g.identify(ctx, stmt, credentials[i], true); r != nil {
 					r.Statements = stmts
@@ -1165,7 +1165,7 @@ func MaskSupportedBy(factory func() inspect.Codec) bool {
 // the codec implements DenyFramer. ok is false otherwise, and the caller
 // falls back to its protocol-keyed writer. An empty message becomes the
 // generic text, the same default proxy.ProtocolDenyWriter applies, so a
-// codec never has to invent one.
+// codec does not have to invent one.
 func (g *Gate) DenyFrame(dir inspect.Direction, message string) (frame []byte, ok bool) {
 	if g.client == nil {
 		return nil, false
@@ -1295,9 +1295,9 @@ func (g *Gate) Close(ctx context.Context) error {
 	g.mu.Unlock()
 
 	sess.End()
-	// Codecs go after the session is marked ended and before the audit
-	// write: a codec that is a WASM instance or a subprocess must not
-	// outlive the connection, and the audit write may block.
+	// Codecs go after sess.End and before the audit write: a codec that
+	// is a WASM instance or a subprocess must not outlive the connection,
+	// and the audit write may block.
 	if g.client != nil {
 		closeCodec(g.client.Codec())
 		if g.server != nil && g.server.Codec() != g.client.Codec() {

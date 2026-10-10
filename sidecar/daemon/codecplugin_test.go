@@ -45,8 +45,9 @@ func (renderingCodec) Content(stmt inspect.Statement, maxBytes int) (string, str
 	return "module rendered " + stmt.Text, "key", stmt.Text != ""
 }
 
-// fakeCodecPlugin is what a test loader returns: the root module cannot
-// import codec/wasm, so the contract is exercised through its interface.
+// fakeCodecPlugin is the plug-in a test loader returns: the root module
+// cannot import codec/wasm, so the tests exercise the contract through its
+// interface.
 type fakeCodecPlugin struct {
 	protocol  inspect.Protocol
 	manifest  string
@@ -107,8 +108,8 @@ func pluginLaneConfig(module, sha string, extra string) string {
     }`
 }
 
-// The entries the config alone can check are refused at validation, on the
-// plane as on the host, so a module is never fetched for a config that
+// Validation refuses the entries the config alone can check, on the plane
+// as on the host, so the loader never fetches a module for a config that
 // could not use it.
 func TestPluginsEntriesAreValidated(t *testing.T) {
 	for name, tc := range map[string]struct{ doc, want string }{
@@ -193,7 +194,7 @@ func TestAModuleForAnotherProtocolIsRefused(t *testing.T) {
 	useFakeLoader(t, plugin, nil)
 	module, sha := writeModule(t, "wasm")
 	_, _, err := Setup(writeConfig(t, pluginLaneConfig(module, sha, "")), nil, nil)
-	if err == nil || !strings.Contains(err.Error(), `declares protocol "x-other", not "x-acmewire"`) {
+	if err == nil || !strings.Contains(err.Error(), `declares protocol "x-other"; the entry expects "x-acmewire"`) {
 		t.Fatalf("Setup = %v, want the protocol refusal", err)
 	}
 	if plugin.closed != 1 {
@@ -290,10 +291,10 @@ func TestAContentCapablePluginRendersItsOwnPrompt(t *testing.T) {
 	}
 }
 
-// Masking on a plug-in lane is decided by the module: a codec that
-// re-frames takes the rules, one that does not refuses them at build, since
-// the config check cannot know and the data path would otherwise forward
-// rows unmasked under a lane that claims to mask.
+// The module decides masking on a plug-in lane: a codec that re-frames
+// takes the rules, one that does not refuses them at build, since the
+// config check cannot know and the data path would otherwise forward rows
+// unmasked under a lane that claims to mask.
 func TestMaskingOnAPluginLaneAsksTheModule(t *testing.T) {
 	det := stubPlugin{entities: []string{"US_SSN"}}
 	mc := MaskConfig{Rules: []byte(`[{"entity":"US_SSN","strategy":"redact"}]`)}
@@ -319,8 +320,8 @@ func TestMaskingOnAPluginLaneAsksTheModule(t *testing.T) {
 	}
 }
 
-// A plug-in lane whose module did not load is refused at build, never bound
-// to a port that decodes nothing.
+// buildLanes refuses a plug-in lane whose module did not load; it never
+// binds a port that decodes nothing.
 func TestAPluginLaneWithoutItsModuleIsRefusedAtBuild(t *testing.T) {
 	cfg := &Config{
 		Plugins:   []CodecPluginConfig{{Protocol: "x-acme", Module: "a.wasm"}},

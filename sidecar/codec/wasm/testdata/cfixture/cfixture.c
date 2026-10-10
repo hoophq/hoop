@@ -1,12 +1,12 @@
 // cfixture.c is the x-cfix test protocol: a frame is one length byte and
-// that many bytes of text. It exists to exercise the host, not to be a
-// codec, and it is freestanding C so the test fixture depends on nothing
-// but clang's wasm32 target.
+// that many bytes of text. It exists to exercise the host, and it is
+// freestanding C so the test fixture depends on nothing but clang's
+// wasm32 target.
 //
 // One source builds every variant; build.sh lists them. Each -D flag
-// breaks one rule of abi/ABI.md so the host's refusal of it can be tested,
-// or misbehaves in one way (trap, spin, memory growth) so the failure
-// semantics can be.
+// breaks one rule of abi/ABI.md so a test can prove the host refuses it,
+// or misbehaves in one way (trap, spin, memory growth) so a test can
+// prove the failure semantics.
 #include <stdint.h>
 
 typedef uint32_t u32;
@@ -50,9 +50,10 @@ static const char manifest[] =
     EXTRA "}";
 
 // A bump allocator. Every region is dead once the export that produced or
-// received it has returned and the host has called free, so the arena
-// resets when the last live region is freed. Memory grows on demand; a
-// failed grow traps, which is the ABI's answer to a guest past its limit.
+// received it has returned and the host has called free, so free resets
+// the arena when it releases the last live region. Memory grows on
+// demand; a failed grow traps, which is the ABI's answer to a guest past
+// its limit.
 extern unsigned char __heap_base;
 static u32 top, live;
 

@@ -102,8 +102,8 @@ func TestStatementJSONUsesTheABINamesAndOmitsEmptyFields(t *testing.T) {
 		t.Fatalf("minimum statement: %s", raw)
 	}
 
-	// What the host hands back: its own Statement, direction set, maybe
-	// with protocol, which the guest ignores and never emits.
+	// The host hands back its own Statement, direction set, maybe with
+	// protocol, which the guest ignores and never emits.
 	var in Statement
 	if err := json.Unmarshal([]byte(`{"protocol":"x","direction":"server","text":"ROW","operation":"other","result":{"row_count":1,"truncated":true}}`), &in); err != nil {
 		t.Fatal(err)
@@ -228,9 +228,9 @@ func TestCapabilityExportsRenderTheirResultJSON(t *testing.T) {
 	}
 }
 
-// The exports move bytes through alloc/borrow/give; on the host the
-// addresses are truncated to 32 bits but used consistently, so the path
-// runs without a wasm runtime.
+// The exports move bytes through alloc/borrow/give; on the host, address
+// truncates every pointer to 32 bits and every lookup uses the same
+// truncated key, so the path runs without a wasm runtime.
 func TestExportsMoveBytesThroughLinearMemory(t *testing.T) {
 	served = newRegistry(newEcho, Manifest{Protocol: "x-t", Label: "T"})
 	defer func() { served = nil }()

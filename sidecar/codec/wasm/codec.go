@@ -16,17 +16,17 @@ import (
 // rebuild its frames.
 //
 // Both directions of a connection share this one value (gate.Duplex): a
-// guest keys its state by connection, not by direction, and the ABI
-// promises it serialized calls, which the instance's lock provides.
+// guest keys its state by connection, and the ABI promises it serialized
+// calls, which the instance's lock provides.
 type codec struct {
 	p     *Plugin
 	in    *instance
 	conn  uint32
 	owned bool // per_connection: Close releases the instance
 
-	// err is set when the codec could not be attached (instantiate failed,
-	// open refused). Every method reports it, so the gate fails the
-	// connection with the reason rather than a nil-interface panic.
+	// err holds the reason attach failed (instantiate failed, open
+	// refused). Every method reports it, so the gate fails the connection
+	// with the reason. A nil interface in its place would panic.
 	err error
 
 	mu     sync.Mutex
@@ -69,8 +69,8 @@ func (c *codec) MaxReassemblyBytes() int    { return c.p.manifest.maxReassembly(
 // The gate's default for a decode error is to forward the bytes: for a
 // shipped codec the upstream's parser is the authority on its own
 // protocol, and a chunk the relay misread is still one the server can
-// judge. ABI.md promises the opposite for a plug-in — a decode error, a
-// trap or a timeout DROPS the connection — because the plug-in IS the
+// judge. ABI.md promises the opposite for a plug-in: a decode error, a
+// trap or a timeout drops the connection, because the plug-in is the
 // only parser the relay has for that protocol, and bytes it could not
 // read are bytes policy never saw. inspect.ErrStreamUnsafe is the one
 // error the gate denies regardless of policy, so every decode failure
@@ -155,11 +155,12 @@ func (c *codec) DenyFrame(dir inspect.Direction, message string) []byte {
 // TakeCredential implements gate.CredentialSource; ok is false when the
 // manifest names no credential capability.
 //
-// A guest failure here has no error to return through. The statement is
-// then reduced to an unknown operation carrying only the failure, so no
-// trace of a credential the guest did not remove reaches policy, audit or
-// the analyzer, and a rule naming `unknown` refuses it. The instance is
-// dead at that point, so the connection drops on its next byte.
+// A guest failure here has no error to return through. TakeCredential
+// then reduces the statement to an unknown operation carrying only the
+// failure, so no trace of a credential the guest did not remove reaches
+// policy, audit or the analyzer, and a rule naming `unknown` refuses it.
+// The instance is dead at that point, so the connection drops on its
+// next byte.
 func (c *codec) TakeCredential(stmt *inspect.Statement) (string, bool) {
 	if !c.p.manifest.hasCapability(CapCredential) || c.err != nil {
 		return "", false
@@ -257,7 +258,7 @@ func (c *codec) Close() error {
 }
 
 // EnableRewrite tells the guest the lane has a masker, before any server
-// bytes arrive. A failure is logged; the instance is dead and Decode
+// bytes arrive. It logs a failure; the instance is dead and Decode
 // reports it on the next chunk.
 func (c *rewriteCodec) EnableRewrite() {
 	if c.err != nil {
@@ -268,9 +269,9 @@ func (c *rewriteCodec) EnableRewrite() {
 	}
 }
 
-// Rewrite implements gate.Reframer. The mask callback is installed on the
-// instance for the duration of the call, which is the only window in
-// which the guest's `mask` import works.
+// Rewrite implements gate.Reframer. It installs the mask callback on the
+// instance for the duration of the call, the only window in which the
+// guest's `mask` import works.
 func (c *rewriteCodec) Rewrite(data []byte, mask func(column string, value []byte) []byte) ([]byte, inspect.ReframeResult, error) {
 	if c.err != nil {
 		return nil, inspect.ReframeResult{}, c.fail(c.err)
@@ -292,9 +293,9 @@ func (c *rewriteCodec) Rewrite(data []byte, mask func(column string, value []byt
 	return res.Bytes, inspect.ReframeResult{Cells: res.Cells, Rows: res.Rows}, nil
 }
 
-// Flush implements gate.Reframer. It has no error to return: a failure is
-// logged and nothing is released, which is the fail-closed direction for
-// bytes that were held because they could not be masked yet.
+// Flush implements gate.Reframer. It has no error to return: it logs a
+// failure and releases nothing, which is the fail-closed direction for
+// bytes the guest held because it could not mask them yet.
 func (c *rewriteCodec) Flush(mask func(column string, value []byte) []byte) []byte {
 	if c.err != nil {
 		return nil

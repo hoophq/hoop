@@ -55,9 +55,9 @@ type Step struct {
 	Expect *Expect `json:"expect,omitempty"`
 }
 
-// Expect is what a step must produce. Absent keys are not checked;
-// Statements is kept raw so its subset comparison sees exactly the fields
-// the author wrote.
+// Expect is what a step must produce. The runner skips absent keys and
+// keeps Statements raw, so its subset comparison sees the fields the
+// author wrote.
 type Expect struct {
 	Consumed   *int            `json:"consumed,omitempty"`
 	Statements json.RawMessage `json:"statements,omitempty"`
@@ -72,8 +72,8 @@ const garbageSize = 64 << 10
 // Run loads module, runs the generic checks, then the fixture checks over
 // every script in fixtures, writing one line per check to out. It
 // returns an error naming the checks that failed; a module with no
-// fixtures passes on the generic checks alone, with the fixture checks
-// reported as skipped.
+// fixtures passes on the generic checks alone, and Run reports the
+// fixture checks as skipped.
 func Run(ctx context.Context, module []byte, fixtures [][]byte, out io.Writer) error {
 	r := &runner{out: out}
 	fmt.Fprintf(out, "%-5s %-6s %s\n", "check", "result", "detail")
@@ -197,12 +197,12 @@ func (r *runner) checkDeny(p *wasm.Plugin) {
 // Check 5: a guest failure surfaces as an error, never a hang or a panic.
 //
 // The runner cannot make an arbitrary module trap: it has no export that
-// traps on demand, and adding one to the ABI would test the export
-// rather than the module. What it can do is hand decode input no framing
-// accepts and hold the host to its promise about whatever the guest does
-// with it. A module that traps on it exercises the trap path for real; a
-// module that spins is stopped by call_timeout_ms; a module that reports
-// a decode error exercises only the error path. All three must return,
+// traps on demand, and adding one to the ABI would test only that
+// export. The runner can hand decode input no framing accepts and hold
+// the host to its promise about whatever the guest does with it. A
+// module that traps on it exercises the trap path for real;
+// call_timeout_ms stops a module that spins; a module that reports a
+// decode error exercises only the error path. All three must return,
 // within the deadline, without a panic escaping. The limit: a module
 // that decodes garbage without complaint passes this check having
 // proven nothing about its traps, and only its author's fixtures can.
@@ -328,8 +328,9 @@ func (r *runner) checkWhole(p *wasm.Plugin, scripts []Script) [][]stepResult {
 		conn.close()
 	}
 	// The host refuses an operation outside the list before the
-	// statement reaches here, so this cannot fail on a loaded module; it
-	// is reported so the list of checks reads the way ABI.md lists them.
+	// statement reaches here, so this cannot fail on a loaded module; the
+	// runner reports it so the list of checks reads the way ABI.md lists
+	// them.
 	r.ok(4, "operations: %d statement(s), every operation listed by inspect.Operations", statements)
 	for _, f := range failures {
 		r.fail(6, "%s", f)
@@ -401,7 +402,7 @@ func (r *runner) checkByteAtATime(p *wasm.Plugin, scripts []Script, solo [][]ste
 }
 
 // Check 8: two scripts interleaved step by step on two connections each
-// produce what they produce alone. Script i is paired with script i+1,
+// produce what they produce alone. The runner pairs script i with i+1,
 // and the last with the first, so every script runs beside a different
 // one; a lone script runs beside itself, which still proves two
 // connections of one guest do not share state.
@@ -494,7 +495,7 @@ func check(e *Expect, res stepResult) string {
 	return ""
 }
 
-// subset reports whether want is contained in got: every key of an
+// subset reports whether got contains want: every key of an
 // object, the same length and matching elements of an array, equality
 // of a scalar. The path of the first mismatch comes back for the report.
 func subset(want, got any, path string) (string, bool) {
@@ -566,7 +567,7 @@ func mustJSON(s inspect.Statement) string {
 }
 
 // parseFixtures reads every fixture file strictly: an unknown key is a
-// typo that would otherwise silently check nothing.
+// typo that would otherwise check nothing.
 func parseFixtures(fixtures [][]byte) ([]Script, error) {
 	var scripts []Script
 	for i, raw := range fixtures {

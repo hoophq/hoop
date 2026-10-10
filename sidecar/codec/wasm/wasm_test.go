@@ -43,7 +43,7 @@ func frame(text string) []byte {
 
 func TestLoadRefusesBrokenModules(t *testing.T) {
 	cases := []struct{ file, want string }{
-		{"cfixture_badabi.wasm", "abi 2 is not supported"},
+		{"cfixture_badabi.wasm", "the module declares abi 2"},
 		{"cfixture_builtin.wasm", `protocol "postgres" must match`},
 		{"cfixture_noprefix.wasm", `protocol "cfix" must match`},
 		{"cfixture_capnoexport.wasm", `capability "filter" but the module does not export "filter"`},
@@ -70,8 +70,8 @@ func TestLoadRefusesBrokenModules(t *testing.T) {
 }
 
 func TestLoadRefusesBuiltinProtocolByRegistry(t *testing.T) {
-	// The pattern already excludes libhoop's names; a custom binary that
-	// registered an x- codec must not be shadowed by a plug-in either.
+	// The pattern already excludes libhoop's names; a plug-in must not
+	// shadow an x- codec a custom binary registered either.
 	if _, err := parseManifest([]byte(`{"abi":1,"protocol":"postgres","label":"x"}`)); err == nil {
 		t.Fatal("built-in protocol accepted")
 	}
@@ -130,7 +130,7 @@ func TestDecode(t *testing.T) {
 	if _, _, err = c.Decode(inspect.FromClient, []byte{0}); err == nil || err.Error() != "empty frame" || !errors.Is(err, inspect.ErrStreamUnsafe) {
 		t.Fatalf("empty frame: %v", err)
 	}
-	// A decode error is not fatal: the instance stays usable.
+	// The instance stays usable after a decode error.
 	if _, _, err = c.Decode(inspect.FromClient, frame("still here")); err != nil {
 		t.Fatalf("after a decode error: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestPerLaneInstanceIsShared(t *testing.T) {
 		t.Fatal(err)
 	}
 	// One instance, two connections: b is conn 1, both opens are visible,
-	// and b's own sequence is untouched by a's frames.
+	// and a's frames leave b's own sequence untouched.
 	if m := stmts[0].Metadata; m["x-cfix.seq"] != "1" || m["x-cfix.opens"] != "2" || m["x-cfix.conn"] != "1" {
 		t.Fatalf("metadata %v", m)
 	}
@@ -407,7 +407,7 @@ func TestGateAcceptsTheCodec(t *testing.T) {
 	if d = g.Request(context.Background(), []byte{0}); d.Allowed || d.Rule != "stream-unsafe" || !strings.Contains(d.Message, "empty frame") {
 		t.Fatalf("decode error decision %+v", d)
 	}
-	// A masker on a codec that cannot re-frame is refused at New.
+	// gate.New refuses a masker on a codec that cannot re-frame.
 	_, err = gate.New(session.New("x-cfix", session.Identity{}), gate.Config{Protocol: "x-cfix", CodecFactory: factory, Masker: nopMasker{}})
 	if err == nil || !strings.Contains(err.Error(), "cannot re-frame") {
 		t.Fatalf("masker on cfixture: %v", err)

@@ -1,7 +1,7 @@
 // Package wasm loads a codec plug-in: one WebAssembly module that decodes
 // a wire protocol the relay was not built with.
 //
-// # Why a plug-in is a wasm module
+// # The case for a wasm module
 //
 // A customer with an in-house protocol, or a vendor whose database the
 // shipped codecs do not cover, needs the relay to understand its bytes
@@ -16,14 +16,14 @@
 // abi/ABI.md is the contract the module implements; this package is the
 // host side of it. The SDKs under sdk/ are conveniences on top.
 //
-// # What the host enforces
+// # The host's checks
 //
-// Load refuses a module before it runs any of its code for real: the
-// imports and exports are checked against the ABI tables, then `describe`
-// runs on a throwaway instance and the manifest is held to the module
+// Load refuses a module before it runs any of its code for real: it
+// checks the imports and exports against the ABI tables, then runs
+// `describe` on a throwaway instance and holds the manifest to the module
 // (every capability has its exports and vice versa, a module importing the
-// SQL lexer names a dialect, a module importing WASI says so). The
-// runtime that serves connections is then built under the manifest's own
+// SQL lexer names a dialect, a module importing WASI says so). Load then
+// builds the runtime that serves connections under the manifest's own
 // memory limit, and every export call runs under its call_timeout_ms.
 //
 // Every failure fails closed. A trap, a timeout or an exit kills the
@@ -65,9 +65,9 @@ type loadOptions struct {
 
 // WithLogger routes the guest's `log` import and the host's own messages
 // about the plug-in to l. Without it the plug-in logs through
-// slog.Default, read at each call so a logger installed after Load (the
-// daemon sets its own) is honoured. Pass a logger already tagged with the
-// lane so a guest log line names where it ran.
+// slog.Default, read at each call, so the plug-in honours a logger
+// installed after Load (the daemon sets its own). Pass a logger already
+// tagged with the lane so a guest log line names where it ran.
 func WithLogger(l *slog.Logger) Option {
 	return func(o *loadOptions) {
 		if l != nil {
@@ -115,9 +115,9 @@ func Load(ctx context.Context, module []byte, opts ...Option) (*Plugin, error) {
 
 	// The manifest decides the memory limit and the deadline, and the
 	// manifest comes from running the module: so a bootstrap runtime
-	// under the defaults runs describe, and the serving runtime is built
-	// afterwards under the manifest's own limits. Two compiles per load;
-	// a load is rare and a connection is not.
+	// under the defaults runs describe, and Load builds the serving
+	// runtime afterwards under the manifest's own limits. Two compiles
+	// per load; loads are rare.
 	boot := &Plugin{log: o.log, timeout: callTimeout(DefaultCallTimeoutMS)}
 	boot.ctx, boot.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	defer boot.Close()
@@ -206,8 +206,8 @@ func (p *Plugin) Version() string { return p.manifest.Version }
 // Capabilities lists the optional exports the manifest declares.
 func (p *Plugin) Capabilities() []string { return slices.Clone(p.manifest.Capabilities) }
 
-// Manifest returns the describe JSON exactly as the module produced it,
-// after validation. The daemon renders the listener form from it.
+// Manifest returns the describe JSON as the module produced it, after
+// validation. The daemon renders the listener form from it.
 func (p *Plugin) Manifest() []byte { return slices.Clone(p.raw) }
 
 // ManifestValues returns the parsed manifest.
@@ -231,8 +231,8 @@ func (p *Plugin) name() string {
 
 // ValidateOptions holds a listener's option values to the manifest: every
 // key must be an option the manifest declares and every value must parse
-// as its type. The daemon calls it at config validation so a typo is a
-// refused config rather than a connection that fails at open.
+// as its type. The daemon calls it at config validation, so it refuses a
+// config with a typo before any connection reaches open.
 func (p *Plugin) ValidateOptions(options map[string]string) error {
 	for name, value := range options {
 		i := slices.IndexFunc(p.manifest.Options, func(o ManifestOption) bool { return o.Name == name })
@@ -280,12 +280,12 @@ func (p *Plugin) openOptions(options map[string]string) ([]byte, error) {
 //
 // It never returns nil: a codec that could not be built reports its
 // error from every call, so the gate drops the connection with the reason
-// in the log instead of failing on a nil interface.
+// in the log.
 //
 // The returned value implements gate.Reframer and EnableRewrite only when
 // the manifest names the rewrite capability, and analyzer.ContentRenderer
 // only when it names content, through distinct types, so a type
-// assertion answers for this plug-in and not for the package.
+// assertion answers for this plug-in alone.
 func (p *Plugin) NewCodec(options map[string]string) inspect.Codec {
 	c := &codec{p: p}
 	c.err = p.attach(c, options)
@@ -354,8 +354,8 @@ func (p *Plugin) attach(c *codec, options map[string]string) error {
 	return nil
 }
 
-// Close releases the runtime and every instance. A call in flight on any
-// instance is terminated; codecs still open report the plug-in closed.
+// Close releases the runtime and every instance. It terminates a call in
+// flight on any instance; codecs still open report the plug-in closed.
 func (p *Plugin) Close() error {
 	p.mu.Lock()
 	if p.closed {

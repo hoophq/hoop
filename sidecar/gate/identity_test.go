@@ -238,9 +238,8 @@ func (c *frameCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Stateme
 
 // A database or plug-in protocol names its caller on the frames that carry
 // a credential and on no other. A frame that lifts nothing stays with the
-// running session instead of being refused the way an HTTP request without
-// a credential is, and a frame that names a new caller rotates at once:
-// such a codec does not pair responses to requests, so nothing is
+// running session, and a frame that names a new caller rotates the session
+// at once: such a codec does not pair responses to requests, so nothing is
 // outstanding.
 func TestFrameProtocolLiftsCredentialsOnlyWhereTheyAre(t *testing.T) {
 	ctx := context.Background()

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Builds every x-cfix variant into ../ from cfixture.c. The binaries are
-# checked in so the tests need no C toolchain; run this after editing the
-# source.
+# Builds every x-cfix variant into ../ from cfixture.c. The repo carries
+# the binaries so the tests need no C toolchain; run this after editing
+# the source.
 #
 # Needs clang with the wasm32 target and wasm-ld on PATH: `brew install
 # llvm lld` on macOS (CC=/opt/homebrew/opt/llvm/bin/clang), or any LLVM

@@ -14,7 +14,7 @@
 // # It does not register itself
 //
 // Every shipped seam under codec/ calls inspect.Register from init, and
-// this package deliberately does not. Registration is process-wide and has
+// this package does not. Registration is process-wide and has
 // three consequences a test fixture must not have:
 //
 //   - inspect.Register panics on a duplicate protocol, so a second
@@ -28,8 +28,8 @@
 //   - A registered protocol is reachable from any config file, so a
 //     listener could select it in production.
 //
-// New is what a lane uses: hand it to gate.Config.CodecFactory or
-// proxy.Config.CodecFactory and the registry is never consulted. Register
+// A lane uses New: hand it to gate.Config.CodecFactory or
+// proxy.Config.CodecFactory and the gate never consults the registry. Register
 // exists for the custom binary that wants x-example selectable by name;
 // call it once, from main or a package init of your own.
 package example
@@ -43,7 +43,7 @@ import (
 )
 
 // Protocol is the name an x-example lane declares. Plug-in protocols carry
-// the x- prefix so a built-in name can never be shadowed.
+// the x- prefix so a plug-in can never shadow a built-in name.
 const Protocol inspect.Protocol = "x-example"
 
 // denyTag opens a deny frame. 0xFF is not a valid length for a message
@@ -51,15 +51,15 @@ const Protocol inspect.Protocol = "x-example"
 // protocol cannot mistake the frame for text.
 const denyTag = 0xFF
 
-// maxMessage is the largest message the length byte can describe. The
-// reassembly cap is set a little above it so the generic 8 MiB guard is
-// never what refuses a frame of this protocol.
+// maxMessage is the largest message the length byte can describe.
+// MaxReassemblyBytes sits a little above it so the generic 8 MiB guard
+// never refuses a frame of this protocol.
 const maxMessage = 0xFE
 
 // New builds one codec. The codec is stateless beyond what the inspector
-// holds for it, but it is still built per connection: that is the contract
-// CodecFactory and Register share, and a codec that grows state later must
-// not have to change its callers.
+// holds for it, but a lane still builds it per connection: that is the
+// contract CodecFactory and Register share, and a codec that grows state
+// later must not have to change its callers.
 func New() inspect.Codec { return &codec{} }
 
 // Register makes x-example selectable by protocol name through the
@@ -81,8 +81,8 @@ func (*codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, i
 	for consumed < len(data) {
 		n := int(data[consumed])
 		if n == denyTag {
-			// A deny frame is something the relay writes, never something a
-			// peer sends; it arriving on the wire means the stream is not
+			// The relay writes deny frames and a peer never sends one, so
+			// a deny tag arriving on the wire means the stream is not
 			// speaking x-example.
 			return nil, 0, errors.New("x-example: deny tag on the wire")
 		}
@@ -107,9 +107,8 @@ func (*codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, i
 }
 
 // DenyFrame implements gate.DenyFramer: a denial reaches the client as a
-// frame it can decode instead of a closed socket. A message longer than
-// the length byte can carry is cut, not refused, because a truncated reason
-// still beats no reason.
+// frame it can decode. DenyFrame cuts a message longer than the length
+// byte can carry, because a truncated reason still beats no reason.
 func (*codec) DenyFrame(_ inspect.Direction, message string) []byte {
 	if len(message) > maxMessage {
 		message = message[:maxMessage]

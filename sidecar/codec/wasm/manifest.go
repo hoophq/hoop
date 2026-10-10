@@ -42,8 +42,7 @@ type ManifestOption struct {
 }
 
 // The manifest's enumerations. Each is closed on purpose: a value outside
-// it is a typo the author should hear about at load, not a silently
-// ignored key.
+// it is a typo the author should hear about at load.
 const (
 	CapDeny       = "deny"
 	CapFilter     = "filter"
@@ -109,8 +108,8 @@ func dialectOf(name string) (lexer.Dialect, bool) {
 	return 0, false
 }
 
-// parseManifest decodes and validates a describe payload. Unknown keys are
-// refused like every other payload: a misspelt `capabilites` would
+// parseManifest decodes and validates a describe payload. It refuses
+// unknown keys like every other payload: a misspelt `capabilites` would
 // otherwise drop every capability and surface later as "export present
 // without its capability", two steps away from the typo.
 func parseManifest(raw []byte) (Manifest, error) {
@@ -124,7 +123,7 @@ func parseManifest(raw []byte) (Manifest, error) {
 		return m, fmt.Errorf("manifest: trailing data after the JSON object")
 	}
 	if m.ABI != ABIVersion {
-		return m, fmt.Errorf("manifest: abi %d is not supported, this host speaks abi %d", m.ABI, ABIVersion)
+		return m, fmt.Errorf("manifest: this host speaks abi %d, the module declares abi %d", ABIVersion, m.ABI)
 	}
 	if !protocolNamePattern.MatchString(m.Protocol) {
 		return m, fmt.Errorf("manifest: protocol %q must match %s", m.Protocol, protocolNamePattern)

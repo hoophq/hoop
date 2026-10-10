@@ -36,7 +36,7 @@ mod imports {
 #[cfg(not(target_arch = "wasm32"))]
 mod imports {
     // The imports that return data have no answer off the relay and fail
-    // loudly; `log` is handled in the wrapper below.
+    // loudly; the wrapper below handles `log`.
     pub unsafe fn analyze_sql(_: u32, _: u32) -> u64 {
         unavailable("analyze_sql")
     }
@@ -53,10 +53,9 @@ mod imports {
 
 /// Classifies SQL text with the host lexer in the manifest's `sql_dialect`.
 ///
-/// The classifier stays in the relay on purpose: it is the most
-/// safety-critical code in the system, and one auditable copy serves every
-/// plug-in. A codec copies the result onto its statement with
-/// `Statement::with_analysis`.
+/// The classifier stays in the relay: it is the most safety-critical code
+/// in the system, and one auditable copy serves every plug-in. A codec
+/// copies the result onto its statement with `Statement::with_analysis`.
 pub fn analyze_sql(sql: &str) -> SqlAnalysis {
     let raw = unsafe { abi::take(imports::analyze_sql(sql.as_ptr() as usize as u32, sql.len() as u32)) };
     // The host wrote this; a payload it cannot encode is a host bug, and a
@@ -76,8 +75,7 @@ pub fn split_sql(sql: &str) -> Vec<String> {
 /// protocol does not name one.
 ///
 /// Legal only on the stack of `rewrite` or `flush`; the host traps a call
-/// from anywhere else, so `Codec::rewrite` receives it as a closure rather
-/// than reaching for this directly.
+/// from anywhere else, so `Codec::rewrite` receives it as a closure.
 pub(crate) fn mask(column: &str, value: &[u8]) -> Vec<u8> {
     unsafe {
         abi::take(imports::mask(

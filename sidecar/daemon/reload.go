@@ -594,8 +594,8 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		return r.keep(reloadRestart, msg)
 	}
 	// The plugins list is in the baseline, so an accepted document names
-	// the running modules: hand them over, rather than loading the same
-	// code a second time and leaving the running lanes on the first.
+	// the running modules: hand them over. Loading the same code a second
+	// time would leave the running lanes on the first.
 	newCfg.codecPlugins = r.codecPlugins
 	newCfg.codecPluginInfo = r.codecPluginInfo
 

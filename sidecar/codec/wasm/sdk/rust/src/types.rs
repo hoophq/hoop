@@ -2,8 +2,8 @@
 //!
 //! Field names are the JSON names of `inspect.Statement`, which are
 //! libhoop's, and the host refuses a payload with a name it does not know.
-//! A codec therefore builds these types rather than hand-written JSON: the
-//! names are checked once here, by `cargo test`, instead of at every load.
+//! A codec builds these types: `cargo test` checks the names once here
+//! instead of at every load.
 //!
 //! `Statement` carries no `protocol`: the host fills it and refuses a
 //! guest that sets it, so a module cannot impersonate a built-in protocol.
@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Which side of the connection produced the bytes.
+/// The side of the connection that produced the bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
@@ -94,8 +94,8 @@ pub enum Access {
     Write,
 }
 
-/// One relation a statement touches, and how. Names are lowercased by the
-/// guest; the policy compares them as written.
+/// One relation a statement touches, and how. The guest lowercases names;
+/// the policy compares them as written.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Relation {
     pub name: String,
@@ -132,9 +132,9 @@ pub struct ResultDetail {
 
 /// One inspected unit of work: the document a policy evaluates.
 ///
-/// `direction` may be left `None` on a decoded statement; the host fills
-/// it with the direction of the `decode` call. A statement the host hands
-/// back (`take_credential`, `content`) always carries it.
+/// A codec may leave `direction` as `None` on a decoded statement; the
+/// host fills it with the direction of the `decode` call. A statement the
+/// host hands back (`take_credential`, `content`) always carries it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Statement {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -190,7 +190,7 @@ impl Statement {
     }
 }
 
-/// What the host lexer found in one SQL statement; see `host::analyze_sql`.
+/// The host lexer's findings for one SQL statement; see `host::analyze_sql`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SqlAnalysis {
     pub operation: Operation,
@@ -206,13 +206,13 @@ pub struct SqlAnalysis {
     pub reason: String,
 }
 
-/// What `Codec::decode` hands back for one chunk of input.
+/// The result `Codec::decode` hands back for one chunk of input.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Decoded {
     pub statements: Vec<Statement>,
-    /// Bytes of the input the codec finished with. An incomplete trailing
-    /// message is not an error: stop here and the host passes the rest
-    /// again, prefixed to the next read.
+    /// Bytes of the input the codec finished with. Stop at an incomplete
+    /// trailing message; the host passes the rest again, prefixed to the
+    /// next read.
     pub consumed: usize,
 }
 
@@ -222,23 +222,23 @@ impl Decoded {
     }
 }
 
-/// What `Codec::rewrite` and `Codec::flush` hand back.
+/// The result `Codec::rewrite` and `Codec::flush` hand back.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Rewritten {
     /// The bytes to forward. May be empty while rows are held.
     pub bytes: Vec<u8>,
-    /// How many values `mask` returned changed. A value handed over and
-    /// returned as-is is not masked, and the audit trail reports this.
+    /// The count of values `mask` returned changed. A value handed over
+    /// and returned as-is is not masked, and the audit trail reports this.
     pub cells: u64,
-    /// How many rows had at least one changed value.
+    /// The count of rows with at least one changed value.
     pub rows: u64,
 }
 
-/// What `Codec::content` renders for the AI analyzer.
+/// The text `Codec::content` renders for the AI analyzer.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Content {
     pub text: String,
-    /// Names the statement's SHAPE with literals stripped, so one verdict
+    /// Names the statement's shape with literals stripped, so one verdict
     /// serves repeats. Empty means never cache.
     pub cache_key: String,
 }
@@ -266,7 +266,7 @@ pub enum SqlDialect {
     Googlesql,
 }
 
-/// How the host maps connections onto instances.
+/// The way the host maps connections onto instances.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Instances {
@@ -300,8 +300,8 @@ pub struct OptionSpec {
     pub help: Option<String>,
 }
 
-/// What `describe` returns. `Manifest::new` sets `abi`; the rest is the
-/// plug-in's to fill. `capabilities` must name exactly what the
+/// The manifest `describe` returns. `Manifest::new` sets `abi`; the rest is
+/// the plug-in's to fill. `capabilities` must name the same set the
 /// `export_codec!` list names, and `describe` traps when they differ,
 /// because the host refuses a capability without its export and an export
 /// without its capability.

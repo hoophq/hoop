@@ -22,10 +22,10 @@ import (
 )
 
 // registerOnce puts x-example in the registry for this test binary only.
-// proxy.NewServer asks the registry for the protocol at construction, so
-// the proxy path needs it; the gate path does not, and runs first to prove
-// that. registered remembers that it fired: `-count=2` reruns the test in
-// the same process, where the registry already holds the protocol.
+// The schema step needs it; the gate path and a proxy with a CodecFactory
+// do not, and the gate path runs first to prove that. registered remembers
+// that it fired: `-count=2` reruns the test in the same process, where the
+// registry already holds the protocol.
 var (
 	registerOnce sync.Once
 	registered   bool
@@ -111,7 +111,7 @@ func TestExampleProtocolEndToEnd(t *testing.T) {
 
 		d = g.Request(ctx, frame("please DROP everything"))
 		if d.Allowed {
-			t.Fatal("a text carrying the deny word was allowed")
+			t.Fatal("the gate allowed a text carrying the deny word")
 		}
 		if d.Rule != "no-drop" || d.Message != "drop is not allowed here" {
 			t.Errorf("denial rule=%q message=%q", d.Rule, d.Message)
@@ -130,7 +130,7 @@ func TestExampleProtocolEndToEnd(t *testing.T) {
 			t.Errorf("deny frame = %x, want %x", got, want)
 		}
 
-		// A split message is reassembled, not judged twice or dropped.
+		// The gate reassembles a split message and judges it once.
 		whole := frame("split across reads")
 		if d := g.Request(ctx, whole[:5]); !d.Allowed || len(d.Statements) != 0 {
 			t.Fatalf("partial message: allowed=%v statements=%d", d.Allowed, len(d.Statements))
@@ -191,7 +191,7 @@ func TestExampleProtocolEndToEnd(t *testing.T) {
 		defer c.Close()
 		c.SetDeadline(time.Now().Add(3 * time.Second))
 
-		// Allowed text is relayed and echoed back unchanged.
+		// The relay forwards allowed text and the upstream echoes it back unchanged.
 		msg := frame("hello")
 		if _, err := c.Write(msg); err != nil {
 			t.Fatalf("write: %v", err)
@@ -232,7 +232,7 @@ func TestExampleProtocolEndToEnd(t *testing.T) {
 }
 
 // recordingUpstream echoes every byte and remembers what it saw, so a test
-// can prove a denied message was never forwarded.
+// can prove the relay never forwarded a denied message.
 type recordingUpstream struct {
 	ln       net.Listener
 	mu       sync.Mutex

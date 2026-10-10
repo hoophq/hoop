@@ -21,8 +21,8 @@ serde_json = "1"
 [workspace]
 members = ["examples/acmewire"]
 
-# The release profile is tuned for the wasm artifact, which is what a
-# plug-in ships. opt-level "s" and lto keep acmewire well under the 300 KB
+# The release profile targets the wasm artifact, which is what a plug-in
+# ships. opt-level "s" and lto keep acmewire well under the 300 KB
 # the conformance budget allows; panic = "abort" turns a panic into the
 # trap ABI.md's failure semantics expect, instead of linking unwinding
 # tables the host could never drive.

@@ -9,24 +9,24 @@ import (
 
 // pluginProtocolPrefix marks a protocol a codec plug-in declares. The ABI
 // reserves the prefix (codec/wasm/abi/ABI.md), and the registry treats such
-// a protocol differently from a shipped one: its builder is installed at
-// plug-in load, not at package init, so it must be replaceable.
+// a protocol differently from a shipped one: the loader installs its
+// builder at plug-in load, after package init, so it must be replaceable.
 const pluginProtocolPrefix = "x-"
 
 // IsPluginProtocol reports whether p carries the plug-in prefix. The daemon,
 // the registry and the control plane all decide on the same test, so it is
-// one function rather than three string compares.
+// one function.
 func IsPluginProtocol(p inspect.Protocol) bool {
 	return strings.HasPrefix(string(p), pluginProtocolPrefix)
 }
 
 // SetPluginBuilder installs the builder for a plug-in protocol, replacing
-// any earlier one. A plug-in is loaded once per process start, but the
-// -validate path and Run share one process in tests and an embedder may
-// load a module twice, so the duplicate-registration panic RegisterBuilder
-// keeps for shipped protocols would turn a second load into a crash. It
-// refuses a shipped protocol name: a module cannot take over postgres by
-// registering late.
+// any earlier one. The host loads a plug-in once per process start, but
+// the -validate path and Run share one process in tests and an embedder
+// may load a module twice, so the duplicate-registration panic
+// RegisterBuilder keeps for shipped protocols would turn a second load
+// into a crash. It refuses a shipped protocol name: a module cannot take
+// over postgres by registering late.
 func SetPluginBuilder(p inspect.Protocol, b Builder) error {
 	if !IsPluginProtocol(p) {
 		return fmt.Errorf("sidecar/analyzer: %q is not a plug-in protocol (no %q prefix)", p, pluginProtocolPrefix)
@@ -35,7 +35,7 @@ func SetPluginBuilder(p inspect.Protocol, b Builder) error {
 		return fmt.Errorf("sidecar/analyzer: SetPluginBuilder(%q) called with nil", p)
 	}
 	if b.Protocol() != p {
-		return fmt.Errorf("sidecar/analyzer: builder answers for %q, not %q", b.Protocol(), p)
+		return fmt.Errorf("sidecar/analyzer: builder answers for %q; the registration is for %q", b.Protocol(), p)
 	}
 	builderMu.Lock()
 	defer builderMu.Unlock()
@@ -83,7 +83,7 @@ func (b GenericBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bo
 	return Content{Text: sb.String(), CacheKey: sqlCacheKey(stmt)}, true
 }
 
-// ContentRenderer is what a codec offers when its plug-in declares the
+// ContentRenderer is the method a codec offers when its plug-in declares the
 // `content` capability: the module renders its own statements for the
 // model, because it knows which bytes are the operation and which are the
 // payload. The signature mirrors Builder.Build with the Content struct

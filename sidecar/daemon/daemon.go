@@ -189,10 +189,10 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
 	}
-	// On the resolved config, not the file: under a plane the plugins list
-	// is the plane's. Loaded here rather than in Validate because the
-	// module is code this process runs, and that belongs to the host, not
-	// to a check the control plane also runs.
+	// On the resolved config: under a plane the plugins list is the
+	// plane's. SetupWith loads the modules because they are code this
+	// process runs, which belongs to the host; Validate is a check the
+	// control plane also runs.
 	if err := cfg.loadCodecPlugins(context.Background()); err != nil {
 		return nil, nil, err
 	}
@@ -586,8 +586,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 		return nil, err
 	}
 	// A config assembled in Go reaches here without SetupWith; a config
-	// SetupWith loaded holds its plug-ins already and this is a no-op. The
-	// ones loaded here are released with the report: nothing runs them.
+	// SetupWith loaded holds its plug-ins already and this is a no-op.
+	// Validate releases the ones it loads with the report: nothing runs
+	// them.
 	if cfg.codecPlugins == nil && len(cfg.Plugins) > 0 {
 		if err := cfg.loadCodecPlugins(context.Background()); err != nil {
 			return nil, err
@@ -892,9 +893,10 @@ func Run(cfg *Config, det Plugin) error {
 			"fail_open", cfg.Analyzer.failOpen())
 	}
 
-	// Loaded by SetupWith for a config from a file or a plane; here for a
-	// config assembled in Go. Closed after the lanes that run them are
-	// down, so no connection is mid-call in a released module.
+	// SetupWith loads them for a config from a file or a plane; Run loads
+	// them for a config assembled in Go. Run closes them after the lanes
+	// that run them are down, so no connection is mid-call in a released
+	// module.
 	if err := cfg.loadCodecPlugins(context.Background()); err != nil {
 		return err
 	}
@@ -1589,9 +1591,9 @@ func buildServer(
 // protocol ignores it.
 //
 // pluginFactory is set for a plug-in lane and nil otherwise. The registry
-// cannot answer for a plug-in protocol, so the codec the factory builds is
-// asked instead — it re-frames exactly when the module declares the
-// rewrite capability.
+// cannot answer for a plug-in protocol, so buildMasker asks the codec the
+// factory builds: it re-frames when the module declares the rewrite
+// capability.
 //
 // Validate reports both at startup; these checks cover a caller reaching Run
 // without going through LoadConfig.
@@ -1874,8 +1876,8 @@ func serveAdmin(
 				v.Rules = []string{} // render [] rather than null
 			}
 			// A plug-in lane's answer is its module's; the view does not
-			// build a codec to ask, so it says nothing rather than
-			// something wrong.
+			// build a codec to ask, so it says nothing, since a guess could
+			// be wrong.
 			if !v.Masking && !isPluginLane(ln.cfg) && !gate.MaskSupported(inspect.Protocol(ln.cfg.Protocol)) {
 				v.MaskNote = "masking is not supported on this protocol"
 			}

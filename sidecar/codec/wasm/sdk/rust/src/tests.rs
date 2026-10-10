@@ -110,9 +110,9 @@ fn statement_json_uses_the_abi_names_and_omits_empty_fields() {
 
 #[test]
 fn statement_json_from_the_host_parses_with_protocol_and_direction_ignored_or_kept() {
-    // What the host hands take_credential/content: its own Statement,
-    // with direction set. It strips protocol, but an older host that
-    // leaves it in must not break the guest.
+    // The host hands take_credential/content its own Statement, with
+    // direction set. It strips protocol, but an older host that leaves
+    // it in must not break the guest.
     let raw = json!({
         "protocol": "x-acmewire", "direction": "server", "text": "ROW", "operation": "other",
         "result": {"row_count": 1, "truncated": true, "columns": [{"name": "id", "data_type_oid": 23}]},
@@ -311,8 +311,8 @@ mod expands {
 
     #[test]
     fn exports_exist_for_the_listed_capabilities_only() {
-        // Names only: the pointer-taking bodies are wasm32's. What this
-        // pins is that the macro accepts a subset and emits each wrapper.
+        // Names only: the pointer-taking bodies are wasm32's. The test
+        // pins that the macro accepts a subset and emits each wrapper.
         let _: extern "C" fn(u32, u32, u32, u32) -> u64 = __hoop_deny;
         let _: extern "C" fn(u32, u32, u32) -> u64 = __hoop_content;
         let _: extern "C" fn() -> u64 = __hoop_describe;
