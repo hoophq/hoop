@@ -26,6 +26,7 @@ require (
 	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar v0.0.0
 	github.com/hoophq/hoop/sidecar/analyzer/vertex v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/sidecar/codec/wasm v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
@@ -330,3 +331,5 @@ replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../sidecar/analyzer/ve
 replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../sidecar/descriptors/gcs
 
 replace github.com/hoophq/hoop/sidecar/mcp => ../sidecar/mcp
+
+replace github.com/hoophq/hoop/sidecar/codec/wasm => ../sidecar/codec/wasm

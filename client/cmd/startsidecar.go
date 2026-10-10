@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,10 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
+	// The codec plug-in host, same rule: a `plugins` block must not need
+	// the standalone binary. wazero is confined to codec/wasm's own module.
+	"github.com/hoophq/hoop/sidecar/codec/wasm"
+	"github.com/hoophq/hoop/sidecar/codec/wasm/conformance"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	// The gs:// descriptor fetcher, same rule as the providers above.
@@ -45,6 +50,7 @@ var (
 	sidecarMigrateFlag    bool
 	sidecarMigrateOutFlag string
 	sidecarLogFormatFlag  string
+	sidecarCodecTestFlag  string
 )
 
 var startSidecarCmd = &cobra.Command{
@@ -118,6 +124,12 @@ needs a restart.`,
 		if err != nil {
 			cmd.SilenceUsage = false
 			return err
+		}
+
+		// Same branch as the standalone binary's -codec-test: no config,
+		// no sidecar, just the ABI report for a plug-in author.
+		if sidecarCodecTestFlag != "" {
+			return daemon.CodecTest(cmd.Context(), sidecarCodecTestFlag, args, os.Stdout)
 		}
 
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
@@ -308,6 +320,12 @@ func init() {
 	// --migrate renders YAML through the same module that parses it; the
 	// daemon package cannot import it, so the renderer is injected.
 	daemon.YAMLFromJSON = configyaml.FromJSON
+	// The daemon cannot import the wasm host (its module carries wazero),
+	// so the plug-in loader and the --codec-test runner are injected too.
+	daemon.LoadCodecPlugin = func(ctx context.Context, module []byte) (daemon.CodecPlugin, error) {
+		return wasm.Load(ctx, module)
+	}
+	daemon.CodecTester = conformance.Run
 
 	startSidecarCmd.Flags().StringVar(&sidecarConfigFlag, "config", sidecarConfigFromEnv(),
 		"Path to the inspection config file (YAML or JSON)")
@@ -335,6 +353,9 @@ func init() {
 	startSidecarCmd.Flags().StringVar(&sidecarMigrateOutFlag, "migrate-out", "",
 		"File --migrate writes to instead of stdout; its extension picks the syntax, "+
 			"defaulting to the input's")
+	startSidecarCmd.Flags().StringVar(&sidecarCodecTestFlag, "codec-test", "",
+		"Path to a codec plug-in module: run the ABI conformance checks over it and "+
+			"the fixture files given as arguments, print the report, and exit")
 
 	startSidecarCmd.Flags().StringVar(&sidecarLogFormatFlag, "log-format", string(sidecartui.FormatAuto),
 		"How output reaches the terminal: auto, tui, text or json. auto draws the TUI on an "+

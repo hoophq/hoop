@@ -257,7 +257,7 @@ func TestFailOpenDefaultsTrue(t *testing.T) {
 // see every request as carrying none. The lifted header stays out of what
 // policy sees. An http block on a postgres lane changes nothing.
 func TestHTTPLaneWithoutHTTPBlockLiftsItsCredential(t *testing.T) {
-	f := laneCodecFactory(ListenerConfig{Protocol: "http", IdentityHeader: "authorization"})
+	f := laneCodecFactory(ListenerConfig{Protocol: "http", IdentityHeader: "authorization"}, nil)
 	if f == nil {
 		t.Fatal("an http lane with no http block got no codec factory")
 	}
@@ -279,7 +279,7 @@ func TestHTTPLaneWithoutHTTPBlockLiftsItsCredential(t *testing.T) {
 		t.Errorf("TakeCredential = %q, %v; want the request's Authorization", got, ok)
 	}
 
-	if f := laneCodecFactory(ListenerConfig{Protocol: "postgres", HTTP: &HTTPCodecConfig{CaptureBody: true}}); f != nil {
+	if f := laneCodecFactory(ListenerConfig{Protocol: "postgres", HTTP: &HTTPCodecConfig{CaptureBody: true}}, nil); f != nil {
 		t.Error("a postgres lane got an http codec factory")
 	}
 }
@@ -287,7 +287,7 @@ func TestHTTPLaneWithoutHTTPBlockLiftsItsCredential(t *testing.T) {
 // The factory must produce a FRESH codec per call: two connections sharing one
 // stateful codec corrupt each other's reassembly buffer.
 func TestCodecFactoryReturnsDistinctCodecs(t *testing.T) {
-	f := laneCodecFactory(ListenerConfig{Protocol: "http", HTTP: &HTTPCodecConfig{CaptureBody: true}})
+	f := laneCodecFactory(ListenerConfig{Protocol: "http", HTTP: &HTTPCodecConfig{CaptureBody: true}}, nil)
 	if f == nil {
 		t.Fatal("no factory for an http lane with capture on")
 	}
