@@ -1,0 +1,256 @@
+[
+  {
+    "name": "query is classified by the host lexer",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "510000001553454c4543542069642046524f4d206f7264657273",
+        "expect": {
+          "consumed": 26,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "select",
+              "effects": [
+                "select"
+              ],
+              "relations": [
+                {
+                  "name": "orders",
+                  "access": "read"
+                }
+              ],
+              "tables": [
+                "orders"
+              ],
+              "text": "SELECT id FROM orders",
+              "metadata": {
+                "x-acmewire.verb": "QUERY"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "multi-statement query is split by the host lexer",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "510000001653454c45435420313b2044524f50205441424c452074",
+        "expect": {
+          "consumed": 27,
+          "statements": [
+            {
+              "operation": "select",
+              "metadata": {
+                "x-acmewire.verb": "QUERY"
+              }
+            },
+            {
+              "operation": "drop",
+              "tables": [
+                "t"
+              ],
+              "metadata": {
+                "x-acmewire.verb": "QUERY"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "purge is a delete on the lowercased table",
+    "options": {
+      "deny_prefix": "ACME"
+    },
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "50000000064f7264657273",
+        "expect": {
+          "consumed": 11,
+          "statements": [
+            {
+              "operation": "delete",
+              "effects": [
+                "delete"
+              ],
+              "relations": [
+                {
+                  "name": "orders",
+                  "access": "write"
+                }
+              ],
+              "tables": [
+                "orders"
+              ],
+              "text": "PURGE Orders",
+              "metadata": {
+                "x-acmewire.verb": "PURGE"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "auth carries a credential handle in metadata",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "4100000006733363726574",
+        "expect": {
+          "consumed": 11,
+          "statements": [
+            {
+              "operation": "other",
+              "text": "AUTH",
+              "metadata": {
+                "x-acmewire.verb": "AUTH",
+                "x-acmewire.credential": "1"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "server frames report the result shape",
+    "steps": [
+      {
+        "dir": "server",
+        "hex": "4300000008696400656d61696c",
+        "expect": {
+          "consumed": 13,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "COLUMNS",
+              "result": {
+                "columns": [
+                  {
+                    "name": "id"
+                  },
+                  {
+                    "name": "email"
+                  }
+                ],
+                "row_count": 0
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "440000000c000000013100000003614062",
+        "expect": {
+          "consumed": 17,
+          "statements": [
+            {
+              "operation": "other",
+              "text": "ROW",
+              "result": {
+                "row_count": 1
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "520000000400000003",
+        "expect": {
+          "consumed": 9,
+          "statements": [
+            {
+              "operation": "other",
+              "text": "DONE",
+              "result": {
+                "row_count": 3
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "4500000004626f6f6d",
+        "expect": {
+          "consumed": 9,
+          "statements": [
+            {
+              "operation": "other",
+              "text": "ERROR: boom"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "a partial frame consumes nothing",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "510000000b53454c45",
+        "expect": {
+          "consumed": 0,
+          "statements": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "an unknown client opcode is a decode error",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "5800000000",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "a client opcode from the server is a decode error",
+    "steps": [
+      {
+        "dir": "server",
+        "hex": "510000000853454c4543542031",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "keepalive padding before a frame is filtered out",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "0000510000000853454c4543542031",
+        "expect": {
+          "consumed": 13,
+          "statements": [
+            {
+              "operation": "select",
+              "text": "SELECT 1",
+              "metadata": {
+                "x-acmewire.verb": "QUERY"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

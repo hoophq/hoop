@@ -12,6 +12,7 @@ go 1.26.8
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
+	github.com/hoophq/hoop/sidecar/codec/wasm v0.0.0
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0
 )
@@ -72,6 +73,7 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sijms/go-ora/v2 v2.9.0 // indirect
+	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
@@ -127,3 +129,9 @@ replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../analyzer/vertex
 replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../descriptors/gcs
 
 replace github.com/hoophq/hoop/sidecar/mcp => ../mcp
+
+replace github.com/hoophq/hoop/sidecar/codec/wasm => ../codec/wasm
+
+// The same wazero pin as codec/wasm/go.mod, gateway/go.mod and client/go.mod;
+// see codec/wasm/go.mod for why it must match across the workspace.
+replace github.com/tetratelabs/wazero => github.com/racerxdl/wazero v1.12.1-0.20260610204201-d1e18e798de6

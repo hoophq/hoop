@@ -2124,6 +2124,185 @@ The boundary:
 On HTTP, Envoy's `ext_authz` covers request-side authorization well, and the
 gaps named above are the narrow ones; Envoy is not blind here.
 
+## Writing a codec
+
+A codec turns one protocol's bytes into statements. It is the only part of
+a lane that knows the wire format; policy, audit, masking and the deny path
+are the gate's, and they reach the codec through interfaces the gate
+discovers by type assertion. You can add one in two ways: a Go type linked
+into a custom binary, described here, or a WebAssembly module the relay
+loads at startup, described under "Codec plug-ins". Both answer the same
+capabilities.
+
+The required interface is `inspect.Codec`:
+
+```go
+type Codec interface {
+	Protocol() inspect.Protocol
+	Decode(dir inspect.Direction, data []byte) (stmts []inspect.Statement, consumed int, err error)
+}
+```
+
+`Decode` parses every complete message in `data` and reports how many
+bytes it finished with. An incomplete trailing message is NOT an error:
+return the statements before it and stop `consumed` at its first byte; the
+inspector holds the rest and hands it back prefixed to the next read. An
+error means the bytes are not this protocol, and the relay closes the
+connection. A statement's `Operation` must be one of
+`inspect.Operations()`; a protocol whose verbs are not SQL reports `other`
+and puts the native verb in `Metadata["<protocol>.verb"]`, which a
+`metadata` rule matches. SQL text goes through `inspect.AnalyzeSQL` so the
+classifier that every shipped codec uses is the one that fills `Operation`,
+`Effects` and `Relations`.
+
+Everything else is optional. The gate asks for each one with a type
+assertion, so a codec implements the set that is true of it, and a
+capability it does not implement is a feature the lane refuses at load:
+
+| Interface | Implement it when |
+|---|---|
+| `gate.Reframer` (`Rewrite`, `Flush`) | the lane can mask the response stream: the codec rebuilds its length-prefixed frames around the masked cells. Without it the relay refuses a `mask:` block on the lane at load, because `gate.MaskSupported` asks for this |
+| `EnableRewrite()` | the reframer is stateful and must start correlating requests before the first server byte, as MySQL and MongoDB do. The gate calls it once, before any response, and only when the lane has a masker |
+| `gate.Duplex` | the meaning of a server message depends on client-side state (negotiated capabilities, the command in flight, a prepared statement's text). The gate then builds ONE instance for both directions; the per-direction reassembly buffers still stay apart |
+| `gate.StreamFilter` | the codec must change bytes before inspection or forwarding, in both directions: ClickHouse clamps the advertised protocol revisions here. A filter may hold a prefix and return nothing; an error is fatal |
+| `MaxReassemblyBytes() int` | the protocol admits a message larger than the 8 MiB default and the codec is the authority on its own cap |
+| `gate.CredentialSource` | requests carry a credential the lane resolves to an identity (HTTP's `Authorization` or an identity header). The gate refuses `RequestIdentity` on a codec without it |
+| `gate.DenyFramer` | always, for a protocol `proxy.ProtocolDenyWriter` does not know by name. The gate asks the codec first and falls back to the writer; without either a denial is a bare socket close with no reason the user can read |
+| `gate.Labeled` | the protocol is registered and the control-plane listener form should show a human-readable name |
+| `io.Closer` | the codec holds a resource the garbage collector does not reclaim: a WASM instance, a subprocess. The gate closes it once, with the connection |
+
+### Registry or factory
+
+The shipped seams under `codec/` call `inspect.Register` from `init`, and
+that is the right choice for a protocol a config file selects by name: the
+relay, the schema and the capability header all read the registry. It is
+process-wide, panics on a duplicate protocol, and makes `daemon.Protocols()`
+advertise the name on every control-plane handshake.
+
+A lane can also skip the registry: `gate.Config.CodecFactory` and
+`proxy.Config.CodecFactory` take a function that builds a fresh codec per
+connection, and the gate never consults the registry when one is set. That
+is how `codec/http` turns on per-lane body capture the argument-free
+registry factory cannot express, and how a test fixture or a plug-in stays
+out of the schema. Either way, supply a FACTORY and never an instance: a
+codec that reassembles across reads holds per-connection state, and one
+shared instance lets one connection's SQL surface in another's audit trail.
+
+### Pieces that fail without an error
+
+The codec is the smallest part of a new protocol. Each of these fails
+without an error when it is missing, so check the list:
+
+- a lexer `Dialect`, selected in `inspect.AnalyzeSQL`: the wrong one
+  misreads a statement, and a read-only lane refuses what it misread as a
+  write
+- a deny frame, either `gate.DenyFramer` on the codec or an entry in
+  `proxy/deny.go`: without one the relay closes the socket with no message
+- an analyzer content builder in `analyzer/content.go`: without one an
+  `ai_analysis` rule classifies nothing on the lane
+- the `Protocol` constant aliased in `inspect/wiretypes.go`, and a label in
+  `daemon/schema.go` `protocolLabels` (or `gate.Labeled` on the codec)
+- a masking test that fails without the change, in `gate/` or
+  `inspect/bypass_test.go`, because masking that does nothing is invisible
+  from outside
+
+`codec/example` is a complete codec for a protocol that does not exist:
+required interface, deny frame, label and reassembly cap, NOT registered
+at init, with a test that drives it through `gate.New` and
+`proxy.NewServer` by `CodecFactory` and proves the client reads the codec's
+own deny frame. Copy it to start a new one.
+
+## Codec plug-ins
+
+A codec plug-in is one WebAssembly module that decodes a protocol this
+build did not link. The relay loads it at startup, hands it the bytes of
+one connection at a time, and treats the statements it returns like any
+shipped codec's: policy, audit, masking and the analyzer see no difference.
+The contract between the module and the host is `codec/wasm/abi/ABI.md`;
+the host is the nested module `codec/wasm`, which carries wazero. `cmd/`
+and `hoop start sidecar` link it; the root module never does. SDKs
+under `codec/wasm/sdk/` and the `x-acmewire` example under
+`codec/wasm/sdk/rust/examples/acmewire/` show a complete module.
+
+### Config
+
+```yaml
+plugins:
+  - protocol: x-acmewire
+    module: https://artifacts.example.com/codecs/acmewire-0.1.0.wasm
+    sha256: 5f2b…c1   # required for a URL, optional for a path, checked when set
+listeners:
+  - name: acme
+    protocol: x-acmewire
+    listen: 0.0.0.0:17000
+    upstream: acme:7000
+    plugin:            # the options the module's manifest declares
+      deny_prefix: ACME
+```
+
+- `protocol` is `x-` then `[a-z0-9_-]+`. The prefix keeps a module from
+  claiming a shipped name, and the module's own manifest must declare the
+  same one: the loader refuses a module for another protocol.
+- `module` is a file path or a URL with a scheme the descriptors registry
+  resolves: `https` in every build, `gs` where the build links
+  `descriptors/gcs`. A download has the trust section's roots and a
+  two-minute bound.
+- A listener names the protocol the way it names `postgres`. `plugin` holds
+  its per-listener options; validation refuses it on any other lane.
+  Validation also refuses `downstream_tls` and `identity_header`: the
+  module sees relay bytes and no TLS.
+- Plug-in protocols are a fact of the config. They are not in
+  `Protocols()`, not in the listener schema and not in the capabilities
+  header; the control plane grants a lane on an `x-` protocol to any build
+  that reports the `plugins` capability. The listener form renders the
+  manifest's `options` list for such a lane.
+
+### Startup
+
+`Setup` loads the list after the config resolves (the plane's list under a
+plane): read the bytes, check the digest, instantiate, compare the declared
+protocol, and install the analyzer content builder (the module's own
+`content` rendering when it declares that capability, the generic one
+otherwise). `-validate` reports each plug-in lane with the module's version,
+digest and capabilities; `Run` logs one `codec plug-in loaded` line per
+module. The list is baseline: a reload that changes it is a restart, and
+the reloader carries the running modules onto every document a reload
+applies.
+
+A lane's codec factory calls the plug-in's `NewCodec` with the listener's
+options once per connection. The gate reads the optional capabilities off
+the codec by type assertion, so the relay accepts masking on a plug-in lane
+when the module declares `rewrite` (`gate.MaskSupportedBy` asks the
+factory), the native deny frame is the module's `deny` export, and
+`filter`, `credential` and `content` each light one more seam. A module
+with `credential` keeps the secret in its own connection state and puts
+only an opaque handle under `metadata["<protocol>.credential"]`, the way
+the HTTP codec does with `hoop.credential`: the gate trades the handle
+back through `take_credential` only on a lane with per-request identity,
+and audit, policy and the analyzer on every other lane see the statement
+as `decode` returned it.
+
+### Failure semantics
+
+Everything fails closed and at startup where it can:
+
+- a build without a loader (an embedder that linked no `codec/wasm`)
+  refuses a config with a `plugins` list: "this build loads no codec
+  plug-ins"
+- a digest mismatch, an unreadable module, a module whose manifest the
+  host refuses (see the ABI) or one that declares another protocol stops
+  startup naming the entry; `Setup` tries every entry before it reports,
+  so one restart shows every broken module
+- `Setup` refuses at build a plug-in lane whose module did not load, and
+  never binds it to a port that decodes nothing
+- at runtime a trap, a timeout or a memory overrun in the module closes that
+  connection with the deny frame when the module has one; no other
+  connection or lane sees it (ABI.md, Failure semantics)
+
+`hoop-inspect -codec-test module.wasm [fixtures.json...]` runs the ABI's
+conformance checks over a module before it ships; the fixture format is in
+ABI.md.
+
 ## Protocols
 
 | Protocol | Request messages | Response messages | Stateful |
@@ -3058,7 +3237,7 @@ opa}` so a statement the local rules already forbid costs no network round
 trip. The Go package is still `policy`; the config keys are what split.
 
 **Guardrails are Hoop's own rules**, written under `guardrails` and evaluated
-in-process against a decoded statement. Seven local rule types, plus the
+in-process against a decoded statement. Ten local rule types, plus the
 DEPRECATED `ai_analysis` one that the listener `analyzer` block replaced, and
 `guardrails.mode` decides whether a match denies or lands in the audit record
 as `guardrails.would_deny`. Nothing here needs a policy engine, a network hop
@@ -3076,11 +3255,15 @@ hands every statement to Rego.
 
 **The local rule types.** SQL: `deny_words_list`, `pattern_match` (RE2),
 `operation`, `table`. HTTP: `http_resource`, `http_status`, `http_header`.
-Cross-protocol: `pii` (see [Masking and PII](#masking-and-pii)). The AI
-analyzer joins the same chain from its own listener block (see [Analyzing
-statements with a model](#analyzing-statements-with-a-model)). One ordered
-set can mix the rule types, so a deployment fronting a database and an API
-needs one evaluator:
+gRPC: `grpc_status`. Cross-protocol: `pii` (see [Masking and
+PII](#masking-and-pii)) and `metadata`, which reads `Statement.Metadata`:
+the rule ANDs keys, ORs the values under one key, lowercases both sides and
+compares them for equality; a key the statement lacks never matches. It is
+the policy surface for a plug-in codec, whose wire verb lands under
+`<protocol>.verb`. The AI analyzer joins the same chain from its own listener
+block (see [Analyzing statements with a model](#analyzing-statements-with-a-model)).
+One ordered set can mix the rule types, so a deployment fronting a database
+and an API needs one evaluator:
 
 ```go
 policy.NewRules([]policy.Rule{
@@ -3099,6 +3282,10 @@ policy.NewRules([]policy.Rule{
         WithMethods("GET").
         WithHeadersNot(map[string][]string{"Accept": {"application/json;as=Table;*"}}).
         WithMessage("listing secrets is fine; reading one is not"),
+
+    {Name: "no-purge", Type: policy.MatchMetadata,
+     Metadata: map[string][]string{"x-acmewire.verb": {"PURGE"}},
+     Message:  "purging a table needs a ticket"},
 })
 ```
 

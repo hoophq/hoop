@@ -250,7 +250,22 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 	// Fail at construction rather than on the first connection: an
 	// unsupported protocol is a config error and must surface at startup.
-	if _, err := inspect.New(cfg.Protocol); err != nil {
+	// A lane with a CodecFactory speaks whatever the factory builds (a
+	// plug-in protocol the registry never saw), so NewServer probes the
+	// factory, and the gate refuses on every connection a codec whose
+	// protocol is not the lane's.
+	if cfg.CodecFactory != nil {
+		c := cfg.CodecFactory()
+		if c == nil {
+			return nil, errors.New("sidecar/proxy: CodecFactory returned nil")
+		}
+		if got := c.Protocol(); got != cfg.Protocol {
+			return nil, fmt.Errorf("sidecar/proxy: CodecFactory builds a %q codec for a %q lane", got, cfg.Protocol)
+		}
+		if closer, ok := c.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	} else if _, err := inspect.New(cfg.Protocol); err != nil {
 		return nil, fmt.Errorf("sidecar/proxy: %w", err)
 	}
 	if cfg.Network == "" {
@@ -926,12 +941,15 @@ func (s *Server) pump(
 				// denial came from: on a response denial the offending bytes
 				// travel toward the client, so the client needs to know why
 				// the connection ended.
-				if s.cfg.DenyWriter != nil {
-					target := dst
-					if dir == inspect.FromClient {
-						target = src // the client is the source of a request
-					}
-					var frame []byte
+				// The codec goes first: a plug-in or custom codec is the
+				// only thing that knows its own error frame, and the
+				// writer below knows only the shipped protocols by name.
+				target := dst
+				if dir == inspect.FromClient {
+					target = src // the client is the source of a request
+				}
+				frame, _ := g.DenyFrame(dir, d.Message)
+				if len(frame) == 0 && s.cfg.DenyWriter != nil {
 					if d.DeniedStatement != nil {
 						if writer, ok := s.cfg.DenyWriter.(statementDenyWriter); ok {
 							frame = writer.DenyStatement(*d.DeniedStatement, d.Message, d.Review)
@@ -940,10 +958,10 @@ func (s *Server) pump(
 					if len(frame) == 0 {
 						frame = s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, d.Message)
 					}
-					if len(frame) > 0 {
-						_ = target.SetWriteDeadline(time.Now().Add(5 * time.Second))
-						_, _ = target.Write(frame)
-					}
+				}
+				if len(frame) > 0 {
+					_ = target.SetWriteDeadline(time.Now().Add(5 * time.Second))
+					_, _ = target.Write(frame)
 				}
 				return
 			}

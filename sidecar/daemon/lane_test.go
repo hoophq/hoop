@@ -271,7 +271,7 @@ func TestMaskOnPostgresIsAccepted(t *testing.T) {
 	}
 
 	det := stubPlugin{entities: []string{"US_SSN"}}
-	if _, berr := buildMasker(*cfg.Listeners[0].Mask, det, inspect.Postgres, false); berr != nil {
+	if _, berr := buildMasker(*cfg.Listeners[0].Mask, det, inspect.Postgres, false, nil); berr != nil {
 		t.Errorf("buildMasker refused postgres: %v", berr)
 	}
 }
@@ -284,7 +284,7 @@ func TestMaskOnUnmaskableProtocolIsRefused(t *testing.T) {
 	det := stubPlugin{entities: []string{"US_SSN"}}
 	mc := MaskConfig{Rules: []byte(`[{"entities":["US_SSN"]}]`)}
 
-	if _, err := buildMasker(mc, det, inspect.Protocol("cassandra"), false); err == nil {
+	if _, err := buildMasker(mc, det, inspect.Protocol("cassandra"), false, nil); err == nil {
 		t.Error("buildMasker accepted a protocol with no codec and no masking path")
 	}
 }

@@ -189,11 +189,19 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
 	}
+	// On the resolved config: under a plane the plugins list is the
+	// plane's. SetupWith loads the modules because they are code this
+	// process runs, which belongs to the host; Validate is a check the
+	// control plane also runs.
+	if err := cfg.loadCodecPlugins(context.Background()); err != nil {
+		return nil, nil, err
+	}
 	if build == nil {
 		return cfg, nil, nil
 	}
 	det, err := build(cfg.PII)
 	if err != nil {
+		_ = cfg.closeCodecPlugins()
 		return nil, nil, err
 	}
 	return cfg, det, nil
@@ -303,6 +311,7 @@ var ErrUsage = errors.New("usage")
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
 //	hoop-inspect -validate -config config.yaml
 //	hoop-inspect -migrate -config config.yaml -migrate-out config-new.yaml
+//	hoop-inspect -codec-test plugin.wasm [fixtures.json...]
 //	hoop-inspect -version
 func Main(version string, load Loader, build PluginBuilder) error {
 	Version = version
@@ -336,6 +345,9 @@ func Main(version string, load Loader, build PluginBuilder) error {
 			"method with its maskable field paths, and exit")
 		grpcDiscoverOut = fs.String("grpc-discover-out", "", "file -grpc-discover writes "+
 			"the fetched descriptor set to, for listeners[].grpc.descriptors")
+		codecTest = fs.String("codec-test", "", "path to a codec plug-in module: run the "+
+			"ABI conformance checks over it and the fixture files given as arguments, "+
+			"print the report, and exit")
 	)
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		// -h is a request, not a mistake. ContinueOnError has already
@@ -349,6 +361,10 @@ func Main(version string, load Loader, build PluginBuilder) error {
 	if *showVer {
 		fmt.Println("hoop-inspect", version)
 		return nil
+	}
+
+	if *codecTest != "" {
+		return CodecTest(context.Background(), *codecTest, fs.Args(), os.Stdout)
 	}
 
 	if *migrate {
@@ -569,6 +585,16 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkMCP(cfg); err != nil {
 		return nil, err
 	}
+	// A config assembled in Go reaches here without SetupWith; a config
+	// SetupWith loaded holds its plug-ins already and this is a no-op.
+	// Validate releases the ones it loads with the report: nothing runs
+	// them.
+	if cfg.codecPlugins == nil && len(cfg.Plugins) > 0 {
+		if err := cfg.loadCodecPlugins(context.Background()); err != nil {
+			return nil, err
+		}
+		defer cfg.closeCodecPlugins()
+	}
 	ac, err := setupAnalyzer(cfg, det)
 	if err != nil {
 		return nil, err
@@ -587,6 +613,11 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	validationLog := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, ln := range lanes {
 		notes := append([]string(nil), ln.notes...)
+		// A plug-in lane names its module in the report, so the operator
+		// reading "config OK" sees which code the lane will run.
+		if isPluginLane(ln.cfg) {
+			notes = append(notes, cfg.codecPluginNote(ln.cfg.Protocol))
+		}
 		// An endpoint lane is CONSTRUCTED here, not merely described. That
 		// is what turns an unreadable key or a descriptor set that does not
 		// merge into a validate failure, and it is where a lane's own notes
@@ -860,6 +891,26 @@ func Run(cfg *Config, det Plugin) error {
 			"model", cfg.Analyzer.Model,
 			"send", sendModeOrDefault(cfg.Analyzer.Send),
 			"fail_open", cfg.Analyzer.failOpen())
+	}
+
+	// SetupWith loads them for a config from a file or a plane; Run loads
+	// them for a config assembled in Go. Run closes them after the lanes
+	// that run them are down, so no connection is mid-call in a released
+	// module.
+	if err := cfg.loadCodecPlugins(context.Background()); err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := cfg.closeCodecPlugins(); cerr != nil {
+			log.Error("codec plug-in close failed", "error", cerr)
+		}
+	}()
+	for _, info := range cfg.codecPluginInfo {
+		log.Info("codec plug-in loaded",
+			"protocol", info.Protocol,
+			"version", info.Version,
+			"sha256", info.SHA256,
+			"capabilities", strings.Join(info.Capabilities, ","))
 	}
 
 	lanes, err := buildLanes(cfg, det, analyzerDeps)
@@ -1270,7 +1321,17 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			problems = append(problems, name+": "+err.Error())
 			continue
 		}
-		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasDescriptors())
+		plugin, err := cfg.codecPluginFor(lc)
+		if err != nil {
+			problems = append(problems, name+": "+err.Error())
+			continue
+		}
+		factory := laneCodecFactory(lc, cfg.codecPlugins)
+		var pluginFactory func() inspect.Codec
+		if plugin != nil {
+			pluginFactory = factory
+		}
+		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasDescriptors(), pluginFactory)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -1281,7 +1342,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			name:         name,
 			policy:       pol,
 			masker:       masker,
-			codecFactory: laneCodecFactory(lc),
+			codecFactory: factory,
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
@@ -1529,22 +1590,36 @@ func buildServer(
 // descriptor set (ADR-0013). grpcDescriptors is that fact; every other
 // protocol ignores it.
 //
+// pluginFactory is set for a plug-in lane and nil otherwise. The registry
+// cannot answer for a plug-in protocol, so buildMasker asks the codec the
+// factory builds: it re-frames when the module declares the rewrite
+// capability.
+//
 // Validate reports both at startup; these checks cover a caller reaching Run
 // without going through LoadConfig.
-func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCDescriptors bool) (gate.Masker, error) {
+func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCDescriptors bool,
+	pluginFactory func() inspect.Codec) (gate.Masker, error) {
 	if !mc.hasRules() {
 		return nil, nil
 	}
 	if det == nil {
 		return nil, fmt.Errorf("mask.rules is set but this build has no detection plugin")
 	}
-	if proto == inspect.GRPC || proto == inspect.Spanner {
+	switch {
+	case proto == inspect.GRPC || proto == inspect.Spanner:
 		if !hasGRPCDescriptors {
 			return nil, fmt.Errorf(
 				"mask.rules is set but this %s lane has no grpc.descriptors; without a "+
 					"descriptor set the lane cannot decode a message to rewrite it", proto)
 		}
-	} else if !gate.MaskSupported(proto) {
+	case pluginFactory != nil:
+		if !gate.MaskSupportedBy(pluginFactory) {
+			return nil, fmt.Errorf(
+				"mask.rules is set but the %s plug-in declares no rewrite capability, so it "+
+					"cannot rebuild a response; remove the rules from this lane, or set "+
+					"mask: {rules: []} on it", proto)
+		}
+	case !gate.MaskSupported(proto):
 		return nil, fmt.Errorf(
 			"mask.rules is set but masking is not supported on %s; remove the rules from "+
 				"this lane, or set mask: {rules: []} on it", proto)
@@ -1800,7 +1875,10 @@ func serveAdmin(
 			if v.Rules == nil {
 				v.Rules = []string{} // render [] rather than null
 			}
-			if !v.Masking && !gate.MaskSupported(inspect.Protocol(ln.cfg.Protocol)) {
+			// A plug-in lane's answer is its module's; the view does not
+			// build a codec to ask, so it says nothing, since a guess could
+			// be wrong.
+			if !v.Masking && !isPluginLane(ln.cfg) && !gate.MaskSupported(inspect.Protocol(ln.cfg.Protocol)) {
 				v.MaskNote = "masking is not supported on this protocol"
 			}
 			out = append(out, v)

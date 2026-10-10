@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/license"
 )
 
@@ -157,6 +158,11 @@ type reloader struct {
 	// Only the redactor is replaced, and only when the detector changed.
 	ac    *analyzerDeps
 	build PluginBuilder
+	// codecPlugins are the modules loaded at startup, carried onto every
+	// document a reload applies: the plugins list is baseline, so a
+	// document that changes it never reaches buildLanes here.
+	codecPlugins    map[inspect.Protocol]CodecPlugin
+	codecPluginInfo []CodecPluginInfo
 
 	// lastHandled is the last document that reached a terminal outcome.
 	// Tracked apart from the fetch dedupe in the heartbeat on purpose: a
@@ -233,19 +239,21 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 		prevLanes[ln.name] = ln
 	}
 	r := &reloader{
-		baseline:   baseline,
-		piiRaw:     cfg.PII,
-		laneDocs:   laneDocs,
-		sections:   laneSections,
-		prevLanes:  prevLanes,
-		servers:    servers,
-		view:       view,
-		lic:        lic,
-		det:        det,
-		ac:         ac,
-		build:      cfg.build,
-		configPath: cfg.configPath,
-		load:       cfg.load,
+		baseline:        baseline,
+		piiRaw:          cfg.PII,
+		laneDocs:        laneDocs,
+		sections:        laneSections,
+		prevLanes:       prevLanes,
+		servers:         servers,
+		view:            view,
+		lic:             lic,
+		det:             det,
+		ac:              ac,
+		build:           cfg.build,
+		codecPlugins:    cfg.codecPlugins,
+		codecPluginInfo: cfg.codecPluginInfo,
+		configPath:      cfg.configPath,
+		load:            cfg.load,
 	}
 	if cfg.cp != nil {
 		r.planeOwned = true
@@ -585,6 +593,11 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		log.Warn(msg)
 		return r.keep(reloadRestart, msg)
 	}
+	// The plugins list is in the baseline, so an accepted document names
+	// the running modules: hand them over. Loading the same code a second
+	// time would leave the running lanes on the first.
+	newCfg.codecPlugins = r.codecPlugins
+	newCfg.codecPluginInfo = r.codecPluginInfo
 
 	det, detChanged := r.det, false
 	if !bytes.Equal(bytes.TrimSpace(r.piiRaw), bytes.TrimSpace(newCfg.PII)) {
