@@ -10,6 +10,7 @@ use (
 	./sidecar
 	./sidecar/analyzer/vertex
 	./sidecar/cmd
+	./sidecar/codec/wasm
 	./sidecar/config/yaml
 	./sidecar/descriptors/gcs
 	./sidecar/lexer/conformance
