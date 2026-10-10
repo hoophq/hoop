@@ -1,0 +1,17 @@
+# The x-acmewire plug-in: the template for a Rust codec plug-in, and the
+# fixture the host's conformance tests run (../../../../testdata).
+#
+# A plug-in is a cdylib. `build.sh` here builds it for
+# wasm32-unknown-unknown; the release profile comes from the workspace
+# root (../../Cargo.toml).
+[package]
+name = "acmewire"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+hoop-codec = { path = "../.." }
