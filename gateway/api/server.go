@@ -843,6 +843,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		reviewHandler.GetByIdOrSid,
 	}
 	updateReview := []gin.HandlerFunc{
+		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateReview),
 		reviewHandler.ReviewByIdOrSid,
@@ -1061,7 +1062,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,
 		sessionapi.Kill)
-	reviewBySid := []gin.HandlerFunc{r.AuthMiddleware, reviewHandler.ReviewBySid}
+	reviewBySid := []gin.HandlerFunc{apiroutes.ReadOnlyAccessRole,r.AuthMiddleware,reviewHandler.ReviewBySid}
 	r.PUT("/sessions/:session_id/review", reviewBySid...)
 	r.PUT("/sessions/:session_id/approval", reviewBySid...)
 	r.PATCH("/sessions/:session_id/metadata",
