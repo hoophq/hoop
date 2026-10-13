@@ -70,9 +70,9 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 
 | Route | Handler | Status |
 |-------|---------|--------|
-| `/sidecars`, `/sidecars/connect`, `/sidecars/new`, `/sidecars/:id` | React | Done — sidecar fleet on `/api/sidecars` (list, connect/create wizard with the one-time token, details) |
-| `/onboarding/license` | React | Done — first-access license screen; reached by URL only |
-| `/approvals`, `/approvals/:sessionId` | React | Done — agent and sidecar approvals; `/reviews` redirects |
+| `/sidecars`, `/sidecars/connect`, `/sidecars/new`, `/sidecars/:id` | React | Done — control plane fleet on `/api/sidecars` (list, connect/create wizard with the one-time token, details) |
+| `/onboarding/license` | React | Done — control plane first-access license screen; reached by URL only |
+| `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane page; `NotImplemented`) |
 | `/organization/users` | React | Done — with free-form groups |
 | `/login` | React | Done |
 | `/register` | React | Done (local auth signup) |

@@ -317,7 +317,7 @@ root and its own `AppShell.Header` uses under `layout="alt"`; that is why the ba
 the sidebar collapsing instead of recomputing its width from a store.
 
 ### `ClojureApp`
-Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere.
+Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere, never from a `ControlPlane*` file.
 
 ### `NotImplemented`
 A route that exists in the information architecture but has no backend yet. Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
