@@ -113,6 +113,12 @@ type Config struct {
 	// trust store alone, which is every config written before the key.
 	Trust *TrustConfig `json:"trust,omitempty" cap:"trust" since:"1.198.0"`
 
+	// Plugins loads codec plug-ins: wasm modules that decode a protocol
+	// this build did not link (codec/wasm/abi/ABI.md). A listener names a
+	// plug-in's protocol the way it names postgres. The list is baseline:
+	// a module is loaded once at startup, and a change to it restarts.
+	Plugins []CodecPluginConfig `json:"plugins,omitempty" cap:"plugins"`
+
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level,omitempty"`
 
@@ -201,6 +207,12 @@ type Config struct {
 	// detector; a drifted pii section then stays on the restart path.
 	load  Loader
 	build PluginBuilder
+	// codecPlugins holds the loaded modules, by protocol, and
+	// codecPluginInfo what the log and -validate report about each.
+	// loadCodecPlugins fills both on the sidecar host; the reloader carries
+	// them onto each new document, since the list is baseline.
+	codecPlugins    map[inspect.Protocol]CodecPlugin
+	codecPluginInfo []CodecPluginInfo
 }
 
 // Licensing reports the license this config runs under. The zero value is a
@@ -393,6 +405,12 @@ type ListenerConfig struct {
 	// admits, the account it runs as. Required on an ssh lane and a config
 	// error anywhere else. See SSHConfig.
 	SSH *SSHConfig `json:"ssh,omitempty" label:"SSH" help:"The keys this listener trusts and what a session may do." protocols:"ssh" ui:"required"`
+
+	// Plugin carries a plug-in lane's options, the `options` its module's
+	// manifest declares, to every codec the lane builds. Only valid on a
+	// lane whose protocol a `plugins` entry declares. Out of the form: the
+	// plane renders the manifest's own option list for such a lane.
+	Plugin map[string]string `json:"plugin,omitempty" cap:"plugins" ui:"-"`
 
 	// Connection is the DEPRECATED second name for this lane. normalize
 	// folds it onto Name, which now fills the audit key and
@@ -1121,6 +1139,8 @@ func (c *Config) validate(onHost bool) error {
 
 	problems = append(problems, c.MCP.validate()...)
 
+	problems = append(problems, c.validatePlugins()...)
+
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
 		name := l.displayName(i)
@@ -1138,8 +1158,25 @@ func (c *Config) validate(onHost bool) error {
 			// the connection is encrypted end to end, so there are no relay
 			// bytes for a registry decoder to be handed. The lane terminates
 			// the handshake and enters at statements the endpoint reports.
+		} else if isPluginLane(l) {
+			// The config declares a plug-in protocol: the module loads on
+			// the sidecar host, after this runs, and the control plane
+			// never loads one at all. Both can check the entry.
+			if !c.pluginDeclared(l.Protocol) {
+				problems = append(problems, fmt.Sprintf(
+					"%s: protocol %q is a plug-in protocol, and no plugins entry declares it",
+					name, l.Protocol))
+			}
 		} else if _, err := inspect.New(inspect.Protocol(l.Protocol)); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: unsupported protocol %q", name, l.Protocol))
+		}
+		// Per-listener plug-in options reach a codec only through a
+		// plug-in's NewCodec; anywhere else they would load and reach
+		// nothing.
+		if l.Plugin != nil && !isPluginLane(l) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: a \"plugin\" block is only valid on a listener whose protocol a plugins entry declares, and no entry declares %s",
+				name, l.Protocol))
 		}
 		if l.Listen == "" {
 			problems = append(problems, name+": no listen address")
@@ -1411,7 +1448,12 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	// exactly as if the analyzer were absent. That is the mssql case this
 	// check exists for, and it covers any protocol that relays without
 	// decoding.
-	if p := inspect.Protocol(lc.Protocol); analyzing && p != "" {
+	//
+	// A plug-in lane is exempt: loading its module installs a builder (the
+	// module's own rendering or the generic one), so the check would
+	// refuse every plug-in lane on the control plane, which loads nothing,
+	// and on the host it runs before the host loads the module.
+	if p := inspect.Protocol(lc.Protocol); analyzing && p != "" && !isPluginLane(lc) {
 		if _, ok := analyzer.BuilderFor(p); !ok {
 			problems = append(problems, fmt.Sprintf(
 				"%s: has an analyzer on a listener with protocol %q, and this "+
@@ -1477,7 +1519,10 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 						"Add the descriptor set, or set mask: {rules: []} on this lane.",
 					name, lc.Protocol))
 			}
-		} else if p := inspect.Protocol(lc.Protocol); p != "" && !gate.MaskSupported(p) {
+		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !gate.MaskSupported(p) {
+			// The loaded module answers for a plug-in lane (the rewrite
+			// capability), and buildMasker asks it through the factory; the
+			// config alone cannot say, and the plane never loads one.
 			problems = append(problems, fmt.Sprintf(
 				"%s: masking is not supported on %s (its rows are length-prefixed binary "+
 					"frames; rewriting bytes in place desynchronizes the client). Remove "+

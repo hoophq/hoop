@@ -1,0 +1,83 @@
+name: Sidecar Plug-in SDK Auto Tag
+
+# A merge to main that changes sdk/VERSION is a release. This workflow
+# turns it into the tag `hoop-codec-v<VERSION>` on that merge commit;
+# sidecar-plugins-release.yml does everything else from the tag. Nothing
+# and nobody else pushes that tag.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - sidecar/codec/wasm/sdk/VERSION
+
+permissions:
+  contents: read
+
+# No concurrency group on purpose. GitHub keeps one pending run per group
+# and replaces it when a third run arrives, so three VERSION merges in a
+# row would lose the middle release. Runs are independent: each one
+# tags its own commit under its own version, and the API refuses a tag
+# that already exists, which the step below turns into a verdict.
+
+jobs:
+  tag:
+    name: Tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify GH_TOKEN secret is present
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::secrets.GH_TOKEN (PAT) is required so that tag pushes from this workflow trigger sidecar-plugins-release.yml. Add it in repo settings."
+            exit 1
+          fi
+
+      # The tag check below reads the tags, so the checkout needs them.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Push the release tag
+        env:
+          # A tag pushed with GITHUB_TOKEN triggers no workflow, so the
+          # release workflow would never see it. The PAT pushes it instead;
+          # that push is what starts sidecar-plugins-release.yml.
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version=$(sidecar/codec/wasm/sdk/version.sh)
+          tag="hoop-codec-v${version}"
+
+          # The tag's commit decides: at this commit the run is a repeat
+          # and there is nothing to do; at another commit the version was
+          # reused, which would publish a different tree under a version
+          # crates.io and the Go proxy may already serve.
+          verdict() {
+            if [ "$1" = "$SHA" ]; then
+              echo "${tag} exists at ${SHA}; nothing to do"
+              exit 0
+            fi
+            echo "::error::${tag} exists at $1, not at ${SHA}; v${version} is already released from another tree, bump sidecar/codec/wasm/sdk/VERSION"
+            exit 1
+          }
+          if existing=$(git rev-parse -q --verify "refs/tags/${tag}^{commit}"); then
+            verdict "$existing"
+          fi
+
+          # A refusal here means a parallel run created the tag after the
+          # check above; fetch it and judge it the same way. The fetch
+          # peels an annotated tag to its commit like the check did.
+          if ! gh api -X POST "repos/${REPO}/git/refs" \
+            -f ref="refs/tags/${tag}" \
+            -f sha="${SHA}"; then
+            git fetch origin "refs/tags/${tag}:refs/tags/${tag}"
+            verdict "$(git rev-parse "refs/tags/${tag}^{commit}")"
+          fi
+          echo "pushed ${tag} at ${SHA}"

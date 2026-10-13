@@ -19,7 +19,7 @@ func TestAnHTTPLaneCapturesTheReviewModeHeader(t *testing.T) {
 	stored := &HTTPCodecConfig{Headers: []string{"accept"}}
 	for name, h := range map[string]*HTTPCodecConfig{"no http block": nil, "operator headers": stored} {
 		t.Run(name, func(t *testing.T) {
-			f := laneCodecFactory(ListenerConfig{Protocol: "http", HTTP: h})
+			f := laneCodecFactory(ListenerConfig{Protocol: "http", HTTP: h}, nil)
 			if f == nil {
 				t.Fatal("an http lane kept the registry codec, which captures no header")
 			}

@@ -116,6 +116,7 @@ func TestEveryRuleTypeFormBuildsAValidRule(t *testing.T) {
 		policy.MatchHTTPStatus:   {"statuses": "5xx"},
 		policy.MatchHTTPHeader:   {"headers": "x-env=prod|staging"},
 		policy.MatchGRPCStatus:   {"statuses": "UNAVAILABLE"},
+		policy.MatchMetadata:     {"metadata": "grpc.method=DeleteUser|DropTable"},
 	}
 	for _, protocol := range []string{"postgres", "http", "grpc"} {
 		for _, typ := range ruleTypesFor(protocol, false) {

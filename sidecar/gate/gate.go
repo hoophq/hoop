@@ -29,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"sort"
 	"sync"
@@ -128,6 +129,31 @@ type StreamFilter interface {
 type reassemblySizer interface {
 	MaxReassemblyBytes() int
 }
+
+// DenyFramer renders a policy denial in the codec's native error frame.
+//
+// proxy.ProtocolDenyWriter knows the frames of the shipped protocols by
+// name. A codec the registry did not ship (a plug-in, or a codec a custom
+// binary links) is the only thing that knows its own error frame, so the
+// gate asks it first and the relay falls back to the writer. Without it a
+// denial on such a protocol is a bare socket close, the outcome the writer
+// exists to prevent.
+//
+// message is never empty: the gate substitutes the generic text first.
+type DenyFramer interface {
+	DenyFrame(dir inspect.Direction, message string) []byte
+}
+
+// Labeled names the protocol for a human. The control-plane listener form
+// reads it for a registered protocol daemon.protocolLabels does not list.
+type Labeled interface {
+	Label() string
+}
+
+// Close closes a codec that implements io.Closer once, even when one
+// instance serves both directions. A codec backed by a resource the garbage
+// collector does not reclaim (a WASM instance, a subprocess) needs it; the
+// shipped codecs are plain memory and do not.
 
 // Config assembles a Gate.
 type Config struct {
@@ -398,6 +424,12 @@ type Gate struct {
 	// connection gate records nothing and annotates the request instead.
 	oneExchange   bool
 	skipResponses map[string]bool
+
+	// sharedCodec says both inspectors drive one codec instance (the
+	// Duplex branch of New), so Close releases it once. Recorded here
+	// because comparing the two codec interfaces panics on a value type
+	// holding a slice or a map.
+	sharedCodec bool
 }
 
 // New builds a Gate for a session.
@@ -446,7 +478,8 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		return nil, fmt.Errorf("sidecar/gate: %w", err)
 	}
 	serverCodec := clientCodec
-	if _, duplex := clientCodec.(Duplex); !duplex {
+	_, sharedCodec := clientCodec.(Duplex)
+	if !sharedCodec {
 		if serverCodec, err = newCodec(); err != nil {
 			return nil, fmt.Errorf("sidecar/gate: %w", err)
 		}
@@ -477,6 +510,8 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		audit:  cfg.Audit,
 		masker: cfg.Masker,
 		polCtx: sess.PolicyContext(),
+
+		sharedCodec: sharedCodec,
 	}
 	if filter, ok := clientCodec.(StreamFilter); ok {
 		g.clientFilter = filter
@@ -708,7 +743,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		credentials = make([]string, len(stmts))
 		lifted = make([]bool, len(stmts))
 		for i := range stmts {
-			if isHTTPRequest(stmts[i]) {
+			if isHTTPRequest(stmts[i]) || isFrameRequest(stmts[i]) {
 				credentials[i], lifted[i] = g.creds.TakeCredential(&stmts[i])
 			}
 		}
@@ -793,6 +828,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 				g.mu.Unlock()
 			case isFinalHTTPResponse(stmt):
 				finals++
+			case isFrameRequest(stmt) && lifted[i]:
+				// A frame protocol names its caller on the frames that
+				// carry a credential (a handshake, a re-auth) and on no
+				// other, so a frame that lifted nothing belongs to the
+				// running session. Nothing is outstanding on such a
+				// lane: the codec does not pair responses to requests,
+				// so a caller change applies from this frame on.
+				if r := g.identify(ctx, stmt, credentials[i], true); r != nil {
+					r.Statements = stmts
+					return *r
+				}
 			}
 		}
 		j := g.judge(ctx, stmt)
@@ -1108,6 +1154,52 @@ func MaskSupported(p inspect.Protocol) bool {
 	return ok
 }
 
+// MaskSupportedBy is MaskSupported for a codec the registry does not hold:
+// it asks the codec a factory builds. A lane with a CodecFactory checks the
+// factory, because that is the codec the data path will run.
+func MaskSupportedBy(factory func() inspect.Codec) bool {
+	if factory == nil {
+		return false
+	}
+	c := factory()
+	if c == nil {
+		return false
+	}
+	// A probe never saw a byte, so a failed release has nothing to report
+	// beyond what the data path's own Close will.
+	defer closeCodec(c)
+	_, ok := c.(Reframer)
+	return ok
+}
+
+// DenyFrame renders message in the client codec's native error frame when
+// the codec implements DenyFramer. ok is false otherwise, and the caller
+// falls back to its protocol-keyed writer. An empty message becomes the
+// generic text, the same default proxy.ProtocolDenyWriter applies, so a
+// codec does not have to invent one.
+func (g *Gate) DenyFrame(dir inspect.Direction, message string) (frame []byte, ok bool) {
+	if g.client == nil {
+		return nil, false
+	}
+	framer, ok := g.client.Codec().(DenyFramer)
+	if !ok {
+		return nil, false
+	}
+	if message == "" {
+		message = "denied by policy"
+	}
+	return framer.DenyFrame(dir, message), true
+}
+
+// closeCodec releases a codec that holds a resource and reports the
+// failure. See the io.Closer note above Config.
+func closeCodec(c inspect.Codec) error {
+	if closer, ok := c.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
 // evaluate runs the policy, defaulting to allow when none is configured.
 //
 // ctx rides on the evaluation context so an evaluator that waits (the
@@ -1202,7 +1294,8 @@ func (g *Gate) writeAudit(ctx context.Context, ev audit.Event) error {
 }
 
 // Close ends the session and records the closing event with the running
-// session's totals. Idempotent.
+// session's totals. Idempotent. The error joins a codec that failed to
+// release with a failed audit write, so a caller sees both.
 func (g *Gate) Close(ctx context.Context) error {
 	g.mu.Lock()
 	if g.closed {
@@ -1215,10 +1308,24 @@ func (g *Gate) Close(ctx context.Context) error {
 	g.mu.Unlock()
 
 	sess.End()
-	if g.audit == nil {
-		return nil
+	// Codecs go after sess.End and before the audit write: a codec that
+	// is a WASM instance or a subprocess must not outlive the connection,
+	// and the audit write may block.
+	var err error
+	if g.client != nil {
+		if cerr := closeCodec(g.client.Codec()); cerr != nil {
+			err = fmt.Errorf("client codec: %w", cerr)
+		}
+		if g.server != nil && !g.sharedCodec {
+			if cerr := closeCodec(g.server.Codec()); cerr != nil {
+				err = errors.Join(err, fmt.Errorf("server codec: %w", cerr))
+			}
+		}
 	}
-	return g.writeAudit(ctx, audit.SessionEndEvent(sess, statements, denied))
+	if g.audit == nil {
+		return err
+	}
+	return errors.Join(err, g.writeAudit(ctx, audit.SessionEndEvent(sess, statements, denied)))
 }
 
 // Stats reports the running totals for the whole connection, across every
@@ -1236,6 +1343,13 @@ func (g *Gate) Stats() (statements, denied int) {
 func isHTTPRequest(stmt inspect.Statement) bool {
 	return stmt.Direction == inspect.FromClient && stmt.HTTP != nil &&
 		stmt.HTTP.WebSocket == nil && stmt.HTTP.StatusCode == 0
+}
+
+// isFrameRequest reports a client statement with no HTTP shape: a database
+// or plug-in frame. The credential path treats it as a request only when
+// the codec lifted something from it; see inspect.
+func isFrameRequest(stmt inspect.Statement) bool {
+	return stmt.Direction == inspect.FromClient && stmt.HTTP == nil
 }
 
 // isFinalHTTPResponse reports whether stmt ends the exchange its request
@@ -1261,6 +1375,13 @@ func (g *Gate) identify(ctx context.Context, stmt inspect.Statement, credential 
 		// the old identity is the failure this whole path exists to stop.
 		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer},
 			"request refused: the codec lifted no credential from it")
+	}
+	if credential == "" {
+		// The WASM host answers ("", true) when the guest's credential
+		// export failed, and no caller is named by an empty value, so
+		// the request is refused before any resolver sees it.
+		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer},
+			"request refused: the codec lifted an empty credential")
 	}
 	id, err := g.cfg.RequestIdentity.Resolve(ctx, credential)
 	if err != nil {

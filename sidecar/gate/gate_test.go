@@ -816,6 +816,195 @@ func TestMaskerOnNonReframingCodecIsRefused(t *testing.T) {
 	}
 }
 
+// closingCodec records Close and frames its own denial. It stands in for
+// a codec backed by a resource the collector does not reclaim.
+type closingCodec struct {
+	plainCodec
+	closed int
+}
+
+func (c *closingCodec) Close() error { c.closed++; return nil }
+func (*closingCodec) DenyFrame(_ inspect.Direction, message string) []byte {
+	return []byte("DENY:" + message)
+}
+
+// A codec that holds a WASM instance or a subprocess leaks it unless the
+// gate closes it with the connection. Both directions share one instance
+// when the codec is Duplex, so the close must not run twice on it; the
+// gate closes a per-direction codec once per direction.
+func TestCloseReleasesEveryCodecOnce(t *testing.T) {
+	var built []*closingCodec
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol: inspect.Postgres,
+		CodecFactory: func() inspect.Codec {
+			c := &closingCodec{}
+			built = append(built, c)
+			return c
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx := context.Background()
+	if err := g.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := g.Close(ctx); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+	if len(built) != 2 {
+		t.Fatalf("built %d codecs, want one per direction", len(built))
+	}
+	for i, c := range built {
+		if c.closed != 1 {
+			t.Errorf("codec %d closed %d times, want once", i, c.closed)
+		}
+	}
+}
+
+// A codec that fails to release reports it: a WASM instance or a
+// subprocess that did not go away is a leak the operator must hear about.
+// Close joins both directions' failures with the audit write's.
+func TestCloseReportsCodecReleaseFailures(t *testing.T) {
+	errRelease := errors.New("instance still running")
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &failingCloseCodec{err: errRelease} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = g.Close(context.Background())
+	if !errors.Is(err, errRelease) {
+		t.Fatalf("Close = %v, want the codec's release error", err)
+	}
+	for _, dir := range []string{"client codec", "server codec"} {
+		if !strings.Contains(err.Error(), dir) {
+			t.Errorf("Close = %q, does not name the %s", err, dir)
+		}
+	}
+	if err := g.Close(context.Background()); err != nil {
+		t.Fatalf("second Close = %v, want nil: the codecs were released once", err)
+	}
+}
+
+type failingCloseCodec struct {
+	plainCodec
+	err error
+}
+
+func (c *failingCloseCodec) Close() error { return c.err }
+
+// sliceCodec is a value-type codec holding a slice, so two of them cannot
+// be compared: a gate that tells its two directions apart by comparing
+// codec interfaces panics on it. Only Close exercises that path, and a
+// CodecFactory may hand the gate any shape.
+type sliceCodec struct {
+	closed []int
+}
+
+func (sliceCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (sliceCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
+}
+
+// duplexSliceCodec shares one instance across both directions; the gate
+// closes it once, and must know that without comparing the two values.
+type duplexSliceCodec struct {
+	closed *int
+	tags   []string
+}
+
+func (duplexSliceCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (duplexSliceCodec) Duplex()                    {}
+func (duplexSliceCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
+}
+func (c duplexSliceCodec) Close() error { *c.closed++; return nil }
+
+func TestCloseHandlesNonComparableCodecs(t *testing.T) {
+	ctx := context.Background()
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return sliceCodec{closed: []int{}} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := g.Close(ctx); err != nil {
+		t.Fatalf("Close on a per-direction value codec: %v", err)
+	}
+
+	closed := 0
+	g, err = gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return duplexSliceCodec{closed: &closed, tags: []string{"x"}} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := g.Close(ctx); err != nil {
+		t.Fatalf("Close on a duplex value codec: %v", err)
+	}
+	if closed != 1 {
+		t.Fatalf("the shared codec closed %d times, want once", closed)
+	}
+}
+
+// A denial on a protocol the deny writer does not know is a bare socket
+// close unless the codec frames it. The gate asks the codec and supplies
+// the generic text when the rule had none, so the codec does not invent one.
+func TestDenyFrameComesFromTheCodec(t *testing.T) {
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &closingCodec{} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	frame, ok := g.DenyFrame(inspect.FromClient, "no drops on appdb")
+	if !ok || string(frame) != "DENY:no drops on appdb" {
+		t.Fatalf("DenyFrame = %q, %v; want the codec's frame", frame, ok)
+	}
+	frame, ok = g.DenyFrame(inspect.FromClient, "")
+	if !ok || string(frame) != "DENY:denied by policy" {
+		t.Fatalf("DenyFrame with no message = %q, %v; want the generic text", frame, ok)
+	}
+
+	plain, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &plainCodec{} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if frame, ok := plain.DenyFrame(inspect.FromClient, "x"); ok || frame != nil {
+		t.Fatalf("a codec without DenyFramer answered %q, %v; want no frame", frame, ok)
+	}
+}
+
+// MaskSupportedBy answers for the codec a factory builds, so the daemon
+// refuses masking at load on a lane with a CodecFactory by the same test
+// the gate applies at construction. MaskSupportedBy closes the probe codec.
+func TestMaskSupportedByAsksTheFactoryCodec(t *testing.T) {
+	if gate.MaskSupportedBy(nil) {
+		t.Error("a nil factory supports masking")
+	}
+	if gate.MaskSupportedBy(func() inspect.Codec { return nil }) {
+		t.Error("a factory returning nil supports masking")
+	}
+	var probe *closingCodec
+	if gate.MaskSupportedBy(func() inspect.Codec { probe = &closingCodec{}; return probe }) {
+		t.Error("a codec without Reframer supports masking")
+	}
+	if probe == nil || probe.closed != 1 {
+		t.Errorf("the probe codec was not closed once: %+v", probe)
+	}
+	if !gate.MaskSupportedBy(func() inspect.Codec { return &activatingCodec{} }) {
+		t.Error("a re-framing codec does not support masking")
+	}
+}
+
 // The gate must carry session identity into the policy input, or a Rego rule
 // cannot reference the actor.
 func TestPolicyContextCarriesIdentity(t *testing.T) {

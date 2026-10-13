@@ -2,6 +2,7 @@ package sidecarbind
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -77,5 +78,24 @@ func TestEffectiveSpecKeepsTheStoredBlock(t *testing.T) {
 	null := json.RawMessage(`null`)
 	if got := (Request{Spec: null, StoredSpec: stored}).EffectiveSpec(); string(got) != "null" {
 		t.Errorf("an explicit null must clear the block, got %s", got)
+	}
+}
+
+// A listener stored before the limit can have a name no binding index holds.
+// Its target is refused with its position, never sent to the database.
+func TestToModelTargetsRefusesAListenerNameNoIndexHolds(t *testing.T) {
+	over := strings.Repeat("l", models.MaxSidecarListenerNameBytes+1)
+	_, err := toModelTargets(&[]openapi.SidecarRuleTarget{
+		{SidecarID: "sc-1", ListenerName: "appdb"},
+		{SidecarID: "sc-1", ListenerName: over},
+	})
+	if _, ok := err.(malformedTargets); !ok || !strings.Contains(err.Error(), "sidecar target 2: the listener name is 1025 bytes, over 1024") {
+		t.Fatalf("want a malformed target naming target 2 and the limit, got %v", err)
+	}
+	got, err := toModelTargets(&[]openapi.SidecarRuleTarget{
+		{SidecarID: "sc-1", ListenerName: strings.Repeat("l", models.MaxSidecarListenerNameBytes)},
+	})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("a name at the limit binds: %v, %d targets", err, len(got))
 	}
 }

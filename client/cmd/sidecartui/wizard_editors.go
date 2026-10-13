@@ -120,6 +120,7 @@ var ruleTypeLabel = map[string]string{
 	string(policy.MatchHTTPStatus):   "HTTP status",
 	string(policy.MatchHTTPHeader):   "HTTP headers",
 	string(policy.MatchGRPCStatus):   "gRPC status",
+	string(policy.MatchMetadata):     "Statement metadata",
 }
 
 // ruleTypesFor lists the rule types a lane of protocol can evaluate, in
@@ -495,6 +496,8 @@ func ruleDetail(r policy.Rule) string {
 		return strings.Join(r.Statuses, ", ")
 	case policy.MatchHTTPHeader:
 		return headerText(r.Headers)
+	case policy.MatchMetadata:
+		return headerText(r.Metadata)
 	}
 	return ""
 }
@@ -567,6 +570,9 @@ func ruleForm(r policy.Rule, protocol string, captures, isNew bool) *form {
 			help: "Match when a header has one of these values. name=v1|v2, comma-separated.", hidden: is(policy.MatchHTTPHeader)},
 		{id: "headers_not", label: "Headers not", kind: fText, text: headerText(r.HeadersNot), placeholder: "x-team=ops",
 			help: "Match when a header does NOT have one of these values.", hidden: is(policy.MatchHTTPHeader)},
+		{id: "metadata", label: "Metadata", kind: fText, text: headerText(r.Metadata), placeholder: "grpc.method=DeleteUser|DropTable",
+			help:   "Match when every key has one of its values; keys come from the codec (grpc.*, mongodb.command, <plug-in>.verb). key=v1|v2, comma-separated.",
+			hidden: is(policy.MatchMetadata)},
 		{id: "message", label: "Message", kind: fText, text: r.Message, placeholder: "not allowed through the sidecar",
 			help: "What the client is told when the rule refuses a statement."},
 		{id: "action", label: "On match", kind: fEnum, options: []string{"", "defer"}, text: r.Action,
@@ -664,6 +670,14 @@ func ruleFromForm(f *form) (policy.Rule, error) {
 		}
 		if len(r.Headers) == 0 && len(r.HeadersNot) == 0 {
 			empty = "Headers or Headers not"
+		}
+	case policy.MatchMetadata:
+		var err error
+		if r.Metadata, err = parseHeaders(g("metadata")); err != nil {
+			return r, err
+		}
+		if len(r.Metadata) == 0 {
+			empty = "Metadata"
 		}
 	}
 	if empty != "" {

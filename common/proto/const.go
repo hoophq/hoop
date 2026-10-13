@@ -128,6 +128,9 @@ const (
 	RecordingFormatExec = "exec"
 	RecordingFormatRDP  = "rdp"
 	RecordingFormatRaw  = "raw"
+	// RecordingFormatSSH is the hoop SSH framing (libhoop proxy/ssh/types):
+	// one frame per event, terminal bytes in the Data frames of pty channels.
+	RecordingFormatSSH = "ssh"
 
 	// SessionOrigin* are the product-level origins of a session. They are
 	// persisted on the session record (sessions.origin) and emitted on the

@@ -325,9 +325,10 @@ func testPutReviewRefusesAnExpiredReview(t *testing.T) {
 		pastDeadline(t, rev.ID)
 		before := reviewSnapshot(t, rev)
 
+		// It cannot see the review, so the review does not exist for it.
 		rec := putReview(t, rev.ID, `{"status":"approved"}`, []string{"engineering"})
-		assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-		assert.JSONEq(t, `{"message":"review expired"}`, rec.Body.String())
+		assert.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+		assert.JSONEq(t, `{"message":"resource not found"}`, rec.Body.String())
 		assert.JSONEq(t, before, reviewSnapshot(t, rev))
 		assert.Equal(t, string(models.ReviewStatusPending), readStoredReview(t, rev.ID).Status)
 	})

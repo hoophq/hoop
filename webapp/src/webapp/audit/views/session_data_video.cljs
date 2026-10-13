@@ -10,12 +10,12 @@
    [webapp.audit.views.terminal-decoder :as terminal-decoder]
    [webapp.utilities :as utilities]))
 
-(defn- asciinema-player-container [event-stream]
+(defn- asciinema-player-container [{:keys [width height]} event-stream]
   (let [asciinema-view (atom {:current nil})
         event-stream-config [{"version" 2
                               "title" "Recording"
-                              "width" 80
-                              "height" 24
+                              "width" width
+                              "height" height
                               "env" {"TERM" "xterm-256color"}}]
         asciinema-options (clj->js {:loop true
                                     :fit "both"})
@@ -53,6 +53,21 @@
     "Loading logs for this session"]
    [loaders/simple-loader {:size 4}]])
 
+(defn- logs-content [logs-text]
+  (if (empty? logs-text)
+    [empty-event-stream/main]
+    [logs-text-container logs-text]))
+
+(defn- tabbed-view [{:keys [selected-tab on-change logs size video-events]}]
+  [:div {:class "flex flex-col h-[660px] min-h-0 overflow-hidden"}
+   [tabs/tabs {:on-change on-change
+               :tabs ["Logs" "Video"]
+               :default-value "Logs"}]
+   [:div {:class "flex min-h-0 flex-1 flex-col overflow-hidden"}
+    (case selected-tab
+      "Logs" logs
+      "Video" [asciinema-player-container size video-events])]])
+
 (defn- tab-container [_ session-id]
   (let [selected-tab (r/atom "Logs")
         session-logs (rf/subscribe [:audit->session-logs])
@@ -65,35 +80,47 @@
     (rf/dispatch [:audit->get-session-logs-data session-id])
 
     (fn [event-stream]
-      [:div {:class "flex flex-col h-[660px] min-h-0 overflow-hidden"}
-       [tabs/tabs {:on-change handle-tab-change
-                   :tabs ["Logs" "Video"]
-                   :default-value "Logs"}]
-       [:div {:class "flex min-h-0 flex-1 flex-col overflow-hidden"}
-        (case @selected-tab
-          "Logs" (cond
-                   (= (:status @session-logs) :loading)
-                   [loading-logs]
+      [tabbed-view
+       {:selected-tab @selected-tab
+        :on-change handle-tab-change
+        :logs (cond
+                (= (:status @session-logs) :loading)
+                [loading-logs]
 
-                   (and (= (:status @session-logs) :success)
-                        (seq (:data @session-logs)))
-                   (let [event-data (first (:data @session-logs))
-                         logs-text (utilities/decode-b64 event-data)]
-                     (if (empty? logs-text)
-                       [empty-event-stream/main]
-                       [logs-text-container logs-text]))
+                (and (= (:status @session-logs) :success)
+                     (seq (:data @session-logs)))
+                [logs-content (utilities/decode-b64 (first (:data @session-logs)))]
 
-                   (= (:status @session-logs) :error)
-                   [empty-event-stream/main]
-
-                   :else
-                   [empty-event-stream/main])
-
-          "Video" [asciinema-player-container
-                   (terminal-decoder/decode-events event-stream)])]])))
+                :else
+                [empty-event-stream/main])
+        :size {:width 80 :height 24}
+        :video-events (when (= @selected-tab "Video")
+                        (terminal-decoder/decode-events event-stream))}])))
 
 (defn main [event-stream session-id]
   [:div
    (if (empty? event-stream)
      [empty-event-stream/main]
      [tab-container event-stream session-id])])
+
+(defn- ssh-tab-container [_recording]
+  (let [selected-tab (r/atom "Logs")]
+    (fn [{:keys [width height events]}]
+      ;; The gateway's Logs text joins the raw frames, so build it from the
+      ;; decoded terminal channels instead.
+      (let [decoded (terminal-decoder/decode-byte-events events)]
+        [tabbed-view
+         {:selected-tab @selected-tab
+          :on-change #(reset! selected-tab %)
+          :logs [logs-content (->> decoded
+                                   (filter #(contains? #{"o" "e"} (second %)))
+                                   (map #(nth % 2))
+                                   (apply str))]
+          :size {:width width :height height}
+          :video-events decoded}]))))
+
+(defn ssh-terminal
+  "Logs and Video for the pty channels of an SSH recording, as read by
+  ssh-decoder/terminal-recording."
+  [recording]
+  [:div [ssh-tab-container recording]])

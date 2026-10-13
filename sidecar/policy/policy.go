@@ -478,7 +478,7 @@ func RuleTypes() []MatchType {
 	return []MatchType{
 		MatchDenyWords, MatchPattern, MatchOperation, MatchTable, MatchPII,
 		MatchAIAnalysis, MatchHTTPResource, MatchHTTPStatus, MatchHTTPHeader,
-		MatchGRPCStatus,
+		MatchGRPCStatus, MatchMetadata,
 	}
 }
 
@@ -637,6 +637,15 @@ type Rule struct {
 	// audit trail.
 	Prompt string `json:"prompt,omitempty"`
 
+	// Metadata for MatchMetadata: statement metadata key to the values
+	// that match it, ANDed across keys and ORed within one. The rule
+	// lowercases both sides and compares them for equality; there is no
+	// wildcard, because metadata values are codec-chosen tokens. A key the
+	// statement does not carry never matches. Plug-in codecs record their
+	// wire verb under `<protocol>.verb`, so a rule reads
+	// `{x-acmewire.verb: [PURGE]}`.
+	Metadata map[string][]string `json:"metadata,omitempty" cap:"rule_metadata"`
+
 	// HTTP-specific fields (Resources, Statuses, Fields, MaxDepth, ...).
 	// Embedded so one ordered rule set can mix SQL and HTTP matchers; a
 	// deployment fronting both a database and an API should not need two
@@ -781,6 +790,10 @@ func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 			}
 		case MatchGRPCStatus:
 			if err := r.validateGRPC(); err != nil {
+				problems = append(problems, err.Error())
+			}
+		case MatchMetadata:
+			if err := r.validateMetadata(); err != nil {
 				problems = append(problems, err.Error())
 			}
 		default:
@@ -980,12 +993,15 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		}
 	}
 
-	// HTTP rule types are handled in http.go, gRPC rule types in grpc.go;
-	// ok=false means "not mine".
+	// http.go handles the HTTP rule types, grpc.go the gRPC ones and
+	// metadata.go the metadata type; ok=false means "not mine".
 	if matched, ok := r.matchesHTTP(stmt); ok {
 		return matched, nil
 	}
 	if matched, ok := r.matchesGRPC(stmt); ok {
+		return matched, nil
+	}
+	if matched, ok := r.matchesMetadata(stmt); ok {
 		return matched, nil
 	}
 	switch r.Type {
