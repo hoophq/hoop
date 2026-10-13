@@ -63,17 +63,18 @@ func TestReviewApprovedInSlack(t *testing.T) {
 	h.must("PATCH", apiURL+"/api/users/self/slack", alice, map[string]string{"slack_id": "U0ALICE"}, nil)
 	h.must("PATCH", apiURL+"/api/users/self/slack", bob, map[string]string{"slack_id": "U0BOB"}, nil)
 
-	var agents []struct{ ID, Name string }
-	h.must("GET", apiURL+"/api/agents", alice, nil, &agents)
+	// /api/healthz answers before `hoop start standalone` provisions its agent.
 	agentID := ""
-	for _, a := range agents {
-		if a.Name == "standalone" {
-			agentID = a.ID
+	h.eventually("the standalone agent to connect", 60*time.Second, func() bool {
+		var agents []struct{ ID, Name, Status string }
+		h.must("GET", apiURL+"/api/agents", alice, nil, &agents)
+		for _, a := range agents {
+			if a.Name == "standalone" && a.Status == "CONNECTED" {
+				agentID = a.ID
+			}
 		}
-	}
-	if agentID == "" {
-		t.Fatalf("no standalone agent in %+v", agents)
-	}
+		return agentID != ""
+	})
 	var conn struct{ ID string }
 	h.must("POST", apiURL+"/api/connections", alice, map[string]any{
 		"name": "shell", "type": "custom", "subtype": "custom", "command": []string{"/bin/sh"},
