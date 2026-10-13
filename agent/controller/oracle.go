@@ -7,7 +7,6 @@ import (
 	"github.com/hoophq/libhoop"
 	"strings"
 
-	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -17,7 +16,7 @@ func (a *Agent) processOracleProtocol(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	// Native Oracle access is gated behind a feature flag. When it is off,
 	//It will refuse to open the proxy session instead of starting the TNS handshake.
-	if !featureflagstate.IsEnabled("beta.oracle_native") {
+	if !a.flags.IsEnabled("beta.oracle_native") {
 		log.Infof("session=%s - oracle native access disabled by feature flag, closing session", sessionID)
 		a.sendClientSessionClose(sessionID, "oracle native access is not enabled for this organization")
 		return

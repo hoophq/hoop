@@ -46,9 +46,15 @@ func clickhouseCodecFactory(proto inspect.Protocol, cfg *ClickHouseCodecConfig) 
 //
 // An http lane is the exception and always gets its own: the registry's
 // codec has no way to learn the lane's credential header, and a lane that
-// lifts none still needs its capture settings.
-func laneCodecFactory(lc ListenerConfig) func() inspect.Codec {
+// lifts none still needs its capture settings. A plug-in lane always gets
+// one too, because the registry never holds its protocol: plugins is the
+// loaded set, and the caller proved the lane's module is in it
+// (Config.codecPluginFor).
+func laneCodecFactory(lc ListenerConfig, plugins map[inspect.Protocol]CodecPlugin) func() inspect.Codec {
 	proto := inspect.Protocol(lc.Protocol)
+	if plugin, ok := plugins[proto]; ok && isPluginLane(lc) {
+		return codecPluginFactory(plugin, lc.Plugin)
+	}
 	if proto == inspect.HTTP {
 		return newHTTPCodec(lc.HTTP, lc.credentialHeader(), analyzerHolds(lc.Analyzer))
 	}

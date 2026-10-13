@@ -14,6 +14,7 @@
    [webapp.audit.views.session-data-rdp :as session-data-rdp]
    [webapp.audit.views.session-live-tail :as session-live-tail]
    [webapp.audit.views.session-format :as session-format]
+   [webapp.audit.views.ssh-decoder :as ssh-decoder]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
    [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
@@ -76,6 +77,19 @@
   [session]
   [session-data-rdp/main (:event_stream session) (:id session) (:metrics session)])
 
+(defn- ssh-recording [event-stream session-id start-date]
+  (let [recording (ssh-decoder/terminal-recording event-stream)]
+    (cond
+      ;; Not SSH frames: the subtype was a PTY connection when recorded.
+      (nil? recording) [session-data-video/main event-stream session-id]
+      (:terminal? recording) [session-data-video/ssh-terminal recording]
+      ;; No channel asked for a pty: port forwards, sftp, git.
+      :else [session-data-raw/main event-stream start-date])))
+
+(defmethod ^:private session-event-stream "ssh"
+  [session]
+  [ssh-recording (:event_stream session) (:id session) (:start_date session)])
+
 (defmethod ^:private session-event-stream :default
   [session]
   [session-data-raw/main (:event_stream session) (:start_date session)
@@ -103,11 +117,11 @@
        [metadata-row "sidecar"
         [:span (cond-> name listener (str " · " listener))]])
      (when (seq review_sessions)
-       [metadata-row "reviews"
+       [metadata-row "approvals"
         [:> Flex {:gap "3" :wrap "wrap"}
          (for [review-session review_sessions]
            ^{:key review-session}
-           [:a {:href (str "/reviews/" (js/encodeURIComponent review-session))
+           [:a {:href (str "/approvals/" (js/encodeURIComponent review-session))
                 :class "text-blue-600 underline font-mono"}
             review-session])]])
      (when sidecar-session-id

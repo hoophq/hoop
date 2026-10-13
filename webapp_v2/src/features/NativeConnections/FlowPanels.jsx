@@ -56,21 +56,18 @@ export function PendingReviewPanel({
   const resumeAfterReview = useNativeAccessStore((s) => s.resumeAfterReview)
   const closeDrawer = useNativeConnectionsStore((s) => s.close)
 
-  // Client-side navigation: the legacy panel used to ignore a param-only move
-  // like /sessions/A → /sessions/B, which is why this briefly did a full page
-  // load. That is fixed at the source now — webapp/src/webapp/events.cljs
-  // records the pathname and main-panel keys the panel on it — so the drawer
-  // can navigate without throwing away the app's state.
+  // The requester sees their own request on /approvals (owner visibility in
+  // gateway/models/reviews.go), so the button opens the approval itself.
   const viewReview = () => {
     closeDrawer()
-    navigate(`/sessions/${sessionId}`)
+    navigate(`/approvals/${encodeURIComponent(sessionId)}`)
   }
 
   return (
     <Stack gap="sm">
-      <Alert color="amber" icon={<Clock size={16} />} title="Waiting for review approval" classNames={{ title: classes.amberText, icon: classes.amberText }}>
-        A reviewer has to approve this request before the credentials are issued. This row picks
-        them up on its own once that happens.
+      <Alert color="amber" icon={<Clock size={16} />} title="Waiting for approval" classNames={{ title: classes.amberText, icon: classes.amberText }}>
+        The credentials are issued once this request is approved. This row picks them up on its
+        own.
       </Alert>
       {/* A failed check does not end the wait — the review is still open — so
           the message is a hint here rather than an error panel that would take
@@ -83,7 +80,7 @@ export function PendingReviewPanel({
       {sessionId && (
         <Group justify="flex-end" gap="sm">
           <Button variant="default" size="sm" onClick={viewReview}>
-            View review
+            View approval request
           </Button>
           <Button
             size="sm"

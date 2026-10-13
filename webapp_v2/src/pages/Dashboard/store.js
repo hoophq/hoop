@@ -69,7 +69,7 @@ export const useDashboardStore = create((set, get) => ({
       reviewsService
         .list()
         .then(({ data }) => set({ reviews: Array.isArray(data) ? data : [] }))
-        .catch(() => set({ reviews: [], reviewsError: 'Failed to load reviews.' })),
+        .catch(() => set({ reviews: [], reviewsError: 'Failed to load approvals.' })),
 
       connectionsService
         .getConnections()

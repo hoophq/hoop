@@ -240,6 +240,49 @@ func TestDeniedStatementNeverReachesUpstream(t *testing.T) {
 	}
 }
 
+// A client that is gone before its denial is written never learns why the
+// connection ended, and the relay used to drop the socket error with it.
+// The log line is the only trace of that, so the relay must write it.
+func TestUndeliveredDenyFrameIsLogged(t *testing.T) {
+	up := newEchoUpstream(t, nil)
+	logs := &syncBuffer{}
+	pol := &decidingPolicy{started: make(chan struct{}, 1), verdict: make(chan policy.Verdict)}
+	srv := startServer(t, proxy.Config{
+		Upstream:   up.addr(),
+		Protocol:   inspect.Postgres,
+		Connection: "appdb",
+		Policy:     pol,
+		DenyWriter: proxy.ProtocolDenyWriter{},
+		Logger:     slog.New(slog.NewJSONHandler(logs, nil)),
+	})
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if _, err := c.Write(pgQuery("DROP TABLE customers")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	<-pol.started
+	// Reset instead of a FIN, so the relay's next write fails outright: a
+	// write after a FIN still lands in the kernel buffer and reports
+	// nothing.
+	if err := c.(*net.TCPConn).SetLinger(0); err != nil {
+		t.Fatalf("linger: %v", err)
+	}
+	c.Close()
+	time.Sleep(50 * time.Millisecond)
+	pol.verdict <- policy.Deny("drops", "no drops on appdb")
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(logs.String(), "session closed") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !strings.Contains(logs.String(), `"deny frame not delivered"`) {
+		t.Fatalf("the relay did not report the undelivered deny frame:\n%s", logs.String())
+	}
+}
+
 func TestSessionAuditLifecycle(t *testing.T) {
 	up := newEchoUpstream(t, nil)
 	sink := audit.NewMemorySink(64)

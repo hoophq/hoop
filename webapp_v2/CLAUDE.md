@@ -63,13 +63,12 @@ error).
 - **Sidecar features are always on.** Every gateway serves sidecars, so the Sidecars
   pages, nav and palette items and the sidecar traffic of a rule carry no gate. The
   agents product follows `agentsEnabled()` (`modes/agents.js`, the `experimental.agents`
-  flag). On, `GatewayProtectedRoute` sends an admin with no connection to the agent
-  onboarding. Off, it turns `/`, `/client` and the agent onboarding into the landing by
-  role (`pages/Home`) on every route change, and the CLJS app does not move the URL
-  while it is parked (`routes/navigate!`).
+  flag). Off, `GatewayProtectedRoute` turns `/`, `/client` and the agent onboarding into
+  the landing by role (`pages/Home`) on every route change, and the CLJS app does not
+  move the URL while it is parked (`routes/navigate!`).
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`). `GatewayProtectedRoute` adds the
-  onboarding redirect through the `onReady` hook.
+  agents landing swap.
 - **Roles.** `/userinfo` reports `role`. A role is a reserved group name; `standard` is
   the absence of one and is never stored as a group. The group names come from
   `/serverinfo` (`admin_role_name`, `approver_role_name`), never a literal. Gate a route

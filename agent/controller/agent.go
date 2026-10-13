@@ -51,9 +51,12 @@ type (
 	}
 
 	Agent struct {
-		client           pb.ClientTransport
-		connStore        memory.Store
-		config           *config.Config
+		client    pb.ClientTransport
+		connStore memory.Store
+		config    *config.Config
+		// flags is the snapshot of this gateway stream only; a new stream
+		// starts with every flag off (DEP-289).
+		flags            featureflagstate.State
 		runtimeEnvs      map[string]string
 		shutdownCtx      context.Context
 		shutdownCancelFn context.CancelCauseFunc
@@ -261,7 +264,7 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 	case pbagent.GatewayConnectOK:
 		log.Infof("connected with success to %v", a.config.URL)
 	case pbgateway.FeatureFlagUpdate:
-		featureflagstate.Update(pkt.Spec)
+		a.flags.Update(pkt.Spec)
 	case pbagent.SessionOpen:
 		a.processSessionOpen(pkt)
 

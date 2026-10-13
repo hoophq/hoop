@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -106,7 +105,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		err      error
 		execDesc string
 	)
-	if driver, ok := dbExecDriver(connParams.ConnectionType); ok && featureflagstate.IsEnabled(dbExecDriverFlag) {
+	if driver, ok := dbExecDriver(connParams.ConnectionType); ok && a.flags.IsEnabled(dbExecDriverFlag) {
 		cmd, err = a.newDBExecProxy(driver, connParams, pkt.Payload, stdoutw, stderrw, opts)
 		execDesc = "db-driver=" + driver
 	} else {
@@ -134,7 +133,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		"client_origin", connParams.ClientOrigin,
 		"stdin_size", len(pkt.Payload),
 	}
-	if featureflagstate.IsEnabled("experimental.log_exec_input") {
+	if a.flags.IsEnabled("experimental.log_exec_input") {
 		snippet, truncated, size := truncateForLog(pkt.Payload, execInputLogMaxBytes)
 		logFields = append(logFields,
 			"input", snippet,

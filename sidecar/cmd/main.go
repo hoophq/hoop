@@ -69,6 +69,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,6 +84,10 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/gemini"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
+	// The codec plug-in host, same rule: a `plugins` block must not need a
+	// different binary. wazero stays in codec/wasm's own module.
+	"github.com/hoophq/hoop/sidecar/codec/wasm"
+	"github.com/hoophq/hoop/sidecar/codec/wasm/conformance"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	// The gs:// descriptor fetcher, same rule: a grpc lane whose descriptor
@@ -104,6 +109,12 @@ func main() {
 	// the daemon package cannot import it, so the renderer is injected the
 	// same way the Loader is.
 	daemon.YAMLFromJSON = configyaml.FromJSON
+	// The daemon cannot import the wasm host (its module carries wazero),
+	// so main injects the loader and the -codec-test runner the same way.
+	daemon.LoadCodecPlugin = func(ctx context.Context, module []byte) (daemon.CodecPlugin, error) {
+		return wasm.Load(ctx, module)
+	}
+	daemon.CodecTester = conformance.Run
 
 	err := daemon.Main(version, configyaml.Load, func(raw json.RawMessage) (daemon.Plugin, error) {
 		// An absent "pii" section no longer means no detector: the plugin

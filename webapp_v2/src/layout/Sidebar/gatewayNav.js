@@ -42,7 +42,7 @@ const AI_ANALYZER = '/features/ai-session-analyzer';
 
 const MAIN_ITEMS = [
   { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
-  { label: 'Resources', path: '/resources', icon: Package },
+  { label: 'Resources', path: '/resources', icon: Package, featureFlag: AGENTS_FLAG },
   { label: 'Terminal', path: '/client', icon: SquareCode, featureFlag: AGENTS_FLAG },
   {
     label: 'Runbooks',
@@ -61,8 +61,8 @@ const MAIN_ITEMS = [
     icon: Sparkles,
     children: [
       { label: 'Rules', path: AI_ANALYZER, icon: List, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
-      { label: 'Approval History', path: '/reviews?status=settled', icon: History },
-      { label: 'Pending Approvals', path: '/reviews', icon: Clock },
+      { label: 'Approval History', path: '/approvals?status=settled', icon: History },
+      { label: 'Pending Approvals', path: '/approvals', icon: Clock },
       { label: 'Configuration', path: `${AI_ANALYZER}?tab=configure`, icon: SlidersHorizontal, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
     ],
   },
@@ -140,7 +140,7 @@ export const NAV = [
 // mirror the sidebar entries above and are applied with the same shouldHide()
 // helper — keep both lists in sync when a page's gating changes.
 export const SUGGESTION_ITEMS = [
-  { id: 'resources', label: 'Resources', description: 'Manage resources', icon: Package, path: '/resources' },
+  { id: 'resources', label: 'Resources', description: 'Manage resources', icon: Package, path: '/resources', featureFlag: AGENTS_FLAG },
   { id: 'terminal', label: 'Terminal', description: 'Open terminal', icon: SquareCode, path: '/client', featureFlag: AGENTS_FLAG },
 ]
 
@@ -148,7 +148,7 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', description: 'Overview dashboard', icon: LayoutDashboard, path: '/dashboard', adminOnly: true },
   { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks', featureFlag: AGENTS_FLAG },
   { id: 'sessions', label: 'Sessions', description: 'View session history', icon: GalleryVerticalEnd, path: '/sessions' },
-  { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: View, path: '/reviews' },
+  { id: 'reviews', label: 'Pending Approvals', description: 'Approve or reject requests', icon: View, path: '/approvals' },
   { id: 'access-request', label: 'Access Request', description: 'Manage access requests', icon: CircleCheckBig, path: '/features/access-request', adminOnly: true, licenseFeature: 'access-requests' },
   { id: 'runbooks-setup', label: 'Runbooks Setup', description: 'Configure runbooks', icon: BookMarked, path: '/features/runbooks/setup', adminOnly: true, licenseFeature: 'runbooks', featureFlag: AGENTS_FLAG },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },

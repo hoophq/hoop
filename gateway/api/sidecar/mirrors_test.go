@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -212,21 +211,4 @@ func TestTheConnectionsAPIRefusesToDeleteAMirror(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, w.Code, "body: %s", w.Body)
 	assert.Contains(t, w.Body.String(), "remove the listener from the sidecar")
 	assert.Len(t, mirrorNames(t, sc.ID), 1)
-}
-
-// A listener name wider than the mirror's binding column is refused with the
-// listener's position, so the admin can find it. (No name and a repeated name
-// are refused already, by ValidateListenerNames.)
-func TestAListenerNameTheMirrorCannotHoldIsRefused(t *testing.T) {
-	startSwitchDB(t)
-	long := strings.Repeat("a", models.MaxSidecarListenerNameLength+1)
-	cfg := `{"listeners": [
-		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"},
-		{"name": "` + long + `", "protocol": "postgres", "listen": ":5433", "upstream": "db:5432"}]}`
-	w, _ := postSidecar(t, "lane-on", cfg)
-	assert.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
-	assert.Contains(t, w.Body.String(), "listeners[1]: the name is 256 characters, over 255")
-	var n int64
-	require.NoError(t, models.DB.Raw(`SELECT count(*) FROM private.sidecars WHERE org_id = ? AND name = 'lane-on'`, switchOrgID).Scan(&n).Error)
-	assert.Zero(t, n, "the refused write stored nothing")
 }

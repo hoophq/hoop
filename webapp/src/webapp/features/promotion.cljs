@@ -182,7 +182,7 @@
                      :description "Define precise boundaries around your infrastructure with flexible rules that protect sensitive resources and scale effortlessly."}
                     {:icon [:> ListTodo {:size 20}]
                      :title "Approval Workflows"
-                     :description "Add intelligent security gates with real-time command reviews and just-in-time approvals."}]
+                     :description "Add intelligent security gates with real-time command approvals and just-in-time access."}]
     :on-primary-click #(rf/dispatch [:users/mark-promotion-seen])
     :primary-text "Get Started"}])
 

@@ -52,7 +52,7 @@
                                                   :maxWidth "95vw"
                                                   :content [session-details/main {:id session-id :verb "exec"}]}])))}
                 [:div {:class "text-sm mb-1"}
-                 "This task needs to be reviewed. Please click here to see the details."]
+                 "This task needs approval. Please click here to see the details."]
                 [:div {:class "text-gray-11 text-sm"}
                  (str (formatters/current-time) " [cost " (formatters/time-elapsed execution-time) "]")]]
 

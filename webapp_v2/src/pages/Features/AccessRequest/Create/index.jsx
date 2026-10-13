@@ -468,7 +468,7 @@ function RuleFormFields({ rule, isEdit }) {
 
           <SectionRow
             title="Who needs approval"
-            description="Requests from these groups go through review."
+            description="Requests from these groups need approval."
           >
             <Stack gap="xs">
               <MultiSelect
@@ -485,7 +485,7 @@ function RuleFormFields({ rule, isEdit }) {
                 clearable
               />
               <Text size="xs" c="dimmed">
-                Leave empty to require review from all users.
+                Leave empty to require approval from all users.
               </Text>
             </Stack>
           </SectionRow>
@@ -493,7 +493,7 @@ function RuleFormFields({ rule, isEdit }) {
           {approvalRequiredGroups.length === 0 && (
             <SectionRow
               title="Who can skip approval (optional)"
-              description="Users in these groups get access without going through an approval review when requesting access with this rule."
+              description="Users in these groups get access without approval when requesting access with this rule."
             >
               <MultiSelect
                 label="User Groups"

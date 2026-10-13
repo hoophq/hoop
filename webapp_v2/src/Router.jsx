@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import PageLoader from '@/components/PageLoader'
 import NotImplemented from '@/components/NotImplemented'
 import { useModeConfig } from '@/modes'
@@ -72,6 +72,14 @@ import SidecarListenerPage from '@/pages/Sidecars/Listener'
 // Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
 // only — no reason to put that in the bundle every user downloads.
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
+
+// /reviews is the old path of /approvals. Keep the session id and the query.
+function ReviewsRedirect() {
+  const { sessionId } = useParams()
+  const { search } = useLocation()
+  const path = sessionId ? `/approvals/${encodeURIComponent(sessionId)}` : '/approvals'
+  return <Navigate to={`${path}${search}`} replace />
+}
 
 /**
  * The route table (src/modes/gateway.jsx is the product manifest):
@@ -152,10 +160,12 @@ function Router() {
         }
       />
       {/* Both render the list; the session id opens its drawer, so the Slack
-          link resolves to one review. Every signed-in user reaches it: a
-          reviewer's groups come from the identity provider, not from a role. */}
-      <Route path="/reviews" element={<Page><Reviews /></Page>} />
-      <Route path="/reviews/:sessionId" element={<Page><Reviews /></Page>} />
+          link resolves to one approval. Every signed-in user reaches it: an
+          approver's groups come from the identity provider, not from a role. */}
+      <Route path="/approvals" element={<Page><Reviews /></Page>} />
+      <Route path="/approvals/:sessionId" element={<Page><Reviews /></Page>} />
+      <Route path="/reviews" element={<ReviewsRedirect />} />
+      <Route path="/reviews/:sessionId" element={<ReviewsRedirect />} />
 
       {/* React pages — fully migrated */}
       <Route

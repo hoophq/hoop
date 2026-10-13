@@ -123,7 +123,7 @@
                "Select which Roles to apply this configuration."]
               [:> Callout.Root {:size "1" :color "gray" :variant "surface"}
                [:> Callout.Icon [:> Info {:size 16}]]
-               [:> Callout.Text "Roles requiring review aren't available."]]]
+               [:> Callout.Text "Roles requiring approval aren't available."]]]
              [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
               (let [conn-by-name (into {} (map (juxt :name identity)) all-connections)
                     selected-names @(:connection-names state)

@@ -490,12 +490,8 @@ type SidecarSessionEventsResponse struct {
 // The sidecar is not in the body and must not be: the token identifies it, so a
 // field here would let one sidecar file a review as another.
 type SidecarReviewRequest struct {
-	// The sidecar listener the statement arrived on
-	//
-	// Bounded because private.reviews.listener_name is VARCHAR(255): a longer
-	// name would reach Postgres and fail the write, rather than being told at
-	// the door that it is too long.
-	ListenerName string `json:"listener_name" binding:"required,max=255" example:"appdb"`
+	// The sidecar listener the statement arrived on, at most 1024 bytes
+	ListenerName string `json:"listener_name" binding:"required" example:"appdb"`
 	// The statement to review, base64 encoded
 	Payload string `json:"payload" binding:"required" example:"REVMRVRFIEZST00gdXNlcnM7"`
 	// The access request rule that decides who may approve this statement
@@ -1194,8 +1190,10 @@ const (
 	SessionRecordingFormatExec SessionRecordingFormat = "exec"
 	// RDP frames.
 	SessionRecordingFormatRDP SessionRecordingFormat = "rdp"
-	// Protocol bytes (HTTP, SSH, TCP, databases): never a terminal stream.
+	// Protocol bytes (HTTP, TCP, databases): never a terminal stream.
 	SessionRecordingFormatRaw SessionRecordingFormat = "raw"
+	// Hoop SSH frames: terminal output in the data of pty channels.
+	SessionRecordingFormatSSH SessionRecordingFormat = "ssh"
 )
 
 type SessionGetByIDParams struct {
@@ -1374,7 +1372,8 @@ type Session struct {
 	// * exec - plain text output of a command without a TTY
 	// * rdp - RDP frames
 	// * raw - protocol bytes, do not interpret them as terminal output
-	RecordingFormat *SessionRecordingFormat `json:"recording_format,omitempty" enums:"pty,exec,rdp,raw"`
+	// * ssh - hoop SSH frames; pty channels carry terminal output
+	RecordingFormat *SessionRecordingFormat `json:"recording_format,omitempty" enums:"pty,exec,rdp,raw,ssh"`
 	// Status of the resource
 	// * ready - the resource is ready to be executed, after being approved by a user
 	// * open - the session started and it's running

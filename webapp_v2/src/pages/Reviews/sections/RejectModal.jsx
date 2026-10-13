@@ -15,7 +15,7 @@ export default function RejectModal({
 }) {
   return (
     // Above Mantine's default 200: this one opens over the review detail.
-    <Modal opened={opened} onClose={onClose} title={sidecar ? 'Reject statement' : 'Reject review'} zIndex={400}>
+    <Modal opened={opened} onClose={onClose} title={sidecar ? 'Reject statement' : 'Reject request'} zIndex={400}>
       <Stack gap="lg">
         <Text size="sm">
           {sidecar

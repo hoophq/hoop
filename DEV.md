@@ -345,9 +345,8 @@ if featureflag.IsEnabled(orgID, "experimental.my_feature") {
 **Agent:**
 
 ```go
-import "github.com/hoophq/hoop/agent/controller/featureflagstate"
-
-if featureflagstate.IsEnabled("experimental.my_feature") {
+// inside an (*controller.Agent) method; flags belong to the current gateway stream
+if a.flags.IsEnabled("experimental.my_feature") {
     // new path
 }
 ```

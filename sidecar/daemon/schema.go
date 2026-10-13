@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
@@ -82,11 +83,7 @@ func ListenerSchema() ([]byte, error) {
 	protocols := Protocols()
 	doc := listenerSchema{}
 	for _, p := range protocols {
-		label, ok := protocolLabels[p]
-		if !ok {
-			return nil, fmt.Errorf("protocol %q has no label in protocolLabels", p)
-		}
-		doc.Protocols = append(doc.Protocols, schemaOption{Value: p, Label: label})
+		doc.Protocols = append(doc.Protocols, schemaOption{Value: p, Label: protocolLabel(p)})
 	}
 	fields, err := schemaFields(reflect.TypeFor[ListenerConfig](), "listeners", protocols, nil)
 	if err != nil {
@@ -101,6 +98,23 @@ func ListenerSchema() ([]byte, error) {
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// protocolLabel names a protocol for the form: the table for the shipped
+// ones, the codec's own Label for a registered protocol the table does not
+// know (a custom binary linking its own codec), the bare name last. The
+// form must never fail to render over a label, because the sidecar still
+// speaks the protocol.
+func protocolLabel(p string) string {
+	if label, ok := protocolLabels[p]; ok {
+		return label
+	}
+	if insp, err := inspect.New(inspect.Protocol(p)); err == nil {
+		if labeled, ok := insp.Codec().(gate.Labeled); ok && labeled.Label() != "" {
+			return labeled.Label()
+		}
+	}
+	return p
 }
 
 var protocolLabels = map[string]string{

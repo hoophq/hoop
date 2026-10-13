@@ -32,8 +32,8 @@ export function statusLabel(review) {
   return STATUS_LABEL[status] ?? { label: status ?? 'Unknown', color: 'gray' }
 }
 
-// The sidebar picks one: Pending Approvals (/reviews) or Approval History
-// (/reviews?status=settled).
+// The sidebar picks one: Pending Approvals (/approvals) or Approval History
+// (/approvals?status=settled).
 export const STATUS_FILTERS = {
   waiting: (r) => r.status === STATUS.PENDING,
   settled: (r) => r.status !== STATUS.PENDING,

@@ -42,7 +42,7 @@ func TestFetchRefusesAnUnlinkedSchemeAndNamesWhatIsLinked(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unlinked scheme fetched")
 	}
-	for _, want := range []string{"nolink://bucket/api.pb", `scheme "nolink"`, "linked: testlinked"} {
+	for _, want := range []string{"nolink://bucket/api.pb", `scheme "nolink"`, "linked: https, testlinked"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q lacks %q", err, want)
 		}

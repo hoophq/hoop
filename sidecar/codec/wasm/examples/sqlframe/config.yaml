@@ -1,0 +1,24 @@
+# A Sidecar lane for the x-sqlframe example. Build the module first:
+#   ./build.sh
+#   hoop start sidecar --config config.yaml --validate
+plugins:
+  - protocol: x-sqlframe
+    module: ./sqlframe.wasm
+
+listeners:
+  - name: sqlframe
+    protocol: x-sqlframe
+    listen: 127.0.0.1:19500
+    upstream: sqlframe-db.internal:9500
+    plugin:
+      dialect_label: pg16
+    guardrails:
+      rules:
+        # The host classifier sees the SQL inside QUERY and PREPARE
+        # frames, so operation and table rules work as on a postgres lane.
+        # An unlicensed Sidecar enforces one rule; README.md shows the
+        # metadata rule that fences PREPARE frames.
+        - name: no-destructive-sql
+          type: operation
+          operations: [drop, truncate, delete]
+          message: destructive statements are refused on sqlframe-db
