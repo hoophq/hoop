@@ -390,8 +390,8 @@ setup, hoop-specific worktree notes, and the daily flow). Conventions the
 tooling enforces:
 
 - One ticket = one worktree = one session (`claude --worktree <ticket-id>`)
-- `/fix-ticket <ID>` runs the standard ticket→draft-PR flow; `/test-plan`
-  generates the mandatory "How to test" PR section
+- `/shape` turns an idea into Linear tickets; `/build-ticket <ID>` runs one to a
+  draft PR, gated by the `qa` agent; `/evidence` makes its "Testing" images
 - Branch names come from Linear's `branchName`; commits start with the ticket ID
 - Go changes: `make test-oss` green before PR; `webapp_v2/`: `npm run lint`
   and `npm run build`

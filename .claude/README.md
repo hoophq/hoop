@@ -9,15 +9,21 @@ behaves the same way in this repo. Change it via PR like any code.
 |---|---|
 | `settings.json` | Pre-approved permissions (build/test/lint/git/gh read), `CGO_ENABLED=1`, deny rules for secrets, hooks |
 | `hooks/gofmt.sh` | Auto-`gofmt` on every Go file Claude edits — deterministic, not a prose instruction |
-| `skills/fix-ticket/` | `/fix-ticket EVL-86` — the standard ticket→draft-PR flow |
-| `skills/test-plan/` | `/test-plan` — generates the mandatory "How to test" PR section |
+| `skills/shape/` | `/shape` — an idea or a Linear project becomes vertical tickets with a `Definition of done` |
+| `skills/build-ticket/` | `/build-ticket EVL-86` — one ticket to a draft PR: code, tests, QA loop, evidence |
+| `agents/qa.md` | `qa` — independent QA; judges the branch against the ticket only, never edits |
+| `skills/evidence/` | `/evidence` — the same flow on `origin/main` and the branch, as before/after images |
 | `../.mcp.json` | Linear + Figma MCP servers for everyone (first run: approve + `/mcp` to authenticate) |
 
 ## First-time setup (each engineer, once)
 
 1. Pull, open `claude` in the repo, accept the workspace trust prompt.
 2. Run `/mcp` and authenticate `linear` (and `figma` if you do frontend work).
-3. That's it — skills, permissions and hooks are active.
+3. For `/evidence`: `brew install ffmpeg vhs charmbracelet/tap/freeze`.
+4. That's it — skills, agents, permissions and hooks are active.
+
+A personal skill of the same name in `~/.claude/skills/` shadows the team one.
+Delete the personal copy.
 
 ## Parallel sessions with worktrees (the standard)
 
@@ -48,14 +54,18 @@ run `claude` inside it.
 - Hygiene: worktree name = ticket ID; remove after merge
   (`git worktree remove <path>`, `git worktree prune` weekly).
 
-Suggested daily loop: dispatch 3-4 tickets in the morning (one worktree +
-`/fix-ticket` each), then rotate — validate one session's output while the
-others run. You review and unblock; the agents wait, not you.
+Suggested daily loop: `/shape` the work into tickets, dispatch 3-4 in the
+morning (one worktree + `/build-ticket` each), then rotate — read one
+session's evidence while the others run. You review and unblock; the agents
+wait, not you.
 
 ## Conventions the skills enforce
 
 - Branch names come from Linear's `branchName` (auto-links the PR).
 - Commits start with the ticket ID.
 - Go: `make test-oss` green before PR. `webapp_v2`: `npm run lint` + build.
-- Every PR is born **draft** with a "How to test" section.
+- No PR before the `qa` agent says PASS.
+- Every PR is born **draft**, its "Testing" section built from the evidence.
+- Evidence lives in `~/evidencias/<TICKET-ID>/`, raw captures in
+  `~/evidencias/.archive/<TICKET-ID>/`.
 - Linear ticket gets the PR link and moves to In Review.

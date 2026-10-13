@@ -84,8 +84,10 @@ deploy/docker-compose/hoopdata/zitadel-admin-sa.json
 # rust build
 target/
 webapp/resources/public/data/connections-metadata.json
-# .claude/ is versioned team config (settings, skills, hooks) — only
+# .claude/ is versioned team config (settings, skills, agents, hooks) — only
 # per-engineer state stays ignored
+!/.claude/**
+/.claude/settings.local.json
 .claude/worktrees/
 .worktrees/
 # WASM build output
