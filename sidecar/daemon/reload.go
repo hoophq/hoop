@@ -678,6 +678,29 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			licRotated = true
 		}
 	}
+	// The hosted-model default depends on the license, and a running
+	// provider is restart-guarded, so a reload cannot swap it.
+	eff, effErr := newCfg.effectiveAnalyzer()
+	switch {
+	case effErr != nil && ac != nil && ac.cfg != nil && ac.cfg.hostedDefault:
+		// An Enterprise license arrived while the license default sends
+		// statements to Hoop. Stop through the same drain as a license
+		// that no longer covers the rules: the restart then refuses the
+		// config until it names a provider or opts in.
+		r.licRaw = newCfg.License
+		r.lic.set(newCfg.lic)
+		r.lic.overCap.Store(true)
+		log.Warn("an Enterprise license is now installed and the analyzer uses the model Hoop hosts "+
+			"by default; stopping the relay so it restarts under the new license",
+			"hint", "set use_hoop_llm_provider: true, or a provider and model")
+		return r.keep(reloadRefused, hostedNeedsOptIn)
+	case ac == nil && eff != nil:
+		// The first listener to ask for analysis: the provider is built
+		// once per process, so attaching it takes a restart.
+		log.Warn("a listener now asks for analysis and no analyzer is running; restart to attach it")
+		return r.keep(reloadRestart, "a listener now asks for analysis; restart to attach the analyzer")
+	}
+
 	// ac, not r.ac: the staged detector this reload built. A refusal below
 	// must leave the running dependencies untouched.
 	lanes, err := buildLanes(newCfg, det, ac)

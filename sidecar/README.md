@@ -1865,20 +1865,26 @@ to the audit trail.
 | `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global); `thinking_level`, `thinking_budget` |
 | `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi`; with `publisher: google`, also `thinking_level`, `thinking_budget`, `labels` |
 
-**The model Hoop hosts.** Without an LLM of your own, set
-`use_hoop_llm_provider: true` instead of `provider` and `model`:
+**The model Hoop hosts.** Analysis works without an LLM of your own: Hoop
+hosts a small model. Statement text, which can contain PII, is then sent to
+Hoop. The sidecar logs that warning at startup and in `-validate`, and the
+control plane shows it on the sidecar's page. No key is needed: each request
+is signed and expires after 30 seconds.
+
+When a listener analyses and no `provider` is set, the license decides:
+
+| License | `use_hoop_llm_provider` unset | `true` | `false` |
+|---|---|---|---|
+| none | hosted model, with a warning | hosted model | refused: set a provider |
+| Enterprise (valid or expired) | refused: set a provider or `true` | hosted model | refused: set a provider |
 
 ```yaml
 analyzer:
   use_hoop_llm_provider: true
 ```
 
-The statement text, which can contain PII, is then sent to Hoop. The sidecar
-logs that warning at startup and in `-validate`, and the control plane shows
-it on the sidecar's page. It is never a default: an `analyzer` section with no
-provider is refused, with both options named. No key is needed: each request
-is signed and expires after 30 seconds. `provider`, `credentials_file` and
-`use_hoop_llm_provider` are exclusive.
+`provider`, `credentials_file` and `use_hoop_llm_provider: true` are
+exclusive. A config with no analyzer block on any listener sends nothing.
 
 **Gemini** with an API key goes through `provider: gemini`. `api: developer`
 is the Gemini Developer API on `generativelanguage.googleapis.com`, billed to

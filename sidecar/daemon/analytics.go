@@ -381,7 +381,7 @@ func shapeProperties(cfg *Config, lanes []lane, det Plugin) analytics.Properties
 	// Provider is one of the registered names (openai, anthropic, vertex);
 	// the model is free text the operator typed, so it stays out. Same
 	// rule as the prompt: whether one is set, never what it says.
-	if a := cfg.Analyzer; a != nil {
+	if a, _ := cfg.effectiveAnalyzer(); a != nil {
 		p["analyzer-provider"] = a.providerName()
 		p["analyzer-send"] = string(sendModeOrDefault(a.Send))
 		p["analyzer-fail-open"] = a.failOpen()

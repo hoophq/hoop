@@ -904,15 +904,20 @@ func Run(cfg *Config, det Plugin) error {
 	if err := verifyAnalyzer(analyzerDeps); err != nil {
 		return err
 	}
+	var analyzerCfg *AnalyzerConfig
 	if analyzerDeps != nil {
+		analyzerCfg = analyzerDeps.cfg
 		analyzerDeps.log = log
 		log.Info("risk analyzer attached",
-			"provider", cfg.Analyzer.providerName(),
-			"model", cfg.Analyzer.modelName(),
-			"send", sendModeOrDefault(cfg.Analyzer.Send),
-			"fail_open", cfg.Analyzer.failOpen())
-		if cfg.Analyzer.UseHoopLLMProvider {
+			"provider", analyzerCfg.providerName(),
+			"model", analyzerCfg.modelName(),
+			"send", sendModeOrDefault(analyzerCfg.Send),
+			"fail_open", analyzerCfg.failOpen())
+		if analyzerCfg.hosted() {
 			log.Warn(hostedPIINotice)
+		}
+		if analyzerCfg.hostedDefault {
+			log.Warn(hostedDefaultNotice)
 		}
 	}
 
@@ -1109,7 +1114,7 @@ func Run(cfg *Config, det Plugin) error {
 			am = analyzerDeps.metrics
 		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, cfg.Analyzer, am, licState, log)
+			view, ac, analyzerCfg, am, licState, log)
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so

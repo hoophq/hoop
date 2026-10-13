@@ -51,20 +51,6 @@ func TestLaneAnalyzerBlockIsAccepted(t *testing.T) {
 	}
 }
 
-// The block needs the top-level section the same way the rule form did: the
-// provider, the model and the credential live there.
-func TestLaneAnalyzerWithoutTopLevelSectionIsRefused(t *testing.T) {
-	cfg := blockLane(laneBlock())
-	cfg.Analyzer = nil
-	err := cfg.Validate()
-	if err == nil {
-		t.Fatal("an analyzer block with no top-level analyzer section was accepted")
-	}
-	if !strings.Contains(err.Error(), "analyzer") {
-		t.Errorf("the error does not name the missing section: %v", err)
-	}
-}
-
 // An omitted trigger means "classify everything" on an ungated lane and
 // "the gate decides" on a gated one. Both spellings are accepted; the
 // difference is who spends the money.

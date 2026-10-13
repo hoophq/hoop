@@ -1085,3 +1085,50 @@ func TestAHeartbeat412WhenPlaneOwnedDoesNotImport(t *testing.T) {
 		t.Fatalf("a plane-owned process pushed its file on a 412")
 	}
 }
+
+// reloadAnalyzing is reloadBase with a listener that asks for analysis and
+// names no provider: the license decides what that means.
+func reloadAnalyzing(t *testing.T) string {
+	return editJSON(t, reloadBase, `"upstream": "h:5432",`, `"upstream": "h:5432", "analyzer": {"high": "warn"},`)
+}
+
+// An Enterprise license arriving while the license default sends statements
+// to Hoop must stop the relay: an Enterprise sidecar needs explicit consent.
+func TestAnEnterpriseLicenseStopsTheHostedDefault(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.ac = &analyzerDeps{cfg: &AnalyzerConfig{hostedDefault: true}}
+
+	doc := withLicense(t, reloadAnalyzing(t), licensetest.Document(t, licensetest.Enterprise()))
+	if got := applyWith(rl, buf, doc); got != reloadRefused {
+		t.Fatalf("outcome = %v, want refused; log:\n%s", got, buf)
+	}
+	if !rl.lic.overCap.Load() {
+		t.Fatal("the relay kept sending statements to Hoop under an Enterprise license")
+	}
+	if !strings.Contains(buf.String(), "use_hoop_llm_provider: true") {
+		t.Errorf("the stop does not name the opt-in:\n%s", buf)
+	}
+}
+
+// The first listener to ask for analysis needs a provider the running process
+// never built: a restart, not a refusal and not a silent no-op.
+func TestTheFirstAnalyzingListenerNeedsARestart(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	if got := applyWith(rl, buf, reloadAnalyzing(t)); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+}
+
+// The plane refuses at save what an Enterprise sidecar refuses at startup.
+func TestThePlaneRefusesAProviderlessAnalyzerOnEnterprise(t *testing.T) {
+	cfg, err := LoadConfigBytes([]byte(reloadAnalyzing(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.CheckAnalyzerLicense(license.Status{}); len(got) != 0 {
+		t.Errorf("free tier refused: %v", got)
+	}
+	if got := cfg.CheckAnalyzerLicense(licensetest.Status(t, licensetest.Enterprise())); len(got) == 0 {
+		t.Error("enterprise license accepted an analyzer with no provider")
+	}
+}
