@@ -10,5 +10,5 @@ const (
 
 	// HostedModel is the model the hosted server loads. llama-server serves
 	// one model and ignores the name; it is sent for logs and audit records.
-	HostedModel = "qwen3-1.7b"
+	HostedModel = "qwen3-4b"
 )
