@@ -5,7 +5,6 @@ import { SidebarCollapsed } from './SidebarCollapsed';
 import { SidebarExpanded } from './SidebarExpanded';
 import classes from './Sidebar.module.css';
 
-// Both products render this with their own nav (gatewayNav.js, controlPlaneNav.js).
 export function Sidebar({ nav, top }) {
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
 

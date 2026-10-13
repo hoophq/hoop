@@ -26,7 +26,6 @@ import TextInput from '@/components/TextInput'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
-import { roleToGroups } from '@/utils/roles'
 import { showSnackbar } from '@/utils/snackbar'
 import { useAccessRequestStore } from '../store'
 import {
@@ -100,7 +99,7 @@ function AccessTypeCard({ icon: Icon, title, description, checked, disabled, onT
 
 // Remounted via `key` when the edited rule changes, so state derives from the
 // loaded rule with lazy useState initializers instead of a prefill effect.
-function RuleFormFields({ rule, isEdit, defaultReviewerRoles }) {
+function RuleFormFields({ rule, isEdit }) {
   const navigate = useNavigate()
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
@@ -114,14 +113,6 @@ function RuleFormFields({ rule, isEdit, defaultReviewerRoles }) {
   const deleteRule = useAccessRequestStore((s) => s.deleteRule)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  // Roles (utils/roles) a new rule names as reviewers, given by the route table:
-  // the control plane passes the approver, the gateway none. The group name
-  // comes from /serverinfo: a deployment may rename it.
-  const adminRoleName = useUserStore((s) => s.adminRoleName)
-  const approverRoleName = useUserStore((s) => s.approverRoleName)
-  const defaultReviewerGroups = defaultReviewerRoles.flatMap((role) =>
-    roleToGroups(role, adminRoleName, approverRoleName),
-  )
 
   // Rules that Hoop manages as part of a protection profile: the API accepts
   // changes to approval settings and group lists only, and refuses to delete
@@ -148,7 +139,7 @@ function RuleFormFields({ rule, isEdit, defaultReviewerRoles }) {
     () => rule?.all_groups_must_approve ?? true,
   )
   const [reviewersGroups, setReviewersGroups] = useState(
-    () => rule?.reviewers_groups ?? defaultReviewerGroups,
+    () => rule?.reviewers_groups ?? [],
   )
   const [forceApprovalGroups, setForceApprovalGroups] = useState(
     () => rule?.force_approval_groups ?? [],
@@ -628,7 +619,7 @@ function RuleFormFields({ rule, isEdit, defaultReviewerRoles }) {
 
 // Create and edit share one form; the rule name is a path segment so the
 // legacy `/features/access-request/edit/:rule-name` links keep working.
-export default function AccessRequestRuleForm({ defaultReviewerRoles = [] }) {
+export default function AccessRequestRuleForm() {
   const { ruleName } = useParams()
   const isEdit = Boolean(ruleName)
 
@@ -684,7 +675,6 @@ export default function AccessRequestRuleForm({ defaultReviewerRoles = [] }) {
       key={ruleName ?? 'new'}
       rule={isEdit ? rule : null}
       isEdit={isEdit}
-      defaultReviewerRoles={defaultReviewerRoles}
     />
   )
 }

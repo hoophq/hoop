@@ -19,14 +19,9 @@ import AiSessionAnalyzerPromotion from './components/AiSessionAnalyzerPromotion'
 // what "seen" means.
 const PROMOTION_SEEN_STORAGE_KEY = 'ai-session-analyzer-promotion-seen'
 
-// ConfigureTab and orgWideProvider come from Router.jsx through <ByProduct>, so
-// this page serves both products without reading the mode.
-//
-// orgWideProvider is false where the provider is a property of each sidecar
-// rather than of the organization. The empty state reads it: pushing a control
-// plane admin at "Configure AI Session Analyzer" would send them to a tab that
-// has nothing to save.
-export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true }) {
+// ConfigureTab comes from Router.jsx: an un-prefixed page cannot import a
+// Gateway* file.
+export default function AiSessionAnalyzer({ ConfigureTab }) {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -109,9 +104,7 @@ export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true
             onCreate={(kind) => navigate(newRulePath('/features/ai-session-analyzer/rules/new', kind))}
             disabled={atFreeLimit}
             blocked={
-              orgWideProvider && !provider
-                ? { [TRAFFIC_AGENT]: 'Configure the provider first' }
-                : undefined
+              provider ? undefined : { [TRAFFIC_AGENT]: 'Configure the provider first' }
             }
           >
             Create new rule
@@ -135,7 +128,7 @@ export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true
         </Box>
       ) : (
         <RulesTab
-          providerConfigured={!orgWideProvider || Boolean(provider)}
+          providerConfigured={Boolean(provider)}
           onGoConfigure={() => setTab('configure')}
           newTraffics={newTraffics}
         />

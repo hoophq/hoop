@@ -46,8 +46,8 @@ export const useUserStore = create((set, get) => ({
   // /serverinfo postgres_proxy_enabled. Fail closed: without a Postgres proxy
   // listen address the gateway cannot serve a native postgres session.
   postgresProxyEnabled: false,
-  // Which product this bundle renders as: 'gateway' or 'control-plane'. A
-  // property of the deployment, not of the user, so clear() leaves it alone.
+  // Which product this bundle renders as: always 'gateway' today. A property
+  // of the deployment, not of the user, so clear() leaves it alone.
   // 'gateway' until /publicserverinfo says otherwise, which keeps an old gateway
   // that does not send application_mode behaving exactly as before. Consumers
   // read it through src/modes (useModeConfig), never directly.

@@ -3,13 +3,11 @@ import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-do
 import PageLoader from '@/components/PageLoader'
 import NotImplemented from '@/components/NotImplemented'
 import { useModeConfig } from '@/modes'
-import ByProduct from '@/modes/ByProduct'
 import ByRuleTraffic from '@/modes/ByRuleTraffic'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
 import { RULE_KIND_ANALYZER, RULE_KIND_DATAMASKING, RULE_KIND_GUARDRAIL } from '@/utils/ruleTraffic'
-import { ROLE_APPROVER } from '@/utils/roles'
 
 // Auth pages
 import Login from '@/pages/Auth/Login'
@@ -53,7 +51,6 @@ import AiSessionAnalyzer from '@/pages/Features/AiSessionAnalyzer'
 import GatewayAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/GatewayAiAnalyzerForm'
 import ControlPlaneAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/ControlPlaneAiAnalyzerForm'
 import GatewayAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/GatewayConfigureTab'
-import ControlPlaneAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/ControlPlaneConfigureTab'
 import Guardrails from '@/pages/Guardrails'
 import GatewayGuardrailForm from '@/pages/Guardrails/Create/GatewayGuardrailForm'
 import ControlPlaneGuardrailForm from '@/pages/Guardrails/Create/ControlPlaneGuardrailForm'
@@ -63,7 +60,6 @@ import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
 import JiraTemplates from '@/pages/JiraTemplates'
 import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import GatewaySlack from '@/pages/Integrations/Slack/GatewaySlack'
-import ControlPlaneSlack from '@/pages/Integrations/Slack/ControlPlaneSlack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
 import Reviews from '@/pages/Reviews'
@@ -77,10 +73,6 @@ import SidecarListenerPage from '@/pages/Sidecars/Listener'
 // only — no reason to put that in the bundle every user downloads.
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 
-// A review rule created in the control plane names the approver group as
-// reviewer; the form maps the role to the group name through /serverinfo.
-const CONTROL_PLANE_REVIEWER_ROLES = [ROLE_APPROVER]
-
 // /reviews is the old path of /approvals. Keep the session id and the query.
 function ReviewsRedirect() {
   const { sessionId } = useParams()
@@ -90,24 +82,13 @@ function ReviewsRedirect() {
 }
 
 /**
- * One route table for both products (src/modes). Every React route below exists
- * in the gateway and in the control plane; the sidebar of each product says what
- * it shows, and a page absent from it is still reachable by URL. That is a
- * decision, not an oversight: while the control plane is in transition, an open
- * URL finds bugs.
- *
- * What the product decides comes from its manifest:
+ * The route table (src/modes/gateway.jsx is the product manifest):
  *   - `Page`: the shell a React page renders in (ProtectedRoute + Layout).
  *   - `Guard`: a React route without the shell (onboarding).
- *   - `Home`, `Onboarding`, `CatchAll`: the three leaves that differ. In the
- *     gateway '/' redirects to the terminal and the other two are ClojureScript;
- *     in the control plane '/' is the landing by role and the other two are a
- *     404, so the CLJS bundle never loads there.
+ *   - `Home`, `Onboarding`, `CatchAll`: the ClojureScript leaves.
  *
- * A page that differs between the products is a pair of sibling files
- * (Gateway*, ControlPlane*) chosen here with <ByProduct>. `grep ByProduct` in
- * this file lists every such page. Guardrail, masking and analyzer forms are
- * chosen per rule with <ByRuleTraffic>, since one org can have both.
+ * Guardrail, masking and analyzer forms are chosen per rule with
+ * <ByRuleTraffic>, since one org can have both agent and sidecar traffic.
  *
  * To migrate a page from Clojure to React:
  *   1. Import the React component
@@ -126,12 +107,10 @@ function Router() {
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/signup/callback" element={<SignupCallback />} />
 
-      {/* Landing: the product decides (gateway: terminal; control plane: by role). */}
       <Route path="/" element={Home} />
 
-      {/* Control plane pages. The sidecar fleet (list, the connect/create wizard,
-          a details page) runs on /api/sidecars; Reviews is the one surface a
-          reviewer reaches. */}
+      {/* The sidecar fleet (list, the connect/create wizard, a details page)
+          runs on /api/sidecars. */}
       <Route
         path="/sidecars"
         element={
@@ -495,10 +474,7 @@ function Router() {
         path="/features/access-request/new"
         element={
           <Page adminOnly licenseFeature="access-requests">
-            <ByProduct
-              gateway={<AccessRequestForm />}
-              controlPlane={<AccessRequestForm defaultReviewerRoles={CONTROL_PLANE_REVIEWER_ROLES} />}
-            />
+            <AccessRequestForm />
           </Page>
         }
       />
@@ -506,10 +482,7 @@ function Router() {
         path="/features/access-request/edit/:ruleName"
         element={
           <Page adminOnly licenseFeature="access-requests">
-            <ByProduct
-              gateway={<AccessRequestForm />}
-              controlPlane={<AccessRequestForm defaultReviewerRoles={CONTROL_PLANE_REVIEWER_ROLES} />}
-            />
+            <AccessRequestForm />
           </Page>
         }
       />
@@ -520,20 +493,7 @@ function Router() {
         path="/features/ai-session-analyzer"
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
-            {/* The Configure tab is the one part that differs: the gateway
-                stores one provider per organization, a sidecar carries its own
-                and reads its credential off its own disk. */}
-            <ByProduct
-              gateway={
-                <AiSessionAnalyzer ConfigureTab={GatewayAiAnalyzerConfigureTab} />
-              }
-              controlPlane={
-                <AiSessionAnalyzer
-                  ConfigureTab={ControlPlaneAiAnalyzerConfigureTab}
-                  orgWideProvider={false}
-                />
-              }
-            />
+            <AiSessionAnalyzer ConfigureTab={GatewayAiAnalyzerConfigureTab} />
           </Page>
         }
       />
@@ -691,10 +651,7 @@ function Router() {
         path="/integrations/slack"
         element={
           <Page adminOnly>
-            <ByProduct
-              gateway={<GatewaySlack showListeners />}
-              controlPlane={<ControlPlaneSlack />}
-            />
+            <GatewaySlack showListeners />
           </Page>
         }
       />
@@ -707,11 +664,8 @@ function Router() {
         }
       />
 
-      {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The two
-          React routes exist in both products; the rest of the CLJS onboarding is
-          a gateway leaf and the control plane answers 404. The control plane gate
-          (ControlPlaneProtectedRoute) sends a free-plan admin to
-          /onboarding/license. */}
+      {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The rest
+          of the onboarding is ClojureScript. */}
       <Route
         path="/onboarding/protection-rules"
         element={
@@ -730,7 +684,7 @@ function Router() {
       />
       <Route path="/onboarding/*" element={Onboarding} />
 
-      {/* Everything else: ClojureScript in the gateway, a 404 in the control plane */}
+      {/* Everything else: ClojureScript */}
       <Route path="/*" element={CatchAll} />
     </Routes>
   )

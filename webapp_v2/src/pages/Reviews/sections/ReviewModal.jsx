@@ -31,6 +31,7 @@ import {
   decidedGroups,
   expiryLabel,
   isSettled,
+  isSidecarReview,
   reviewSource,
   statusLabel,
 } from '../helpers'
@@ -123,6 +124,18 @@ function Statement({ sessionId }) {
   return <CodeSnippet code={statement} />
 }
 
+function Requester({ sessionId }) {
+  const requester = useReviewStore((s) => s.requesters[sessionId])
+  if (!requester) return null
+  return (
+    <DetailRow icon={CircleUser} label="Created by">
+      <Text size="sm" fw={500}>
+        {requester}
+      </Text>
+    </DetailRow>
+  )
+}
+
 // SidecarSession links the review to the session its statement ran in. The
 // sidecar reports that session after the review settles, so it can be absent.
 function SidecarSession({ sessionId, onOpen }) {
@@ -169,6 +182,8 @@ export default function ReviewModal({
               {source.resource}
             </Badge>
           </DetailRow>
+
+          {!isSidecarReview(review) && <Requester sessionId={review.session} />}
 
           {source.sidecar && (
             <DetailRow icon={Container} label="Sidecar">

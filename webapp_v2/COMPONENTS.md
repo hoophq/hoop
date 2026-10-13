@@ -259,8 +259,8 @@ import StepAccordion from '@/components/StepAccordion'
 />
 ```
 
-### `ProtectedRoute` / `GatewayProtectedRoute` / `ControlPlaneProtectedRoute`
-Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`; `onReady(user)` is the product's extra step (a path it returns is where the user goes). `GatewayProtectedRoute` adds the onboarding redirect through it; `ControlPlaneProtectedRoute` sends an admin on the free plan with no sidecar to `/onboarding/license` once (`utils/licenseIntro.js` remembers the skip per user). All three are already wrapping every route through the product `Page` (`layout/GatewayPage`, `layout/ControlPlanePage`). Do not add another instance.
+### `ProtectedRoute` / `GatewayProtectedRoute`
+Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`. `GatewayProtectedRoute` adds the agents landing swap. Both already wrap every route through the product `Page` (`layout/GatewayPage`). Do not add another instance.
 
 ### `Stepper`
 Horizontal step indicator for a multi-page flow (numbered circles joined by a rule). Controlled by the zero-based `active` step; render the step body below it yourself.
@@ -320,19 +320,16 @@ the sidebar collapsing instead of recomputing its width from a store.
 Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere, never from a `ControlPlane*` file.
 
 ### `NotImplemented`
-A route that exists in the information architecture but has no backend yet (the control plane's Reviews placeholder). Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
+A route that exists in the information architecture but has no backend yet. Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
 ```jsx
 <NotImplemented title="Reviews" project="Reviews (Human in the Loop)" missing={['Approve and reject']} />
 ```
 
 ### `useModeConfig` / `getModeConfig` / `postAuthPath` (`src/modes/`)
-The current product manifest (`modes/gateway.jsx` or `modes/controlPlane.jsx`): `id`, `theme`, `postLoginPath`, `postSetupPath`, `Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx`, `ByProduct`, `ModeThemeProvider` and the auth pages only. Pages and layout never use them — see `CLAUDE.md`, "Application modes".
-
-### `ByProduct` (`src/modes/`)
-`<ByProduct gateway={<GatewayDataMaskingForm />} controlPlane={<ControlPlaneDataMaskingForm />} />` — renders one of two elements by product. Used in `Router.jsx` only; `grep ByProduct` lists every page that differs between the products.
+The product manifest (`modes/gateway.jsx`): `id`, `theme`, `postLoginPath`, `postSetupPath`, `Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx`, `ModeThemeProvider` and the auth pages only. Pages and layout never use them — see `CLAUDE.md`, "Application modes".
 
 ### `useRuleTraffics` (`src/modes/`)
-Built on `useSidecarsEnabled()`. Answers which traffic a guardrail, masking or analyzer rule can protect: `['agent']`, `['sidecar']` or both.
+Answers which traffic a guardrail, masking or analyzer rule can protect: always `['agent', 'sidecar']`.
 
 ### `ByRuleTraffic` (`src/modes/`)
 `<ByRuleTraffic kind={RULE_KIND_GUARDRAIL} fetchRule={guardrailsService.get} listPath="/guardrails" agent={<GatewayGuardrailForm />} sidecar={<ControlPlaneGuardrailForm />} />` — picks a rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Used in `Router.jsx` only.
@@ -708,7 +705,7 @@ Props: `value` (names[]), `onChange(names)`, `label` (default "Resource Roles"),
 ### `SidecarTargetPicker`
 Picks the sidecar listeners a rule is distributed to — the control plane's answer to "configure once, enforce across the fleet". Options are grouped by sidecar, with an **All listeners** row that targets the whole sidecar (the configuration's top-level block, which every lane inherits) above its individual lanes. Reads the fleet from `useSidecarStore`.
 
-Used by the Guardrails, Data Masking and AI Session Analyzer rule editors, each of which renders it only when `Router.jsx` passes `sidecarTargets` through `<ByProduct>` — in the gateway it never mounts, so the fleet endpoint is never called there.
+Used by the sidecar variants of the Guardrails, Data Masking and AI Session Analyzer rule editors (`Sidecar*Fields`).
 ```jsx
 import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 
@@ -738,7 +735,7 @@ const shown = names ? rules.filter((r) => names.has(r.name)) : rules
 
 <SidecarListenerFilter selected={target} onSelect={setTarget} onClear={() => setTarget(null)} />
 ```
-Rendered only where `Router.jsx` passes `filterBySidecar` through `<ByProduct>`, so the gateway never calls the fleet endpoint.
+Rendered by the Guardrails, Data Masking and AI Session Analyzer rule lists.
 
 ---
 

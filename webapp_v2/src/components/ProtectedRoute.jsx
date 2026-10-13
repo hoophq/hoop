@@ -7,13 +7,10 @@ import { featureFlagsService } from '@/services/featureFlags'
 import { hasRole } from '@/utils/roles'
 import AuthPageLoader from '@/components/AuthPageLoader'
 
-// The auth gate both products share: token, /userinfo, /serverinfo, feature
-// flags, then `adminOnly`, `role` (utils/roles: admin passes every role gate,
-// approver passes the routes that name it) and `licenseFeature`. `onReady(user)`
-// is the product's extra step once all of that is known; a path it returns is
-// where the user goes instead. The control plane uses it for its setup
-// redirect (ControlPlaneProtectedRoute); the gateway has none.
-function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeature = null, onReady = null }) {
+// The auth gate: token, /userinfo, /serverinfo, feature flags, then
+// `adminOnly`, `role` (utils/roles: admin passes every role gate, approver
+// passes the routes that name it) and `licenseFeature`.
+function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeature = null }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
   const { user, isAdmin, role: userRole, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
@@ -38,8 +35,7 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
     const initialize = async () => {
       try {
         // Fetch user if not already in store
-        let currentUser = user
-        if (!currentUser) {
+        if (!user) {
           setLoading(true)
           const [userData, serverInfo] = await Promise.all([
             authService.getCurrentUser(),
@@ -60,7 +56,6 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
             initIntercom(userData)
             initAnalytics(userData)
           }
-          currentUser = userData
         }
 
         // Retry /serverinfo when a previous fetch failed or was skipped:
@@ -75,12 +70,6 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
         const { data: featureFlagsData } = await featureFlagsService.list()
         const featureFlags = Object.fromEntries(featureFlagsData.map(flag => [flag.name, flag.enabled]))
         setFeatureFlags(featureFlags)
-
-        const target = onReady ? await onReady(currentUser) : null
-        if (target) {
-          setRedirectTo(target)
-          return
-        }
       } catch (error) {
         console.error('[ProtectedRoute] initialization failed:', error)
         saveRedirectUrl(window.location.href)

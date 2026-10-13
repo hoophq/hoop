@@ -15,7 +15,7 @@ const NEW_RULE_TRAFFICS = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
 
 /**
  * Picks the agent or the sidecar form of a guardrail, masking or analyzer rule.
- * Used in Router.jsx only, like ByProduct:
+ * Used in Router.jsx only:
  *
  *   <ByRuleTraffic kind="guardrail" fetchRule={guardrailsService.get} listPath="/guardrails"
  *     agent={<GatewayGuardrailForm />} sidecar={<ControlPlaneGuardrailForm />} />

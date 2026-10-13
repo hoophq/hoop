@@ -9,9 +9,8 @@ import classes from './License.module.css'
 const SIDECARS_PATH = '/sidecars'
 
 /**
- * The control plane's license screen (Figma: Control-Plane-UI, "First Time -
- * Option B"). ControlPlaneProtectedRoute sends every admin without a valid
- * Enterprise license here; Confirm installs one and goes on to Sidecars.
+ * The first-access license screen. Confirm installs a license and goes on to
+ * Sidecars.
  *
  * Chrome-less like the other onboarding routes. Same save sequence as
  * features/ProtectionProfiles/AddLicenseModal.

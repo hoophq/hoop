@@ -8,7 +8,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 // A file without a product prefix serves both products. When one product needs
 // it changed, it becomes two siblings: Gateway* and ControlPlane*. These rules
 // turn the name into a contract. Matching is case-sensitive on purpose: the
-// data files gatewayNav.js/controlPlaneNav.js are listed where they matter.
+// data file gatewayNav.js is listed where it matters.
 
 // Modules only the gateway may reach: its sibling files, the ClojureScript app
 // and its bridge, and the chrome that only makes sense with a data plane.
@@ -25,11 +25,11 @@ const GATEWAY_ONLY = [
   '@/features/CommandPalette/spotlight',
 ]
 
-const CONTROL_PLANE_ONLY = ['**/ControlPlane*', '**/controlPlaneNav']
+const CONTROL_PLANE_ONLY = ['**/ControlPlane*']
 
 const PRODUCT_FILES = {
   gateway: ['src/**/Gateway*.{js,jsx}', 'src/**/gatewayNav.js'],
-  controlPlane: ['src/**/ControlPlane*.{js,jsx}', 'src/**/controlPlaneNav.js'],
+  controlPlane: ['src/**/ControlPlane*.{js,jsx}'],
 }
 
 const restricted = (patterns, message) => ({

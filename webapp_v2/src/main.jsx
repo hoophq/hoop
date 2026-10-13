@@ -25,8 +25,8 @@ import '@mantine/carousel/styles.layer.css';
 // instead of opening a second Radix dialog underneath the Mantine Spotlight.
 window.__hoopReactShellPresent = true;
 
-// Which product this bundle renders as (gateway or control plane) comes from the
-// backend. Kicked off before the first render; the shell re-renders when it lands.
+// The product mode comes from the backend. Kicked off before the first render;
+// the shell re-renders when it lands.
 useUserStore.getState().loadAppMode();
 
 createRoot(document.getElementById('root')).render(

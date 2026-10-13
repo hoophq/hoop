@@ -72,13 +72,9 @@ gateway, with sidecars and no agents):
 ```bash
 make run-dev-control-plane                                 # repo root, control plane on :8019
 npm --prefix ../webapp run download-connection-metadata    # once; the catalog JSON is gitignored
-API_URL=http://localhost:8019 npm run dev                  # no shadow-cljs needed
+API_URL=http://localhost:8019 npm run dev
 ```
 
-The control plane never loads the CLJS bundle, so shadow-cljs can stay down.
-Every React route exists in both products (the sidebar says what each one
-shows); only `/onboarding/*` and `/*`, which are ClojureScript in the gateway,
-answer 404 in the control plane.
 `/images`, `/icons` and `/data` are served by Vite straight from
 `webapp/resources/public` (see `cljsStaticAssets` in `vite.config.js`); only
 `/js` and `/css` are proxied to :8280.
