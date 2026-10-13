@@ -36,8 +36,6 @@ type RunSpec struct {
 	Run Run
 	// Mode is the `hoop start` subcommand: gateway or control-plane.
 	Mode string
-	// SidecarListeners turns beta.sidecar_listeners on after boot.
-	SidecarListeners bool
 	// Agent starts a real agent; only a gateway can accept one.
 	Agent bool
 }
@@ -125,9 +123,6 @@ func startEnv(t *testing.T, h *harness, spec RunSpec) *Env {
 	e.Token = e.registerAdmin(t)
 	e.OrgID = e.orgID(t)
 	e.installLicense(t, h)
-	if spec.SidecarListeners {
-		e.mustAPI(t, http.MethodPut, "/feature-flags/beta.sidecar_listeners", map[string]any{"enabled": true}, http.StatusOK)
-	}
 	if spec.Agent {
 		e.startAgent(t, h.bin, home)
 	}

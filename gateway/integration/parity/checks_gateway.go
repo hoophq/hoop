@@ -14,8 +14,8 @@ import (
 )
 
 // What today's gateway customers do through the real agent. Every one of
-// these has to keep working with beta.sidecar_listeners on.
-var gatewayRuns = map[Run]Expect{GatewayFlagOff: Must, GatewayFlagOn: Must}
+// these has to keep working.
+var gatewayRuns = map[Run]Expect{Gateway: Must}
 
 type gwConnection struct {
 	ID             string            `json:"id"`
@@ -256,7 +256,7 @@ var _ = register(Check{
 
 var _ = register(Check{
 	ID:    "GW-03",
-	Title: "connection list keeps ordinary connections apart from sidecar mirrors, which exist only with the flag on",
+	Title: "connection lists show ordinary connections and leave sidecar mirrors out",
 	Runs:  gatewayRuns,
 	Fn: func(c *C) {
 		conn := gwCreateBash(c, "plain", nil)
@@ -284,33 +284,15 @@ var _ = register(Check{
 			c.Fatalf("listed connection %+v, want id %s on agent %s, not managed", *plain, conn.ID, c.AgentID)
 		}
 
-		mirrors := gwListConnections(c, "?managed_by=sidecar")
-		if gwFindConnection(mirrors, conn.Name) != nil {
-			c.Fatalf("ordinary connection %s listed under managed_by=sidecar", conn.Name)
-		}
-		var ours []gwConnection
-		for _, m := range mirrors {
-			if m.ManagedBy == nil || *m.ManagedBy != "sidecar" {
-				c.Fatalf("managed_by=sidecar listed %s with managed_by=%v", m.Name, m.ManagedBy)
-			}
-			if strings.HasPrefix(m.Name, scName+"-") {
-				ours = append(ours, m)
+		for _, q := range []string{"", "?managed_by=sidecar"} {
+			for _, m := range gwListConnections(c, q) {
+				if strings.HasPrefix(m.Name, scName+"-") || m.ManagedBy != nil && *m.ManagedBy == "sidecar" {
+					c.Fatalf("GET /connections%s lists mirror %s", q, m.Name)
+				}
 			}
 		}
-		for _, m := range all {
-			if strings.HasPrefix(m.Name, scName+"-") && gwFindConnection(ours, m.Name) == nil {
-				c.Fatalf("unfiltered list holds %s but managed_by=sidecar does not", m.Name)
-			}
-		}
-		switch c.Run {
-		case GatewayFlagOff:
-			if len(ours) != 0 {
-				c.Fatalf("flag off, but sidecar %s is mirrored as %+v", scName, ours)
-			}
-		case GatewayFlagOn:
-			if len(ours) != 1 || ours[0].Name != scName+"-appdb" {
-				c.Fatalf("flag on, want one mirror %s-appdb, got %+v", scName, ours)
-			}
+		if got := gwGetConnection(c, scName+"-appdb"); got.ManagedBy == nil || *got.ManagedBy != "sidecar" {
+			c.Fatalf("mirror %s-appdb is %+v, want managed_by sidecar", scName, got)
 		}
 
 		c.Admin().Do(c, http.MethodDelete, "/sidecars/"+sc.ID, nil).Expect(c, http.StatusNoContent)
@@ -647,14 +629,10 @@ var _ = register(Check{
 	},
 })
 
-// Today a gateway refuses sidecar_spec with 422 (sidecarbind.Refuse). With
-// the control-plane mode gone the gateway serves the control plane's rule
-// writes, so the flag-off answer is expected to change too: only the flag-on
-// target is asserted.
 var _ = register(Check{
 	ID:    "GW-11",
 	Title: "a guardrail carrying a sidecar_spec is stored and read back on the gateway",
-	Runs:  map[Run]Expect{GatewayFlagOn: PendingOn("ENG-524")},
+	Runs:  gatewayRuns,
 	Fn: func(c *C) {
 		spec := json.RawMessage(`{"rules":[{"name":"r","type":"operation","operations":["drop","truncate"]}]}`)
 		body := gwGuardrailBody(c.Name("rule"), nil, "paritygw11word")

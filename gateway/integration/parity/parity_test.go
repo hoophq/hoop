@@ -5,10 +5,9 @@
 // against its own Postgres database, and drives it over HTTP only.
 //
 // Runs:
-//   - gateway-flag-off: today's gateway. Nothing here may change.
-//   - control-plane: today's control plane. Nothing here may change.
-//   - gateway-flag-on: the gateway with beta.sidecar_listeners on. A check
-//     the rollout has not delivered yet is pending on its ticket.
+//   - gateway: `hoop start gateway` with a real agent.
+//   - control-plane-alias: `hoop start control-plane`, the command existing
+//     control-plane installs still run.
 //
 // MUST_NOT_BREAK.md lists every check; TestTheListMatchesTheChecks keeps the
 // two in step.
@@ -38,9 +37,8 @@ import (
 )
 
 var runs = []RunSpec{
-	{Run: GatewayFlagOff, Mode: "gateway", Agent: true},
-	{Run: ControlPlane, Mode: "control-plane"},
-	{Run: GatewayFlagOn, Mode: "gateway", SidecarListeners: true, Agent: true},
+	{Run: Gateway, Mode: "gateway", Agent: true},
+	{Run: ControlPlaneAlias, Mode: "control-plane"},
 }
 
 type harness struct {
@@ -231,7 +229,7 @@ func selectedCheck(id string) bool {
 var listRowRe = regexp.MustCompile(`^\|\s*([A-Z]{2,4}-\d{2})\s*\|`)
 
 // listColumns is the run order of the MUST_NOT_BREAK.md table columns.
-var listColumns = []Run{GatewayFlagOff, ControlPlane, GatewayFlagOn}
+var listColumns = []Run{Gateway, ControlPlaneAlias}
 
 // listRow renders ck as its MUST_NOT_BREAK.md row.
 func listRow(ck Check) string {

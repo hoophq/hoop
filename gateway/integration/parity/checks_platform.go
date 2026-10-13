@@ -4,27 +4,23 @@ package parity
 
 import "net/http"
 
-var allLiveRuns = map[Run]Expect{GatewayFlagOff: Must, ControlPlane: Must, GatewayFlagOn: Must}
+var allLiveRuns = map[Run]Expect{Gateway: Must, ControlPlaneAlias: Must}
 
 var _ = register(Check{
 	ID:    "PLT-01",
-	Title: "serverinfo reports the app mode, the flag state and a valid Enterprise license",
+	Title: "serverinfo reports the gateway mode and a valid Enterprise license",
 	Runs:  allLiveRuns,
 	Fn: func(c *C) {
 		var info struct {
-			ApplicationMode string          `json:"application_mode"`
-			FeatureFlags    map[string]bool `json:"feature_flags"`
+			ApplicationMode string `json:"application_mode"`
 			LicenseInfo     struct {
 				IsValid bool   `json:"is_valid"`
 				Type    string `json:"type"`
 			} `json:"license_info"`
 		}
 		c.Admin().Do(c, http.MethodGet, "/serverinfo", nil).Expect(c, http.StatusOK).JSON(c, &info)
-		if info.ApplicationMode != c.Mode {
-			c.Fatalf("application_mode=%q, want %q", info.ApplicationMode, c.Mode)
-		}
-		if want := c.Run == GatewayFlagOn; info.FeatureFlags["beta.sidecar_listeners"] != want {
-			c.Fatalf("beta.sidecar_listeners=%v, want %v", info.FeatureFlags["beta.sidecar_listeners"], want)
+		if info.ApplicationMode != "gateway" {
+			c.Fatalf("application_mode=%q, want gateway", info.ApplicationMode)
 		}
 		if !info.LicenseInfo.IsValid || info.LicenseInfo.Type != "enterprise" {
 			c.Fatalf("license is_valid=%v type=%q, want a valid enterprise license", info.LicenseInfo.IsValid, info.LicenseInfo.Type)

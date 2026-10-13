@@ -23,9 +23,9 @@ const (
 	slackListener    = "appdb"
 )
 
-var slackSidecarRuns = map[Run]Expect{ControlPlane: Must, GatewayFlagOn: PendingOn("ENG-526")}
+var slackSidecarRuns = allLiveRuns
 
-var slackGatewayRuns = map[Run]Expect{GatewayFlagOff: Must, GatewayFlagOn: Must}
+var slackGatewayRuns = map[Run]Expect{Gateway: Must}
 
 var _ = register(Check{
 	ID:    "SL-01",

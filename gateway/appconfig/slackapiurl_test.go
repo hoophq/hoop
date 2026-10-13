@@ -29,7 +29,7 @@ func TestLoadSlackAPIURL(t *testing.T) {
 			t.Setenv("SLACK_API_URL", tc.env)
 			runtimeConfig = Config{}
 
-			err := Load(AppModeGateway)
+			err := Load()
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected Load to fail, got nil")

@@ -16,14 +16,9 @@ import (
 // Sidecar reviews (RV) and sidecar rules (RUL), as a control-plane customer
 // drives them today: an admin authors the rules, a sidecar files and claims
 // reviews with its own token.
-//
-// On the gateway with beta.sidecar_listeners on, reviews wait for ENG-526 and
-// rule bindings for ENG-525. Nothing here runs on gateway-flag-off except the
-// token refusal: today's gateway has no sidecar reviews or bound rules to keep,
-// and ENG-524 may legitimately change what it answers for them.
 var (
-	rvReviewRuns = map[Run]Expect{ControlPlane: Must, GatewayFlagOn: PendingOn("ENG-526")}
-	rvRuleRuns   = map[Run]Expect{ControlPlane: Must, GatewayFlagOn: PendingOn("ENG-525")}
+	rvReviewRuns = allLiveRuns
+	rvRuleRuns   = allLiveRuns
 )
 
 const (

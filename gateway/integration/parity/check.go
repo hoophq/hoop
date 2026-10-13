@@ -15,13 +15,11 @@ import (
 type Run string
 
 const (
-	// GatewayFlagOff is today's gateway: beta.sidecar_listeners off.
-	GatewayFlagOff Run = "gateway-flag-off"
-	// ControlPlane is today's control plane (`hoop start control-plane`).
-	ControlPlane Run = "control-plane"
-	// GatewayFlagOn is the target: the gateway with beta.sidecar_listeners on
-	// serves what the control plane serves today.
-	GatewayFlagOn Run = "gateway-flag-on"
+	// Gateway is `hoop start gateway` with a real agent.
+	Gateway Run = "gateway"
+	// ControlPlaneAlias is `hoop start control-plane`, which existing
+	// control-plane installs still run. It boots the same gateway.
+	ControlPlaneAlias Run = "control-plane-alias"
 )
 
 // Expect is what a run expects of a check. A pending check names the ticket

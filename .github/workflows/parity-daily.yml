@@ -1,8 +1,8 @@
 name: Parity Acceptance
 
-# ENG-529: proves every day that today's gateway and today's control plane
-# still behave as customers rely on, and tracks what the sidecar-in-gateway
-# rollout has delivered. The checks are listed in
+# ENG-529: proves every day that the gateway, started as `hoop start gateway`
+# and as `hoop start control-plane`, serves what gateway and control-plane
+# customers rely on. The checks are listed in
 # gateway/integration/parity/MUST_NOT_BREAK.md; the job summary has the
 # result of each one.
 on:
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   parity:
-    name: Parity (gateway flag off, control plane, gateway flag on)
+    name: Parity (gateway, control-plane alias)
     runs-on: ubuntu-latest
     # The job holds GH_TOKEN and runs repository code. A manual dispatch may
     # pick any branch, so run only the default branch's code.

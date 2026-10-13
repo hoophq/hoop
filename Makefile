@@ -276,11 +276,11 @@ test-standalone:
 test-standalone-e2e:
 	./scripts/standalone-e2e.sh
 
-# Daily parity acceptance (ENG-529): builds the hoop CLI, boots it as
-# today's gateway (flag off), today's control plane, the gateway with
-# beta.sidecar_listeners on, then checks MUST_NOT_BREAK.md over HTTP. Needs
+# Daily parity acceptance (ENG-529): builds the hoop CLI, boots it with
+# `start gateway` (plus an agent) and with `start control-plane`, then checks
+# MUST_NOT_BREAK.md over HTTP. Needs
 # Docker (Postgres) and a free port 8010. Narrow a local run with
-# PARITY_RUNS=control-plane and PARITY_CHECKS=SC-,RV-01; PARITY_LOG_DIR keeps
+# PARITY_RUNS=control-plane-alias and PARITY_CHECKS=SC-,RV-01; PARITY_LOG_DIR keeps
 # the process logs and report.md. Own CI workflow: parity-daily.yml.
 test-parity:
 	cd gateway && env CGO_ENABLED=0 go test -tags integration,parity -v -timeout 30m -count=1 ./integration/parity/

@@ -148,16 +148,30 @@ func scpDelete(c *C, name string) {
 	c.Admin().Do(c, http.MethodDelete, "/sidecars/"+name, nil).Expect(c, http.StatusNoContent)
 }
 
-// scpMirrors lists the connections the API reports as sidecar-managed, by
-// name.
-func scpMirrors(c *C) map[string]scpConnection {
-	var conns []scpConnection
-	c.Admin().Do(c, http.MethodGet, "/connections?managed_by=sidecar", nil).Expect(c, http.StatusOK).JSON(c, &conns)
-	out := map[string]scpConnection{}
-	for _, conn := range conns {
-		out[conn.Name] = conn
+// scpMirror reads a mirror by name: lists never show mirrors (ENG-592), but
+// GET /connections/:name answers for one. ok is false on 404.
+func scpMirror(c *C, name string) (scpConnection, bool) {
+	r := c.Admin().Do(c, http.MethodGet, "/connections/"+name, nil).Expect(c, http.StatusOK, http.StatusNotFound)
+	if r.Status == http.StatusNotFound {
+		return scpConnection{}, false
 	}
-	return out
+	var m scpConnection
+	r.JSON(c, &m)
+	return m, true
+}
+
+// scpListsHideMirrors stops the check if any connection list shows a mirror
+// of sidecar name.
+func scpListsHideMirrors(c *C, name string) {
+	for _, q := range []string{"", "?managed_by=sidecar"} {
+		var conns []scpConnection
+		c.Admin().Do(c, http.MethodGet, "/connections"+q, nil).Expect(c, http.StatusOK).JSON(c, &conns)
+		for _, conn := range conns {
+			if conn.ManagedBy != nil && *conn.ManagedBy == "sidecar" || strings.HasPrefix(conn.Name, name+"-") {
+				c.Fatalf("GET /connections%s lists mirror %s", q, conn.Name)
+			}
+		}
+	}
 }
 
 // scpFlag reads a feature flag through /serverinfo, as the UI does.
@@ -498,13 +512,13 @@ var _ = register(Check{
 
 		scpSetFlag(c, scpSessionEvents, false)
 		if _, _, r := scpServedOK(c, *sc.Token); r.Header.Get(scpSessionEventsHd) != "" {
-			c.Fatalf("flag off: the handshake offers session events (%s=%q)", scpSessionEventsHd, r.Header.Get(scpSessionEventsHd))
+			c.Fatalf("session events off: the handshake offers session events (%s=%q)", scpSessionEventsHd, r.Header.Get(scpSessionEventsHd))
 		}
 		sidecar.Do(c, http.MethodPost, "/sidecars/events", []byte(scpEvents)).Expect(c, http.StatusPreconditionFailed)
 
 		scpSetFlag(c, scpSessionEvents, true)
 		if _, _, r := scpServedOK(c, *sc.Token); r.Header.Get(scpSessionEventsHd) != "true" {
-			c.Fatalf("flag on: handshake %s=%q, want true", scpSessionEventsHd, r.Header.Get(scpSessionEventsHd))
+			c.Fatalf("session events on: handshake %s=%q, want true", scpSessionEventsHd, r.Header.Get(scpSessionEventsHd))
 		}
 		type counts struct {
 			Accepted   int `json:"accepted"`
@@ -547,19 +561,18 @@ var _ = register(Check{
 
 var _ = register(Check{
 	ID:    "SC-11",
-	Title: "with beta.sidecar_listeners on, each listener is a <sidecar>-<listener> connection with every access mode disabled, owned by the sidecar",
-	Runs:  map[Run]Expect{GatewayFlagOn: Must},
+	Title: "each listener is a <sidecar>-<listener> connection with every access mode disabled, owned by the sidecar and left out of lists",
+	Runs:  allLiveRuns,
 	Fn: func(c *C) {
 		name := c.Name("pay")
 		scpCreate(c, name, `{"listeners": [
 			{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"},
 			{"name": "api", "protocol": "http", "listen": ":8080", "upstream": "api:80"}]}`)
 		appdb, api := name+"-appdb", name+"-api"
-		mirrors := scpMirrors(c)
 		for conn, kind := range map[string][2]string{appdb: {"database", "postgres"}, api: {"httpproxy", "httpproxy"}} {
-			m, ok := mirrors[conn]
+			m, ok := scpMirror(c, conn)
 			if !ok {
-				c.Fatalf("GET /connections?managed_by=sidecar does not list %s: %v", conn, mirrors)
+				c.Fatalf("GET /connections/%s answers 404, want the mirror", conn)
 			}
 			if m.Type != kind[0] || m.SubType != kind[1] || m.ManagedBy == nil || *m.ManagedBy != "sidecar" {
 				c.Fatalf("%s is %s/%s managed_by=%v, want %s/%s managed_by sidecar", conn, m.Type, m.SubType, m.ManagedBy, kind[0], kind[1])
@@ -569,47 +582,25 @@ var _ = register(Check{
 					conn, m.AccessModeConnect, m.AccessModeExec, m.AccessModeRunbooks)
 			}
 		}
+		scpListsHideMirrors(c, name)
 
 		c.Admin().Do(c, http.MethodDelete, "/connections/"+appdb, nil).Expect(c, http.StatusConflict)
-		if _, ok := scpMirrors(c)[appdb]; !ok {
+		if _, ok := scpMirror(c, appdb); !ok {
 			c.Fatalf("a refused DELETE /connections/%s removed the mirror", appdb)
 		}
 
 		scpPut(c, name, `{"listeners": [{"name": "appdb", "protocol": "mysql", "listen": ":3306", "upstream": "db:3306"}]}`).
 			Expect(c, http.StatusOK)
-		mirrors = scpMirrors(c)
-		if m, ok := mirrors[appdb]; !ok || m.SubType != "mysql" {
-			c.Fatalf("after PUT %s = %+v (listed %v), want the mysql mirror", appdb, m, ok)
+		if m, ok := scpMirror(c, appdb); !ok || m.SubType != "mysql" {
+			c.Fatalf("after PUT %s = %+v (found %v), want the mysql mirror", appdb, m, ok)
 		}
-		if _, ok := mirrors[api]; ok {
-			c.Fatalf("after PUT dropped listener api, its mirror %s is still listed", api)
+		if _, ok := scpMirror(c, api); ok {
+			c.Fatalf("after PUT dropped listener api, its mirror %s still answers", api)
 		}
 
 		scpDelete(c, name)
-		if _, ok := scpMirrors(c)[appdb]; ok {
+		if _, ok := scpMirror(c, appdb); ok {
 			c.Fatalf("deleting the sidecar left its mirror %s", appdb)
-		}
-	},
-})
-
-var _ = register(Check{
-	ID:    "SC-12",
-	Title: "with beta.sidecar_listeners off, sidecar writes and imports create no connection",
-	Runs:  map[Run]Expect{GatewayFlagOff: Must, ControlPlane: Must},
-	Fn: func(c *C) {
-		before := scpMirrors(c)
-		name := c.Name("pay")
-		scpCreate(c, name, `{"listeners": [
-			{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"},
-			{"name": "app db", "protocol": "postgres", "listen": ":5433", "upstream": "db:5432"}]}`)
-		imp := scpCreate(c, c.Name("imp"), "")
-		c.Sidecar(*imp.Token).Do(c, http.MethodPut, "/sidecars/configuration", []byte(scpImportFile)).Expect(c, http.StatusOK)
-		after := scpMirrors(c)
-		if len(after) != len(before) {
-			c.Fatalf("sidecar-managed connections went from %d to %d with the flag off: %v", len(before), len(after), after)
-		}
-		for _, conn := range []string{name + "-appdb", c.Name("imp") + "-appdb"} {
-			c.Admin().Do(c, http.MethodGet, "/connections/"+conn, nil).Expect(c, http.StatusNotFound)
 		}
 	},
 })
@@ -617,13 +608,13 @@ var _ = register(Check{
 var _ = register(Check{
 	ID:    "SC-13",
 	Title: "a sidecar's mirror connections read online once it checks in",
-	Runs:  map[Run]Expect{GatewayFlagOn: PendingOn("ENG-530")},
+	Runs:  allLiveRuns,
 	Fn: func(c *C) {
 		name := c.Name("pay")
 		sc := scpCreate(c, name, scpOneListener)
 		conn := name + "-appdb"
-		if m, ok := scpMirrors(c)[conn]; !ok || m.Status != "offline" {
-			c.Fatalf("before any check-in %s = %+v (listed %v), want offline", conn, m, ok)
+		if m, ok := scpMirror(c, conn); !ok || m.Status != "offline" {
+			c.Fatalf("before any check-in %s = %+v (found %v), want offline", conn, m, ok)
 		}
 		scpServedOK(c, *sc.Token)
 		var status string
