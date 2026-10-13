@@ -131,7 +131,3 @@ replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../descriptors/gcs
 replace github.com/hoophq/hoop/sidecar/mcp => ../mcp
 
 replace github.com/hoophq/hoop/sidecar/codec/wasm => ../codec/wasm
-
-// The same wazero pin as codec/wasm/go.mod, gateway/go.mod and client/go.mod;
-// see codec/wasm/go.mod for why it must match across the workspace.
-replace github.com/tetratelabs/wazero => github.com/racerxdl/wazero v1.12.1-0.20260610204201-d1e18e798de6

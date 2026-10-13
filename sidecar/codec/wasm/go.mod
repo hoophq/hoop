@@ -25,11 +25,8 @@ require (
 
 replace github.com/hoophq/hoop/sidecar => ../..
 
-// TEMPORARY until https://github.com/wazero/wazero/pull/2507 ships in a
-// release: the fork allows fd_renumber onto stdio fds, which the embedded
-// PGlite database (gateway/pglite) needs. This module does not need the fix,
-// but the pin MUST match gateway/go.mod and client/go.mod: go.work resolves
-// one wazero for the whole workspace, and two modules disagreeing on the
-// replacement make `hoop start sidecar` (which links both) unbuildable.
-// Drop the replace here when the gateway drops its own.
-replace github.com/tetratelabs/wazero => github.com/racerxdl/wazero v1.12.1-0.20260610204201-d1e18e798de6
+// This module runs upstream wazero. gateway/go.mod and client/go.mod replace
+// it with a fork for PGlite's fd_renumber (wazero/wazero#2507); under go.work
+// that replace reaches this module too, and the fork differs from upstream
+// in that one WASI call, which no codec plug-in makes. A build outside the
+// workspace (GOWORK=off) runs upstream and the tests pass on both.
