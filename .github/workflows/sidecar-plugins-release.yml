@@ -5,9 +5,10 @@ name: Sidecar Plug-in SDK Release
 # sdk/VERSION. From it this workflow publishes the Rust crate to
 # crates.io, tags the Go module `sidecar/codec/wasm/sdk/tinygo/vX.Y.Z`
 # (Go's nested-module rule makes the tag the module path below the repo
-# root plus the version, so the tag IS the publication), attaches the C
-# header to a GitHub release, and opens a PR against hoophq/plugins that
-# pins the examples to vX.Y.Z.
+# root plus the version, so the tag IS the publication), and opens a PR
+# against hoophq/plugins that pins the examples to vX.Y.Z and carries the
+# C header, which is how the C SDK is published. It creates no GitHub
+# release: this repository's release list is the product's.
 on:
   push:
     tags:
@@ -15,6 +16,12 @@ on:
 
 permissions:
   contents: write
+
+# One run per tag at a time: a re-run started while the first is still
+# publishing would race it on the Go tag and the mirror PR.
+concurrency:
+  group: sidecar-plugins-release-${{ github.ref }}
+  cancel-in-progress: false
 
 # proxy.golang.org intermittently resets HTTP/2 streams mid-download
 # ("stream error: stream ID N; INTERNAL_ERROR; received from peer"). cmd/go
@@ -168,7 +175,19 @@ jobs:
             exit 0
           fi
           git tag "$tag" "$COMMIT"
-          git push origin "refs/tags/${tag}"
+          # A rejected push means another run created the tag between the
+          # check above and here. That is a success when the remote tag is
+          # at this commit, and the same error as above when it is not.
+          if ! git push origin "refs/tags/${tag}"; then
+            git fetch origin "refs/tags/${tag}:refs/remotes/origin/tags/${tag}"
+            remote=$(git rev-parse "refs/remotes/origin/tags/${tag}^{commit}")
+            if [ "$remote" != "$COMMIT" ]; then
+              echo "::error::${tag} exists at ${remote}, not at ${COMMIT}; v${VERSION} of the Go module is another tree, bump sidecar/codec/wasm/sdk/VERSION"
+              exit 1
+            fi
+            echo "${tag} already at ${COMMIT} (pushed by another run)"
+            exit 0
+          fi
           echo "pushed ${tag} at ${COMMIT}"
 
       - name: Publish crate
@@ -176,26 +195,12 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish --locked --manifest-path sidecar/codec/wasm/sdk/rust/Cargo.toml
 
-      # The test job proved the checked-in artifacts equal a rebuild from
-      # this tag, so the release attaches the committed files.
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: SDK v${{ steps.versions.outputs.version }}
-          body: |
-            hoop codec plug-in SDK. ABI version 1: see `ABI.md`.
-
-            - Rust: `cargo add hoop-codec@${{ steps.versions.outputs.version }}`
-            - Go (TinyGo): `go get github.com/hoophq/hoop/sidecar/codec/wasm/sdk/tinygo@v${{ steps.versions.outputs.version }}`
-            - C: `hoop_codec.h` below
-          files: |
-            sidecar/codec/wasm/sdk/c/hoop_codec.h
-            sidecar/codec/wasm/abi/ABI.md
-            sidecar/codec/wasm/testdata/acmewire.wasm
-            sidecar/codec/wasm/examples/resp/resp.wasm
-            sidecar/codec/wasm/examples/memcache/memcache.wasm
-            sidecar/codec/wasm/examples/sqlframe/sqlframe.wasm
+      # No GitHub release. One would sit in this repository's release list
+      # beside the product releases, which the deploy tooling reads as
+      # "newest release = version to deploy"; the plug-in SDK is not a
+      # product release and must not appear there. The header and the ABI
+      # text travel in the examples PR below instead, so hoophq/plugins is
+      # where a C vendor fetches them.
 
       - name: Checkout hoophq/plugins
         uses: actions/checkout@v7
@@ -207,10 +212,11 @@ jobs:
       # The examples in this tree depend on the SDKs by relative path. The
       # copies in hoophq/plugins stand alone, so each dependency becomes
       # the published version: the crates.io version for Rust, the module
-      # tag for Go, and for C++ the header itself beside the source, the
-      # same bytes the release above attached. Every rewrite checks that
-      # its line existed: a sed with no match would ship a path dependency
-      # into a repository that has no such path.
+      # tag for Go, and for C++ the header itself beside the source. The
+      # header, the ABI text and the SDK version also land under sdk/ in
+      # that repository: it is the C SDK's publication. Every rewrite
+      # checks that its line existed: a sed with no match would ship a
+      # path dependency into a repository that has no such path.
       - name: Rewrite examples to the published SDKs
         env:
           VERSION: ${{ steps.versions.outputs.version }}
@@ -244,6 +250,11 @@ jobs:
           sed -i 's#^include="\$here/../../sdk/c"$#include="$here"#' "$build_sh"
           cp sidecar/codec/wasm/sdk/c/hoop_codec.h "$dst/sqlframe/hoop_codec.h"
 
+          mkdir -p plugins/sdk/c
+          cp sidecar/codec/wasm/sdk/c/hoop_codec.h plugins/sdk/c/hoop_codec.h
+          cp sidecar/codec/wasm/abi/ABI.md plugins/sdk/ABI.md
+          echo "$VERSION" > plugins/sdk/VERSION
+
       - name: Open the examples PR
         uses: peter-evans/create-pull-request@v7
         with:
@@ -256,4 +267,5 @@ jobs:
             Examples from hoophq/hoop at `${{ github.ref_name }}`, pinned to
             `hoop-codec = "${{ steps.versions.outputs.version }}"` and
             `github.com/hoophq/hoop/sidecar/codec/wasm/sdk/tinygo@v${{ steps.versions.outputs.version }}`.
-            Release: https://github.com/hoophq/hoop/releases/tag/${{ github.ref_name }}
+            `sdk/c/hoop_codec.h`, `sdk/ABI.md` and `sdk/VERSION` are the C SDK at this version.
+            Source: https://github.com/hoophq/hoop/tree/${{ github.ref_name }}/sidecar/codec/wasm

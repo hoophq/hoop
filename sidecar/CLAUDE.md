@@ -83,17 +83,20 @@ Rust crate and `examples/resp`, `GOWORK=off go test` on the TinyGo module
 and `examples/memcache` (neither is in `go.work`, so the walk above skips
 them), then `hoop-inspect -codec-test` over every checked-in `.wasm`. It
 needs Go and Rust only, which is why the artifacts are committed; the
-plug-in workflow installs TinyGo and lld, rebuilds them and compares
-digests. `test-oss` depends on it.
+plug-in workflow installs TinyGo and lld, rebuilds them from source and
+proves the rebuilds with `-codec-test` (no byte compare: rustc differs
+across OSes). `test-oss` depends on it.
 
 The SDKs under `codec/wasm/sdk` release from one file, `sdk/VERSION`,
-repeated in `sdk/rust/Cargo.toml` because cargo reads only its manifest;
-the plug-in workflow refuses a PR where the two differ. Merging a bump to
-main tags `hoop-codec-vX.Y.Z` (`sidecar-plugins-autotag.yml`), and from
-that tag `sidecar-plugins-release.yml` publishes the crate, tags the Go
-module `sidecar/codec/wasm/sdk/tinygo/vX.Y.Z` at the same commit, attaches
-the C header to the GitHub release and opens the hoophq/plugins mirror
-PR. Never push either tag by hand.
+repeated in `sdk/rust/Cargo.toml` and recorded in `sdk/rust/Cargo.lock`
+(`cargo update -w` after the bump); `sdk/version.sh` refuses a PR where
+the three differ. Merging a bump to main tags `hoop-codec-vX.Y.Z`
+(`sidecar-plugins-autotag.yml`), and from that tag
+`sidecar-plugins-release.yml` publishes the crate, tags the Go module
+`sidecar/codec/wasm/sdk/tinygo/vX.Y.Z` at the same commit, and opens the
+hoophq/plugins mirror PR, which carries the C header as
+`sdk/c/hoop_codec.h`. It creates no GitHub release: that list is the
+product's and the deploy tooling reads it. Never push either tag by hand.
 
 `make test-sidecar-e2e` is a separate path: it boots a real
 `mysql:8` container and runs the `hoop-inspect` binary as a subprocess in

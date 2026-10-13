@@ -50,6 +50,6 @@ The three SDKs share one version, `../sdk/VERSION`. A PR bumps it and
 when they differ. The merge to main tags `hoop-codec-vX.Y.Z`, and from
 that tag the release workflow publishes the crate, tags the Go module
 `sidecar/codec/wasm/sdk/tinygo/vX.Y.Z` at the same commit, attaches
-`hoop_codec.h` to the GitHub release, and opens a PR against
+`hoop_codec.h` into hoophq/plugins as `sdk/c/hoop_codec.h`, and opens a PR against
 hoophq/plugins with copies of these examples pinned to `vX.Y.Z` in place
 of the relative paths. No tag is pushed by hand.

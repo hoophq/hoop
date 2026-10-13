@@ -14,11 +14,11 @@ on:
 permissions:
   contents: read
 
-# Two merges that touch VERSION run one after the other, so the second
-# sees the tag the first pushed.
-concurrency:
-  group: sidecar-plugins-autotag
-  cancel-in-progress: false
+# No concurrency group on purpose. GitHub keeps one pending run per group
+# and replaces it when a third run arrives, so three VERSION merges in a
+# row would lose the middle release. Runs are independent: each one
+# tags its own commit under its own version, and the API refuses a tag
+# that already exists, which the step below turns into a verdict.
 
 jobs:
   tag:
@@ -55,12 +55,29 @@ jobs:
           version=$(sidecar/codec/wasm/sdk/version.sh)
           tag="hoop-codec-v${version}"
 
+          # The tag's commit decides: at this commit the run is a repeat
+          # and there is nothing to do; at another commit the version was
+          # reused, which would publish a different tree under a version
+          # crates.io and the Go proxy may already serve.
+          verdict() {
+            if [ "$1" = "$SHA" ]; then
+              echo "${tag} exists at ${SHA}; nothing to do"
+              exit 0
+            fi
+            echo "::error::${tag} exists at $1, not at ${SHA}; v${version} is already released from another tree, bump sidecar/codec/wasm/sdk/VERSION"
+            exit 1
+          }
           if existing=$(git rev-parse -q --verify "refs/tags/${tag}^{commit}"); then
-            echo "${tag} exists at ${existing}; nothing to do"
-            exit 0
+            verdict "$existing"
           fi
 
-          gh api -X POST "repos/${REPO}/git/refs" \
+          # A refusal here means a parallel run created the tag after the
+          # check above; fetch it and judge it the same way. The fetch
+          # peels an annotated tag to its commit like the check did.
+          if ! gh api -X POST "repos/${REPO}/git/refs" \
             -f ref="refs/tags/${tag}" \
-            -f sha="${SHA}"
+            -f sha="${SHA}"; then
+            git fetch origin "refs/tags/${tag}:refs/tags/${tag}"
+            verdict "$(git rev-parse "refs/tags/${tag}^{commit}")"
+          fi
           echo "pushed ${tag} at ${SHA}"

@@ -105,11 +105,14 @@ hoop start sidecar --codec-test target/wasm32-unknown-unknown/release/acmewire.w
 ## Releasing
 
 One PR bumps `sidecar/codec/wasm/sdk/VERSION` and `version` here to the
-same number; CI refuses the PR when they differ. The merge to main tags
+same number and runs `cargo update -w` so `Cargo.lock` records it; CI
+refuses the PR when the three differ, because `cargo publish --locked`
+would refuse the lockfile after the tag exists. The merge to main tags
 `hoop-codec-vX.Y.Z`, and from that tag the release workflow publishes
 this crate, tags the Go module `sidecar/codec/wasm/sdk/tinygo/vX.Y.Z`,
-attaches `hoop_codec.h` to the GitHub release and opens the PR that pins
-the examples in hoophq/plugins. No tag is pushed by hand.
+and opens the PR that pins the examples in hoophq/plugins and carries
+`hoop_codec.h` as `sdk/c/hoop_codec.h` there. No GitHub release and no
+tag pushed by hand.
 
 ## License
 
