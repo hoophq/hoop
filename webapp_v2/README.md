@@ -72,7 +72,7 @@ web app is the same):
 ```bash
 make run-dev-control-plane                                 # repo root, on :8019
 npm --prefix ../webapp run download-connection-metadata    # once; the catalog JSON is gitignored
-API_URL=http://localhost:8019 npm run dev:full
+API_URL=http://localhost:8019 npm run dev
 ```
 
 `/images`, `/icons` and `/data` are served by Vite straight from
