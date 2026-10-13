@@ -130,6 +130,14 @@ func TestReviewApprovedInSlack(t *testing.T) {
 	})
 	h.mark("review message posted to the Slack twin")
 
+	// The review must hold the command: it may not run before anyone decides.
+	select {
+	case err := <-exited:
+		t.Fatalf("hoop exec returned before the approval, err=%v\n%s", err, out.String())
+	case <-time.After(2 * time.Second):
+	}
+	h.mark("hoop exec still waiting for the review")
+
 	var click struct {
 		Acked bool `json:"acked"`
 	}
@@ -265,9 +273,15 @@ var knownEgress = map[string]string{
 	"api.honeycomb.io:443": "tracing exporter",
 }
 
+// egressSettle is how long checkEgress lets background senders dial after
+// the flow. The tracing exporter first dials about 4s after the spans that
+// feed it; a sender that dials later than this is not caught.
+const egressSettle = 10 * time.Second
+
 // checkEgress fails on any host the gateway tried that has no twin.
 func (h *harness) checkEgress() {
 	h.t.Helper()
+	time.Sleep(egressSettle)
 	h.saveState("router", routerAdm)
 	var st struct {
 		State struct {
