@@ -40,8 +40,35 @@ func TestResolve(t *testing.T) {
 		{"flag wins in a pod", FormatTUI, true, map[string]string{"KUBERNETES_SERVICE_HOST": "10.0.0.1"}, FormatTUI, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := Resolve(tc.requested, tc.tty, !tc.noStdin, env(tc.env)); got != tc.want {
+			if got := Resolve(tc.requested, tc.tty, !tc.noStdin, env(tc.env), noFiles); got != tc.want {
 				t.Fatalf("Resolve = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func noFiles(string) bool { return false }
+
+// A container given a terminal (`docker run -it`, compose with tty and
+// stdin_open) still ships its logs, though plain Docker sets no variable.
+func TestResolveInAContainer(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		file string
+	}{
+		{"docker run -it", nil, "/.dockerenv"},
+		{"podman run -it", nil, "/run/.containerenv"},
+		{"podman, nspawn or lxc variable", map[string]string{"container": "podman"}, ""},
+		{"nomad allocation", map[string]string{"NOMAD_ALLOC_ID": "abc"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exists := func(p string) bool { return p == tc.file }
+			if got := Resolve(FormatAuto, true, true, env(tc.env), exists); got != FormatJSON {
+				t.Fatalf("Resolve = %q, want json", got)
+			}
+			if got := Resolve(FormatTUI, true, true, env(tc.env), exists); got != FormatTUI {
+				t.Fatalf("an explicit tui = %q, want it kept", got)
 			}
 		})
 	}

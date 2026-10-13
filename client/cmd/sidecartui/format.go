@@ -50,16 +50,19 @@ func ParseFormat(s string) (Format, error) {
 //
 // An explicit format always wins. Auto keeps today's JSON whenever no person
 // can be watching (stdout is a pipe or a file, CI is set, or the process runs
-// under an orchestrator), because that is what every deployed sidecar already
+// in a container), because that is what every deployed sidecar already
 // ships to its log platform. A person who can read but not type (stdin is not
 // a terminal), a terminal that cannot or must not draw (TERM=dumb, NO_COLOR),
 // or an AI coding agent gets text: a dashboard nobody can key into cannot be
 // quit or answer an approval. Everyone else gets the TUI.
-func Resolve(requested Format, stdoutTTY, stdinTTY bool, getenv func(string) string) Format {
+//
+// exists reports whether a path is present; it finds the files a container
+// runtime leaves, which plain Docker sets no variable for.
+func Resolve(requested Format, stdoutTTY, stdinTTY bool, getenv func(string) string, exists func(string) bool) Format {
 	if requested != FormatAuto && requested != "" {
 		return requested
 	}
-	if !stdoutTTY || getenv("CI") != "" || orchestrated(getenv) {
+	if !stdoutTTY || getenv("CI") != "" || deployed(getenv, exists) {
 		return FormatJSON
 	}
 	if !stdinTTY || getenv("NO_COLOR") != "" || strings.EqualFold(getenv("TERM"), "dumb") || codingAgent(getenv) {
@@ -87,12 +90,33 @@ func codingAgent(getenv func(string) string) bool {
 	return false
 }
 
-// orchestrated is whether a scheduler runs this process: a Kubernetes pod or
-// an ECS task. A pod given tty: true and stdin: true has terminals nobody
-// reads; its output is what the cluster's log collector ships.
-func orchestrated(getenv func(string) string) bool {
-	return getenv("KUBERNETES_SERVICE_HOST") != "" ||
-		getenv("ECS_CONTAINER_METADATA_URI_V4") != "" || getenv("ECS_CONTAINER_METADATA_URI") != ""
+// deployedEnv are set by a scheduler in what it runs: a Kubernetes pod, an
+// ECS task, a Nomad allocation; and container by Podman, systemd-nspawn and
+// LXC.
+var deployedEnv = []string{
+	"KUBERNETES_SERVICE_HOST", "ECS_CONTAINER_METADATA_URI_V4", "ECS_CONTAINER_METADATA_URI",
+	"NOMAD_ALLOC_ID", "container",
+}
+
+// deployedFiles are left by a container runtime: Docker, then Podman.
+var deployedFiles = []string{"/.dockerenv", "/run/.containerenv"}
+
+// deployed is whether this process runs in a container or under a
+// scheduler. `docker run -it`, compose with tty and stdin_open, or a pod with
+// tty: true and stdin: true have terminals nobody reads; the output is what
+// the log collector ships.
+func deployed(getenv func(string) string, exists func(string) bool) bool {
+	for _, k := range deployedEnv {
+		if getenv(k) != "" {
+			return true
+		}
+	}
+	for _, f := range deployedFiles {
+		if exists(f) {
+			return true
+		}
+	}
+	return false
 }
 
 // Interactive is whether a person can answer at this terminal: both stdin and

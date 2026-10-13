@@ -152,7 +152,7 @@ needs a restart.`,
 		// (a pipe, CI, a container) nobody could answer, and Setup keeps
 		// refusing such a config.
 		stdoutTTY, stdinTTY := term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd()))
-		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv)
+		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv, fileExists)
 
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
 			if !sidecarBareInvocation(cmd, args) {
@@ -527,6 +527,12 @@ func refusePlainPlane(path string) error {
 	return nil
 }
 
+// fileExists is whether something is at path.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // sidecarOperator names the person reviewing at this terminal: the OS
 // account that started the process, which is who the decision is recorded
 // against.
@@ -634,7 +640,7 @@ func init() {
 
 	startSidecarCmd.Flags().StringVar(&sidecarLogFormatFlag, "log-format", string(sidecartui.FormatAuto),
 		"How output reaches the terminal: auto, tui, text or json. auto draws the TUI only for a person "+
-			"at an interactive terminal: it writes JSON to a pipe, a file, CI or a Kubernetes/ECS container, and "+
+			"at an interactive terminal: it writes JSON to a pipe, a file, CI or a container (Docker, Podman, Kubernetes, ECS, Nomad), and "+
 			"text to an AI coding agent or when NO_COLOR or TERM=dumb. text or json starts without the TUI")
 
 	startCmd.AddCommand(startSidecarCmd)
