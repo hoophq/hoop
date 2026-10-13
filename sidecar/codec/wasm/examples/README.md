@@ -42,3 +42,14 @@ module that differs from the macOS build of the same source. A source
 change under an example or an SDK still ships with the artifact its
 `build.sh` produces, because the committed copy is what `make
 test-sidecar-plugins` proves.
+
+## Release
+
+The three SDKs share one version, `../sdk/VERSION`. A PR bumps it and
+`../sdk/rust/Cargo.toml` together; the plug-in workflow refuses the PR
+when they differ. The merge to main tags `hoop-codec-vX.Y.Z`, and from
+that tag the release workflow publishes the crate, tags the Go module
+`sidecar/codec/wasm/sdk/tinygo/vX.Y.Z` at the same commit, attaches
+`hoop_codec.h` to the GitHub release, and opens a PR against
+hoophq/plugins with copies of these examples pinned to `vX.Y.Z` in place
+of the relative paths. No tag is pushed by hand.

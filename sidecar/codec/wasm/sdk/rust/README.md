@@ -102,6 +102,15 @@ Prove the module against the ABI, then against your own fixtures:
 hoop start sidecar --codec-test target/wasm32-unknown-unknown/release/acmewire.wasm acmewire.fixtures.json
 ```
 
+## Releasing
+
+One PR bumps `sidecar/codec/wasm/sdk/VERSION` and `version` here to the
+same number; CI refuses the PR when they differ. The merge to main tags
+`hoop-codec-vX.Y.Z`, and from that tag the release workflow publishes
+this crate, tags the Go module `sidecar/codec/wasm/sdk/tinygo/vX.Y.Z`,
+attaches `hoop_codec.h` to the GitHub release and opens the PR that pins
+the examples in hoophq/plugins. No tag is pushed by hand.
+
 ## License
 
 MIT. See `LICENSE`.

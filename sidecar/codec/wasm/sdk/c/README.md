@@ -20,6 +20,11 @@ Replace `X.Y.Z` with an SDK version from the Releases page, and pin the
 one your plug-in was proven against. A copy of the file in your source
 tree is the whole dependency; there is nothing to link.
 
+The version is `../VERSION`, shared with the Rust crate and the Go
+module. A PR that bumps it (and `../rust/Cargo.toml`) is the release:
+the merge to main tags `hoop-codec-vX.Y.Z` and the release workflow
+attaches the header to that tag.
+
 ## Build
 
 ```sh

@@ -1,0 +1,66 @@
+name: Sidecar Plug-in SDK Auto Tag
+
+# A merge to main that changes sdk/VERSION is a release. This workflow
+# turns it into the tag `hoop-codec-v<VERSION>` on that merge commit;
+# sidecar-plugins-release.yml does everything else from the tag. Nothing
+# and nobody else pushes that tag.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - sidecar/codec/wasm/sdk/VERSION
+
+permissions:
+  contents: read
+
+# Two merges that touch VERSION run one after the other, so the second
+# sees the tag the first pushed.
+concurrency:
+  group: sidecar-plugins-autotag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify GH_TOKEN secret is present
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::secrets.GH_TOKEN (PAT) is required so that tag pushes from this workflow trigger sidecar-plugins-release.yml. Add it in repo settings."
+            exit 1
+          fi
+
+      # The tag check below reads the tags, so the checkout needs them.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Push the release tag
+        env:
+          # A tag pushed with GITHUB_TOKEN triggers no workflow, so the
+          # release workflow would never see it. The PAT pushes it instead;
+          # that push is what starts sidecar-plugins-release.yml.
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version=$(sidecar/codec/wasm/sdk/version.sh)
+          tag="hoop-codec-v${version}"
+
+          if existing=$(git rev-parse -q --verify "refs/tags/${tag}^{commit}"); then
+            echo "${tag} exists at ${existing}; nothing to do"
+            exit 0
+          fi
+
+          gh api -X POST "repos/${REPO}/git/refs" \
+            -f ref="refs/tags/${tag}" \
+            -f sha="${SHA}"
+          echo "pushed ${tag} at ${SHA}"
