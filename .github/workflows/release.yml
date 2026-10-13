@@ -3,7 +3,12 @@ name: Hoop Release
 on:
   push:
     tags:
+      # Product releases only. "*.*.*" alone also matches the plug-in SDK
+      # tag hoop-codec-vX.Y.Z, which has its own workflow and no product
+      # artifacts; the first run on one pushed images under that tag and
+      # failed at helm's semver check.
       - "*.*.*"
+      - "!hoop-codec-v*"
 
 # proxy.golang.org intermittently resets HTTP/2 streams mid-download
 # ("stream error: stream ID N; INTERNAL_ERROR; received from peer"). cmd/go
