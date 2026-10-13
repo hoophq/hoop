@@ -4,9 +4,11 @@
 # separate cdylib crate that depends on it and builds for
 # wasm32-unknown-unknown; examples/acmewire is the template.
 #
-# Published to crates.io as `hoop-codec`. The release workflow tags the
-# crate `hoop-codec-v<version>` and runs `cargo publish` from this
-# directory; bump `version` here and nowhere else.
+# Published to crates.io as `hoop-codec`. `version` repeats ../VERSION,
+# the one number the three SDKs release under, because cargo reads only
+# this file; CI refuses a PR where the two differ. A merge to main that
+# changes ../VERSION tags `hoop-codec-v<version>` and the release workflow
+# runs `cargo publish` from this directory.
 [package]
 name = "hoop-codec"
 version = "0.1.0"

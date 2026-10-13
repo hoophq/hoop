@@ -63,6 +63,12 @@ jobs:
       - name: Download modules over HTTP/1.1
         run: go mod download
 
+      # sdk/VERSION is what the merge to main tags and publishes, and cargo
+      # reads only Cargo.toml. A PR that bumps one without the other is
+      # refused here, before the tag exists.
+      - name: Check sdk/VERSION against Cargo.toml
+        run: sidecar/codec/wasm/sdk/version.sh
+
       - name: Test
         env:
           GODEBUG: http2client=1

@@ -16,6 +16,12 @@ The module sits below the repository root, so its tag carries the module
 path as a prefix: `sidecar/codec/wasm/sdk/tinygo/vX.Y.Z`. The repository's
 own release tags (`1.162.0` and the like) do not version this module.
 
+The version is `../VERSION`, shared with the Rust crate and the C header.
+A PR bumps that file and `../rust/Cargo.toml` together; the merge to main
+tags `hoop-codec-vX.Y.Z`, and the release workflow pushes this module's
+tag at the same commit, so `vX.Y.Z` of the module is the tree the crate
+`X.Y.Z` was published from. No tag is pushed by hand.
+
 The `go` directive is 1.26, the Go minor the repository's CI runs.
 TinyGo 0.43 supports Go 1.25 through 1.27, so TinyGo 0.43 with Go 1.26
 or 1.27 builds a plug-in on this module.

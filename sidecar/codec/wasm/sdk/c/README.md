@@ -9,16 +9,24 @@ it speaks is `../../abi/ABI.md`.
 
 ## Install
 
-The header is a release asset, not a package. Each release of the SDK
-attaches it to the `hoop-codec-vX.Y.Z` tag on GitHub:
+The header is a file, not a package. Each SDK release places it in the
+[hoophq/plugins](https://github.com/hoophq/plugins) repository as
+`sdk/c/hoop_codec.h`, beside `sdk/ABI.md` and `sdk/VERSION`:
 
 ```sh
-curl -fsSLO https://github.com/hoophq/hoop/releases/download/hoop-codec-vX.Y.Z/hoop_codec.h
+curl -fsSLO https://raw.githubusercontent.com/hoophq/plugins/main/sdk/c/hoop_codec.h
 ```
 
-Replace `X.Y.Z` with an SDK version from the Releases page, and pin the
-one your plug-in was proven against. A copy of the file in your source
-tree is the whole dependency; there is nothing to link.
+Pin the one your plug-in was proven against: `sdk/VERSION` in that
+repository names it, and `git log` there shows every version the file
+shipped under. A copy of the file in your source tree is the whole
+dependency; there is nothing to link. The same header sits in this tree
+at the `hoop-codec-vX.Y.Z` tag.
+
+The version is `../VERSION`, shared with the Rust crate and the Go
+module. A PR that bumps it (and `../rust/Cargo.toml`) is the release:
+the merge to main tags `hoop-codec-vX.Y.Z`, and from that tag the release
+workflow opens the hoophq/plugins PR that carries this header.
 
 ## Build
 
