@@ -1,0 +1,116 @@
+name: Sidecar Plug-ins
+
+# Runs only when a PR touches the plug-in host, its SDKs or the examples:
+# the TinyGo and LLVM installs below cost minutes that a gateway PR must not
+# pay. A path-filtered workflow is skipped, not passed, on the other PRs,
+# so it cannot be a required check without blocking them. `make
+# test-sidecar-plugins` inside `make test-oss` is the required part; this
+# workflow adds the rebuild that needs the toolchains CI does not carry.
+on:
+  pull_request:
+    paths:
+      - sidecar/codec/wasm/**
+      - sidecar/inspect/**
+      - sidecar/gate/**
+      - .github/workflows/sidecar-plugins-pullrequest.yml
+
+# proxy.golang.org intermittently resets HTTP/2 streams mid-download
+# ("stream error: stream ID N; INTERNAL_ERROR; received from peer"). cmd/go
+# turns that into a hard build failure after a ~60s stall: it does not retry,
+# and the `direct` GOPROXY fallback only covers 404/410. Frame-level resets
+# are HTTP/2-only, so fetch modules over HTTP/1.1.
+env:
+  GODEBUG: http2client=0
+
+jobs:
+  plugins:
+    name: Plug-in SDKs and examples
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # The memcache example is TinyGo. Its Linux package carries the
+      # wasm-opt it prefers; apt's binaryen is the fallback for a release
+      # that ships without one.
+      - name: Setup TinyGo
+        uses: acifani/setup-tinygo@v2
+        with:
+          tinygo-version: 0.43.0
+      - name: Install binaryen
+        run: sudo apt-get install -y binaryen
+
+      # The sqlframe example is C++ against sdk/c/hoop_codec.h: clang for
+      # the wasm32 target, lld for wasm-ld.
+      - name: Install clang and lld
+        run: sudo apt-get install -y clang lld
+
+      # The workflow-level GODEBUG (see the header comment) applies to the
+      # module downloads only: the tests run with client HTTP/2 restored,
+      # the same split as the Unit Test job.
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
+      - name: Test
+        env:
+          GODEBUG: http2client=1
+        run: make test-sidecar-plugins
+
+      # Every checked-in artifact rebuilt from source. Each build.sh writes
+      # over the checked-in copy, so the compare below reads the committed
+      # bytes back from git.
+      - name: Rebuild artifacts
+        env:
+          CC: clang++
+        run: |
+          set -euo pipefail
+          sidecar/codec/wasm/sdk/rust/examples/acmewire/build.sh
+          sidecar/codec/wasm/examples/resp/build.sh
+          sidecar/codec/wasm/examples/memcache/build.sh
+          sidecar/codec/wasm/examples/sqlframe/build.sh
+
+      # The checked-in artifact and the rebuilt one are not compared byte for
+      # byte: the first run of this job showed rustc on Linux emits a module
+      # a few hundred bytes different from the macOS build of the same
+      # source, and Rust promises no cross-OS reproducibility. The property
+      # the artifact exists for is that the SOURCE satisfies the ABI and the
+      # fixtures, so the rebuilt file is proven with the conformance runner
+      # against the same fixtures the checked-in one passed in `make
+      # test-sidecar-plugins` above. A source change that breaks the module
+      # fails here; a stale checked-in artifact fails in the make target.
+      - name: Prove the rebuilt artifacts
+        run: |
+          set -euo pipefail
+          w=sidecar/codec/wasm
+          bin=$w/.build/hoop-inspect
+          test -x "$bin" || (cd sidecar/cmd && env CGO_ENABLED=0 go build -o "../../$bin" .)
+          "$bin" -codec-test $w/testdata/acmewire.wasm $w/testdata/acmewire.fixtures.json
+          for e in resp memcache sqlframe; do
+            "$bin" -codec-test $w/examples/$e/$e.wasm $w/examples/$e/fixtures.json
+          done
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-plugins-${{ env.GIT_TAG }}
+          path: |
+            sidecar/codec/wasm/testdata/acmewire.wasm
+            sidecar/codec/wasm/examples/resp/resp.wasm
+            sidecar/codec/wasm/examples/memcache/memcache.wasm
+            sidecar/codec/wasm/examples/sqlframe/sqlframe.wasm
+            sidecar/codec/wasm/sdk/c/hoop_codec.h

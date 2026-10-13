@@ -1,0 +1,27 @@
+# A Sidecar in front of a local memcached, decoding with the x-memcache
+# plug-in. Run from this directory after ./build.sh:
+#
+#   hoop start sidecar --config config.yaml --validate
+#   hoop start sidecar --config config.yaml
+#
+# Clients connect to 127.0.0.1:21211; memcached listens on 11211.
+plugins:
+  - protocol: x-memcache
+    module: ./memcache.wasm
+
+listeners:
+  - name: cache
+    protocol: x-memcache
+    listen: 127.0.0.1:21211
+    upstream: 127.0.0.1:11211
+    plugin:
+      max_line_bytes: "2048"
+    guardrails:
+      rules:
+        # flush_all empties the whole cache. The command word travels in
+        # metadata, so the rule names it and nothing else.
+        - name: no-flush
+          type: metadata
+          metadata:
+            x-memcache.command: [flush_all]
+          message: flush_all is refused on this lane

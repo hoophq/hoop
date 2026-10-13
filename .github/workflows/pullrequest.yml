@@ -79,6 +79,39 @@ jobs:
           GODEBUG: http2client=1
         run: make test-sidecar
 
+  # The test-sidecar-plugins third of `make test-oss`: the codec plug-in
+  # SDKs and examples. Go and Rust only; the checked-in .wasm artifacts are
+  # proven against the ABI with hoop-inspect. Rebuilding them needs TinyGo
+  # and lld and lives in sidecar-plugins-pullrequest.yml, which runs only
+  # when the plug-in tree changes.
+  sidecar-plugins:
+    name: Sidecar Plug-in Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            sidecar/codec/wasm/sdk/rust
+            sidecar/codec/wasm/examples/resp
+
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
+      - name: Sidecar Plug-in Test
+        env:
+          GODEBUG: http2client=1
+        run: make test-sidecar-plugins
+
   integration-test:
     name: Integration Test (${{ matrix.shard }})
     runs-on: ubuntu-latest

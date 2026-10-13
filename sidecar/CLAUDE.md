@@ -65,6 +65,7 @@ it is removing a directory.
 | `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one. It wraps the `anthropic`, `gemini` and `openai` encoders from the root under a GCP bearer; the API-key providers stay in the root |
 | `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
 | `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the review status MCP server an `mcp:` block turns on (ADR-0021) |
+| `codec/wasm/` | `github.com/tetratelabs/wazero`, the codec plug-in host; `daemon` only sees `LoadCodecPlugin`. `sdk/` and `examples/` hold the guest side: Rust, TinyGo and C |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
 Adding a dependency to the root still needs a reason. Add a nested module, or
@@ -76,7 +77,16 @@ do without.
 `make test-oss` depends on it, so CI runs them too. The commands are here
 because the target is a loop over them and you will want one at a time.
 
-`make test-sidecar-e2e` is the second, separate path: it boots a real
+`make test-sidecar-plugins` covers what `test-sidecar` cannot reach: the
+guest SDKs and the examples under `codec/wasm`. It runs `cargo test` on the
+Rust crate and `examples/resp`, `GOWORK=off go test` on the TinyGo module
+and `examples/memcache` (neither is in `go.work`, so the walk above skips
+them), then `hoop-inspect -codec-test` over every checked-in `.wasm`. It
+needs Go and Rust only, which is why the artifacts are committed; the
+plug-in workflow installs TinyGo and lld, rebuilds them and compares
+digests. `test-oss` depends on it.
+
+`make test-sidecar-e2e` is a separate path: it boots a real
 `mysql:8` container and runs the `hoop-inspect` binary as a subprocess in
 front of it, so it needs a working Docker daemon. It is deliberately NOT a
 dependency of `test-oss` or `test-sidecar` — those run in the unit-test job,
@@ -102,7 +112,7 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp lexer/conformance; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp lexer/conformance codec/wasm; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
 
@@ -111,6 +121,12 @@ done
 
 # validate a sidecar config without starting anything
 (cd cmd && go run . -validate -config /path/to/config.yaml)
+
+# prove a codec plug-in against the ABI, then its own fixtures
+(cd cmd && go run . -codec-test /path/to/plugin.wasm /path/to/fixtures.json)
+
+# the guest SDKs and the three examples; also proves every checked-in .wasm
+(cd ../.. && make test-sidecar-plugins)
 
 # end to end against a real mysql:8, needs Docker. GOWORK=off is required:
 # e2e/ is deliberately not a go.work member.
@@ -230,6 +246,15 @@ done
   with `OpUnknown`. That fails closed, but it means a policy naming `select`
   matches nothing.
 
+- **A plug-in protocol is config-level, never build-level.** `plugins:`
+  names the module and its `x-` protocol; `Setup` loads the module on the
+  host, and `Validate` accepts the lane from the entry alone because the
+  control plane never loads one. So an `x-` protocol is NOT in
+  `Protocols()`, not in `schema.json`, not a `protocol:` header entry and
+  never in `baselineCapabilities`: the plane grants it by the `plugins`
+  capability. Adding it to any of those lists makes the build claim a
+  protocol it does not link.
+
 - **The license verifier exists twice, on purpose.** `sidecar/license`
   reimplements `common/license` over the stdlib: same key, same RSA-PSS
   signature over the same bytes, same JSON. Importing the gateway's module
@@ -276,7 +301,8 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `audit/` | the write side of the trail |
 | `store/` | the read side |
 | `pii/` | detectors and maskers |
-| `descriptors/` | resolves `grpc.descriptors` entries that are URLs; fetchers register by scheme, `gcs/` is the one shipped |
+| `descriptors/` | resolves `grpc.descriptors` entries and `plugins[].module` values that are URLs; fetchers register by scheme, `https` is in the root, `gcs/` is nested |
+| `codec/wasm/` | nested module: the codec plug-in host (wazero) behind `daemon.LoadCodecPlugin`; `abi/ABI.md` is the contract, `sdk/` the guest SDKs, `examples/` one plug-in per guest language with its committed `.wasm` |
 
 ## Conventions
 
