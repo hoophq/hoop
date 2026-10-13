@@ -27,6 +27,17 @@ func TestResolve(t *testing.T) {
 		{"flag wins over no keyboard", FormatTUI, true, nil, FormatTUI, true},
 		{"flag wins over a terminal", FormatJSON, true, nil, FormatJSON, false},
 		{"text flag on a terminal", FormatText, true, nil, FormatText, false},
+		// An AI coding agent in a pseudo-terminal cannot drive a dashboard.
+		{"claude code on a terminal writes text", FormatAuto, true, map[string]string{"CLAUDECODE": "1"}, FormatText, false},
+		{"cursor on a terminal writes text", FormatAuto, true, map[string]string{"CURSOR_AGENT": "1"}, FormatText, false},
+		{"codex on a terminal writes text", FormatAuto, true, map[string]string{"CODEX_SANDBOX": "seatbelt"}, FormatText, false},
+		{"gemini on a terminal writes text", FormatAuto, true, map[string]string{"GEMINI_CLI": "1"}, FormatText, false},
+		{"an agent on a pipe keeps json", FormatAuto, false, map[string]string{"CLAUDECODE": "1"}, FormatJSON, false},
+		{"flag wins over an agent", FormatTUI, true, map[string]string{"CLAUDECODE": "1"}, FormatTUI, false},
+		// A pod or a task with terminals allocated still ships its logs.
+		{"kubernetes with tty and stdin keeps json", FormatAuto, true, map[string]string{"KUBERNETES_SERVICE_HOST": "10.0.0.1"}, FormatJSON, false},
+		{"ecs with a tty keeps json", FormatAuto, true, map[string]string{"ECS_CONTAINER_METADATA_URI_V4": "http://169.254.170.2/v4/x"}, FormatJSON, false},
+		{"flag wins in a pod", FormatTUI, true, map[string]string{"KUBERNETES_SERVICE_HOST": "10.0.0.1"}, FormatTUI, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := Resolve(tc.requested, tc.tty, !tc.noStdin, env(tc.env)); got != tc.want {

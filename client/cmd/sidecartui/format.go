@@ -49,22 +49,50 @@ func ParseFormat(s string) (Format, error) {
 // Resolve turns a requested format into the one to run.
 //
 // An explicit format always wins. Auto keeps today's JSON whenever no person
-// can be watching (stdout is a pipe or a file, or CI is set), because that is
-// what every deployed sidecar already ships to its log platform. A person who
-// can read but not type (stdin is not a terminal), or whose terminal cannot
-// or must not draw (TERM=dumb, NO_COLOR), gets text: a dashboard that cannot
-// take a key cannot be quit or answer an approval. Everyone else gets the TUI.
+// can be watching (stdout is a pipe or a file, CI is set, or the process runs
+// under an orchestrator), because that is what every deployed sidecar already
+// ships to its log platform. A person who can read but not type (stdin is not
+// a terminal), a terminal that cannot or must not draw (TERM=dumb, NO_COLOR),
+// or an AI coding agent gets text: a dashboard nobody can key into cannot be
+// quit or answer an approval. Everyone else gets the TUI.
 func Resolve(requested Format, stdoutTTY, stdinTTY bool, getenv func(string) string) Format {
 	if requested != FormatAuto && requested != "" {
 		return requested
 	}
-	if !stdoutTTY || getenv("CI") != "" {
+	if !stdoutTTY || getenv("CI") != "" || orchestrated(getenv) {
 		return FormatJSON
 	}
-	if !stdinTTY || getenv("NO_COLOR") != "" || strings.EqualFold(getenv("TERM"), "dumb") {
+	if !stdinTTY || getenv("NO_COLOR") != "" || strings.EqualFold(getenv("TERM"), "dumb") || codingAgent(getenv) {
 		return FormatText
 	}
 	return FormatTUI
+}
+
+// agentEnv are the variables AI coding agents set in the shells they run
+// commands in (the list DuckDB's agent mode reads). Several run commands in a
+// pseudo-terminal, so a tty alone would hand them a full-screen dashboard
+// they cannot drive.
+var agentEnv = []string{
+	"CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI", "CODEX_SANDBOX", "CODEX_THREAD_ID", "CODEX_CI",
+	"COPILOT_AGENT", "COPILOT_CLI", "AI_AGENT", "AGENT",
+}
+
+// codingAgent is whether an AI coding agent runs this process.
+func codingAgent(getenv func(string) string) bool {
+	for _, k := range agentEnv {
+		if getenv(k) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// orchestrated is whether a scheduler runs this process: a Kubernetes pod or
+// an ECS task. A pod given tty: true and stdin: true has terminals nobody
+// reads; its output is what the cluster's log collector ships.
+func orchestrated(getenv func(string) string) bool {
+	return getenv("KUBERNETES_SERVICE_HOST") != "" ||
+		getenv("ECS_CONTAINER_METADATA_URI_V4") != "" || getenv("ECS_CONTAINER_METADATA_URI") != ""
 }
 
 // Interactive is whether a person can answer at this terminal: both stdin and

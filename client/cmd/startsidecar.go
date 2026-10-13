@@ -633,9 +633,9 @@ func init() {
 			"the fixture files given as arguments, print the report, and exit")
 
 	startSidecarCmd.Flags().StringVar(&sidecarLogFormatFlag, "log-format", string(sidecartui.FormatAuto),
-		"How output reaches the terminal: auto, tui, text or json. auto draws the TUI on an "+
-			"interactive terminal and writes JSON to a pipe, a file or CI (text when NO_COLOR or TERM=dumb). "+
-			"text or json starts without the TUI")
+		"How output reaches the terminal: auto, tui, text or json. auto draws the TUI only for a person "+
+			"at an interactive terminal: it writes JSON to a pipe, a file, CI or a Kubernetes/ECS container, and "+
+			"text to an AI coding agent or when NO_COLOR or TERM=dumb. text or json starts without the TUI")
 
 	startCmd.AddCommand(startSidecarCmd)
 }
