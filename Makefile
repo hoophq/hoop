@@ -105,7 +105,7 @@ generate-wasm:
 
 test: test-oss
 
-test-oss: generate-wasm test-sidecar test-unit
+test-oss: generate-wasm test-sidecar test-sidecar-plugins test-unit
 
 # The unit suite without the per-module sidecar loop; CI runs the two in
 # parallel jobs. gateway/models starts an isolated PGlite instance per test.
@@ -133,6 +133,31 @@ test-sidecar:
 	@set -e; for m in $$(find sidecar -name go.mod -exec dirname {} \;); do \
 		grep -q "^[[:space:]]*\./$$m$$" go.work || continue; \
 		(cd $$m && env CGO_ENABLED=0 go test -json -v ./...); \
+	done
+
+# The codec plug-in SDKs and examples under sidecar/codec/wasm. The job that
+# runs test-oss has Go and Rust and nothing else: no TinyGo, no lld. So this
+# target runs what those two reach, the Rust crate and the Rust example on
+# the host, the TinyGo SDK and the Go example with the standard toolchain,
+# and then proves the CHECKED-IN .wasm artifacts against the ABI and their
+# fixtures with hoop-inspect. Rebuilding the artifacts and comparing digests
+# needs the guest toolchains and lives in the path-filtered plug-in workflow.
+#
+# sdk/tinygo and examples/memcache are not in go.work, so test-sidecar
+# skips them on purpose (it filters its module walk against go.work) and
+# the two go test lines here need GOWORK=off. cargo test in sdk/rust runs
+# the root crate only; examples/acmewire is a cdylib without tests.
+test-sidecar-plugins:
+	sidecar/codec/wasm/sdk/c/test.sh
+	cd sidecar/codec/wasm/sdk/rust && cargo test
+	cd sidecar/codec/wasm/examples/resp && cargo test
+	cd sidecar/codec/wasm/sdk/tinygo && env GOWORK=off CGO_ENABLED=0 go test ./...
+	cd sidecar/codec/wasm/examples/memcache && env GOWORK=off CGO_ENABLED=0 go test ./...
+	@set -e; w=$(CURDIR)/sidecar/codec/wasm; bin=$$w/.build/hoop-inspect; mkdir -p $$w/.build; \
+	(cd sidecar/cmd && env CGO_ENABLED=0 go build -o $$bin .); \
+	$$bin -codec-test $$w/testdata/acmewire.wasm $$w/testdata/acmewire.fixtures.json; \
+	for e in resp memcache sqlframe; do \
+		$$bin -codec-test $$w/examples/$$e/$$e.wasm $$w/examples/$$e/fixtures.json; \
 	done
 
 # End-to-end sidecar suite (DEP-170): boots a real mysql:8 container through
@@ -445,4 +470,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

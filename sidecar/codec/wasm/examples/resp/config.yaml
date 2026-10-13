@@ -1,0 +1,26 @@
+# A sidecar lane in front of a local Redis, decoded by the x-resp plug-in.
+#
+#   ./build.sh
+#   hoop-inspect -validate -config config.yaml
+#   hoop-inspect -config config.yaml
+#   redis-cli -p 16379
+plugins:
+  - protocol: x-resp
+    module: ./resp.wasm
+
+listeners:
+  - name: cache
+    protocol: x-resp
+    listen: 127.0.0.1:16379
+    upstream: 127.0.0.1:6379
+    plugin:
+      max_text_bytes: "4096"
+    guardrails:
+      rules:
+        # Without a license the sidecar accepts one guardrail rule; the
+        # README shows more.
+        - name: no-flush
+          type: metadata
+          metadata:
+            x-resp.command: [FLUSHALL, FLUSHDB]
+          message: flushing the cache is not permitted through this lane

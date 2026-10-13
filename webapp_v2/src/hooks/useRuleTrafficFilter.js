@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useRuleTraffics } from '@/modes'
+import { useAgentsEnabled } from '@/modes/agents'
 import {
   TRAFFIC_AGENT,
   TRAFFIC_BOTH,
@@ -14,14 +15,17 @@ const VALUES = Object.keys(LABELS)
 // it: resource role and attribute for agent rules, listener for sidecar rules.
 export function useRuleTrafficFilter(kind) {
   const traffics = useRuleTraffics()
+  const agentsEnabled = useAgentsEnabled()
   const mixed = traffics.length > 1
   // Every rule list carries sidecar_spec, so a row is classified whenever both
   // traffics exist.
   const classifiable = mixed
+  const showTrafficFilter = classifiable && agentsEnabled
   const [label, setLabel] = useState(null)
-  const selected = classifiable ? (LABELS[label] ?? null) : null
+  const selected = showTrafficFilter ? (LABELS[label] ?? null) : null
 
-  const showAgentFilters = traffics.includes(TRAFFIC_AGENT) && selected !== TRAFFIC_SIDECAR
+  const showAgentFilters =
+    agentsEnabled && traffics.includes(TRAFFIC_AGENT) && selected !== TRAFFIC_SIDECAR
   const showSidecarFilter = traffics.includes(TRAFFIC_SIDECAR) && selected !== TRAFFIC_AGENT
 
   const matches = useCallback(
@@ -37,6 +41,7 @@ export function useRuleTrafficFilter(kind) {
     traffics,
     mixed,
     classifiable,
+    showTrafficFilter,
     showAgentFilters,
     showSidecarFilter,
     matches,

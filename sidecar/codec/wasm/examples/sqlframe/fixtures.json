@@ -1,0 +1,346 @@
+[
+  {
+    "name": "query is classified by the host lexer",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "5a010000001553454c4543542069642046524f4d206f7264657273",
+        "expect": {
+          "consumed": 27,
+          "statements": [
+            {
+              "direction": "client",
+              "text": "SELECT id FROM orders",
+              "operation": "select",
+              "effects": [
+                "select"
+              ],
+              "relations": [
+                {
+                  "name": "orders",
+                  "access": "read"
+                }
+              ],
+              "tables": [
+                "orders"
+              ],
+              "metadata": {
+                "x-sqlframe.command": "QUERY",
+                "x-sqlframe.seq": "1",
+                "x-sqlframe.dialect": "postgres"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "a multi-statement query is split into one statement each",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "5a010000001653454c45435420313b2044524f50205441424c452074",
+        "expect": {
+          "consumed": 28,
+          "statements": [
+            {
+              "text": "SELECT 1",
+              "operation": "select",
+              "metadata": {
+                "x-sqlframe.command": "QUERY",
+                "x-sqlframe.seq": "1",
+                "x-sqlframe.dialect": "postgres"
+              }
+            },
+            {
+              "text": "DROP TABLE t",
+              "operation": "drop",
+              "tables": [
+                "t"
+              ],
+              "metadata": {
+                "x-sqlframe.command": "QUERY",
+                "x-sqlframe.seq": "1",
+                "x-sqlframe.dialect": "postgres"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "prepare is classified like a query and the seq counts frames",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "5a0300000000",
+        "expect": {
+          "consumed": 6,
+          "statements": [
+            {
+              "text": "PING",
+              "operation": "other",
+              "metadata": {
+                "x-sqlframe.command": "PING",
+                "x-sqlframe.seq": "1"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "5a0200000025494e5345525420494e544f20757365727320286e616d65292056414c554553202827612729",
+        "expect": {
+          "consumed": 43,
+          "statements": [
+            {
+              "text": "INSERT INTO users (name) VALUES ('a')",
+              "operation": "insert",
+              "tables": [
+                "users"
+              ],
+              "relations": [
+                {
+                  "name": "users",
+                  "access": "write"
+                }
+              ],
+              "metadata": {
+                "x-sqlframe.command": "PREPARE",
+                "x-sqlframe.seq": "2",
+                "x-sqlframe.dialect": "postgres"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "5a7f00000000",
+        "expect": {
+          "consumed": 6,
+          "statements": [
+            {
+              "text": "CLOSE",
+              "operation": "other",
+              "metadata": {
+                "x-sqlframe.command": "CLOSE",
+                "x-sqlframe.seq": "3"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "the dialect_label option lands in metadata",
+    "options": {
+      "dialect_label": "pg16"
+    },
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "5a010000000853454c4543542031",
+        "expect": {
+          "consumed": 14,
+          "statements": [
+            {
+              "text": "SELECT 1",
+              "operation": "select",
+              "metadata": {
+                "x-sqlframe.command": "QUERY",
+                "x-sqlframe.seq": "1",
+                "x-sqlframe.dialect": "pg16"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "server frames report the result shape",
+    "steps": [
+      {
+        "dir": "server",
+        "hex": "5a810000000400000003",
+        "expect": {
+          "consumed": 10,
+          "statements": [
+            {
+              "direction": "server",
+              "text": "ROWS",
+              "operation": "other",
+              "result": {
+                "row_count": 3
+              },
+              "metadata": {
+                "x-sqlframe.command": "ROWS",
+                "x-sqlframe.seq": "1"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "5a8200000000",
+        "expect": {
+          "consumed": 6,
+          "statements": [
+            {
+              "text": "OK",
+              "operation": "other",
+              "metadata": {
+                "x-sqlframe.command": "OK",
+                "x-sqlframe.seq": "2"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "5a8e00000004626f6f6d",
+        "expect": {
+          "consumed": 10,
+          "statements": [
+            {
+              "text": "ERROR: boom",
+              "operation": "other",
+              "metadata": {
+                "x-sqlframe.command": "ERROR",
+                "x-sqlframe.seq": "3"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "two frames in one read decode in order",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "5a03000000005a010000000853454c4543542031",
+        "expect": {
+          "consumed": 20,
+          "statements": [
+            {
+              "text": "PING",
+              "operation": "other"
+            },
+            {
+              "text": "SELECT 1",
+              "operation": "select",
+              "metadata": {
+                "x-sqlframe.command": "QUERY",
+                "x-sqlframe.seq": "2",
+                "x-sqlframe.dialect": "postgres"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "a partial frame consumes nothing",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "5a010000001553454c",
+        "expect": {
+          "consumed": 0,
+          "statements": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "keepalive padding before a frame is filtered out",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "00005a010000000853454c4543542031",
+        "expect": {
+          "consumed": 14,
+          "statements": [
+            {
+              "text": "SELECT 1",
+              "operation": "select"
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "005a810000000400000000000000",
+        "expect": {
+          "consumed": 10,
+          "statements": [
+            {
+              "text": "ROWS",
+              "result": {
+                "row_count": 0
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "wrong magic is a decode error",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "41010000001553454c4543542069642046524f4d206f7264657273",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "an unknown frame type is a decode error",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "5a4200000000",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "a client frame from the server is a decode error",
+    "steps": [
+      {
+        "dir": "server",
+        "hex": "5a010000000853454c4543542031",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "a ROWS frame without a u32 payload is a decode error",
+    "steps": [
+      {
+        "dir": "server",
+        "hex": "5a81000000020003",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  }
+]

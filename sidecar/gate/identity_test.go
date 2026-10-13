@@ -203,6 +203,79 @@ func TestRequestIdentityOpensASessionPerCaller(t *testing.T) {
 	}
 }
 
+// frameCodec is a non-HTTP line protocol: "AUTH <credential>\n" names the
+// caller, "DO <text>\n" is a statement with no credential. It lifts the
+// credential the way a plug-in codec does, off the frame that carries one.
+type frameCodec struct{ lineCodec }
+
+func (*frameCodec) Protocol() inspect.Protocol { return "x-frame" }
+
+func (c *frameCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []inspect.Statement
+	pos := 0
+	for {
+		i := bytes.IndexByte(data[pos:], '\n')
+		if i < 0 {
+			return out, pos, nil
+		}
+		verb, arg, _ := strings.Cut(string(data[pos:pos+i]), " ")
+		pos += i + 1
+		stmt := inspect.Statement{Protocol: "x-frame", Direction: inspect.FromClient, Text: verb, Operation: inspect.OpOther}
+		if verb == "AUTH" {
+			c.next++
+			h := strconv.Itoa(c.next)
+			if c.creds == nil {
+				c.creds = map[string]string{}
+			}
+			c.creds[h] = arg
+			stmt.Metadata = map[string]string{credentialKey: h}
+		}
+		out = append(out, stmt)
+	}
+}
+
+// A database or plug-in protocol names its caller on the frames that carry
+// a credential and on no other. A frame that lifts nothing stays with the
+// running session, and a frame that names a new caller rotates the session
+// at once: such a codec does not pair responses to requests, so nothing is
+// outstanding.
+func TestFrameProtocolLiftsCredentialsOnlyWhereTheyAre(t *testing.T) {
+	ctx := context.Background()
+	pol := &principalRecorder{}
+	sess := session.New("x-frame", session.Identity{Subject: "alice@example.com", PeerAddr: "10.0.0.7:51234"})
+	g, err := gate.New(sess, gate.Config{
+		Protocol:        "x-frame",
+		Policy:          pol,
+		CodecFactory:    func() inspect.Codec { return &frameCodec{} },
+		RequestIdentity: tokens,
+	})
+	if err != nil {
+		t.Fatalf("gate.New: %v", err)
+	}
+	mustAllow(t, g.Request(ctx, []byte("DO one\n")))
+	alice := g.Session().ID
+	mustAllow(t, g.Request(ctx, []byte("AUTH tok-bob\n")))
+	if g.Session().ID == alice {
+		t.Fatal("an AUTH frame naming bob kept alice's session")
+	}
+	d := g.Request(ctx, []byte("DO two\n"))
+	mustAllow(t, d)
+	if d.Statements[0].Metadata[credentialKey] != "" {
+		t.Fatal("the credential handle leaked onto a statement")
+	}
+	if d := g.Request(ctx, []byte("AUTH nope\n")); d.Allowed {
+		t.Fatal("an AUTH frame with a rejected token was allowed")
+	}
+	pol.mu.Lock()
+	defer pol.mu.Unlock()
+	want := []string{"alice@example.com", "bob@example.com", "bob@example.com"}
+	if strings.Join(pol.seen, ",") != strings.Join(want, ",") {
+		t.Errorf("principals = %v, want %v", pol.seen, want)
+	}
+}
+
 // Rotating while alice's response is still coming would file that response
 // under bob. The request is refused instead, and filed under bob, not alice.
 func TestRequestIdentityRefusesACallerChangeWithAResponseOutstanding(t *testing.T) {
@@ -294,6 +367,46 @@ func TestRequestIdentityNeedsACodecThatLiftsTheCredential(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("gate.New accepted RequestIdentity with a codec that lifts no credential")
+	}
+}
+
+// The WASM host answers ("", true) when the guest's credential export
+// failed. An empty credential names nobody, so the gate refuses the
+// request itself, before a resolver that would accept anything sees it.
+func TestEmptyLiftedCredentialIsRefusedBeforeResolution(t *testing.T) {
+	ctx := context.Background()
+	sink := &recordingSink{}
+	resolved := 0
+	anyone := gate.RequestIdentityFunc(func(_ context.Context, cred string) (session.Identity, error) {
+		resolved++
+		return session.Identity{Subject: "resolved:" + cred, PeerAddr: "10.0.0.7:51234"}, nil
+	})
+	sess := session.New(inspect.HTTP, session.Identity{Subject: "alice@example.com", PeerAddr: "10.0.0.7:51234"})
+	g, err := gate.New(sess, gate.Config{
+		Protocol:        inspect.HTTP,
+		Audit:           sink,
+		CodecFactory:    func() inspect.Codec { return &lineCodec{} },
+		RequestIdentity: anyone,
+	})
+	if err != nil {
+		t.Fatalf("gate.New: %v", err)
+	}
+	d := g.Request(ctx, []byte("REQ \n"))
+	if d.Allowed || d.Rule != "identity" || d.Payload != nil {
+		t.Fatalf("decision = %+v, want an identity refusal forwarding nothing", d)
+	}
+	if !strings.Contains(d.Message, "empty credential") {
+		t.Errorf("message %q does not name the empty credential", d.Message)
+	}
+	if resolved != 0 {
+		t.Errorf("the resolver saw %d credentials, want none", resolved)
+	}
+	if p := g.Session().Identity.Principal(); p != "alice@example.com" {
+		t.Errorf("running session is %q, want alice's untouched", p)
+	}
+	v := sink.find(audit.KindViolation)
+	if v == nil || v.Principal == "alice@example.com" {
+		t.Fatalf("violation = %+v, want it filed under an anonymous caller", v)
 	}
 }
 

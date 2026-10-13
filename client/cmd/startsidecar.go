@@ -26,6 +26,10 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
+	// The codec plug-in host, same rule: a `plugins` block must not need
+	// the standalone binary. wazero stays in codec/wasm's own module.
+	"github.com/hoophq/hoop/sidecar/codec/wasm"
+	"github.com/hoophq/hoop/sidecar/codec/wasm/conformance"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	// The gs:// descriptor fetcher, same rule as the providers above.
@@ -52,6 +56,7 @@ var (
 	sidecarMigrateFlag    bool
 	sidecarMigrateOutFlag string
 	sidecarLogFormatFlag  string
+	sidecarCodecTestFlag  string
 )
 
 var startSidecarCmd = &cobra.Command{
@@ -77,10 +82,13 @@ Run with nothing at all — no config, no flags — and a built-in default
 starts instead: one loopback URL that forwards to the getting-started
 guide. It inspects no traffic; it exists so the first run after the
 install works. Write a config to replace it. On an interactive terminal it
-draws a screen instead of the banner, and pressing w there sets up a config:
-pick the demo (an invented API the CLI serves) or a protocol, say where the
-backend is, adjust the default guardrail, masking, analyzer and detection,
-then save it, or save and boot the sidecar on it without restarting.
+draws a setup screen instead of the banner: set up a config (the demo or a
+protocol), open one, or connect to a Control Plane, then boot it without
+restarting.
+
+To start without the screen, pass --log-format text or json: with no config
+it prints the banner, and with a config it writes plain logs instead of the
+dashboard.
 
 This command was named "inspect". That name still works as a deprecated
 alias.
@@ -112,6 +120,7 @@ its license; moving that entry either way reaches a running sidecar on its
 next check-in, which applies what a live process can change and logs what
 needs a restart.`,
 	Example: `  hoop start sidecar
+  hoop start sidecar --log-format text
   hoop start sidecar --config /etc/hoop-inspect/config.yaml
   hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
   hoop start sidecar --config config.yaml --validate
@@ -129,6 +138,12 @@ needs a restart.`,
 		if err != nil {
 			cmd.SilenceUsage = false
 			return err
+		}
+
+		// Same branch as the standalone binary's -codec-test: it prints
+		// the ABI report for a plug-in author and starts no sidecar.
+		if sidecarCodecTestFlag != "" {
+			return daemon.CodecTest(cmd.Context(), sidecarCodecTestFlag, args, os.Stdout)
 		}
 
 		// Resolved before Setup: in the TUI the person at the terminal
@@ -437,7 +452,10 @@ func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
 		return false
 	}
 	changed := false
-	seen := func(f *pflag.Flag) { changed = changed || f.Changed }
+	// --log-format picks how output reaches the terminal, not what runs:
+	// `--log-format text` or `json` with nothing else is the first run
+	// without the screen, the banner a pipe gets.
+	seen := func(f *pflag.Flag) { changed = changed || (f.Changed && f.Name != "log-format") }
 	cmd.Flags().VisitAll(seen)
 	cmd.InheritedFlags().VisitAll(seen)
 	return !changed
@@ -577,6 +595,12 @@ func init() {
 	// --migrate renders YAML through the same module that parses it; the
 	// daemon package cannot import it, so the renderer is injected.
 	daemon.YAMLFromJSON = configyaml.FromJSON
+	// The daemon cannot import the wasm host (its module carries wazero),
+	// so init injects the plug-in loader and the --codec-test runner too.
+	daemon.LoadCodecPlugin = func(ctx context.Context, module []byte) (daemon.CodecPlugin, error) {
+		return wasm.Load(ctx, module)
+	}
+	daemon.CodecTester = conformance.Run
 
 	startSidecarCmd.Flags().StringVar(&sidecarConfigFlag, "config", sidecarConfigFromEnv(),
 		"Path to the inspection config file (YAML or JSON)")
@@ -604,10 +628,14 @@ func init() {
 	startSidecarCmd.Flags().StringVar(&sidecarMigrateOutFlag, "migrate-out", "",
 		"File --migrate writes to instead of stdout; its extension picks the syntax, "+
 			"defaulting to the input's")
+	startSidecarCmd.Flags().StringVar(&sidecarCodecTestFlag, "codec-test", "",
+		"Path to a codec plug-in module: run the ABI conformance checks over it and "+
+			"the fixture files given as arguments, print the report, and exit")
 
 	startSidecarCmd.Flags().StringVar(&sidecarLogFormatFlag, "log-format", string(sidecartui.FormatAuto),
 		"How output reaches the terminal: auto, tui, text or json. auto draws the TUI on an "+
-			"interactive terminal and writes JSON to a pipe, a file or CI (text when NO_COLOR or TERM=dumb)")
+			"interactive terminal and writes JSON to a pipe, a file or CI (text when NO_COLOR or TERM=dumb). "+
+			"text or json starts without the TUI")
 
 	startCmd.AddCommand(startSidecarCmd)
 }

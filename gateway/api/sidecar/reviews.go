@@ -98,6 +98,12 @@ func PostReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	// Told here, not by a failed write: no index holds a longer name.
+	if n := len(req.ListenerName); n > models.MaxSidecarListenerNameBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf(
+			"listener_name is %d bytes, over %d", n, models.MaxSidecarListenerNameBytes)})
+		return
+	}
 
 	// Decoded here so a human never sees base64. The raw bytes are capped and
 	// hashed; the blobs and Slack get displayStatement(raw).

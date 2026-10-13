@@ -401,6 +401,8 @@ func SessionRecordingFormat(connectionType, subtype, verb string) string {
 		return RecordingFormatExec
 	case connType == ConnectionTypeCommandLine:
 		return RecordingFormatPTY
+	case connType == ConnectionTypeSSH:
+		return RecordingFormatSSH
 	default:
 		return RecordingFormatRaw
 	}

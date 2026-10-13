@@ -53,6 +53,9 @@ func withDB(t *testing.T, inst *pglite.Instance, fn func()) {
 		t.Fatal(err)
 	}
 	fn()
+	// The embedded backend keeps one session, so a statement this pool
+	// prepared outlives it and the next pool cannot prepare it again.
+	execSQL(t, `DEALLOCATE ALL`)
 	if err := sqlDB.Close(); err != nil {
 		t.Fatal(err)
 	}

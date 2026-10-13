@@ -3,6 +3,7 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { spotlight } from '@mantine/spotlight';
 import { useCommandPaletteStore } from '@/stores/useCommandPaletteStore';
+import { useAgentsEnabled } from '@/modes/agents';
 import { useUserStore } from '@/stores/useUserStore';
 import { searchAll } from '@/services/search';
 import { useBridgeStore } from '@/stores/useBridgeStore';
@@ -17,21 +18,23 @@ function ConnectedCommandPalette() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [debouncedQuery] = useDebouncedValue(query, 300);
+  // Search returns agent resources, roles and runbooks only.
+  const searchQuery = useAgentsEnabled() ? debouncedQuery : '';
   const { currentPage, context, searchStatus, searchResults, setSearchResults, reset, back, navigateToPage } = useCommandPaletteStore();
   const { user } = useUserStore();
 
   useEffect(
     () => {
-      if (debouncedQuery.length >= 2) {
+      if (searchQuery.length >= 2) {
         setSearchResults('searching', {});
-        searchAll(debouncedQuery)
+        searchAll(searchQuery)
           .then(r => setSearchResults('ready', r.data))
           .catch(() => setSearchResults('error', {}));
       } else {
         setSearchResults('idle', {});
       }
     },
-    [debouncedQuery, setSearchResults]
+    [searchQuery, setSearchResults]
   );
 
   const handleKeyDown = event => {
@@ -113,7 +116,7 @@ function ConnectedCommandPalette() {
     >
       {currentPage === 'main' && (
         <MainPage
-          query={debouncedQuery}
+          query={searchQuery}
           searchStatus={searchStatus}
           searchResults={searchResults}
           onResourceSelect={handleResourceSelect}

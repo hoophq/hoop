@@ -100,8 +100,9 @@ function ReviewsRedirect() {
  *   - `Page`: the shell a React page renders in (ProtectedRoute + Layout).
  *   - `Guard`: a React route without the shell (onboarding).
  *   - `Home`, `Onboarding`, `CatchAll`: the three leaves that differ. In the
- *     gateway they are ClojureScript; in the control plane '/' is the landing
- *     by role and the other two are a 404, so the CLJS bundle never loads there.
+ *     gateway '/' redirects to the terminal and the other two are ClojureScript;
+ *     in the control plane '/' is the landing by role and the other two are a
+ *     404, so the CLJS bundle never loads there.
  *
  * A page that differs between the products is a pair of sibling files
  * (Gateway*, ControlPlane*) chosen here with <ByProduct>. `grep ByProduct` in
@@ -125,7 +126,7 @@ function Router() {
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/signup/callback" element={<SignupCallback />} />
 
-      {/* Landing: the product decides (gateway: CLJS; control plane: by role). */}
+      {/* Landing: the product decides (gateway: terminal; control plane: by role). */}
       <Route path="/" element={Home} />
 
       {/* Control plane pages. The sidecar fleet (list, the connect/create wizard,

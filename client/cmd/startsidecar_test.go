@@ -258,6 +258,11 @@ func TestSidecarBareInvocation(t *testing.T) {
 		{msg: "an explicit empty value still keeps the usage error", args: []string{"--license="}},
 		{msg: "an inherited global flag keeps the usage error", args: []string{"--debug"}},
 		{msg: "a positional argument keeps the usage error", args: []string{"extra"}},
+		// Picking the output is not asking for a config: it is how to get
+		// the first run without the screen.
+		{msg: "--log-format text is the first run without the screen", args: []string{"--log-format", "text"}, want: true},
+		{msg: "--log-format json is the first run without the screen", args: []string{"--log-format=json"}, want: true},
+		{msg: "--log-format with another flag keeps the usage error", args: []string{"--log-format", "text", "--validate"}},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
 			// Fresh commands per case: pflag's Changed sticks once set, so
@@ -269,6 +274,7 @@ func TestSidecarBareInvocation(t *testing.T) {
 			cmd.Flags().Bool("strict", false, "")
 			cmd.Flags().String("license", "", "")
 			cmd.Flags().String("token", "", "")
+			cmd.Flags().String("log-format", "auto", "")
 			root.AddCommand(cmd)
 			if err := cmd.ParseFlags(tt.args); err != nil {
 				t.Fatalf("parse: %v", err)

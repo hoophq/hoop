@@ -246,6 +246,11 @@ func toModelTargets(in *[]openapi.SidecarRuleTarget) ([]models.SidecarRuleTarget
 			return nil, malformedTargets{fmt.Sprintf("sidecar target %d names no sidecar; "+
 				"every target is one listener on one sidecar", i+1)}
 		}
+		// Such a listener has no mirror, and no binding index holds its name.
+		if n := len(t.ListenerName); n > models.MaxSidecarListenerNameBytes {
+			return nil, malformedTargets{fmt.Sprintf("sidecar target %d: the listener name is %d bytes, over %d; "+
+				"rename the listener to bind a rule to it", i+1, n, models.MaxSidecarListenerNameBytes)}
+		}
 		out = append(out, models.SidecarRuleTarget{SidecarID: t.SidecarID, ListenerName: t.ListenerName})
 	}
 	return out, nil

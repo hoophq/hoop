@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
@@ -82,11 +83,7 @@ func ListenerSchema() ([]byte, error) {
 	protocols := Protocols()
 	doc := listenerSchema{}
 	for _, p := range protocols {
-		label, ok := protocolLabels[p]
-		if !ok {
-			return nil, fmt.Errorf("protocol %q has no label in protocolLabels", p)
-		}
-		doc.Protocols = append(doc.Protocols, schemaOption{Value: p, Label: label})
+		doc.Protocols = append(doc.Protocols, schemaOption{Value: p, Label: protocolLabel(p)})
 	}
 	fields, err := schemaFields(reflect.TypeFor[ListenerConfig](), "listeners", protocols, nil)
 	if err != nil {
@@ -104,10 +101,23 @@ func ListenerSchema() ([]byte, error) {
 }
 
 // ProtocolLabel is the name a person reads for protocol p: "PostgreSQL"
-// for postgres. A protocol with no label returns p itself.
-func ProtocolLabel(p string) string {
-	if l, ok := protocolLabels[p]; ok {
-		return l
+// for postgres, the codec's own label for one the table does not know, p
+// itself last. The CLI's setup screens list protocols by it.
+func ProtocolLabel(p string) string { return protocolLabel(p) }
+
+// protocolLabel names a protocol for the form: the table for the shipped
+// ones, the codec's own Label for a registered protocol the table does not
+// know (a custom binary linking its own codec), the bare name last. The
+// form must never fail to render over a label, because the sidecar still
+// speaks the protocol.
+func protocolLabel(p string) string {
+	if label, ok := protocolLabels[p]; ok {
+		return label
+	}
+	if insp, err := inspect.New(inspect.Protocol(p)); err == nil {
+		if labeled, ok := insp.Codec().(gate.Labeled); ok && labeled.Label() != "" {
+			return labeled.Label()
+		}
 	}
 	return p
 }
