@@ -202,28 +202,42 @@ func (r *registry) get(conn uint32, export string) Codec {
 	return c
 }
 
+// capability returns the codec of conn as the interface export needs.
+// describe probes one codec from the factory, so a factory that hands
+// out several types can still pass it and fail here; the trap names the
+// connection and the export so the host log says which lane and which
+// capability, where a bare type assertion would say only the types.
+func capability[T any](r *registry, conn uint32, export string) T {
+	c := r.get(conn, export)
+	t, ok := c.(T)
+	if !ok {
+		panic(fmt.Sprintf("hoop-codec: %s on connection %d, but %T does not implement the %s capability", export, conn, c, export))
+	}
+	return t
+}
+
 func (r *registry) deny(conn, dir uint32, message []byte) []byte {
-	return r.get(conn, "deny").(Denier).Deny(directionOf(dir), string(message))
+	return capability[Denier](r, conn, "deny").Deny(directionOf(dir), string(message))
 }
 
 func (r *registry) filter(conn, dir uint32, data []byte) []byte {
-	return r.get(conn, "filter").(Filterer).Filter(directionOf(dir), data)
+	return capability[Filterer](r, conn, "filter").Filter(directionOf(dir), data)
 }
 
 func (r *registry) enableRewrite(conn uint32) {
-	r.get(conn, "enable_rewrite").(Rewriter).EnableRewrite()
+	capability[Rewriter](r, conn, "enable_rewrite").EnableRewrite()
 }
 
 func (r *registry) rewrite(conn uint32, data []byte) []byte {
-	return rewriteJSON(r.get(conn, "rewrite").(Rewriter).Rewrite(data, mask))
+	return rewriteJSON(capability[Rewriter](r, conn, "rewrite").Rewrite(data, mask))
 }
 
 func (r *registry) flush(conn uint32) []byte {
-	return rewriteJSON(r.get(conn, "flush").(Rewriter).Flush(mask))
+	return rewriteJSON(capability[Rewriter](r, conn, "flush").Flush(mask))
 }
 
 func (r *registry) takeCredential(conn uint32, stmtJSON []byte) []byte {
-	credential, scrubbed, ok := r.get(conn, "take_credential").(CredentialSource).TakeCredential(parseStatement(stmtJSON))
+	credential, scrubbed, ok := capability[CredentialSource](r, conn, "take_credential").TakeCredential(parseStatement(stmtJSON))
 	if !ok {
 		return mustJSON(credentialResult{OK: false})
 	}
@@ -231,7 +245,7 @@ func (r *registry) takeCredential(conn uint32, stmtJSON []byte) []byte {
 }
 
 func (r *registry) content(conn uint32, stmtJSON []byte) []byte {
-	content, ok := r.get(conn, "content").(ContentRenderer).Content(parseStatement(stmtJSON))
+	content, ok := capability[ContentRenderer](r, conn, "content").Content(parseStatement(stmtJSON))
 	if !ok {
 		return mustJSON(contentResult{OK: false})
 	}

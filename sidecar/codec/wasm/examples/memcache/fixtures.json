@@ -696,6 +696,81 @@
     ]
   },
   {
+    "name": "a storage line whose trailing token is not noreply reads no data block",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "736574206b20302030203320626f6775730d0a6162630d0a676574206b0d0a",
+        "expect": {
+          "consumed": 31,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "other",
+              "text": "set k 0 0 3 bogus",
+              "metadata": {
+                "x-memcache.command": "set"
+              }
+            },
+            {
+              "direction": "client",
+              "operation": "other",
+              "text": "abc",
+              "metadata": {
+                "x-memcache.command": "abc"
+              }
+            },
+            {
+              "direction": "client",
+              "operation": "select",
+              "text": "get k",
+              "metadata": {
+                "x-memcache.command": "get",
+                "x-memcache.key": "k"
+              },
+              "tables": [
+                "k"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "4552524f520d0a4552524f520d0a454e440d0a",
+        "expect": {
+          "consumed": 19,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "ERROR",
+              "metadata": {
+                "x-memcache.reply": "ERROR"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "ERROR",
+              "metadata": {
+                "x-memcache.reply": "ERROR"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "END",
+              "metadata": {
+                "x-memcache.reply": "END"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
     "name": "a storage command whose length is not a number is a decode error",
     "steps": [
       {

@@ -33,6 +33,10 @@ the module and the `capabilities` of the manifest cannot disagree: the
 host refuses a capability without its export and an export without its
 capability, and `describe` traps when the manifest names a capability the
 tags did not turn on, or one the codec's type does not implement.
+`describe` probes one codec from the factory; a factory that hands a
+later connection a type without the interface traps in that capability
+export instead, with the connection and the capability named, and the
+host reports the trap and drops the instance's connections.
 
 | tag | capability | interface | exports |
 |---|---|---|---|

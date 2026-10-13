@@ -30,12 +30,20 @@ func init() {
 // status refused, the body bounded by MaxHTTPSBytes. Credentials are the
 // client's business (a transport adding a header) or the URL's (a signed
 // URL); the fetcher adds none.
+//
+// A redirect is followed only to another https URL. Go's stock policy
+// follows an https URL to a plain http one, which would deliver the
+// artifact over the transport this package refuses to register.
 func FetchHTTPS(ctx context.Context, u *url.URL, client *http.Client) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := client.Do(req)
+	// A shallow copy: the caller's transport, trust roots and timeout
+	// stay, only the redirect policy is this fetcher's.
+	own := *client
+	own.CheckRedirect = httpsOnlyRedirect
+	resp, err := own.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -56,4 +64,19 @@ func FetchHTTPS(ctx context.Context, u *url.URL, client *http.Client) ([]byte, e
 		return nil, fmt.Errorf("the response exceeds %d bytes", MaxHTTPSBytes)
 	}
 	return body, nil
+}
+
+// maxRedirects is the stock client's limit, kept so a redirect loop still
+// ends.
+const maxRedirects = 10
+
+// httpsOnlyRedirect is the CheckRedirect policy: every hop stays on https.
+func httpsOnlyRedirect(req *http.Request, via []*http.Request) error {
+	if req.URL.Scheme != HTTPSScheme {
+		return fmt.Errorf("refusing a redirect from %s to %s: only https is followed", via[len(via)-1].URL, req.URL)
+	}
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+	return nil
 }

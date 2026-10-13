@@ -3,7 +3,9 @@ package wasm
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"slices"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -54,15 +56,22 @@ type rewriteResult struct {
 
 // decodeStrict parses one guest payload. It refuses unknown fields, as
 // ABI.md says: a misspelt key dropped without an error is a statement a
-// policy never sees.
+// policy never sees. It also refuses anything after the value, by asking
+// for a second one and requiring EOF: Decoder.More answers false for a
+// stray `}` or `]`, so a guest could append those unnoticed.
 func decodeStrict(raw []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return err
 	}
-	if dec.More() {
-		return fmt.Errorf("trailing data after the JSON object")
+	return requireEOF(dec, "trailing data after the JSON object")
+}
+
+// requireEOF fails unless dec has nothing left but whitespace.
+func requireEOF(dec *json.Decoder, msg string) error {
+	if err := dec.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
+		return errors.New(msg)
 	}
 	return nil
 }

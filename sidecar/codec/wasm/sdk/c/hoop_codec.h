@@ -13,8 +13,9 @@
  *
  * The header declares the four imports of module `hoop`, the attribute an
  * export carries, the packed-u64 helpers every export returns through,
- * and, under HOOP_CODEC_ARENA, an `alloc`/`free` pair that needs no libc.
- * The skeleton at the end of this file is a complete plug-in to copy.
+ * and, under HOOP_CODEC_ARENA, an `alloc`/`free` pair that needs no libc
+ * and lives one export call at a time (see hoop_arena_reset). The
+ * skeleton at the end of this file is a complete plug-in to copy.
  *
  * Everything is C99 and nothing here needs a libc: a module that links
  * nothing imports nothing the host would refuse.
@@ -48,10 +49,10 @@ enum hoop_log_level { HOOP_LOG_DEBUG = 0, HOOP_LOG_INFO = 1, HOOP_LOG_WARN = 2, 
 
 /*
  * Imports. Each returns a packed region (see hoop_pack) the host wrote
- * through your `alloc`; read it, then release it with your `free`. A
- * module calls only what it needs: the linker drops an unreferenced
- * import, and a module that never calls analyze_sql owes the host no
- * sql_dialect.
+ * through your `alloc`; read it through hoop_take, or read it and release
+ * it with your `free` when you brought your own allocator. A module calls
+ * only what it needs: the linker drops an unreferenced import, and a
+ * module that never calls analyze_sql owes the host no sql_dialect.
  */
 
 /* Classify SQL with the host lexer in the manifest's sql_dialect; returns
@@ -105,12 +106,21 @@ static inline uint32_t hoop_strlen(const char *s) {
  * An arena allocator for the ABI buffers, when the plug-in links no libc.
  *
  * Define HOOP_CODEC_ARENA in a single translation unit to get the
- * `alloc` and `free` exports. It is a bump allocator that rewinds when
- * nothing is outstanding: the host frees an export's input right after
- * the export returns and an export's output right after reading it, so
- * between calls the arena is empty and the pointer goes back to the
- * start. That bounds memory to the largest single call, which is the
- * same bound the host's max_reassembly already imposes on input.
+ * `alloc` and `free` exports and hoop_arena_reset. It is a bump
+ * allocator with one lifetime: the export call. Everything allocated
+ * during one call (the host's input, the regions imports return, your
+ * scratch, the output) stays where it is until the call ends. `free` is
+ * a no-op, so a region an import returned is readable until the export
+ * returns, however much the export allocates after taking it. The bound
+ * is the sum of one call's allocations, which the host's max_reassembly
+ * already bounds on the input side.
+ *
+ * Each export calls hoop_arena_reset() as the last thing before it
+ * returns. The reset takes effect at the next allocation: the output the
+ * export returns stays allocated while the host reads it, and the first
+ * `alloc` of the next call, the host's input, rewinds to the start. An
+ * export that returns without the reset leaks its call until the next
+ * export resets; it never corrupts a region.
  *
  * Consequence: nothing that must outlive one export call may live in the
  * arena. Keep per-connection state in static storage.
@@ -127,9 +137,18 @@ static inline uint32_t hoop_strlen(const char *s) {
 
 static uint8_t hoop_arena[HOOP_CODEC_ARENA_BYTES] __attribute__((aligned(16)));
 static uint32_t hoop_arena_used = 0;
-static uint32_t hoop_arena_live = 0;
+static int hoop_arena_reclaim = 0;
+
+/* hoop_arena_reset marks the current call's regions dead. The rewind
+ * waits for the next hoop_alloc, so the output being returned survives
+ * the host's read of it. */
+static inline void hoop_arena_reset(void) { hoop_arena_reclaim = 1; }
 
 HOOP_EXPORT("alloc") uint32_t hoop_alloc(uint32_t len) {
+    if (hoop_arena_reclaim) {
+        hoop_arena_reclaim = 0;
+        hoop_arena_used = 0;
+    }
     uint32_t rounded = (len + 15u) & ~15u;
     if (rounded < len || HOOP_CODEC_ARENA_BYTES - hoop_arena_used < rounded) {
         hoop_log(HOOP_LOG_ERROR, "hoop_codec: arena exhausted", 27);
@@ -137,27 +156,25 @@ HOOP_EXPORT("alloc") uint32_t hoop_alloc(uint32_t len) {
     }
     uint8_t *p = hoop_arena + hoop_arena_used;
     hoop_arena_used += rounded;
-    hoop_arena_live++;
     return (uint32_t)(uintptr_t)p;
 }
 
+/* The host frees an export's input and output after the export returns;
+ * both die with the call under hoop_arena_reset, so there is nothing left
+ * to do here. A bump arena cannot give back a region in the middle. */
 HOOP_EXPORT("free") void hoop_free(uint32_t ptr, uint32_t len) {
     (void)ptr;
     (void)len;
-    if (hoop_arena_live > 0 && --hoop_arena_live == 0) {
-        hoop_arena_used = 0;
-    }
 }
 
-/* hoop_take reads a packed region a host import returned into the arena
- * and releases it: the import allocated through hoop_alloc, so the bytes
- * stay readable until the arena rewinds at the end of the call. */
+/* hoop_take reads a packed region a host import returned. The bytes stay
+ * readable until the export returns, whatever the export allocates next;
+ * there is nothing to release. */
 static inline const uint8_t *hoop_take(uint64_t packed, uint32_t *len) {
     *len = hoop_len(packed);
     if (packed == HOOP_NONE) {
         return (const uint8_t *)"";
     }
-    hoop_free((uint32_t)(uintptr_t)hoop_ptr(packed), *len);
     return (const uint8_t *)hoop_ptr(packed);
 }
 
@@ -188,17 +205,21 @@ static inline const uint8_t *hoop_take(uint64_t packed, uint32_t *len) {
  *   // Per-connection state lives in static storage, never in the arena.
  *   static uint32_t frames_seen;
  *
+ *   // Every export ends with hoop_arena_reset(): the call's regions die
+ *   // with it, and the first alloc of the next call rewinds the arena.
  *   HOOP_EXPORT("describe") uint64_t skel_describe(void) {
+ *       hoop_arena_reset();
  *       return hoop_pack(MANIFEST, sizeof MANIFEST - 1);
  *   }
  *
  *   HOOP_EXPORT("open") uint32_t skel_open(uint32_t conn, const uint8_t *options, uint32_t len) {
  *       (void)conn; (void)options; (void)len;  // Options JSON, string to string
  *       frames_seen = 0;
+ *       hoop_arena_reset();
  *       return 0;                               // non-zero refuses the connection
  *   }
  *
- *   HOOP_EXPORT("close") void skel_close(uint32_t conn) { (void)conn; }
+ *   HOOP_EXPORT("close") void skel_close(uint32_t conn) { (void)conn; hoop_arena_reset(); }
  *
  *   static uint32_t put(uint8_t *out, uint32_t n, const char *s) {
  *       while (*s) out[n++] = (uint8_t)*s++;
@@ -211,6 +232,7 @@ static inline const uint8_t *hoop_take(uint64_t packed, uint32_t *len) {
  *       // report consumed = 0 and the host retries with more.
  *       if (len == 0 || len < 1u + data[0]) {
  *           static const char EMPTY[] = "{\"statements\":[],\"consumed\":0}";
+ *           hoop_arena_reset();
  *           return hoop_pack(EMPTY, sizeof EMPTY - 1);
  *       }
  *       frames_seen++;
@@ -230,6 +252,7 @@ static inline const uint8_t *hoop_take(uint64_t packed, uint32_t *len) {
  *       do { digits[d++] = (char)('0' + consumed % 10); consumed /= 10; } while (consumed);
  *       while (d) out[n++] = (uint8_t)digits[--d];
  *       out[n++] = '}';
+ *       hoop_arena_reset();
  *       return hoop_pack(out, n);
  *   }
  *
@@ -239,6 +262,7 @@ static inline const uint8_t *hoop_take(uint64_t packed, uint32_t *len) {
  *       uint8_t *out = (uint8_t *)(uintptr_t)hoop_alloc(1 + len);
  *       out[0] = (uint8_t)len;
  *       for (uint32_t i = 0; i < len; i++) out[1 + i] = message[i];
+ *       hoop_arena_reset();
  *       return hoop_pack(out, 1 + len);
  *   }
  */

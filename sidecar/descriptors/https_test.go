@@ -59,3 +59,48 @@ func TestHTTPSFetchesThroughTheGivenClient(t *testing.T) {
 		t.Fatalf("a body past the bound was read whole: %v", err)
 	}
 }
+
+// The fetcher registers no plain http, and a redirect must not open the
+// door it keeps shut: an https URL answered with a Location on http is
+// refused before the hop, and the http server never sees the request. A
+// hop to another https URL is still followed.
+func TestHTTPSRefusesARedirectToPlainHTTP(t *testing.T) {
+	plainHits := 0
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plainHits++
+		w.Write([]byte("downgraded bytes"))
+	}))
+	defer plain.Close()
+
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/to-http":
+			http.Redirect(w, r, plain.URL+"/module.wasm", http.StatusFound)
+		case "/to-https":
+			http.Redirect(w, r, srv.URL+"/ok.pb", http.StatusFound)
+		case "/ok.pb":
+			w.Write([]byte("descriptor bytes"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := Fetch(context.Background(), srv.URL+"/to-http", srv.Client())
+	if err == nil || !strings.Contains(err.Error(), "only https is followed") {
+		t.Fatalf("a redirect to plain http was followed: %v", err)
+	}
+	if plainHits != 0 {
+		t.Fatalf("the http server was hit %d times, want none", plainHits)
+	}
+
+	blob, err := Fetch(context.Background(), srv.URL+"/to-https", srv.Client())
+	if err != nil || string(blob) != "descriptor bytes" {
+		t.Fatalf("an https redirect was not followed: %q, %v", blob, err)
+	}
+	// The fetcher's policy rides a copy: the caller's client keeps its own.
+	if srv.Client().CheckRedirect != nil {
+		t.Fatal("the fetch set a redirect policy on the caller's client")
+	}
+}

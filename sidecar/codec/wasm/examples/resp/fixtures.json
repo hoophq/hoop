@@ -573,6 +573,37 @@
     ]
   },
   {
+    "name": "an inline line at max_inline_bytes is a decode error even when complete",
+    "options": {
+      "max_inline_bytes": "16"
+    },
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "50494e470d0a",
+        "expect": {
+          "consumed": 6,
+          "statements": [
+            {
+              "operation": "other",
+              "text": "PING",
+              "metadata": {
+                "x-resp.command": "PING"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "4141414141414141414141414141410d0a50494e470d0a",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
     "name": "a byte outside the RESP type set from the server is a decode error",
     "steps": [
       {

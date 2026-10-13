@@ -370,6 +370,46 @@ func TestRequestIdentityNeedsACodecThatLiftsTheCredential(t *testing.T) {
 	}
 }
 
+// The WASM host answers ("", true) when the guest's credential export
+// failed. An empty credential names nobody, so the gate refuses the
+// request itself, before a resolver that would accept anything sees it.
+func TestEmptyLiftedCredentialIsRefusedBeforeResolution(t *testing.T) {
+	ctx := context.Background()
+	sink := &recordingSink{}
+	resolved := 0
+	anyone := gate.RequestIdentityFunc(func(_ context.Context, cred string) (session.Identity, error) {
+		resolved++
+		return session.Identity{Subject: "resolved:" + cred, PeerAddr: "10.0.0.7:51234"}, nil
+	})
+	sess := session.New(inspect.HTTP, session.Identity{Subject: "alice@example.com", PeerAddr: "10.0.0.7:51234"})
+	g, err := gate.New(sess, gate.Config{
+		Protocol:        inspect.HTTP,
+		Audit:           sink,
+		CodecFactory:    func() inspect.Codec { return &lineCodec{} },
+		RequestIdentity: anyone,
+	})
+	if err != nil {
+		t.Fatalf("gate.New: %v", err)
+	}
+	d := g.Request(ctx, []byte("REQ \n"))
+	if d.Allowed || d.Rule != "identity" || d.Payload != nil {
+		t.Fatalf("decision = %+v, want an identity refusal forwarding nothing", d)
+	}
+	if !strings.Contains(d.Message, "empty credential") {
+		t.Errorf("message %q does not name the empty credential", d.Message)
+	}
+	if resolved != 0 {
+		t.Errorf("the resolver saw %d credentials, want none", resolved)
+	}
+	if p := g.Session().Identity.Principal(); p != "alice@example.com" {
+		t.Errorf("running session is %q, want alice's untouched", p)
+	}
+	v := sink.find(audit.KindViolation)
+	if v == nil || v.Principal == "alice@example.com" {
+		t.Fatalf("violation = %+v, want it filed under an anonymous caller", v)
+	}
+}
+
 // heldResponses allows everything but holds each response's evaluation
 // until released, so a test can put a request on the other pump while a
 // response is mid-judgment. It records the principal each response was

@@ -24,13 +24,14 @@ type fakeCodec struct {
 	protocol inspect.Protocol
 	options  map[string]string
 	closed   *int
+	closeErr error
 }
 
 func (c *fakeCodec) Protocol() inspect.Protocol { return c.protocol }
 func (c *fakeCodec) Decode(inspect.Direction, []byte) ([]inspect.Statement, int, error) {
 	return nil, 0, nil
 }
-func (c *fakeCodec) Close() error { *c.closed++; return nil }
+func (c *fakeCodec) Close() error { *c.closed++; return c.closeErr }
 
 type reframingCodec struct{ *fakeCodec }
 
@@ -55,12 +56,16 @@ type fakeCodecPlugin struct {
 	renders   bool
 	closed    int
 	codecsOut int
+	// closeErr is what Close reports; codecCloseErr what every codec's
+	// Close reports.
+	closeErr      error
+	codecCloseErr error
 }
 
 func (p *fakeCodecPlugin) Protocol() inspect.Protocol { return p.protocol }
 func (p *fakeCodecPlugin) Manifest() []byte           { return []byte(p.manifest) }
 func (p *fakeCodecPlugin) NewCodec(options map[string]string) inspect.Codec {
-	c := &fakeCodec{protocol: p.protocol, options: options, closed: &p.codecsOut}
+	c := &fakeCodec{protocol: p.protocol, options: options, closed: &p.codecsOut, closeErr: p.codecCloseErr}
 	switch {
 	case p.reframes:
 		return reframingCodec{c}
@@ -69,7 +74,7 @@ func (p *fakeCodecPlugin) NewCodec(options map[string]string) inspect.Codec {
 	}
 	return c
 }
-func (p *fakeCodecPlugin) Close() error { p.closed++; return nil }
+func (p *fakeCodecPlugin) Close() error { p.closed++; return p.closeErr }
 
 // useFakeLoader installs a loader that answers with plugin for any module
 // and restores the build's loader after the test.
@@ -196,6 +201,41 @@ func TestAModuleForAnotherProtocolIsRefused(t *testing.T) {
 	_, _, err := Setup(writeConfig(t, pluginLaneConfig(module, sha, "")), nil, nil)
 	if err == nil || !strings.Contains(err.Error(), `declares protocol "x-other"; the entry expects "x-acmewire"`) {
 		t.Fatalf("Setup = %v, want the protocol refusal", err)
+	}
+	if plugin.closed != 1 {
+		t.Errorf("the refused module was closed %d times, want 1", plugin.closed)
+	}
+}
+
+// A refused module that also fails to unload reports both: the operator
+// fixes the entry and then needs to know the host still holds the module.
+func TestARefusedModuleReportsAFailedUnload(t *testing.T) {
+	plugin := &fakeCodecPlugin{protocol: "x-other", manifest: `{"protocol":"x-other"}`,
+		closeErr: errors.New("runtime busy")}
+	useFakeLoader(t, plugin, nil)
+	module, sha := writeModule(t, "wasm")
+	_, _, err := Setup(writeConfig(t, pluginLaneConfig(module, sha, "")), nil, nil)
+	if err == nil {
+		t.Fatal("Setup accepted a module for another protocol")
+	}
+	for _, want := range []string{`declares protocol "x-other"`, "failed to unload: runtime busy"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Setup = %v, does not say %q", err, want)
+		}
+	}
+}
+
+// The loader builds one codec to learn the module's capabilities. A codec
+// that cannot be released at load cannot be released on any connection,
+// so the load refuses the module and unloads it.
+func TestAProbeCodecThatFailsToCloseRefusesTheModule(t *testing.T) {
+	plugin := &fakeCodecPlugin{protocol: "x-acmewire", manifest: acmeManifest,
+		codecCloseErr: errors.New("instance still running")}
+	useFakeLoader(t, plugin, nil)
+	module, sha := writeModule(t, "wasm")
+	_, _, err := Setup(writeConfig(t, pluginLaneConfig(module, sha, "")), nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "codec failed to close: instance still running") {
+		t.Fatalf("Setup = %v, want the codec close refusal", err)
 	}
 	if plugin.closed != 1 {
 		t.Errorf("the refused module was closed %d times, want 1", plugin.closed)

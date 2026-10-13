@@ -72,12 +72,12 @@ Apple's clang has no wasm target, so `CC` must name the Homebrew one. If `wasm-l
 
 `build.sh` includes `hoop_codec.h` from `../../sdk/c` inside the hoop repository and from this directory in the copy under `hoophq/plugins`, where the release workflow places the header beside the source. The flags are `--target=wasm32-unknown-unknown -std=c++17 -nostdlib -fno-builtin -fno-exceptions -fno-rtti -O2 -fuse-ld=lld -Wl,--no-entry -Wl,--strip-all`. `-fno-builtin` keeps the optimizer from turning a copy loop into a `memcpy` call; the source defines `memcpy` and `memset` for the aggregate copies the compiler emits on its own.
 
-`sqlframe.wasm` is checked in beside `fixtures.json`, so the conformance run below needs no clang or lld. The plug-in workflow rebuilds it on every change under this directory or the SDK and fails when the digest differs, so a source change ships with a rebuilt artifact.
+`sqlframe.wasm` is checked in beside `fixtures.json`, so the conformance run below needs no clang or lld. The plug-in workflow rebuilds the module from source on every change under this directory or the SDK and proves it against the fixtures; the checked-in copy is what `make test-sidecar-plugins` proves.
 
 ### How the source is laid out
 
-- `HOOP_CODEC_ARENA` from the header provides `alloc` and `free`. The arena rewinds when nothing is outstanding, so per-connection state (`conn_state`) is static and never lives in the arena.
-- `Writer` builds the output JSON in the arena and grows by doubling. It frees the block it abandons so the arena's live count stays balanced.
+- `HOOP_CODEC_ARENA` from the header provides `alloc` and `free`. The arena lives one export call at a time: `ArenaCall` at the top of every export calls `hoop_arena_reset()` on the way out, and the next call's first allocation rewinds it. A region a host import returned therefore stays readable until the export returns, however much the export allocates after taking it. Per-connection state (`conn_state`) is static and never lives in the arena.
+- `Writer` builds the output JSON in the arena and grows by doubling. The block it abandons dies with the call like every other region; `free` is a no-op on a bump arena.
 - `find_key`, `next_elem` and `unescape` are the whole JSON reader. The analysis the host returns is spliced into the statement as raw spans, so the fields reach the Sidecar byte for byte as the host wrote them.
 - Every ABI export carries `HOOP_EXPORT`, so the link needs no `--export` flags and nothing else leaks into the export list.
 

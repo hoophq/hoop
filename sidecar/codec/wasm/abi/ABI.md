@@ -251,8 +251,9 @@ lane:
   missing `statement`, has no error to return through: the host reduces
   the statement to operation `unknown` carrying only the failure text, so
   nothing the guest put on it reaches policy, audit or the analyzer, and
-  a rule naming `unknown` refuses it. A credential the module still holds
-  dies with the instance.
+  reports an empty credential, which the gate refuses before policy. The
+  instance closes, so the connection drops on its next byte, and a
+  credential the module still holds dies with it.
 - `describe` failing, a capability without its export, an export without
   its capability, an undeclared import, a `protocol` without the `x-`
   prefix, or a sha256 mismatch refuses the module at load, so the lane

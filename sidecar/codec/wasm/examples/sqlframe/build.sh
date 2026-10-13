@@ -3,8 +3,8 @@
 # directories up (../../sdk/c) and copies it to sqlframe.wasm beside
 # fixtures.json. The repository carries that copy: `make
 # test-sidecar-plugins` proves it against the fixtures without clang or
-# lld, and the plug-in workflow rebuilds it and fails on a digest that
-# differs.
+# lld, and the plug-in workflow rebuilds the module from source and proves
+# that build against the same fixtures.
 #
 # Needs clang with the wasm32 target and wasm-ld (LLVM's lld). On macOS:
 # `brew install llvm lld`, then CC=/opt/homebrew/opt/llvm/bin/clang++,

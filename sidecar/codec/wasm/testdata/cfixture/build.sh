@@ -27,6 +27,8 @@ build cfixture_lane.wasm -DEXTRA='",\"instances\":\"per_lane\""'
 build cfixture_sql.wasm -DSQL -DEXTRA='",\"sql_dialect\":\"postgres\""'
 build cfixture_wasi.wasm -DWASI -DEXTRA='",\"wasi\":true"'
 build cfixture_maskabuse.wasm -DMASKABUSE
+build cfixture_flushmask.wasm -DFLUSHMASK
+build cfixture_credential.wasm -DCREDENTIAL
 
 # Each of these breaks one load-time rule.
 build cfixture_badabi.wasm -DABI_VERSION='"2"'

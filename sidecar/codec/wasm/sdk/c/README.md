@@ -37,3 +37,17 @@ Prove the module against the ABI, then against your fixtures:
 ```sh
 hoop-inspect -codec-test plugin.wasm plugin.fixtures.json
 ```
+
+## The arena
+
+`HOOP_CODEC_ARENA` gives a bump allocator that lives one export call at
+a time. Every region allocated during a call, the host's input, what an
+import returns, your scratch and the output, stays put until the export
+returns; `free` is a no-op. Each export calls `hoop_arena_reset()` as its
+last act, and the first `alloc` of the next call rewinds the arena. So
+`hoop_take` hands back bytes that survive whatever the export allocates
+after it. The skeleton in the header shows the pattern.
+
+`test.sh` compiles `arena_test.c` with the native C compiler (`CC`,
+default `cc`) and runs it: the lifetime rule above, proven without a wasm
+target. `make test-sidecar-plugins` runs it.

@@ -646,7 +646,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	}
 	defer func() {
 		if err := g.Close(ctx); err != nil {
-			log.Warn("session end not recorded", "error", err)
+			log.Warn("session close reported an error", "error", err)
 		}
 		stmts, denied := g.Stats()
 		log.Info("session closed",
@@ -960,8 +960,15 @@ func (s *Server) pump(
 					}
 				}
 				if len(frame) > 0 {
-					_ = target.SetWriteDeadline(time.Now().Add(5 * time.Second))
-					_, _ = target.Write(frame)
+					// The connection closes either way; the log is the
+					// only place a client left without its reason shows.
+					err := target.SetWriteDeadline(time.Now().Add(5 * time.Second))
+					if err == nil {
+						_, err = target.Write(frame)
+					}
+					if err != nil {
+						log.Warn("deny frame not delivered", "direction", string(dir), "error", err)
+					}
 				}
 				return
 			}

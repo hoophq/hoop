@@ -80,6 +80,17 @@ func TestUnknownFixtureKeyIsRefused(t *testing.T) {
 	}
 }
 
+// A second value after the fixture array is cases that would never run.
+func TestTrailingFixtureDataIsRefused(t *testing.T) {
+	valid := testdata(t, "acmewire.fixtures.json")
+	for _, tail := range []string{`[{"name": "late", "steps": [{"dir": "client", "hex": "00"}]}]`, `]`, `junk`} {
+		_, err := run(t, "acmewire.wasm", append(bytes.Clone(valid), tail...))
+		if err == nil || !strings.HasSuffix(err.Error(), ": 6") {
+			t.Fatalf("tail %q: %v", tail, err)
+		}
+	}
+}
+
 func TestGenericChecksAloneWithoutFixtures(t *testing.T) {
 	out, err := run(t, "cfixture.wasm")
 	if err != nil {

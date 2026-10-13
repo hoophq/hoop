@@ -24,8 +24,10 @@ const CREDENTIAL_KEY: &str = "x-resp.credential";
 const REPLY_KEY: &str = "x-resp.reply";
 const DEFAULT_MAX_TEXT_BYTES: usize = 4096;
 /// Redis refuses an inline line past 64 KiB. The codec gives up waiting
-/// for its newline there instead of buffering to `max_reassembly`.
-const MAX_INLINE_BYTES: usize = 64 * 1024;
+/// for its newline there instead of buffering to `max_reassembly`, and
+/// refuses a line that arrived whole past the same bound. An option,
+/// so a fixture can prove both paths without a 64 KiB script.
+const DEFAULT_MAX_INLINE_BYTES: usize = 64 * 1024;
 /// Redis refuses a multibulk count past 1024*1024.
 const MAX_ARRAY_LEN: i64 = 1024 * 1024;
 /// Redis's default `proto-max-bulk-len`.
@@ -39,14 +41,24 @@ pub fn manifest() -> Manifest {
     m.version = env!("CARGO_PKG_VERSION").into();
     m.capabilities = vec![Capability::Deny, Capability::Rewrite, Capability::Credential];
     m.instances = Some(Instances::PerConnection);
-    m.options = vec![OptionSpec {
-        name: "max_text_bytes".into(),
-        label: Some("Max text bytes".into()),
-        kind: OptionType::Int,
-        values: Vec::new(),
-        default: Some(DEFAULT_MAX_TEXT_BYTES.to_string()),
-        help: Some("Bytes of a command line kept as the statement text; longer lines are cut.".into()),
-    }];
+    m.options = vec![
+        OptionSpec {
+            name: "max_text_bytes".into(),
+            label: Some("Max text bytes".into()),
+            kind: OptionType::Int,
+            values: Vec::new(),
+            default: Some(DEFAULT_MAX_TEXT_BYTES.to_string()),
+            help: Some("Bytes of a command line kept as the statement text; longer lines are cut.".into()),
+        },
+        OptionSpec {
+            name: "max_inline_bytes".into(),
+            label: Some("Max inline bytes".into()),
+            kind: OptionType::Int,
+            values: Vec::new(),
+            default: Some(DEFAULT_MAX_INLINE_BYTES.to_string()),
+            help: Some("Longest inline command line before the LF, CR included; a longer one drops the connection as malformed. Redis's own bound is 65536.".into()),
+        },
+    ];
     m
 }
 
@@ -59,6 +71,7 @@ hoop_codec::export_codec!(Resp, manifest, [deny, rewrite, credential]);
 #[derive(Default)]
 pub struct Resp {
     max_text_bytes: usize,
+    max_inline_bytes: usize,
     rewrite_buf: Vec<u8>,
     next_handle: u64,
     secrets: BTreeMap<u64, String>,
@@ -391,11 +404,16 @@ impl Resp {
             return Err(format!("x-resp: byte 0x{first:02x} does not start a command"));
         }
         let Some(end) = data.iter().position(|b| *b == b'\n') else {
-            if data.len() >= MAX_INLINE_BYTES {
-                return Err(format!("x-resp: inline command exceeds {MAX_INLINE_BYTES} bytes"));
+            if data.len() >= self.max_inline_bytes {
+                return Err(format!("x-resp: inline command exceeds {} bytes", self.max_inline_bytes));
             }
             return Ok(None);
         };
+        // The same bound on a line that arrived whole, so a replay in one
+        // read fails where a byte-at-a-time replay fails.
+        if end >= self.max_inline_bytes {
+            return Err(format!("x-resp: inline command exceeds {} bytes", self.max_inline_bytes));
+        }
         let args: Vec<&[u8]> = data[..end].split(u8::is_ascii_whitespace).filter(|a| !a.is_empty()).collect();
         let stmt = if args.is_empty() { None } else { Some(self.command_statement(&args)) };
         Ok(Some((stmt, end + 1)))
@@ -423,15 +441,21 @@ impl Resp {
     }
 }
 
+/// One integer option, which must be positive when set.
+fn positive_int(options: &BTreeMap<String, String>, name: &str, default: usize) -> Result<usize, String> {
+    match options.get(name) {
+        None => Ok(default),
+        Some(raw) => match raw.trim().parse::<usize>() {
+            Ok(n) if n > 0 => Ok(n),
+            _ => Err(format!("x-resp: {name} {raw:?} is not a positive integer")),
+        },
+    }
+}
+
 impl Codec for Resp {
     fn open(&mut self, options: &BTreeMap<String, String>) -> Result<(), String> {
-        self.max_text_bytes = match options.get("max_text_bytes") {
-            None => DEFAULT_MAX_TEXT_BYTES,
-            Some(raw) => match raw.trim().parse::<usize>() {
-                Ok(n) if n > 0 => n,
-                _ => return Err(format!("x-resp: max_text_bytes {raw:?} is not a positive integer")),
-            },
-        };
+        self.max_text_bytes = positive_int(options, "max_text_bytes", DEFAULT_MAX_TEXT_BYTES)?;
+        self.max_inline_bytes = positive_int(options, "max_inline_bytes", DEFAULT_MAX_INLINE_BYTES)?;
         Ok(())
     }
 
@@ -601,8 +625,22 @@ mod tests {
         assert!(c.decode(Direction::Client, b"*1\r\n$-5\r\n").is_err());
         assert!(c.decode(Direction::Server, b"\xff").is_err());
         assert!(c.decode(Direction::Server, b"+OK\n").is_err(), "a bare LF");
-        let long = vec![b'A'; MAX_INLINE_BYTES];
-        assert!(c.decode(Direction::Client, &long).is_err());
+        let long = vec![b'A'; DEFAULT_MAX_INLINE_BYTES];
+        assert!(c.decode(Direction::Client, &long).is_err(), "no newline at the bound");
+    }
+
+    #[test]
+    fn inline_bound_applies_to_a_complete_line() {
+        let mut c = Resp::default();
+        c.open(&BTreeMap::from([("max_inline_bytes".to_string(), "16".to_string())])).unwrap();
+        assert!(c.decode(Direction::Client, b"AAAAAAAAAAAAAAAA").is_err(), "16 bytes without a newline");
+        assert!(c.decode(Direction::Client, b"AAAAAAAAAAAAAAA\r\n").is_err(), "a complete line of 16 bytes before the LF");
+        assert!(c.decode(Direction::Client, b"AAAAAAAAAAAAAAAAAAAA\r\nPING\r\n").is_err(), "a longer complete line, whatever follows");
+        // The bound counts every byte before the LF, the CR included.
+        let s = decode_one(&mut c, Direction::Client, b"AAAAAAAAAAAAAA\r\n");
+        assert_eq!(s.text, "AAAAAAAAAAAAAA");
+        assert_eq!(c.decode(Direction::Client, b"AAAAAAAAAAAAAAA").unwrap().consumed, 0, "15 bytes still wait for the LF");
+        assert!(Resp::default().open(&BTreeMap::from([("max_inline_bytes".to_string(), "0".to_string())])).is_err());
     }
 
     #[test]

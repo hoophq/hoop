@@ -81,31 +81,25 @@ jobs:
           sidecar/codec/wasm/examples/memcache/build.sh
           sidecar/codec/wasm/examples/sqlframe/build.sh
 
-      # A Rust or TinyGo build is reproducible across the same toolchain
-      # version, so a rebuilt artifact that differs from the committed one
-      # means the source changed without a rebuild, or the author built
-      # with another toolchain. If this compare proves flaky in CI, the
-      # fallback is `hoop-inspect -codec-test` on the rebuilt file instead
-      # of a byte compare: it proves the source still satisfies the ABI
-      # and the fixtures, which is the property the artifact exists for.
-      - name: Compare artifacts with the checked-in ones
+      # The checked-in artifact and the rebuilt one are not compared byte for
+      # byte: the first run of this job showed rustc on Linux emits a module
+      # a few hundred bytes different from the macOS build of the same
+      # source, and Rust promises no cross-OS reproducibility. The property
+      # the artifact exists for is that the SOURCE satisfies the ABI and the
+      # fixtures, so the rebuilt file is proven with the conformance runner
+      # against the same fixtures the checked-in one passed in `make
+      # test-sidecar-plugins` above. A source change that breaks the module
+      # fails here; a stale checked-in artifact fails in the make target.
+      - name: Prove the rebuilt artifacts
         run: |
           set -euo pipefail
-          status=0
-          for f in \
-            sidecar/codec/wasm/testdata/acmewire.wasm \
-            sidecar/codec/wasm/examples/resp/resp.wasm \
-            sidecar/codec/wasm/examples/memcache/memcache.wasm \
-            sidecar/codec/wasm/examples/sqlframe/sqlframe.wasm
-          do
-            want=$(git show "HEAD:$f" | sha256sum | cut -d' ' -f1)
-            got=$(sha256sum "$f" | cut -d' ' -f1)
-            if [ "$want" != "$got" ]; then
-              echo "::error file=$f::$f: checked-in sha256 $want, rebuilt $got. Run its build.sh with the toolchain versions this job installs and commit the artifact."
-              status=1
-            fi
+          w=sidecar/codec/wasm
+          bin=$w/.build/hoop-inspect
+          test -x "$bin" || (cd sidecar/cmd && env CGO_ENABLED=0 go build -o "../../$bin" .)
+          "$bin" -codec-test $w/testdata/acmewire.wasm $w/testdata/acmewire.fixtures.json
+          for e in resp memcache sqlframe; do
+            "$bin" -codec-test $w/examples/$e/$e.wasm $w/examples/$e/fixtures.json
           done
-          exit $status
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV

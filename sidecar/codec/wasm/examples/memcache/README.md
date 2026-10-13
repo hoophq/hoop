@@ -51,7 +51,7 @@ Key names are lowercased in `tables` and `relations`; the policy compares them a
 | `x-memcache.noreply` | `"true"` when the line ends in `noreply` on a command that accepts it |
 | `x-memcache.reply` | on a server statement, the first word of the reply line (`STORED`, `VALUE`, `END`, `SERVER_ERROR`, the number an `incr` returns, ...) |
 
-A line memcached answers with `ERROR` is not a decode error: an unknown word (`GET`, the meta commands `mg`/`ms`/`md`, `gat`, `slabs`, ...), a known word short of its arguments, or a storage line with tokens past `noreply` is one statement of operation `other` with the line as text and the word in `x-memcache.command`. memcached executes nothing for such a line and reads no data block, so the decoder reads none either.
+A line memcached answers with `ERROR` is not a decode error: an unknown word (`GET`, the meta commands `mg`/`ms`/`md`, `gat`, `slabs`, ...), a known word short of its arguments, or a storage line with a token past `<bytes>` (or `<cas unique>`) that is not `noreply` is one statement of operation `other` with the line as text and the word in `x-memcache.command`. memcached executes nothing for such a line and reads no data block, so the decoder reads none either: the bytes behind `set k 0 0 3 bogus` are the next command line.
 
 Two inputs are malformed and drop the connection: a line longer than `max_line_bytes` without `\r\n`, and a storage command (or a `VALUE` reply) whose `<bytes>` is not a number. A `VALUE` block is one server statement with `result.row_count` 1; `END` is its own statement.
 
@@ -77,7 +77,7 @@ The `-tags` list and the `Capabilities` in `main.go` must name the same set: the
 
 `build.sh` refuses to run without `tinygo` in `PATH` and names the install command. A TinyGo release tarball works too; it needs `wasm-opt` in `PATH` or named by `WASMOPT`.
 
-`memcache.wasm` is checked in beside `fixtures.json`, so the conformance run below needs no TinyGo. The plug-in workflow rebuilds it on every change under this directory or the SDK and fails when the digest differs, so a source change ships with a rebuilt artifact.
+`memcache.wasm` is checked in beside `fixtures.json`, so the conformance run below needs no TinyGo. The plug-in workflow rebuilds the module from source on every change under this directory or the SDK and proves it against the fixtures; the checked-in copy is what `make test-sidecar-plugins` proves.
 
 ### Go commands
 
@@ -106,13 +106,13 @@ check result detail
 2     ok     decode of zero bytes: nothing consumed, nothing returned, both directions
 3     ok     deny: client 32 bytes, server 32 bytes
 5     ok     garbage input returned without a hang or a panic; client: error "x-memcache: line longer than 2048 bytes without CRLF"; server: error "x-memcache: line longer than 2048 bytes without CRLF"
-4     ok     operations: 41 statement(s), every operation listed by inspect.Operations
-6     ok     10 script(s) replayed whole
-7     ok     10 script(s) replayed one byte at a time match the whole replay
-8     ok     10 script pair(s) interleaved on two connections match their solo replays
+4     ok     operations: 47 statement(s), every operation listed by inspect.Operations
+6     ok     11 script(s) replayed whole
+7     ok     11 script(s) replayed one byte at a time match the whole replay
+8     ok     11 script pair(s) interleaved on two connections match their solo replays
 ```
 
-`fixtures.json` covers each operation class, a data block split across chunks (a partial frame consumes nothing), a `VALUE` block split across chunks, unknown and incomplete commands, the `max_line_bytes` option, and the two malformed inputs.
+`fixtures.json` covers each operation class, a data block split across chunks (a partial frame consumes nothing), a `VALUE` block split across chunks, unknown and incomplete commands, a storage line with a token that is not `noreply` followed by what would have been its data block, the `max_line_bytes` option, and the two malformed inputs.
 
 ## Run
 

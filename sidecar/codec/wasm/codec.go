@@ -158,22 +158,24 @@ func (c *codec) DenyFrame(dir inspect.Direction, message string) []byte {
 // A guest failure here has no error to return through. TakeCredential
 // then reduces the statement to an unknown operation carrying only the
 // failure, so no trace of a credential the guest did not remove reaches
-// policy, audit or the analyzer, and a rule naming `unknown` refuses it.
-// The instance is dead at that point, so the connection drops on its
-// next byte.
+// policy, audit or the analyzer, and answers ok with an empty
+// credential: the gate refuses a lifted empty credential before policy,
+// so the frame never reaches the upstream under a permissive lane. The
+// instance dies too, so the connection drops on its next byte.
 func (c *codec) TakeCredential(stmt *inspect.Statement) (string, bool) {
 	if !c.p.manifest.hasCapability(CapCredential) || c.err != nil {
 		return "", false
 	}
 	fail := func(err error) (string, bool) {
 		c.p.logger().Error("codec plug-in: take_credential failed", "protocol", c.p.name(), "conn", c.conn, "error", err)
+		c.in.kill(err)
 		*stmt = inspect.Statement{
 			Protocol:  stmt.Protocol,
 			Direction: stmt.Direction,
 			Operation: inspect.OpUnknown,
 			Text:      "take_credential failed: " + err.Error(),
 		}
-		return "", false
+		return "", true
 	}
 	payload, err := encodeStatement(*stmt)
 	if err != nil {
@@ -188,17 +190,17 @@ func (c *codec) TakeCredential(stmt *inspect.Statement) (string, bool) {
 	}
 	var res credentialResult
 	if err := decodeStrict(out, &res); err != nil {
-		return fail(fmt.Errorf("credential result: %w", err))
+		return fail(fmt.Errorf("%s: credential result: %w", c.p.name(), err))
 	}
 	if !res.OK {
 		return "", false
 	}
 	if res.Statement == nil {
-		return fail(fmt.Errorf("credential result says ok but carries no statement"))
+		return fail(fmt.Errorf("%s: credential result says ok but carries no statement", c.p.name()))
 	}
 	replaced, err := adoptStatement(res.Statement, stmt.Protocol, stmt.Direction)
 	if err != nil {
-		return fail(fmt.Errorf("credential result: %w", err))
+		return fail(fmt.Errorf("%s: credential result: %w", c.p.name(), err))
 	}
 	*stmt = replaced
 	return res.Credential, true
@@ -236,6 +238,11 @@ func (c *codec) content(stmt inspect.Statement, maxBytes int) (text, cacheKey st
 // Close ends the connection on the guest side and, under per_connection,
 // releases the instance. Idempotent: the gate closes a Duplex codec once,
 // but MaskSupportedBy and tests close what they build.
+//
+// A codec whose attach failed still owns an instance when `open` refused
+// the connection, and this is where it goes: without it every refused
+// connection would hold a module until the plug-in closes. The guest's
+// `close` is not called for a connection it never opened.
 func (c *codec) Close() error {
 	c.mu.Lock()
 	if c.closed {
@@ -244,11 +251,11 @@ func (c *codec) Close() error {
 	}
 	c.closed = true
 	c.mu.Unlock()
-	if c.err != nil || c.in == nil {
+	if c.in == nil {
 		return nil
 	}
 	var err error
-	if c.p.shape.exports[expClose] {
+	if c.err == nil && c.p.shape.exports[expClose] {
 		_, err = c.in.call(c.conn, expClose, uint64(c.conn))
 	}
 	if c.owned {
@@ -296,9 +303,18 @@ func (c *rewriteCodec) Rewrite(data []byte, mask func(column string, value []byt
 // Flush implements gate.Reframer. It has no error to return: it logs a
 // failure and releases nothing, which is the fail-closed direction for
 // bytes the guest held because it could not mask them yet.
+//
+// A nil mask means the gate discards the output, or has no masker. The
+// guest cannot know that, and ABI.md promises it `mask` inside flush, so
+// the identity stands in: without it a guest masking its held rows on
+// the way out would trap, and under per_lane take every connection of
+// the lane with it.
 func (c *rewriteCodec) Flush(mask func(column string, value []byte) []byte) []byte {
 	if c.err != nil {
 		return nil
+	}
+	if mask == nil {
+		mask = func(_ string, value []byte) []byte { return value }
 	}
 	out, err := c.withMask(mask, func() ([]byte, error) {
 		_, out, err := c.in.runLocked(c.conn, expFlush, nil, false, true, uint64(c.conn))

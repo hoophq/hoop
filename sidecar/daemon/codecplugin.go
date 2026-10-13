@@ -250,21 +250,28 @@ func loadCodecPlugin(ctx context.Context, entry CodecPluginConfig, client *http.
 		return nil, CodecPluginInfo{}, err
 	}
 	if got := string(plugin.Protocol()); got != entry.Protocol {
-		_ = plugin.Close()
-		return nil, CodecPluginInfo{}, fmt.Errorf(
+		return nil, CodecPluginInfo{}, errors.Join(fmt.Errorf(
 			"the module declares protocol %q; the entry expects %q and names the protocol its lanes run, "+
-				"so the loader refuses a module for another one", got, entry.Protocol)
+				"so the loader refuses a module for another one", got, entry.Protocol), closeRefused(plugin))
 	}
 	info, err := describeCodecPlugin(plugin, digest)
 	if err != nil {
-		_ = plugin.Close()
-		return nil, CodecPluginInfo{}, err
+		return nil, CodecPluginInfo{}, errors.Join(err, closeRefused(plugin))
 	}
 	if err := installCodecPluginBuilder(plugin); err != nil {
-		_ = plugin.Close()
-		return nil, CodecPluginInfo{}, err
+		return nil, CodecPluginInfo{}, errors.Join(err, closeRefused(plugin))
 	}
 	return plugin, info, nil
+}
+
+// closeRefused releases a module the loader is refusing. The caller joins
+// the result into its own error: a module that also failed to unload is a
+// second fact the operator needs, and nothing else reports it.
+func closeRefused(plugin CodecPlugin) error {
+	if err := plugin.Close(); err != nil {
+		return fmt.Errorf("the refused module failed to unload: %w", err)
+	}
+	return nil
 }
 
 // readCodecModule reads the module bytes from a path or a URL the
@@ -317,7 +324,11 @@ func installCodecPluginBuilder(plugin CodecPlugin) error {
 	if r, ok := codec.(analyzer.ContentRenderer); ok {
 		b = analyzer.PluginBuilder{Protocol_: p, Renderer: r}
 	} else if closer, ok := codec.(io.Closer); ok {
-		_ = closer.Close()
+		// The probe never saw a byte. A close that fails here fails on
+		// every connection too, so the load is the place to report it.
+		if err := closer.Close(); err != nil {
+			return fmt.Errorf("the module's codec failed to close: %w", err)
+		}
 	}
 	return analyzer.SetPluginBuilder(p, b)
 }

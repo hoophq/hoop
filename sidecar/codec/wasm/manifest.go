@@ -119,8 +119,8 @@ func parseManifest(raw []byte) (Manifest, error) {
 	if err := dec.Decode(&m); err != nil {
 		return m, fmt.Errorf("manifest: %w", err)
 	}
-	if dec.More() {
-		return m, fmt.Errorf("manifest: trailing data after the JSON object")
+	if err := requireEOF(dec, "trailing data after the JSON object"); err != nil {
+		return m, fmt.Errorf("manifest: %w", err)
 	}
 	if m.ABI != ABIVersion {
 		return m, fmt.Errorf("manifest: this host speaks abi %d, the module declares abi %d", ABIVersion, m.ABI)

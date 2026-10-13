@@ -153,10 +153,15 @@ func request(line, data []byte) (stmt codec.Statement, size int, ok bool, err er
 	stmt = stmt.WithMetadata(commandKey, word)
 	spec, known := commands[word]
 	// memcached answers ERROR to an unknown word, a known word short of
-	// its arguments, and a storage line with tokens past noreply. It
-	// executes nothing and reads no data block for any of them, so each
-	// is one statement of operation other.
-	if !known || len(args) < spec.fixed || (spec.data && len(args) > spec.fixed+1) {
+	// its arguments, and a storage line with a token past <bytes> (or
+	// <cas unique>) that is not noreply. It executes nothing and reads
+	// no data block for any of them, so each is one statement of
+	// operation other; reading a block here would feed its bytes to the
+	// parser as the next command line.
+	if !known || len(args) < spec.fixed {
+		return stmt, size, true, nil
+	}
+	if spec.data && len(args) > spec.fixed && (len(args) > spec.fixed+1 || args[spec.fixed] != "noreply") {
 		return stmt, size, true, nil
 	}
 	if spec.data {

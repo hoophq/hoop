@@ -2,8 +2,9 @@
 # Builds dist/memcache.wasm with TinyGo and copies it to memcache.wasm
 # beside fixtures.json. The repository carries that copy: `make
 # test-sidecar-plugins` proves it against the fixtures without TinyGo, and
-# the plug-in workflow rebuilds it and fails on a digest that differs. The
-# SDK is the module two directories up, through the replace in go.mod.
+# the plug-in workflow rebuilds the module from source and proves that
+# build against the same fixtures. The SDK is the module two directories
+# up, through the replace in go.mod.
 #
 # Needs TinyGo 0.33 or later:
 #   brew tap tinygo-org/tools && brew install tinygo

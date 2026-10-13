@@ -2,8 +2,8 @@
 # Builds the x-resp plug-in for wasm32-unknown-unknown into dist/resp.wasm
 # and copies it to resp.wasm beside fixtures.json. The repository carries
 # that copy: `make test-sidecar-plugins` proves it against the fixtures
-# without a Rust wasm target, and the plug-in workflow rebuilds it and
-# fails on a digest that differs.
+# without a Rust wasm target, and the plug-in workflow rebuilds the module
+# from source and proves that build against the same fixtures.
 #
 # Needs: rustup target add wasm32-unknown-unknown
 set -euo pipefail

@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/session"
+	"github.com/tetratelabs/wazero/api"
 )
 
 func fixture(t *testing.T, name string) []byte {
@@ -220,6 +221,177 @@ func TestMaskOutsideRewriteTraps(t *testing.T) {
 	}
 	if _, _, err := c.Decode(inspect.FromClient, frame("x")); !errors.Is(err, errDead) {
 		t.Fatalf("after abuse: %v", err)
+	}
+}
+
+// closeFailingModule closes the real module and then reports a failure,
+// the way wazero does when releasing the module's resources fails.
+type closeFailingModule struct{ api.Module }
+
+func (m closeFailingModule) Close(ctx context.Context) error {
+	_ = m.Module.Close(ctx)
+	return errors.New("boom")
+}
+
+func TestModuleCloseFailureIsPartOfTheDeathCause(t *testing.T) {
+	p := load(t, "cfixture_trap.wasm")
+	c := p.NewCodec(nil).(*codec)
+	c.in.mod = closeFailingModule{c.in.mod}
+	_, _, err := c.Decode(inspect.FromClient, frame("x"))
+	if err == nil || !strings.Contains(err.Error(), "unreachable; module close: boom") {
+		t.Fatalf("trap with a failing close: %v", err)
+	}
+	if _, _, again := c.Decode(inspect.FromClient, frame("x")); !errors.Is(again, errDead) || !strings.Contains(again.Error(), "module close: boom") {
+		t.Fatalf("second call: %v", again)
+	}
+	// The same for a release that is not a death.
+	c = p.NewCodec(nil).(*codec)
+	c.in.mod = closeFailingModule{c.in.mod}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Decode(inspect.FromClient, frame("x")); !errors.Is(err, errDead) || !strings.Contains(err.Error(), "module close: boom") {
+		t.Fatalf("after a failing close: %v", err)
+	}
+}
+
+func TestCredentialFailureRefusesTheFrame(t *testing.T) {
+	p := load(t, "cfixture_credential.wasm")
+	for _, text := range []string{"trap", "junk"} {
+		c := p.NewCodec(nil)
+		stmts, _, err := c.Decode(inspect.FromClient, frame(text))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := stmts[0]
+		// ok with an empty credential is what the gate refuses before
+		// policy; ok=false would let the frame through on a permissive lane.
+		if cred, ok := c.(gate.CredentialSource).TakeCredential(&s); cred != "" || !ok {
+			t.Fatalf("%s: TakeCredential returned %q %v", text, cred, ok)
+		}
+		if s.Operation != inspect.OpUnknown || !strings.HasPrefix(s.Text, "take_credential failed: x-cfix: ") || s.Metadata != nil {
+			t.Fatalf("%s: statement after the failure %+v", text, s)
+		}
+		if !c.(*codec).in.isDead() {
+			t.Fatalf("%s: instance survived the failure", text)
+		}
+		if _, _, err := c.Decode(inspect.FromClient, frame("x")); !errors.Is(err, errDead) {
+			t.Fatalf("%s: decode after the failure: %v", text, err)
+		}
+	}
+	// The well-formed answer still lifts.
+	c := p.NewCodec(nil)
+	stmts, _, _ := c.Decode(inspect.FromClient, frame("hello"))
+	s := stmts[0]
+	if cred, ok := c.(gate.CredentialSource).TakeCredential(&s); cred != "tok" || !ok || s.Text != "lifted" {
+		t.Fatalf("lift: %q %v %+v", cred, ok, s)
+	}
+}
+
+func TestRefusedOpenReleasesTheInstance(t *testing.T) {
+	p := load(t, "cfixture.wasm")
+	for i := range 3 {
+		c := p.NewCodec(map[string]string{"refuse": "true"}).(*codec)
+		if c.in == nil || !c.owned || c.in.mod.IsClosed() {
+			t.Fatalf("refused codec %d: in=%v owned=%v", i, c.in, c.owned)
+		}
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if !c.in.isDead() || !c.in.mod.IsClosed() {
+			t.Fatalf("refused codec %d kept its instance after Close", i)
+		}
+	}
+	// Under per_lane the refused connection shares the instance: Close
+	// leaves it alive and skips the guest's close for a connection that
+	// never opened, which the next connection's counters show.
+	lane := load(t, "cfixture_lane.wasm")
+	refused := lane.NewCodec(map[string]string{"refuse": "true"}).(*codec)
+	if err := refused.Close(); err != nil {
+		t.Fatal(err)
+	}
+	stmts, _, err := lane.NewCodec(nil).Decode(inspect.FromClient, frame("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := stmts[0].Metadata; m["x-cfix.opens"] != "2" || m["x-cfix.closes"] != "0" {
+		t.Fatalf("lane counters after a refused close: %v", m)
+	}
+}
+
+func TestTrailingPayloadBytesAreRefused(t *testing.T) {
+	const manifest = `{"abi":1,"protocol":"x-t","label":"T"}`
+	for _, tail := range []string{`{}`, `}`, `]`, `junk`, `[1]`} {
+		var res decodeResult
+		if err := decodeStrict([]byte(`{"consumed":1}`+tail), &res); err == nil || !strings.Contains(err.Error(), "trailing data") {
+			t.Fatalf("decodeStrict with tail %q: %v", tail, err)
+		}
+		if _, err := parseManifest([]byte(manifest + tail)); err == nil || !strings.Contains(err.Error(), "trailing data") {
+			t.Fatalf("parseManifest with tail %q: %v", tail, err)
+		}
+	}
+	var res decodeResult
+	if err := decodeStrict([]byte("{\"consumed\":1} \n"), &res); err != nil || res.Consumed != 1 {
+		t.Fatalf("whitespace after the value: %v", err)
+	}
+	if _, err := parseManifest([]byte(manifest + "\n")); err != nil {
+		t.Fatalf("whitespace after the manifest: %v", err)
+	}
+}
+
+// textMasker masks every cell of the "text" column.
+type textMasker struct{}
+
+func (textMasker) Mask(data []byte) ([]byte, []string, int) { return data, nil, 0 }
+func (textMasker) MaskCell(column string, value []byte) ([]byte, []string, int) {
+	if column != "text" || len(value) == 0 {
+		return value, nil, 0
+	}
+	return []byte("***"), []string{"TEXT"}, 1
+}
+
+func TestFlushWithoutMaskServesTheMaskImport(t *testing.T) {
+	p := load(t, "cfixture_flushmask.wasm")
+	ctx := context.Background()
+	newGate := func(masker gate.Masker) *gate.Gate {
+		t.Helper()
+		g, err := gate.New(session.New("x-cfix", session.Identity{Subject: "t"}), gate.Config{
+			Protocol:     "x-cfix",
+			CodecFactory: func() inspect.Codec { return p.NewCodec(nil) },
+			Masker:       masker,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { g.Close(ctx) })
+		return g
+	}
+
+	// A denied response: the gate discards what the guest holds with no
+	// mask, and the guest masks on the way out anyway.
+	g := newGate(textMasker{})
+	if d := g.Response(ctx, frame("secret")); !d.Allowed || d.Err != nil || len(d.Payload) != 0 {
+		t.Fatalf("held response %+v", d)
+	}
+	g.DiscardResponse()
+	d := g.Response(ctx, frame("after"))
+	if !d.Allowed || d.Err != nil || len(d.Statements) != 1 || d.Statements[0].Text != "after" {
+		t.Fatalf("instance after discard: %+v err %v", d, d.Err)
+	}
+	// The same release through the masker hands the held chunk to the
+	// masker, which replaces it.
+	if out := g.FlushResponse(); string(out) != "***" {
+		t.Fatalf("flushed %q", out)
+	}
+
+	// A lane with no masker flushes with no mask too.
+	g = newGate(nil)
+	if d := g.Response(ctx, frame("plain")); !d.Allowed || d.Err != nil {
+		t.Fatalf("response without masker %+v", d)
+	}
+	g.DiscardResponse()
+	if d := g.Response(ctx, frame("still")); !d.Allowed || d.Err != nil {
+		t.Fatalf("instance after discard without masker: %+v err %v", d, d.Err)
 	}
 }
 

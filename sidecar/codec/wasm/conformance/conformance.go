@@ -567,7 +567,8 @@ func mustJSON(s inspect.Statement) string {
 }
 
 // parseFixtures reads every fixture file strictly: an unknown key is a
-// typo that would otherwise check nothing.
+// typo that would otherwise check nothing, and so is a second value
+// after the array, which would be cases that never run.
 func parseFixtures(fixtures [][]byte) ([]Script, error) {
 	var scripts []Script
 	for i, raw := range fixtures {
@@ -576,6 +577,9 @@ func parseFixtures(fixtures [][]byte) ([]Script, error) {
 		var batch []Script
 		if err := dec.Decode(&batch); err != nil {
 			return nil, fmt.Errorf("fixture file %d: %w", i+1, err)
+		}
+		if err := dec.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("fixture file %d: trailing data after the fixture array", i+1)
 		}
 		for _, s := range batch {
 			if s.Name == "" {

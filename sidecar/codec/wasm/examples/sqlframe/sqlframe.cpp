@@ -6,11 +6,12 @@
 // analysis the host returns into the statement it emits. README.md
 // describes the frame layout and the build.
 //
-// Memory: the arena from hoop_codec.h serves every ABI buffer. The arena
-// rewinds when the live count reaches zero, which happens only between
-// export calls, so a region a host import returned stays readable until
-// the export returns. Per-connection state lives in `conn_state`, static,
-// because the arena keeps nothing across calls.
+// Memory: the arena from hoop_codec.h serves every ABI buffer and lives
+// one export call at a time: a region a host import returned stays
+// readable until the export returns, and ArenaCall below resets the arena
+// on the way out of every export, so the next call's first allocation
+// rewinds it. Per-connection state lives in `conn_state`, static, because
+// the arena keeps nothing across calls.
 #define HOOP_CODEC_ARENA
 #define HOOP_CODEC_ARENA_BYTES (8u * 1024u * 1024u)
 #include "hoop_codec.h"
@@ -91,9 +92,8 @@ struct Span {
     uint32_t n;
 };
 
-// Writer builds one output buffer in the arena. It grows by doubling and
-// frees the block it leaves behind, so the arena's live count stays
-// balanced: the dead block is reclaimed when the arena rewinds.
+// Writer builds one output buffer in the arena. It grows by doubling; the
+// block it leaves behind dies with the call, like every other region.
 struct Writer {
     uint8_t *buf = nullptr;
     uint32_t len = 0;
@@ -106,7 +106,6 @@ struct Writer {
         while (ncap < want) ncap *= 2;
         uint8_t *nb = reinterpret_cast<uint8_t *>(hoop_alloc(ncap));
         for (uint32_t i = 0; i < len; i++) nb[i] = buf[i];
-        if (buf) hoop_free(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(buf)), cap);
         buf = nb;
         cap = ncap;
     }
@@ -473,7 +472,6 @@ struct Emitter {
             uint8_t *text = reinterpret_cast<uint8_t *>(hoop_alloc(el.n));
             uint32_t text_len = unescape(el.p + 1, el.n - 2, text);
             sql(text, text_len, command, seq);
-            hoop_free(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(text)), el.n);
             any = true;
         }
         if (!any) sql(f.payload, f.len, command, seq);
@@ -521,24 +519,34 @@ const char *server_frame(Emitter &e, const Frame &f, uint32_t seq) {
         memcpy(text, "ERROR: ", 7);
         memcpy(text + 7, f.payload, f.len);
         e.other(text, tl, "ERROR", seq, nullptr);
-        hoop_free(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(text)), tl);
         return nullptr;
     }
     default: return "x-sqlframe: unknown server frame type";
     }
 }
 
+// ArenaCall sits at the top of every export: its destructor runs after
+// the return value is built, so the reset is the export's last act and
+// no early return can skip it.
+struct ArenaCall {
+    ~ArenaCall() { hoop_arena_reset(); }
+};
+
 }  // namespace
 
 extern "C" {
 
-HOOP_EXPORT("describe") uint64_t sqlframe_describe(void) { return hoop_pack(MANIFEST, sizeof MANIFEST - 1); }
+HOOP_EXPORT("describe") uint64_t sqlframe_describe(void) {
+    ArenaCall call;
+    return hoop_pack(MANIFEST, sizeof MANIFEST - 1);
+}
 
 // Reads dialect_label out of the Options JSON. The host merges the
 // manifest default under the listener's value, so the key is always there
 // and the module keeps no default of its own. A label the static buffer
 // cannot hold refuses the connection.
 HOOP_EXPORT("open") uint32_t sqlframe_open(uint32_t conn, const uint8_t *options, uint32_t len) {
+    ArenaCall call;
     (void)conn;
     conn_state = ConnState{};
     Span v;
@@ -554,9 +562,13 @@ HOOP_EXPORT("open") uint32_t sqlframe_open(uint32_t conn, const uint8_t *options
     return 0;
 }
 
-HOOP_EXPORT("close") void sqlframe_close(uint32_t conn) { (void)conn; }
+HOOP_EXPORT("close") void sqlframe_close(uint32_t conn) {
+    ArenaCall call;
+    (void)conn;
+}
 
 HOOP_EXPORT("decode") uint64_t sqlframe_decode(uint32_t conn, uint32_t dir, const uint8_t *data, uint32_t len) {
+    ArenaCall call;
     (void)conn;
     if (len == 0) return hoop_pack(EMPTY_RESULT, sizeof EMPTY_RESULT - 1);
     Writer w;
@@ -582,6 +594,7 @@ HOOP_EXPORT("decode") uint64_t sqlframe_decode(uint32_t conn, uint32_t dir, cons
 
 // The native error frame: 0x5A 0x8E length message.
 HOOP_EXPORT("deny") uint64_t sqlframe_deny(uint32_t conn, uint32_t dir, const uint8_t *message, uint32_t len) {
+    ArenaCall call;
     (void)conn;
     (void)dir;
     uint8_t *out = reinterpret_cast<uint8_t *>(hoop_alloc(HEADER_LEN + len));
@@ -600,6 +613,7 @@ HOOP_EXPORT("deny") uint64_t sqlframe_deny(uint32_t conn, uint32_t dir, const ui
 // that many bytes through untouched, so a zero inside a payload survives
 // whether the frame arrives whole or one byte at a time.
 HOOP_EXPORT("filter") uint64_t sqlframe_filter(uint32_t conn, uint32_t dir, const uint8_t *data, uint32_t len) {
+    ArenaCall call;
     (void)conn;
     if (len == 0) return HOOP_NONE;
     FilterCursor &c = conn_state.filter[dir & 1];
@@ -626,10 +640,7 @@ HOOP_EXPORT("filter") uint64_t sqlframe_filter(uint32_t conn, uint32_t dir, cons
             c.header_len = 0;
         }
     }
-    if (w.len == 0) {
-        hoop_free(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(w.buf)), w.cap);
-        return HOOP_NONE;
-    }
+    if (w.len == 0) return HOOP_NONE;
     return w.pack();
 }
 

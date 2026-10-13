@@ -204,27 +204,43 @@ func (in *instance) callError(name string, err error) error {
 
 // die records the first fatal error and closes the module. The call that
 // died gets the cause; every later call gets the cause behind errDead,
-// so a log line reads "closed: <why>".
+// so a log line reads "closed: <why>". A module that fails to close is
+// part of the cause: the memory it holds is the reason a caller cares.
 func (in *instance) die(err error) error {
 	if in.dead != nil {
 		return in.dead
 	}
+	if cerr := in.mod.Close(context.WithoutCancel(in.p.ctx)); cerr != nil {
+		err = fmt.Errorf("%w; module close: %w", err, cerr)
+	}
 	in.dead = fmt.Errorf("%w: %w", errDead, err)
 	in.p.logger().Error("codec plug-in instance closed", "protocol", in.p.name(), "conn", in.conn, "error", err)
-	_ = in.mod.Close(context.WithoutCancel(in.p.ctx))
 	return err
 }
 
 // close releases the instance. Closing the module terminates a call in
 // flight on another goroutine (WithCloseOnContextDone), and every later
-// call reports the instance closed.
+// call reports the instance closed, with the close failure when there
+// was one.
 func (in *instance) close() {
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	if in.dead == nil {
-		in.dead = errDead
-		_ = in.mod.Close(context.WithoutCancel(in.p.ctx))
+	if in.dead != nil {
+		return
 	}
+	in.dead = errDead
+	if cerr := in.mod.Close(context.WithoutCancel(in.p.ctx)); cerr != nil {
+		in.dead = fmt.Errorf("%w: module close: %w", errDead, cerr)
+		in.p.logger().Error("codec plug-in instance close failed", "protocol", in.p.name(), "error", cerr)
+	}
+}
+
+// kill is die for a failure the host finds after the call returned: a
+// payload the guest produced that the codec cannot act on.
+func (in *instance) kill(err error) error {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.die(err)
 }
 
 // isDead reports whether a call would fail. per_lane codecs use it to

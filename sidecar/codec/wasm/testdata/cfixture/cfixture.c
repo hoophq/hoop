@@ -19,7 +19,7 @@ IMPORT("hoop", "log") void hoop_log(u32 level, const char *p, u32 n);
 #ifdef SQL
 IMPORT("hoop", "analyze_sql") u64 hoop_analyze_sql(const char *p, u32 n);
 #endif
-#ifdef MASKABUSE
+#if defined(MASKABUSE) || defined(FLUSHMASK)
 IMPORT("hoop", "mask") u64 hoop_mask(const char *c, u32 cn, const char *v, u32 vn);
 #endif
 #ifdef UNDECLARED
@@ -38,7 +38,13 @@ IMPORT("wasi_snapshot_preview1", "fd_write") u32 fd_write(u32 fd, const ciovec *
 #define PROTOCOL "x-cfix"
 #endif
 #ifndef CAPS
+#ifdef FLUSHMASK
+#define CAPS "[\"deny\",\"rewrite\"]"
+#elif defined(CREDENTIAL)
+#define CAPS "[\"deny\",\"credential\"]"
+#else
 #define CAPS "[\"deny\"]"
+#endif
 #endif
 #ifndef EXTRA
 #define EXTRA ""
@@ -122,6 +128,17 @@ static void put_json_str(const unsigned char *s, u32 n) {
     }
   }
   put("\"", 1);
+}
+static void put_b64(const unsigned char *s, u32 n) {
+  static const char tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  for (u32 i = 0; i < n; i += 3) {
+    u32 v = (u32)s[i] << 16;
+    if (i + 1 < n) v |= (u32)s[i + 1] << 8;
+    if (i + 2 < n) v |= s[i + 2];
+    char q[4] = {tbl[(v >> 18) & 63], tbl[(v >> 12) & 63],
+                 i + 1 < n ? tbl[(v >> 6) & 63] : '=', i + 2 < n ? tbl[v & 63] : '='};
+    put(q, 4);
+  }
 }
 static u64 finish(void) { return pack(ob, on); }
 
@@ -257,6 +274,60 @@ EXPORT("deny") u64 cfix_deny(u32 conn, u32 dir, const char *msg, u32 n) {
   begin(8 + n);
   puts_("CFIX:");
   put(msg, n);
+  return finish();
+}
+#endif
+
+#ifdef FLUSHMASK
+// rewrite holds every server chunk and flush releases it through `mask`,
+// so a test can prove the host serves `mask` inside flush whether or not
+// the lane has a masker: the gate flushes with no masker on a denied
+// response, and a trap there would kill the instance.
+static unsigned char held[256];
+static u32 heldn;
+
+EXPORT("enable_rewrite") void cfix_enable_rewrite(u32 conn) { (void)conn; }
+
+EXPORT("rewrite") u64 cfix_rewrite(u32 conn, const unsigned char *in, u32 n) {
+  (void)conn;
+  for (u32 i = 0; i < n && heldn < sizeof(held); i++) held[heldn++] = in[i];
+  return 0;
+}
+
+EXPORT("flush") u64 cfix_flush(u32 conn) {
+  (void)conn;
+  u64 m = hoop_mask("text", 4, (const char *)held, heldn);
+  const unsigned char *mp = (const unsigned char *)(u32)(m >> 32);
+  u32 mn = (u32)m;
+  u32 changed = mn != heldn;
+  for (u32 i = 0; !changed && i < mn; i++) changed = mp[i] != held[i];
+  begin(64 + 2 * mn);
+  puts_("{\"bytes\":\"");
+  put_b64(mp, mn);
+  puts_("\",\"cells\":");
+  put_u32(changed);
+  puts_(",\"rows\":");
+  put_u32(heldn ? 1 : 0);
+  puts_("}");
+  if (m) cfix_free((u32)mp, mn);
+  heldn = 0;
+  return finish();
+}
+#endif
+
+#ifdef CREDENTIAL
+// take_credential misbehaves on cue: a statement whose text is "trap"
+// traps, "junk" answers with bytes that are not JSON, and anything else
+// lifts a fixed token. The host must refuse the frame on the first two.
+EXPORT("take_credential") u64 cfix_take_credential(u32 conn, const char *stmt, u32 n) {
+  (void)conn;
+  if (contains(stmt, n, "\"text\":\"trap\"")) __builtin_trap();
+  begin(128);
+  if (contains(stmt, n, "\"text\":\"junk\"")) {
+    puts_("{\"ok\":true");
+    return finish();
+  }
+  puts_("{\"ok\":true,\"credential\":\"tok\",\"statement\":{\"operation\":\"other\",\"text\":\"lifted\"}}");
   return finish();
 }
 #endif

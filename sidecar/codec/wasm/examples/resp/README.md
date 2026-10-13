@@ -12,6 +12,7 @@ denies, masks bulk string values in replies, and lifts the AUTH password.
 | capabilities | `deny`, `rewrite`, `credential` |
 | instances | `per_connection` |
 | option `max_text_bytes` | int, default `4096`: bytes of a command line kept as the statement text |
+| option `max_inline_bytes` | int, default `65536`: longest inline command line before the LF, CR included; a longer one, complete or not, drops the connection as malformed (Redis's own bound) |
 
 ## Protocol
 
@@ -101,9 +102,10 @@ cargo test     # the decoder on the host, no wasm needed
 ```
 
 `resp.wasm` is checked in beside `fixtures.json`, so the conformance run
-below needs no Rust wasm target. The plug-in workflow rebuilds it on every
-change under this directory or the SDK and fails when the digest differs,
-so a source change ships with a rebuilt artifact.
+below needs no Rust wasm target. The plug-in workflow rebuilds the module
+from source on every change under this directory or the SDK and proves it
+against the fixtures; the checked-in copy is what `make
+test-sidecar-plugins` proves.
 
 ## Test
 
@@ -119,7 +121,8 @@ for every SDK and example with a freshly built `hoop-inspect`.
 from here.
 
 `fixtures.json` covers SET/GET/DEL/FLUSHALL, MULTI..EXEC and DISCARD,
-MSET and EVAL keys, AUTH, inline commands, a bulk string split across two
+MSET and EVAL keys, AUTH, inline commands, an inline line past
+`max_inline_bytes` that arrived whole, a bulk string split across two
 reads, a non-numeric array count, a control byte, server replies with a
 nested array and an error, and a bad server type byte. All eight checks
 pass.

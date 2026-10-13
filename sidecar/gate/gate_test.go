@@ -862,6 +862,95 @@ func TestCloseReleasesEveryCodecOnce(t *testing.T) {
 	}
 }
 
+// A codec that fails to release reports it: a WASM instance or a
+// subprocess that did not go away is a leak the operator must hear about.
+// Close joins both directions' failures with the audit write's.
+func TestCloseReportsCodecReleaseFailures(t *testing.T) {
+	errRelease := errors.New("instance still running")
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &failingCloseCodec{err: errRelease} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = g.Close(context.Background())
+	if !errors.Is(err, errRelease) {
+		t.Fatalf("Close = %v, want the codec's release error", err)
+	}
+	for _, dir := range []string{"client codec", "server codec"} {
+		if !strings.Contains(err.Error(), dir) {
+			t.Errorf("Close = %q, does not name the %s", err, dir)
+		}
+	}
+	if err := g.Close(context.Background()); err != nil {
+		t.Fatalf("second Close = %v, want nil: the codecs were released once", err)
+	}
+}
+
+type failingCloseCodec struct {
+	plainCodec
+	err error
+}
+
+func (c *failingCloseCodec) Close() error { return c.err }
+
+// sliceCodec is a value-type codec holding a slice, so two of them cannot
+// be compared: a gate that tells its two directions apart by comparing
+// codec interfaces panics on it. Only Close exercises that path, and a
+// CodecFactory may hand the gate any shape.
+type sliceCodec struct {
+	closed []int
+}
+
+func (sliceCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (sliceCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
+}
+
+// duplexSliceCodec shares one instance across both directions; the gate
+// closes it once, and must know that without comparing the two values.
+type duplexSliceCodec struct {
+	closed *int
+	tags   []string
+}
+
+func (duplexSliceCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (duplexSliceCodec) Duplex()                    {}
+func (duplexSliceCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
+}
+func (c duplexSliceCodec) Close() error { *c.closed++; return nil }
+
+func TestCloseHandlesNonComparableCodecs(t *testing.T) {
+	ctx := context.Background()
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return sliceCodec{closed: []int{}} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := g.Close(ctx); err != nil {
+		t.Fatalf("Close on a per-direction value codec: %v", err)
+	}
+
+	closed := 0
+	g, err = gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return duplexSliceCodec{closed: &closed, tags: []string{"x"}} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := g.Close(ctx); err != nil {
+		t.Fatalf("Close on a duplex value codec: %v", err)
+	}
+	if closed != 1 {
+		t.Fatalf("the shared codec closed %d times, want once", closed)
+	}
+}
+
 // A denial on a protocol the deny writer does not know is a bare socket
 // close unless the codec frames it. The gate asks the codec and supplies
 // the generic text when the rule had none, so the codec does not invent one.

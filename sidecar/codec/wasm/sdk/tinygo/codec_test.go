@@ -201,6 +201,52 @@ func TestRegistryDispatchesByConnAndKeepsStateApart(t *testing.T) {
 	r.close(1)
 }
 
+// panicMessage returns what f panicked with, as text.
+func panicMessage(t *testing.T, name string, f func()) (msg string) {
+	t.Helper()
+	defer func() {
+		v := recover()
+		if v == nil {
+			t.Fatalf("%s: expected a panic", name)
+		}
+		if err, ok := v.(error); ok {
+			msg = err.Error()
+		} else {
+			msg = v.(string)
+		}
+	}()
+	f()
+	return ""
+}
+
+// echo implements neither Filterer nor Rewriter. A factory can pass
+// describe with one type and hand a later connection another, so the
+// dispatcher must trap with the connection and the capability named,
+// which is what the host logs; a bare type assertion names only types.
+func TestCapabilityExportsTrapWithConnAndCapabilityNamed(t *testing.T) {
+	r := newRegistry(newEcho, Manifest{Protocol: "x-t", Label: "T"})
+	if rc := r.open(7, nil); rc != 0 {
+		t.Fatalf("open: %d", rc)
+	}
+	for name, f := range map[string]func(){
+		"filter":         func() { r.filter(7, 0, []byte("x")) },
+		"enable_rewrite": func() { r.enableRewrite(7) },
+		"rewrite":        func() { r.rewrite(7, []byte("x")) },
+		"flush":          func() { r.flush(7) },
+	} {
+		msg := panicMessage(t, name, f)
+		for _, want := range []string{"hoop-codec:", name + " on connection 7", "*codec.echo", "does not implement"} {
+			if !strings.Contains(msg, want) {
+				t.Fatalf("%s: panic %q lacks %q", name, msg, want)
+			}
+		}
+	}
+	// The capability echo does implement dispatches through the same path.
+	if got := string(r.deny(7, 0, []byte("no"))); got != ":no" {
+		t.Fatalf("deny: %q", got)
+	}
+}
+
 func TestCapabilityExportsRenderTheirResultJSON(t *testing.T) {
 	r := newRegistry(newEcho, Manifest{Protocol: "x-t", Label: "T"})
 	r.open(0, []byte(`{}`))

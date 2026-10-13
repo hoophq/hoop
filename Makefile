@@ -148,6 +148,7 @@ test-sidecar:
 # the two go test lines here need GOWORK=off. cargo test in sdk/rust runs
 # the root crate only; examples/acmewire is a cdylib without tests.
 test-sidecar-plugins:
+	sidecar/codec/wasm/sdk/c/test.sh
 	cd sidecar/codec/wasm/sdk/rust && cargo test
 	cd sidecar/codec/wasm/examples/resp && cargo test
 	cd sidecar/codec/wasm/sdk/tinygo && env GOWORK=off CGO_ENABLED=0 go test ./...

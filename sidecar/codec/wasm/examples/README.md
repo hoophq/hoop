@@ -36,6 +36,9 @@ its fixtures with `hoop-inspect -codec-test`. That job has Go and Rust and
 nothing else, so it never builds a module.
 
 The path-filtered plug-in workflow installs the three guest toolchains,
-rebuilds every example and compares the digest with the committed file.
-A source change under an example or an SDK ships with the artifact its
-`build.sh` produces, or that workflow fails.
+rebuilds every example from source and proves the rebuilt module against
+the same fixtures. It does not compare bytes: rustc on Linux emits a
+module that differs from the macOS build of the same source. A source
+change under an example or an SDK still ships with the artifact its
+`build.sh` produces, because the committed copy is what `make
+test-sidecar-plugins` proves.
