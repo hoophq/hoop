@@ -40,6 +40,18 @@ type Options struct {
 	// both exist only on the screen and are gone at exit, so the CLI always
 	// sets it (~/.hoop/sidecar); empty is for tests.
 	SaveDir string
+	// Notes are facts the caller set up around the daemon (the demo API),
+	// shown with the capture's own on the System section.
+	Notes []string
+	// Demo, when set, adds the Try it section and opens the dashboard on
+	// it: the sidecar fronts the demo API.
+	Demo *DemoOptions
+	// ControlPlane is the control plane URL this sidecar is connected to,
+	// "" when it runs on its own. Approvals are then decided there, and the
+	// Approvals section says so and links to them.
+	ControlPlane string
+	// OpenURL opens a URL in the person's browser; nil hides that key.
+	OpenURL func(string) error
 }
 
 // Run starts the daemon through run and presents its output in format f.
@@ -52,6 +64,9 @@ func Run(f Format, opts Options, run func() error) error {
 	case FormatTUI:
 		return runTUI(opts, run)
 	case FormatText:
+		for _, n := range opts.Notes {
+			fmt.Fprintln(os.Stderr, n)
+		}
 		return runText(run)
 	case FormatJSON:
 		return run()
@@ -296,8 +311,15 @@ func runTUI(opts Options, run func() error) error {
 		}
 		return self.Signal(os.Interrupt)
 	}
-	m := newModel(opts.Version, notes, time.Now, stop)
+	m := newModel(opts.Version, append(opts.Notes, notes...), time.Now, stop)
 	m.reviewer, m.operator = opts.Reviewer, opts.Operator
+	m.controlPlane, m.openURL = opts.ControlPlane, opts.OpenURL
+	if opts.Demo != nil {
+		// The demo opens on its guide: a person who just booted it has
+		// not sent anything yet, and the empty Wire tells them nothing.
+		m.tour = newTour(opts.Demo)
+		m.tab, m.menuFocus = tabTour, false
+	}
 	if opts.Reviewer != nil {
 		m.notes = append(m.notes, "held statements wait for approval in this terminal, decided by "+opts.Operator)
 		// The decision goes into the daemon's own log stream, as JSON

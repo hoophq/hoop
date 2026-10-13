@@ -49,22 +49,74 @@ func ParseFormat(s string) (Format, error) {
 // Resolve turns a requested format into the one to run.
 //
 // An explicit format always wins. Auto keeps today's JSON whenever no person
-// can be watching (stdout is a pipe or a file, or CI is set), because that is
-// what every deployed sidecar already ships to its log platform. A person who
-// can read but not type (stdin is not a terminal), or whose terminal cannot
-// or must not draw (TERM=dumb, NO_COLOR), gets text: a dashboard that cannot
-// take a key cannot be quit or answer an approval. Everyone else gets the TUI.
-func Resolve(requested Format, stdoutTTY, stdinTTY bool, getenv func(string) string) Format {
+// can be watching (stdout is a pipe or a file, CI is set, or the process runs
+// in a container), because that is what every deployed sidecar already
+// ships to its log platform. A person who can read but not type (stdin is not
+// a terminal), a terminal that cannot or must not draw (TERM=dumb, NO_COLOR),
+// or an AI coding agent gets text: a dashboard nobody can key into cannot be
+// quit or answer an approval. Everyone else gets the TUI.
+//
+// exists reports whether a path is present; it finds the files a container
+// runtime leaves, which plain Docker sets no variable for.
+func Resolve(requested Format, stdoutTTY, stdinTTY bool, getenv func(string) string, exists func(string) bool) Format {
 	if requested != FormatAuto && requested != "" {
 		return requested
 	}
-	if !stdoutTTY || getenv("CI") != "" {
+	if !stdoutTTY || getenv("CI") != "" || deployed(getenv, exists) {
 		return FormatJSON
 	}
-	if !stdinTTY || getenv("NO_COLOR") != "" || strings.EqualFold(getenv("TERM"), "dumb") {
+	if !stdinTTY || getenv("NO_COLOR") != "" || strings.EqualFold(getenv("TERM"), "dumb") || codingAgent(getenv) {
 		return FormatText
 	}
 	return FormatTUI
+}
+
+// agentEnv are the variables AI coding agents set in the shells they run
+// commands in (the list DuckDB's agent mode reads). Several run commands in a
+// pseudo-terminal, so a tty alone would hand them a full-screen dashboard
+// they cannot drive.
+var agentEnv = []string{
+	"CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI", "CODEX_SANDBOX", "CODEX_THREAD_ID", "CODEX_CI",
+	"COPILOT_AGENT", "COPILOT_CLI", "AI_AGENT", "AGENT",
+}
+
+// codingAgent is whether an AI coding agent runs this process.
+func codingAgent(getenv func(string) string) bool {
+	for _, k := range agentEnv {
+		if getenv(k) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// deployedEnv are set by a scheduler in what it runs: a Kubernetes pod, an
+// ECS task, a Nomad allocation; and container by Podman, systemd-nspawn and
+// LXC.
+var deployedEnv = []string{
+	"KUBERNETES_SERVICE_HOST", "ECS_CONTAINER_METADATA_URI_V4", "ECS_CONTAINER_METADATA_URI",
+	"NOMAD_ALLOC_ID", "container",
+}
+
+// deployedFiles are left by a container runtime: Docker, then Podman.
+var deployedFiles = []string{"/.dockerenv", "/run/.containerenv"}
+
+// deployed is whether this process runs in a container or under a
+// scheduler. `docker run -it`, compose with tty and stdin_open, or a pod with
+// tty: true and stdin: true have terminals nobody reads; the output is what
+// the log collector ships.
+func deployed(getenv func(string) string, exists func(string) bool) bool {
+	for _, k := range deployedEnv {
+		if getenv(k) != "" {
+			return true
+		}
+	}
+	for _, f := range deployedFiles {
+		if exists(f) {
+			return true
+		}
+	}
+	return false
 }
 
 // Interactive is whether a person can answer at this terminal: both stdin and

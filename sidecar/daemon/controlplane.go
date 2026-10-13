@@ -204,9 +204,22 @@ func (c *Config) ControlPlane() (planeURL, source string, ok bool) {
 	return c.cp.url, c.cp.urlSource, true
 }
 
+// WithControlPlaneURL supplies the Control Plane URL from the caller, which
+// outranks HOOP_CONTROL_PLANE_URL and the config file's key. It exists so an
+// entry point can connect for one call without setting a process-wide
+// environment variable another goroutine would also read. An empty value
+// falls through.
+func WithControlPlaneURL(planeURL string) Option {
+	return func(o *setupOptions) { o.planeURL = planeURL }
+}
+
 // resolveControlPlaneURL picks the URL, highest precedence first: the
-// environment, then the config file's key. Empty everywhere means standalone.
-func resolveControlPlaneURL(fileValue string) (value, source string, err error) {
+// caller's option, the environment, then the config file's key. Empty
+// everywhere means standalone.
+func resolveControlPlaneURL(flagValue, fileValue string) (value, source string, err error) {
+	if flagValue != "" {
+		return checkControlPlaneURL(flagValue, "the Control Plane URL given to this process")
+	}
 	if v := os.Getenv(ControlPlaneURLEnv); v != "" {
 		return checkControlPlaneURL(v, ControlPlaneURLEnv)
 	}
@@ -266,7 +279,7 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // A plane answering "load_from_disk" hands the document back to the file:
 // the file's listeners serve, while the connection and the license stay
 // plane-side facts (see licenseManaged).
-func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
+func resolveConfigSource(local *Config, tokenFlag, planeFlag string) (*Config, error) {
 	if local != nil && local.LoadFromDisk != nil {
 		return nil, errors.New(`"load_from_disk" is not a config file key; ` +
 			`it is set on the control plane's sidecar configuration, and the file cannot answer for the plane`)
@@ -276,7 +289,7 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	if local != nil {
 		fileURL = local.ControlPlaneURL
 	}
-	planeURL, urlSource, err := resolveControlPlaneURL(fileURL)
+	planeURL, urlSource, err := resolveControlPlaneURL(planeFlag, fileURL)
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +347,7 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	// 200 with a document naming no listeners. Same fact, same move: seed
 	// the plane with the file's document, so the connect journey never
 	// asks anyone to translate their YAML into an API call by hand.
-	if errors.Is(err, errPlaneHasNoConfig) || (err == nil && !rawDeclaresListeners(raw)) {
+	if errors.Is(err, ErrPlaneHasNoConfig) || (err == nil && !rawDeclaresListeners(raw)) {
 		answer, imported, err = importLocalConfig(planeURL, cred, local)
 		raw, managed = answer.raw, answer.managed
 	}
@@ -487,7 +500,7 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 		// The plane authenticated the token and holds nothing to serve.
 		// resolveConfigSource turns this into an import when the local
 		// file can supply the document; the heartbeat only logs it.
-		return handshakeAnswer{}, fmt.Errorf("%w (at %s): %s", errPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
+		return handshakeAnswer{}, fmt.Errorf("%w (at %s): %s", ErrPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
 	case http.StatusUnprocessableEntity:
 		// An operator misconfiguration on the plane side (say, a connection
 		// type no codec speaks). Retrying never fixes it; the message names
@@ -526,7 +539,7 @@ func controlPlaneHTTPClient() *http.Client {
 // has no file to push that the plane did not already refuse, so it only logs.
 func (cp *controlPlane) reimport(log *slog.Logger, rl *reloader) (handshakeAnswer, error) {
 	if !rl.diskMode || rl.configPath == "" || rl.load == nil {
-		return handshakeAnswer{}, fmt.Errorf("%w (at %s)", errPlaneHasNoConfig, cp.url)
+		return handshakeAnswer{}, fmt.Errorf("%w (at %s)", ErrPlaneHasNoConfig, cp.url)
 	}
 	local, err := rl.load(rl.configPath)
 	if err != nil {
@@ -541,10 +554,26 @@ func (cp *controlPlane) reimport(log *slog.Logger, rl *reloader) (handshakeAnswe
 	return answer, nil
 }
 
-// errPlaneHasNoConfig marks the handshake's 412: the plane authenticated the
+// ErrPlaneHasNoConfig marks the handshake's 412: the plane authenticated the
 // token and holds nothing to serve. resolveConfigSource turns it into an
-// import when the local file can supply the document.
-var errPlaneHasNoConfig = errors.New("the control plane has no configuration for this sidecar")
+// import when the local file can supply the document, and returns it,
+// wrapped, when there is no file to import. Exported so an entry point can
+// tell "connected, and the plane is waiting for a config" from a failure:
+// the CLI's first-run screen then helps write the config to import.
+var ErrPlaneHasNoConfig = errors.New("the control plane has no configuration for this sidecar")
+
+// planeHasNoConfigError is the empty plane with no file to import. It keeps
+// the sentence an operator has always read, naming the plane first, and
+// unwraps to ErrPlaneHasNoConfig for callers that branch on it.
+type planeHasNoConfigError struct{ planeURL string }
+
+func (e planeHasNoConfigError) Error() string {
+	return fmt.Sprintf("the control plane at %s has no configuration for this sidecar; "+
+		"author one in the control plane, or restart with a config file whose listeners this "+
+		"process can import", e.planeURL)
+}
+
+func (e planeHasNoConfigError) Unwrap() error { return ErrPlaneHasNoConfig }
 
 // errPlaneAlreadyConfigured marks the import's 409: a configuration landed
 // on the plane between the handshake and the push. The concurrent author
@@ -578,9 +607,7 @@ func rawDeclaresListeners(raw []byte) bool {
 // ever being reached.
 func importLocalConfig(planeURL string, cred credential, local *Config) (answer handshakeAnswer, pushed bool, err error) {
 	if local == nil || len(local.Listeners) == 0 {
-		return handshakeAnswer{}, false, fmt.Errorf("the control plane at %s has no configuration for this sidecar; "+
-			"author one in the control plane, or restart with a config file whose listeners this "+
-			"process can import", planeURL)
+		return handshakeAnswer{}, false, planeHasNoConfigError{planeURL: planeURL}
 	}
 	doc := *local
 	doc.ControlPlaneURL = ""
@@ -740,7 +767,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			LastOutcome:     cp.outcome,
 			LastError:       cp.reason,
 		})
-		if errors.Is(err, errPlaneHasNoConfig) {
+		if errors.Is(err, ErrPlaneHasNoConfig) {
 			answer, err = cp.reimport(log, rl)
 		}
 		if err != nil {

@@ -13,7 +13,7 @@ type Event string
 const (
 	// EventFirstRun: a bare invocation served the first-run redirect page.
 	// The install funnel's top. Properties: deprecated-alias, port,
-	// port-fell-back, duration-seconds.
+	// port-fell-back, duration-seconds, visits.
 	EventFirstRun Event = "hoop-sidecar-first-run"
 
 	// EventStarted: Run built every lane and is about to serve. Properties:

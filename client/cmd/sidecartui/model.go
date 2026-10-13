@@ -1,6 +1,7 @@
 package sidecartui
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -21,10 +22,13 @@ const (
 	tabLanes
 	tabSystem
 	tabLogs
+	// tabTour is the demo's guided section. Last, so a dashboard without the
+	// demo hides it by counting one tab less (numTabs).
+	tabTour
 	tabCount
 )
 
-var tabNames = [tabCount]string{"Wire", "Sessions", "Approvals", "Listeners", "System", "Logs"}
+var tabNames = [tabCount]string{"Wire", "Sessions", "Approvals", "Listeners", "System", "Logs", "Try it"}
 
 // Messages the capture goroutines and the clock send in.
 type (
@@ -108,6 +112,37 @@ type model struct {
 	// dropped counts captured lines thrown away because the screen fell
 	// behind; the daemon is never made to wait for the screen.
 	dropped int64
+
+	// tour is the demo's guided section, nil when the sidecar does not
+	// front the demo API.
+	tour *tour
+
+	// controlPlane is the plane this sidecar is connected to, "" when it
+	// runs on its own; approvals are then decided there. openURL opens a
+	// link in the browser, and cpFlash says what the last open did.
+	controlPlane string
+	openURL      func(string) error
+	cpFlash      string
+}
+
+// reviewsURL is where the control plane shows the reviews this sidecar
+// files: its web app's Reviews page. The plane's URL may carry the API's
+// /api suffix or a path prefix; the prefix stays, the suffix goes.
+func reviewsURL(plane string) string {
+	u, err := url.Parse(plane)
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(plane, "/") + "/reviews"
+	}
+	p := strings.TrimSuffix(strings.TrimRight(u.Path, "/"), "/api")
+	return u.Scheme + "://" + u.Host + p + "/reviews"
+}
+
+// numTabs is how many sections the menu shows: Try it only with the demo.
+func (m model) numTabs() tab {
+	if m.tour == nil {
+		return tabCount - 1
+	}
+	return tabCount
 }
 
 func newModel(version string, notes []string, now func() time.Time, stop func() error) model {
@@ -152,6 +187,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case auditMsg:
 		m.st.ApplyAudit(audit.Event(msg))
+		if m.tour != nil {
+			m.tour.see(audit.Event(msg))
+		}
+		return m, nil
+	case tourResultMsg:
+		if m.tour != nil {
+			m.tour.apply(tourResult(msg))
+		}
 		return m, nil
 	case rawMsg:
 		// A line that is not JSON: a panic, a library's own print. Kept
@@ -226,15 +269,43 @@ func (m model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.menuKey(k)
 	}
 
+	if m.tab == tabTour && m.tour != nil {
+		if cmd, used := m.tour.key(k); used {
+			return m, cmd
+		}
+	}
+	if m.tab == tabReviews && m.controlPlane != "" {
+		link := reviewsURL(m.controlPlane)
+		switch k.String() {
+		case "o":
+			switch {
+			case m.openURL == nil:
+				m.cpFlash = "no browser opener on this system; copy the link with c"
+			default:
+				if err := m.openURL(link); err != nil {
+					m.cpFlash = "could not open a browser: " + err.Error()
+				} else {
+					m.cpFlash = "opened " + link + " in your browser"
+				}
+			}
+			return m, nil
+		case "c":
+			m.cpFlash = "copied " + link
+			return m, tea.SetClipboard(link)
+		}
+	}
+
 	switch k.String() {
 	case "q", "ctrl+c":
 		return m.quit()
 	case "tab":
-		m.tab, m.zoom = (m.tab+1)%tabCount, false
+		m.tab, m.zoom = (m.tab+1)%m.numTabs(), false
 	case "shift+tab":
-		m.tab, m.zoom = (m.tab+tabCount-1)%tabCount, false
-	case "1", "2", "3", "4", "5", "6":
-		m.tab, m.zoom = tab(k.String()[0]-'1'), false
+		m.tab, m.zoom = (m.tab+m.numTabs()-1)%m.numTabs(), false
+	case "1", "2", "3", "4", "5", "6", "7":
+		if t := tab(k.String()[0] - '1'); t < m.numTabs() {
+			m.tab, m.zoom = t, false
+		}
 	case "left", "h":
 		m.zoom, m.menuFocus = false, true
 	case "up", "k":
@@ -289,12 +360,13 @@ func (m model) menuKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m.quit()
 	case "up", "k", "shift+tab":
-		m.tab = (m.tab + tabCount - 1) % tabCount
+		m.tab = (m.tab + m.numTabs() - 1) % m.numTabs()
 	case "down", "j", "tab":
-		m.tab = (m.tab + 1) % tabCount
-	case "1", "2", "3", "4", "5", "6":
-		m.tab = tab(k.String()[0] - '1')
-		m.menuFocus = false
+		m.tab = (m.tab + 1) % m.numTabs()
+	case "1", "2", "3", "4", "5", "6", "7":
+		if t := tab(k.String()[0] - '1'); t < m.numTabs() {
+			m.tab, m.menuFocus = t, false
+		}
 	case "enter", "space", "right", "l":
 		m.menuFocus = false
 	case "/":

@@ -484,7 +484,7 @@ prompt, no token, no listener or upstream address — the same line
 
 | Event | When | Carries |
 |---|---|---|
-| `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up |
+| `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up, how many times the page was opened |
 | `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state and type, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, PII entity count, audit sinks |
 | `hoop-sidecar-config-applied` | an edit reached the reloader, from the control plane or the config file | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed, lanes swapped and kept |
 | `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, denials by evaluator kind, analyzer calls, failures and rate-limited statements, audit write failures, per protocol |

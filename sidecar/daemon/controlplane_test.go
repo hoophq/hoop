@@ -3,9 +3,11 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -319,6 +321,44 @@ func newAdoptivePlane(t *testing.T, stored string, legacy bool) *adoptivePlane {
 	}))
 	t.Cleanup(p.srv.Close)
 	return p
+}
+
+// With no file to import, an empty plane is reported as ErrPlaneHasNoConfig,
+// not as a failure: an entry point checking the connection first (the CLI's
+// first-run screen) tells "connected, waiting for a config" from a refused
+// token or an unreachable plane by this, and nothing is pushed.
+func TestAnEmptyPlaneWithNoFileIsErrPlaneHasNoConfig(t *testing.T) {
+	plane := newAdoptivePlane(t, "", false)
+	t.Setenv(ControlPlaneURLEnv, plane.srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	_, _, err := SetupWith("", nil, nil)
+	if !errors.Is(err, ErrPlaneHasNoConfig) {
+		t.Fatalf("err = %v, want ErrPlaneHasNoConfig", err)
+	}
+	// The sentence operators read is unchanged: the plane first.
+	if want := "the control plane at " + plane.srv.URL + " has no configuration for this sidecar"; !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("err = %q, want it to start %q", err, want)
+	}
+	if len(plane.puts) != 0 {
+		t.Errorf("imports = %d, want none: there was no file to send", len(plane.puts))
+	}
+}
+
+// WithControlPlaneURL connects for one Setup without the environment: it
+// outranks HOOP_CONTROL_PLANE_URL, and leaves it as it was.
+func TestWithControlPlaneURLOutranksTheEnvironment(t *testing.T) {
+	plane := newAdoptivePlane(t, "", false)
+	t.Setenv(ControlPlaneURLEnv, "https://elsewhere.invalid")
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	_, _, err := SetupWith("", nil, nil, WithControlPlaneURL(plane.srv.URL))
+	if !errors.Is(err, ErrPlaneHasNoConfig) || !strings.Contains(err.Error(), plane.srv.URL) {
+		t.Fatalf("err = %v, want the option's plane, empty", err)
+	}
+	if v := os.Getenv(ControlPlaneURLEnv); v != "https://elsewhere.invalid" {
+		t.Errorf("%s = %q, the option changed the environment", ControlPlaneURLEnv, v)
+	}
 }
 
 // The connect journey: a standalone sidecar's file, plus the URL and the
@@ -817,7 +857,7 @@ func TestADiskModeAnswerServesTheLocalFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg, err := resolveConfigSource(local, "")
+	cfg, err := resolveConfigSource(local, "", "")
 	if err != nil {
 		t.Fatalf("resolveConfigSource: %v", err)
 	}
@@ -904,7 +944,7 @@ func TestADiskModeAnswerWithoutAFileStopsStartup(t *testing.T) {
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
 	t.Setenv(SidecarTokenEnv, "hsc_x")
 
-	_, err := resolveConfigSource(nil, "")
+	_, err := resolveConfigSource(nil, "", "")
 	if err == nil {
 		t.Fatal("a disk-mode answer without a file was accepted")
 	}
@@ -924,7 +964,7 @@ func TestADiskModeAnswerNeedsFileListeners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	_, err = resolveConfigSource(local, "")
+	_, err = resolveConfigSource(local, "", "")
 	if err == nil {
 		t.Fatal("a disk-mode answer with a listener-less file was accepted")
 	}
@@ -956,7 +996,7 @@ func TestAConfigFileMayNotWriteLoadFromDisk(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadConfigBytes: %v", err)
 			}
-			_, err = resolveConfigSource(local, "")
+			_, err = resolveConfigSource(local, "", "")
 			if err == nil {
 				t.Fatal("a file writing load_from_disk was accepted")
 			}
@@ -990,7 +1030,7 @@ func TestADiskModeAnswerNeverSeedsThePlane(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg, err := resolveConfigSource(local, "")
+	cfg, err := resolveConfigSource(local, "", "")
 	if err != nil {
 		t.Fatalf("resolveConfigSource: %v", err)
 	}

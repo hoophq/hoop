@@ -100,6 +100,11 @@ func ListenerSchema() ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// ProtocolLabel is the name a person reads for protocol p: "PostgreSQL"
+// for postgres, the codec's own label for one the table does not know, p
+// itself last. The CLI's setup screens list protocols by it.
+func ProtocolLabel(p string) string { return protocolLabel(p) }
+
 // protocolLabel names a protocol for the form: the table for the shipped
 // ones, the codec's own Label for a registered protocol the table does not
 // know (a custom binary linking its own codec), the bare name last. The
