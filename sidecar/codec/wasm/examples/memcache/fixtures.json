@@ -1,0 +1,767 @@
+[
+  {
+    "name": "get is a select that reads the lowercased key",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "6765742053657373696f6e3a34320d0a",
+        "expect": {
+          "consumed": 16,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "select",
+              "text": "get Session:42",
+              "metadata": {
+                "x-memcache.command": "get",
+                "x-memcache.key": "Session:42"
+              },
+              "tables": [
+                "session:42"
+              ],
+              "relations": [
+                {
+                  "name": "session:42",
+                  "access": "read"
+                }
+              ],
+              "effects": [
+                "select"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "56414c55452053657373696f6e3a3432203020350d0a68656c6c6f0d0a454e440d0a",
+        "expect": {
+          "consumed": 34,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "VALUE Session:42 0 5",
+              "metadata": {
+                "x-memcache.reply": "VALUE"
+              },
+              "result": {
+                "row_count": 1
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "END",
+              "metadata": {
+                "x-memcache.reply": "END"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "storage commands own their data block and are updates",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "73657420757365723a312030203930302035206e6f7265706c790d0a68656c6c6f0d0a",
+        "expect": {
+          "consumed": 35,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "update",
+              "text": "set user:1 0 900 5 noreply",
+              "metadata": {
+                "x-memcache.command": "set",
+                "x-memcache.key": "user:1",
+                "x-memcache.noreply": "true"
+              },
+              "tables": [
+                "user:1"
+              ],
+              "relations": [
+                {
+                  "name": "user:1",
+                  "access": "write"
+                }
+              ],
+              "effects": [
+                "update"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "63617320757365723a31203020393030203320370d0a6162630d0a",
+        "expect": {
+          "consumed": 27,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "update",
+              "text": "cas user:1 0 900 3 7",
+              "metadata": {
+                "x-memcache.command": "cas",
+                "x-memcache.key": "user:1"
+              },
+              "tables": [
+                "user:1"
+              ],
+              "relations": [
+                {
+                  "name": "user:1",
+                  "access": "write"
+                }
+              ],
+              "effects": [
+                "update"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "617070656e6420757365723a312030203020320d0a21210d0a",
+        "expect": {
+          "consumed": 25,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "update",
+              "text": "append user:1 0 0 2",
+              "metadata": {
+                "x-memcache.command": "append",
+                "x-memcache.key": "user:1"
+              },
+              "tables": [
+                "user:1"
+              ],
+              "relations": [
+                {
+                  "name": "user:1",
+                  "access": "write"
+                }
+              ],
+              "effects": [
+                "update"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "53544f5245440d0a4558495354530d0a",
+        "expect": {
+          "consumed": 16,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "STORED",
+              "metadata": {
+                "x-memcache.reply": "STORED"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "EXISTS",
+              "metadata": {
+                "x-memcache.reply": "EXISTS"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "gets with several keys reads each one",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "676574732061206220430d0a",
+        "expect": {
+          "consumed": 12,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "select",
+              "text": "gets a b C",
+              "metadata": {
+                "x-memcache.command": "gets",
+                "x-memcache.key": "a"
+              },
+              "tables": [
+                "a",
+                "b",
+                "c"
+              ],
+              "relations": [
+                {
+                  "name": "a",
+                  "access": "read"
+                },
+                {
+                  "name": "b",
+                  "access": "read"
+                },
+                {
+                  "name": "c",
+                  "access": "read"
+                }
+              ],
+              "effects": [
+                "select"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "56414c55452061203020312031310d0a780d0a56414c55452062203020322031320d0a79790d0a454e440d0a",
+        "expect": {
+          "consumed": 44,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "VALUE a 0 1 11",
+              "metadata": {
+                "x-memcache.reply": "VALUE"
+              },
+              "result": {
+                "row_count": 1
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "VALUE b 0 2 12",
+              "metadata": {
+                "x-memcache.reply": "VALUE"
+              },
+              "result": {
+                "row_count": 1
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "END",
+              "metadata": {
+                "x-memcache.reply": "END"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "delete, incr, touch and flush_all classify by command word",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "64656c65746520757365723a31206e6f7265706c790d0a696e637220636f756e74657220350d0a746f75636820757365723a322036300d0a666c7573685f616c6c2031300d0a",
+        "expect": {
+          "consumed": 70,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "delete",
+              "text": "delete user:1 noreply",
+              "metadata": {
+                "x-memcache.command": "delete",
+                "x-memcache.key": "user:1",
+                "x-memcache.noreply": "true"
+              },
+              "tables": [
+                "user:1"
+              ],
+              "relations": [
+                {
+                  "name": "user:1",
+                  "access": "write"
+                }
+              ],
+              "effects": [
+                "delete"
+              ]
+            },
+            {
+              "direction": "client",
+              "operation": "update",
+              "text": "incr counter 5",
+              "metadata": {
+                "x-memcache.command": "incr",
+                "x-memcache.key": "counter"
+              },
+              "tables": [
+                "counter"
+              ],
+              "relations": [
+                {
+                  "name": "counter",
+                  "access": "write"
+                }
+              ],
+              "effects": [
+                "update"
+              ]
+            },
+            {
+              "direction": "client",
+              "operation": "update",
+              "text": "touch user:2 60",
+              "metadata": {
+                "x-memcache.command": "touch",
+                "x-memcache.key": "user:2"
+              },
+              "tables": [
+                "user:2"
+              ],
+              "relations": [
+                {
+                  "name": "user:2",
+                  "access": "write"
+                }
+              ],
+              "effects": [
+                "update"
+              ]
+            },
+            {
+              "direction": "client",
+              "operation": "truncate",
+              "text": "flush_all 10",
+              "metadata": {
+                "x-memcache.command": "flush_all"
+              },
+              "effects": [
+                "truncate"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "44454c455445440d0a360d0a544f55434845440d0a4f4b0d0a",
+        "expect": {
+          "consumed": 25,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "DELETED",
+              "metadata": {
+                "x-memcache.reply": "DELETED"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "6",
+              "metadata": {
+                "x-memcache.reply": "6"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "TOUCHED",
+              "metadata": {
+                "x-memcache.reply": "TOUCHED"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "OK",
+              "metadata": {
+                "x-memcache.reply": "OK"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "stats and version are show, verbosity is set, quit is other",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "73746174730d0a76657273696f6e0d0a766572626f736974792031206e6f7265706c790d0a717569740d0a",
+        "expect": {
+          "consumed": 43,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "show",
+              "text": "stats",
+              "metadata": {
+                "x-memcache.command": "stats"
+              },
+              "effects": [
+                "show"
+              ]
+            },
+            {
+              "direction": "client",
+              "operation": "show",
+              "text": "version",
+              "metadata": {
+                "x-memcache.command": "version"
+              },
+              "effects": [
+                "show"
+              ]
+            },
+            {
+              "direction": "client",
+              "operation": "set",
+              "text": "verbosity 1 noreply",
+              "metadata": {
+                "x-memcache.command": "verbosity",
+                "x-memcache.noreply": "true"
+              },
+              "effects": [
+                "set"
+              ]
+            },
+            {
+              "direction": "client",
+              "operation": "other",
+              "text": "quit",
+              "metadata": {
+                "x-memcache.command": "quit"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "535441542070696420310d0a454e440d0a56455253494f4e20312e362e32310d0a4f4b0d0a",
+        "expect": {
+          "consumed": 37,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "STAT pid 1",
+              "metadata": {
+                "x-memcache.reply": "STAT"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "END",
+              "metadata": {
+                "x-memcache.reply": "END"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "VERSION 1.6.21",
+              "metadata": {
+                "x-memcache.reply": "VERSION"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "OK",
+              "metadata": {
+                "x-memcache.reply": "OK"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "an unknown or incomplete command is other, not an error",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "47455420666f6f0d0a6d6720666f6f20760d0a736574206b203020300d0a0d0a",
+        "expect": {
+          "consumed": 32,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "other",
+              "text": "GET foo",
+              "metadata": {
+                "x-memcache.command": "GET"
+              }
+            },
+            {
+              "direction": "client",
+              "operation": "other",
+              "text": "mg foo v",
+              "metadata": {
+                "x-memcache.command": "mg"
+              }
+            },
+            {
+              "direction": "client",
+              "operation": "other",
+              "text": "set k 0 0",
+              "metadata": {
+                "x-memcache.command": "set"
+              }
+            },
+            {
+              "direction": "client",
+              "operation": "other",
+              "text": ""
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "4552524f520d0a4552524f520d0a4552524f520d0a434c49454e545f4552524f522062616420636f6d6d616e64206c696e6520666f726d61740d0a",
+        "expect": {
+          "consumed": 59,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "ERROR",
+              "metadata": {
+                "x-memcache.reply": "ERROR"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "ERROR",
+              "metadata": {
+                "x-memcache.reply": "ERROR"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "ERROR",
+              "metadata": {
+                "x-memcache.reply": "ERROR"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "CLIENT_ERROR bad command line format",
+              "metadata": {
+                "x-memcache.reply": "CLIENT_ERROR"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "a partial frame consumes nothing until its tail arrives",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "736574206b203020302031300d0a68656c6c6f",
+        "expect": {
+          "consumed": 0,
+          "statements": []
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "776f726c640d0a",
+        "expect": {
+          "consumed": 26,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "update",
+              "text": "set k 0 0 10",
+              "metadata": {
+                "x-memcache.command": "set",
+                "x-memcache.key": "k"
+              },
+              "tables": [
+                "k"
+              ],
+              "relations": [
+                {
+                  "name": "k",
+                  "access": "write"
+                }
+              ],
+              "effects": [
+                "update"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "67657420666f",
+        "expect": {
+          "consumed": 0,
+          "statements": []
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "6f0d0a",
+        "expect": {
+          "consumed": 9,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "select",
+              "text": "get foo",
+              "metadata": {
+                "x-memcache.command": "get",
+                "x-memcache.key": "foo"
+              },
+              "tables": [
+                "foo"
+              ],
+              "relations": [
+                {
+                  "name": "foo",
+                  "access": "read"
+                }
+              ],
+              "effects": [
+                "select"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "56414c5545206b20302031300d0a68656c6c6f",
+        "expect": {
+          "consumed": 0,
+          "statements": []
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "776f726c640d0a454e440d0a",
+        "expect": {
+          "consumed": 31,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "VALUE k 0 10",
+              "metadata": {
+                "x-memcache.reply": "VALUE"
+              },
+              "result": {
+                "row_count": 1
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "END",
+              "metadata": {
+                "x-memcache.reply": "END"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "a storage command whose length is not a number is a decode error",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "736574206b20302030206162630d0a",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "a VALUE reply whose length is not a number is a decode error",
+    "steps": [
+      {
+        "dir": "server",
+        "hex": "56414c5545206b203020780d0a",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "a line past max_line_bytes without CRLF is a decode error",
+    "options": {
+      "max_line_bytes": "16"
+    },
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "6765742073686f72740d0a",
+        "expect": {
+          "consumed": 11,
+          "statements": [
+            {
+              "direction": "client",
+              "operation": "select",
+              "text": "get short",
+              "metadata": {
+                "x-memcache.command": "get",
+                "x-memcache.key": "short"
+              },
+              "tables": [
+                "short"
+              ],
+              "relations": [
+                {
+                  "name": "short",
+                  "access": "read"
+                }
+              ],
+              "effects": [
+                "select"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "676574206b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,604 @@
+[
+  {
+    "name": "set get del flushall map to update select delete truncate",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "2a330d0a24330d0a5345540d0a24360d0a557365723a310d0a24330d0a626f620d0a",
+        "expect": {
+          "consumed": 34,
+          "statements": [
+            {
+              "operation": "update",
+              "text": "SET User:1 bob",
+              "metadata": {
+                "x-resp.command": "SET",
+                "x-resp.key": "user:1"
+              },
+              "tables": [
+                "user:1"
+              ],
+              "relations": [
+                {
+                  "name": "user:1",
+                  "access": "write"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "2a320d0a24330d0a4745540d0a24360d0a757365723a310d0a",
+        "expect": {
+          "consumed": 25,
+          "statements": [
+            {
+              "operation": "select",
+              "text": "GET user:1",
+              "metadata": {
+                "x-resp.command": "GET",
+                "x-resp.key": "user:1"
+              },
+              "tables": [
+                "user:1"
+              ],
+              "relations": [
+                {
+                  "name": "user:1",
+                  "access": "read"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "2a330d0a24330d0a44454c0d0a24360d0a757365723a310d0a24360d0a757365723a320d0a",
+        "expect": {
+          "consumed": 37,
+          "statements": [
+            {
+              "operation": "delete",
+              "text": "DEL user:1 user:2",
+              "metadata": {
+                "x-resp.command": "DEL",
+                "x-resp.key": "user:1"
+              },
+              "tables": [
+                "user:1",
+                "user:2"
+              ],
+              "relations": [
+                {
+                  "name": "user:1",
+                  "access": "write"
+                },
+                {
+                  "name": "user:2",
+                  "access": "write"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "2a310d0a24380d0a464c555348414c4c0d0a",
+        "expect": {
+          "consumed": 18,
+          "statements": [
+            {
+              "operation": "truncate",
+              "text": "FLUSHALL",
+              "metadata": {
+                "x-resp.command": "FLUSHALL"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "2b4f4b0d0a",
+        "expect": {
+          "consumed": 5,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "+OK",
+              "metadata": {
+                "x-resp.reply": "simple"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "multi exec and discard are begin commit rollback",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "2a310d0a24350d0a4d554c54490d0a2a320d0a24340d0a494e43520d0a24370d0a636f756e7465720d0a2a310d0a24340d0a455845430d0a",
+        "expect": {
+          "consumed": 56,
+          "statements": [
+            {
+              "operation": "begin",
+              "text": "MULTI",
+              "metadata": {
+                "x-resp.command": "MULTI"
+              }
+            },
+            {
+              "operation": "update",
+              "text": "INCR counter",
+              "metadata": {
+                "x-resp.command": "INCR",
+                "x-resp.key": "counter"
+              },
+              "tables": [
+                "counter"
+              ],
+              "relations": [
+                {
+                  "name": "counter",
+                  "access": "write"
+                }
+              ]
+            },
+            {
+              "operation": "commit",
+              "text": "EXEC",
+              "metadata": {
+                "x-resp.command": "EXEC"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "2a310d0a24350d0a4d554c54490d0a2a310d0a24370d0a444953434152440d0a",
+        "expect": {
+          "consumed": 32,
+          "statements": [
+            {
+              "operation": "begin",
+              "text": "MULTI",
+              "metadata": {
+                "x-resp.command": "MULTI"
+              }
+            },
+            {
+              "operation": "rollback",
+              "text": "DISCARD",
+              "metadata": {
+                "x-resp.command": "DISCARD"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "mset keys every other argument and eval keys by numkeys",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "2a350d0a24340d0a4d5345540d0a24320d0a6b310d0a24320d0a76310d0a24320d0a4b320d0a24320d0a76320d0a",
+        "expect": {
+          "consumed": 46,
+          "statements": [
+            {
+              "operation": "update",
+              "text": "MSET k1 v1 K2 v2",
+              "metadata": {
+                "x-resp.command": "MSET",
+                "x-resp.key": "k1"
+              },
+              "tables": [
+                "k1",
+                "k2"
+              ],
+              "relations": [
+                {
+                  "name": "k1",
+                  "access": "write"
+                },
+                {
+                  "name": "k2",
+                  "access": "write"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "2a360d0a24340d0a4556414c0d0a24380d0a72657475726e20310d0a24310d0a320d0a24310d0a610d0a24310d0a620d0a24330d0a6172670d0a",
+        "expect": {
+          "consumed": 58,
+          "statements": [
+            {
+              "operation": "call",
+              "text": "EVAL return 1 2 a b arg",
+              "metadata": {
+                "x-resp.command": "EVAL",
+                "x-resp.key": "a"
+              },
+              "tables": [
+                "a",
+                "b"
+              ],
+              "relations": [
+                {
+                  "name": "a",
+                  "access": "write"
+                },
+                {
+                  "name": "b",
+                  "access": "write"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "2a330d0a24360d0a4f424a4543540d0a24380d0a454e434f44494e470d0a24310d0a6b0d0a",
+        "expect": {
+          "consumed": 37,
+          "statements": [
+            {
+              "operation": "other",
+              "text": "OBJECT ENCODING k",
+              "metadata": {
+                "x-resp.command": "OBJECT"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "auth is a set whose text omits the password",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "2a320d0a24340d0a415554480d0a24360d0a7333637265740d0a",
+        "expect": {
+          "consumed": 26,
+          "statements": [
+            {
+              "operation": "set",
+              "text": "AUTH",
+              "metadata": {
+                "x-resp.command": "AUTH"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "2a330d0a24340d0a415554480d0a24350d0a616c6963650d0a24320d0a70770d0a",
+        "expect": {
+          "consumed": 33,
+          "statements": [
+            {
+              "operation": "set",
+              "text": "AUTH",
+              "metadata": {
+                "x-resp.command": "AUTH"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "2d57524f4e475041535320696e76616c696420757365726e616d652d70617373776f726420706169720d0a",
+        "expect": {
+          "consumed": 43,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "-WRONGPASS invalid username-password pair",
+              "metadata": {
+                "x-resp.reply": "error"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "inline commands",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "50494e470d0a",
+        "expect": {
+          "consumed": 6,
+          "statements": [
+            {
+              "operation": "other",
+              "text": "PING",
+              "metadata": {
+                "x-resp.command": "PING"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "67657420206b310d0a",
+        "expect": {
+          "consumed": 9,
+          "statements": [
+            {
+              "operation": "select",
+              "text": "get k1",
+              "metadata": {
+                "x-resp.command": "GET",
+                "x-resp.key": "k1"
+              },
+              "tables": [
+                "k1"
+              ],
+              "relations": [
+                {
+                  "name": "k1",
+                  "access": "read"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "2b504f4e470d0a24320d0a76310d0a",
+        "expect": {
+          "consumed": 15,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "+PONG",
+              "metadata": {
+                "x-resp.reply": "simple"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "$2",
+              "metadata": {
+                "x-resp.reply": "bulk"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "a partial bulk string consumes nothing until its tail arrives",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "2a320d0a24330d0a4745540d0a24350d0a68656c",
+        "expect": {
+          "consumed": 0,
+          "statements": []
+        }
+      },
+      {
+        "dir": "client",
+        "hex": "6c6f0d0a",
+        "expect": {
+          "consumed": 24,
+          "statements": [
+            {
+              "operation": "select",
+              "text": "GET hello",
+              "metadata": {
+                "x-resp.command": "GET",
+                "x-resp.key": "hello"
+              },
+              "tables": [
+                "hello"
+              ],
+              "relations": [
+                {
+                  "name": "hello",
+                  "access": "read"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "server replies render short and nested arrays are consumed whole",
+    "steps": [
+      {
+        "dir": "server",
+        "hex": "3a330d0a",
+        "expect": {
+          "consumed": 4,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": ":3",
+              "metadata": {
+                "x-resp.reply": "integer"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "24350d0a68656c6c6f0d0a242d310d0a",
+        "expect": {
+          "consumed": 16,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "$5",
+              "metadata": {
+                "x-resp.reply": "bulk"
+              }
+            },
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "$-1",
+              "metadata": {
+                "x-resp.reply": "bulk"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "2a320d0a2a320d0a24310d0a610d0a3a310d0a24320d0a62620d0a",
+        "expect": {
+          "consumed": 27,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "*2",
+              "metadata": {
+                "x-resp.reply": "array"
+              },
+              "result": {
+                "row_count": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "2a2d310d0a",
+        "expect": {
+          "consumed": 5,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "*-1",
+              "metadata": {
+                "x-resp.reply": "array"
+              },
+              "result": {
+                "row_count": 0
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "2d45525220756e6b6e6f776e20636f6d6d616e642027464f4f270d0a",
+        "expect": {
+          "consumed": 28,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "-ERR unknown command 'FOO'",
+              "metadata": {
+                "x-resp.reply": "error"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "2a320d0a24310d0a610d0a24310d0a",
+        "expect": {
+          "consumed": 0,
+          "statements": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "a non-numeric array count is a decode error",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "2a780d0a",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "a control byte does not start a command",
+    "steps": [
+      {
+        "dir": "client",
+        "hex": "00",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "a byte outside the RESP type set from the server is a decode error",
+    "steps": [
+      {
+        "dir": "server",
+        "hex": "2b4f4b0d0a",
+        "expect": {
+          "consumed": 5,
+          "statements": [
+            {
+              "direction": "server",
+              "operation": "other",
+              "text": "+OK",
+              "metadata": {
+                "x-resp.reply": "simple"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "dir": "server",
+        "hex": "ff",
+        "expect": {
+          "error": true
+        }
+      }
+    ]
+  }
+]

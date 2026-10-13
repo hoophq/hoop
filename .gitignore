@@ -48,6 +48,8 @@ dist/
 !tunnel/dist/scripts/**
 rootfs/app/ui
 build
+# hoop-inspect built by `make test-sidecar-plugins` for the codec-test runs
+sidecar/codec/wasm/.build/
 go.work.sum
 .env
 

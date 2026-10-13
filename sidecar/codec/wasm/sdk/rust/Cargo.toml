@@ -3,13 +3,27 @@
 # The library itself builds and tests on the host target. A plug-in is a
 # separate cdylib crate that depends on it and builds for
 # wasm32-unknown-unknown; examples/acmewire is the template.
+#
+# Published to crates.io as `hoop-codec`. The release workflow tags the
+# crate `hoop-codec-v<version>` and runs `cargo publish` from this
+# directory; bump `version` here and nowhere else.
 [package]
 name = "hoop-codec"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
 description = "SDK for hoop codec plug-ins: implement Codec, call export_codec!, build for wasm32-unknown-unknown"
-publish = false
+license = "MIT"
+repository = "https://github.com/hoophq/hoop"
+homepage = "https://hoop.dev"
+documentation = "https://hoop.dev/docs/setup/configuration/hoop-sidecar/plugins/writing"
+readme = "README.md"
+keywords = ["hoop", "wasm", "plugin", "codec", "protocol"]
+categories = ["wasm", "parsing", "development-tools"]
+# The package is the library alone. The examples are workspace members
+# with a path dependency on this crate; a plug-in author copies one from
+# the repository, so they have no place in the registry tarball.
+include = ["src/**", "Cargo.toml", "README.md", "LICENSE"]
 
 # serde and serde_json are the only dependencies. The ABI is JSON over
 # linear memory, and a plug-in author should not have to audit more than

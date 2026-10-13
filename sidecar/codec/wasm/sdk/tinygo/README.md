@@ -6,6 +6,20 @@ implements `codec.Codec`, the capability interfaces it supports, and calls
 `codec.Serve` from an `init` function. `example/acmewire` is a complete
 plug-in and the template to copy.
 
+## Install
+
+```sh
+go get github.com/hoophq/hoop/sidecar/codec/wasm/sdk/tinygo@v0.1.0
+```
+
+The module sits below the repository root, so its tag carries the module
+path as a prefix: `sidecar/codec/wasm/sdk/tinygo/vX.Y.Z`. The repository's
+own release tags (`1.162.0` and the like) do not version this module.
+
+The `go` directive is 1.26, the Go minor the repository's CI runs.
+TinyGo 0.43 supports Go 1.25 through 1.27, so TinyGo 0.43 with Go 1.26
+or 1.27 builds a plug-in on this module.
+
 ## Build
 
 ```sh
@@ -51,12 +65,12 @@ only, and off the relay the data-returning ones panic naming the import
 while `Log` goes to stderr. This lets a plug-in unit-test its codec on the
 host.
 
-## TinyGo is not installed on the dev box
+## No `.wasm` ships here
 
-`command -v tinygo` finds nothing here, so this SDK ships no `.wasm` and
-the wasm build above is unverified on this machine. The
-checked-in conformance fixture is the Rust example
-(`../../testdata/acmewire.wasm`); `example/acmewire` implements the same
-protocol and the same fixtures apply to it once built. Install TinyGo
-(`brew install tinygo`), build, then
-`hoop-inspect -codec-test acmewire.wasm ../../testdata/acmewire.fixtures.json`.
+The SDK ships no artifact. Build `example/acmewire` with the command
+above; it implements the same protocol as the Rust fixture under
+`../../testdata`, so the same fixtures prove it:
+
+```sh
+hoop-inspect -codec-test acmewire.wasm ../../testdata/acmewire.fixtures.json
+```

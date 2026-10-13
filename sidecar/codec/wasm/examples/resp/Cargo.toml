@@ -1,0 +1,29 @@
+# The x-resp plug-in: Redis RESP2 as a hoop Sidecar codec, written in Rust.
+#
+# A plug-in is a cdylib built for wasm32-unknown-unknown; build.sh does
+# that and copies the artifact to resp.wasm beside fixtures.json. The SDK
+# is the crate two directories up. This crate is its own Cargo root, not a
+# member of the SDK workspace, so a copy of it builds unchanged outside the
+# repository once `path` points at a checkout.
+[package]
+name = "resp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+hoop-codec = { path = "../../sdk/rust" }
+
+# opt-level "s" and lto keep the module small; panic = "abort" turns a
+# panic into the trap ABI.md expects instead of linking unwinding tables
+# the host cannot drive.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

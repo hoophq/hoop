@@ -1,0 +1,278 @@
+name: Sidecar Plug-in SDK Release
+
+# Two tag families publish the plug-in SDKs, one per package manager:
+#
+#   hoop-codec-vX.Y.Z                      the Rust crate, to crates.io
+#   sidecar/codec/wasm/sdk/tinygo/vX.Y.Z   the Go module; Go's nested-module
+#                                          rule makes the tag the module
+#                                          path below the repo root plus
+#                                          the version, so the tag IS the
+#                                          publication
+#
+# Either tag gets a GitHub release with the C header, the ABI and the four
+# artifacts, and a PR against hoophq/plugins that pins the examples to the
+# published versions. The Go pin on a Rust tag is the newest Go tag, so on
+# a first release push the Go tag before the Rust one.
+on:
+  push:
+    tags:
+      - "hoop-codec-v*"
+      - "sidecar/codec/wasm/sdk/tinygo/v*"
+
+permissions:
+  contents: write
+
+# proxy.golang.org intermittently resets HTTP/2 streams mid-download
+# ("stream error: stream ID N; INTERNAL_ERROR; received from peer"). cmd/go
+# turns that into a hard build failure after a ~60s stall: it does not retry,
+# and the `direct` GOPROXY fallback only covers 404/410. Frame-level resets
+# are HTTP/2-only, so fetch modules over HTTP/1.1.
+env:
+  GODEBUG: http2client=0
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # A tag build has no PR branch to track, so the libhoop PR switch is off.
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          libhoop-pr: "false"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # The memcache example is TinyGo. Its Linux package carries the
+      # wasm-opt it prefers; apt's binaryen is the fallback for a release
+      # that ships without one.
+      - name: Setup TinyGo
+        uses: acifani/setup-tinygo@v2
+        with:
+          tinygo-version: 0.43.0
+      - name: Install binaryen
+        run: sudo apt-get install -y binaryen
+
+      # The sqlframe example is C++ against sdk/c/hoop_codec.h: clang for
+      # the wasm32 target, lld for wasm-ld.
+      - name: Install clang and lld
+        run: sudo apt-get install -y clang lld
+
+      # The workflow-level GODEBUG (see the header comment) applies to the
+      # module downloads only: the tests run with client HTTP/2 restored,
+      # the same split as the Unit Test job.
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
+      - name: Test
+        env:
+          GODEBUG: http2client=1
+        run: make test-sidecar-plugins
+
+      # Every checked-in artifact rebuilt from source. Each build.sh writes
+      # over the checked-in copy, so the compare below reads the committed
+      # bytes back from git.
+      - name: Rebuild artifacts
+        env:
+          CC: clang++
+        run: |
+          set -euo pipefail
+          sidecar/codec/wasm/sdk/rust/examples/acmewire/build.sh
+          sidecar/codec/wasm/examples/resp/build.sh
+          sidecar/codec/wasm/examples/memcache/build.sh
+          sidecar/codec/wasm/examples/sqlframe/build.sh
+
+      # A Rust or TinyGo build is reproducible across the same toolchain
+      # version, so a rebuilt artifact that differs from the committed one
+      # means the source changed without a rebuild, or the author built
+      # with another toolchain. If this compare proves flaky in CI, the
+      # fallback is `hoop-inspect -codec-test` on the rebuilt file instead
+      # of a byte compare: it proves the source still satisfies the ABI
+      # and the fixtures, which is the property the artifact exists for.
+      - name: Compare artifacts with the checked-in ones
+        run: |
+          set -euo pipefail
+          status=0
+          for f in \
+            sidecar/codec/wasm/testdata/acmewire.wasm \
+            sidecar/codec/wasm/examples/resp/resp.wasm \
+            sidecar/codec/wasm/examples/memcache/memcache.wasm \
+            sidecar/codec/wasm/examples/sqlframe/sqlframe.wasm
+          do
+            want=$(git show "HEAD:$f" | sha256sum | cut -d' ' -f1)
+            got=$(sha256sum "$f" | cut -d' ' -f1)
+            if [ "$want" != "$got" ]; then
+              echo "::error file=$f::$f: checked-in sha256 $want, rebuilt $got. Run its build.sh with the toolchain versions this job installs and commit the artifact."
+              status=1
+            fi
+          done
+          exit $status
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: [test]
+    timeout-minutes: 20
+
+    steps:
+      # The Go pin for the examples PR is read from the tags, so the
+      # checkout needs all of them.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Every version the later steps pin is decided here, before anything
+      # is published, so a run that cannot complete fails with nothing
+      # half shipped. The Rust pin is the crate version in Cargo.toml: on a
+      # Rust tag it must equal the tag, and on a Go tag it is the crate the
+      # tree was written against. The Go pin is the tag on a Go tag and the
+      # newest Go tag otherwise.
+      - name: Resolve versions
+        id: versions
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          rust_version=$(sed -nE 's/^version = "([^"]+)"$/\1/p' sidecar/codec/wasm/sdk/rust/Cargo.toml | head -1)
+          if [ -z "$rust_version" ]; then
+            echo "::error::no version in sidecar/codec/wasm/sdk/rust/Cargo.toml"
+            exit 1
+          fi
+          case "$TAG" in
+            hoop-codec-v*)
+              kind=rust
+              version="${TAG#hoop-codec-v}"
+              if [ "$version" != "$rust_version" ]; then
+                echo "::error::tag $TAG names $version but sidecar/codec/wasm/sdk/rust/Cargo.toml says $rust_version; bump Cargo.toml and tag the commit that carries it"
+                exit 1
+              fi
+              go_tag=$(git tag -l 'sidecar/codec/wasm/sdk/tinygo/v*' | sort -V | tail -1)
+              if [ -z "$go_tag" ]; then
+                echo "::error::no sidecar/codec/wasm/sdk/tinygo/v* tag to pin the Go example to; push the Go SDK tag first"
+                exit 1
+              fi
+              go_version="${go_tag#sidecar/codec/wasm/sdk/tinygo/v}"
+              ;;
+            sidecar/codec/wasm/sdk/tinygo/v*)
+              kind=go
+              version="${TAG#sidecar/codec/wasm/sdk/tinygo/v}"
+              go_version="$version"
+              ;;
+            *)
+              echo "::error::tag $TAG matches neither hoop-codec-v* nor sidecar/codec/wasm/sdk/tinygo/v*"
+              exit 1
+              ;;
+          esac
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "rust_version=$rust_version" >> "$GITHUB_OUTPUT"
+          echo "go_version=$go_version" >> "$GITHUB_OUTPUT"
+          echo "kind=$kind version=$version rust=$rust_version go=$go_version"
+
+      - name: Publish crate
+        if: steps.versions.outputs.kind == 'rust'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked --manifest-path sidecar/codec/wasm/sdk/rust/Cargo.toml
+
+      # The test job proved the checked-in artifacts equal a rebuild from
+      # this tag, so the release attaches the committed files.
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            hoop codec plug-in SDK. ABI version 1: see `ABI.md`.
+
+            - Rust: `cargo add hoop-codec@${{ steps.versions.outputs.rust_version }}`
+            - Go (TinyGo): `go get github.com/hoophq/hoop/sidecar/codec/wasm/sdk/tinygo@v${{ steps.versions.outputs.go_version }}`
+            - C: `hoop_codec.h` below
+          files: |
+            sidecar/codec/wasm/sdk/c/hoop_codec.h
+            sidecar/codec/wasm/abi/ABI.md
+            sidecar/codec/wasm/testdata/acmewire.wasm
+            sidecar/codec/wasm/examples/resp/resp.wasm
+            sidecar/codec/wasm/examples/memcache/memcache.wasm
+            sidecar/codec/wasm/examples/sqlframe/sqlframe.wasm
+
+      - name: Checkout hoophq/plugins
+        uses: actions/checkout@v7
+        with:
+          repository: hoophq/plugins
+          token: ${{ secrets.GH_TOKEN }}
+          path: plugins
+
+      # The examples in this tree depend on the SDKs by relative path. The
+      # copies in hoophq/plugins stand alone, so each dependency becomes
+      # the published version: a crates.io version for Rust, a tagged
+      # module for Go, and for C++ the header itself beside the source,
+      # the same bytes the release above attached. Every rewrite checks
+      # that its line existed: a sed with no match would ship a path
+      # dependency into a repository that has no such path.
+      - name: Rewrite examples to the published SDKs
+        env:
+          RUST_VERSION: ${{ steps.versions.outputs.rust_version }}
+          GO_VERSION: ${{ steps.versions.outputs.go_version }}
+        run: |
+          set -euo pipefail
+          src=sidecar/codec/wasm/examples
+          dst=plugins/examples
+          mkdir -p "$dst"
+          for name in resp memcache sqlframe; do
+            rsync -a --delete --exclude target/ --exclude dist/ "$src/$name/" "$dst/$name/"
+          done
+
+          cargo_toml="$dst/resp/Cargo.toml"
+          grep -q '^hoop-codec = { path = "../../sdk/rust" }$' "$cargo_toml"
+          sed -i 's#^hoop-codec = { path = "../../sdk/rust" }$#hoop-codec = "'"$RUST_VERSION"'"#' "$cargo_toml"
+
+          (
+            cd "$dst/memcache"
+            export GOWORK=off
+            go mod edit \
+              -dropreplace=github.com/hoophq/hoop/sidecar/codec/wasm/sdk/tinygo \
+              -require=github.com/hoophq/hoop/sidecar/codec/wasm/sdk/tinygo@v"$GO_VERSION"
+            # The tag was pushed moments ago: fetch it from GitHub directly
+            # instead of waiting for the proxy and the checksum database to
+            # notice it. go.sum still records the hash of what was fetched.
+            GOPROXY=direct GONOSUMDB=github.com/hoophq/hoop go mod tidy
+          )
+
+          build_sh="$dst/sqlframe/build.sh"
+          grep -q '^include="\$here/../../sdk/c"$' "$build_sh"
+          sed -i 's#^include="\$here/../../sdk/c"$#include="$here"#' "$build_sh"
+          cp sidecar/codec/wasm/sdk/c/hoop_codec.h "$dst/sqlframe/hoop_codec.h"
+
+      - name: Open the examples PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          path: plugins
+          branch: sidecar-plugins/${{ steps.versions.outputs.kind }}-v${{ steps.versions.outputs.version }}
+          commit-message: "examples: pin to hoop-codec ${{ steps.versions.outputs.rust_version }} and tinygo SDK v${{ steps.versions.outputs.go_version }}"
+          title: "examples: ${{ github.ref_name }}"
+          body: |
+            Examples from hoophq/hoop at `${{ github.ref_name }}`, pinned to
+            `hoop-codec = "${{ steps.versions.outputs.rust_version }}"` and
+            `github.com/hoophq/hoop/sidecar/codec/wasm/sdk/tinygo@v${{ steps.versions.outputs.go_version }}`.
+            Release: https://github.com/hoophq/hoop/releases/tag/${{ github.ref_name }}
