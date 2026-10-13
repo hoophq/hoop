@@ -152,6 +152,11 @@ needs a restart.`,
 		// (a pipe, CI, a container) nobody could answer, and Setup keeps
 		// refusing such a config.
 		stdoutTTY, stdinTTY := term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd()))
+		// A coding agent or a deployment can hold a terminal with nobody at
+		// it: run as a pipe would, with no screen and no approvals.
+		if sidecartui.Unattended(os.Getenv, fileExists) != "" {
+			stdoutTTY, stdinTTY = false, false
+		}
 		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv)
 
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
@@ -525,6 +530,12 @@ func refusePlainPlane(path string) error {
 		return fmt.Errorf("%s: control_plane_url: %w", path, err)
 	}
 	return nil
+}
+
+// fileExists is whether something is at path.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // sidecarOperator names the person reviewing at this terminal: the OS
