@@ -1,0 +1,76 @@
+# The scenario stack. Run with one override, which picks how the gateway
+# reaches a hard-coded host such as slack.com:
+#
+#   compose.alias.yml  A: network aliases on the Slack twin
+#   compose.proxy.yml  B: HTTPS_PROXY to the twin router
+#
+# Both trust the twins through SSL_CERT_FILE, which replaces the system
+# roots: no real CA is trusted, so no real third party can answer.
+name: twins
+
+services:
+  pki:
+    image: hoop-twins:spike
+    build: ..
+    command:
+      - pki
+      - -dir=/pki
+      - -leaf=oidc=oidc-twin,localhost,127.0.0.1
+      - -leaf=slack=slack.com,wss-primary.slack.com,hooks.slack.com,slack-twin,localhost,127.0.0.1
+    volumes: [pki:/pki]
+
+  oidc-twin:
+    image: hoop-twins:spike
+    command: [oidc, -issuer=https://oidc-twin, -cert=/pki/oidc.crt, -key=/pki/oidc.key]
+    volumes: [pki:/pki:ro]
+    ports: ["127.0.0.1:18081:8080"]
+    depends_on: { pki: { condition: service_completed_successfully } }
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:8080/_twin/healthz]
+      interval: 1s
+      retries: 30
+
+  slack-twin:
+    image: hoop-twins:spike
+    command: [slack, -cert=/pki/slack.crt, -key=/pki/slack.key]
+    volumes: [pki:/pki:ro]
+    ports: ["127.0.0.1:18082:8080"]
+    depends_on: { pki: { condition: service_completed_successfully } }
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:8080/_twin/healthz]
+      interval: 1s
+      retries: 30
+
+  # The real hoop binary, built on the host for linux and mounted, run as
+  # `hoop start standalone`: gateway, embedded PGlite and the agent in one
+  # process. The custom connection runs its command in this container.
+  gateway:
+    image: alpine:3.20
+    entrypoint: [/hoop/hoop, start, standalone]
+    environment:
+      # 18009/18010 on the host, so the stack runs next to a dev gateway.
+      # The API listens on PORT; gRPC always listens on 8010.
+      PORT: "18009"
+      API_URL: http://127.0.0.1:18009
+      GRPC_URL: grpc://127.0.0.1:8010
+      IDP_ISSUER: https://oidc-twin
+      IDP_CLIENT_ID: hoop
+      IDP_CLIENT_SECRET: hoop-secret
+      SSL_CERT_FILE: /pki/ca.crt
+      DO_NOT_TRACK: "1"
+      GIN_MODE: release
+      LOG_ENCODING: console
+    volumes:
+      - pki:/pki:ro
+      - ${HOOP_BIN_DIR:?set HOOP_BIN_DIR to the directory holding the linux hoop binary}:/hoop:ro
+    ports: ["127.0.0.1:18009:18009", "127.0.0.1:18010:8010"]
+    depends_on:
+      oidc-twin: { condition: service_healthy }
+      slack-twin: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, -qO-, http://127.0.0.1:18009/api/healthz]
+      interval: 1s
+      retries: 120
+
+volumes:
+  pki:

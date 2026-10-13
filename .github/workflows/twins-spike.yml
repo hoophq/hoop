@@ -1,0 +1,65 @@
+# ENG-690 spike, throwaway branch only: one scenario against the OIDC and
+# Slack twins, once per way of reaching slack.com. The run time of each leg
+# is the measurement the spike needs.
+name: Twins spike
+
+on:
+  push:
+    branches: [rogerio/eng-690-spike-scenario-harness-with-oidc-and-slack-twins]
+  workflow_dispatch:
+
+jobs:
+  scenario:
+    name: Scenario (${{ matrix.reach }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        reach: [alias, proxy, native]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          libhoop-pr: "false"
+
+      - name: Build hoop (linux)
+        run: |
+          mkdir -p dist/twins
+          CGO_ENABLED=0 go build -o dist/twins/hoop ./client
+
+      # Exec on a connection with review needs an enterprise license, and the
+      # license key is fixed in the binary. With no secret the scenario fails
+      # at that step and says so.
+      - name: License
+        env:
+          TWINS_LICENSE: ${{ secrets.TWINS_LICENSE }}
+        run: |
+          if [ -n "$TWINS_LICENSE" ]; then
+            printf '%s' "$TWINS_LICENSE" > "$RUNNER_TEMP/license.json"
+            echo "TWINS_LICENSE_FILE=$RUNNER_TEMP/license.json" >> "$GITHUB_ENV"
+          fi
+
+      - name: Scenario
+        working-directory: twins/scenario
+        env:
+          TWINS_REACH: ${{ matrix.reach }}
+          HOOP_BIN_DIR: ${{ github.workspace }}/dist/twins
+          TWINS_ARTIFACTS: ${{ runner.temp }}/twins
+        run: GOWORK=off go test -tags scenario -count=1 -v -timeout 10m ./...
+
+      - name: Upload twin states and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: twins-${{ matrix.reach }}
+          path: |
+            ${{ runner.temp }}/twins/*.json
+            ${{ runner.temp }}/twins/*.txt
+            ${{ runner.temp }}/twins/*.log
+            ${{ runner.temp }}/twins/native/*.log

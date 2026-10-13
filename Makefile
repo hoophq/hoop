@@ -182,6 +182,11 @@ test-sidecar-plugins:
 test-sidecar-e2e:
 	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 go test -tags integration -v -timeout 10m -count=1 ./...
 
+# ENG-690 spike: the review scenario against the OIDC and Slack twins.
+# TWINS_REACH=alias|proxy|native picks how the gateway reaches slack.com.
+test-twins-scenario:
+	cd twins/scenario && env GOWORK=off go test -tags scenario -count=1 -v -timeout 10m ./...
+
 # EVL-338: the previous release must decode the document this plane serves.
 # The test builds a decoder in a worktree of the newest release tag HEAD does
 # not contain, so it needs the tags (fetch-depth: 0). The grep makes a renamed

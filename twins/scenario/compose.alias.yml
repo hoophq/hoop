@@ -1,0 +1,8 @@
+# A: the Slack twin answers as the real Slack hosts through network aliases,
+# as fakegoogle does. Every host hoop dials must be listed here; a host not
+# listed resolves through real DNS.
+services:
+  slack-twin:
+    networks:
+      default:
+        aliases: [slack.com, wss-primary.slack.com, hooks.slack.com]

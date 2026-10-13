@@ -1,0 +1,27 @@
+# B: the gateway sends every HTTPS request through the twin router. The
+# router tunnels a mapped host to its twin and refuses any other host, so
+# an unexpected egress fails and shows up in the router's /_twin/state.
+services:
+  router:
+    image: hoop-twins:spike
+    command:
+      - router
+      - -listen=:3128
+      - -route=slack.com=slack-twin:443
+      - -route=wss-primary.slack.com=slack-twin:443
+      - -route=hooks.slack.com=slack-twin:443
+      - -route=oidc-twin=oidc-twin:443
+    ports: ["127.0.0.1:18083:3128"]
+    depends_on:
+      oidc-twin: { condition: service_healthy }
+      slack-twin: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:3128/_twin/healthz]
+      interval: 1s
+      retries: 30
+
+  gateway:
+    environment:
+      HTTPS_PROXY: http://router:3128
+    depends_on:
+      router: { condition: service_healthy }
