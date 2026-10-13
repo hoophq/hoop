@@ -21,11 +21,16 @@ mkdir -p "$here/dist"
 
 # -tags must name the same capability set as the manifest in main.go:
 # describe traps at load when they differ. GOWORK=off because the SDK and
-# this module are outside go.work on purpose; go.mod says why.
+# this module are outside go.work on purpose; go.mod says why. The build
+# runs from this directory: TinyGo resolves the package through `go list`
+# relative to the working directory, and an absolute path from a directory
+# with no go.mod (the repository root under GOWORK=off) fails with "cannot
+# find main module".
+cd "$here"
 GOWORK=off tinygo build \
-  -o "$here/dist/memcache.wasm" \
+  -o dist/memcache.wasm \
   -target wasm-unknown -opt=z -no-debug \
   -tags hoop_deny,hoop_content \
-  "$here"
-cp "$here/dist/memcache.wasm" "$here/memcache.wasm"
-ls -l "$here/memcache.wasm"
+  .
+cp dist/memcache.wasm memcache.wasm
+ls -l memcache.wasm
