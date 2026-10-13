@@ -117,7 +117,15 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
       )}
 
       {tab === 'configure' ? (
-        <ConfigureTab onSaved={() => setTab('rules')} />
+        <Box>
+          {mixed && (
+            <Text size="sm" c="dimmed" mb="lg">
+              This provider analyzes agent sessions. Each sidecar uses the provider in its own
+              configuration.
+            </Text>
+          )}
+          <ConfigureTab onSaved={() => setTab('rules')} />
+        </Box>
       ) : (
         <RulesTab
           providerConfigured={Boolean(provider)}
