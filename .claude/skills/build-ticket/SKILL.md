@@ -45,8 +45,9 @@ human. Otherwise continue.
 ## 3. Branch
 
 One worktree per ticket. Branch from up-to-date `main`, using Linear's
-`branchName` so Linear links the PR. Commits start with the ticket ID:
-`EVL-86: <summary>`.
+`branchName` so Linear links the PR. A `claude --worktree` session starts on a
+branch of its own: switch to `branchName` before the first commit. Commits start
+with the ticket ID: `EVL-86: <summary>`.
 
 ## 4. Implement
 
@@ -81,34 +82,28 @@ re-check, so it remembers what it already raised.
 After 3 `FAIL` rounds: stop. Do not open the PR. Report the open findings and
 what you think the real blocker is.
 
-On `PASS`: run the `evidence` skill from QA's last-round captures (steps 4 to 6:
-compose, write `EVIDENCE.md`, show it to the user). Capture what is missing.
-Continue only after the user has seen it.
+On `PASS`: run the `evidence` skill from QA's last-round captures (steps 4 and 5:
+compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing.
+Continue only after the user has seen it. Step 7 publishes it.
 
 For a `spike`, there is no PR. Deliver the evidence and a proposed cut into
 vertical tickets, then stop.
 
 ## 7. Draft PR
 
-`gh pr create --draft`, title `<ID>: <summary>`. Fill the repo's PR template.
-Inside its sections, cover:
+`gh pr create --draft`, title `<ID>: <summary>`. Fill every section of
+`.github/PULL_REQUEST_TEMPLATE.md`. Put:
 
-```
-## Ticket
-<ticket ID only, never a Linear URL>
+- **Description**: what and why, 2-6 lines.
+- **Related Issue**: the ticket ID only, never a Linear URL.
+- **Testing**: the result line, the comparison images and "What it solves" from
+  `EVIDENCE.md` (no customer data, tokens or internal hosts: the repo is
+  public), the `Definition of done` as a checklist, the tests that guard it,
+  and exact commands so a teammate can re-run it without asking anything.
+- **Additional Notes**: the risks, or "low".
 
-## What & why
-<2-6 lines>
-
-## How to test
-<the result line, the comparison images and "What it solves" from EVIDENCE.md
- (no customer data, tokens or internal hosts: the repo is public), the
- Definition of done as a checklist, the tests that guard it, and exact commands
- so a teammate can re-run it without asking anything>
-
-## Risks
-<what could break, or "low">
-```
+Then write the PR number into `EVIDENCE.md` and attach it to the ticket
+(`evidence` step 6).
 
 Call out explicitly, when true: a change an old agent cannot process (`major`), a
 removed or renamed analytics event with its dashboard and successor, a new env

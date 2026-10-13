@@ -65,8 +65,7 @@ wait, not you.
 - Commits start with the ticket ID.
 - Go: `make test-oss` green before PR. `webapp_v2`: `npm run lint` + build.
 - No PR before the `qa` agent says PASS.
-- Every PR is born **draft** with a "How to test" section built from the
-  evidence.
+- Every PR is born **draft**, its "Testing" section built from the evidence.
 - Evidence lives in `~/evidencias/<TICKET-ID>/`, raw captures in
   `~/evidencias/.archive/<TICKET-ID>/`.
 - Linear ticket gets the PR link and moves to In Review.

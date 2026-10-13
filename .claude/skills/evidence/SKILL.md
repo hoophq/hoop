@@ -7,8 +7,7 @@ description: Produce the human evidence for a hoop ticket - the same real flow c
 
 Evidence is what convinces a person in two minutes that the change works and
 breaks nothing. A reader must be able to COMPARE: every image puts "before" and
-"after" side by side, with a label on each panel. Model: "How to test" in PR
-#1937.
+"after" side by side, with a label on each panel. Model: "Testing" in PR #1937.
 
 Deliverable, and nothing else, in `~/evidencias/<TICKET-ID>/`:
 
@@ -110,7 +109,7 @@ question; no file the reader has to open by hand.
 Show the EVIDENCE.md and the images to the user, in their language, before
 publishing. Then:
 - Linear: attach `EVIDENCE.md` and the images to the ticket.
-- PR: the result line, the images and "What it solves" under "How to test".
+- PR: the result line, the images and "What it solves" under "Testing".
   Host the images in a secret gist and link the raw URLs.
   The repo is public: no customer data, tokens, internal hosts or real emails
   in any image.

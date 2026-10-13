@@ -391,7 +391,7 @@ tooling enforces:
 
 - One ticket = one worktree = one session (`claude --worktree <ticket-id>`)
 - `/shape` turns an idea into Linear tickets; `/build-ticket <ID>` runs one to a
-  draft PR, gated by the `qa` agent; `/evidence` makes its "How to test" images
+  draft PR, gated by the `qa` agent; `/evidence` makes its "Testing" images
 - Branch names come from Linear's `branchName`; commits start with the ticket ID
 - Go changes: `make test-oss` green before PR; `webapp_v2/`: `npm run lint`
   and `npm run build`

@@ -31,28 +31,33 @@ for spec in "$@"; do
 done
 n=${#inputs[@]}
 
-maxw=0; maxh=0
+maxw=0; maxh=0; minw=${widths[0]}
 for i in $(seq 0 $((n-1))); do
   (( widths[i] > maxw )) && maxw=${widths[i]}
+  (( widths[i] < minw )) && minw=${widths[i]}
   (( heights[i] > maxh )) && maxh=${heights[i]}
 done
 
 args=(); filter=""; joined=""
 for i in $(seq 0 $((n-1))); do
   printf '%s' "${labels[i]}" > "$tmp/l$i.txt"
+  # freeze waits on stdin when it is an open pipe, even with a file argument.
   freeze "$tmp/l$i.txt" --language text --window=false --border.radius 0 \
     --background "#1f2937" --padding 22,30 --margin 0 --font.size 28 \
-    --theme dracula -o "$tmp/l$i.png" >/dev/null 2>&1
+    --theme dracula -o "$tmp/l$i.png" </dev/null >/dev/null 2>&1
   args+=(-i "${inputs[i]}")
 done
 for i in $(seq 0 $((n-1))); do args+=(-i "$tmp/l$i.png"); done
 
-# Label band: about 1/9 of the panel width, readable once the image is scaled down.
+# Label band: about 1/9 of the narrowest panel, readable once the image is scaled
+# down. One band for all panels: hstack needs equal heights.
+if [[ $dir == h ]]; then band=$(( minw / 9 )); else band=$(( maxw / 9 )); fi
+(( band < 80 )) && band=80; (( band > 160 )) && band=160
 for i in $(seq 0 $((n-1))); do
   if [[ $dir == h ]]; then pw=${widths[i]}; ph=$maxh; else pw=$maxw; ph=${heights[i]}; fi
-  band=$(( pw / 9 )); (( band < 80 )) && band=80; (( band > 160 )) && band=160
   filter+="[$i]pad=${pw}:${ph}:0:0:color=0x1d1d1d[i$i];"
-  filter+="[$((n+i))]scale=-1:${band},pad=${pw}:${band}:0:0:color=${bg}[b$i];"
+  # A label wider than its panel shrinks to fit; pad cannot crop.
+  filter+="[$((n+i))]scale=-1:${band},scale='min(iw,${pw})':-1,pad=${pw}:${band}:0:0:color=${bg}[b$i];"
   filter+="[b$i][i$i]vstack[p$i];"
   joined+="[p$i]"
 done
