@@ -325,7 +325,7 @@ func (m model) empty(w int) string {
 		if m.reviewer != nil {
 			hint += "You decide it here: select it and press enter."
 		} else {
-			hint += "It is decided in the gateway."
+			hint += "It is decided in the control plane."
 		}
 		b.WriteString(stFaint.Render(hint))
 	case tabLanes:
@@ -589,7 +589,7 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 	case "REJECTED", "REVOKED", "DENIED":
 		accent = colDanger
 	}
-	where := "gateway"
+	where := "control plane"
 	if r.Local {
 		where = "this terminal"
 	}
@@ -602,7 +602,7 @@ func reviewDetail(r *Review, w int, now time.Time) string {
 		parts = append(parts, "", b)
 	}
 	if r.Status == "PENDING" {
-		hint := "Approve or reject it in the gateway. The client resends the statement once it is approved."
+		hint := "Approve or reject it in the control plane. The client resends the statement once it is approved."
 		if r.Local {
 			hint = "Press enter to approve or reject it here."
 		}
@@ -674,8 +674,8 @@ func (m model) systemView(w, h, off int) string {
 		{"rule limits", orDash(sys.Limits)},
 		{"pii detector", on(sys.Detection, "attached")},
 		{"ai analyzer", on(sys.Analyzer != "", sys.Analyzer)},
-		{"gateway", on(sys.ControlPlane != "", sys.ControlPlane)},
-		{"session sync", on(sys.SessionsSink, "sending session events to the gateway")},
+		{"control plane", on(sys.ControlPlane != "", sys.ControlPlane)},
+		{"session sync", on(sys.SessionsSink, "sending session events to the control plane")},
 		{"admin api", on(sys.Admin != "", sys.Admin)},
 		{"query api", on(sys.QueryAPI, "/api/sessions · /api/events · /api/stats")},
 		{"config watch", on(sys.Watching != "", sys.Watching+stFaint.Render(" · edits apply live, SIGHUP to force"))},
