@@ -55,7 +55,7 @@ export const useReviewStore = create((set, get) => ({
         },
         requesters: {
           ...s.requesters,
-          [sessionId]: data?.user_name || data?.user_email || null,
+          [sessionId]: data?.user_name || data?.user || null,
         },
         statementStatus: { ...s.statementStatus, [sessionId]: 'success' },
       }))
