@@ -91,23 +91,23 @@ func TestListUsersWithLastLogin(t *testing.T) {
 		assert.Empty(t, users)
 		assert.EqualValues(t, 3, total)
 	})
-}
 
-func TestUpsertUserTokenRecordsLastLogin(t *testing.T) {
-	startTestDB(t)
-	refreshToken := "refresh-1"
-	require.NoError(t, models.UpsertUserToken(models.DB, "subject-1", "token-1", &refreshToken))
-	first, err := models.GetUserToken(models.DB, "subject-1")
-	require.NoError(t, err)
-	require.NotNil(t, first.LastLoginAt)
+	// One database for the whole test: each embedded boot is slow.
+	t.Run("the token upsert moves the time and keeps the refresh token", func(t *testing.T) {
+		refreshToken := "refresh-1"
+		require.NoError(t, models.UpsertUserToken(models.DB, "subject-1", "token-1", &refreshToken))
+		first, err := models.GetUserToken(models.DB, "subject-1")
+		require.NoError(t, err)
+		require.NotNil(t, first.LastLoginAt)
 
-	// A sign-in without a refresh token keeps the stored one and moves the time.
-	require.NoError(t, models.UpsertUserToken(models.DB, "subject-1", "token-2", nil))
-	second, err := models.GetUserToken(models.DB, "subject-1")
-	require.NoError(t, err)
-	require.NotNil(t, second.LastLoginAt)
-	assert.Equal(t, "token-2", second.Token)
-	require.NotNil(t, second.RefreshToken)
-	assert.Equal(t, refreshToken, *second.RefreshToken)
-	assert.False(t, second.LastLoginAt.Before(*first.LastLoginAt))
+		// A sign-in without a refresh token keeps the stored one.
+		require.NoError(t, models.UpsertUserToken(models.DB, "subject-1", "token-2", nil))
+		second, err := models.GetUserToken(models.DB, "subject-1")
+		require.NoError(t, err)
+		require.NotNil(t, second.LastLoginAt)
+		assert.Equal(t, "token-2", second.Token)
+		require.NotNil(t, second.RefreshToken)
+		assert.Equal(t, refreshToken, *second.RefreshToken)
+		assert.False(t, second.LastLoginAt.Before(*first.LastLoginAt))
+	})
 }
