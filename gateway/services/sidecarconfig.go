@@ -324,6 +324,9 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	if rule.SpendApprovalOn != "" {
 		out.SpendApprovalOn = rule.SpendApprovalOn
 	}
+	if len(rule.MatchIgnore) > 0 {
+		out.MatchIgnore = rule.MatchIgnore
+	}
 	return &out
 }
 
@@ -385,7 +388,8 @@ func (e ErrSidecarAnalyzerInvalid) Error() string { return e.Reason }
 // analyzer block AS SERVED. A rule and a listener block are each valid alone
 // and can compose into one the sidecar refuses, such as review_mode on a lane
 // whose bound rule holds nothing; the sidecar then refuses the whole document.
-// The lane half too: spend_approval_on on a lane that cannot settle.
+// The lane half runs here too: a listener's own block reaches no other check
+// of it, since the plane never runs daemon.Validate.
 func validateComposedAnalyzers(cfg daemon.Config) error {
 	var problems []string
 	for _, l := range cfg.Listeners {

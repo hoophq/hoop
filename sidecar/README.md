@@ -1618,13 +1618,53 @@ stays on the raw bytes. Five consequences:
 - A query value the codec redacts (a token, a password) is filed redacted, so
   requests differing only in that value match one approval (EVL-310).
 - A request carrying a trace id, a nonce or a timestamp never matches twice.
-  Every attempt files its own review and pages the approvers again.
+  Every attempt files its own review and pages the approvers again, unless
+  `match_ignore` names that value (below).
 - A client that retries on its own timeout leaves two attempts in flight, and
   the approval releases whichever claims it first.
 - A request that arrives in more than one read reaches the upstream in part
   before the gate decides: the request line, the headers and the start of the
   body. A denial does not recall them, so a route that acts on headers alone
   runs whatever the reviewer decides (EVL-309).
+
+**`match_ignore` unbinds a volatile body value.** `kubectl rollout restart`
+writes the current second into the patch, so its resend never matches the
+approval. Name that value, and the relay files a fixed marker in its place:
+
+```yaml
+    analyzer:
+      high: require_review
+      approval_rule: k8s-approvers
+      review_mode: return
+      match_ignore:
+        - methods: [PATCH]          # empty means every method
+          resources: [/apis/apps/v1/namespaces/*/deployments/*]
+          fields:
+            - [spec, template, metadata, annotations, "kubectl.kubernetes.io/restartedAt"]
+```
+
+```
+PATCH /apis/apps/v1/namespaces/default/deployments/web?fieldManager=kubectl-rollout
+
+{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":"<ignored by match_ignore>"}}}}}
+```
+
+- The approval does not bind an ignored value. The request that runs carries
+  a value the reviewer did not read. Name only values that change nothing a
+  reviewer decides on.
+- `resources` uses the `http_resource` glob over the normalized resource, and
+  is required. A field is a list of object keys from the body root, so a key
+  with dots stays one key.
+- Only a string, number, boolean or null is replaced. An object or array at
+  the path, a path through an array, and a body that is not JSON are filed
+  exactly.
+- The value is replaced in the client's bytes. Every other byte, a duplicate
+  key included, reaches the reviewer as sent.
+- The audit record carries `review_match_ignored`, the count of values
+  replaced.
+- Valid on an http lane where a level asks for `require_review`; elsewhere
+  startup refuses it. A control plane serves it only to a sidecar that
+  reports `analyzer_match_ignore`.
 
 On a grpc lane the relay files the method path, a newline, then the message
 as protojson. A spanner lane files the SQL alone when it reads SQL from the

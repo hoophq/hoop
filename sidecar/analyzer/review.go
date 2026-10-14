@@ -3,6 +3,7 @@ package analyzer
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -290,9 +291,12 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		return e.denyEnded(ctx, notes, "", "", "the connection ended before the review was filed")
 	}
 
-	text, err := reviewText(stmt)
+	text, ignored, err := reviewText(stmt, e.cfg.MatchIgnore)
 	if err != nil {
 		return e.denyHold(notes, "", "", err.Error())
+	}
+	if ignored > 0 {
+		notes[MetadataReviewMatchIgnored] = strconv.Itoa(ignored)
 	}
 	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
 		return e.cfg.Review.File(c, text)
@@ -331,22 +335,25 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 // target, so filing it alone would let one approval release any body sent to
 // that path; the body goes with it. A query value the codec redacted still
 // matches across requests; the codec never hands over the raw one.
-func reviewText(stmt inspect.Statement) (string, error) {
+//
+// ignore replaces the http body values it names, and the count says how many.
+func reviewText(stmt inspect.Statement, ignore []MatchIgnore) (string, int, error) {
 	if stmt.HTTP == nil {
-		return stmt.Text, nil
+		return stmt.Text, 0, nil
 	}
 	if stmt.HTTP.BodyTruncated {
 		budget := "http.max_body_bytes"
 		if stmt.Protocol != inspect.HTTP {
 			budget = "grpc.max_payload_bytes"
 		}
-		return "", fmt.Errorf("the request body is larger than %s, "+
+		return "", 0, fmt.Errorf("the request body is larger than %s, "+
 			"so a reviewer could not read all of it", budget)
 	}
 	if stmt.Protocol != inspect.HTTP || stmt.HTTP.Body == "" {
-		return stmt.Text, nil
+		return stmt.Text, 0, nil
 	}
-	return stmt.Text + "\n\n" + stmt.HTTP.Body, nil
+	body, ignored := ignoreFields(stmt.HTTP, ignore)
+	return stmt.Text + "\n\n" + body, ignored, nil
 }
 
 // wait asks about one pending review until it settles, the budget runs out or
