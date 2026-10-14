@@ -339,7 +339,7 @@ func getReviewByIdOrSid(db *gorm.DB, orgID, id string, viewer *ReviewViewer) (*R
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at
 	FROM private.reviews rv
 	WHERE org_id = ? AND (id = ? OR session_id = ?)`+visibility,
 		append([]any{orgID, id, id}, visibilityArgs...)...).
@@ -381,7 +381,7 @@ func ListReviews(db *gorm.DB, orgID string, viewer ReviewViewer) (*[]Review, err
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at
 	FROM private.reviews rv
 	WHERE org_id = ?`+visibility, append([]any{orgID}, visibilityArgs...)...).
 		Find(&reviews).

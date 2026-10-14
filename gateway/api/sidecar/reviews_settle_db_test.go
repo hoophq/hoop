@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -159,6 +160,17 @@ func testLapsedReservationIsSpent(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &status))
 	assert.Equal(t, string(models.ReviewStatusExecuted), string(status.Status), "a lapsed lease reads as spent")
 	assert.Equal(t, string(models.ReviewStatusProcessing), readStoredReview(t, id).Status, "a read writes nothing")
+
+	// The reviewer's reads show the same.
+	viewer := models.ReviewViewer{IsAuditorOrAdmin: true}
+	review, err := models.GetReviewByIdOrSidForViewer(models.DB, statusTestOrgID, id, viewer)
+	require.NoError(t, err)
+	assert.Equal(t, models.ReviewStatusExecuted, review.Status, "the review page")
+	reviews, err := models.ListReviews(models.DB, statusTestOrgID, viewer)
+	require.NoError(t, err)
+	idx := slices.IndexFunc(*reviews, func(r models.Review) bool { return r.ID == id })
+	require.NotEqual(t, -1, idx, "the review list holds the review")
+	assert.Equal(t, models.ReviewStatusExecuted, (*reviews)[idx].Status, "the review list")
 
 	// A late refusal cannot give the approval back: the upstream may have run it.
 	rec = settleReview(sc, id, `{"accepted":false}`)
