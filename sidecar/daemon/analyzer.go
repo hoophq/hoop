@@ -1462,9 +1462,9 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 
 	if len(la.MatchIgnore) > 0 && !holds {
 		problems = append(problems, fmt.Sprintf(
-			"%s: match_ignore decides how a held statement matches its review, and no "+
-				"risk level asks for %q, so nothing on this lane would hold one",
-			where, analyzer.ActionRequireReview))
+			"%s: match_ignore decides how a held statement matches its approval request, "+
+				"and no risk level asks for %s, so nothing on this lane would hold one",
+			where, holdAction))
 	}
 	for i, m := range la.MatchIgnore {
 		if err := m.Validate(); err != nil {

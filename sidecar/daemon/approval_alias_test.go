@@ -205,7 +205,7 @@ func TestAHoldingGRPCLaneCarriesTheApprovalModeOntoRequestMessages(t *testing.T)
 
 // An http lane captures the approval header as it captures the review one.
 func TestAnHTTPLaneCapturesTheApprovalModeHeader(t *testing.T) {
-	f := laneCodecFactory(ListenerConfig{Protocol: "http"})
+	f := laneCodecFactory(ListenerConfig{Protocol: "http"}, nil)
 	stmts, _, err := f().Decode(inspect.FromClient, []byte(
 		"POST /x HTTP/1.1\r\nHost: h\r\nX-Hoop-Approval-Mode: return\r\nContent-Length: 0\r\n\r\n"))
 	if err != nil || len(stmts) != 1 {

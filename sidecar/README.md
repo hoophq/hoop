@@ -1670,8 +1670,8 @@ PATCH /apis/apps/v1/namespaces/default/deployments/web?fieldManager=kubectl-roll
 ```
 
 - The approval does not bind an ignored value. The request that runs carries
-  a value the reviewer did not read. Name only values that change nothing a
-  reviewer decides on.
+  a value the approver did not read. Name only values that change nothing an
+  approver decides on.
 - `resources` uses the `http_resource` glob over the normalized resource, and
   is required. A field is a list of object keys from the body root, so a key
   with dots stays one key.
@@ -1679,10 +1679,10 @@ PATCH /apis/apps/v1/namespaces/default/deployments/web?fieldManager=kubectl-roll
   the path, a path through an array, and a body that is not JSON are filed
   exactly.
 - The value is replaced in the client's bytes. Every other byte, a duplicate
-  key included, reaches the reviewer as sent.
+  key included, reaches the approver as sent.
 - The audit record carries `review_match_ignored`, the count of values
   replaced.
-- Valid on an http lane where a level asks for `require_review`; elsewhere
+- Valid on an http lane where a level asks for `require_approval`; elsewhere
   startup refuses it. A control plane serves it only to a sidecar that
   reports `analyzer_match_ignore`.
 
