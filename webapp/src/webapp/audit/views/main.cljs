@@ -49,11 +49,20 @@
                                (:sessions @sessions))
             display-status (if is-filtered-search-active?
                              (:status @filtered-sessions)
-                             (:status @sessions))]
+                             (:status @sessions))
+            filters (:filters @sessions)
+            live-total (when (and (= (get filters "status") "open")
+                                  (= (get filters "verb") "connect")
+                                  (not is-filtered-search-active?))
+                         (get-in @sessions [:sessions :total]))]
         [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
          [:header
-          [filters/audit-filters
-           (:filters @sessions)]]
+          [filters/audit-filters filters]]
+
+         (when (and live-total (not= display-status :loading))
+           [:> Text {:as "p" :size "2" :weight "medium" :class "text-gray-11 mb-3"
+                     :role "status"}
+            (str live-total (if (= live-total 1) " live session" " live sessions"))])
 
          (cond
            (and (empty? (:data display-sessions)) (not= display-status :loading))

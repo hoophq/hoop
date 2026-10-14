@@ -56,8 +56,11 @@
          ;; :has_next_page alone — so the count was computed over the whole
          ;; tenant and then discarded on every filter change and every page.
          ;; Merged after the URL params so a stray ?count= in the address bar
-         ;; cannot reintroduce it.
-         query-params (merge url-params-map {"limit" (or limit 20) "count" "none"} params)]
+         ;; cannot reintroduce it. The Live filter is the exception: it shows
+         ;; how many sessions are running, and index_sessions_open makes that
+         ;; count read only open sessions.
+         count-mode (if (= (get url-params-map "status") "open") "exact" "none")
+         query-params (merge url-params-map {"limit" (or limit 20) "count" count-mode} params)]
      {:fx [[:dispatch [:fetch {:method "GET"
                                :uri "/plugins/audit/sessions"
                                :query-params query-params
