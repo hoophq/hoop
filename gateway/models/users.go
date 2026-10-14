@@ -42,8 +42,8 @@ type UserListOption struct {
 	PageSize int
 }
 
-// UserWithLastLogin is a user plus the time of its last sign-in, NULL when
-// none was recorded.
+// UserWithLastLogin is a user plus the time of its last sign-in, nil when none
+// was recorded.
 type UserWithLastLogin struct {
 	User
 	LastLoginAt *time.Time `gorm:"column:last_login_at"`
@@ -73,8 +73,7 @@ func ListUsersWithLastLogin(db *gorm.DB, orgID string, opts UserListOption) ([]U
 	}
 
 	q := matches().
-		Select("u.id, u.org_id, u.subject, u.name, u.picture, u.email, u.verified, u.status, u.slack_id, ut.last_login_at").
-		Joins("LEFT JOIN private.user_tokens AS ut ON ut.user_id = u.subject")
+		Select("u.id, u.org_id, u.subject, u.name, u.picture, u.email, u.verified, u.status, u.slack_id, u.last_login_at")
 	if opts.Page > 0 {
 		q = q.Order("LOWER(u.name), LOWER(u.email), u.id").
 			Limit(opts.PageSize).

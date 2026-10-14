@@ -11622,7 +11622,7 @@ const docTemplate = `{
         },
         "/users": {
             "get": {
-                "description": "List the users of the organization. Pass ` + "`" + `page` + "`" + ` or ` + "`" + `page_size` + "`" + ` to get a paginated response.",
+                "description": "List the users of the organization. Pass ` + "`" + `page` + "`" + ` or ` + "`" + `page_size` + "`" + ` to get a paginated response. Only admins and auditors receive ` + "`" + `last_login_at` + "`" + `.",
                 "produces": [
                     "application/json"
                 ],

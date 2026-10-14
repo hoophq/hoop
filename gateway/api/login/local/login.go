@@ -62,6 +62,9 @@ func Login(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to generate token")
 		return
 	}
+	if err := models.RecordUserLogin(models.DB, dbUser.Subject); err != nil {
+		log.Warnf("failed recording last login of %s, reason=%v", dbUser.Email, err)
+	}
 
 	c.Header("Access-Control-Expose-Headers", "Token")
 	c.Header("Token", tokenString)

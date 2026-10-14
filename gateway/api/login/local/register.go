@@ -123,6 +123,10 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	if err := models.RecordUserLogin(models.DB, userSubject); err != nil {
+		log.Warnf("failed recording last login of %s, reason=%v", user.Email, err)
+	}
+
 	// add default system tags
 	_ = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(org.ID))
 

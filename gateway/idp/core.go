@@ -234,6 +234,10 @@ func refreshForSubject(tokenVerifier TokenVerifier, subject, mode string) (strin
 		if err := models.UpsertUserToken(models.DB, subject, newToken.AccessToken, newRefreshToken); err != nil {
 			return nil, fmt.Errorf("failed to persist refreshed token: %w", err)
 		}
+		// A refresh keeps the user signed in, so it counts as a login.
+		if err := models.RecordUserLogin(models.DB, subject); err != nil {
+			log.With("subject", subject).Warnf("failed recording last login, reason=%v", err)
+		}
 
 		syncUserGroupsFromUserInfo(tokenVerifier, subject, newToken.AccessToken)
 

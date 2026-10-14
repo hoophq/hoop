@@ -35,7 +35,10 @@ func TestListUsersWithLastLogin(t *testing.T) {
 	seedListUser(t, "erin", "daxve@hoop.dev", "active")
 
 	before := time.Now().UTC().Add(-time.Second)
-	require.NoError(t, models.UpsertUserToken(models.DB, "alice@hoop.dev", "token", nil))
+	require.NoError(t, models.RecordUserLogin(models.DB, "alice@hoop.dev"))
+	// Refused sign-ins: only an active user gets a last login.
+	require.NoError(t, models.RecordUserLogin(models.DB, "bob@hoop.dev"))
+	require.NoError(t, models.RecordUserLogin(models.DB, "da_ve@hoop.dev"))
 
 	t.Run("without a page it keeps the ListUsers order and returns the last login", func(t *testing.T) {
 		users, total, err := models.ListUsersWithLastLogin(models.DB, testOrgID, models.UserListOption{})
@@ -92,22 +95,13 @@ func TestListUsersWithLastLogin(t *testing.T) {
 		assert.EqualValues(t, 3, total)
 	})
 
-	// One database for the whole test: each embedded boot is slow.
-	t.Run("the token upsert moves the time and keeps the refresh token", func(t *testing.T) {
-		refreshToken := "refresh-1"
-		require.NoError(t, models.UpsertUserToken(models.DB, "subject-1", "token-1", &refreshToken))
-		first, err := models.GetUserToken(models.DB, "subject-1")
+	t.Run("a user created again with the same email starts without a last login", func(t *testing.T) {
+		require.NoError(t, models.DB.Exec(
+			`DELETE FROM private.users WHERE org_id = ? AND subject = 'alice@hoop.dev'`, testOrgID).Error)
+		seedListUser(t, "Alice", "alice@hoop.dev", "active")
+		users, _, err := models.ListUsersWithLastLogin(models.DB, testOrgID, models.UserListOption{Email: "alice"})
 		require.NoError(t, err)
-		require.NotNil(t, first.LastLoginAt)
-
-		// A sign-in without a refresh token keeps the stored one.
-		require.NoError(t, models.UpsertUserToken(models.DB, "subject-1", "token-2", nil))
-		second, err := models.GetUserToken(models.DB, "subject-1")
-		require.NoError(t, err)
-		require.NotNil(t, second.LastLoginAt)
-		assert.Equal(t, "token-2", second.Token)
-		require.NotNil(t, second.RefreshToken)
-		assert.Equal(t, refreshToken, *second.RefreshToken)
-		assert.False(t, second.LastLoginAt.Before(*first.LastLoginAt))
+		require.Len(t, users, 1)
+		assert.Nil(t, users[0].LastLoginAt)
 	})
 }

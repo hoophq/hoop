@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/proto"
 	loginlocalapi "github.com/hoophq/hoop/gateway/api/login/local"
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,26 +60,68 @@ func seedUser(t *testing.T, name, email, status, password string, groups ...stri
 	}
 }
 
+// callList runs GET /users as an admin of the test org.
 func callList(t *testing.T, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	return callListAs(t, listTestOrgID, []string{types.GroupAdmin}, query)
+}
+
+func callListAs(t *testing.T, orgID string, groups []string, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Set(storagev2.ContextKey, storagev2.NewContext("admin@hoop.dev", listTestOrgID))
+	c.Set(storagev2.ContextKey, storagev2.NewContext("caller@hoop.dev", orgID).
+		WithUserInfo("Caller", "caller@hoop.dev", "active", "", groups))
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/users?"+query, nil)
 	userapi.List(c)
 	return rec
 }
 
-func signIn(t *testing.T, email, password string) {
+// listKeys returns the sorted keys of each listed user.
+func listKeys(t *testing.T, rec *httptest.ResponseRecorder) [][]string {
+	t.Helper()
+	var raw []map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw), "GET /users must stay a JSON array")
+	keys := make([][]string, len(raw))
+	for i, item := range raw {
+		for k := range item {
+			keys[i] = append(keys[i], k)
+		}
+		sort.Strings(keys[i])
+	}
+	return keys
+}
+
+func lastLoginOf(t *testing.T, rec *httptest.ResponseRecorder, email string) *time.Time {
+	t.Helper()
+	var users []listedUser
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &users))
+	for _, u := range users {
+		if u.Email == email {
+			return u.LastLoginAt
+		}
+	}
+	t.Fatalf("user %s is not listed", email)
+	return nil
+}
+
+// callLocalAuth runs a local auth handler with an email and password body.
+func callLocalAuth(t *testing.T, handler gin.HandlerFunc, path, email, password string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	body := `{"email":"` + email + `","password":"` + password + `"}`
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/localauth/login", strings.NewReader(body))
+	body := `{"email":"` + email + `","password":"` + password + `","name":"` + email + `"}`
+	c.Request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
-	loginlocalapi.Login(c)
+	handler(c)
+	return rec
+}
+
+func signIn(t *testing.T, email, password string) {
+	t.Helper()
+	rec := callLocalAuth(t, loginlocalapi.Login, "/api/localauth/login", email, password)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.NotEmpty(t, rec.Header().Get("Token"))
 }
@@ -101,16 +145,10 @@ func TestListUsers(t *testing.T) {
 		rec := callList(t, "")
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
-		var raw []map[string]any
-		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw), "GET /users must stay a JSON array")
-		require.Len(t, raw, 3)
-		for _, item := range raw {
-			keys := make([]string, 0, len(item))
-			for k := range item {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			assert.Equal(t, []string{"email", "groups", "id", "last_login_at", "name", "picture", "role", "slack_id", "status", "verified"}, keys)
+		keys := listKeys(t, rec)
+		require.Len(t, keys, 3)
+		for _, k := range keys {
+			assert.Equal(t, []string{"email", "groups", "id", "last_login_at", "name", "picture", "role", "slack_id", "status", "verified"}, k)
 		}
 
 		var users []listedUser
@@ -158,8 +196,27 @@ func TestListUsers(t *testing.T) {
 		assert.Equal(t, "bob@hoop.dev", users[0].Email)
 	})
 
+	t.Run("an auditor gets last_login_at and other roles do not", func(t *testing.T) {
+		rec := callListAs(t, listTestOrgID, []string{types.GroupAuditor}, "")
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Contains(t, listKeys(t, rec)[0], "last_login_at")
+
+		for _, groups := range [][]string{nil, {"sre"}, {types.GroupApprover}} {
+			rec := callListAs(t, listTestOrgID, groups, "")
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			for _, k := range listKeys(t, rec) {
+				assert.Equal(t, []string{"email", "groups", "id", "name", "picture", "role", "slack_id", "status", "verified"}, k,
+					"groups %v must get the user fields only", groups)
+			}
+
+			rec = callListAs(t, listTestOrgID, groups, "page=1")
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			assert.NotContains(t, rec.Body.String(), "last_login_at", "groups %v", groups)
+		}
+	})
+
 	t.Run("invalid params return 422", func(t *testing.T) {
-		for _, query := range []string{"page_size=101", "page_size=0", "page=0", "status=deleted"} {
+		for _, query := range []string{"page_size=101", "page_size=0", "page=0", "page=2147483648", "status=deleted"} {
 			rec := callList(t, query)
 			assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, "query %q: %s", query, rec.Body.String())
 		}
@@ -167,19 +224,38 @@ func TestListUsers(t *testing.T) {
 
 	t.Run("a local sign-in sets last_login_at", func(t *testing.T) {
 		before := time.Now().UTC().Add(-time.Second)
+		signIn(t, "alice@hoop.dev", "alice-pass")
+
+		rec := callList(t, "")
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		lastLogin := lastLoginOf(t, rec, "alice@hoop.dev")
+		require.NotNil(t, lastLogin)
+		assert.False(t, lastLogin.Before(before), "last login %v is before the sign-in %v", lastLogin, before)
+		assert.Nil(t, lastLoginOf(t, rec, "carol@hoop.dev"), "carol never signed in")
+	})
+
+	t.Run("an inactive user's sign-in is not recorded", func(t *testing.T) {
+		// Local auth hands an inactive user a token; every request with it is then refused.
 		signIn(t, "bob@hoop.dev", "bob-pass")
 
 		rec := callList(t, "")
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-		var users []listedUser
-		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &users))
-		for _, u := range users {
-			if u.Email == "bob@hoop.dev" {
-				require.NotNil(t, u.LastLoginAt)
-				assert.False(t, u.LastLoginAt.Before(before), "last login %v is before the sign-in %v", u.LastLoginAt, before)
-				continue
-			}
-			assert.Nil(t, u.LastLoginAt, "user %s never signed in", u.Email)
-		}
+		assert.Nil(t, lastLoginOf(t, rec, "bob@hoop.dev"))
+	})
+
+	t.Run("the first local register sets last_login_at", func(t *testing.T) {
+		// Register signs up the first user of the default org.
+		const defaultOrgID = "00000000-0000-0000-0000-0000000000c2"
+		require.NoError(t, models.DB.Exec(
+			`INSERT INTO private.orgs (id, name) VALUES (?, ?)`, defaultOrgID, proto.DefaultOrgName).Error)
+		before := time.Now().UTC().Add(-time.Second)
+		rec := callLocalAuth(t, loginlocalapi.Register, "/api/localauth/register", "first@hoop.dev", "first-pass")
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+		rec = callListAs(t, defaultOrgID, []string{types.GroupAdmin}, "")
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		lastLogin := lastLoginOf(t, rec, "first@hoop.dev")
+		require.NotNil(t, lastLogin)
+		assert.False(t, lastLogin.Before(before), "last login %v is before the register %v", lastLogin, before)
 	})
 }

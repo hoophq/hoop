@@ -3,6 +3,7 @@ package userapi
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/mail"
 	"os"
@@ -246,7 +247,7 @@ func Update(c *gin.Context) {
 // ListUsers
 //
 //	@Summary		List Users
-//	@Description	List the users of the organization. Pass `page` or `page_size` to get a paginated response.
+//	@Description	List the users of the organization. Pass `page` or `page_size` to get a paginated response. Only admins and auditors receive `last_login_at`.
 //	@Tags			User Management
 //	@Produce		json
 //	@Param			email		query		string											false	"Filter by part of the email, ignoring case"
@@ -275,6 +276,11 @@ func List(c *gin.Context) {
 		page, pageSize, err := apivalidation.ParsePaginationParams(pageStr, pageSizeStr)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+		// Keeps (page-1)*page_size, the query offset, far from an overflow.
+		if page > math.MaxInt32 {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "page is out of range"})
 			return
 		}
 		opts.Page, opts.PageSize = page, pageSize
@@ -322,13 +328,29 @@ func List(c *gin.Context) {
 		usersList[i] = item
 	}
 
-	if !paginated {
-		c.JSON(http.StatusOK, usersList)
+	// When other users signed in is for admins and auditors only. Other roles
+	// get the user fields without last_login_at.
+	if !ctx.IsAuditorOrAdminUser() {
+		plainUsers := make([]openapi.User, len(usersList))
+		for i, item := range usersList {
+			plainUsers[i] = item.User
+		}
+		writeUserList(c, paginated, plainUsers, total, opts)
 		return
 	}
-	c.JSON(http.StatusOK, openapi.PaginatedResponse[openapi.UserListItem]{
+	writeUserList(c, paginated, usersList, total, opts)
+}
+
+// writeUserList answers a plain array, or the paginated envelope when the
+// request asked for a page.
+func writeUserList[T any](c *gin.Context, paginated bool, items []T, total int64, opts models.UserListOption) {
+	if !paginated {
+		c.JSON(http.StatusOK, items)
+		return
+	}
+	c.JSON(http.StatusOK, openapi.PaginatedResponse[T]{
 		Pages: openapi.Pagination{Total: int(total), Page: opts.Page, Size: opts.PageSize},
-		Data:  usersList,
+		Data:  items,
 	})
 }
 
