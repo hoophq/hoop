@@ -1,6 +1,6 @@
 ---
 name: evidence
-description: Produce the human evidence for a hoop ticket - the same real flow captured on origin/main and on the branch, composed into labeled before/after images, plus a one-page EVIDENCE.md. Use after QA passes and before a ticket goes to review, or when asked for evidence of a change.
+description: Produce the human evidence for a hoop ticket - the same real flow captured on origin/main and on the branch, composed into labeled before/after images (a side-by-side video when the UI changes), plus a one-page EVIDENCE.md. Use after QA passes and before a ticket goes to review, or when asked for evidence of a change.
 ---
 
 # Evidence for a ticket
@@ -17,6 +17,10 @@ EVIDENCE.md
 2-<question>.png
 ```
 
+When the UI changes, the comparison is a video of the flow instead (model:
+ENG-596): `<flow>.gif` for the PR and `<flow>.mp4` for Linear, 1 or 2 flows.
+PNGs stay for API, log and CLI surfaces.
+
 Everything else (raw captures, logs, snapshots, scripts, test output) goes to
 `~/evidencias/.archive/<TICKET-ID>/`. Never inside the ticket folder.
 
@@ -28,10 +32,15 @@ For each `Definition of done` item, write one line:
 |---|---|---|
 | "Does the sidecar get the same rules?" | `GET /api/sidecars/configuration` | `curl \| jq` → PNG |
 | "Does the admin screen change?" | rule edit page | browser screenshot |
+| "Is the page fast, and does it show X?" | the page, used end to end | recorded flow → side-by-side GIF/MP4 |
 
 Surfaces, best first: the UI; an API response; a sidecar, gateway or agent log
 line; CLI output. Never an internal DB snapshot or `go test` output: a test is
 proof for CI, not for a reader.
+
+When the UI changes, the surface is the flow, recorded: a still hides what a
+click does. When the ticket adds a view, show its layout to the human as soon
+as it renders, before building its backend: the first look can remove it.
 
 Add a third column, **DURING DEPLOY** (`origin/main` code reading the database
 the branch migrated), when the ticket has a migration, a wire/packet change, or
@@ -48,6 +57,9 @@ break.
   wait for it to exit before starting the next. A health check can answer
   from the previous process. If a run overlapped, discard it and redo it from
   an empty database.
+- QA's stacks, still running with QA's seed, are the cheapest place to record.
+  Ask QA to leave them up. After you swap the UI assets under a running stack,
+  restart its container: the gateway reads `index.html` once at boot.
 
 ## 3. Capture
 
@@ -57,7 +69,20 @@ break.
   before/after GIFs side by side too.
 - Keep only the lines that answer the question (`jq` filter, `grep`). The
   command and the commit on top of the panel say which version produced it.
-- **UI:** a screenshot of the state, both versions at the same size.
+- **UI:** record the flow. A screenshot only for a state that has no flow.
+  - Write the steps once in a `<flow>.flow.mjs` (model:
+    `.claude/skills/evidence/examples/access-control.flow.mjs`) and run it on each stack:
+    `node .claude/skills/evidence/rec.mjs <baseURL> <tokenFile> <flow>.flow.mjs main|branch <outDir>`
+  - Same seed, same steps, same start and end state. The middle differs only
+    where the UI does (main scrolls a long list, the branch pages it).
+  - Show what the page hides. `counters` in the flow adds a fixed "test
+    overlay" with request counts; `ui.click` draws a ring where each click
+    lands.
+  - Undo what the flow opened before its last step, so the last frame shows
+    the answer.
+  - Record on the final commit, then pull 3 or 4 frames
+    (`ffmpeg -ss <s> -i x.mp4 -frames:v 1 f.png`) and look at them. A capture
+    from an earlier QA round can show the bug you fixed after it.
 
 ## 4. Compose
 
@@ -69,7 +94,19 @@ break.
 ```
 
 `h` for screens and JSON (side by side), `v` for wide one-line logs (stacked).
-Open every image and check the labels and the text are readable.
+
+A recorded flow:
+
+```bash
+.claude/skills/evidence/compose-video.sh <out-basename> \
+  "BEFORE · origin/main=main.mp4" "AFTER · branch=branch.mp4"
+```
+
+It writes `<out>.mp4` (full size, for Linear) and `<out>.gif` (1800 px, 8 fps,
+about 2 MB for 30 s, for the PR). The shorter side holds its last frame.
+
+Open every image, and the frames you pulled from a video, and check the labels
+and the text are readable.
 
 ## 5. Write EVIDENCE.md (English)
 
@@ -104,12 +141,17 @@ flaky checks. Never hide one.>
 Rules: the result comes first; one screen of text; each image answers one
 question; no file the reader has to open by hand.
 
+For a video, one section holds the GIF and a "What to look at" list. Each
+bullet names a region of the screen (the counter bottom-left, the expanded
+group, the filter) and what differs there.
+
 ## 6. Show, then publish
 
 Show the EVIDENCE.md and the images to the user, in their language, before
 publishing. Then:
-- Linear: attach `EVIDENCE.md` and the images to the ticket.
-- PR: the result line, the images and "What it solves" under "Testing".
+- Linear: attach `EVIDENCE.md` and the images to the ticket (the MP4 for a
+  video).
+- PR: the result line, the images (the GIF for a video) and "What it solves" under "Testing".
   Host the images in a secret gist and link the raw URLs.
   The repo is public: no customer data, tokens, internal hosts or real emails
   in any image.
@@ -125,3 +167,9 @@ publishing. Then:
   does not.
 - In control-plane mode the rule screen opens the sidecar form, which does not
   show connections; use gateway mode for that screen.
+- `Page.captureScreenshot` of `about:blank` never answers. `rec.mjs` starts the
+  frame loop at `ui.go(path, { record: true })` and times out each capture.
+- `freeze`, `compare.sh` and `compose-video.sh` wait on stdin in a background
+  shell: run them with `</dev/null`.
+- This Homebrew `ffmpeg` has no `-vsync`: pull single frames with `-ss`.
+  `ffprobe -of csv=p=0` can print a trailing comma: `| head -1 | tr -d ,`.
