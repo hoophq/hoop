@@ -3081,6 +3081,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/users": {
+            "get": {
+                "description": "List the users who can open a connection, and the path that grants each one access. Ordered by email.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "List Connection Users",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int",
+                        "description": "Page number (1-based)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int",
+                        "description": "Maximum number of items to return (1-100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_ConnectionUser"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrId}/ai-session-analyzer-rule": {
             "get": {
                 "description": "Get the AI session analyzer rule configured for a specific connection",
@@ -14889,6 +14950,67 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionUser": {
+            "type": "object",
+            "properties": {
+                "access_type": {
+                    "description": "The path that grants access, in the order the gateway checks it\n* all - The access_control plugin is off, every user has access\n* admin - The user is in the admin group\n* auditor - The user is in the auditor group\n* groups - A group of the user is in ` + "`" + `groups` + "`" + ` or ` + "`" + `attribute_groups` + "`" + `",
+                    "type": "string",
+                    "enum": [
+                        "all",
+                        "admin",
+                        "auditor",
+                        "groups"
+                    ],
+                    "example": "groups"
+                },
+                "attribute_groups": {
+                    "description": "Groups of the user linked to the connection through an attribute",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba"
+                    ]
+                },
+                "email": {
+                    "description": "Email address of the user",
+                    "type": "string",
+                    "format": "email",
+                    "example": "john.wick@example.com"
+                },
+                "groups": {
+                    "description": "Groups of the user in the connection's access_control config",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre"
+                    ]
+                },
+                "id": {
+                    "description": "The subject identifier of the user",
+                    "type": "string",
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "name": {
+                    "description": "Display name",
+                    "type": "string",
+                    "example": "John Wick"
+                },
+                "status": {
+                    "description": "The status of the user. Inactive users cannot access the system",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.StatusType"
+                        }
+                    ],
+                    "example": "active"
+                }
+            }
+        },
         "openapi.CreateDBRoleJob": {
             "type": "object",
             "required": [
@@ -17118,6 +17240,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.Connection"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
+        "openapi.PaginatedResponse-openapi_ConnectionUser": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionUser"
                     }
                 },
                 "pages": {
