@@ -104,6 +104,16 @@ func TestLoginCallbackRecordsLastLogin(t *testing.T) {
 		assert.Equal(t, "active", status)
 		require.NotNil(t, lastLogin)
 		assert.False(t, lastLogin.Before(before), "last login %v is before the sign-in %v", *lastLogin, before)
+
+		// The refresh, the session poller and the native proxies look the token
+		// up by the provider subject, so the first session must find it there.
+		userToken, err := models.GetUserToken(models.DB, "idp|bruna")
+		require.NoError(t, err)
+		require.NotNil(t, userToken, "the first sign-in must store the token under the provider subject")
+		assert.Equal(t, "access-idp|bruna", userToken.Token)
+		orphan, err := models.GetUserToken(models.DB, "bruna@hoop.dev")
+		require.NoError(t, err)
+		assert.Nil(t, orphan, "no token is stored under the invited email")
 	})
 
 	t.Run("a returning user's sign-in is recorded", func(t *testing.T) {

@@ -200,7 +200,10 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	if token.RefreshToken != "" {
 		refreshToken = &token.RefreshToken
 	}
-	err = models.UpsertUserToken(models.DB, subject, token.AccessToken, refreshToken)
+	// Store the token under the access token's subject, the key the refresh,
+	// the session poller and the native proxies look up. An invited user still
+	// has the email as subject here; the sync below replaces it with this one.
+	err = models.UpsertUserToken(models.DB, uinfo.Subject, token.AccessToken, refreshToken)
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed upserting user token subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
 		log.Error(login.Outcome)
