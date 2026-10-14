@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import { Rotate3d } from 'lucide-react'
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
+import Pagination from '@/components/Pagination'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import EmptyState from '@/layout/EmptyState'
@@ -13,7 +14,14 @@ import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import { useAccessControlStore } from './store'
-import { allGroups, groupsWithPermissions } from './helpers'
+import {
+  GROUPS_PAGE_SIZE,
+  allGroups,
+  groupsWithPermissions,
+  pageCount,
+  pageSlice,
+  usersByGroup,
+} from './helpers'
 import AccessControlPromotion from './components/AccessControlPromotion'
 import GroupListItem from './components/GroupListItem'
 
@@ -24,31 +32,36 @@ export default function AccessControl() {
   const pluginStatus = useAccessControlStore((s) => s.pluginStatus)
   const groups = useAccessControlStore((s) => s.groups)
   const groupsStatus = useAccessControlStore((s) => s.groupsStatus)
+  const users = useAccessControlStore((s) => s.users)
+  const usersStatus = useAccessControlStore((s) => s.usersStatus)
   const connectionsById = useAccessControlStore((s) => s.connectionsById)
   const submitting = useAccessControlStore((s) => s.submitting)
   const fetchPlugin = useAccessControlStore((s) => s.fetchPlugin)
   const fetchGroups = useAccessControlStore((s) => s.fetchGroups)
+  const fetchUsers = useAccessControlStore((s) => s.fetchUsers)
   const fetchConnections = useAccessControlStore((s) => s.fetchConnections)
   const installPlugin = useAccessControlStore((s) => s.installPlugin)
 
   const [selectedRole, setSelectedRole] = useState(null)
+  const [page, setPage] = useState(1)
 
   const roleFilter = usePaginatedConnections({ pageSize: 50 })
-  const getIconUrl = useConnectionIconGetter()
+  const getConnectionIcon = useConnectionIconGetter()
 
   useEffect(() => {
     fetchPlugin()
     fetchGroups()
-  }, [fetchPlugin, fetchGroups])
+    fetchUsers()
+  }, [fetchPlugin, fetchGroups, fetchUsers])
 
   const pluginConnections = plugin?.connections
 
   // The plugin resolves each association's name but not its subtype, which is
-  // what picks the type icon — look the connections up separately.
-  useEffect(() => {
-    const ids = (pluginConnections ?? []).map((c) => c.id)
-    if (ids.length > 0) fetchConnections(ids)
-  }, [pluginConnections, fetchConnections])
+  // what picks the type icon. Each expanded group asks for its visible page.
+  const getIconUrl = useCallback(
+    (id) => getConnectionIcon(connectionsById[id]),
+    [connectionsById, getConnectionIcon],
+  )
 
   const permissions = useMemo(
     () => groupsWithPermissions(pluginConnections),
@@ -58,6 +71,8 @@ export default function AccessControl() {
     () => allGroups(groups, pluginConnections),
     [groups, pluginConnections],
   )
+
+  const members = useMemo(() => usersByGroup(users), [users])
 
   const processedGroups = useMemo(
     () =>
@@ -69,19 +84,28 @@ export default function AccessControl() {
         )
         .map((name) => ({
           name,
-          connections: (permissions[name] ?? []).map((connection) => ({
-            ...connection,
-            iconUrl: getIconUrl(connectionsById[connection.id]),
-          })),
+          connections: permissions[name] ?? [],
+          users: members[name] ?? [],
         })),
-    [groupNames, permissions, selectedRole, connectionsById, getIconUrl],
+    [groupNames, permissions, selectedRole, members],
   )
+  const visibleGroups = pageSlice(processedGroups, page, GROUPS_PAGE_SIZE)
+  const groupPages = pageCount(processedGroups.length, GROUPS_PAGE_SIZE)
 
+  const selectRole = (role) => {
+    setSelectedRole(role)
+    setPage(1)
+  }
+
+  // Users gate the loader so no row shows a count of 0 before they arrive; a
+  // failed users load still renders the list, marked per row. The promotion
+  // screen lists no group, so it does not wait for them.
   const loading =
     pluginStatus === 'idle' ||
     pluginStatus === 'loading' ||
     groupsStatus === 'idle' ||
-    groupsStatus === 'loading'
+    groupsStatus === 'loading' ||
+    (pluginStatus === 'success' && (usersStatus === 'idle' || usersStatus === 'loading'))
   const showLoader = useMinDelay(loading, 500)
 
   const goCreate = () => navigate('/features/access-control/new')
@@ -150,8 +174,8 @@ export default function AccessControl() {
               label="Resource Roles"
               placeholder="Search resource roles"
               selected={selectedRole}
-              onSelect={setSelectedRole}
-              onClear={() => setSelectedRole(null)}
+              onSelect={selectRole}
+              onClear={() => selectRole(null)}
               options={roleFilter.options}
               loading={roleFilter.loading}
               hasMore={roleFilter.hasMore}
@@ -169,24 +193,32 @@ export default function AccessControl() {
               description="Try changing the Resource Roles filter to explore more groups."
             />
           ) : (
-            <Box>
-              {processedGroups.map((group, idx) => (
-                <GroupListItem
-                  key={group.name}
-                  group={group}
-                  isFirst={idx === 0}
-                  isLast={idx === processedGroups.length - 1}
-                  onConfigure={(name) =>
-                    navigate(
-                      `/features/access-control/edit?group=${encodeURIComponent(name)}`,
-                    )
-                  }
-                  onConfigureConnection={(name) =>
-                    navigate(`/roles/${encodeURIComponent(name)}/configure`)
-                  }
-                />
-              ))}
-            </Box>
+            <Stack gap="md">
+              <Box>
+                {visibleGroups.map((group, idx) => (
+                  <GroupListItem
+                    key={group.name}
+                    group={group}
+                    isFirst={idx === 0}
+                    isLast={idx === visibleGroups.length - 1}
+                    usersFailed={usersStatus === 'error'}
+                    getIconUrl={getIconUrl}
+                    onShowConnections={fetchConnections}
+                    onConfigure={(name) =>
+                      navigate(
+                        `/features/access-control/edit?group=${encodeURIComponent(name)}`,
+                      )
+                    }
+                    onConfigureConnection={(name) =>
+                      navigate(`/roles/${encodeURIComponent(name)}/configure`)
+                    }
+                  />
+                ))}
+              </Box>
+              {groupPages > 1 && (
+                <Pagination total={groupPages} value={page} onChange={setPage} />
+              )}
+            </Stack>
           )}
         </>
       )}

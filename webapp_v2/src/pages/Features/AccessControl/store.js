@@ -3,6 +3,8 @@ import { attributesService } from '@/services/attributes'
 import { connectionsService } from '@/services/connections'
 import { pluginsService } from '@/services/plugins'
 import { userGroupsService } from '@/services/userGroups'
+import { usersService } from '@/services/users'
+import { useAuthStore } from '@/stores/useAuthStore'
 import {
   ACCESS_CONTROL_PLUGIN,
   attributeGroupPayload,
@@ -45,13 +47,25 @@ function applyAttributeChanges({ attributes, groupName, selectedNames }) {
   ])
 }
 
-export const useAccessControlStore = create((set, get) => ({
+// Bumped by reset. A response to a request made before the bump belongs to the
+// previous session (another account, or a replaced token) and is dropped.
+let session = 0
+
+// Role ids whose connection lookup is on the wire, so two expanded groups that
+// share roles do not ask for them twice.
+const pendingConnectionIds = new Set()
+
+const initialState = {
   plugin: null,
   // 'idle' | 'loading' | 'success' | 'error' | 'not-installed'
   pluginStatus: 'idle',
 
   groups: [],
   groupsStatus: 'idle',
+
+  // Every user with its groups, for the user count and list of each group.
+  users: [],
+  usersStatus: 'idle',
 
   attributes: [],
   attributesStatus: 'idle',
@@ -62,13 +76,26 @@ export const useAccessControlStore = create((set, get) => ({
   connectionsById: {},
 
   submitting: false,
+}
+
+export const useAccessControlStore = create((set, get) => ({
+  ...initialState,
+
+  reset: () => {
+    session += 1
+    pendingConnectionIds.clear()
+    set(initialState)
+  },
 
   fetchPlugin: async () => {
+    const started = session
     set({ pluginStatus: 'loading' })
     try {
       const { data } = await pluginsService.get(ACCESS_CONTROL_PLUGIN)
+      if (started !== session) return
       set({ plugin: data, pluginStatus: 'success' })
     } catch (error) {
+      if (started !== session) return
       // A 404 is how the gateway reports "this plugin was never enabled" — it
       // drives the promotion screen, not the error screen.
       if (error?.response?.status === 404) {
@@ -80,20 +107,40 @@ export const useAccessControlStore = create((set, get) => ({
   },
 
   fetchGroups: async () => {
+    const started = session
     set({ groupsStatus: 'loading' })
     try {
       const { data } = await userGroupsService.list()
+      if (started !== session) return
       set({ groups: data ?? [], groupsStatus: 'success' })
     } catch {
+      if (started !== session) return
       set({ groupsStatus: 'error' })
     }
   },
 
+  fetchUsers: async () => {
+    const started = session
+    set({ usersStatus: 'loading' })
+    try {
+      const { data } = await usersService.list()
+      if (started !== session) return
+      set({ users: data ?? [], usersStatus: 'success' })
+    } catch {
+      if (started !== session) return
+      set({ usersStatus: 'error' })
+    }
+  },
+
   fetchAttributes: async () => {
+    const started = session
     set({ attributesStatus: 'loading' })
     try {
-      set({ attributes: await attributesService.listAll(), attributesStatus: 'success' })
+      const attributes = await attributesService.listAll()
+      if (started !== session) return
+      set({ attributes, attributesStatus: 'success' })
     } catch {
+      if (started !== session) return
       set({ attributesStatus: 'error' })
     }
   },
@@ -101,19 +148,27 @@ export const useAccessControlStore = create((set, get) => ({
   // Best effort: a failure here only costs the type icons, so it stays silent
   // rather than taking the whole list down.
   fetchConnections: async (ids) => {
-    const missing = [...new Set(ids)].filter((id) => !get().connectionsById[id])
+    const missing = [...new Set(ids)].filter(
+      (id) => !get().connectionsById[id] && !pendingConnectionIds.has(id),
+    )
     if (missing.length === 0) return
+    const started = session
+    missing.forEach((id) => pendingConnectionIds.add(id))
     try {
       const batches = await Promise.all(
         chunk(missing, CONNECTIONS_CHUNK).map((batch) =>
           connectionsService.getConnectionsByIds(batch),
         ),
       )
+      if (started !== session) return
       const resolved = {}
       for (const rows of batches) for (const row of rows ?? []) resolved[row.id] = row
       set((state) => ({ connectionsById: { ...state.connectionsById, ...resolved } }))
     } catch {
       // keep the fallback icon
+    } finally {
+      // A failed lookup stays retryable. After a reset the set is already clear.
+      if (started === session) missing.forEach((id) => pendingConnectionIds.delete(id))
     }
   },
 
@@ -198,3 +253,13 @@ export const useAccessControlStore = create((set, get) => ({
     }
   },
 }))
+
+// The store holds the org's users and groups, so the next account in the same
+// tab must not see them: reset on logout and on a token change.
+useAuthStore.subscribe((state, prev) => {
+  const loggedOut = prev.isAuthenticated && !state.isAuthenticated
+  const tokenChanged = prev.token && state.token && prev.token !== state.token
+  if (loggedOut || tokenChanged) {
+    useAccessControlStore.getState().reset()
+  }
+})

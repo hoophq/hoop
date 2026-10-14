@@ -24,6 +24,9 @@ Read its `Type`:
   so. Do not invent the contract. Run `/shape` on it instead.
 - **no `Type`** (not written by `/shape`) — a defect report is a `bug`. Anything
   else: run `/shape` on it first.
+- A support ticket (`[SUP]`, label `Support`) is shaped in place: write the
+  template into that ticket and build it as one PR. Never split it into new
+  tickets.
 
 Identify the modules. For a frontend ticket with a Figma link, pull the design
 context before writing UI code.
@@ -38,6 +41,9 @@ comment on the Linear ticket with the design note:
 - gateway↔agent compatibility: what an old agent does with this,
 - feature flag, migration, env var, analytics event: what changes,
 - what you considered and dropped.
+
+A feature that adds a view: show the human its layout (a screenshot of the
+first render; fake data is fine) before building its backend.
 
 If `Checkpoint` is `approve design before code`, stop here and wait for the
 human. Otherwise continue.
@@ -70,6 +76,10 @@ name, stop and report what is missing.
 - New endpoint or schema: `make generate-openapi-docs`
 - Migration: test `down 1`
 
+`make test-oss` red on a busy machine: compare the package times with CI
+(`gh api repos/hoophq/hoop/actions/jobs/<id>/logs`) before blaming the branch,
+and rerun with the Makefile's `-timeout 15m`, not `go test`'s 10m default.
+
 ## 6. Independent QA
 
 Call the `qa` subagent. Give it only the ticket ID and the branch. **Never pass
@@ -83,7 +93,8 @@ After 3 `FAIL` rounds: stop. Do not open the PR. Report the open findings and
 what you think the real blocker is.
 
 On `PASS`: run the `evidence` skill from QA's last-round captures (steps 4 and 5:
-compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing.
+compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI ticket, record the flow on the final commit,
+against QA's stacks (evidence skill, step 3).
 Continue only after the user has seen it. Step 7 publishes it.
 
 For a `spike`, there is no PR. Deliver the evidence and a proposed cut into

@@ -21,3 +21,23 @@ Also found on the way:
   and had to be discarded. One process at a time; check the new one answers.
 - For a change where "nothing visible changes" is the goal, say so in the first
   line, and name the ticket where the visible part arrives.
+
+## Trial 2 · ENG-596 (2026-10-14)
+
+A UI ticket: paging and user counts on the Access Control page.
+
+| Version | What the agent delivered | Why it did not work | Rule it produced |
+|---|---|---|---|
+| 1 | 3 PNG comparisons, one of them a new users-per-role table | Seeing the table, the human removed it and its endpoint, after two QA rounds | Show a new view's layout before building its backend |
+| 2 | The same PNGs after the cut; one taken from QA round 3 | That capture showed a bug fixed after the round (page 1 started at `pg-1936`) | Record on the final commit and look at the frames |
+| 3 | One side-by-side GIF/MP4 of the same scripted flow, with a request counter and click rings | Accepted: "by far the best evidence so far" | A UI change is shown as a recorded flow |
+
+Also found on the way:
+- One overlay number (requests on load: 21 on main, 0 on the branch) replaced
+  a whole PNG of request logs. Put what the page hides on screen, labeled
+  "test overlay".
+- A panel left open hid the filter result in the last frame. Undo before the
+  last step.
+- QA's stacks were still up with QA's seed; recording there cost nothing. The
+  gateway cached `index.html`, so a UI swap needed a container restart.
+
