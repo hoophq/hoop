@@ -91,6 +91,11 @@ const (
 	MetadataReviewMode       = "review_mode"
 	MetadataReviewModeSource = "review_mode_source"
 
+	// MetadataReviewMatchIgnored counts the body values match_ignore left
+	// out of the filed bytes. The statement that ran can differ from the
+	// one the reviewer read in exactly those values.
+	MetadataReviewMatchIgnored = "review_match_ignored"
+
 	// MetadataAIStatus records what the analyzer did. It is the key that
 	// separates "rated low" from "never asked", "provider down" and
 	// "budget spent". All four look like an absent risk_level to anything

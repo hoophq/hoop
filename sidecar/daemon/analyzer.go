@@ -532,6 +532,11 @@ type LaneAnalyzerConfig struct {
 	// deleting it.
 	ReviewMode analyzer.ReviewMode `json:"review_mode,omitempty" cap:"review_mode" since:"1.196.0"`
 
+	// MatchIgnore names HTTP body fields a review match skips, such as the
+	// timestamp kubectl rollout restart writes, so a resend matches its
+	// approval. Http lanes that hold only; see analyzer.MatchIgnore.
+	MatchIgnore []analyzer.MatchIgnore `json:"match_ignore,omitempty" cap:"analyzer_match_ignore"`
+
 	// The rest override the top-level analyzer defaults for this lane.
 	// A zero value inherits; see the field of the same name on
 	// AnalyzerConfig for what each bounds.
@@ -991,6 +996,7 @@ func buildAnalyzerEvaluator(
 		Redact:        redactorFor(send, ac.det),
 		Review:        review,
 		ReviewMode:    la.ReviewMode,
+		MatchIgnore:   la.MatchIgnore,
 		ReturnNext:    returnNext(ac.mcp),
 	})
 }
@@ -1300,21 +1306,34 @@ func ValidateLaneAnalyzerBlock(la *LaneAnalyzerConfig, lane string) []string {
 	return validateLaneBlock(la, lane, true)
 }
 
-// ValidateHoldOnLane is the half of a hold only the lane answers: an ssh lane
-// that admits a shell. A shell sends no statements (ADR-0015), so a user
-// types in it what exec would have held. Refused rather than noted: the
-// operator asked for a human gate and the shell walks around it.
+// ValidateHoldOnLane is the half of a hold only the lane answers.
+//
+// An ssh lane that admits a shell: a shell sends no statements (ADR-0015), so
+// a user types in it what exec would have held. Refused rather than noted:
+// the operator asked for a human gate and the shell walks around it.
+//
+// match_ignore on a lane that is not http: it names HTTP body fields, and no
+// other lane files a body it could find them in.
 //
 // Exported for the control plane, which knows the lane only once a rule is
 // bound to it.
 func ValidateHoldOnLane(la *LaneAnalyzerConfig, lc ListenerConfig, where string) []string {
-	if la == nil || !analyzerHolds(la) || !isSSH(lc) || !lc.SSH.admits(codecssh.CapShell) {
+	if la == nil || !analyzerHolds(la) {
 		return nil
 	}
-	return []string{fmt.Sprintf(
-		"%s asks for %q on an ssh lane that admits shell, and a shell sends no "+
-			"statements, so nothing typed in it is held; drop shell from "+
-			"ssh.capabilities_allowed", where, analyzer.ActionRequireReview)}
+	var problems []string
+	if isSSH(lc) && lc.SSH.admits(codecssh.CapShell) {
+		problems = append(problems, fmt.Sprintf(
+			"%s asks for %q on an ssh lane that admits shell, and a shell sends no "+
+				"statements, so nothing typed in it is held; drop shell from "+
+				"ssh.capabilities_allowed", where, analyzer.ActionRequireReview))
+	}
+	if len(la.MatchIgnore) > 0 && inspect.Protocol(lc.Protocol) != inspect.HTTP {
+		problems = append(problems, fmt.Sprintf(
+			"%s sets match_ignore on a %s lane; it names HTTP body fields, so only "+
+				"an http lane reads it", where, lc.Protocol))
+	}
+	return problems
 }
 
 // validateLaneBlock checks one listener's analyzer block in isolation. The
@@ -1393,6 +1412,18 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 			"%s: review_mode %q decides how a held statement waits, and no risk "+
 				"level asks for %q, so nothing on this lane would hold one",
 			where, la.ReviewMode, analyzer.ActionRequireReview))
+	}
+
+	if len(la.MatchIgnore) > 0 && !holds {
+		problems = append(problems, fmt.Sprintf(
+			"%s: match_ignore decides how a held statement matches its review, and no "+
+				"risk level asks for %q, so nothing on this lane would hold one",
+			where, analyzer.ActionRequireReview))
+	}
+	for i, m := range la.MatchIgnore {
+		if err := m.Validate(); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: match_ignore[%d] %v", where, i, err))
+		}
 	}
 	return problems
 }

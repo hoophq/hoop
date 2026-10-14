@@ -285,6 +285,10 @@ type Config struct {
 	// is ReviewHold.
 	ReviewMode ReviewMode
 
+	// MatchIgnore names the HTTP body fields a review match skips. Empty
+	// files the exact bytes.
+	MatchIgnore []MatchIgnore
+
 	// ReturnNext is what an agent does before it resends a statement a
 	// return-mode denial refused, such as the MCP tool to wait on. The
 	// daemon supplies it because this package does not know which tools
@@ -361,6 +365,11 @@ func New(cfg Config) (*Evaluator, error) {
 	}
 	if !cfg.ReviewMode.Valid() {
 		return nil, fmt.Errorf("sidecar/analyzer: unknown review mode %q", cfg.ReviewMode)
+	}
+	for i, m := range cfg.MatchIgnore {
+		if err := m.Validate(); err != nil {
+			return nil, fmt.Errorf("sidecar/analyzer: match_ignore[%d] %w", i, err)
+		}
 	}
 	if err := cfg.RateLimit.validate(); err != nil {
 		return nil, err
