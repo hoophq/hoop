@@ -67,8 +67,27 @@ func assertMatchesConnectionRead(t *testing.T, connName string, subjects []strin
 	}
 }
 
+// One embedded database for every case: each boot costs tens of seconds, and
+// the package shares a 15 minute budget. The cases run in order on purpose:
+// the plugin-off case must run before the access_control plugin exists.
 func TestListConnectionUsersMatchesConnectionRead(t *testing.T) {
 	startTestDB(t)
+
+	// Without the access_control plugin every user can open every connection.
+	seedConnection(t, "open", "enabled")
+	seedUserGroups(t, "u-eng", "eng")
+	seedUserGroups(t, "u-none")
+	listed := listAllConnectionUsers(t, "open")
+	assertMatchesConnectionRead(t, "open", []string{"u-eng", "u-none"}, listed)
+	for _, subject := range []string{"u-eng", "u-none"} {
+		if got := listed[subject].AccessType; got != models.ConnectionAccessAll {
+			t.Errorf("plugin off, %s access_type: want %q, got %q", subject, models.ConnectionAccessAll, got)
+		}
+	}
+
+	if _, _, err := models.ListConnectionUsers(models.DB, testOrgID, "missing", 1, 10); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("unknown connection: want gorm.ErrRecordNotFound, got %v", err)
+	}
 
 	seedPluginConnection(t, "access_control", "target", true, []string{"sre"})
 	seedAttributeGroup(t, "pii", "target", "dba")
@@ -81,12 +100,10 @@ func TestListConnectionUsersMatchesConnectionRead(t *testing.T) {
 	seedUserGroups(t, "u-sre", "sre")
 	seedUserGroups(t, "u-dba", "dba")
 	seedUserGroups(t, "u-both", "sre", "dba", "eng")
-	seedUserGroups(t, "u-eng", "eng")
 	seedUserGroups(t, "u-finance", "finance")
-	seedUserGroups(t, "u-none")
 	subjects := []string{"u-admin", "u-auditor", "u-sre", "u-dba", "u-both", "u-eng", "u-finance", "u-none"}
 
-	listed := listAllConnectionUsers(t, "target")
+	listed = listAllConnectionUsers(t, "target")
 	assertMatchesConnectionRead(t, "target", subjects, listed)
 
 	want := map[string]struct {
@@ -119,58 +136,21 @@ func TestListConnectionUsersMatchesConnectionRead(t *testing.T) {
 			t.Errorf("%s attribute_groups: want %v, got %v", subject, w.attributeGroups, got.AttributeGroups)
 		}
 	}
-}
 
-// Without the access_control plugin every user can open every connection.
-func TestListConnectionUsersWithoutAccessControl(t *testing.T) {
-	startTestDB(t)
-
-	seedConnection(t, "open", "enabled")
-	seedUserGroups(t, "u-eng", "eng")
-	seedUserGroups(t, "u-none")
-	subjects := []string{"u-eng", "u-none"}
-
-	listed := listAllConnectionUsers(t, "open")
-	assertMatchesConnectionRead(t, "open", subjects, listed)
-	for _, subject := range subjects {
-		if got := listed[subject].AccessType; got != models.ConnectionAccessAll {
-			t.Errorf("%s access_type: want %q, got %q", subject, models.ConnectionAccessAll, got)
-		}
-	}
-}
-
-func TestListConnectionUsersPagination(t *testing.T) {
-	startTestDB(t)
-
-	seedPluginConnection(t, "access_control", "target", true, []string{"sre"})
-	for _, subject := range []string{"u-a", "u-b", "u-c"} {
-		seedUserGroups(t, subject, "sre")
-	}
-	seedUserGroups(t, "u-out", "eng")
-
-	items, total, err := models.ListConnectionUsers(models.DB, testOrgID, "target", 1, 2)
+	// Ordered by email: u-admin, u-auditor, u-both, u-dba, u-sre.
+	items, total, err := models.ListConnectionUsers(models.DB, testOrgID, "target", 2, 2)
 	if err != nil {
-		t.Fatalf("page 1: %v", err)
+		t.Fatalf("page 2: %v", err)
 	}
-	if total != 3 || len(items) != 2 || items[0].Subject != "u-a" || items[1].Subject != "u-b" {
-		t.Errorf("page 1: want u-a,u-b of 3, got %d of %d: %+v", len(items), total, items)
+	if total != 5 || len(items) != 2 || items[0].Subject != "u-both" || items[1].Subject != "u-dba" {
+		t.Errorf("page 2: want u-both,u-dba of 5, got %d of %d: %+v", len(items), total, items)
 	}
-
 	// A page past the end still reports the total, so the client can step back.
-	items, total, err = models.ListConnectionUsers(models.DB, testOrgID, "target", 3, 2)
+	items, total, err = models.ListConnectionUsers(models.DB, testOrgID, "target", 4, 2)
 	if err != nil {
-		t.Fatalf("page 3: %v", err)
+		t.Fatalf("page 4: %v", err)
 	}
-	if total != 3 || len(items) != 0 {
-		t.Errorf("page 3: want 0 of 3, got %d of %d", len(items), total)
-	}
-}
-
-func TestListConnectionUsersUnknownConnection(t *testing.T) {
-	startTestDB(t)
-
-	_, _, err := models.ListConnectionUsers(models.DB, testOrgID, "missing", 1, 10)
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("want gorm.ErrRecordNotFound, got %v", err)
+	if total != 5 || len(items) != 0 {
+		t.Errorf("page 4: want 0 of 5, got %d of %d", len(items), total)
 	}
 }
