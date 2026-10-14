@@ -24,7 +24,6 @@ import {
 } from './helpers'
 import AccessControlPromotion from './components/AccessControlPromotion'
 import GroupListItem from './components/GroupListItem'
-import RoleUsers from './sections/RoleUsers'
 
 export default function AccessControl() {
   const navigate = useNavigate()
@@ -36,14 +35,11 @@ export default function AccessControl() {
   const users = useAccessControlStore((s) => s.users)
   const usersStatus = useAccessControlStore((s) => s.usersStatus)
   const connectionsById = useAccessControlStore((s) => s.connectionsById)
-  const roleUsers = useAccessControlStore((s) => s.roleUsers)
   const submitting = useAccessControlStore((s) => s.submitting)
   const fetchPlugin = useAccessControlStore((s) => s.fetchPlugin)
   const fetchGroups = useAccessControlStore((s) => s.fetchGroups)
   const fetchUsers = useAccessControlStore((s) => s.fetchUsers)
   const fetchConnections = useAccessControlStore((s) => s.fetchConnections)
-  const fetchRoleUsers = useAccessControlStore((s) => s.fetchRoleUsers)
-  const clearRoleUsers = useAccessControlStore((s) => s.clearRoleUsers)
   const installPlugin = useAccessControlStore((s) => s.installPlugin)
 
   const [selectedRole, setSelectedRole] = useState(null)
@@ -57,11 +53,6 @@ export default function AccessControl() {
     fetchGroups()
     fetchUsers()
   }, [fetchPlugin, fetchGroups, fetchUsers])
-
-  useEffect(() => {
-    if (selectedRole) fetchRoleUsers(selectedRole.value, 1)
-    else clearRoleUsers()
-  }, [selectedRole, fetchRoleUsers, clearRoleUsers])
 
   const pluginConnections = plugin?.connections
 
@@ -194,14 +185,6 @@ export default function AccessControl() {
               onOpen={roleFilter.ensureLoaded}
             />
           </Group>
-
-          {selectedRole && (
-            <RoleUsers
-              roleName={selectedRole.label}
-              roleUsers={roleUsers}
-              onPageChange={(next) => fetchRoleUsers(selectedRole.value, next)}
-            />
-          )}
 
           {processedGroups.length === 0 ? (
             <EmptyState
