@@ -405,6 +405,7 @@ func validateComposedAnalyzers(cfg daemon.Config) error {
 		problems = append(problems, daemon.ValidateLaneAnalyzerBlock(l.Analyzer, l.Name)...)
 		problems = append(problems, daemon.ValidateHoldOnLane(l.Analyzer, l, l.Name+": analyzer block")...)
 	}
+	problems = append(problems, cfg.CheckServedAnalyzer()...)
 	problems = append(problems, daemon.ValidateLaneTriggers(cfg)...)
 	if len(problems) > 0 {
 		return ErrSidecarAnalyzerInvalid{Reason: strings.Join(problems, "; ")}

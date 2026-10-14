@@ -37,10 +37,13 @@ func TestAnAnalyzerRuleMatchIgnoreWinsWhenSet(t *testing.T) {
 // whole, so the plane refuses it first.
 func TestAComposedMatchIgnoreOnANonHTTPLaneIsReported(t *testing.T) {
 	base := &daemon.LaneAnalyzerConfig{MatchIgnore: restartIgnore("/a")}
-	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{{
-		Name: "appdb", Protocol: "postgres",
-		Analyzer: mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{HighRisk: "require_review", ApprovalRule: "dba"}),
-	}}}
+	cfg := daemon.Config{
+		Analyzer: &daemon.AnalyzerConfig{Provider: "anthropic", Model: "m"},
+		Listeners: []daemon.ListenerConfig{{
+			Name: "appdb", Protocol: "postgres",
+			Analyzer: mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{HighRisk: "require_review", ApprovalRule: "dba"}),
+		}},
+	}
 	err := validateComposedAnalyzers(cfg)
 	if err == nil || !strings.Contains(err.Error(), "only an http lane reads it") {
 		t.Fatalf("the composed block was accepted: %v", err)

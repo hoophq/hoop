@@ -620,7 +620,7 @@ func (a *AnalyzerConfig) validate(hasScanner, onHost bool) []string {
 	var problems []string
 
 	switch {
-	case a.hostedOptIn():
+	case a.hosted():
 		// The hosted model is one fixed service: nothing here picks a
 		// different one, and a credential has nowhere to go.
 		if a.Provider != "" {
@@ -817,16 +817,25 @@ const hostedNeedsOptIn = "analyzer: an Enterprise license is installed, so the a
 
 var errHostedNeedsOptIn = fmt.Errorf("invalid config:\n  - %s", hostedNeedsOptIn)
 
-// CheckAnalyzerLicense reports what startup would refuse about the analyzer
-// under lic: a listener that analyses with no provider named, on an
-// Enterprise license. The control plane calls it with the license it serves.
-func (c Config) CheckAnalyzerLicense(lic license.Status) []string {
-	c.lic = lic
-	if _, err := c.effectiveAnalyzer(); err != nil {
-		return []string{hostedNeedsOptIn}
+// CheckServedAnalyzer reports an analyzer the control plane must not serve:
+// a listener that analyses while the config names neither a provider nor
+// use_hoop_llm_provider: true. The license default exists for a sidecar's
+// own file; a served document says what it means, because a sidecar older
+// than the default refuses a provider-less section, and only the explicit
+// flag is capability-checked.
+func (c Config) CheckServedAnalyzer() []string {
+	if !c.lanesAnalyze() {
+		return nil
 	}
-	return nil
+	if a := c.Analyzer; a != nil && (a.Provider != "" || a.hostedOptIn()) {
+		return nil
+	}
+	return []string{servedNeedsProvider}
 }
+
+const servedNeedsProvider = "analyzer: a listener analyses but the configuration names no provider. " +
+	"Set provider and model to use your own LLM, or set use_hoop_llm_provider: true to use the model " +
+	"Hoop hosts (statement text, which can contain PII, is then sent to Hoop)"
 
 // hostedOptIn reports use_hoop_llm_provider: true.
 func (a *AnalyzerConfig) hostedOptIn() bool {

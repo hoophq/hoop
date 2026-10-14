@@ -1119,16 +1119,23 @@ func TestTheFirstAnalyzingListenerNeedsARestart(t *testing.T) {
 	}
 }
 
-// The plane refuses at save what an Enterprise sidecar refuses at startup.
-func TestThePlaneRefusesAProviderlessAnalyzerOnEnterprise(t *testing.T) {
+// The plane serves only an analyzer that says what it uses: an older sidecar
+// refuses a provider-less section, and only the explicit flag is
+// capability-checked.
+func TestThePlaneServesOnlyAnExplicitAnalyzer(t *testing.T) {
 	cfg, err := LoadConfigBytes([]byte(reloadAnalyzing(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.CheckAnalyzerLicense(license.Status{}); len(got) != 0 {
-		t.Errorf("free tier refused: %v", got)
+	if len(cfg.CheckServedAnalyzer()) == 0 {
+		t.Error("a listener analysing with no provider was servable")
 	}
-	if got := cfg.CheckAnalyzerLicense(licensetest.Status(t, licensetest.Enterprise())); len(got) == 0 {
-		t.Error("enterprise license accepted an analyzer with no provider")
+	cfg.Analyzer = &AnalyzerConfig{UseHoopLLMProvider: boolp(true)}
+	if got := cfg.CheckServedAnalyzer(); len(got) != 0 {
+		t.Errorf("explicit hosted opt-in refused: %v", got)
+	}
+	cfg.Analyzer = &AnalyzerConfig{Provider: "openai", Model: "m"}
+	if got := cfg.CheckServedAnalyzer(); len(got) != 0 {
+		t.Errorf("own provider refused: %v", got)
 	}
 }

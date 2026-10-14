@@ -193,6 +193,9 @@ func CheckSidecarConfiguration(cfg daemon.Config) error {
 	if err != nil {
 		return err
 	}
+	if problems := cfg.CheckServedAnalyzer(); len(problems) > 0 {
+		return ErrSidecarConfigInvalid{Err: errors.New(problems[0]), Problems: problems}
+	}
 	if err := daemon.CheckConfigBytes(raw); err != nil {
 		invalid := ErrSidecarConfigInvalid{Err: err, Problems: []string{err.Error()}}
 		var problems daemon.ConfigProblems
@@ -215,8 +218,7 @@ func (e ErrSidecarConfigOverCap) Error() string {
 }
 
 // CheckSidecarConfigurationLimits refuses a configuration the sidecar it is
-// written for would refuse under the organization license: rule caps, and an
-// analyzer with no provider on an Enterprise license.
+// written for would refuse.
 //
 // The caps are per process and count what a document AUTHORS, across the
 // top-level blocks and every listener (sidecar/daemon/limits.go). Unlicensed
@@ -243,11 +245,6 @@ func CheckSidecarConfigurationLimits(cfg daemon.Config, licenseData json.RawMess
 		})
 	}
 	if problems := cfg.CheckLimits(lic); len(problems) > 0 {
-		return ErrSidecarConfigOverCap{Problems: problems}
-	}
-	// Same license, same reason: an Enterprise sidecar refuses to start
-	// when a listener analyses and the analyzer names no provider.
-	if problems := cfg.CheckAnalyzerLicense(lic); len(problems) > 0 {
 		return ErrSidecarConfigOverCap{Problems: problems}
 	}
 	return nil

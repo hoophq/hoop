@@ -623,6 +623,11 @@ func TestHostedDefaultFollowsTheLicense(t *testing.T) {
 		}
 	}
 
+	withCred := &Config{Listeners: lane, Analyzer: &AnalyzerConfig{CredentialsFile: "/k"}}
+	if a, _ := withCred.effectiveAnalyzer(); len(a.validate(false, false)) == 0 {
+		t.Error("the hosted default accepted a credentials_file it would try to read")
+	}
+
 	off := &Config{Listeners: lane, Analyzer: &AnalyzerConfig{UseHoopLLMProvider: boolp(false)}}
 	if a, _ := off.effectiveAnalyzer(); a.hosted() || len(a.validate(false, false)) == 0 {
 		t.Errorf("use_hoop_llm_provider: false with no provider: hosted=%v, want off and a validation problem", a.hosted())
