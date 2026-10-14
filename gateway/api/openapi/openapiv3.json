@@ -2784,58 +2784,6 @@
         },
         "type": "object"
       },
-      "openapi.ConnectionUser": {
-        "properties": {
-          "access_type": {
-            "description": "The path that grants access, in the order the gateway checks it\n* all - The access_control plugin is off, every user has access\n* admin - The user is in the admin group\n* auditor - The user is in the auditor group\n* groups - A group of the user is in `groups` or `attribute_groups`",
-            "enum": [
-              "all",
-              "admin",
-              "auditor",
-              "groups"
-            ],
-            "example": "groups",
-            "type": "string"
-          },
-          "attribute_groups": {
-            "description": "Groups of the user linked to the connection through an attribute",
-            "example": [
-              "dba"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "email": {
-            "description": "Email address of the user",
-            "example": "john.wick@example.com",
-            "format": "email",
-            "type": "string"
-          },
-          "groups": {
-            "description": "Groups of the user in the connection's access_control config",
-            "example": [
-              "sre"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "id": {
-            "description": "The subject identifier of the user",
-            "example": "5364ec99-653b-41ba-8165-67236e894990",
-            "type": "string"
-          },
-          "name": {
-            "description": "Display name",
-            "example": "John Wick",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
       "openapi.CreateDBRoleJob": {
         "properties": {
           "agent_id": {
@@ -5063,20 +5011,6 @@
           "data": {
             "items": {
               "$ref": "#/components/schemas/openapi.Connection"
-            },
-            "type": "array"
-          },
-          "pages": {
-            "$ref": "#/components/schemas/openapi.Pagination"
-          }
-        },
-        "type": "object"
-      },
-      "openapi.PaginatedResponse-openapi_ConnectionUser": {
-        "properties": {
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/openapi.ConnectionUser"
             },
             "type": "array"
           },
@@ -13736,86 +13670,6 @@
           }
         },
         "summary": "Test Connection",
-        "tags": [
-          "Connections"
-        ]
-      }
-    },
-    "/connections/{nameOrID}/users": {
-      "get": {
-        "description": "List the active users who can open a connection, and the path that grants each one access. Ordered by email. Inactive users are left out: they cannot sign in.",
-        "parameters": [
-          {
-            "description": "Name or UUID of the connection",
-            "in": "path",
-            "name": "nameOrID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Page number (1-based)",
-            "in": "query",
-            "name": "page",
-            "schema": {
-              "format": "int",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Maximum number of items to return (1-100)",
-            "in": "query",
-            "name": "page_size",
-            "schema": {
-              "format": "int",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.PaginatedResponse-openapi_ConnectionUser"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "List Connection Users",
         "tags": [
           "Connections"
         ]

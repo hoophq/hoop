@@ -97,26 +97,6 @@ type User struct {
 	Password string `json:"password,omitempty" example:"mysecurepassword"`
 }
 
-// ConnectionUser is an active user who can open a connection, and the path that grants it.
-type ConnectionUser struct {
-	// The subject identifier of the user
-	ID string `json:"id" example:"5364ec99-653b-41ba-8165-67236e894990"`
-	// Display name
-	Name string `json:"name" example:"John Wick"`
-	// Email address of the user
-	Email string `json:"email" format:"email" example:"john.wick@example.com"`
-	// The path that grants access, in the order the gateway checks it
-	// * all - The access_control plugin is off, every user has access
-	// * admin - The user is in the admin group
-	// * auditor - The user is in the auditor group
-	// * groups - A group of the user is in `groups` or `attribute_groups`
-	AccessType string `json:"access_type" enums:"all,admin,auditor,groups" example:"groups"`
-	// Groups of the user in the connection's access_control config
-	Groups []string `json:"groups" example:"sre"`
-	// Groups of the user linked to the connection through an attribute
-	AttributeGroups []string `json:"attribute_groups" example:"dba"`
-}
-
 type UserPatchSlackID struct {
 	SlackID string `json:"slack_id" binding:"required" example:"U053ELZHB53"`
 }

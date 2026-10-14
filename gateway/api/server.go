@@ -679,10 +679,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteConnection),
 		apiconnections.Delete)
-	r.GET("/connections/:nameOrID/users",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		apiconnections.ListUsers)
 	r.GET("/connections/:nameOrID/databases",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
