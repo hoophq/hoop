@@ -16,7 +16,7 @@ import (
 // ListUsers
 //
 //	@Summary		List Connection Users
-//	@Description	List the users who can open a connection, and the path that grants each one access. Ordered by email.
+//	@Description	List the active users who can open a connection, and the path that grants each one access. Ordered by email. Inactive users are left out: they cannot sign in.
 //	@Tags			Connections
 //	@Produce		json
 //	@Param			nameOrID	path		string												true	"Name or UUID of the connection"
@@ -47,7 +47,6 @@ func ListUsers(c *gin.Context) {
 			ID:              item.Subject,
 			Name:            item.Name,
 			Email:           item.Email,
-			Status:          openapi.StatusType(item.Status),
 			AccessType:      item.AccessType,
 			Groups:          append([]string{}, item.Groups...),
 			AttributeGroups: append([]string{}, item.AttributeGroups...),

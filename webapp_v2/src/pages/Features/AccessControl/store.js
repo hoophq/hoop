@@ -69,7 +69,7 @@ const initialState = {
   connectionsById: {},
 
   // One page of the users who can open the role picked in the filter.
-  roleUsers: { items: [], total: 0, page: 1, status: 'idle' },
+  roleUsers: { connectionId: null, items: [], total: 0, page: 1, status: 'idle' },
   roleUsersRequestId: 0,
 
   submitting: false,
@@ -117,12 +117,17 @@ export const useAccessControlStore = create((set, get) => ({
   },
 
   // The filter can change before a page answers, so only the latest request
-  // commits.
+  // commits. A new role drops the old rows at once: they belong to another
+  // role and must not show under this one's heading. A new page of the same
+  // role keeps them until the next page arrives.
   fetchRoleUsers: async (connectionId, page = 1) => {
     const requestId = get().roleUsersRequestId + 1
     set((state) => ({
       roleUsersRequestId: requestId,
-      roleUsers: { ...state.roleUsers, page, status: 'loading' },
+      roleUsers:
+        state.roleUsers.connectionId === connectionId
+          ? { ...state.roleUsers, page, status: 'loading' }
+          : { connectionId, items: [], total: 0, page, status: 'loading' },
     }))
     try {
       const { data } = await connectionsService.listUsers(connectionId, {
@@ -132,6 +137,7 @@ export const useAccessControlStore = create((set, get) => ({
       if (get().roleUsersRequestId !== requestId) return
       set({
         roleUsers: {
+          connectionId,
           items: data?.data ?? [],
           total: data?.pages?.total ?? 0,
           page,
@@ -140,7 +146,7 @@ export const useAccessControlStore = create((set, get) => ({
       })
     } catch {
       if (get().roleUsersRequestId !== requestId) return
-      set({ roleUsers: { items: [], total: 0, page, status: 'error' } })
+      set({ roleUsers: { connectionId, items: [], total: 0, page, status: 'error' } })
     }
   },
 

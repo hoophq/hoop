@@ -97,7 +97,7 @@ type User struct {
 	Password string `json:"password,omitempty" example:"mysecurepassword"`
 }
 
-// ConnectionUser is a user who can open a connection, and the path that grants it.
+// ConnectionUser is an active user who can open a connection, and the path that grants it.
 type ConnectionUser struct {
 	// The subject identifier of the user
 	ID string `json:"id" example:"5364ec99-653b-41ba-8165-67236e894990"`
@@ -105,8 +105,6 @@ type ConnectionUser struct {
 	Name string `json:"name" example:"John Wick"`
 	// Email address of the user
 	Email string `json:"email" format:"email" example:"john.wick@example.com"`
-	// The status of the user. Inactive users cannot access the system
-	Status StatusType `json:"status" example:"active"`
 	// The path that grants access, in the order the gateway checks it
 	// * all - The access_control plugin is off, every user has access
 	// * admin - The user is in the admin group

@@ -107,14 +107,14 @@ export default function AccessControl() {
   }
 
   // Users gate the loader so no row shows a count of 0 before they arrive; a
-  // failed users load still renders the list, marked per row.
+  // failed users load still renders the list, marked per row. The promotion
+  // screen lists no group, so it does not wait for them.
   const loading =
     pluginStatus === 'idle' ||
     pluginStatus === 'loading' ||
     groupsStatus === 'idle' ||
     groupsStatus === 'loading' ||
-    usersStatus === 'idle' ||
-    usersStatus === 'loading'
+    (pluginStatus === 'success' && (usersStatus === 'idle' || usersStatus === 'loading'))
   const showLoader = useMinDelay(loading, 500)
 
   const goCreate = () => navigate('/features/access-control/new')

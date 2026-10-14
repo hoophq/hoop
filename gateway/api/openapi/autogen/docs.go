@@ -3083,7 +3083,7 @@ const docTemplate = `{
         },
         "/connections/{nameOrID}/users": {
             "get": {
-                "description": "List the users who can open a connection, and the path that grants each one access. Ordered by email.",
+                "description": "List the active users who can open a connection, and the path that grants each one access. Ordered by email. Inactive users are left out: they cannot sign in.",
                 "produces": [
                     "application/json"
                 ],
@@ -14999,15 +14999,6 @@ const docTemplate = `{
                     "description": "Display name",
                     "type": "string",
                     "example": "John Wick"
-                },
-                "status": {
-                    "description": "The status of the user. Inactive users cannot access the system",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/openapi.StatusType"
-                        }
-                    ],
-                    "example": "active"
                 }
             }
         },

@@ -13,6 +13,19 @@ import (
 func seedUserGroups(t *testing.T, subject string, groups ...string) {
 	t.Helper()
 	seedUser(t, subject, 0)
+	addUserGroups(t, subject, groups...)
+}
+
+func seedUserWithStatus(t *testing.T, subject, status string, groups ...string) {
+	t.Helper()
+	seedUser(t, subject, 0)
+	execSQL(t, `UPDATE private.users SET status = ?::private.enum_user_status WHERE org_id = ? AND subject = ?`,
+		status, testOrgID, subject)
+	addUserGroups(t, subject, groups...)
+}
+
+func addUserGroups(t *testing.T, subject string, groups ...string) {
+	t.Helper()
 	for _, group := range groups {
 		execSQL(t, `
 			INSERT INTO private.user_groups (org_id, user_id, name)
@@ -48,7 +61,8 @@ func listAllConnectionUsers(t *testing.T, connName string) map[string]models.Con
 }
 
 // assertMatchesConnectionRead checks, user by user, that the list holds exactly
-// the users whose own context can read the connection.
+// the users who get past the auth middleware's status check
+// (apiroutes/auth.go) and whose own context can read the connection.
 func assertMatchesConnectionRead(t *testing.T, connName string, subjects []string, listed map[string]models.ConnectionUser) {
 	t.Helper()
 	for _, subject := range subjects {
@@ -61,8 +75,10 @@ func assertMatchesConnectionRead(t *testing.T, connName string, subjects []strin
 			t.Fatalf("read connection as %s: %v", subject, err)
 		}
 		_, isListed := listed[subject]
-		if canRead := conn != nil; canRead != isListed {
-			t.Errorf("%s: connection read allows=%v, list has user=%v", subject, canRead, isListed)
+		canOpen := ctx.UserStatus == string(types.UserStatusActive) && conn != nil
+		if canOpen != isListed {
+			t.Errorf("%s: status=%s connection read allows=%v, list has user=%v",
+				subject, ctx.UserStatus, conn != nil, isListed)
 		}
 	}
 }
@@ -77,8 +93,14 @@ func TestListConnectionUsersMatchesConnectionRead(t *testing.T) {
 	seedConnection(t, "open", "enabled")
 	seedUserGroups(t, "u-eng", "eng")
 	seedUserGroups(t, "u-none")
+	// The read ignores status, so these are the cases only the status gate catches.
+	seedUserWithStatus(t, "u-inactive", "inactive", "sre")
+	seedUserWithStatus(t, "u-reviewing", "reviewing", "sre")
 	listed := listAllConnectionUsers(t, "open")
-	assertMatchesConnectionRead(t, "open", []string{"u-eng", "u-none"}, listed)
+	assertMatchesConnectionRead(t, "open", []string{"u-eng", "u-none", "u-inactive", "u-reviewing"}, listed)
+	if len(listed) != 2 {
+		t.Errorf("plugin off: want u-eng and u-none, got %v", listed)
+	}
 	for _, subject := range []string{"u-eng", "u-none"} {
 		if got := listed[subject].AccessType; got != models.ConnectionAccessAll {
 			t.Errorf("plugin off, %s access_type: want %q, got %q", subject, models.ConnectionAccessAll, got)
@@ -101,7 +123,8 @@ func TestListConnectionUsersMatchesConnectionRead(t *testing.T) {
 	seedUserGroups(t, "u-dba", "dba")
 	seedUserGroups(t, "u-both", "sre", "dba", "eng")
 	seedUserGroups(t, "u-finance", "finance")
-	subjects := []string{"u-admin", "u-auditor", "u-sre", "u-dba", "u-both", "u-eng", "u-finance", "u-none"}
+	subjects := []string{"u-admin", "u-auditor", "u-sre", "u-dba", "u-both", "u-eng", "u-finance", "u-none",
+		"u-inactive", "u-reviewing"}
 
 	listed = listAllConnectionUsers(t, "target")
 	assertMatchesConnectionRead(t, "target", subjects, listed)

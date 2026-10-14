@@ -66,12 +66,7 @@ export default function RoleUsers({ roleName, roleUsers, onPageChange }) {
             {items.map((user) => (
               <Table.Tr key={user.id}>
                 <Table.Td>
-                  <Group gap="xs" wrap="nowrap">
-                    <Text size="sm">{user.name || user.email}</Text>
-                    {user.status !== 'active' && (
-                      <Badge variant="inactive">{user.status}</Badge>
-                    )}
-                  </Group>
+                  <Text size="sm">{user.name || user.email}</Text>
                 </Table.Td>
                 <Table.Td>
                   <Text size="sm" c="dimmed">

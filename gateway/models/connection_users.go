@@ -23,7 +23,6 @@ type ConnectionUser struct {
 	Subject    string `gorm:"column:subject"`
 	Name       string `gorm:"column:name"`
 	Email      string `gorm:"column:email"`
-	Status     string `gorm:"column:status"`
 	AccessType string `gorm:"column:access_type"`
 	// Groups of the user in the connection's access_control config.
 	Groups pq.StringArray `gorm:"column:groups;type:text[]"`
@@ -31,8 +30,9 @@ type ConnectionUser struct {
 	AttributeGroups pq.StringArray `gorm:"column:attribute_groups;type:text[]"`
 }
 
-// connectionUsersQuery selects every user of the org with the path that lets
-// them open the connection @conn_id, or a NULL access_type when none does.
+// connectionUsersQuery selects every active user of the org with the path that
+// lets them open the connection @conn_id, or a NULL access_type when none does.
+// The auth middleware refuses users that are not active, so they open nothing.
 const connectionUsersQuery = `
 	WITH conn AS (
 		SELECT c.name, ac.id IS NOT NULL AS access_control_on,
@@ -49,14 +49,14 @@ const connectionUsersQuery = `
 		JOIN conn ON ca.connection_name = conn.name
 		WHERE acga.org_id = @org_id
 	), usr AS (
-		SELECT u.subject, u.name, u.email, u.status::TEXT AS status,
+		SELECT u.subject, u.name, u.email,
 			COALESCE((
 				SELECT array_agg(ug.name::TEXT) FROM private.user_groups ug WHERE ug.user_id = u.id
 			), ARRAY[]::TEXT[]) AS groups
 		FROM private.users u
-		WHERE u.org_id = @org_id
+		WHERE u.org_id = @org_id AND u.status::TEXT = @active_status
 	), access AS (
-		SELECT u.subject, u.name, u.email, u.status,
+		SELECT u.subject, u.name, u.email,
 			CASE
 				WHEN NOT conn.access_control_on THEN @all
 				WHEN (@admin_group)::TEXT = ANY(u.groups) THEN @admin
@@ -68,9 +68,10 @@ const connectionUsersQuery = `
 		FROM usr u, conn, attr
 	)`
 
-// ListConnectionUsers lists the users who can open a connection, ordered by
-// email. It is the inverse of the access check in getConnectionByNameOrID;
-// TestListConnectionUsersMatchesConnectionRead fails when the two disagree.
+// ListConnectionUsers lists the active users who can open a connection, ordered
+// by email. It is the inverse of the status check in the auth middleware plus
+// the access check in getConnectionByNameOrID;
+// TestListConnectionUsersMatchesConnectionRead fails when they disagree.
 // It returns gorm.ErrRecordNotFound when the connection does not exist.
 func ListConnectionUsers(db *gorm.DB, orgID, nameOrID string, page, pageSize int) ([]ConnectionUser, int64, error) {
 	var connID string
@@ -90,6 +91,7 @@ func ListConnectionUsers(db *gorm.DB, orgID, nameOrID string, page, pageSize int
 		"org_id":        orgID,
 		"admin_group":   types.GroupAdmin,
 		"auditor_group": types.GroupAuditor,
+		"active_status": string(types.UserStatusActive),
 		"all":           ConnectionAccessAll,
 		"admin":         ConnectionAccessAdmin,
 		"auditor":       ConnectionAccessAuditor,
