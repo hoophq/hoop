@@ -116,7 +116,7 @@ function Login() {
           ? await authService.getSamlLoginUrl(callbackUrl, options)
           : await authService.getLoginUrl(callbackUrl, options)
       window.location.replace(loginUrl)
-    } catch (err) {
+    } catch {
       setError('Failed to initialize login')
       setLoading(false)
     }
@@ -155,7 +155,7 @@ function Login() {
       const callbackUrl = `${window.location.origin}/signup/callback`
       const signupUrl = await authService.getSignupUrl(callbackUrl)
       window.location.replace(signupUrl)
-    } catch (err) {
+    } catch {
       setError('Failed to initialize signup')
     }
   }
