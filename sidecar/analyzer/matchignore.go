@@ -110,11 +110,11 @@ func ignoreJSONFields(body string, paths [][]string) (string, int) {
 	if !json.Valid([]byte(body)) {
 		return body, 0
 	}
-	w := jsonWalker{body: body, paths: paths, dec: json.NewDecoder(strings.NewReader(body))}
+	w := jsonWalker{body: body, dec: json.NewDecoder(strings.NewReader(body))}
 	// Without it a valid number past float64, such as 1e999, fails the walk
 	// and the whole body falls back to the exact match.
 	w.dec.UseNumber()
-	if err := w.value(nil, true); err != nil || len(w.spans) == 0 {
+	if err := w.value(newKeyTree(paths)); err != nil || len(w.spans) == 0 {
 		return body, 0
 	}
 	var b strings.Builder
@@ -128,16 +128,44 @@ func ignoreJSONFields(body string, paths [][]string) (string, int) {
 	return b.String(), len(w.spans)
 }
 
+// keyTree holds the ignored paths key by key, so each body value costs one
+// map lookup however many paths are configured.
+type keyTree struct {
+	end  bool
+	next map[string]*keyTree
+}
+
+func newKeyTree(paths [][]string) *keyTree {
+	root := &keyTree{}
+	for _, p := range paths {
+		if len(p) == 0 {
+			continue // Validate refuses it; the root would match a scalar body
+		}
+		n := root
+		for _, k := range p {
+			if n.next == nil {
+				n.next = map[string]*keyTree{}
+			}
+			if n.next[k] == nil {
+				n.next[k] = &keyTree{}
+			}
+			n = n.next[k]
+		}
+		n.end = true
+	}
+	return root
+}
+
 type jsonWalker struct {
 	body  string
-	paths [][]string
 	dec   *json.Decoder
 	spans [][2]int
 }
 
-// value reads one value at path and records its span when a path names it.
-// Nothing inside an array matches.
-func (w *jsonWalker) value(path []string, matchable bool) error {
+// value reads one value and records its span when a path ends there. node is
+// the tree at this value's path, nil where no path leads; arrays pass nil, so
+// nothing inside one matches.
+func (w *jsonWalker) value(node *keyTree) error {
 	start := w.next()
 	tok, err := w.dec.Token()
 	if err != nil {
@@ -150,8 +178,11 @@ func (w *jsonWalker) value(path []string, matchable bool) error {
 			if err != nil {
 				return err
 			}
-			k, _ := key.(string)
-			if err := w.value(append(path[:len(path):len(path)], k), matchable); err != nil {
+			var child *keyTree
+			if k, ok := key.(string); ok && node != nil {
+				child = node.next[k]
+			}
+			if err := w.value(child); err != nil {
 				return err
 			}
 		}
@@ -159,16 +190,14 @@ func (w *jsonWalker) value(path []string, matchable bool) error {
 		return err
 	case json.Delim('['):
 		for w.dec.More() {
-			if err := w.value(nil, false); err != nil {
+			if err := w.value(nil); err != nil {
 				return err
 			}
 		}
 		_, err = w.dec.Token()
 		return err
 	}
-	if matchable && len(path) > 0 && slices.ContainsFunc(w.paths, func(p []string) bool {
-		return slices.Equal(p, path)
-	}) {
+	if node != nil && node.end {
 		w.spans = append(w.spans, [2]int{start, int(w.dec.InputOffset())})
 	}
 	return nil

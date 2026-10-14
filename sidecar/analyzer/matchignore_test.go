@@ -186,6 +186,30 @@ func TestOnlyTheItemsThatApplyIgnoreFields(t *testing.T) {
 	}
 }
 
+// A path can end where another goes on. The object there stays bound, the
+// scalar under it is replaced, and a scalar at the shorter path is replaced.
+func TestNestedPathsIgnoreOnlyTheirScalars(t *testing.T) {
+	edit := func(c *analyzer.Config) {
+		c.Trigger = analyzer.Trigger{Operations: []inspect.Operation{inspect.OpPatch}}
+		c.MatchIgnore = []analyzer.MatchIgnore{{
+			Resources: []string{deployment},
+			Fields:    [][]string{{"a"}, {"a", "b"}},
+		}}
+	}
+	for body, want := range map[string]string{
+		`{"a":{"b":1,"c":2}}`: `{"a":{"b":"<ignored by match_ignore>","c":2}}`,
+		`{"a":"x"}`:           `{"a":"<ignored by match_ignore>"}`,
+	} {
+		sent, notes := fileOnce(t, edit, patchStatement(deployment, body))
+		if !strings.HasSuffix(sent, "\n\n"+want) {
+			t.Errorf("body %s filed %q, want %q", body, sent, want)
+		}
+		if got := notes[analyzer.MetadataReviewMatchIgnored]; got != "1" {
+			t.Errorf("body %s: %s is %q, want 1", body, analyzer.MetadataReviewMatchIgnored, got)
+		}
+	}
+}
+
 // Only a scalar is ignored, and only outside arrays. An object at the path
 // would let a subtree pass a review, and a body that is not JSON has no path
 // at all; each is filed exactly.
