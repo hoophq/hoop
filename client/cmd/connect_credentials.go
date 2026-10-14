@@ -187,7 +187,9 @@ func requestPersistentCredential(config *clientconfig.Config, connectionName str
 }
 
 func renderReviewRequired(config *clientconfig.Config, resp *credentialsResponse) {
-	reviewURL := fmt.Sprintf("%s/approvals/%s", config.ApiURL, resp.ReviewID)
+	// /reviews/<session id> works on every gateway: newer ones redirect it to
+	// /approvals. The page looks the request up by session id.
+	reviewURL := fmt.Sprintf("%s/reviews/%s", config.ApiURL, resp.SessionID)
 	fmt.Println()
 	fmt.Printf("  %s requires approval.\n", styles.Keyword(fmt.Sprintf(" %s ", resp.ConnectionName)))
 	fmt.Println()

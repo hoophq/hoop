@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -33,22 +32,4 @@ func TestApprovalRoutesAliasReviewRoutes(t *testing.T) {
 		require.True(t, ok, "%s %s is not registered", tt.method, tt.approval)
 		assert.Equal(t, review, approval, "%s %s and %s run different handlers", tt.method, tt.review, tt.approval)
 	}
-}
-
-// The alias runs the whole handler chain, middleware included.
-func TestWithApprovalAliasSharesTheChain(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	engine := gin.New()
-	middleware := func(c *gin.Context) { c.Header("X-Middleware", "ran"); c.Next() }
-	handler := func(c *gin.Context) { c.String(http.StatusOK, "id="+c.Param("id")) }
-	withApprovalAlias(engine.GET, "/reviews/:id", middleware, handler)
-
-	for _, path := range []string{"/reviews/abc", "/approvals/abc"} {
-		w := httptest.NewRecorder()
-		engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
-		assert.Equal(t, http.StatusOK, w.Code, path)
-		assert.Equal(t, "id=abc", w.Body.String(), path)
-		assert.Equal(t, "ran", w.Header().Get("X-Middleware"), path)
-	}
-	assert.Panics(t, func() { withApprovalAlias(engine.GET, "/no-alias", handler) })
 }

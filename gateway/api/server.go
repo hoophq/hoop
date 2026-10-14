@@ -399,25 +399,6 @@ func (api *Api) buildSidecarServiceAccountRoutes(r *apiroutes.Router) {
 		sidecarserviceaccountsapi.ClearDeletedName)
 }
 
-// approvalRouteAliases maps each review route to its approval path. Approval
-// is the current name; the review paths stay for older clients.
-var approvalRouteAliases = map[string]string{
-	"/reviews":                     "/approvals",
-	"/reviews/:id":                 "/approvals/:id",
-	"/sessions/:session_id/review": "/sessions/:session_id/approval",
-}
-
-// withApprovalAlias registers handlers on path and on its approval alias, so
-// both share the role middleware, auth and analytics events.
-func withApprovalAlias(register func(string, ...gin.HandlerFunc) gin.IRoutes, path string, handlers ...gin.HandlerFunc) {
-	alias, ok := approvalRouteAliases[path]
-	if !ok {
-		panic("api: no approval alias for route " + path)
-	}
-	register(path, handlers...)
-	register(alias, handlers...)
-}
-
 func (api *Api) buildRoutes(r *apiroutes.Router) {
 	reviewHandler := reviewapi.NewHandler(api.ReleaseConnectionFn)
 	loginOidcApiHandler := loginoidcapi.New()
@@ -840,25 +821,31 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiproxymanager.Get)
 
-	// Each review route is also served under its approval path; see
-	// withApprovalAlias.
-	withApprovalAlias(r.GET, "/reviews",
+	// /approvals is the new name of /reviews. Both paths share one chain, so
+	// roles, auth and analytics events cannot drift apart.
+	listReviews := []gin.HandlerFunc{
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.List,
-	)
-	withApprovalAlias(r.GET, "/reviews/:id",
+	}
+	getReview := []gin.HandlerFunc{
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.GetByIdOrSid,
-	)
-	withApprovalAlias(r.PUT, "/reviews/:id",
+	}
+	updateReview := []gin.HandlerFunc{
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateReview),
 		reviewHandler.ReviewByIdOrSid,
-	)
+	}
+	r.GET("/reviews", listReviews...)
+	r.GET("/approvals", listReviews...)
+	r.GET("/reviews/:id", getReview...)
+	r.GET("/approvals/:id", getReview...)
+	r.PUT("/reviews/:id", updateReview...)
+	r.PUT("/approvals/:id", updateReview...)
 
 	r.GET("/access-requests/rules",
 		apiroutes.AdminAndAuditorAccessRole,
@@ -1067,10 +1054,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,
 		sessionapi.Kill)
-	withApprovalAlias(r.PUT, "/sessions/:session_id/review",
-		r.AuthMiddleware,
-		reviewHandler.ReviewBySid,
-	)
+	reviewBySid := []gin.HandlerFunc{r.AuthMiddleware, reviewHandler.ReviewBySid}
+	r.PUT("/sessions/:session_id/review", reviewBySid...)
+	r.PUT("/sessions/:session_id/approval", reviewBySid...)
 	r.PATCH("/sessions/:session_id/metadata",
 		r.AuthMiddleware,
 		sessionapi.PatchMetadata)
