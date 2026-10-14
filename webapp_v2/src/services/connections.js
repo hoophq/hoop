@@ -22,6 +22,12 @@ export const connectionsService = {
     if (connectionIds?.length) params.set('connection_ids', connectionIds.join(','))
     return api.get(`/connections?${params.toString()}`).then((res) => res.data)
   },
+  // The users who can open the connection, with the path that grants each one
+  // ({ pages, data }). Admin and auditor only.
+  listUsers: (nameOrId, { page = 1, pageSize = 10 } = {}) =>
+    api.get(`/connections/${encodeURIComponent(nameOrId)}/users`, {
+      params: { page, page_size: pageSize },
+    }),
   getConnection: (nameOrId) =>
     api.get(`/connections/${encodeURIComponent(nameOrId)}`).then((res) => res.data),
   patchConnection: (name, payload) =>

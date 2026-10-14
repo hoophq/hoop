@@ -3,8 +3,11 @@ import { attributesService } from '@/services/attributes'
 import { connectionsService } from '@/services/connections'
 import { pluginsService } from '@/services/plugins'
 import { userGroupsService } from '@/services/userGroups'
+import { usersService } from '@/services/users'
+import { useAuthStore } from '@/stores/useAuthStore'
 import {
   ACCESS_CONTROL_PLUGIN,
+  PANEL_PAGE_SIZE,
   attributeGroupPayload,
   diffGroupAttributes,
   mergeGroupIntoConnections,
@@ -45,13 +48,17 @@ function applyAttributeChanges({ attributes, groupName, selectedNames }) {
   ])
 }
 
-export const useAccessControlStore = create((set, get) => ({
+const initialState = {
   plugin: null,
   // 'idle' | 'loading' | 'success' | 'error' | 'not-installed'
   pluginStatus: 'idle',
 
   groups: [],
   groupsStatus: 'idle',
+
+  // Every user with its groups, for the user count and list of each group.
+  users: [],
+  usersStatus: 'idle',
 
   attributes: [],
   attributesStatus: 'idle',
@@ -61,7 +68,17 @@ export const useAccessControlStore = create((set, get) => ({
   // type icon.
   connectionsById: {},
 
+  // One page of the users who can open the role picked in the filter.
+  roleUsers: { items: [], total: 0, page: 1, status: 'idle' },
+  roleUsersRequestId: 0,
+
   submitting: false,
+}
+
+export const useAccessControlStore = create((set, get) => ({
+  ...initialState,
+
+  reset: () => set(initialState),
 
   fetchPlugin: async () => {
     set({ pluginStatus: 'loading' })
@@ -88,6 +105,50 @@ export const useAccessControlStore = create((set, get) => ({
       set({ groupsStatus: 'error' })
     }
   },
+
+  fetchUsers: async () => {
+    set({ usersStatus: 'loading' })
+    try {
+      const { data } = await usersService.list()
+      set({ users: data ?? [], usersStatus: 'success' })
+    } catch {
+      set({ usersStatus: 'error' })
+    }
+  },
+
+  // The filter can change before a page answers, so only the latest request
+  // commits.
+  fetchRoleUsers: async (connectionId, page = 1) => {
+    const requestId = get().roleUsersRequestId + 1
+    set((state) => ({
+      roleUsersRequestId: requestId,
+      roleUsers: { ...state.roleUsers, page, status: 'loading' },
+    }))
+    try {
+      const { data } = await connectionsService.listUsers(connectionId, {
+        page,
+        pageSize: PANEL_PAGE_SIZE,
+      })
+      if (get().roleUsersRequestId !== requestId) return
+      set({
+        roleUsers: {
+          items: data?.data ?? [],
+          total: data?.pages?.total ?? 0,
+          page,
+          status: 'success',
+        },
+      })
+    } catch {
+      if (get().roleUsersRequestId !== requestId) return
+      set({ roleUsers: { items: [], total: 0, page, status: 'error' } })
+    }
+  },
+
+  clearRoleUsers: () =>
+    set((state) => ({
+      roleUsersRequestId: state.roleUsersRequestId + 1,
+      roleUsers: initialState.roleUsers,
+    })),
 
   fetchAttributes: async () => {
     set({ attributesStatus: 'loading' })
@@ -198,3 +259,11 @@ export const useAccessControlStore = create((set, get) => ({
     }
   },
 }))
+
+// The store holds the org's users and groups, so the next user in the same tab
+// must not see them.
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) {
+    useAccessControlStore.getState().reset()
+  }
+})

@@ -47,6 +47,34 @@ export function allGroups(userGroups, connections) {
   return [...names].sort((a, b) => a.localeCompare(b))
 }
 
+// Orgs reach thousands of resource roles, so every list on the page is paged.
+export const GROUPS_PAGE_SIZE = 20
+export const PANEL_PAGE_SIZE = 10
+
+export function pageCount(total, size) {
+  return Math.max(1, Math.ceil(total / size))
+}
+
+export function pageSlice(items, page, size) {
+  return items.slice((page - 1) * size, page * size)
+}
+
+// group name -> the users in it, by name. `GET /users` returns each user with
+// its groups; service accounts, API keys and AI agents are not in it.
+export function usersByGroup(users) {
+  const byGroup = {}
+  for (const user of users ?? []) {
+    for (const groupName of user.groups ?? []) {
+      byGroup[groupName] = byGroup[groupName] ?? []
+      byGroup[groupName].push(user)
+    }
+  }
+  for (const members of Object.values(byGroup)) {
+    members.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
+  }
+  return byGroup
+}
+
 export function groupAttributeNames(attributes, groupName) {
   return (attributes ?? [])
     .filter(isEditableAttribute)
