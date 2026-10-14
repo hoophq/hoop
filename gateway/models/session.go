@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
@@ -455,6 +456,29 @@ const sessionListInputCondition = `EXISTS (
 					AND b.blob_stream->>0 ILIKE @input_pattern
 			)`
 
+// MaxSessionListInputLength bounds the input filter: the scan cost grows with
+// the pattern length times the input bytes of every session it reads.
+const MaxSessionListInputLength = 256
+
+// ValidateSessionInputFilter reports why v cannot be an input filter.
+func ValidateSessionInputFilter(v string) error {
+	switch {
+	case len(v) > MaxSessionListInputLength:
+		return fmt.Errorf("must be at most %d bytes, got %d", MaxSessionListInputLength, len(v))
+	case !utf8.ValidString(v) || strings.ContainsRune(v, 0):
+		return errors.New("must be valid UTF-8 without NUL bytes")
+	}
+	return nil
+}
+
+// sessionInputPattern makes v a LIKE pattern that matches it anywhere. Only %
+// stays a wildcard: _ and the \ escape character match themselves.
+func sessionInputPattern(v string) string {
+	v = strings.ReplaceAll(v, `\`, `\\`)
+	v = strings.ReplaceAll(v, `_`, `\_`)
+	return "%" + v + "%"
+}
+
 // IsValidSessionStatus reports whether v is a status the session list can
 // filter by.
 func IsValidSessionStatus(v string) bool {
@@ -680,6 +704,9 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 	if opt.Verb != "" && !IsValidSessionVerb(opt.Verb) {
 		return nil, fmt.Errorf("invalid verb %q", opt.Verb)
 	}
+	if err := ValidateSessionInputFilter(opt.Input); err != nil {
+		return nil, fmt.Errorf("invalid input filter: %w", err)
+	}
 
 	sessionList := &SessionList{Items: []Session{}}
 	// Prepare lowercase jira issue keys array
@@ -705,7 +732,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 		"jira_issue_keys":       jiraIssueKeysLower,
 		"start_date":            opt.StartDate,
 		"end_date":              opt.EndDate,
-		"input_pattern":         "%" + opt.Input + "%",
+		"input_pattern":         sessionInputPattern(opt.Input),
 		"user_id":               userId,
 		// One more row than the caller asked for: its presence is what proves
 		// there is a next page, without a second query and without relying on

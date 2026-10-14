@@ -436,7 +436,7 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Param			jira_issue_key	query		string	false	"Filter by Jira issue key"
 //	@Param			status			query		string	false	"Filter by the session status"	Enums(open, ready, done)
 //	@Param			verb			query		string	false	"Filter by the session verb"	Enums(connect, exec)
-//	@Param			input			query		string	false	"Filter by text in the session input, case-insensitive. % matches any text. Native client sessions record no input."
+//	@Param			input			query		string	false	"Filter by text in the session input, case-insensitive, at most 256 bytes. Only % is a wildcard. Native client sessions are not searched."
 //	@Param			start_date		query		string	false	"Filter starting on this date"	Format(RFC3339)
 //	@Param			end_date		query		string	false	"Filter ending on this date"	Format(RFC3339)
 //	@Param			limit			query		int		false	"Limit the amount of records to return (max: 100)"

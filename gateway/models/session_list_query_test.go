@@ -426,3 +426,20 @@ func TestListSessionsRejectsUnknownStatusAndVerb(t *testing.T) {
 		assert.True(t, IsValidSessionVerb(v), v)
 	}
 }
+
+// Only % is a wildcard, as the API documents: a search for user_id must not
+// match userXid, and a backslash must not escape the next character.
+func TestSessionInputPattern(t *testing.T) {
+	for in, want := range map[string]string{
+		"delete":        `%delete%`,
+		"delete%orders": `%delete%orders%`,
+		"user_id":       `%user\_id%`,
+		`C:\temp`:       `%C:\\temp%`,
+		`a\`:            `%a\\%`,
+	} {
+		assert.Equal(t, want, sessionInputPattern(in), in)
+	}
+	assert.NoError(t, ValidateSessionInputFilter(""))
+	assert.NoError(t, ValidateSessionInputFilter(strings.Repeat("x", MaxSessionListInputLength)))
+	assert.Error(t, ValidateSessionInputFilter(strings.Repeat("x", MaxSessionListInputLength+1)))
+}

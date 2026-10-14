@@ -8999,7 +8999,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by text in the session input, case-insensitive. % matches any text. Native client sessions record no input.",
+                        "description": "Filter by text in the session input, case-insensitive, at most 256 bytes. Only % is a wildcard. Native client sessions are not searched.",
                         "name": "input",
                         "in": "query"
                     },

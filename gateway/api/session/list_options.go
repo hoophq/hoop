@@ -122,6 +122,9 @@ func parseSessionListOptions(qs url.Values) (models.SessionOption, error) {
 			}
 			option.Verb = queryOptVal
 		case openapi.SessionOptionInput:
+			if err := models.ValidateSessionInputFilter(queryOptVal); err != nil {
+				return option, invalidOption(optKey, "%v", err)
+			}
 			option.Input = queryOptVal
 		case openapi.SessionOptionCount:
 			countMode, err := models.ParseSessionCountMode(queryOptVal)

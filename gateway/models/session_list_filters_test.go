@@ -1,11 +1,18 @@
 package models_test
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	migrationfiles "github.com/hoophq/hoop/gateway/migrations"
 	"github.com/hoophq/hoop/gateway/models"
+	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
+	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,6 +47,10 @@ func TestListSessionsLiveAndInputFilters(t *testing.T) {
 		"delete from orders where id = 7", 2*time.Minute)
 	doneSelect := seed("00000000-0000-0000-0000-000000000b06", "exec", "done",
 		"SELECT * FROM orders", 90*time.Second)
+	userIDColumn := seed("00000000-0000-0000-0000-000000000b07", "exec", "done",
+		"SELECT user_id FROM accounts", 80*time.Second)
+	seed("00000000-0000-0000-0000-000000000b08", "exec", "done",
+		"SELECT userXid FROM accounts", 70*time.Second)
 
 	list := func(mutate func(*models.SessionOption)) ([]string, *int64) {
 		t.Helper()
@@ -86,6 +97,11 @@ func TestListSessionsLiveAndInputFilters(t *testing.T) {
 				o.Input, o.Status, o.ConnectionName = "orders", "done", "pg-prod"
 			},
 			want: []string{doneSelect, doneDelete},
+		},
+		{
+			msg:    "an underscore matches only itself",
+			mutate: func(o *models.SessionOption) { o.Input = "user_id" },
+			want:   []string{userIDColumn},
 		},
 		{
 			msg:    "an input nothing holds matches nothing",
@@ -146,4 +162,56 @@ func TestLiveSessionFilterUsesOpenIndex(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 	assert.Contains(t, strings.Join(plan, "\n"), "index_sessions_open")
+}
+
+const sessionsOpenIndexVersion = 140
+
+// Migration 000140 rolls both ways, and a gateway built before it still starts
+// on a database that has it: gateways roll, so for a while an old one runs
+// MigrateDB against version 140 with a source that ends at 139.
+func TestSessionsOpenIndexMigration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping embedded database test in -short mode")
+	}
+	inst := pglitetest.StartMigrated(t)
+
+	// Each phase reads with its own query text, see withDB.
+	hasIndex := func(phase string) bool {
+		t.Helper()
+		var n int
+		withDB(t, inst, func() {
+			require.NoError(t, models.DB.Raw(`SELECT count(*) FROM pg_indexes
+				WHERE schemaname = 'private' AND indexname = 'index_sessions_open' -- `+phase).Scan(&n).Error)
+		})
+		return n == 1
+	}
+	require.True(t, hasIndex("migrated"))
+
+	oldSource := t.TempDir()
+	entries, err := fs.ReadDir(migrationfiles.FS, ".")
+	require.NoError(t, err)
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".sql") || strings.HasPrefix(e.Name(), "000140_") {
+			continue
+		}
+		data, err := fs.ReadFile(migrationfiles.FS, e.Name())
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(oldSource, e.Name()), data, 0o600))
+	}
+	require.NoError(t, modelsbootstrap.MigrateDB(inst.MigrateDSN(), oldSource),
+		"a gateway without 000140 must start on a database at 140")
+	require.True(t, hasIndex("after old gateway"))
+
+	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(sessionsOpenIndexVersion - 1) })
+	require.False(t, hasIndex("down"))
+	// Without the index the live filter is slower, not wrong.
+	withDB(t, inst, func() {
+		opt := models.NewSessionOption()
+		opt.Status, opt.Verb = "open", "connect"
+		_, err := models.ListSessions(testOrgID, "admin", true, opt)
+		require.NoError(t, err)
+	})
+
+	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(sessionsOpenIndexVersion) })
+	require.True(t, hasIndex("up"))
 }

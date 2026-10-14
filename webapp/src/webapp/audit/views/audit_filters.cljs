@@ -156,6 +156,8 @@
           [:> TextField.Root {:class "w-[280px] h-[40px] rounded-lg"
                               :placeholder "Search query text, e.g. delete%orders"
                               :aria-label "Search sessions by query text"
+                              ;; The gateway rejects a longer filter.
+                              :maxLength 256
                               :value @input-search
                               :onChange #(reset! input-search (-> % .-target .-value))
                               :onKeyDown (fn [e]
