@@ -30,14 +30,17 @@ var errUserInactive = fmt.Errorf("user is inactive")
 
 type handler struct {
 	apiURL string
+	// newVerifier loads the OIDC verifier. Tests replace it to run the
+	// callback without an identity provider.
+	newVerifier func() (idp.OidcVerifier, error)
 }
 
 func New() *handler {
-	return &handler{apiURL: appconfig.Get().ApiURL()}
+	return &handler{apiURL: appconfig.Get().ApiURL(), newVerifier: idp.NewOidcVerifierProvider}
 }
 
 func (h *handler) loadOidcVerifier(c *gin.Context) (idp.OidcVerifier, bool) {
-	oidcVerifier, err := idp.NewOidcVerifierProvider()
+	oidcVerifier, err := h.newVerifier()
 	switch err {
 	case idp.ErrUnknownIdpProvider:
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "OIDC provider not configured"})
