@@ -1044,6 +1044,11 @@ Non-obvious notes only:
   identity side (users, service accounts, API keys, AI agents) with the
   `access_control` plugin config. Empty organizations get `[]`; gateways older
   than EVL-217 answer `null`, so callers still coalesce.
+- `users.js` — `list()` returns every user as a plain array, for pickers that
+  filter client-side. `listPaginated({ page, pageSize, email, status })` sends
+  `page`/`page_size`, which switches `GET /users` to the `{ pages, data }`
+  envelope; `email` matches a part, ignoring case. Each user carries
+  `last_login_at`, `null` when no sign-in was recorded.
 - `aiSessionAnalyzer.js` — `getProvider()` answers **404 when the org never
   configured a provider**; that is "not set up", not an error. Rule names are
   user-supplied path segments, so every interpolation is `encodeURIComponent`d.

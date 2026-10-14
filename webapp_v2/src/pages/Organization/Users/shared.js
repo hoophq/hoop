@@ -6,6 +6,15 @@ export const STATUS_OPTIONS = [
   { value: 'reviewing', label: 'Reviewing' },
 ]
 
+// Every status the list filter accepts, invited included: an admin cannot set
+// it, but invited users exist.
+export const STATUS_FILTER_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+  { value: 'invited', label: 'Invited' },
+  { value: 'reviewing', label: 'Reviewing' },
+]
+
 // The backend activates a local user with this password immediately and never
 // forces a change, so it is the account's real credential. The previous
 // generator drew from three eight-word lists with Math.random — 512

@@ -23,6 +23,18 @@ func GetUserGroupsByOrgID(orgID string) ([]UserGroup, error) {
 	return userGroups, nil
 }
 
+// GetUserGroupsByUserIDs returns the groups of the given users in the org.
+func GetUserGroupsByUserIDs(db *gorm.DB, orgID string, userIDs []string) ([]UserGroup, error) {
+	if len(userIDs) == 0 {
+		return []UserGroup{}, nil
+	}
+	var userGroups []UserGroup
+	err := db.Table("private.user_groups").
+		Where("org_id = ? AND user_id IN ?", orgID, userIDs).
+		Find(&userGroups).Error
+	return userGroups, err
+}
+
 func GetUserGroupsByUserID(userID string) ([]UserGroup, error) {
 	var userGroups []UserGroup
 	if err := DB.Where("user_id = ?", userID).Find(&userGroups).Error; err != nil {

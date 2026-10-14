@@ -5076,6 +5076,20 @@
         },
         "type": "object"
       },
+      "openapi.PaginatedResponse-openapi_UserListItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/openapi.UserListItem"
+            },
+            "type": "array"
+          },
+          "pages": {
+            "$ref": "#/components/schemas/openapi.Pagination"
+          }
+        },
+        "type": "object"
+      },
       "openapi.Pagination": {
         "properties": {
           "page": {
@@ -9275,13 +9289,15 @@
         "enum": [
           "active",
           "inactive",
-          "invited"
+          "invited",
+          "reviewing"
         ],
         "type": "string",
         "x-enum-varnames": [
           "StatusActive",
           "StatusInactive",
-          "StatusInvited"
+          "StatusInvited",
+          "StatusReviewing"
         ]
       },
       "openapi.SupportedEntityTypesEntry": {
@@ -9555,6 +9571,89 @@
               "off"
             ],
             "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "openapi.UserListItem": {
+        "properties": {
+          "email": {
+            "description": "Email address of the user",
+            "format": "email",
+            "type": "string"
+          },
+          "groups": {
+            "description": "Groups registered for this user",
+            "example": [
+              "sre",
+              "dba"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "description": "Unique identifier of the resource",
+            "format": "uuid",
+            "readOnly": true,
+            "type": "string"
+          },
+          "last_login_at": {
+            "description": "The time of the last sign-in or access token refresh. It is null when none was recorded.",
+            "example": "2026-10-14T13:45:00Z",
+            "format": "date-time",
+            "readOnly": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "Display name",
+            "example": "John Wick",
+            "type": "string"
+          },
+          "password": {
+            "description": "Local auth cases have a password",
+            "example": "mysecurepassword",
+            "type": "string"
+          },
+          "picture": {
+            "description": "The profile picture url to display",
+            "example": "",
+            "type": "string"
+          },
+          "role": {
+            "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
+            "enum": [
+              "admin",
+              "approver",
+              "standard",
+              "unregistered"
+            ],
+            "example": "standard",
+            "readOnly": true,
+            "type": "string"
+          },
+          "slack_id": {
+            "description": "The identifier of slack to send messages to users",
+            "example": "U053ELZHB53",
+            "type": "string"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.StatusType"
+              }
+            ],
+            "default": "active",
+            "description": "The status of the user. Inactive users cannot access the system"
+          },
+          "verified": {
+            "description": "DEPRECATED in flavor of role",
+            "readOnly": true,
+            "type": "boolean"
           }
         },
         "required": [
@@ -24580,20 +24679,72 @@
     },
     "/users": {
       "get": {
-        "description": "List all users",
+        "description": "List the users of the organization. Pass `page` or `page_size` to get a paginated response.",
+        "parameters": [
+          {
+            "description": "Filter by part of the email, ignoring case",
+            "in": "query",
+            "name": "email",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by user status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "active",
+                "inactive",
+                "invited",
+                "reviewing"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of items to return (1-100). When provided, enables pagination",
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "format": "int",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page number (1-based). When provided, enables pagination",
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "format": "int",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/openapi.User"
+                    "$ref": "#/components/schemas/openapi.UserListItem"
                   },
                   "type": "array"
                 }
               }
             },
-            "description": "OK"
+            "description": "Returns array of users"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
