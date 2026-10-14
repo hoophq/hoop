@@ -20,6 +20,8 @@ const EMPTY = {
   max_calls: '',
   approval_rule: '',
   review_mode: '',
+  // No field edits it; kept so a save does not erase what the API set.
+  match_ignore: [],
 }
 
 function specToForm(spec) {
@@ -38,6 +40,7 @@ function specToForm(spec) {
     max_calls: spec.max_calls ?? '',
     approval_rule: spec.approval_rule ?? '',
     review_mode: spec.review_mode ?? '',
+    match_ignore: spec.match_ignore ?? [],
   }
 }
 
@@ -74,6 +77,7 @@ function formToSpec(f, ruleName) {
     spec.approval_rule = f.approval_rule && f.approval_rule !== ruleName ? f.approval_rule : ruleName
     // Only on a lane that holds: the sidecar refuses a mode nothing reads.
     if (f.review_mode !== '') spec.review_mode = f.review_mode
+    if (f.match_ignore.length > 0) spec.match_ignore = f.match_ignore
   }
   return spec
 }

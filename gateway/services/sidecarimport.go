@@ -244,8 +244,9 @@ func maskItem(ruleName string, entry json.RawMessage, targets ...ImportedTarget)
 // mergeAnalyzerBlock replaces. The lane keeps the rest as the base the rule
 // merges over. A block that decides nothing (only overrides such as
 // max_calls) stays in the lane: as a rule it would allow everything. The
-// file's approval_rule and review_mode travel with the rule, since both mean
-// something only where it holds; ImportSidecarRulesTx checks the first.
+// file's approval_rule, review_mode and match_ignore travel with the rule,
+// since each means something only where it holds; ImportSidecarRulesTx
+// checks the first.
 func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []ImportedRule) ([]ImportedRule, error) {
 	for i := range cfg.Listeners {
 		l := &cfg.Listeners[i]
@@ -257,6 +258,7 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 			Trigger: base.Trigger, HighRisk: base.HighRisk, MediumRisk: base.MediumRisk,
 			LowRisk: base.LowRisk, Prompt: base.Prompt, Message: base.Message,
 			ApprovalRule: base.ApprovalRule, ReviewMode: base.ReviewMode,
+			MatchIgnore: base.MatchIgnore,
 		}
 		if rule.Trigger == nil && rule.HighRisk == "" && rule.MediumRisk == "" && rule.LowRisk == "" &&
 			rule.Prompt == "" && rule.Message == "" {
@@ -279,6 +281,7 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 		base.Trigger = nil
 		base.HighRisk, base.MediumRisk, base.LowRisk = "", "", ""
 		base.Prompt, base.Message, base.ApprovalRule, base.ReviewMode = "", "", "", ""
+		base.MatchIgnore = nil
 		l.Analyzer = &base
 	}
 	return out, nil
