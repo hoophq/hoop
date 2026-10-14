@@ -8977,6 +8977,33 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "open",
+                            "ready",
+                            "done"
+                        ],
+                        "type": "string",
+                        "description": "Filter by the session status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "connect",
+                            "exec"
+                        ],
+                        "type": "string",
+                        "description": "Filter by the session verb",
+                        "name": "verb",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by text in the session input, case-insensitive. % matches any text. Native client sessions record no input.",
+                        "name": "input",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "format": "RFC3339",
                         "description": "Filter starting on this date",

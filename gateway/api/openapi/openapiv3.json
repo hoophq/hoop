@@ -21077,6 +21077,39 @@
             }
           },
           {
+            "description": "Filter by the session status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "open",
+                "ready",
+                "done"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by the session verb",
+            "in": "query",
+            "name": "verb",
+            "schema": {
+              "enum": [
+                "connect",
+                "exec"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by text in the session input, case-insensitive. % matches any text. Native client sessions record no input.",
+            "in": "query",
+            "name": "input",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Filter starting on this date",
             "in": "query",
             "name": "start_date",
