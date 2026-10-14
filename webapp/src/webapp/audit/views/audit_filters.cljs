@@ -37,9 +37,15 @@
         ;; read every session input of the org.
         input-search (r/atom (get filters "input" ""))
         input-filter-seen (r/atom (get filters "input" ""))
+        ;; The gateway caps the filter at 256 UTF-8 bytes, but :maxLength
+        ;; counts characters, so accented text can pass the field and get a 422.
         submit-input-search (fn [value]
-                              (rf/dispatch [:audit->filter-sessions
-                                            {"input" (string/trim value)}]))
+                              (let [trimmed (string/trim value)]
+                                (if (> (.-length (.encode (js/TextEncoder.) trimmed)) 256)
+                                  (rf/dispatch [:show-snackbar {:level :error
+                                                                :text "Search text must be at most 256 bytes."}])
+                                  (rf/dispatch [:audit->filter-sessions
+                                                {"input" trimmed}]))))
 
         workflow-correlation-id (r/atom "")
         submit-workflow (fn []
