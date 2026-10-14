@@ -11,19 +11,19 @@ function AccessPath({ user }) {
     case 'all':
       return <Text size="sm">Access control is off</Text>
     case 'admin':
-      return <Badge color="indigo" variant="light">Admin</Badge>
+      return <Badge tag color="indigo" variant="light">Admin</Badge>
     case 'auditor':
-      return <Badge color="indigo" variant="light">Auditor</Badge>
+      return <Badge tag color="indigo" variant="light">Auditor</Badge>
     default:
       return (
         <Group gap="xs">
           {(user.groups ?? []).map((name) => (
-            <Badge key={`group-${name}`} color="gray" variant="light">
+            <Badge tag key={`group-${name}`} color="gray" variant="light">
               {name}
             </Badge>
           ))}
           {(user.attribute_groups ?? []).map((name) => (
-            <Badge key={`attribute-${name}`} color="gray" variant="outline">
+            <Badge tag key={`attribute-${name}`} color="gray" variant="outline">
               {`${name} · via attribute`}
             </Badge>
           ))}
