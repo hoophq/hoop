@@ -168,7 +168,7 @@ func canExecReviewedSession(ctx *storagev2.Context, session *models.Session, rev
 	}
 
 	if review.Status != models.ReviewStatusApproved {
-		return fmt.Errorf("approval request not approved or already executed")
+		return fmt.Errorf("request is not approved or was already executed")
 	}
 
 	if review.TimeWindow != nil {

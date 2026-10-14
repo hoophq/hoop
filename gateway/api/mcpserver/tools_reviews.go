@@ -32,13 +32,13 @@ type reviewTimeWindowInput struct {
 type reviewsUpdateInput struct {
 	ID              string                 `json:"id" jsonschema:"approval request ID or session ID"`
 	Status          string                 `json:"status" jsonschema:"new status: APPROVED, REJECTED, or REVOKED"`
-	TimeWindow      *reviewTimeWindowInput `json:"time_window,omitempty" jsonschema:"optional time window for approved JIT approval requests"`
+	TimeWindow      *reviewTimeWindowInput `json:"time_window,omitempty" jsonschema:"optional time window for approved JIT requests"`
 	ForceReview     bool                   `json:"force_review,omitempty" jsonschema:"force the approval (requires force approval group membership)"`
 	RejectionReason string                 `json:"rejection_reason,omitempty" jsonschema:"reason recorded on the approval request when status is REJECTED"`
 }
 
 type reviewsExecuteInput struct {
-	ID string `json:"id" jsonschema:"approval request ID or session ID of an APPROVED one-time approval request"`
+	ID string `json:"id" jsonschema:"approval request ID or session ID of an APPROVED one-time request"`
 }
 
 type reviewsWaitInput struct {
@@ -93,7 +93,7 @@ func registerReviewTools(server *mcp.Server, releaseConnFn reviewapi.TransportRe
 
 	addApprovalTool(server, &mcp.Tool{
 		Name: "approvals_execute",
-		Description: "Execute a query that was blocked on an approved one-time approval request. Runs the originally " +
+		Description: "Execute a query that was blocked on an approved one-time request. Runs the originally " +
 			"submitted query (no drift from what the approver approved). Only the session owner or an " +
 			"admin/auditor can execute; the approval request must be in status=APPROVED. Returns the same envelope " +
 			"shape as exec: completed, or status=running after a 50s timeout (poll sessions_get).",
@@ -142,7 +142,7 @@ func reviewsExecuteHandler(ctx context.Context, _ *mcp.CallToolRequest, args rev
 		return errResult("approval request not found"), nil, nil
 	}
 	if review.Type != models.ReviewTypeOneTime {
-		return errResult("approval request is not a one-time approval request"), nil, nil
+		return errResult("not a one-time approval request"), nil, nil
 	}
 
 	sid := review.SessionID
@@ -247,7 +247,7 @@ func canExecReviewedSessionMCP(ctx *storagev2.Context, session *models.Session, 
 		return fmt.Errorf("unable to execute session")
 	}
 	if review.Status != models.ReviewStatusApproved {
-		return fmt.Errorf("approval request not approved or already executed")
+		return fmt.Errorf("request is not approved or was already executed")
 	}
 	if review.TimeWindow == nil {
 		return nil
