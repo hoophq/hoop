@@ -255,7 +255,7 @@ func Update(c *gin.Context) {
 //	@Param			page_size	query		int												false	"Maximum number of items to return (1-100). When provided, enables pagination"	Format(int)
 //	@Param			page		query		int												false	"Page number (1-based). When provided, enables pagination"						Format(int)
 //	@Success		200			{object}	openapi.PaginatedResponse[openapi.UserListItem]	"Returns users paginated when using pagination"
-//	@Success		200			{array}		openapi.UserListItem							"Returns array of users"
+//	@Success		200			{array}		openapi.UserListItem							"Array of users. With page or page_size, the {pages, data} envelope of openapi.PaginatedResponse-openapi_UserListItem"
 //	@Failure		422,500		{object}	openapi.HTTPError
 //	@Router			/users [get]
 func List(c *gin.Context) {

@@ -24734,7 +24734,7 @@
                 }
               }
             },
-            "description": "Returns array of users"
+            "description": "Array of users. With page or page_size, the {pages, data} envelope of openapi.PaginatedResponse-openapi_UserListItem"
           },
           "422": {
             "content": {

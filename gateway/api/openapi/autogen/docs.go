@@ -11666,7 +11666,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Returns array of users",
+                        "description": "Array of users. With page or page_size, the {pages, data} envelope of openapi.PaginatedResponse-openapi_UserListItem",
                         "schema": {
                             "type": "array",
                             "items": {

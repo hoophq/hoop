@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Anchor,
-  Button,
   Divider,
   Group,
   Stack,
@@ -11,6 +10,7 @@ import {
 import { useDisclosure } from '@mantine/hooks'
 import { Search } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
+import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import Table from '@/components/Table'
@@ -210,6 +210,10 @@ export default function Users() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [isLocalAuth, setIsLocalAuth] = useState(false)
+  // The form reads the groups and the auth method. The page waits for both:
+  // a late answer would reset an open form, or hide the local auth password.
+  const [groupsReady, setGroupsReady] = useState(false)
+  const [serverInfoReady, setServerInfoReady] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [formType, setFormType] = useState('create')
   const [opened, { open, close }] = useDisclosure(false)
@@ -224,7 +228,7 @@ export default function Users() {
   const loadedRef = useRef(false)
   const debounceRef = useRef(null)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = useMinDelay(loading || !groupsReady || !serverInfoReady)
 
   const fetchUsers = useCallback(async () => {
     const requestId = ++requestIdRef.current
@@ -260,6 +264,8 @@ export default function Users() {
       setGroups(data ?? [])
     } catch {
       setError('Failed to load users.')
+    } finally {
+      setGroupsReady(true)
     }
   }, [])
 
@@ -272,6 +278,7 @@ export default function Users() {
     authService.getPublicServerInfo()
       .then((serverInfo) => setIsLocalAuth(serverInfo?.auth_method === 'local'))
       .catch(() => setError('Failed to load users.'))
+      .finally(() => setServerInfoReady(true))
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
