@@ -289,6 +289,7 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	r.GET("/sidecars/reviews", r.SidecarAuthMiddleware, apisidecar.ListReviews)
 	r.GET("/sidecars/reviews/:id", r.SidecarAuthMiddleware, apisidecar.GetReview)
 	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apisidecar.ClaimReview)
+	r.POST("/sidecars/reviews/:id/settle", r.SidecarAuthMiddleware, apisidecar.SettleReview)
 	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.ImportConfiguration)
 	// No TrackRequest, for the reason above. 412 while experimental.sidecar_session_events is off.
 	r.POST("/sidecars/events", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.PostEvents)

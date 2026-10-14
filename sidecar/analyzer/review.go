@@ -36,11 +36,13 @@ type ReviewResult struct {
 // the statement was not released, which is the safe reading of a vocabulary
 // that grew a value this build predates.
 const (
-	reviewPending  = "PENDING"
-	reviewRejected = "REJECTED"
-	reviewRevoked  = "REVOKED"
-	reviewExecuted = "EXECUTED"
-	reviewExpired  = "EXPIRED"
+	reviewPending    = "PENDING"
+	reviewApproved   = "APPROVED"
+	reviewRejected   = "REJECTED"
+	reviewRevoked    = "REVOKED"
+	reviewExecuted   = "EXECUTED"
+	reviewExpired    = "EXPIRED"
+	reviewProcessing = "PROCESSING"
 )
 
 // ReviewMode decides what a PENDING review does to its statement.
@@ -180,6 +182,15 @@ type Reviewer interface {
 	Claim(ctx context.Context, reviewID string) (ReviewResult, error)
 }
 
+// Settler is a Reviewer whose release can be a reservation: the backend
+// answers PROCESSING with Forward, and the approval is spent only once the
+// upstream's answer is reported (spend_approval_on: accepted). The gate
+// reports that answer; hold calls Settle only to give an approval back when
+// the connection ended before the statement could run.
+type Settler interface {
+	Settle(ctx context.Context, reviewID string, accepted bool) error
+}
+
 // HoldDetail is the verdict that put a statement on hold: what the analyzer
 // rated it and why. It reaches the reviewer's context, not the review
 // request, so a backend that shows a person the statement can show the
@@ -296,15 +307,18 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		notes[MetadataReviewID] = res.ID
 	}
 	if res.Forward {
-		return e.release(ctx, notes, res.ID)
+		return e.release(ctx, notes, res)
 	}
-	if res.Status != reviewPending || res.ID == "" {
-		return e.denyHold(notes, res.ID, res.Status, reviewReason(res.Status))
-	}
-	if mode == ReviewReturn {
+	switch {
+	case res.ID == "":
+	case res.Status == reviewPending && mode == ReviewReturn:
 		return e.denyReturn(notes, res.ID)
+	case res.Status == reviewPending, res.Status == reviewProcessing && mode == ReviewHold:
+		// PROCESSING: another request holds the approval while its upstream
+		// answers. Waiting is worth it, since a refusal gives it back.
+		return e.wait(ctx, res.ID, notes)
 	}
-	return e.wait(ctx, res.ID, notes)
+	return e.denyHold(notes, res.ID, res.Status, reviewReason(res.Status))
 }
 
 // reviewText renders the bytes the backend files and matches an approval
@@ -370,9 +384,9 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 			return v
 		}
 		if res.Forward {
-			return e.release(ctx, notes, reviewID)
+			return e.release(ctx, notes, res)
 		}
-		if res.Status != reviewPending {
+		if res.Status != reviewPending && res.Status != reviewProcessing {
 			return e.denyHold(notes, reviewID, res.Status, reviewReason(res.Status))
 		}
 
@@ -399,18 +413,45 @@ func (e *Evaluator) ask(ctx context.Context, call func(context.Context) (ReviewR
 	return call(callCtx)
 }
 
-// release forwards a statement whose approval the backend just spent, unless
-// the connection ended while the claim was in flight. The approval is gone
-// either way; the record says so, and names the review that was spent.
-func (e *Evaluator) release(ctx context.Context, notes map[string]string, reviewID string) policy.Verdict {
+// release forwards a statement whose approval the backend just spent or
+// reserved, unless the connection ended while the claim was in flight. A
+// spent approval is gone either way; the record says so, and names the
+// review that was spent. A reserved one is given back, since nothing ran.
+func (e *Evaluator) release(ctx context.Context, notes map[string]string, res ReviewResult) policy.Verdict {
+	reserved := res.Status == reviewProcessing
 	if ctx.Err() != nil {
-		return e.denyEnded(ctx, notes, reviewID, reviewExecuted,
+		if reserved && e.giveBack(ctx, res.ID) {
+			return e.denyEnded(ctx, notes, res.ID, reviewApproved,
+				"the connection ended before the statement could run, and the approval was given back")
+		}
+		return e.denyEnded(ctx, notes, res.ID, reviewExecuted,
 			"the approval was used, but the connection ended before the statement could run")
 	}
 	// The backend consumed an approved review for these exact bytes, which
 	// it does once. The statement travels, and the audit record carries the
 	// review that released it.
-	return policy.Verdict{Annotations: notes}
+	v := policy.Verdict{Annotations: notes}
+	if reserved {
+		v.Review = &policy.Review{ID: res.ID, Status: res.Status, Reserved: true}
+	}
+	return v
+}
+
+// giveBack reports a reserved approval's statement as refused, so the
+// approval returns to APPROVED. False when the backend cannot settle or the
+// call failed: the plane then spends it when the reservation's lease ends.
+func (e *Evaluator) giveBack(ctx context.Context, reviewID string) bool {
+	s, ok := e.cfg.Review.(Settler)
+	if !ok {
+		return false
+	}
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.cfg.Timeout)
+	defer cancel()
+	if err := s.Settle(callCtx, reviewID, false); err != nil {
+		e.errs.Add(1)
+		return false
+	}
+	return true
 }
 
 // denyEnded refuses a statement whose connection ended during the hold. The
@@ -510,6 +551,10 @@ func reviewReason(status string) string {
 		return "the approval was already used"
 	case reviewExpired:
 		return "the review expired; running the statement again files a new review"
+	case reviewProcessing:
+		// Return mode only: a hold waits on it. The other request's
+		// answer decides whether the approval is spent or given back.
+		return "another request is using this approval; check the review before resending"
 	}
 	return "the statement was not released"
 }

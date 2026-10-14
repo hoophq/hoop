@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -169,7 +170,7 @@ func PostReview(c *gin.Context) {
 			req.ListenerName, rule.Name, statementHash, now)
 		switch {
 		case err == nil:
-			answerExistingReview(c, sidecar, req.ListenerName, rev, time.Now().UTC())
+			answerExistingReview(c, sidecar, req.ListenerName, rev, time.Now().UTC(), req.Reserve)
 			return
 		case !errors.Is(err, gorm.ErrRecordNotFound):
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
@@ -215,18 +216,27 @@ func PostReview(c *gin.Context) {
 // ClaimReview
 //
 //	@Summary		Claim Sidecar Review
-//	@Description	Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement; a review past its deadline is expired and never releases it; any other status is returned as it stands. It never files a review.
+//	@Description	Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement, or is reserved (PROCESSING) when the body asks to reserve it; a review past its deadline is expired and never releases it; any other status is returned as it stands. It never files a review.
 //	@Tags			Sidecars
+//	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
-//	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
-//	@Param			id					path		string	true	"The review id"
+//	@Param			hoop-sidecar-token	header		string								false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity	header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
+//	@Param			id					path		string								true	"The review id"
+//	@Param			request				body		openapi.SidecarReviewClaimRequest	false	"Optional; an empty body spends an approved review"
 //	@Success		200					{object}	openapi.SidecarReviewResponse
-//	@Failure		401,404,500			{object}	openapi.HTTPError
+//	@Failure		400,401,404,500		{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews/{id}/claim [post]
 func ClaimReview(c *gin.Context) {
 	sidecar := authenticatedSidecar(c)
 	if sidecar == nil {
+		return
+	}
+
+	// Optional: a sidecar that predates settling sends no body.
+	var req openapi.SidecarReviewClaimRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -249,7 +259,74 @@ func ClaimReview(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
 		return
 	}
-	answerExistingReview(c, sidecar, rev.ListenerName.String, rev, time.Now().UTC())
+	answerExistingReview(c, sidecar, rev.ListenerName.String, rev, time.Now().UTC(), req.Reserve)
+}
+
+// SettleReview
+//
+//	@Summary		Settle Sidecar Review
+//	@Description	Report what the upstream answered to a statement a reserved approval released. Accepted spends the approval (EXECUTED). Refused gives it back (APPROVED), so a resend of the same bytes can take it again. A reservation past its lease is spent and stays spent. Any review the calling sidecar did not reserve is returned as it stands.
+//	@Tags			Sidecars
+//	@Accept			json
+//	@Produce		json
+//	@Param			hoop-sidecar-token	header		string								false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-identity	header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
+//	@Param			id					path		string								true	"The review id"
+//	@Param			request				body		openapi.SidecarReviewSettleRequest	true	"The request body resource"
+//	@Success		200					{object}	openapi.SidecarReviewResponse
+//	@Failure		400,401,404,500		{object}	openapi.HTTPError
+//	@Router			/sidecars/reviews/{id}/settle [post]
+func SettleReview(c *gin.Context) {
+	sidecar := authenticatedSidecar(c)
+	if sidecar == nil {
+		return
+	}
+
+	reviewID := c.Param("id")
+	if _, err := uuid.Parse(reviewID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		return
+	}
+	var req openapi.SidecarReviewSettleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	// Read first, scoped to the calling sidecar, so a token cannot settle
+	// another sidecar's reservation or write anything on its review.
+	switch _, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID); {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		return
+	case err != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+		return
+	}
+	settled, err := models.SettleSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID, *req.Accepted, time.Now().UTC())
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed settling the sidecar review")
+		return
+	}
+	rev, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+		return
+	}
+
+	if settled {
+		listenerName := rev.ListenerName.String
+		log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
+			"listener", listenerName, "accepted", *req.Accepted).
+			Infof("settled a reserved sidecar review")
+		if *req.Accepted {
+			trackConsumedReview(sidecar, listenerName)
+		}
+	}
+	c.JSON(http.StatusOK, &openapi.SidecarReviewResponse{
+		Forward: false,
+		Review:  toOpenApiSidecarReview(rev),
+	})
 }
 
 // GetReview
@@ -396,11 +473,12 @@ func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 
 // answerExistingReview answers a retry, or a claim by id, from the filed review. Only the
 // claim's winner of an APPROVED review forwards; a lapsed one is expired; others return as they stand.
-func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review, now time.Time) {
+// reserve takes the approval without spending it; see ReserveApprovedSidecarReview.
+func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review, now time.Time, reserve bool) {
 	forward := false
 	if rev.Status == models.ReviewStatusApproved {
 		var ok bool
-		if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, now); !ok {
+		if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, now, reserve); !ok {
 			return
 		}
 	}
@@ -426,7 +504,7 @@ func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName 
 		// sidecar reads APPROVED with forward false as final, so claim it now.
 		if status == models.ReviewStatusApproved {
 			var ok bool
-			if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, time.Now().UTC()); !ok {
+			if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, time.Now().UTC(), reserve); !ok {
 				return
 			}
 		}
@@ -448,28 +526,45 @@ func lapsedSidecarReview(rev *models.Review, now time.Time) bool {
 	return false
 }
 
-// claimSidecarApproval consumes an approved review and reports whether this
-// request won it. ok is false when it already answered the request.
+// claimSidecarApproval consumes an approved review, or reserves it, and
+// reports whether this request won it. ok is false when it already answered
+// the request.
 func claimSidecarApproval(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review,
-	now time.Time) (forward, ok bool) {
-	claimed, status, err := models.ClaimApprovedSidecarReview(models.DB, sidecar.OrgID, rev.ID, now)
+	now time.Time, reserve bool) (forward, ok bool) {
+	take := models.ClaimApprovedSidecarReview
+	if reserve {
+		take = models.ReserveApprovedSidecarReview
+	}
+	claimed, status, err := take(models.DB, sidecar.OrgID, rev.ID, now)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err,
 			"failed consuming the approved sidecar review")
 		return false, false
 	}
-	// The status the row holds now, so a claim loser reports EXECUTED
-	// rather than the APPROVED it read a moment earlier. It is forward,
-	// not this, that says whether the statement may run.
+	// The status the row holds now, so a claim loser reports EXECUTED (or
+	// PROCESSING) rather than the APPROVED it read a moment earlier. It is
+	// forward, not this, that says whether the statement may run.
 	rev.Status = status
 	if !claimed {
 		return false, true
 	}
 
+	if reserve {
+		// Not spent yet: SettleReview counts it once the upstream accepts.
+		log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
+			"listener", listenerName).
+			Infof("reserved an approved sidecar review")
+		return true, true
+	}
 	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
 		"listener", listenerName).
 		Infof("consumed an approved sidecar review")
+	trackConsumedReview(sidecar, listenerName)
+	return true, true
+}
 
+// trackConsumedReview records that an approval was spent on a statement.
+func trackConsumedReview(sidecar *models.Sidecar, listenerName string) {
 	trackClient := analytics.New()
 	defer trackClient.Close()
 	trackClient.TrackEvent(analytics.EventConsumeSidecarReview, map[string]any{
@@ -477,7 +572,6 @@ func claimSidecarApproval(c *gin.Context, sidecar *models.Sidecar, listenerName 
 		"sidecar":  sidecar.Name,
 		"listener": listenerName,
 	})
-	return true, true
 }
 
 // notifySlack posts the review to the org's Slack channel, so a human learns it

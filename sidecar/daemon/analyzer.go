@@ -532,6 +532,17 @@ type LaneAnalyzerConfig struct {
 	// deleting it.
 	ReviewMode analyzer.ReviewMode `json:"review_mode,omitempty" cap:"review_mode" since:"1.196.0"`
 
+	// SpendApprovalOn is when a held statement's approval is spent:
+	// "forward" (the default) when the sidecar releases it, "accepted" only
+	// once the upstream accepts it. Under accepted the plane reserves the
+	// approval and the sidecar reports the upstream's answer: a refusal
+	// (an HTTP 4xx, a gRPC status such as unauthenticated) gives it back,
+	// so a resend with a fresh credential can use it. http, grpc and
+	// spanner lanes only, and only with a control plane to settle with.
+	//
+	// "forward" is dropped by ServedForm, like review_mode's "hold".
+	SpendApprovalOn SpendApprovalOn `json:"spend_approval_on,omitempty" cap:"spend_approval_on"`
+
 	// The rest override the top-level analyzer defaults for this lane.
 	// A zero value inherits; see the field of the same name on
 	// AnalyzerConfig for what each bounds.
@@ -795,7 +806,7 @@ func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, obs
 		if la.ApprovalRule == "" {
 			return nil
 		}
-		return ac.cp.reviewer(listener, la.ApprovalRule)
+		return ac.cp.reviewer(listener, la.ApprovalRule, la.reserves(), ac.log)
 	}
 	if ac.local != nil && analyzerHolds(la) {
 		return ac.local(listener)
@@ -1300,21 +1311,33 @@ func ValidateLaneAnalyzerBlock(la *LaneAnalyzerConfig, lane string) []string {
 	return validateLaneBlock(la, lane, true)
 }
 
-// ValidateHoldOnLane is the half of a hold only the lane answers: an ssh lane
-// that admits a shell. A shell sends no statements (ADR-0015), so a user
+// ValidateHoldOnLane is the half of a hold only the lane answers. An ssh lane
+// that admits a shell: a shell sends no statements (ADR-0015), so a user
 // types in it what exec would have held. Refused rather than noted: the
-// operator asked for a human gate and the shell walks around it.
+// operator asked for a human gate and the shell walks around it. And
+// spend_approval_on: accepted on a lane whose upstream answer the sidecar
+// does not read, where no approval would ever be spent.
 //
 // Exported for the control plane, which knows the lane only once a rule is
 // bound to it.
 func ValidateHoldOnLane(la *LaneAnalyzerConfig, lc ListenerConfig, where string) []string {
-	if la == nil || !analyzerHolds(la) || !isSSH(lc) || !lc.SSH.admits(codecssh.CapShell) {
+	if la == nil {
 		return nil
 	}
-	return []string{fmt.Sprintf(
-		"%s asks for %q on an ssh lane that admits shell, and a shell sends no "+
-			"statements, so nothing typed in it is held; drop shell from "+
-			"ssh.capabilities_allowed", where, analyzer.ActionRequireReview)}
+	var problems []string
+	if la.reserves() && inspect.Protocol(lc.Protocol) != inspect.HTTP && !isGRPCTransport(lc) {
+		problems = append(problems, fmt.Sprintf(
+			"%s: spend_approval_on %q spends an approval on the upstream's answer, which "+
+				"the sidecar reads on http, grpc and spanner lanes only; this lane is %s",
+			where, la.SpendApprovalOn, lc.Protocol))
+	}
+	if analyzerHolds(la) && isSSH(lc) && lc.SSH.admits(codecssh.CapShell) {
+		problems = append(problems, fmt.Sprintf(
+			"%s asks for %q on an ssh lane that admits shell, and a shell sends no "+
+				"statements, so nothing typed in it is held; drop shell from "+
+				"ssh.capabilities_allowed", where, analyzer.ActionRequireReview))
+	}
+	return problems
 }
 
 // validateLaneBlock checks one listener's analyzer block in isolation. The
@@ -1394,7 +1417,40 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 				"level asks for %q, so nothing on this lane would hold one",
 			where, la.ReviewMode, analyzer.ActionRequireReview))
 	}
+	switch {
+	case !la.SpendApprovalOn.valid():
+		problems = append(problems, fmt.Sprintf(
+			"%s: unknown spend_approval_on %q (forward or accepted)", where, la.SpendApprovalOn))
+	case la.SpendApprovalOn != "" && !holds:
+		problems = append(problems, fmt.Sprintf(
+			"%s: spend_approval_on %q decides when a held statement's approval is "+
+				"spent, and no risk level asks for %q, so nothing on this lane would hold one",
+			where, la.SpendApprovalOn, analyzer.ActionRequireReview))
+	}
 	return problems
+}
+
+// SpendApprovalOn is when a held statement's approval is spent; see
+// LaneAnalyzerConfig.SpendApprovalOn.
+type SpendApprovalOn string
+
+const (
+	SpendOnForward  SpendApprovalOn = "forward"
+	SpendOnAccepted SpendApprovalOn = "accepted"
+)
+
+func (s SpendApprovalOn) valid() bool {
+	switch s {
+	case "", SpendOnForward, SpendOnAccepted:
+		return true
+	}
+	return false
+}
+
+// reserves reports a lane whose approvals the plane reserves until the
+// upstream answers.
+func (la *LaneAnalyzerConfig) reserves() bool {
+	return la != nil && la.SpendApprovalOn == SpendOnAccepted
 }
 
 // validateTriggerItems refuses a trigger item that names no field. It would

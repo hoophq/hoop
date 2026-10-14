@@ -48,6 +48,9 @@ const (
 	// CapabilityReviewMode means this build decodes an analyzer block's
 	// review_mode.
 	CapabilityReviewMode = "review_mode"
+	// CapabilitySpendApprovalOn means this build decodes an analyzer
+	// block's spend_approval_on.
+	CapabilitySpendApprovalOn = "spend_approval_on"
 	// CapabilityAnalyzerRateLimit means this build decodes analyzer
 	// rate_limit, on the top-level section and on a listener's block.
 	CapabilityAnalyzerRateLimit = "analyzer_rate_limit"
@@ -349,21 +352,28 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 	}
 }
 
-// ServedForm drops the review_mode key where it holds the default, so a hold
-// lane serves the same document an older build decodes. It copies what it
-// changes: cfg may share listeners with a stored row.
+// ServedForm drops the review_mode and spend_approval_on keys where they hold
+// the default, so such a lane serves the same document an older build
+// decodes. It copies what it changes: cfg may share listeners with a stored
+// row.
 //
-// The one hand-written case: "hold" is a value, and every other default is
-// the zero value, which the field's own tag omits.
+// The hand-written cases: "hold" and "forward" are values, and every other
+// default is the zero value, which the field's own tag omits.
 func ServedForm(cfg Config) Config {
 	listeners := make([]ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
 	for i, l := range listeners {
-		if l.Analyzer == nil || l.Analyzer.ReviewMode != "hold" {
+		if l.Analyzer == nil ||
+			(l.Analyzer.ReviewMode != "hold" && l.Analyzer.SpendApprovalOn != SpendOnForward) {
 			continue
 		}
 		block := *l.Analyzer
-		block.ReviewMode = ""
+		if block.ReviewMode == "hold" {
+			block.ReviewMode = ""
+		}
+		if block.SpendApprovalOn == SpendOnForward {
+			block.SpendApprovalOn = ""
+		}
 		listeners[i].Analyzer = &block
 	}
 	cfg.Listeners = listeners

@@ -59,7 +59,7 @@ func TestAFiledReviewCarriesTheListenerRuleAndStatement(t *testing.T) {
 	cp, calls := reviewPlane(t, http.StatusCreated,
 		`{"forward":false,"review":{"id":"9f97","status":"PENDING"}}`)
 
-	res, err := cp.reviewer("payments", "payments-approvers").File(
+	res, err := cp.reviewer("payments", "payments-approvers", false, nil).File(
 		context.Background(), "DELETE FROM users WHERE email = 'a@b.c'")
 	if err != nil {
 		t.Fatalf("fileReview: %v", err)
@@ -107,7 +107,7 @@ func TestOnlyForwardReleasesTheStatement(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp, _ := reviewPlane(t, http.StatusOK, tc.body)
-			res, err := cp.fileReview(context.Background(), "payments", "rule", "DELETE FROM t")
+			res, err := cp.fileReview(context.Background(), "payments", "rule", "DELETE FROM t", false)
 			if err != nil {
 				t.Fatalf("fileReview: %v", err)
 			}
@@ -148,7 +148,7 @@ func TestEveryRefusalIsAnError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp, _ := reviewPlane(t, tc.code, tc.body)
-			res, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t")
+			res, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t", false)
 			if err == nil {
 				t.Fatalf("the answer was accepted as %+v", res)
 			}
@@ -178,7 +178,7 @@ func TestAReviewNeverFollowsARedirect(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cp := &controlPlane{url: srv.URL, cred: tokenCredential("hsc_token")}
-	_, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t")
+	_, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t", false)
 	if err == nil {
 		t.Fatal("a redirect was accepted")
 	}
@@ -202,7 +202,7 @@ func TestAPathPrefixedPlaneKeepsItsPrefix(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cp := &controlPlane{url: srv.URL + "/hoop", cred: tokenCredential("hsc_token")}
-	if _, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t"); err != nil {
+	if _, err := cp.fileReview(context.Background(), "payments", "x", "DELETE FROM t", false); err != nil {
 		t.Fatalf("fileReview: %v", err)
 	}
 	if want := "/hoop" + controlPlaneReviewsPath; path != want {
@@ -217,7 +217,7 @@ func TestAClaimAsksAboutOneReviewByID(t *testing.T) {
 	cp, calls := reviewPlane(t, http.StatusOK,
 		`{"forward":true,"review":{"id":"9f97","status":"EXECUTED"}}`)
 
-	res, err := cp.reviewer("payments", "payments-approvers").Claim(context.Background(), "9f97")
+	res, err := cp.reviewer("payments", "payments-approvers", false, nil).Claim(context.Background(), "9f97")
 	if err != nil {
 		t.Fatalf("claimReview: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestAClaimEscapesTheReviewID(t *testing.T) {
 	cp, calls := reviewPlane(t, http.StatusOK,
 		`{"forward":false,"review":{"id":"a/../b","status":"PENDING"}}`)
 
-	if _, err := cp.claimReview(context.Background(), "a/../b"); err != nil {
+	if _, err := cp.claimReview(context.Background(), "a/../b", false); err != nil {
 		t.Fatalf("claimReview: %v", err)
 	}
 	if want := controlPlaneReviewsPath + "/a/../b/claim"; (*calls)[0].path != want {
@@ -274,7 +274,7 @@ func TestEveryClaimRefusalIsAnError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp, _ := reviewPlane(t, tc.code, tc.body)
-			res, err := cp.claimReview(context.Background(), "9f97")
+			res, err := cp.claimReview(context.Background(), "9f97", false)
 			if err == nil {
 				t.Fatalf("the answer was accepted as %+v", res)
 			}
@@ -424,7 +424,7 @@ func (*localReviewer) Claim(context.Context, string) (analyzer.ReviewResult, err
 // ever contacting a plane.
 func TestNoControlPlaneMeansNoReviewer(t *testing.T) {
 	var cp *controlPlane
-	if cp.reviewer("payments", "payments-approvers") != nil {
+	if cp.reviewer("payments", "payments-approvers", false, nil) != nil {
 		t.Error("a process with no control plane built a reviewer")
 	}
 }

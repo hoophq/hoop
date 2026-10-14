@@ -3,6 +3,7 @@ package apisidecar
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,13 +39,27 @@ func putReview(t *testing.T, reviewID, body string, groups []string) *httptest.R
 	return rec
 }
 
+// claimSidecarReview claims with no body, as a sidecar that does not
+// reserve does.
 func claimSidecarReview(sc *models.Sidecar, reviewID string) *httptest.ResponseRecorder {
+	return claimWithBody(sc, reviewID, "")
+}
+
+// claimWithBody claims with body as the JSON request body; "" sends none.
+func claimWithBody(sc *models.Sidecar, reviewID, body string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Set("sidecar-auth", sc)
 	c.Params = gin.Params{{Key: "id", Value: reviewID}}
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews/"+reviewID+"/claim", nil)
+	var r io.Reader
+	if body != "" {
+		r = strings.NewReader(body)
+	}
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews/"+reviewID+"/claim", r)
+	if body != "" {
+		c.Request.Header.Set("Content-Type", "application/json")
+	}
 	ClaimReview(c)
 	return rec
 }

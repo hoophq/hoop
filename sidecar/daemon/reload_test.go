@@ -75,7 +75,7 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 			servers[ln.name] = newLiveRules(ln)
 			continue
 		}
-		srv, serr := buildServer(ln, cfg.Audit, nil, nil, slog.Default())
+		srv, serr := buildServer(ln, cfg.Audit, nil, nil, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}
@@ -408,7 +408,7 @@ func TestAGRPCRuleEditReachesTheNextRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}
-	server, rules, err := buildGRPCServer(lanes[0], cfg.Audit, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	server, rules, err := buildGRPCServer(lanes[0], cfg.Audit, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("buildGRPCServer: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
 	}
 	servers := map[string]ruleSwapper{}
 	for _, ln := range lanes {
-		srv, serr := buildServer(ln, cfg.Audit, nil, nil, slog.Default())
+		srv, serr := buildServer(ln, cfg.Audit, nil, nil, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}

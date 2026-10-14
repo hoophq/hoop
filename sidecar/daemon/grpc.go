@@ -234,10 +234,14 @@ func grpcMetadataAllowlist(gc GRPCCodecConfig, holds bool) []string {
 // buildGRPCServer resolves one grpc lane's transport facts and builds the
 // reusable libhoop endpoint with sidecar-owned RPC callbacks. The returned
 // liveRules is the lane's reload target: every RPC reads its rules there.
+//
+// settle reports the upstream's answer to a statement a reserved approval
+// released; nil in a process with no control plane.
 func buildGRPCServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
+	settle gate.SettleFunc,
 	log *slog.Logger,
 ) (GRPCServer, *liveRules, error) {
 	lc := ln.cfg
@@ -351,6 +355,7 @@ func buildGRPCServer(
 			Masker:           live.masker,
 			FailOnAuditError: failOnAuditError,
 			Metrics:          ln.metrics,
+			Settle:           settle,
 		})
 		if err != nil {
 			// No handler, so libhoop calls no Close: release here.

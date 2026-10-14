@@ -36,15 +36,25 @@ func seedReviewingSidecar(t *testing.T, name string) *models.Sidecar {
 }
 
 func postReview(sc *models.Sidecar, raw []byte) *httptest.ResponseRecorder {
+	return postReviewReserving(sc, raw, false)
+}
+
+// postReviewReserving is postReview from a sidecar that reserves approvals
+// when reserve is set.
+func postReviewReserving(sc *models.Sidecar, raw []byte, reserve bool) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Set("sidecar-auth", sc)
-	body, _ := json.Marshal(map[string]string{
+	req := map[string]any{
 		"listener_name": "appdb",
 		"approval_rule": "payments-approvers",
 		"payload":       base64.StdEncoding.EncodeToString(raw),
-	})
+	}
+	if reserve {
+		req["reserve"] = true
+	}
+	body, _ := json.Marshal(req)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews", strings.NewReader(string(body)))
 	c.Request.Header.Set("Content-Type", "application/json")
 	PostReview(c)

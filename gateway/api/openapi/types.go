@@ -503,6 +503,29 @@ type SidecarReviewRequest struct {
 	//
 	// Bounded at 254 to match what a rule name may be.
 	ApprovalRule string `json:"approval_rule" binding:"required,max=254" example:"payments-approvers"`
+	// Reserve an approved review instead of spending it
+	//
+	// The review moves to PROCESSING, and the sidecar settles it with what
+	// the upstream answered. A plane that predates this field ignores it and
+	// spends the approval at release.
+	Reserve bool `json:"reserve,omitempty" example:"false"`
+}
+
+// SidecarReviewClaimRequest is the optional body of a claim. An empty body
+// spends an approved review, as before the body existed.
+type SidecarReviewClaimRequest struct {
+	// Reserve an approved review instead of spending it, as on SidecarReviewRequest
+	Reserve bool `json:"reserve,omitempty" example:"false"`
+}
+
+// SidecarReviewSettleRequest reports what the upstream answered to the
+// statement a reserved approval released.
+type SidecarReviewSettleRequest struct {
+	// Whether the upstream accepted the statement
+	//
+	// True spends the approval (EXECUTED). False gives it back (APPROVED):
+	// the upstream refused the statement, so nothing ran.
+	Accepted *bool `json:"accepted" binding:"required" example:"false"`
 }
 
 // SidecarReviewResponse answers a sidecar that asked to review a statement.
@@ -515,9 +538,9 @@ type SidecarReviewRequest struct {
 type SidecarReviewResponse struct {
 	// Whether the sidecar may release the statement it held
 	//
-	// True only on the request that consumed an approved review, and only
-	// once per review. False while the review waits, and false forever once
-	// it is rejected, revoked or expired.
+	// True only on the request that consumed or reserved an approved review,
+	// and only once per claim. False while the review waits or a reservation
+	// is in flight, and false forever once it is rejected, revoked or expired.
 	Forward bool `json:"forward" example:"false"`
 	// The review the statement is waiting on, or the one that released it
 	Review *Review `json:"review"`
