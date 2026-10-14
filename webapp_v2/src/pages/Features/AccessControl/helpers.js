@@ -22,7 +22,8 @@ export function isEditableAttribute(attribute) {
   return !attribute?.managed_by
 }
 
-// group name -> the resource roles it can reach.
+// group name -> the resource roles it can reach, by name. The plugin returns
+// them in no fixed order, and the panel pages them.
 export function groupsWithPermissions(connections) {
   const byGroup = {}
   for (const connection of connections ?? []) {
@@ -30,6 +31,9 @@ export function groupsWithPermissions(connections) {
       byGroup[groupName] = byGroup[groupName] ?? []
       byGroup[groupName].push({ id: connection.id, name: connection.name })
     }
+  }
+  for (const roles of Object.values(byGroup)) {
+    roles.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
   }
   return byGroup
 }
