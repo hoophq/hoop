@@ -149,6 +149,7 @@ export default function TagsEditor({
               valueOptions={valuesForLabel.get(labelForTag(key)) || []}
               valueInvalid={Boolean(valueErrorOf(val))}
               disabled={disabled}
+              onKeyEdit={() => rowKeyError && setRowKeyError(null)}
               onKeyCommit={(newLabel) => {
                 const label = newLabel.trim()
                 const newKey = resolveLabelToKey(label)
@@ -238,6 +239,7 @@ function RowFragment({
   valueOptions,
   valueInvalid,
   disabled,
+  onKeyEdit,
   onKeyCommit,
   onValueChange,
   onRemove,
@@ -261,7 +263,10 @@ function RowFragment({
           label="Key"
           data={keyOptions}
           value={keyDraft ?? keyLabel}
-          onChange={setKeyDraft}
+          onChange={(val) => {
+            setKeyDraft(val)
+            onKeyEdit()
+          }}
           onBlur={() => commitKey()}
           onOptionSubmit={commitKey}
           disabled={disabled}
