@@ -28,7 +28,7 @@ func hasAgentTagsTable(t *testing.T, inst *pglite.Instance) bool {
 	return found
 }
 
-// Migration 000143 rolls back: down drops private.agent_tags and keeps the
+// Migration 000144 rolls back: down drops private.agent_tags and keeps the
 // agents, up creates the table again.
 func TestAgentTagsMigrationRollsBack(t *testing.T) {
 	if testing.Short() {
@@ -48,7 +48,7 @@ func TestAgentTagsMigrationRollsBack(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
-	migrateTo(t, inst, 142)
+	migrateTo(t, inst, 143)
 	assert.False(t, hasAgentTagsTable(t, inst), "down must drop private.agent_tags")
 	db = openPQ(t, inst)
 	var agents int
@@ -56,6 +56,6 @@ func TestAgentTagsMigrationRollsBack(t *testing.T) {
 	assert.Equal(t, 1, agents, "down must keep the agents")
 	require.NoError(t, db.Close())
 
-	migrateTo(t, inst, 143)
+	migrateTo(t, inst, 144)
 	assert.True(t, hasAgentTagsTable(t, inst), "up must create private.agent_tags again")
 }
