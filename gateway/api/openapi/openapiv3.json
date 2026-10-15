@@ -1259,7 +1259,7 @@
             },
             "description": "Tags are key/value pairs to select agents (optional, max 10)",
             "example": {
-              "hoop.dev/infrastructure.environment": "prod"
+              "environment": "prod"
             },
             "type": "object"
           }
@@ -1346,7 +1346,7 @@
             },
             "description": "Tags are the key/value pairs of the agent. It is an empty object when the agent has no tags",
             "example": {
-              "hoop.dev/infrastructure.environment": "prod"
+              "environment": "prod"
             },
             "type": "object"
           },
@@ -1429,7 +1429,7 @@
         "properties": {
           "key": {
             "description": "Key is the identifier for the tag category",
-            "example": "hoop.dev/infrastructure.environment",
+            "example": "environment",
             "type": "string"
           },
           "value": {

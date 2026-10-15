@@ -47,7 +47,7 @@ var getLongDesc = `Display one or many resources. Available ones:
 
 var getExamplesDesc = `
 hoop admin get agents
-hoop admin get agents --show-tags --tag-selector 'hoop.dev/infrastructure.environment=prod,team!=data'
+hoop admin get agents --show-tags --tag-selector 'environment=prod,team!=data'
 hoop admin get connections -o json
 hoop admin get plugins`
 

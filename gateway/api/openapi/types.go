@@ -735,7 +735,7 @@ type AgentRequest struct {
 	// * embedded - This mode is suitable when the agent needs to be run close to another process or application
 	Mode string `json:"mode" default:"standard" enums:"standard,embedded"`
 	// Tags are key/value pairs to select agents (optional, max 10)
-	Tags map[string]string `json:"tags,omitempty" example:"hoop.dev/infrastructure.environment:prod"`
+	Tags map[string]string `json:"tags,omitempty" example:"environment:prod"`
 }
 
 type AgentCreateResponse struct {
@@ -767,7 +767,7 @@ type AgentResponse struct {
 	// * kernel-version - The kernel version of the server
 	Metadata map[string]string `json:"metadata" example:"hostname:johnwick.local,version:1.23.14,compiler:gcc,kernel-version:Linux 9acfe93d8195 5.15.49-linuxkit,platform:amd64,machine-id:id"`
 	// Tags are the key/value pairs of the agent. It is an empty object when the agent has no tags
-	Tags map[string]string `json:"tags" example:"hoop.dev/infrastructure.environment:prod"`
+	Tags map[string]string `json:"tags" example:"environment:prod"`
 	// DEPRECATE top level metadata keys
 	Hostname      string `json:"hostname" example:"john.wick.local"`
 	MachineID     string `json:"machine_id" example:""`
@@ -784,7 +784,7 @@ type AgentTagList struct {
 
 type AgentTag struct {
 	// Key is the identifier for the tag category
-	Key string `json:"key" example:"hoop.dev/infrastructure.environment"`
+	Key string `json:"key" example:"environment"`
 	// Value is the tag value associated with the key
 	Value string `json:"value" example:"prod"`
 }

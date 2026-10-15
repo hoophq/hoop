@@ -88,7 +88,7 @@ func names(items []openapi.AgentResponse) []string {
 
 func TestAgentTagsAPI(t *testing.T) {
 	startTestDB(t)
-	const env = "hoop.dev/infrastructure.environment"
+	const env = "environment"
 
 	t.Run("create without tags works as before and returns tags as an empty object", func(t *testing.T) {
 		rec := call(t, apiagents.Post, http.MethodPost, "/api/agents", `{"name":"agent-bare"}`)

@@ -13861,7 +13861,7 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": {
-                        "hoop.dev/infrastructure.environment": "prod"
+                        "environment": "prod"
                     }
                 }
             }
@@ -13945,7 +13945,7 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": {
-                        "hoop.dev/infrastructure.environment": "prod"
+                        "environment": "prod"
                     }
                 },
                 "token": {
@@ -14028,7 +14028,7 @@ const docTemplate = `{
                 "key": {
                     "description": "Key is the identifier for the tag category",
                     "type": "string",
-                    "example": "hoop.dev/infrastructure.environment"
+                    "example": "environment"
                 },
                 "value": {
                     "description": "Value is the tag value associated with the key",

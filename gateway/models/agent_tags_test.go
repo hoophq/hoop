@@ -32,16 +32,16 @@ func listAgentNames(t *testing.T, opts models.AgentFilterOption) []string {
 func TestAgentTags(t *testing.T) {
 	startTestDB(t)
 	prod := createTaggedAgent(t, "agent-prod", map[string]string{
-		"hoop.dev/infrastructure.environment": "prod",
-		"team":                                "data",
+		"environment": "prod",
+		"team":        "data",
 	})
-	stg := createTaggedAgent(t, "agent-stg", map[string]string{"hoop.dev/infrastructure.environment": "staging"})
+	stg := createTaggedAgent(t, "agent-stg", map[string]string{"environment": "staging"})
 	bare := createTaggedAgent(t, "agent-bare", nil)
 
 	t.Run("create stores the tags of each agent", func(t *testing.T) {
 		tags, err := models.GetAgentTags(models.DB, testOrgID, prod.ID)
 		require.NoError(t, err)
-		assert.Equal(t, map[string]string{"hoop.dev/infrastructure.environment": "prod", "team": "data"}, tags)
+		assert.Equal(t, map[string]string{"environment": "prod", "team": "data"}, tags)
 
 		tags, err = models.GetAgentTags(models.DB, testOrgID, bare.ID)
 		require.NoError(t, err)
@@ -50,7 +50,7 @@ func TestAgentTags(t *testing.T) {
 
 		byAgent, err := models.ListAgentTags(models.DB, testOrgID)
 		require.NoError(t, err)
-		assert.Equal(t, map[string]string{"hoop.dev/infrastructure.environment": "staging"}, byAgent[stg.ID])
+		assert.Equal(t, map[string]string{"environment": "staging"}, byAgent[stg.ID])
 		assert.NotContains(t, byAgent, bare.ID)
 	})
 
@@ -63,7 +63,7 @@ func TestAgentTags(t *testing.T) {
 	})
 
 	t.Run("tag selector filters with the connection semantics", func(t *testing.T) {
-		env := "hoop.dev/infrastructure.environment"
+		env := "environment"
 		assert.ElementsMatch(t, []string{"agent-prod", "agent-stg", "agent-bare"}, listAgentNames(t, models.AgentFilterOption{}))
 		assert.Equal(t, []string{"agent-prod"}, listAgentNames(t, models.AgentFilterOption{TagSelector: env + "=prod"}))
 		// != matches an agent that has the key with another value, as /connections does.
@@ -75,7 +75,7 @@ func TestAgentTags(t *testing.T) {
 
 	t.Run("tag selector combines with status", func(t *testing.T) {
 		require.NoError(t, models.UpdateAgentStatus(testOrgID, stg.ID, models.AgentStatusConnected, nil))
-		env := "hoop.dev/infrastructure.environment"
+		env := "environment"
 		assert.Equal(t, []string{"agent-stg"}, listAgentNames(t, models.AgentFilterOption{Status: "CONNECTED"}))
 		assert.Empty(t, listAgentNames(t, models.AgentFilterOption{Status: "CONNECTED", TagSelector: env + "=prod"}))
 		assert.Equal(t, []string{"agent-prod"}, listAgentNames(t, models.AgentFilterOption{Status: "DISCONNECTED", TagSelector: env + "=prod"}))
@@ -117,7 +117,7 @@ func TestAgentTags(t *testing.T) {
 		for _, t := range items {
 			pairs = append(pairs, t.Key+"="+t.Value)
 		}
-		assert.Equal(t, []string{"hoop.dev/infrastructure.environment=prod", "team=data"}, pairs)
+		assert.Equal(t, []string{"environment=prod", "team=data"}, pairs)
 	})
 
 	t.Run("delete removes the tags and a recreated agent starts with none", func(t *testing.T) {

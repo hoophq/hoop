@@ -29,8 +29,8 @@ var createAgentCmd = &cobra.Command{
 	Use:     "agent NAME",
 	Short:   "Create an agent token.",
 	Aliases: []string{"agents"},
-	Example: `hoop admin create agent prod-eu --tags hoop.dev/infrastructure.environment=prod,team=data
-hoop admin create agent prod-eu --overwrite --tags hoop.dev/infrastructure.environment=prod`,
+	Example: `hoop admin create agent prod-eu --tags environment=prod,team=data
+hoop admin create agent prod-eu --overwrite --tags environment=prod`,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			cmd.Usage()

@@ -15,14 +15,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// predefinedTags are the agent tag suggestions of every org. They are a subset
-// of the connection system tags, with the same keys and values.
+// predefinedTags are the agent tag suggestions of every org: a subset of the
+// connection system tags, with the same values. The keys are the plain labels,
+// without the internal hoop.dev/<category>. prefix, so a user who filters
+// agents through the API or the CLI never types it.
 var predefinedTags = map[string][]string{
-	"hoop.dev/infrastructure.cloud":       {"aws", "gcp", "azure", "digitalocean", "cloudflare"},
-	"hoop.dev/infrastructure.environment": {"prod", "staging", "dev", "qa", "sandbox"},
-	"hoop.dev/organization.team":          {"backend", "frontend", "platform", "devops", "security", "data"},
-	"hoop.dev/organization.department":    {"engineering", "marketing", "sales", "finance"},
-	"hoop.dev/operations.criticality":     {"critical", "important", "normal"},
+	"cloud":       {"aws", "gcp", "azure", "digitalocean", "cloudflare"},
+	"environment": {"prod", "staging", "dev", "qa", "sandbox"},
+	"team":        {"backend", "frontend", "platform", "devops", "security", "data"},
+	"department":  {"engineering", "marketing", "sales", "finance"},
+	"criticality": {"critical", "important", "normal"},
 }
 
 // UpdateAgentTags

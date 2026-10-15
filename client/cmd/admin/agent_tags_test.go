@@ -13,11 +13,11 @@ import (
 )
 
 func TestParseTagsFlag(t *testing.T) {
-	tags, err := parseTagsFlag([]string{"hoop.dev/infrastructure.environment=prod", "team=data", "empty="})
+	tags, err := parseTagsFlag([]string{"environment=prod", "team=data", "empty="})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := map[string]string{"hoop.dev/infrastructure.environment": "prod", "team": "data", "empty": ""}
+	want := map[string]string{"environment": "prod", "team": "data", "empty": ""}
 	if len(tags) != len(want) {
 		t.Fatalf("got %v, want %v", tags, want)
 	}

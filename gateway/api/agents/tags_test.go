@@ -1,6 +1,7 @@
 package apiagents
 
 import (
+	"strings"
 	"testing"
 
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
@@ -9,14 +10,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// The predefined agent tags must keep the keys and values of the connection
-// system tags.
-func TestPredefinedTagsAreConnectionSystemTags(t *testing.T) {
+// The predefined agent tags keep the values of the connection system tags
+// under the plain label: hoop.dev/infrastructure.environment becomes environment.
+func TestPredefinedTagsAreConnectionSystemTagsWithoutPrefix(t *testing.T) {
 	systemTags := map[string][]string{}
 	for _, tag := range apiconnections.DefaultConnectionTags("org") {
-		systemTags[tag.Key] = append(systemTags[tag.Key], tag.Value)
+		label := tag.Key[strings.LastIndex(tag.Key, ".")+1:]
+		systemTags[label] = append(systemTags[label], tag.Value)
 	}
 	for key, values := range predefinedTags {
+		assert.False(t, strings.HasPrefix(key, "hoop.dev/"), "agent tags must not expose the internal prefix: %s", key)
 		assert.Contains(t, systemTags, key)
 		assert.ElementsMatch(t, systemTags[key], values, key)
 	}
@@ -24,7 +27,7 @@ func TestPredefinedTagsAreConnectionSystemTags(t *testing.T) {
 
 func TestTagSuggestions(t *testing.T) {
 	items := tagSuggestions([]models.AgentTag{
-		{Key: "hoop.dev/infrastructure.environment", Value: "prod"},
+		{Key: "environment", Value: "prod"},
 		{Key: "business-unit", Value: "payments"},
 	})
 	var count int
