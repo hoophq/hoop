@@ -1384,6 +1384,16 @@ func ValidateHoldOnLane(la *LaneAnalyzerConfig, lc ListenerConfig, where string)
 func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) []string {
 	var problems []string
 	where := lane + ": analyzer block"
+	// The plane hands a block that never went through normalize, so the
+	// approval spellings are folded here on a copy: the checks below then
+	// judge approval_mode as review_mode and require_approval as a hold, and
+	// a conflict between the two modes is refused at the save instead of by
+	// every sidecar the block reaches.
+	folded := *la
+	if err := foldApprovalSpellings(&folded); err != nil {
+		problems = append(problems, fmt.Sprintf("%s: %v", where, err))
+	}
+	la = &folded
 	problems = append(problems, validateRiskActions(
 		la.HighRisk, la.MediumRisk, la.LowRisk, where)...)
 	problems = append(problems, validateTriggerItems(la.Trigger, where)...)

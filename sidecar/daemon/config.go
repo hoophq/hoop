@@ -894,7 +894,9 @@ func (c *Config) normalize() error {
 			warnAIRules(where+": guardrails", lc.Guardrails.Rules, warn)
 			foldRuleApprovalActions(lc.Guardrails.Rules)
 		}
-		foldApprovalSpellings(where, lc.Analyzer, conflict)
+		if err := foldApprovalSpellings(lc.Analyzer); err != nil {
+			conflict("%s: analyzer: %v", where, err)
+		}
 	}
 	if c.Guardrails != nil {
 		foldRuleApprovalActions(c.Guardrails.Rules)
@@ -916,10 +918,11 @@ func (c *Config) normalize() error {
 // sidecar decodes them; after this, nothing reads the alias.
 //
 // Both keys set and equal is the same setting written twice, and loads.
-// Both set and different is refused, for the reason normalize gives.
-func foldApprovalSpellings(where string, la *LaneAnalyzerConfig, conflict func(string, ...any)) {
+// Both set and different is refused, for the reason normalize gives; the
+// block is then left as written, so nothing reads one of the two as chosen.
+func foldApprovalSpellings(la *LaneAnalyzerConfig) error {
 	if la == nil {
-		return
+		return nil
 	}
 	if la.ApprovalMode != "" {
 		switch la.ReviewMode {
@@ -927,14 +930,55 @@ func foldApprovalSpellings(where string, la *LaneAnalyzerConfig, conflict func(s
 			la.ReviewMode = la.ApprovalMode
 		case la.ApprovalMode:
 		default:
-			conflict("%s: analyzer: set approval_mode or review_mode, not both "+
-				"(approval_mode %q, review_mode %q)", where, la.ApprovalMode, la.ReviewMode)
+			return fmt.Errorf("set approval_mode or review_mode, not both "+
+				"(approval_mode %q, review_mode %q)", la.ApprovalMode, la.ReviewMode)
 		}
 		la.ApprovalMode = ""
 	}
 	la.HighRisk = canonicalAction(la.HighRisk)
 	la.MediumRisk = canonicalAction(la.MediumRisk)
 	la.LowRisk = canonicalAction(la.LowRisk)
+	return nil
+}
+
+// Canonicalize folds the approval spellings of one analyzer block, as
+// normalize does for a whole config. The control plane decodes rule specs
+// without normalize; it calls this right after the decode, so nothing on its
+// side reads an alias: it compares require_review, merges review_mode, and
+// serves what every sidecar build decodes.
+func (la *LaneAnalyzerConfig) Canonicalize() error {
+	return foldApprovalSpellings(la)
+}
+
+// CanonicalizeApprovalSpellings folds every approval spelling in a document
+// the control plane decoded without normalize: each listener's analyzer
+// block, and the actions of the deprecated ai_analysis rule form. The plane
+// then stores the canonical form, and a sidecar of any build reads it.
+func CanonicalizeApprovalSpellings(cfg *Config) error {
+	var problems ConfigProblems
+	for i := range cfg.Listeners {
+		lc := &cfg.Listeners[i]
+		where := lc.Name
+		if where == "" {
+			where = lc.Connection
+		}
+		if where == "" {
+			where = fmt.Sprintf("listener[%d]", i)
+		}
+		if lc.Guardrails != nil {
+			foldRuleApprovalActions(lc.Guardrails.Rules)
+		}
+		if err := foldApprovalSpellings(lc.Analyzer); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: analyzer: %v", where, err))
+		}
+	}
+	if cfg.Guardrails != nil {
+		foldRuleApprovalActions(cfg.Guardrails.Rules)
+	}
+	if len(problems) > 0 {
+		return problems
+	}
+	return nil
 }
 
 // foldRuleApprovalActions folds require_approval onto require_review on the

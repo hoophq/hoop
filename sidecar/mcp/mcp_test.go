@@ -423,11 +423,32 @@ func TestAnAgentListsTheSidecarsReviews(t *testing.T) {
 	}
 }
 
-// A plane without the list route sends the agent back to approval_status.
-func TestReviewListOnAnOldPlanePointsAtReviewStatus(t *testing.T) {
-	cs, _ := connect(t, &fakeReviews{err: daemon.ErrPlaneTooOld})
-	_, res := call(t, cs, &sdk.CallToolParams{Name: "review_list"})
-	if !res.IsError || !strings.Contains(errorText(res), "approval_status") {
-		t.Errorf("result %s, want an error naming approval_status", errorText(res))
+// A plane without the list route sends the agent back to the status tool of
+// the family it called: an agent allowed only review_* cannot call
+// approval_status.
+func TestAListOnAnOldPlanePointsAtItsOwnStatusTool(t *testing.T) {
+	for list, status := range map[string]string{"review_list": "review_status", "approval_list": "approval_status"} {
+		cs, _ := connect(t, &fakeReviews{err: daemon.ErrPlaneTooOld})
+		_, res := call(t, cs, &sdk.CallToolParams{Name: list})
+		if text := errorText(res); !res.IsError || !strings.Contains(text, status) {
+			t.Errorf("%s: result %s, want an error naming %s", list, text, status)
+		}
+	}
+}
+
+// A pending answer names the wait tool of the family the agent called.
+func TestAPendingAnswerNamesTheCallersWaitTool(t *testing.T) {
+	for tool, want := range map[string]struct{ wait, not string }{
+		"review_status":   {"review_wait", "approval_wait"},
+		"approval_status": {"approval_wait", "review_wait"},
+	} {
+		cs, _ := connect(t, &fakeReviews{statuses: []string{statusPending}})
+		out, res := call(t, cs, &sdk.CallToolParams{Name: tool, Arguments: map[string]any{"id": "rv_1"}})
+		if res.IsError {
+			t.Fatalf("%s: %s", tool, errorText(res))
+		}
+		if !strings.Contains(out.Instruction, want.wait) || strings.Contains(out.Instruction, want.not) {
+			t.Errorf("%s: instruction %q, want %s and not %s", tool, out.Instruction, want.wait, want.not)
+		}
 	}
 }

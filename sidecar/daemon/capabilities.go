@@ -383,7 +383,9 @@ func ServedForm(cfg Config) Config {
 		if block.ApprovalMode != "" && (block.ReviewMode == "" || block.ReviewMode == block.ApprovalMode) {
 			block.ReviewMode, block.ApprovalMode = block.ApprovalMode, ""
 		}
-		if block.ReviewMode == "hold" {
+		// Only when no conflicting approval_mode is left: dropping hold there
+		// would serve approval_mode alone, which loads without the conflict.
+		if block.ReviewMode == "hold" && block.ApprovalMode == "" {
 			block.ReviewMode = ""
 		}
 		if block.SpendApprovalOn == SpendOnForward {

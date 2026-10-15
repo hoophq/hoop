@@ -175,7 +175,7 @@ func TestServedFormServesTheCanonicalSpellings(t *testing.T) {
 
 	// Two different answers are served as written, for the sidecar to refuse.
 	both := ServedForm(*approvalLane(func(la *LaneAnalyzerConfig) { la.ApprovalMode, la.ReviewMode = "return", "hold" }))
-	if la := both.Listeners[0].Analyzer; la.ApprovalMode != "return" {
+	if la := both.Listeners[0].Analyzer; la.ApprovalMode != "return" || la.ReviewMode != "hold" {
 		t.Errorf("a conflict was resolved in the served form: %+v", la)
 	}
 }
@@ -213,5 +213,89 @@ func TestAnHTTPLaneCapturesTheApprovalModeHeader(t *testing.T) {
 	}
 	if got := stmts[0].HTTP.Headers[analyzer.HeaderApprovalMode]; got != "return" {
 		t.Errorf("approval header is %q, want return", got)
+	}
+}
+
+// Canonicalize is the fold the control plane runs on a block it decoded
+// without normalize.
+func TestCanonicalizeFoldsOneBlock(t *testing.T) {
+	la := LaneAnalyzerConfig{HighRisk: "require_approval", LowRisk: "allow", ApprovalMode: "return"}
+	if err := la.Canonicalize(); err != nil {
+		t.Fatal(err)
+	}
+	if la.HighRisk != string(analyzer.ActionRequireReview) || la.LowRisk != "allow" ||
+		la.ReviewMode != "return" || la.ApprovalMode != "" {
+		t.Errorf("folded %+v", la)
+	}
+
+	same := LaneAnalyzerConfig{ApprovalMode: "return", ReviewMode: "return"}
+	if err := same.Canonicalize(); err != nil || same.ReviewMode != "return" || same.ApprovalMode != "" {
+		t.Errorf("the same mode twice: %+v, %v", same, err)
+	}
+
+	both := LaneAnalyzerConfig{ApprovalMode: "return", ReviewMode: "hold"}
+	if err := both.Canonicalize(); err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Errorf("a conflict folded: %v", err)
+	}
+}
+
+// CanonicalizeApprovalSpellings folds a whole document, naming the listener
+// of a conflict.
+func TestCanonicalizeApprovalSpellingsFoldsADocument(t *testing.T) {
+	cfg := Config{
+		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{{Name: "r", HighRisk: "require_approval"}}},
+		Listeners: []ListenerConfig{{
+			Name:     "agents",
+			Analyzer: &LaneAnalyzerConfig{MediumRisk: "require_approval", ApprovalMode: "hold"},
+		}},
+	}
+	if err := CanonicalizeApprovalSpellings(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	la := cfg.Listeners[0].Analyzer
+	if la.MediumRisk != string(analyzer.ActionRequireReview) || la.ReviewMode != "hold" || la.ApprovalMode != "" {
+		t.Errorf("folded block %+v", la)
+	}
+	if got := cfg.Guardrails.Rules[0].HighRisk; got != string(analyzer.ActionRequireReview) {
+		t.Errorf("folded rule action %q", got)
+	}
+
+	cfg.Listeners[0].Analyzer = &LaneAnalyzerConfig{ApprovalMode: "return", ReviewMode: "hold"}
+	err := CanonicalizeApprovalSpellings(&cfg)
+	if err == nil || !strings.Contains(err.Error(), "agents: analyzer: set approval_mode or review_mode, not both") {
+		t.Errorf("a conflict folded: %v", err)
+	}
+}
+
+// The plane validates a block that never went through normalize. An
+// approval_mode no sidecar accepts, or one that disagrees with review_mode,
+// is refused there instead of by every sidecar the block reaches.
+func TestValidateLaneAnalyzerBlockJudgesTheApprovalSpellings(t *testing.T) {
+	hold := func(edit func(*LaneAnalyzerConfig)) *LaneAnalyzerConfig {
+		la := &LaneAnalyzerConfig{HighRisk: "require_approval", ApprovalRule: "r"}
+		edit(la)
+		return la
+	}
+	for name, tc := range map[string]struct {
+		block *LaneAnalyzerConfig
+		want  string
+	}{
+		"unknown approval_mode": {hold(func(la *LaneAnalyzerConfig) { la.ApprovalMode = "bogus" }), "bogus"},
+		"two modes":             {hold(func(la *LaneAnalyzerConfig) { la.ApprovalMode, la.ReviewMode = "return", "hold" }), "not both"},
+		"mode with no hold": {&LaneAnalyzerConfig{HighRisk: "block", ApprovalMode: "return"},
+			"nothing on this lane would hold one"},
+	} {
+		problems := strings.Join(ValidateLaneAnalyzerBlock(tc.block, "rule"), "; ")
+		if !strings.Contains(problems, tc.want) {
+			t.Errorf("%s: problems %q, want one naming %q", name, problems, tc.want)
+		}
+	}
+
+	ok := hold(func(la *LaneAnalyzerConfig) { la.ApprovalMode = "return" })
+	if problems := ValidateLaneAnalyzerBlock(ok, "rule"); len(problems) > 0 {
+		t.Errorf("a valid approval block was refused: %v", problems)
+	}
+	if ok.ApprovalMode != "return" || ok.HighRisk != "require_approval" {
+		t.Error("the validator changed the caller's block")
 	}
 }

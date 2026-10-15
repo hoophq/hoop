@@ -160,3 +160,24 @@ func TestApplicationNameApprovalMode(t *testing.T) {
 		}
 	}
 }
+
+// The mode headers a client may send, in both spellings, and nothing else.
+func TestClientModeHeaders(t *testing.T) {
+	got := analyzer.ClientModeHeaders()
+	if len(got) != 2 || got[0] != analyzer.HeaderReviewMode || got[1] != analyzer.HeaderApprovalMode {
+		t.Errorf("analyzer.ClientModeHeaders() = %v, want [%s %s]", got, analyzer.HeaderReviewMode, analyzer.HeaderApprovalMode)
+	}
+	for _, name := range got {
+		if !analyzer.IsClientModeHeader(name) {
+			t.Errorf("analyzer.IsClientModeHeader(%q) = false", name)
+		}
+	}
+	// Names arrive lower-cased; anything else, a prefix or a neighbour is
+	// not a mode header.
+	for _, name := range []string{"", "X-Hoop-Approval-Mode", "x-hoop-approval", "x-hoop-review-mode-x",
+		"x-hoop-mode", "authorization"} {
+		if analyzer.IsClientModeHeader(name) {
+			t.Errorf("analyzer.IsClientModeHeader(%q) = true", name)
+		}
+	}
+}

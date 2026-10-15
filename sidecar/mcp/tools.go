@@ -105,6 +105,16 @@ const (
 	reviewListTool     = "review_list"
 )
 
+// toolNames are the sibling tools an answer points an agent at. A caller of
+// review_status is told review_wait: an agent allowed only the review_* tools
+// cannot call approval_wait.
+type toolNames struct{ status, wait string }
+
+var (
+	approvalNames = toolNames{status: approvalStatusTool, wait: daemon.ApprovalWaitTool}
+	reviewNames   = toolNames{status: reviewStatusTool, wait: daemon.ReviewWaitTool}
+)
+
 func (t *tools) register(server *sdk.Server) {
 	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
 	const (
@@ -123,15 +133,33 @@ func (t *tools) register(server *sdk.Server) {
 	alias := func(name, of, desc string) *sdk.Tool {
 		return tool(name, "Alias of "+of+". "+desc)
 	}
-	sdk.AddTool(server, tool(approvalStatusTool, statusDesc), t.status)
-	sdk.AddTool(server, tool(approvalListTool, listDesc), t.list)
-	sdk.AddTool(server, tool(daemon.ApprovalWaitTool, waitDesc), t.wait)
-	sdk.AddTool(server, alias(reviewStatusTool, approvalStatusTool, statusDesc), t.status)
-	sdk.AddTool(server, alias(reviewListTool, approvalListTool, listDesc), t.list)
-	sdk.AddTool(server, alias(daemon.ReviewWaitTool, daemon.ApprovalWaitTool, waitDesc), t.wait)
+	sdk.AddTool(server, tool(approvalStatusTool, statusDesc), t.statusAs(approvalNames))
+	sdk.AddTool(server, tool(approvalListTool, listDesc), t.listAs(approvalNames))
+	sdk.AddTool(server, tool(daemon.ApprovalWaitTool, waitDesc), t.waitAs(approvalNames))
+	sdk.AddTool(server, alias(reviewStatusTool, approvalStatusTool, statusDesc), t.statusAs(reviewNames))
+	sdk.AddTool(server, alias(reviewListTool, approvalListTool, listDesc), t.listAs(reviewNames))
+	sdk.AddTool(server, alias(daemon.ReviewWaitTool, daemon.ApprovalWaitTool, waitDesc), t.waitAs(reviewNames))
 }
 
-func (t *tools) status(ctx context.Context, _ *sdk.CallToolRequest, in statusInput) (*sdk.CallToolResult, reviewOutput, error) {
+func (t *tools) statusAs(n toolNames) sdk.ToolHandlerFor[statusInput, reviewOutput] {
+	return func(ctx context.Context, req *sdk.CallToolRequest, in statusInput) (*sdk.CallToolResult, reviewOutput, error) {
+		return t.status(ctx, req, in, n)
+	}
+}
+
+func (t *tools) listAs(n toolNames) sdk.ToolHandlerFor[listInput, listOutput] {
+	return func(ctx context.Context, req *sdk.CallToolRequest, in listInput) (*sdk.CallToolResult, listOutput, error) {
+		return t.list(ctx, req, in, n)
+	}
+}
+
+func (t *tools) waitAs(n toolNames) sdk.ToolHandlerFor[waitInput, reviewOutput] {
+	return func(ctx context.Context, req *sdk.CallToolRequest, in waitInput) (*sdk.CallToolResult, reviewOutput, error) {
+		return t.wait(ctx, req, in, n)
+	}
+}
+
+func (t *tools) status(ctx context.Context, _ *sdk.CallToolRequest, in statusInput, n toolNames) (*sdk.CallToolResult, reviewOutput, error) {
 	if in.ID == "" {
 		return nil, reviewOutput{}, errors.New("id is required")
 	}
@@ -141,10 +169,10 @@ func (t *tools) status(ctx context.Context, _ *sdk.CallToolRequest, in statusInp
 	if err != nil {
 		return nil, reviewOutput{}, err
 	}
-	return nil, describe(rev), nil
+	return nil, describeFor(rev, n), nil
 }
 
-func (t *tools) list(ctx context.Context, _ *sdk.CallToolRequest, in listInput) (*sdk.CallToolResult, listOutput, error) {
+func (t *tools) list(ctx context.Context, _ *sdk.CallToolRequest, in listInput, n toolNames) (*sdk.CallToolResult, listOutput, error) {
 	limit := in.Limit
 	if limit <= 0 {
 		limit = defaultListLimit
@@ -154,19 +182,19 @@ func (t *tools) list(ctx context.Context, _ *sdk.CallToolRequest, in listInput) 
 	defer cancel()
 	revs, err := t.reviews.ListReviews(ctx, strings.ToUpper(in.Status), limit)
 	if errors.Is(err, daemon.ErrPlaneTooOld) {
-		return nil, listOutput{}, fmt.Errorf("%w. Use approval_status with an id from a deny message", err)
+		return nil, listOutput{}, fmt.Errorf("%w. Use %s with an id from a deny message", err, n.status)
 	}
 	if err != nil {
 		return nil, listOutput{}, err
 	}
 	out := listOutput{Reviews: make([]reviewOutput, 0, len(revs))}
 	for _, r := range revs {
-		out.Reviews = append(out.Reviews, describe(r))
+		out.Reviews = append(out.Reviews, describeFor(r, n))
 	}
 	return nil, out, nil
 }
 
-func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput) (*sdk.CallToolResult, reviewOutput, error) {
+func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput, n toolNames) (*sdk.CallToolResult, reviewOutput, error) {
 	if in.ID == "" {
 		return nil, reviewOutput{}, errors.New("id is required")
 	}
@@ -188,7 +216,7 @@ func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput
 		}
 		elapsed := time.Since(started)
 		if !waits(rev.Status) {
-			return nil, withWait(describe(rev), false, elapsed), nil
+			return nil, withWait(describeFor(rev, n), false, elapsed), nil
 		}
 		select {
 		case <-ctx.Done():
@@ -200,7 +228,7 @@ func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput
 			if err != nil {
 				return nil, reviewOutput{}, err
 			}
-			return nil, withWait(describe(rev), waits(rev.Status), time.Since(started)), nil
+			return nil, withWait(describeFor(rev, n), waits(rev.Status), time.Since(started)), nil
 		case <-ticker.C:
 			progress(time.Since(started))
 		}
@@ -220,7 +248,11 @@ func (t *tools) read(ctx context.Context, id string) (daemon.ReviewStatus, error
 	return rev, err
 }
 
-func describe(r daemon.ReviewStatus) reviewOutput {
+// describe is describeFor with the approval_* names.
+func describe(r daemon.ReviewStatus) reviewOutput { return describeFor(r, approvalNames) }
+
+// describeFor turns a status into the answer, naming the tools in n.
+func describeFor(r daemon.ReviewStatus, n toolNames) reviewOutput {
 	out := reviewOutput{
 		ID:              r.ID,
 		Status:          r.Status,
@@ -234,7 +266,7 @@ func describe(r daemon.ReviewStatus) reviewOutput {
 	}
 	switch r.Status {
 	case statusPending:
-		out.Instruction = "No approver has decided yet. Call approval_wait with this id. Do not " +
+		out.Instruction = "No approver has decided yet. Call " + n.wait + " with this id. Do not " +
 			"resend the statement now, and never reformat it: different bytes file a new approval request."
 		if r.ExpiresAt != nil {
 			out.Instruction += fmt.Sprintf(" It expires at %s if nobody decides.", deadline(r.ExpiresAt))
@@ -254,7 +286,7 @@ func describe(r daemon.ReviewStatus) reviewOutput {
 		out.Instruction = "The approval was revoked. The statement will not run; do not resend it."
 	case statusProcessing:
 		out.Instruction = "A resent statement is using the approval while its upstream answers. " +
-			"Call review_wait with this id: if the upstream refuses it, the approval comes back " +
+			"Call " + n.wait + " with this id: if the upstream refuses it, the approval comes back " +
 			"and reads APPROVED; if it accepts it, the approval is used."
 	case statusExecuted:
 		out.Instruction = "The approval was already used by a resent statement. Running it " +
