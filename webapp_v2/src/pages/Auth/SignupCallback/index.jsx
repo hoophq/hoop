@@ -29,7 +29,7 @@ function SignupCallback() {
           return
         }
 
-        setTimeout(() => navigate('/signup'), 1500)
+        navigate('/signup')
       } catch (err) {
         console.error('Signup callback error:', err)
         setError('Authentication failed')

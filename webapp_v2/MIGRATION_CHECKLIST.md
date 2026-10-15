@@ -84,7 +84,6 @@ import { Stack, Title, Button, Text } from '@mantine/core'
 import { Plus } from 'lucide-react'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
-import useMinDelay from '@/hooks/useMinDelay'
 import { useUserStore } from '@/stores/useUserStore'
 import { useFeatureStore } from '@/stores/useFeatureStore'
 
@@ -92,11 +91,10 @@ export default function FeaturePage() {
   const navigate = useNavigate()
   const { isAdmin } = useUserStore()
   const { items, loading, error, fetchItems } = useFeatureStore()
-  const showLoader = useMinDelay(loading, 500)
 
   useEffect(() => { fetchItems() }, [])
 
-  if (showLoader) return <PageLoader h={400} />
+  if (loading) return <PageLoader h={400} />
   if (error) return <Text c="red">{error}</Text>
   if (!items.length) return (
     <EmptyState
@@ -155,7 +153,6 @@ Check `src/layout/Sidebar/` — the nav link for this route may already exist. C
 Compare with the running CLJS app:
 - [ ] Same data shown in the same order
 - [ ] Empty state matches (same icon/message)
-- [ ] Loading state doesn't flash (useMinDelay working)
 - [ ] Admin-only actions hidden for non-admins
 - [ ] Free-tier gates respected
 - [ ] Create/delete actions produce the same result

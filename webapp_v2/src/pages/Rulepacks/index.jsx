@@ -12,7 +12,6 @@ import {
 } from '@mantine/core'
 import { ArrowRight, EyeOff, Search, Shield, Sparkles } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import Badge from '@/components/Badge'
@@ -106,7 +105,7 @@ function RulepackListContent() {
   }
 
   const loading = listStatus === 'loading'
-  const showLoader = useMinDelay(loading && list.length === 0, 500)
+  const showLoader = loading && list.length === 0
   const searching = useMemo(
     () => input.trim().length > 0 || listSearch.length > 0,
     [input, listSearch],

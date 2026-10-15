@@ -9,7 +9,6 @@ import NewRuleButton from '@/components/NewRuleButton'
 import PageLoader from '@/components/PageLoader'
 import SidecarListenerFilter from '@/components/SidecarListenerFilter'
 import ValueFilter from '@/components/ValueFilter'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { useNewRuleTraffics } from '@/hooks/useNewRuleTraffics'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
@@ -103,19 +102,18 @@ export default function Guardrails() {
   }, [list, matches, sidecars, target, role, attribute])
 
   const atFreeLimit = isFreeLicense && list.length >= 1
-  const loading = listStatus === 'loading'
-  const showLoader = useMinDelay(loading && list.length === 0, 500)
   const activeFilterCount =
     (role ? 1 : 0) + (attribute ? 1 : 0) + (target ? 1 : 0) + (traffic.active ? 1 : 0)
 
   const goCreate = (kind) => navigate(newRulePath('/guardrails/new', kind))
 
-  if (showLoader) {
+  // A failed load leaves the list empty, which would otherwise fall through to
+  // the empty state and tell an admin they have no guardrails configured.
+  // First load only: a revisit renders the cached list while it refreshes.
+  if ((listStatus === 'idle' || listStatus === 'loading') && list.length === 0) {
     return <PageLoader h={300} />
   }
 
-  // A failed load leaves the list empty, which would otherwise fall through to
-  // the empty state and tell an admin they have no guardrails configured.
   if (listStatus === 'error') {
     return <PageLoader error h={300} message="Failed to load guardrails." />
   }

@@ -4,7 +4,6 @@ import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import NewRuleButton from '@/components/NewRuleButton'
 import PageLoader from '@/components/PageLoader'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import FullBleed from '@/layout/FullBleed'
 import { useNewRuleTraffics } from '@/hooks/useNewRuleTraffics'
 import { useRuleTraffics } from '@/modes'
@@ -54,19 +53,14 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
     fetchProvider()
   }, [fetchList, fetchProvider])
 
-  const loading =
-    listStatus === 'idle' ||
-    listStatus === 'loading' ||
-    providerStatus === 'idle' ||
-    providerStatus === 'loading'
-  const showLoader = useMinDelay(loading, 500)
-
-  if (showLoader) {
+  // A failed load leaves the list empty, which would otherwise fall through to
+  // the empty state and tell an admin they have no rules configured.
+  // First load only: a revisit renders the cached list while it refreshes.
+  const pending = (status) => status === 'idle' || status === 'loading'
+  if ((pending(listStatus) && list.length === 0) || (pending(providerStatus) && !provider)) {
     return <PageLoader h={300} />
   }
 
-  // A failed load leaves the list empty, which would otherwise fall through to
-  // the empty state and tell an admin they have no rules configured.
   if (listStatus === 'error' || providerStatus === 'error') {
     return <PageLoader error h={300} message="Failed to load AI Session Analyzer." />
   }

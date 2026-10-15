@@ -3,7 +3,6 @@ import { Stack, Text, Title } from '@mantine/core'
 import Tabs from '@/components/Tabs'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { useUserStore } from '@/stores/useUserStore'
 import { isSidecarMirror } from '@/utils/connectionPolicy'
 import { usePlugin } from '../usePlugin'
@@ -42,7 +41,7 @@ function GatewaySlack({ showListeners = false }) {
     [connections, listeners],
   )
 
-  const showLoader = useMinDelay(status === 'loading')
+  const showLoader = status === 'loading'
 
   if (showLoader) return <PageLoader />
   if (status === 'error') return <PageLoader error message="Failed to load the Slack plugin." />

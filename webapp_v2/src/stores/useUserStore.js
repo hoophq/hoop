@@ -34,6 +34,7 @@ export const useUserStore = create((set, get) => ({
   gatewayVersion: null,
   redactProvider: null,
   featureFlags: {},
+  featureFlagsLoaded: false,
   // Features enabled by the gateway license; empty/null = all enabled.
   // Only meaningful once serverInfoLoaded is true — gating fails closed
   // while /serverinfo hasn't been fetched successfully.
@@ -136,7 +137,7 @@ export const useUserStore = create((set, get) => ({
     const info = await authService.getPublicServerInfo().catch(() => null)
     set({ appMode: info?.application_mode || get().appMode, appModeLoaded: true })
   },
-  setFeatureFlags: (flags) => set({ featureFlags: flags }),
+  setFeatureFlags: (flags) => set({ featureFlags: flags, featureFlagsLoaded: true }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
   isLicenseFeatureEnabled: (name) => {
     const { serverInfoLoaded, licenseFeatures } = get()
@@ -160,6 +161,7 @@ export const useUserStore = create((set, get) => ({
       disableClipboard: false, 
       gatewayVersion: null, 
       featureFlags: {},
+      featureFlagsLoaded: false,
       licenseFeatures: null,
       licenseInfo: null,
       serverInfoLoaded: false,

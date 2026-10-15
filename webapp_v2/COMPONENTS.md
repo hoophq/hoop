@@ -45,7 +45,7 @@ import PageLoader from '@/components/PageLoader'
 <PageLoader overlay />            // fixed full-screen overlay
 <PageLoader error="message" />   // error state with icon
 ```
-Use with `useMinDelay` to prevent flash on fast requests.
+Do not hold it up after the data arrives; a short blink is fine.
 
 ### `AuthPageLoader`
 Full-screen dark loading state for auth-flow routes (login redirect, OAuth callbacks, session verification). Auth screens are always dark — there is no light variant — so the dark styling is baked in. For loaders inside the (light) app shell, use `PageLoader`.
@@ -850,15 +850,6 @@ Calls `handler({ type, id })` for each live event of `type` from the gateway (`G
 useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (e) => e.id === id && refresh(id))
 ```
 
-### `useMinDelay(value, ms = 500)`
-Returns `true` for at least `ms` milliseconds even if `value` goes `false` sooner. Prevents loading flash.
-```jsx
-import useMinDelay from '@/hooks/useMinDelay'
-
-const showLoader = useMinDelay(loading, 500)
-if (showLoader) return <PageLoader />
-```
-
 ### `useCountdown(expireAt)`
 Display-only countdown against a shared 1 Hz clock (`utils/tick.js`), which is reference-counted
 so N countdowns cost one interval. Returns `{ remainingMs, label, expired }`; `label` is
@@ -941,8 +932,7 @@ Non-obvious notes only:
   `selectedId !== id` catches the frame between a URL change and the effect that
   refetches — a loading flag alone still reads "idle" there and paints the
   previous sidecar under the new URL — while `selectedLoading` covers the request
-  itself, without which the loader lifts after `useMinDelay` and a slow response
-  renders an empty body. `clearSelected` belongs in the effect cleanup of every
+  itself, without which a slow response renders an empty body. `clearSelected` belongs in the effect cleanup of every
   page that reads the slot — the details page and the listener form — so a
   revisit cannot open on a record minutes old, or on one already deleted.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds

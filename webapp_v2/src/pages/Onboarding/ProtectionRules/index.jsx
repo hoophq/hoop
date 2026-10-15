@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, Group, Image, Stack, Text, Title } from '@mantine/core'
 import Button from '@/components/Button'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import ProfileSelector from '@/features/ProtectionProfiles/ProfileSelector'
 import { toApiProfile } from '@/features/ProtectionProfiles/constants'
@@ -23,7 +22,7 @@ function OnboardingProtectionRules() {
   const [loading, setLoading] = useState(true)
   const [applying, setApplying] = useState(false)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   useEffect(() => {
     protectionProfilesService

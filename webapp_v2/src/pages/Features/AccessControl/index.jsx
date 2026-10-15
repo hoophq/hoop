@@ -6,7 +6,6 @@ import AsyncValueFilter from '@/components/AsyncValueFilter'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import Pagination from '@/components/Pagination'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
@@ -97,17 +96,6 @@ export default function AccessControl() {
     setPage(1)
   }
 
-  // Users gate the loader so no row shows a count of 0 before they arrive; a
-  // failed users load still renders the list, marked per row. The promotion
-  // screen lists no group, so it does not wait for them.
-  const loading =
-    pluginStatus === 'idle' ||
-    pluginStatus === 'loading' ||
-    groupsStatus === 'idle' ||
-    groupsStatus === 'loading' ||
-    (pluginStatus === 'success' && (usersStatus === 'idle' || usersStatus === 'loading'))
-  const showLoader = useMinDelay(loading, 500)
-
   const goCreate = () => navigate('/features/access-control/new')
 
   const handleActivate = async () => {
@@ -122,12 +110,19 @@ export default function AccessControl() {
     }
   }
 
-  if (showLoader) {
+  // A failed load leaves both lists empty, which would otherwise fall through
+  // to the empty state and tell an admin they have no groups configured.
+  // First load only: a revisit renders the cached groups while they refresh.
+  // Users gate it too, so no row shows "0 users" before they arrive.
+  const pending = (status) => status === 'idle' || status === 'loading'
+  if (
+    (pending(pluginStatus) && !plugin) ||
+    (pending(groupsStatus) && groups.length === 0) ||
+    (pluginStatus === 'success' && pending(usersStatus) && users.length === 0)
+  ) {
     return <PageLoader h={300} />
   }
 
-  // A failed load leaves both lists empty, which would otherwise fall through
-  // to the empty state and tell an admin they have no groups configured.
   if (pluginStatus === 'error' || groupsStatus === 'error') {
     return <PageLoader error h={300} message="Failed to load access control." />
   }

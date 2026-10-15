@@ -33,6 +33,16 @@ function sortRunbookParams(metadata) {
     })
 }
 
+function seedMapping(runbook, eventEntry) {
+  if (!runbook || !eventEntry) return {}
+  const eventFields = new Set((eventEntry.schema || []).map((f) => f.name))
+  return Object.fromEntries(
+    Object.keys(runbook.metadata || {})
+      .filter((name) => eventFields.has(name))
+      .map((name) => [name, name]),
+  )
+}
+
 function SectionRow({ title, description, children }) {
   return (
     <Grid columns={7} gutter="xl">
@@ -98,6 +108,7 @@ export default function EventRoutingForm() {
         v.startsWith("$.") ? v.slice(2) : v,
       ]),
     )
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot prefill; the store loads sub after mount
     setForm((f) => ({
       ...f,
       name: sub.name || "",
@@ -142,6 +153,7 @@ export default function EventRoutingForm() {
         v.repository === sub.runbookRepository && v.file === sub.runbookFile,
     )
     if (match) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot prefill; runbooks load after sub
       setForm((f) => ({ ...f, runbookValue: match[0] }))
     }
     runbookPrefillDone.current = true
@@ -165,30 +177,6 @@ export default function EventRoutingForm() {
       label: f.type ? `${f.name}  ·  ${f.type}` : f.name,
     }))
   }, [selectedEventEntry])
-
-  useEffect(() => {
-    if (isEdit && !editPrefillDone.current) return
-    if (!selectedRunbook || !selectedEventEntry) {
-      if (!isEdit) setMapping({})
-      return
-    }
-    if (isEdit && runbookPrefillDone.current) return
-    const eventFieldSet = new Set(
-      (selectedEventEntry.schema || []).map((f) => f.name),
-    )
-    const seed = {}
-    for (const [paramName] of runbookParams) {
-      if (eventFieldSet.has(paramName)) seed[paramName] = paramName
-    }
-    setMapping(seed)
-  }, [
-    form.runbookValue,
-    form.selectedEvent,
-    selectedRunbook,
-    selectedEventEntry,
-    runbookParams,
-    isEdit,
-  ])
 
   const runbooksStatus =
     runbooksByConnection[form.connectionName]?.status || "idle"
@@ -217,7 +205,27 @@ export default function EventRoutingForm() {
     form.selectedEvent.length > 0 &&
     !missingRequiredMapping
 
-  const selectEvent = (name) => setForm((f) => ({ ...f, selectedEvent: name }))
+  // Edit keeps the stored mapping; only a pick on create reseeds it.
+  const reseedMapping = (runbook, eventEntry) => {
+    if (!isEdit) setMapping(seedMapping(runbook, eventEntry))
+  }
+
+  const selectConnection = (v) => {
+    setForm((f) => ({ ...f, connectionName: v || "", runbookValue: "" }))
+    reseedMapping(null, selectedEventEntry)
+  }
+
+  const selectRunbook = (v) => {
+    setForm((f) => ({ ...f, runbookValue: v || "" }))
+    reseedMapping(runbookLookup[v] || null, selectedEventEntry)
+  }
+
+  // The row's onClick also fires for the event already selected.
+  const selectEvent = (name) => {
+    if (name === form.selectedEvent) return
+    setForm((f) => ({ ...f, selectedEvent: name }))
+    reseedMapping(selectedRunbook, catalog.find((e) => e.name === name) || null)
+  }
 
   const setMappingFor = (paramName, eventFieldName) => {
     setMapping((prev) => {
@@ -402,13 +410,7 @@ export default function EventRoutingForm() {
               placeholder="Select a resource role"
               data={connectionOptions}
               value={form.connectionName || null}
-              onChange={(v) =>
-                setForm((f) => ({
-                  ...f,
-                  connectionName: v || "",
-                  runbookValue: "",
-                }))
-              }
+              onChange={selectConnection}
               searchable
               nothingFoundMessage="No resource roles"
             />
@@ -426,9 +428,7 @@ export default function EventRoutingForm() {
               }
               data={runbookOptions}
               value={form.runbookValue || null}
-              onChange={(v) =>
-                setForm((f) => ({ ...f, runbookValue: v || "" }))
-              }
+              onChange={selectRunbook}
               searchable
               disabled={
                 !form.connectionName || runbooksStatus !== "ready" || noRunbooks

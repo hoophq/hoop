@@ -5,7 +5,6 @@ import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { showSnackbar } from '@/utils/snackbar'
 import { useReviewStore } from './store'
 import { STATUS, STATUS_FILTERS, filterFromSearch, isSidecarReview, sortByNewest } from './helpers'
@@ -89,7 +88,7 @@ export default function Reviews() {
   )
 
   const loading = reviewsStatus === 'idle' || reviewsStatus === 'loading'
-  const showLoader = useMinDelay(loading, 500)
+  const showLoader = loading
 
   const open = (review) => navigate(`/approvals/${encodeURIComponent(review.session)}${search}`)
   const close = () => navigate(`/approvals${search}`)

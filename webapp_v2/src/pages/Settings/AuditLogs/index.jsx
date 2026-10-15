@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, Button, Group, Popover, Stack, Text, Title } from '@mantine/core'
 import { Network, CircleAlert, ChevronDown, ChevronRight, User, BadgeCheck, Link } from 'lucide-react'
 import Code from '@/components/Code'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import Table from '@/components/Table'
@@ -171,7 +170,7 @@ export default function AuditLogs() {
   const [actorEmail, setActorEmail] = useState(null)
 
   const isInitialLoad = useRef(true)
-  const showLoader = useMinDelay(loading, 1500)
+  const showLoader = loading
 
   const toISO = (date, endOfDay = false) => {
     if (!date) return undefined

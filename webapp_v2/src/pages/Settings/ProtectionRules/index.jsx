@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Group, Stack, Text, Title } from '@mantine/core'
 import Button from '@/components/Button'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import ProfileSelector from '@/features/ProtectionProfiles/ProfileSelector'
 import { fromApiProfile, toApiProfile } from '@/features/ProtectionProfiles/constants'
@@ -14,7 +13,7 @@ function SettingsProtectionRules() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   useEffect(() => {
     protectionProfilesService
