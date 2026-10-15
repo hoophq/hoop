@@ -50,6 +50,7 @@ export default function TagsEditor({
   const [draftValue, setDraftValue] = useState('')
   const [keyError, setKeyError] = useState(null)
   const [valueError, setValueError] = useState(null)
+  const [rowKeyError, setRowKeyError] = useState(null)
 
   // label → full key map drawn from the pool. When the user picks a label
   // from the dropdown we resolve it back to the full key (with
@@ -92,11 +93,10 @@ export default function TagsEditor({
     onChange(next)
   }
 
+  // Keeps the renamed tag in its place, so the row does not jump to the end.
   const renameTag = (oldKey, newKey) => {
-    const next = { ...tags }
-    const val = next[oldKey]
-    delete next[oldKey]
-    next[newKey] = val
+    const next = {}
+    for (const [k, v] of Object.entries(tags)) next[k === oldKey ? newKey : k] = v
     onChange(next)
   }
 
@@ -149,16 +149,23 @@ export default function TagsEditor({
               valueOptions={valuesForLabel.get(labelForTag(key)) || []}
               valueInvalid={Boolean(valueErrorOf(val))}
               disabled={disabled}
-              onKeyChange={(newLabel) => {
-                const newKey = resolveLabelToKey(newLabel)
+              onKeyCommit={(newLabel) => {
+                const label = newLabel.trim()
+                const newKey = resolveLabelToKey(label)
+                setRowKeyError(null)
                 if (newKey === key) return
                 // keyPattern runs against the user-typed label (free-form
                 // tags), not the resolved full key — system tags like
                 // `hoop.dev/...` come from the pool and always pass.
-                if (
-                  newKey === newLabel /* free-form */ &&
-                  !keyPattern.test(newLabel)
-                ) return
+                if (!label || (newKey === label && !keyPattern.test(label))) {
+                  setRowKeyError(keyRuleError)
+                  return
+                }
+                // A rename never overwrites another tag.
+                if (Object.hasOwn(tags, newKey)) {
+                  setRowKeyError(`"${label}" is already a tag`)
+                  return
+                }
                 renameTag(key, newKey)
               }}
               onValueChange={(newValue) => setTag(key, newValue)}
@@ -167,6 +174,7 @@ export default function TagsEditor({
           ))}
         </Grid>
       )}
+      {rowKeyError && <Text size="xs" c="red">{rowKeyError}</Text>}
       {rowValueError && <Text size="xs" c="red">{rowValueError}</Text>}
 
       {!disabled && (
@@ -230,21 +238,32 @@ function RowFragment({
   valueOptions,
   valueInvalid,
   disabled,
-  onKeyChange,
+  onKeyCommit,
   onValueChange,
   onRemove,
 }) {
   // Display the stripped label so users never see the
   // `hoop.dev/<category>.` system prefix in the input.
   const keyLabel = labelForTag(tagKey)
+  // The key being typed. It renames the tag only on blur or on a picked
+  // option: a rename per keystroke remounts the row and drops the focus.
+  // null shows the saved key, also after a refused rename.
+  const [keyDraft, setKeyDraft] = useState(null)
+  const commitKey = (label) => {
+    if (label === undefined && keyDraft === null) return
+    onKeyCommit(label ?? keyDraft)
+    setKeyDraft(null)
+  }
   return (
     <>
       <Grid.Col span={5}>
         <Autocomplete
           label="Key"
           data={keyOptions}
-          value={keyLabel}
-          onChange={onKeyChange}
+          value={keyDraft ?? keyLabel}
+          onChange={setKeyDraft}
+          onBlur={() => commitKey()}
+          onOptionSubmit={commitKey}
           disabled={disabled}
         />
       </Grid.Col>

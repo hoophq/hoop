@@ -100,7 +100,7 @@ func TestCheckAgentTagsSupported(t *testing.T) {
 	}{
 		{"new gateway", http.StatusOK, ""},
 		{"old gateway", http.StatusNotFound, "does not support agent tags"},
-		{"other failure", http.StatusInternalServerError, "no agent was created"},
+		{"other failure", http.StatusInternalServerError, "failed checking the gateway for agent tags"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +150,10 @@ func TestExplainTagsUpdateError(t *testing.T) {
 			got := explainTagsUpdateError(&clientconfig.Config{ApiURL: srv.URL, Token: "token"}, "prod-eu", tc.err)
 			if !strings.Contains(got.Error(), tc.want) {
 				t.Errorf("got %q, want it to contain %q", got, tc.want)
+			}
+			// The agent exists: an update error never talks about creating one.
+			if strings.Contains(got.Error(), "created") {
+				t.Errorf("update error mentions agent creation: %q", got)
 			}
 		})
 	}

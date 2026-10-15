@@ -52,7 +52,9 @@ hoop admin create agent prod-eu --overwrite --tags environment=prod`,
 				styles.PrintErrorAndExit("failed retrieving agent %v, %v", apir.name, err)
 			}
 			if exists {
-				updateAgentTags(apir, tags)
+				if err := updateAgentTags(apir, tags); err != nil {
+					styles.PrintErrorAndExit("%s", err.Error())
+				}
 				return
 			}
 		}
@@ -62,7 +64,7 @@ hoop admin create agent prod-eu --overwrite --tags environment=prod`,
 			// A gateway without agent tags ignores the field and still creates
 			// the agent: refuse before anything is created.
 			if err := checkAgentTagsSupported(apir.conf); err != nil {
-				styles.PrintErrorAndExit("%s", err.Error())
+				styles.PrintErrorAndExit("no agent was created: %v", err)
 			}
 			body["tags"] = tags
 		}
@@ -83,8 +85,8 @@ hoop admin create agent prod-eu --overwrite --tags environment=prod`,
 	},
 }
 
-// updateAgentTags replaces the tags of an existing agent.
-func updateAgentTags(apir *apiResource, tags map[string]string) {
+// updateAgentTags replaces the tags of an existing agent and prints them.
+func updateAgentTags(apir *apiResource, tags map[string]string) error {
 	body := map[string]any{}
 	for key, val := range tags {
 		body[key] = val
@@ -92,12 +94,12 @@ func updateAgentTags(apir *apiResource, tags map[string]string) {
 	apir.suffixEndpoint = fmt.Sprintf("/api/agents/%v/tags", apir.name)
 	resp, err := httpBodyRequest(apir, "PUT", body)
 	if err != nil {
-		styles.PrintErrorAndExit("%s", explainTagsUpdateError(apir.conf, apir.name, err).Error())
+		return explainTagsUpdateError(apir.conf, apir.name, err)
 	}
 	if apir.decodeTo == "raw" {
 		jsonData, _ := resp.([]byte)
 		fmt.Println(string(jsonData))
-		return
+		return nil
 	}
 	respMap, _ := resp.(map[string]any)
 	tagList := joinMap(respMap["tags"])
@@ -105,6 +107,7 @@ func updateAgentTags(apir *apiResource, tags map[string]string) {
 		tagList = "(none)"
 	}
 	fmt.Printf("agent %v updated, tags: %v\n", apir.name, tagList)
+	return nil
 }
 
 // explainTagsUpdateError tells the causes of a 404 on PUT /agents/{name}/tags
@@ -117,7 +120,7 @@ func explainTagsUpdateError(conf *clientconfig.Config, name string, err error) e
 	case errors.Is(supportErr, errGatewayWithoutAgentTags):
 		return fmt.Errorf("the gateway does not support agent tags, upgrade it to edit them")
 	case supportErr != nil:
-		return fmt.Errorf("failed updating the tags of agent %v: %v; %v", name, err, supportErr)
+		return fmt.Errorf("failed updating the tags of agent %v, the tags were not changed: %v; %v", name, err, supportErr)
 	}
 	return fmt.Errorf("agent %v not found: %v", name, err)
 }
@@ -169,10 +172,10 @@ func checkAgentTagsSupported(conf *clientconfig.Config) error {
 		conf:           conf,
 		decodeTo:       "object"})
 	if err != nil && strings.Contains(err.Error(), "status=404") {
-		return errNoAgentTags("no agent was created")
+		return errGatewayWithoutAgentTags
 	}
 	if err != nil {
-		return fmt.Errorf("failed checking the gateway for agent tags, no agent was created: %v", err)
+		return fmt.Errorf("failed checking the gateway for agent tags: %v", err)
 	}
 	return nil
 }
