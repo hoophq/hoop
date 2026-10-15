@@ -242,10 +242,10 @@ func (m model) controlPlaneReviews(w int) string {
 	lines := []string{
 		stStrong.Render("Approvals are managed by the control plane"),
 		"",
-		text.Inherit(stText).Render("This sidecar is connected to " + host + ". Statements held for review are " +
-			"filed there, and approved or rejected there by its reviewers; this terminal cannot decide them."),
+		text.Inherit(stText).Render("This sidecar is connected to " + host + ". Statements held for approval are " +
+			"filed there, and approved or rejected there by its approvers; this terminal cannot decide them."),
 		"",
-		stLabel.Render("REVIEWS FOR THIS SIDECAR"),
+		stLabel.Render("APPROVALS FOR THIS SIDECAR"),
 		stPrimary.Underline(true).Render(ansi.Truncate(link, w, "…")),
 		"",
 	}

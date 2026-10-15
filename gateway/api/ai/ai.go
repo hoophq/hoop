@@ -307,7 +307,7 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 		out.SidecarTargets = targets
 		hold, err := storedHold(orgID, rule.Name)
 		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the reviewer groups of the rule")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the approver groups of the rule")
 			return
 		}
 		setHold(&out, hold)
@@ -440,7 +440,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		out.SidecarTargets = targets
 		hold, err := storedHold(orgID, rule.Name)
 		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its approver groups failed: %v", err)
 			return
 		}
 		setHold(&out, hold)
@@ -589,7 +589,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		out.SidecarTargets = targets
 		hold, err := storedHold(orgID, rule.Name)
 		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its approver groups failed: %v", err)
 			return
 		}
 		setHold(&out, hold)

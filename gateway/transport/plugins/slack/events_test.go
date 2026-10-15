@@ -84,11 +84,11 @@ func TestReviewRefusalMessage(t *testing.T) {
 		err  error
 		want string
 	}{
-		{reviewapi.ErrNotFound, "review not found"},
-		{reviewapi.ErrWrongState, "The review is already approved or rejected"},
-		{reviewapi.ErrSelfApproval, "Unable to self approval review, contact another member of you team to approve it"},
-		{reviewapi.ErrNotEligible, "You're not eligible to approve/reject this review"},
-		{reviewapi.ErrExpired, "This review expired. Nothing was released; running the statement again files a new review."},
+		{reviewapi.ErrNotFound, "approval request not found"},
+		{reviewapi.ErrWrongState, "The approval request is already approved or rejected"},
+		{reviewapi.ErrSelfApproval, "You cannot approve your own request. Ask another member of your team to approve it"},
+		{reviewapi.ErrNotEligible, "You cannot approve or reject this approval request"},
+		{reviewapi.ErrExpired, "This approval request expired. Nothing was released; running the statement again files a new approval request."},
 		{errors.New("boom"), "boom"},
 	} {
 		if got := reviewRefusalMessage(tt.err); got != tt.want {

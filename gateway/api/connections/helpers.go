@@ -176,7 +176,7 @@ func validateConnectionRequest(req openapi.Connection) error {
 	}
 
 	if req.MinReviewApprovals != nil && *req.MinReviewApprovals <= 0 {
-		return fmt.Errorf("min review approvals must be greater than 0 or null")
+		return fmt.Errorf("min approvals must be greater than 0 or null")
 	}
 
 	for key, val := range req.ConnectionTags {

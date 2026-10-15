@@ -76,17 +76,17 @@ func (e ruleNotAuthorized) Error() string {
 
 // PostReview
 //
-//	@Summary		Create Sidecar Review
-//	@Description	Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body. A review of the same bytes past its deadline is expired and a new one is filed.
+//	@Summary		Create Sidecar Approval Request
+//	@Description	Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string							false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-token		header		string							false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
 //	@Param			hoop-sidecar-identity	header		string							false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
-//	@Param			request				body		openapi.SidecarReviewRequest	true	"The request body resource"
+//	@Param			request					body		openapi.SidecarReviewRequest	true	"The request body resource"
 //	@Success		200						{object}	openapi.SidecarReviewResponse
 //	@Success		201						{object}	openapi.SidecarReviewResponse
-//	@Failure		400,401,413,422,500	{object}	openapi.HTTPError
+//	@Failure		400,401,413,422,500		{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [post]
 func PostReview(c *gin.Context) {
 	sidecar := authenticatedSidecar(c)
@@ -147,7 +147,7 @@ func PostReview(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 			return
 		}
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed building the review policy")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed building the approval policy")
 		return
 	}
 
@@ -173,7 +173,7 @@ func PostReview(c *gin.Context) {
 			answerExistingReview(c, sidecar, req.ListenerName, rev, time.Now().UTC(), req.Reserve)
 			return
 		case !errors.Is(err, gorm.ErrRecordNotFound):
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar approval request")
 			return
 		}
 
@@ -188,7 +188,7 @@ func PostReview(c *gin.Context) {
 			// The error is logged and sent to Sentry by AbortWithErr; the caller
 			// gets none of it. A database message names constraints, tables and
 			// columns, and a token holder has no use for any of that.
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar review")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar approval request")
 			return
 		}
 
@@ -209,23 +209,23 @@ func PostReview(c *gin.Context) {
 	// being filed and consumed faster than a request can answer it, and a
 	// non-2xx makes the sidecar deny.
 	httputils.AbortWithErr(c, http.StatusInternalServerError,
-		fmt.Errorf("could not match or file a review in %d attempts", attempts),
-		"failed creating sidecar review")
+		fmt.Errorf("could not match or file an approval request in %d attempts", attempts),
+		"failed creating sidecar approval request")
 }
 
 // ClaimReview
 //
-//	@Summary		Claim Sidecar Review
-//	@Description	Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement, or is reserved (PROCESSING) when the body asks to reserve it; a review past its deadline is expired and never releases it; any other status is returned as it stands. It never files a review.
+//	@Summary		Claim Sidecar Approval Request
+//	@Description	Answer a sidecar waiting on one approval request it filed. An approved request is consumed once and releases the statement, or is reserved (PROCESSING) when the body asks to reserve it; a request past its deadline is expired and never releases it; any other status is returned as it stands. It never files an approval request.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string								false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-token		header		string								false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
 //	@Param			hoop-sidecar-identity	header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
-//	@Param			id					path		string								true	"The review id"
-//	@Param			request				body		openapi.SidecarReviewClaimRequest	false	"Optional; an empty body spends an approved review"
-//	@Success		200					{object}	openapi.SidecarReviewResponse
-//	@Failure		400,401,404,500		{object}	openapi.HTTPError
+//	@Param			id						path		string								true	"The approval request id"
+//	@Param			request					body		openapi.SidecarReviewClaimRequest	false	"Optional; an empty body spends an approved request"
+//	@Success		200						{object}	openapi.SidecarReviewResponse
+//	@Failure		400,401,404,500			{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews/{id}/claim [post]
 func ClaimReview(c *gin.Context) {
 	sidecar := authenticatedSidecar(c)
@@ -244,7 +244,7 @@ func ClaimReview(c *gin.Context) {
 	// malformed one with an error that would read as a 500.
 	reviewID := c.Param("id")
 	if _, err := uuid.Parse(reviewID); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "approval request not found"})
 		return
 	}
 
@@ -253,10 +253,10 @@ func ClaimReview(c *gin.Context) {
 	rev, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "approval request not found"})
 		return
 	case err != nil:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar approval request")
 		return
 	}
 	answerExistingReview(c, sidecar, rev.ListenerName.String, rev, time.Now().UTC(), req.Reserve)
@@ -264,17 +264,17 @@ func ClaimReview(c *gin.Context) {
 
 // SettleReview
 //
-//	@Summary		Settle Sidecar Review
-//	@Description	Report what the upstream answered to a statement a reserved approval released. Accepted spends the approval (EXECUTED). Refused gives it back (APPROVED), so a resend of the same bytes can take it again. A reservation past its lease is spent and stays spent. Any review the calling sidecar did not reserve is returned as it stands.
+//	@Summary		Settle Sidecar Approval Request
+//	@Description	Report what the upstream answered to a statement a reserved approval released. Accepted spends the approval (EXECUTED). Refused gives it back (APPROVED), so a resend of the same bytes can take it again. A reservation past its lease is spent and stays spent. Any approval request the calling sidecar did not reserve is returned as it stands.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string								false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-token		header		string								false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
 //	@Param			hoop-sidecar-identity	header		string								false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
-//	@Param			id					path		string								true	"The review id"
-//	@Param			request				body		openapi.SidecarReviewSettleRequest	true	"The request body resource"
-//	@Success		200					{object}	openapi.SidecarReviewResponse
-//	@Failure		400,401,404,500		{object}	openapi.HTTPError
+//	@Param			id						path		string								true	"The approval request id"
+//	@Param			request					body		openapi.SidecarReviewSettleRequest	true	"The request body resource"
+//	@Success		200						{object}	openapi.SidecarReviewResponse
+//	@Failure		400,401,404,500			{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews/{id}/settle [post]
 func SettleReview(c *gin.Context) {
 	sidecar := authenticatedSidecar(c)
@@ -284,7 +284,7 @@ func SettleReview(c *gin.Context) {
 
 	reviewID := c.Param("id")
 	if _, err := uuid.Parse(reviewID); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "approval request not found"})
 		return
 	}
 	var req openapi.SidecarReviewSettleRequest
@@ -297,20 +297,20 @@ func SettleReview(c *gin.Context) {
 	// another sidecar's reservation or write anything on its review.
 	switch _, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID); {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "approval request not found"})
 		return
 	case err != nil:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar approval request")
 		return
 	}
 	settled, err := models.SettleSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID, *req.Accepted, time.Now().UTC())
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed settling the sidecar review")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed settling the sidecar approval request")
 		return
 	}
 	rev, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar approval request")
 		return
 	}
 
@@ -331,15 +331,15 @@ func SettleReview(c *gin.Context) {
 
 // GetReview
 //
-//	@Summary		Get Sidecar Review Status
-//	@Description	Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement or its approval expires. A review past its deadline reads EXPIRED.
+//	@Summary		Get Sidecar Approval Status
+//	@Description	Read the status of one approval request the calling sidecar filed. It never changes the request: an approved request stays approved until the sidecar resends the statement or its approval expires. A request past its deadline reads EXPIRED.
 //	@Tags			Sidecars
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-token		header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
 //	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
-//	@Param			id					path		string	true	"The review id"
-//	@Success		200					{object}	openapi.SidecarReviewStatus
-//	@Failure		401,404,500			{object}	openapi.HTTPError
+//	@Param			id						path		string	true	"The approval request id"
+//	@Success		200						{object}	openapi.SidecarReviewStatus
+//	@Failure		401,404,500				{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews/{id} [get]
 func GetReview(c *gin.Context) {
 	sidecar := authenticatedSidecar(c)
@@ -349,7 +349,7 @@ func GetReview(c *gin.Context) {
 
 	reviewID := c.Param("id")
 	if _, err := uuid.Parse(reviewID); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "approval request not found"})
 		return
 	}
 
@@ -357,10 +357,10 @@ func GetReview(c *gin.Context) {
 	rev, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "approval request not found"})
 		return
 	case err != nil:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar approval request")
 		return
 	}
 	c.JSON(http.StatusOK, toSidecarReviewStatus(rev))
@@ -375,16 +375,16 @@ const (
 
 // ListReviews
 //
-//	@Summary		List Sidecar Reviews
-//	@Description	List the reviews the calling sidecar filed, newest first. It never changes a review.
+//	@Summary		List Sidecar Approval Requests
+//	@Description	List the approval requests the calling sidecar filed, newest first. It never changes a request.
 //	@Tags			Sidecars
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
+//	@Param			hoop-sidecar-token		header		string	false	"The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity."
 //	@Param			hoop-sidecar-identity	header		string	false	"A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token."
-//	@Param			status				query		string	false	"Only reviews in this status"	Enums(PENDING, APPROVED, REJECTED, REVOKED, PROCESSING, EXECUTED, EXPIRED, UNKNOWN)
-//	@Param			limit				query		int		false	"The most reviews to return, 1 to 200"	default(50)
-//	@Success		200					{array}		openapi.SidecarReviewStatus
-//	@Failure		400,401,500			{object}	openapi.HTTPError
+//	@Param			status					query		string	false	"Only approval requests in this status"				Enums(PENDING, APPROVED, REJECTED, REVOKED, PROCESSING, EXECUTED, EXPIRED, UNKNOWN)
+//	@Param			limit					query		int		false	"The most approval requests to return, 1 to 200"	default(50)
+//	@Success		200						{array}		openapi.SidecarReviewStatus
+//	@Failure		400,401,500				{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [get]
 func ListReviews(c *gin.Context) {
 	sidecar := authenticatedSidecar(c)
@@ -398,7 +398,7 @@ func ListReviews(c *gin.Context) {
 		models.ReviewStatusRevoked, models.ReviewStatusProcessing, models.ReviewStatusExecuted,
 		models.ReviewStatusExpired, models.ReviewStatusUnknown:
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("unknown review status %q", c.Query("status"))})
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("unknown approval status %q", c.Query("status"))})
 		return
 	}
 	limit := defaultReviewListLimit
@@ -414,7 +414,7 @@ func ListReviews(c *gin.Context) {
 
 	reviews, err := models.ListSidecarReviews(models.DB, sidecar.OrgID, sidecar.ID, status, limit)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing the sidecar reviews")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing the sidecar approval requests")
 		return
 	}
 	out := make([]*openapi.SidecarReviewStatus, 0, len(reviews))
@@ -489,7 +489,7 @@ func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName 
 	if !forward && (refusedByDeadline || lapsedSidecarReview(rev, now)) {
 		expired, status, err := models.ExpireSidecarReview(models.DB, sidecar.OrgID, rev.ID, now)
 		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed expiring the sidecar review")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed expiring the sidecar approval request")
 			return
 		}
 		rev.Status = status
@@ -538,7 +538,7 @@ func claimSidecarApproval(c *gin.Context, sidecar *models.Sidecar, listenerName 
 	claimed, status, err := take(models.DB, sidecar.OrgID, rev.ID, now)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err,
-			"failed consuming the approved sidecar review")
+			"failed consuming the approved sidecar approval request")
 		return false, false
 	}
 	// The status the row holds now, so a claim loser reports EXECUTED (or
@@ -653,7 +653,7 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 
 		// FullApiURL, not ApiURL: the latter drops the configured path prefix,
 		// which lands the approver outside the app wherever one is set.
-		WebappURL: fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), rev.SessionID),
+		WebappURL: fmt.Sprintf("%s/approvals/%s", appconfig.Get().FullApiURL(), rev.SessionID),
 
 		// The decision deadline; nil with no limit.
 		ExpiresAt: rev.ExpiresAt,

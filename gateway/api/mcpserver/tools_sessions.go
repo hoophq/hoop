@@ -16,7 +16,7 @@ type sessionsListInput struct {
 	User         string `json:"user,omitempty" jsonschema:"filter by user email"`
 	Connection   string `json:"connection,omitempty" jsonschema:"filter by connection name"`
 	Type         string `json:"type,omitempty" jsonschema:"filter by connection type (database, application, custom)"`
-	ReviewStatus string `json:"review_status,omitempty" jsonschema:"filter by review status (PENDING, APPROVED, REJECTED)"`
+	ReviewStatus string `json:"review_status,omitempty" jsonschema:"filter by approval status (PENDING, APPROVED, REJECTED)"`
 	StartDate    string `json:"start_date,omitempty" jsonschema:"start of date range in RFC3339 format"`
 	EndDate      string `json:"end_date,omitempty" jsonschema:"end of date range in RFC3339 format"`
 	Limit        int    `json:"limit,omitempty" jsonschema:"max results (default 20, max 100)"`

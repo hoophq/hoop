@@ -125,9 +125,10 @@ type model struct {
 	cpFlash      string
 }
 
-// reviewsURL is where the control plane shows the reviews this sidecar
-// files: its web app's Reviews page. The plane's URL may carry the API's
-// /api suffix or a path prefix; the prefix stays, the suffix goes.
+// reviewsURL is where the control plane shows the approval requests this
+// sidecar files. It stays /reviews: an older plane has no /approvals page,
+// and a newer one redirects /reviews there. The plane's URL may carry the
+// API's /api suffix or a path prefix; the prefix stays, the suffix goes.
 func reviewsURL(plane string) string {
 	u, err := url.Parse(plane)
 	if err != nil || u.Host == "" {
