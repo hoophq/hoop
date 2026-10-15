@@ -428,6 +428,12 @@ type SidecarResponse struct {
 	// whose binding an admin cleared.
 	IdentityIssuer  string `json:"identity_issuer,omitempty" example:"https://container.googleapis.com/v1/projects/my-project/locations/europe-west1/clusters/eu"`
 	IdentitySubject string `json:"identity_subject,omitempty" example:"system:serviceaccount:ws-123:hoop-sidecar"`
+	// ReportedConfiguration is the config file the sidecar runs, as its last
+	// handshake reported it. The control plane adopts it only when an admin
+	// sends load_from_disk false. Absent for a build too old to report it.
+	ReportedConfiguration *daemon.Config `json:"reported_configuration,omitempty" swaggertype:"object"`
+	// When the sidecar last reported ReportedConfiguration.
+	ReportedConfigurationAt *time.Time `json:"reported_configuration_at,omitempty"`
 }
 
 // SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one
@@ -612,6 +618,13 @@ type SidecarHandshakeRequest struct {
 	//
 	// Optional. A build from before the field sends nothing.
 	LastError string `json:"last_error,omitempty" example:"the config file sent a config this build refuses: parse config: json: unknown field \"future_key\""`
+	// LocalConfiguration is the sidecar's config file, without license and
+	// control_plane_url, sent while the file is its source. For a sidecar
+	// with no stored configuration the control plane answers load_from_disk
+	// instead of 412, so the sidecar keeps its file until an admin moves the
+	// configuration. Optional: a build from before the field sends nothing
+	// and imports its file on the 412.
+	LocalConfiguration json.RawMessage `json:"local_configuration,omitempty" swaggertype:"object"`
 }
 
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop

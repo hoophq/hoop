@@ -20,9 +20,17 @@ function countRules(boundRules) {
 
 // Which side owns a sidecar's configuration. To the configuration file, the
 // gateway deletes the rules imported from this sidecar that nothing else uses,
-// and unbinds the rest. Back to the control plane, the sidecar imports its
-// configuration file again.
-export default function SidecarSourceModal({ opened, toConfigFile, boundRules, onClose, onConfirm, loading }) {
+// and unbinds the rest. To the control plane, the gateway adopts the file the
+// sidecar reported, or the sidecar pushes it when it is too old to report.
+export default function SidecarSourceModal({
+  opened,
+  toConfigFile,
+  hasReport,
+  boundRules,
+  onClose,
+  onConfirm,
+  loading,
+}) {
   const counts = countRules(boundRules)
   return (
     <Modal
@@ -48,8 +56,9 @@ export default function SidecarSourceModal({ opened, toConfigFile, boundRules, o
                       ))}
                     </Stack>
                     <Text size="sm">
-                      A rule imported from this sidecar&apos;s configuration file, and used by nothing else, is deleted.
-                      Every other rule is only removed from this sidecar.
+                      {
+                        "A rule imported from this sidecar's configuration file, and used by nothing else, is deleted. Every other rule is only removed from this sidecar."
+                      }
                     </Text>
                   </>
                 ) : (
@@ -63,10 +72,18 @@ export default function SidecarSourceModal({ opened, toConfigFile, boundRules, o
             </Text>
           </>
         ) : (
-          <Text size="sm">
-            The configuration file replaces the stored document. The sidecar sends its file to Hoop on its next
-            check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session Analyzer.
-          </Text>
+          <>
+            <Alert color="amber" variant="light" radius="md" icon={<TriangleAlert size={16} />}>
+              <Text size="sm" fw={600}>
+                After this step, the Sidecar ignores its local configuration file.
+              </Text>
+            </Alert>
+            <Text size="sm">
+              {hasReport
+                ? 'Hoop takes the configuration file the sidecar reported, shown on this page, and serves it on the next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session Analyzer. Edit the configuration in Hoop from then on.'
+                : 'The sidecar sends its configuration file to Hoop on its next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session Analyzer. Edit the configuration in Hoop from then on.'}
+            </Text>
+          </>
         )}
         <Group justify="flex-end" mt="xs">
           <Button variant="subtle" color="gray" onClick={onClose} disabled={loading}>

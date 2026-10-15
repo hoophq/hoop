@@ -3608,6 +3608,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/events/stream": {
+            "get": {
+                "description": "Streams change notices of the organization via SSE, one \"event: \u003ctype\u003e\" frame per change, with {\"type\",\"id\"} as data. A notice names what changed and never its content: read the resource again through its own route. Types: sidecar.checked_in.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Live Events"
+                ],
+                "summary": "Stream Live Events",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/feature-flags": {
             "get": {
                 "description": "List all feature flags from the catalog with their per-org state",
@@ -10644,7 +10670,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the gateway already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
+                "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Only a sidecar too old to send local_configuration on the handshake calls it. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the gateway already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10815,7 +10841,7 @@ const docTemplate = `{
         },
         "/sidecars/handshake": {
             "post": {
-                "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
+                "description": "Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. A sidecar that sends local_configuration while no configuration is stored gets that answer too: the control plane stores the report and adopts it only when an admin sends load_from_disk false. Otherwise it answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
                 "consumes": [
                     "application/json"
                 ],
@@ -21175,6 +21201,14 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "reported_configuration": {
+                    "description": "ReportedConfiguration is the config file the sidecar runs, as its last\nhandshake reported it. The control plane adopts it only when an admin\nsends load_from_disk false. Absent for a build too old to report it.",
+                    "type": "object"
+                },
+                "reported_configuration_at": {
+                    "description": "When the sidecar last reported ReportedConfiguration.",
+                    "type": "string"
+                },
                 "served_revision": {
                     "description": "ServedRevision names the configuration last answered to this sidecar,\nand AppliedRevision the one it says it is running. Equal means the\nsidecar is enforcing what the control plane holds.\n\nBoth are opaque: the control plane issues them and compares them to\nitself. Nothing parses them.",
                     "type": "string",
@@ -21252,6 +21286,10 @@ const docTemplate = `{
                     "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time. One more value\nis the control plane's own: not_served, when it refused to serve this\nbuild the configuration, with LastError saying why.\n\nOptional, for the same reason as AppliedRevision.",
                     "type": "string",
                     "example": "applied"
+                },
+                "local_configuration": {
+                    "description": "LocalConfiguration is the sidecar's config file, without license and\ncontrol_plane_url, sent while the file is its source. For a sidecar\nwith no stored configuration the control plane answers load_from_disk\ninstead of 412, so the sidecar keeps its file until an admin moves the\nconfiguration. Optional: a build from before the field sends nothing\nand imports its file on the 412.",
+                    "type": "object"
                 },
                 "version": {
                     "description": "Version of the sidecar binary",
@@ -21398,6 +21436,14 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true
+                },
+                "reported_configuration": {
+                    "description": "ReportedConfiguration is the config file the sidecar runs, as its last\nhandshake reported it. The control plane adopts it only when an admin\nsends load_from_disk false. Absent for a build too old to report it.",
+                    "type": "object"
+                },
+                "reported_configuration_at": {
+                    "description": "When the sidecar last reported ReportedConfiguration.",
+                    "type": "string"
                 },
                 "served_revision": {
                     "description": "ServedRevision names the configuration last answered to this sidecar,\nand AppliedRevision the one it says it is running. Equal means the\nsidecar is enforcing what the control plane holds.\n\nBoth are opaque: the control plane issues them and compares them to\nitself. Nothing parses them.",

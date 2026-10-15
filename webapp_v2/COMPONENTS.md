@@ -844,6 +844,12 @@ Reference: `pages/Settings/Infrastructure/index.jsx`.
 ### `useRuleTrafficFilter(kind)`
 The Traffic filter of the guardrail, masking and analyzer lists: `filterProps` for a `ValueFilter`, `matches(rule)`, `trafficOf(rule)` for the badge, and `showAgentFilters` / `showSidecarFilter`. `classifiable` is false where the list response carries no `sidecar_spec` (guardrails today).
 
+### `useLiveEvent(type, handler, enabled = true)`
+Calls `handler({ type, id })` for each live event of `type` from the gateway (`GET /events/stream`) while mounted. One connection per tab, shared by every subscriber, closed when the last one unmounts. Types are in `LIVE_EVENTS` (`services/liveEvents.js`). The event carries no data: read the resource again. Rules in `CLAUDE.md` (Real-time updates).
+```jsx
+useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (e) => e.id === id && refresh(id))
+```
+
 ### `useCountdown(expireAt)`
 Display-only countdown against a shared 1 Hz clock (`utils/tick.js`), which is reference-counted
 so N countdowns cost one interval. Returns `{ remainingMs, label, expired }`; `label` is

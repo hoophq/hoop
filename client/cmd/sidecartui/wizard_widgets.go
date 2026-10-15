@@ -277,6 +277,37 @@ func (f *form) store() {
 	}
 }
 
+// paste puts pasted text into the focused text field. Bubble Tea v2 delivers
+// a paste as one tea.PasteMsg, never as key presses, so update never sees it.
+func (f *form) paste(p tea.PasteMsg) tea.Cmd {
+	x := f.focused()
+	if f.pick != nil || x == nil || (x.kind != fText && x.kind != fInt) {
+		return nil
+	}
+	text := pastedLine(p.Content)
+	if x.kind == fInt && strings.ContainsFunc(text, func(r rune) bool { return r < '0' || r > '9' }) {
+		return nil
+	}
+	f.err = ""
+	var cmd tea.Cmd
+	f.input, cmd = f.input.Update(tea.PasteMsg{Content: text})
+	x.text = f.input.Value()
+	return cmd
+}
+
+// pastedLine is a paste as one line. A URL, token or license copied from a
+// terminal or a web page often ends in a newline, and every field holds one
+// line.
+func pastedLine(s string) string {
+	return withoutLineBreaks(strings.TrimSpace(s))
+}
+
+// withoutLineBreaks drops the line breaks of a paste and keeps every other
+// character: a path may start or end with a space that matters.
+func withoutLineBreaks(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
+}
+
 // update handles a key and returns "back" for esc, a button's id for enter
 // on it, or "" otherwise.
 func (f *form) update(k tea.KeyPressMsg) (tea.Cmd, string) {

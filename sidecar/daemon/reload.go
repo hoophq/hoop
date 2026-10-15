@@ -185,6 +185,11 @@ type reloader struct {
 	// flip runs the incoming owner's document through applyOwned,
 	// flipping this only when it applied.
 	diskMode bool
+	// runningFile is the config file document this process runs in disk
+	// mode, as localReport strips it: the boot's, or the one adoptFile last
+	// took on. The heartbeat reports it, never a newer read of the disk, so
+	// the plane never shows, or adopts, a file this process did not apply.
+	runningFile json.RawMessage
 	// configPath and load re-read the config file: a standalone process
 	// on every change, a plane-owned one when the plane hands ownership to
 	// the file mid-run. An empty path means no file was given.
@@ -261,6 +266,7 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 		r.licSource = PlaneLicenseSource
 		r.lastHandled = cfg.cp.lastRaw
 		r.diskMode = cfg.cp.diskMode
+		r.runningFile = cfg.cp.fileReport
 		return r, nil
 	}
 	r.licRaw = cfg.License
@@ -562,6 +568,11 @@ func (r *reloader) adoptFile(log *slog.Logger, planeLicense string) reloadOutcom
 	}
 	flipped := !r.diskMode
 	out := r.applyOwned(log, raw, "config file")
+	if out == reloadApplied || out == reloadUnchanged {
+		if report, rerr := localReport(local); rerr == nil {
+			r.runningFile = report
+		}
+	}
 	if out == reloadApplied && flipped {
 		r.diskMode = true
 		log.Info("the control plane handed the configuration to the local file; "+

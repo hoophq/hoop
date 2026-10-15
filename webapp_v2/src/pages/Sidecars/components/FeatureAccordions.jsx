@@ -92,8 +92,8 @@ function EmptyFeatureRow({ feature, observing, onAdd }) {
  * `actions` adds Add per feature and Edit on distributed rules; rules embedded
  * in the document have no form here.
  */
-export default function FeatureAccordions({ listener = null, config, boundRules, flush = false, actions }) {
-  const features = featureList(listener, config, boundRules)
+export default function FeatureAccordions({ listener = null, config, boundRules, includeLanes = false, flush = false, actions }) {
+  const features = featureList(listener, config, boundRules, { includeLanes })
   // The sidecar's endpoint is a Global settings row; a lane speaks only on override.
   const ownOPA = overridesOPA(listener)
   const opa = ownOPA ? resolveOPA(listener, config) : null

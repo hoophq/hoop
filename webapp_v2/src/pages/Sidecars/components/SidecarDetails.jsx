@@ -8,7 +8,7 @@ import Tooltip from '@/components/Tooltip'
 import EmptyState from '@/layout/EmptyState'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
-import { hasConfiguration, usesConfigFile } from '../config'
+import { hasConfiguration, reportedConfiguration, usesConfigFile } from '../config'
 import GlobalSettings from '../sections/GlobalSettings'
 import ListenersTable from '../sections/ListenersTable'
 import { sidecarStatus } from '../status'
@@ -56,7 +56,18 @@ function detachedSummary(detached) {
     .join(' ')
 }
 
-function SourceCallout({ fromFile, configured, editable, onSwitch }) {
+function SourceCallout({ fromFile, configured, awaitingFile, reported, editable, onSwitch }) {
+  // Moved to Hoop with no report to adopt: a sidecar too old to report sends
+  // its file on its next check-in.
+  if (awaitingFile) {
+    return (
+      <Callout icon={Info} color="gray.0">
+        <Text size="sm">
+          {'Hoop manages this configuration. It waits for the sidecar to send its config file on its next check-in.'}
+        </Text>
+      </Callout>
+    )
+  }
   if (fromFile) {
     return (
       <Callout
@@ -72,10 +83,19 @@ function SourceCallout({ fromFile, configured, editable, onSwitch }) {
       >
         <Text size="sm">
           {
-            'This sidecar loads its configuration from its own config file, and Hoop sends only its license. A running sidecar picks this up on its next check-in, within a minute.'
+            'This sidecar runs the configuration in its own config file, and Hoop sends only its license. To manage the configuration in Hoop, select Manage in Hoop.'
           }
         </Text>
-        {configured && (
+        {reported ? (
+          <Text size="sm">The configuration below is the config file the sidecar reported at its last check-in.</Text>
+        ) : (
+          <Text size="sm">
+            {
+              'The sidecar has not reported its config file. A sidecar older than this Hoop release does not report it.'
+            }
+          </Text>
+        )}
+        {!reported && configured && (
           <Text size="sm">The configuration below is stored in Hoop and is not applied.</Text>
         )}
       </Callout>
@@ -105,8 +125,9 @@ function SourceCallout({ fromFile, configured, editable, onSwitch }) {
   return (
     <Callout icon={Info} color="gray.0">
       <Text size="sm">
-        Hoop stores no listeners for this sidecar yet. The sidecar imports its own config file on its first
-        handshake, and Hoop owns it from then on.
+        {
+          'Hoop stores no listeners for this sidecar yet. A sidecar started with a config file runs that file, and this page shows it. Hoop manages the configuration only after you select Manage in Hoop.'
+        }
       </Text>
     </Callout>
   )
@@ -120,16 +141,18 @@ function SourceCallout({ fromFile, configured, editable, onSwitch }) {
  * to it only when the caller hands it somewhere to put the result, under
  * `editable`: which side owns the document, and the Global settings rows.
  * Listeners are authored through `listenerActions`, the sidecar is deleted
- * through `onDelete`. The wizard's Overview step passes none of them — it
- * holds its own copy of a sidecar that is still waiting for the first
- * handshake.
+ * through `onDelete`. The wizard's Overview step passes `editable` only, so a
+ * sidecar running its file can move to Hoop there too.
  */
 export default function SidecarDetails({ sidecar, editable, listenerActions, onDelete }) {
   const setUsesConfigFile = useSidecarStore((s) => s.setUsesConfigFile)
   const refreshSidecar = useSidecarStore((s) => s.refreshSidecar)
-  const config = sidecar.configuration
-  const configured = hasConfiguration(config)
   const fromFile = usesConfigFile(sidecar)
+  // While the file runs, the card shows the file the sidecar reported, read
+  // only: it is what runs, and what Manage in Hoop adopts.
+  const reported = fromFile ? reportedConfiguration(sidecar) : null
+  const shown = reported ? { ...sidecar, configuration: reported } : sidecar
+  const configured = hasConfiguration(shown.configuration)
   const deprecations = sidecar.deprecations ?? []
   // The value awaiting confirmation, and whether the dialog is up. Two states
   // rather than one: Mantine keeps the modal mounted through its exit
@@ -174,6 +197,8 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
           <SourceCallout
             fromFile={fromFile}
             configured={configured}
+            awaitingFile={sidecar.configuration?.load_from_disk === false && !configured}
+            reported={!!reported}
             editable={editable && !saving && !asking}
             onSwitch={ask}
           />
@@ -193,7 +218,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
           </Group>
 
           {/* Read-only on the file's config. The key drops an open editor when that flips. */}
-          <GlobalSettings key={String(editable && !fromFile)} sidecar={sidecar} editable={editable && !fromFile} />
+          <GlobalSettings key={String(editable && !fromFile)} sidecar={shown} editable={editable && !fromFile} />
 
           {deprecations.length > 0 && (
             <Callout icon={TriangleAlert} color="amber.0">
@@ -213,13 +238,13 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
             <>
               <Stack gap="sm">
                 <Text fw={600}>Features</Text>
-                <FeatureRules sidecar={sidecar} editable={editable && !fromFile} />
+                <FeatureRules sidecar={shown} editable={editable && !fromFile} includeLanes={!!reported} />
               </Stack>
 
               <Divider />
 
               {/* The file owns the listeners, so an edit here would change nothing it runs. */}
-              <ListenersTable sidecar={sidecar} {...(fromFile ? {} : listenerActions)} />
+              <ListenersTable sidecar={shown} {...(fromFile ? {} : listenerActions)} />
             </>
           ) : fromFile ? (
             // Nothing stored and nothing to store into: the plane sends this
@@ -245,6 +270,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
       <SidecarSourceModal
         opened={asking}
         toConfigFile={target}
+        hasReport={!!reportedConfiguration(sidecar)}
         boundRules={sidecar.bound_rules ?? []}
         onClose={() => setAsking(false)}
         onConfirm={confirmSource}

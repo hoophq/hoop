@@ -16,10 +16,13 @@ import api from './api'
 // `pages/Sidecars/status.js` renders them; nothing here re-derives them.
 // `configuration` is the daemon.Config the control plane STORES for this
 // sidecar and serves back on the handshake and on every poll. Creating without
-// one stores an empty document; the sidecar then seeds the plane with its own
-// config file on the first handshake (importLocalConfig, #1803), which is the
-// connect journey the wizard prints. Once the plane holds listeners that seed
-// is refused with a 409 and the plane owns the document from then on.
+// one stores an empty document. A sidecar started with a config file then
+// reports it on its handshake and keeps running it: the plane stores
+// `{load_from_disk: true}` and the file as `reported_configuration`. The plane
+// takes the file only when an admin sends `load_from_disk: false` (PATCH).
+// A sidecar too old to report still pushes its file on the first handshake
+// (importLocalConfig in sidecar/daemon/controlplane.go); once the plane holds
+// listeners that push is refused with a 409.
 //
 // Two ways to write it, and they are not interchangeable:
 //

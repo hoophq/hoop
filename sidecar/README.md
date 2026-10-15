@@ -388,11 +388,17 @@ At startup the process runs the handshake
 (`POST {url}/api/sidecars/handshake`). The plane answers with the document
 stored for this sidecar, and that document becomes the running config,
 checked by the same strict decoder the file path uses. `--config` becomes
-optional. A plane holding no configuration answers 412, and the process
-seeds it with the file's document (`PUT {url}/api/sidecars/configuration`),
-then serves what the plane sends back: a sidecar that ran standalone
-connects by adding the URL and passing the token, nothing else. The import
-happens only into an empty plane; once the plane holds a configuration it
+optional. The handshake carries the file's document as
+`local_configuration`. A plane holding no configuration answers
+`load_from_disk` and keeps the report: the process runs its file, the
+sidecar page shows it, and the plane takes it only when an admin selects
+Manage in Hoop (`load_from_disk: false`, below). A sidecar that ran
+standalone connects by adding the URL and passing the token, nothing else.
+A plane older than the report answers 412 instead, and the process seeds it
+with the file's document (`PUT {url}/api/sidecars/configuration`), then
+serves what the plane sends back; a sidecar build older than the report does
+the same against any plane. That
+import happens only into an empty plane; once the plane holds a configuration it
 owns it, and listeners still in the file are ignored with a warning rather
 than merged: two authorities for one fact is the same mistake as a field
 written in two spellings. The pushed document drops `control_plane_url` and
@@ -441,8 +447,11 @@ crash-loop.
 own config file. The plane then serves only that flag and the license, so the
 sidecar's own build decodes everything it runs. The switch deletes the rules
 imported from this sidecar that nothing else uses, and unbinds the rest.
-`load_from_disk: false`, sent alone, returns ownership to the plane: the
-stored document is cleared, and the sidecar imports its file again.
+`load_from_disk: false`, sent alone, gives ownership to the plane: the
+stored document is replaced by the file the sidecar last reported, and the
+next heartbeat serves it. After this step the sidecar ignores its local
+configuration file. A sidecar too old to report has its document cleared
+instead, and imports its file again on the next heartbeat.
 
 #### Sessions on the plane
 

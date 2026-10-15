@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/liveevents"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -71,6 +72,9 @@ func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, se
 	if err := models.MarkSidecarConnectionsOnline(models.DB, sc.OrgID, sc.ID); err != nil {
 		log.With("sidecar", sc.ID).Warnf("%v", err)
 	}
+	// A page waiting for this sidecar, such as the setup wizard, reads it
+	// again now instead of on its next poll.
+	liveevents.Publish(sc.OrgID, liveevents.Event{Type: liveevents.SidecarCheckedIn, ID: sc.ID})
 }
 
 // refuseOverCap answers 422 when a configuration authors more rules than the
@@ -164,9 +168,17 @@ func answerSidecarWrite(c *gin.Context, err error) {
 	var unmirrored services.ErrSidecarListenerInvalid
 	var nameTaken models.ErrSidecarConnectionNameTaken
 	var inUse models.ErrSidecarConnectionInUse
+	var importInvalid services.ErrImportedRuleInvalid
+	var unusable errReportUnusable
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+	case errors.As(err, &importInvalid):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": importInvalid.Error()})
+	case errors.As(err, &unusable):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": unusable.Error()})
+	case errors.Is(err, services.ErrImportedRuleConflict):
+		c.JSON(http.StatusConflict, gin.H{"message": services.ErrImportedRuleConflict.Error()})
 	case errors.As(err, &configInvalid):
 		c.JSON(http.StatusUnprocessableEntity, openapi.SidecarConfigError{Message: configInvalid.Error(), Problems: configInvalid.Problems})
 	case errors.As(err, &overCap):
@@ -564,7 +576,26 @@ func Patch(c *gin.Context) {
 		if isFile {
 			return sc, nil
 		}
-		return models.ResetSidecarConfigurationTx(tx, ctx.OrgID, sc.ID)
+		reset, err := models.ResetSidecarConfigurationTx(tx, ctx.OrgID, sc.ID)
+		if err != nil {
+			return nil, err
+		}
+		// The admin's move: the config file the sidecar reported becomes
+		// the plane's document now, and the next heartbeat serves it. A
+		// build too old to report keeps the reset, and its heartbeat 412
+		// pushes the file instead. A report this plane cannot read refuses
+		// the move: the push would carry the same file and be refused too.
+		report, err := storedReport(current)
+		if err != nil {
+			return nil, err
+		}
+		if report == nil {
+			return reset, nil
+		}
+		if err := services.CheckSidecarConfigurationLimits(*report, licenseData); err != nil {
+			return nil, err
+		}
+		return adoptConfigurationTx(tx, ctx.OrgID, sc.ID, current.Name, *report)
 	})
 	if err != nil {
 		answerSidecarWrite(c, err)
@@ -601,7 +632,7 @@ func usesConfigFile(cfg models.SidecarConfiguration) bool {
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
-//	@Description	Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
+//	@Description	Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. A sidecar that sends local_configuration while no configuration is stored gets that answer too: the control plane stores the report and adopts it only when an admin sends load_from_disk false. Otherwise it answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -626,7 +657,35 @@ func Handshake(c *gin.Context) {
 		return
 	}
 	capabilities := daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))
-	if sidecar.Configuration.LoadFromDisk != nil && *sidecar.Configuration.LoadFromDisk {
+	// A sidecar that reports its config file keeps it until an admin moves
+	// the configuration to the plane (Patch). For a row with nothing stored
+	// the plane answers load_from_disk instead of the 412 that makes a
+	// sidecar push its file: the plane never takes the file on its own.
+	if report := parseReport(sidecar, req.LocalConfiguration); report != nil {
+		if !usesConfigFile(sidecar.Configuration) && len(sidecar.Configuration.Listeners) == 0 {
+			started, err := models.StartSidecarInDiskModeTx(models.DB, sidecar.OrgID, sidecar.ID)
+			if err != nil {
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed recording the sidecar's config file")
+				return
+			}
+			if started {
+				fromFile := true
+				sidecar.Configuration = models.SidecarConfiguration{LoadFromDisk: &fromFile}
+			}
+		}
+		// Kept only while the file runs. A plane-owned sidecar ignores its
+		// file, and the page would read a kept report as what runs.
+		if usesConfigFile(sidecar.Configuration) {
+			doc, err := json.Marshal(report)
+			if err == nil {
+				err = models.RecordSidecarReportedConfiguration(models.DB, sidecar.ID, doc)
+			}
+			if err != nil {
+				log.With("sidecar", sidecar.ID).Warnf("failed recording the sidecar's config file, reason=%v", err)
+			}
+		}
+	}
+	if usesConfigFile(sidecar.Configuration) {
 		licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
@@ -769,7 +828,7 @@ func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) 
 // Import Sidecar Configuration
 //
 //	@Summary		Import Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the gateway already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
+//	@Description	Authenticated with the hoop-sidecar-token or the hoop-sidecar-identity header, never both. Stores the config document a sidecar carried locally, once. Only a sidecar too old to send local_configuration on the handshake calls it. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the gateway already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -815,38 +874,15 @@ func ImportConfiguration(c *gin.Context) {
 	if refuseOverCap(c, sidecar.OrgID, cfg) {
 		return
 	}
-	// An imported configuration is plane-owned by definition: the sidecar
-	// pushed its file to hand ownership over, so the row records the flag
-	// explicitly off.
-	defaultLoadFromDisk := false
-	cfg.LoadFromDisk = &defaultLoadFromDisk
-	// Each rule of the file becomes a rule item on its feature page, bound to
-	// the listeners that ran it. The row keeps the rest; composition folds the
-	// items back, so the served document enforces what the file did.
-	// The names are picked inside the transaction that writes them, so a
-	// writer racing the import meets a unique key and not a stale check.
+	// Only a build older than the handshake's local_configuration reaches
+	// this route: a current sidecar reports its file and waits for an admin
+	// (Handshake). The older build fails its boot when the handshake after
+	// the push carries no listeners, so its push is still adopted.
 	var item *models.Sidecar
 	var invalid services.ErrImportedRuleInvalid
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
-		stripped, rules, err := services.SplitSidecarConfiguration(sidecar.Name, cfg,
-			services.ImportedRuleNameTaken(tx, sidecar.OrgID))
-		var check services.ErrImportedRuleNameCheck
-		if errors.As(err, &check) {
-			return err
-		}
-		if err != nil {
-			return services.ErrImportedRuleInvalid{Err: err}
-		}
-		item, err = models.AdoptSidecarConfiguration(tx, sidecar.OrgID, sidecar.ID, models.SidecarConfiguration(stripped))
-		if err != nil {
-			return err
-		}
-		// Mirrors before rules: a rule binds to a mirror once the bindings
-		// move to connections.
-		if err := services.SyncSidecarListenerConnectionsTx(tx, item); err != nil {
-			return err
-		}
-		return services.ImportSidecarRulesTx(tx, sidecar.OrgID, sidecar.ID, rules)
+		item, err = adoptConfigurationTx(tx, sidecar.OrgID, sidecar.ID, sidecar.Name, cfg)
+		return err
 	})
 	var unmirrored services.ErrSidecarListenerInvalid
 	var nameTaken models.ErrSidecarConnectionNameTaken
@@ -868,6 +904,97 @@ func ImportConfiguration(c *gin.Context) {
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed importing sidecar configuration")
 	}
+}
+
+// adoptConfigurationTx makes a sidecar's config file the plane-owned
+// configuration: the import of a build that pushed it, or the admin's move of
+// the file a sidecar reported. The caller checked the caps.
+//
+// Each rule of the file becomes a rule item on its feature page, bound to the
+// listeners that ran it. The row keeps the rest; composition folds the items
+// back, so the served document enforces what the file did. The names are
+// picked inside the transaction that writes them, so a writer racing the
+// adoption meets a unique key and not a stale check.
+func adoptConfigurationTx(tx *gorm.DB, orgID, sidecarID, sidecarName string, cfg daemon.Config) (*models.Sidecar, error) {
+	cfg.License = ""
+	// The flag is recorded explicitly off: the plane owns this document.
+	planeOwned := false
+	cfg.LoadFromDisk = &planeOwned
+	stripped, rules, err := services.SplitSidecarConfiguration(sidecarName, cfg,
+		services.ImportedRuleNameTaken(tx, orgID))
+	var check services.ErrImportedRuleNameCheck
+	if errors.As(err, &check) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, services.ErrImportedRuleInvalid{Err: err}
+	}
+	item, err := models.AdoptSidecarConfiguration(tx, orgID, sidecarID, models.SidecarConfiguration(stripped))
+	if err != nil {
+		return nil, err
+	}
+	// Mirrors before rules: a rule binds to a mirror once the bindings move
+	// to connections.
+	if err := services.SyncSidecarListenerConnectionsTx(tx, item); err != nil {
+		return nil, err
+	}
+	if err := services.ImportSidecarRulesTx(tx, orgID, sidecarID, rules); err != nil {
+		return nil, err
+	}
+	// The plane runs the document now and the sidecar stops reporting its
+	// file, so a kept report would read as a second configuration.
+	if err := models.ClearSidecarReportedConfigurationTx(tx, sidecarID); err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+// storedReport is the config file a sidecar last reported, nil when it never
+// reported one. A stored report this plane cannot adopt is errReportUnusable.
+func storedReport(sc *models.Sidecar) (*daemon.Config, error) {
+	if sc.ReportedConfiguration == nil {
+		return nil, nil
+	}
+	cfg, err := services.ParseSidecarConfiguration(json.RawMessage(*sc.ReportedConfiguration))
+	if err == nil && len(cfg.Listeners) == 0 {
+		err = errors.New("it declares no listeners")
+	}
+	if err != nil {
+		return nil, errReportUnusable{err: err}
+	}
+	return &cfg, nil
+}
+
+// errReportUnusable refuses a move to the plane whose reported config file
+// this gateway cannot adopt. Answered 422, and the switch rolls back.
+type errReportUnusable struct{ err error }
+
+func (e errReportUnusable) Error() string {
+	return "the config file this sidecar reported cannot be moved to Hoop: " + e.err.Error() +
+		"; fix the file on the sidecar, or upgrade the gateway, then try again"
+}
+
+// parseReport reads the config file a sidecar reported on its handshake. It
+// returns nil when there is nothing to keep: no report, or one this plane
+// could not adopt, which is logged and then handled as no report (the 412,
+// and the import of an older build).
+func parseReport(sc *models.Sidecar, raw json.RawMessage) *daemon.Config {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	cfg, err := services.ParseSidecarConfiguration(raw)
+	if err == nil && cfg.LoadFromDisk != nil {
+		err = errors.New(`a config file cannot set "load_from_disk"`)
+	}
+	if err == nil && len(cfg.Listeners) == 0 {
+		err = errors.New("the config file declares no listeners")
+	}
+	if err != nil {
+		log.With("sidecar", sc.ID).Warnf("ignored the config file the sidecar reported, reason=%v", err)
+		return nil
+	}
+	cfg.License = ""
+	return &cfg
 }
 
 // Sidecar Configuration
@@ -958,6 +1085,16 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp.Deprecations = configDeprecations(s.Configuration)
 	resp.IdentityIssuer = derefOrEmpty(s.IdentityIssuer)
 	resp.IdentitySubject = derefOrEmpty(s.IdentitySubject)
+	// Lenient: the page shows what the file runs, and a strict decode would
+	// hide the whole report over one key this gateway does not know.
+	if s.ReportedConfiguration != nil {
+		var reported daemon.Config
+		if err := json.Unmarshal([]byte(*s.ReportedConfiguration), &reported); err == nil {
+			reported.License = ""
+			resp.ReportedConfiguration = &reported
+			resp.ReportedConfigurationAt = s.ReportedConfigurationAt
+		}
+	}
 	return resp
 }
 

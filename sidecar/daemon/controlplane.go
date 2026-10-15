@@ -167,6 +167,9 @@ type controlPlane struct {
 	// hot-applies license drift and ownership flips when the documents
 	// allow it, restarting only for drift no reload can absorb.
 	diskMode bool
+	// fileReport is the boot's LocalConfiguration: in disk mode, the file
+	// document this process runs. The reloader carries it on from there.
+	fileReport json.RawMessage
 
 	// sessionEvents is what the boot handshake said about
 	// SessionEventsHeader. Run hands it to events, and the heartbeat
@@ -320,7 +323,11 @@ func resolveConfigSource(local *Config, tokenFlag, planeFlag string) (*Config, e
 	// The first handshake reports nothing about a previous document: this
 	// process has handled none, and claiming otherwise would let a plane
 	// read a fresh boot as a sidecar that had already applied something.
-	answer, err := fetchControlPlaneConfig(planeURL, cred, handshakeRequest{Version: Version})
+	report, err := localReport(local)
+	if err != nil {
+		return nil, err
+	}
+	answer, err := fetchControlPlaneConfig(planeURL, cred, handshakeRequest{Version: Version, LocalConfiguration: report})
 	raw, managed := answer.raw, answer.managed
 	var planeDoc Config
 	if err == nil && json.Unmarshal(raw, &planeDoc) == nil &&
@@ -338,7 +345,7 @@ func resolveConfigSource(local *Config, tokenFlag, planeFlag string) (*Config, e
 		// source (resolveLicenseFor), and SetupWith names it as ignored.
 		local.ControlPlaneURL = planeURL
 		local.cp = &controlPlane{url: planeURL, urlSource: urlSource, cred: cred,
-			lastRaw: raw, diskMode: true, license: planeDoc.License, licenseManaged: managed,
+			lastRaw: raw, diskMode: true, fileReport: report, license: planeDoc.License, licenseManaged: managed,
 			revision: answer.revision, sessionEvents: answer.sessionEvents}
 		return local, nil
 	}
@@ -414,6 +421,13 @@ type handshakeRequest struct {
 	// stores it beside the outcome and shows it on the sidecar page, so an
 	// admin reads the reason without the sidecar's log.
 	LastError string `json:"last_error,omitempty"`
+	// LocalConfiguration is the config file this process runs, or would
+	// run, stripped as localReport strips it. Sent while the file is the
+	// source, so the plane shows what runs and an admin can choose to move
+	// it there. The plane never takes it on its own: it answers
+	// load_from_disk and stores the report. A gateway older than the field
+	// ignores it and answers 412, and the boot then imports as before.
+	LocalConfiguration json.RawMessage `json:"local_configuration,omitempty"`
 }
 
 // handshakeAnswer is one handshake's result: the document, and the facts the
@@ -606,16 +620,12 @@ func rawDeclaresListeners(raw []byte) bool {
 // renewed. The plane refuses the key as well; this keeps the refusal from
 // ever being reached.
 func importLocalConfig(planeURL string, cred credential, local *Config) (answer handshakeAnswer, pushed bool, err error) {
-	if local == nil || len(local.Listeners) == 0 {
-		return handshakeAnswer{}, false, planeHasNoConfigError{planeURL: planeURL}
-	}
-	doc := *local
-	doc.ControlPlaneURL = ""
-	doc.License = ""
-	doc.cp = nil
-	body, err := json.Marshal(doc)
+	body, err := localReport(local)
 	if err != nil {
-		return handshakeAnswer{}, false, fmt.Errorf("marshaling the config file for the import: %w", err)
+		return handshakeAnswer{}, false, err
+	}
+	if body == nil {
+		return handshakeAnswer{}, false, planeHasNoConfigError{planeURL: planeURL}
 	}
 	switch err := pushControlPlaneConfig(planeURL, cred, body); {
 	case err == nil:
@@ -639,6 +649,24 @@ func importLocalConfig(planeURL string, cred credential, local *Config) (answer 
 			"still answers without listeners; check the plane's logs", planeURL)
 	}
 	return answer, pushed, nil
+}
+
+// localReport is the file's document as the plane may see it: the import body
+// and the handshake's LocalConfiguration. Nil when there is no file or it
+// declares no listeners, because the plane can neither run nor show that.
+func localReport(local *Config) (json.RawMessage, error) {
+	if local == nil || len(local.Listeners) == 0 {
+		return nil, nil
+	}
+	doc := *local
+	doc.ControlPlaneURL = ""
+	doc.License = ""
+	doc.cp = nil
+	body, err := json.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling the config file for the control plane: %w", err)
+	}
+	return body, nil
 }
 
 // pushControlPlaneConfig PUTs the document to the plane's configuration
@@ -731,6 +759,17 @@ func jittered(every time.Duration) time.Duration {
 	return every - spread/2 + rand.N(spread)
 }
 
+// runningFileReport is the config file document a disk-mode process runs, for
+// the heartbeat's LocalConfiguration: never a newer read of the disk, which
+// this process may not have applied. A plane-owned process sends nothing: its
+// file is ignored, and the page would read a report as what runs.
+func runningFileReport(rl *reloader) json.RawMessage {
+	if !rl.diskMode {
+		return nil
+	}
+	return rl.runningFile
+}
+
 // heartbeat re-runs the handshake until ctx ends. It keeps the gateway's
 // last-seen fresh and notices a config edited in the UI.
 //
@@ -762,10 +801,11 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 		// handshaking on time, and nothing else distinguishes that from a
 		// sidecar that took the document.
 		answer, err := fetchControlPlaneConfig(cp.url, cp.cred, handshakeRequest{
-			Version:         Version,
-			AppliedRevision: cp.revision,
-			LastOutcome:     cp.outcome,
-			LastError:       cp.reason,
+			Version:            Version,
+			AppliedRevision:    cp.revision,
+			LastOutcome:        cp.outcome,
+			LastError:          cp.reason,
+			LocalConfiguration: runningFileReport(rl),
 		})
 		if errors.Is(err, ErrPlaneHasNoConfig) {
 			answer, err = cp.reimport(log, rl)

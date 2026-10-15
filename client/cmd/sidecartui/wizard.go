@@ -156,8 +156,22 @@ func (w *wizard) update(msg tea.Msg) (tea.Cmd, wizEvent) {
 		return nil, wizSavedOnly
 	case tea.KeyPressMsg:
 		return w.key(msg)
+	case tea.PasteMsg:
+		return w.paste(msg), wizNone
 	}
 	return nil, wizNone
+}
+
+// paste sends pasted text to the form of the page on screen, the same pages
+// key sends to a form.
+func (w *wizard) paste(p tea.PasteMsg) tea.Cmd {
+	switch w.page {
+	case pgListener:
+		return w.d.listener.form.paste(p)
+	case pgRule, pgMask, pgAnalyzer, pgPII, pgFile:
+		return w.form.paste(p)
+	}
+	return nil
 }
 
 func (w *wizard) key(k tea.KeyPressMsg) (tea.Cmd, wizEvent) {
