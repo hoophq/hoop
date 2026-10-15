@@ -73,6 +73,8 @@ spec:
             add: [NET_ADMIN]
           {{- else }}
           runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
           capabilities:
             drop: [ALL]
           {{- end }}

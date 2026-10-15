@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -331,12 +332,14 @@ func (t *ICATransparentConfig) validate(name string) []string {
 	return problems
 }
 
+// parsePrefixes refuses a blank entry: dropping it would let a list of
+// blanks pass validation and reach the engine as an empty policy.
 func parsePrefixes(values []string) ([]netip.Prefix, error) {
 	out := make([]netip.Prefix, 0, len(values))
 	for _, v := range values {
 		v = strings.TrimSpace(v)
 		if v == "" {
-			continue
+			return nil, errors.New("an entry is blank")
 		}
 		p, err := netip.ParsePrefix(v)
 		if err != nil {
@@ -350,7 +353,9 @@ func parsePrefixes(values []string) ([]netip.Prefix, error) {
 // ICALane is the daemon's input to the engine for one lane. The daemon
 // resolves every value, and the struct holds no config text and no engine
 // types. Events is the sidecar's audit bridge; the engine calls it for each
-// event it emits.
+// event it emits. A non-nil error from Events means the trail could not
+// record a session start on a fail-closed lane, and the engine side must
+// stop that session.
 type ICALane struct {
 	Name     string
 	Listen   string
@@ -371,7 +376,7 @@ type ICALane struct {
 	Width, Height   int  // 0 = engine default
 	ThinwireChannel uint // 0 = engine default
 
-	Events func(ICAEvent)
+	Events func(ICAEvent) error
 	Log    *slog.Logger
 }
 
@@ -395,22 +400,10 @@ type ICAEvent struct {
 	Data      map[string]any
 }
 
-// ICASessionView is one engine session as the admin API reports it.
-type ICASessionView struct {
-	ID        string    `json:"id"`
-	TenantID  string    `json:"tenant_id"`
-	Upstream  string    `json:"upstream"`
-	Status    string    `json:"status"`
-	LastError string    `json:"last_error,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
 // ICAServer is the running side of an ica lane. It satisfies
 // endpointServer (Serve blocks until ctx ends or the listener fails; Close
-// is idempotent and drains) and adds what the admin API serves for an
-// engine that is not a relay: readiness (the runtime loads for minutes),
-// the session list, and an administrative stop.
+// is idempotent and drains) and adds readiness, because the runtime loads
+// for minutes after the socket binds.
 //
 // The builder MUST NOT bind a socket or load a model: Validate constructs
 // the server on the control plane and on macOS. Both happen in Serve.
@@ -423,9 +416,6 @@ type ICAServer interface {
 	// Ready reports whether the OCR/NER runtime is loaded. It returns false
 	// before Serve and while the model loads.
 	Ready() bool
-	Sessions() []ICASessionView
-	// Stop ends one session and returns false when no such session exists.
-	Stop(id string) bool
 }
 
 // ICABuilder builds the server for one lane. sidecar/ica registers one
@@ -494,7 +484,7 @@ func icaRuntimeFor(cfg *Config) ICARuntime {
 }
 
 // resolveICALane turns a validated listener into the engine's input.
-func resolveICALane(lc ListenerConfig, name string, events func(ICAEvent), log *slog.Logger) (ICALane, error) {
+func resolveICALane(lc ListenerConfig, name string, events func(ICAEvent) error, log *slog.Logger) (ICALane, error) {
 	ic := lc.ICA
 	if ic == nil {
 		return ICALane{}, fmt.Errorf("%s: protocol is ica but there is no ica block", name)
@@ -572,16 +562,17 @@ func icaLaneNotes(lc ListenerConfig) []string {
 // Principal is the tenant: an ICA session authenticates to the VDA, and the
 // sidecar does not see a user name. SessionID is the engine's id, which the
 // engine guarantees unique per process.
+//
+// The lane's /stats denied count lives in the engine adapter, which sees
+// the same events; the bridge keeps no second counter.
 type icaAuditBridge struct {
-	sink      audit.Sink
-	lane      string
-	tenant    string
-	failHard  bool
-	log       *slog.Logger
-	mu        sync.Mutex
-	sessions  map[string]*icaSessionTally
-	denials   int64
-	activeSet map[string]struct{}
+	sink     audit.Sink
+	lane     string
+	tenant   string
+	failHard bool
+	log      *slog.Logger
+	mu       sync.Mutex
+	sessions map[string]*icaSessionTally
 }
 
 type icaSessionTally struct {
@@ -592,7 +583,7 @@ type icaSessionTally struct {
 
 func newICAAuditBridge(sink audit.Sink, lane, tenant string, failHard bool, log *slog.Logger) *icaAuditBridge {
 	return &icaAuditBridge{sink: sink, lane: lane, tenant: tenant, failHard: failHard, log: log,
-		sessions: map[string]*icaSessionTally{}, activeSet: map[string]struct{}{}}
+		sessions: map[string]*icaSessionTally{}}
 }
 
 // Event names and data keys the bridge handles, spelled as the engine emits
@@ -609,16 +600,23 @@ const (
 	icaDecisionError           = "error"
 )
 
-func (b *icaAuditBridge) observe(e ICAEvent) {
+// errICAUnaudited is what observe returns when a fail-closed lane could not
+// record a session start. The ssh and grpc lanes refuse the connection in
+// that case; an ica session is already admitted when the engine reports it,
+// so the adapter stops it instead.
+var errICAUnaudited = errors.New("audit write failed on a fail-closed lane; the session must not run unrecorded")
+
+// observe writes the row for e. It returns errICAUnaudited only for a
+// session start that the sink refused on a fail-closed lane: a refused
+// connection never became a session, and the rows after a start describe
+// a session that has already run.
+func (b *icaAuditBridge) observe(e ICAEvent) error {
 	if b == nil || b.sink == nil {
-		return
+		return nil
 	}
 	var out *audit.Event
 	switch e.Name {
 	case icaEventConnectionRejected:
-		b.mu.Lock()
-		b.denials++
-		b.mu.Unlock()
 		out = b.event(audit.KindViolation, e)
 		out.Rule, _ = e.Data["stage"].(string)
 		out.Message, _ = e.Data["error"].(string)
@@ -638,7 +636,7 @@ func (b *icaAuditBridge) observe(e ICAEvent) {
 			}
 		}
 		b.mu.Unlock()
-		return
+		return nil
 	case icaEventSessionError:
 		out = b.event(audit.KindError, e)
 		out.Error, _ = e.Data["error"].(string)
@@ -648,9 +646,6 @@ func (b *icaAuditBridge) observe(e ICAEvent) {
 		b.mu.Lock()
 		tally := b.sessions[e.SessionID]
 		delete(b.sessions, e.SessionID)
-		if decision == icaDecisionBlock {
-			b.denials++
-		}
 		b.mu.Unlock()
 		kind := audit.KindSessionEnd
 		if decision == icaDecisionBlock {
@@ -669,15 +664,21 @@ func (b *icaAuditBridge) observe(e ICAEvent) {
 			out.DeniedCount = 1
 		}
 	default:
-		return
+		return nil
 	}
-	if err := b.sink.Write(context.Background(), *out); err != nil {
-		if b.failHard {
-			b.log.Error("audit write failed", "event", e.Name, "error", err)
-		} else {
-			b.log.Warn("audit write failed", "event", e.Name, "error", err)
-		}
+	err := b.sink.Write(context.Background(), *out)
+	if err == nil {
+		return nil
 	}
+	if !b.failHard {
+		b.log.Warn("audit write failed", "event", e.Name, "error", err)
+		return nil
+	}
+	b.log.Error("audit write failed", "event", e.Name, "error", err)
+	if e.Name == icaEventSessionStart {
+		return errICAUnaudited
+	}
+	return nil
 }
 
 func (b *icaAuditBridge) event(kind audit.Kind, e ICAEvent) *audit.Event {
@@ -695,15 +696,6 @@ func (b *icaAuditBridge) event(kind audit.Kind, e ICAEvent) *audit.Event {
 		}
 	}
 	return out
-}
-
-// denied returns the bridge's count of refused connections plus blocked
-// sessions. The engine's Stats count blocked sessions and omit refused
-// connections, since those never became sessions.
-func (b *icaAuditBridge) denied() int64 {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.denials
 }
 
 // notReadyEndpoints returns the names of endpoint lanes whose engine has

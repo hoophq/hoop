@@ -1187,9 +1187,18 @@ func Run(cfg *Config, det Plugin) error {
 	for _, srv := range servers {
 		_ = srv.Close()
 	}
-	for _, srv := range endpoints {
-		_ = srv.Close()
+	// Endpoint lanes close together: an ica lane's Close drains its sessions
+	// for up to 30s, and closing lanes one after another would add those
+	// windows up past the pod's termination grace period.
+	var closing sync.WaitGroup
+	for i, srv := range endpoints {
+		closing.Go(func() {
+			if cerr := srv.Close(); cerr != nil {
+				log.Warn("listener close failed", "listener", endpointNames[i], "error", cerr)
+			}
+		})
 	}
+	closing.Wait()
 	wg.Wait()
 	close(errCh)
 

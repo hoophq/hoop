@@ -234,6 +234,10 @@ keeps a pod that is still loading. The chart mounts `ica.model` at the
 engine's default NER model path; a config that sets `ica.ner_model` elsewhere
 must mount the model there through `extraVolumes`.
 
+`max_sessions` in the config's top-level `ica` block bounds the sessions of
+every ica lane in the pod together (default 32), because they share one
+OCR/NER runtime.
+
 ### Single mode
 
 Each listener names one VDA in `upstream`. Publish the listener port through a
@@ -288,6 +292,10 @@ the appliance's place:
 - The admin `containerPort` becomes a host port under `hostNetwork`, so the
   scheduler places one replica per node. Set `replicas` to the number of
   appliance nodes.
+- Do not publish a CIDR-mode listener through `laneServices`. A Service
+  rewrites the destination address, and the lane takes the VDA from it, so it
+  would refuse every connection. When `config` is inline, the chart refuses a
+  lane Service whose target port is a CIDR-mode listener's port.
 
 ```yaml
 image:

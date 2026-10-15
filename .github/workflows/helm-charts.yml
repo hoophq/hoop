@@ -229,7 +229,9 @@ jobs:
                --set ica.enabled=true
                --set ica.model.persistentVolumeClaim.claimName=ica-ner-model)
           single=$(helm template t "$chart" "${ica[@]}" --show-only templates/deployment.yaml)
-          for want in "path: /readyz" "runAsNonRoot: true" "drop: \[ALL\]" \
+          # runAsNonRoot needs a numeric user: the kubelet refuses a named one
+          # with CreateContainerConfigError, which no render check can see.
+          for want in "path: /readyz" "runAsNonRoot: true" "runAsUser: 10001" "drop: \[ALL\]" \
             "mountPath: /opt/libhoop-ica/releases/image/models/KnightsAnalytics_distilbert-NER" \
             "claimName: ica-ner-model" "terminationGracePeriodSeconds: 45"; do
             echo "$single" | grep -q -- "$want" \
@@ -252,8 +254,15 @@ jobs:
           guard "ica with no model"         --set config.admin.listen=0.0.0.0:19000 --set image.tag=1.0.0-ica --set ica.enabled=true
           guard "ica with no config file"   --set controlPlane.url=https://cp.example.com --set controlPlane.token=t \
             --set image.tag=1.0.0-ica --set ica.enabled=true --set ica.model.emptyDir.medium=Memory
+          guard "lane Service in front of a CIDR ica listener" "${ica[@]}" --set ica.transparent=true \
+            --set 'config.listeners[0].name=vdi' --set 'config.listeners[0].protocol=ica' \
+            --set 'config.listeners[0].listen=0.0.0.0:2598' --set 'config.listeners[0].ica.tenant_id=t' \
+            --set 'config.listeners[0].ica.transparent.source_cidrs={10.10.1.10/32}' \
+            --set 'config.listeners[0].ica.transparent.upstream_cidrs={10.77.0.0/16}' \
+            --set 'config.listeners[0].ica.transparent.upstream_ports={2598}' \
+            --set laneServices.vdi.enabled=true --set 'laneServices.vdi.ports[0].port=2598'
 
-          echo "ica off leaves the pod alone; single and CIDR mode render their own privileges; five ica guards fire"
+          echo "ica off leaves the pod alone; single and CIDR mode render their own privileges; six ica guards fire"
 
       - name: Assert the control plane chart renders and its guards hold
         run: |

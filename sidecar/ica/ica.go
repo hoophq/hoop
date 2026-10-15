@@ -2,8 +2,7 @@
 // server behind an ica lane. daemon/ica.go defines the contract: the daemon
 // resolves config into an ICALane and an ICARuntime, this package turns
 // them into the engine's Runtime, Manager and transparent listener, and
-// returns the readiness, statistics and session list the admin API
-// serves.
+// returns the readiness and statistics the admin API serves.
 //
 // Validate calls Build on the control plane and on a developer's macOS, so
 // Build resolves the runtime profile, checks it with the engine's validator
@@ -41,6 +40,10 @@ const (
 // drainTimeout bounds how long Close waits for active sessions to end
 // before it stops the manager, which cancels the sessions still running.
 const drainTimeout = 30 * time.Second
+
+// defaultMaxSessions is the engine's own default for
+// ManagerConfig.MaxSessions, used when the operator sets no max_sessions.
+const defaultMaxSessions = 32
 
 // Build implements daemon.ICABuilder.
 func Build(rt daemon.ICARuntime, lane daemon.ICALane) (daemon.ICAServer, error) {
@@ -221,9 +224,14 @@ func notes(cfg ica.RuntimeConfig, lane daemon.ICALane) []string {
 // runtime. Lanes with different options get separate runtimes and pay a
 // second load; the daemon's config has one `ica` block, so the current
 // config format does not produce that case.
+//
+// slots is max_sessions for every lane on this runtime together. The
+// engine's MaxSessions bounds one Manager, and each lane has its own, so
+// the gate sits in front of every lane's listener.
 type sharedRuntime struct {
-	key  string
-	done chan struct{} // closed when load finishes; runtime and err are valid after
+	key   string
+	done  chan struct{} // closed when load finishes; runtime and err are valid after
+	slots chan struct{}
 
 	runtime     *ica.Runtime
 	diagnostics *ica.FailureDiagnostics
@@ -241,20 +249,20 @@ var (
 
 // fingerprint identifies a resolved RuntimeConfig for sharing. It sorts
 // PIIEntities so two identical sets in different order share a runtime.
-func fingerprint(cfg ica.RuntimeConfig, diagnosticDir string) string {
+func fingerprint(cfg ica.RuntimeConfig, diagnosticDir string, maxSessions int) string {
 	cfg.PIIEntities = slices.Clone(cfg.PIIEntities)
 	slices.Sort(cfg.PIIEntities)
-	return fmt.Sprintf("%+v|%s", cfg, diagnosticDir)
+	return fmt.Sprintf("%+v|%s|%d", cfg, diagnosticDir, maxSessions)
 }
 
 // acquireRuntime returns the runtime for cfg, loading it on first use. The
 // first caller loads; the others wait for that load or for their own ctx.
-func acquireRuntime(ctx context.Context, cfg ica.RuntimeConfig, diagnosticDir string) (*sharedRuntime, error) {
-	key := fingerprint(cfg, diagnosticDir)
+func acquireRuntime(ctx context.Context, cfg ica.RuntimeConfig, diagnosticDir string, maxSessions int) (*sharedRuntime, error) {
+	key := fingerprint(cfg, diagnosticDir, maxSessions)
 	runtimesMu.Lock()
 	entry, loading := runtimes[key]
 	if !loading {
-		entry = &sharedRuntime{key: key, done: make(chan struct{})}
+		entry = &sharedRuntime{key: key, done: make(chan struct{}), slots: make(chan struct{}, maxSessions)}
 		runtimes[key] = entry
 	}
 	entry.refs++
@@ -266,12 +274,10 @@ func acquireRuntime(ctx context.Context, cfg ica.RuntimeConfig, diagnosticDir st
 	select {
 	case <-entry.done:
 	case <-ctx.Done():
-		releaseRuntime(entry)
-		return nil, ctx.Err()
+		return nil, errors.Join(ctx.Err(), releaseRuntime(entry))
 	}
 	if entry.err != nil {
-		releaseRuntime(entry)
-		return nil, entry.err
+		return nil, errors.Join(entry.err, releaseRuntime(entry))
 	}
 	return entry, nil
 }
@@ -296,35 +302,42 @@ func (e *sharedRuntime) load(ctx context.Context, cfg ica.RuntimeConfig, diagnos
 		// load failed. Removing the entry keeps the next acquirer from
 		// getting a dead runtime.
 		delete(runtimes, e.key)
-		e.closeResources()
+		e.err = errors.Join(e.err, e.closeResources())
 	}
 }
 
-// releaseRuntime drops one lane's hold; the last one closes the runtime.
-func releaseRuntime(e *sharedRuntime) {
+// releaseRuntime drops one lane's hold; the last one closes the runtime and
+// returns what closing it reported.
+func releaseRuntime(e *sharedRuntime) error {
 	runtimesMu.Lock()
 	defer runtimesMu.Unlock()
 	e.refs--
 	if e.refs > 0 || !e.loaded || runtimes[e.key] != e {
-		return
+		return nil
 	}
 	delete(runtimes, e.key)
-	e.closeResources()
+	return e.closeResources()
 }
 
 // closeResources runs under runtimesMu. It closes the runtime first, so no
 // worker writes a failure file after the writer closes.
-func (e *sharedRuntime) closeResources() {
+func (e *sharedRuntime) closeResources() error {
+	var err error
 	if e.runtime != nil {
-		_ = e.runtime.Close()
+		if cerr := e.runtime.Close(); cerr != nil {
+			err = fmt.Errorf("close ica runtime: %w", cerr)
+		}
 		e.runtime = nil
 	}
 	if e.diagnostics != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		_ = e.diagnostics.Close(ctx)
+		if cerr := e.diagnostics.Close(ctx); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close failure diagnostics: %w", cerr))
+		}
 		cancel()
 		e.diagnostics = nil
 	}
+	return err
 }
 
 // server is one ica lane. The fields after cfg/rt/lane/notes are in use
@@ -349,26 +362,29 @@ type server struct {
 // Serve loads the runtime (which takes minutes), resolves the destination
 // policy, binds the listener and runs the engine's accept loop until the
 // listener closes or ctx ends; Serve returns nil in both cases. Serve also
-// returns nil when a shutdown arrives during the load.
+// returns nil when a shutdown arrives during the load, and logs what
+// releasing the runtime reported, since no caller is left to hear it.
 func (s *server) Serve(ctx context.Context) error {
 	if s.isClosed() {
 		return nil
 	}
-	shared, err := acquireRuntime(ctx, s.cfg, s.rt.FailureDiagnosticDir)
+	shared, err := acquireRuntime(ctx, s.cfg, s.rt.FailureDiagnosticDir, s.maxSessions())
 	if err != nil {
 		if ctx.Err() != nil {
+			s.logReleaseError(err)
 			return nil
 		}
 		return fmt.Errorf("%s: load ica runtime: %w", s.lane.Name, err)
 	}
 	if s.isClosed() {
-		releaseRuntime(shared)
+		s.logReleaseError(releaseRuntime(shared))
 		return nil
 	}
 	manager, listener, tc, summary, err := s.start(ctx, shared)
 	if err != nil {
-		releaseRuntime(shared)
+		err = errors.Join(err, releaseRuntime(shared))
 		if ctx.Err() != nil {
+			s.logReleaseError(err)
 			return nil
 		}
 		return fmt.Errorf("%s: %w", s.lane.Name, err)
@@ -377,9 +393,7 @@ func (s *server) Serve(ctx context.Context) error {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		_ = listener.Close()
-		_ = manager.Close()
-		releaseRuntime(shared)
+		s.logReleaseError(errors.Join(listener.Close(), manager.Close(), releaseRuntime(shared)))
 		return nil
 	}
 	s.shared, s.manager, s.listener = shared, manager, listener
@@ -387,9 +401,27 @@ func (s *server) Serve(ctx context.Context) error {
 
 	if s.lane.Log != nil {
 		s.lane.Log.Info("ica lane ready", "listen", listener.Addr().String(), "mode", s.mode(), "policy", summary,
-			"tenant", s.lane.TenantID)
+			"tenant", s.lane.TenantID, "max_sessions", s.maxSessions())
 	}
 	return manager.ServeTransparent(listener, tc)
+}
+
+// maxSessions is the process-wide session bound: the operator's value, or
+// the engine's default.
+func (s *server) maxSessions() int {
+	if s.rt.MaxSessions > 0 {
+		return s.rt.MaxSessions
+	}
+	return defaultMaxSessions
+}
+
+// logReleaseError reports a cleanup failure on a path that returns nil to
+// the daemon, because a shutdown is already under way.
+func (s *server) logReleaseError(err error) {
+	if err == nil || errors.Is(err, context.Canceled) || s.lane.Log == nil {
+		return
+	}
+	s.lane.Log.Warn("ica lane cleanup failed", "error", err)
 }
 
 func (s *server) isClosed() bool {
@@ -436,7 +468,7 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 	}
 
 	manager, err := ica.NewManager(ctx, ica.ManagerConfig{
-		Runtime: shared.runtime, NetworkPolicy: policy, MaxSessions: s.rt.MaxSessions,
+		Runtime: shared.runtime, NetworkPolicy: policy, MaxSessions: s.maxSessions(),
 		ConnectTimeout:     time.Duration(s.rt.ConnectTimeoutSec) * time.Second,
 		DisableAuditOutput: true, EventHook: s.observe,
 	})
@@ -445,10 +477,59 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 	}
 	listener, err := s.listen(ctx)
 	if err != nil {
-		_ = manager.Close()
-		return nil, nil, tc, "", err
+		return nil, nil, tc, "", errors.Join(err, manager.Close())
 	}
-	return manager, listener, tc, summary, nil
+	return manager, &gatedListener{Listener: listener, slots: shared.slots, refuse: s.refuseOverCapacity}, tc, summary, nil
+}
+
+// gatedListener admits a connection only while the shared runtime has a
+// free session slot, and the slot returns when the connection closes. The
+// engine closes the client connection on every path out of a session
+// (terminate.ServeConn documents it), so a slot cannot outlive its session.
+// It wraps only the accept, so OriginalDestination still reads the
+// accepted socket's local address.
+type gatedListener struct {
+	net.Listener
+	slots  chan struct{}
+	refuse func(net.Conn)
+}
+
+func (l *gatedListener) Accept() (net.Conn, error) {
+	for {
+		conn, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		select {
+		case l.slots <- struct{}{}:
+			return &gatedConn{Conn: conn, slots: l.slots}, nil
+		default:
+			l.refuse(conn)
+		}
+	}
+}
+
+type gatedConn struct {
+	net.Conn
+	slots chan struct{}
+	once  sync.Once
+}
+
+func (c *gatedConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(func() { <-c.slots })
+	return err
+}
+
+// refuseOverCapacity closes a connection the gate turned away and reports
+// it as the engine reports its own admission refusals, so the trail and
+// the denied count treat both alike.
+func (s *server) refuseOverCapacity(conn net.Conn) {
+	_ = conn.Close()
+	s.observe(ica.Event{Time: time.Now().UTC(), Event: ica.EventConnectionRejected, Data: map[string]any{
+		"stage": ica.RejectStageSessionAdmission, "decision": ica.DecisionBlock,
+		"error": fmt.Sprintf("maximum active sessions reached across ica lanes (%d)", s.maxSessions()),
+	}})
 }
 
 // listen binds the lane's socket: IP_TRANSPARENT in CIDR mode, so an
@@ -467,14 +548,31 @@ func (s *server) listen(ctx context.Context) (net.Listener, error) {
 
 // observe is the engine's EventHook. The engine calls it on a worker under
 // the sink lock, so observe only counts and forwards. The lane's Events is
-// the daemon's audit bridge, which the daemon built to run in that position.
+// the daemon's audit bridge, which the daemon built to run in that
+// position. When the bridge reports a session start the trail could not
+// record on a fail-closed lane, observe stops that session; Stop emits
+// events of its own, so it runs on a new goroutine, not under the lock.
 func (s *server) observe(e ica.Event) {
 	if e.Event == ica.EventConnectionRejected || (e.Event == ica.EventSessionEnd && e.Data["decision"] == ica.DecisionBlock) {
 		s.denied.Add(1)
 	}
-	if s.lane.Events != nil {
-		s.lane.Events(daemon.ICAEvent{Time: e.Time, Name: e.Event, SessionID: e.SessionID, Direction: e.Direction, Data: e.Data})
+	if s.lane.Events == nil {
+		return
 	}
+	err := s.lane.Events(daemon.ICAEvent{Time: e.Time, Name: e.Event, SessionID: e.SessionID, Direction: e.Direction, Data: e.Data})
+	if err == nil || e.SessionID == "" {
+		return
+	}
+	s.mu.Lock()
+	manager := s.manager
+	s.mu.Unlock()
+	if manager == nil {
+		return
+	}
+	if s.lane.Log != nil {
+		s.lane.Log.Error("stopping ica session", "session", e.SessionID, "error", err)
+	}
+	go manager.Stop(e.SessionID)
 }
 
 // Close stops intake, waits a bounded time for the sessions in flight,
@@ -501,8 +599,7 @@ func (s *server) Close() error {
 	for manager.Stats().Active > 0 && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
-	err = errors.Join(err, manager.Close())
-	releaseRuntime(shared)
+	err = errors.Join(err, manager.Close(), releaseRuntime(shared))
 	return err
 }
 
@@ -535,31 +632,4 @@ func (s *server) Ready() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.manager != nil && s.manager.Ready()
-}
-
-func (s *server) Sessions() []daemon.ICASessionView {
-	s.mu.Lock()
-	manager := s.manager
-	s.mu.Unlock()
-	if manager == nil {
-		return nil
-	}
-	views := manager.List()
-	out := make([]daemon.ICASessionView, 0, len(views))
-	for _, v := range views {
-		out = append(out, daemon.ICASessionView{ID: v.ID, TenantID: v.TenantID, Upstream: v.Upstream, Status: v.Status,
-			LastError: v.LastError, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt})
-	}
-	return out
-}
-
-func (s *server) Stop(id string) bool {
-	s.mu.Lock()
-	manager := s.manager
-	s.mu.Unlock()
-	if manager == nil {
-		return false
-	}
-	_, ok := manager.Stop(id)
-	return ok
 }

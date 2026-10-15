@@ -184,6 +184,33 @@ itself would print on the restart nobody is watching.
 {{- if not $ica.model -}}
 {{- fail "ica.enabled needs ica.model: a volume source holding the KnightsAnalytics/distilbert-NER directory. The -ica image ships no model, and the engine cannot run NER without one" -}}
 {{- end -}}
+{{- /*
+A Service rewrites a packet's destination to the pod, and a CIDR-mode ica
+listener reads the VDA from that destination, so every connection through
+one is refused. Checkable only when the chart sees the config.
+*/ -}}
+{{- if and $ica.transparent .Values.config -}}
+{{- $tports := list -}}
+{{- range (.Values.config.listeners | default list) -}}
+{{- if eq (toString .protocol) "ica" -}}
+{{- if .ica -}}
+{{- if .ica.transparent -}}
+{{- $tports = append $tports (regexReplaceAll "^.*:" (toString .listen) "") -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $key, $svc := (.Values.laneServices | default dict) -}}
+{{- if $svc.enabled -}}
+{{- range ($svc.ports | default list) -}}
+{{- $target := toString (.targetPort | default .port) -}}
+{{- if has $target $tports -}}
+{{- fail (printf "laneServices.%s sends port %s to a CIDR-mode ica listener. A Service rewrites the destination address, and that listener takes the VDA from it, so it would refuse every connection. Traffic reaches a CIDR-mode lane through the node's TPROXY rule: drop this port from the Service" $key $target) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- $cp := .Values.controlPlane -}}
 {{- if and $cp.identity (not (has $cp.identity (list "kubernetes" "gcp"))) -}}

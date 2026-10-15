@@ -305,7 +305,9 @@ COPY --from=ica-build /out/ort/lib/ /opt/alcatraz/ort/releases/1.28.0/lib/
 # /opt/libhoop-ica/current/models/KnightsAnalytics_distilbert-NER, or any
 # directory named in the config's ica.ner_model.
 ENV PATH="/app:${PATH}"
-USER hoop
+# Numeric, so a pod with runAsNonRoot can verify the user without a
+# runAsUser of its own; the kubelet refuses a named user under it.
+USER 10001:10001
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["hoop-inspect", "-config", "/etc/hoop-inspect/config.yaml"]
 

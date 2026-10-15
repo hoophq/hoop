@@ -2790,10 +2790,12 @@ The top-level `ica` block configures the runtime: asset paths,
 `max_sessions`, and `options`, which override individual settings of the
 engine's production profile (the profile the engine's own agent runs by
 default). The engine owns that profile and this page does not copy it, so
-`-validate` prints the resolved values in the lane's notes. Loading the NER
-model and spawning the OCR workers takes minutes; `GET /readyz` on the admin
-port returns 503 until every ica lane's engine has loaded, and 200 for a
-process with no ica lane.
+`-validate` prints the resolved values in the lane's notes. `max_sessions`
+(default 32) bounds the sessions of every ica lane in the process together,
+since they share one OCR/NER runtime; a connection past it is refused with
+`session_admission` as the rule. Loading the NER model and spawning the OCR
+workers takes minutes; `GET /readyz` on the admin port returns 503 until
+every ica lane's engine has loaded, and 200 for a process with no ica lane.
 
 Validate refuses `upstream_tls`, `downstream_tls`, `identity_header`,
 `google_identity`, and any guardrail, mask, analyzer or OPA that reaches an
@@ -2817,6 +2819,11 @@ the sidecar does not see a user name.
 The trail omits pixels, recognized text, detections, and ICA/CGP bytes. The
 engine's own JSON audit stream is off inside the sidecar, so the rows above
 are the whole trail.
+
+With audit fail-closed (the default; `audit.fail_open: true` turns it off),
+a session whose `session_start` row the sink refuses is stopped: the engine
+has admitted it by the time it reports, so the lane ends it, where the ssh
+and grpc lanes refuse the connection.
 
 ### Postgres: trace ids from the startup packet
 

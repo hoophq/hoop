@@ -2,10 +2,12 @@ package ica
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/netip"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -83,12 +85,6 @@ func TestBuildIsInertAndTheServerIsIdleBeforeServe(t *testing.T) {
 	}
 	if a, n, d := srv.Stats(); a != 0 || n != 0 || d != 0 {
 		t.Fatalf("stats %d/%d/%d before Serve", a, n, d)
-	}
-	if got := srv.Sessions(); len(got) != 0 {
-		t.Fatalf("sessions %v before Serve", got)
-	}
-	if srv.Stop("nope") {
-		t.Fatal("stopped a session that cannot exist")
 	}
 	// Close before Serve leaves no runtime behind, and a second Close is a
 	// no-op.
@@ -225,14 +221,14 @@ func TestResolveRuntimeConfigAppliesEveryOverride(t *testing.T) {
 func TestFingerprintSharesIdenticalConfigs(t *testing.T) {
 	a := resolveRuntimeConfig(daemon.ICARuntime{Options: daemon.ICAOptions{PIIEntities: []string{"EMAIL", "PHONE"}}})
 	b := resolveRuntimeConfig(daemon.ICARuntime{Options: daemon.ICAOptions{PIIEntities: []string{"PHONE", "EMAIL"}}})
-	if fingerprint(a, "") != fingerprint(b, "") {
+	if fingerprint(a, "", 32) != fingerprint(b, "", 32) {
 		t.Error("entity order split two identical configs")
 	}
 	c := resolveRuntimeConfig(daemon.ICARuntime{Options: daemon.ICAOptions{OCRWorkers: ptr(2)}})
-	if fingerprint(a, "") == fingerprint(c, "") {
+	if fingerprint(a, "", 32) == fingerprint(c, "", 32) {
 		t.Error("different options share a fingerprint")
 	}
-	if fingerprint(a, "") == fingerprint(a, "/var/lib/ica") {
+	if fingerprint(a, "", 32) == fingerprint(a, "/var/lib/ica", 32) {
 		t.Error("the failure diagnostics directory is not part of the fingerprint")
 	}
 }
@@ -304,7 +300,7 @@ func TestCIDRPolicyAndSourceFallback(t *testing.T) {
 
 func TestObserveCountsDenialsAndForwards(t *testing.T) {
 	var got []daemon.ICAEvent
-	s := &server{lane: daemon.ICALane{Events: func(e daemon.ICAEvent) { got = append(got, e) }}}
+	s := &server{lane: daemon.ICALane{Events: func(e daemon.ICAEvent) error { got = append(got, e); return nil }}}
 	now := time.Now()
 	s.observe(ica.Event{Time: now, Event: ica.EventConnectionRejected, Data: map[string]any{"stage": ica.RejectStageGatewaySource, "decision": "block"}})
 	s.observe(ica.Event{Time: now, Event: ica.EventSessionEnd, SessionID: "s1", Data: map[string]any{"decision": ica.DecisionBlock}})
@@ -321,5 +317,97 @@ func TestObserveCountsDenialsAndForwards(t *testing.T) {
 	quiet.observe(ica.Event{Event: ica.EventConnectionRejected})
 	if _, _, denied := quiet.Stats(); denied != 1 {
 		t.Fatalf("denied %d without a bridge", denied)
+	}
+}
+
+// max_sessions bounds every lane on a runtime together. The gate refuses a
+// connection while all slots are held, admits again once a session's
+// connection closes, releases a slot once however often the engine closes
+// the connection, and leaves the accepted socket's local address intact
+// for OriginalDestination.
+func TestGatedListenerSharesTheSessionBound(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refused atomic.Int32
+	slots := make(chan struct{}, 1)
+	gate := &gatedListener{Listener: ln, slots: slots, refuse: func(c net.Conn) { _ = c.Close(); refused.Add(1) }}
+	defer gate.Close()
+	dial := func() net.Conn {
+		t.Helper()
+		c, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = c.Close() })
+		return c
+	}
+
+	dial()
+	first, err := gate.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.LocalAddr().String() != ln.Addr().String() {
+		t.Fatalf("local address %v, want the listener's %v", first.LocalAddr(), ln.Addr())
+	}
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		if c, err := gate.Accept(); err == nil {
+			accepted <- c
+		}
+	}()
+	over := dial()
+	_ = over.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := over.Read(make([]byte, 1)); err == nil {
+		t.Fatal("a connection past the bound was not closed")
+	}
+	if refused.Load() != 1 {
+		t.Fatalf("refused %d, want 1", refused.Load())
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		_ = first.Close()
+		_ = first.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a second Close blocked: it tried to release a slot it no longer held")
+	}
+	dial()
+	select {
+	case c := <-accepted:
+		defer c.Close()
+	case <-time.After(5 * time.Second):
+		t.Fatal("no admission after the first session's connection closed")
+	}
+	if len(slots) != 1 {
+		t.Fatalf("%d slots held, want 1: a double Close released twice", len(slots))
+	}
+}
+
+// A refusal at the shared bound reaches the trail and the denied count the
+// way the engine's own admission refusals do.
+func TestRefuseOverCapacityReportsLikeTheEngine(t *testing.T) {
+	var got []daemon.ICAEvent
+	s := &server{rt: daemon.ICARuntime{MaxSessions: 4},
+		lane: daemon.ICALane{Events: func(e daemon.ICAEvent) error { got = append(got, e); return nil }}}
+	client, peer := net.Pipe()
+	defer peer.Close()
+	s.refuseOverCapacity(client)
+	if len(got) != 1 || got[0].Name != ica.EventConnectionRejected || got[0].Data["stage"] != ica.RejectStageSessionAdmission ||
+		!strings.Contains(fmt.Sprint(got[0].Data["error"]), "(4)") {
+		t.Fatalf("events %+v", got)
+	}
+	if _, _, denied := s.Stats(); denied != 1 {
+		t.Fatalf("denied %d, want 1", denied)
+	}
+	if _, err := peer.Read(make([]byte, 1)); err == nil {
+		t.Fatal("the refused connection is still open")
 	}
 }

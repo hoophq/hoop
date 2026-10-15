@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -50,8 +51,6 @@ func (f *fakeICAServer) Addr() net.Addr                  { return nil }
 func (f *fakeICAServer) Stats() (int64, int64, int64)    { return 1, 2, 3 }
 func (f *fakeICAServer) Notes() []string                 { return f.notes }
 func (f *fakeICAServer) Ready() bool                     { return f.ready }
-func (f *fakeICAServer) Sessions() []ICASessionView      { return nil }
-func (f *fakeICAServer) Stop(string) bool                { return false }
 
 func fakeICAEngine(ready bool) (ICABuilder, *[]*fakeICAServer) {
 	var built []*fakeICAServer
@@ -83,6 +82,8 @@ func TestICAListenerValidation(t *testing.T) {
 		"cidr bad cidr":        {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","ica":{"tenant_id":"t","transparent":{"source_cidrs":["10.0.0.0"],"upstream_cidrs":["10.0.0.0/8"],"upstream_ports":[2598]}}}]}`, "is not a CIDR"},
 		"cidr bad port":        {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","ica":{"tenant_id":"t","transparent":{"source_cidrs":["10.0.0.0/8"],"upstream_cidrs":["10.0.0.0/8"],"upstream_ports":["cgp"]}}}]}`, "is not a port"},
 		"cidr on unix":         {`{"listeners":[{"name":"v","protocol":"ica","network":"unix","listen":"/tmp/x.sock","ica":{"tenant_id":"t","transparent":{"source_cidrs":["10.0.0.0/8"],"upstream_cidrs":["10.0.0.0/8"],"upstream_ports":[2598]}}}]}`, "network: unix cannot carry it"},
+		"cidr blank source":    {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","ica":{"tenant_id":"t","transparent":{"source_cidrs":[" "],"upstream_cidrs":["10.0.0.0/8"],"upstream_ports":[2598]}}}]}`, "source_cidrs: an entry is blank"},
+		"cidr blank vda":       {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","ica":{"tenant_id":"t","transparent":{"source_cidrs":["10.0.0.0/8"],"upstream_cidrs":["10.0.0.0/8",""],"upstream_ports":[2598]}}}]}`, "upstream_cidrs: an entry is blank"},
 		"display range":        {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","display":{"width":100}}}]}`, "width must be 320..4096"},
 		"upstream tls":         {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","upstream_tls":{},"ica":{"tenant_id":"t"}}]}`, "upstream_tls is not valid on an ica listener"},
 		"identity header":      {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","identity_header":"x","ica":{"tenant_id":"t"}}]}`, "identity_header is only supported"},
@@ -238,10 +239,39 @@ func TestICAAuditBridgeShapesTheTrail(t *testing.T) {
 	if rows[4].Allowed || rows[4].DeniedCount != 1 || rows[4].Rule != "block" {
 		t.Fatalf("block row: %+v", rows[4])
 	}
-	if b.denied() != 2 {
-		t.Fatalf("denied = %d, want the refused connection and the blocked session", b.denied())
+}
+
+// A fail-closed lane must not run a session the trail could not record:
+// the bridge reports the failed start so the adapter stops the session.
+// A fail-open lane logs and carries on, and only the start counts, because
+// the rows after it describe a session that already ran.
+func TestICAAuditBridgeFailClosedStopsUnrecordedSessions(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	start := ICAEvent{Name: icaEventSessionStart, SessionID: "s1"}
+	end := ICAEvent{Name: icaEventSessionEnd, SessionID: "s1", Data: map[string]any{"decision": "release"}}
+	rejected := ICAEvent{Name: icaEventConnectionRejected, Data: map[string]any{"stage": "gateway_source_policy"}}
+
+	closed := newICAAuditBridge(brokenSink{}, "vdi", "t", true, quiet)
+	if err := closed.observe(start); !errors.Is(err, errICAUnaudited) {
+		t.Fatalf("fail-closed start: err = %v, want errICAUnaudited", err)
+	}
+	if err := closed.observe(rejected); err != nil {
+		t.Fatalf("fail-closed rejection: err = %v, want nil (no session to stop)", err)
+	}
+	if err := closed.observe(end); err != nil {
+		t.Fatalf("fail-closed end: err = %v, want nil (the session is over)", err)
+	}
+
+	open := newICAAuditBridge(brokenSink{}, "vdi", "t", false, quiet)
+	if err := open.observe(start); err != nil {
+		t.Fatalf("fail-open start: err = %v, want nil", err)
 	}
 }
+
+type brokenSink struct{}
+
+func (brokenSink) Write(context.Context, audit.Event) error { return errors.New("disk full") }
+func (brokenSink) Close() error                             { return nil }
 
 // /readyz consults only the endpoints that report readiness and names the
 // ones still loading.
