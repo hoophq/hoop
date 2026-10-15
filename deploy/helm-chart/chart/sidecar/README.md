@@ -223,16 +223,21 @@ chart without the block.
 |---|---|---|---|
 | Image tag | `<version>` | `<version>-ica` | `<version>-ica` |
 | Readiness probe | `/healthz` | `/readyz` | `/readyz` |
-| NER model volume | none | `ica.model` | `ica.model` |
+| NER model | none | in the image; `ica.model` overrides | in the image; `ica.model` overrides |
 | Runs as | image user | 10001, all capabilities dropped | root, `NET_ADMIN` only |
 | Network | pod network | pod network | `hostNetwork` |
 | `terminationGracePeriodSeconds` | 30 | 45 | 45 |
 
 `/readyz` answers 503 while an ica lane loads its NER model and starts OCR
 workers, which can take minutes. Liveness stays on `/healthz`, so Kubernetes
-keeps a pod that is still loading. The chart mounts `ica.model` at the
-engine's default NER model path; a config that sets `ica.ner_model` elsewhere
-must mount the model there through `extraVolumes`.
+keeps a pod that is still loading.
+
+The `-ica` image carries the NER model (`KnightsAnalytics/distilbert-NER`) at
+the engine's default path, so the chart needs nothing for it. To pin a model
+independent of the image tag, or to load one of your own in the same format,
+set `ica.model` to a volume source; the chart mounts it read-only over the
+image's copy. A config that sets `ica.ner_model` elsewhere must mount the model
+there through `extraVolumes`.
 
 `max_sessions` in the config's top-level `ica` block bounds the sessions of
 every ica lane in the pod together (default 32), because they share one
@@ -256,8 +261,6 @@ config:
     ica: {tenant_id: finance}
 ica:
   enabled: true
-  model:
-    persistentVolumeClaim: {claimName: ica-ner-model}
 laneServices:
   ica:
     enabled: true
@@ -315,16 +318,13 @@ config:
 ica:
   enabled: true
   transparent: true
-  model:
-    persistentVolumeClaim: {claimName: ica-ner-model}
 nodeSelector:
   hoop.dev/ica-appliance: "true"
 replicas: 2
 ```
 
 The chart refuses to render an ica release whose `image.tag` does not end in
-`-ica`, that has no `ica.model`, or that has no `config` or
-`existingConfigMap`. The `-ica` image runs
+`-ica`, or that has no `config` or `existingConfigMap`. The `-ica` image runs
 `hoop-inspect -config /etc/hoop-inspect/config.yaml` and does not read
 `HOOP_SIDECAR_CONFIG`; under a control plane, a file holding `admin` and the
 top-level `ica` block is enough.

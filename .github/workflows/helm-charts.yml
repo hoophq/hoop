@@ -251,7 +251,13 @@ jobs:
           guard "ica.transparent without ica.enabled" --set config.admin.listen=0.0.0.0:19000 --set ica.transparent=true
           guard "ica on a non -ica tag"     "${ica[@]}" --set image.tag=1.0.0
           guard "ica on the default tag"    --set config.admin.listen=0.0.0.0:19000 --set ica.enabled=true --set ica.model.emptyDir.medium=Memory
-          guard "ica with no model"         --set config.admin.listen=0.0.0.0:19000 --set image.tag=1.0.0-ica --set ica.enabled=true
+          # The -ica image carries the NER model, so ica.model is an override:
+          # without it the pod mounts nothing over the image's copy.
+          nomodel=$(helm template t "$chart" --set config.admin.listen=0.0.0.0:19000 \
+            --set image.tag=1.0.0-ica --set ica.enabled=true --show-only templates/deployment.yaml) \
+            || { echo "::error::ica without ica.model was refused; the image carries the model"; exit 1; }
+          echo "$nomodel" | grep -q 'ica-ner-model' \
+            && { echo "::error::ica without ica.model mounted a model volume over the image's copy"; exit 1; }
           guard "ica with no config file"   --set controlPlane.url=https://cp.example.com --set controlPlane.token=t \
             --set image.tag=1.0.0-ica --set ica.enabled=true --set ica.model.emptyDir.medium=Memory
           guard "lane Service in front of a CIDR ica listener" "${ica[@]}" --set ica.transparent=true \
@@ -262,7 +268,7 @@ jobs:
             --set 'config.listeners[0].ica.transparent.upstream_ports={2598}' \
             --set laneServices.vdi.enabled=true --set 'laneServices.vdi.ports[0].port=2598'
 
-          echo "ica off leaves the pod alone; single and CIDR mode render their own privileges; six ica guards fire"
+          echo "ica off leaves the pod alone; single and CIDR mode render their own privileges; the model is an override; five ica guards fire"
 
       - name: Assert the control plane chart renders and its guards hold
         run: |

@@ -115,12 +115,13 @@ the handshake supplies the running config and there is no file to point at.
 {{- end -}}
 
 {{/*
-Where the ica.model volume lands: the engine's default ner_model,
-/opt/libhoop-ica/current/models/KnightsAnalytics_distilbert-NER, written
-through the real directory. In the -ica image `current` is a symlink to
-releases/image, and the chart mounts at the real path so the runtime never
-resolves a mount target through a symlink. A config that sets ica.ner_model
-elsewhere must mount the model there itself.
+Where an ica.model volume lands: over the -ica image's own copy at the
+engine's default ner_model, /opt/libhoop-ica/current/models/
+KnightsAnalytics_distilbert-NER, written through the real directory. In the
+-ica image `current` is a symlink to releases/image, and the chart mounts at
+the real path so the runtime never resolves a mount target through a
+symlink. A config that sets ica.ner_model elsewhere must mount the model
+there itself.
 */}}
 {{- define "hoopsidecar.icaModelDir" -}}/opt/libhoop-ica/releases/image/models/KnightsAnalytics_distilbert-NER{{- end -}}
 
@@ -180,9 +181,6 @@ itself would print on the restart nobody is watching.
 {{- end -}}
 {{- if not (include "hoopsidecar.hasConfigFile" .) -}}
 {{- fail "ica.enabled needs config or existingConfigMap: the -ica image runs hoop-inspect -config /etc/hoop-inspect/config.yaml, which does not read HOOP_SIDECAR_CONFIG. With a control plane, a file holding admin and the top-level ica block is enough" -}}
-{{- end -}}
-{{- if not $ica.model -}}
-{{- fail "ica.enabled needs ica.model: a volume source holding the KnightsAnalytics/distilbert-NER directory. The -ica image ships no model, and the engine cannot run NER without one" -}}
 {{- end -}}
 {{- /*
 A Service rewrites a packet's destination to the pod, and a CIDR-mode ica

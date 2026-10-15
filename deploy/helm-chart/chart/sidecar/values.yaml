@@ -308,13 +308,11 @@ laneServices: {}
 # `enabled: false` the chart renders the same pod as it does without this
 # block.
 #
-# Turning it on changes the pod in four ways:
+# Turning it on changes the pod in three ways:
 #   - The readiness probe reads /readyz. An ica lane loads its NER model and
 #     starts OCR workers after the socket binds, which can take minutes, and
 #     /readyz answers 503 until every lane can take a session. Liveness stays
 #     on /healthz so Kubernetes does not restart a pod that is still loading.
-#   - The chart mounts `model` read-only at the engine's default NER model
-#     path. The -ica image ships no model.
 #   - The container drops all capabilities and runs as the image's user
 #     (10001), or as root with NET_ADMIN under `transparent`.
 #   - terminationGracePeriodSeconds becomes 45: on SIGTERM the admin server
@@ -328,7 +326,9 @@ laneServices: {}
 #     not read HOOP_SIDECAR_CONFIG, so a control plane alone leaves it with
 #     no file. A file holding `admin` and the top-level `ica` block is enough
 #     when the plane supplies the listeners.
-#   - `model` is set.
+#
+# The -ica image carries the NER model (KnightsAnalytics/distilbert-NER), so
+# the chart needs nothing more for it; `model` below replaces that copy.
 ica:
   enabled: false
 
@@ -352,9 +352,11 @@ ica:
   # number of appliance nodes.
   transparent: false
 
-  # A volume source holding the KnightsAnalytics/distilbert-NER directory
-  # (config.json, tokenizer.json and the ONNX file at its root). Any
-  # Kubernetes volume source works.
+  # Optional. A volume source holding a KnightsAnalytics/distilbert-NER
+  # directory (config.json, tokenizer.json and the ONNX file at its root),
+  # mounted read-only over the copy the -ica image carries. Leave it empty to
+  # use the image's copy; set it to pin a model version independent of the
+  # image or to load a model of your own in the same format.
   model: {}
     # persistentVolumeClaim:
     #   claimName: ica-ner-model

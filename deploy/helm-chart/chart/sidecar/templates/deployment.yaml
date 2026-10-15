@@ -130,7 +130,7 @@ spec:
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
         {{- $k8sIdentity := eq .Values.controlPlane.identity "kubernetes" }}
-        {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumeMounts $k8sIdentity $ica.enabled }}
+        {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumeMounts $k8sIdentity (and $ica.enabled $ica.model) }}
         volumeMounts:
         {{- if include "hoopsidecar.hasConfigFile" . }}
         - name: sidecar-config-volume
@@ -142,7 +142,7 @@ spec:
           mountPath: {{ include "hoopsidecar.identityTokenDir" . }}
           readOnly: true
         {{- end }}
-        {{- if $ica.enabled }}
+        {{- if and $ica.enabled $ica.model }}
         - name: ica-ner-model
           mountPath: {{ include "hoopsidecar.icaModelDir" . }}
           readOnly: true
@@ -151,7 +151,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- end }}
-      {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumes $k8sIdentity $ica.enabled }}
+      {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumes $k8sIdentity (and $ica.enabled $ica.model) }}
       volumes:
       {{- if include "hoopsidecar.hasConfigFile" . }}
       - name: sidecar-config-volume
@@ -170,7 +170,7 @@ spec:
               expirationSeconds: {{ include "hoopsidecar.identityTokenExpiration" . }}
               path: token
       {{- end }}
-      {{- if $ica.enabled }}
+      {{- if and $ica.enabled $ica.model }}
       - name: ica-ner-model
         {{- toYaml $ica.model | nindent 8 }}
       {{- end }}
