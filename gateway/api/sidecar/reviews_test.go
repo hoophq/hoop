@@ -516,7 +516,7 @@ func TestGetReviewAnswersAMalformedIDAsNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 	// The sidecar reads a JSON 404 as "not found" and any other 404 as a
 	// plane too old to have this route (daemon.planeNotFound).
-	assert.JSONEq(t, `{"message":"review not found"}`, rec.Body.String())
+	assert.JSONEq(t, `{"message":"approval request not found"}`, rec.Body.String())
 }
 
 func TestToSidecarReviewStatusOmitsStatementAndReviewers(t *testing.T) {
@@ -684,7 +684,7 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	// The line renders unconditionally, so an empty value would show a broken
 	// link. It opens the review the message is about.
 	assert.NotEmpty(t, req.WebappURL, "an empty url renders as a dead More details link")
-	assert.Equal(t, appconfig.Get().FullApiURL()+"/reviews/"+rev.SessionID, req.WebappURL)
+	assert.Equal(t, appconfig.Get().FullApiURL()+"/approvals/"+rev.SessionID, req.WebappURL)
 	assert.True(t, strings.HasPrefix(req.WebappURL, "http://localhost:8009/hoop/"),
 		"ApiURL drops a configured path prefix and lands the approver outside the app")
 

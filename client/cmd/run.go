@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	cmdutils "github.com/hoophq/hoop/client/cmd/utils"
 	"net/url"
 	"os"
 	"os/exec"
@@ -46,7 +47,8 @@ func init() {
 	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mysql", dbConnectionURI, "The database connection uri, e.g.: mysql://...")
 	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mssql", dbConnectionURI, "The database connection uri, e.g.: sqlserver://...")
 	runCmd.Flags().StringVar(&runFlags.ConnectionString, "mongodb", dbConnectionURI, "The database connection uri, e.g.: mongodb://...")
-	runCmd.Flags().StringSliceVar(&runFlags.Reviewers, "review", nil, "The approval groups for this connection, interactions are reviewed when enabled")
+	runCmd.Flags().StringSliceVar(&runFlags.Reviewers, "approval", nil, "The approval groups for this connection, interactions require approval when enabled")
+	cmdutils.FlagAliases(runCmd.Flags(), map[string]string{"review": "approval"})
 	runCmd.Flags().StringSliceVar(&runFlags.RedactTypes, "data-masking", nil, "The data masking types for this connection, content is redacted when enabled")
 
 	_ = runCmd.Flags().MarkHidden("export")

@@ -430,8 +430,8 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Param			user			query		string	false	"Filter by user's subject id"
 //	@Param			connection		query		string	false	"Filter by connection's name"
 //	@Param			type			query		string	false	"Filter by connection's type"
-//	@Param			review.approver	query		string	false	"Filter by the approver's email of a review"
-//	@Param			review.status	query		string	false	"Filter by the review status"
+//	@Param			review.approver	query		string	false	"Filter by the approver email of an approval request"
+//	@Param			review.status	query		string	false	"Filter by the approval status"
 //	@Param			correlation_id	query		string	false	"Filter by external workflow/task correlation id"
 //	@Param			jira_issue_key	query		string	false	"Filter by Jira issue key"
 //	@Param			start_date		query		string	false	"Filter starting on this date"	Format(RFC3339)
@@ -1066,7 +1066,7 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 		Infof("creating review")
 
 	if err := models.CreateReview(newRev, sessionInput); err != nil {
-		return false, fmt.Errorf("failed saving review: %w", err)
+		return false, fmt.Errorf("failed saving approval request: %w", err)
 	}
 
 	return areAllGroupsApproved, nil
@@ -1074,14 +1074,14 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 
 // Provision
 //
-//	@Summary				Create a provisioned session using API Key
-//	@Tags						Sessions
-//	@Accept					json
-//	@Produce				json
-//	@Param					request		body		openapi.ProvisionSession		true	"The request body resource"
-//	@Success				200			{object}	openapi.ProvisionSessionResponse	"The session has been created"
-//	@Failure				400,422,500	{object}	openapi.HTTPError
-//	@Router					/sessions/provision [post]
+//	@Summary	Create a provisioned session using API Key
+//	@Tags		Sessions
+//	@Accept		json
+//	@Produce	json
+//	@Param		request		body		openapi.ProvisionSession			true	"The request body resource"
+//	@Success	200			{object}	openapi.ProvisionSessionResponse	"The session has been created"
+//	@Failure	400,422,500	{object}	openapi.HTTPError
+//	@Router		/sessions/provision [post]
 func Provision(c *gin.Context) {
 	sid := uuid.NewString()
 	apiroutes.SetSidSpanAttr(c, sid)
@@ -1216,7 +1216,7 @@ func Provision(c *gin.Context) {
 
 	allGroupsApproved, err := createApprovedReview(ctx, &newSession, conn, user, &req)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating review")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating approval request")
 		return
 	}
 

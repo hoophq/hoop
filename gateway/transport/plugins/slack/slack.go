@@ -346,7 +346,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 
 	rev, err := models.GetReviewByIdOrSid(pctx.OrgID, pctx.SID)
 	if err != nil && err != models.ErrNotFound {
-		return nil, plugintypes.InternalErr("internal error, failed fetching review", err)
+		return nil, plugintypes.InternalErr("internal error, failed fetching approval request", err)
 	}
 	if rev != nil {
 		if rev.Status != models.ReviewStatusPending {
@@ -354,7 +354,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		}
 		reviewInput, err := rev.GetBlobInput()
 		if err != nil {
-			return nil, plugintypes.InternalErr("internal error, failed fetching review input", err)
+			return nil, plugintypes.InternalErr("internal error, failed fetching approval request input", err)
 		}
 		sreq.ID = rev.ID
 		sreq.WebappURL = fmt.Sprintf("%s/sessions/%s", p.apiURL, rev.SessionID)

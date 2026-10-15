@@ -107,7 +107,7 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 			reviewedConns++
 		}
 	}
-	rbaEvidence := fmt.Sprintf("%d groups, %d connections with review requirements", groups, reviewedConns)
+	rbaEvidence := fmt.Sprintf("%d groups, %d connections with approval requirements", groups, reviewedConns)
 	switch {
 	case groups > 0 && reviewedConns > 0:
 		out["role_based_access"] = checkResult{openapi.ComplianceStatusCompliant,
@@ -132,20 +132,20 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 	if prodConns == 0 {
 		out["jit_reviews"] = checkResult{openapi.ComplianceStatusWarning,
 			"No production connections identified. Tag connections for better visibility.",
-			fmt.Sprintf("%d connections with reviewers", reviewedConns)}
+			fmt.Sprintf("%d connections with approvers", reviewedConns)}
 	} else {
 		jitEvidence := fmt.Sprintf("%d/%d production connections protected", prodCovered, prodConns)
 		coverage := percentOf(prodCovered, prodConns)
 		switch {
 		case prodCovered == prodConns:
 			out["jit_reviews"] = checkResult{openapi.ComplianceStatusCompliant,
-				"All production connections require just-in-time review approval", jitEvidence}
+				"All production connections require just-in-time approval", jitEvidence}
 		case coverage >= 50:
 			out["jit_reviews"] = checkResult{openapi.ComplianceStatusWarning,
-				fmt.Sprintf("Only %d%% of production connections require review approval", coverage), jitEvidence}
+				fmt.Sprintf("Only %d%% of production connections require approval", coverage), jitEvidence}
 		default:
 			out["jit_reviews"] = checkResult{openapi.ComplianceStatusNonCompliant,
-				fmt.Sprintf("Only %d%% of production connections require review approval", coverage), jitEvidence}
+				fmt.Sprintf("Only %d%% of production connections require approval", coverage), jitEvidence}
 		}
 	}
 
@@ -159,14 +159,14 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 			"No service accounts configured", "0 service accounts configured"}
 	}
 
-	lpEvidence := fmt.Sprintf("%d groups, %d connections with reviewers", groups, reviewedConns)
+	lpEvidence := fmt.Sprintf("%d groups, %d connections with approvers", groups, reviewedConns)
 	switch {
 	case groups >= 3 && reviewedConns > 0:
 		out["least_privilege"] = checkResult{openapi.ComplianceStatusCompliant,
-			"Granular groups and connection review requirements enforce least privilege", lpEvidence}
+			"Granular groups and connection approval requirements enforce least privilege", lpEvidence}
 	case groups > 0:
 		out["least_privilege"] = checkResult{openapi.ComplianceStatusWarning,
-			"Partial least privilege setup. Add more groups and connection review requirements.", lpEvidence}
+			"Partial least privilege setup. Add more groups and connection approval requirements.", lpEvidence}
 	default:
 		out["least_privilege"] = checkResult{openapi.ComplianceStatusNonCompliant,
 			"No user groups configured. Least privilege cannot be enforced.", lpEvidence}
@@ -436,15 +436,15 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 	switch {
 	case snap.PendingReviews == 0:
 		out["review_response_sla"] = checkResult{openapi.ComplianceStatusCompliant,
-			"No pending access reviews", "0 pending reviews"}
+			"No pending approval requests", "0 pending approval requests"}
 	case snap.StalePendingReviews == 0:
 		out["review_response_sla"] = checkResult{openapi.ComplianceStatusCompliant,
-			fmt.Sprintf("All %d pending access reviews are within the 24-hour response window", snap.PendingReviews),
-			fmt.Sprintf("%d pending reviews, none older than 24h", snap.PendingReviews)}
+			fmt.Sprintf("All %d pending approval requests are within the 24-hour response window", snap.PendingReviews),
+			fmt.Sprintf("%d pending approval requests, none older than 24h", snap.PendingReviews)}
 	default:
 		out["review_response_sla"] = checkResult{openapi.ComplianceStatusWarning,
-			fmt.Sprintf("%d access reviews pending for more than 24 hours", snap.StalePendingReviews),
-			fmt.Sprintf("%d/%d pending reviews older than 24h", snap.StalePendingReviews, snap.PendingReviews)}
+			fmt.Sprintf("%d approval requests pending for more than 24 hours", snap.StalePendingReviews),
+			fmt.Sprintf("%d/%d pending approval requests older than 24h", snap.StalePendingReviews, snap.PendingReviews)}
 	}
 
 	// ---- infrastructure ----

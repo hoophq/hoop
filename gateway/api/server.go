@@ -117,7 +117,7 @@ type Api struct {
 
 //	@tag.name	Guard Rails
 
-//	@tag.name	Reviews
+//	@tag.name	Approvals
 
 //	@tag.name	Sessions
 
@@ -821,23 +821,31 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiproxymanager.Get)
 
-	r.GET("/reviews",
+	// /approvals is the new name of /reviews. Both paths share one chain, so
+	// roles, auth and analytics events cannot drift apart.
+	listReviews := []gin.HandlerFunc{
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.List,
-	)
-	r.GET("/reviews/:id",
+	}
+	getReview := []gin.HandlerFunc{
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.GetByIdOrSid,
-	)
-	r.PUT("/reviews/:id",
+	}
+	updateReview := []gin.HandlerFunc{
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateReview),
 		reviewHandler.ReviewByIdOrSid,
-	)
+	}
+	r.GET("/reviews", listReviews...)
+	r.GET("/approvals", listReviews...)
+	r.GET("/reviews/:id", getReview...)
+	r.GET("/approvals/:id", getReview...)
+	r.PUT("/reviews/:id", updateReview...)
+	r.PUT("/approvals/:id", updateReview...)
 
 	r.GET("/access-requests/rules",
 		apiroutes.AdminAndAuditorAccessRole,
@@ -1046,10 +1054,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,
 		sessionapi.Kill)
-	r.PUT("/sessions/:session_id/review",
-		r.AuthMiddleware,
-		reviewHandler.ReviewBySid,
-	)
+	reviewBySid := []gin.HandlerFunc{r.AuthMiddleware, reviewHandler.ReviewBySid}
+	r.PUT("/sessions/:session_id/review", reviewBySid...)
+	r.PUT("/sessions/:session_id/approval", reviewBySid...)
 	r.PATCH("/sessions/:session_id/metadata",
 		r.AuthMiddleware,
 		sessionapi.PatchMetadata)

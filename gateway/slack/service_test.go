@@ -106,7 +106,7 @@ func TestRebuildReviewBlocks(t *testing.T) {
 		}, nil, nil)
 	}
 	original := []slack.Block{
-		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Review"}),
+		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Approval"}),
 		label("admin"),
 		slack.NewActionBlock(revID + ":admin:0"),
 		label("sre"),
@@ -293,7 +293,7 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	if err := s.UpdateReviewMessage(expired); err != nil {
 		t.Fatalf("tracked expiry failed: %v", err)
 	}
-	if updateCalls != 1 || !strings.Contains(lastBlocks, "Review expired.") {
+	if updateCalls != 1 || !strings.Contains(lastBlocks, "Approval request expired.") {
 		t.Fatalf("chat.update calls=%d blocks=%s, want one expired rewrite", updateCalls, lastBlocks)
 	}
 	if s.HasTrackedReviewMessages("rev-exp") {
@@ -370,7 +370,7 @@ var reviewDeadline = time.Date(2026, 9, 29, 10, 0, 0, 0, time.FixedZone("x", -3*
 
 func deadlineBlock() *slack.ContextBlock {
 	return slack.NewContextBlock(reviewDeadlineBlockID,
-		slack.NewTextBlockObject(slack.MarkdownType, "_Decide before Tue, 29 Sep 2026 13:00:00 UTC; after it the review expires._", false, false))
+		slack.NewTextBlockObject(slack.MarkdownType, "_Decide before Tue, 29 Sep 2026 13:00:00 UTC; after it the approval request expires._", false, false))
 }
 
 // An expired review takes no more input: the buttons and the deadline go, and
@@ -384,7 +384,7 @@ func TestRebuildReviewBlocksExpired(t *testing.T) {
 	}
 	deadline := deadlineBlock()
 	m := &sentReviewMessage{eventKind: EventKindOneTime, blocks: []slack.Block{
-		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Review"}),
+		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Approval"}),
 		deadline,
 		label("admin"),
 		slack.NewActionBlock(revID + ":admin:0"),
@@ -438,7 +438,7 @@ func TestRebuildReviewBlocksExpired(t *testing.T) {
 
 // With no deadline the approved message is today's; with one it names it.
 func TestRebuildReviewBlocksApprovedShowsTheApprovalDeadline(t *testing.T) {
-	header := slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Review"})
+	header := slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Approval"})
 	rg := ReviewedGroup{Name: "sre", Status: "APPROVED", ReviewerEmail: "a@a.com", ReviewedAt: reviewDeadline}
 	reviewed := map[string]ReviewedGroup{"sre": rg}
 	ready := func(text string) []slack.Block {
@@ -526,7 +526,7 @@ func TestPostMessageReviewShowsTheDeadline(t *testing.T) {
 	}
 	if deadline.Type != "context" || deadline.BlockID != reviewDeadlineBlockID || len(deadline.Elements) != 1 ||
 		deadline.Elements[0].Type != slack.MarkdownType ||
-		deadline.Elements[0].Text != "_Decide before Tue, 29 Sep 2026 13:00:00 UTC; after it the review expires._" {
+		deadline.Elements[0].Text != "_Decide before Tue, 29 Sep 2026 13:00:00 UTC; after it the approval request expires._" {
 		t.Errorf("block 2 is not the deadline: %s", got[2])
 	}
 	rest := append(slices.Clone(got[:2]), got[3:]...)
@@ -561,7 +561,7 @@ func TestUpdateMessageStatusWithoutBlockActions(t *testing.T) {
 func TestRebuildReviewBlocksRevoked(t *testing.T) {
 	const revID = "rev-1"
 	original := []slack.Block{
-		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Review"}),
+		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Approval"}),
 		slack.NewSectionBlock(&slack.TextBlockObject{Type: slack.MarkdownType, Text: "*Approver groups:* admin"}, nil, nil),
 		slack.NewActionBlock(revID + ":admin:0"),
 	}
