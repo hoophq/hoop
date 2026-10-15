@@ -131,6 +131,11 @@ export default function TagsEditor({
   const hasDraft = draftKey.trim().length > 0 && draftValue.trim().length > 0
   const canCommit = hasDraft && !atMaxTags
 
+  // Value errors paint the input red and print the message under the row:
+  // a message inside the input would push the other inputs of the row out
+  // of line, since the row aligns on the input bottoms.
+  const rowValueError = entries.map(([, val]) => valueErrorOf(val)).find(Boolean)
+
   return (
     <Stack gap="md">
       {entries.length > 0 && (
@@ -142,7 +147,7 @@ export default function TagsEditor({
               tagValue={val}
               keyOptions={keyOptions}
               valueOptions={valuesForLabel.get(labelForTag(key)) || []}
-              valueError={valueErrorOf(val)}
+              valueInvalid={Boolean(valueErrorOf(val))}
               disabled={disabled}
               onKeyChange={(newLabel) => {
                 const newKey = resolveLabelToKey(newLabel)
@@ -162,6 +167,7 @@ export default function TagsEditor({
           ))}
         </Grid>
       )}
+      {rowValueError && <Text size="xs" c="red">{rowValueError}</Text>}
 
       {!disabled && (
         <Grid gutter="md" align="flex-end">
@@ -188,7 +194,7 @@ export default function TagsEditor({
                 setDraftValue(val)
                 if (valueError) setValueError(null)
               }}
-              error={valueError}
+              error={Boolean(valueError)}
               disabled={!draftKey.trim()}
             />
           </Grid.Col>
@@ -205,6 +211,7 @@ export default function TagsEditor({
           </Grid.Col>
         </Grid>
       )}
+      {!disabled && valueError && <Text size="xs" c="red">{valueError}</Text>}
 
       {!disabled && atMaxTags && (
         <Text size="xs" c="dimmed">{`Maximum of ${maxTags} tags reached.`}</Text>
@@ -221,7 +228,7 @@ function RowFragment({
   tagValue,
   keyOptions,
   valueOptions,
-  valueError,
+  valueInvalid,
   disabled,
   onKeyChange,
   onValueChange,
@@ -247,7 +254,7 @@ function RowFragment({
           data={valueOptions}
           value={tagValue}
           onChange={onValueChange}
-          error={valueError}
+          error={valueInvalid}
           disabled={disabled}
         />
       </Grid.Col>
