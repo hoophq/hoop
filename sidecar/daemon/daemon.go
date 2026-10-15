@@ -650,7 +650,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			// resolved runtime profile; see ICAServer.
 			srv, _, err := buildICAServer(ln, icaRuntimeFor(cfg), cfg.Audit, nil, validationLog)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", ln.name, err)
+				return nil, err // buildICAServer names the lane
 			}
 			notes = append(notes, srv.Notes()...)
 			_ = srv.Close()

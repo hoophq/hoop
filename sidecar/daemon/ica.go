@@ -81,7 +81,31 @@ type ICARuntimeConfig struct {
 	FailureDiagnosticDir string `json:"failure_diagnostic_dir,omitempty"`
 	// Options overrides individual profile settings. See ICAOptions.
 	Options *ICAOptions `json:"options,omitempty"`
+	// EDT bounds the retained EDT sessions of every lane that sets ica.edt.
+	// With no block, the engine's defaults apply.
+	EDT *ICAEDTRuntimeConfig `json:"edt,omitempty" cap:"ica_edt"`
 }
+
+// ICAEDTRuntimeConfig tunes experimental EDT. An EDT session survives a
+// network change by suspending; retention is how long a suspended session
+// waits for its client to reconnect, and the replay budget bounds the bytes
+// queued for replay across all EDT sessions of a lane.
+type ICAEDTRuntimeConfig struct {
+	// RetentionSec is 1..600; 0 takes the engine's default (120).
+	RetentionSec int `json:"retention_sec,omitempty"`
+	// ReplayBudgetBytes is at most 8 GiB; 0 takes the engine's default
+	// (512 MiB). The engine also refuses a budget below what max_sessions
+	// needs, at start.
+	ReplayBudgetBytes int64 `json:"replay_budget_bytes,omitempty"`
+}
+
+// The engine's bounds for ICAEDTRuntimeConfig (libhoop-ica/ica
+// MaxEDTRetention and MaxEDTReplayBudgetBytes). This file cannot import the
+// engine; sidecar/ica's tests compare the two.
+const (
+	icaMaxEDTRetentionSec      = 600
+	icaMaxEDTReplayBudgetBytes = 8 << 30
+)
 
 // ICAOptions overrides the engine's production profile. Each field is a
 // pointer, and nil keeps the profile's value. Field names are the agent's
@@ -122,7 +146,7 @@ type ICAOptions struct {
 	OutputLatestFrame      *bool    `json:"output_latest_frame,omitempty"`
 }
 
-func (r *ICARuntimeConfig) validate(onHost bool) []string {
+func (r *ICARuntimeConfig) validate(onHost bool, listeners []ListenerConfig) []string {
 	if r == nil {
 		return nil
 	}
@@ -149,6 +173,17 @@ func (r *ICARuntimeConfig) validate(onHost bool) []string {
 		}
 	}
 	problems = append(problems, r.Options.validate(where+".options")...)
+	if e := r.EDT; e != nil {
+		if e.RetentionSec != 0 && (e.RetentionSec < 1 || e.RetentionSec > icaMaxEDTRetentionSec) {
+			problems = append(problems, fmt.Sprintf("%s.edt.retention_sec must be 1..%d", where, icaMaxEDTRetentionSec))
+		}
+		if e.ReplayBudgetBytes != 0 && (e.ReplayBudgetBytes < 1 || e.ReplayBudgetBytes > icaMaxEDTReplayBudgetBytes) {
+			problems = append(problems, fmt.Sprintf("%s.edt.replay_budget_bytes must be 1..%d (8 GiB)", where, int64(icaMaxEDTReplayBudgetBytes)))
+		}
+		if !slices.ContainsFunc(listeners, func(l ListenerConfig) bool { return isICA(l) && l.ICA != nil && l.ICA.EDT }) {
+			problems = append(problems, where+".edt is set but no ica listener sets edt: true; remove the block or turn EDT on for a lane")
+		}
+	}
 	return problems
 }
 
@@ -208,6 +243,12 @@ type ICAConfig struct {
 	// session. With no block, the engine's defaults apply (1264x1040,
 	// channel 9).
 	Display *ICADisplayConfig `json:"display,omitempty" label:"Display" help:"Framebuffer geometry and ThinWire channel. Leave empty for the engine defaults."`
+
+	// EDT also serves Citrix EDT (UDP) on the listener's address, beside
+	// TCP: same port, same policy, same session bound. The engine marks EDT
+	// experimental. A client that cannot reach the UDP port falls back to
+	// TCP.
+	EDT bool `json:"edt,omitempty" cap:"ica_edt" label:"EDT (experimental)" help:"Also accept Citrix EDT over UDP on the same address and port. Experimental; clients fall back to TCP."`
 }
 
 // ICATransparentConfig is CIDR mode's admission policy.
@@ -291,6 +332,9 @@ func (c *ICAConfig) validate(lc ListenerConfig, name string) []string {
 			problems = append(problems, name+": ica.transparent intercepts TCP; network: unix cannot carry it")
 		}
 		problems = append(problems, c.Transparent.validate(name)...)
+	}
+	if c.EDT && lc.Network == "unix" {
+		problems = append(problems, name+": ica.edt listens on UDP; network: unix cannot carry it")
 	}
 	if c.Display != nil {
 		d := c.Display
@@ -376,6 +420,10 @@ type ICALane struct {
 	Width, Height   int  // 0 = engine default
 	ThinwireChannel uint // 0 = engine default
 
+	// EDT opens a UDP listener on Listen beside the TCP one and serves EDT
+	// sessions from it under the same policy.
+	EDT bool
+
 	Events func(ICAEvent) error
 	Log    *slog.Logger
 }
@@ -387,6 +435,10 @@ type ICARuntime struct {
 	FailureDiagnosticDir                         string
 	MaxSessions, ConnectTimeoutSec               int
 	Options                                      ICAOptions
+	// EDTRetentionSec and EDTReplayBudgetBytes are 0 for the engine's
+	// defaults.
+	EDTRetentionSec      int
+	EDTReplayBudgetBytes int64
 }
 
 // ICAEvent is one engine audit event, as the engine shapes it: Name is
@@ -480,6 +532,9 @@ func icaRuntimeFor(cfg *Config) ICARuntime {
 	if r.Options != nil {
 		out.Options = *r.Options
 	}
+	if r.EDT != nil {
+		out.EDTRetentionSec, out.EDTReplayBudgetBytes = r.EDT.RetentionSec, r.EDT.ReplayBudgetBytes
+	}
 	return out
 }
 
@@ -490,7 +545,7 @@ func resolveICALane(lc ListenerConfig, name string, events func(ICAEvent) error,
 		return ICALane{}, fmt.Errorf("%s: protocol is ica but there is no ica block", name)
 	}
 	lane := ICALane{Name: name, Listen: lc.Listen, Network: lc.Network, TenantID: strings.TrimSpace(ic.TenantID),
-		Events: events, Log: log}
+		EDT: ic.EDT, Events: events, Log: log}
 	if ic.Display != nil {
 		lane.Width, lane.Height, lane.ThinwireChannel = ic.Display.Width, ic.Display.Height, uint(ic.Display.ThinwireChannel)
 	}
@@ -537,19 +592,28 @@ func buildICAServer(ln lane, rt ICARuntime, ac AuditConfig, sink audit.Sink, log
 }
 
 // icaLaneNotes returns the notes a -validate run reports for an ica lane
-// that the engine cannot report: the mode, and that CIDR mode is Linux-only
-// and privileged.
+// that the engine cannot report: the mode, that CIDR mode is Linux-only and
+// privileged, and what EDT needs from the network.
 func icaLaneNotes(lc ListenerConfig) []string {
 	ic := lc.ICA
 	if ic == nil {
 		return nil
 	}
+	var notes []string
 	if ic.Transparent == nil {
-		return []string{fmt.Sprintf("ica: single-VDA mode; every session goes to %s, and the engine resolves that name once at start", lc.Upstream)}
+		notes = append(notes, fmt.Sprintf("ica: single-VDA mode; every session goes to %s, and the engine resolves that name once at start", lc.Upstream))
+	} else {
+		notes = append(notes, fmt.Sprintf("ica: CIDR mode; the VDA is each connection's original destination within %s on ports %s, admitted from %s",
+			strings.Join(ic.Transparent.UpstreamCIDRs, ", "), strings.Join(ic.Transparent.UpstreamPorts, ", "), strings.Join(ic.Transparent.SourceCIDRs, ", ")))
+		notes = append(notes, "ica: CIDR mode needs Linux IP_TRANSPARENT, CAP_NET_ADMIN on this process, and the TPROXY rule and policy route on the host; the listener's own address must not fall inside the VDA CIDRs")
 	}
-	notes := []string{fmt.Sprintf("ica: CIDR mode; the VDA is each connection's original destination within %s on ports %s, admitted from %s",
-		strings.Join(ic.Transparent.UpstreamCIDRs, ", "), strings.Join(ic.Transparent.UpstreamPorts, ", "), strings.Join(ic.Transparent.SourceCIDRs, ", "))}
-	notes = append(notes, "ica: CIDR mode needs Linux IP_TRANSPARENT, CAP_NET_ADMIN on this process, and the TPROXY rule and policy route on the host; the listener's own address must not fall inside the VDA CIDRs")
+	if ic.EDT {
+		edt := fmt.Sprintf("ica: EDT (experimental) on UDP %s beside TCP; publish the port for UDP as well, or clients fall back to TCP", lc.Listen)
+		if ic.Transparent != nil {
+			edt = fmt.Sprintf("ica: EDT (experimental) on UDP %s beside TCP; the TPROXY rule must intercept UDP on the VDA ports too", lc.Listen)
+		}
+		notes = append(notes, edt)
+	}
 	return notes
 }
 
@@ -690,7 +754,10 @@ func (b *icaAuditBridge) event(kind audit.Kind, e ICAEvent) *audit.Event {
 		Kind: kind, Timestamp: ts, SessionID: session.ID(e.SessionID), Principal: b.tenant,
 		Protocol: inspect.ICA, Connection: b.lane, Metadata: map[string]string{},
 	}
-	for _, key := range []string{"decision", "stage", "transport", "upstream", "end_cause"} {
+	// suppressed and dropped ride on EDT refusals: how many datagrams the
+	// engine folded into this row, and how many refusal rows it could not
+	// queue.
+	for _, key := range []string{"decision", "stage", "transport", "upstream", "end_cause", "suppressed", "dropped"} {
 		if v, ok := e.Data[key]; ok {
 			out.Metadata[key] = fmt.Sprint(v)
 		}

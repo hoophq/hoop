@@ -115,17 +115,6 @@ the handshake supplies the running config and there is no file to point at.
 {{- end -}}
 
 {{/*
-Where an ica.model volume lands: over the -ica image's own copy at the
-engine's default ner_model, /opt/libhoop-ica/current/models/
-KnightsAnalytics_distilbert-NER, written through the real directory. In the
--ica image `current` is a symlink to releases/image, and the chart mounts at
-the real path so the runtime never resolves a mount target through a
-symlink. A config that sets ica.ner_model elsewhere must mount the model
-there itself.
-*/}}
-{{- define "hoopsidecar.icaModelDir" -}}/opt/libhoop-ica/releases/image/models/KnightsAnalytics_distilbert-NER{{- end -}}
-
-{{/*
 Where the projected service account token lands under
 controlPlane.identity: kubernetes. Its own directory, never the default
 service account mount: that token's audience is the API server, and the
@@ -169,46 +158,6 @@ itself would print on the restart nobody is watching.
 {{- end -}}
 {{- if not (or (include "hoopsidecar.hasConfigFile" .) .Values.controlPlane.url) -}}
 {{- fail "no config file was given and no control plane is configured: set config, existingConfigMap or controlPlane.url" -}}
-{{- end -}}
-{{- $ica := .Values.ica | default dict -}}
-{{- if and $ica.transparent (not $ica.enabled) -}}
-{{- fail "ica.transparent is set but ica.enabled is not: CIDR mode is an ica deployment, so set ica.enabled as well" -}}
-{{- end -}}
-{{- if $ica.enabled -}}
-{{- $tag := (.Values.image | default dict).tag | default "" | toString -}}
-{{- if not (hasSuffix "-ica" $tag) -}}
-{{- fail (printf "ica.enabled needs image.tag set to <version>-ica, and it is %q: only the -ica flavour links the ICA engine, and the release publishes no latest-ica" $tag) -}}
-{{- end -}}
-{{- if not (include "hoopsidecar.hasConfigFile" .) -}}
-{{- fail "ica.enabled needs config or existingConfigMap: the -ica image runs hoop-inspect -config /etc/hoop-inspect/config.yaml, which does not read HOOP_SIDECAR_CONFIG. With a control plane, a file holding admin and the top-level ica block is enough" -}}
-{{- end -}}
-{{- /*
-A Service rewrites a packet's destination to the pod, and a CIDR-mode ica
-listener reads the VDA from that destination, so every connection through
-one is refused. Checkable only when the chart sees the config.
-*/ -}}
-{{- if and $ica.transparent .Values.config -}}
-{{- $tports := list -}}
-{{- range (.Values.config.listeners | default list) -}}
-{{- if eq (toString .protocol) "ica" -}}
-{{- if .ica -}}
-{{- if .ica.transparent -}}
-{{- $tports = append $tports (regexReplaceAll "^.*:" (toString .listen) "") -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- range $key, $svc := (.Values.laneServices | default dict) -}}
-{{- if $svc.enabled -}}
-{{- range ($svc.ports | default list) -}}
-{{- $target := toString (.targetPort | default .port) -}}
-{{- if has $target $tports -}}
-{{- fail (printf "laneServices.%s sends port %s to a CIDR-mode ica listener. A Service rewrites the destination address, and that listener takes the VDA from it, so it would refuse every connection. Traffic reaches a CIDR-mode lane through the node's TPROXY rule: drop this port from the Service" $key $target) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
 {{- end -}}
 {{- $cp := .Values.controlPlane -}}
 {{- if and $cp.identity (not (has $cp.identity (list "kubernetes" "gcp"))) -}}

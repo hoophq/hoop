@@ -99,6 +99,11 @@ func TestICAListenerValidation(t *testing.T) {
 		"option range":         {`{"ica":{"options":{"ocr_tiles":17}},"listeners":[` + icaSingle + `]}`, "ocr_tiles must be 1..16"},
 		"option enum":          {`{"ica":{"options":{"ner_backend":"cuda"}},"listeners":[` + icaSingle + `]}`, "ner_backend must be go or ort"},
 		"option threshold":     {`{"ica":{"options":{"pii_threshold":1.5}},"listeners":[` + icaSingle + `]}`, "pii_threshold must be 0..1"},
+		"edt single":           {`{"ica":{"edt":{"retention_sec":300}},"listeners":[{"name":"v","protocol":"ica","listen":"0.0.0.0:2598","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","edt":true}}]}`, ""},
+		"edt on unix":          {`{"listeners":[{"name":"v","protocol":"ica","network":"unix","listen":"/tmp/x.sock","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","edt":true}}]}`, "ica.edt listens on UDP; network: unix cannot carry it"},
+		"edt retention":        {`{"ica":{"edt":{"retention_sec":601}},"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","edt":true}}]}`, "ica.edt.retention_sec must be 1..600"},
+		"edt budget":           {`{"ica":{"edt":{"replay_budget_bytes":9000000000}},"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","edt":true}}]}`, "ica.edt.replay_budget_bytes must be 1..8589934592"},
+		"edt block unused":     {`{"ica":{"edt":{"retention_sec":60}},"listeners":[` + icaSingle + `]}`, "ica.edt is set but no ica listener sets edt: true"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -185,13 +190,36 @@ func TestICAResolvesSingleModeAndRuntimeOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := (*built)[0]
-	if s.lane.Transparent || s.lane.Upstream != "10.77.0.30:2598" || len(s.lane.SourcePrefixes) != 0 || s.lane.TenantID != "finance" {
+	if s.lane.Transparent || s.lane.Upstream != "10.77.0.30:2598" || len(s.lane.SourcePrefixes) != 0 || s.lane.TenantID != "finance" || s.lane.EDT {
 		t.Fatalf("single-mode lane: %+v", s.lane)
 	}
 	if s.rt.MaxSessions != 8 || s.rt.Options.OCRWorkers == nil || *s.rt.Options.OCRWorkers != 4 ||
 		s.rt.Options.VideoBatch == nil || *s.rt.Options.VideoBatch || s.rt.Options.OCRTiles != nil ||
-		len(s.rt.Options.PIIEntities) != 1 {
+		len(s.rt.Options.PIIEntities) != 1 || s.rt.EDTRetentionSec != 0 || s.rt.EDTReplayBudgetBytes != 0 {
 		t.Fatalf("runtime overrides: %+v", s.rt)
+	}
+}
+
+// ica.edt reaches the engine as the lane's EDT flag and the runtime's EDT
+// bounds, and -validate tells the operator what the network needs.
+func TestICAResolvesEDT(t *testing.T) {
+	cfg, err := LoadConfigBytes([]byte(`{"ica":{"edt":{"retention_sec":300,"replay_budget_bytes":1073741824}},"listeners":[` +
+		`{"name":"vdi","protocol":"ica","listen":"0.0.0.0:2598","upstream":"10.77.0.30:2598","ica":{"tenant_id":"finance","edt":true}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	build, built := fakeICAEngine(true)
+	withICAEngine(t, build)
+	lanes, err := Validate(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := (*built)[0]
+	if !s.lane.EDT || s.rt.EDTRetentionSec != 300 || s.rt.EDTReplayBudgetBytes != 1<<30 {
+		t.Fatalf("EDT did not reach the engine: lane.EDT=%t rt=%+v", s.lane.EDT, s.rt)
+	}
+	if !strings.Contains(strings.Join(lanes[0].Notes, "\n"), "publish the port for UDP") {
+		t.Fatalf("no EDT note: %v", lanes[0].Notes)
 	}
 }
 

@@ -319,101 +319,90 @@ func TestObserveCountsDenialsAndForwards(t *testing.T) {
 	}
 }
 
-// max_sessions bounds every lane on a runtime together. The gate refuses a
-// connection while all slots are held, admits again once a session's
-// connection closes, releases a slot once however often the engine closes
-// the connection, and leaves the accepted socket's local address intact
-// for OriginalDestination.
-func TestGatedListenerSharesTheSessionBound(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+// Every lane on one runtime shares one SessionLimit, so max_sessions bounds
+// the lanes together; a different bound gets its own runtime entry.
+func TestLanesOnOneRuntimeShareOneSessionLimit(t *testing.T) {
+	loaded := 0
+	restore := newRuntime
+	newRuntime = func(context.Context, ica.RuntimeConfig) (*ica.Runtime, error) { loaded++; return nil, nil }
+	t.Cleanup(func() { newRuntime = restore })
+	cfg := resolveRuntimeConfig(daemon.ICARuntime{})
+
+	a, err := acquireRuntime(context.Background(), cfg, "", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// refuse runs on the Accept goroutine; the channel orders its report
-	// before the test's check, which the client seeing the close does not.
-	refused := make(chan struct{}, 4)
-	slots := make(chan struct{}, 1)
-	gate := &gatedListener{Listener: ln, slots: slots, refuse: func(c net.Conn) { _ = c.Close(); refused <- struct{}{} }}
-	defer gate.Close()
-	dial := func() net.Conn {
-		t.Helper()
-		c, err := net.Dial("tcp", ln.Addr().String())
-		if err != nil {
+	b, err := acquireRuntime(context.Background(), cfg, "", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != b || a.limit == nil || a.limit != b.limit || a.limit.Max() != 5 || loaded != 1 {
+		t.Fatalf("two lanes on one runtime do not share one limit: %p/%p, limit %p/%p, loads %d", a, b, a.limit, b.limit, loaded)
+	}
+	c, err := acquireRuntime(context.Background(), cfg, "", 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c == a || c.limit.Max() != 6 {
+		t.Fatalf("a different max_sessions reused the runtime entry")
+	}
+	for _, e := range []*sharedRuntime{a, b, c} {
+		if err := releaseRuntime(e); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = c.Close() })
-		return c
-	}
-
-	dial()
-	first, err := gate.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.LocalAddr().String() != ln.Addr().String() {
-		t.Fatalf("local address %v, want the listener's %v", first.LocalAddr(), ln.Addr())
-	}
-
-	accepted := make(chan net.Conn, 1)
-	go func() {
-		if c, err := gate.Accept(); err == nil {
-			accepted <- c
-		}
-	}()
-	over := dial()
-	_ = over.SetReadDeadline(time.Now().Add(5 * time.Second))
-	if _, err := over.Read(make([]byte, 1)); err == nil {
-		t.Fatal("a connection past the bound was not closed")
-	}
-	select {
-	case <-refused:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the gate closed the connection without reporting a refusal")
-	}
-	if n := len(refused); n != 0 {
-		t.Fatalf("%d extra refusals, want 1 in all", n)
-	}
-
-	closed := make(chan struct{})
-	go func() {
-		_ = first.Close()
-		_ = first.Close()
-		close(closed)
-	}()
-	select {
-	case <-closed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("a second Close blocked: it tried to release a slot it no longer held")
-	}
-	dial()
-	select {
-	case c := <-accepted:
-		defer c.Close()
-	case <-time.After(5 * time.Second):
-		t.Fatal("no admission after the first session's connection closed")
-	}
-	if len(slots) != 1 {
-		t.Fatalf("%d slots held, want 1: a double Close released twice", len(slots))
 	}
 }
 
-// A refusal at the shared bound reaches the trail and the denied count the
-// way the engine's own admission refusals do.
-func TestRefuseOverCapacityReportsLikeTheEngine(t *testing.T) {
-	var got []daemon.ICAEvent
-	s := &server{rt: daemon.ICARuntime{MaxSessions: 4},
-		lane: daemon.ICALane{Events: func(e daemon.ICAEvent) error { got = append(got, e); return nil }}}
-	client, peer := net.Pipe()
-	defer peer.Close()
-	s.refuseOverCapacity(client)
-	if len(got) != 1 || got[0].Name != ica.EventConnectionRejected || got[0].Data["stage"] != ica.RejectStageSessionAdmission ||
-		!strings.Contains(fmt.Sprint(got[0].Data["error"]), "(4)") {
-		t.Fatalf("events %+v", got)
+// EDT is IPv4 UDP, and CIDR mode's UDP TPROXY socket needs a literal
+// address; Build refuses what the engine's listener would refuse at Serve.
+func TestBuildRefusesAnEDTListenAddressTheEngineCannotBind(t *testing.T) {
+	cases := []struct {
+		listen      string
+		transparent bool
+		want        string
+	}{
+		{"0.0.0.0:2598", false, ""},
+		{":2598", false, ""},
+		{"vdi.example:2598", false, ""},
+		{"[::]:2598", false, "IPv6 address"},
+		{"0.0.0.0:2598", true, ""},
+		{":2598", true, "literal IPv4 listen address"},
+		{"[::]:2598", true, "IPv6 address"},
 	}
-	if _, _, denied := s.Stats(); denied != 1 {
-		t.Fatalf("denied %d, want 1", denied)
+	for _, tc := range cases {
+		lane := daemon.ICALane{Name: "v", Listen: tc.listen, TenantID: "t", EDT: true, Upstream: "10.77.0.30:2598"}
+		if tc.transparent {
+			lane.Upstream = ""
+			lane.Transparent = true
+			lane.UpstreamPrefixes = []netip.Prefix{netip.MustParsePrefix("10.77.0.0/16")}
+		}
+		_, err := Build(daemon.ICARuntime{}, lane)
+		if tc.want == "" && err != nil {
+			t.Errorf("%s (transparent %t): refused: %v", tc.listen, tc.transparent, err)
+		}
+		if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+			t.Errorf("%s (transparent %t): err = %v, want %q", tc.listen, tc.transparent, err, tc.want)
+		}
 	}
-	if _, err := peer.Read(make([]byte, 1)); err == nil {
-		t.Fatal("the refused connection is still open")
+}
+
+// The daemon validates ica.edt against its own copy of the engine's bounds;
+// a config it accepts must not be one the engine refuses at Serve.
+func TestDaemonEDTBoundsMatchTheEngine(t *testing.T) {
+	maxRetention := int(ica.MaxEDTRetention / time.Second)
+	for _, tc := range []struct {
+		edt string
+		ok  bool
+	}{
+		{fmt.Sprintf(`{"retention_sec":%d}`, maxRetention), true},
+		{fmt.Sprintf(`{"retention_sec":%d}`, maxRetention+1), false},
+		{fmt.Sprintf(`{"replay_budget_bytes":%d}`, ica.MaxEDTReplayBudgetBytes), true},
+		{fmt.Sprintf(`{"replay_budget_bytes":%d}`, ica.MaxEDTReplayBudgetBytes+1), false},
+	} {
+		doc := `{"ica":{"edt":` + tc.edt + `},"listeners":[{"name":"v","protocol":"ica","listen":"0.0.0.0:2598","upstream":"10.77.0.30:2598","ica":{"tenant_id":"t","edt":true}}]}`
+		_, err := daemon.LoadConfigBytes([]byte(doc))
+		if (err == nil) != tc.ok {
+			t.Errorf("ica.edt %s: err = %v, want accepted=%t", tc.edt, err, tc.ok)
+		}
 	}
 }

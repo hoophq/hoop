@@ -1254,7 +1254,7 @@ func (c *Config) validate(onHost bool) error {
 	// limit its license lifts. buildLanes is the single site instead.
 
 	problems = append(problems, c.MCP.validate()...)
-	problems = append(problems, c.ICA.validate(onHost)...)
+	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
 
 	problems = append(problems, c.validatePlugins()...)
 

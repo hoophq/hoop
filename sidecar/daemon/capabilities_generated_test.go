@@ -44,10 +44,12 @@ func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 	if slices.Contains(caps, "protocol:ica") {
 		t.Errorf("the header lists protocol:ica with no engine registered; the plane would serve a lane checkICA refuses: %v", caps)
 	}
+	seen := map[string]bool{}
 	for _, c := range caps {
-		if strings.Count(strings.Join(caps, ","), c) != 1 {
+		if seen[c] {
 			t.Errorf("%q is reported twice: %v", c, caps)
 		}
+		seen[c] = true
 	}
 }
 

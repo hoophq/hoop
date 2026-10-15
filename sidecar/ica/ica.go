@@ -54,7 +54,7 @@ func Build(rt daemon.ICARuntime, lane daemon.ICALane) (daemon.ICAServer, error) 
 	if err := validateLane(lane); err != nil {
 		return nil, err
 	}
-	return &server{cfg: cfg, rt: rt, lane: lane, notes: notes(cfg, lane)}, nil
+	return &server{cfg: cfg, rt: rt, lane: lane, notes: notes(cfg, rt, lane)}, nil
 }
 
 // override copies src onto dst when src is set; a nil src keeps the
@@ -119,6 +119,11 @@ func validateLane(lane daemon.ICALane) error {
 	if strings.TrimSpace(lane.TenantID) == "" {
 		return errors.New("ica.tenant_id is required")
 	}
+	if lane.EDT {
+		if err := validateEDTListen(lane); err != nil {
+			return err
+		}
+	}
 	if lane.Transparent {
 		if len(lane.UpstreamPrefixes) == 0 {
 			return errors.New("ica.transparent.upstream_cidrs is empty: no VDA could ever be admitted")
@@ -127,6 +132,24 @@ func validateLane(lane daemon.ICALane) error {
 	}
 	if _, _, err := splitUpstream(lane.Upstream); err != nil {
 		return err
+	}
+	return nil
+}
+
+// validateEDTListen checks that the engine's UDP listener can bind the
+// lane's listen address: EDT is IPv4 UDP, and the transparent (CIDR) socket
+// also needs a literal address.
+func validateEDTListen(lane daemon.ICALane) error {
+	host, _, err := net.SplitHostPort(lane.Listen)
+	if err != nil {
+		return fmt.Errorf("ica.edt: listen %q is not host:port: %w", lane.Listen, err)
+	}
+	addr, literal := netip.ParseAddr(host)
+	if literal == nil && !addr.Unmap().Is4() {
+		return fmt.Errorf("ica.edt: EDT listens on IPv4 UDP, and listen %q is an IPv6 address; use 0.0.0.0 or an IPv4 address", lane.Listen)
+	}
+	if lane.Transparent && literal != nil {
+		return fmt.Errorf("ica.edt in CIDR mode needs a literal IPv4 listen address for its UDP TPROXY socket, and listen is %q", lane.Listen)
 	}
 	return nil
 }
@@ -200,7 +223,7 @@ var anySource = []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustPar
 // profile they override lives in the engine. The daemon's icaLaneNotes
 // reports the mode and the CIDR-mode privileges, since the daemon can state
 // them without an engine, for the control plane.
-func notes(cfg ica.RuntimeConfig, lane daemon.ICALane) []string {
+func notes(cfg ica.RuntimeConfig, rt daemon.ICARuntime, lane daemon.ICALane) []string {
 	out := []string{
 		fmt.Sprintf("ica: ocr tesseract, %d workers, %d tiles, thread limit %d, timeout %s, min confidence %.2f",
 			cfg.OCRWorkers, cfg.OCRTiles, cfg.OCRThreadLimit, cfg.OCRTimeout, cfg.OCRMinConfidence),
@@ -215,6 +238,16 @@ func notes(cfg ica.RuntimeConfig, lane daemon.ICALane) []string {
 	if lane.Transparent && runtime.GOOS != "linux" {
 		out = append(out, "ica: this host is not Linux and cannot serve CIDR mode; -validate passes, Serve will not")
 	}
+	if lane.EDT {
+		retention, budget := ica.DefaultEDTRetention, ica.DefaultEDTReplayBudgetBytes
+		if rt.EDTRetentionSec > 0 {
+			retention = time.Duration(rt.EDTRetentionSec) * time.Second
+		}
+		if rt.EDTReplayBudgetBytes > 0 {
+			budget = rt.EDTReplayBudgetBytes
+		}
+		out = append(out, fmt.Sprintf("ica: edt retention %s, replay budget %d MiB", retention, budget>>20))
+	}
 	return out
 }
 
@@ -225,13 +258,14 @@ func notes(cfg ica.RuntimeConfig, lane daemon.ICALane) []string {
 // second load; the daemon's config has one `ica` block, so the current
 // config format does not produce that case.
 //
-// slots is max_sessions for every lane on this runtime together. The
-// engine's MaxSessions bounds one Manager, and each lane has its own, so
-// the gate sits in front of every lane's listener.
+// limit is max_sessions for every lane on this runtime together: each lane
+// runs its own Manager, and the engine's MaxSessions bounds one Manager, so
+// every lane's Manager shares this SessionLimit. It covers TCP and EDT
+// sessions alike, and a suspended EDT session keeps its slot.
 type sharedRuntime struct {
 	key   string
 	done  chan struct{} // closed when load finishes; runtime and err are valid after
-	slots chan struct{}
+	limit *ica.SessionLimit
 
 	runtime     *ica.Runtime
 	diagnostics *ica.FailureDiagnostics
@@ -245,6 +279,9 @@ type sharedRuntime struct {
 var (
 	runtimesMu sync.Mutex
 	runtimes   = map[string]*sharedRuntime{}
+	// newRuntime is ica.NewRuntime; tests replace it to share entries
+	// without loading a model.
+	newRuntime = ica.NewRuntime
 )
 
 // fingerprint identifies a resolved RuntimeConfig for sharing. It sorts
@@ -262,7 +299,12 @@ func acquireRuntime(ctx context.Context, cfg ica.RuntimeConfig, diagnosticDir st
 	runtimesMu.Lock()
 	entry, loading := runtimes[key]
 	if !loading {
-		entry = &sharedRuntime{key: key, done: make(chan struct{}), slots: make(chan struct{}, maxSessions)}
+		limit, err := ica.NewSessionLimit(maxSessions)
+		if err != nil {
+			runtimesMu.Unlock()
+			return nil, err
+		}
+		entry = &sharedRuntime{key: key, done: make(chan struct{}), limit: limit}
 		runtimes[key] = entry
 	}
 	entry.refs++
@@ -292,7 +334,7 @@ func (e *sharedRuntime) load(ctx context.Context, cfg ica.RuntimeConfig, diagnos
 	}
 	if e.err == nil {
 		cfg.FailureDiagnostics = e.diagnostics
-		e.runtime, e.err = ica.NewRuntime(ctx, cfg)
+		e.runtime, e.err = newRuntime(ctx, cfg)
 	}
 	runtimesMu.Lock()
 	defer runtimesMu.Unlock()
@@ -352,11 +394,12 @@ type server struct {
 	// sessions the pipeline blocked. The engine's Stats count neither.
 	denied atomic.Int64
 
-	mu       sync.Mutex
-	closed   bool
-	shared   *sharedRuntime
-	manager  *ica.Manager
-	listener net.Listener
+	mu      sync.Mutex
+	closed  bool
+	shared  *sharedRuntime
+	manager *ica.Manager
+	tcp     net.Listener
+	edt     net.Listener // nil unless lane.EDT
 }
 
 // Serve loads the runtime (which takes minutes), resolves the destination
@@ -380,7 +423,7 @@ func (s *server) Serve(ctx context.Context) error {
 		s.logReleaseError(releaseRuntime(shared))
 		return nil
 	}
-	manager, listener, tc, summary, err := s.start(ctx, shared)
+	manager, tcp, edt, tc, summary, err := s.start(ctx, shared)
 	if err != nil {
 		err = errors.Join(err, releaseRuntime(shared))
 		if ctx.Err() != nil {
@@ -393,17 +436,49 @@ func (s *server) Serve(ctx context.Context) error {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		s.logReleaseError(errors.Join(listener.Close(), manager.Close(), releaseRuntime(shared)))
+		s.logReleaseError(errors.Join(tcp.Close(), closeListener(edt), manager.Close(), releaseRuntime(shared)))
 		return nil
 	}
-	s.shared, s.manager, s.listener = shared, manager, listener
+	s.shared, s.manager, s.tcp, s.edt = shared, manager, tcp, edt
 	s.mu.Unlock()
 
 	if s.lane.Log != nil {
-		s.lane.Log.Info("ica lane ready", "listen", listener.Addr().String(), "mode", s.mode(), "policy", summary,
-			"tenant", s.lane.TenantID, "max_sessions", s.maxSessions())
+		s.lane.Log.Info("ica lane ready", "listen", tcp.Addr().String(), "mode", s.mode(), "edt", edt != nil,
+			"policy", summary, "tenant", s.lane.TenantID, "max_sessions", s.maxSessions())
 	}
-	return manager.ServeTransparent(listener, tc)
+	return serveBoth(manager, tcp, edt, tc)
+}
+
+// serveBoth runs the TCP accept loop and, with EDT on, the UDP one, and
+// returns when either ends: a failed EDT listener takes the lane down
+// rather than leaving it half served.
+func serveBoth(manager *ica.Manager, tcp, edt net.Listener, tc ica.TransparentConfig) error {
+	if edt == nil {
+		return manager.ServeTransparent(tcp, tc)
+	}
+	edtConfig := tc
+	edtConfig.Transport = "edt-v4"
+	tcpDone, edtDone := make(chan error, 1), make(chan error, 1)
+	go func() { tcpDone <- manager.ServeTransparent(tcp, tc) }()
+	go func() { edtDone <- manager.ServeTransparent(edt, edtConfig) }()
+	select {
+	case err := <-tcpDone:
+		_ = edt.Close()
+		return errors.Join(err, <-edtDone)
+	case err := <-edtDone:
+		_ = tcp.Close()
+		return errors.Join(err, <-tcpDone)
+	}
+}
+
+func closeListener(l net.Listener) error {
+	if l == nil {
+		return nil
+	}
+	if err := l.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		return err
+	}
+	return nil
 }
 
 // maxSessions is the process-wide session bound: the operator's value, or
@@ -437,10 +512,10 @@ func (s *server) mode() string {
 	return "single"
 }
 
-// start builds the manager and the listener for one Serve. It builds the
+// start builds the manager and the listeners for one Serve. It builds the
 // manager first, because a bound socket with no manager behind it would
 // accept connections and drop them.
-func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager, net.Listener, ica.TransparentConfig, string, error) {
+func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager, net.Listener, net.Listener, ica.TransparentConfig, string, error) {
 	tc := ica.TransparentConfig{TenantID: s.lane.TenantID, Width: s.lane.Width, Height: s.lane.Height,
 		ThinwireChannel: s.lane.ThinwireChannel}
 	var (
@@ -455,7 +530,7 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 	} else {
 		addr, port, err := resolveUpstream(ctx, s.lane.Upstream)
 		if err != nil {
-			return nil, nil, tc, "", err
+			return nil, nil, nil, tc, "", err
 		}
 		var fixed string
 		policy, fixed = singlePolicy(addr, port)
@@ -468,68 +543,26 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 	}
 
 	manager, err := ica.NewManager(ctx, ica.ManagerConfig{
-		Runtime: shared.runtime, NetworkPolicy: policy, MaxSessions: s.maxSessions(),
-		ConnectTimeout:     time.Duration(s.rt.ConnectTimeoutSec) * time.Second,
-		DisableAuditOutput: true, EventHook: s.observe,
+		Runtime: shared.runtime, NetworkPolicy: policy, MaxSessions: s.maxSessions(), SessionLimit: shared.limit,
+		ConnectTimeout:        time.Duration(s.rt.ConnectTimeoutSec) * time.Second,
+		EnableExperimentalEDT: s.lane.EDT, EDTRetention: time.Duration(s.rt.EDTRetentionSec) * time.Second,
+		EDTReplayBudgetBytes: s.rt.EDTReplayBudgetBytes,
+		DisableAuditOutput:   true, EventHook: s.observe,
 	})
 	if err != nil {
-		return nil, nil, tc, "", fmt.Errorf("ica manager: %w", err)
+		return nil, nil, nil, tc, "", fmt.Errorf("ica manager: %w", err)
 	}
-	listener, err := s.listen(ctx)
+	tcp, err := s.listen(ctx)
 	if err != nil {
-		return nil, nil, tc, "", errors.Join(err, manager.Close())
+		return nil, nil, nil, tc, "", errors.Join(err, manager.Close())
 	}
-	return manager, &gatedListener{Listener: listener, slots: shared.slots, refuse: s.refuseOverCapacity}, tc, summary, nil
-}
-
-// gatedListener admits a connection only while the shared runtime has a
-// free session slot, and the slot returns when the connection closes. The
-// engine closes the client connection on every path out of a session
-// (terminate.ServeConn documents it), so a slot cannot outlive its session.
-// It wraps only the accept, so OriginalDestination still reads the
-// accepted socket's local address.
-type gatedListener struct {
-	net.Listener
-	slots  chan struct{}
-	refuse func(net.Conn)
-}
-
-func (l *gatedListener) Accept() (net.Conn, error) {
-	for {
-		conn, err := l.Listener.Accept()
-		if err != nil {
-			return nil, err
-		}
-		select {
-		case l.slots <- struct{}{}:
-			return &gatedConn{Conn: conn, slots: l.slots}, nil
-		default:
-			l.refuse(conn)
+	var edt net.Listener
+	if s.lane.EDT {
+		if edt, err = s.listenEDT(ctx); err != nil {
+			return nil, nil, nil, tc, "", errors.Join(fmt.Errorf("edt: %w", err), tcp.Close(), manager.Close())
 		}
 	}
-}
-
-type gatedConn struct {
-	net.Conn
-	slots chan struct{}
-	once  sync.Once
-}
-
-func (c *gatedConn) Close() error {
-	err := c.Conn.Close()
-	c.once.Do(func() { <-c.slots })
-	return err
-}
-
-// refuseOverCapacity closes a connection the gate turned away and reports
-// it as the engine reports its own admission refusals, so the trail and
-// the denied count treat both alike.
-func (s *server) refuseOverCapacity(conn net.Conn) {
-	_ = conn.Close()
-	s.observe(ica.Event{Time: time.Now().UTC(), Event: ica.EventConnectionRejected, Data: map[string]any{
-		"stage": ica.RejectStageSessionAdmission, "decision": ica.DecisionBlock,
-		"error": fmt.Sprintf("maximum active sessions reached across ica lanes (%d)", s.maxSessions()),
-	}})
+	return manager, tcp, edt, tc, summary, nil
 }
 
 // listen binds the lane's socket: IP_TRANSPARENT in CIDR mode, so an
@@ -544,6 +577,16 @@ func (s *server) listen(ctx context.Context) (net.Listener, error) {
 		network = "unix"
 	}
 	return (&net.ListenConfig{}).Listen(ctx, network, s.lane.Listen)
+}
+
+// listenEDT binds the lane's UDP socket on the same address. Both engine
+// listeners drop every datagram until ServeTransparent installs the lane's
+// admission policy.
+func (s *server) listenEDT(ctx context.Context) (net.Listener, error) {
+	if s.lane.Transparent {
+		return ica.ListenEDT(ctx, s.lane.Listen)
+	}
+	return ica.ListenEDTFixed(s.lane.Listen)
 }
 
 // observe is the engine's EventHook. The engine calls it on a worker under
@@ -586,15 +629,12 @@ func (s *server) Close() error {
 		return nil
 	}
 	s.closed = true
-	shared, manager, listener := s.shared, s.manager, s.listener
+	shared, manager, tcp, edt := s.shared, s.manager, s.tcp, s.edt
 	s.mu.Unlock()
 	if manager == nil {
 		return nil
 	}
-	err := listener.Close()
-	if errors.Is(err, net.ErrClosed) {
-		err = nil
-	}
+	err := errors.Join(closeListener(tcp), closeListener(edt))
 	deadline := time.Now().Add(drainTimeout)
 	for manager.Stats().Active > 0 && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
@@ -606,10 +646,10 @@ func (s *server) Close() error {
 func (s *server) Addr() net.Addr {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.listener == nil {
+	if s.tcp == nil {
 		return nil
 	}
-	return s.listener.Addr()
+	return s.tcp.Addr()
 }
 
 func (s *server) Stats() (active, total, denied int64) {

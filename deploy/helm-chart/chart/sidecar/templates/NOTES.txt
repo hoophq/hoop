@@ -10,16 +10,8 @@ running state, and /config is the resolved result — every default a lane
 inherited, already folded in.
 
 Validate a config change before it reaches a pod:
-{{ if (.Values.ica | default dict).enabled }}
-  docker run --rm -v "$PWD:/c" {{ .Values.image.repository | default "hoophq/hoopsidecar" }}:{{ .Values.image.tag }} hoop-inspect -validate -config /c/config.yaml
 
-An ica lane reports ready on /readyz once its NER model and OCR workers load,
-which can take minutes:
-
-  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }} -w
-{{- else }}
   hoop start sidecar --config config.yaml --validate
-{{- end }}
 
 Documentation:
 https://hoop.dev/docs/setup

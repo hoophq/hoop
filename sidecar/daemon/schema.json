@@ -524,6 +524,12 @@
               "placeholder": "9"
             }
           ]
+        },
+        {
+          "key": "edt",
+          "type": "boolean",
+          "label": "EDT (experimental)",
+          "help": "Also accept Citrix EDT over UDP on the same address and port. Experimental; clients fall back to TCP."
         }
       ]
     }

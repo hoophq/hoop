@@ -41,47 +41,13 @@ spec:
       labels:
         {{- include "hoopsidecar.labels" . | nindent 8 }}
     spec:
-      {{- $ica := .Values.ica | default dict }}
       {{- with (include "hoopsidecar.serviceAccountName" .) }}
       serviceAccountName: {{ . }}
-      {{- end }}
-      {{- if $ica.enabled }}
-      # On SIGTERM the admin server closes within 3s and each ica lane drains
-      # its sessions for up to 30s; the default 30s grace would cut the drain.
-      terminationGracePeriodSeconds: 45
-      {{- if $ica.transparent }}
-      # CIDR mode. The node holds the TPROXY rule, and TPROXY delivers only
-      # to a socket in the rule's network namespace. See ica.transparent in
-      # values.yaml for the node setup this depends on.
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
-      {{- end }}
       {{- end }}
       containers:
       - image: '{{ .Values.image.repository |default "hoophq/hoopsidecar" }}:{{ .Values.image.tag |default "latest" }}'
         name: sidecar
         imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
-        {{- if $ica.enabled }}
-        securityContext:
-          {{- if $ica.transparent }}
-          # IP_TRANSPARENT needs NET_ADMIN, and Kubernetes grants an added
-          # capability to a non-root process only through a file capability
-          # on the binary. Root keeps NET_ADMIN and nothing else.
-          runAsUser: 0
-          capabilities:
-            drop: [ALL]
-            add: [NET_ADMIN]
-          {{- else }}
-          runAsNonRoot: true
-          runAsUser: 10001
-          runAsGroup: 10001
-          capabilities:
-            drop: [ALL]
-          {{- end }}
-          allowPrivilegeEscalation: false
-          seccompProfile:
-            type: RuntimeDefault
-        {{- end }}
         {{- if .Values.resources }}
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
@@ -115,11 +81,9 @@ spec:
         - name: admin
           containerPort: 19000
           protocol: TCP
-        {{- /* /readyz answers 503 while an ica lane loads its model and OCR
-        workers. Only ica images serve it, so other pods keep /healthz. */}}
         readinessProbe:
           httpGet:
-            path: {{ if $ica.enabled }}/readyz{{ else }}/healthz{{ end }}
+            path: /healthz
             port: 19000
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
@@ -130,7 +94,7 @@ spec:
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
         {{- $k8sIdentity := eq .Values.controlPlane.identity "kubernetes" }}
-        {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumeMounts $k8sIdentity (and $ica.enabled $ica.model) }}
+        {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumeMounts $k8sIdentity }}
         volumeMounts:
         {{- if include "hoopsidecar.hasConfigFile" . }}
         - name: sidecar-config-volume
@@ -142,16 +106,11 @@ spec:
           mountPath: {{ include "hoopsidecar.identityTokenDir" . }}
           readOnly: true
         {{- end }}
-        {{- if and $ica.enabled $ica.model }}
-        - name: ica-ner-model
-          mountPath: {{ include "hoopsidecar.icaModelDir" . }}
-          readOnly: true
-        {{- end }}
         {{- with .Values.extraVolumeMounts }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- end }}
-      {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumes $k8sIdentity (and $ica.enabled $ica.model) }}
+      {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumes $k8sIdentity }}
       volumes:
       {{- if include "hoopsidecar.hasConfigFile" . }}
       - name: sidecar-config-volume
@@ -169,10 +128,6 @@ spec:
               audience: {{ include "hoopsidecar.identityAudience" . | quote }}
               expirationSeconds: {{ include "hoopsidecar.identityTokenExpiration" . }}
               path: token
-      {{- end }}
-      {{- if and $ica.enabled $ica.model }}
-      - name: ica-ner-model
-        {{- toYaml $ica.model | nindent 8 }}
       {{- end }}
       {{- with .Values.extraVolumes }}
       {{- toYaml . | nindent 6 }}

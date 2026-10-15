@@ -2749,22 +2749,54 @@ nested module, `sidecar/ica`, and only `hoop-inspect` links it. A build
 without it refuses an ica lane at startup and omits `protocol:ica` from its
 capabilities header, so the plane does not serve that build an ica lane.
 
-`upstream:` selects single mode and names the VDA; `ica.transparent:`
-selects CIDR mode, where each connection's original destination is its VDA:
+`upstream:` selects single mode and names the VDA. Single mode is the
+standard setup: register the VDA with Citrix using the sidecar host as its
+address, so the Gateway's connection for that VDA lands on the sidecar, and
+the lane forwards it to the VDA in `upstream`. It needs no routing changes
+and no privileges, and each lane serves one VDA:
 
 ```yaml
 ica:                                   # one OCR/NER runtime for every ica lane in the process
-  ner_model: /opt/libhoop-ica/current/models/KnightsAnalytics_distilbert-NER
   options: {ocr_workers: 4}            # overrides of the engine's production profile
 
 listeners:
-  - name: vdi-finance                  # single mode: upstream is the one VDA
+  - name: vdi-finance
     protocol: ica
-    listen: 0.0.0.0:2599
+    listen: 0.0.0.0:2598
     upstream: 10.77.0.30:2598
-    ica: {tenant_id: finance}
+    ica:
+      tenant_id: finance
+      edt: true                        # optional: EDT over UDP on the same port
+```
 
-  - name: vdi                          # CIDR mode: the VDA is each connection's own destination
+The `hoophq/hoopsidecar:<version>-ica` image runs `hoop-inspect` with the
+engine, tesseract, ONNX Runtime and the NER model in place, so a config like
+the one above is all it needs:
+
+```sh
+docker run -d --name hoop-ica \
+  -p 2598:2598/tcp -p 2598:2598/udp -p 19000:19000 \
+  -v "$PWD/config.yaml:/etc/hoop-inspect/config.yaml:ro" \
+  hoophq/hoopsidecar:<version>-ica
+curl -s localhost:19000/readyz         # 503 while the model loads, then 200
+```
+
+`ica.edt: true` also accepts Citrix EDT (UDP) on the listener's address,
+beside TCP: same port, same tenant and VDA, and the same `max_sessions`. EDT
+is experimental in the engine. Publish the port for UDP as well; a client
+that cannot reach it falls back to TCP, which the lane inspects the same
+way. The top-level `ica.edt` block tunes it: `retention_sec` (1..600,
+default 120) is how long a suspended EDT session waits for its client to
+reconnect, and `replay_budget_bytes` (up to 8 GiB, default 512 MiB) bounds
+the bytes queued for replay. EDT needs an IPv4 listen address.
+
+`ica.transparent:` selects CIDR mode instead, for a network that routes
+Gateway-to-VDA traffic through the sidecar host and cannot register VDAs
+with the sidecar's address. Each connection's original destination is its
+VDA:
+
+```yaml
+  - name: vdi
     protocol: ica
     listen: 0.0.0.0:2598
     ica:
@@ -2780,10 +2812,10 @@ CIDR mode intercepts traffic through an `IP_TRANSPARENT` listening socket,
 so an accepted connection's local address is the VDA the client dialed. The
 engine checks that address against `upstream_cidrs`/`upstream_ports` and
 the source against `source_cidrs`, then dials the VDA. CIDR mode is
-Linux-only: the process needs `CAP_NET_ADMIN`, and the host needs the
-nftables TPROXY rule and policy route that the engine's
-`docs/transparent-linux.md` lists. Single mode has none of these
-requirements and serves one VDA per lane. Both modes run the same engine
+Linux-only: the process needs `CAP_NET_ADMIN` (`docker run --cap-add
+NET_ADMIN --network host`), and the host needs the nftables TPROXY rule and
+policy route that the engine's `docs/transparent-linux.md` lists, with a
+UDP rule as well when the lane sets `edt`. Both modes run the same engine
 after accept.
 
 The top-level `ica` block configures the runtime: asset paths,
@@ -2811,10 +2843,13 @@ the sidecar does not see a user name.
 
 | Event | Row |
 |---|---|
-| a refused connection | `kind: violation` with the engine's stage as the rule (`gateway_source_policy`, `original_destination`, `session_admission`) and the reason as the message. No session id, because the engine admitted no session |
-| a session | `session_start`; then `session_end` with the engine's decision as the rule (`release`, `release_uninspected`), the duration, and the frame and OCR batch counts in `metadata` |
+| a refused connection | `kind: violation` with the engine's stage as the rule (`gateway_source_policy`, `original_destination`, `session_admission`) and the reason as the message. No session id, because the engine admitted no session. For EDT, one row per source and stage every 10 seconds; `metadata.suppressed` counts the datagrams folded into it, and `metadata.dropped` the refusal rows the engine could not queue |
+| a session | `session_start`; then `session_end` with the engine's decision as the rule (`release`, `release_uninspected`; for EDT also `expired`, when a suspended session outlived `retention_sec`), the duration, and the frame and OCR batch counts in `metadata` |
 | a blocked session | `kind: violation` in place of the end row, `rule: block`, `denied_count: 1` |
 | a failed session | `kind: error` with the engine's stage and reason |
+
+Session rows and EDT refusal rows carry `metadata.transport`, `tcp` or
+`edt-v4`; a refused TCP connection has none.
 
 The trail omits pixels, recognized text, detections, and ICA/CGP bytes. The
 engine's own JSON audit stream is off inside the sidecar, so the rows above
