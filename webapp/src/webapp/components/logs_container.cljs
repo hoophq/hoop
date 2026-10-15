@@ -3,10 +3,10 @@
    ["@radix-ui/themes" :refer [ScrollArea]]
    ["lucide-react" :refer [Clipboard]]
    ["clipboard" :as clipboardjs]
-   [clojure.string :as string]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.headings :as h]
+   [webapp.components.log-lines :as log-lines]
    [webapp.components.virtualized-list :as vlist]
    [webapp.config :as config]))
 
@@ -17,7 +17,8 @@
   [:div.flex.gap-small
    [:span "loading"]
    [:figure.w-4
-    [:img.animate-spin {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
+    [:img.animate-spin {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")
+                        :alt ""}]]])
 (defmethod logs-area :failure [_ _] "There was an error to get the logs for this task")
 (defmethod logs-area :default [_ _] "No logs to show")
 
@@ -75,34 +76,36 @@
         (when clipboard
           (.destroy clipboard))))))
 
+(defn- row [line _idx]
+  (log-lines/row line ""))
+
 (defn virtualized-container
   "Renders a large log string using window virtualization.
    Only visible lines are in the DOM — scroll is always fluid.
    The container fills its parent; place inside a flex/grid cell with a
    bounded height (e.g. `flex-1 min-h-0`).
    config keys: :status :logs :classes"
-  [config]
-  (let [logs (:logs config)
-        status (:status config)]
-    [:div {:class (str "relative bg-gray-900 font-mono overflow-hidden h-full"
-                       " text-gray-200 text-sm"
-                       " p-radix-4 rounded-lg"
-                       (when (:classes config) (str " " (:classes config))))}
-     (if (= status :success)
-       (let [lines (if (and logs (seq logs))
-                     (vec (string/split logs #"\n"))
-                     [])]
-         [vlist/virtualized-list
-          {:items lines
-           :item-height 20
-           :render-item (fn [line _idx]
-                          [:div {:class "whitespace-pre leading-5"} line])}])
-       (case status
-         :loading [:div {:class "flex gap-small"}
-                   [:span "loading"]
-                   [:figure {:class "w-4"}
-                    [:img {:class "animate-spin"
-                           :src (str config/webapp-url
-                                     "/icons/icon-loader-circle-white.svg")}]]]
-         :failure "There was an error to get the logs for this task"
-         "No logs to show"))]))
+  [_config]
+  (let [cache (log-lines/new-cache)]
+    (fn [config]
+      (let [logs (:logs config)
+            status (:status config)]
+        [:div {:class (str "relative bg-gray-900 font-mono overflow-hidden h-full"
+                           " text-gray-200 text-sm"
+                           " p-radix-4 rounded-lg"
+                           (when (:classes config) (str " " (:classes config))))}
+         (if (= status :success)
+           [vlist/virtualized-list
+            {:items (:rows (log-lines/parse cache logs))
+             :item-height log-lines/row-height
+             :render-item row}]
+           (case status
+             :loading [:div {:class "flex gap-small"}
+                       [:span "loading"]
+                       [:figure {:class "w-4"}
+                        [:img {:class "animate-spin"
+                               :alt ""
+                               :src (str config/webapp-url
+                                         "/icons/icon-loader-circle-white.svg")}]]]
+             :failure "There was an error to get the logs for this task"
+             "No logs to show"))]))))
