@@ -375,3 +375,30 @@ jobs:
 
       - name: Sidecar Config Compat
         run: make test-sidecar-compat
+
+  # Development Release builds webapp_v2 only after the CLJS bundle; fail fast here.
+  webapp-v2:
+    name: Webapp v2 Lint and Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: webapp_v2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      # Matches the release build; DEP-306 moves both off Node 20.
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: webapp_v2/package-lock.json
+
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build

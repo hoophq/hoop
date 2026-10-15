@@ -1,10 +1,6 @@
-import { SpotlightRoot, SpotlightSearch, SpotlightActionsList, spotlight } from '@mantine/spotlight';
+import { SpotlightRoot, SpotlightSearch, SpotlightActionsList } from '@mantine/spotlight';
 import { Badge, ActionIcon } from '@mantine/core';
 import { Search, X } from 'lucide-react';
-
-export { spotlight };
-
-export const openCommandPalette = () => spotlight.open();
 
 function CommandPaletteRoot({ 
   query, 
