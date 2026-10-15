@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Stack, Group, Grid } from '@mantine/core'
+import { Stack, Group, Grid, Text } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import Button from '@/components/Button'
 import ActionIcon from '@/components/ActionIcon'
@@ -13,7 +13,12 @@ import { labelForTag } from '@/utils/tags'
 // key. Users can also type a brand-new key/value and commit it with the Add
 // button.
 
-const KEY_PATTERN = /^[a-zA-Z0-9-]+$/
+// The Roles → Configure rules: only the key is checked, against the typed
+// label.
+const DEFAULT_RULES = {
+  keyPattern: /^[a-zA-Z0-9-]+$/,
+  keyError: 'Only letters, numbers and hyphens are allowed',
+}
 
 /**
  * Controlled key/value tags editor.
@@ -26,14 +31,25 @@ const KEY_PATTERN = /^[a-zA-Z0-9-]+$/
  *   />
  *
  * `pool` is the suggestion list, `[{ key, value }]`. `onChange` receives the
- * whole next tags object.
+ * whole next tags object. `rules` sets what the editor accepts:
+ * `{ keyPattern, keyError, valuePattern?, valueError?, maxTags?,
+ * warnPendingDraft? }`. The default is the Roles → Configure rule set.
  */
-export default function TagsEditor({ value, onChange, pool = [], disabled = false }) {
+export default function TagsEditor({
+  value,
+  onChange,
+  pool = [],
+  disabled = false,
+  rules = DEFAULT_RULES,
+}) {
   const tags = value || {}
+  const { keyPattern, keyError: keyRuleError, valuePattern, valueError: valueRuleError, maxTags } = rules
+  const valueErrorOf = (val) => (valuePattern && !valuePattern.test(val) ? valueRuleError : null)
 
   const [draftKey, setDraftKey] = useState('')
   const [draftValue, setDraftValue] = useState('')
   const [keyError, setKeyError] = useState(null)
+  const [valueError, setValueError] = useState(null)
 
   // label → full key map drawn from the pool. When the user picks a label
   // from the dropdown we resolve it back to the full key (with
@@ -96,9 +112,14 @@ export default function TagsEditor({ value, onChange, pool = [], disabled = fals
     // Both must be non-empty — matches CLJS Add-disabled rule at
     // tags_inputs.cljs:69-73.
     if (!k || !v) return
-    if (!KEY_PATTERN.test(k)) {
-      setKeyError('Only letters, numbers and hyphens are allowed')
+    if (!keyPattern.test(k)) {
+      setKeyError(keyRuleError)
       setTimeout(() => setKeyError(null), 3000)
+      return
+    }
+    const vError = valueErrorOf(v)
+    if (vError) {
+      setValueError(vError)
       return
     }
     setTag(resolveLabelToKey(k), v)
@@ -106,7 +127,9 @@ export default function TagsEditor({ value, onChange, pool = [], disabled = fals
     setDraftValue('')
   }
 
-  const canCommit = draftKey.trim().length > 0 && draftValue.trim().length > 0
+  const atMaxTags = maxTags != null && entries.length >= maxTags
+  const hasDraft = draftKey.trim().length > 0 && draftValue.trim().length > 0
+  const canCommit = hasDraft && !atMaxTags
 
   return (
     <Stack gap="md">
@@ -119,16 +142,17 @@ export default function TagsEditor({ value, onChange, pool = [], disabled = fals
               tagValue={val}
               keyOptions={keyOptions}
               valueOptions={valuesForLabel.get(labelForTag(key)) || []}
+              valueError={valueErrorOf(val)}
               disabled={disabled}
               onKeyChange={(newLabel) => {
                 const newKey = resolveLabelToKey(newLabel)
                 if (newKey === key) return
-                // KEY_PATTERN runs against the user-typed label (free-form
+                // keyPattern runs against the user-typed label (free-form
                 // tags), not the resolved full key — system tags like
                 // `hoop.dev/...` come from the pool and always pass.
                 if (
                   newKey === newLabel /* free-form */ &&
-                  !KEY_PATTERN.test(newLabel)
+                  !keyPattern.test(newLabel)
                 ) return
                 renameTag(key, newKey)
               }}
@@ -160,7 +184,11 @@ export default function TagsEditor({ value, onChange, pool = [], disabled = fals
               placeholder={draftKey ? 'Select or create a value...' : 'First select a key...'}
               data={draftKey ? valuesForLabel.get(draftKey) || [] : []}
               value={draftValue}
-              onChange={setDraftValue}
+              onChange={(val) => {
+                setDraftValue(val)
+                if (valueError) setValueError(null)
+              }}
+              error={valueError}
               disabled={!draftKey.trim()}
             />
           </Grid.Col>
@@ -177,6 +205,13 @@ export default function TagsEditor({ value, onChange, pool = [], disabled = fals
           </Grid.Col>
         </Grid>
       )}
+
+      {!disabled && atMaxTags && (
+        <Text size="xs" c="dimmed">{`Maximum of ${maxTags} tags reached.`}</Text>
+      )}
+      {!disabled && rules.warnPendingDraft && hasDraft && !atMaxTags && (
+        <Text size="xs" c="dimmed">Click Add to keep this tag. A tag that is not added is not saved.</Text>
+      )}
     </Stack>
   )
 }
@@ -186,6 +221,7 @@ function RowFragment({
   tagValue,
   keyOptions,
   valueOptions,
+  valueError,
   disabled,
   onKeyChange,
   onValueChange,
@@ -211,6 +247,7 @@ function RowFragment({
           data={valueOptions}
           value={tagValue}
           onChange={onValueChange}
+          error={valueError}
           disabled={disabled}
         />
       </Grid.Col>

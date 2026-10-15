@@ -31,7 +31,7 @@ func TestValidateTags(t *testing.T) {
 		{strings.Repeat("k", 65), "v"},
 		{"key", ""},
 		{"key", "bad#value"},
-		// The value rule has no (.), whatever the message says: connections keep it.
+		// The value rule has no (.): connections keep it.
 		{"key", "v1.2"},
 		{"key", strings.Repeat("v", 257)},
 	} {
@@ -39,6 +39,15 @@ func TestValidateTags(t *testing.T) {
 		assert.Error(t, err, "%q=%q", tc.key, tc.val)
 	}
 	assert.NoError(t, ValidateTags("tags", map[string]string{strings.Repeat("k", 64): strings.Repeat("v", 256)}))
+}
+
+// The messages list only the characters the rules accept.
+func TestTagErrorMessagesMatchTheRules(t *testing.T) {
+	errs := TagErrors("tags", map[string]string{"bad key": "v1.2"})
+	if assert.Len(t, errs, 2) {
+		assert.Contains(t, errs[0], "it must not end with (-), (/) or (.)")
+		assert.NotContains(t, errs[1], "(.)")
+	}
 }
 
 func TestTagErrorsNameTheFieldInKeyOrder(t *testing.T) {

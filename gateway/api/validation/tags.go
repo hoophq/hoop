@@ -29,11 +29,11 @@ func TagErrors(field string, tags map[string]string) []string {
 		if len(key) < 1 || len(key) > 64 || !reTagKey.MatchString(key) {
 			errs = append(errs,
 				fmt.Sprintf("%s (%v), keys must contain between 1 and 64 alphanumeric characters, ", field, key)+
-					"it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-)")
+					"it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (.)")
 		}
 		if len(val) < 1 || len(val) > 256 || !reTagValue.MatchString(val) {
 			errs = append(errs, fmt.Sprintf("%s (%v), values must contain between 1 and 256 alphanumeric characters, ", field, key)+
-				"it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters")
+				"it may include space, (-), (_), (/), (+), (@), (:) or (=) characters")
 		}
 	}
 	return errs

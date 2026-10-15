@@ -623,6 +623,7 @@ import TagsEditor from '@/components/TagsEditor'
 <TagsEditor value={tags} onChange={setTags} pool={tagsPool} disabled={saved} />
 ```
 `onChange` receives the whole next tags object. `disabled` makes the rows read-only and hides the Add row.
+`rules` sets what it accepts: `{ keyPattern, keyError, valuePattern?, valueError?, maxTags?, warnPendingDraft? }`. The default is the Roles → Configure set (key letters, numbers and hyphens). Agents pass `AGENT_TAG_RULES` from `utils/tags.js`, which follows the gateway rules in `gateway/api/validation/tags.go`.
 
 ### `NumberInput`
 Numeric input. Supports `min`, `max`, `step`, and clamping.

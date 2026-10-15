@@ -6,6 +6,8 @@ import { useAgentStore } from '@/stores/useAgentStore'
 import MethodCard from '@/components/MethodCard'
 import StepAccordion from '@/components/StepAccordion'
 import TagsEditor from '@/components/TagsEditor'
+import { showSnackbar } from '@/utils/snackbar'
+import { AGENT_TAG_RULES } from '@/utils/tags'
 import { DeploymentMain } from './DeploymentInstructions'
 
 const INSTALL_METHODS = [
@@ -56,8 +58,12 @@ function AgentsCreate() {
       await createAgent({ name, tags })
       setCreated(true)
       setActiveAccordion('step2')
-    } catch {
-      // error handled by store
+    } catch (error) {
+      showSnackbar({
+        level: 'error',
+        text: 'Failed to create agent.',
+        description: error?.response?.data?.message,
+      })
     }
   }
 
@@ -91,7 +97,13 @@ function AgentsCreate() {
             <Text size="sm" c="dimmed">
               Optional labels to select agents through the API, for example production agents only.
             </Text>
-            <TagsEditor value={tags} onChange={setTags} pool={tagsPool} disabled={created} />
+            <TagsEditor
+              value={tags}
+              onChange={setTags}
+              pool={tagsPool}
+              rules={AGENT_TAG_RULES}
+              disabled={created}
+            />
           </Stack>
           <Button
             type="submit"

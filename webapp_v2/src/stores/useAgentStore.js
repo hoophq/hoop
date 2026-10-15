@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { agentsService } from '@/services/agents'
 
-export const useAgentStore = create((set) => ({
+export const useAgentStore = create((set, get) => ({
   agents: [],
   loading: false,
   error: null,
@@ -43,6 +43,8 @@ export const useAgentStore = create((set) => ({
       set((state) => ({
         agents: state.agents.filter((a) => a.id !== id),
       }))
+      // A custom tag leaves the suggestions when no agent uses it.
+      get().fetchTagsPool()
     } catch (error) {
       set({ error: error.message })
       throw error
@@ -56,6 +58,7 @@ export const useAgentStore = create((set) => ({
     set((state) => ({
       agents: state.agents.map((a) => (a.id === id ? { ...a, tags: data.tags } : a)),
     }))
+    get().fetchTagsPool()
     return data
   },
 

@@ -24,7 +24,7 @@ import TagsEditor from '@/components/TagsEditor'
 import TagBadge from '@/components/Badge'
 import Tooltip from '@/components/Tooltip'
 import { showSnackbar } from '@/utils/snackbar'
-import { labelForTag } from '@/utils/tags'
+import { labelForTag, AGENT_TAG_RULES } from '@/utils/tags'
 
 function AgentStatusBadge({ status }) {
   const isOnline = status === 'CONNECTED'
@@ -73,7 +73,6 @@ function DeleteAgentModal({ agent, opened, onClose, onConfirm }) {
 function EditTagsModal({ agent, opened, onClose }) {
   const updateAgentTags = useAgentStore((s) => s.updateAgentTags)
   const tagsPool = useAgentStore((s) => s.tagsPool)
-  const fetchTagsPool = useAgentStore((s) => s.fetchTagsPool)
   // The parent remounts this modal on every open (key), so the draft
   // always starts from the agent's saved tags.
   const [tags, setTags] = useState(() => ({ ...(agent?.tags || {}) }))
@@ -83,7 +82,6 @@ function EditTagsModal({ agent, opened, onClose }) {
     setSaving(true)
     try {
       await updateAgentTags(agent.id, tags)
-      fetchTagsPool()
       showSnackbar({ level: 'success', text: `Tags of agent "${agent.name}" updated.` })
       onClose()
     } catch (error) {
@@ -103,7 +101,7 @@ function EditTagsModal({ agent, opened, onClose }) {
         <Text size="sm" c="dimmed">
           Labels to select agents through the API, for example production agents only.
         </Text>
-        <TagsEditor value={tags} onChange={setTags} pool={tagsPool} />
+        <TagsEditor value={tags} onChange={setTags} pool={tagsPool} rules={AGENT_TAG_RULES} />
         <Group justify="flex-end" mt="xs">
           <Button variant="subtle" color="gray" onClick={onClose}>
             Cancel
