@@ -7,12 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/gate"
 )
 
 // controlPlaneReviewsPath files a statement for human approval.
@@ -33,6 +36,16 @@ const controlPlaneReviewsPath = "/api/sidecars/reviews"
 // from inside a wait nobody started.
 const controlPlaneClaimPath = "claim"
 
+// controlPlaneSettlePath is where a lane that settles reports the upstream's
+// answer to a statement a reserved approval released, under
+// controlPlaneReviewsPath as <id>/settle.
+const controlPlaneSettlePath = "settle"
+
+// settleTimeout bounds one settle. It runs on the response path, before the
+// client reads the response, so it is short: a settle that fails leaves the
+// approval for the plane to spend when the reservation's lease ends.
+const settleTimeout = 10 * time.Second
+
 // maxReviewResponse bounds the response read. A review answer is a few
 // hundred bytes; anything near this is not the control plane.
 const maxReviewResponse = 1 << 20
@@ -46,20 +59,47 @@ const maxReviewResponse = 1 << 20
 // is NOT the evaluator's own name: a deprecated ai_analysis rule carries an
 // operator-chosen one. Binding them here keeps the analyzer package unable to
 // get that wrong.
+//
+// reserve asks the plane to reserve an approval rather than spend it
+// (spend_approval_on: accepted); the lane's gate then settles it with the
+// upstream's answer through Config.reviewSettler.
 type planReviewer struct {
 	cp       *controlPlane
 	listener string
 	rule     string
+	reserve  bool
+	log      *slog.Logger
 }
 
 // File implements analyzer.Reviewer.
 func (r planReviewer) File(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
-	return r.cp.fileReview(ctx, r.listener, r.rule, statement)
+	res, err := r.cp.fileReview(ctx, r.listener, r.rule, statement, r.reserve)
+	r.checkReserved(res)
+	return res, err
 }
 
 // Claim implements analyzer.Reviewer.
 func (r planReviewer) Claim(ctx context.Context, reviewID string) (analyzer.ReviewResult, error) {
-	return r.cp.claimReview(ctx, reviewID)
+	res, err := r.cp.claimReview(ctx, reviewID, r.reserve)
+	r.checkReserved(res)
+	return res, err
+}
+
+// Settle implements analyzer.Settler.
+func (r planReviewer) Settle(ctx context.Context, reviewID string, accepted bool) error {
+	_, err := r.cp.settleReview(ctx, reviewID, accepted)
+	return err
+}
+
+// checkReserved warns when a lane that reserves was released on a spent
+// approval: a plane older than settling ignores the request and spends the
+// approval at release, as it did before.
+func (r planReviewer) checkReserved(res analyzer.ReviewResult) {
+	if r.reserve && res.Forward && res.Status != "PROCESSING" && r.log != nil {
+		r.log.Warn("the control plane spent the approval at release; it predates "+
+			"spend_approval_on: accepted, so a refused statement still uses the approval",
+			"listener", r.listener, "review", res.ID, "status", res.Status)
+	}
 }
 
 // reviewer returns the backend one lane holds statements against.
@@ -69,11 +109,35 @@ func (r planReviewer) Claim(ctx context.Context, reviewID string) (analyzer.Revi
 // plane, so a client cannot exist there, and a build error would refuse a
 // config that runs correctly. The nil is untyped on purpose: a nil
 // *controlPlane inside a planReviewer would read as a backend.
-func (cp *controlPlane) reviewer(listener, rule string) analyzer.Reviewer {
+func (cp *controlPlane) reviewer(listener, rule string, reserve bool, log *slog.Logger) analyzer.Reviewer {
 	if cp == nil {
 		return nil
 	}
-	return planReviewer{cp: cp, listener: listener, rule: rule}
+	return planReviewer{cp: cp, listener: listener, rule: rule, reserve: reserve, log: log}
+}
+
+// reviewSettler returns what every lane's gate reports the upstream's answer
+// through, or nil without a control plane. Set on every lane, not only on
+// those that reserve: a reload can turn reserving on, and a gate settles only
+// a statement whose approval the plane reserved. On a lane with no http or
+// grpc answer to read it is never called.
+func (c *Config) reviewSettler(log *slog.Logger) gate.SettleFunc {
+	if c.cp == nil {
+		return nil
+	}
+	cp := c.cp
+	return func(ctx context.Context, reviewID string, accepted bool) {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
+		defer cancel()
+		status, err := cp.settleReview(ctx, reviewID, accepted)
+		if err != nil {
+			log.Warn("the upstream's answer was not reported; the control plane spends "+
+				"the approval when the reservation's lease ends",
+				"review", reviewID, "accepted", accepted, "error", err)
+			return
+		}
+		log.Info("settled a reserved approval", "review", reviewID, "accepted", accepted, "status", status)
+	}
 }
 
 // LocalReviewer returns the backend one lane files held statements with when
@@ -108,6 +172,12 @@ func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
 	}
 	if holdsWithoutAPlane(cfg, la, ac) {
 		if ac != nil && ac.local != nil {
+			if la.reserves() {
+				return fmt.Sprintf("the analyzer block sets spend_approval_on %q and this "+
+					"sidecar has no control plane; only the plane can hold an approval "+
+					"until the upstream answers, and the terminal reviewer releases one "+
+					"statement at once", la.SpendApprovalOn)
+			}
 			return ""
 		}
 		return fmt.Sprintf("the analyzer block asks for %q and this sidecar has no control "+
@@ -164,17 +234,23 @@ func holdsWithoutAPlane(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) b
 //
 // Every failure returns an error, and the caller denies on one. There is no
 // retry here: a hold that is still pending asks again through claimReview.
-func (cp *controlPlane) fileReview(ctx context.Context, listener, rule, statement string) (analyzer.ReviewResult, error) {
+func (cp *controlPlane) fileReview(ctx context.Context, listener, rule, statement string, reserve bool) (analyzer.ReviewResult, error) {
 	var out analyzer.ReviewResult
 
 	// The statement is base64 because it is bytes, not text: a wire
 	// statement can carry anything the client typed, and the plane hashes
 	// exactly what arrives to match a retry against the approval.
-	body, err := json.Marshal(map[string]string{
+	req := map[string]any{
 		"listener_name": listener,
 		"approval_rule": rule,
 		"payload":       base64.StdEncoding.EncodeToString([]byte(statement)),
-	})
+	}
+	// Only when set, so a lane that does not reserve sends the body it
+	// always sent.
+	if reserve {
+		req["reserve"] = true
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
 		return out, fmt.Errorf("encoding the review request: %w", err)
 	}
@@ -203,11 +279,16 @@ func (cp *controlPlane) fileReview(ctx context.Context, listener, rule, statemen
 // The answer must be about that review. One naming another is not the plane
 // answering this question, and a release on it would tie the statement to a
 // decision nobody made about it.
-func (cp *controlPlane) claimReview(ctx context.Context, reviewID string) (analyzer.ReviewResult, error) {
+func (cp *controlPlane) claimReview(ctx context.Context, reviewID string, reserve bool) (analyzer.ReviewResult, error) {
 	var out analyzer.ReviewResult
 
+	// No body unless reserving: what a claim sent before reserving existed.
+	var body []byte
+	if reserve {
+		body = []byte(`{"reserve":true}`)
+	}
 	// Escaped, so an id is always one path segment whatever it carries.
-	resp, raw, err := cp.reviewRequest(ctx, http.MethodPost, nil,
+	resp, raw, err := cp.reviewRequest(ctx, http.MethodPost, body,
 		controlPlaneReviewsPath, url.PathEscape(reviewID), controlPlaneClaimPath)
 	if err != nil {
 		return out, err
@@ -229,6 +310,35 @@ func (cp *controlPlane) claimReview(ctx context.Context, reviewID string) (analy
 			"the control plane answered about review %q when asked about %q", out.ID, reviewID)
 	}
 	return out, nil
+}
+
+// settleReview runs one POST /api/sidecars/reviews/<id>/settle and returns
+// the review's status after it. An approval the plane did not reserve, or
+// whose lease ended, answers with its status unchanged, which is not an
+// error: the plane already decided.
+func (cp *controlPlane) settleReview(ctx context.Context, reviewID string, accepted bool) (string, error) {
+	body, err := json.Marshal(map[string]bool{"accepted": accepted})
+	if err != nil {
+		return "", fmt.Errorf("encoding the settle request: %w", err)
+	}
+	resp, raw, err := cp.reviewRequest(ctx, http.MethodPost, body,
+		controlPlaneReviewsPath, url.PathEscape(reviewID), controlPlaneSettlePath)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf("the control plane at %s has no review %s to settle: %s",
+			cp.url, reviewID, controlPlaneMessage(raw))
+	}
+	out, err := cp.reviewAnswer(resp, raw)
+	if err != nil {
+		return "", err
+	}
+	if out.ID != reviewID {
+		return "", fmt.Errorf(
+			"the control plane answered about review %q when asked about %q", out.ID, reviewID)
+	}
+	return out.Status, nil
 }
 
 // reviewRequest sends one request under the reviews path and reads the

@@ -28,7 +28,15 @@ const (
 	statusRevoked  = "REVOKED"
 	statusExecuted = "EXECUTED"
 	statusExpired  = "EXPIRED"
+	// statusProcessing is an approval a request is using while its
+	// upstream answers (spend_approval_on: accepted).
+	statusProcessing = "PROCESSING"
 )
+
+// waits reports a status review_wait keeps waiting on.
+func waits(status string) bool {
+	return status == statusPending || status == statusProcessing
+}
 
 type tools struct {
 	reviews daemon.ReviewStatusReader
@@ -53,7 +61,7 @@ type statusInput struct {
 }
 
 type listInput struct {
-	Status string `json:"status,omitempty" jsonschema:"only reviews in this status: PENDING, APPROVED, REJECTED, REVOKED, EXECUTED or EXPIRED"`
+	Status string `json:"status,omitempty" jsonschema:"only reviews in this status: PENDING, APPROVED, REJECTED, REVOKED, PROCESSING, EXECUTED or EXPIRED"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"how many of the newest reviews, default 20, max 200"`
 }
 
@@ -167,7 +175,7 @@ func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput
 			return nil, reviewOutput{}, err
 		}
 		elapsed := time.Since(started)
-		if rev.Status != statusPending {
+		if !waits(rev.Status) {
 			return nil, withWait(describe(rev), false, elapsed), nil
 		}
 		select {
@@ -180,7 +188,7 @@ func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput
 			if err != nil {
 				return nil, reviewOutput{}, err
 			}
-			return nil, withWait(describe(rev), rev.Status == statusPending, time.Since(started)), nil
+			return nil, withWait(describe(rev), waits(rev.Status), time.Since(started)), nil
 		case <-ticker.C:
 			progress(time.Since(started))
 		}
@@ -232,6 +240,10 @@ func describe(r daemon.ReviewStatus) reviewOutput {
 		}
 	case statusRevoked:
 		out.Instruction = "The approval was revoked. The statement will not run; do not resend it."
+	case statusProcessing:
+		out.Instruction = "A resent statement is using the approval while its upstream answers. " +
+			"Call review_wait with this id: if the upstream refuses it, the approval comes back " +
+			"and reads APPROVED; if it accepts it, the approval is used."
 	case statusExecuted:
 		out.Instruction = "The approval was already used by a resent statement. Running it " +
 			"again needs a new review."

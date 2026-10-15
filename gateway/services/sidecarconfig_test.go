@@ -365,6 +365,18 @@ func TestAnAnalyzerRuleReviewModeWinsWhenSet(t *testing.T) {
 	}
 }
 
+// spend_approval_on merges like review_mode: a rule spec that names it means
+// it, and a spec that names none keeps the listener's.
+func TestAnAnalyzerRuleSpendApprovalOnWinsWhenSet(t *testing.T) {
+	base := &daemon.LaneAnalyzerConfig{SpendApprovalOn: daemon.SpendOnAccepted}
+	if got := mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{}); got.SpendApprovalOn != daemon.SpendOnAccepted {
+		t.Errorf("a rule naming none dropped the listener's: %q", got.SpendApprovalOn)
+	}
+	if got := mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{SpendApprovalOn: daemon.SpendOnForward}); got.SpendApprovalOn != daemon.SpendOnForward {
+		t.Errorf("the rule's value did not win: %q", got.SpendApprovalOn)
+	}
+}
+
 // A rule spec that names rate_limit sets the lane's rate field by field, as
 // the sidecar merges a block over its default; one that names none keeps the
 // listener's.
@@ -395,6 +407,24 @@ func TestAComposedBlockTheSidecarRefusesIsReported(t *testing.T) {
 	err := validateComposedAnalyzers(cfg)
 	if err == nil || !strings.Contains(err.Error(), "nothing on this lane would hold one") {
 		t.Fatalf("the composed block was accepted: %v", err)
+	}
+}
+
+// spend_approval_on: accepted needs the upstream's answer, which a postgres
+// lane never reports; the sidecar refuses such a lane, so the plane does first.
+func TestSpendApprovalOnALaneThatCannotSettleIsReported(t *testing.T) {
+	block := func() *daemon.LaneAnalyzerConfig {
+		return &daemon.LaneAnalyzerConfig{HighRisk: "require_review", ApprovalRule: "dba",
+			SpendApprovalOn: daemon.SpendOnAccepted}
+	}
+	pg := daemon.Config{Listeners: []daemon.ListenerConfig{{Name: "appdb", Protocol: "postgres", Analyzer: block()}}}
+	err := validateComposedAnalyzers(pg)
+	if err == nil || !strings.Contains(err.Error(), "http, grpc and spanner lanes only") {
+		t.Fatalf("spend_approval_on on a postgres lane was accepted: %v", err)
+	}
+	api := daemon.Config{Listeners: []daemon.ListenerConfig{{Name: "api", Protocol: "http", Analyzer: block()}}}
+	if err := validateComposedAnalyzers(api); err != nil {
+		t.Errorf("spend_approval_on on an http lane was refused: %v", err)
 	}
 }
 

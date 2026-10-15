@@ -11131,7 +11131,10 @@ const docTemplate = `{
         },
         "/sidecars/reviews/{id}/claim": {
             "post": {
-                "description": "Answer a sidecar waiting on one approval request it filed. An approved request is consumed once and releases the statement; a request past its deadline is expired and never releases it; any other status is returned as it stands. It never files an approval request.",
+                "description": "Answer a sidecar waiting on one approval request it filed. An approved request is consumed once and releases the statement, or is reserved (PROCESSING) when the body asks to reserve it; a request past its deadline is expired and never releases it; any other status is returned as it stands. It never files an approval request.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -11158,6 +11161,14 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Optional; an empty body spends an approved request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarReviewClaimRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -11165,6 +11176,89 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.SidecarReviewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/reviews/{id}/settle": {
+            "post": {
+                "description": "Report what the upstream answered to a statement a reserved approval released. Accepted spends the approval (EXECUTED). Refused gives it back (APPROVED), so a resend of the same bytes can take it again. A reservation past its lease is spent and stays spent. Any approval request the calling sidecar did not reserve is returned as it stands.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Settle Sidecar Approval Request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
+                        "name": "hoop-sidecar-token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+                        "name": "hoop-sidecar-identity",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "The approval request id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarReviewSettleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarReviewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "401": {
@@ -21317,6 +21411,16 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SidecarReviewClaimRequest": {
+            "type": "object",
+            "properties": {
+                "reserve": {
+                    "description": "Reserve an approved request instead of spending it, as on SidecarReviewRequest",
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
         "openapi.SidecarReviewRequest": {
             "type": "object",
             "required": [
@@ -21340,6 +21444,11 @@ const docTemplate = `{
                     "description": "The statement to approve, base64 encoded",
                     "type": "string",
                     "example": "REVMRVRFIEZST00gdXNlcnM7"
+                },
+                "reserve": {
+                    "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release.",
+                    "type": "boolean",
+                    "example": false
                 }
             }
         },
@@ -21347,7 +21456,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "forward": {
-                    "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed an approved request, and only\nonce per approval request. False while the approval request waits, and false forever once\nit is rejected, revoked or expired.",
+                    "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed or reserved an approved request,\nand only once per claim. False while the approval request waits or a\nreservation is in flight, and false forever once it is rejected, revoked\nor expired.",
                     "type": "boolean",
                     "example": false
                 },
@@ -21358,6 +21467,19 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.Review"
                         }
                     ]
+                }
+            }
+        },
+        "openapi.SidecarReviewSettleRequest": {
+            "type": "object",
+            "required": [
+                "accepted"
+            ],
+            "properties": {
+                "accepted": {
+                    "description": "Whether the upstream accepted the statement\n\nTrue spends the approval (EXECUTED). False gives it back (APPROVED):\nthe upstream refused the statement, so nothing ran.",
+                    "type": "boolean",
+                    "example": false
                 }
             }
         },

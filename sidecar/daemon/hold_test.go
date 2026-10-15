@@ -243,7 +243,7 @@ func buildHoldTestServer(t *testing.T, protocol, upstream, descriptors string, p
 		},
 		name:   "hold-" + protocol,
 		policy: pol,
-	}, AuditConfig{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, AuditConfig{}, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -53,10 +53,11 @@ const (
 	// a sidecar authenticates with its own token and carries no user.
 	EventCreateSidecarReview = "hoop-create-sidecar-review"
 	// EventConsumeSidecarReview is the approval being spent: the retry that
-	// claimed an approved review and released the statement. Emitted once per
-	// review, by the request that wins the claim, so counting it against
-	// EventCreateSidecarReview measures how many held statements a human
-	// actually releases.
+	// claimed an approved review and released the statement, or, on a lane
+	// that settles, the settle that reports the upstream accepted it. Emitted
+	// once per review, so counting it against EventCreateSidecarReview
+	// measures how many held statements a human actually releases. A
+	// reservation whose lease ran out is not counted.
 	EventConsumeSidecarReview = "hoop-consume-sidecar-review"
 	// sidecar service accounts
 	EventCreateSidecarServiceAccount = "hoop-create-sidecar-service-account"

@@ -321,6 +321,9 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	if rule.ReviewMode != "" {
 		out.ReviewMode = rule.ReviewMode
 	}
+	if rule.SpendApprovalOn != "" {
+		out.SpendApprovalOn = rule.SpendApprovalOn
+	}
 	if len(rule.MatchIgnore) > 0 {
 		out.MatchIgnore = rule.MatchIgnore
 	}

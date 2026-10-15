@@ -193,14 +193,15 @@ func TestAMissingReviewAndAnOldPlaneReadDifferently(t *testing.T) {
 
 func TestEveryStatusSaysWhatToDoNext(t *testing.T) {
 	for status, next := range map[string]string{
-		statusPending:  daemon.ReviewNextWait,
-		statusApproved: daemon.ReviewNextResend,
-		statusRejected: daemon.ReviewNextStop,
-		statusRevoked:  daemon.ReviewNextStop,
-		statusExecuted: daemon.ReviewNextStop,
-		statusExpired:  daemon.ReviewNextStop,
-		"PROCESSING":   daemon.ReviewNextStop,
-		"":             daemon.ReviewNextStop,
+		statusPending:    daemon.ReviewNextWait,
+		statusApproved:   daemon.ReviewNextResend,
+		statusRejected:   daemon.ReviewNextStop,
+		statusRevoked:    daemon.ReviewNextStop,
+		statusExecuted:   daemon.ReviewNextStop,
+		statusExpired:    daemon.ReviewNextStop,
+		statusProcessing: daemon.ReviewNextWait,
+		"UNKNOWN":        daemon.ReviewNextStop,
+		"":               daemon.ReviewNextStop,
 	} {
 		out := describe(daemon.ReviewStatus{Status: status})
 		if out.Next != next || out.Instruction == "" {
@@ -210,6 +211,21 @@ func TestEveryStatusSaysWhatToDoNext(t *testing.T) {
 	out := describe(daemon.ReviewStatus{Status: statusRejected, RejectionReason: "not in business hours"})
 	if !strings.Contains(out.Instruction, "not in business hours") {
 		t.Errorf("the rejection reason is missing from %q", out.Instruction)
+	}
+}
+
+// An approval a resent statement is using comes back when the upstream
+// refuses it, so the wait goes on through PROCESSING.
+func TestAWaitOutlastsAnApprovalInUse(t *testing.T) {
+	reviews := &fakeReviews{statuses: []string{statusProcessing, statusApproved}}
+	cs, _ := connect(t, reviews)
+	out, res := call(t, cs, &sdk.CallToolParams{Name: "review_wait",
+		Arguments: map[string]any{"id": "r1", "timeout_seconds": 5}})
+	if res.IsError {
+		t.Fatalf("review_wait failed: %s", errorText(res))
+	}
+	if out.Status != statusApproved || out.Next != daemon.ReviewNextResend {
+		t.Fatalf("review_wait answered %+v, want APPROVED after PROCESSING", out)
 	}
 }
 

@@ -8941,6 +8941,16 @@
         },
         "type": "object"
       },
+      "openapi.SidecarReviewClaimRequest": {
+        "properties": {
+          "reserve": {
+            "description": "Reserve an approved request instead of spending it, as on SidecarReviewRequest",
+            "example": false,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "openapi.SidecarReviewRequest": {
         "properties": {
           "approval_rule": {
@@ -8958,6 +8968,11 @@
             "description": "The statement to approve, base64 encoded",
             "example": "REVMRVRFIEZST00gdXNlcnM7",
             "type": "string"
+          },
+          "reserve": {
+            "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release.",
+            "example": false,
+            "type": "boolean"
           }
         },
         "required": [
@@ -8970,7 +8985,7 @@
       "openapi.SidecarReviewResponse": {
         "properties": {
           "forward": {
-            "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed an approved request, and only\nonce per approval request. False while the approval request waits, and false forever once\nit is rejected, revoked or expired.",
+            "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed or reserved an approved request,\nand only once per claim. False while the approval request waits or a\nreservation is in flight, and false forever once it is rejected, revoked\nor expired.",
             "example": false,
             "type": "boolean"
           },
@@ -8983,6 +8998,19 @@
             "description": "The approval request the statement is waiting on, or the one that released it"
           }
         },
+        "type": "object"
+      },
+      "openapi.SidecarReviewSettleRequest": {
+        "properties": {
+          "accepted": {
+            "description": "Whether the upstream accepted the statement\n\nTrue spends the approval (EXECUTED). False gives it back (APPROVED):\nthe upstream refused the statement, so nothing ran.",
+            "example": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
         "type": "object"
       },
       "openapi.SidecarReviewStatus": {
@@ -24042,7 +24070,7 @@
     },
     "/sidecars/reviews/{id}/claim": {
       "post": {
-        "description": "Answer a sidecar waiting on one approval request it filed. An approved request is consumed once and releases the statement; a request past its deadline is expired and never releases it; any other status is returned as it stands. It never files an approval request.",
+        "description": "Answer a sidecar waiting on one approval request it filed. An approved request is consumed once and releases the statement, or is reserved (PROCESSING) when the body asks to reserve it; a request past its deadline is expired and never releases it; any other status is returned as it stands. It never files an approval request.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
@@ -24070,6 +24098,17 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarReviewClaimRequest"
+              }
+            }
+          },
+          "description": "Optional; an empty body spends an approved request",
+          "x-originalParamName": "request"
+        },
         "responses": {
           "200": {
             "content": {
@@ -24080,6 +24119,16 @@
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "401": {
             "content": {
@@ -24113,6 +24162,106 @@
           }
         },
         "summary": "Claim Sidecar Approval Request",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/reviews/{id}/settle": {
+      "post": {
+        "description": "Report what the upstream answered to a statement a reserved approval released. Accepted spends the approval (EXECUTED). Refused gives it back (APPROVED), so a resend of the same bytes can take it again. A reservation past its lease is spent and stays spent. Any approval request the calling sidecar did not reserve is returned as it stands.",
+        "parameters": [
+          {
+            "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Kubernetes or Google service account JWT, raw, that a sidecar service account mapping allows. Omit it when sending hoop-sidecar-token.",
+            "in": "header",
+            "name": "hoop-sidecar-identity",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The approval request id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarReviewSettleRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarReviewResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Settle Sidecar Approval Request",
         "tags": [
           "Sidecars"
         ]

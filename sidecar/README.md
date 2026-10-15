@@ -1423,6 +1423,49 @@ them. A pending limit above the 30-minute hold does not make a hold wait
 longer. A relay older than the limits says `the statement was not released`
 instead. The sidecar has no setting for either limit.
 
+**`spend_approval_on: accepted` spends an approval only on an accepted
+answer.** By default (`forward`) the approval is spent when the relay releases
+the statement, so a request that the upstream refuses (a bearer token that
+expired during the hold, then a 401) uses it. With `accepted`, the plane
+reserves the approval (`PROCESSING`) and the relay reports the upstream's
+answer before the client reads it:
+
+```yaml
+    analyzer:
+      high: require_review
+      approval_rule: payments-approvers
+      spend_approval_on: accepted   # forward (the default) or accepted
+```
+
+| Upstream answer | Approval |
+|---|---|
+| http 4xx | given back (`APPROVED`) |
+| grpc `invalid_argument`, `not_found`, `already_exists`, `permission_denied`, `resource_exhausted`, `failed_precondition`, `aborted`, `out_of_range`, `unimplemented`, `unauthenticated` | given back |
+| any other final status, or a grpc response message | spent (`EXECUTED`) |
+| none: the connection ends first | spent |
+
+A 5xx spends the approval because the upstream may have done the work before
+it failed. A refused request ran nothing, so the resend of the identical
+statement, with a fresh credential, takes the approval again.
+
+A resend while the approval is `PROCESSING` is not released a second time.
+A hold waits for the answer; `return` denies with `another request is using
+this approval`. The MCP `review_wait` waits through `PROCESSING`.
+
+A reservation the relay never settles (it crashed, or the plane was
+unreachable) is spent 10 minutes after the release. A late answer can spend
+it but never give it back.
+
+Known limit: on one HTTP/1 connection, a reserved request pipelined ahead of
+another held request is forwarded only after that hold ends. If that is past
+the 10 minutes, the approval is spent, as it was before this setting existed.
+
+`spend_approval_on: accepted` is valid on http, grpc and spanner lanes that
+hold, with a control plane; startup refuses it elsewhere. The control plane
+serves it only to a sidecar that decodes it. A control plane older than the
+setting ignores it and spends the approval at release; the relay logs a
+warning when that happens.
+
 The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first
 poll, as it did before it could wait.

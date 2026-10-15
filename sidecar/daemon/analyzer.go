@@ -532,6 +532,17 @@ type LaneAnalyzerConfig struct {
 	// deleting it.
 	ReviewMode analyzer.ReviewMode `json:"review_mode,omitempty" cap:"review_mode" since:"1.196.0"`
 
+	// SpendApprovalOn is when a held statement's approval is spent:
+	// "forward" (the default) when the sidecar releases it, "accepted" only
+	// once the upstream accepts it. Under accepted the plane reserves the
+	// approval and the sidecar reports the upstream's answer: a refusal
+	// (an HTTP 4xx, a gRPC status such as unauthenticated) gives it back,
+	// so a resend with a fresh credential can use it. http, grpc and
+	// spanner lanes only, and only with a control plane to settle with.
+	//
+	// "forward" is dropped by ServedForm, like review_mode's "hold".
+	SpendApprovalOn SpendApprovalOn `json:"spend_approval_on,omitempty" cap:"spend_approval_on"`
+
 	// MatchIgnore names HTTP body fields a review match skips, such as the
 	// timestamp kubectl rollout restart writes, so a resend matches its
 	// approval. Http lanes that hold only; see analyzer.MatchIgnore.
@@ -800,7 +811,7 @@ func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, obs
 		if la.ApprovalRule == "" {
 			return nil
 		}
-		return ac.cp.reviewer(listener, la.ApprovalRule)
+		return ac.cp.reviewer(listener, la.ApprovalRule, la.reserves(), ac.log)
 	}
 	if ac.local != nil && analyzerHolds(la) {
 		return ac.local(listener)
@@ -1315,13 +1326,25 @@ func ValidateLaneAnalyzerBlock(la *LaneAnalyzerConfig, lane string) []string {
 // match_ignore on a lane that is not http: it names HTTP body fields, and no
 // other lane files a body it could find them in.
 //
+// spend_approval_on: accepted on a lane whose upstream answer the sidecar
+// does not read, where no approval would ever be spent.
+//
 // Exported for the control plane, which knows the lane only once a rule is
 // bound to it.
 func ValidateHoldOnLane(la *LaneAnalyzerConfig, lc ListenerConfig, where string) []string {
-	if la == nil || !analyzerHolds(la) {
+	if la == nil {
 		return nil
 	}
 	var problems []string
+	if la.reserves() && inspect.Protocol(lc.Protocol) != inspect.HTTP && !isGRPCTransport(lc) {
+		problems = append(problems, fmt.Sprintf(
+			"%s: spend_approval_on %q spends an approval on the upstream's answer, which "+
+				"the sidecar reads on http, grpc and spanner lanes only; this lane is %s",
+			where, la.SpendApprovalOn, lc.Protocol))
+	}
+	if !analyzerHolds(la) {
+		return problems
+	}
 	if isSSH(lc) && lc.SSH.admits(codecssh.CapShell) {
 		problems = append(problems, fmt.Sprintf(
 			"%s asks for %q on an ssh lane that admits shell, and a shell sends no "+
@@ -1413,6 +1436,16 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 				"level asks for %q, so nothing on this lane would hold one",
 			where, la.ReviewMode, analyzer.ActionRequireReview))
 	}
+	switch {
+	case !la.SpendApprovalOn.valid():
+		problems = append(problems, fmt.Sprintf(
+			"%s: unknown spend_approval_on %q (forward or accepted)", where, la.SpendApprovalOn))
+	case la.SpendApprovalOn != "" && !holds:
+		problems = append(problems, fmt.Sprintf(
+			"%s: spend_approval_on %q decides when a held statement's approval is "+
+				"spent, and no risk level asks for %q, so nothing on this lane would hold one",
+			where, la.SpendApprovalOn, analyzer.ActionRequireReview))
+	}
 
 	if len(la.MatchIgnore) > 0 && !holds {
 		problems = append(problems, fmt.Sprintf(
@@ -1426,6 +1459,29 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 		}
 	}
 	return problems
+}
+
+// SpendApprovalOn is when a held statement's approval is spent; see
+// LaneAnalyzerConfig.SpendApprovalOn.
+type SpendApprovalOn string
+
+const (
+	SpendOnForward  SpendApprovalOn = "forward"
+	SpendOnAccepted SpendApprovalOn = "accepted"
+)
+
+func (s SpendApprovalOn) valid() bool {
+	switch s {
+	case "", SpendOnForward, SpendOnAccepted:
+		return true
+	}
+	return false
+}
+
+// reserves reports a lane whose approvals the plane reserves until the
+// upstream answers.
+func (la *LaneAnalyzerConfig) reserves() bool {
+	return la != nil && la.SpendApprovalOn == SpendOnAccepted
 }
 
 // validateTriggerItems refuses a trigger item that names no field. It would

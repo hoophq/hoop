@@ -125,6 +125,10 @@ type Config struct {
 	// gate.Config.Answer. Optional, and read on http lanes only.
 	Answer func(stmt inspect.Statement) func(ctx context.Context) []byte
 
+	// Settle reports the upstream's answer to a statement a reserved
+	// approval released; see gate.Config.Settle. Optional.
+	Settle gate.SettleFunc
+
 	// IdentityFn derives the caller's identity from the accepted connection.
 	// Optional; the default records only the peer address, producing an
 	// anonymous session.
@@ -636,6 +640,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		Metrics:          s.cfg.Metrics,
 		RequestIdentity:  requestIdentity,
 		Answer:           s.cfg.Answer,
+		Settle:           s.cfg.Settle,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)

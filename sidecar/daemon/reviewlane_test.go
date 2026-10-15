@@ -176,7 +176,7 @@ func TestAnHTTPLaneServesReviewStatus(t *testing.T) {
 
 	ln := lane{name: "api", cfg: ListenerConfig{Name: "api", Protocol: "http",
 		Listen: "127.0.0.1:0", Upstream: upstream.Addr().String()}}
-	srv, err := buildServer(ln, AuditConfig{}, nil, pendingReviews(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv, err := buildServer(ln, AuditConfig{}, nil, pendingReviews(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}

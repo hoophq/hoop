@@ -107,7 +107,16 @@ type Review struct {
 	// from the rule at filing. A gateway review sets neither.
 	ExpiresAt      *time.Time `gorm:"column:expires_at"`
 	ApprovalTTLSec *int       `gorm:"column:approval_ttl_sec"`
+
+	// ReservedAt is when a sidecar reserved this approval to settle it after
+	// the upstream answers. Set only while the review is PROCESSING.
+	ReservedAt *time.Time `gorm:"column:reserved_at"`
 }
+
+// SidecarReservationLease is how long a reserved approval waits for its
+// settle. Past it the approval is spent: the upstream may have run the
+// statement, so a late settle can spend it but never give it back.
+const SidecarReservationLease = 10 * time.Minute
 
 // SidecarReviewDeadline returns from + ttlSec, or nil for no limit.
 func SidecarReviewDeadline(from time.Time, ttlSec *int) *time.Time {
@@ -153,11 +162,21 @@ func (r *Review) SidecarApprovalTTLSec() *int {
 	return r.ApprovalTTLSec
 }
 
-// reportSidecarExpiry shows a lapsed sidecar review as EXPIRED. It writes
-// nothing: a claim, a refile or a decision records the expiry.
+// PastSidecarLease reports a reserved sidecar approval whose lease passed at now.
+func (r *Review) PastSidecarLease(now time.Time) bool {
+	return r.isSidecar() && r.Status == ReviewStatusProcessing && r.ReservedAt != nil &&
+		!now.Before(r.ReservedAt.Add(SidecarReservationLease))
+}
+
+// reportSidecarExpiry shows a lapsed sidecar review as EXPIRED, and a
+// reservation past its lease as EXECUTED. It writes nothing: a claim, a
+// refile, a settle or a decision records it.
 func (r *Review) reportSidecarExpiry(now time.Time) {
-	if r.PastSidecarDeadline(now) {
+	switch {
+	case r.PastSidecarDeadline(now):
 		r.Status = ReviewStatusExpired
+	case r.PastSidecarLease(now):
+		r.Status = ReviewStatusExecuted
 	}
 }
 
@@ -320,7 +339,7 @@ func getReviewByIdOrSid(db *gorm.DB, orgID, id string, viewer *ReviewViewer) (*R
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at
 	FROM private.reviews rv
 	WHERE org_id = ? AND (id = ? OR session_id = ?)`+visibility,
 		append([]any{orgID, id, id}, visibilityArgs...)...).
@@ -362,7 +381,7 @@ func ListReviews(db *gorm.DB, orgID string, viewer ReviewViewer) (*[]Review, err
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at
 	FROM private.reviews rv
 	WHERE org_id = ?`+visibility, append([]any{orgID}, visibilityArgs...)...).
 		Find(&reviews).
@@ -645,7 +664,7 @@ const sidecarReviewSelect = `
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at
 	FROM private.reviews rv`
 
 // GetLiveSidecarReview returns the review already filed for these exact
@@ -654,18 +673,20 @@ const sidecarReviewSelect = `
 // "Live" excludes EXECUTED, REJECTED and REVOKED, matching the partial unique
 // index: a spent approval or a refusal is final for that review, and the next
 // request files a new one. Groups load as GetReviewByIdOrSid loads them, so a
-// match carries the same policy as a fresh review. A lapsed PENDING or APPROVED holder is not live;
-// CreateSidecarReview expires exactly those, so no lapsed holder blocks the insert.
+// match carries the same policy as a fresh review. A lapsed PENDING or APPROVED holder is not live,
+// nor is a reservation past its lease; CreateSidecarReview settles exactly those, so none blocks the insert.
 func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName, statementHash string, now time.Time) (*Review, error) {
 	now = now.UTC()
 	var review Review
 	err := db.Raw(sidecarReviewSelect+`
 	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
 	AND access_request_rule_name = ? AND statement_hash = ? AND status NOT IN (?, ?, ?, ?)
-	AND (status NOT IN (?, ?) OR expires_at IS NULL OR `+sidecarInsideDeadline+`)`,
+	AND (status NOT IN (?, ?) OR expires_at IS NULL OR `+sidecarInsideDeadline+`)
+	AND (status <> ? OR reserved_at IS NULL OR `+sidecarInsideLease+`)`,
 		orgID, sidecarID, listenerName, ruleName, statementHash,
 		ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked, ReviewStatusExpired,
-		ReviewStatusPending, ReviewStatusApproved, now).
+		ReviewStatusPending, ReviewStatusApproved, now,
+		ReviewStatusProcessing, leaseStart(now)).
 		First(&review).
 		Error
 	if err != nil {
@@ -713,6 +734,12 @@ func ListSidecarReviews(db *gorm.DB, orgID, sidecarID string, status ReviewStatu
 	case ReviewStatusExpired:
 		query += ` AND (status = ? OR (status IN (?, ?) AND ` + sidecarLapsed + `))`
 		args = append(args, status, ReviewStatusPending, ReviewStatusApproved, now)
+	case ReviewStatusProcessing:
+		query += ` AND status = ? AND NOT ` + sidecarLeaseLapsed
+		args = append(args, status, leaseStart(now))
+	case ReviewStatusExecuted:
+		query += ` AND (status = ? OR (status = ? AND ` + sidecarLeaseLapsed + `))`
+		args = append(args, status, ReviewStatusProcessing, leaseStart(now))
 	default:
 		query += ` AND status = ?`
 		args = append(args, status)
@@ -739,43 +766,133 @@ func ListSidecarReviews(db *gorm.DB, orgID, sidecarID string, status ReviewStatu
 // will, since there is no connection and no agent to report an exit. An
 // approval past its deadline is never claimed.
 func ClaimApprovedSidecarReview(db *gorm.DB, orgID, reviewID string, now time.Time) (bool, ReviewStatusType, error) {
+	return takeApprovedSidecarReview(db, orgID, reviewID, now, false)
+}
+
+// ReserveApprovedSidecarReview is ClaimApprovedSidecarReview for a sidecar
+// that settles after the upstream answers: the winner moves the review to
+// PROCESSING, not EXECUTED, and the session stays open until
+// SettleSidecarReview. A reservation still releases one statement once: a
+// resend matches the PROCESSING review and is not forwarded.
+func ReserveApprovedSidecarReview(db *gorm.DB, orgID, reviewID string, now time.Time) (bool, ReviewStatusType, error) {
+	return takeApprovedSidecarReview(db, orgID, reviewID, now, true)
+}
+
+func takeApprovedSidecarReview(db *gorm.DB, orgID, reviewID string, now time.Time, reserve bool) (bool, ReviewStatusType, error) {
 	now = now.UTC()
 	var claimed bool
-	var status string
+	var after string
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := lockSidecarReviewTx(tx, orgID, reviewID); err != nil {
 			return err
 		}
+		status, reservedAt := ReviewStatusExecuted, (*time.Time)(nil)
+		if reserve {
+			// The later clock, as for an approval: the lease must not start
+			// before the lock wait ended.
+			from, err := laterOfDatabaseClockTx(tx, now)
+			if err != nil {
+				return err
+			}
+			status, reservedAt = ReviewStatusProcessing, &from
+		}
 		res := tx.Exec(`
 		UPDATE private.reviews
-		SET status = ?
+		SET status = ?, reserved_at = ?
 		WHERE org_id = ? AND id = ? AND status = ? AND sidecar_id IS NOT NULL
 		AND (expires_at IS NULL OR `+sidecarInsideDeadline+`)`,
-			ReviewStatusExecuted, orgID, reviewID, ReviewStatusApproved, now)
+			status, reservedAt, orgID, reviewID, ReviewStatusApproved, now)
 		if res.Error != nil {
 			return res.Error
 		}
 		claimed = res.RowsAffected > 0
 
-		if claimed {
-			err := tx.Exec(`
-			UPDATE private.sessions AS s
-			SET status = 'done', ended_at = ?
-			FROM private.reviews AS r
-			WHERE r.org_id = s.org_id AND r.session_id = s.id
-			AND r.org_id = ? AND r.id = ?`, now, orgID, reviewID).Error
-			if err != nil {
+		if claimed && !reserve {
+			if err := closeSidecarSessionsTx(tx, now, []string{reviewID}); err != nil {
 				return err
 			}
 		}
 
 		return tx.Raw(`SELECT status FROM private.reviews WHERE org_id = ? AND id = ?`,
-			orgID, reviewID).Scan(&status).Error
+			orgID, reviewID).Scan(&after).Error
 	})
 	if err != nil {
 		return false, "", err
 	}
-	return claimed, ReviewStatusType(status), nil
+	return claimed, ReviewStatusType(after), nil
+}
+
+// SettleSidecarReview records what the upstream answered to the statement a
+// reservation released. Accepted spends the approval (EXECUTED) and closes
+// the session; refused gives it back (APPROVED), so a resend of the same
+// bytes can take it again. Only the calling sidecar's PROCESSING review
+// inside its lease moves, and settled reports whether it did. A reservation
+// past its lease is spent here first. The caller checks the review is the
+// sidecar's: the lease spend runs by id.
+func SettleSidecarReview(db *gorm.DB, orgID, sidecarID, reviewID string, accepted bool, now time.Time) (bool, error) {
+	now = now.UTC()
+	var settled bool
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := lockSidecarReviewTx(tx, orgID, reviewID); err != nil {
+			return err
+		}
+		if err := spendLapsedReservationsTx(tx, now, expireScopeReview, orgID, reviewID); err != nil {
+			return err
+		}
+		status := ReviewStatusApproved
+		if accepted {
+			status = ReviewStatusExecuted
+		}
+		res := tx.Exec(`
+		UPDATE private.reviews
+		SET status = ?, reserved_at = NULL
+		WHERE org_id = ? AND sidecar_id = ? AND id = ? AND status = ? AND reserved_at IS NOT NULL
+		AND `+sidecarInsideLease,
+			status, orgID, sidecarID, reviewID, ReviewStatusProcessing, leaseStart(now))
+		if res.Error != nil {
+			return res.Error
+		}
+		settled = res.RowsAffected > 0
+		if settled && accepted {
+			return closeSidecarSessionsTx(tx, now, []string{reviewID})
+		}
+		return nil
+	})
+	return settled, err
+}
+
+// closeSidecarSessionsTx closes the sessions of reviews whose statement ran,
+// or may have: nothing else ever will, since there is no connection and no
+// agent to report an exit.
+func closeSidecarSessionsTx(tx *gorm.DB, now time.Time, reviewIDs []string) error {
+	return tx.Exec(`
+	UPDATE private.sessions AS s
+	SET status = 'done', ended_at = ?
+	FROM private.reviews AS r
+	WHERE r.org_id = s.org_id AND r.session_id = s.id
+	AND r.id IN ?`, now, reviewIDs).Error
+}
+
+// spendLapsedReservationsTx records EXECUTED on the reservations in scope past
+// their lease and closes their sessions. EXECUTED leaves the 000125 index, so
+// the statement is free for a new review.
+func spendLapsedReservationsTx(tx *gorm.DB, now time.Time, scope string, args ...any) error {
+	if scope != expireScopeReview && scope != expireScopeStatement {
+		return fmt.Errorf("unknown reservation scope")
+	}
+	now = now.UTC()
+	var ids []string
+	err := tx.Raw(`
+	UPDATE private.reviews SET status = ?, reserved_at = NULL
+	WHERE listener_name IS NOT NULL AND status = ? AND reserved_at IS NOT NULL
+	AND NOT `+sidecarInsideLease+` AND `+scope+`
+	RETURNING id`,
+		append([]any{ReviewStatusExecuted, ReviewStatusProcessing, leaseStart(now)}, args...)...).
+		Scan(&ids).Error
+	if err != nil || len(ids) == 0 {
+		return err
+	}
+	return closeSidecarSessionsTx(tx, now, ids)
 }
 
 // CreateSidecarReview writes the session and the review in one transaction, so
@@ -785,7 +902,7 @@ func ClaimApprovedSidecarReview(db *gorm.DB, orgID, reviewID string, now time.Ti
 // first. That is the index doing its job, not a fault: answer from the winner.
 // display is the reviewer's text (apisidecar displayStatement): raw binary bytes
 // fail the JSONB blob write. The approval binds to rev.StatementHash. A lapsed holder of the same key
-// is expired first in the transaction, and its ids are returned.
+// is expired first in the transaction, and its ids are returned; a reservation past its lease is spent.
 func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string) ([]string, error) {
 	// CreatedAt is the expiry clock: a zero one would expire no lapsed holder.
 	if rev.CreatedAt.IsZero() {
@@ -793,9 +910,12 @@ func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string)
 	}
 	var expired []string
 	err := db.Transaction(func(tx *gorm.DB) error {
+		scope := []any{rev.OrgID, rev.SidecarID, rev.ListenerName, rev.AccessRequestRuleName, rev.StatementHash}
+		if err := spendLapsedReservationsTx(tx, rev.CreatedAt, expireScopeStatement, scope...); err != nil {
+			return fmt.Errorf("failed spending the previous reservation: %w", err)
+		}
 		var err error
-		expired, err = expireSidecarReviewsTx(tx, rev.CreatedAt, expireScopeStatement,
-			rev.OrgID, rev.SidecarID, rev.ListenerName, rev.AccessRequestRuleName, rev.StatementHash)
+		expired, err = expireSidecarReviewsTx(tx, rev.CreatedAt, expireScopeStatement, scope...)
 		if err != nil {
 			return fmt.Errorf("failed expiring the previous review: %w", err)
 		}
@@ -818,6 +938,21 @@ const sidecarInsideDeadline = `(expires_at > ? AND expires_at > (clock_timestamp
 // sidecarLapsed matches a review PastSidecarDeadline reports, given its status
 // is live. It takes one argument: now.
 const sidecarLapsed = `(COALESCE(listener_name, '') <> '' AND expires_at IS NOT NULL AND expires_at <= ?)`
+
+// sidecarInsideLease: the reservation started after both the bound time (the
+// one ?, leaseStart(now)) and the database clock less the lease, like
+// sidecarInsideDeadline.
+var sidecarInsideLease = fmt.Sprintf(`(reserved_at > ? AND reserved_at > `+
+	`(clock_timestamp() AT TIME ZONE 'UTC') - interval '%d seconds')`, int(SidecarReservationLease/time.Second))
+
+// sidecarLeaseLapsed matches a reservation PastSidecarLease reports, given its
+// status is PROCESSING. It takes one argument: leaseStart(now).
+const sidecarLeaseLapsed = `(COALESCE(listener_name, '') <> '' AND reserved_at IS NOT NULL AND reserved_at <= ?)`
+
+// leaseStart is the earliest reservation still inside its lease at now.
+func leaseStart(now time.Time) time.Time {
+	return now.UTC().Add(-SidecarReservationLease)
+}
 
 // laterOfDatabaseClockTx returns the later of t and the database clock.
 func laterOfDatabaseClockTx(tx *gorm.DB, t time.Time) (time.Time, error) {

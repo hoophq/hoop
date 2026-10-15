@@ -35,9 +35,12 @@ const (
 
 // ReviewNext maps the plane's status to what a client does next. Any status
 // it does not know stops the client, because only a human can say more.
+//
+// PROCESSING waits: another request is using the approval, and the
+// upstream's answer either spends it or gives it back.
 func ReviewNext(status string) string {
 	switch status {
-	case "PENDING":
+	case "PENDING", "PROCESSING":
 		return ReviewNextWait
 	case "APPROVED":
 		return ReviewNextResend
