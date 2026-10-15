@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -121,9 +123,15 @@ type SessionOption struct {
 	JiraIssueKey        []string
 	StartDate           sql.NullString
 	EndDate             sql.NullString
-	Offset              int
-	Limit               int
-	CountMode           SessionCountMode
+	// Status, Verb and Input are unset when empty.
+	Status string
+	Verb   string
+	// Input is a case-insensitive LIKE pattern matched anywhere in the session
+	// input.
+	Input     string
+	Offset    int
+	Limit     int
+	CountMode SessionCountMode
 }
 
 func NewSessionOption() SessionOption {
@@ -424,6 +432,67 @@ const (
 	sessionListDateRangeCondition      = `s.created_at BETWEEN @start_date AND @end_date`
 )
 
+// Status and verb are emitted as one literal per enum label, never compared to
+// a bind parameter: under a generic plan a parameter hides the value, and the
+// planner then cannot prove the predicate of the partial index_sessions_open.
+var (
+	sessionListStatusConditions = map[string]string{
+		string(openapi.SessionStatusOpen):  `s.status = 'open'`,
+		string(openapi.SessionStatusReady): `s.status = 'ready'`,
+		string(openapi.SessionStatusDone):  `s.status = 'done'`,
+	}
+	sessionListVerbConditions = map[string]string{
+		proto.ClientVerbConnect: `s.verb = 'connect'`,
+		proto.ClientVerbExec:    `s.verb = 'exec'`,
+	}
+)
+
+// sessionListInputCondition matches the text of the session input. Only exec
+// sessions write one; a connect session records its wire stream instead, so it
+// never matches. The org_id predicate is what lets UNIQUE(org_id, id) apply.
+const sessionListInputCondition = `EXISTS (
+				SELECT 1 FROM private.blobs b
+				WHERE b.org_id = s.org_id AND b.id = s.blob_input_id
+					AND b.blob_stream->>0 ILIKE @input_pattern
+			)`
+
+// MaxSessionListInputLength bounds the input filter: the scan cost grows with
+// the pattern length times the input bytes of every session it reads.
+const MaxSessionListInputLength = 256
+
+// ValidateSessionInputFilter reports why v cannot be an input filter.
+func ValidateSessionInputFilter(v string) error {
+	switch {
+	case len(v) > MaxSessionListInputLength:
+		return fmt.Errorf("must be at most %d bytes, got %d", MaxSessionListInputLength, len(v))
+	case !utf8.ValidString(v) || strings.ContainsRune(v, 0):
+		return errors.New("must be valid UTF-8 without NUL bytes")
+	}
+	return nil
+}
+
+// sessionInputPattern makes v a LIKE pattern that matches it anywhere. Only %
+// stays a wildcard: _ and the \ escape character match themselves.
+func sessionInputPattern(v string) string {
+	v = strings.ReplaceAll(v, `\`, `\\`)
+	v = strings.ReplaceAll(v, `_`, `\_`)
+	return "%" + v + "%"
+}
+
+// IsValidSessionStatus reports whether v is a status the session list can
+// filter by.
+func IsValidSessionStatus(v string) bool {
+	_, ok := sessionListStatusConditions[v]
+	return ok
+}
+
+// IsValidSessionVerb reports whether v is a verb the session list can filter
+// by.
+func IsValidSessionVerb(v string) bool {
+	_, ok := sessionListVerbConditions[v]
+	return ok
+}
+
 // sessionListVisibilityCondition restricts a non-admin to their own sessions
 // plus the ones they are a reviewer of. References `rv`.
 //
@@ -535,6 +604,17 @@ func newSessionListShape(isAuditorOrAdmin bool, opt SessionOption) sessionListSh
 	if opt.StartDate.Valid {
 		sh.sessionConditions = append(sh.sessionConditions, sessionListDateRangeCondition)
 	}
+	// ListSessions rejects any other value, so a lookup miss cannot drop a
+	// filter the caller asked for.
+	if cond, ok := sessionListStatusConditions[opt.Status]; ok {
+		sh.sessionConditions = append(sh.sessionConditions, cond)
+	}
+	if cond, ok := sessionListVerbConditions[opt.Verb]; ok {
+		sh.sessionConditions = append(sh.sessionConditions, cond)
+	}
+	if opt.Input != "" {
+		sh.sessionConditions = append(sh.sessionConditions, sessionListInputCondition)
+	}
 	sh.needsReviews = !sh.isAdmin || sh.reviewStatusActive || sh.approverActive
 
 	// A session with no review still matches when the pattern matches the
@@ -618,6 +698,15 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 	if _, err := ParseSessionCountMode(string(countMode)); err != nil {
 		return nil, err
 	}
+	if opt.Status != "" && !IsValidSessionStatus(opt.Status) {
+		return nil, fmt.Errorf("invalid status %q", opt.Status)
+	}
+	if opt.Verb != "" && !IsValidSessionVerb(opt.Verb) {
+		return nil, fmt.Errorf("invalid verb %q", opt.Verb)
+	}
+	if err := ValidateSessionInputFilter(opt.Input); err != nil {
+		return nil, fmt.Errorf("invalid input filter: %w", err)
+	}
 
 	sessionList := &SessionList{Items: []Session{}}
 	// Prepare lowercase jira issue keys array
@@ -643,6 +732,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 		"jira_issue_keys":       jiraIssueKeysLower,
 		"start_date":            opt.StartDate,
 		"end_date":              opt.EndDate,
+		"input_pattern":         sessionInputPattern(opt.Input),
 		"user_id":               userId,
 		// One more row than the caller asked for: its presence is what proves
 		// there is a next page, without a second query and without relying on

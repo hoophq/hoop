@@ -159,6 +159,30 @@ func TestNewSessionListShape(t *testing.T) {
 			want: sessionListShape{isAdmin: true},
 		},
 		{
+			msg:   "the live filter emits status and verb as literals, so a partial index can apply",
+			admin: true,
+			opt: optWith(func(o *SessionOption) {
+				o.Status = "open"
+				o.Verb = "connect"
+			}),
+			want: sessionListShape{
+				isAdmin: true,
+				sessionConditions: []string{
+					sessionListStatusConditions["open"],
+					sessionListVerbConditions["connect"],
+				},
+			},
+		},
+		{
+			msg:   "an input filter emits the blob predicate",
+			admin: true,
+			opt:   optWith(func(o *SessionOption) { o.Input = "delete" }),
+			want: sessionListShape{
+				isAdmin:           true,
+				sessionConditions: []string{sessionListInputCondition},
+			},
+		},
+		{
 			msg:   "every session filter set emits every session predicate, in a stable order",
 			admin: true,
 			opt: optWith(func(o *SessionOption) {
@@ -169,6 +193,9 @@ func TestNewSessionListShape(t *testing.T) {
 				o.CorrelationID = ptr.String("c")
 				o.JiraIssueKey = []string{"ENG-1"}
 				o.StartDate = sql.NullString{String: "2026-01-01T00:00:00Z", Valid: true}
+				o.Status = "done"
+				o.Verb = "exec"
+				o.Input = "orders"
 			}),
 			want: sessionListShape{
 				isAdmin: true,
@@ -180,6 +207,9 @@ func TestNewSessionListShape(t *testing.T) {
 					sessionListCorrelationIDCondition,
 					sessionListJiraCondition,
 					sessionListDateRangeCondition,
+					sessionListStatusConditions["done"],
+					sessionListVerbConditions["exec"],
+					sessionListInputCondition,
 				},
 			},
 		},
@@ -249,6 +279,21 @@ func TestSessionListShapeWhereGolden(t *testing.T) {
 			admin: true,
 			opt:   SessionOption{User: "%", ConnectionType: "%", ConnectionName: "lt-conn-007", ReviewStatus: "%", Limit: 20},
 			want:  `s.org_id = @org_id AND COALESCE(s.connection::text, '') LIKE @connection`,
+		},
+		{
+			msg:   "the live filter binds no parameter for status or verb",
+			admin: true,
+			opt: SessionOption{User: "%", ConnectionType: "%", ConnectionName: "%", ReviewStatus: "%",
+				Status: "open", Verb: "connect", Limit: 20},
+			want: `s.org_id = @org_id AND s.status = 'open' AND s.verb = 'connect'`,
+		},
+		{
+			msg:   "an input filter reads the input blob of the same org",
+			admin: true,
+			opt:   SessionOption{User: "%", ConnectionType: "%", ConnectionName: "%", ReviewStatus: "%", Input: "x", Limit: 20},
+			want: `s.org_id = @org_id AND EXISTS ( SELECT 1 FROM private.blobs b ` +
+				`WHERE b.org_id = s.org_id AND b.id = s.blob_input_id ` +
+				`AND b.blob_stream->>0 ILIKE @input_pattern )`,
 		},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
@@ -361,4 +406,40 @@ func TestParseSessionCountMode(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// The model guards the values itself, because the shape drops a status or verb
+// it has no literal for. Without the guard that drop would widen the result.
+func TestListSessionsRejectsUnknownStatusAndVerb(t *testing.T) {
+	for _, opt := range []SessionOption{
+		{Status: "running", Limit: 20},
+		{Status: "OPEN", Limit: 20},
+		{Verb: "plain-exec", Limit: 20},
+	} {
+		_, err := ListSessions("org", "user", true, opt)
+		require.Error(t, err, "%+v", opt)
+	}
+	for _, v := range []string{"open", "ready", "done"} {
+		assert.True(t, IsValidSessionStatus(v), v)
+	}
+	for _, v := range []string{"connect", "exec"} {
+		assert.True(t, IsValidSessionVerb(v), v)
+	}
+}
+
+// Only % is a wildcard, as the API documents: a search for user_id must not
+// match userXid, and a backslash must not escape the next character.
+func TestSessionInputPattern(t *testing.T) {
+	for in, want := range map[string]string{
+		"delete":        `%delete%`,
+		"delete%orders": `%delete%orders%`,
+		"user_id":       `%user\_id%`,
+		`C:\temp`:       `%C:\\temp%`,
+		`a\`:            `%a\\%`,
+	} {
+		assert.Equal(t, want, sessionInputPattern(in), in)
+	}
+	assert.NoError(t, ValidateSessionInputFilter(""))
+	assert.NoError(t, ValidateSessionInputFilter(strings.Repeat("x", MaxSessionListInputLength)))
+	assert.Error(t, ValidateSessionInputFilter(strings.Repeat("x", MaxSessionListInputLength+1)))
 }

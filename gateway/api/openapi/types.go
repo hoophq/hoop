@@ -1247,6 +1247,9 @@ const (
 	SessionOptionLimit               SessionOptionKey = "limit"
 	SessionOptionJiraIssueKey        SessionOptionKey = "jira_issue_key"
 	SessionOptionCount               SessionOptionKey = "count"
+	SessionOptionStatus              SessionOptionKey = "status"
+	SessionOptionVerb                SessionOptionKey = "verb"
+	SessionOptionInput               SessionOptionKey = "input"
 )
 
 var AvailableSessionOptions = []SessionOptionKey{
@@ -1263,6 +1266,9 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionOffset,
 	SessionOptionJiraIssueKey,
 	SessionOptionCount,
+	SessionOptionStatus,
+	SessionOptionVerb,
+	SessionOptionInput,
 }
 
 type SessionStatusType string

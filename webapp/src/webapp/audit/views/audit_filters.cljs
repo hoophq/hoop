@@ -1,7 +1,7 @@
 (ns webapp.audit.views.audit-filters
   (:require
    ["@heroicons/react/16/solid" :as hero-micro-icon]
-   ["@radix-ui/themes" :refer [Button Popover TextField]]
+   ["@radix-ui/themes" :refer [Button Popover TextField Tooltip]]
    ["lucide-react" :refer [Search ListFilter Check Workflow]]
    ["react-tailwindcss-datepicker" :as Datepicker]
    [clojure.string :as string]
@@ -32,6 +32,20 @@
 
         jira-ticket-search (r/atom (get filters "jira_issue_key" ""))
         jira-ticket-debounce-timer (r/atom nil)
+
+        ;; Submitted on Enter, not per keystroke: a rare term makes the gateway
+        ;; read every session input of the org.
+        input-search (r/atom (get filters "input" ""))
+        input-filter-seen (r/atom (get filters "input" ""))
+        ;; The gateway caps the filter at 256 UTF-8 bytes, but :maxLength
+        ;; counts characters, so accented text can pass the field and get a 422.
+        submit-input-search (fn [value]
+                              (let [trimmed (string/trim value)]
+                                (if (> (.-length (.encode (js/TextEncoder.) trimmed)) 256)
+                                  (rf/dispatch [:show-snackbar {:level :error
+                                                                :text "Search text must be at most 256 bytes."}])
+                                  (rf/dispatch [:audit->filter-sessions
+                                                {"input" trimmed}]))))
 
         workflow-correlation-id (r/atom "")
         submit-workflow (fn []
@@ -113,7 +127,16 @@
                 ;; Only sync when user is not typing and values differ
                 (when (and (not is-user-typing?)
                            (not= @jira-ticket-search filter-value))
-                  (reset! jira-ticket-search filter-value)))]
+                  (reset! jira-ticket-search filter-value)))
+            ;; Follow the URL when it changes, without overwriting what the
+            ;; user is typing.
+            _ (let [filter-value (get filters "input" "")]
+                (when (not= @input-filter-seen filter-value)
+                  (reset! input-filter-seen filter-value)
+                  (reset! input-search filter-value)))
+            ;; Same rule as the Live badge in session-item.
+            live? (and (= (get filters "status") "open")
+                       (= (get filters "verb") "connect"))]
         [:div {:class "flex gap-regular flex-wrap mb-4"}
          [:> TextField.Root {:class "relative w-[310px] h-[40px] rounded-lg"
                              :placeholder "Search by IDs (separated by comma)"
@@ -132,6 +155,43 @@
                                                     (rf/dispatch [:audit->get-filtered-sessions-by-id session-ids])))))))}
           [:> TextField.Slot
            [:> Search {:size 16 :class "text-gray-500"}]]]
+
+         [:> Tooltip {:content (str "Searches the query or script of sessions run from the "
+                                    "Web Terminal, Runbooks or hoop exec. Native client "
+                                    "sessions are not searched. Use % as a wildcard.")}
+          [:> TextField.Root {:class "w-[280px] h-[40px] rounded-lg"
+                              :placeholder "Search query text, e.g. delete%orders"
+                              :aria-label "Search sessions by query text"
+                              ;; The gateway rejects a longer filter.
+                              :maxLength 256
+                              :value @input-search
+                              :onChange #(reset! input-search (-> % .-target .-value))
+                              :onKeyDown (fn [e]
+                                           (when (= (.-key e) "Enter")
+                                             (submit-input-search (-> e .-target .-value))))}
+           [:> TextField.Slot
+            [:> Search {:size 16 :class "text-gray-500"}]]
+           (when (seq (get filters "input"))
+             [:> TextField.Slot
+              [:button {:class "text-gray-400 hover:text-gray-600"
+                        :aria-label "Clear query text search"
+                        :on-click (fn []
+                                    (reset! input-search "")
+                                    (submit-input-search ""))}
+               [:> hero-micro-icon/XMarkIcon {:class "w-4 h-4"}]]])]]
+
+         [:> Button {:size "3"
+                     :variant (if live? "soft" "surface")
+                     :color "gray"
+                     :aria-pressed live?
+                     :on-click #(rf/dispatch [:audit->filter-sessions
+                                              (if live?
+                                                {"status" "" "verb" ""}
+                                                {"status" "open" "verb" "connect"})])}
+          [:span {:class "inline-block w-2 h-2 rounded-full bg-[--green-9]"
+                  :aria-hidden true}]
+          [:span {:class "text-sm font-semibold"}
+           "Live"]]
 
          [:> Popover.Root
           [:> Popover.Trigger {:asChild true}
