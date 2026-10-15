@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -164,11 +165,11 @@ func TestLiveSessionFilterUsesOpenIndex(t *testing.T) {
 	assert.Contains(t, strings.Join(plan, "\n"), "index_sessions_open")
 }
 
-const sessionsOpenIndexVersion = 140
+const sessionsOpenIndexVersion = 141
 
-// Migration 000140 rolls both ways, and a gateway built before it still starts
+// Migration 000141 rolls both ways, and a gateway built before it still starts
 // on a database that has it: gateways roll, so for a while an old one runs
-// MigrateDB against version 140 with a source that ends at 139.
+// MigrateDB against a newer version with a source that ends at 140.
 func TestSessionsOpenIndexMigration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping embedded database test in -short mode")
@@ -191,7 +192,9 @@ func TestSessionsOpenIndexMigration(t *testing.T) {
 	entries, err := fs.ReadDir(migrationfiles.FS, ".")
 	require.NoError(t, err)
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".sql") || strings.HasPrefix(e.Name(), "000140_") {
+		// The old gateway's source: every migration before this one.
+		version, err := strconv.Atoi(strings.SplitN(e.Name(), "_", 2)[0])
+		if !strings.HasSuffix(e.Name(), ".sql") || err != nil || version >= sessionsOpenIndexVersion {
 			continue
 		}
 		data, err := fs.ReadFile(migrationfiles.FS, e.Name())
@@ -199,7 +202,7 @@ func TestSessionsOpenIndexMigration(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(oldSource, e.Name()), data, 0o600))
 	}
 	require.NoError(t, modelsbootstrap.MigrateDB(inst.MigrateDSN(), oldSource),
-		"a gateway without 000140 must start on a database at 140")
+		"a gateway without 000141 must start on a database past it")
 	require.True(t, hasIndex("after old gateway"))
 
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(sessionsOpenIndexVersion - 1) })
