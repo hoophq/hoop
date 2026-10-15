@@ -3,6 +3,7 @@ package userapi
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/mail"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
@@ -245,31 +247,69 @@ func Update(c *gin.Context) {
 // ListUsers
 //
 //	@Summary		List Users
-//	@Description	List all users
+//	@Description	List the users of the organization. Pass `page` or `page_size` to get a paginated response. Only admins and auditors receive `last_login_at`.
 //	@Tags			User Management
 //	@Produce		json
-//	@Success		200	{array}		openapi.User
-//	@Failure		500	{object}	openapi.HTTPError
+//	@Param			email		query		string											false	"Filter by part of the email, ignoring case"
+//	@Param			status		query		string											false	"Filter by user status"	Enums(active, inactive, invited, reviewing)
+//	@Param			page_size	query		int												false	"Maximum number of items to return (1-100). When provided, enables pagination"	Format(int)
+//	@Param			page		query		int												false	"Page number (1-based). When provided, enables pagination"						Format(int)
+//	@Success		200			{object}	openapi.PaginatedResponse[openapi.UserListItem]	"Returns users paginated when using pagination"
+//	@Success		200			{array}		openapi.UserListItem							"Array of users. With page or page_size, the {pages, data} envelope of openapi.PaginatedResponse-openapi_UserListItem"
+//	@Failure		422,500		{object}	openapi.HTTPError
 //	@Router			/users [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	users, err := models.ListUsers(ctx.OrgID)
+	query := c.Request.URL.Query()
+	opts := models.UserListOption{
+		Email:  query.Get("email"),
+		Status: query.Get("status"),
+	}
+	if opts.Status != "" && !slices.Contains(listStatuses, openapi.StatusType(opts.Status)) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("status must be one of %v", listStatuses)})
+		return
+	}
+
+	pageStr, pageSizeStr := query.Get("page"), query.Get("page_size")
+	paginated := pageStr != "" || pageSizeStr != ""
+	if paginated {
+		page, pageSize, err := apivalidation.ParsePaginationParams(pageStr, pageSizeStr)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+		// Keeps (page-1)*page_size, the query offset, far from an overflow.
+		if page > math.MaxInt32 {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "page is out of range"})
+			return
+		}
+		opts.Page, opts.PageSize = page, pageSize
+	}
+
+	users, total, err := models.ListUsersWithLastLogin(models.DB, ctx.OrgID, opts)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing users")
 		return
 	}
 
-	orgsGroups, err := models.GetUserGroupsByOrgID(ctx.OrgID)
+	userIDs := make([]string, len(users))
+	for i, u := range users {
+		userIDs[i] = u.ID
+	}
+	userGroups, err := models.GetUserGroupsByUserIDs(models.DB, ctx.OrgID, userIDs)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting org groups")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user groups")
 		return
 	}
+	groupsByUserID := map[string][]string{}
+	for _, ug := range userGroups {
+		groupsByUserID[ug.UserID] = append(groupsByUserID[ug.UserID], ug.Name)
+	}
 
-	// map users from db to openapi.User
-	usersList := []openapi.User{}
+	usersList := make([]openapi.UserListItem, len(users))
 	for i, u := range users {
-		usersList = append(usersList,
-			openapi.User{
+		item := openapi.UserListItem{
+			User: openapi.User{
 				ID:       u.Subject,
 				Name:     u.Name,
 				Email:    u.Email,
@@ -277,17 +317,46 @@ func List(c *gin.Context) {
 				Verified: u.Verified,
 				SlackID:  u.SlackID,
 				Picture:  u.Picture,
-			})
-		usersList[i].Groups = []string{}
-		for _, ug := range orgsGroups {
-			if ug.UserID == u.ID {
-				usersList[i].Groups = append(usersList[i].Groups, ug.Name)
-			}
+				Groups:   []string{},
+			},
+			LastLoginAt: u.LastLoginAt,
 		}
-		usersList[i].Role = toRole(usersList[i])
+		if groups, ok := groupsByUserID[u.ID]; ok {
+			item.Groups = groups
+		}
+		item.Role = toRole(item.User)
+		usersList[i] = item
 	}
 
-	c.JSON(http.StatusOK, usersList)
+	// When other users signed in is for admins and auditors only. Other roles
+	// get the user fields without last_login_at.
+	if !ctx.IsAuditorOrAdminUser() {
+		plainUsers := make([]openapi.User, len(usersList))
+		for i, item := range usersList {
+			plainUsers[i] = item.User
+		}
+		writeUserList(c, paginated, plainUsers, total, opts)
+		return
+	}
+	writeUserList(c, paginated, usersList, total, opts)
+}
+
+// writeUserList answers a plain array, or the paginated envelope when the
+// request asked for a page.
+func writeUserList[T any](c *gin.Context, paginated bool, items []T, total int64, opts models.UserListOption) {
+	if !paginated {
+		c.JSON(http.StatusOK, items)
+		return
+	}
+	c.JSON(http.StatusOK, openapi.PaginatedResponse[T]{
+		Pages: openapi.Pagination{Total: int(total), Page: opts.Page, Size: opts.PageSize},
+		Data:  items,
+	})
+}
+
+// listStatuses are the values the status filter of GET /users accepts.
+var listStatuses = []openapi.StatusType{
+	openapi.StatusActive, openapi.StatusInactive, openapi.StatusInvited, openapi.StatusReviewing,
 }
 
 // DeleteUser

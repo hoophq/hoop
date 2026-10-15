@@ -11826,7 +11826,7 @@ const docTemplate = `{
         },
         "/users": {
             "get": {
-                "description": "List all users",
+                "description": "List the users of the organization. Pass ` + "`" + `page` + "`" + ` or ` + "`" + `page_size` + "`" + ` to get a paginated response. Only admins and auditors receive ` + "`" + `last_login_at` + "`" + `.",
                 "produces": [
                     "application/json"
                 ],
@@ -11834,14 +11834,54 @@ const docTemplate = `{
                     "User Management"
                 ],
                 "summary": "List Users",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by part of the email, ignoring case",
+                        "name": "email",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "active",
+                            "inactive",
+                            "invited",
+                            "reviewing"
+                        ],
+                        "type": "string",
+                        "description": "Filter by user status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int",
+                        "description": "Maximum number of items to return (1-100). When provided, enables pagination",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int",
+                        "description": "Page number (1-based). When provided, enables pagination",
+                        "name": "page",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Array of users. With page or page_size, the {pages, data} envelope of openapi.PaginatedResponse-openapi_UserListItem",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/openapi.User"
+                                "$ref": "#/definitions/openapi.UserListItem"
                             }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "500": {
@@ -17385,6 +17425,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_UserListItem": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.UserListItem"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
         "openapi.Pagination": {
             "type": "object",
             "properties": {
@@ -21585,12 +21639,14 @@ const docTemplate = `{
             "enum": [
                 "active",
                 "inactive",
-                "invited"
+                "invited",
+                "reviewing"
             ],
             "x-enum-varnames": [
                 "StatusActive",
                 "StatusInactive",
-                "StatusInvited"
+                "StatusInvited",
+                "StatusReviewing"
             ]
         },
         "openapi.SupportedEntityTypesEntry": {
@@ -21868,6 +21924,89 @@ const docTemplate = `{
                         "on",
                         "off"
                     ]
+                }
+            }
+        },
+        "openapi.UserListItem": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "description": "Email address of the user",
+                    "type": "string",
+                    "format": "email"
+                },
+                "groups": {
+                    "description": "Groups registered for this user",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre",
+                        "dba"
+                    ]
+                },
+                "id": {
+                    "description": "Unique identifier of the resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "last_login_at": {
+                    "description": "The time of the last sign-in or access token refresh. It is null when none was recorded.",
+                    "type": "string",
+                    "format": "date-time",
+                    "readOnly": true,
+                    "example": "2026-10-14T13:45:00Z"
+                },
+                "name": {
+                    "description": "Display name",
+                    "type": "string",
+                    "example": "John Wick"
+                },
+                "password": {
+                    "description": "Local auth cases have a password",
+                    "type": "string",
+                    "example": "mysecurepassword"
+                },
+                "picture": {
+                    "description": "The profile picture url to display",
+                    "type": "string",
+                    "example": ""
+                },
+                "role": {
+                    "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
+                    "type": "string",
+                    "enum": [
+                        "admin",
+                        "approver",
+                        "standard",
+                        "unregistered"
+                    ],
+                    "readOnly": true,
+                    "example": "standard"
+                },
+                "slack_id": {
+                    "description": "The identifier of slack to send messages to users",
+                    "type": "string",
+                    "example": "U053ELZHB53"
+                },
+                "status": {
+                    "description": "The status of the user. Inactive users cannot access the system",
+                    "default": "active",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.StatusType"
+                        }
+                    ]
+                },
+                "verified": {
+                    "description": "DEPRECATED in flavor of role",
+                    "type": "boolean",
+                    "readOnly": true
                 }
             }
         },

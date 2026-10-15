@@ -2,6 +2,8 @@ package models
 
 import (
 	"errors"
+	"strings"
+	"time"
 
 	"github.com/hoophq/hoop/common/log"
 	"gorm.io/gorm"
@@ -28,6 +30,63 @@ func ListUsers(orgID string) ([]User, error) {
 	}
 
 	return users, nil
+}
+
+// UserListOption filters ListUsersWithLastLogin. A zero Page returns every match.
+type UserListOption struct {
+	// Email matches part of the user email, ignoring case.
+	Email string
+	// Status matches the user status exactly.
+	Status   string
+	Page     int
+	PageSize int
+}
+
+// UserWithLastLogin is a user plus the time of its last sign-in, nil when none
+// was recorded.
+type UserWithLastLogin struct {
+	User
+	LastLoginAt *time.Time `gorm:"column:last_login_at"`
+}
+
+// userLikeEscaper neutralizes the LIKE wildcards in a partial-match filter.
+var userLikeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// ListUsersWithLastLogin returns the org users that match opts and the count of
+// all matches. A page sorts by name, then email; without a page the order is
+// the one ListUsers uses.
+func ListUsersWithLastLogin(db *gorm.DB, orgID string, opts UserListOption) ([]UserWithLastLogin, int64, error) {
+	matches := func() *gorm.DB {
+		q := db.Table("private.users AS u").Where("u.org_id = ?", orgID)
+		if opts.Email != "" {
+			q = q.Where("u.email ILIKE ?", "%"+userLikeEscaper.Replace(opts.Email)+"%")
+		}
+		if opts.Status != "" {
+			q = q.Where("u.status::TEXT = ?", opts.Status)
+		}
+		return q
+	}
+
+	var total int64
+	if err := matches().Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	q := matches().
+		Select("u.id, u.org_id, u.subject, u.name, u.picture, u.email, u.verified, u.status, u.slack_id, u.last_login_at")
+	if opts.Page > 0 {
+		q = q.Order("LOWER(u.name), LOWER(u.email), u.id").
+			Limit(opts.PageSize).
+			Offset((opts.Page - 1) * opts.PageSize)
+	} else {
+		q = q.Order("u.email DESC")
+	}
+
+	var users []UserWithLastLogin
+	if err := q.Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+	return users, total, nil
 }
 
 func GetInvitedUserByEmail(email string) (*User, error) {

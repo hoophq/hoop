@@ -52,9 +52,10 @@ type (
 )
 
 const (
-	StatusActive   StatusType = "active"
-	StatusInactive StatusType = "inactive"
-	StatusInvited  StatusType = "invited"
+	StatusActive    StatusType = "active"
+	StatusInactive  StatusType = "inactive"
+	StatusInvited   StatusType = "invited"
+	StatusReviewing StatusType = "reviewing"
 
 	// RoleAdminType will grant access to all routes.
 	RoleAdminType RoleType = "admin"
@@ -95,6 +96,13 @@ type User struct {
 	Groups []string `json:"groups" example:"sre,dba"`
 	// Local auth cases have a password
 	Password string `json:"password,omitempty" example:"mysecurepassword"`
+}
+
+// UserListItem is a user as GET /users lists it
+type UserListItem struct {
+	User
+	// The time of the last sign-in or access token refresh. It is null when none was recorded.
+	LastLoginAt *time.Time `json:"last_login_at" format:"date-time" readonly:"true" example:"2026-10-14T13:45:00Z"`
 }
 
 type UserPatchSlackID struct {

@@ -291,6 +291,9 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 		redirectToErrURL(c, login.Redirect, "unable to store user token")
 		return
 	}
+	if err := models.RecordUserLogin(models.DB, uinfo.Subject); err != nil {
+		log.Warnf("failed recording last login of %s, reason=%v", uinfo.Email, err)
+	}
 
 	redirectSuccessURL := fmt.Sprintf("%s?token=%v", login.Redirect, sessionToken)
 	url, _ := url.Parse(login.Redirect)

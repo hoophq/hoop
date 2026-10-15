@@ -30,14 +30,17 @@ var errUserInactive = fmt.Errorf("user is inactive")
 
 type handler struct {
 	apiURL string
+	// newVerifier loads the OIDC verifier. Tests replace it to run the
+	// callback without an identity provider.
+	newVerifier func() (idp.OidcVerifier, error)
 }
 
 func New() *handler {
-	return &handler{apiURL: appconfig.Get().ApiURL()}
+	return &handler{apiURL: appconfig.Get().ApiURL(), newVerifier: idp.NewOidcVerifierProvider}
 }
 
 func (h *handler) loadOidcVerifier(c *gin.Context) (idp.OidcVerifier, bool) {
-	oidcVerifier, err := idp.NewOidcVerifierProvider()
+	oidcVerifier, err := h.newVerifier()
 	switch err {
 	case idp.ErrUnknownIdpProvider:
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "OIDC provider not configured"})
@@ -197,7 +200,10 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	if token.RefreshToken != "" {
 		refreshToken = &token.RefreshToken
 	}
-	err = models.UpsertUserToken(models.DB, subject, token.AccessToken, refreshToken)
+	// Store the token under the access token's subject, the key the refresh,
+	// the session poller and the native proxies look up. An invited user still
+	// has the email as subject here; the sync below replaces it with this one.
+	err = models.UpsertUserToken(models.DB, uinfo.Subject, token.AccessToken, refreshToken)
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed upserting user token subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
 		log.Error(login.Outcome)
@@ -250,6 +256,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		}
 
 		h.analyticsTrack(isNewUser, userAgent, ctx)
+		recordLogin(uinfo)
 		login.Outcome = "success"
 		c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
 		return
@@ -277,10 +284,20 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	}
 
 	h.analyticsTrack(isNewUser, userAgent, ctx)
+	recordLogin(uinfo)
 
 	// TODO: add analytics (identify / track)
 	login.Outcome = "success"
 	c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
+}
+
+// recordLogin stores the sign-in time under uinfo.Subject, the subject the user
+// has once registerMultiTenantUser or syncSingleTenantUser ran. The subject the
+// token is stored under can still be the email an admin invited.
+func recordLogin(uinfo idptypes.ProviderUserInfo) {
+	if err := models.RecordUserLogin(models.DB, uinfo.Subject); err != nil {
+		log.With("sub", uinfo.Subject, "email", uinfo.Email).Warnf("failed recording last login, reason=%v", err)
+	}
 }
 
 func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (isNewUser bool, err error) {
