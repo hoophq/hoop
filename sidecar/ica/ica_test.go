@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -330,9 +329,11 @@ func TestGatedListenerSharesTheSessionBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var refused atomic.Int32
+	// refuse runs on the Accept goroutine; the channel orders its report
+	// before the test's check, which the client seeing the close does not.
+	refused := make(chan struct{}, 4)
 	slots := make(chan struct{}, 1)
-	gate := &gatedListener{Listener: ln, slots: slots, refuse: func(c net.Conn) { _ = c.Close(); refused.Add(1) }}
+	gate := &gatedListener{Listener: ln, slots: slots, refuse: func(c net.Conn) { _ = c.Close(); refused <- struct{}{} }}
 	defer gate.Close()
 	dial := func() net.Conn {
 		t.Helper()
@@ -364,8 +365,13 @@ func TestGatedListenerSharesTheSessionBound(t *testing.T) {
 	if _, err := over.Read(make([]byte, 1)); err == nil {
 		t.Fatal("a connection past the bound was not closed")
 	}
-	if refused.Load() != 1 {
-		t.Fatalf("refused %d, want 1", refused.Load())
+	select {
+	case <-refused:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the gate closed the connection without reporting a refusal")
+	}
+	if n := len(refused); n != 0 {
+		t.Fatalf("%d extra refusals, want 1 in all", n)
 	}
 
 	closed := make(chan struct{})
