@@ -60,11 +60,11 @@ const (
 	SSH = codectypes.SSH
 	// ICA has no codec for a fourth reason: the lane embeds the libhoop-ica
 	// engine, which terminates the Citrix session, decodes the ThinWire
-	// video channel and masks pixels. There are no statements, only
-	// frames, so nothing here could evaluate it. Declared locally rather
-	// than in libhoop: the engine is its own module, and Protocol is a
-	// string type, so the value needs no definition there to be the same
-	// type everywhere.
+	// video channel and masks pixels. The session carries frames and no
+	// statements, so this package has nothing to evaluate. This file
+	// declares ICA itself, with no codectypes alias: the engine is its own
+	// module, and Protocol is a string type, so the value has the same type
+	// in every module without a libhoop definition.
 	ICA Protocol = "ica"
 
 	FromClient = codectypes.FromClient

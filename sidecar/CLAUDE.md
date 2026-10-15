@@ -228,17 +228,17 @@ done
   classify nothing. README.md's Protocols section carries the table. A new
   protocol also needs a label in `daemon/schema.go` `protocolLabels`.
 
-- **ICA is an endpoint lane that embeds an engine, not a codec.** A Citrix
-  session carries pixels, so `protocol: ica` has no statements, no gate,
-  no masker and no analyzer; Validate refuses all four on it. `daemon/ica.go`
-  is the whole contract — config blocks, `ICALane`/`ICAServer`,
-  `RegisterICAEngine`, the audit bridge — and the engine (`sidecar/ica`, a
-  nested module on `github.com/hoophq/libhoop-ica`) registers from `init`.
-  Two things are deliberately build-dependent: `Protocols()` always lists
-  `ica` so the plane renders its form, but the capabilities header carries
-  `protocol:ica` only when an engine is registered, so the plane never serves
-  an ica lane to a build `checkICA` would refuse. The engine's builder must
-  not bind or load a model: Validate constructs it on the plane and on macOS.
+- **ICA is an endpoint lane that embeds an engine and has no codec.** A
+  Citrix session carries pixels and no statements, so Validate refuses
+  guardrail rules, mask rules, an analyzer and OPA on a `protocol: ica`
+  lane. `daemon/ica.go` holds the whole contract (config blocks,
+  `ICALane`/`ICAServer`, `RegisterICAEngine`, the audit bridge), and the
+  engine (`sidecar/ica`, a nested module on `github.com/hoophq/libhoop-ica`)
+  registers from `init`. `Protocols()` lists `ica` in every build, so the
+  plane renders its form; the capabilities header lists `protocol:ica` only
+  when an engine is registered, so the plane does not serve an ica lane to a
+  build that `checkICA` would refuse. The engine's builder must not bind a
+  socket or load a model: Validate constructs it on the plane and on macOS.
 
 - **A new `ListenerConfig` field needs a UI tag.** The control plane renders
   its listener form from `daemon/schema.json`. Tag the field

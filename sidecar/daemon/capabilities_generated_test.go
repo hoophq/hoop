@@ -13,10 +13,11 @@ import (
 // every rule type and every protocol. Only behaviourCapabilities is listed by
 // hand, because a behaviour has no type to generate it from.
 //
-// One protocol is build-dependent: ica is in Protocols() for every build, so
-// the plane renders its form, but reaches the header only when an engine is
-// registered (ica.go). This test runs without one, so it expects the entry
-// absent; TestTheHeaderCarriesICAOnlyWithAnEngine covers the other half.
+// ica is the one build-dependent protocol. Protocols() lists it in every
+// build, so the plane renders its form; the header lists it only when an
+// engine is registered (ica.go). This test registers no engine and expects
+// the entry absent; TestTheHeaderCarriesICAOnlyWithAnEngine covers the
+// registered case.
 func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 	caps := SidecarCapabilities()
 	if !slices.IsSorted(caps) {
@@ -38,10 +39,10 @@ func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 		}
 	}
 	if icaEngineLinked() {
-		t.Fatal("this test package must not register an ICA engine; the header's ica entry is covered separately")
+		t.Fatal("this test package must not register an ICA engine; TestTheHeaderCarriesICAOnlyWithAnEngine covers the header's ica entry")
 	}
 	if slices.Contains(caps, "protocol:ica") {
-		t.Errorf("the header claims protocol:ica with no engine registered; the plane would serve a lane checkICA refuses: %v", caps)
+		t.Errorf("the header lists protocol:ica with no engine registered; the plane would serve a lane checkICA refuses: %v", caps)
 	}
 	for _, c := range caps {
 		if strings.Count(strings.Join(caps, ","), c) != 1 {
@@ -52,8 +53,8 @@ func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 
 // With an engine registered the header carries protocol:ica, so a plane
 // serves ica lanes only to the binary that links sidecar/ica. The
-// registration is process-wide, so this test installs and removes it under
-// the registry lock rather than leaving it for later tests.
+// registration is process-wide, so this test installs it under the
+// registry lock and restores the previous one on cleanup.
 func TestTheHeaderCarriesICAOnlyWithAnEngine(t *testing.T) {
 	withICAEngine(t, func(daemonICARuntime ICARuntime, lane ICALane) (ICAServer, error) { return nil, nil })
 	if !slices.Contains(SidecarCapabilities(), "protocol:ica") {

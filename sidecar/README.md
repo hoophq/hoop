@@ -2426,7 +2426,7 @@ ABI.md.
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
 | `spanner` | like `grpc`, plus one SQL statement per query or DDL string extracted from known Cloud Spanner methods | as `grpc` | yes, per HTTP/2 stream |
 | `ssh` | the command of an `exec`, the name of an `env`, the path of each file operation | none — the lane rewrites output in flight and records none of it | yes, per connection |
-| `ica` | none — a Citrix session carries pixels, not statements | ThinWire video frames, OCR'd and NER-scanned; sensitive pixels are masked before the frame reaches the client | yes, per session |
+| `ica` | none: a Citrix session carries pixels and no statements | ThinWire video frames, OCR'd and NER-scanned; the engine masks sensitive pixels before the frame reaches the client | yes, per session |
 
 An `oracle` lane applies Oracle SQL classification to each decoded statement for
 policy decisions. It masks supported character results (VARCHAR, CHAR and
@@ -2737,24 +2737,25 @@ happened in `metadata.activity`.
 
 ### ica: the lane that embeds an engine
 
-`protocol: ica` is neither a relay nor a codec. A Citrix ICA session carries
-a screen, not statements, so there is nothing for a guardrail to match or a
-masker to rewrite. The lane embeds the
-[libhoop-ica](https://github.com/hoophq/libhoop-ica) engine: it terminates
-CGP on both legs, decodes the ThinWire video channel, OCRs each frame, runs
-the structured and NER detectors over the text, and masks the sensitive
-pixels before re-encoding the frame toward the client. Fail-closed: a frame
-that cannot be inspected is not released. The engine is a nested module,
-`sidecar/ica`, linked into `hoop-inspect` and nothing else; a build without
-it refuses an ica lane at startup, and its capabilities header never claims
-`protocol:ica`, so the plane never serves one to it.
+A `protocol: ica` lane uses no relay and no codec. A Citrix ICA session
+carries a screen and no statements, so a guardrail has nothing to match and
+a masker has nothing to rewrite. The lane embeds the
+[libhoop-ica](https://github.com/hoophq/libhoop-ica) engine, which
+terminates CGP on both legs, decodes the ThinWire video channel, OCRs each
+frame, runs the structured and NER detectors over the text, and masks the
+sensitive pixels before re-encoding the frame toward the client. The engine
+fails closed: it does not release a frame it cannot inspect. The engine is a
+nested module, `sidecar/ica`, and only `hoop-inspect` links it. A build
+without it refuses an ica lane at startup and omits `protocol:ica` from its
+capabilities header, so the plane does not serve that build an ica lane.
 
-Two modes, one switch — the lane either names its VDA or learns it:
+`upstream:` selects single mode and names the VDA; `ica.transparent:`
+selects CIDR mode, where each connection's original destination is its VDA:
 
 ```yaml
 ica:                                   # one OCR/NER runtime for every ica lane in the process
   ner_model: /opt/libhoop-ica/current/models/KnightsAnalytics_distilbert-NER
-  options: {ocr_workers: 4}            # overrides over the engine's production profile
+  options: {ocr_workers: 4}            # overrides of the engine's production profile
 
 listeners:
   - name: vdi-finance                  # single mode: upstream is the one VDA
@@ -2775,43 +2776,47 @@ listeners:
       display: {width: 1264, height: 1040, thinwire_channel: 9}
 ```
 
-CIDR mode intercepts: the socket is `IP_TRANSPARENT`, so an accepted
-connection's local address is the VDA the client asked for, and the engine
-dials that after checking it against `upstream_cidrs`/`upstream_ports` and
-the source against `source_cidrs`. It is Linux-only, the process needs
-`CAP_NET_ADMIN`, and the host needs the nftables TPROXY rule and policy route
-the engine's `docs/transparent-linux.md` lists. Single mode needs none of
-that and runs anywhere, one VDA per lane. Both modes run the same engine
+CIDR mode intercepts traffic through an `IP_TRANSPARENT` listening socket,
+so an accepted connection's local address is the VDA the client dialed. The
+engine checks that address against `upstream_cidrs`/`upstream_ports` and
+the source against `source_cidrs`, then dials the VDA. CIDR mode is
+Linux-only: the process needs `CAP_NET_ADMIN`, and the host needs the
+nftables TPROXY rule and policy route that the engine's
+`docs/transparent-linux.md` lists. Single mode has none of these
+requirements and serves one VDA per lane. Both modes run the same engine
 after accept.
 
-The top-level `ica` block is the runtime: asset paths, `max_sessions`, and
-`options`, which override individual settings of the engine's production
-profile (the one its own agent runs by default). The profile is not copied
-here — the engine owns it — so `-validate` prints the resolved values in
-the lane's notes. Loading the NER model and spawning the OCR workers takes
-minutes; `GET /readyz` on the admin port is 503 until every ica lane's
-engine is loaded, and 200 for a process with no ica lane.
+The top-level `ica` block configures the runtime: asset paths,
+`max_sessions`, and `options`, which override individual settings of the
+engine's production profile (the profile the engine's own agent runs by
+default). The engine owns that profile and this page does not copy it, so
+`-validate` prints the resolved values in the lane's notes. Loading the NER
+model and spawning the OCR workers takes minutes; `GET /readyz` on the admin
+port returns 503 until every ica lane's engine has loaded, and 200 for a
+process with no ica lane.
 
-Refused on an ica lane: `upstream_tls`, `downstream_tls`, `identity_header`,
-`google_identity`, and any guardrail, mask, analyzer or OPA that reaches it
-(write `guardrails: {rules: []}`, `mask: {rules: []}` or `opa: {}` on the
-listener to opt out of inherited ones). Each would load and do nothing.
+Validate refuses `upstream_tls`, `downstream_tls`, `identity_header`,
+`google_identity`, and any guardrail, mask, analyzer or OPA that reaches an
+ica lane, because each would load and do nothing. To opt out of inherited
+ones, write `guardrails: {rules: []}`, `mask: {rules: []}` or `opa: {}` on
+the listener.
 
-#### What the trail holds, and what it does not
+#### The audit trail
 
-One row per lifecycle fact, none per frame. The principal is `ica.tenant_id`:
-a session authenticates to the VDA, and the sidecar never sees a user name.
+The bridge writes one row per lifecycle event and none per frame. The
+principal is `ica.tenant_id`, because a session authenticates to the VDA and
+the sidecar does not see a user name.
 
-| Fact | What is recorded |
+| Event | Row |
 |---|---|
-| a refused connection | `kind: violation` with the engine's stage as the rule (`gateway_source_policy`, `original_destination`, `session_admission`) and the reason as the message. No session id: nothing was admitted |
+| a refused connection | `kind: violation` with the engine's stage as the rule (`gateway_source_policy`, `original_destination`, `session_admission`) and the reason as the message. No session id, because the engine admitted no session |
 | a session | `session_start`; then `session_end` with the engine's decision as the rule (`release`, `release_uninspected`), the duration, and the frame and OCR batch counts in `metadata` |
 | a blocked session | `kind: violation` in place of the end row, `rule: block`, `denied_count: 1` |
 | a failed session | `kind: error` with the engine's stage and reason |
 
-Never recorded: pixels, recognized text, the detections, the ICA/CGP bytes.
-The engine's own JSON audit stream is off inside the sidecar; the rows above
-are the only trail.
+The trail omits pixels, recognized text, detections, and ICA/CGP bytes. The
+engine's own JSON audit stream is off inside the sidecar, so the rows above
+are the whole trail.
 
 ### Postgres: trace ids from the startup packet
 

@@ -1777,10 +1777,10 @@ func serveAdmin(
 		fmt.Fprintln(w, "ok")
 	})
 
-	// Readiness is distinct from liveness for one reason: an ica lane's
-	// engine loads a model and spawns OCR workers for up to minutes after
-	// the socket is bound, and a connection admitted before that is refused.
-	// Every other lane is ready when bound, so this reads 200 for them.
+	// An ica lane's engine loads a model and starts OCR workers after the
+	// socket binds, which can take minutes, and the engine refuses
+	// connections until then. /readyz reports that, separate from
+	// /healthz; other lanes are ready once bound, so it returns 200 for them.
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if notReady := notReadyEndpoints(endpoints, endpointNames); len(notReady) > 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)

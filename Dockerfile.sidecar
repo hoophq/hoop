@@ -1,9 +1,9 @@
-# hoophq/hoopsidecar — the hoop inspection sidecar image, in two slim flavours
+# hoophq/hoopsidecar: the hoop inspection sidecar image, in two slim flavours
 # and one engine flavour.
 #
-# One Dockerfile, three final stages selected with `docker build --target`.
-# The two slim ones share the `unpack` stage, so release-tarball handling
-# exists in exactly one place:
+# One Dockerfile with three final stages, selected with
+# `docker build --target`. The two slim stages share the `unpack` stage, so
+# release-tarball handling lives in one place:
 #
 #   --target default     -> hoophq/hoopsidecar:<version>
 #                           hoophq/hoopsidecar:latest
@@ -96,19 +96,20 @@
 # The ica flavour
 #
 # A `protocol: ica` lane embeds the libhoop-ica engine (Citrix ICA/CGP,
-# ThinWire video OCR + NER masking). The engine is linked into hoop-inspect
-# only — never into `hoop` — and only as a cgo `-tags ORT` build, and it needs
-# tesseract 5, the hoop-tesseract-worker and libonnxruntime at run time. None
-# of that belongs in the two slim flavours, and distroless cannot carry it, so
-# it is its own target: built from source here rather than unpacked from the
-# release tarball, against two private modules, so it needs a BuildKit secret
-# that can read hoophq/libhoop and hoophq/libhoop-ica:
+# ThinWire video OCR + NER masking). Only hoop-inspect links the engine, and
+# only in a cgo `-tags ORT` build; `hoop` does not. At run time the engine
+# needs tesseract 5, the hoop-tesseract-worker and libonnxruntime. The slim
+# flavours leave those out and distroless cannot carry them, so the engine
+# gets its own target. The ica-build stage compiles hoop-inspect from source
+# against two private modules, so the build needs a BuildKit secret that can
+# read hoophq/libhoop and hoophq/libhoop-ica:
 #
 #   docker build -f Dockerfile.sidecar --target ica \
 #     --secret id=gh_token,env=GH_TOKEN -t hoophq/hoopsidecar:dev-ica .
 #
-# It runs hoop-inspect, not `hoop start sidecar`; the config path is the same.
-# The NER model is mounted, not baked (same reason as the absent -alcatraz
+# The image runs hoop-inspect where the slim flavours run `hoop start
+# sidecar`; the config path is the same. The operator mounts the NER model,
+# and the image does not include it (same reason as the absent -alcatraz
 # flavour above). CIDR mode needs CAP_NET_ADMIN, which a non-root process
 # cannot hold from the pod spec alone: see the ica section of sidecar/README.md.
 #
@@ -203,24 +204,24 @@ ENTRYPOINT ["/app/tini", "--"]
 CMD ["hoop", "start", "sidecar"]
 
 # --- Stage: ica-build (hoop-inspect with the Citrix ICA engine) --------------
-# cgo, so NOT pinned to BUILDPLATFORM like `unpack`: it compiles natively for
-# each target platform (emulated for the non-native one in a multiarch build).
-# Bookworm's glibc is older than noble's, so the binary runs on the ica
-# flavour below.
+# This stage uses cgo, so it is not pinned to BUILDPLATFORM like `unpack`: it
+# compiles natively for each target platform (emulated for the non-native one
+# in a multiarch build). Bookworm's glibc is older than noble's, so the binary
+# runs on the ica flavour below.
 FROM golang:1.26-bookworm AS ica-build
 ARG TARGETARCH
 ARG VERSION=unknown
 WORKDIR /src
-# The sidecar tree only: GOWORK=off below builds sidecar/cmd from its own
-# go.mod, whose replace directives reach the root and every nested module,
-# sidecar/ica included. The repo's go.work lists modules this image never
-# needs and would make the build depend on them.
+# This stage copies the sidecar tree only: GOWORK=off below builds
+# sidecar/cmd from its own go.mod, whose replace directives reach the root and
+# every nested module, sidecar/ica included. The repo's go.work lists modules
+# this image does not need, and using it would make the build depend on them.
 COPY sidecar/ ./sidecar/
-# One RUN, so the token exists only in this step's environment: GIT_CONFIG_*
+# A single RUN keeps the token in this step's environment: GIT_CONFIG_*
 # reaches the git calls `go` makes without writing a ~/.gitconfig into a
-# layer. The stage is not shipped either way; this keeps the build cache
-# clean too. The segment key is optional: absent builds a binary that sends
-# no analytics, as the local stacks do.
+# layer. The final image does not ship this stage; the single RUN also keeps
+# the build cache clean. The segment key is optional: without it the build
+# produces a binary that sends no analytics, as the local stacks do.
 RUN --mount=type=secret,id=gh_token,required=true \
     --mount=type=secret,id=segment_api_key \
     --mount=type=cache,target=/root/go/pkg/mod \
@@ -239,21 +240,22 @@ RUN --mount=type=secret,id=gh_token,required=true \
     esac; \
     mkdir -p /out/tok /out/ort /out/bin /out/worker; \
     cd sidecar/cmd; \
-    # libtokenizers.a at the version go.mod pins: hugot's Rust tokenizer,
-    # which the ORT build tag links statically.
+    # Fetch libtokenizers.a (hugot's Rust tokenizer, which the ORT build tag
+    # links statically) at the version go.mod pins.
     tv=$(go list -m -f '{{.Version}}' github.com/daulet/tokenizers); \
     curl -sSfL "https://github.com/daulet/tokenizers/releases/download/${tv}/libtokenizers.${tok}.tar.gz" \
       | tar -xz -C /out/tok; \
     CGO_LDFLAGS=-L/out/tok go build -tags ORT -trimpath \
       -ldflags "-s -w -X main.version=${VERSION} -X github.com/hoophq/hoop/sidecar/analytics.writeKey=${segment}" \
       -o /out/bin/hoop-inspect .; \
-    # ONNX Runtime at the path the engine's profile reads by default
-    # (libhoop-ica DefaultNERORTLibrary). Bump both together.
+    # Fetch ONNX Runtime for the path the engine's profile reads by default
+    # (libhoop-ica DefaultNERORTLibrary). Bump the two together.
     curl -sSfL "https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-${ort}-1.28.0.tgz" \
       | tar -xz -C /out/ort --strip-components=1; \
-    # The worker from the libhoop-ica release this binary links, so engine
-    # and worker never drift: the version comes from the same go.mod. The
-    # repository is private, so the assets come through the API.
+    # Fetch the worker from the libhoop-ica release this binary links. Both
+    # versions come from the same go.mod, so engine and worker stay in step.
+    # The repository is private, so this step downloads the assets through
+    # the GitHub API.
     iv=$(go list -m -f '{{.Version}}' github.com/hoophq/libhoop-ica); \
     archive="libhoop-ica_${iv#v}_linux_${TARGETARCH}.tar.gz"; \
     release=$(curl -sSfL -H "Authorization: Bearer ${token}" \
@@ -269,20 +271,21 @@ RUN --mount=type=secret,id=gh_token,required=true \
     rm -f "${archive}" checksums.txt
 
 # --- Flavour: ica (Ubuntu 24.04 LTS + the Citrix ICA engine) -----------------
-# hoophq/hoopsidecar:<version>-ica. Before `default`, which must stay last.
+# hoophq/hoopsidecar:<version>-ica. This stage sits before `default`, which
+# must stay last.
 FROM ${UBUNTU_IMAGE} AS ica
 ARG SIDECAR_CONFIG
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Beyond the default flavour's ca-certificates and tini:
+# Packages added to the default flavour's ca-certificates and tini:
 #
 #   libtesseract5, tesseract-ocr, tesseract-ocr-eng
 #       the worker links libtesseract.so.5; the engine also checks the
 #       `tesseract` CLI's major version, and reads English tessdata from
 #       /usr/share/tesseract-ocr/5/tessdata, its default.
 #
-# The engine's defaults read its installed-release layout,
+# The engine's default paths follow its installed-release layout,
 # /opt/libhoop-ica/current/{bin,models}; `current` points at this image's
 # release directory the way the Azure installer's points at a versioned one.
 RUN groupadd --gid 10001 hoop && \
@@ -298,7 +301,7 @@ COPY --from=ica-build /out/bin/hoop-inspect /app/hoop-inspect
 COPY --from=ica-build /out/worker/hoop-tesseract-worker /opt/libhoop-ica/releases/image/bin/
 COPY --from=ica-build /out/worker/LICENSE /out/worker/NOTICE /opt/libhoop-ica/releases/image/
 COPY --from=ica-build /out/ort/lib/ /opt/alcatraz/ort/releases/1.28.0/lib/
-# The NER model (~250MB) is mounted, not baked: a volume at
+# The operator mounts the NER model (~250MB) at run time: a volume at
 # /opt/libhoop-ica/current/models/KnightsAnalytics_distilbert-NER, or any
 # directory named in the config's ica.ner_model.
 ENV PATH="/app:${PATH}"

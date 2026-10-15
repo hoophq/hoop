@@ -171,8 +171,8 @@ func SidecarCapabilities() []string {
 	for _, t := range policy.RuleTypes() {
 		out = append(out, capabilityRulePrefix+string(t))
 	}
-	// Protocols minus ica in a build without the engine: the header must
-	// not claim a lane checkICA would refuse at startup (ica.go).
+	// Protocols minus ica in a build without the engine, so the header does
+	// not list a lane that checkICA would refuse at startup (ica.go).
 	for _, p := range protocolsForCapabilities() {
 		out = append(out, capabilityProtocolPrefix+p)
 	}

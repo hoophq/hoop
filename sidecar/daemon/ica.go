@@ -19,42 +19,44 @@ import (
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
-// An ica lane is not a relay lane and not a codec lane. It EMBEDS the
-// libhoop-ica engine: Citrix ICA/CGP sessions between a Workspace client (or
-// Citrix Gateway) and a VDA are terminated, the ThinWire video channel is
-// decoded, OCR'd and NER-scanned, and sensitive pixels are masked before the
-// frame is re-encoded toward the client. There is no statement, so there is
-// no gate, no policy evaluation and no masker in this package's sense: the
-// engine's own fail-closed pipeline is the enforcement, and the sidecar
-// supplies admission policy, identity labels, audit and lifecycle.
+// An ica lane embeds the libhoop-ica engine and uses no relay and no codec.
+// The engine terminates Citrix ICA/CGP sessions between a Workspace client
+// (or Citrix Gateway) and a VDA, decodes the ThinWire video channel, runs
+// OCR and NER on it, and masks sensitive pixels before it re-encodes the
+// frame toward the client. An ica lane has no statement, so this package's
+// gate, policy evaluation and masker have nothing to act on: the engine's
+// fail-closed pipeline enforces, and the sidecar supplies admission policy,
+// identity labels, audit and lifecycle.
 //
-// The engine lives in github.com/hoophq/libhoop-ica, which the root module
-// must not import (one dependency, libhoop). So this file is the CONTRACT:
-// the config an operator writes, what the daemon hands an engine, and what
-// it expects back. The nested sidecar/ica module registers the engine
-// through RegisterICAEngine, the way sidecar/mcp registers its server.
+// The engine lives in github.com/hoophq/libhoop-ica. The root module must
+// not import it (its one dependency is libhoop), so this file defines the
+// contract: the config an operator writes, what the daemon hands an engine,
+// and what the daemon expects back. The nested sidecar/ica module registers
+// the engine through RegisterICAEngine, as sidecar/mcp registers its server.
 //
-// Two modes, one switch. `upstream:` names a single VDA; `ica.transparent:`
-// selects the VDA per connection from the original destination TPROXY kept
-// on the accepted socket (Linux, IP_TRANSPARENT, CAP_NET_ADMIN). Both are a
-// validate error together. Everything after accept is the same engine path.
+// `upstream:` selects single mode and names the VDA; `ica.transparent:`
+// selects CIDR mode, where the VDA for each connection is the original
+// destination TPROXY kept on the accepted socket (Linux, IP_TRANSPARENT,
+// CAP_NET_ADMIN). Config validation refuses both together. After accept,
+// both modes run the same engine path.
 
-// isICA reports whether a listener is an ica lane. Same job as isSSH: ica
-// registers no codec, so every site that would ask inspect.New needs this
-// carve-out.
+// isICA reports whether a listener is an ica lane. Like isSSH, it exists
+// because ica registers no codec: code that would call inspect.New for a
+// listener checks isICA first.
 func isICA(lc ListenerConfig) bool {
 	return inspect.Protocol(lc.Protocol) == inspect.ICA
 }
 
-// ICARuntimeConfig is the top-level `ica` block: the one OCR/NER runtime
-// every ica lane in this process shares. Loading the NER model and spawning
-// the OCR workers takes minutes and gigabytes, so it is per process, not per
-// lane. Absent, every path and knob is the engine's production profile.
+// ICARuntimeConfig is the top-level `ica` block: the OCR/NER runtime that
+// all ica lanes in this process share. Loading the NER model and spawning
+// the OCR workers takes minutes and gigabytes, so the daemon runs one
+// runtime per process. With no block, the engine's production profile
+// supplies every path and setting.
 //
-// The profile itself is NOT here: it lives in the engine
-// (libhoop-ica/ica.DefaultRuntimeConfig), where the agent's own flags take
-// it from, so there is one profile rather than one per binary. Options is
-// overrides only; the resolved values are reported by the lane's Notes.
+// The profile lives in the engine (libhoop-ica/ica.DefaultRuntimeConfig),
+// which is also the source of the agent's flag defaults, so all binaries
+// share one profile. Options holds overrides only; the lane's Notes report
+// the resolved values.
 type ICARuntimeConfig struct {
 	// OCRWorker is the hoop-tesseract-worker binary. Default: the engine's
 	// installed-release path (/opt/libhoop-ica/current/bin/hoop-tesseract-worker).
@@ -73,22 +75,24 @@ type ICARuntimeConfig struct {
 	// ConnectTimeoutSec bounds the VDA dial. Default 10, 1..60.
 	ConnectTimeoutSec int `json:"connect_timeout_sec,omitempty"`
 	// FailureDiagnosticDir enables the engine's metadata-only failure files
-	// in an existing private (0700) directory. Empty is off. Never pixels.
+	// (no pixels) in an existing private (0700) directory. Empty disables
+	// them.
 	FailureDiagnosticDir string `json:"failure_diagnostic_dir,omitempty"`
 	// Options overrides individual profile settings. See ICAOptions.
 	Options *ICAOptions `json:"options,omitempty"`
 }
 
-// ICAOptions is the override surface over the engine's production profile.
-// Every field is a pointer: nil means "the profile's value". Names are the
-// agent's flag names with underscores, so an operator who knows
-// -ocr-fresh-reuse-frames finds ocr_fresh_reuse_frames. The UNSAFE and LAB
-// ONLY agent modes are deliberately absent; a lane that needs them runs the
+// ICAOptions overrides the engine's production profile. Each field is a
+// pointer, and nil keeps the profile's value. Field names are the agent's
+// flag names with underscores, so an operator who knows
+// -ocr-fresh-reuse-frames finds ocr_fresh_reuse_frames. ICAOptions omits the
+// agent's UNSAFE and LAB ONLY modes; a lane that needs them runs the
 // standalone agent.
 //
-// Ranges are checked here so the control plane refuses a typo without an
-// engine; cross-setting rules (adaptive_coalescing needs output_pipeline…)
-// are the engine's and are checked on the host through its validator.
+// validate checks ranges here so the control plane refuses a typo without
+// an engine. Cross-setting rules (adaptive_coalescing needs
+// output_pipeline…) belong to the engine, and its validator checks them on
+// the host.
 type ICAOptions struct {
 	OCRWorkers              *int     `json:"ocr_workers,omitempty"`
 	OCRTiles                *int     `json:"ocr_tiles,omitempty"`
@@ -107,7 +111,7 @@ type ICAOptions struct {
 	NERParallel             *int     `json:"ner_parallel,omitempty"`
 	PIIThreshold            *float64 `json:"pii_threshold,omitempty"`
 	// PIIEntities replaces the profile's structured entity set
-	// (HEALTHCARE_IDENTIFIERS) when non-empty. NER runs on top either way.
+	// (HEALTHCARE_IDENTIFIERS) when non-empty. NER runs in both cases.
 	PIIEntities            []string `json:"pii_entities,omitempty"`
 	VideoBatch             *bool    `json:"video_batch,omitempty"`
 	OutputPipeline         *bool    `json:"output_pipeline,omitempty"`
@@ -129,9 +133,10 @@ func (r *ICARuntimeConfig) validate(onHost bool) []string {
 	if r.ConnectTimeoutSec != 0 && (r.ConnectTimeoutSec < 1 || r.ConnectTimeoutSec > 60) {
 		problems = append(problems, where+": connect_timeout_sec must be 1..60")
 	}
-	// An explicit path is checked where the file would be read. A default
-	// is not: the image and the installer lay it out, and a developer's
-	// -validate of a config that names no path must not depend on it.
+	// validate checks an explicit path only on the host, where the engine
+	// reads the file. It skips default paths: the image and the installer
+	// lay those out, and a developer's -validate of a config that names no
+	// path must not depend on them.
 	if onHost {
 		for key, path := range map[string]string{"ocr_worker": r.OCRWorker, "tessdata": r.Tessdata, "ner_model": r.NERModel, "ner_ort_library": r.NERORTLibrary, "failure_diagnostic_dir": r.FailureDiagnosticDir} {
 			if path == "" {
@@ -184,40 +189,42 @@ func (o *ICAOptions) validate(where string) []string {
 }
 
 // ICAConfig is the `ica` block on a listener: who the lane serves and how
-// it finds the VDA. Required on an ica lane, refused anywhere else.
+// it finds the VDA. An ica lane requires it, and config validation refuses
+// it on any other protocol.
 type ICAConfig struct {
-	// TenantID labels every session and audit row this lane produces; it
-	// is the principal the trail carries, since an ICA session authenticates
-	// to the VDA, not to the sidecar.
+	// TenantID labels every session and audit row this lane produces. The
+	// audit trail records it as the principal, because an ICA session
+	// authenticates to the VDA and not to the sidecar.
 	TenantID string `json:"tenant_id,omitempty" label:"Tenant" placeholder:"citrix-production" help:"Labels every session and audit row from this listener." ui:"required"`
 
-	// Transparent turns the lane into CIDR mode: the VDA is the original
-	// destination of each intercepted connection, and the listener needs
-	// Linux IP_TRANSPARENT, CAP_NET_ADMIN and a TPROXY rule. Absent, the
-	// lane is single mode and `upstream` names the one VDA.
-	Transparent *ICATransparentConfig `json:"transparent,omitempty" label:"Transparent (CIDR) mode" help:"Select the VDA per connection from the intercepted destination. Linux only; needs CAP_NET_ADMIN and a TPROXY rule." ui:"presence"`
+	// Transparent selects CIDR mode: the VDA is the original destination of
+	// each intercepted connection, and the listener needs Linux
+	// IP_TRANSPARENT, CAP_NET_ADMIN and a TPROXY rule. With no block, the
+	// lane runs in single mode and `upstream` names the VDA.
+	Transparent *ICATransparentConfig `json:"transparent,omitempty" label:"Transparent (CIDR) mode" help:"Selects the VDA for each connection from its intercepted destination. Requires Linux, CAP_NET_ADMIN and a TPROXY rule." ui:"presence"`
 
 	// Display pins the framebuffer geometry and ThinWire channel for every
-	// session. Absent takes the engine's defaults (1264x1040, channel 9).
+	// session. With no block, the engine's defaults apply (1264x1040,
+	// channel 9).
 	Display *ICADisplayConfig `json:"display,omitempty" label:"Display" help:"Framebuffer geometry and ThinWire channel. Leave empty for the engine defaults."`
 }
 
 // ICATransparentConfig is CIDR mode's admission policy.
 type ICATransparentConfig struct {
 	// SourceCIDRs are the Gateway or Workspace client networks allowed to
-	// connect. Required in this mode: a transparent listener is on-path
-	// for everything the router sends it.
-	SourceCIDRs []string `json:"source_cidrs,omitempty" label:"Source CIDRs" placeholder:"10.10.1.10/32" help:"Who may connect: the Citrix Gateway SNIP or the Workspace client networks." ui:"required"`
+	// connect. CIDR mode requires them, because a transparent listener sits
+	// on-path for all traffic the router sends it.
+	SourceCIDRs []string `json:"source_cidrs,omitempty" label:"Source CIDRs" placeholder:"10.10.1.10/32" help:"Networks allowed to connect: the Citrix Gateway SNIP or the Workspace client networks." ui:"required"`
 	// UpstreamCIDRs are the VDA networks a connection may be destined to.
-	UpstreamCIDRs []string `json:"upstream_cidrs,omitempty" label:"VDA CIDRs" placeholder:"10.77.0.0/16" help:"The VDA networks a connection may be destined to." ui:"required"`
+	UpstreamCIDRs []string `json:"upstream_cidrs,omitempty" label:"VDA CIDRs" placeholder:"10.77.0.0/16" help:"VDA networks a connection may be destined to." ui:"required"`
 	// UpstreamPorts are the VDA ports allowed, usually 2598 (CGP).
 	UpstreamPorts ICAPortList `json:"upstream_ports,omitempty" label:"VDA ports" placeholder:"2598" help:"Allowed VDA ports; 2598 is CGP." ui:"required"`
 }
 
 // ICAPortList is a list of ports that decodes from JSON numbers or strings,
 // so `upstream_ports: [2598]` and `["2598"]` both load. It is a string
-// slice underneath because that is the one list the control plane's form
-// renders; validate parses each entry.
+// slice because the control plane's form renders only string lists;
+// validate parses each entry.
 type ICAPortList []string
 
 func (p *ICAPortList) UnmarshalJSON(data []byte) error {
@@ -262,8 +269,8 @@ type ICADisplayConfig struct {
 	ThinwireChannel int `json:"thinwire_channel,omitempty" label:"ThinWire channel" placeholder:"9" help:"The ICA virtual channel carrying ThinWire video, 1..255."`
 }
 
-// validate checks the block with the listener it sits on, since the mode
-// switch is the presence of `upstream` versus `transparent`.
+// validate takes the listener as well as the block, because the listener's
+// `upstream` or the block's `transparent` selects the mode.
 func (c *ICAConfig) validate(lc ListenerConfig, name string) []string {
 	if c == nil {
 		return []string{name + ": an ica listener needs an \"ica\" block with at least tenant_id"}
@@ -340,20 +347,21 @@ func parsePrefixes(values []string) ([]netip.Prefix, error) {
 	return out, nil
 }
 
-// ICALane is what the daemon hands the engine for one lane: every value
-// resolved, no config text, no engine types. Events is the sidecar's audit
-// bridge; the engine calls it for every event it emits.
+// ICALane is the daemon's input to the engine for one lane. The daemon
+// resolves every value, and the struct holds no config text and no engine
+// types. Events is the sidecar's audit bridge; the engine calls it for each
+// event it emits.
 type ICALane struct {
 	Name     string
 	Listen   string
 	Network  string // "" or "tcp", or "unix" in single mode
 	TenantID string
 
-	// Transparent selects CIDR mode. Then SourcePrefixes, UpstreamPrefixes
-	// and UpstreamPorts are the policy and Upstream is empty. Otherwise
-	// Upstream is the single VDA as configured (host:port; the engine
-	// resolves a hostname once, at start) and SourcePrefixes is empty,
-	// meaning any source.
+	// Transparent selects CIDR mode, where SourcePrefixes, UpstreamPrefixes
+	// and UpstreamPorts hold the policy and Upstream is empty. In single
+	// mode, Upstream is the configured VDA (host:port; the engine resolves a
+	// hostname once, at start) and SourcePrefixes is empty, which admits any
+	// source.
 	Transparent      bool
 	Upstream         string
 	SourcePrefixes   []netip.Prefix
@@ -377,7 +385,7 @@ type ICARuntime struct {
 }
 
 // ICAEvent is one engine audit event, as the engine shapes it: Name is
-// the engine's event name, Data flat metadata. It never carries pixels or
+// the engine's event name, Data flat metadata. It carries no pixels and no
 // recognized text. SessionID is empty for the pre-session events.
 type ICAEvent struct {
 	Time      time.Time
@@ -398,11 +406,11 @@ type ICASessionView struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ICAServer is the running side of an ica lane. It satisfies endpointServer
-// — Serve blocks until ctx ends or the listener fails, Close is idempotent
-// and drains — and adds what the admin API serves for an engine that is not
-// a relay: readiness (the runtime loads for minutes), the session list, and
-// an administrative stop.
+// ICAServer is the running side of an ica lane. It satisfies
+// endpointServer (Serve blocks until ctx ends or the listener fails; Close
+// is idempotent and drains) and adds what the admin API serves for an
+// engine that is not a relay: readiness (the runtime loads for minutes),
+// the session list, and an administrative stop.
 //
 // The builder MUST NOT bind a socket or load a model: Validate constructs
 // the server on the control plane and on macOS. Both happen in Serve.
@@ -412,11 +420,11 @@ type ICAServer interface {
 	Addr() net.Addr
 	Stats() (active, total, denied int64)
 	Notes() []string
-	// Ready reports whether the OCR/NER runtime is loaded. Before Serve,
-	// and while the model loads, it is false.
+	// Ready reports whether the OCR/NER runtime is loaded. It returns false
+	// before Serve and while the model loads.
 	Ready() bool
 	Sessions() []ICASessionView
-	// Stop ends one session; false when no such session exists.
+	// Stop ends one session and returns false when no such session exists.
 	Stop(id string) bool
 }
 
@@ -430,7 +438,7 @@ var (
 )
 
 // RegisterICAEngine links an ICA engine into this binary. It panics on a
-// second registration, because import order must not pick a winner.
+// second registration, so the engine choice cannot depend on import order.
 func RegisterICAEngine(build ICABuilder) {
 	if build == nil {
 		panic("sidecar/daemon: RegisterICAEngine called with a nil builder")
@@ -449,14 +457,15 @@ func registeredICAEngine() ICABuilder {
 	return icaBuild
 }
 
-// icaEngineLinked reports whether this build can serve an ica lane. The
-// capabilities header reads it, so a plane never serves an ica lane to a
-// build that would refuse it at startup.
+// icaEngineLinked reports whether this build can serve an ica lane.
+// protocolsForCapabilities uses it to build the capabilities header, so a
+// plane does not serve an ica lane to a build that would refuse it at
+// startup.
 func icaEngineLinked() bool { return registeredICAEngine() != nil }
 
-// checkICA refuses an ica lane this process cannot serve. It runs in Run
-// and Validate, not in Config.Validate: the control plane validates sidecar
-// documents with the same decoder and links no engine.
+// checkICA refuses an ica lane this process cannot serve. Run and Validate
+// call it; Config.Validate does not, because the control plane validates
+// sidecar documents with the same decoder and links no engine.
 func checkICA(cfg *Config) error {
 	if icaEngineLinked() {
 		return nil
@@ -470,7 +479,7 @@ func checkICA(cfg *Config) error {
 	return nil
 }
 
-// icaRuntimeFor resolves the top-level block, absent or not.
+// icaRuntimeFor resolves the top-level block, which may be absent.
 func icaRuntimeFor(cfg *Config) ICARuntime {
 	r := cfg.ICA
 	if r == nil {
@@ -514,9 +523,10 @@ func resolveICALane(lc ListenerConfig, name string, events func(ICAEvent), log *
 }
 
 // buildICAServer resolves one ica lane and builds the engine's server with
-// the sidecar's audit bridge. Same shape as buildSSHServer; the liveRules it
-// returns keeps the reload loop uniform, though an ica lane carries no rules
-// (Validate refuses guardrails, mask, analyzer and opa on it).
+// the sidecar's audit bridge. It follows buildSSHServer and returns a
+// liveRules so the reload loop handles every lane the same way, although an
+// ica lane carries no rules (Validate refuses guardrails, mask, analyzer and
+// opa on it).
 func buildICAServer(ln lane, rt ICARuntime, ac AuditConfig, sink audit.Sink, log *slog.Logger) (ICAServer, *liveRules, error) {
 	build := registeredICAEngine()
 	if build == nil {
@@ -536,8 +546,9 @@ func buildICAServer(ln lane, rt ICARuntime, ac AuditConfig, sink audit.Sink, log
 	return srv, newLiveRules(ln), nil
 }
 
-// icaLaneNotes states the facts a -validate run has to say out loud and the
-// engine cannot: the mode, and that CIDR mode is Linux-only and privileged.
+// icaLaneNotes returns the notes a -validate run reports for an ica lane
+// that the engine cannot report: the mode, and that CIDR mode is Linux-only
+// and privileged.
 func icaLaneNotes(lc ListenerConfig) []string {
 	ic := lc.ICA
 	if ic == nil {
@@ -552,13 +563,14 @@ func icaLaneNotes(lc ListenerConfig) []string {
 	return notes
 }
 
-// icaAuditBridge turns engine events into the sidecar's audit trail. One
-// row per lifecycle fact, never per frame: a session can produce thousands
-// of frame decisions a minute, and the trail is for "who, where, what
-// happened", not telemetry. Counts travel on the session end row.
+// icaAuditBridge turns engine events into the sidecar's audit trail. The
+// bridge writes one row per lifecycle event and none per frame: a session
+// can produce thousands of frame decisions a minute, and the trail records
+// who, where and what happened, without per-frame telemetry. The session
+// end row carries the counts.
 //
 // Principal is the tenant: an ICA session authenticates to the VDA, and the
-// sidecar never sees a user name. SessionID is the engine's id, which the
+// sidecar does not see a user name. SessionID is the engine's id, which the
 // engine guarantees unique per process.
 type icaAuditBridge struct {
 	sink      audit.Sink
@@ -583,9 +595,9 @@ func newICAAuditBridge(sink audit.Sink, lane, tenant string, failHard bool, log 
 		sessions: map[string]*icaSessionTally{}, activeSet: map[string]struct{}{}}
 }
 
-// Event names and data keys the bridge understands, spelled as the engine
-// emits them (libhoop-ica/ica exports the same constants; the nested module
-// compiles against those, this file cannot).
+// Event names and data keys the bridge handles, spelled as the engine emits
+// them. libhoop-ica/ica exports the same constants; the nested module
+// compiles against those, and this file cannot import them.
 const (
 	icaEventConnectionRejected = "libhoop_ica.connection_rejected"
 	icaEventSessionStart       = "libhoop_ica.session_start"
@@ -685,18 +697,18 @@ func (b *icaAuditBridge) event(kind audit.Kind, e ICAEvent) *audit.Event {
 	return out
 }
 
-// denied is what the bridge counted: refused connections plus blocked
-// sessions. The engine's own Stats carry blocked sessions but not refused
-// connections, which never became sessions.
+// denied returns the bridge's count of refused connections plus blocked
+// sessions. The engine's Stats count blocked sessions and omit refused
+// connections, since those never became sessions.
 func (b *icaAuditBridge) denied() int64 {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.denials
 }
 
-// notReadyEndpoints names the endpoint lanes whose engine is not loaded yet.
-// Only servers that report readiness are consulted: the other endpoint
-// kinds are ready when bound. Names pair with endpoints by index.
+// notReadyEndpoints returns the names of endpoint lanes whose engine has
+// not loaded yet. It checks only servers that implement Ready; the other
+// endpoint kinds are ready once bound. names[i] belongs to endpoints[i].
 func notReadyEndpoints(endpoints []endpointServer, names []string) []string {
 	var out []string
 	for i, srv := range endpoints {
@@ -707,10 +719,10 @@ func notReadyEndpoints(endpoints []endpointServer, names []string) []string {
 	return out
 }
 
-// protocolsForCapabilities is Protocols minus ica in a build that did not
-// link the engine, so the capabilities header never claims a lane checkICA
-// would refuse at startup. Protocols itself keeps ica: the plane renders the
-// form from it, and the schema must be the same for every build.
+// protocolsForCapabilities returns Protocols without ica when this build did
+// not link the engine, so the capabilities header does not list a protocol
+// that checkICA would refuse at startup. Protocols keeps ica because the
+// plane renders the form from it and the schema must match across builds.
 func protocolsForCapabilities() []string {
 	out := Protocols()
 	if icaEngineLinked() {

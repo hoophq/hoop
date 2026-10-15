@@ -80,12 +80,13 @@ jobs:
         run: make test-sidecar
 
   # The ica image links hoop-inspect with cgo and -tags ORT (Dockerfile.sidecar
-  # --target ica); everything else builds CGO_ENABLED=0, where the ORT NER
-  # backend and hugot's Rust tokenizer are compiled out. This job LINKS that
-  # build, so a change that breaks only the cgo path fails on the PR instead
-  # of in the release's image step. libtokenizers.a comes from the
+  # --target ica); the other builds use CGO_ENABLED=0, which compiles out the
+  # ORT NER backend and hugot's Rust tokenizer. This job links that cgo build,
+  # so a change that breaks only the cgo path fails on the PR before it
+  # reaches the release's image step. libtokenizers.a comes from the
   # daulet/tokenizers release at the version go.mod pins, the same source the
-  # image uses; libonnxruntime is dlopen'ed at run time and not needed here.
+  # image uses. The binary dlopens libonnxruntime at run time, so this job
+  # does not need it.
   sidecar-ica-ort:
     name: Sidecar ICA build (cgo, -tags ORT)
     runs-on: ubuntu-latest

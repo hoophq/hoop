@@ -88,7 +88,7 @@
       "key": "upstream",
       "type": "string",
       "label": "Upstream",
-      "help": "Where the sidecar reaches your resource. On an ica listener, the single VDA; leave it empty for CIDR mode.",
+      "help": "Where the sidecar reaches your resource. On an ica listener, this names the single VDA; leave it empty for CIDR mode.",
       "placeholder": "appdb:5432",
       "required": true,
       "basic": true,
@@ -467,14 +467,14 @@
           "key": "transparent",
           "type": "object",
           "label": "Transparent (CIDR) mode",
-          "help": "Select the VDA per connection from the intercepted destination. Linux only; needs CAP_NET_ADMIN and a TPROXY rule.",
+          "help": "Selects the VDA for each connection from its intercepted destination. Requires Linux, CAP_NET_ADMIN and a TPROXY rule.",
           "presence": true,
           "fields": [
             {
               "key": "source_cidrs",
               "type": "list",
               "label": "Source CIDRs",
-              "help": "Who may connect: the Citrix Gateway SNIP or the Workspace client networks.",
+              "help": "Networks allowed to connect: the Citrix Gateway SNIP or the Workspace client networks.",
               "placeholder": "10.10.1.10/32",
               "required": true
             },
@@ -482,7 +482,7 @@
               "key": "upstream_cidrs",
               "type": "list",
               "label": "VDA CIDRs",
-              "help": "The VDA networks a connection may be destined to.",
+              "help": "VDA networks a connection may be destined to.",
               "placeholder": "10.77.0.0/16",
               "required": true
             },

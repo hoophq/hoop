@@ -33,11 +33,11 @@ runs:
 
     # GOPRIVATE keeps the private modules off proxy.golang.org and
     # sum.golang.org; the credential rewrite lets the direct fetch
-    # authenticate as the token. Two entries, not a hoophq/* glob: the
+    # authenticate as the token. GOPRIVATE lists two entries because the
     # pattern matches whole path elements, so libhoop does not cover
-    # libhoop-ica, and a glob would also send every public hoophq module
-    # around the proxy. libhoop-ica is the Citrix ICA engine sidecar/ica
-    # links; the token must be able to read it.
+    # libhoop-ica, and a hoophq/* glob would also send every public hoophq
+    # module around the proxy. sidecar/ica links libhoop-ica (the Citrix ICA
+    # engine), so the token must be able to read it.
     - name: Authenticate private modules
       shell: bash
       env:

@@ -16,11 +16,11 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
-// withICAEngine installs an engine builder for one test. The registry is
-// process-wide and RegisterICAEngine refuses a second registration, which is
-// right for a binary and wrong for a test, so this swaps under the lock and
-// restores on cleanup. Tests using it must not run in parallel with tests
-// that read the registry.
+// withICAEngine installs an engine builder for one test. RegisterICAEngine
+// panics on a second registration into the process-wide registry, and a
+// test needs to replace the engine, so withICAEngine swaps the builder under
+// the lock and restores it on cleanup. Tests using it must not run in
+// parallel with tests that read the registry.
 func withICAEngine(t *testing.T, build ICABuilder) {
 	t.Helper()
 	icaMu.Lock()
@@ -34,8 +34,9 @@ func withICAEngine(t *testing.T, build ICABuilder) {
 	})
 }
 
-// fakeICAServer is what a test engine returns: it records the lane and
-// runtime it was built with and answers the admin surface with fixed values.
+// fakeICAServer is the server a test engine returns. It records the lane
+// and runtime it was built with and returns fixed values from the admin
+// methods.
 type fakeICAServer struct {
 	rt    ICARuntime
 	lane  ICALane
@@ -100,9 +101,9 @@ func TestICAListenerValidation(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			// The plane's check: no engine, no host. Every ica rule above
-			// must hold there, since that is where an operator's edit is
-			// first refused.
+			// CheckConfigBytes runs the plane's check, with no engine and no
+			// host. Each ica rule above must hold there, because the plane is
+			// the first place to refuse an operator's edit.
 			err := CheckConfigBytes([]byte(tc.doc))
 			switch {
 			case tc.want == "" && err != nil:
@@ -114,9 +115,9 @@ func TestICAListenerValidation(t *testing.T) {
 	}
 }
 
-// An explicit asset path is checked where the file would be read — on the
-// host — and only there: the plane holds no files, and a default path is the
-// image's promise, not the operator's.
+// Config validation checks an explicit asset path only on the host, where
+// the engine reads the file. The plane holds no files, and the image lays
+// out the default paths.
 func TestICARuntimePathsAreCheckedOnTheHostOnly(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope")
 	doc := `{"ica":{"ocr_worker":"` + missing + `"},"listeners":[` + icaSingle + `]}`
@@ -135,7 +136,7 @@ func TestICARuntimePathsAreCheckedOnTheHostOnly(t *testing.T) {
 	}
 }
 
-// Without an engine the document is valid (the plane says so) but the
+// Without an engine the document is valid (the plane accepts it) but the
 // process cannot serve it; with one, Validate constructs the server and
 // reports its notes beside the lane's own.
 func TestICAValidateNeedsAnEngineAndReportsNotes(t *testing.T) {
@@ -193,9 +194,10 @@ func TestICAResolvesSingleModeAndRuntimeOverrides(t *testing.T) {
 	}
 }
 
-// The bridge writes one row per lifecycle fact and none per frame. A refused
-// connection is a violation with the stage as the rule; a blocked session is
-// a violation that also ends the session; counts ride on the end row.
+// The bridge writes one row per lifecycle event and none per frame. A
+// refused connection is a violation with the stage as the rule; a blocked
+// session is a violation that also ends the session; the end row carries
+// the counts.
 func TestICAAuditBridgeShapesTheTrail(t *testing.T) {
 	sink := audit.NewMemorySink(16)
 	b := newICAAuditBridge(sink, "vdi", "finance", false, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -242,7 +244,7 @@ func TestICAAuditBridgeShapesTheTrail(t *testing.T) {
 }
 
 // /readyz consults only the endpoints that report readiness and names the
-// ones that are not there yet.
+// ones still loading.
 func TestICAReadiness(t *testing.T) {
 	loaded := &fakeICAServer{ready: true}
 	loading := &fakeICAServer{ready: false}

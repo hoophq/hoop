@@ -97,7 +97,7 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 			l["ssh"] = sshBlock
 		case "ica":
 			// Single-VDA mode: upstream names the VDA and the block names
-			// the tenant. CIDR mode is the block's own test's concern.
+			// the tenant. TestICAListenerValidation covers CIDR mode.
 			l["upstream"] = "h:1"
 			l["ica"] = icaBlock
 		default:

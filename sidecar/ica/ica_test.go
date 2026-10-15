@@ -90,8 +90,8 @@ func TestBuildIsInertAndTheServerIsIdleBeforeServe(t *testing.T) {
 	if srv.Stop("nope") {
 		t.Fatal("stopped a session that cannot exist")
 	}
-	// Close before Serve does nothing and leaves no runtime behind; a
-	// second Close is a no-op too.
+	// Close before Serve leaves no runtime behind, and a second Close is a
+	// no-op.
 	if err := srv.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestServeAfterCloseDoesNotLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A live ctx: had Serve reached the load, it would have tried to spawn
-	// OCR workers from the profile's path and failed loudly.
+	// OCR workers from the profile's path and returned an error.
 	if err := srv.Serve(context.Background()); err != nil {
 		t.Fatalf("Serve after Close: %v", err)
 	}
@@ -155,8 +155,8 @@ func TestNotesStateModeAndResolvedRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The mode itself is the daemon's note; the adapter adds only what the
-	// daemon cannot know — here, that this host cannot serve CIDR mode.
+	// The daemon writes the mode note; the adapter adds only what the
+	// daemon cannot know, in this case that this host cannot serve CIDR mode.
 	notes = strings.Join(srv.Notes(), "\n")
 	if strings.Contains(notes, "CIDR mode; the VDA") || strings.Contains(notes, "single-VDA mode") {
 		t.Errorf("the adapter repeats the daemon's mode note:\n%s", notes)
@@ -208,7 +208,7 @@ func TestResolveRuntimeConfigAppliesEveryOverride(t *testing.T) {
 		t.Error("FailureDiagnostics opened at Build")
 	}
 
-	// No overrides: the profile, untouched, including the entity set.
+	// No overrides: the result equals the profile, including the entity set.
 	plain := resolveRuntimeConfig(daemon.ICARuntime{})
 	if plain.OCRWorker != profile.OCRWorker || plain.OCRWorkers != profile.OCRWorkers || plain.NERBackend != profile.NERBackend ||
 		strings.Join(plain.PIIEntities, ",") != strings.Join(profile.PIIEntities, ",") {
@@ -316,7 +316,7 @@ func TestObserveCountsDenialsAndForwards(t *testing.T) {
 	if len(got) != 4 || got[1].Name != ica.EventSessionEnd || got[1].SessionID != "s1" || got[3].Direction != "vda_to_client" || !got[0].Time.Equal(now) {
 		t.Fatalf("forwarded events %+v", got)
 	}
-	// No bridge: counting still works.
+	// No bridge: observe still counts.
 	quiet := &server{}
 	quiet.observe(ica.Event{Event: ica.EventConnectionRejected})
 	if _, _, denied := quiet.Stats(); denied != 1 {

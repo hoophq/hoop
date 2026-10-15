@@ -1,14 +1,14 @@
 // Package ica links the libhoop-ica engine into a sidecar binary as the
-// server behind an ica lane. daemon/ica.go is the contract: the daemon
+// server behind an ica lane. daemon/ica.go defines the contract: the daemon
 // resolves config into an ICALane and an ICARuntime, this package turns
 // them into the engine's Runtime, Manager and transparent listener, and
-// hands back the readiness, statistics and session list the admin API
+// returns the readiness, statistics and session list the admin API
 // serves.
 //
-// Build does nothing heavy. Validate calls it on the control plane and on a
-// developer's macOS, so it resolves the runtime profile, checks it with the
-// engine's own validator and inspects the lane, but binds no socket,
-// resolves no name and loads no model. All of that is Serve.
+// Validate calls Build on the control plane and on a developer's macOS, so
+// Build resolves the runtime profile, checks it with the engine's validator
+// and inspects the lane. Build binds no socket, resolves no name and loads
+// no model; Serve does those.
 package ica
 
 import (
@@ -31,7 +31,7 @@ import (
 
 func init() { daemon.RegisterICAEngine(Build) }
 
-// The failure diagnostics file bounds the standalone agent uses, so the
+// These failure diagnostics file bounds match the standalone agent's, so
 // metadata-only failure files look the same whichever binary wrote them.
 const (
 	failureFileBytes  = 4 << 20
@@ -39,7 +39,7 @@ const (
 )
 
 // drainTimeout bounds how long Close waits for active sessions to end
-// before it stops the manager, which cancels whatever is still running.
+// before it stops the manager, which cancels the sessions still running.
 const drainTimeout = 30 * time.Second
 
 // Build implements daemon.ICABuilder.
@@ -54,8 +54,8 @@ func Build(rt daemon.ICARuntime, lane daemon.ICALane) (daemon.ICAServer, error) 
 	return &server{cfg: cfg, rt: rt, lane: lane, notes: notes(cfg, lane)}, nil
 }
 
-// override applies a pointer override onto a profile value: nil is "keep
-// the profile's".
+// override copies src onto dst when src is set; a nil src keeps the
+// profile's value.
 func override[T any](dst *T, src *T) {
 	if src != nil {
 		*dst = *src
@@ -63,9 +63,10 @@ func override[T any](dst *T, src *T) {
 }
 
 // resolveRuntimeConfig lays the operator's paths and overrides over the
-// engine's production profile. OCRBackend and BitmapDecoder are not on the
-// override surface: the sidecar runs the profile's tesseract/independent
-// pair only. FailureDiagnostics is not set here; the writer opens at Serve.
+// engine's production profile. The override surface excludes OCRBackend
+// and BitmapDecoder, so the sidecar runs the profile's
+// tesseract/independent pair. Serve opens the FailureDiagnostics writer, so
+// this function leaves it unset.
 func resolveRuntimeConfig(rt daemon.ICARuntime) ica.RuntimeConfig {
 	cfg := ica.DefaultRuntimeConfig()
 	for _, p := range [...]struct {
@@ -108,9 +109,9 @@ func resolveRuntimeConfig(rt daemon.ICARuntime) ica.RuntimeConfig {
 }
 
 // validateLane checks what the daemon's config validation cannot see
-// without the engine's types. CIDR mode on a non-Linux host is NOT refused
-// here: -validate must pass on a developer's machine, and ica.Listen says
-// no at Serve.
+// without the engine's types. It accepts CIDR mode on a non-Linux host so
+// -validate passes on a developer's machine; ica.Listen refuses it at
+// Serve.
 func validateLane(lane daemon.ICALane) error {
 	if strings.TrimSpace(lane.TenantID) == "" {
 		return errors.New("ica.tenant_id is required")
@@ -127,8 +128,8 @@ func validateLane(lane daemon.ICALane) error {
 	return nil
 }
 
-// splitUpstream parses the single-VDA upstream as host:port with a real
-// port, since the engine admits a literal ip:port and nothing else.
+// splitUpstream parses the single-VDA upstream as host:port with a port in
+// 1..65535, since the engine admits only a literal ip:port.
 func splitUpstream(upstream string) (host string, port uint16, err error) {
 	host, portText, err := net.SplitHostPort(upstream)
 	if err != nil {
@@ -141,11 +142,11 @@ func splitUpstream(upstream string) (host string, port uint16, err error) {
 	return host, uint16(p), nil
 }
 
-// resolveUpstream turns the single-VDA upstream into one address, once: a
-// literal passes through, a hostname resolves through the system resolver
-// and the first answer wins. The engine dials literals only, and a policy
-// that re-resolved per connection could admit a different host than the
-// one the operator validated.
+// resolveUpstream turns the single-VDA upstream into one address, once. A
+// literal passes through; the system resolver resolves a hostname and the
+// first answer wins. The engine dials literals only, and a policy that
+// re-resolved per connection could admit a different host than the one the
+// operator validated.
 func resolveUpstream(ctx context.Context, upstream string) (netip.Addr, uint16, error) {
 	host, port, err := splitUpstream(upstream)
 	if err != nil {
@@ -164,9 +165,9 @@ func resolveUpstream(ctx context.Context, upstream string) (netip.Addr, uint16, 
 	return addrs[0].Unmap(), port, nil
 }
 
-// singlePolicy is the admission policy for one address: exactly that host
-// (/32 or /128) on exactly that port, and the fixed destination string
-// every accepted connection is sent to.
+// singlePolicy is the admission policy for one address: that host (/32 or
+// /128) on that port, plus the fixed destination string for accepted
+// connections.
 func singlePolicy(addr netip.Addr, port uint16) (ica.NetworkPolicy, string) {
 	addr = addr.Unmap()
 	policy := ica.NetworkPolicy{Prefixes: []netip.Prefix{netip.PrefixFrom(addr, addr.BitLen())},
@@ -186,16 +187,16 @@ func cidrPolicy(lane daemon.ICALane) ica.NetworkPolicy {
 	return policy
 }
 
-// anySource is single mode's source policy when the lane names none: the
-// engine requires a non-empty list, and a single-VDA lane admits whoever
-// reaches the listener, the way every other sidecar lane does.
+// anySource is single mode's source policy when the lane names none. The
+// engine requires a non-empty list, and a single-VDA lane admits any client
+// that reaches the listener, as the other sidecar lanes do.
 var anySource = []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustParsePrefix("::/0")}
 
-// notes states the resolved runtime values a -validate run must say out
-// loud, since only this side of the seam knows them: the operator wrote
-// overrides, and the profile they override lives in the engine. The mode
-// and the CIDR-mode privileges are the daemon's notes (icaLaneNotes); it
-// states them without an engine, for the control plane.
+// notes lists the resolved runtime values a -validate run reports. Only
+// this side of the seam knows them: the operator writes overrides, and the
+// profile they override lives in the engine. The daemon's icaLaneNotes
+// reports the mode and the CIDR-mode privileges, since the daemon can state
+// them without an engine, for the control plane.
 func notes(cfg ica.RuntimeConfig, lane daemon.ICALane) []string {
 	out := []string{
 		fmt.Sprintf("ica: ocr tesseract, %d workers, %d tiles, thread limit %d, timeout %s, min confidence %.2f",
@@ -215,14 +216,14 @@ func notes(cfg ica.RuntimeConfig, lane daemon.ICALane) []string {
 }
 
 // sharedRuntime is one loaded engine runtime and the lanes holding it.
-// NewRuntime loads a model and spawns OCR workers, minutes and gigabytes, so
-// every lane whose resolved RuntimeConfig is the same shares one. Lanes
-// with different options get different runtimes, which costs a second
-// load; the daemon's config has one `ica` block, so that is a future case,
-// not a normal one.
+// NewRuntime loads a model and spawns OCR workers, which costs minutes and
+// gigabytes, so lanes with the same resolved RuntimeConfig share one
+// runtime. Lanes with different options get separate runtimes and pay a
+// second load; the daemon's config has one `ica` block, so the current
+// config format does not produce that case.
 type sharedRuntime struct {
 	key  string
-	done chan struct{} // closed when load finished; runtime/err valid after
+	done chan struct{} // closed when load finishes; runtime and err are valid after
 
 	runtime     *ica.Runtime
 	diagnostics *ica.FailureDiagnostics
@@ -238,8 +239,8 @@ var (
 	runtimes   = map[string]*sharedRuntime{}
 )
 
-// fingerprint identifies a resolved RuntimeConfig for sharing. PIIEntities
-// is sorted so order does not split two identical sets.
+// fingerprint identifies a resolved RuntimeConfig for sharing. It sorts
+// PIIEntities so two identical sets in different order share a runtime.
 func fingerprint(cfg ica.RuntimeConfig, diagnosticDir string) string {
 	cfg.PIIEntities = slices.Clone(cfg.PIIEntities)
 	slices.Sort(cfg.PIIEntities)
@@ -291,9 +292,9 @@ func (e *sharedRuntime) load(ctx context.Context, cfg ica.RuntimeConfig, diagnos
 	defer runtimesMu.Unlock()
 	e.loaded = true
 	if e.err != nil || e.refs == 0 {
-		// Nobody will use it: every acquirer gave up while it loaded, or
-		// it never loaded. Either way the entry must not serve the next
-		// acquirer a dead runtime.
+		// No lane holds it: every acquirer gave up during the load, or the
+		// load failed. Removing the entry keeps the next acquirer from
+		// getting a dead runtime.
 		delete(runtimes, e.key)
 		e.closeResources()
 	}
@@ -311,8 +312,8 @@ func releaseRuntime(e *sharedRuntime) {
 	e.closeResources()
 }
 
-// closeResources runs under runtimesMu: the runtime first, so no worker
-// writes a failure file after the writer is gone.
+// closeResources runs under runtimesMu. It closes the runtime first, so no
+// worker writes a failure file after the writer closes.
 func (e *sharedRuntime) closeResources() {
 	if e.runtime != nil {
 		_ = e.runtime.Close()
@@ -326,16 +327,16 @@ func (e *sharedRuntime) closeResources() {
 	}
 }
 
-// server is one ica lane. Everything after cfg/rt/lane/notes exists only
-// between Serve and Close.
+// server is one ica lane. The fields after cfg/rt/lane/notes are in use
+// only between Serve and Close.
 type server struct {
 	cfg   ica.RuntimeConfig
 	rt    daemon.ICARuntime
 	lane  daemon.ICALane
 	notes []string
 
-	// denied counts what the engine's Stats do not: refused connections,
-	// which never became sessions, plus sessions the pipeline blocked.
+	// denied counts refused connections, which never became sessions, plus
+	// sessions the pipeline blocked. The engine's Stats count neither.
 	denied atomic.Int64
 
 	mu       sync.Mutex
@@ -345,10 +346,10 @@ type server struct {
 	listener net.Listener
 }
 
-// Serve loads the runtime (the minutes), resolves the destination policy,
-// binds the listener and runs the engine's accept loop until the listener
-// closes or ctx ends, both of which return nil. A shutdown that arrives
-// during the load is not a failure either.
+// Serve loads the runtime (which takes minutes), resolves the destination
+// policy, binds the listener and runs the engine's accept loop until the
+// listener closes or ctx ends; Serve returns nil in both cases. Serve also
+// returns nil when a shutdown arrives during the load.
 func (s *server) Serve(ctx context.Context) error {
 	if s.isClosed() {
 		return nil
@@ -404,8 +405,9 @@ func (s *server) mode() string {
 	return "single"
 }
 
-// start builds the manager and the listener for one Serve. The manager
-// comes first: a bound socket with nothing behind it would accept and drop.
+// start builds the manager and the listener for one Serve. It builds the
+// manager first, because a bound socket with no manager behind it would
+// accept connections and drop them.
 func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager, net.Listener, ica.TransparentConfig, string, error) {
 	tc := ica.TransparentConfig{TenantID: s.lane.TenantID, Width: s.lane.Width, Height: s.lane.Height,
 		ThinwireChannel: s.lane.ThinwireChannel}
@@ -463,9 +465,9 @@ func (s *server) listen(ctx context.Context) (net.Listener, error) {
 	return (&net.ListenConfig{}).Listen(ctx, network, s.lane.Listen)
 }
 
-// observe is the engine's EventHook. It runs on an engine worker under the
-// sink lock, so it counts and forwards and does nothing else; the lane's
-// Events is the daemon's audit bridge, which is built for that position.
+// observe is the engine's EventHook. The engine calls it on a worker under
+// the sink lock, so observe only counts and forwards. The lane's Events is
+// the daemon's audit bridge, which the daemon built to run in that position.
 func (s *server) observe(e ica.Event) {
 	if e.Event == ica.EventConnectionRejected || (e.Event == ica.EventSessionEnd && e.Data["decision"] == ica.DecisionBlock) {
 		s.denied.Add(1)
@@ -475,10 +477,10 @@ func (s *server) observe(e ica.Event) {
 	}
 }
 
-// Close stops intake, waits for the sessions in flight (bounded), stops the
-// manager and drops the lane's hold on the shared runtime. Idempotent, and
-// safe before Serve or while Serve is still loading: Serve notices the
-// closed flag when it comes to install what it built.
+// Close stops intake, waits a bounded time for the sessions in flight,
+// stops the manager and drops the lane's hold on the shared runtime. Close
+// is idempotent and safe before Serve or during Serve's load: Serve checks
+// the closed flag before it installs what it built.
 func (s *server) Close() error {
 	s.mu.Lock()
 	if s.closed {
@@ -526,9 +528,9 @@ func (s *server) Stats() (active, total, denied int64) {
 
 func (s *server) Notes() []string { return slices.Clone(s.notes) }
 
-// Ready is the engine's own readiness: the runtime loaded and its OCR
-// workers and NER model answer. False before Serve, while the load runs,
-// and after Close.
+// Ready reports the engine's readiness: the runtime has loaded and its OCR
+// workers and NER model answer. Ready returns false before Serve, during
+// the load, and after Close.
 func (s *server) Ready() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

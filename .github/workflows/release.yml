@@ -867,7 +867,7 @@ jobs:
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
-  # hoophq/hoopsidecar — the inspection sidecar image, the three targets of
+  # hoophq/hoopsidecar: the inspection sidecar image, the three targets of
   # Dockerfile.sidecar (see that file for what each ships):
   #
   #   :<version>              Ubuntu 24.04 LTS + the binary only
@@ -897,10 +897,10 @@ jobs:
   # The slim flavours need build-tar-files and no published base: they
   # extract the release tarball directly, so nothing waits on a registry. One
   # job, one multiarch build per target, for the same reason as hoopagent
-  # above — each build is a tar extraction plus (for the Ubuntu flavour) a
+  # above: each build is a tar extraction plus (for the Ubuntu flavour) a
   # single apt package, so emulating the non-native arch is cheaper than a
   # per-arch runner plus a manifest dance, and the release artifacts are
-  # pulled once. The ica flavour compiles from source instead; see its step.
+  # pulled once. The ica flavour compiles from source; see its step.
   docker-publish-hoopsidecar:
     runs-on: ubuntu-latest
     name: Publish Sidecar Image (hoopsidecar)
@@ -954,11 +954,11 @@ jobs:
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless
       # The ica flavour builds hoop-inspect from source with the libhoop-ica
-      # engine linked in (cgo, -tags ORT), so it needs no tarball but does
-      # need a token that reads both private modules and the libhoop-ica
-      # release assets. Secrets, not build args: they never reach a layer or
-      # the image history. The cgo build runs emulated for arm64, which is
-      # the slow half of this job.
+      # engine linked in (cgo, -tags ORT). It needs no tarball, and it needs
+      # a token that reads both private modules and the libhoop-ica release
+      # assets. The step passes the token and the segment key as BuildKit
+      # secrets, which stay out of the layers and the image history. The
+      # arm64 cgo build runs emulated and is the slow half of this job.
       - name: Build and push (ica)
         uses: docker/build-push-action@v7
         with:
