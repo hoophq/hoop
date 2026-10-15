@@ -100,9 +100,12 @@ Tell the operator, with the values from step 2:
 2. **Specify Helm chart**: the chart URL.
 3. **Image release** → **Specify releases** → new release: display tag
    `MAJOR.MINOR`, a title, a one-line description, and the module's `gs://`
-   path. Make it the default release.
+   path. Make it the default release, and delete releases whose image failed
+   a scan: validation checks every listed release.
 4. **Save and validate**. Marketplace runs `terraform plan` with
-   `marketplace_test.tfvars`.
+   `marketplace_test.tfvars` and scans the images; it takes up to two hours.
+   After uploading a zip again under the same path, select the module again
+   in the release: Producer Portal can keep validating the older copy.
 5. Submit for review only when the operator wants it public.
 
 ## Report
