@@ -175,7 +175,7 @@ func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
 			if la.reserves() {
 				return fmt.Sprintf("the analyzer block sets spend_approval_on %q and this "+
 					"sidecar has no control plane; only the plane can hold an approval "+
-					"until the upstream answers, and the terminal reviewer releases one "+
+					"until the upstream answers, and the terminal approver releases one "+
 					"statement at once", la.SpendApprovalOn)
 			}
 			return ""
@@ -327,7 +327,7 @@ func (cp *controlPlane) settleReview(ctx context.Context, reviewID string, accep
 		return "", err
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("the control plane at %s has no review %s to settle: %s",
+		return "", fmt.Errorf("the control plane at %s has no approval request %s to settle: %s",
 			cp.url, reviewID, controlPlaneMessage(raw))
 	}
 	out, err := cp.reviewAnswer(resp, raw)
@@ -336,7 +336,7 @@ func (cp *controlPlane) settleReview(ctx context.Context, reviewID string, accep
 	}
 	if out.ID != reviewID {
 		return "", fmt.Errorf(
-			"the control plane answered about review %q when asked about %q", out.ID, reviewID)
+			"the control plane answered about approval %q when asked about %q", out.ID, reviewID)
 	}
 	return out.Status, nil
 }

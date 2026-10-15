@@ -107,13 +107,13 @@ func TestSettleReviewReportsTheAnswer(t *testing.T) {
 
 	other, _ := reviewPlane(t, http.StatusOK, `{"forward":false,"review":{"id":"other","status":"EXECUTED"}}`)
 	if _, err := other.settleReview(context.Background(), settleReviewID, true); err == nil ||
-		!strings.Contains(err.Error(), "answered about review") {
+		!strings.Contains(err.Error(), "answered about approval") {
 		t.Errorf("an answer about another review was accepted: %v", err)
 	}
 
 	gone, _ := reviewPlane(t, http.StatusNotFound, `{"message":"review not found"}`)
 	if _, err := gone.settleReview(context.Background(), settleReviewID, true); err == nil ||
-		!strings.Contains(err.Error(), "no review") {
+		!strings.Contains(err.Error(), "no approval request") {
 		t.Errorf("a 404 was not an error naming the review: %v", err)
 	}
 }
