@@ -40,6 +40,9 @@ spec:
       {{- end }}
       labels:
         {{- include "hoopsidecar.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- with (include "hoopsidecar.serviceAccountName" .) }}
       serviceAccountName: {{ . }}
