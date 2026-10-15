@@ -448,7 +448,7 @@ func registeredICAEngine() ICABuilder {
 }
 
 // icaEngineLinked reports whether this build can serve an ica lane.
-// protocolsForCapabilities uses it to build the capabilities header, so a
+// ServableProtocols uses it to build the capabilities header, so a
 // plane does not serve an ica lane to a build that would refuse it at
 // startup.
 func icaEngineLinked() bool { return registeredICAEngine() != nil }
@@ -711,11 +711,13 @@ func notReadyEndpoints(endpoints []endpointServer, names []string) []string {
 	return out
 }
 
-// protocolsForCapabilities returns Protocols without ica when this build did
-// not link the engine, so the capabilities header does not list a protocol
-// that checkICA would refuse at startup. Protocols keeps ica because the
-// plane renders the form from it and the schema must match across builds.
-func protocolsForCapabilities() []string {
+// ServableProtocols returns the protocols this build can serve: Protocols
+// without ica when the build did not link the engine. The capabilities header
+// lists these, so a plane does not hand a build a lane checkICA would refuse
+// at startup, and the hoop CLI's setup wizard offers only these. Protocols
+// keeps ica because the plane renders the form from it and the schema must
+// match across builds.
+func ServableProtocols() []string {
 	out := Protocols()
 	if icaEngineLinked() {
 		return out

@@ -173,7 +173,7 @@ func SidecarCapabilities() []string {
 	}
 	// Protocols minus ica in a build without the engine, so the header does
 	// not list a lane that checkICA would refuse at startup (ica.go).
-	for _, p := range protocolsForCapabilities() {
+	for _, p := range ServableProtocols() {
 		out = append(out, capabilityProtocolPrefix+p)
 	}
 	slices.Sort(out)
