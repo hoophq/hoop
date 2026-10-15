@@ -834,6 +834,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		reviewHandler.GetByIdOrSid,
 	)
 	r.PUT("/reviews/:id",
+		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateReview),
 		reviewHandler.ReviewByIdOrSid,
@@ -1047,6 +1048,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		sessionapi.Kill)
 	r.PUT("/sessions/:session_id/review",
+		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		reviewHandler.ReviewBySid,
 	)
