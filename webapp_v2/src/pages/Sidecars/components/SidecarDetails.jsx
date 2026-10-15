@@ -238,7 +238,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
             <>
               <Stack gap="sm">
                 <Text fw={600}>Features</Text>
-                <FeatureRules sidecar={shown} editable={editable && !fromFile} />
+                <FeatureRules sidecar={shown} editable={editable && !fromFile} includeLanes={!!reported} />
               </Stack>
 
               <Divider />

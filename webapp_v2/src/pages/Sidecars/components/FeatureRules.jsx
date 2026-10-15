@@ -8,7 +8,7 @@ import RulePickerModal from '../sections/RulePickerModal'
 import FeatureAccordions from './FeatureAccordions'
 
 // The accordions with their Add and Edit dialogs; the sidecar is re-read after a save.
-export default function FeatureRules({ sidecar, listener = null, editable = false, flush = false }) {
+export default function FeatureRules({ sidecar, listener = null, editable = false, includeLanes = false, flush = false }) {
   const refreshSidecar = useSidecarStore((s) => s.refreshSidecar)
   // The feature outlives `opened`, so a closing dialog keeps its copy.
   const [picker, setPicker] = useState({ feature: null, opened: false })
@@ -34,6 +34,7 @@ export default function FeatureRules({ sidecar, listener = null, editable = fals
         listener={listener}
         config={sidecar.configuration}
         boundRules={sidecar.bound_rules}
+        includeLanes={includeLanes}
         flush={flush}
         actions={actions}
       />
