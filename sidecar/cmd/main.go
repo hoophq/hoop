@@ -27,7 +27,7 @@
 // the config file, so an operator adding a "pii" section does not also have to
 // swap the binary out:
 //
-//   - "pii" absent: the detector covers all 54 entity types it knows, and
+//   - "pii" absent: the detector covers all 55 entity types it knows, and
 //     costs nothing until a rule asks it for one. A masker scans only for the
 //     entities its own rules name, and a "pii" guardrail intersects the scan
 //     with the entities its own rule names.

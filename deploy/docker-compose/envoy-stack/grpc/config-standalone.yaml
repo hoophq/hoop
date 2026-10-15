@@ -40,7 +40,7 @@ audit:
 
 # Narrowed to what this compose demonstrates: the mask rule reads
 # EMAIL_ADDRESS, the guardrail reads BR_CPF. Omitting the section entirely
-# would activate all 54 entity types; see ../sidecar/config.yaml for why
+# would activate all 55 entity types; see ../sidecar/config.yaml for why
 # the stack narrows on purpose.
 pii:
   entities:

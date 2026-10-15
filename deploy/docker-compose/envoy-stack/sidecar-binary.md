@@ -59,7 +59,7 @@ audit:
   query_sessions: 500       # required for GET /api/sessions; omit it and that route 404s
   fail_open: false          # the default: a statement whose audit write failed is refused
 
-pii:                        # optional; omit it and all 54 entity types are active
+pii:                        # optional; omit it and all 55 entity types are active
   entities: [EMAIL_ADDRESS, US_SSN]
 
 guardrails:                 # Hoop's own rules, inherited by every listener
@@ -545,7 +545,7 @@ denied without evaluating it. A lane that wants the work skipped sets
 
 **Omitting `pii` activates every entity type.** The section used to be
 required before anything could detect, and it now subtracts from a detector
-holding all 54. A `pii` guardrail rule naming an entity the section never
+holding all 55. A `pii` guardrail rule naming an entity the section never
 listed used to be refused at startup; that check is gone with the requirement
 behind it. Narrow with `pii.ignored` where the noisy recognizers cost you:
 `US_SSN` fires on about a third of random nine-digit business ids, and `URL`

@@ -48,7 +48,7 @@ image: {}
   # `args:` replaces CMD entirely and runs nothing.
   #
   # PII detection needs NO special image. The detector is linked into every
-  # build above and holds all 54 entity types without a model on disk. The
+  # build above and holds all 55 entity types without a model on disk. The
   # `-alcatraz` tags exist for the gateway's statistical entity types
   # (PERSON, LOCATION, NRP) and are not read by this process.
 
@@ -82,7 +82,7 @@ config: {}
   #   memory_buffer: 256
   #   async_queue_size: 1024 # a slow disk must not block a user's query
   #
-  # # NARROWS a permissive default: omit the section and all 54 entity types
+  # # NARROWS a permissive default: omit the section and all 55 entity types
   # # are active. Name the union of what your rules below reference, so an
   # # ordinary numeric column is not rewritten by a recognizer nobody asked
   # # for (US_SSN fires on roughly a third of random nine-digit ids).

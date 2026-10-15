@@ -84,6 +84,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/hoophq/alcatraz v0.19.0 h1:xgkSxCronoGZBX3mFmv+sZDFLd/pI6bia/LHSBzsxJs=
 github.com/hoophq/alcatraz v0.19.0/go.mod h1:B5ZNcwna5qCRZpVN6MMjmUbzEDpk5Q04jnKxqfZucdM=
+github.com/hoophq/alcatraz v0.23.0 h1:KsFXDo8jDd4Ah328rrT0jgoqeSrtgjc10/bEM+6F4AM=
+github.com/hoophq/alcatraz v0.23.0/go.mod h1:B5ZNcwna5qCRZpVN6MMjmUbzEDpk5Q04jnKxqfZucdM=
 github.com/hoophq/libhoop v0.0.0-20261005142803-0620ef314f79 h1:WzD8if6NPIfWLLoCDrEtdqzP4IpiT9w7Ikh7zB4947c=
 github.com/hoophq/libhoop v0.0.0-20261005142803-0620ef314f79/go.mod h1:nHA5Pm/wX+iz3JHQR+aJm236TzmZ2RYUo2x3SgwJhWo=
 github.com/hoophq/libhoop v0.0.0-20261005145715-d6d554941875 h1:trEW5MI1IWdsLhChPxf2Pt1xB2dWsdAUQIwUPsK6/T4=

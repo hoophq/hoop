@@ -195,7 +195,7 @@ docker build -f deploy/docker-compose/envoy-stack/sidecar/Dockerfile \
 
 There are no build tags. The config file decides every capability, so an
 operator turning on PII detection does not also have to swap the binary. Omit
-the `pii` section and the detector still runs, holding all 54 entity types:
+the `pii` section and the detector still runs, holding all 55 entity types:
 the section narrows that set rather than switching it on. A binary built
 without the alcatraz plugin is the case that refuses a `mask` block at
 startup.
@@ -729,7 +729,7 @@ example below. Every config written against the old reference needs a pass.
 | `mask.enabled: false` with rules | drop the rules from that scope | stays authoritative, masking stays off, warns |
 | `listeners[].connection` | `listeners[].name` | maps onto `name` when `name` is empty, warns |
 | `audit.fail_closed: <x>` | `audit.fail_open: <the opposite of x>` | works, warns |
-| `pii` omitted | still omitted | the detector gains all 54 entity types |
+| `pii` omitted | still omitted | the detector gains all 55 entity types |
 | `guardrails.rules[].type: ai_analysis` | the listener's own `analyzer` block | works, warns; see [Migrating from `type: ai_analysis` rules](#migrating-from-type-ai_analysis-rules) |
 
 Three of those move traffic on the upgrade, and each one deserves a read
@@ -822,7 +822,7 @@ audit:
   query_sessions: 500       # backs GET /api/sessions
   fail_open: false          # the default: a statement whose audit write failed is refused
 
-pii:                        # omit the section and all 54 entity types are active
+pii:                        # omit the section and all 55 entity types are active
   entities: [EMAIL_ADDRESS, US_SSN, CREDIT_CARD, BR_CPF, IBAN_CODE]
 
 guardrails:                 # Hoop's own rules, inherited by every listener
@@ -1114,7 +1114,7 @@ protocol would otherwise get: no statements to render means no verdict,
 silently.
 
 ```yaml
-pii:                           # optional; omitting it activates all 54 types
+pii:                           # optional; omitting it activates all 55 types
   entities: [EMAIL_ADDRESS, US_SSN, BR_CPF]
 
 analyzer:                      # one provider serves every lane; the rest are
@@ -3880,7 +3880,7 @@ that `mask.enabled` is gone, so a lane that used to load by omitting the
 flag refuses to start.
 
 Detection and rewriting both come from
-[alcatraz](https://github.com/hoophq/alcatraz): 51 entity types across 12
+[alcatraz](https://github.com/hoophq/alcatraz): 52 entity types across 13
 countries, 25 of them checksum-verified with Luhn on cards, ISO 7064 mod-97 on
 IBAN, Verhoeff on Aadhaar, mod-11 on the Brazilian schemes. It lives in the
 nested `pii/alcatraz` module, so the root library never links it.

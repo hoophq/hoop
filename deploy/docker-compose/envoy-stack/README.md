@@ -159,8 +159,8 @@ The image builds `hoop-inspect` with
 [alcatraz](https://github.com/hoophq/alcatraz) PII detection linked in, so the
 demo can deny a query that embeds a Brazilian CPF and redact email addresses
 out of a response. The `pii` section of `sidecar/config.yaml` names which of
-the 54 entity types are active, five here. Omitting the section activates all
-54, and this file narrows on purpose: a mask rule naming `US_SSN` rewrites
+the 55 entity types are active, five here. Omitting the section activates all
+55, and this file narrows on purpose: a mask rule naming `US_SSN` rewrites
 ordinary numeric columns, because that recognizer fires on roughly a third of
 random nine-digit business ids.
 

@@ -68,7 +68,7 @@
 # config load however the weights are mounted. Baking them in would add ~250MB
 # of bytes nothing here reads.
 #
-# The other 51 entity types need no model on disk and are active in both
+# The other 52 entity types need no model on disk and are active in both
 # flavours below without any configuration.
 #
 # If sidecar/pii/alcatraz ever wires ner, add the `models` stage and the two

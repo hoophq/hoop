@@ -23,7 +23,7 @@ audit:
   query_sessions: 500 # backs /api/sessions
 
 # One detector engine for the process. The section is optional now and it
-# NARROWS a permissive default: omit it and all 54 entity types are active.
+# NARROWS a permissive default: omit it and all 55 entity types are active.
 # It is kept because the recognizers it leaves out rewrite ordinary numeric
 # columns (US_SSN fires on roughly a third of random nine-digit business
 # ids), and these five are the union of every entity any lane references

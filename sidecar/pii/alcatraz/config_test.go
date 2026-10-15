@@ -25,12 +25,12 @@ func TestPluginFromConfigAbsentSectionIsPermissive(t *testing.T) {
 		t.Fatal("want a working plugin: a nil one now means this build linked no detector")
 	}
 
-	// 51 alcatraz built-ins plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY from
+	// 52 alcatraz built-ins plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY from
 	// secrets.go. The number is quoted in this package's documentation and
 	// in the sidecar's, so pin it: an alcatraz upgrade that moves it is
 	// exactly when those sentences need rewriting.
-	if got := len(p.Entities()); got != 54 {
-		t.Errorf("Entities() = %d, want 54 (51 built-ins plus the three in secrets.go)", got)
+	if got := len(p.Entities()); got != 55 {
+		t.Errorf("Entities() = %d, want 55 (52 built-ins plus the three in secrets.go)", got)
 	}
 }
 

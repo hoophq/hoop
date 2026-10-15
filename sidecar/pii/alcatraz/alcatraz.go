@@ -13,7 +13,7 @@
 //
 // # Coverage
 //
-// Alcatraz brings 51 entity types across 12 countries, and 25 of them carry a
+// Alcatraz brings 52 entity types across 13 countries, and 25 of them carry a
 // real checksum validator: Luhn, ISO 7064 mod-97 for IBAN, Verhoeff for
 // Aadhaar, the Brazilian mod-11 schemes. For a deployment whose data is not
 // US-shaped, that decides whether masking works at all.
@@ -33,7 +33,7 @@
 //
 // # An empty entity list means all of them
 //
-// Options.Entities is optional, and leaving it empty activates all 54
+// Options.Entities is optional, and leaving it empty activates all 55
 // recognizers. That is safe because enabling a recognizer is not the same as
 // scanning for it. Two layers below, somebody names entities, and that name
 // is what decides the scan:
@@ -123,7 +123,7 @@ type Options struct {
 	// Entities selects the alcatraz entity types to detect, named as the
 	// constants in github.com/hoophq/alcatraz/entities ("US_SSN", "BR_CPF").
 	//
-	// Empty means every supported type, all 54 of them. The package
+	// Empty means every supported type, all 55 of them. The package
 	// documentation carries the argument for why that is not the trap it
 	// reads as: NewMasker and ScanTextFor both narrow the scan to the
 	// entities their own caller named, so an active recognizer nobody
@@ -204,8 +204,8 @@ func newEngine(lang string) *alcatraz.Engine {
 	return analyzer.NewEngine(reg, []string{lang})
 }
 
-// AllEntities returns every entity type this package detects: alcatraz's 51
-// built-ins plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY, 54 in all.
+// AllEntities returns every entity type this package detects: alcatraz's 52
+// built-ins plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY, 55 in all.
 //
 // NewDetector activates the same set for an empty Options.Entities, so this
 // exists for a caller that wants the list itself: to print it at startup, to
@@ -473,7 +473,7 @@ func (d *Detector) RedactText(text string) (string, []string) {
 // A guardrail rule names its own entity list and throws away every finding
 // outside it, so the recognizers for the rest run for nothing. That is a
 // rounding error when a config names five entities and real work when it
-// names none: a permissive Detector has all 54 active, and paying for 54
+// names none: a permissive Detector has all 55 active, and paying for 55
 // recognizer passes per statement to keep two answers is the one genuine
 // cost of the permissive default. This is how a caller declines to pay it.
 //
