@@ -197,6 +197,13 @@ func shortPath(path string) string {
 	return abs
 }
 
+// paste puts a pasted path into the input, the same as typing it.
+func (p *filePicker) paste(msg tea.PasteMsg) {
+	p.input, _ = p.input.Update(tea.PasteMsg{Content: pastedLine(msg.Content)})
+	p.cur = 0
+	p.refresh()
+}
+
 // update returns the chosen file's path, "back" for esc, or "".
 func (p *filePicker) update(k tea.KeyPressMsg) string {
 	switch k.String() {

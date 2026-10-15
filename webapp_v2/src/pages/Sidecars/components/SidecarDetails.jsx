@@ -130,9 +130,8 @@ function SourceCallout({ fromFile, configured, reported, editable, onSwitch }) {
  * to it only when the caller hands it somewhere to put the result, under
  * `editable`: which side owns the document, and the Global settings rows.
  * Listeners are authored through `listenerActions`, the sidecar is deleted
- * through `onDelete`. The wizard's Overview step passes none of them — it
- * holds its own copy of a sidecar that is still waiting for the first
- * handshake.
+ * through `onDelete`. The wizard's Overview step passes `editable` only, so a
+ * sidecar running its file can move to Hoop there too.
  */
 export default function SidecarDetails({ sidecar, editable, listenerActions, onDelete }) {
   const setUsesConfigFile = useSidecarStore((s) => s.setUsesConfigFile)

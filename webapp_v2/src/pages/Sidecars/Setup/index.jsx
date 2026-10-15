@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Group, Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
@@ -40,6 +40,9 @@ export default function SidecarSetup({ mode = 'connect' }) {
   const navigate = useNavigate()
   const apiUrl = useUserStore((s) => s.apiUrl)
   const { createSidecar, deleteSidecar } = useSidecarStore()
+  const fetchSidecar = useSidecarStore((s) => s.fetchSidecar)
+  const clearSelected = useSidecarStore((s) => s.clearSelected)
+  const selected = useSidecarStore((s) => s.selected)
 
   const [step, setStep] = useState(0)
   const [sidecar, setSidecar] = useState(null)
@@ -66,11 +69,19 @@ export default function SidecarSetup({ mode = 'connect' }) {
   }
 
   // The fresh record carries version and last_seen_at; the overview shows both.
-  const handleConnected = useCallback((fresh) => {
-    setWaiting(false)
-    setSidecar(fresh)
-    setStep(2)
-  }, [])
+  // The store loads it too, so the overview can move the configuration to
+  // Hoop: the switch writes the store's record, not this copy.
+  const handleConnected = useCallback(
+    (fresh) => {
+      setWaiting(false)
+      setSidecar(fresh)
+      setStep(2)
+      fetchSidecar(fresh.id)
+    },
+    [fetchSidecar],
+  )
+
+  useEffect(() => clearSelected, [clearSelected])
 
   // Deleted from somewhere else while this page was open: the banner says so,
   // and the button stops pretending to wait for it.
@@ -163,7 +174,11 @@ export default function SidecarSetup({ mode = 'connect' }) {
         />
       )}
 
-      {step === 2 && sidecar && <SidecarDetails sidecar={sidecar} />}
+      {/* Editable, so the sidecar's file can move to Hoop from here: Hoop
+          never takes it on its own. */}
+      {step === 2 && sidecar && (
+        <SidecarDetails sidecar={selected?.id === sidecar.id ? selected : sidecar} editable />
+      )}
     </Stack>
   )
 }

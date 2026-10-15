@@ -266,6 +266,27 @@ func (m firstRunModel) connectKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// paste sends pasted text to the field on screen: the Connect page's URL,
+// token or license, a setup form, or the file picker's path. A paste while a
+// dialog or a check is up is dropped, as a key would be.
+func (m firstRunModel) paste(p tea.PasteMsg) tea.Cmd {
+	switch {
+	case m.ports != nil || m.checking != "":
+		return nil
+	case m.wiz != nil:
+		cmd, _ := m.wiz.update(p)
+		return cmd
+	case m.connect != nil:
+		if m.connect.busy != "" {
+			return nil
+		}
+		return m.connect.form.paste(p)
+	case m.picker != nil:
+		m.picker.paste(p)
+	}
+	return nil
+}
+
 // continueWithLicense checks and saves the license, then leads on to
 // setting up a config that runs under it.
 func (m firstRunModel) continueWithLicense() (tea.Model, tea.Cmd) {
@@ -285,8 +306,8 @@ func (m firstRunModel) continueWithLicense() (tea.Model, tea.Cmd) {
 }
 
 // pendingPlane is a Control Plane connected on the Connect page that holds
-// no config yet: the config set up next is booted on it, and the plane
-// takes it as its own on that first handshake.
+// no config yet: the config set up next is booted on it. The sidecar runs
+// that file and reports it; the plane takes it only when an admin moves it.
 type pendingPlane struct{ url, token string }
 
 // portAsk is the dialog that offers free ports for the ones in use.
@@ -394,8 +415,8 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.err != nil:
 			p.status, p.bad = "✕ Could not connect: "+firstLine(msg.err), true
 		case msg.empty:
-			// Connected, and the plane is waiting for a config: set one up,
-			// and booting it hands it to the plane.
+			// Connected, and the plane holds no config: set one up and boot
+			// it. The plane shows it and takes it only on an admin's action.
 			m.connect, m.plane = nil, &pendingPlane{url: msg.planeURL, token: msg.token}
 			return m, m.startSetup()
 		case len(msg.conflicts) > 0:
@@ -435,6 +456,9 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.boot.ControlPlaneURL, m.boot.Token = m.plane.url, m.plane.token
 		}
 		return m, tea.Quit
+	}
+	if p, ok := msg.(tea.PasteMsg); ok {
+		return m, m.paste(p)
 	}
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		if m.ports != nil {
