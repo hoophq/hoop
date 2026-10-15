@@ -114,6 +114,7 @@ require (
 	github.com/hoophq/alcatraz v0.19.0 // indirect
 	github.com/hoophq/hoop/sidecar/analyzer/vertex v0.0.0
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0
+	github.com/hoophq/hoop/sidecar/ica v0.0.0
 	github.com/hoophq/hoop/sidecar/mcp v0.0.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
@@ -129,5 +130,7 @@ replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../analyzer/vertex
 replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../descriptors/gcs
 
 replace github.com/hoophq/hoop/sidecar/mcp => ../mcp
+
+replace github.com/hoophq/hoop/sidecar/ica => ../ica
 
 replace github.com/hoophq/hoop/sidecar/codec/wasm => ../codec/wasm

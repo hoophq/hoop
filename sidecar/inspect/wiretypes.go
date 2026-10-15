@@ -58,6 +58,14 @@ const (
 	// registry position handed relay bytes would be handed ciphertext
 	// (ADR-0015).
 	SSH = codectypes.SSH
+	// ICA has no codec for a fourth reason: the lane embeds the libhoop-ica
+	// engine, which terminates the Citrix session, decodes the ThinWire
+	// video channel and masks pixels. There are no statements, only
+	// frames, so nothing here could evaluate it. Declared locally rather
+	// than in libhoop: the engine is its own module, and Protocol is a
+	// string type, so the value needs no definition there to be the same
+	// type everywhere.
+	ICA Protocol = "ica"
 
 	FromClient = codectypes.FromClient
 	FromServer = codectypes.FromServer

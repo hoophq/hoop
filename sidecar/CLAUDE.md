@@ -64,7 +64,8 @@ it is removing a directory.
 | `store/sqlite/` | `modernc.org/sqlite`, pure Go because the sidecar is a static binary |
 | `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one. It wraps the `anthropic`, `gemini` and `openai` encoders from the root under a GCP bearer; the API-key providers stay in the root |
 | `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
-| `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the approval status MCP server an `mcp:` block turns on (ADR-0021) |
+| `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the review status MCP server an `mcp:` block turns on (ADR-0021) |
+| `ica/` | `github.com/hoophq/libhoop-ica`, the Citrix ICA engine a `protocol: ica` lane embeds; registers through `daemon.RegisterICAEngine`, linked into `hoop-inspect` only |
 | `codec/wasm/` | `github.com/tetratelabs/wazero`, the codec plug-in host; `daemon` only sees `LoadCodecPlugin`. `sdk/` and `examples/` hold the guest side: Rust, TinyGo and C |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
@@ -124,7 +125,7 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp lexer/conformance codec/wasm; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica lexer/conformance codec/wasm; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
 
@@ -223,6 +224,18 @@ done
   socket with no message, a missing builder makes `ai_analysis` rules
   classify nothing. README.md's Protocols section carries the table. A new
   protocol also needs a label in `daemon/schema.go` `protocolLabels`.
+
+- **ICA is an endpoint lane that embeds an engine, not a codec.** A Citrix
+  session carries pixels, so `protocol: ica` has no statements, no gate,
+  no masker and no analyzer; Validate refuses all four on it. `daemon/ica.go`
+  is the whole contract — config blocks, `ICALane`/`ICAServer`,
+  `RegisterICAEngine`, the audit bridge — and the engine (`sidecar/ica`, a
+  nested module on `github.com/hoophq/libhoop-ica`) registers from `init`.
+  Two things are deliberately build-dependent: `Protocols()` always lists
+  `ica` so the plane renders its form, but the capabilities header carries
+  `protocol:ica` only when an engine is registered, so the plane never serves
+  an ica lane to a build `checkICA` would refuse. The engine's builder must
+  not bind or load a model: Validate constructs it on the plane and on macOS.
 
 - **A new `ListenerConfig` field needs a UI tag.** The control plane renders
   its listener form from `daemon/schema.json`. Tag the field

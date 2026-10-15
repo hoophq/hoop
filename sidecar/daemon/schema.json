@@ -13,6 +13,10 @@
       "label": "HTTP"
     },
     {
+      "value": "ica",
+      "label": "Citrix ICA"
+    },
+    {
       "value": "mongodb",
       "label": "MongoDB"
     },
@@ -84,7 +88,7 @@
       "key": "upstream",
       "type": "string",
       "label": "Upstream",
-      "help": "Where the sidecar reaches your resource.",
+      "help": "Where the sidecar reaches your resource. On an ica listener, the single VDA; leave it empty for CIDR mode.",
       "placeholder": "appdb:5432",
       "required": true,
       "basic": true,
@@ -99,7 +103,8 @@
       "help": "Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic.",
       "presence": true,
       "except_protocols": [
-        "ssh"
+        "ssh",
+        "ica"
       ],
       "fields": [
         {
@@ -435,6 +440,88 @@
               "type": "list",
               "label": "Certificate extensions",
               "help": "Extensions whose values reach policy and the audit trail, such as permit-pty. Not hoop attributes."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "ica",
+      "type": "object",
+      "label": "Citrix ICA",
+      "help": "The tenant this listener serves, how it finds the VDA, and the session geometry.",
+      "required": true,
+      "protocols": [
+        "ica"
+      ],
+      "fields": [
+        {
+          "key": "tenant_id",
+          "type": "string",
+          "label": "Tenant",
+          "help": "Labels every session and audit row from this listener.",
+          "placeholder": "citrix-production",
+          "required": true
+        },
+        {
+          "key": "transparent",
+          "type": "object",
+          "label": "Transparent (CIDR) mode",
+          "help": "Select the VDA per connection from the intercepted destination. Linux only; needs CAP_NET_ADMIN and a TPROXY rule.",
+          "presence": true,
+          "fields": [
+            {
+              "key": "source_cidrs",
+              "type": "list",
+              "label": "Source CIDRs",
+              "help": "Who may connect: the Citrix Gateway SNIP or the Workspace client networks.",
+              "placeholder": "10.10.1.10/32",
+              "required": true
+            },
+            {
+              "key": "upstream_cidrs",
+              "type": "list",
+              "label": "VDA CIDRs",
+              "help": "The VDA networks a connection may be destined to.",
+              "placeholder": "10.77.0.0/16",
+              "required": true
+            },
+            {
+              "key": "upstream_ports",
+              "type": "list",
+              "label": "VDA ports",
+              "help": "Allowed VDA ports; 2598 is CGP.",
+              "placeholder": "2598",
+              "required": true
+            }
+          ]
+        },
+        {
+          "key": "display",
+          "type": "object",
+          "label": "Display",
+          "help": "Framebuffer geometry and ThinWire channel. Leave empty for the engine defaults.",
+          "fields": [
+            {
+              "key": "width",
+              "type": "integer",
+              "label": "Width",
+              "help": "Framebuffer width, 320..4096.",
+              "placeholder": "1264"
+            },
+            {
+              "key": "height",
+              "type": "integer",
+              "label": "Height",
+              "help": "Framebuffer height, 200..4096.",
+              "placeholder": "1040"
+            },
+            {
+              "key": "thinwire_channel",
+              "type": "integer",
+              "label": "ThinWire channel",
+              "help": "The ICA virtual channel carrying ThinWire video, 1..255.",
+              "placeholder": "9"
             }
           ]
         }

@@ -5,12 +5,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
 // The header is generated from what the build links: every cap-tagged field,
 // every rule type and every protocol. Only behaviourCapabilities is listed by
 // hand, because a behaviour has no type to generate it from.
+//
+// One protocol is build-dependent: ica is in Protocols() for every build, so
+// the plane renders its form, but reaches the header only when an engine is
+// registered (ica.go). This test runs without one, so it expects the entry
+// absent; TestTheHeaderCarriesICAOnlyWithAnEngine covers the other half.
 func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 	caps := SidecarCapabilities()
 	if !slices.IsSorted(caps) {
@@ -21,6 +27,9 @@ func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 		want = append(want, "rule:"+string(mt))
 	}
 	for _, p := range Protocols() {
+		if p == string(inspect.ICA) {
+			continue
+		}
 		want = append(want, "protocol:"+p)
 	}
 	for _, w := range want {
@@ -28,10 +37,27 @@ func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 			t.Errorf("the header lacks %q: %v", w, caps)
 		}
 	}
+	if icaEngineLinked() {
+		t.Fatal("this test package must not register an ICA engine; the header's ica entry is covered separately")
+	}
+	if slices.Contains(caps, "protocol:ica") {
+		t.Errorf("the header claims protocol:ica with no engine registered; the plane would serve a lane checkICA refuses: %v", caps)
+	}
 	for _, c := range caps {
 		if strings.Count(strings.Join(caps, ","), c) != 1 {
 			t.Errorf("%q is reported twice: %v", c, caps)
 		}
+	}
+}
+
+// With an engine registered the header carries protocol:ica, so a plane
+// serves ica lanes only to the binary that links sidecar/ica. The
+// registration is process-wide, so this test installs and removes it under
+// the registry lock rather than leaving it for later tests.
+func TestTheHeaderCarriesICAOnlyWithAnEngine(t *testing.T) {
+	withICAEngine(t, func(daemonICARuntime ICARuntime, lane ICALane) (ICAServer, error) { return nil, nil })
+	if !slices.Contains(SidecarCapabilities(), "protocol:ica") {
+		t.Fatalf("engine registered but the header lacks protocol:ica: %v", SidecarCapabilities())
 	}
 }
 
