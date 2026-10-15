@@ -34,22 +34,45 @@ const flushInterval = 50 * time.Second
 var internalExitCode = func() *int { v := 254; return &v }()
 
 // errFlushCapReached signals that a flush has reached the persisted-stream size
-// cap (sessionwal.DefaultMaxRead) and should stop reading further WAL entries.
+// cap (maxStreamBytes) and should stop reading further WAL entries.
 var errFlushCapReached = errors.New("flush size cap reached")
+
+// maxStreamBytes caps the WAL bytes a session persists: flushSession stops
+// reading past it, so writeOnReceive stops writing past it.
+var maxStreamBytes int64 = sessionwal.DefaultMaxRead
+
+// flushWindowBytes caps the WAL bytes one append carries. A flush encodes and
+// sends one window at a time, so its memory does not grow with the unflushed tail.
+var flushWindowBytes int64 = 16 << 20
+
+// errFlushWindowFull stops a read at the first entry of the next window.
+var errFlushWindowFull = errors.New("flush window full")
+
+// appendStream and appendStreamChunk write a flushed window to the session
+// stream: the first rewrites the stream with the window appended, the second
+// adds the window as a new row. Variables so tests can observe the writes.
+var (
+	appendStream      = models.AppendSessionStream
+	appendStreamChunk = func(orgID, sid string, entries json.RawMessage) error {
+		return models.AppendSessionStreamChunkTx(models.DB, orgID, sid, entries)
+	}
+)
 
 type walLogRWMutex struct {
 	log        *sessionwal.WalLog
 	mu         sync.RWMutex
+	flushMu    sync.Mutex // serializes flushes; held across their database writes, where mu is not
 	folderName string
 
 	// incremental-flush / streaming state
 	lastFlushedIndex uint64
 	bytesFlushed     int64           // cumulative encoded bytes appended to blob_stream (→ event_size)
-	bytesRead        int64           // cumulative raw WAL bytes read; enforces the DefaultMaxRead cap
+	bytesRead        int64           // cumulative raw WAL bytes read; enforces the maxStreamBytes cap
 	truncated        bool            // set once bytesRead exceeds the cap; halts further flushing
 	closed           bool            // set when the WAL is closed; guards a late ticker flush
 	metrics          SessionMetric   // cumulative DLP + AI analyzer metrics across flushes, persisted to the session JSONB at close
 	aiDedup          *aiVerdictDedup // cross-window dedup state for the sticky per-request AI verdict
+	chunked          bool            // the stream has chunk rows, so every later window is a row; guarded by flushMu
 	flushCancel      context.CancelFunc
 }
 
@@ -161,7 +184,12 @@ func (p *auditPlugin) writeOnReceive(pctx plugintypes.Context, eventType eventlo
 	}
 	walogm.mu.Lock()
 	now := time.Now().UTC()
-	err := walogm.log.Write(eventlogv1.New(now, eventType, event, metadata))
+	var err error
+	// The entry that crosses the cap is written, so flushSession still reads
+	// past the cap and flags the session as truncated.
+	if walogm.log.Size() <= maxStreamBytes {
+		err = walogm.log.Write(eventlogv1.New(now, eventType, event, metadata))
+	}
 	walogm.mu.Unlock()
 	if err != nil {
 		return err
@@ -197,74 +225,110 @@ func (p *auditPlugin) dropWalLog(sid string) {
 
 // flushSession reads new WAL entries since the last flush, encodes them as a
 // JSON array of [elapsed, type, base64] triples, appends them to the session's
-// blob_stream via Postgres jsonb concatenation, accumulates the cumulative DLP
-// metrics, and increments the per-info-type masked metrics for the flushed
-// window. It stops appending once the persisted stream reaches
-// sessionwal.DefaultMaxRead bytes, flagging the session as truncated. Safe to
-// call concurrently with writes: the WAL mutex serializes writes and reads.
+// stream, accumulates the cumulative DLP metrics, and increments the
+// per-info-type masked metrics for the flushed window. It appends at most
+// flushWindowBytes of WAL at a time, and stops appending once the persisted
+// stream reaches maxStreamBytes bytes, flagging the session as truncated. Safe
+// to call concurrently with writes: the WAL mutex serializes writes and reads.
 func (p *auditPlugin) flushSession(walogm *walLogRWMutex, pctx plugintypes.Context) error {
-	walogm.mu.Lock()
-	defer walogm.mu.Unlock()
+	walogm.flushMu.Lock()
+	defer walogm.flushMu.Unlock()
 
+	walogm.mu.Lock()
 	if walogm.closed {
+		walogm.mu.Unlock()
 		return nil // a late ticker tick lost the race with close; WAL is gone
 	}
-	if walogm.truncated {
-		return nil // reached the persisted-stream cap; stop appending
-	}
-
 	header, err := walogm.log.Header()
+	walogm.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("failed reading wal header: %v", err)
 	}
+	for {
+		windowFull, err := p.flushWindow(walogm, pctx, header)
+		if err != nil || !windowFull {
+			return err
+		}
+	}
+}
 
+// flushWindow appends the entries after lastFlushedIndex, at most
+// flushWindowBytes of them, and reports whether entries are left past the
+// window. It holds the WAL mutex to read, not to write to the database: the
+// agent stream that feeds writeOnReceive carries every session of the agent.
+func (p *auditPlugin) flushWindow(walogm *walLogRWMutex, pctx plugintypes.Context, header *sessionwal.Header) (bool, error) {
+	walogm.mu.Lock()
+	if walogm.closed || walogm.truncated { // truncated: reached the persisted-stream cap; stop appending
+		walogm.mu.Unlock()
+		return false, nil
+	}
 	windowMetrics := newSessionMetric()
 	var encoded strings.Builder
 	startIndex := max(walogm.lastFlushedIndex+1, 2)
 	protoConnType := pctx.ProtoConnectionType()
-	capReached := false
+	var windowBytes int64
+	capReached, windowFull := false, false
 	lastIndex, err := walogm.log.ReadFrom(startIndex, func(data []byte) error {
+		if windowBytes >= flushWindowBytes {
+			windowFull = true
+			return errFlushWindowFull
+		}
 		ev, derr := eventlogv1.Decode(data)
 		if derr != nil {
 			return derr
 		}
 		p.encodeEventEntry(&encoded, ev, header.StartDate, protoConnType, &windowMetrics)
 		accumulateAIAnalyzerVerdict(ev, &windowMetrics, walogm.aiDedup)
+		windowBytes += int64(len(data))
 		walogm.bytesRead += int64(len(data))
-		if walogm.bytesRead > sessionwal.DefaultMaxRead {
+		if walogm.bytesRead > maxStreamBytes {
 			capReached = true
 			return errFlushCapReached
 		}
 		return nil
 	})
-	if err != nil && !errors.Is(err, errFlushCapReached) {
-		return fmt.Errorf("failed reading wal tail: %v", err)
+	walogm.mu.Unlock()
+	if err != nil && !errors.Is(err, errFlushCapReached) && !errors.Is(err, errFlushWindowFull) {
+		return false, fmt.Errorf("failed reading wal tail: %v", err)
 	}
 	if lastIndex < startIndex && !capReached {
-		return nil // nothing new since last flush
+		return false, nil // nothing new since last flush
 	}
 
+	var chunkLen int64
 	if encoded.Len() > 0 {
 		chunk := json.RawMessage("[" + encoded.String() + "]")
-		if err := models.AppendSessionStream(pctx.OrgID, pctx.SID, chunk); err != nil {
-			return fmt.Errorf("failed appending session stream: %v", err)
+		// A flush larger than one window adds rows: rewriting the stream once
+		// per window would cost Postgres the square of the stream size.
+		chunked := walogm.chunked || windowFull
+		appendFn := appendStream
+		if chunked {
+			appendFn = appendStreamChunk
 		}
-		walogm.bytesFlushed += int64(len(chunk))
+		if err := appendFn(pctx.OrgID, pctx.SID, chunk); err != nil {
+			return false, fmt.Errorf("failed appending session stream: %v", err)
+		}
+		walogm.chunked = chunked
+		chunkLen = int64(len(chunk))
 	}
 
+	walogm.mu.Lock()
+	walogm.bytesFlushed += chunkLen
 	if capReached {
 		// the entry that crossed the cap (lastIndex+1) was already encoded above
 		walogm.lastFlushedIndex = lastIndex + 1
 		walogm.truncated = true
 	} else {
+		// a full window stopped before entry lastIndex+1, which starts the next one
 		walogm.lastFlushedIndex = lastIndex
 	}
 	walogm.metrics.merge(windowMetrics)
+	walogm.mu.Unlock()
 
 	if err := models.IncrementSessionMaskedMetrics(models.DB, pctx.SID, windowMetrics.DataMasking.InfoTypes); err != nil {
 		log.With("sid", pctx.SID).Warnf("failed incrementing session masked metrics, reason=%v", err)
 	}
-	return nil
+	return windowFull, nil
 }
 
 // closeSessionWAL stops the flush ticker, performs a final flush of any

@@ -1107,8 +1107,16 @@ func AppendSessionStream(orgID, sessionID string, entries json.RawMessage) error
 }
 
 // AppendSessionStreamTx is AppendSessionStream inside the caller's
-// transaction.
+// transaction. A stream that has chunks gets a chunk instead: concatenated to
+// the blob, the entries would read before the chunks.
 func AppendSessionStreamTx(tx *gorm.DB, orgID, sessionID string, entries json.RawMessage) error {
+	chunks, err := HasSessionStreamChunksTx(tx, orgID, sessionID)
+	if err != nil {
+		return err
+	}
+	if chunks {
+		return AppendSessionStreamChunkTx(tx, orgID, sessionID, entries)
+	}
 	blobStreamID := SessionStreamBlobID(sessionID)
 	res := tx.Exec(
 		`UPDATE private.blobs SET blob_stream = blob_stream || ?::jsonb WHERE org_id = ? AND id = ?`,

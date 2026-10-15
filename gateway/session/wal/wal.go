@@ -27,6 +27,7 @@ type WalLog struct {
 	filePath   string
 	wlog       *wal.Log
 	writeIndex uint64
+	size       int64 // bytes of the event entries written, the header excluded
 }
 
 // Open opens a wal file with default options, it's up to the caller to close the wal file
@@ -95,8 +96,13 @@ func (w *WalLog) Write(event eventlog.Encoder) error {
 		return err
 	}
 	w.writeIndex++
+	w.size += int64(len(data))
 	return nil
 }
+
+// Size returns the bytes of the event entries written by this instance, the
+// same bytes ReadFrom passes to its reader.
+func (w *WalLog) Size() int64 { return w.size }
 
 // ReadAtMost reads event logs from a write ahead log up to max bytes specified.
 // It returns a boolean indicading if it's truncated. It's up to the caller to
