@@ -17,7 +17,12 @@ import (
 // nothing needs DNS. Linux only: darwin ignores SSL_CERT_FILE.
 func (s *stack) upNative(t *testing.T, binDir string) {
 	t.Helper()
+	// A fresh dir each run: a kept PGlite home would hold the last run's
+	// users, and a kept test CA expires after a day.
 	dir := filepath.Join(s.artifacts, "native")
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -19,10 +19,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -62,12 +64,16 @@ type stack struct {
 	start     time.Time
 	marks     []string
 
-	// logins counts the users who logged in, so a scenario that needs an
-	// empty org can refuse a used stack.
-	logins int
-	// admin is the token of the first user, who is admin.
+	// admin is the token of the stack's first user. The first user of an
+	// org is admin.
 	admin string
 }
+
+// The stack logs this user in first, at boot. The IdP has her in group sre
+// only: the first-user rule alone makes her admin.
+const firstUserEmail = "alice@example.com"
+
+var firstUserSeed = map[string]any{"sub": "alice-sub", "email": firstUserEmail, "name": "Alice", "groups": []string{"sre"}}
 
 func newStack(t *testing.T) *stack {
 	t.Helper()
@@ -102,6 +108,20 @@ func newStack(t *testing.T) *stack {
 	s.mark(t, "stack up: twins, router, hoop standalone healthy")
 	// Registered after the stack, so it runs before the teardown.
 	t.Cleanup(func() { s.finish(t) })
+
+	// /api/healthz answers before the standalone agent registers
+	// (ADR-0032, decision 5). Only a signed-in user can list agents, so the
+	// first user logs in before the wait.
+	must(t, "POST", oidcAdmin+"/_twin/seed", "", map[string]any{"users": []any{firstUserSeed}}, nil)
+	s.admin = s.login(t, firstUserEmail)
+	eventually(t, "the standalone agent to report CONNECTED", 60*time.Second, func() bool {
+		var agents []struct{ Name, Status string }
+		must(t, "GET", apiURL+"/api/agents", s.admin, nil, &agents)
+		return slices.ContainsFunc(agents, func(a struct{ Name, Status string }) bool {
+			return a.Name == "standalone" && a.Status == "CONNECTED"
+		})
+	})
+	s.mark(t, "first user logged in, standalone agent CONNECTED")
 	return s
 }
 
@@ -183,6 +203,54 @@ func (s *stack) saveState(t *testing.T, name, admin string) []byte {
 	}
 	_ = os.WriteFile(filepath.Join(s.artifacts, name+"-state.json"), raw, 0o644)
 	return raw
+}
+
+// login runs the code flow for a user seeded at the OIDC twin and returns
+// the access token the gateway hands to the CLI.
+func (s *stack) login(t testing.TB, email string) string {
+	t.Helper()
+	final := loginFlow(t, email)
+	tok := final.Query().Get("token")
+	if tok == "" {
+		t.Fatalf("login %s: the gateway redirected to %s", email, final.Redacted())
+	}
+	return tok
+}
+
+// loginFlow runs the OIDC code flow over HTTP, as a browser does for
+// `hoop login`, and returns where the gateway's callback redirects.
+func loginFlow(t testing.TB, email string) *url.URL {
+	t.Helper()
+	var lr struct {
+		URL string `json:"login_url"`
+	}
+	must(t, "GET", apiURL+"/api/login", "", nil, &lr)
+	authz, err := url.Parse(lr.URL)
+	if err != nil || authz.Host != strings.TrimPrefix(issuer, "https://") {
+		t.Fatalf("login_url %q: want the twin's authorize endpoint", lr.URL)
+	}
+	q := authz.Query()
+	q.Set("login_hint", email)
+	// No DNS resolves the issuer host here. The twin serves the same
+	// handler on its admin port.
+	admin, _ := url.Parse(oidcAdmin)
+	authz.Scheme, authz.Host, authz.RawQuery = admin.Scheme, admin.Host, q.Encode()
+
+	callback := redirect(t, authz.String(), http.StatusFound)
+	final, err := url.Parse(redirect(t, callback, http.StatusTemporaryRedirect))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return final
+}
+
+func redirect(t testing.TB, target string, want int) string {
+	t.Helper()
+	resp := call(t, "GET", target, "", nil, nil)
+	if resp.StatusCode != want {
+		t.Fatalf("GET %s: want %d, got %d", target, want, resp.StatusCode)
+	}
+	return resp.Header.Get("Location")
 }
 
 // call does one JSON request with no redirect and decodes the answer into

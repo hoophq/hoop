@@ -34,9 +34,10 @@ make test-twins-scenario   # boots hoop against the twins; Linux natively, Docke
 | `TWINS_ARTIFACTS=dir` | Keep `oidc-state.json`, `router-state.json`, `timings.txt` and the logs. |
 | `TWINS_KEEP=1` | Leave the compose stack up. |
 
-The native stack binds `127.0.0.1:18009` (API), `:8010` (gRPC, fixed by the
-gateway), `:18081` (OIDC twin admin), `:18441` (OIDC twin TLS) and `:18083`
-(router). One native stack runs per host.
+The native stack uses these ports: the gateway listens on all interfaces at
+18009 (API) and 8010 (gRPC, fixed by the gateway); the OIDC twin at
+`127.0.0.1:18081` (admin) and `127.0.0.1:18441` (TLS); the router at
+`127.0.0.1:18083`. One native stack runs per host.
 
 After its last scenario, a stack waits 10s, then fails on any host the
 gateway tried that no twin answers. `knownEgress` in `scenario/stack_test.go`

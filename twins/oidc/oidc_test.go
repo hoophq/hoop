@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -137,6 +138,35 @@ func TestExpiredTokens(t *testing.T) {
 	tok = s.login(t, "alice@example.com")
 	if exp := jwtClaims(t, tok.IDToken)["exp"].(float64); exp <= now {
 		t.Fatal("an empty expired_tokens must stop the expired tokens")
+	}
+}
+
+// Two grants in the same second still issue distinct tokens, so the
+// suffixes in /_twin/state stay distinct.
+func TestTokensAreUnique(t *testing.T) {
+	s := startTwin(t)
+	s.seed(t, alice)
+	first := s.login(t, "alice@example.com")
+	var fresh tokenAnswer
+	postForm(t, s.client, s.issuer+"/token", url.Values{"grant_type": {"refresh_token"},
+		"refresh_token": {first.RefreshToken}, "client_id": {"hoop"}, "client_secret": {"hoop-secret"}}, &fresh)
+	if fresh.AccessToken == first.AccessToken || fresh.IDToken == first.IDToken {
+		t.Fatal("a refresh in the same second returned the same token")
+	}
+	var suffixes []string
+	b, _ := json.Marshal(s.state(t)["tokens"])
+	var recorded []struct{ Kind, Suffix string }
+	if err := json.Unmarshal(b, &recorded); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range recorded {
+		if r.Kind != "refresh_token" {
+			suffixes = append(suffixes, r.Suffix)
+		}
+	}
+	slices.Sort(suffixes)
+	if len(suffixes) != 4 || len(slices.Compact(suffixes)) != 4 {
+		t.Fatalf("want 4 distinct access and id token suffixes, got %v", suffixes)
 	}
 }
 

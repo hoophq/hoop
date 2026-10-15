@@ -330,10 +330,12 @@ func (t *Twin) token(w http.ResponseWriter, r *http.Request) {
 		return now.Add(ttl)
 	}
 	accessExp, idExp := expiry(KindAccessToken), expiry(KindIDToken)
+	// jti makes each token unique: two grants in the same second would
+	// otherwise sign the same claims into the same bytes.
 	access := t.sign(map[string]any{"iss": t.issuer, "sub": u.Sub, "aud": t.cfg.ClientID, "client_id": t.cfg.ClientID,
-		"scope": "openid email profile", "iat": now.Unix(), "exp": accessExp.Unix()})
+		"scope": "openid email profile", "iat": now.Unix(), "exp": accessExp.Unix(), "jti": randomString(16)})
 	idClaims := t.claims(u, map[string]any{"iss": t.issuer, "aud": t.cfg.ClientID, "azp": t.cfg.ClientID,
-		"iat": now.Unix(), "exp": idExp.Unix()})
+		"iat": now.Unix(), "exp": idExp.Unix(), "jti": randomString(16)})
 	if nonce != "" {
 		idClaims["nonce"] = nonce
 	}

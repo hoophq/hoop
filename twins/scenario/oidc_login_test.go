@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -24,8 +23,6 @@ const bugStickyAdmin = "ENG-742"
 func TestOIDCLogin(t *testing.T) {
 	s := newStack(t)
 	seedOIDC(t, map[string]any{"users": []map[string]any{
-		// alice is not in group admin: only the first-user rule makes her admin.
-		{"sub": "alice-sub", "email": "alice@example.com", "name": "Alice", "groups": []string{"sre"}},
 		{"sub": "bob-sub", "email": "bob@example.com", "name": "Bob", "groups": []string{"admin", "sre"}},
 		{"sub": "carol-sub", "email": "carol@example.com", "name": "Carol", "groups": []string{"sre"}},
 		{"sub": "dave-sub", "email": "dave@example.com", "name": "Dave", "groups": []string{"admin", "dba"}},
@@ -34,18 +31,21 @@ func TestOIDCLogin(t *testing.T) {
 	s.mark(t, "OIDC twin seeded")
 
 	t.Run("the first OIDC user is created as admin", func(t *testing.T) {
-		if s.logins > 0 {
-			t.Fatal("this scenario needs a stack where nobody logged in yet")
-		}
-		me := userinfo(t, s.login(t, "alice@example.com"))
-		if !me.IsAdmin || !slices.Contains(me.Groups, "admin") {
+		// The stack logged alice in at boot, on an empty database. The IdP
+		// has her in group sre only.
+		me := userinfo(t, s.admin)
+		if me.Email != firstUserEmail || !me.IsAdmin || !slices.Contains(me.Groups, "admin") {
 			t.Fatalf("alice is the first user: want admin, got %+v", me)
+		}
+		var users []struct{ Email string }
+		must(t, "GET", apiURL+"/api/users", s.admin, nil, &users)
+		if len(users) != 1 {
+			t.Fatalf("alice must be the only user of a new org, got %+v: does the stack reuse a database?", users)
 		}
 		s.mark(t, "alice, the first user, is admin")
 	})
 
 	t.Run("a user in group admin is admin and a user without it is not", func(t *testing.T) {
-		s.firstUser(t)
 		bob := userinfo(t, s.login(t, "bob@example.com"))
 		if !bob.IsAdmin || !slices.Contains(bob.Groups, "sre") {
 			t.Fatalf("bob is in groups admin and sre: want admin, got %+v", bob)
@@ -58,7 +58,6 @@ func TestOIDCLogin(t *testing.T) {
 	})
 
 	t.Run("the twin removes a user from admin and the next refresh syncs the groups", func(t *testing.T) {
-		s.firstUser(t)
 		// Short-lived tokens, so the next API call refreshes.
 		seedOIDC(t, map[string]any{"token_ttl_sec": 3})
 		t.Cleanup(func() { seedOIDC(t, map[string]any{"token_ttl_sec": 3600}) })
@@ -67,8 +66,10 @@ func TestOIDCLogin(t *testing.T) {
 			t.Fatalf("dave is in group admin: want admin before the change, got %+v", me)
 		}
 
+		// The IdP removes dave from admin and adds him to oncall. Only a group
+		// sync can bring oncall into hoop.
 		seedOIDC(t, map[string]any{"users": []map[string]any{
-			{"sub": "dave-sub", "email": "dave@example.com", "name": "Dave", "groups": []string{"dba"}}}})
+			{"sub": "dave-sub", "email": "dave@example.com", "name": "Dave", "groups": []string{"dba", "oncall"}}}})
 		time.Sleep(time.Until(jwtExpiry(t, dave)) + time.Second)
 
 		// The expired token makes the gateway refresh, then sync the groups
@@ -81,19 +82,20 @@ func TestOIDCLogin(t *testing.T) {
 		if !hasRefresh(t, "dave-sub") {
 			t.Fatal("the twin saw no refresh_token grant for dave")
 		}
-		if !slices.Contains(me.Groups, "dba") {
+		if !slices.Contains(me.Groups, "oncall") {
 			t.Fatalf("the refresh did not sync the groups from userinfo: got %+v", me)
 		}
-		// Today: hoop keeps admin (gateway/idp/core.go syncUserGroupsFromUserInfo).
-		if !me.IsAdmin {
-			t.Fatalf("%s looks fixed: dave is no longer admin after the refresh (%+v). Assert that, and drop bugStickyAdmin", bugStickyAdmin, me)
+		// Today: the sync adds admin back (gateway/idp/core.go
+		// syncUserGroupsFromUserInfo), so dave has [dba oncall admin].
+		groups := slices.Sorted(slices.Values(me.Groups))
+		if !me.IsAdmin || !slices.Equal(groups, []string{"admin", "dba", "oncall"}) {
+			t.Fatalf("%s looks fixed: after the refresh dave is %+v. Assert he is not admin, and drop bugStickyAdmin", bugStickyAdmin, me)
 		}
 		t.Logf("%s: dave left group admin at the IdP and is still admin in hoop: %+v", bugStickyAdmin, me)
 		s.mark(t, "refresh synced dave's groups; admin stays ("+bugStickyAdmin+")")
 	})
 
 	t.Run("JWKS answers 5xx: the login fails at /api/login and the gateway keeps serving", func(t *testing.T) {
-		admin := s.firstUser(t)
 		// The login handler loads the provider and its JWKS per request
 		// (gateway/idp/oidc/oidc.go New); signed-in calls use a cached one.
 		must(t, "POST", oidcAdmin+"/_twin/faults", "", map[string]any{"path": "/jwks", "status": 503}, nil)
@@ -107,18 +109,17 @@ func TestOIDCLogin(t *testing.T) {
 			t.Fatal("the gateway did not call the JWKS, so the fault proves nothing")
 		}
 		must(t, "GET", apiURL+"/api/healthz", "", nil, nil)
-		if me := userinfo(t, admin); !me.IsAdmin {
+		if me := userinfo(t, s.admin); !me.IsAdmin {
 			t.Fatalf("a signed-in admin must keep working, got %+v", me)
 		}
 		s.mark(t, "JWKS 503: /api/login 500, the gateway keeps serving")
 
 		must(t, "DELETE", oidcAdmin+"/_twin/faults", "", nil, nil)
-		userinfo(t, s.login(t, "alice@example.com"))
+		userinfo(t, s.login(t, firstUserEmail))
 		s.mark(t, "JWKS back: login works with no restart")
 	})
 
 	t.Run("an expired id_token: /api/callback refuses the login", func(t *testing.T) {
-		admin := s.firstUser(t)
 		seedOIDC(t, map[string]any{"expired_tokens": []string{"id_token"}})
 		t.Cleanup(func() { seedOIDC(t, map[string]any{"expired_tokens": []string{}}) })
 
@@ -126,7 +127,7 @@ func TestOIDCLogin(t *testing.T) {
 		if final.Query().Get("token") != "" || final.Query().Get("error") == "" {
 			t.Fatalf("the callback must refuse the login: it redirected to %s", final.Redacted())
 		}
-		if resp := call(t, "GET", apiURL+"/api/users/erin@example.com", admin, nil, nil); resp.StatusCode != http.StatusNotFound {
+		if resp := call(t, "GET", apiURL+"/api/users/erin@example.com", s.admin, nil, nil); resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("erin must not exist after a refused login: status %d", resp.StatusCode)
 		}
 		s.mark(t, "expired id_token: /api/callback refused erin, no user created")
@@ -149,68 +150,6 @@ func userinfo(t testing.TB, token string) userInfo {
 func seedOIDC(t testing.TB, body map[string]any) {
 	t.Helper()
 	must(t, "POST", oidcAdmin+"/_twin/seed", "", body, nil)
-}
-
-// login runs the code flow and returns the access token the gateway hands
-// to the CLI. The first user to log in is the stack's admin.
-func (s *stack) login(t testing.TB, email string) string {
-	t.Helper()
-	final := loginFlow(t, email)
-	tok := final.Query().Get("token")
-	if tok == "" {
-		t.Fatalf("login %s: the gateway redirected to %s", email, final.Redacted())
-	}
-	if s.logins == 0 {
-		s.admin = tok
-	}
-	s.logins++
-	return tok
-}
-
-// firstUser returns the first user's token. When nobody has logged in, it
-// logs alice in first, so a scenario run alone does not take her place.
-func (s *stack) firstUser(t testing.TB) string {
-	t.Helper()
-	if s.logins == 0 {
-		s.login(t, "alice@example.com")
-	}
-	return s.admin
-}
-
-// loginFlow runs the OIDC code flow over HTTP, as a browser does for
-// `hoop login`, and returns where the gateway's callback redirects.
-func loginFlow(t testing.TB, email string) *url.URL {
-	t.Helper()
-	var lr struct {
-		URL string `json:"login_url"`
-	}
-	must(t, "GET", apiURL+"/api/login", "", nil, &lr)
-	authz, err := url.Parse(lr.URL)
-	if err != nil || authz.Host != strings.TrimPrefix(issuer, "https://") {
-		t.Fatalf("login_url %q: want the twin's authorize endpoint", lr.URL)
-	}
-	q := authz.Query()
-	q.Set("login_hint", email)
-	// No DNS resolves the issuer host here. The twin serves the same
-	// handler on its admin port.
-	admin, _ := url.Parse(oidcAdmin)
-	authz.Scheme, authz.Host, authz.RawQuery = admin.Scheme, admin.Host, q.Encode()
-
-	callback := redirect(t, authz.String(), http.StatusFound)
-	final, err := url.Parse(redirect(t, callback, http.StatusTemporaryRedirect))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return final
-}
-
-func redirect(t testing.TB, target string, want int) string {
-	t.Helper()
-	resp := call(t, "GET", target, "", nil, nil)
-	if resp.StatusCode != want {
-		t.Fatalf("GET %s: want %d, got %d", target, want, resp.StatusCode)
-	}
-	return resp.Header.Get("Location")
 }
 
 // jwtExpiry reads exp from a JWT the twin signed. It checks no signature.
