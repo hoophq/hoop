@@ -5,6 +5,7 @@ import { ArrowLeft, Info, ListOrdered } from 'lucide-react'
 import { useAgentStore } from '@/stores/useAgentStore'
 import MethodCard from '@/components/MethodCard'
 import StepAccordion from '@/components/StepAccordion'
+import TagsEditor from '@/components/TagsEditor'
 import { DeploymentMain } from './DeploymentInstructions'
 
 const INSTALL_METHODS = [
@@ -33,8 +34,9 @@ const INSTALL_METHODS = [
 
 function AgentsCreate() {
   const navigate = useNavigate()
-  const { createAgent, loading, agentKey, clearAgentKey } = useAgentStore()
+  const { createAgent, loading, agentKey, clearAgentKey, tagsPool, fetchTagsPool } = useAgentStore()
   const [name, setName] = useState('')
+  const [tags, setTags] = useState({})
   const [created, setCreated] = useState(false)
   const [activeAccordion, setActiveAccordion] = useState('step1')
   const [installMethod, setInstallMethod] = useState('docker')
@@ -43,11 +45,15 @@ function AgentsCreate() {
     return () => clearAgentKey()
   }, [clearAgentKey])
 
+  useEffect(() => {
+    fetchTagsPool()
+  }, [fetchTagsPool])
+
   const handleCreate = async (e) => {
     e.preventDefault()
     if (!name.trim()) return
     try {
-      await createAgent({ name })
+      await createAgent({ name, tags })
       setCreated(true)
       setActiveAccordion('step2')
     } catch {
@@ -66,8 +72,10 @@ function AgentsCreate() {
         </Text>
       </Grid.Col>
       <Grid.Col span={9}>
-        <form onSubmit={handleCreate}>
-          <Stack gap="lg" align="flex-start">
+        <Stack gap="lg" align="flex-start">
+          {/* The tags editor stays out of the form: Enter in a tag input
+              must not create the agent. The button submits it by id. */}
+          <form id="agent-create-form" onSubmit={handleCreate}>
             <TextInput
               label="Name"
               placeholder="Enter the name of the Agent"
@@ -77,15 +85,23 @@ function AgentsCreate() {
               disabled={created}
               style={{ width: 320 }}
             />
-            <Button
-              type="submit"
-              loading={loading}
-              disabled={created || !name.trim()}
-            >
-              {created ? 'Agent created' : 'Create Agent'}
-            </Button>
+          </form>
+          <Stack gap="xs" w="100%">
+            <Text fw={500} size="sm">Tags</Text>
+            <Text size="sm" c="dimmed">
+              Optional labels to select agents through the API, for example production agents only.
+            </Text>
+            <TagsEditor value={tags} onChange={setTags} pool={tagsPool} disabled={created} />
           </Stack>
-        </form>
+          <Button
+            type="submit"
+            form="agent-create-form"
+            loading={loading}
+            disabled={created || !name.trim()}
+          >
+            {created ? 'Agent created' : 'Create Agent'}
+          </Button>
+        </Stack>
       </Grid.Col>
     </Grid>
   )

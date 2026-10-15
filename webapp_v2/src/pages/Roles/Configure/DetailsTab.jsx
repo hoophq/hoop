@@ -4,7 +4,7 @@ import TextInput from '@/components/TextInput'
 import { labelForManagedAttribute } from '@/features/ProtectionProfiles/constants'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import AttributesSelect from '@/pages/Roles/Configure/sections/AttributesSelect'
-import ConnectionTagsEditor from '@/pages/Roles/Configure/sections/ConnectionTagsEditor'
+import TagsEditor from '@/components/TagsEditor'
 
 // Display labels for attribute names strip the `hoop.dev/<category>.`
 // namespace prefix the way CLJS tags_utils/extract-label does, so the
@@ -22,6 +22,7 @@ export default function DetailsTab({ connection }) {
   const drafts = useConfigureRoleStore((s) => s.drafts)
   const setDraft = useConfigureRoleStore((s) => s.setDraft)
   const attributesList = useConfigureRoleStore((s) => s.attributesList)
+  const connectionTagsPool = useConfigureRoleStore((s) => s.connectionTagsPool)
 
   // Hoop-managed attributes (the protection-profile attribute) are regular
   // members of the connection's attribute list — removable and re-addable
@@ -74,7 +75,11 @@ export default function DetailsTab({ connection }) {
             your catalog.
           </Text>
         </Stack>
-        <ConnectionTagsEditor />
+        <TagsEditor
+          value={drafts.connection_tags}
+          onChange={(connection_tags) => setDraft({ connection_tags })}
+          pool={connectionTagsPool}
+        />
       </Stack>
     </Stack>
   )

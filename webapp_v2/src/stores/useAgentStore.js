@@ -7,6 +7,9 @@ export const useAgentStore = create((set) => ({
   error: null,
   // { status: 'loading' | 'ready' | 'error', token: string | null }
   agentKey: null,
+  // Tag suggestions from GET /agent-tags: the predefined agent tags plus
+  // every key/value in use, as [{ key, value }].
+  tagsPool: [],
 
   fetchAgents: async () => {
     set({ loading: true, error: null })
@@ -43,6 +46,27 @@ export const useAgentStore = create((set) => ({
     } catch (error) {
       set({ error: error.message })
       throw error
+    }
+  },
+
+  // Replaces the tags of one agent. Throws on failure so the caller can
+  // keep its editor open.
+  updateAgentTags: async (id, tags) => {
+    const { data } = await agentsService.updateTags(id, tags)
+    set((state) => ({
+      agents: state.agents.map((a) => (a.id === id ? { ...a, tags: data.tags } : a)),
+    }))
+    return data
+  },
+
+  // Suggestions are optional: on failure the editor still takes custom
+  // keys and values, the same as Roles → Configure.
+  fetchTagsPool: async () => {
+    try {
+      const { data } = await agentsService.listTags()
+      set({ tagsPool: data?.items ?? [] })
+    } catch {
+      set({ tagsPool: [] })
     }
   },
 

@@ -304,6 +304,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/agent-tags": {
+            "get": {
+                "description": "List the agent tag suggestions: the predefined tags and every key/value in use on the agents of the organization.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "List Agent Tags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentTagList"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/agents": {
             "get": {
                 "description": "List all agent keys",
@@ -320,6 +346,13 @@ const docTemplate = `{
                         "description": "Filter by status (CONNECTED or DISCONNECTED)",
                         "name": "status",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Selector tags to filter on, supports '=' and '!=' (e.g. key1=value1,key2!=value2)",
+                        "name": "tag_selector",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -330,6 +363,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/openapi.AgentResponse"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "500": {
@@ -458,6 +497,68 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{nameOrID}/tags": {
+            "put": {
+                "description": "Replace the tags of an agent. Send ` + "`" + `{}` + "`" + ` to remove all tags. No other attribute changes.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Update Agent Tags",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name or ID of the resource",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The tags of the agent",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
                     },
                     "404": {
                         "description": "Not Found",
@@ -13752,6 +13853,16 @@ const docTemplate = `{
                     "description": "Unique name of the resource",
                     "type": "string",
                     "example": "default"
+                },
+                "tags": {
+                    "description": "Tags are key/value pairs to select agents (optional, max 10)",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "hoop.dev/infrastructure.environment": "prod"
+                    }
                 }
             }
         },
@@ -13827,6 +13938,16 @@ const docTemplate = `{
                     ],
                     "example": "DISCONNECTED"
                 },
+                "tags": {
+                    "description": "Tags are the key/value pairs of the agent. It is an empty object when the agent has no tags",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "hoop.dev/infrastructure.environment": "prod"
+                    }
+                },
                 "token": {
                     "description": "The token/key of the resource, this value is always empty for now",
                     "type": "string"
@@ -13898,6 +14019,32 @@ const docTemplate = `{
                     "description": "Last update timestamp",
                     "type": "string",
                     "readOnly": true
+                }
+            }
+        },
+        "openapi.AgentTag": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "description": "Key is the identifier for the tag category",
+                    "type": "string",
+                    "example": "hoop.dev/infrastructure.environment"
+                },
+                "value": {
+                    "description": "Value is the tag value associated with the key",
+                    "type": "string",
+                    "example": "prod"
+                }
+            }
+        },
+        "openapi.AgentTagList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.AgentTag"
+                    }
                 }
             }
         },

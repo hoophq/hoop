@@ -857,8 +857,14 @@ type tagSelectorCondition struct {
 // Blank segments are formatting noise ('env=prod,') and are skipped; a segment
 // with no operator or an empty key is rejected.
 func (o ConnectionFilterOption) ParseTagSelectorQuery() (selectorJsonData string, err error) {
+	return parseTagSelector(o.TagSelector)
+}
+
+// parseTagSelector holds the ParseTagSelectorQuery rules, shared by the
+// connection and agent tag filters.
+func parseTagSelector(selector string) (selectorJsonData string, err error) {
 	conditions := []tagSelectorCondition{}
-	for _, segment := range strings.Split(o.TagSelector, ",") {
+	for _, segment := range strings.Split(selector, ",") {
 		if strings.TrimSpace(segment) == "" {
 			continue
 		}

@@ -1252,6 +1252,16 @@
             "description": "Unique name of the resource",
             "example": "default",
             "type": "string"
+          },
+          "tags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Tags are key/value pairs to select agents (optional, max 10)",
+            "example": {
+              "hoop.dev/infrastructure.environment": "prod"
+            },
+            "type": "object"
           }
         },
         "required": [
@@ -1330,6 +1340,16 @@
             "example": "DISCONNECTED",
             "type": "string"
           },
+          "tags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Tags are the key/value pairs of the agent. It is an empty object when the agent has no tags",
+            "example": {
+              "hoop.dev/infrastructure.environment": "prod"
+            },
+            "type": "object"
+          },
           "token": {
             "description": "The token/key of the resource, this value is always empty for now",
             "type": "string"
@@ -1403,6 +1423,32 @@
         "required": [
           "trust_domain"
         ],
+        "type": "object"
+      },
+      "openapi.AgentTag": {
+        "properties": {
+          "key": {
+            "description": "Key is the identifier for the tag category",
+            "example": "hoop.dev/infrastructure.environment",
+            "type": "string"
+          },
+          "value": {
+            "description": "Value is the tag value associated with the key",
+            "example": "prod",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.AgentTagList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/openapi.AgentTag"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "openapi.AnalyticsModeType": {
@@ -10292,6 +10338,37 @@
         ]
       }
     },
+    "/agent-tags": {
+      "get": {
+        "description": "List the agent tag suggestions: the predefined tags and every key/value in use on the agents of the organization.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AgentTagList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List Agent Tags",
+        "tags": [
+          "Agents"
+        ]
+      }
+    },
     "/agents": {
       "get": {
         "description": "List all agent keys",
@@ -10301,6 +10378,15 @@
             "in": "query",
             "name": "status",
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Selector tags to filter on, supports '=' and '!=' (e.g. key1=value1,key2!=value2)",
+            "in": "query",
+            "name": "tag_selector",
+            "schema": {
+              "format": "string",
               "type": "string"
             }
           }
@@ -10318,6 +10404,16 @@
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "500": {
             "content": {
@@ -10497,6 +10593,83 @@
           }
         },
         "summary": "Get Agent Key",
+        "tags": [
+          "Agents"
+        ]
+      }
+    },
+    "/agents/{nameOrID}/tags": {
+      "put": {
+        "description": "Replace the tags of an agent. Send `{}` to remove all tags. No other attribute changes.",
+        "parameters": [
+          {
+            "description": "The name or ID of the resource",
+            "in": "path",
+            "name": "nameOrID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            }
+          },
+          "description": "The tags of the agent",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AgentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Update Agent Tags",
         "tags": [
           "Agents"
         ]
