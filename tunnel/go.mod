@@ -1,6 +1,6 @@
 module github.com/hoophq/hoop/tunnel
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/BurntSushi/toml v1.6.0

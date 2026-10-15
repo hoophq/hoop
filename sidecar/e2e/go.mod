@@ -1,6 +1,6 @@
 module github.com/hoophq/hoop/sidecar/e2e
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/go-sql-driver/mysql v1.10.1

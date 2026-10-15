@@ -11,7 +11,7 @@
 // config that names one.
 module github.com/hoophq/hoop/sidecar/codec/wasm
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
