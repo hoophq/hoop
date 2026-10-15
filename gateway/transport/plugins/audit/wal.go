@@ -182,15 +182,7 @@ func (p *auditPlugin) writeOnReceive(pctx plugintypes.Context, eventType eventlo
 	if !ok {
 		return fmt.Errorf("failed obtaining write ahead log for session %v", pctx.SID)
 	}
-	walogm.mu.Lock()
-	now := time.Now().UTC()
-	var err error
-	// The entry that crosses the cap is written, so flushSession still reads
-	// past the cap and flags the session as truncated.
-	if walogm.log.Size() <= maxStreamBytes {
-		err = walogm.log.Write(eventlogv1.New(now, eventType, event, metadata))
-	}
-	walogm.mu.Unlock()
+	now, err := walogm.write(eventType, event, metadata)
 	if err != nil {
 		return err
 	}
@@ -202,6 +194,19 @@ func (p *auditPlugin) writeOnReceive(pctx plugintypes.Context, eventType eventlo
 		Payload: event,
 	})
 	return nil
+}
+
+// write appends an event to the WAL, up to the bytes flushSession reads.
+func (w *walLogRWMutex) write(eventType eventlogv1.EventType, event []byte, metadata map[string][]byte) (time.Time, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	now := time.Now().UTC()
+	// The entry that crosses the cap is written, so flushSession still reads
+	// past the cap and flags the session as truncated.
+	if w.log.Size() > maxStreamBytes {
+		return now, nil
+	}
+	return now, w.log.Write(eventlogv1.New(now, eventType, event, metadata))
 }
 
 func (p *auditPlugin) dropWalLog(sid string) {
@@ -367,11 +372,21 @@ func (p *auditPlugin) closeSessionWAL(pctx plugintypes.Context, errMsg error) er
 		_ = walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventlogv1.ErrorType, []byte(errMsg.Error()), nil))
 		walogm.mu.Unlock()
 	}
-	if err := p.flushSession(walogm, pctx); err != nil {
-		log.With("sid", pctx.SID).Warnf("final flush failed: %v", err)
+	// A writer that took the WAL before the Pop above can write while a flush
+	// writes to the database. Flush until nothing is left, and close under the
+	// lock that saw it, so no write lands in between.
+	for {
+		if err := p.flushSession(walogm, pctx); err != nil {
+			log.With("sid", pctx.SID).Warnf("final flush failed: %v", err)
+			walogm.mu.Lock()
+			break
+		}
+		walogm.mu.Lock()
+		if walogm.closed || walogm.truncated || walogm.log.LastIndex() <= max(walogm.lastFlushedIndex, 1) {
+			break
+		}
+		walogm.mu.Unlock()
 	}
-
-	walogm.mu.Lock()
 	walogm.closed = true
 	_ = walogm.log.Close()
 	if err := os.RemoveAll(walogm.folderName); err != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -284,6 +285,81 @@ func TestFlushWhileWritingKeepsOrder(t *testing.T) {
 				t.Fatalf("cap %d: event %d is not row %d", streamCap, i, i)
 			}
 		}
+	}
+}
+
+// A write that lands while the final flush writes to the database must be
+// persisted, not removed with the WAL.
+func TestCloseKeepsWriteDuringFinalFlush(t *testing.T) {
+	startTestDB(t)
+	origAuditPath, origAppend := plugintypes.AuditPath, appendStream
+	t.Cleanup(func() { plugintypes.AuditPath, appendStream = origAuditPath, origAppend })
+	plugintypes.AuditPath = t.TempDir()
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	appendStream = func(orgID, sid string, entries json.RawMessage) error {
+		once.Do(func() {
+			close(entered)
+			<-release
+		})
+		return models.AppendSessionStream(orgID, sid, entries)
+	}
+
+	orgID, sid := uuid.NewString(), uuid.NewString()
+	if err := models.DB.Exec(`INSERT INTO private.orgs (id, name) VALUES (?, 'close-race-test')`, orgID).Error; err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	startDate := time.Now().UTC()
+	if err := models.UpsertSession(models.Session{ID: sid, OrgID: orgID, Connection: "bash",
+		ConnectionType: "custom", Verb: "exec", Status: "open", CreatedAt: startDate}); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	p := New()
+	pctx := plugintypes.Context{OrgID: orgID, SID: sid, ConnectionType: "custom",
+		ParamsData: plugintypes.GenericMap{"status": "open", "start_date": &startDate}}
+	if err := p.writeOnConnect(pctx); err != nil {
+		t.Fatalf("open wal: %v", err)
+	}
+	if err := models.CreateEmptySessionStreamBlob(orgID, sid, nil); err != nil {
+		t.Fatalf("create stream blob: %v", err)
+	}
+	if err := p.writeOnReceive(pctx, eventlogv1.OutputType, []byte("first"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// a receive that took the WAL before close popped it from the store
+	walogm := p.walSessionStore.Get(sid).(*walLogRWMutex)
+	closed := make(chan error, 1)
+	go func() { closed <- p.closeSessionWAL(pctx, nil) }()
+	<-entered
+	if _, err := walogm.write(eventlogv1.OutputType, []byte("late"), nil); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-closed; err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+
+	sess, err := models.GetSessionByID(orgID, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := sess.GetBlobStream()
+	if err != nil || blob == nil {
+		t.Fatalf("read stream blob: blob=%v err=%v", blob, err)
+	}
+	var stream [][]any
+	if err := json.Unmarshal(blob.BlobStream, &stream); err != nil {
+		t.Fatalf("decode stream: %v", err)
+	}
+	var got []string
+	for _, ev := range stream {
+		b, _ := base64.StdEncoding.DecodeString(ev[2].(string))
+		got = append(got, string(b))
+	}
+	if strings.Join(got, ",") != "first,late" {
+		t.Fatalf("stored %q, want [first late]", got)
 	}
 }
 

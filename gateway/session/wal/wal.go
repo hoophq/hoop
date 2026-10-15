@@ -104,6 +104,10 @@ func (w *WalLog) Write(event eventlog.Encoder) error {
 // same bytes ReadFrom passes to its reader.
 func (w *WalLog) Size() int64 { return w.size }
 
+// LastIndex returns the index of the last entry written by this instance; the
+// header is index 1.
+func (w *WalLog) LastIndex() uint64 { return w.writeIndex - 1 }
+
 // ReadAtMost reads event logs from a write ahead log up to max bytes specified.
 // It returns a boolean indicading if it's truncated. It's up to the caller to
 // decode the event log properly using a decoder.
