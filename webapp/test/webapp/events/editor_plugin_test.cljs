@@ -105,6 +105,20 @@
     (rf/dispatch-sync (take-queued! :editor-plugin/submit-task-with-fresh-data))
     (is (= [:modal->open :jira-templates->get-submit-template] (event-ids)))))
 
+(deftest a-second-submit-while-the-analysis-loads-is-ignored
+  (seed-db! true)
+  (let [request (analyze!)]
+    ;; Mod-Enter pressed again before the first analysis answers.
+    (submit!)
+    (rf/dispatch-sync (take-queued! :editor-plugin/analyze-before-forms))
+    (is (empty? @queued) "no second analysis request")
+    (is (= 1 (count @fetches)))
+    (with-redefs [rf/dispatch (fn [event] (swap! queued conj event))]
+      ((:on-success request) nil))
+    (rf/dispatch-sync (take-queued! :editor-plugin/open-run-forms))
+    (is (= previous-output (:editor-plugin->script @rf-db/app-db))
+        "a cancelled form must not leave the editor loading")))
+
 (deftest a-412-falls-back-to-the-forms
   (seed-db! true)
   (let [request (analyze!)]

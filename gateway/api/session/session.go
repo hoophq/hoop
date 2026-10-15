@@ -75,12 +75,18 @@ type AIAnalyzeInput struct {
 }
 
 func AIAnalyze(ctx context.Context, in AIAnalyzeInput) (*models.SessionAIAnalysis, *models.AccessRequestRule, error) {
+	analysis, accessRule, _, err := aiAnalyze(ctx, in)
+	return analysis, accessRule, err
+}
+
+// aiAnalyze is AIAnalyze that also returns the analyzer rule it applied.
+func aiAnalyze(ctx context.Context, in AIAnalyzeInput) (*models.SessionAIAnalysis, *models.AccessRequestRule, *models.AISessionAnalyzerRules, error) {
 	aiAnalyzerRule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, in.OrgID, in.ConnectionName)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		return nil, nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", in.ConnectionName, err)
+		return nil, nil, nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", in.ConnectionName, err)
 	}
 	if aiAnalyzerRule == nil || in.Script == "" {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	var analysis *models.SessionAIAnalysis
@@ -100,9 +106,10 @@ func AIAnalyze(ctx context.Context, in AIAnalyzeInput) (*models.SessionAIAnalysi
 		}
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed analyzing session, reason: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed analyzing session, reason: %w", err)
 	}
-	return applyRuleTier(in.OrgID, aiAnalyzerRule, analysis)
+	analysis, accessRule, err := applyRuleTier(in.OrgID, aiAnalyzerRule, analysis)
+	return analysis, accessRule, aiAnalyzerRule, err
 }
 
 // applyRuleTier sets the action the rule gives to the analysis risk level, and

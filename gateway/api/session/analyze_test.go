@@ -103,10 +103,21 @@ func startAnalyzeTestDB(t *testing.T, llmURL string) {
 		defaultRiskEvaluation)
 }
 
-func setRiskEvaluation(t *testing.T, riskEvaluation string) {
+// editRule changes the analyzer rule the way PUT /ai/session-analyzer/rules does.
+func editRule(t *testing.T, edit func(rule *models.AISessionAnalyzerRules)) {
 	t.Helper()
-	require.NoError(t, models.DB.Exec(`UPDATE private.ai_session_analyzer_rules SET risk_evaluation = ?::jsonb
-		WHERE org_id = ?`, riskEvaluation, analyzeTestOrgID).Error)
+	rule, err := models.GetAISessionAnalyzerRule(uuid.MustParse(analyzeTestOrgID), "gmud-analyzer")
+	require.NoError(t, err)
+	edit(rule)
+	require.NoError(t, models.UpdateAISessionAnalyzerRule(rule))
+}
+
+func resetRule(t *testing.T) {
+	t.Helper()
+	editRule(t, func(rule *models.AISessionAnalyzerRules) {
+		require.NoError(t, json.Unmarshal([]byte(defaultRiskEvaluation), &rule.RiskEvaluation))
+		rule.CustomPrompt = nil
+	})
 }
 
 func analyzeTestContext() *storagev2.Context {
@@ -236,21 +247,38 @@ func TestAnalyze(t *testing.T) {
 		assert.Equal(t, int32(2), calls.Load(), "a decided run spends the verdict: the next run analyzes again")
 	})
 
-	t.Run("POST /sessions applies the current rule to a held verdict", func(t *testing.T) {
+	t.Run("a rule changed since the analysis analyzes again", func(t *testing.T) {
 		setAnalyzeFlag(t, true)
-		t.Cleanup(func() { setRiskEvaluation(t, defaultRiskEvaluation) })
+		t.Cleanup(func() { resetRule(t) })
 		const script = "SELECT 7"
 		calls.Store(0)
 		require.Equal(t, http.StatusNoContent, callAnalyze(t, script).Code)
 
 		// An admin blocks low risk while the user fills in the forms.
-		setRiskEvaluation(t, `{"low_risk":{"action":"block_execution"}}`)
+		editRule(t, func(rule *models.AISessionAnalyzerRules) {
+			rule.RiskEvaluation = models.AISessionAnalyzerRiskEvaluation{
+				LowRisk: &models.AISessionAnalyzerRiskTier{Action: models.BlockExecution},
+			}
+		})
 		rec := callPost(t, script)
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 		resp := decodeExecResponse(t, rec)
 		assert.Equal(t, "blocked", resp.OutputStatus)
 		assert.Equal(t, string(models.BlockExecution), resp.AIAnalysis.Action)
-		assert.Equal(t, int32(1), calls.Load(), "the risk level is reused, the action is not")
+		assert.Equal(t, int32(2), calls.Load())
+	})
+
+	t.Run("a custom prompt added since the analysis analyzes again", func(t *testing.T) {
+		setAnalyzeFlag(t, true)
+		t.Cleanup(func() { resetRule(t) })
+		const script = "UPDATE customers SET tier = 'bronze'"
+		calls.Store(0)
+		require.Equal(t, http.StatusNoContent, callAnalyze(t, script).Code)
+		require.True(t, isHeld(t, analyzeTestConn, script))
+
+		prompt := "Treat every change to customers as high risk."
+		editRule(t, func(rule *models.AISessionAnalyzerRules) { rule.CustomPrompt = &prompt })
+		assert.False(t, isHeld(t, analyzeTestConn, script), "the held risk level was judged without this prompt")
 	})
 
 	t.Run("a 422 before the run keeps the verdict for the retry", func(t *testing.T) {

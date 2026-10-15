@@ -28,10 +28,12 @@ import (
 const heldVerdictTTL = 15 * time.Minute
 
 type heldVerdict struct {
-	// analysis keeps the risk level. POST /sessions applies the current rule
-	// to it, so a rule changed since the analysis applies to the run.
-	analysis  *models.SessionAIAnalysis
-	expiresAt time.Time
+	analysis *models.SessionAIAnalysis
+	// ruleID and ruleUpdatedAt name the rule version that judged the script.
+	// A rule changed since (risk actions, custom prompt, agentic) analyzes again.
+	ruleID        uuid.UUID
+	ruleUpdatedAt time.Time
+	expiresAt     time.Time
 }
 
 // verdictHold keeps, in the memory of one gateway and per org, the verdicts
@@ -102,8 +104,8 @@ func heldVerdictKey(userID, connectionID, script string) string {
 }
 
 // heldAnalysis returns the verdict POST /sessions/analyze held for this run,
-// with the action of the connection's current rule. It does not spend the
-// verdict. While the flag is off it drops the org's verdicts and holds none.
+// while the connection's rule is the version that judged it. It does not
+// spend the verdict. While the flag is off it drops the org's verdicts.
 func heldAnalysis(ctx *storagev2.Context, conn *models.Connection, script string) (*models.SessionAIAnalysis, *models.AccessRequestRule, bool, error) {
 	if !featureflag.IsEnabled(ctx.OrgID, featureflag.FlagAnalyzeBeforeRunForms) {
 		heldVerdicts.dropOrg(ctx.OrgID)
@@ -119,8 +121,8 @@ func heldAnalysis(ctx *storagev2.Context, conn *models.Connection, script string
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil, false, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", conn.Name, err)
 	}
-	if rule == nil {
-		// The rule is gone: analyze as if nothing was held.
+	if rule == nil || rule.ID != v.ruleID || !rule.UpdatedAt.Equal(v.ruleUpdatedAt) {
+		// The rule is gone or changed: analyze as if nothing was held.
 		heldVerdicts.drop(ctx.OrgID, key)
 		return nil, nil, false, nil
 	}
@@ -229,7 +231,7 @@ func Analyze(c *gin.Context) {
 		return
 	}
 
-	analysis, accessRule, err := AIAnalyze(c, newAIAnalyzeInput(c, ctx, conn, req.Script))
+	analysis, accessRule, rule, err := aiAnalyze(c, newAIAnalyzeInput(c, ctx, conn, req.Script))
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
 		return
@@ -258,8 +260,10 @@ func Analyze(c *gin.Context) {
 	}
 
 	heldVerdicts.put(ctx.OrgID, heldVerdictKey(ctx.UserID, conn.ID, req.Script), heldVerdict{
-		analysis:  analysis,
-		expiresAt: heldVerdicts.now().Add(heldVerdictTTL),
+		analysis:      analysis,
+		ruleID:        rule.ID,
+		ruleUpdatedAt: rule.UpdatedAt,
+		expiresAt:     heldVerdicts.now().Add(heldVerdictTTL),
 	})
 	c.Status(http.StatusNoContent)
 }
