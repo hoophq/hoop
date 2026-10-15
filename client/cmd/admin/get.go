@@ -81,9 +81,17 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			styles.PrintErrorAndExit("%s", err.Error())
 		}
-		if getTagSelectorFlag != "" && isAgentResource(apir.resourceType) {
-			// A gateway without agent tags ignores the selector and lists every agent.
-			if err := checkAgentListHasTags(obj); err != nil {
+		if isAgentResource(apir.resourceType) {
+			// A gateway without agent tags ignores the selector and lists every
+			// agent, and has no tags to show.
+			var err error
+			switch {
+			case getTagSelectorFlag != "":
+				err = checkAgentListHasTags(obj, "--tag-selector was not applied")
+			case getShowTagsFlag:
+				err = checkAgentListHasTags(obj, "--show-tags has no tags to show")
+			}
+			if err != nil {
 				styles.PrintErrorAndExit("%s", err.Error())
 			}
 		}
@@ -619,7 +627,7 @@ func setTagSelector(apir *apiResource, selector string) error {
 
 // checkAgentListHasTags fails when the agents carry no tags attribute, which
 // means the gateway does not know agent tags and ignored the selector.
-func checkAgentListHasTags(obj any) error {
+func checkAgentListHasTags(obj any, what string) error {
 	var items []map[string]any
 	switch v := obj.(type) {
 	case []map[string]any:
@@ -631,7 +639,7 @@ func checkAgentListHasTags(obj any) error {
 	}
 	for _, m := range items {
 		if _, ok := m["tags"]; !ok {
-			return errNoAgentTags("--tag-selector was not applied")
+			return errNoAgentTags(what)
 		}
 	}
 	return nil

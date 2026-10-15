@@ -90,10 +90,14 @@ func updateAgentTags(apir *apiResource, tags map[string]string) {
 	}
 	apir.suffixEndpoint = fmt.Sprintf("/api/agents/%v/tags", apir.name)
 	resp, err := httpBodyRequest(apir, "PUT", body)
-	if err != nil {
-		if strings.Contains(err.Error(), "status=404") {
-			styles.PrintErrorAndExit("the gateway does not support agent tags, upgrade it to edit them: %v", err)
+	if err != nil && strings.Contains(err.Error(), "status=404") {
+		// A 404 is an old gateway, or an agent deleted since the existence check.
+		if supportErr := checkAgentTagsSupported(apir.conf); supportErr != nil {
+			styles.PrintErrorAndExit("the gateway does not support agent tags, upgrade it to edit them")
 		}
+		styles.PrintErrorAndExit("agent %v not found: %v", apir.name, err)
+	}
+	if err != nil {
 		styles.PrintErrorAndExit("%s", err.Error())
 	}
 	if apir.decodeTo == "raw" {

@@ -73,17 +73,18 @@ func TestSetTagSelectorKeepsCommas(t *testing.T) {
 func TestCheckAgentListHasTags(t *testing.T) {
 	withTags := []map[string]any{{"name": "a", "tags": map[string]any{}}}
 	withoutTags := []map[string]any{{"name": "a"}}
-	if err := checkAgentListHasTags(withTags); err != nil {
+	if err := checkAgentListHasTags(withTags, "x"); err != nil {
 		t.Errorf("list with tags: %v", err)
 	}
-	if err := checkAgentListHasTags(withoutTags); err == nil {
-		t.Error("list from a gateway without agent tags: want error")
+	if err := checkAgentListHasTags(withoutTags, "--show-tags has no tags to show"); err == nil ||
+		!strings.Contains(err.Error(), "--show-tags has no tags to show") {
+		t.Errorf("list from a gateway without agent tags: err = %v", err)
 	}
 	raw, _ := json.Marshal(withoutTags)
-	if err := checkAgentListHasTags(raw); err == nil {
+	if err := checkAgentListHasTags(raw, "x"); err == nil {
 		t.Error("raw list from a gateway without agent tags: want error")
 	}
-	if err := checkAgentListHasTags([]map[string]any{}); err != nil {
+	if err := checkAgentListHasTags([]map[string]any{}, "x"); err != nil {
 		t.Errorf("empty list: %v", err)
 	}
 }
