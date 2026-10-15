@@ -169,11 +169,14 @@ func answerSidecarWrite(c *gin.Context, err error) {
 	var nameTaken models.ErrSidecarConnectionNameTaken
 	var inUse models.ErrSidecarConnectionInUse
 	var importInvalid services.ErrImportedRuleInvalid
+	var unusable errReportUnusable
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
 	case errors.As(err, &importInvalid):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": importInvalid.Error()})
+	case errors.As(err, &unusable):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": unusable.Error()})
 	case errors.Is(err, services.ErrImportedRuleConflict):
 		c.JSON(http.StatusConflict, gin.H{"message": services.ErrImportedRuleConflict.Error()})
 	case errors.As(err, &configInvalid):
@@ -580,8 +583,12 @@ func Patch(c *gin.Context) {
 		// The admin's move: the config file the sidecar reported becomes
 		// the plane's document now, and the next heartbeat serves it. A
 		// build too old to report keeps the reset, and its heartbeat 412
-		// pushes the file instead.
-		report := storedReport(current)
+		// pushes the file instead. A report this plane cannot read refuses
+		// the move: the push would carry the same file and be refused too.
+		report, err := storedReport(current)
+		if err != nil {
+			return nil, err
+		}
 		if report == nil {
 			return reset, nil
 		}
@@ -943,18 +950,28 @@ func adoptConfigurationTx(tx *gorm.DB, orgID, sidecarID, sidecarName string, cfg
 }
 
 // storedReport is the config file a sidecar last reported, nil when it never
-// reported one. A stored report this plane no longer decodes is handled as no
-// report, so the switch falls back to the import of the file.
-func storedReport(sc *models.Sidecar) *daemon.Config {
+// reported one. A stored report this plane cannot adopt is errReportUnusable.
+func storedReport(sc *models.Sidecar) (*daemon.Config, error) {
 	if sc.ReportedConfiguration == nil {
-		return nil
+		return nil, nil
 	}
 	cfg, err := services.ParseSidecarConfiguration(json.RawMessage(*sc.ReportedConfiguration))
-	if err != nil || len(cfg.Listeners) == 0 {
-		log.With("sidecar", sc.ID).Warnf("ignored the stored config file report, reason=%v", err)
-		return nil
+	if err == nil && len(cfg.Listeners) == 0 {
+		err = errors.New("it declares no listeners")
 	}
-	return &cfg
+	if err != nil {
+		return nil, errReportUnusable{err: err}
+	}
+	return &cfg, nil
+}
+
+// errReportUnusable refuses a move to the plane whose reported config file
+// this gateway cannot adopt. Answered 422, and the switch rolls back.
+type errReportUnusable struct{ err error }
+
+func (e errReportUnusable) Error() string {
+	return "the config file this sidecar reported cannot be moved to Hoop: " + e.err.Error() +
+		"; fix the file on the sidecar, or upgrade the gateway, then try again"
 }
 
 // parseReport reads the config file a sidecar reported on its handshake. It

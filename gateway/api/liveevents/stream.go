@@ -39,7 +39,9 @@ func Stream(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 	// Commits the headers, so the client's fetch resolves before the first
 	// event.
-	fmt.Fprint(c.Writer, ": connected\n\n")
+	if _, err := fmt.Fprint(c.Writer, ": connected\n\n"); err != nil {
+		return
+	}
 	flusher.Flush()
 
 	keepalive := time.NewTicker(keepaliveInterval)

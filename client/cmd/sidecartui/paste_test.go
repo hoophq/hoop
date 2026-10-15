@@ -48,6 +48,14 @@ func TestAPasteOnAButtonChangesNothing(t *testing.T) {
 	}
 }
 
+// A pasted path keeps a space at its ends, as a typed one does; only the line
+// break goes.
+func TestAPastedPathKeepsItsSpaces(t *testing.T) {
+	if got, want := withoutLineBreaks(" my config.yaml \n"), " my config.yaml "; got != want {
+		t.Errorf("withoutLineBreaks = %q, want %q", got, want)
+	}
+}
+
 // A number field takes a pasted number and drops anything else, as it drops
 // a typed letter.
 func TestANumberFieldTakesOnlyAPastedNumber(t *testing.T) {

@@ -167,6 +167,9 @@ type controlPlane struct {
 	// hot-applies license drift and ownership flips when the documents
 	// allow it, restarting only for drift no reload can absorb.
 	diskMode bool
+	// fileReport is the boot's LocalConfiguration: in disk mode, the file
+	// document this process runs. The reloader carries it on from there.
+	fileReport json.RawMessage
 
 	// sessionEvents is what the boot handshake said about
 	// SessionEventsHeader. Run hands it to events, and the heartbeat
@@ -342,7 +345,7 @@ func resolveConfigSource(local *Config, tokenFlag, planeFlag string) (*Config, e
 		// source (resolveLicenseFor), and SetupWith names it as ignored.
 		local.ControlPlaneURL = planeURL
 		local.cp = &controlPlane{url: planeURL, urlSource: urlSource, cred: cred,
-			lastRaw: raw, diskMode: true, license: planeDoc.License, licenseManaged: managed,
+			lastRaw: raw, diskMode: true, fileReport: report, license: planeDoc.License, licenseManaged: managed,
 			revision: answer.revision, sessionEvents: answer.sessionEvents}
 		return local, nil
 	}
@@ -756,25 +759,15 @@ func jittered(every time.Duration) time.Duration {
 	return every - spread/2 + rand.N(spread)
 }
 
-// fileReport reads the config file again while it is the source, so the
-// plane shows the document this process runs after an edit. A plane-owned
-// process sends nothing: its file is ignored, and showing it would read as
-// running. A file that does not load sends nothing; the reloader reports it.
-func (cp *controlPlane) fileReport(log *slog.Logger, rl *reloader) json.RawMessage {
-	if !rl.diskMode || rl.configPath == "" || rl.load == nil {
+// runningFileReport is the config file document a disk-mode process runs, for
+// the heartbeat's LocalConfiguration: never a newer read of the disk, which
+// this process may not have applied. A plane-owned process sends nothing: its
+// file is ignored, and the page would read a report as what runs.
+func runningFileReport(rl *reloader) json.RawMessage {
+	if !rl.diskMode {
 		return nil
 	}
-	local, err := rl.load(rl.configPath)
-	if err != nil {
-		log.Debug("config file not reported to the control plane", "path", rl.configPath, "error", err)
-		return nil
-	}
-	report, err := localReport(local)
-	if err != nil {
-		log.Debug("config file not reported to the control plane", "path", rl.configPath, "error", err)
-		return nil
-	}
-	return report
+	return rl.runningFile
 }
 
 // heartbeat re-runs the handshake until ctx ends. It keeps the gateway's
@@ -812,7 +805,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			AppliedRevision:    cp.revision,
 			LastOutcome:        cp.outcome,
 			LastError:          cp.reason,
-			LocalConfiguration: cp.fileReport(log, rl),
+			LocalConfiguration: runningFileReport(rl),
 		})
 		if errors.Is(err, ErrPlaneHasNoConfig) {
 			answer, err = cp.reimport(log, rl)

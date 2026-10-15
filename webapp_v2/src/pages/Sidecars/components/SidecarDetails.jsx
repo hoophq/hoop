@@ -56,7 +56,18 @@ function detachedSummary(detached) {
     .join(' ')
 }
 
-function SourceCallout({ fromFile, configured, reported, editable, onSwitch }) {
+function SourceCallout({ fromFile, configured, awaitingFile, reported, editable, onSwitch }) {
+  // Moved to Hoop with no report to adopt: a sidecar too old to report sends
+  // its file on its next check-in.
+  if (awaitingFile) {
+    return (
+      <Callout icon={Info} color="gray.0">
+        <Text size="sm">
+          {'Hoop manages this configuration. It waits for the sidecar to send its config file on its next check-in.'}
+        </Text>
+      </Callout>
+    )
+  }
   if (fromFile) {
     return (
       <Callout
@@ -186,6 +197,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
           <SourceCallout
             fromFile={fromFile}
             configured={configured}
+            awaitingFile={sidecar.configuration?.load_from_disk === false && !configured}
             reported={!!reported}
             editable={editable && !saving && !asking}
             onSwitch={ask}

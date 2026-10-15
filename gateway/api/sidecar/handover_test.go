@@ -132,6 +132,56 @@ func TestAReportNeverReplacesAStoredConfiguration(t *testing.T) {
 	assert.Nil(t, resp.ReportedConfiguration)
 }
 
+// A move to Hoop with no report left (adopted by an earlier move) must stay a
+// move to Hoop: the next reporting heartbeat answers 412, so the sidecar
+// pushes its file, and never puts the sidecar back on it.
+func TestAMoveToHoopWithoutAReportIsNotUndoneByTheNextHeartbeat(t *testing.T) {
+	startSwitchDB(t)
+	sc := newSidecar(t, "flip-back")
+	require.Equal(t, http.StatusOK, reportHandshake(t, sc, reportBody(t, switchFile)).Code)
+	for _, toFile := range []string{"false", "true", "false"} {
+		w, _ := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": `+toFile+`}`)
+		require.Equal(t, http.StatusOK, w.Code, "PATCH %s: %s", toFile, w.Body)
+	}
+
+	w := reportHandshake(t, sc, reportBody(t, switchFile))
+	assert.Equal(t, http.StatusPreconditionFailed, w.Code, "body: %s", w.Body)
+	_, resp := callAdmin(t, Get, http.MethodGet, sc.ID, `{}`)
+	require.NotNil(t, resp.Configuration.LoadFromDisk)
+	assert.False(t, *resp.Configuration.LoadFromDisk, "the row keeps the admin's move")
+	assert.Nil(t, resp.ReportedConfiguration)
+}
+
+// A report this gateway cannot adopt refuses the move, and the sidecar stays
+// on its file.
+func TestAMoveToHoopWithAnUnusableReportIsRefused(t *testing.T) {
+	startSwitchDB(t)
+	sc := newSidecar(t, "bad-stored")
+	require.Equal(t, http.StatusOK, reportHandshake(t, sc, reportBody(t, switchFile)).Code)
+	require.NoError(t, models.DB.Exec(`UPDATE private.sidecars SET reported_configuration = '{"future_key":1}'::jsonb WHERE id = ?`, sc.ID).Error)
+
+	w, _ := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": false}`)
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
+	assert.Contains(t, w.Body.String(), "cannot be moved to Hoop")
+	_, resp := callAdmin(t, Get, http.MethodGet, sc.ID, `{}`)
+	require.NotNil(t, resp.Configuration.LoadFromDisk)
+	assert.True(t, *resp.Configuration.LoadFromDisk, "the refused move rolled back")
+}
+
+// A report that lands after the admin's move is not kept: it would come back
+// as a second configuration, and a later move could adopt it.
+func TestALateReportAfterTheMoveIsNotKept(t *testing.T) {
+	startSwitchDB(t)
+	sc := newSidecar(t, "late-report")
+	require.Equal(t, http.StatusOK, reportHandshake(t, sc, reportBody(t, switchFile)).Code)
+	w, _ := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": false}`)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+
+	require.NoError(t, models.RecordSidecarReportedConfiguration(models.DB, sc.ID, []byte(switchFile)))
+	_, resp := callAdmin(t, Get, http.MethodGet, sc.ID, `{}`)
+	assert.Nil(t, resp.ReportedConfiguration)
+}
+
 func boundNames(t *testing.T, sidecarID string) []string {
 	t.Helper()
 	bound, err := models.ListSidecarRuleBindings(models.DB, uuid.MustParse(switchOrgID), sidecarID)

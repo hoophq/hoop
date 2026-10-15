@@ -119,23 +119,43 @@ func heartbeatReports(t *testing.T, rl *reloader, answer string) []json.RawMessa
 	return reports
 }
 
-// In disk mode every heartbeat reports the file as it reads now, so the plane
-// shows an edit without a restart.
-func TestADiskModeHeartbeatReportsTheFile(t *testing.T) {
+// In disk mode every heartbeat reports the file document this process runs,
+// not the file as it reads now: an edit it has not applied is never shown,
+// and never adopted, as what runs.
+func TestADiskModeHeartbeatReportsTheRunningFile(t *testing.T) {
 	rl, _ := testReloader(t, reloadBase)
 	rl.diskMode = true
 	rl.lastHandled = []byte(`{"load_from_disk":true}`)
 	rl.configPath = "sidecar.yaml"
-	rl.load = func(string) (*Config, error) { return LoadConfigBytes([]byte(reloadBase)) }
+	running := json.RawMessage(`{"listeners":[{"name":"running"}]}`)
+	rl.runningFile = running
+	// The disk holds an edit this process never applied.
+	rl.load = func(string) (*Config, error) {
+		return LoadConfigBytes([]byte(`{"listeners":[{"name":"edited","protocol":"postgres","listen":":1","upstream":"h:5432"}]}`))
+	}
 
 	reports := heartbeatReports(t, rl, `{"load_from_disk":true}`)
 	if len(reports) == 0 {
 		t.Fatal("no heartbeat ran")
 	}
 	for i, r := range reports {
-		if len(r) == 0 {
-			t.Fatalf("heartbeat %d carried no report", i)
+		if string(r) != string(running) {
+			t.Fatalf("heartbeat %d reported %s, want the running file %s", i, r, running)
 		}
+	}
+}
+
+// The file a disk-mode answer adopts becomes the report, once applied.
+func TestAnAdoptedFileBecomesTheReport(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.configPath = "sidecar.yaml"
+	rl.load = func(string) (*Config, error) { return LoadConfigBytes([]byte(reloadBase)) }
+
+	if out := rl.adoptFile(slog.New(slog.NewTextHandler(buf, nil)), ""); out != reloadApplied && out != reloadUnchanged {
+		t.Fatalf("adoptFile = %v; log:\n%s", out, buf)
+	}
+	if len(rl.runningFile) == 0 || !strings.Contains(string(rl.runningFile), `"listeners"`) {
+		t.Fatalf("runningFile = %s, want the adopted file", rl.runningFile)
 	}
 }
 

@@ -195,8 +195,13 @@ export default function SidecarSetup({ mode = 'connect' }) {
 
       {/* Editable, so the sidecar's file can move to Hoop from here: Hoop
           never takes it on its own. */}
+      {/* Read-only until the store holds the record: the switch writes the
+          store's copy, so acting on this page's copy would show the old owner. */}
       {step === 2 && sidecar && (
-        <SidecarDetails sidecar={selected?.id === sidecar.id ? selected : sidecar} editable />
+        <SidecarDetails
+          sidecar={selected?.id === sidecar.id ? selected : sidecar}
+          editable={selected?.id === sidecar.id}
+        />
       )}
     </Stack>
   )

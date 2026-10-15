@@ -299,7 +299,13 @@ func (f *form) paste(p tea.PasteMsg) tea.Cmd {
 // terminal or a web page often ends in a newline, and every field holds one
 // line.
 func pastedLine(s string) string {
-	return strings.NewReplacer("\r", "", "\n", "").Replace(strings.TrimSpace(s))
+	return withoutLineBreaks(strings.TrimSpace(s))
+}
+
+// withoutLineBreaks drops the line breaks of a paste and keeps every other
+// character: a path may start or end with a space that matters.
+func withoutLineBreaks(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
 }
 
 // update handles a key and returns "back" for esc, a button's id for enter

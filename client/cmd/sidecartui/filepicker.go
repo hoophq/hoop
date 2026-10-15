@@ -197,9 +197,10 @@ func shortPath(path string) string {
 	return abs
 }
 
-// paste puts a pasted path into the input, the same as typing it.
+// paste puts a pasted path into the input, the same as typing it: only its
+// line breaks go, never a space a file name may hold.
 func (p *filePicker) paste(msg tea.PasteMsg) {
-	p.input, _ = p.input.Update(tea.PasteMsg{Content: pastedLine(msg.Content)})
+	p.input, _ = p.input.Update(tea.PasteMsg{Content: withoutLineBreaks(msg.Content)})
 	p.cur = 0
 	p.refresh()
 }

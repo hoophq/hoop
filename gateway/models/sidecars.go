@@ -420,12 +420,14 @@ func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.R
 	return &item, nil
 }
 
-// ResetSidecarConfigurationTx empties the stored configuration, so the next
-// handshake answers 412 and the sidecar imports its config file again.
+// ResetSidecarConfigurationTx empties the stored configuration and records the
+// plane as its owner, so the next handshake answers 412 and the sidecar
+// imports its config file. The explicit false keeps a reporting heartbeat from
+// putting the sidecar back on its file (StartSidecarInDiskModeTx).
 func ResetSidecarConfigurationTx(tx *gorm.DB, orgID, id string) (*Sidecar, error) {
 	var item Sidecar
 	err := tx.Raw(`
-	UPDATE private.sidecars SET configuration = '{}'::jsonb
+	UPDATE private.sidecars SET configuration = '{"load_from_disk":false}'::jsonb
 	WHERE org_id = ? AND id = ?
 	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities, reported_version`, orgID, id).
 		Scan(&item).Error
@@ -467,11 +469,13 @@ func AdoptSidecarConfiguration(db *gorm.DB, orgID, id string, configuration Side
 
 // RecordSidecarReportedConfiguration stores the config file a sidecar
 // reported on its handshake. The caller validated it. It never touches the
-// configuration the plane serves.
+// configuration the plane serves, and writes only while the row still runs
+// the file: a handshake that raced an admin's move to the plane must not
+// bring back the report that move adopted.
 func RecordSidecarReportedConfiguration(db *gorm.DB, sidecarID string, report []byte) error {
 	return db.Exec(`
 	UPDATE private.sidecars SET reported_configuration = ?::jsonb, reported_configuration_at = NOW()
-	WHERE id = ?`, string(report), sidecarID).Error
+	WHERE id = ? AND configuration->'load_from_disk' = 'true'::jsonb`, string(report), sidecarID).Error
 }
 
 // ClearSidecarReportedConfigurationTx drops the reported config file once the

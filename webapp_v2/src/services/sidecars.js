@@ -21,8 +21,8 @@ import api from './api'
 // `{load_from_disk: true}` and the file as `reported_configuration`. The plane
 // takes the file only when an admin sends `load_from_disk: false` (PATCH).
 // A sidecar too old to report still pushes its file on the first handshake
-// (importLocalConfig, #1803); once the plane holds listeners that push is
-// refused with a 409.
+// (importLocalConfig in sidecar/daemon/controlplane.go); once the plane holds
+// listeners that push is refused with a 409.
 //
 // Two ways to write it, and they are not interchangeable:
 //
