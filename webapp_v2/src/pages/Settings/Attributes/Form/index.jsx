@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Box, Button, Grid, Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { ArrowLeft } from 'lucide-react'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import Modal from '@/components/Modal'
 import TextInput from '@/components/TextInput'
@@ -42,7 +41,7 @@ export default function AttributesForm() {
 
   const [deleteOpened, { open: openDelete, close: closeDelete }] = useDisclosure(false)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   useEffect(() => {
     async function loadData() {

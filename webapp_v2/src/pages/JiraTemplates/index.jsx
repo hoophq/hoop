@@ -5,7 +5,6 @@ import Button from '@/components/Button'
 import Tabs from '@/components/Tabs'
 import PageLoader from '@/components/PageLoader'
 import FullBleed from '@/layout/FullBleed'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { useUserStore } from '@/stores/useUserStore'
 import { useJiraTemplatesStore } from './store'
 import TemplatesTab from './TemplatesTab'
@@ -54,7 +53,7 @@ export default function JiraTemplates() {
     listStatus === 'idle' ||
     integrationStatus === 'loading' ||
     integrationStatus === 'idle'
-  const showLoader = useMinDelay(loading, 500)
+  const showLoader = loading
 
   if (showLoader) {
     return <PageLoader h={400} />

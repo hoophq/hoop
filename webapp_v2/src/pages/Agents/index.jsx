@@ -20,7 +20,6 @@ import EmptyState from '@/layout/EmptyState'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import { docsUrl } from '@/utils/docsUrl'
 import PageLoader from '@/components/PageLoader'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { showSnackbar } from '@/utils/snackbar'
 
 function AgentStatusBadge({ status }) {
@@ -106,7 +105,7 @@ function Agents() {
   const [selectedAgent, setSelectedAgent] = useState(null)
 
   const isAdmin = user?.is_admin
-  const showLoader = useMinDelay(loading, 500)
+  const showLoader = loading
 
   useEffect(() => {
     fetchAgents()
