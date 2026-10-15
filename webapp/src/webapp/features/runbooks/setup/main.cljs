@@ -28,18 +28,17 @@
         active-tab (r/atom "rules")
         params (.-search (.-location js/window))
         url-tab (r/atom (parse-params params))
-        promotion-seen? (r/atom (boolean (.getItem (.-localStorage js/window) "runbooks-promotion-seen")))
-        min-loading-done (r/atom false)]
+        promotion-seen? (r/atom (boolean (.getItem (.-localStorage js/window) "runbooks-promotion-seen")))]
 
     (rf/dispatch [:runbooks/list])
     (rf/dispatch [:runbooks-rules/get-all])
     (rf/dispatch [:runbooks-configurations/get])
-    (js/setTimeout #(reset! min-loading-done true) 1500)
 
     (fn []
       (let [has-rules? (seq (or (:data @runbooks-rules-list) []))
-            loading? (or (= :loading (:status @runbooks-rules-list))
-                         (not @min-loading-done))]
+            ;; First load only: a revisit renders the cached rules while they refresh.
+            loading? (and (contains? #{:idle :loading} (:status @runbooks-rules-list))
+                          (not has-rules?))]
 
         (when @url-tab
           (reset! active-tab @url-tab)
