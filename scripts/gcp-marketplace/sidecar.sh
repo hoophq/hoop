@@ -216,6 +216,7 @@ cmd_test() {
     -var "image_tag=$TRACK"
     -var "consumption_tracking_label=${CONSUMPTION_LABEL:-}"
     -var "upstream=${UPSTREAM:-db.invalid:5432}"
+    -var "goog_cm_deployment_name=hoop-sidecar-test"
     "${cluster[@]}"
   )
   step "installing $CHART_NAME:$TRACK with Terraform (the pod must go ready with no database behind it)"

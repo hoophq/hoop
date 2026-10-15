@@ -65,10 +65,10 @@ spec:
         description: Namespace for the sidecar. Created when missing.
         varType: string
         defaultValue: hoop-sidecar
-      - name: helm_release_name
-        description: Name of the Helm release. Empty picks hoopsidecar-<random>.
+      - name: goog_cm_deployment_name
+        description: Name of the deployment, used as the Helm release name.
         varType: string
-        defaultValue: ""
+        required: true
       - name: config_source
         description: "Where the sidecar config comes from: simple (the fields below), document (a whole config), configmap (an existing ConfigMap) or control_plane."
         varType: string

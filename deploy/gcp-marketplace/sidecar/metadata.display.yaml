@@ -74,12 +74,10 @@ spec:
           name: namespace
           title: Namespace
           section: cluster
-        helm_release_name:
-          name: helm_release_name
-          title: Release name
-          tooltip: Empty picks hoopsidecar-RANDOM.
+        goog_cm_deployment_name:
+          name: goog_cm_deployment_name
+          title: Deployment name
           section: cluster
-          level: 1
 
         config_source:
           name: config_source
