@@ -7,7 +7,6 @@ import Button from '@/components/Button'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import PageLoader from '@/components/PageLoader'
 import ValueFilter from '@/components/ValueFilter'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
@@ -79,8 +78,6 @@ export default function AccessRequest() {
   )
 
   const atFreeLimit = isFreeLicense && rules.length >= 1
-  const loading = rulesStatus === 'idle' || rulesStatus === 'loading'
-  const showLoader = useMinDelay(loading, 500)
   const activeFilterCount = (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0)
 
   const goCreate = () => navigate(NEW_PATH)
@@ -89,10 +86,6 @@ export default function AccessRequest() {
     localStorage.setItem(PROMOTION_SEEN_STORAGE_KEY, 'true')
     setPromotionSeen(true)
     goCreate()
-  }
-
-  if (showLoader) {
-    return <PageLoader h={300} />
   }
 
   // A failed load leaves the list empty, which would otherwise fall through to

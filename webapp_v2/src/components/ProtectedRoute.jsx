@@ -15,7 +15,12 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
   const { user, isAdmin, role: userRole, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
-  const [initializing, setInitializing] = useState(true)
+  // A remount with the session already loaded (React <-> CLJS route switch)
+  // renders at once; the effect below still refreshes the flags.
+  const [initializing, setInitializing] = useState(() => {
+    const s = useUserStore.getState()
+    return !(isAuthenticated && s.user && s.serverInfoLoaded && s.featureFlagsLoaded)
+  })
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
 

@@ -4,7 +4,6 @@ import BarChart from '@/components/BarChart'
 import DonutChart from '@/components/DonutChart'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import PageLoader from '@/components/PageLoader'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { useUserStore } from '@/stores/useUserStore'
 import ChartCard from './components/ChartCard'
 import ComingSoon from './components/ComingSoon'
@@ -71,7 +70,7 @@ function Dashboard() {
   const redactedError = useDashboardStore((state) => state.redactedError)
   const setRedactedRange = useDashboardStore((state) => state.setRedactedRange)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   useEffect(() => {
     fetchAll()

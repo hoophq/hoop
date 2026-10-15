@@ -4,7 +4,6 @@ import { Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
@@ -37,10 +36,9 @@ export default function SidecarDetailsPage() {
   //     flag alone would miss: it would still read "idle" and paint the
   //     previous sidecar under the new URL.
   //   selectedLoading — the store went for this id but has no answer yet.
-  //     Without it the loader lifts after useMinDelay's 500 ms and a slower
-  //     request renders an empty body.
+  //     Without it a slow request renders an empty body.
   const loading = selectedId !== id || selectedLoading
-  const showLoader = useMinDelay(loading, 500)
+  const showLoader = loading
 
   // Dropping the record on unmount keeps this page from opening on a stale one.
   useEffect(() => {

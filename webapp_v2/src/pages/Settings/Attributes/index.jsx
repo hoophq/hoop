@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, Button, Divider, Group, Image, Paper, Popover, Stack, Text, Title } from '@mantine/core'
 import { Check, Rotate3d, Search, X } from 'lucide-react'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import TextInput from '@/components/TextInput'
@@ -107,7 +106,7 @@ export default function Attributes() {
   const [error, setError] = useState(null)
   const [filterConn, setFilterConn] = useState(null)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   useEffect(() => {
     async function fetchData() {

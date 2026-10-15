@@ -11,7 +11,6 @@ import {
   Title,
 } from '@mantine/core'
 import { AlertCircle } from 'lucide-react'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { useUserStore } from '@/stores/useUserStore'
 import PageLoader from '@/components/PageLoader'
 import Table from '@/components/Table'
@@ -67,7 +66,7 @@ function SettingsLicense() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   const disableInput = licenseInfo?.is_valid && licenseInfo?.type === 'enterprise'
   const disableSave = disableInput || !licenseKey.trim()

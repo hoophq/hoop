@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Grid, Group, Stack, Text, Title, Box } from '@mantine/core'
 import { showSnackbar } from '@/utils/snackbar'
 import { ArrowLeft } from 'lucide-react'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import MultiSelect from '@/components/MultiSelect'
@@ -40,7 +39,7 @@ export default function AiAgentsIdentitiesForm() {
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   useEffect(() => {
     async function loadData() {

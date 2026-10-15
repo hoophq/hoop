@@ -9,7 +9,6 @@ import {
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { Search } from 'lucide-react'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
@@ -228,7 +227,7 @@ export default function Users() {
   const loadedRef = useRef(false)
   const debounceRef = useRef(null)
 
-  const showLoader = useMinDelay(loading || !groupsReady || !serverInfoReady)
+  const showLoader = loading || !groupsReady || !serverInfoReady
 
   const fetchUsers = useCallback(async () => {
     const requestId = ++requestIdRef.current
