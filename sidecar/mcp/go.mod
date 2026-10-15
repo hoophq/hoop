@@ -4,7 +4,7 @@
 // importing this module; one that does not refuses an "mcp" block.
 module github.com/hoophq/hoop/sidecar/mcp
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0

@@ -231,7 +231,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 
 				if requireReview {
 					if aiAccessRule == nil {
-						return nil, plugintypes.InternalErr("ai analyzer requested review without resolving access request rule",
+						return nil, plugintypes.InternalErr("ai analyzer requested approval without resolving access request rule",
 							fmt.Errorf("aiAccessRule is nil for sid=%s", pctx.SID))
 					}
 					ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
@@ -239,7 +239,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 
 					conn, err := models.GetBareConnectionByNameOrID(ctx, pctx.ConnectionName, models.DB)
 					if err != nil {
-						return nil, plugintypes.InternalErr("failed retrieving connection for ai-driven review", err)
+						return nil, plugintypes.InternalErr("failed retrieving connection for ai-driven approval request", err)
 					}
 					review, err := sessionapi.CreateReviewFromAIAnalysis(orgID, pctx.SID, conn,
 						sessionapi.AIReviewRequester{
@@ -251,7 +251,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 						},
 						aiAccessRule, string(pkt.Payload), nil, nil, analyzeRes)
 					if err != nil {
-						return nil, plugintypes.InternalErr("failed creating ai-driven review", err)
+						return nil, plugintypes.InternalErr("failed creating ai-driven approval request", err)
 					}
 					pkt.Spec[pb.SpecHasReviewKey] = []byte("true")
 					return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{

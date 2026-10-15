@@ -2,6 +2,33 @@
   (:require
    [reagent.core :as r]))
 
+(def ^:const max-scroll-height
+  "Chrome clamps layout at 2^25 px (EVL-121). Above this the scroll box is
+  scaled and the scroll range maps onto the row range."
+  (* 16 1024 1024))
+
+(defn window
+  "The rows to render for a scroll position: {:start :end :offset-y
+  :total-height}. `end` is exclusive."
+  [{:keys [scroll-top height item-height total overscan]}]
+  (let [real-height (* total item-height)
+        total-height (min real-height max-scroll-height)
+        scaled? (> real-height max-scroll-height)
+        visible (js/Math.ceil (/ height item-height))
+        first-row (if scaled?
+                    (let [range (max 1 (- total-height height))
+                          max-start (max 0 (- total visible))]
+                      (js/Math.round (* (/ (min scroll-top range) range) max-start)))
+                    (js/Math.floor (/ scroll-top item-height)))
+        start (max 0 (min (- first-row overscan) (max 0 (dec total))))
+        end (max start (min total (+ first-row visible overscan)))
+        offset-y (cond
+                   (not scaled?) (* start item-height)
+                   ;; At the end of the range the last row sits on the bottom edge.
+                   (= end total) (- (+ scroll-top height) (* (- end start) item-height))
+                   :else (- scroll-top (* (- first-row start) item-height)))]
+    {:start start :end end :offset-y offset-y :total-height total-height}))
+
 (defn virtualized-list
   "Virtualized list that renders only visible items.
 
@@ -56,19 +83,17 @@
                   (reset! prev-items-count total-items))
 
               effective-height (or @measured-height container-height 0)
-              visible-count (js/Math.ceil (/ effective-height item-height))
-              start-index (js/Math.max 0 (- (js/Math.floor (/ @scroll-top item-height)) overscan))
-              end-index (js/Math.min total-items (+ start-index visible-count (* 2 overscan)))
-
-              safe-start (js/Math.max 0 (js/Math.min start-index (js/Math.max 0 (- total-items 1))))
-              safe-end (js/Math.max safe-start (js/Math.min end-index total-items))
+              {safe-start :start safe-end :end
+               :keys [offset-y total-height]} (window {:scroll-top @scroll-top
+                                                       :height effective-height
+                                                       :item-height item-height
+                                                       :total total-items
+                                                       :overscan overscan})
 
               visible-items (if (and (> total-items 0) (< safe-start total-items))
                               (subvec items safe-start safe-end)
                               [])
 
-              total-height (* total-items item-height)
-              offset-y (* safe-start item-height)
               fixed-style (when container-height
                             {:max-height (str container-height "px")})]
 

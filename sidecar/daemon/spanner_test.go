@@ -579,7 +579,7 @@ func buildSpannerTestServer(
 		},
 		name:   name,
 		policy: evaluator,
-	}, AuditConfig{}, sink, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, AuditConfig{}, sink, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

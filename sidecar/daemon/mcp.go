@@ -10,9 +10,14 @@ import (
 	"time"
 )
 
-// ReviewWaitTool names the MCP tool that waits on a review. A return-mode
-// denial tells the agent to call it, so sidecar/mcp registers it under this
-// name and the two cannot drift.
+// ApprovalWaitTool names the MCP tool that waits on an approval request. A
+// return-mode denial tells the agent to call it, so sidecar/mcp registers it
+// under this name and the two cannot drift.
+const ApprovalWaitTool = "approval_wait"
+
+// ReviewWaitTool is the name ApprovalWaitTool had before the product renamed
+// review to approval. sidecar/mcp keeps it registered as an alias on the same
+// handler, because agents configured against it keep calling it.
 const ReviewWaitTool = "review_wait"
 
 // MCPConfig is the top-level "mcp" block: an MCP server that answers agents
@@ -69,13 +74,13 @@ var (
 	// ErrReviewNotFound is the plane answering that this sidecar has no
 	// such review. Another sidecar's review reads the same, because the
 	// token scopes the lookup.
-	ErrReviewNotFound = errors.New("review not found")
+	ErrReviewNotFound = errors.New("approval not found")
 
 	// ErrPlaneTooOld is a plane with no status route. It must not read as
 	// ErrReviewNotFound: the review may exist, and "not found" would tell an
 	// agent to give up on a statement a human can still approve.
 	ErrPlaneTooOld = errors.New("the control plane is older than this sidecar and " +
-		"cannot report review status; upgrade the control plane")
+		"cannot report approval status; upgrade the control plane")
 )
 
 // ReviewStatusReader reads the reviews of this sidecar. It never claims one.
@@ -146,7 +151,7 @@ func checkMCP(cfg *Config) error {
 			"build github.com/hoophq/hoop/sidecar/cmd, or remove the block")
 	}
 	if cfg.cp == nil && !cfg.controlPlaneConfigured() {
-		return fmt.Errorf(`config has an "mcp" block but no control plane; review status `+
+		return fmt.Errorf(`config has an "mcp" block but no control plane; approval status `+
 			"comes from the control plane, so set %s or \"control_plane_url\", or remove the block",
 			ControlPlaneURLEnv)
 	}

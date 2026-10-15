@@ -207,7 +207,7 @@ func testAStaleClaimAnswersExpired(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	answerExistingReview(c, sc, rev.ListenerName.String, rev, now)
+	answerExistingReview(c, sc, rev.ListenerName.String, rev, now, false)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	resp := decodeReviewResponse(t, rec)
@@ -305,7 +305,7 @@ func testPutReviewRefusesAnExpiredReview(t *testing.T) {
 
 			rec := putReview(t, rev.ID, tc.body, tc.groups)
 			assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-			assert.JSONEq(t, `{"message":"review expired"}`, rec.Body.String())
+			assert.JSONEq(t, `{"message":"approval request expired"}`, rec.Body.String())
 
 			stored := readStoredReview(t, rev.ID)
 			assert.Equal(t, string(models.ReviewStatusExpired), stored.Status, "an eligible caller records the expiry")
@@ -339,7 +339,7 @@ func testPutReviewRefusesAnExpiredReview(t *testing.T) {
 		before := reviewSnapshot(t, rev)
 
 		rec := putReview(t, rev.ID, `{"status":"foo"}`, []string{types.GroupAdmin})
-		assert.NotContains(t, rec.Body.String(), "review expired")
+		assert.NotContains(t, rec.Body.String(), "approval request expired")
 		assert.Contains(t, rec.Body.String(), "unknown status")
 		assert.JSONEq(t, before, reviewSnapshot(t, rev))
 	})
@@ -357,7 +357,7 @@ func testPutReviewAfterTheRowExpired(t *testing.T) {
 
 	rec := putReview(t, rev.ID, `{"status":"approved"}`, []string{"dba"})
 	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-	assert.JSONEq(t, `{"message":"review expired"}`, rec.Body.String())
+	assert.JSONEq(t, `{"message":"approval request expired"}`, rec.Body.String())
 	assert.JSONEq(t, before, reviewSnapshot(t, rev))
 }
 

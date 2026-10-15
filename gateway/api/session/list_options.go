@@ -109,6 +109,23 @@ func parseSessionListOptions(qs url.Values) (models.SessionOption, error) {
 					models.MaxSessionListOffset, offset)
 			}
 			option.Offset = offset
+		// Blank means unset, as for correlation_id: the webapp drops a filter by
+		// sending it empty.
+		case openapi.SessionOptionStatus:
+			if queryOptVal != "" && !models.IsValidSessionStatus(queryOptVal) {
+				return option, invalidOption(optKey, "%q is not one of open, ready, done", queryOptVal)
+			}
+			option.Status = queryOptVal
+		case openapi.SessionOptionVerb:
+			if queryOptVal != "" && !models.IsValidSessionVerb(queryOptVal) {
+				return option, invalidOption(optKey, "%q is not one of connect, exec", queryOptVal)
+			}
+			option.Verb = queryOptVal
+		case openapi.SessionOptionInput:
+			if err := models.ValidateSessionInputFilter(queryOptVal); err != nil {
+				return option, invalidOption(optKey, "%v", err)
+			}
+			option.Input = queryOptVal
 		case openapi.SessionOptionCount:
 			countMode, err := models.ParseSessionCountMode(queryOptVal)
 			if err != nil {

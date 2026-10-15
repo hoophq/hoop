@@ -229,6 +229,11 @@ type Config struct {
 	// calls only when the reply can be sent (see Decision.Hangup). Nil
 	// answers nothing, which is every lane but http.
 	Answer func(stmt inspect.Statement) func(ctx context.Context) []byte
+
+	// Settle reports the upstream's answer to every statement a reserved
+	// approval released (policy.Review.Reserved). Nil settles nothing, and
+	// no backend reserves without one. See SettleFunc.
+	Settle SettleFunc
 }
 
 // CredentialSource is implemented by a codec that lifts a caller credential
@@ -407,6 +412,11 @@ type Gate struct {
 	// requests counts the http requests this connection has judged. Only
 	// the client direction touches it, so it needs no lock.
 	requests int
+
+	// settleQueue and settleOpen pair reserved approvals with the
+	// upstream's answer, when Config.Settle is set. See settle.go.
+	settleQueue []string
+	settleOpen  []string
 
 	// oneExchange says this gate lives exactly as long as one request and
 	// the responses that answer it, which is true of a gate from
@@ -685,7 +695,15 @@ func (g *Gate) DiscardResponse() {
 	}
 }
 
-func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) Decision {
+func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) (out Decision) {
+	// Requests this chunk queued for a settle are not forwarded when the
+	// chunk is refused, so their approvals go back.
+	var queued int
+	defer func() {
+		if queued > 0 && !out.Allowed {
+			g.dropQueued(ctx, queued)
+		}
+	}()
 	d := Decision{Allowed: true}
 
 	filter := g.clientFilter
@@ -816,6 +834,11 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		if isHTTPRequest(stmt) {
 			g.requests++
 		}
+		// Before the response is judged, so the settle stands whatever the
+		// response policy does: the upstream already answered.
+		if isFinalHTTPResponse(stmt) {
+			g.answerExchange(ctx, stmt)
+		}
 		if g.creds != nil {
 			switch {
 			case isHTTPRequest(stmt):
@@ -859,6 +882,9 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			d.DeniedStatement = &denied
 			d.Payload = nil // nothing may be forwarded
 			return d
+		}
+		if isHTTPRequest(stmt) && g.queueExchange(reservedReview(j)) {
+			queued++
 		}
 	}
 
@@ -939,6 +965,11 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 	g.countStatement(denied, source)
 
 	if refused {
+		// Nothing is forwarded, so an approval the policy just reserved for
+		// this statement goes back.
+		if r := verdict.Review; r != nil && r.Reserved {
+			g.settle(ctx, []string{r.ID}, false)
+		}
 		denied := stmt
 		return judgment{refusal: &Decision{
 			Allowed:         false,
@@ -998,12 +1029,20 @@ func NewStatementGate(sess *session.Session, cfg Config) (*Gate, error) {
 // Safe on any Gate, but built for one from NewStatementGate.
 func (g *Gate) EvaluateStatement(ctx context.Context, stmt inspect.Statement) Decision {
 	stmts := []inspect.Statement{stmt}
+	g.answerStatement(ctx, stmt)
 	j := g.judge(ctx, stmt)
+	if stmt.Direction == inspect.FromClient && (j.refusal != nil || j.denied) {
+		// On the grpc lane this refusal ends the call with the sidecar's own
+		// status, which says nothing about what the upstream did with the
+		// requests already forwarded: spend them, never give them back.
+		g.settleUnanswered(ctx)
+	}
 	if j.refusal != nil {
 		r := *j.refusal
 		r.Statements = stmts
 		return r
 	}
+	g.openReservation(reservedReview(j))
 	d := Decision{Allowed: !j.denied, Statements: stmts, Err: j.err}
 	if j.denied {
 		d.Message = j.message
@@ -1306,6 +1345,8 @@ func (g *Gate) Close(ctx context.Context) error {
 	sess := g.sess
 	statements, denied := g.statements-g.sessionStatements, g.denied-g.sessionDenied
 	g.mu.Unlock()
+
+	g.settleUnanswered(ctx)
 
 	sess.End()
 	// Codecs go after sess.End and before the audit write: a codec that

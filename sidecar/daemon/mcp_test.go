@@ -89,7 +89,7 @@ func TestEveryStatusRefusalIsAnError(t *testing.T) {
 		want string
 	}{
 		{"unauthorized", http.StatusUnauthorized, `{"message":"access denied"}`, "rejected the token"},
-		{"not a control plane", http.StatusPreconditionFailed, `{"message":"no"}`, "does not serve sidecar reviews"},
+		{"not a control plane", http.StatusPreconditionFailed, `{"message":"no"}`, "does not serve sidecar approvals"},
 		{"another review", http.StatusOK, `{"id":"other","status":"PENDING"}`, "when asked about"},
 		{"not json", http.StatusOK, `<html>`, "could not be read"},
 		{"server error", http.StatusInternalServerError, `{"message":"boom"}`, "500"},

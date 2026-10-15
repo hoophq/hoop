@@ -2,6 +2,7 @@ package sessionapi
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -47,6 +48,19 @@ func TestParseSessionListOptions(t *testing.T) {
 				o.ReviewApproverEmail, o.BatchID, o.CorrelationID = &approver, &batch, &correlation
 				return o
 			},
+		},
+		{
+			msg: "it accepts the live filter and an input pattern",
+			qs:  "status=open&verb=connect&input=delete%25orders",
+			want: func(o models.SessionOption) models.SessionOption {
+				o.Status, o.Verb, o.Input = "open", "connect", "delete%orders"
+				return o
+			},
+		},
+		{
+			msg:  "a blank status, verb or input is unset",
+			qs:   "status=&verb=&input=",
+			want: func(o models.SessionOption) models.SessionOption { return o },
 		},
 		{
 			msg: "jira issue keys are split, trimmed and lowercased",
@@ -117,6 +131,13 @@ func TestParseSessionListOptions(t *testing.T) {
 		{msg: "an unknown count mode is rejected", qs: "count=all", wantErr: `invalid "count" option: invalid count value "all"`},
 		{msg: "a malformed start_date is rejected", qs: "start_date=yesterday", wantErr: `invalid "start_date" option`},
 		{msg: "a malformed end_date is rejected", qs: "end_date=tomorrow", wantErr: `invalid "end_date" option`},
+		{msg: "an unknown status is rejected", qs: "status=running", wantErr: `invalid "status" option: "running" is not one of open, ready, done`},
+		{msg: "an unknown verb is rejected", qs: "verb=plain-exec", wantErr: `invalid "verb" option: "plain-exec" is not one of connect, exec`},
+		// The scan cost grows with the pattern length; Postgres rejects NUL and
+		// invalid UTF-8 with an error the handler would turn into a 500.
+		{msg: "an input over the cap is rejected", qs: "input=" + strings.Repeat("a", 257), wantErr: `invalid "input" option: must be at most 256 bytes, got 257`},
+		{msg: "an input with a NUL byte is rejected", qs: "input=%00", wantErr: `invalid "input" option: must be valid UTF-8 without NUL bytes`},
+		{msg: "an input that is not UTF-8 is rejected", qs: "input=%FF", wantErr: `invalid "input" option: must be valid UTF-8 without NUL bytes`},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
 			qs, err := url.ParseQuery(tt.qs)
@@ -157,6 +178,9 @@ func TestParseSessionListOptionsCoversEveryAdvertisedOption(t *testing.T) {
 		openapi.SessionOptionOffset:              "5",
 		openapi.SessionOptionJiraIssueKey:        "ABC-1",
 		openapi.SessionOptionCount:               "none",
+		openapi.SessionOptionStatus:              "open",
+		openapi.SessionOptionVerb:                "connect",
+		openapi.SessionOptionInput:               "delete",
 	}
 
 	baseline := models.NewSessionOption()

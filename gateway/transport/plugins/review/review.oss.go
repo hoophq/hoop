@@ -17,11 +17,11 @@ import (
 
 func (p *reviewPlugin) onReceiveOSS(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if pctx.ClientVerb != pb.ClientVerbConnect {
-		return nil, fmt.Errorf(`Accessing a connection with review from the web requires an Enterprise plan. Contact us for instant access to a 15-day trial license - no strings attached. If you want to continue using the OSS version, you can access your connection from the CLI or the Hoop desktop app. Check our docs for more information: https://hoop.dev/docs/clients/cli`)
+		return nil, fmt.Errorf(`Accessing a connection that requires approval from the web requires an Enterprise plan. Contact us for instant access to a 15-day trial license - no strings attached. If you want to continue using the OSS version, you can access your connection from the CLI or the Hoop desktop app. Check our docs for more information: https://hoop.dev/docs/clients/cli`)
 	}
 	jitr, err := models.GetApprovedReviewJit(pctx.OrgID, pctx.UserID, pctx.ConnectionID)
 	if err != nil && err != models.ErrNotFound {
-		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
+		return nil, plugintypes.InternalErr("failed listing time based approval requests", err)
 	}
 	if jitr != nil {
 		err = validateJit(jitr, time.Now().UTC())
@@ -94,7 +94,7 @@ func (p *reviewPlugin) onReceiveOSS(pctx plugintypes.Context, pkt *pb.Packet) (*
 	// input is always empty for jit types
 	var sessionInput string
 	if err := models.CreateReview(newRev, sessionInput); err != nil {
-		return nil, plugintypes.InternalErr("failed saving review", err)
+		return nil, plugintypes.InternalErr("failed saving approval request", err)
 	}
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,

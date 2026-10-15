@@ -37,11 +37,13 @@ type ReviewResult struct {
 // the statement was not released, which is the safe reading of a vocabulary
 // that grew a value this build predates.
 const (
-	reviewPending  = "PENDING"
-	reviewRejected = "REJECTED"
-	reviewRevoked  = "REVOKED"
-	reviewExecuted = "EXECUTED"
-	reviewExpired  = "EXPIRED"
+	reviewPending    = "PENDING"
+	reviewApproved   = "APPROVED"
+	reviewRejected   = "REJECTED"
+	reviewRevoked    = "REVOKED"
+	reviewExecuted   = "EXECUTED"
+	reviewExpired    = "EXPIRED"
+	reviewProcessing = "PROCESSING"
 )
 
 // ReviewMode decides what a PENDING review does to its statement.
@@ -76,16 +78,38 @@ func (m ReviewMode) Valid() bool {
 // moves.
 const HeaderReviewMode = "x-hoop-review-mode"
 
+// HeaderApprovalMode is HeaderReviewMode under the product's name for the
+// concept. A client may send either. Both sent and different is no request at
+// all: see clientMode.
+const HeaderApprovalMode = "x-hoop-approval-mode"
+
+// ClientModeHeaders are the header names a client opts in with, in both
+// spellings. A lane that captures one captures both.
+func ClientModeHeaders() []string {
+	return []string{HeaderReviewMode, HeaderApprovalMode}
+}
+
+// IsClientModeHeader reports whether name, lower-cased, is one of
+// ClientModeHeaders.
+func IsClientModeHeader(name string) bool {
+	return name == HeaderReviewMode || name == HeaderApprovalMode
+}
+
 // ConnectAttrReviewMode is the same opt-in for a MySQL connection: a
 // connection attribute in the handshake, since MySQL has no per-statement
 // header. It applies to every statement on the connection. sidecar/codec/mysql
 // keeps it on every MySQL lane.
 const ConnectAttrReviewMode = "hoop_review_mode"
 
-// applicationNameToken is how a SQL client picks its review mode: the token,
-// then hold or return, at the end of its application_name. At the end, so a
-// client keeps its own name in front of it.
-const applicationNameToken = "hoop-review="
+// ConnectAttrApprovalMode is ConnectAttrReviewMode under the product's name.
+// sidecar/codec/mysql keeps both.
+const ConnectAttrApprovalMode = "hoop_approval_mode"
+
+// applicationNameTokens are how a SQL client picks its approval mode: a
+// token, then hold or return, at the end of its application_name. At the
+// end, so a client keeps its own name in front of it. Two spellings, the
+// product's name first.
+var applicationNameTokens = [...]string{"hoop-approval=", "hoop-review="}
 
 // ApplicationNameReviewMode reads the mode a Postgres client asked for in its
 // application_name, or "" when it asked for none.
@@ -93,17 +117,53 @@ const applicationNameToken = "hoop-review="
 // The token is the whole value, or follows a space or ";". A name that only
 // contains the token inside a word, like "xhoop-review=return", is the
 // client's own name and not a request.
+//
+// A name that carries both spellings asks for nothing. Only one of them can
+// be at the end, so the two can never agree, and a mode picked from a name
+// that says two things is a guess.
 func ApplicationNameReviewMode(name string) ReviewMode {
 	name = strings.ToLower(strings.TrimSpace(name))
-	i := strings.LastIndex(name, applicationNameToken)
-	if i < 0 || (i > 0 && !strings.ContainsRune(" ;", rune(name[i-1]))) {
+	var found []string
+	for _, token := range applicationNameTokens {
+		i := strings.LastIndex(name, token)
+		if i < 0 || (i > 0 && !strings.ContainsRune(" ;", rune(name[i-1]))) {
+			continue
+		}
+		found = append(found, name[i+len(token):])
+	}
+	if len(found) != 1 {
 		return ""
 	}
-	switch m := ReviewMode(name[i+len(applicationNameToken):]); m {
+	switch m := ReviewMode(found[0]); m {
 	case ReviewHold, ReviewReturn:
 		return m
 	}
 	return ""
+}
+
+// clientMode resolves what a client asked for across the spellings of one
+// opt-in, the header or the connection attribute. Values are trimmed and
+// lower-cased; an empty one was not sent.
+//
+// Every value sent must be hold or return, and all of them must agree.
+// Anything else is no request, and the listener decides: the same answer a
+// single unknown value gets, so a client that says two things cannot pick
+// the one it likes better.
+func clientMode(values ...string) (ReviewMode, bool) {
+	var out ReviewMode
+	for _, v := range values {
+		m := ReviewMode(strings.ToLower(strings.TrimSpace(v)))
+		switch {
+		case m == "":
+			continue
+		case m != ReviewHold && m != ReviewReturn:
+			return "", false
+		case out != "" && out != m:
+			return "", false
+		}
+		out = m
+	}
+	return out, out != ""
 }
 
 type clientReviewModeKey struct{}
@@ -130,15 +190,17 @@ const (
 // A client value outside hold and return falls back to the listener: a typo
 // must not turn an agent's call into one that waits for a human.
 func (e *Evaluator) reviewMode(ctx context.Context, stmt inspect.Statement) (ReviewMode, string) {
-	var asked string
+	var asked []string
 	switch {
 	case stmt.HTTP != nil:
-		asked = stmt.HTTP.Headers[HeaderReviewMode]
+		asked = []string{stmt.HTTP.Headers[HeaderApprovalMode], stmt.HTTP.Headers[HeaderReviewMode]}
 	case stmt.Protocol == inspect.MySQL:
-		asked = stmt.Metadata[inspect.MetadataMySQLConnectAttrPrefix+ConnectAttrReviewMode]
+		asked = []string{
+			stmt.Metadata[inspect.MetadataMySQLConnectAttrPrefix+ConnectAttrApprovalMode],
+			stmt.Metadata[inspect.MetadataMySQLConnectAttrPrefix+ConnectAttrReviewMode],
+		}
 	}
-	switch m := ReviewMode(strings.ToLower(strings.TrimSpace(asked))); m {
-	case ReviewHold, ReviewReturn:
+	if m, ok := clientMode(asked...); ok {
 		return m, reviewModeClient
 	}
 	if m, ok := ctx.Value(clientReviewModeKey{}).(ReviewMode); ok {
@@ -179,6 +241,15 @@ type Reviewer interface {
 	// Claim answers about one review by id, spending it when it is
 	// approved. It never files.
 	Claim(ctx context.Context, reviewID string) (ReviewResult, error)
+}
+
+// Settler is a Reviewer whose release can be a reservation: the backend
+// answers PROCESSING with Forward, and the approval is spent only once the
+// upstream's answer is reported (spend_approval_on: accepted). The gate
+// reports that answer; hold calls Settle only to give an approval back when
+// the connection ended before the statement could run.
+type Settler interface {
+	Settle(ctx context.Context, reviewID string, accepted bool) error
 }
 
 // HoldDetail is the verdict that put a statement on hold: what the analyzer
@@ -272,12 +343,12 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		// other lane reaching here has no way to file, and a hold that
 		// cannot file has to deny. It never waits: a rehearsal must not
 		// stall on a human.
-		return e.denyHold(notes, "", "", "no review backend is configured")
+		return e.denyHold(notes, "", "", "no approval backend is configured")
 	}
 	if err := ctx.Err(); err != nil {
 		// Gone before anything was filed: paging a human for a statement
 		// that can no longer run is noise.
-		return e.denyEnded(ctx, notes, "", "", "the connection ended before the review was filed")
+		return e.denyEnded(ctx, notes, "", "", "the connection ended before the approval request was filed")
 	}
 
 	text, ignored, err := reviewText(stmt, e.cfg.MatchIgnore)
@@ -292,7 +363,7 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	})
 	if err != nil {
 		e.errs.Add(1)
-		v := e.denyHold(notes, res.ID, res.Status, "the review could not be filed")
+		v := e.denyHold(notes, res.ID, res.Status, "the approval request could not be filed")
 		v.Err = err
 		return v
 	}
@@ -300,15 +371,18 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		notes[MetadataReviewID] = res.ID
 	}
 	if res.Forward {
-		return e.release(ctx, notes, res.ID)
+		return e.release(ctx, notes, res)
 	}
-	if res.Status != reviewPending || res.ID == "" {
-		return e.denyHold(notes, res.ID, res.Status, reviewReason(res.Status))
-	}
-	if mode == ReviewReturn {
+	switch {
+	case res.ID == "":
+	case res.Status == reviewPending && mode == ReviewReturn:
 		return e.denyReturn(notes, res.ID)
+	case res.Status == reviewPending, res.Status == reviewProcessing && mode == ReviewHold:
+		// PROCESSING: another request holds the approval while its upstream
+		// answers. Waiting is worth it, since a refusal gives it back.
+		return e.wait(ctx, res.ID, notes)
 	}
-	return e.wait(ctx, res.ID, notes)
+	return e.denyHold(notes, res.ID, res.Status, reviewReason(res.Status))
 }
 
 // reviewText renders the bytes the backend files and matches an approval
@@ -333,7 +407,7 @@ func reviewText(stmt inspect.Statement, ignore []MatchIgnore) (string, int, erro
 			budget = "grpc.max_payload_bytes"
 		}
 		return "", 0, fmt.Errorf("the request body is larger than %s, "+
-			"so a reviewer could not read all of it", budget)
+			"so an approver could not read all of it", budget)
 	}
 	if stmt.Protocol != inspect.HTTP || stmt.HTTP.Body == "" {
 		return stmt.Text, 0, nil
@@ -372,14 +446,14 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 		})
 		if err != nil {
 			e.errs.Add(1)
-			v := e.denyHold(notes, reviewID, "", "the review could not be checked")
+			v := e.denyHold(notes, reviewID, "", "the approval request could not be checked")
 			v.Err = err
 			return v
 		}
 		if res.Forward {
-			return e.release(ctx, notes, reviewID)
+			return e.release(ctx, notes, res)
 		}
-		if res.Status != reviewPending {
+		if res.Status != reviewPending && res.Status != reviewProcessing {
 			return e.denyHold(notes, reviewID, res.Status, reviewReason(res.Status))
 		}
 
@@ -406,18 +480,45 @@ func (e *Evaluator) ask(ctx context.Context, call func(context.Context) (ReviewR
 	return call(callCtx)
 }
 
-// release forwards a statement whose approval the backend just spent, unless
-// the connection ended while the claim was in flight. The approval is gone
-// either way; the record says so, and names the review that was spent.
-func (e *Evaluator) release(ctx context.Context, notes map[string]string, reviewID string) policy.Verdict {
+// release forwards a statement whose approval the backend just spent or
+// reserved, unless the connection ended while the claim was in flight. A
+// spent approval is gone either way; the record says so, and names the
+// review that was spent. A reserved one is given back, since nothing ran.
+func (e *Evaluator) release(ctx context.Context, notes map[string]string, res ReviewResult) policy.Verdict {
+	reserved := res.Status == reviewProcessing
 	if ctx.Err() != nil {
-		return e.denyEnded(ctx, notes, reviewID, reviewExecuted,
+		if reserved && e.giveBack(ctx, res.ID) {
+			return e.denyEnded(ctx, notes, res.ID, reviewApproved,
+				"the connection ended before the statement could run, and the approval was given back")
+		}
+		return e.denyEnded(ctx, notes, res.ID, reviewExecuted,
 			"the approval was used, but the connection ended before the statement could run")
 	}
 	// The backend consumed an approved review for these exact bytes, which
 	// it does once. The statement travels, and the audit record carries the
 	// review that released it.
-	return policy.Verdict{Annotations: notes}
+	v := policy.Verdict{Annotations: notes}
+	if reserved {
+		v.Review = &policy.Review{ID: res.ID, Status: res.Status, Reserved: true}
+	}
+	return v
+}
+
+// giveBack reports a reserved approval's statement as refused, so the
+// approval returns to APPROVED. False when the backend cannot settle or the
+// call failed: the plane then spends it when the reservation's lease ends.
+func (e *Evaluator) giveBack(ctx context.Context, reviewID string) bool {
+	s, ok := e.cfg.Review.(Settler)
+	if !ok {
+		return false
+	}
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.cfg.Timeout)
+	defer cancel()
+	if err := s.Settle(callCtx, reviewID, false); err != nil {
+		e.errs.Add(1)
+		return false
+	}
+	return true
 }
 
 // denyEnded refuses a statement whose connection ended during the hold. The
@@ -466,7 +567,7 @@ func (e *Evaluator) denyReturn(notes map[string]string, reviewID string) policy.
 	if e.cfg.ReturnNext == "" {
 		v = e.denyHold(notes, reviewID, reviewPending, returnReason)
 	} else {
-		v = e.deny(notes, fmt.Sprintf("review %s: %s; %s, then %s (%s)",
+		v = e.deny(notes, fmt.Sprintf("approval %s: %s; %s, then %s (%s)",
 			reviewID, returnWaiting, e.cfg.ReturnNext, returnResend, operatorMessage(e.cfg.Message)))
 	}
 	v.Review = &policy.Review{ID: reviewID, Status: reviewPending, Return: true}
@@ -484,7 +585,7 @@ func holdMessage(operator, reviewID, reason string) string {
 	if reviewID == "" {
 		return msg + ": " + reason
 	}
-	return fmt.Sprintf("%s: %s (review %s)", msg, reason, reviewID)
+	return fmt.Sprintf("%s: %s (approval %s)", msg, reason, reviewID)
 }
 
 // operatorMessage is the operator's message, or the default when none is set.
@@ -507,16 +608,20 @@ func reviewReason(status string) string {
 	case reviewPending:
 		return "waiting for approval"
 	case reviewRejected:
-		return "the review was rejected"
+		return "the approval request was rejected"
 	case reviewRevoked:
-		return "the review was revoked"
+		return "the approval was revoked"
 	case reviewExecuted:
 		// Reached by the loser of a claim race: another connection
 		// consumed this approval a moment ago. An approval releases one
 		// statement once, so this one needs a new review.
 		return "the approval was already used"
 	case reviewExpired:
-		return "the review expired; running the statement again files a new review"
+		return "the approval request expired; running the statement again files a new approval request"
+	case reviewProcessing:
+		// Return mode only: a hold waits on it. The other request's
+		// answer decides whether the approval is spent or given back.
+		return "another request is using this approval; check the approval request before resending"
 	}
 	return "the statement was not released"
 }

@@ -75,7 +75,7 @@ func Get(c *gin.Context) {
 //	@Produce		json
 //	@Param			request			body		openapi.ProxyManagerRequest	true	"The request body resource"
 //	@Success		200				{object}	openapi.ProxyManagerResponse
-//	@Header			200				{string}	Location	"It will contain the url of the review in case the connection resource has the review enabled"
+//	@Header			200				{string}	Location	"It will contain the url of the approval request in case the connection resource requires approval"
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/proxymanager/connect [post]
 func Post(c *gin.Context) {

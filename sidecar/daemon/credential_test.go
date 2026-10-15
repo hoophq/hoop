@@ -538,7 +538,7 @@ func TestReviewRequestsPresentTheIdentity(t *testing.T) {
 	writeTokenFile(t, path, jwt)
 	cp := &controlPlane{url: srv.URL, cred: tokenFileCredential{path: path}}
 
-	if _, err := cp.reviewer("payments", "approvers").File(context.Background(), "DELETE FROM t"); err != nil {
+	if _, err := cp.reviewer("payments", "approvers", false, nil).File(context.Background(), "DELETE FROM t"); err != nil {
 		t.Fatalf("File: %v", err)
 	}
 	if got := calls(); len(got) != 1 || got[0].identity != jwt || got[0].token != "" {
@@ -553,7 +553,7 @@ func TestARejectedIdentityOnAReviewNamesTheSubject(t *testing.T) {
 	writeTokenFile(t, path, k8sJWT(t, "system:serviceaccount:ws-2:hoop-sidecar", time.Now().Add(time.Hour)))
 	cp := &controlPlane{url: srv.URL, cred: tokenFileCredential{path: path}}
 
-	_, err := cp.reviewer("payments", "approvers").File(context.Background(), "DELETE FROM t")
+	_, err := cp.reviewer("payments", "approvers", false, nil).File(context.Background(), "DELETE FROM t")
 	if err == nil {
 		t.Fatal("a rejected review was accepted")
 	}

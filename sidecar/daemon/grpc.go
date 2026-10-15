@@ -217,16 +217,16 @@ func isGRPCTransport(lc ListenerConfig) bool {
 const grpcPermissionDenied = 7
 
 // grpcMetadataAllowlist is the lower-cased metadata a grpc lane exposes to
-// policy and audit. A lane that holds adds analyzer.HeaderReviewMode, the same
+// policy and audit. A lane that holds adds analyzer.ClientModeHeaders, the same
 // opt-in as an http lane. The analyzer block swaps on a reload, so the lane
 // builds both lists and picks one per RPC from its live rules.
 func grpcMetadataAllowlist(gc GRPCCodecConfig, holds bool) []string {
-	out := make([]string, 0, len(gc.Metadata)+1)
+	out := make([]string, 0, len(gc.Metadata)+2)
 	for _, name := range gc.Metadata {
 		out = append(out, strings.ToLower(strings.TrimSpace(name)))
 	}
 	if holds {
-		out = append(out, analyzer.HeaderReviewMode)
+		out = append(out, analyzer.ClientModeHeaders()...)
 	}
 	return out
 }
@@ -234,10 +234,14 @@ func grpcMetadataAllowlist(gc GRPCCodecConfig, holds bool) []string {
 // buildGRPCServer resolves one grpc lane's transport facts and builds the
 // reusable libhoop endpoint with sidecar-owned RPC callbacks. The returned
 // liveRules is the lane's reload target: every RPC reads its rules there.
+//
+// settle reports the upstream's answer to a statement a reserved approval
+// released; nil in a process with no control plane.
 func buildGRPCServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
+	settle gate.SettleFunc,
 	log *slog.Logger,
 ) (GRPCServer, *liveRules, error) {
 	lc := ln.cfg
@@ -351,6 +355,7 @@ func buildGRPCServer(
 			Masker:           live.masker,
 			FailOnAuditError: failOnAuditError,
 			Metrics:          ln.metrics,
+			Settle:           settle,
 		})
 		if err != nil {
 			// No handler, so libhoop calls no Close: release here.

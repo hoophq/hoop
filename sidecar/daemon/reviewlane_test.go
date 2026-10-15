@@ -79,12 +79,18 @@ func TestTheReviewStatusPathAnswersFromThePlane(t *testing.T) {
 		passThru bool
 	}{
 		{name: "pending", reviews: pendingReviews(), stmt: httpRequest("GET", statusPath), code: 200},
+		{name: "pending under approvals", reviews: pendingReviews(),
+			stmt: httpRequest("GET", ApprovalStatusPath+laneReviewID), code: 200},
 		{name: "head", reviews: pendingReviews(), stmt: httpRequest("HEAD", statusPath), code: 200},
 		{name: "unknown id", reviews: pendingReviews(),
-			stmt: httpRequest("GET", ReviewStatusPath+"9f97"), code: 404, message: "review not found"},
+			stmt: httpRequest("GET", ReviewStatusPath+"9f97"), code: 404, message: "approval not found"},
+		{name: "unknown id under approvals", reviews: pendingReviews(),
+			stmt: httpRequest("GET", ApprovalStatusPath+"9f97"), code: 404, message: "approval not found"},
+		{name: "no id under approvals", reviews: pendingReviews(),
+			stmt: httpRequest("GET", ApprovalStatusPath), code: 404, message: "not found"},
 		{name: "another lane's review", reviews: fakeReviews{rev: ReviewStatus{ID: laneReviewID,
 			Status: "PENDING", ListenerName: "billing"}},
-			stmt: httpRequest("GET", statusPath), code: 404, message: "review not found"},
+			stmt: httpRequest("GET", statusPath), code: 404, message: "approval not found"},
 		{name: "unrenderable plane answer", reviews: fakeReviews{rev: ReviewStatus{ID: laneReviewID,
 			Status: "PENDING", ListenerName: "api", CreatedAt: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)}},
 			stmt: httpRequest("GET", statusPath), code: 500, message: "could not be read"},
@@ -176,7 +182,7 @@ func TestAnHTTPLaneServesReviewStatus(t *testing.T) {
 
 	ln := lane{name: "api", cfg: ListenerConfig{Name: "api", Protocol: "http",
 		Listen: "127.0.0.1:0", Upstream: upstream.Addr().String()}}
-	srv, err := buildServer(ln, AuditConfig{}, nil, pendingReviews(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv, err := buildServer(ln, AuditConfig{}, nil, pendingReviews(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("buildServer: %v", err)
 	}

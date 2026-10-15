@@ -626,7 +626,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 		// — what it admits, where it will carry a forward, the account it
 		// will run as — come from.
 		if isGRPCTransport(ln.cfg) {
-			srv, _, err := buildGRPCServer(ln, cfg.Audit, nil, validationLog)
+			srv, _, err := buildGRPCServer(ln, cfg.Audit, nil, nil, validationLog)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ln.name, err)
 			}
@@ -963,7 +963,7 @@ func Run(cfg *Config, det Plugin) error {
 	for _, ln := range lanes {
 		switch {
 		case isGRPCTransport(ln.cfg):
-			gsrv, rules, serr := buildGRPCServer(ln, cfg.Audit, auditSink, log)
+			gsrv, rules, serr := buildGRPCServer(ln, cfg.Audit, auditSink, cfg.reviewSettler(log), log)
 			if serr != nil {
 				return serr
 			}
@@ -981,7 +981,7 @@ func Run(cfg *Config, det Plugin) error {
 			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
 			swappers[ln.name] = rules
 		default:
-			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), log)
+			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), cfg.reviewSettler(log), log)
 			if serr != nil {
 				return serr
 			}
@@ -1388,7 +1388,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		// nobody filed cannot be approved later either.
 		if gc.observing() && analyzerHolds(lc.Analyzer) {
 			ln.notes = append(ln.notes,
-				"observe mode files no review: a held statement is recorded as "+
+				"observe mode files no approval request: a held statement is recorded as "+
 					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
@@ -1397,7 +1397,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
 			ln.notes = append(ln.notes, fmt.Sprintf(
 				"idle_timeout_sec %d ends a held statement's wait before the %s "+
-					"review wait does", lc.IdleTimeoutSec, analyzer.ReviewWait))
+					"approval wait does", lc.IdleTimeoutSec, analyzer.ReviewWait))
 		}
 		if !opa.enabled() && (anyDeferred(gc.Rules) || analyzerDefers(lc.Analyzer)) {
 			ln.notes = append(ln.notes,
@@ -1488,13 +1488,15 @@ func checkPIIEntities(rules []policy.Rule, det Plugin) []string {
 
 // buildServer turns one resolved lane into a running-capable Server.
 //
-// reviews answers the reserved review status path on an http lane; nil in a
-// process with no control plane.
+// reviews answers the reserved review status path on an http lane, and settle
+// reports the upstream's answer to a reserved approval there; both are nil in
+// a process with no control plane.
 func buildServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
 	reviews ReviewStatusReader,
+	settle gate.SettleFunc,
 	log *slog.Logger,
 ) (*proxy.Server, error) {
 	lc := ln.cfg
@@ -1556,6 +1558,7 @@ func buildServer(
 		FailOnAuditError:    ac.failOnAuditError(),
 		DenyWriter:          proxy.ProtocolDenyWriter{},
 		Answer:              reviewStatusAnswer(lc, ln.name, reviews, log.With("listener", ln.name)),
+		Settle:              settle,
 		CredentialHeader:    lc.credentialHeader(),
 		RequestIdentity:     requestIdentity,
 		CodecFactory:        ln.codecFactory,

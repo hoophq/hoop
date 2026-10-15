@@ -65,7 +65,7 @@ func TestApprovalsSectionPointsAtTheControlPlane(t *testing.T) {
 	out := ansi.Strip(m.render())
 	flat := strings.Join(strings.Fields(out), " ")
 	for _, want := range []string{"Approvals are managed by the control plane", "cp.example.com",
-		"this terminal cannot decide them", "https://cp.example.com/reviews"} {
+		"this terminal cannot decide them", "APPROVALS FOR THIS SIDECAR", "https://cp.example.com/reviews"} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("the section lacks %q:\n%s", want, out)
 		}

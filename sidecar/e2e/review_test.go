@@ -272,7 +272,7 @@ func callReviewTool(t *testing.T, cs *sdk.ClientSession, tool string, args map[s
 	return out
 }
 
-var reviewIDInDeny = regexp.MustCompile(`^.*review ([0-9a-f-]{36}): `)
+var reviewIDInDeny = regexp.MustCompile(`^.*approval ([0-9a-f-]{36}): `)
 
 // deniedReviewID asserts a return-mode deny and returns its review id.
 func deniedReviewID(t *testing.T, err error) string {
@@ -281,8 +281,8 @@ func deniedReviewID(t *testing.T, err error) string {
 		t.Fatal("the statement ran; want a return-mode deny")
 	}
 	m := reviewIDInDeny.FindStringSubmatch(err.Error())
-	if m == nil || !strings.Contains(err.Error(), "call the MCP tool review_wait") {
-		t.Fatalf("deny %q does not carry a review id and the review_wait clause", err)
+	if m == nil || !strings.Contains(err.Error(), "call the MCP tool approval_wait") {
+		t.Fatalf("deny %q does not carry an approval id and the approval_wait clause", err)
 	}
 	return m[1]
 }
@@ -333,9 +333,9 @@ func TestAgentFlowFromHeldStatementToApprovedRetry(t *testing.T) {
 	}
 
 	plane.approve(first)
-	approved := callReviewTool(t, cs, "review_wait", map[string]any{"id": first})
+	approved := callReviewTool(t, cs, "approval_wait", map[string]any{"id": first})
 	if approved.Status != "APPROVED" || approved.Next != "resend_identical_statement" {
-		t.Fatalf("review_wait after approval = %+v, want APPROVED, next=resend_identical_statement", approved)
+		t.Fatalf("approval_wait after approval = %+v, want APPROVED, next=resend_identical_statement", approved)
 	}
 
 	if _, err := agent.Exec(agentStmt); err != nil {

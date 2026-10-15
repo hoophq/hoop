@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"gorm.io/gorm"
 )
@@ -100,7 +101,7 @@ func AnalyzerRuleHolds(spec json.RawMessage) bool {
 		return false
 	}
 	for _, action := range []string{block.HighRisk, block.MediumRisk, block.LowRisk} {
-		if action == string(analyzerReviewAction) {
+		if holdsAction(action) {
 			return true
 		}
 	}
@@ -117,8 +118,12 @@ func specApprovalRule(spec json.RawMessage) string {
 	return block.ApprovalRule
 }
 
-// analyzerReviewAction is the daemon's own spelling, quoted once.
-const analyzerReviewAction = "require_review"
+// holdsAction reports whether a risk level's action holds the statement for
+// a human, in either spelling: require_review, or require_approval, which the
+// daemon folds onto it.
+func holdsAction(action string) bool {
+	return analyzer.Action(action).Canonical() == analyzer.ActionRequireReview
+}
 
 // SyncAnalyzerApprovalRule makes the approval rule match what the analyzer rule
 // now asks for: present while the rule holds, gone once it stops.

@@ -123,8 +123,43 @@ func TestAClientListsBothTools(t *testing.T) {
 			t.Errorf("%s is not marked read-only", tool.Name)
 		}
 	}
-	if strings.Join(names, ",") != "review_list,review_status,review_wait" {
-		t.Errorf("tools %v, want review_list, review_status and review_wait", names)
+	if strings.Join(names, ",") != "approval_list,approval_status,approval_wait,review_list,review_status,review_wait" {
+		t.Errorf("tools %v, want the approval_* tools and their review_* aliases", names)
+	}
+}
+
+// The review_* names are aliases: each says so, and answers as its approval_*
+// counterpart does.
+func TestTheReviewToolsAreAliasesOfTheApprovalTools(t *testing.T) {
+	cs, _ := connect(t, &fakeReviews{statuses: []string{statusPending}})
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desc := map[string]string{}
+	for _, tool := range res.Tools {
+		desc[tool.Name] = tool.Description
+	}
+	for alias, name := range map[string]string{
+		"review_status": "approval_status", "review_list": "approval_list", "review_wait": "approval_wait",
+	} {
+		if !strings.HasPrefix(desc[alias], "Alias of "+name+".") {
+			t.Errorf("%s description %q does not say it is an alias of %s", alias, desc[alias], name)
+		}
+		if strings.Contains(desc[name], "Alias") {
+			t.Errorf("%s description %q calls itself an alias", name, desc[name])
+		}
+	}
+
+	for _, pair := range [][2]string{{"approval_status", "review_status"}, {"approval_wait", "review_wait"}} {
+		var outs [2]reviewOutput
+		for i, name := range pair {
+			cs, _ := connect(t, &fakeReviews{statuses: []string{statusRejected}})
+			outs[i], _ = call(t, cs, &sdk.CallToolParams{Name: name, Arguments: map[string]any{"id": "r1"}})
+		}
+		if outs[0].Status != outs[1].Status || outs[0].Instruction != outs[1].Instruction {
+			t.Errorf("%s answered %+v, %s answered %+v", pair[0], outs[0], pair[1], outs[1])
+		}
 	}
 }
 
@@ -133,16 +168,19 @@ func TestAnAgentFollowsOneReviewFromPendingToApproved(t *testing.T) {
 	reviews := &fakeReviews{statuses: []string{statusPending, statusPending, statusPending, statusApproved}}
 	cs, progress := connect(t, reviews)
 
-	out, _ := call(t, cs, &sdk.CallToolParams{Name: "review_status", Arguments: map[string]any{"id": "r1"}})
+	out, _ := call(t, cs, &sdk.CallToolParams{Name: "approval_status", Arguments: map[string]any{"id": "r1"}})
 	if out.Status != statusPending || out.Next != daemon.ReviewNextWait {
-		t.Fatalf("review_status answered %+v", out)
+		t.Fatalf("approval_status answered %+v", out)
+	}
+	if !strings.Contains(out.Instruction, "approval_wait") {
+		t.Errorf("instruction %q does not name approval_wait", out.Instruction)
 	}
 
-	params := &sdk.CallToolParams{Name: "review_wait", Arguments: map[string]any{"id": "r1"}}
+	params := &sdk.CallToolParams{Name: "approval_wait", Arguments: map[string]any{"id": "r1"}}
 	params.SetProgressToken("p1")
 	out, _ = call(t, cs, params)
 	if out.Status != statusApproved || out.Next != daemon.ReviewNextResend {
-		t.Fatalf("review_wait answered %+v", out)
+		t.Fatalf("approval_wait answered %+v", out)
 	}
 	if out.TimedOut == nil || *out.TimedOut {
 		t.Errorf("a decided wait reported timed_out=%v", out.TimedOut)
@@ -181,7 +219,7 @@ func TestAMissingReviewAndAnOldPlaneReadDifferently(t *testing.T) {
 		{daemon.ErrReviewNotFound, "not found on this sidecar"},
 		{daemon.ErrPlaneTooOld, "older than this sidecar"},
 	} {
-		for _, tool := range []string{"review_status", "review_wait"} {
+		for _, tool := range []string{"approval_status", "approval_wait", "review_status", "review_wait"} {
 			cs, _ := connect(t, &fakeReviews{err: tc.err})
 			_, res := call(t, cs, &sdk.CallToolParams{Name: tool, Arguments: map[string]any{"id": "r1"}})
 			if !res.IsError || !strings.Contains(errorText(res), tc.want) {
@@ -193,14 +231,15 @@ func TestAMissingReviewAndAnOldPlaneReadDifferently(t *testing.T) {
 
 func TestEveryStatusSaysWhatToDoNext(t *testing.T) {
 	for status, next := range map[string]string{
-		statusPending:  daemon.ReviewNextWait,
-		statusApproved: daemon.ReviewNextResend,
-		statusRejected: daemon.ReviewNextStop,
-		statusRevoked:  daemon.ReviewNextStop,
-		statusExecuted: daemon.ReviewNextStop,
-		statusExpired:  daemon.ReviewNextStop,
-		"PROCESSING":   daemon.ReviewNextStop,
-		"":             daemon.ReviewNextStop,
+		statusPending:    daemon.ReviewNextWait,
+		statusApproved:   daemon.ReviewNextResend,
+		statusRejected:   daemon.ReviewNextStop,
+		statusRevoked:    daemon.ReviewNextStop,
+		statusExecuted:   daemon.ReviewNextStop,
+		statusExpired:    daemon.ReviewNextStop,
+		statusProcessing: daemon.ReviewNextWait,
+		"UNKNOWN":        daemon.ReviewNextStop,
+		"":               daemon.ReviewNextStop,
 	} {
 		out := describe(daemon.ReviewStatus{Status: status})
 		if out.Next != next || out.Instruction == "" {
@@ -210,6 +249,21 @@ func TestEveryStatusSaysWhatToDoNext(t *testing.T) {
 	out := describe(daemon.ReviewStatus{Status: statusRejected, RejectionReason: "not in business hours"})
 	if !strings.Contains(out.Instruction, "not in business hours") {
 		t.Errorf("the rejection reason is missing from %q", out.Instruction)
+	}
+}
+
+// An approval a resent statement is using comes back when the upstream
+// refuses it, so the wait goes on through PROCESSING.
+func TestAWaitOutlastsAnApprovalInUse(t *testing.T) {
+	reviews := &fakeReviews{statuses: []string{statusProcessing, statusApproved}}
+	cs, _ := connect(t, reviews)
+	out, res := call(t, cs, &sdk.CallToolParams{Name: "review_wait",
+		Arguments: map[string]any{"id": "r1", "timeout_seconds": 5}})
+	if res.IsError {
+		t.Fatalf("review_wait failed: %s", errorText(res))
+	}
+	if out.Status != statusApproved || out.Next != daemon.ReviewNextResend {
+		t.Fatalf("review_wait answered %+v, want APPROVED after PROCESSING", out)
 	}
 }
 
@@ -369,11 +423,32 @@ func TestAnAgentListsTheSidecarsReviews(t *testing.T) {
 	}
 }
 
-// A plane without the list route sends the agent back to review_status.
-func TestReviewListOnAnOldPlanePointsAtReviewStatus(t *testing.T) {
-	cs, _ := connect(t, &fakeReviews{err: daemon.ErrPlaneTooOld})
-	_, res := call(t, cs, &sdk.CallToolParams{Name: "review_list"})
-	if !res.IsError || !strings.Contains(errorText(res), "review_status") {
-		t.Errorf("result %s, want an error naming review_status", errorText(res))
+// A plane without the list route sends the agent back to the status tool of
+// the family it called: an agent allowed only review_* cannot call
+// approval_status.
+func TestAListOnAnOldPlanePointsAtItsOwnStatusTool(t *testing.T) {
+	for list, status := range map[string]string{"review_list": "review_status", "approval_list": "approval_status"} {
+		cs, _ := connect(t, &fakeReviews{err: daemon.ErrPlaneTooOld})
+		_, res := call(t, cs, &sdk.CallToolParams{Name: list})
+		if text := errorText(res); !res.IsError || !strings.Contains(text, status) {
+			t.Errorf("%s: result %s, want an error naming %s", list, text, status)
+		}
+	}
+}
+
+// A pending answer names the wait tool of the family the agent called.
+func TestAPendingAnswerNamesTheCallersWaitTool(t *testing.T) {
+	for tool, want := range map[string]struct{ wait, not string }{
+		"review_status":   {"review_wait", "approval_wait"},
+		"approval_status": {"approval_wait", "review_wait"},
+	} {
+		cs, _ := connect(t, &fakeReviews{statuses: []string{statusPending}})
+		out, res := call(t, cs, &sdk.CallToolParams{Name: tool, Arguments: map[string]any{"id": "rv_1"}})
+		if res.IsError {
+			t.Fatalf("%s: %s", tool, errorText(res))
+		}
+		if !strings.Contains(out.Instruction, want.wait) || strings.Contains(out.Instruction, want.not) {
+			t.Errorf("%s: instruction %q, want %s and not %s", tool, out.Instruction, want.wait, want.not)
+		}
 	}
 }

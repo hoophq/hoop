@@ -3,6 +3,7 @@ package apisidecar
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,13 +39,27 @@ func putReview(t *testing.T, reviewID, body string, groups []string) *httptest.R
 	return rec
 }
 
+// claimSidecarReview claims with no body, as a sidecar that does not
+// reserve does.
 func claimSidecarReview(sc *models.Sidecar, reviewID string) *httptest.ResponseRecorder {
+	return claimWithBody(sc, reviewID, "")
+}
+
+// claimWithBody claims with body as the JSON request body; "" sends none.
+func claimWithBody(sc *models.Sidecar, reviewID, body string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Set("sidecar-auth", sc)
 	c.Params = gin.Params{{Key: "id", Value: reviewID}}
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews/"+reviewID+"/claim", nil)
+	var r io.Reader
+	if body != "" {
+		r = strings.NewReader(body)
+	}
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews/"+reviewID+"/claim", r)
+	if body != "" {
+		c.Request.Header.Set("Content-Type", "application/json")
+	}
 	ClaimReview(c)
 	return rec
 }
@@ -109,7 +124,7 @@ func TestPutReviewOnASidecarReview(t *testing.T) {
 
 			rec := putReview(t, rev.ID, `{"status":"revoked"}`, []string{types.GroupAdmin})
 			assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-			assert.JSONEq(t, `{"message":"review is in wrong state"}`, rec.Body.String())
+			assert.JSONEq(t, `{"message":"approval request is in wrong state"}`, rec.Body.String())
 			assert.JSONEq(t, before, reviewSnapshot(t, rev))
 		})
 	}
@@ -175,7 +190,7 @@ func TestPutReviewOnASidecarReview(t *testing.T) {
 		rec := putReview(t, rev.ID, `{"status":"revoked"}`, []string{types.GroupAdmin})
 		require.True(t, fired, "the claim did not run between the read and the write")
 		assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-		assert.JSONEq(t, `{"message":"review is in wrong state"}`, rec.Body.String())
+		assert.JSONEq(t, `{"message":"approval request is in wrong state"}`, rec.Body.String())
 
 		got, err := models.GetSidecarReview(models.DB, statusTestOrgID, sc.ID, rev.ID)
 		require.NoError(t, err)

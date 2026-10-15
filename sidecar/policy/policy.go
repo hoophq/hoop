@@ -79,8 +79,9 @@ type Verdict struct {
 
 	// Review is set on a denial that names a human review, so a protocol
 	// with structured fields (HTTP headers, gRPC trailers) can carry the
-	// id and status a client acts on without parsing Message. Nil on
-	// every other verdict.
+	// id and status a client acts on without parsing Message. On an allow
+	// it is set only when Review.Reserved: the gate settles that approval
+	// once the upstream answers. Nil on every other verdict.
 	Review *Review
 }
 
@@ -98,6 +99,11 @@ type Review struct {
 	// identical statement after approval, rather than held on its
 	// connection.
 	Return bool
+
+	// Reserved is true on an allow whose approval the backend reserved
+	// rather than spent: the gate reports the upstream's answer, which
+	// spends the approval or gives it back.
+	Reserved bool
 }
 
 // Allow is the zero verdict.
@@ -1244,7 +1250,7 @@ func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 		requests := ec.requests
 		ec.review, ec.requests = nil, 0
 		if requests > 1 {
-			v := Deny("review", "more than one evaluator asked for a human review "+
+			v := Deny("review", "more than one evaluator asked for human approval "+
 				"of this statement; denying")
 			v.Source = SourceReview
 			v.Err = errs

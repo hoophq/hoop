@@ -47,7 +47,7 @@ func TestMatchIgnoreIsRefused(t *testing.T) {
 		"on a lane that holds nothing": {func(c *Config) {
 			c.Listeners[0].Analyzer.HighRisk = "block"
 			c.Listeners[0].Analyzer.ApprovalRule = ""
-		}, "match_ignore decides how a held statement matches its review"},
+		}, "match_ignore decides how a held statement matches its approval request"},
 		"with an unscoped item": {func(c *Config) {
 			c.Listeners[0].Analyzer.MatchIgnore[0].Resources = nil
 		}, "match_ignore[0] names no resources"},

@@ -61,7 +61,7 @@ var riskToolSchema = ToolInputSchema{
 		},
 		"summary": {
 			Type:        "string",
-			Description: "2-4 sentence reviewer-facing impact summary of the investigation and verdict. Optional.",
+			Description: "2-4 sentence approver-facing impact summary of the investigation and verdict. Optional.",
 		},
 	},
 	Required: []string{"title", "explanation"},

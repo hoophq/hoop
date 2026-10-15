@@ -254,6 +254,11 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 			continue
 		}
 		base := *l.Analyzer
+		// Folded first, so approval_mode travels with the rule as review_mode
+		// instead of staying on the lane, where the rule merge never reads it.
+		if err := base.Canonicalize(); err != nil {
+			return nil, fmt.Errorf("listener %q: analyzer: %w", l.Name, err)
+		}
 		rule := daemon.LaneAnalyzerConfig{
 			Trigger: base.Trigger, HighRisk: base.HighRisk, MediumRisk: base.MediumRisk,
 			LowRisk: base.LowRisk, Prompt: base.Prompt, Message: base.Message,
@@ -289,7 +294,7 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 
 func holds(b daemon.LaneAnalyzerConfig) bool {
 	for _, a := range []string{b.HighRisk, b.MediumRisk, b.LowRisk} {
-		if a == analyzerReviewAction {
+		if holdsAction(a) {
 			return true
 		}
 	}

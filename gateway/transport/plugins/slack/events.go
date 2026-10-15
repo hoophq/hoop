@@ -56,7 +56,7 @@ func (p *slackPlugin) resolveApprover(ev *event) *storagev2.Context {
 		return nil
 	case err != nil:
 		log.With("sid", ev.msg.SessionID).Errorf("failed obtaining review, err=%v", err)
-		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining the review")
+		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining the approval request")
 		return nil
 	}
 	if reviewapi.IsSidecarReview(rev) {
@@ -137,7 +137,7 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 		msg = reviewRefusalMessage(err)
 		// DoReview rewrote only the tracked messages; an untracked one keeps its buttons otherwise.
 		if !tracked {
-			_ = ev.ss.UpdateMessageStatus(ev.msg, "*Review expired.* Nothing was released.")
+			_ = ev.ss.UpdateMessageStatus(ev.msg, "*Approval request expired.* Nothing was released.")
 		}
 	case nil:
 		isApproved := rev.Status == models.ReviewStatusApproved
@@ -196,13 +196,13 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 func reviewRefusalMessage(err error) string {
 	switch err {
 	case reviewapi.ErrWrongState:
-		return "The review is already approved or rejected"
+		return "The approval request is already approved or rejected"
 	case reviewapi.ErrSelfApproval:
-		return "Unable to self approval review, contact another member of you team to approve it"
+		return "You cannot approve your own request. Ask another member of your team to approve it"
 	case reviewapi.ErrNotEligible:
-		return "You're not eligible to approve/reject this review"
+		return "You cannot approve or reject this approval request"
 	case reviewapi.ErrExpired:
-		return "This review expired. Nothing was released; running the statement again files a new review."
+		return "This approval request expired. Nothing was released; running the statement again files a new approval request."
 	}
 	return err.Error()
 }

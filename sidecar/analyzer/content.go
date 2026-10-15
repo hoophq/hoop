@@ -372,7 +372,7 @@ func sortedHeaders(h map[string]string) []string {
 		// Control data, not request content. Kept out of the prompt, where a
 		// client would write free text the operator never allowlisted, and
 		// out of the cache key, so hold and return share a classification.
-		if name == HeaderReviewMode {
+		if IsClientModeHeader(name) {
 			continue
 		}
 		names = append(names, name)

@@ -51,7 +51,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	otrev, err := models.GetReviewByIdOrSid(pctx.OrgID, pctx.SID)
 	if err != nil && err != models.ErrNotFound {
 		log.With("sid", pctx.SID).Error("failed fetching session, err=%v", err)
-		return nil, plugintypes.InternalErr("failed fetching review", err)
+		return nil, plugintypes.InternalErr("failed fetching approval request", err)
 	}
 
 	if otrev != nil && otrev.Type == models.ReviewTypeOneTime {
@@ -69,7 +69,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 
 		if otrev.Status == models.ReviewStatusApproved {
 			if err := models.UpdateReviewStatus(otrev.OrgID, otrev.ID, models.ReviewStatusProcessing); err != nil {
-				return nil, plugintypes.InternalErr("failed updating approved review", err)
+				return nil, plugintypes.InternalErr("failed updating the approved request", err)
 			}
 		}
 		return nil, nil
@@ -77,7 +77,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 
 	jitr, err := models.GetApprovedReviewJit(pctx.OrgID, pctx.UserID, pctx.ConnectionID)
 	if err != nil && err != models.ErrNotFound {
-		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
+		return nil, plugintypes.InternalErr("failed listing time based approval requests", err)
 	}
 	if jitr != nil {
 		err = validateJit(jitr, time.Now().UTC())
@@ -195,7 +195,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		Infof("creating review")
 
 	if err := models.CreateReview(newRev, sessionInput); err != nil {
-		return nil, plugintypes.InternalErr("failed saving review", err)
+		return nil, plugintypes.InternalErr("failed saving approval request", err)
 	}
 
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{

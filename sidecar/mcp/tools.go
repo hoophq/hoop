@@ -11,7 +11,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// The same numbers as the gateway's reviews_wait (gateway/api/mcpserver/
+// The same numbers as the gateway's approvals_wait (gateway/api/mcpserver/
 // poll.go). MCP clients drop a tool call that blocks past 60 to 120 seconds,
 // so a wait is capped at 5 minutes and the agent calls again on timed_out.
 const (
@@ -28,7 +28,15 @@ const (
 	statusRevoked  = "REVOKED"
 	statusExecuted = "EXECUTED"
 	statusExpired  = "EXPIRED"
+	// statusProcessing is an approval a request is using while its
+	// upstream answers (spend_approval_on: accepted).
+	statusProcessing = "PROCESSING"
 )
+
+// waits reports a status review_wait keeps waiting on.
+func waits(status string) bool {
+	return status == statusPending || status == statusProcessing
+}
 
 type tools struct {
 	reviews daemon.ReviewStatusReader
@@ -49,12 +57,12 @@ func (t *tools) bound(ctx context.Context) (context.Context, context.CancelFunc)
 }
 
 type statusInput struct {
-	ID string `json:"id" jsonschema:"the review id from the sidecar's deny message"`
+	ID string `json:"id" jsonschema:"the approval id from the sidecar's deny message"`
 }
 
 type listInput struct {
-	Status string `json:"status,omitempty" jsonschema:"only reviews in this status: PENDING, APPROVED, REJECTED, REVOKED, EXECUTED or EXPIRED"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"how many of the newest reviews, default 20, max 200"`
+	Status string `json:"status,omitempty" jsonschema:"only approval requests in this status: PENDING, APPROVED, REJECTED, REVOKED, PROCESSING, EXECUTED or EXPIRED"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"how many of the newest approval requests, default 20, max 200"`
 }
 
 // listOutput wraps the list: a tool's structured output is an object.
@@ -66,7 +74,7 @@ type listOutput struct {
 const defaultListLimit = 20
 
 type waitInput struct {
-	ID             string `json:"id" jsonschema:"the review id from the sidecar's deny message"`
+	ID             string `json:"id" jsonschema:"the approval id from the sidecar's deny message"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"how long to wait, default 60, max 300"`
 }
 
@@ -82,36 +90,76 @@ type reviewOutput struct {
 	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
 	Next            string     `json:"next" jsonschema:"wait, resend_identical_statement or stop"`
 	Instruction     string     `json:"instruction"`
-	// TimedOut and WaitedSeconds are set by review_wait only.
+	// TimedOut and WaitedSeconds are set by approval_wait (and review_wait) only.
 	TimedOut      *bool `json:"timed_out,omitempty"`
 	WaitedSeconds *int  `json:"waited_seconds,omitempty"`
 }
 
+// Tool names. The approval_* names are the product's; the review_* names are
+// what they were called before the rename, kept on the same handlers because
+// agents configured against them keep calling them.
+const (
+	approvalStatusTool = "approval_status"
+	approvalListTool   = "approval_list"
+	reviewStatusTool   = "review_status"
+	reviewListTool     = "review_list"
+)
+
+// toolNames are the sibling tools an answer points an agent at. A caller of
+// review_status is told review_wait: an agent allowed only the review_* tools
+// cannot call approval_wait.
+type toolNames struct{ status, wait string }
+
+var (
+	approvalNames = toolNames{status: approvalStatusTool, wait: daemon.ApprovalWaitTool}
+	reviewNames   = toolNames{status: reviewStatusTool, wait: daemon.ReviewWaitTool}
+)
+
 func (t *tools) register(server *sdk.Server) {
 	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
-	sdk.AddTool(server, &sdk.Tool{
-		Name: "review_status",
-		Description: "Get the status of a review the sidecar filed when it held a statement for " +
-			"human approval. The result's next field says what to do: wait, " +
-			"resend_identical_statement, or stop.",
-		Annotations: readOnly,
-	}, t.status)
-	sdk.AddTool(server, &sdk.Tool{
-		Name: "review_list",
-		Description: "List the reviews this sidecar filed, newest first, across every listener. " +
-			"Each one's next field says what to do: wait, resend_identical_statement, or stop.",
-		Annotations: readOnly,
-	}, t.list)
-	sdk.AddTool(server, &sdk.Tool{
-		Name: daemon.ReviewWaitTool,
-		Description: "Wait until a review is decided or the timeout elapses (default 60s, max 300s). " +
-			"timed_out=true is not an error: call again to keep waiting. The result's next " +
-			"field says what to do: wait, resend_identical_statement, or stop.",
-		Annotations: readOnly,
-	}, t.wait)
+	const (
+		statusDesc = "Get the status of an approval request the sidecar filed when it held a " +
+			"statement for human approval. The result's next field says what to do: wait, " +
+			"resend_identical_statement, or stop."
+		listDesc = "List the approval requests this sidecar filed, newest first, across every " +
+			"listener. Each one's next field says what to do: wait, resend_identical_statement, or stop."
+		waitDesc = "Wait until an approval request is decided or the timeout elapses (default 60s, " +
+			"max 300s). timed_out=true is not an error: call again to keep waiting. The result's " +
+			"next field says what to do: wait, resend_identical_statement, or stop."
+	)
+	tool := func(name, desc string) *sdk.Tool {
+		return &sdk.Tool{Name: name, Description: desc, Annotations: readOnly}
+	}
+	alias := func(name, of, desc string) *sdk.Tool {
+		return tool(name, "Alias of "+of+". "+desc)
+	}
+	sdk.AddTool(server, tool(approvalStatusTool, statusDesc), t.statusAs(approvalNames))
+	sdk.AddTool(server, tool(approvalListTool, listDesc), t.listAs(approvalNames))
+	sdk.AddTool(server, tool(daemon.ApprovalWaitTool, waitDesc), t.waitAs(approvalNames))
+	sdk.AddTool(server, alias(reviewStatusTool, approvalStatusTool, statusDesc), t.statusAs(reviewNames))
+	sdk.AddTool(server, alias(reviewListTool, approvalListTool, listDesc), t.listAs(reviewNames))
+	sdk.AddTool(server, alias(daemon.ReviewWaitTool, daemon.ApprovalWaitTool, waitDesc), t.waitAs(reviewNames))
 }
 
-func (t *tools) status(ctx context.Context, _ *sdk.CallToolRequest, in statusInput) (*sdk.CallToolResult, reviewOutput, error) {
+func (t *tools) statusAs(n toolNames) sdk.ToolHandlerFor[statusInput, reviewOutput] {
+	return func(ctx context.Context, req *sdk.CallToolRequest, in statusInput) (*sdk.CallToolResult, reviewOutput, error) {
+		return t.status(ctx, req, in, n)
+	}
+}
+
+func (t *tools) listAs(n toolNames) sdk.ToolHandlerFor[listInput, listOutput] {
+	return func(ctx context.Context, req *sdk.CallToolRequest, in listInput) (*sdk.CallToolResult, listOutput, error) {
+		return t.list(ctx, req, in, n)
+	}
+}
+
+func (t *tools) waitAs(n toolNames) sdk.ToolHandlerFor[waitInput, reviewOutput] {
+	return func(ctx context.Context, req *sdk.CallToolRequest, in waitInput) (*sdk.CallToolResult, reviewOutput, error) {
+		return t.wait(ctx, req, in, n)
+	}
+}
+
+func (t *tools) status(ctx context.Context, _ *sdk.CallToolRequest, in statusInput, n toolNames) (*sdk.CallToolResult, reviewOutput, error) {
 	if in.ID == "" {
 		return nil, reviewOutput{}, errors.New("id is required")
 	}
@@ -121,10 +169,10 @@ func (t *tools) status(ctx context.Context, _ *sdk.CallToolRequest, in statusInp
 	if err != nil {
 		return nil, reviewOutput{}, err
 	}
-	return nil, describe(rev), nil
+	return nil, describeFor(rev, n), nil
 }
 
-func (t *tools) list(ctx context.Context, _ *sdk.CallToolRequest, in listInput) (*sdk.CallToolResult, listOutput, error) {
+func (t *tools) list(ctx context.Context, _ *sdk.CallToolRequest, in listInput, n toolNames) (*sdk.CallToolResult, listOutput, error) {
 	limit := in.Limit
 	if limit <= 0 {
 		limit = defaultListLimit
@@ -134,19 +182,19 @@ func (t *tools) list(ctx context.Context, _ *sdk.CallToolRequest, in listInput) 
 	defer cancel()
 	revs, err := t.reviews.ListReviews(ctx, strings.ToUpper(in.Status), limit)
 	if errors.Is(err, daemon.ErrPlaneTooOld) {
-		return nil, listOutput{}, fmt.Errorf("%w. Use review_status with an id from a deny message", err)
+		return nil, listOutput{}, fmt.Errorf("%w. Use %s with an id from a deny message", err, n.status)
 	}
 	if err != nil {
 		return nil, listOutput{}, err
 	}
 	out := listOutput{Reviews: make([]reviewOutput, 0, len(revs))}
 	for _, r := range revs {
-		out.Reviews = append(out.Reviews, describe(r))
+		out.Reviews = append(out.Reviews, describeFor(r, n))
 	}
 	return nil, out, nil
 }
 
-func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput) (*sdk.CallToolResult, reviewOutput, error) {
+func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput, n toolNames) (*sdk.CallToolResult, reviewOutput, error) {
 	if in.ID == "" {
 		return nil, reviewOutput{}, errors.New("id is required")
 	}
@@ -167,8 +215,8 @@ func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput
 			return nil, reviewOutput{}, err
 		}
 		elapsed := time.Since(started)
-		if rev.Status != statusPending {
-			return nil, withWait(describe(rev), false, elapsed), nil
+		if !waits(rev.Status) {
+			return nil, withWait(describeFor(rev, n), false, elapsed), nil
 		}
 		select {
 		case <-ctx.Done():
@@ -180,7 +228,7 @@ func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput
 			if err != nil {
 				return nil, reviewOutput{}, err
 			}
-			return nil, withWait(describe(rev), rev.Status == statusPending, time.Since(started)), nil
+			return nil, withWait(describeFor(rev, n), waits(rev.Status), time.Since(started)), nil
 		case <-ticker.C:
 			progress(time.Since(started))
 		}
@@ -192,15 +240,19 @@ func (t *tools) read(ctx context.Context, id string) (daemon.ReviewStatus, error
 	rev, err := t.reviews.ReviewStatus(ctx, id)
 	switch {
 	case errors.Is(err, daemon.ErrReviewNotFound):
-		return rev, fmt.Errorf("review %s was not found on this sidecar. Stop: check the id "+
+		return rev, fmt.Errorf("approval %s was not found on this sidecar. Stop: check the id "+
 			"against the deny message, and that this MCP entry is the sidecar that denied it", id)
 	case errors.Is(err, daemon.ErrPlaneTooOld):
-		return rev, fmt.Errorf("%w. Ask a human to check review %s in the control plane", err, id)
+		return rev, fmt.Errorf("%w. Ask a human to check approval %s in the control plane", err, id)
 	}
 	return rev, err
 }
 
-func describe(r daemon.ReviewStatus) reviewOutput {
+// describe is describeFor with the approval_* names.
+func describe(r daemon.ReviewStatus) reviewOutput { return describeFor(r, approvalNames) }
+
+// describeFor turns a status into the answer, naming the tools in n.
+func describeFor(r daemon.ReviewStatus, n toolNames) reviewOutput {
 	out := reviewOutput{
 		ID:              r.ID,
 		Status:          r.Status,
@@ -214,8 +266,8 @@ func describe(r daemon.ReviewStatus) reviewOutput {
 	}
 	switch r.Status {
 	case statusPending:
-		out.Instruction = "No reviewer has decided yet. Call review_wait with this id. Do not " +
-			"resend the statement now, and never reformat it: different bytes file a new review."
+		out.Instruction = "No approver has decided yet. Call " + n.wait + " with this id. Do not " +
+			"resend the statement now, and never reformat it: different bytes file a new approval request."
 		if r.ExpiresAt != nil {
 			out.Instruction += fmt.Sprintf(" It expires at %s if nobody decides.", deadline(r.ExpiresAt))
 		}
@@ -232,20 +284,24 @@ func describe(r daemon.ReviewStatus) reviewOutput {
 		}
 	case statusRevoked:
 		out.Instruction = "The approval was revoked. The statement will not run; do not resend it."
+	case statusProcessing:
+		out.Instruction = "A resent statement is using the approval while its upstream answers. " +
+			"Call " + n.wait + " with this id: if the upstream refuses it, the approval comes back " +
+			"and reads APPROVED; if it accepts it, the approval is used."
 	case statusExecuted:
 		out.Instruction = "The approval was already used by a resent statement. Running it " +
-			"again needs a new review."
+			"again needs a new approval request."
 	case statusExpired:
-		out.Instruction = "The review expired before it was decided or used. The statement did " +
-			"not run. Resending the identical statement files a new review and asks the " +
+		out.Instruction = "The approval request expired before it was decided or used. The statement did " +
+			"not run. Resending the identical statement files a new approval request and asks the " +
 			"approvers again; do that only if a human asks for it."
 	default:
-		out.Instruction = fmt.Sprintf("Unknown review status %q. Stop and ask a human.", r.Status)
+		out.Instruction = fmt.Sprintf("Unknown approval status %q. Stop and ask a human.", r.Status)
 	}
 	return out
 }
 
-// deadline spells a review deadline for an agent: UTC, so every agent reads
+// deadline spells an approval deadline for an agent: UTC, so every agent reads
 // the same instant whatever the host's zone.
 func deadline(t *time.Time) string {
 	return t.UTC().Format(time.RFC3339)
@@ -287,7 +343,7 @@ func progressNotifier(ctx context.Context, req *sdk.CallToolRequest, total time.
 			ProgressToken: token,
 			Progress:      elapsed.Seconds(),
 			Total:         total.Seconds(),
-			Message:       "waiting for a reviewer",
+			Message:       "waiting for an approver",
 		})
 	}
 }
