@@ -242,54 +242,18 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
-	// Attribute the session to the calling surface via the User-Client/User-Agent
-	// header: the webapp (CLJS) sends "webapp.core", the CLI sends "hoopcli", and
-	// everything else is treated as a raw API consumer. Once webapp_v2 (React)
-	// issues its own session calls it must send the same header to keep being
-	// attributed as `webapp`.
-	sessionOrigin := proto.SessionOriginFromUserAgent(userAgent)
-	if userAgent == "webapp.core" {
-		userAgent = "webapp.editor.exec"
-	}
+	newSession, userAgent := newExecSession(c, ctx, sid, req, conn)
 	log := log.With("sid", sid, "user", ctx.UserEmail)
-	newSession := models.Session{
-		ID:                   sid,
-		OrgID:                ctx.OrgID,
-		Labels:               req.Labels,
-		Metadata:             req.Metadata,
-		IntegrationsMetadata: nil,
-		Metrics:              nil,
-		BlobInput:            models.BlobInputType(req.Script),
-		UserEmail:            ctx.UserEmail,
-		UserID:               ctx.UserID,
-		UserName:             ctx.UserName,
-		ConnectionType:       conn.Type,
-		ConnectionSubtype:    conn.SubType.String,
-		Connection:           conn.Name,
-		ConnectionTags:       conn.ConnectionTags,
-		Verb:                 proto.ClientVerbExec,
-		Status:               string(openapi.SessionStatusOpen),
-		IdentityType:         "user",
-		SessionBatchID:       req.SessionBatchID,
-		CorrelationID:        req.CorrelationID,
-		Origin:               sessionOrigin,
-		CreatedAt:            time.Now().UTC(),
-		EndSession:           nil,
-	}
 
-	orgID := uuid.MustParse(ctx.GetOrgID())
-	analyzeRes, aiAccessRule, err := AIAnalyze(c, AIAnalyzeInput{
-		OrgID:          orgID,
-		ConnectionName: conn.Name,
-		Script:         req.Script,
-		UserID:         ctx.UserID,
-		UserGroups:     ctx.UserGroups,
-		Exec:           aianalyzer.AnalyzerExecIdentity{BearerToken: apiroutes.GetAccessTokenFromRequest(c), UserAgent: "aianalyzer"},
-	})
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
-		return
+	analyzeRes, aiAccessRule, held := takeHeldVerdict(ctx, conn, req.Script)
+	if held {
+		log.Infof("reusing the ai analysis verdict of POST /sessions/analyze")
+	} else {
+		analyzeRes, aiAccessRule, err = AIAnalyze(c, newAIAnalyzeInput(c, ctx, conn, req.Script))
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
+			return
+		}
 	}
 
 	decision, aiResp, err := ApplyAIAnalysisDecision(ctx, &newSession, conn, analyzeRes, aiAccessRule,
