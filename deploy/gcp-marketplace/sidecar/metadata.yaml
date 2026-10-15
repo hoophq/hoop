@@ -110,7 +110,7 @@ spec:
         varType: string
         defaultValue: ClusterIP
       - name: license
-        description: "Hoop license document. Empty runs the free tier: one guardrail rule and one masking rule."
+        description: "Hoop license document. Empty runs the free tier: one guardrail rule and one masking rule. Ignored in control_plane mode, where the organization's license applies."
         varType: string
         defaultValue: ""
       - name: cpu

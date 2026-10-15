@@ -68,13 +68,15 @@ variable "namespace" {
   default     = "hoop-sidecar"
 }
 
-# Marketplace requires this name and sets it per deployment.
+# Marketplace requires this name and sets it per deployment. At most 45
+# characters: the chart names the lane Service <name>-hoopsidecar-lanes, and a
+# Service name is at most 63.
 variable "goog_cm_deployment_name" {
   description = "Name of the deployment, used as the Helm release name."
   type        = string
   validation {
-    condition     = can(regex("^[a-z]([-a-z0-9]{0,51}[a-z0-9])?$", var.goog_cm_deployment_name))
-    error_message = "goog_cm_deployment_name must be lowercase letters, digits and hyphens, start with a letter, and be at most 53 characters (a Helm release name)."
+    condition     = can(regex("^[a-z]([-a-z0-9]{0,43}[a-z0-9])?$", var.goog_cm_deployment_name))
+    error_message = "goog_cm_deployment_name must be lowercase letters, digits and hyphens, start with a letter, and be at most 45 characters."
   }
 }
 
@@ -147,7 +149,7 @@ variable "service_type" {
 }
 
 variable "license" {
-  description = "Hoop license document. Empty runs the free tier: one guardrail rule and one masking rule."
+  description = "Hoop license document. Empty runs the free tier: one guardrail rule and one masking rule. Ignored in control_plane mode, where the organization's license applies."
   type        = string
   default     = ""
   sensitive   = true

@@ -16,7 +16,8 @@ GKE cluster: one Deployment, a Service for the admin server on port 19000, and
 a Service for the resource's port. Install it once per resource it fronts.
 
 Without a license the sidecar runs the free tier: one guardrail rule and one
-masking rule. Set `license` to lift the limits.
+masking rule. Set `license` to lift the limits. A sidecar on a control plane
+uses the organization's license instead, and ignores this one.
 
 ## One-time setup
 
@@ -59,12 +60,12 @@ The chart and image locations are the ones the Marketplace listing shows.
 | `service_port` | `simple`: the port clients connect to. Default: the protocol's usual port (5432 for postgres) |
 | `config_document` | `document`: the whole config, JSON or YAML. `admin.listen` must be `0.0.0.0:19000` |
 | `existing_config_map` | `configmap`: a ConfigMap in `namespace` whose `config.yaml` is the config |
-| `control_plane_url`, `control_plane_token` | `control_plane`: take the config from a hoop control plane |
+| `control_plane_url`, `control_plane_token` | `control_plane`: take the config from a hoop control plane. The plane must already hold this sidecar's configuration: this mode ships no local document to seed it |
 | `lane_ports` | `configmap`, `control_plane`: listener ports to publish on the lane Service, comma separated, e.g. `15432,18080` |
 | `service_type` | `ClusterIP` (default) or `InternalLoadBalancer` (reachable from the VPC, never public) |
-| `license` | Hoop license document. Empty runs the free tier |
+| `license` | Hoop license document. Empty runs the free tier. Ignored in `control_plane` mode |
 | `namespace` | Default `hoop-sidecar`, created when missing |
-| `goog_cm_deployment_name` | Required. Names the Helm release and its resources; one per sidecar. Lowercase, at most 53 characters |
+| `goog_cm_deployment_name` | Required. Names the Helm release and its resources; one per sidecar. Lowercase, at most 45 characters |
 | `replicas`, `cpu`, `memory` | Size of the Deployment. Default 1 pod, 500m, 512Mi |
 
 The config schema is in `sidecar/README.md`; worked configs are under
@@ -122,12 +123,14 @@ kubectl -n hoop-sidecar port-forward svc/ADMIN_SERVICE 19000
 curl -s localhost:19000/stats
 ```
 
-The audit trail goes to the pod's log, so Cloud Logging collects it.
+In `simple` mode the audit trail goes to the pod's log, so Cloud Logging
+collects it. A `document` or ConfigMap config decides that itself with
+`audit.file`: `-` is the pod's log, a path is a file in the pod.
 
-TLS: on `postgres`, `grpc` and `spanner` lanes the sidecar can terminate
-client TLS (`downstream_tls` in a `document` config). The other protocols are
-plaintext between client and sidecar, which is why no public load balancer is
-offered.
+TLS: on `postgres`, `clickhouse`, `http`, `grpc` and `spanner` lanes the
+sidecar can terminate client TLS (`downstream_tls` in a `document` config).
+The other protocols are plaintext between client and sidecar, which is why no
+public load balancer is offered.
 
 ## Back up and restore
 

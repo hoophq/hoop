@@ -150,9 +150,12 @@ spec:
             variableName: config_source
             variableValues: [control_plane]
             type: DISPLAY_VARIABLE_TOGGLE_TYPE_STRING
+        # Not masked: the Blueprint UI schema has no secret or masked input.
+        # Terraform still marks it sensitive and Helm gets it via set_sensitive.
         control_plane_token:
           name: control_plane_token
           title: Sidecar token
+          tooltip: The control plane must already hold this sidecar's configuration.
           section: sidecar
           toggleUsingVariable: *control_plane
         lane_ports:
@@ -173,11 +176,16 @@ spec:
               value: ClusterIP
             - label: Inside the VPC (internal load balancer)
               value: InternalLoadBalancer
+        # Hidden in control_plane mode: the organization's license applies there.
         license:
           name: license
           title: License
           tooltip: Empty runs the free tier, one guardrail rule and one masking rule.
           section: sidecar
+          toggleUsingVariable:
+            variableName: config_source
+            variableValues: [simple, document, configmap]
+            type: DISPLAY_VARIABLE_TOGGLE_TYPE_STRING
 
         replicas:
           name: replicas
