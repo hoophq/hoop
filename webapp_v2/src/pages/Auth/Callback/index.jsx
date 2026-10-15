@@ -32,13 +32,11 @@ function AuthCallback() {
 
         const redirectUrl = getAndClearRedirectUrl()
         const target = redirectUrl ? null : await postAuthPath()
-        setTimeout(() => {
-          if (redirectUrl) {
-            window.location.href = redirectUrl
-          } else {
-            navigate(target)
-          }
-        }, 1500)
+        if (redirectUrl) {
+          window.location.href = redirectUrl
+        } else {
+          navigate(target)
+        }
       } catch (err) {
         console.error('Auth callback error:', err)
         setError('Authentication failed')

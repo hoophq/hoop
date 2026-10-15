@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { Group, Stack, Switch, Text, Title } from '@mantine/core'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import Table from '@/components/Table'
@@ -18,7 +17,7 @@ export default function SettingsExperimental() {
   const [loading, setLoading] = useState(true)
   const [pending, setPending] = useState(new Set())
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   useEffect(() => {
     featureFlagsService

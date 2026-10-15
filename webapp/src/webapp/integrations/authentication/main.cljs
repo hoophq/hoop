@@ -9,17 +9,16 @@
 
 (defn main []
   (let [auth-config (rf/subscribe [:authentication->config])
-        active-tab (r/atom "general")
-        min-loading-done (r/atom false)]
+        active-tab (r/atom "general")]
 
     (rf/dispatch [:authentication->get-config])
 
-    ;; Set timer for minimum loading time
-    (js/setTimeout #(reset! min-loading-done true) 1500)
-
     (fn []
-      (let [loading? (or (= :loading (:status @auth-config))
-                         (not @min-loading-done))
+      ;; Wait for every fetch: edits write into the cached config, so a
+      ;; revisit must not show abandoned edits as saved values.
+      (let [loading? (and (not= :error (:status @auth-config))
+                          (or (nil? (:data @auth-config))
+                              (= :loading (:status @auth-config))))
             submitting? (:submitting? @auth-config)]
 
         (cond

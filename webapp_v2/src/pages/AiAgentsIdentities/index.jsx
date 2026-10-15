@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { Button, Group, Stack, Text, Title } from '@mantine/core'
 import { showSnackbar } from '@/utils/snackbar'
 import { KeyRound, Unplug } from 'lucide-react'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
 import Table from '@/components/Table'
@@ -32,7 +31,7 @@ export default function AiAgentsIdentities() {
   const [error, setError] = useState(null)
   const [confirmRevoke, setConfirmRevoke] = useState(null)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   async function fetchAgents() {
     try {

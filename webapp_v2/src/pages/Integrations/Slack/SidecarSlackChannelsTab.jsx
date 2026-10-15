@@ -6,7 +6,6 @@ import PageLoader from '@/components/PageLoader'
 import Table from '@/components/Table'
 import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { protocolInfo } from '@/pages/Sidecars/config'
 import { sidecarsService } from '@/services/sidecars'
 import { useSidecarStore } from '@/stores/useSidecarStore'
@@ -119,7 +118,7 @@ function SidecarSlackChannelsTab() {
     }
   }
 
-  const showLoader = useMinDelay(loading || channelsStatus === 'loading')
+  const showLoader = loading || channelsStatus === 'loading'
   if (showLoader) return <PageLoader h={200} />
   if (error) return <PageLoader error h={200} message="Failed to load sidecars." />
   if (channelsStatus === 'error') return <PageLoader error h={200} message="Failed to load Slack channels." />

@@ -9,7 +9,6 @@ import {
   Title,
 } from '@mantine/core'
 import { BarChart3, EyeOff, ShieldOff } from 'lucide-react'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import SelectionCard from '@/components/SelectionCard'
@@ -92,7 +91,7 @@ function SettingsInfrastructure() {
   const load = useInfrastructureStore((s) => s.load)
   const save = useInfrastructureStore((s) => s.save)
 
-  const showLoader = useMinDelay(loading)
+  const showLoader = loading
 
   useEffect(() => {
     load()

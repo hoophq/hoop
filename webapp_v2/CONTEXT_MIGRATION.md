@@ -226,7 +226,7 @@ sub, which resource setup/configure and the activation journey still consume.
 | Modal system | `components/modal.cljs` | ✅ Pattern replaced — `components/Modal` + colocated `useDisclosure` (no global registry by design) |
 | Snackbar / Toast | `components/snackbar.cljs`, `components/toast.cljs` | ✅ Yes — `utils/snackbar.jsx` + `components/Snackbar/Toast.jsx` (sonner, top-right) |
 | Confirmation Dialog | `components/dialog.cljs` | 🔶 Partial — no shared ConfirmDialog yet; pages build ad-hoc confirmations (planned: roadmap Wave 1) |
-| Page loader | Re-frame `:page-loader-status` | ✅ Yes — `components/PageLoader` + `hooks/useMinDelay` |
+| Page loader | Re-frame `:page-loader-status` | ✅ Yes — `components/PageLoader` |
 | Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ✅ Yes — `features/NativeConnections/` drawer + `stores/useNativeAccessStore`. The draggable card is replaced by the drawer plus an active-session badge on the header button. CLJS stands down via `react-shell?`; the namespaces are deleted in a follow-up once the drawer has baked |
 | org-migration dialog | `features/users/views/org_migration_dialog.cljs` | ❌ Not yet (roadmap Wave 3) |
 | Sentry / Clarity / Segment `track()` | `events/tracking.cljs`, `events/clarity.cljs`, `events/segment.cljs` | ❌ CLJS-only today — React has Segment `identify()` + Intercom only (roadmap Parity track) |
@@ -282,7 +282,7 @@ blocks"); full props in `COMPONENTS.md`.
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
 - Onboarding Protection Rules (`/onboarding/protection-rules` — the rest of `/onboarding/*` is still CLJS)
 - Toast/snackbar parity — `utils/snackbar.jsx` + `Toast.jsx` (same sonner library as CLJS)
-- Page loaders (`PageLoader`, `AuthPageLoader`, `useMinDelay`)
+- Page loaders (`PageLoader`, `AuthPageLoader`)
 - Auth store, User store, UI store, Agent store
 - ClojureApp bridge component
 - Re-frame dispatch bridge — React can trigger CLJS actions via `window.hoopDispatch` (wrapped in Zustand stores)

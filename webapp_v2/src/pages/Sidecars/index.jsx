@@ -3,7 +3,6 @@ import { Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
-import { useMinDelay } from '@/hooks/useMinDelay'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import AddSidecarModal from './components/AddSidecarModal'
@@ -17,7 +16,6 @@ export default function Sidecars() {
   const serverInfoLoaded = useUserStore((s) => s.serverInfoLoaded)
   // Every sidecar route answers 403 without an Enterprise license.
   const locked = serverInfoLoaded && isFreeLicense
-  const showLoader = useMinDelay(loading && !locked, 500)
 
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false)
 
@@ -25,7 +23,8 @@ export default function Sidecars() {
     if (!locked) fetchSidecars()
   }, [locked, fetchSidecars])
 
-  if (showLoader) return <PageLoader h={400} />
+  // First load only: a revisit renders the cached list while it refreshes.
+  if (loading && !locked && sidecars.length === 0) return <PageLoader h={400} />
   if (error && !locked) return <Text c="red">{error}</Text>
 
   const count = locked ? 0 : sidecars.length
