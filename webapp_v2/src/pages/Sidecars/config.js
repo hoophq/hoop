@@ -126,3 +126,8 @@ export function hasConfiguration(config) {
 // (resolveConfigSource, sidecar/daemon/controlplane.go). The API key keeps its
 // wire name, load_from_disk.
 export const usesConfigFile = (sidecar) => sidecar?.configuration?.load_from_disk === true
+
+// The config file the sidecar runs, as its last check-in reported it. Hoop
+// adopts it only when an admin moves the configuration. Null for a sidecar
+// too old to report it.
+export const reportedConfiguration = (sidecar) => sidecar?.reported_configuration ?? null

@@ -87,12 +87,20 @@ type Sidecar struct {
 	// daemon.CapabilitiesHeader. Nil until the sidecar handshakes; empty for
 	// a build too old to send the header.
 	Capabilities pq.StringArray `gorm:"column:capabilities;type:text[]"`
+
+	// ReportedConfiguration is the config file the sidecar runs, as its last
+	// handshake reported it, read as text. The plane adopts it only when an
+	// admin moves the configuration. Nil for a sidecar that never reported
+	// one: a build older than the report, or one the plane owns.
+	ReportedConfiguration   *string    `gorm:"column:reported_configuration"`
+	ReportedConfigurationAt *time.Time `gorm:"column:reported_configuration_at"`
 }
 
 const sidecarColumns = `
 	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
 	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome,
-	s.last_error, s.served_revision_at, s.capabilities, s.identity_issuer, s.identity_subject`
+	s.last_error, s.served_revision_at, s.capabilities, s.identity_issuer, s.identity_subject,
+	s.reported_configuration::text AS reported_configuration, s.reported_configuration_at`
 
 // ErrSidecarNameDeleted reports a name an admin deleted after a service
 // account identity reached it. The identity must not create it again.
@@ -455,6 +463,38 @@ func AdoptSidecarConfiguration(db *gorm.DB, orgID, id string, configuration Side
 		return nil, ErrAlreadyExists
 	}
 	return &item, nil
+}
+
+// RecordSidecarReportedConfiguration stores the config file a sidecar
+// reported on its handshake. The caller validated it. It never touches the
+// configuration the plane serves.
+func RecordSidecarReportedConfiguration(db *gorm.DB, sidecarID string, report []byte) error {
+	return db.Exec(`
+	UPDATE private.sidecars SET reported_configuration = ?::jsonb, reported_configuration_at = NOW()
+	WHERE id = ?`, string(report), sidecarID).Error
+}
+
+// ClearSidecarReportedConfigurationTx drops the reported config file once the
+// plane adopted it.
+func ClearSidecarReportedConfigurationTx(tx *gorm.DB, sidecarID string) error {
+	return tx.Exec(`
+	UPDATE private.sidecars SET reported_configuration = NULL, reported_configuration_at = NULL
+	WHERE id = ?`, sidecarID).Error
+}
+
+// StartSidecarInDiskModeTx records that a sidecar runs its own config file,
+// but only while the row holds no listeners and no owner choice. The guard
+// runs in the UPDATE, so a booting sidecar never overwrites a configuration
+// or a switch an admin made. It returns false when the guard fired.
+func StartSidecarInDiskModeTx(tx *gorm.DB, orgID, id string) (bool, error) {
+	res := tx.Exec(`
+	UPDATE private.sidecars
+	SET configuration = '{"load_from_disk":true}'::jsonb
+	WHERE org_id = ? AND id = ?
+	  AND configuration->'load_from_disk' IS NULL
+	  AND (jsonb_typeof(configuration->'listeners') IS DISTINCT FROM 'array'
+	       OR jsonb_array_length(configuration->'listeners') = 0)`, orgID, id)
+	return res.RowsAffected == 1, res.Error
 }
 
 // DeletedSidecar is the row DeleteSidecarByNameOrID removed.

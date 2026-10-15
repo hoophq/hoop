@@ -19,7 +19,8 @@ const STATE = {
   },
   connected: {
     title: 'Sidecar connected',
-    description: 'It checked in and took its configuration.',
+    description:
+      'It checked in. A sidecar started with a config file keeps running it; move the configuration to Hoop from the sidecar page.',
   },
   gone: {
     title: 'This sidecar was deleted',
