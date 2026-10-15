@@ -181,17 +181,19 @@ hoop start sidecar --config my-config.yaml --validate
 
 ## The image
 
-`hoophq/hoopsidecar` publishes two flavours of `Dockerfile.sidecar`:
+`hoophq/hoopsidecar` publishes three flavours of `Dockerfile.sidecar`:
 
 | Tag | Base |
 |---|---|
 | `<version>`, and `latest` | Ubuntu 24.04 LTS + the `hoop` binary |
 | `<version>-distroless` | distroless static + the `hoop` binary |
+| `<version>-ica` | Ubuntu 24.04 LTS + `hoop-inspect` built with the Citrix ICA engine, tesseract and ONNX Runtime; no `latest-ica` |
 
 The Ubuntu flavour carries no suffix — it is the image, and `latest` points at
 it. It keeps a shell, so the default is the flavour you can `kubectl exec` into.
 distroless has no package manager and no shell, reports zero OS-package CVEs and
-is about two thirds the size; it is the only flavour that is named.
+is about two thirds the size; ask for it by name. `-ica` is for `protocol: ica`
+lanes only; see [Citrix ICA lanes](#citrix-ica-lanes).
 
 The chart sets no `command`. It expects the image's own entrypoint to run the
 relay and to read the config at `/etc/hoop-inspect/config.yaml` — the path the
@@ -210,6 +212,114 @@ command: ["hoop", "start", "sidecar"]
 `command:` and not a bare `args:`: those images carry no ENTRYPOINT, so `args:`
 replaces CMD entirely and runs nothing. Their invocation contract is in
 `Dockerfile.agent`.
+
+## Citrix ICA lanes
+
+A `protocol: ica` listener needs the `-ica` image and the `ica` values block.
+With `ica.enabled: false`, the default, the chart renders the same pod as a
+chart without the block.
+
+| | Other lanes | ica, single mode | ica, CIDR mode (`ica.transparent: true`) |
+|---|---|---|---|
+| Image tag | `<version>` | `<version>-ica` | `<version>-ica` |
+| Readiness probe | `/healthz` | `/readyz` | `/readyz` |
+| NER model volume | none | `ica.model` | `ica.model` |
+| Runs as | image user | 10001, all capabilities dropped | root, `NET_ADMIN` only |
+| Network | pod network | pod network | `hostNetwork` |
+| `terminationGracePeriodSeconds` | 30 | 45 | 45 |
+
+`/readyz` answers 503 while an ica lane loads its NER model and starts OCR
+workers, which can take minutes. Liveness stays on `/healthz`, so Kubernetes
+keeps a pod that is still loading. The chart mounts `ica.model` at the
+engine's default NER model path; a config that sets `ica.ner_model` elsewhere
+must mount the model there through `extraVolumes`.
+
+### Single mode
+
+Each listener names one VDA in `upstream`. Publish the listener port through a
+`laneServices` entry the Citrix Gateway can reach:
+
+```yaml
+image:
+  tag: <version>-ica
+config:
+  admin: {listen: '0.0.0.0:19000'}
+  listeners:
+  - name: vdi-finance
+    protocol: ica
+    listen: '0.0.0.0:2598'
+    upstream: 'vda01.corp.example:2598'
+    ica: {tenant_id: finance, upstream_ports: [2598]}
+ica:
+  enabled: true
+  model:
+    persistentVolumeClaim: {claimName: ica-ner-model}
+laneServices:
+  ica:
+    enabled: true
+    ports:
+    - {name: ica, port: 2598}
+```
+
+### CIDR mode
+
+The listener sets `ica.transparent` with the Gateway's source networks and the
+VDA networks, and each connection's original destination selects its VDA. The
+engine reads that destination from a TPROXY socket, so the setup follows the
+appliance model in libhoop-ica's `docs/transparent-linux.md`, with the node in
+the appliance's place:
+
+- The pod runs with `hostNetwork`. TPROXY delivers a packet only to a socket in
+  the network namespace that holds the nftables rule, and that rule lives on
+  the node.
+- The process runs as root with only `NET_ADMIN`, which `IP_TRANSPARENT`
+  requires. Kubernetes grants an added capability to a non-root process only
+  through a file capability on the binary.
+- You prepare each appliance node before you install: IP forwarding (GCP
+  `canIpForward`), the TPROXY nftables rule, the `fwmark` policy route and
+  `rp_filter=0`. The chart does not change the node. Pin the pod to those
+  nodes with `nodeSelector`.
+- A policy-based route sends Gateway-to-VDA traffic to an internal passthrough
+  load balancer over the appliance nodes. Point its health check at
+  `http://<node>:19000/readyz`. On SIGTERM the admin server closes within 3s,
+  so the load balancer stops sending new flows while the lanes drain.
+- The admin server binds 19000 on the node's address. Firewall it to the load
+  balancer's health-check ranges and your management network.
+- The admin `containerPort` becomes a host port under `hostNetwork`, so the
+  scheduler places one replica per node. Set `replicas` to the number of
+  appliance nodes.
+
+```yaml
+image:
+  tag: <version>-ica
+config:
+  admin: {listen: '0.0.0.0:19000'}
+  listeners:
+  - name: vdi-all
+    protocol: ica
+    listen: '0.0.0.0:2598'
+    ica:
+      tenant_id: citrix-production
+      upstream_ports: [2598]
+      transparent:
+        source_cidrs: [10.10.1.10/32]
+        upstream_cidrs: [10.77.0.0/16]
+ica:
+  enabled: true
+  transparent: true
+  model:
+    persistentVolumeClaim: {claimName: ica-ner-model}
+nodeSelector:
+  hoop.dev/ica-appliance: "true"
+replicas: 2
+```
+
+The chart refuses to render an ica release whose `image.tag` does not end in
+`-ica`, that has no `ica.model`, or that has no `config` or
+`existingConfigMap`. The `-ica` image runs
+`hoop-inspect -config /etc/hoop-inspect/config.yaml` and does not read
+`HOOP_SIDECAR_CONFIG`; under a control plane, a file holding `admin` and the
+top-level `ica` block is enough.
 
 ## Rolling pods when the config changes
 

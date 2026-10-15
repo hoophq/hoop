@@ -218,6 +218,43 @@ jobs:
 
           echo "lane Services render per entry and leave the admin Service alone"
 
+          # ica. With the block off, the pod must not pick up any of it: an
+          # older image has no /readyz and would never go Ready. With it on,
+          # single mode stays non-root on the pod network and only CIDR mode
+          # gets hostNetwork and NET_ADMIN.
+          echo "$sc" | grep -qE '/readyz|hostNetwork|NET_ADMIN|ica-ner-model' \
+            && { echo "::error::a sidecar with ica off rendered ica settings"; exit 1; }
+          ica=(--set config.admin.listen=0.0.0.0:19000
+               --set image.tag=1.0.0-ica
+               --set ica.enabled=true
+               --set ica.model.persistentVolumeClaim.claimName=ica-ner-model)
+          single=$(helm template t "$chart" "${ica[@]}" --show-only templates/deployment.yaml)
+          for want in "path: /readyz" "runAsNonRoot: true" "drop: \[ALL\]" \
+            "mountPath: /opt/libhoop-ica/releases/image/models/KnightsAnalytics_distilbert-NER" \
+            "claimName: ica-ner-model" "terminationGracePeriodSeconds: 45"; do
+            echo "$single" | grep -q -- "$want" \
+              || { echo "::error::ica single mode did not render: $want"; exit 1; }
+          done
+          echo "$single" | grep -qE 'hostNetwork|NET_ADMIN|runAsUser: 0' \
+            && { echo "::error::ica single mode rendered CIDR-mode privileges"; exit 1; }
+          echo "$single" | grep -c 'path: /healthz' | grep -qx 1 \
+            || { echo "::error::ica single mode must keep liveness, and only liveness, on /healthz"; exit 1; }
+          cidr=$(helm template t "$chart" "${ica[@]}" --set ica.transparent=true \
+            --show-only templates/deployment.yaml)
+          for want in "hostNetwork: true" "dnsPolicy: ClusterFirstWithHostNet" \
+            "runAsUser: 0" "add: \[NET_ADMIN\]" "allowPrivilegeEscalation: false"; do
+            echo "$cidr" | grep -q -- "$want" \
+              || { echo "::error::ica CIDR mode did not render: $want"; exit 1; }
+          done
+          guard "ica.transparent without ica.enabled" --set config.admin.listen=0.0.0.0:19000 --set ica.transparent=true
+          guard "ica on a non -ica tag"     "${ica[@]}" --set image.tag=1.0.0
+          guard "ica on the default tag"    --set config.admin.listen=0.0.0.0:19000 --set ica.enabled=true --set ica.model.emptyDir.medium=Memory
+          guard "ica with no model"         --set config.admin.listen=0.0.0.0:19000 --set image.tag=1.0.0-ica --set ica.enabled=true
+          guard "ica with no config file"   --set controlPlane.url=https://cp.example.com --set controlPlane.token=t \
+            --set image.tag=1.0.0-ica --set ica.enabled=true --set ica.model.emptyDir.medium=Memory
+
+          echo "ica off leaves the pod alone; single and CIDR mode render their own privileges; five ica guards fire"
+
       - name: Assert the control plane chart renders and its guards hold
         run: |
           set -euo pipefail
