@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -90,15 +91,8 @@ func updateAgentTags(apir *apiResource, tags map[string]string) {
 	}
 	apir.suffixEndpoint = fmt.Sprintf("/api/agents/%v/tags", apir.name)
 	resp, err := httpBodyRequest(apir, "PUT", body)
-	if err != nil && strings.Contains(err.Error(), "status=404") {
-		// A 404 is an old gateway, or an agent deleted since the existence check.
-		if supportErr := checkAgentTagsSupported(apir.conf); supportErr != nil {
-			styles.PrintErrorAndExit("the gateway does not support agent tags, upgrade it to edit them")
-		}
-		styles.PrintErrorAndExit("agent %v not found: %v", apir.name, err)
-	}
 	if err != nil {
-		styles.PrintErrorAndExit("%s", err.Error())
+		styles.PrintErrorAndExit("%s", explainTagsUpdateError(apir.conf, apir.name, err).Error())
 	}
 	if apir.decodeTo == "raw" {
 		jsonData, _ := resp.([]byte)
@@ -111,6 +105,21 @@ func updateAgentTags(apir *apiResource, tags map[string]string) {
 		tagList = "(none)"
 	}
 	fmt.Printf("agent %v updated, tags: %v\n", apir.name, tagList)
+}
+
+// explainTagsUpdateError tells the causes of a 404 on PUT /agents/{name}/tags
+// apart: an old gateway, or an agent deleted since the existence check.
+func explainTagsUpdateError(conf *clientconfig.Config, name string, err error) error {
+	if !strings.Contains(err.Error(), "status=404") {
+		return err
+	}
+	switch supportErr := checkAgentTagsSupported(conf); {
+	case errors.Is(supportErr, errGatewayWithoutAgentTags):
+		return fmt.Errorf("the gateway does not support agent tags, upgrade it to edit them")
+	case supportErr != nil:
+		return fmt.Errorf("failed updating the tags of agent %v: %v; %v", name, err, supportErr)
+	}
+	return fmt.Errorf("agent %v not found: %v", name, err)
 }
 
 // parseTagsFlag reads key=value pairs. A pair without '=' or with an empty key
@@ -168,6 +177,8 @@ func checkAgentTagsSupported(conf *clientconfig.Config) error {
 	return nil
 }
 
+var errGatewayWithoutAgentTags = errors.New("the gateway does not support agent tags, upgrade it")
+
 func errNoAgentTags(what string) error {
-	return fmt.Errorf("%s: the gateway does not support agent tags, upgrade it", what)
+	return fmt.Errorf("%s: %w", what, errGatewayWithoutAgentTags)
 }

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -120,6 +121,35 @@ func TestCheckAgentTagsSupported(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("err = %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// A 404 on the tags update is an old gateway or an agent deleted since the
+// existence check; GET /agent-tags tells them apart.
+func TestExplainTagsUpdateError(t *testing.T) {
+	put404 := errors.New(`failed performing request, status=404, body={"message":"agent not found"}`)
+	for _, tc := range []struct {
+		name        string
+		probeStatus int
+		err         error
+		want        string
+	}{
+		{"agent deleted", http.StatusOK, put404, "agent prod-eu not found"},
+		{"old gateway", http.StatusNotFound, put404, "does not support agent tags"},
+		{"probe fails", http.StatusInternalServerError, put404, "failed updating the tags of agent prod-eu"},
+		{"not a 404", http.StatusOK, errors.New("failed performing request, status=400, body=bad"), "status=400"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.probeStatus)
+				_, _ = w.Write([]byte(`{"items":[]}`))
+			}))
+			defer srv.Close()
+			got := explainTagsUpdateError(&clientconfig.Config{ApiURL: srv.URL, Token: "token"}, "prod-eu", tc.err)
+			if !strings.Contains(got.Error(), tc.want) {
+				t.Errorf("got %q, want it to contain %q", got, tc.want)
 			}
 		})
 	}
