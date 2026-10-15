@@ -5,9 +5,9 @@
 // for callers who did not ask for it. Depending on this module is opting in.
 module github.com/hoophq/hoop/sidecar/config/yaml
 
-go 1.26.8
+go 1.26.9
 
-toolchain go1.26.8
+toolchain go1.26.9
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0

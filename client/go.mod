@@ -1,6 +1,6 @@
 module github.com/hoophq/hoop/client
 
-go 1.26.8
+go 1.26.9
 
 require (
 	// latest version breaks when using the loader to stderr

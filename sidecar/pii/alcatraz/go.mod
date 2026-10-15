@@ -1,6 +1,6 @@
 module github.com/hoophq/hoop/sidecar/pii/alcatraz
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/hoophq/alcatraz v0.16.0
