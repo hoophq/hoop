@@ -32,6 +32,9 @@ the decoders produce.
 
 libhoop is PRIVATE, so building or testing here needs
 `GOPRIVATE=github.com/hoophq/libhoop` and credentials for that repository.
+`cmd/` and the nested `ica/` module also link the private Citrix ICA engine,
+so they need `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`
+and credentials for both.
 
 **The edge runs one way and must stay that way.** libhoop imports nothing from
 this repository. Two mechanisms hold that:

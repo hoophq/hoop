@@ -21,7 +21,9 @@ decoders, the gRPC HTTP/2 endpoint, and the wire types this module aliases.
 The root module declares only libhoop. Sidecar-specific gRPC identity,
 statement, policy, audit, and masking behavior is injected from `daemon/`
 into `libhoop/v2/codec/grpc`. libhoop is private, so builds need
-`GOPRIVATE=github.com/hoophq/libhoop` and credentials.
+`GOPRIVATE=github.com/hoophq/libhoop` and credentials. Building `cmd/` or the
+nested `ica/` module also needs the private ICA engine:
+`GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`.
 
 The root shipped zero dependencies until the decoders moved to libhoop. They
 produce the `Statement` a policy evaluates, so this module cannot describe its
