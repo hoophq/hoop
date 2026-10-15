@@ -52,6 +52,9 @@ type Boot struct {
 	// which then supplies its whole config; set instead of ConfigPath.
 	ControlPlaneURL string
 	Token           string
+	// Login is the person choosing the hoop-managed control plane: the
+	// caller logs this sidecar in there, and it supplies the config.
+	Login bool
 }
 
 type (

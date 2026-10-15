@@ -283,6 +283,37 @@ means registering a new sidecar. The token flag and `HOOP_SIDECAR_TOKEN`
 hold the token itself, never a path, and no config key exists for it: a
 bearer secret does not belong in a file that gets committed.
 
+#### Logging in instead of a token
+
+`hoop start sidecar` with no config and no token logs in to
+`https://use.hoop.dev` (`HOOP_CONTROL_PLANE_URL` names another plane). At a
+terminal it asks first: **Managed by hoop (free)** logs in there, and
+**Enterprise** opens the Connect page (your own Control Plane and token, or a
+license). The login prints a URL and a code; an admin approves the code in the
+web app and the sidecar connects. `--login` logs in without asking,
+`--no-login` opens the first-run screen instead.
+
+```bash
+hoop start sidecar
+#   To connect this sidecar, approve it in your browser:
+#     https://use.hoop.dev/sidecars/login?code=BCDF-GHJK
+#   The page shows the code BCDF-GHJK. Approve only if it matches this one.
+```
+
+The sidecar makes its own `hsc_` token and sends it once; the plane keeps
+only its hash, and approving creates the sidecar with it. The login is saved
+in `~/.hoop/sidecar/controlplane.json` (mode 0600) and reused for that plane
+on the next run. Until the plane holds a listener for it, the sidecar waits
+and names the page to add one.
+
+An organization without an Enterprise license holds one sidecar, under the
+free rule caps below. This is the hoop CLI only: `hoop-inspect` takes a token.
+
+Only a bare run logs in. A run with `--config`, a token, `--validate` or
+`--migrate` never does, so a deployment missing its token still fails fast.
+A container or a pod has no person to approve a code and often no lasting
+home directory: register the sidecar in the web app and pass the token.
+
 #### Service account identity instead of a token
 
 A fleet does not have to register each sidecar. The sidecar can present an

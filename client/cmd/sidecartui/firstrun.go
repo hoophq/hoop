@@ -39,6 +39,10 @@ type FirstRunOptions struct {
 	// UseLicense tells the CLI a license was saved at path, so what it
 	// validates and boots from here on runs under it.
 	UseLicense func(path string)
+	// ManagedURL is the hoop-managed control plane. Set, the screen opens
+	// on one choice: log in there (a Boot with Login), or Enterprise (the
+	// Connect page). Empty opens the Get started list.
+	ManagedURL string
 }
 
 // Messages first-run mode sends the screen.
@@ -132,6 +136,11 @@ type firstRunModel struct {
 	plane       *pendingPlane
 	licenseNote string
 
+	// managedURL is the hoop-managed control plane offered first; choosing
+	// is set while the screen shows that choice instead of Get started.
+	managedURL string
+	choosing   bool
+
 	stop     func()
 	stopping bool
 	done     bool
@@ -154,6 +163,16 @@ func newFirstRunModel(version string, now func() time.Time, stop func(), detect 
 // configs already in this folder. The folder is read again each time, so a
 // config the setup screens just saved appears in it.
 func (m *firstRunModel) buildHome() {
+	if m.choosing {
+		m.home.items = []menuItem{
+			{id: "managed", label: "Managed by hoop (free)",
+				detail: "log in at " + hostOf(m.managedURL) + " · free: 1 sidecar, 1 rule per feature"},
+			{id: "enterprise", label: "Enterprise",
+				detail: "your own Control Plane and token, or a license"},
+		}
+		m.home.cur = min(m.home.cur, len(m.home.items)-1)
+		return
+	}
 	items := []menuItem{
 		{id: "setup", label: "Set up a config file", detail: "pick the demo or a protocol, adjust the defaults, boot"},
 		{id: "connect", label: "Connect to a Control Plane", detail: "Enterprise: manage this sidecar from the hoop web app, or start with a license"},
@@ -225,6 +244,8 @@ func (m firstRunModel) connectKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch ev {
 	case "back":
 		m.connect = nil
+		// Enterprise was a choice on the first screen: back is that screen.
+		m.choosing = m.managedURL != ""
 		m.buildHome()
 	case "meet":
 		p.status, p.bad = "Opened "+MeetURL+" in your browser.", false
@@ -303,6 +324,15 @@ func (m firstRunModel) continueWithLicense() (tea.Model, tea.Cmd) {
 	}
 	m.connect, m.plane = nil, nil
 	return m, m.startSetup()
+}
+
+// hostOf is the host a person recognizes in a URL: use.hoop.dev, not the
+// scheme and path around it.
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return raw
 }
 
 // pendingPlane is a Control Plane connected on the Connect page that holds
@@ -515,6 +545,21 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.choosing {
+		switch k.String() {
+		case "q", "esc":
+			return m.quit()
+		}
+		switch m.home.update(k) {
+		case "managed":
+			m.boot = &Boot{Login: true}
+			return m, tea.Quit
+		case "enterprise":
+			m.choosing = false
+			m.connect, m.invalid = newConnectPage(m.licenseDir), ""
+		}
+		return m, nil
+	}
 	switch k.String() {
 	case "q", "esc":
 		return m.quit()
@@ -567,6 +612,10 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 	}
 	m := newFirstRunModel(opts.Version, time.Now, cancel, detect, opts.Validate, opts.Dir)
 	m.connectCheck, m.openURL, m.licenseDir, m.useLicense = opts.ConnectCheck, opts.OpenURL, opts.LicenseDir, opts.UseLicense
+	if opts.ManagedURL != "" {
+		m.managedURL, m.choosing = opts.ManagedURL, true
+		m.buildHome()
+	}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout), tea.WithInput(os.Stdin), tea.WithoutSignalHandler())
 
 	// The listener's callbacks never wait on the screen. Program.Send blocks
@@ -624,11 +673,14 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 		if derr != nil {
 			return nil, fmt.Errorf("stopping the first-run listener before boot: %w", derr)
 		}
-		if fm.boot.ControlPlaneURL != "" {
+		switch {
+		case fm.boot.Login:
+			fmt.Fprintf(os.Stdout, "hoop sidecar: logging in to %s\n", fm.managedURL)
+		case fm.boot.ControlPlaneURL != "":
 			fmt.Fprintf(os.Stdout, "hoop sidecar: connecting to %s\n", fm.boot.ControlPlaneURL)
 			fmt.Fprintf(os.Stdout, "  to reconnect later: %s=%s hoop start sidecar --token <your token>\n",
 				daemon.ControlPlaneURLEnv, fm.boot.ControlPlaneURL)
-		} else {
+		default:
 			fmt.Fprintf(os.Stdout, "hoop sidecar: booting %s\n", fm.boot.ConfigPath)
 		}
 		return fm.boot, nil

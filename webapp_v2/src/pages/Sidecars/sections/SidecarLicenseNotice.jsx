@@ -5,8 +5,13 @@ import Alert from '@/components/Alert'
 import AddLicenseModal from '@/features/ProtectionProfiles/AddLicenseModal'
 import { useUserStore } from '@/stores/useUserStore'
 
+// The free plan's sidecar seats; gateway/services/sidecarseats.go holds the
+// number the API enforces.
+export const FREE_SIDECAR_SEATS = 1
+
 const MESSAGE =
-  'Sidecars are part of the Enterprise plan. Add your license to create and connect them.'
+  'Free plan: 1 sidecar, with 1 guardrail, 1 data masking and 1 access request rule. ' +
+  'A license lifts these limits.'
 
 /**
  * Free-plan callout on the sidecars page, with the same "Add your license here"

@@ -302,7 +302,11 @@ func (m firstRunModel) getStarted(w, h int, now time.Time) (title, body string) 
 		title, body = "Open a config file", m.picker.view(w, room)
 	} else {
 		blocks, sel := m.homeCards(w)
-		title, body = "Get started", fitBlocks(blocks, sel, room)
+		title = "Get started"
+		if m.choosing {
+			title = "How do you want to run this sidecar?"
+		}
+		body = fitBlocks(blocks, sel, room)
 	}
 	if len(status) > 0 {
 		body += "\n\n" + strings.Join(status, "\n")
@@ -346,8 +350,13 @@ func (m firstRunModel) render() string {
 	// Wrapped to the frame, so a narrow terminal breaks the sentence
 	// instead of cutting it.
 	wrap := lipgloss.NewStyle().Width(w).Align(lipgloss.Center)
-	intro := wrap.Inherit(stText).Render("Welcome to hoop sidecar. Let's get it running: " +
-		"set up a config in a few steps, or start from one you already have.")
+	introText := "Welcome to hoop sidecar. Let's get it running: " +
+		"set up a config in a few steps, or start from one you already have."
+	if m.choosing {
+		introText = "Welcome to hoop sidecar. First, connect it: log in to hoop and start free, " +
+			"or use the Enterprise version with your own Control Plane or a license."
+	}
+	intro := wrap.Inherit(stText).Render(introText)
 	flow := m.frFlow(now)
 
 	// The panel takes what the screen has left under the header, at most
@@ -365,6 +374,9 @@ func (m firstRunModel) render() string {
 
 	k := func(key, what string) string { return stKey.Render(key) + stFaint.Render(" "+what+"   ") }
 	hints := k("↑↓", "move") + k("enter", "choose") + k("w", "set up") + k("o", "open a file") + k("q", "quit")
+	if m.choosing {
+		hints = k("↑↓", "move") + k("enter", "choose") + k("q", "quit")
+	}
 	if m.picker != nil {
 		hints = k("type", "a path") + k("↑↓", "move") + k("tab/→", "into a folder") + k("enter", "open") + k("esc", "back")
 	}
