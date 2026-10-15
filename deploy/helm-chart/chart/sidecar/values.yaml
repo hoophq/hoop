@@ -28,7 +28,7 @@ image: {}
   # no package manager, no shell, zero OS-package CVEs, about two thirds the
   # size. Ask for it explicitly.
   #
-  # `<version>-ica` carries hoop-inspect built with the Citrix ICA engine and
+  # `<version>-ica` carries the sidecar built with the Citrix ICA engine and
   # its OCR and NER runtimes. Use it with `ica.enabled`; see `ica` below.
   #
   # The chart sets no command: the image's own entrypoint runs the relay, and

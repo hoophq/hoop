@@ -187,7 +187,7 @@ hoop start sidecar --config my-config.yaml --validate
 |---|---|
 | `<version>`, and `latest` | Ubuntu 24.04 LTS + the `hoop` binary |
 | `<version>-distroless` | distroless static + the `hoop` binary |
-| `<version>-ica` | Ubuntu 24.04 LTS + `hoop-inspect` built with the Citrix ICA engine, tesseract and ONNX Runtime; no `latest-ica` |
+| `<version>-ica` | Ubuntu 24.04 LTS + the sidecar built with the Citrix ICA engine, tesseract and ONNX Runtime; no `latest-ica` |
 
 The Ubuntu flavour carries no suffix — it is the image, and `latest` points at
 it. It keeps a shell, so the default is the flavour you can `kubectl exec` into.
@@ -249,7 +249,7 @@ config:
     protocol: ica
     listen: '0.0.0.0:2598'
     upstream: 'vda01.corp.example:2598'
-    ica: {tenant_id: finance, upstream_ports: [2598]}
+    ica: {tenant_id: finance}
 ica:
   enabled: true
   model:
@@ -300,10 +300,10 @@ config:
     listen: '0.0.0.0:2598'
     ica:
       tenant_id: citrix-production
-      upstream_ports: [2598]
       transparent:
         source_cidrs: [10.10.1.10/32]
         upstream_cidrs: [10.77.0.0/16]
+        upstream_ports: [2598]
 ica:
   enabled: true
   transparent: true
