@@ -43,6 +43,7 @@ terraform apply \
   -var helm_chart_repo=oci://REGISTRY/PATH -var helm_chart_name=hoopsidecar-chart \
   -var helm_chart_version=MAJOR.MINOR \
   -var image_repo=REGISTRY/PATH/hoopsidecar -var image_tag=MAJOR.MINOR \
+  -var goog_cm_deployment_name=appdb-sidecar \
   -var upstream=appdb.default.svc.cluster.local:5432
 ```
 
@@ -63,6 +64,7 @@ The chart and image locations are the ones the Marketplace listing shows.
 | `service_type` | `ClusterIP` (default) or `InternalLoadBalancer` (reachable from the VPC, never public) |
 | `license` | Hoop license document. Empty runs the free tier |
 | `namespace` | Default `hoop-sidecar`, created when missing |
+| `goog_cm_deployment_name` | Required. Names the Helm release and its resources; one per sidecar. Lowercase, at most 53 characters |
 | `replicas`, `cpu`, `memory` | Size of the Deployment. Default 1 pod, 500m, 512Mi |
 
 The config schema is in `sidecar/README.md`; worked configs are under

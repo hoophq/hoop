@@ -68,10 +68,14 @@ variable "namespace" {
   default     = "hoop-sidecar"
 }
 
-variable "helm_release_name" {
-  description = "Name of the Helm release. Empty picks hoopsidecar-<random>."
+# Marketplace requires this name and sets it per deployment.
+variable "goog_cm_deployment_name" {
+  description = "Name of the deployment, used as the Helm release name."
   type        = string
-  default     = ""
+  validation {
+    condition     = can(regex("^[a-z]([-a-z0-9]{0,51}[a-z0-9])?$", var.goog_cm_deployment_name))
+    error_message = "goog_cm_deployment_name must be lowercase letters, digits and hyphens, start with a letter, and be at most 53 characters (a Helm release name)."
+  }
 }
 
 # --- Sidecar

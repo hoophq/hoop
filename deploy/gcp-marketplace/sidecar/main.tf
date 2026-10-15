@@ -16,15 +16,10 @@ provider "google" {
 
 data "google_client_config" "default" {}
 
-resource "random_string" "suffix" {
-  length  = 4
-  special = false
-  upper   = false
-}
-
 locals {
-  # A release name that contains "hoopsidecar" is used as is by the chart,
-  # so every resource is named after the release and nothing else.
-  release_name = var.helm_release_name != "" ? var.helm_release_name : "hoopsidecar-${random_string.suffix.result}"
+  # Marketplace gives every deployment its own name, so two deployments in one
+  # namespace never share a release. A release name that contains
+  # "hoopsidecar" is used as is by the chart; any other gets the suffix.
+  release_name = var.goog_cm_deployment_name
   fullname     = length(regexall("hoopsidecar", local.release_name)) > 0 ? local.release_name : "${local.release_name}-hoopsidecar"
 }
