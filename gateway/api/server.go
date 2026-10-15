@@ -35,6 +35,7 @@ import (
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
 	apijiraintegration "github.com/hoophq/hoop/gateway/api/integrations"
 	awsintegration "github.com/hoophq/hoop/gateway/api/integrations/aws"
+	liveeventsapi "github.com/hoophq/hoop/gateway/api/liveevents"
 	loginlocalapi "github.com/hoophq/hoop/gateway/api/login/local"
 	loginoidcapi "github.com/hoophq/hoop/gateway/api/login/oidc"
 	loginsamlapi "github.com/hoophq/hoop/gateway/api/login/saml"
@@ -593,6 +594,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		serverlogsapi.Stream)
+	// Admin only while every event type is about an admin page.
+	r.GET("/events/stream",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		liveeventsapi.Stream)
 
 	r.GET("/ai-agents",
 		apiroutes.AdminOnlyAccessRole,

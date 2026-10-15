@@ -214,6 +214,32 @@ When something in `pages/[Page]/components/` starts getting reused outside the p
   <Text>{'Hello ' + name + '!'}</Text>
   ```
 
+## Real-time updates — use `useLiveEvent`, never a new stream or socket
+
+When a page must react to a change made elsewhere (a sidecar checked in, a
+record changed), subscribe with `useLiveEvent`. The tab holds one shared
+connection to `GET /api/events/stream`: it opens with the first subscriber and
+closes when the last page unmounts. Do not open an `EventSource`, a websocket or
+a new `fetch` stream for this.
+
+```jsx
+import { useLiveEvent } from '@/hooks/useLiveEvent'
+import { LIVE_EVENTS } from '@/services/liveEvents'
+
+useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (event) => {
+  if (event.id === sidecar.id) refreshSidecar(sidecar.id)
+}, enabled)
+```
+
+**Rules:**
+- An event is `{ type, id }` and carries no data. Read the resource again
+  through its store or service.
+- A new type is added in both places: the gateway constant
+  (`gateway/liveevents`) and `LIVE_EVENTS`.
+- A page that must not miss an event keeps a slow poll: the stream is
+  best effort (one replica, reconnects after 5s).
+- The first user is the sidecar setup wizard (`pages/Sidecars/Setup`).
+
 ## Snackbars / Toasts — use `showSnackbar`, never Mantine notifications
 
 The legacy CLJS app shows toasts through `sonner` at the **top-right** of the screen.

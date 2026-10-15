@@ -4,6 +4,9 @@ import { Group, Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
 import Button from '@/components/Button'
 import Stepper from '@/components/Stepper'
+import { useLiveEvent } from '@/hooks/useLiveEvent'
+import { LIVE_EVENTS } from '@/services/liveEvents'
+import { sidecarsService } from '@/services/sidecars'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
@@ -82,6 +85,22 @@ export default function SidecarSetup({ mode = 'connect' }) {
   )
 
   useEffect(() => clearSelected, [clearSelected])
+
+  // From the moment the token is shown: when this sidecar checks in, the
+  // wizard moves to the overview by itself, without Continue.
+  useLiveEvent(
+    LIVE_EVENTS.SIDECAR_CHECKED_IN,
+    async (event) => {
+      if (event.id !== sidecar?.id) return
+      try {
+        const { data: fresh } = await sidecarsService.get(sidecar.id)
+        if (fresh.last_seen_at) handleConnected(fresh)
+      } catch {
+        // The waiting step's poll, or the next check-in, tries again.
+      }
+    },
+    !!sidecar && step < 2,
+  )
 
   // Deleted from somewhere else while this page was open: the banner says so,
   // and the button stops pretending to wait for it.

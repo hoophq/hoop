@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/liveevents"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -71,6 +72,9 @@ func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, se
 	if err := models.MarkSidecarConnectionsOnline(models.DB, sc.OrgID, sc.ID); err != nil {
 		log.With("sidecar", sc.ID).Warnf("%v", err)
 	}
+	// A page waiting for this sidecar, such as the setup wizard, reads it
+	// again now instead of on its next poll.
+	liveevents.Publish(sc.OrgID, liveevents.Event{Type: liveevents.SidecarCheckedIn, ID: sc.ID})
 }
 
 // refuseOverCap answers 422 when a configuration authors more rules than the

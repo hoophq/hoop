@@ -14172,6 +14172,37 @@
         ]
       }
     },
+    "/events/stream": {
+      "get": {
+        "description": "Streams change notices of the organization via SSE, one \"event: \u003ctype\u003e\" frame per change, with {\"type\",\"id\"} as data. A notice names what changed and never its content: read the resource again through its own route. Types: sidecar.checked_in.",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Stream Live Events",
+        "tags": [
+          "Live Events"
+        ]
+      }
+    },
     "/feature-flags": {
       "get": {
         "description": "List all feature flags from the catalog with their per-org state",

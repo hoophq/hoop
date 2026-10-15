@@ -3469,6 +3469,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/events/stream": {
+            "get": {
+                "description": "Streams change notices of the organization via SSE, one \"event: \u003ctype\u003e\" frame per change, with {\"type\",\"id\"} as data. A notice names what changed and never its content: read the resource again through its own route. Types: sidecar.checked_in.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Live Events"
+                ],
+                "summary": "Stream Live Events",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/feature-flags": {
             "get": {
                 "description": "List all feature flags from the catalog with their per-org state",
