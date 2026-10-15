@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -57,10 +58,11 @@ type laneStatements struct {
 	metadataAllow []string // lower-cased header allowlist
 	baseMeta      map[string]string
 
-	// reviewMode is the call's analyzer.HeaderReviewMode, when the lane
-	// exposes it. The analyzer holds request messages, which carry no
-	// headers, so message copies this one onto them.
-	reviewMode string
+	// reviewMode is the call's analyzer.ClientModeHeaders, each spelling
+	// the client sent, when the lane exposes them. The analyzer holds
+	// request messages, which carry no headers, so message copies these
+	// onto them, and the analyzer decides between the two spellings.
+	reviewMode map[string]string
 }
 
 func newLaneStatements(r *http.Request, service, methodName string, allow []string, proto inspect.Protocol, spanner *SpannerConfig) *laneStatements {
@@ -92,8 +94,13 @@ func newLaneStatements(r *http.Request, service, methodName string, allow []stri
 		meta[inspect.MetadataGRPCUserAgent] = v
 	}
 	s.baseMeta = meta
-	if slices.Contains(allow, analyzer.HeaderReviewMode) {
-		s.reviewMode = r.Header.Get(analyzer.HeaderReviewMode)
+	for _, name := range analyzer.ClientModeHeaders() {
+		if v := r.Header.Get(name); v != "" && slices.Contains(allow, name) {
+			if s.reviewMode == nil {
+				s.reviewMode = map[string]string{}
+			}
+			s.reviewMode[name] = v
+		}
 	}
 	return s
 }
@@ -164,8 +171,8 @@ func (s *laneStatements) message(dir inspect.Direction, rendered string, truncat
 	stmt.HTTP.Body = rendered
 	stmt.HTTP.BodyTruncated = truncated
 	stmt.Metadata[inspect.MetadataGRPCMessageIndex] = strconv.Itoa(index)
-	if dir == inspect.FromClient && s.reviewMode != "" {
-		stmt.HTTP.Headers = map[string]string{analyzer.HeaderReviewMode: s.reviewMode}
+	if dir == inspect.FromClient && len(s.reviewMode) > 0 {
+		stmt.HTTP.Headers = maps.Clone(s.reviewMode)
 	}
 	return stmt
 }

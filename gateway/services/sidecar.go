@@ -58,6 +58,12 @@ func ParseSidecarConfiguration(raw json.RawMessage) (daemon.Config, error) {
 	if cfg.LoadFromDisk != nil && !*cfg.LoadFromDisk {
 		cfg.LoadFromDisk = nil
 	}
+	// The plane never runs normalize, so it folds the approval spellings
+	// itself: the stored document then holds only what every sidecar build
+	// decodes, and nothing on the plane reads an alias.
+	if err := daemon.CanonicalizeApprovalSpellings(&cfg); err != nil {
+		return cfg, fmt.Errorf("invalid sidecar configuration: %w", err)
+	}
 	if err := ValidateListenerNames(cfg.Listeners); err != nil {
 		return cfg, err
 	}

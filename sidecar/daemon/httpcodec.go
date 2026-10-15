@@ -14,12 +14,12 @@ import (
 // binary link only the protocols it speaks; this file is already inside a
 // package that imports codec/all, so it adds no reach.
 //
-// A nil cfg captures no header but the review mode, and no body unless the
+// A nil cfg captures no header but the approval mode, and no body unless the
 // lane holds. The lane still gets its own factory, because the Via loop
 // marker and the Connect Gateway resource normalization apply to every http
 // lane, capture or not.
 //
-// Every http lane captures analyzer.HeaderReviewMode, so a client can opt
+// Every http lane captures analyzer.ClientModeHeaders, so a client can opt
 // into return per request (ADR-0021). The codec records only headers the
 // client sent, so other requests keep their audit shape.
 //
@@ -37,7 +37,7 @@ func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, holds bool) fun
 	opts := codechttp.Options{
 		// headerNames is normalized once, the same list validate checked,
 		// nil-safe, and a fresh slice, so the append leaves cfg alone.
-		Headers:            append(cfg.headerNames(), analyzer.HeaderReviewMode),
+		Headers:            append(cfg.headerNames(), analyzer.ClientModeHeaders()...),
 		CredentialHeader:   credentialHeader,
 		CaptureRequestBody: holds,
 	}

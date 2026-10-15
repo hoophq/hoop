@@ -31,15 +31,17 @@ import (
 // should construct the libhoop codec directly for production use; go through
 // here so the classifier is always attached.
 //
-// It keeps one connection attribute, analyzer.ConnectAttrReviewMode, so a
-// client can opt into a review mode (ADR-0021). On every lane, holding or
-// not, because the registry codec cannot see the lane. A lane that does not
-// hold never reads it.
+// It keeps two connection attributes, analyzer.ConnectAttrApprovalMode and
+// analyzer.ConnectAttrReviewMode (the same opt-in, spelled before and after
+// the product renamed review to approval), so a client can opt into an
+// approval mode (ADR-0021). On every lane, holding or not, because the
+// registry codec cannot see the lane. A lane that does not hold never reads
+// them.
 func New() inspect.Codec {
 	return codecmysql.New(codecmysql.Options{
 		Analyze:      inspect.AnalyzeSQL,
 		Split:        split,
-		ConnectAttrs: []string{analyzer.ConnectAttrReviewMode},
+		ConnectAttrs: []string{analyzer.ConnectAttrReviewMode, analyzer.ConnectAttrApprovalMode},
 	})
 }
 

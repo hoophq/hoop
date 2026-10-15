@@ -346,6 +346,15 @@ func decodeSpec(raw json.RawMessage, into any) error {
 	if err := dec.Decode(into); err != nil {
 		return fmt.Errorf("its stored sidecar rule is not a shape a sidecar accepts: %w", err)
 	}
+	// An analyzer spec may use the approval spellings. Folded here, at the one
+	// decode every reader shares, so no reader on the plane sees an alias:
+	// holds checks, the merge into a lane and the served document all read
+	// require_review and review_mode.
+	if block, ok := into.(*daemon.LaneAnalyzerConfig); ok {
+		if err := block.Canonicalize(); err != nil {
+			return fmt.Errorf("its stored sidecar rule is not a shape a sidecar accepts: %w", err)
+		}
+	}
 	return nil
 }
 

@@ -341,7 +341,8 @@ func HTTPReviewForbidden(msg string, review policy.Review) []byte {
 
 // reviewHeaderOrder is the order HTTPReviewForbidden writes ReviewHeaders in,
 // so a response is the same bytes on every run.
-var reviewHeaderOrder = []string{"X-Hoop-Denied", "X-Hoop-Review-Id", "X-Hoop-Review-Status", "Retry-After"}
+var reviewHeaderOrder = []string{"X-Hoop-Denied", "X-Hoop-Approval-Id", "X-Hoop-Approval-Status",
+	"X-Hoop-Review-Id", "X-Hoop-Review-Status", "Retry-After"}
 
 // ReviewHeaders are the markers a denial that names a review carries: http
 // lanes send them as headers, grpc lanes as trailers.
@@ -351,14 +352,20 @@ var reviewHeaderOrder = []string{"X-Hoop-Denied", "X-Hoop-Review-Id", "X-Hoop-Re
 // return mode while the review is pending, because only then does a resend
 // after approval run the statement.
 //
+// The id and status travel twice: X-Hoop-Approval-* under the product's name,
+// and X-Hoop-Review-* for clients written before the rename. X-Hoop-Denied
+// keeps the value "review", because clients already match on it.
+//
 // The id and status come from the control plane. A value that is not a plain
 // token is dropped rather than written, so a reply cannot inject a header.
 func ReviewHeaders(review policy.Review) http.Header {
 	h := http.Header{"X-Hoop-Denied": {"review"}}
 	if headerToken(review.ID) {
+		h.Set("X-Hoop-Approval-Id", review.ID)
 		h.Set("X-Hoop-Review-Id", review.ID)
 	}
 	if headerToken(review.Status) {
+		h.Set("X-Hoop-Approval-Status", review.Status)
 		h.Set("X-Hoop-Review-Status", review.Status)
 	}
 	if review.Return && review.Status == ReviewStatusPending {
