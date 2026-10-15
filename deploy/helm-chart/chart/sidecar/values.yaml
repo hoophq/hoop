@@ -358,6 +358,13 @@ affinity: {}
 ##
 podAnnotations: {}
 
+## Set pod labels. They go on the pod template only, never the selector, and
+## a key the chart already sets is refused at render. GCP Marketplace puts
+## its consumption tracking label here:
+##   podLabels:
+##     goog-partner-solution: isol_plb32_...
+podLabels: {}
+
 ## Set deployment annotations
 ##
 deploymentAnnotations: {}

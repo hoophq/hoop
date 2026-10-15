@@ -13,6 +13,7 @@ behaves the same way in this repo. Change it via PR like any code.
 | `skills/build-ticket/` | `/build-ticket EVL-86` — one ticket to a draft PR: code, tests, QA loop, evidence |
 | `agents/qa.md` | `qa` — independent QA; judges the branch against the ticket only, never edits |
 | `skills/evidence/` | `/evidence` — the same flow on `origin/main` and the branch, as before/after images |
+| `skills/gcp-marketplace-publish/` | `/gcp-marketplace-publish` — a release of the sidecar to the GCP Marketplace listing, on demand |
 | `../.mcp.json` | Linear + Figma MCP servers for everyone (first run: approve + `/mcp` to authenticate) |
 
 ## First-time setup (each engineer, once)

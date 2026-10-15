@@ -1,0 +1,10 @@
+# Marketplace copies the image to its own registry at publish time and writes
+# the copy's location into these variables. The key is the image path after
+# the Artifact Registry repository: <registry>/<project>/<repo>/hoopsidecar.
+images:
+  hoopsidecar:
+    variables:
+      image_repo:
+        type: REPO_WITH_REGISTRY_WITH_NAME
+      image_tag:
+        type: TAG
