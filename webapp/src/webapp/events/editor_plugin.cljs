@@ -22,6 +22,15 @@
        (reduce into {})
        (clj->js)))
 
+(def analyze-before-run-forms-flag "experimental.analyze_before_run_forms")
+
+(defn- feature-flag-enabled?
+  "Reads a /serverinfo flag the way the :feature-flag/enabled? sub does."
+  [db flag-name]
+  (let [flags (get-in db [:gateway->info :data :feature_flags])]
+    (boolean (or (get flags (keyword flag-name))
+                 (get flags flag-name)))))
+
 (rf/reg-event-fx
  :editor-plugin->exec-script
  (fn
@@ -119,7 +128,7 @@
 
 (rf/reg-event-fx
  :editor-plugin/submit-task-with-fresh-data
- (fn [{:keys [db]} [_ {:keys [script]}]]
+ (fn [{:keys [db]} [_ {:keys [script analyzed?]}]]
    (let [primary-name (get-in db [:editor :connections :selected :name])
          connection-details (get-in db [:connections :details])
 
@@ -166,7 +175,9 @@
                              (= connection-type "mysql")) (str "use " selected-db ";\n" script)
                         (and selected-db
                              (= connection-type "mongodb")) (str "use " selected-db ";\n" script)
-                        :else script)]
+                        :else script)
+         opens-forms? (or mandatory-metadata-fields
+                          (and needs-template? jira-integration-enabled?))]
 
      (cond
        ;; No connection selected (should not happen due to previous check)
@@ -174,6 +185,16 @@
        {:fx [[:dispatch [:show-snackbar
                          {:level :error
                           :text "Connection not found"}]]]}
+
+       ;; Analyze before the forms, so a blocked script stops before them
+       (and opens-forms?
+            (not analyzed?)
+            (feature-flag-enabled? db analyze-before-run-forms-flag))
+       {:fx [[:dispatch [:editor-plugin/analyze-before-forms
+                         {:script script
+                          :final-script final-script
+                          :connection-name (:name fresh-primary-connection)
+                          :metadata (metadata->json-stringify metadata)}]]]}
 
        ;; Mandatory metadata collection
        mandatory-metadata-fields
@@ -227,6 +248,36 @@
           {:db (update db :editor-plugin merge {:metadata []
                                                 :metadata-key ""
                                                 :metadata-value ""})}))))))
+
+;; POST /sessions/analyze answers 200 with the blocked session, or 204 when the
+;; script may run. 412 means the flag is off on the gateway: open the forms.
+(rf/reg-event-fx
+ :editor-plugin/analyze-before-forms
+ (fn [{:keys [db]} [_ {:keys [script final-script connection-name metadata]}]]
+   {:db (assoc-in db [:editor-plugin->script] {:status :loading})
+    :fx [[:dispatch [:fetch {:method "POST"
+                             :uri "/sessions/analyze"
+                             :body {:script final-script
+                                    :connection connection-name
+                                    :metadata metadata}
+                             :on-success (fn [res]
+                                           (if res
+                                             (rf/dispatch [::editor-plugin->set-script-success res final-script])
+                                             (rf/dispatch [:editor-plugin/open-run-forms script])))
+                             :on-failure (fn [error]
+                                           (if (= 412 (:status error))
+                                             (rf/dispatch [:editor-plugin/open-run-forms script])
+                                             (do
+                                               (rf/dispatch [:show-snackbar {:text "Failed to analyze script"
+                                                                             :level :error
+                                                                             :details error}])
+                                               (rf/dispatch [::editor-plugin->set-script-failure error]))))}]]]}))
+
+(rf/reg-event-fx
+ :editor-plugin/open-run-forms
+ (fn [{:keys [db]} [_ script]]
+   {:db (assoc-in db [:editor-plugin->script] nil)
+    :fx [[:dispatch [:editor-plugin/submit-task-with-fresh-data {:script script :analyzed? true}]]]}))
 
 ;; Error handler for connection loading failures
 (rf/reg-event-fx
