@@ -30,7 +30,14 @@ func TestMain(m *testing.M) { os.Exit(pglitetest.Main(m)) }
 const (
 	analyzeTestOrgID = "00000000-0000-0000-0000-0000000000e6"
 	analyzeTestConn  = "pg-gmud"
+	// analyzeMetaConn requires the change_ticket metadata field.
+	analyzeMetaConn = "pg-meta"
 )
+
+// The rule of the test org: medium risk needs approval, high risk blocks.
+const defaultRiskEvaluation = `{"low_risk":{"action":"allow_execution"},
+	"medium_risk":{"action":"require_access_request","access_request_rule_name":"gmud-approval"},
+	"high_risk":{"action":"block_execution"}}`
 
 // llmStub answers as an OpenAI-compatible provider: a script with DROP is high
 // risk, UPDATE medium, anything else low. calls counts the analyzer runs.
@@ -57,8 +64,8 @@ func llmStub(t *testing.T, calls *atomic.Int32) *httptest.Server {
 	return srv
 }
 
-// startAnalyzeTestDB seeds an org, a connection, an AI provider that points at
-// the stub, and an analyzer rule: medium risk needs approval, high risk blocks.
+// startAnalyzeTestDB seeds an org, two connections, an AI provider that points
+// at the stub, and an analyzer rule for both connections.
 func startAnalyzeTestDB(t *testing.T, llmURL string) {
 	t.Helper()
 	if testing.Short() {
@@ -71,28 +78,35 @@ func startAnalyzeTestDB(t *testing.T, llmURL string) {
 		require.NoError(t, models.DB.Exec(query, args...).Error)
 	}
 	exec(`INSERT INTO private.orgs (id, name) VALUES (?, 'analyze-test')`, analyzeTestOrgID)
-	exec(`INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, ?, 'database', 'postgres')`,
-		analyzeTestOrgID, analyzeTestConn)
-	exec(`INSERT INTO private.connections (org_id, name, type, subtype, resource_name, access_mode_exec)
-		VALUES (?, ?, 'database', 'postgres', ?, 'enabled'::private.enum_access_status)`,
-		analyzeTestOrgID, analyzeTestConn, analyzeTestConn)
+	for _, name := range []string{analyzeTestConn, analyzeMetaConn} {
+		exec(`INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, ?, 'database', 'postgres')`,
+			analyzeTestOrgID, name)
+		exec(`INSERT INTO private.connections (org_id, name, type, subtype, resource_name, access_mode_exec)
+			VALUES (?, ?, 'database', 'postgres', ?, 'enabled'::private.enum_access_status)`,
+			analyzeTestOrgID, name, name)
+	}
+	exec(`UPDATE private.connections SET mandatory_metadata_fields = ARRAY['change_ticket'] WHERE name = ?`, analyzeMetaConn)
 	exec(`INSERT INTO private.ai_providers (org_id, feature, provider, api_url, api_key, model)
 		VALUES (?, 'session-analyzer', 'openai', ?, 'stub-key', 'stub')`, analyzeTestOrgID, llmURL+"/v1/")
 	require.NoError(t, models.DB.Create(&models.AccessRequestRule{
 		OrgID:                  uuid.MustParse(analyzeTestOrgID),
 		Name:                   "gmud-approval",
 		AccessType:             models.AccessTypeCommand,
-		ConnectionNames:        pq.StringArray{analyzeTestConn},
+		ConnectionNames:        pq.StringArray{analyzeTestConn, analyzeMetaConn},
 		ApprovalRequiredGroups: pq.StringArray{"sre"},
 		ReviewersGroups:        pq.StringArray{"sre"},
 		ForceApprovalGroups:    pq.StringArray{},
 		SkipReviewGroups:       pq.StringArray{},
 	}).Error)
 	exec(`INSERT INTO private.ai_session_analyzer_rules (org_id, name, connection_names, risk_evaluation)
-		VALUES (?, 'block-high', ARRAY[?], ?::jsonb)`, analyzeTestOrgID, analyzeTestConn,
-		`{"low_risk":{"action":"allow_execution"},
-		"medium_risk":{"action":"require_access_request","access_request_rule_name":"gmud-approval"},
-		"high_risk":{"action":"block_execution"}}`)
+		VALUES (?, 'gmud-analyzer', ARRAY[?, ?], ?::jsonb)`, analyzeTestOrgID, analyzeTestConn, analyzeMetaConn,
+		defaultRiskEvaluation)
+}
+
+func setRiskEvaluation(t *testing.T, riskEvaluation string) {
+	t.Helper()
+	require.NoError(t, models.DB.Exec(`UPDATE private.ai_session_analyzer_rules SET risk_evaluation = ?::jsonb
+		WHERE org_id = ?`, riskEvaluation, analyzeTestOrgID).Error)
 }
 
 func analyzeTestContext() *storagev2.Context {
@@ -102,17 +116,22 @@ func analyzeTestContext() *storagev2.Context {
 
 func callAnalyze(t *testing.T, script string) *httptest.ResponseRecorder {
 	t.Helper()
-	return callSessionHandler(t, Analyze, "/api/sessions/analyze", script)
+	return callSessionHandler(t, Analyze, "/api/sessions/analyze", map[string]any{"connection": analyzeTestConn, "script": script})
 }
 
-func callSessionHandler(t *testing.T, handler gin.HandlerFunc, path, script string) *httptest.ResponseRecorder {
+func callPost(t *testing.T, script string) *httptest.ResponseRecorder {
+	t.Helper()
+	return callSessionHandler(t, Post, "/api/sessions", map[string]any{"connection": analyzeTestConn, "script": script})
+}
+
+func callSessionHandler(t *testing.T, handler gin.HandlerFunc, path string, body map[string]any) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Set(storagev2.ContextKey, analyzeTestContext())
-	body, _ := json.Marshal(map[string]any{"connection": analyzeTestConn, "script": script})
-	c.Request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(body)))
+	raw, _ := json.Marshal(body)
+	c.Request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(raw)))
 	c.Request.Header.Set("Content-Type", "application/json")
 	handler(c)
 	// The gin engine flushes the status after the handler; a test context does not.
@@ -126,12 +145,34 @@ func setAnalyzeFlag(t *testing.T, on bool) {
 	t.Cleanup(func() { featureflag.Set(analyzeTestOrgID, featureflag.FlagAnalyzeBeforeRunForms, false) })
 }
 
-func analyzeTestConnection(t *testing.T) *models.Connection {
+func analyzeTestConnection(t *testing.T, name string) *models.Connection {
 	t.Helper()
-	conn, err := models.GetConnectionByNameOrID(analyzeTestContext(), analyzeTestConn)
+	conn, err := models.GetConnectionByNameOrID(analyzeTestContext(), name)
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 	return conn
+}
+
+func isHeld(t *testing.T, connection, script string) bool {
+	t.Helper()
+	_, _, held, err := heldAnalysis(analyzeTestContext(), analyzeTestConnection(t, connection), script)
+	require.NoError(t, err)
+	return held
+}
+
+type execResponse struct {
+	SessionID    string `json:"session_id"`
+	OutputStatus string `json:"output_status"`
+	AIAnalysis   struct {
+		Action string `json:"action"`
+	} `json:"ai_analysis"`
+}
+
+func decodeExecResponse(t *testing.T, rec *httptest.ResponseRecorder) execResponse {
+	t.Helper()
+	var resp execResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	return resp
 }
 
 func TestAnalyze(t *testing.T) {
@@ -152,14 +193,7 @@ func TestAnalyze(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 		assert.Equal(t, int32(1), calls.Load())
 
-		var resp struct {
-			SessionID    string `json:"session_id"`
-			OutputStatus string `json:"output_status"`
-			AIAnalysis   struct {
-				Action string `json:"action"`
-			} `json:"ai_analysis"`
-		}
-		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		resp := decodeExecResponse(t, rec)
 		assert.Equal(t, "blocked", resp.OutputStatus)
 		assert.Equal(t, string(models.BlockExecution), resp.AIAnalysis.Action)
 
@@ -167,28 +201,22 @@ func TestAnalyze(t *testing.T) {
 		require.NoError(t, models.DB.Raw(`SELECT status FROM private.sessions WHERE id = ?`, resp.SessionID).
 			Row().Scan(&status))
 		assert.Equal(t, "done", status, "the blocked run is recorded as POST /sessions records it")
-
-		_, _, held := takeHeldVerdict(analyzeTestContext(), analyzeTestConnection(t), "DROP TABLE customers")
-		assert.False(t, held, "a block must not be held: it was already applied")
+		assert.False(t, isHeld(t, analyzeTestConn, "DROP TABLE customers"), "a block is applied, not held")
 	})
 
-	t.Run("an allow answers 204 and is held once for POST /sessions", func(t *testing.T) {
+	t.Run("an allow answers 204 and is held for this user, connection and script", func(t *testing.T) {
 		setAnalyzeFlag(t, true)
 		calls.Store(0)
 		rec := callAnalyze(t, "SELECT * FROM customers")
 		require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
 		assert.Equal(t, int32(1), calls.Load())
 
-		conn := analyzeTestConnection(t)
-		_, _, held := takeHeldVerdict(analyzeTestContext(), conn, "SELECT * FROM customers -- edited")
-		assert.False(t, held, "an edited script must be analyzed again")
-
-		analysis, _, held := takeHeldVerdict(analyzeTestContext(), conn, "SELECT * FROM customers")
+		assert.False(t, isHeld(t, analyzeTestConn, "SELECT * FROM customers -- edited"), "an edited script analyzes again")
+		assert.False(t, isHeld(t, analyzeMetaConn, "SELECT * FROM customers"), "another connection analyzes again")
+		analysis, _, held, err := heldAnalysis(analyzeTestContext(), analyzeTestConnection(t, analyzeTestConn), "SELECT * FROM customers")
+		require.NoError(t, err)
 		require.True(t, held)
 		assert.Equal(t, string(models.AllowExecution), analysis.Action)
-
-		_, _, held = takeHeldVerdict(analyzeTestContext(), conn, "SELECT * FROM customers")
-		assert.False(t, held, "a held verdict is used once")
 	})
 
 	t.Run("POST /sessions applies the held verdict without a second analysis", func(t *testing.T) {
@@ -199,21 +227,58 @@ func TestAnalyze(t *testing.T) {
 		require.Equal(t, int32(1), calls.Load())
 
 		// Medium risk needs approval: POST /sessions answers 202 before it runs anything.
-		rec := callSessionHandler(t, Post, "/api/sessions", script)
+		rec := callPost(t, script)
 		require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
 		assert.Equal(t, int32(1), calls.Load(), "POST /sessions must reuse the held verdict")
 
-		rec = callSessionHandler(t, Post, "/api/sessions", script)
+		rec = callPost(t, script)
 		require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
-		assert.Equal(t, int32(2), calls.Load(), "a used verdict is gone: the next run analyzes again")
+		assert.Equal(t, int32(2), calls.Load(), "a decided run spends the verdict: the next run analyzes again")
 	})
 
-	t.Run("flag off: POST /sessions does not read held verdicts", func(t *testing.T) {
+	t.Run("POST /sessions applies the current rule to a held verdict", func(t *testing.T) {
 		setAnalyzeFlag(t, true)
-		require.Equal(t, http.StatusNoContent, callAnalyze(t, "SELECT 2").Code)
+		t.Cleanup(func() { setRiskEvaluation(t, defaultRiskEvaluation) })
+		const script = "SELECT 7"
+		calls.Store(0)
+		require.Equal(t, http.StatusNoContent, callAnalyze(t, script).Code)
+
+		// An admin blocks low risk while the user fills in the forms.
+		setRiskEvaluation(t, `{"low_risk":{"action":"block_execution"}}`)
+		rec := callPost(t, script)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		resp := decodeExecResponse(t, rec)
+		assert.Equal(t, "blocked", resp.OutputStatus)
+		assert.Equal(t, string(models.BlockExecution), resp.AIAnalysis.Action)
+		assert.Equal(t, int32(1), calls.Load(), "the risk level is reused, the action is not")
+	})
+
+	t.Run("a 422 before the run keeps the verdict for the retry", func(t *testing.T) {
+		setAnalyzeFlag(t, true)
+		const script = "SELECT 8"
+		body := map[string]any{"connection": analyzeMetaConn, "script": script}
+		calls.Store(0)
+		require.Equal(t, http.StatusNoContent, callSessionHandler(t, Analyze, "/api/sessions/analyze", body).Code)
+
+		rec := callSessionHandler(t, Post, "/api/sessions", body)
+		require.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+		assert.True(t, isHeld(t, analyzeMetaConn, script))
+		assert.Equal(t, int32(1), calls.Load())
+	})
+
+	t.Run("turning the flag off drops the held verdicts", func(t *testing.T) {
+		setAnalyzeFlag(t, true)
+		const script = "UPDATE customers SET tier = 'silver'"
+		calls.Store(0)
+		require.Equal(t, http.StatusNoContent, callAnalyze(t, script).Code)
+
 		featureflag.Set(analyzeTestOrgID, featureflag.FlagAnalyzeBeforeRunForms, false)
-		_, _, held := takeHeldVerdict(analyzeTestContext(), analyzeTestConnection(t), "SELECT 2")
-		assert.False(t, held)
+		require.Equal(t, http.StatusAccepted, callPost(t, script).Code)
+		assert.Equal(t, int32(2), calls.Load(), "flag off: POST /sessions analyzes as before")
+
+		featureflag.Set(analyzeTestOrgID, featureflag.FlagAnalyzeBeforeRunForms, true)
+		require.Equal(t, http.StatusAccepted, callPost(t, script).Code)
+		assert.Equal(t, int32(3), calls.Load(), "a verdict held before the flag went off is gone")
 	})
 
 	t.Run("no analyzer rule answers 204", func(t *testing.T) {
@@ -228,37 +293,46 @@ func TestAnalyze(t *testing.T) {
 
 func TestVerdictHold(t *testing.T) {
 	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
-	h := &verdictHold{entries: map[string]heldVerdict{}, now: func() time.Time { return now }}
+	h := &verdictHold{entries: map[string]map[string]heldVerdict{}, now: func() time.Time { return now }}
 	allow := &models.SessionAIAnalysis{Action: string(models.AllowExecution)}
 
-	h.put("a", heldVerdict{analysis: allow, expiresAt: now.Add(heldVerdictTTL)})
-	h.put("old", heldVerdict{analysis: allow, expiresAt: now.Add(time.Minute)})
+	h.put("org1", "a", heldVerdict{analysis: allow, expiresAt: now.Add(heldVerdictTTL)})
+	h.put("org1", "old", heldVerdict{analysis: allow, expiresAt: now.Add(time.Minute)})
+	h.put("org2", "old", heldVerdict{analysis: allow, expiresAt: now.Add(time.Minute)})
 
 	now = now.Add(2 * time.Minute)
-	h.put("b", heldVerdict{analysis: allow, expiresAt: now.Add(heldVerdictTTL)})
-	assert.NotContains(t, h.entries, "old", "put drops expired entries")
+	h.put("org1", "b", heldVerdict{analysis: allow, expiresAt: now.Add(heldVerdictTTL)})
+	assert.NotContains(t, h.entries["org1"], "old", "put drops expired entries")
+	assert.NotContains(t, h.entries, "org2", "put drops orgs with no verdict left")
 
-	v, ok := h.take("a")
+	v, ok := h.get("org1", "a")
 	require.True(t, ok)
 	assert.Same(t, allow, v.analysis)
-	_, ok = h.take("a")
-	assert.False(t, ok, "take is one use")
+	_, ok = h.get("org1", "a")
+	assert.True(t, ok, "get keeps the verdict")
+	_, ok = h.get("org2", "a")
+	assert.False(t, ok, "verdicts are per org")
+
+	h.drop("org1", "a")
+	_, ok = h.get("org1", "a")
+	assert.False(t, ok)
 
 	now = now.Add(heldVerdictTTL)
-	_, ok = h.take("b")
+	_, ok = h.get("org1", "b")
 	assert.False(t, ok, "an expired verdict is not returned")
+
+	h.dropOrg("org1")
 	assert.Empty(t, h.entries)
 }
 
 func TestHeldVerdictKey(t *testing.T) {
-	base := heldVerdictKey("org", "user", "conn", "SELECT 1")
-	assert.Equal(t, base, heldVerdictKey("org", "user", "conn", "SELECT 1"))
+	base := heldVerdictKey("user", "conn", "SELECT 1")
+	assert.Equal(t, base, heldVerdictKey("user", "conn", "SELECT 1"))
 	for name, key := range map[string]string{
-		"other org":        heldVerdictKey("org2", "user", "conn", "SELECT 1"),
-		"other user":       heldVerdictKey("org", "user2", "conn", "SELECT 1"),
-		"other connection": heldVerdictKey("org", "user", "conn2", "SELECT 1"),
-		"other script":     heldVerdictKey("org", "user", "conn", "SELECT 2"),
-		"shifted parts":    heldVerdictKey("org", "use", "rconn", "SELECT 1"),
+		"other user":       heldVerdictKey("user2", "conn", "SELECT 1"),
+		"other connection": heldVerdictKey("user", "conn2", "SELECT 1"),
+		"other script":     heldVerdictKey("user", "conn", "SELECT 2"),
+		"shifted parts":    heldVerdictKey("use", "rconn", "SELECT 1"),
 	} {
 		assert.NotEqual(t, base, key, name)
 	}

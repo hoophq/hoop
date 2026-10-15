@@ -3,6 +3,7 @@ package sessionapi
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 // heldVerdictTTL is how long POST /sessions reuses a verdict of POST
@@ -26,69 +28,111 @@ import (
 const heldVerdictTTL = 15 * time.Minute
 
 type heldVerdict struct {
-	analysis   *models.SessionAIAnalysis
-	accessRule *models.AccessRequestRule
-	expiresAt  time.Time
+	// analysis keeps the risk level. POST /sessions applies the current rule
+	// to it, so a rule changed since the analysis applies to the run.
+	analysis  *models.SessionAIAnalysis
+	expiresAt time.Time
 }
 
-// verdictHold keeps, in the memory of one gateway, the verdicts that POST
-// /sessions/analyze let through. A miss (other replica, expired, restart)
-// analyzes again, so no result depends on a hit.
+// verdictHold keeps, in the memory of one gateway and per org, the verdicts
+// that POST /sessions/analyze let through. A miss (other replica, expired,
+// restart) analyzes again, so no result depends on a hit.
 type verdictHold struct {
 	mu      sync.Mutex
-	entries map[string]heldVerdict
+	entries map[string]map[string]heldVerdict // org id -> key -> verdict
 	now     func() time.Time
 }
 
-var heldVerdicts = &verdictHold{entries: map[string]heldVerdict{}, now: time.Now}
+var heldVerdicts = &verdictHold{entries: map[string]map[string]heldVerdict{}, now: time.Now}
 
 // put keeps v under key and drops the expired entries, so abandoned forms do
 // not grow the map.
-func (h *verdictHold) put(key string, v heldVerdict) {
+func (h *verdictHold) put(orgID, key string, v heldVerdict) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	now := h.now()
-	for k, e := range h.entries {
-		if !now.Before(e.expiresAt) {
-			delete(h.entries, k)
+	for org, verdicts := range h.entries {
+		for k, e := range verdicts {
+			if !now.Before(e.expiresAt) {
+				delete(verdicts, k)
+			}
+		}
+		if len(verdicts) == 0 {
+			delete(h.entries, org)
 		}
 	}
-	h.entries[key] = v
+	if h.entries[orgID] == nil {
+		h.entries[orgID] = map[string]heldVerdict{}
+	}
+	h.entries[orgID][key] = v
 }
 
-// take removes and returns the verdict under key. A verdict is used once.
-func (h *verdictHold) take(key string) (heldVerdict, bool) {
+// get returns the unexpired verdict under key and keeps it: a run that fails
+// before it starts (422 on a form field) can use it again.
+func (h *verdictHold) get(orgID, key string) (heldVerdict, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	v, ok := h.entries[key]
-	if !ok {
-		return heldVerdict{}, false
-	}
-	delete(h.entries, key)
-	if !h.now().Before(v.expiresAt) {
+	v, ok := h.entries[orgID][key]
+	if !ok || !h.now().Before(v.expiresAt) {
 		return heldVerdict{}, false
 	}
 	return v, true
 }
 
-// heldVerdictKey binds a verdict to the org, the user, the connection and the
-// exact script it judged.
-func heldVerdictKey(orgID, userID, connectionID, script string) string {
+func (h *verdictHold) drop(orgID, key string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.entries[orgID], key)
+}
+
+func (h *verdictHold) dropOrg(orgID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.entries, orgID)
+}
+
+// heldVerdictKey binds a verdict to the user, the connection and the exact
+// script it judged.
+func heldVerdictKey(userID, connectionID, script string) string {
 	h := sha256.New()
-	for _, part := range []string{orgID, userID, connectionID, script} {
+	for _, part := range []string{userID, connectionID, script} {
 		fmt.Fprintf(h, "%d:%s", len(part), part)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// takeHeldVerdict returns the verdict that POST /sessions/analyze held for
-// this run. It holds nothing while the flag is off.
-func takeHeldVerdict(ctx *storagev2.Context, conn *models.Connection, script string) (*models.SessionAIAnalysis, *models.AccessRequestRule, bool) {
+// heldAnalysis returns the verdict POST /sessions/analyze held for this run,
+// with the action of the connection's current rule. It does not spend the
+// verdict. While the flag is off it drops the org's verdicts and holds none.
+func heldAnalysis(ctx *storagev2.Context, conn *models.Connection, script string) (*models.SessionAIAnalysis, *models.AccessRequestRule, bool, error) {
 	if !featureflag.IsEnabled(ctx.OrgID, featureflag.FlagAnalyzeBeforeRunForms) {
-		return nil, nil, false
+		heldVerdicts.dropOrg(ctx.OrgID)
+		return nil, nil, false, nil
 	}
-	v, ok := heldVerdicts.take(heldVerdictKey(ctx.OrgID, ctx.UserID, conn.ID, script))
-	return v.analysis, v.accessRule, ok
+	key := heldVerdictKey(ctx.UserID, conn.ID, script)
+	v, ok := heldVerdicts.get(ctx.OrgID, key)
+	if !ok {
+		return nil, nil, false, nil
+	}
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	rule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, orgID, conn.Name)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil, false, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", conn.Name, err)
+	}
+	if rule == nil {
+		// The rule is gone: analyze as if nothing was held.
+		heldVerdicts.drop(ctx.OrgID, key)
+		return nil, nil, false, nil
+	}
+	analysis := *v.analysis
+	a, accessRule, err := applyRuleTier(orgID, rule, &analysis)
+	return a, accessRule, true, err
+}
+
+// spendHeldVerdict drops the verdict of a run that is decided: blocked, sent
+// to approval, or started. The next run of the same script analyzes again.
+func spendHeldVerdict(ctx *storagev2.Context, conn *models.Connection, script string) {
+	heldVerdicts.drop(ctx.OrgID, heldVerdictKey(ctx.UserID, conn.ID, script))
 }
 
 // newExecSession builds the session row of an exec request, and returns the
@@ -213,10 +257,9 @@ func Analyze(c *gin.Context) {
 		return
 	}
 
-	heldVerdicts.put(heldVerdictKey(ctx.OrgID, ctx.UserID, conn.ID, req.Script), heldVerdict{
-		analysis:   analysis,
-		accessRule: accessRule,
-		expiresAt:  heldVerdicts.now().Add(heldVerdictTTL),
+	heldVerdicts.put(ctx.OrgID, heldVerdictKey(ctx.UserID, conn.ID, req.Script), heldVerdict{
+		analysis:  analysis,
+		expiresAt: heldVerdicts.now().Add(heldVerdictTTL),
 	})
 	c.Status(http.StatusNoContent)
 }

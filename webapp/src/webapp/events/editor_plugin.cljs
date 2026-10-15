@@ -251,32 +251,34 @@
 
 ;; POST /sessions/analyze answers 200 with the blocked session, or 204 when the
 ;; script may run. 412 means the flag is off on the gateway: open the forms.
+;; The forms open over the previous output, as they do without the flag.
 (rf/reg-event-fx
  :editor-plugin/analyze-before-forms
  (fn [{:keys [db]} [_ {:keys [script final-script connection-name metadata]}]]
-   {:db (assoc-in db [:editor-plugin->script] {:status :loading})
-    :fx [[:dispatch [:fetch {:method "POST"
-                             :uri "/sessions/analyze"
-                             :body {:script final-script
-                                    :connection connection-name
-                                    :metadata metadata}
-                             :on-success (fn [res]
-                                           (if res
-                                             (rf/dispatch [::editor-plugin->set-script-success res final-script])
-                                             (rf/dispatch [:editor-plugin/open-run-forms script])))
-                             :on-failure (fn [error]
-                                           (if (= 412 (:status error))
-                                             (rf/dispatch [:editor-plugin/open-run-forms script])
-                                             (do
-                                               (rf/dispatch [:show-snackbar {:text "Failed to analyze script"
-                                                                             :level :error
-                                                                             :details error}])
-                                               (rf/dispatch [::editor-plugin->set-script-failure error]))))}]]]}))
+   (let [previous-output (get-in db [:editor-plugin->script])]
+     {:db (assoc-in db [:editor-plugin->script] {:status :loading})
+      :fx [[:dispatch [:fetch {:method "POST"
+                               :uri "/sessions/analyze"
+                               :body {:script final-script
+                                      :connection connection-name
+                                      :metadata metadata}
+                               :on-success (fn [res]
+                                             (if res
+                                               (rf/dispatch [::editor-plugin->set-script-success res final-script])
+                                               (rf/dispatch [:editor-plugin/open-run-forms script previous-output])))
+                               :on-failure (fn [error]
+                                             (if (= 412 (:status error))
+                                               (rf/dispatch [:editor-plugin/open-run-forms script previous-output])
+                                               (do
+                                                 (rf/dispatch [:show-snackbar {:text "Failed to analyze script"
+                                                                               :level :error
+                                                                               :details error}])
+                                                 (rf/dispatch [::editor-plugin->set-script-failure error]))))}]]]})))
 
 (rf/reg-event-fx
  :editor-plugin/open-run-forms
- (fn [{:keys [db]} [_ script]]
-   {:db (assoc-in db [:editor-plugin->script] nil)
+ (fn [{:keys [db]} [_ script previous-output]]
+   {:db (assoc-in db [:editor-plugin->script] previous-output)
     :fx [[:dispatch [:editor-plugin/submit-task-with-fresh-data {:script script :analyzed? true}]]]}))
 
 ;; Error handler for connection loading failures

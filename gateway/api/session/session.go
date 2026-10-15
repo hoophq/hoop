@@ -102,18 +102,24 @@ func AIAnalyze(ctx context.Context, in AIAnalyzeInput) (*models.SessionAIAnalysi
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed analyzing session, reason: %w", err)
 	}
+	return applyRuleTier(in.OrgID, aiAnalyzerRule, analysis)
+}
 
-	if analysis.Action != string(models.RequireAccessRequest) {
+// applyRuleTier sets the action the rule gives to the analysis risk level, and
+// loads the access request rule that the action names.
+func applyRuleTier(orgID uuid.UUID, rule *models.AISessionAnalyzerRules, analysis *models.SessionAIAnalysis) (*models.SessionAIAnalysis, *models.AccessRequestRule, error) {
+	tier := rule.RiskEvaluation.Tier(aianalyzer.RiskLevelKey(aianalyzer.RiskLevel(analysis.RiskLevel)))
+	analysis.Action = string(tier.Action)
+	if tier.Action != models.RequireAccessRequest {
 		return analysis, nil, nil
 	}
 
-	tier := aiAnalyzerRule.RiskEvaluation.Tier(models.RiskLevelKey(analysis.RiskLevel))
 	if tier.AccessRequestRuleName == nil || *tier.AccessRequestRuleName == "" {
-		return analysis, nil, fmt.Errorf("ai analyzer rule %q has require_access_request action without access_request_rule_name for risk %q", aiAnalyzerRule.Name, analysis.RiskLevel)
+		return analysis, nil, fmt.Errorf("ai analyzer rule %q has require_access_request action without access_request_rule_name for risk %q", rule.Name, analysis.RiskLevel)
 	}
-	accessRule, err := models.GetAccessRequestRuleByName(models.DB, *tier.AccessRequestRuleName, in.OrgID)
+	accessRule, err := models.GetAccessRequestRuleByName(models.DB, *tier.AccessRequestRuleName, orgID)
 	if err != nil {
-		return analysis, nil, fmt.Errorf("ai analyzer rule %q references access request rule %q that could not be loaded: %w", aiAnalyzerRule.Name, *tier.AccessRequestRuleName, err)
+		return analysis, nil, fmt.Errorf("ai analyzer rule %q references access request rule %q that could not be loaded: %w", rule.Name, *tier.AccessRequestRuleName, err)
 	}
 	return analysis, accessRule, nil
 }
@@ -245,7 +251,11 @@ func Post(c *gin.Context) {
 	newSession, userAgent := newExecSession(c, ctx, sid, req, conn)
 	log := log.With("sid", sid, "user", ctx.UserEmail)
 
-	analyzeRes, aiAccessRule, held := takeHeldVerdict(ctx, conn, req.Script)
+	analyzeRes, aiAccessRule, held, err := heldAnalysis(ctx, conn, req.Script)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
+		return
+	}
 	if held {
 		log.Infof("reusing the ai analysis verdict of POST /sessions/analyze")
 	} else {
@@ -264,9 +274,11 @@ func Post(c *gin.Context) {
 	}
 	switch decision {
 	case AIDecisionBlocked:
+		spendHeldVerdict(ctx, conn, req.Script)
 		c.JSON(http.StatusOK, aiResp)
 		return
 	case AIDecisionReview:
+		spendHeldVerdict(ctx, conn, req.Script)
 		c.JSON(http.StatusAccepted, aiResp)
 		return
 	}
@@ -314,6 +326,7 @@ func Post(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session")
 		return
 	}
+	spendHeldVerdict(ctx, conn, req.Script)
 	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, ctx.OrgID, ctx.UserID, sid)
 
 	// TODO: refactor to use response from openapi package
