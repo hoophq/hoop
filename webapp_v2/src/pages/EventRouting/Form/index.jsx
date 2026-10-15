@@ -220,7 +220,9 @@ export default function EventRoutingForm() {
     reseedMapping(runbookLookup[v] || null, selectedEventEntry)
   }
 
+  // The row's onClick also fires for the event already selected.
   const selectEvent = (name) => {
+    if (name === form.selectedEvent) return
     setForm((f) => ({ ...f, selectedEvent: name }))
     reseedMapping(selectedRunbook, catalog.find((e) => e.name === name) || null)
   }
