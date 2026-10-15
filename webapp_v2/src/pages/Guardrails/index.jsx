@@ -109,6 +109,11 @@ export default function Guardrails() {
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin they have no guardrails configured.
+  // First load only: a revisit renders the cached list while it refreshes.
+  if ((listStatus === 'idle' || listStatus === 'loading') && list.length === 0) {
+    return <PageLoader h={300} />
+  }
+
   if (listStatus === 'error') {
     return <PageLoader error h={300} message="Failed to load guardrails." />
   }

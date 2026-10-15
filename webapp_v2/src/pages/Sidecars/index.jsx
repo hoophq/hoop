@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import Button from '@/components/Button'
+import PageLoader from '@/components/PageLoader'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import AddSidecarModal from './components/AddSidecarModal'
@@ -10,7 +11,7 @@ import SidecarLicenseNotice from './sections/SidecarLicenseNotice'
 import SidecarsTable from './sections/SidecarsTable'
 
 export default function Sidecars() {
-  const { sidecars, error, fetchSidecars } = useSidecarStore()
+  const { sidecars, loading, error, fetchSidecars } = useSidecarStore()
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   const serverInfoLoaded = useUserStore((s) => s.serverInfoLoaded)
   // Every sidecar route answers 403 without an Enterprise license.
@@ -22,6 +23,8 @@ export default function Sidecars() {
     if (!locked) fetchSidecars()
   }, [locked, fetchSidecars])
 
+  // First load only: a revisit renders the cached list while it refreshes.
+  if (loading && !locked && sidecars.length === 0) return <PageLoader h={400} />
   if (error && !locked) return <Text c="red">{error}</Text>
 
   const count = locked ? 0 : sidecars.length

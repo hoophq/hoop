@@ -55,6 +55,12 @@ export default function AiSessionAnalyzer({ ConfigureTab }) {
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin they have no rules configured.
+  // First load only: a revisit renders the cached list while it refreshes.
+  const pending = (status) => status === 'idle' || status === 'loading'
+  if ((pending(listStatus) && list.length === 0) || (pending(providerStatus) && !provider)) {
+    return <PageLoader h={300} />
+  }
+
   if (listStatus === 'error' || providerStatus === 'error') {
     return <PageLoader error h={300} message="Failed to load AI Session Analyzer." />
   }

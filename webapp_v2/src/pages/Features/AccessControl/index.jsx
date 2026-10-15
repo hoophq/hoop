@@ -112,6 +112,17 @@ export default function AccessControl() {
 
   // A failed load leaves both lists empty, which would otherwise fall through
   // to the empty state and tell an admin they have no groups configured.
+  // First load only: a revisit renders the cached groups while they refresh.
+  // Users gate it too, so no row shows "0 users" before they arrive.
+  const pending = (status) => status === 'idle' || status === 'loading'
+  if (
+    (pending(pluginStatus) && !plugin) ||
+    (pending(groupsStatus) && groups.length === 0) ||
+    (pluginStatus === 'success' && pending(usersStatus) && users.length === 0)
+  ) {
+    return <PageLoader h={300} />
+  }
+
   if (pluginStatus === 'error' || groupsStatus === 'error') {
     return <PageLoader error h={300} message="Failed to load access control." />
   }

@@ -77,6 +77,9 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
         setFeatureFlags(featureFlags)
       } catch (error) {
         console.error('[ProtectedRoute] initialization failed:', error)
+        // A failed background refresh keeps the loaded session and its flags.
+        // An expired token still logs out through the 401 handler in services/api.js.
+        if (!initializing) return
         saveRedirectUrl(window.location.href)
         logout()
         setRedirectTo('/login')

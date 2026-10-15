@@ -90,6 +90,11 @@ export default function AccessRequest() {
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin they have no rules configured.
+  // First load only: a revisit renders the cached rules while they refresh.
+  if ((rulesStatus === 'idle' || rulesStatus === 'loading') && rules.length === 0) {
+    return <PageLoader h={300} />
+  }
+
   if (rulesStatus === 'error') {
     return <PageLoader error h={300} message="Failed to load access request rules." />
   }
