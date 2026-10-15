@@ -9,7 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -107,7 +107,7 @@ func newSerial() (*big.Int, error) {
 // under twins that already loaded their certificates.
 func WritePKI(dir string, leaves map[string][]string) error {
 	if _, err := os.Stat(filepath.Join(dir, "ca.crt")); err == nil {
-		log.Printf("[pki] %s already holds a CA, kept", dir)
+		slog.Info("pki kept: the dir already holds a CA", "dir", dir)
 		return nil
 	}
 	ca, err := NewCA()
@@ -153,6 +153,6 @@ func Serve(t Twin, tlsAddr, adminAddr, certFile, keyFile string) error {
 		srv := &http.Server{Addr: adminAddr, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		errc <- srv.ListenAndServe()
 	}()
-	log.Printf("[%s] tls on %s, admin on %s", t.Name(), tlsAddr, adminAddr)
+	slog.Info("twin listening", "twin", t.Name(), "tls", tlsAddr, "admin", adminAddr)
 	return <-errc
 }

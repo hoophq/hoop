@@ -82,11 +82,25 @@ func (tg contractTarget) jwks(t *testing.T) []jwk {
 	return set.Keys
 }
 
-func (tg contractTarget) tokenRequest(t *testing.T, form url.Values) (int, tokenAnswer) {
+// tokenRequest authenticates the client with HTTP Basic, the method every
+// provider must support (RFC 6749 2.3.1) and the one golang.org/x/oauth2,
+// which the gateway uses, tries first.
+func (tg contractTarget) tokenRequest(t *testing.T, secret string, form url.Values) (int, tokenAnswer) {
 	t.Helper()
+	req, err := http.NewRequest("POST", tg.discovery(t).TokenEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(url.QueryEscape(tg.clientID), url.QueryEscape(secret))
+	resp, err := tg.client.Do(req)
+	if err != nil {
+		t.Fatalf("POST token endpoint: %v", err)
+	}
+	defer resp.Body.Close()
 	var ans tokenAnswer
-	code := postForm(t, tg.client, tg.discovery(t).TokenEndpoint, form, &ans)
-	return code, ans
+	decode(t, resp, &ans)
+	return resp.StatusCode, ans
 }
 
 // The gateway refuses a document whose issuer differs from the configured
@@ -134,13 +148,11 @@ func TestContractJWKS(t *testing.T) {
 // The gateway only needs the failure; the codes help a person read the log.
 func TestContractTokenErrors(t *testing.T) {
 	tg := newContractTarget(t)
-	code, ans := tg.tokenRequest(t, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tg.refreshToken},
-		"client_id": {tg.clientID}, "client_secret": {"not-the-secret"}})
+	code, ans := tg.tokenRequest(t, "not-the-secret", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tg.refreshToken}})
 	if code < 400 || code > 499 || ans.Error == "" || ans.AccessToken != "" {
 		t.Errorf("wrong client secret: got %d %+v, want 4xx with an error code", code, ans)
 	}
-	code, ans = tg.tokenRequest(t, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"not-a-refresh-token"},
-		"client_id": {tg.clientID}, "client_secret": {tg.clientSecret}})
+	code, ans = tg.tokenRequest(t, tg.clientSecret, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"not-a-refresh-token"}})
 	if code < 400 || code > 499 || ans.Error != "invalid_grant" {
 		t.Errorf("unknown refresh token: got %d %+v, want 4xx invalid_grant", code, ans)
 	}
@@ -150,8 +162,7 @@ func TestContractTokenErrors(t *testing.T) {
 // change (gateway/idp/core.go refreshForSubject, syncUserGroupsFromUserInfo).
 func TestContractRefreshAndUserinfo(t *testing.T) {
 	tg := newContractTarget(t)
-	code, ans := tg.tokenRequest(t, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tg.refreshToken},
-		"client_id": {tg.clientID}, "client_secret": {tg.clientSecret}})
+	code, ans := tg.tokenRequest(t, tg.clientSecret, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tg.refreshToken}})
 	if code != http.StatusOK || ans.AccessToken == "" {
 		t.Fatalf("refresh: got %d %+v, want 200 with an access_token", code, ans)
 	}
@@ -162,9 +173,14 @@ func TestContractRefreshAndUserinfo(t *testing.T) {
 
 	// A JWT access token is verified with the JWKS; an opaque one goes to
 	// userinfo (gateway/idp/oidc/oidc.go VerifyAccessToken).
+	// The gateway also needs a sub in it.
+	var accessSub string
 	if strings.Count(ans.AccessToken, ".") == 2 {
 		if err := verifyRS256(ans.AccessToken, keys); err != nil {
 			t.Errorf("access token signature: %v", err)
+		}
+		if accessSub, _ = jwtClaims(t, ans.AccessToken)["sub"].(string); accessSub == "" {
+			t.Errorf("JWT access token has no sub: the gateway refuses it")
 		}
 	}
 	if ans.IDToken != "" {
@@ -192,6 +208,8 @@ func TestContractRefreshAndUserinfo(t *testing.T) {
 	}
 	if sub, _ := info["sub"].(string); sub == "" {
 		t.Errorf("userinfo has no sub: %v", info)
+	} else if accessSub != "" && accessSub != sub {
+		t.Errorf("access token sub %q differs from userinfo sub %q", accessSub, sub)
 	}
 	if email, _ := info["email"].(string); email == "" {
 		t.Errorf("userinfo has no email: %v", info)
@@ -202,6 +220,9 @@ func TestContractRefreshAndUserinfo(t *testing.T) {
 			t.Errorf("userinfo %s is empty: the token's user must be in a group", tg.groupsClaim)
 		}
 	case string:
+		if g == "" {
+			t.Errorf("userinfo %s is empty: the token's user must be in a group", tg.groupsClaim)
+		}
 	default:
 		t.Errorf("userinfo %s is %T (%v): want a list or a string, or the gateway never syncs groups", tg.groupsClaim, g, g)
 	}

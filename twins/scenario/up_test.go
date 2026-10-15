@@ -141,14 +141,15 @@ func (s *stack) upCompose(t *testing.T, binDir string) {
 		}
 	}
 	_ = compose("down", "-v", "--remove-orphans").Run()
-	if b, err := compose("up", "-d", "--build", "--wait").CombinedOutput(); err != nil {
-		logs()
-		t.Fatalf("compose up: %v\n%s", err, b)
-	}
+	// Registered before `up`: a failed build or health check still leaves
+	// containers behind, and their ports would block the next run.
 	t.Cleanup(func() {
 		logs()
 		if os.Getenv("TWINS_KEEP") == "" {
 			_ = compose("down", "-v", "--remove-orphans").Run()
 		}
 	})
+	if b, err := compose("up", "-d", "--build", "--wait").CombinedOutput(); err != nil {
+		t.Fatalf("compose up: %v\n%s", err, b)
+	}
 }

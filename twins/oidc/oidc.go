@@ -93,6 +93,7 @@ type Twin struct {
 	users   map[string]User // by lower-case email
 	codes   map[string]*code
 	refresh map[string]string // refresh token -> lower-case email
+	access  map[string]bool   // jti of every access token issued
 	issued  []issued
 }
 
@@ -118,6 +119,7 @@ func (t *Twin) Reset() {
 	t.users = map[string]User{}
 	t.codes = map[string]*code{}
 	t.refresh = map[string]string{}
+	t.access = map[string]bool{}
 	t.issued = nil
 }
 
@@ -331,15 +333,26 @@ func (t *Twin) token(w http.ResponseWriter, r *http.Request) {
 	}
 	accessExp, idExp := expiry(KindAccessToken), expiry(KindIDToken)
 	// jti makes each token unique: two grants in the same second would
-	// otherwise sign the same claims into the same bytes.
-	access := t.sign(map[string]any{"iss": t.issuer, "sub": u.Sub, "aud": t.cfg.ClientID, "client_id": t.cfg.ClientID,
-		"scope": "openid email profile", "iat": now.Unix(), "exp": accessExp.Unix(), "jti": randomString(16)})
+	// otherwise sign the same claims into the same bytes. userinfo accepts
+	// only the jti of an access token.
+	accessJTI := randomString(16)
+	access, err := t.sign(map[string]any{"iss": t.issuer, "sub": u.Sub, "aud": t.cfg.ClientID, "client_id": t.cfg.ClientID,
+		"scope": "openid email profile", "iat": now.Unix(), "exp": accessExp.Unix(), "jti": accessJTI})
+	if err != nil {
+		oauthError(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
 	idClaims := t.claims(u, map[string]any{"iss": t.issuer, "aud": t.cfg.ClientID, "azp": t.cfg.ClientID,
 		"iat": now.Unix(), "exp": idExp.Unix(), "jti": randomString(16)})
 	if nonce != "" {
 		idClaims["nonce"] = nonce
 	}
-	idToken := t.sign(idClaims)
+	idToken, err := t.sign(idClaims)
+	if err != nil {
+		oauthError(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	t.access[accessJTI] = true
 	refresh := r.PostForm.Get("refresh_token")
 	if refresh == "" {
 		refresh = randomString(32)
@@ -370,6 +383,13 @@ func (t *Twin) userinfo(w http.ResponseWriter, r *http.Request) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	// A real provider refuses an id_token here: only access tokens are
+	// bearer credentials.
+	if jti, _ := claims["jti"].(string); !t.access[jti] {
+		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+		oauthError(w, http.StatusUnauthorized, "invalid_token", "not an access token")
+		return
+	}
 	for _, u := range t.users {
 		if u.Sub == claims["sub"] {
 			// The current groups: a refresh reads them here (gateway/idp/core.go).
@@ -404,16 +424,22 @@ func (t *Twin) claims(u User, base map[string]any) map[string]any {
 	return base
 }
 
-func (t *Twin) sign(claims map[string]any) string {
-	header, _ := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT", "kid": t.kid})
-	payload, _ := json.Marshal(claims)
+func (t *Twin) sign(claims map[string]any) (string, error) {
+	header, err := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT", "kid": t.kid})
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
 	input := b64(header) + "." + b64(payload)
 	sum := sha256.Sum256([]byte(input))
 	sig, err := rsa.SignPKCS1v15(rand.Reader, t.key, crypto.SHA256, sum[:])
 	if err != nil {
-		panic(err) // a valid 2048-bit key always signs
+		return "", fmt.Errorf("sign token: %w", err)
 	}
-	return input + "." + b64(sig)
+	return input + "." + b64(sig), nil
 }
 
 // verify checks a token this twin signed and that it has not expired.

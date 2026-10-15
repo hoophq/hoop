@@ -84,6 +84,20 @@ func TestTokenExchange(t *testing.T) {
 	}
 }
 
+// Only an access token is a bearer credential at userinfo, as at a real
+// provider.
+func TestUserinfoRefusesIDToken(t *testing.T) {
+	s := startTwin(t)
+	s.seed(t, alice)
+	tok := s.login(t, "alice@example.com")
+	if code := getJSON(t, s.client, s.issuer+"/userinfo", tok.IDToken, nil); code != http.StatusUnauthorized {
+		t.Fatalf("userinfo with the id_token: %d, want 401", code)
+	}
+	if code := getJSON(t, s.client, s.issuer+"/userinfo", tok.AccessToken, nil); code != http.StatusOK {
+		t.Fatalf("userinfo with the access token: %d, want 200", code)
+	}
+}
+
 // The twin moves a user out of a group; the next refresh and userinfo show it.
 func TestRefreshSeesGroupChange(t *testing.T) {
 	s := startTwin(t)

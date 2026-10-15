@@ -8,7 +8,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -23,7 +23,7 @@ func (m *multi) String() string     { return strings.Join(*m, " ") }
 func (m *multi) Set(v string) error { *m = append(*m, v); return nil }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: twins pki|oidc|router [flags]")
 		os.Exit(2)
@@ -44,7 +44,7 @@ func main() {
 		for _, l := range leaves {
 			name, hosts, ok := strings.Cut(l, "=")
 			if !ok || name == "" || hosts == "" {
-				log.Fatalf("leaf %q is not name=host1,host2", l)
+				fatal(fmt.Errorf("leaf %q is not name=host1,host2", l))
 			}
 			m[name] = strings.Split(hosts, ",")
 		}
@@ -69,6 +69,11 @@ func main() {
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
+}
+
+func fatal(err error) {
+	slog.Error("twins stopped", "cmd", os.Args[1], "err", err)
+	os.Exit(1)
 }

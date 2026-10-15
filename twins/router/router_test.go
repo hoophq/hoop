@@ -1,13 +1,16 @@
 package router
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestConnect(t *testing.T) {
@@ -64,6 +67,55 @@ func TestConnect(t *testing.T) {
 	}
 	if len(st.State.Refused) != 1 || st.State.Refused[0].Host != "api.example.org:443" || st.State.Refused[0].Count != 1 {
 		t.Fatalf("refused: %+v", st.State.Refused)
+	}
+}
+
+// A twin that resets the connection mid-tunnel shows as an error in
+// /_twin/state, not as a clean close.
+func TestTunnelErrorIsRecorded(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		io.ReadFull(c, make([]byte, 5))
+		c.(*net.TCPConn).SetLinger(0) // close with RST
+		c.Close()
+	}()
+	r, _ := New([]string{"oidc-twin=" + ln.Addr().String()})
+	proxy := httptest.NewServer(r.Handler())
+	defer proxy.Close()
+
+	conn, err := net.Dial("tcp", proxy.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	io.WriteString(conn, "CONNECT oidc-twin:443 HTTP/1.1\r\nHost: oidc-twin:443\r\n\r\n")
+	reply, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil || !strings.Contains(reply, "200") {
+		t.Fatalf("CONNECT reply %q, %v", reply, err)
+	}
+	io.WriteString(conn, "hello")
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st := r.State().(map[string]any)
+		if tunnels := st["tunnels"].([]Tunnel); len(tunnels) == 1 && tunnels[0].Error != "" {
+			if !tunnels[0].Allowed {
+				t.Fatalf("tunnel: %+v", tunnels[0])
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the reset was not recorded: %+v", st["tunnels"])
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

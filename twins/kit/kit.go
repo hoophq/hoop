@@ -6,15 +6,15 @@
 // /_twin/reset, /_twin/faults and /_twin/healthz, so every twin answers them
 // the same way.
 //
-// Twins import nothing from github.com/hoophq/hoop: they log with the
-// standard library.
+// Twins import nothing from github.com/hoophq/hoop (ADR-0032), so they log
+// with log/slog, not common/log.
 package kit
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -110,12 +110,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.Status != 0 {
 			rec.WriteHeader(f.Status)
 			io.WriteString(rec, f.Body)
-			log.Printf("[%s] %s %s%s -> %d (fault)", h.twin.Name(), r.Method, r.Host, r.URL.Path, f.Status)
+			slog.Info("request", "twin", h.twin.Name(), "method", r.Method, "host", r.Host, "path", r.URL.Path,
+				"status", f.Status, "fault", true)
 			return
 		}
 	}
 	h.real.ServeHTTP(rec, r)
-	log.Printf("[%s] %s %s%s -> %d (%s)", h.twin.Name(), r.Method, r.Host, r.URL.Path, rec.status, time.Since(start).Round(time.Millisecond))
+	slog.Info("request", "twin", h.twin.Name(), "method", r.Method, "host", r.Host, "path", r.URL.Path,
+		"status", rec.status, "duration", time.Since(start).Round(time.Millisecond))
 }
 
 // fault returns a copy of the first fault that matches path and counts the
@@ -144,7 +146,7 @@ func (h *handler) seed(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	log.Printf("[%s] seeded", h.twin.Name())
+	slog.Info("seeded", "twin", h.twin.Name())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -163,7 +165,7 @@ func (h *handler) reset(w http.ResponseWriter, _ *http.Request) {
 	h.faults = nil
 	h.mu.Unlock()
 	h.twin.Reset()
-	log.Printf("[%s] reset", h.twin.Name())
+	slog.Info("reset", "twin", h.twin.Name())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -181,7 +183,7 @@ func (h *handler) addFault(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	h.faults = append(h.faults, &f)
 	h.mu.Unlock()
-	log.Printf("[%s] fault on %s: status=%d delay=%dms times=%d", h.twin.Name(), f.Path, f.Status, f.DelayMS, f.Times)
+	slog.Info("fault added", "twin", h.twin.Name(), "path", f.Path, "status", f.Status, "delay_ms", f.DelayMS, "times", f.Times)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -190,7 +192,7 @@ func (h *handler) clearFaults(w http.ResponseWriter, _ *http.Request) {
 	h.mu.Lock()
 	h.faults = nil
 	h.mu.Unlock()
-	log.Printf("[%s] faults cleared", h.twin.Name())
+	slog.Info("faults cleared", "twin", h.twin.Name())
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -7,9 +7,10 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"sort"
@@ -26,13 +27,15 @@ type Tunnel struct {
 	Target  string    `json:"target,omitempty"`
 	Allowed bool      `json:"allowed"`
 	At      time.Time `json:"at"`
+	// Error is how an allowed tunnel broke, when it did not end with a close.
+	Error string `json:"error,omitempty"`
 }
 
 // Router maps hostnames to twins. It implements kit.Twin for its admin API.
 type Router struct {
 	mu      sync.Mutex
 	routes  map[string]string // hostname -> host:port of the twin
-	tunnels []Tunnel
+	tunnels []*Tunnel
 }
 
 // New takes host=target pairs, for example "oidc-twin=127.0.0.1:18441".
@@ -75,7 +78,11 @@ func (r *Router) State() any {
 	for h, t := range r.routes {
 		routes[h] = t
 	}
-	return map[string]any{"routes": routes, "tunnels": append([]Tunnel{}, r.tunnels...), "refused": r.refused()}
+	tunnels := make([]Tunnel, 0, len(r.tunnels))
+	for _, t := range r.tunnels {
+		tunnels = append(tunnels, *t)
+	}
+	return map[string]any{"routes": routes, "tunnels": tunnels, "refused": r.refused()}
 }
 
 // refused counts refused CONNECTs by host. The caller holds r.mu.
@@ -124,43 +131,70 @@ func (r *Router) connect(w http.ResponseWriter, req *http.Request) {
 	}
 	r.mu.Lock()
 	target, ok := r.routes[host]
-	r.tunnels = append(r.tunnels, Tunnel{Host: req.Host, Target: target, Allowed: ok, At: time.Now().UTC()})
+	tunnel := &Tunnel{Host: req.Host, Target: target, Allowed: ok, At: time.Now().UTC()}
+	r.tunnels = append(r.tunnels, tunnel)
 	r.mu.Unlock()
 	if !ok {
-		log.Printf("[router] REFUSED CONNECT %s: no twin for this host", req.Host)
+		slog.Warn("connect refused: no twin for this host", "host", req.Host)
 		http.Error(w, "no twin for "+host, http.StatusForbidden)
 		return
 	}
 	upstream, err := net.DialTimeout("tcp", target, 5*time.Second)
 	if err != nil {
-		log.Printf("[router] CONNECT %s -> %s: %v", req.Host, target, err)
+		r.fail(tunnel, fmt.Errorf("dial %s: %w", target, err))
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	client, buf, err := http.NewResponseController(w).Hijack()
 	if err != nil {
 		upstream.Close()
-		log.Printf("[router] CONNECT %s: hijack: %v", req.Host, err)
+		r.fail(tunnel, fmt.Errorf("hijack: %w", err))
 		return
 	}
-	io.WriteString(client, "HTTP/1.1 200 Connection established\r\n\r\n")
-	log.Printf("[router] CONNECT %s -> %s", req.Host, target)
+	slog.Info("connect", "host", req.Host, "target", target)
+	errc := make(chan error, 2)
 	go func() {
+		if _, err := io.WriteString(client, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
+			errc <- err
+			return
+		}
 		// The client can send its TLS hello in the same packet as CONNECT.
 		if n := buf.Reader.Buffered(); n > 0 {
-			b, _ := buf.Reader.Peek(n)
-			upstream.Write(b)
+			b, _ := buf.Reader.Peek(n) // n bytes are buffered, so Peek cannot fail
+			if _, err := upstream.Write(b); err != nil {
+				errc <- err
+				return
+			}
 		}
-		io.Copy(upstream, client)
-		upstream.Close()
+		_, err := io.Copy(upstream, client)
+		errc <- err
 	}()
-	io.Copy(client, upstream)
+	go func() {
+		_, err := io.Copy(client, upstream)
+		errc <- err
+	}()
+	// The first direction to end ends the tunnel. The other one then sees
+	// the close, which is not a failure.
+	err = <-errc
 	client.Close()
+	upstream.Close()
+	<-errc
+	if err != nil && !errors.Is(err, net.ErrClosed) {
+		r.fail(tunnel, err)
+	}
+}
+
+// fail records why a tunnel broke, in the log and in /_twin/state.
+func (r *Router) fail(t *Tunnel, err error) {
+	slog.Error("connect failed", "host", t.Host, "target", t.Target, "err", err)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t.Error = err.Error()
 }
 
 // Serve runs the router on addr. It blocks.
 func (r *Router) Serve(addr string) error {
-	log.Printf("[router] proxy and admin on %s, routes %v", addr, r.routes)
+	slog.Info("router listening", "addr", addr, "routes", r.routes)
 	srv := &http.Server{Addr: addr, Handler: r.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServe()
 }
