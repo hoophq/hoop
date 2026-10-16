@@ -164,11 +164,14 @@ func analyzeTestConnection(t *testing.T, name string) *models.Connection {
 	return conn
 }
 
+// isHeld reports whether a verdict is held for the test user, without taking it.
 func isHeld(t *testing.T, connection, script string) bool {
 	t.Helper()
-	_, _, held, err := heldAnalysis(analyzeTestContext(), analyzeTestConnection(t, connection), script)
-	require.NoError(t, err)
-	return held
+	key := heldVerdictKey("user-1", analyzeTestConnection(t, connection).ID, script)
+	heldVerdicts.mu.Lock()
+	defer heldVerdicts.mu.Unlock()
+	v, ok := heldVerdicts.entries[analyzeTestOrgID][key]
+	return ok && heldVerdicts.now().Before(v.expiresAt)
 }
 
 type execResponse struct {
@@ -224,10 +227,27 @@ func TestAnalyze(t *testing.T) {
 
 		assert.False(t, isHeld(t, analyzeTestConn, "SELECT * FROM customers -- edited"), "an edited script analyzes again")
 		assert.False(t, isHeld(t, analyzeMetaConn, "SELECT * FROM customers"), "another connection analyzes again")
-		analysis, _, held, err := heldAnalysis(analyzeTestContext(), analyzeTestConnection(t, analyzeTestConn), "SELECT * FROM customers")
+		run, err := takeHeldVerdict(analyzeTestContext(), analyzeTestConnection(t, analyzeTestConn), "SELECT * FROM customers")
 		require.NoError(t, err)
-		require.True(t, held)
-		assert.Equal(t, string(models.AllowExecution), analysis.Action)
+		require.NotNil(t, run)
+		assert.Equal(t, string(models.AllowExecution), run.analysis.Action)
+	})
+
+	t.Run("a verdict serves one run: a concurrent run analyzes again", func(t *testing.T) {
+		setAnalyzeFlag(t, true)
+		const script = "SELECT 9"
+		conn := analyzeTestConnection(t, analyzeTestConn)
+		require.Equal(t, http.StatusNoContent, callAnalyze(t, script).Code)
+
+		first, err := takeHeldVerdict(analyzeTestContext(), conn, script)
+		require.NoError(t, err)
+		require.NotNil(t, first)
+		second, err := takeHeldVerdict(analyzeTestContext(), conn, script)
+		require.NoError(t, err)
+		assert.Nil(t, second, "the first run holds the verdict until it is decided")
+
+		first.release()
+		assert.True(t, isHeld(t, analyzeTestConn, script), "a run that failed before it was decided gives it back")
 	})
 
 	t.Run("POST /sessions applies the held verdict without a second analysis", func(t *testing.T) {
@@ -278,7 +298,8 @@ func TestAnalyze(t *testing.T) {
 
 		prompt := "Treat every change to customers as high risk."
 		editRule(t, func(rule *models.AISessionAnalyzerRules) { rule.CustomPrompt = &prompt })
-		assert.False(t, isHeld(t, analyzeTestConn, script), "the held risk level was judged without this prompt")
+		require.Equal(t, http.StatusAccepted, callPost(t, script).Code)
+		assert.Equal(t, int32(2), calls.Load(), "the held risk level was judged without this prompt")
 	})
 
 	t.Run("a 422 before the run keeps the verdict for the retry", func(t *testing.T) {
@@ -330,27 +351,72 @@ func TestVerdictHold(t *testing.T) {
 
 	now = now.Add(2 * time.Minute)
 	h.put("org1", "b", heldVerdict{analysis: allow, expiresAt: now.Add(heldVerdictTTL)})
-	assert.NotContains(t, h.entries["org1"], "old", "put drops expired entries")
-	assert.NotContains(t, h.entries, "org2", "put drops orgs with no verdict left")
+	assert.NotContains(t, h.entries["org1"], "old", "a put drops expired entries")
+	assert.NotContains(t, h.entries, "org2", "a put drops orgs with no verdict left")
 
-	v, ok := h.get("org1", "a")
+	v, ok := h.take("org1", "a")
 	require.True(t, ok)
 	assert.Same(t, allow, v.analysis)
-	_, ok = h.get("org1", "a")
-	assert.True(t, ok, "get keeps the verdict")
-	_, ok = h.get("org2", "a")
+	_, ok = h.take("org1", "a")
+	assert.False(t, ok, "take is one use")
+	h.restore("org1", "a", v)
+	_, ok = h.take("org2", "a")
 	assert.False(t, ok, "verdicts are per org")
-
-	h.drop("org1", "a")
-	_, ok = h.get("org1", "a")
-	assert.False(t, ok)
+	_, ok = h.take("org1", "a")
+	assert.True(t, ok, "restore gives the verdict back")
 
 	now = now.Add(heldVerdictTTL)
-	_, ok = h.get("org1", "b")
+	_, ok = h.take("org1", "b")
 	assert.False(t, ok, "an expired verdict is not returned")
+	assert.Empty(t, h.entries, "take drops the expired entry and the empty org")
 
-	h.dropOrg("org1")
-	assert.Empty(t, h.entries)
+	h.restore("org1", "b", heldVerdict{analysis: allow, expiresAt: now})
+	assert.Empty(t, h.entries, "an expired verdict is not restored")
+}
+
+func TestVerdictHoldSweepsAtMostEachMinute(t *testing.T) {
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	h := &verdictHold{entries: map[string]map[string]heldVerdict{}, now: func() time.Time { return now }}
+	allow := &models.SessionAIAnalysis{Action: string(models.AllowExecution)}
+
+	h.put("org1", "short", heldVerdict{analysis: allow, expiresAt: now.Add(time.Second)})
+	now = now.Add(2 * time.Second)
+	h.put("org1", "next", heldVerdict{analysis: allow, expiresAt: now.Add(heldVerdictTTL)})
+	assert.Contains(t, h.entries["org1"], "short", "no sweep within a minute of the last one")
+
+	now = now.Add(heldVerdictSweep)
+	h.put("org1", "later", heldVerdict{analysis: allow, expiresAt: now.Add(heldVerdictTTL)})
+	assert.NotContains(t, h.entries["org1"], "short")
+}
+
+func TestVerdictHoldKeepsTheStricterVerdict(t *testing.T) {
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	h := &verdictHold{entries: map[string]map[string]heldVerdict{}, now: func() time.Time { return now }}
+	ruleID := uuid.New()
+	verdict := func(action models.RiskEvaluationAction, updatedAt time.Time) heldVerdict {
+		return heldVerdict{
+			analysis:      &models.SessionAIAnalysis{Action: string(action)},
+			ruleID:        ruleID,
+			ruleUpdatedAt: updatedAt,
+			expiresAt:     now.Add(heldVerdictTTL),
+		}
+	}
+	held := func() string {
+		v, ok := h.take("org1", "k")
+		require.True(t, ok)
+		h.restore("org1", "k", v)
+		return v.analysis.Action
+	}
+
+	h.put("org1", "k", verdict(models.RequireAccessRequest, now))
+	h.put("org1", "k", verdict(models.AllowExecution, now))
+	assert.Equal(t, string(models.RequireAccessRequest), held(), "a retry that gets allow keeps the approval verdict")
+
+	h.put("org1", "k", verdict(models.AllowExecution, now.Add(time.Second)))
+	assert.Equal(t, string(models.AllowExecution), held(), "a new rule version replaces the verdict")
+
+	h.put("org1", "k", verdict(models.RequireAccessRequest, now.Add(time.Second)))
+	assert.Equal(t, string(models.RequireAccessRequest), held(), "a stricter verdict replaces a permissive one")
 }
 
 func TestHeldVerdictKey(t *testing.T) {

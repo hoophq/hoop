@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/featureflag"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
@@ -27,6 +28,9 @@ import (
 // /sessions/analyze: the time a user takes to fill in the run forms.
 const heldVerdictTTL = 15 * time.Minute
 
+// heldVerdictSweep is how often a put drops the expired verdicts of every org.
+const heldVerdictSweep = time.Minute
+
 type heldVerdict struct {
 	analysis *models.SessionAIAnalysis
 	// ruleID and ruleUpdatedAt name the rule version that judged the script.
@@ -36,55 +40,99 @@ type heldVerdict struct {
 	expiresAt     time.Time
 }
 
+// sameRule reports whether v and o were judged by the same rule version.
+func (v heldVerdict) sameRule(o heldVerdict) bool {
+	return v.ruleID == o.ruleID && v.ruleUpdatedAt.Equal(o.ruleUpdatedAt)
+}
+
+// strictness ranks an action: block, then approval, then allow.
+func strictness(action string) int {
+	switch models.RiskEvaluationAction(action) {
+	case models.BlockExecution:
+		return 2
+	case models.RequireAccessRequest:
+		return 1
+	}
+	return 0
+}
+
 // verdictHold keeps, in the memory of one gateway and per org, the verdicts
 // that POST /sessions/analyze let through. A miss (other replica, expired,
-// restart) analyzes again, so no result depends on a hit.
+// restart) analyzes again, so no result depends on a hit. now is monotonic
+// (time.Now): the TTL must not follow a wall clock step.
 type verdictHold struct {
-	mu      sync.Mutex
-	entries map[string]map[string]heldVerdict // org id -> key -> verdict
-	now     func() time.Time
+	mu        sync.Mutex
+	entries   map[string]map[string]heldVerdict // org id -> key -> verdict
+	now       func() time.Time
+	lastSweep time.Time
 }
 
 var heldVerdicts = &verdictHold{entries: map[string]map[string]heldVerdict{}, now: time.Now}
 
-// put keeps v under key and drops the expired entries, so abandoned forms do
-// not grow the map.
+// put keeps v under key. A held verdict for the same rule version that is
+// stricter stays: analyzing again until the model answers allow does not
+// replace an approval verdict.
 func (h *verdictHold) put(orgID, key string, v heldVerdict) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	now := h.now()
-	for org, verdicts := range h.entries {
-		for k, e := range verdicts {
-			if !now.Before(e.expiresAt) {
-				delete(verdicts, k)
+	if now.Sub(h.lastSweep) >= heldVerdictSweep {
+		h.lastSweep = now
+		for org, verdicts := range h.entries {
+			for k, e := range verdicts {
+				if !now.Before(e.expiresAt) {
+					delete(verdicts, k)
+				}
 			}
-		}
-		if len(verdicts) == 0 {
-			delete(h.entries, org)
+			if len(verdicts) == 0 {
+				delete(h.entries, org)
+			}
 		}
 	}
 	if h.entries[orgID] == nil {
 		h.entries[orgID] = map[string]heldVerdict{}
 	}
+	held, ok := h.entries[orgID][key]
+	if ok && now.Before(held.expiresAt) && held.sameRule(v) &&
+		strictness(held.analysis.Action) > strictness(v.analysis.Action) {
+		return
+	}
 	h.entries[orgID][key] = v
 }
 
-// get returns the unexpired verdict under key and keeps it: a run that fails
-// before it starts (422 on a form field) can use it again.
-func (h *verdictHold) get(orgID, key string) (heldVerdict, bool) {
+// take removes and returns the unexpired verdict under key, so one run uses
+// it. A run that fails before it is decided gives it back with restore.
+func (h *verdictHold) take(orgID, key string) (heldVerdict, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	v, ok := h.entries[orgID][key]
-	if !ok || !h.now().Before(v.expiresAt) {
+	verdicts := h.entries[orgID]
+	v, ok := verdicts[key]
+	if !ok {
+		return heldVerdict{}, false
+	}
+	delete(verdicts, key)
+	if len(verdicts) == 0 {
+		delete(h.entries, orgID)
+	}
+	if !h.now().Before(v.expiresAt) {
 		return heldVerdict{}, false
 	}
 	return v, true
 }
 
-func (h *verdictHold) drop(orgID, key string) {
+// restore gives back a taken verdict, unless a newer one took its key.
+func (h *verdictHold) restore(orgID, key string, v heldVerdict) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	delete(h.entries[orgID], key)
+	if !h.now().Before(v.expiresAt) {
+		return
+	}
+	if h.entries[orgID] == nil {
+		h.entries[orgID] = map[string]heldVerdict{}
+	}
+	if _, ok := h.entries[orgID][key]; !ok {
+		h.entries[orgID][key] = v
+	}
 }
 
 func (h *verdictHold) dropOrg(orgID string) {
@@ -103,38 +151,48 @@ func heldVerdictKey(userID, connectionID, script string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// heldAnalysis returns the verdict POST /sessions/analyze held for this run,
-// while the connection's rule is the version that judged it. It does not
-// spend the verdict. While the flag is off it drops the org's verdicts.
-func heldAnalysis(ctx *storagev2.Context, conn *models.Connection, script string) (*models.SessionAIAnalysis, *models.AccessRequestRule, bool, error) {
+// heldRun is a held verdict that one POST /sessions took.
+type heldRun struct {
+	orgID, key string
+	verdict    heldVerdict
+	analysis   *models.SessionAIAnalysis
+	accessRule *models.AccessRequestRule
+}
+
+// release gives the verdict back, for a run that failed before it was decided
+// (a 422 on a form field): the retry reuses it.
+func (r *heldRun) release() { heldVerdicts.restore(r.orgID, r.key, r.verdict) }
+
+// takeHeldVerdict takes the verdict POST /sessions/analyze held for this run,
+// while the connection's rule is the version that judged it. It returns nil
+// when there is none. While the flag is off it drops the org's verdicts.
+func takeHeldVerdict(ctx *storagev2.Context, conn *models.Connection, script string) (*heldRun, error) {
 	if !featureflag.IsEnabled(ctx.OrgID, featureflag.FlagAnalyzeBeforeRunForms) {
 		heldVerdicts.dropOrg(ctx.OrgID)
-		return nil, nil, false, nil
+		return nil, nil
 	}
 	key := heldVerdictKey(ctx.UserID, conn.ID, script)
-	v, ok := heldVerdicts.get(ctx.OrgID, key)
+	v, ok := heldVerdicts.take(ctx.OrgID, key)
 	if !ok {
-		return nil, nil, false, nil
+		return nil, nil
 	}
 	orgID := uuid.MustParse(ctx.GetOrgID())
 	rule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, orgID, conn.Name)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil, false, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", conn.Name, err)
+		heldVerdicts.restore(ctx.OrgID, key, v)
+		return nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", conn.Name, err)
 	}
-	if rule == nil || rule.ID != v.ruleID || !rule.UpdatedAt.Equal(v.ruleUpdatedAt) {
+	if rule == nil || !v.sameRule(heldVerdict{ruleID: rule.ID, ruleUpdatedAt: rule.UpdatedAt}) {
 		// The rule is gone or changed: analyze as if nothing was held.
-		heldVerdicts.drop(ctx.OrgID, key)
-		return nil, nil, false, nil
+		return nil, nil
 	}
 	analysis := *v.analysis
 	a, accessRule, err := applyRuleTier(orgID, rule, &analysis)
-	return a, accessRule, true, err
-}
-
-// spendHeldVerdict drops the verdict of a run that is decided: blocked, sent
-// to approval, or started. The next run of the same script analyzes again.
-func spendHeldVerdict(ctx *storagev2.Context, conn *models.Connection, script string) {
-	heldVerdicts.drop(ctx.OrgID, heldVerdictKey(ctx.UserID, conn.ID, script))
+	if err != nil {
+		heldVerdicts.restore(ctx.OrgID, key, v)
+		return nil, err
+	}
+	return &heldRun{orgID: ctx.OrgID, key: key, verdict: v, analysis: a, accessRule: accessRule}, nil
 }
 
 // newExecSession builds the session row of an exec request, and returns the
@@ -240,6 +298,9 @@ func Analyze(c *gin.Context) {
 		c.Status(http.StatusNoContent)
 		return
 	}
+	// Each verdict is logged: repeated analyze calls on a script leave a trail.
+	log.With("user", ctx.UserEmail, "connection", conn.Name, "risk", analysis.RiskLevel, "action", analysis.Action).
+		Infof("ai analysis before the run forms")
 
 	if analysis.Action == string(models.BlockExecution) {
 		sid := uuid.NewString()

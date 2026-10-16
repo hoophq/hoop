@@ -261,10 +261,10 @@
          on-success (fn [res]
                       (if res
                         (rf/dispatch [::editor-plugin->set-script-success res final-script])
-                        (rf/dispatch [:editor-plugin/open-run-forms script previous-output])))
+                        (rf/dispatch [:editor-plugin/open-run-forms script connection-name previous-output])))
          on-failure (fn [error]
                       (if (= 412 (:status error))
-                        (rf/dispatch [:editor-plugin/open-run-forms script previous-output])
+                        (rf/dispatch [:editor-plugin/open-run-forms script connection-name previous-output])
                         (do
                           (rf/dispatch [:show-snackbar {:text "Failed to analyze script"
                                                         :level :error
@@ -281,11 +281,15 @@
                                  :on-success on-success
                                  :on-failure on-failure}]]]}))))
 
+;; The verdict belongs to the analyzed connection. If the user selected another
+;; one meanwhile, the run stops: the next Run analyzes the new connection.
 (rf/reg-event-fx
  :editor-plugin/open-run-forms
- (fn [{:keys [db]} [_ script previous-output]]
-   {:db (assoc-in db [:editor-plugin->script] previous-output)
-    :fx [[:dispatch [:editor-plugin/submit-task-with-fresh-data {:script script :analyzed? true}]]]}))
+ (fn [{:keys [db]} [_ script connection-name previous-output]]
+   (merge
+    {:db (assoc-in db [:editor-plugin->script] previous-output)}
+    (when (= connection-name (get-in db [:editor :connections :selected :name]))
+      {:fx [[:dispatch [:editor-plugin/submit-task-with-fresh-data {:script script :analyzed? true}]]]}))))
 
 ;; Error handler for connection loading failures
 (rf/reg-event-fx

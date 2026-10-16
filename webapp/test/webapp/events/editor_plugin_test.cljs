@@ -119,6 +119,17 @@
     (is (= previous-output (:editor-plugin->script @rf-db/app-db))
         "a cancelled form must not leave the editor loading")))
 
+(deftest a-verdict-does-not-open-the-forms-of-another-connection
+  (seed-db! true)
+  (let [request (analyze!)]
+    ;; The user selects another connection before the analysis answers.
+    (swap! rf-db/app-db assoc-in [:editor :connections :selected :name] "pg-other")
+    (with-redefs [rf/dispatch (fn [event] (swap! queued conj event))]
+      ((:on-success request) nil))
+    (rf/dispatch-sync (take-queued! :editor-plugin/open-run-forms))
+    (is (empty? @queued) "no form opens, nothing runs")
+    (is (= previous-output (:editor-plugin->script @rf-db/app-db)))))
+
 (deftest a-412-falls-back-to-the-forms
   (seed-db! true)
   (let [request (analyze!)]

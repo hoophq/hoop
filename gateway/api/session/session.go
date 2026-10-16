@@ -258,13 +258,23 @@ func Post(c *gin.Context) {
 	newSession, userAgent := newExecSession(c, ctx, sid, req, conn)
 	log := log.With("sid", sid, "user", ctx.UserEmail)
 
-	analyzeRes, aiAccessRule, held, err := heldAnalysis(ctx, conn, req.Script)
+	run, err := takeHeldVerdict(ctx, conn, req.Script)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
 		return
 	}
-	if held {
+	// decided is set once the run is blocked, sent to approval, or started.
+	decided := false
+	var analyzeRes *models.SessionAIAnalysis
+	var aiAccessRule *models.AccessRequestRule
+	if run != nil {
+		defer func() {
+			if !decided {
+				run.release()
+			}
+		}()
 		log.Infof("reusing the ai analysis verdict of POST /sessions/analyze")
+		analyzeRes, aiAccessRule = run.analysis, run.accessRule
 	} else {
 		analyzeRes, aiAccessRule, err = AIAnalyze(c, newAIAnalyzeInput(c, ctx, conn, req.Script))
 		if err != nil {
@@ -281,11 +291,11 @@ func Post(c *gin.Context) {
 	}
 	switch decision {
 	case AIDecisionBlocked:
-		spendHeldVerdict(ctx, conn, req.Script)
+		decided = true
 		c.JSON(http.StatusOK, aiResp)
 		return
 	case AIDecisionReview:
-		spendHeldVerdict(ctx, conn, req.Script)
+		decided = true
 		c.JSON(http.StatusAccepted, aiResp)
 		return
 	}
@@ -333,7 +343,7 @@ func Post(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session")
 		return
 	}
-	spendHeldVerdict(ctx, conn, req.Script)
+	decided = true
 	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, ctx.OrgID, ctx.UserID, sid)
 
 	// TODO: refactor to use response from openapi package
