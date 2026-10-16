@@ -63,8 +63,10 @@ wait, not you.
 
 - Branch names come from Linear's `branchName` (auto-links the PR).
 - Commits start with the ticket ID.
-- Go: `make test-oss` green before PR. `webapp_v2`: `npm run lint` + build.
-- No PR before the `qa` agent says PASS.
+- Go: `go test` on the changed packages before the first push; the full suite
+  runs in the PR's CI. `webapp_v2`: `npm run lint` + build.
+- The PR opens as a draft after those checks, so CI runs while the `qa` agent
+  works. It leaves draft only after QA says PASS and CI is green.
 - Every PR is born **draft**, its "Testing" section built from the evidence.
 - Evidence lives in `~/evidencias/<TICKET-ID>/`, raw captures in
   `~/evidencias/.archive/<TICKET-ID>/`.

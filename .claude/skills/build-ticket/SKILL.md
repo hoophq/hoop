@@ -71,14 +71,16 @@ name, stop and report what is missing.
 
 ## 5. Validate
 
-- Go: `make test-oss`
+- Go: `go vet` and `go test` on the packages you changed, and on the packages
+  that import a changed exported API. Add `-race` when the change touches
+  goroutines, locks or channels. Do not run `make test-oss` here: the PR's CI
+  runs the full suite (unit, sidecar modules, integration, smoke).
 - `webapp_v2/`: `npm run lint` and `npm run build`
 - New endpoint or schema: `make generate-openapi-docs`
 - Migration: test `down 1`
 
-`make test-oss` red on a busy machine: compare the package times with CI
-(`gh api repos/hoophq/hoop/actions/jobs/<id>/logs`) before blaming the branch,
-and rerun with the Makefile's `-timeout 15m`, not `go test`'s 10m default.
+Then push the branch and open the PR as a draft, title `<ID>: <summary>`
+(`gh pr create --draft`), so CI runs while QA works. Step 7 fills it.
 
 ## 6. Independent QA
 
@@ -89,8 +91,8 @@ it judges against the ticket, not against you.
 On `FAIL`: fix each finding, commit, then resume the SAME qa agent and ask it to
 re-check, so it remembers what it already raised.
 
-After 3 `FAIL` rounds: stop. Do not open the PR. Report the open findings and
-what you think the real blocker is.
+After 3 `FAIL` rounds: stop. Leave the PR as a draft. Report the open findings
+and what you think the real blocker is.
 
 On `PASS`: run the `evidence` skill from QA's last-round captures (steps 4 and 5:
 compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI ticket, record the flow on the final commit,
@@ -100,10 +102,10 @@ Continue only after the user has seen it. Step 7 publishes it.
 For a `spike`, there is no PR. Deliver the evidence and a proposed cut into
 vertical tickets, then stop.
 
-## 7. Draft PR
+## 7. Fill the PR
 
-`gh pr create --draft`, title `<ID>: <summary>`. Fill every section of
-`.github/PULL_REQUEST_TEMPLATE.md`. Put:
+Fill every section of `.github/PULL_REQUEST_TEMPLATE.md` in the draft from
+step 5. Put:
 
 - **Description**: what and why, 2-6 lines.
 - **Related Issue**: the ticket ID only, never a Linear URL.
@@ -121,6 +123,8 @@ removed or renamed analytics event with its dashboard and successor, a new env
 var with the helm chart change.
 
 Add exactly one release label: `major`, `minor`, `patch` or `skip-release`.
+
+CI must be green before step 8: a red check goes back to step 4.
 
 ## 8. Close the loop
 

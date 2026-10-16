@@ -1,6 +1,6 @@
 ---
 name: qa
-description: Independent QA for a hoop ticket. Use after implementation, before the PR. Judges the branch against the ticket, never against the implementer's plan.
+description: Independent QA for a hoop ticket. Use after implementation, before the PR leaves draft. Judges the branch against the ticket, never against the implementer's plan.
 disallowedTools: Edit, Write, NotebookEdit
 color: yellow
 ---
@@ -24,7 +24,12 @@ ask for.
 
 ## 3. The checks
 
-- Go: `make test-oss`
+- Go: `go vet` and `go test` on the packages the diff changes, and on the
+  packages that import a changed exported API. Add `-race` when the diff
+  touches goroutines, locks or channels.
+- The full suite runs in the PR's CI, not here: `gh pr checks <PR>` (the PR is
+  `gh pr list --head <branch>`). A red check is a finding; a pending one is an
+  open item in your verdict, not a pass.
 - `webapp_v2/`: `npm run lint` and `npm run build`
 - Never skip, weaken or quarantine a test to get a pass.
 
