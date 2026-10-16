@@ -81,17 +81,15 @@ var startControlPlaneCmd = &cobra.Command{
 	Short: "Runs the gateway as the control plane",
 	Long: `Runs the same gateway as "hoop start gateway". The control plane image
 mounts no session volume, so PLUGIN_AUDIT_PATH defaults to a temporary
-directory when it is not set.`,
+directory when it is not set. When that directory is not writable, the
+gateway logs a warning and starts anyway.`,
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
 		// PLUGIN_AUDIT_PATH is consumed at package init time, so the resolved
-		// variable is adjusted directly when the env was not provided.
+		// variable is adjusted directly when the env was not provided. The
+		// audit plugin creates and checks the directory at startup.
 		if os.Getenv("PLUGIN_AUDIT_PATH") == "" {
-			auditPath := filepath.Join(os.TempDir(), "hoop_sessions")
-			if err := os.MkdirAll(auditPath, 0o700); err != nil {
-				log.Fatalf("failed creating the session storage directory %v: %v", auditPath, err)
-			}
-			plugintypes.AuditPath = auditPath
+			plugintypes.AuditPath = filepath.Join(os.TempDir(), "hoop_sessions")
 		}
 		gateway.Run()
 	},
