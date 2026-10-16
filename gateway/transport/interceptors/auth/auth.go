@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc"
@@ -268,6 +269,14 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 					break
 				}
 			}
+			if commongrpc.MetaGet(md, grpckey.ServiceIdentityFlagHeaderKey) == "true" {
+				serviceCtx, err := i.authenticateServiceIdentity(subject, commongrpc.MetaGet(md, grpckey.ServiceIdentityOrgIDHeaderKey), md)
+				if err != nil {
+					return err
+				}
+				ctxVal = serviceCtx
+				break
+			}
 		} else {
 			// first we check if the auth method is local, if so, we authenticate the user
 			// using the local auth method, otherwise we use the tokenVerifier.VerifyAccessToken
@@ -307,6 +316,31 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	}
 
 	return handler(srv, &serverStreamWrapper{ss, nil, ctxVal})
+}
+
+func (i *interceptor) authenticateServiceIdentity(subject, orgID string, md metadata.MD) (*GatewayContext, error) {
+	if orgID == "" {
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+	ctx, err := services.GetServiceIdentityContextByID(models.DB, orgID, subject)
+	if err != nil {
+		log.Errorf("failed loading service identity, org=%v id=%v err=%v", orgID, subject, err)
+		sentry.CaptureException(err)
+		return nil, status.Errorf(codes.Internal, "internal error")
+	}
+	if ctx == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+	gwctx := &GatewayContext{UserContext: *ctx, IdentityType: plugintypes.IdentityTypeAPIKey}
+	conn, err := i.getConnection(commongrpc.MetaGet(md, "connection-name"), ctx)
+	if err != nil {
+		return nil, err
+	}
+	if conn == nil {
+		return nil, status.Errorf(codes.NotFound, "connection not found")
+	}
+	gwctx.Connection = *conn
+	return gwctx, nil
 }
 
 func (i *interceptor) getConnection(name string, userCtx *models.Context) (*types.ConnectionInfo, error) {

@@ -43,8 +43,17 @@ func ListAllOrganizations() ([]Organization, error) {
 }
 
 func GetOrganizationByNameOrID(nameOrID string) (*Organization, error) {
+	return getOrganizationByNameOrID(DB, nameOrID)
+}
+
+// GetOrganizationByID loads an organization using the supplied database handle.
+func GetOrganizationByID(db *gorm.DB, id string) (*Organization, error) {
+	return getOrganizationByNameOrID(db, id)
+}
+
+func getOrganizationByNameOrID(db *gorm.DB, nameOrID string) (*Organization, error) {
 	var org Organization
-	err := DB.Raw(`
+	err := db.Raw(`
 	SELECT o.id, o.name, license_data, analytics_mode, hide_role_info, default_protection_profile,
 	o.onboarding_completed_at,
 	(SELECT count(*) FROM private.users u WHERE u.org_id = o.id) AS total_users
