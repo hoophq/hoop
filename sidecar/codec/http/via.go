@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -147,12 +148,6 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			pos = len(src)
 
 		case viaHead:
-			if f.switched {
-				// A switch granted while a request pipelined behind it was
-				// arriving: those bytes belong to the new protocol.
-				f.passThrough(&out)
-				continue
-			}
 			n, blankLen, done := f.line.scan(src[pos:])
 			f.held = append(f.held, src[pos:pos+n]...)
 			pos += n
@@ -248,13 +243,20 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			// Nothing is consumed here, only the state decided. A client
 			// sends after the switch request only once the answer reached
 			// it, and the gate decodes that answer before forwarding it, so
-			// switched is already known then. A client that sends before
-			// it hears back is read as HTTP: a frame then fails to parse
-			// and the connection is refused, never passed through.
-			if f.switched {
+			// the outcome is known then. Bytes that come before it cannot be
+			// handled: rewritten as HTTP they would corrupt a tunnel the
+			// server then opens, passed through they would skip the rewrite
+			// when it refuses, and held they would wait for client bytes
+			// that may never come. So the connection is refused.
+			switch {
+			case f.switched:
 				f.state = viaPassThrough
-			} else {
+			case f.switchAt == 0:
 				f.state = viaHead
+			default:
+				f.err = errors.New("this listener points every request at its upstream, and the client sent " +
+					"more data before the server answered its Upgrade or CONNECT, so it cannot; the connection is closed")
+				return nil, f.err
 			}
 		}
 	}

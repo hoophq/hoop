@@ -3483,7 +3483,8 @@ listeners:
   origin form (`GET /x`), so the client cannot pick another virtual host.
 - After an `Upgrade` or `CONNECT`, the connection passes through only once
   the server grants the switch; a refused upgrade leaves the next request
-  rewritten. A request the sidecar cannot frame is refused, never forwarded
+  rewritten. Bytes the client sends before that answer close the
+  connection. A request the sidecar cannot frame is refused, never forwarded
   with the client's own Host.
 
 Nothing in a response is rewritten: no `Location`, cookie domain or body. An

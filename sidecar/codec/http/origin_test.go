@@ -158,28 +158,50 @@ func TestOriginKeepsRewritingAfterARefusedUpgrade(t *testing.T) {
 }
 
 // The answer that grants a switch is the one to the request that asked for
-// it. A 200 to an earlier request is not a 2xx to the CONNECT behind it.
+// it. A 200 to an earlier request is not a 2xx to the CONNECT behind it, and
+// once the CONNECT itself is refused the next request is rewritten.
 func TestOriginMatchesTheSwitchToItsRequest(t *testing.T) {
 	c := newConn(t)
 	if _, err := c.send("GET /a HTTP/1.1\r\nHost: h\r\n\r\nCONNECT db:5432 HTTP/1.1\r\nHost: db:5432\r\n\r\n"); err != nil {
 		t.Fatal(err)
 	}
 	c.answer("HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-	if got, err := c.send(forged); err != nil || !strings.Contains(got, "Host: api.example.com\r\n") {
-		t.Errorf("a 200 to the GET passed the CONNECT's tunnel through: %q, %v", got, err)
+	c.answer("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+	got, err := c.send(forged)
+	if err != nil || !strings.Contains(got, "Host: api.example.com\r\n") {
+		t.Errorf("after a refused CONNECT: %q, %v", got, err)
+	}
+
+	early := newConn(t)
+	if _, err := early.send("GET /a HTTP/1.1\r\nHost: h\r\n\r\nCONNECT db:5432 HTTP/1.1\r\nHost: db:5432\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	early.answer("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+	if got, err := early.send(forged); err == nil {
+		t.Errorf("a 200 to the GET let bytes through before the CONNECT was answered: %q", got)
 	}
 }
 
-// A client that sends frames before the server answered is read as HTTP,
-// and what does not parse is refused: never forwarded with its own Host.
-// So is a head too large to frame, and a malformed chunked body.
+// Bytes the client sends before the server answered its switch request are
+// refused, whatever they look like: rewritten as HTTP they would corrupt a
+// tunnel the server then opens, passed through they would skip the rewrite.
+// So is a head too large to frame, a malformed chunked body, and garbage.
 func TestOriginRefusesWhatItCannotFrame(t *testing.T) {
-	early := newConn(t)
-	if _, err := early.send(wsHead); err != nil {
-		t.Fatal(err)
+	for name, early := range map[string]string{
+		"frames":           "\x81\x85\x01\x02\x03\x04iggho",
+		"a pipelined head": forged,
+	} {
+		c := newConn(t)
+		if _, err := c.send(wsHead); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := c.send(early); err == nil {
+			t.Errorf("%s before the switch was answered went out as %q", name, got)
+		}
 	}
-	if _, err := early.send("\x81\x85\x01\x02\x03\x04iggho\r\n\r\n"); err == nil {
-		t.Error("frames before the switch were forwarded")
+	// In the same read as the switch request, too.
+	if got, err := newConn(t).send(wsHead + forged); err == nil {
+		t.Errorf("a head pipelined behind the switch request went out as %q", got)
 	}
 	for name, in := range map[string]string{
 		"oversized head": "GET / HTTP/1.1\r\nHost: h\r\nX-Pad: " + strings.Repeat("a", 1<<20+1),

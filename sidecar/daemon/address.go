@@ -57,11 +57,16 @@ func parseAddressURL(v string) (a addressURL, isURL bool, err error) {
 	if u.Hostname() == "" {
 		return addressURL{}, true, fmt.Errorf("%q names no host", v)
 	}
-	port := u.Port()
-	if port == "" {
-		port = defaultPort(u.Scheme)
-	} else if n, err := strconv.Atoi(port); err != nil || n > 65535 {
-		return addressURL{}, true, fmt.Errorf("%q: port %s is out of range", v, port)
+	// Stored canonical, so "00080" is port 80: authority compares it with
+	// the scheme's default, and the Host it writes must be the one a
+	// browser would send.
+	port := defaultPort(u.Scheme)
+	if p := u.Port(); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n > 65535 {
+			return addressURL{}, true, fmt.Errorf("%q: port %s is out of range", v, p)
+		}
+		port = strconv.Itoa(n)
 	}
 	return addressURL{scheme: u.Scheme, host: u.Hostname(), port: port}, true, nil
 }
@@ -147,13 +152,13 @@ func (l ListenerConfig) usesAddressURL() bool {
 // host:port value is not checked: it is dialed as written, as it always was.
 func (l ListenerConfig) addressProblems(name string) []string {
 	var problems []string
-	listen, listenURL, err := parseAddressURL(l.Listen)
-	if err != nil {
-		problems = append(problems, fmt.Sprintf("%s: listen %v", name, err))
+	listen, listenURL, listenErr := parseAddressURL(l.Listen)
+	if listenErr != nil {
+		problems = append(problems, fmt.Sprintf("%s: listen %v", name, listenErr))
 	}
-	upstream, upstreamURL, err := parseAddressURL(l.Upstream)
-	if err != nil {
-		problems = append(problems, fmt.Sprintf("%s: upstream %v", name, err))
+	upstream, upstreamURL, upstreamErr := parseAddressURL(l.Upstream)
+	if upstreamErr != nil {
+		problems = append(problems, fmt.Sprintf("%s: upstream %v", name, upstreamErr))
 	}
 	if !listenURL && !upstreamURL {
 		return problems
@@ -163,7 +168,9 @@ func (l ListenerConfig) addressProblems(name string) []string {
 			"%s: listen and upstream take a URL on an http listener only; write host:port on a %s listener",
 			name, l.Protocol))
 	}
-	if listenURL && listen.scheme != "" {
+	// A URL that did not parse is reported above; the checks below read
+	// its parts, which it has none of.
+	if listenURL && listenErr == nil {
 		switch {
 		case l.Network == "unix":
 			problems = append(problems, fmt.Sprintf(
@@ -178,7 +185,7 @@ func (l ListenerConfig) addressProblems(name string) []string {
 					"or drop downstream_tls", name, l.Listen))
 		}
 	}
-	if upstreamURL && upstream.scheme == "http" && l.UpstreamTLS != nil {
+	if upstreamURL && upstreamErr == nil && upstream.scheme == "http" && l.UpstreamTLS != nil {
 		problems = append(problems, fmt.Sprintf(
 			"%s: upstream %s is plaintext, and upstream_tls encrypts that hop; write https://, "+
 				"or drop upstream_tls", name, l.Upstream))

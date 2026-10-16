@@ -34,6 +34,7 @@ func TestAnHTTPListenerReadsURLs(t *testing.T) {
 		{"0.0.0.0:8080", "https://api.example.com:8443", "0.0.0.0:8080", "api.example.com:8443", "api.example.com:8443", true},
 		{"http://[::1]:8080", "https://[::1]", "[::1]:8080", "[::1]:443", "[::1]", true},
 		{"127.0.0.1:1", "http://10.0.0.5:80", "127.0.0.1:1", "10.0.0.5:80", "10.0.0.5", false},
+		{"http://127.0.0.1:0008080", "https://h:00443", "127.0.0.1:8080", "h:443", "h", true},
 	} {
 		if err := CheckConfigBytes([]byte(httpURLLane(tc.listen, tc.upstream, ""))); err != nil {
 			t.Errorf("%s -> %s refused: %v", tc.listen, tc.upstream, err)
@@ -160,9 +161,15 @@ func TestAURLLaneProxiesToTheOriginByName(t *testing.T) {
 		}
 		defer conn.Close()
 		sum := sha1.Sum([]byte(r.Header.Get("Sec-WebSocket-Key") + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
-		fmt.Fprintf(rw, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"+
-			"Sec-WebSocket-Accept: %s\r\n\r\n", base64.StdEncoding.EncodeToString(sum[:]))
-		_ = rw.Flush()
+		if _, err := fmt.Fprintf(rw, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"+
+			"Sec-WebSocket-Accept: %s\r\n\r\n", base64.StdEncoding.EncodeToString(sum[:])); err != nil {
+			t.Errorf("write the 101: %v", err)
+			return
+		}
+		if err := rw.Flush(); err != nil {
+			t.Errorf("flush the 101: %v", err)
+			return
+		}
 		// One masked client text frame in, its payload echoed unmasked.
 		hdr := make([]byte, 6)
 		if _, err := io.ReadFull(rw, hdr); err != nil {
@@ -200,7 +207,10 @@ func TestAURLLaneProxiesToTheOriginByName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read the body: %v", err)
+	}
 	resp.Body.Close()
 	if resp.StatusCode != 200 || string(body) != "hello from the origin" {
 		t.Errorf("status %d body %q", resp.StatusCode, body)
@@ -214,8 +224,10 @@ func TestAURLLaneProxiesToTheOriginByName(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer conn.Close()
-	fmt.Fprintf(conn, "GET /ws HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"+
-		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n", addr)
+	if _, err := fmt.Fprintf(conn, "GET /ws HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"+
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n", addr); err != nil {
+		t.Fatalf("write the handshake: %v", err)
+	}
 	br := bufio.NewReader(conn)
 	wsResp, err := http.ReadResponse(br, nil)
 	if err != nil || wsResp.StatusCode != http.StatusSwitchingProtocols {
