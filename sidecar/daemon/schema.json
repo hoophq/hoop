@@ -67,7 +67,7 @@
       "key": "listen",
       "type": "string",
       "label": "Listen on",
-      "help": "Where clients reach the sidecar: host:port, or a socket path on a unix transport.",
+      "help": "Where clients reach the sidecar: host:port, or a socket path on a unix transport. An http listener also takes a URL, such as http://0.0.0.0:8080.",
       "placeholder": "0.0.0.0:15432",
       "required": true,
       "basic": true
@@ -88,7 +88,7 @@
       "key": "upstream",
       "type": "string",
       "label": "Upstream",
-      "help": "Where the sidecar reaches your resource. On an ica listener, this names the single VDA; leave it empty for CIDR mode.",
+      "help": "Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode.",
       "placeholder": "appdb:5432",
       "required": true,
       "basic": true,

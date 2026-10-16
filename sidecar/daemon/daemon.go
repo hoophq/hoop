@@ -1547,7 +1547,7 @@ func buildServer(
 	log *slog.Logger,
 ) (*proxy.Server, error) {
 	lc := ln.cfg
-	upstreamTLS, err := lc.UpstreamTLS.BuildTLS(ln.trustRoots)
+	upstreamTLS, err := lc.upstreamTLS().BuildTLS(ln.trustRoots)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
@@ -1591,9 +1591,9 @@ func buildServer(
 	}
 
 	return proxy.NewServer(proxy.Config{
-		Listen:              lc.Listen,
+		Listen:              lc.listenAddress(),
 		Network:             lc.Network,
-		Upstream:            lc.Upstream,
+		Upstream:            lc.upstreamAddress(),
 		UpstreamTLS:         upstreamTLS,
 		MySQLAuthPrivateKey: mysqlAuthKey,
 		DownstreamTLS:       downstreamTLS,

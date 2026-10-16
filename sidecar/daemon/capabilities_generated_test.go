@@ -10,8 +10,9 @@ import (
 )
 
 // The header is generated from what the build links: every cap-tagged field,
-// every rule type and every protocol. Only behaviourCapabilities is listed by
-// hand, because a behaviour has no type to generate it from.
+// every rule type and every protocol. Only behaviourCapabilities and
+// valueCapabilities are listed by hand, because neither has a type to
+// generate it from.
 //
 // ica is the one build-dependent protocol. Protocols() lists it in every
 // build, so the plane renders its form; the header lists it only when an

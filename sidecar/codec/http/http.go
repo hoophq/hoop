@@ -38,7 +38,7 @@ import (
 
 // Options configures one lane's HTTP codec.
 //
-// Every field but CredentialHeader is forwarded to libhoop's
+// Every field but CredentialHeader and Origin is forwarded to libhoop's
 // codechttp.Options unchanged; see there for their defaults.
 type Options struct {
 	CaptureBody bool
@@ -58,6 +58,11 @@ type Options struct {
 	// back through TakeCredential; it stays in HTTP.Headers only when
 	// Headers names it too, because then the operator asked to see it.
 	CredentialHeader string
+
+	// Origin, when set, makes the lane a reverse proxy in front of one
+	// origin server: every request names it in Host. Nil forwards each
+	// request's Host as the client wrote it. See origin.go.
+	Origin *Origin
 }
 
 // Codec is libhoop's HTTP Inspector with the relay's additions.
@@ -105,6 +110,7 @@ func New(o Options) *Codec {
 			MaxMessageBytes:      o.MaxMessageBytes,
 		}),
 		creds: credentials{header: header, keep: keep},
+		via:   viaFilter{origin: o.Origin},
 	}
 }
 
@@ -120,10 +126,18 @@ func (c *Codec) CredentialHeader() string { return c.creds.header }
 // joined rather than replaced: it wraps inspect.ErrStreamUnsafe, which is
 // what makes the gate refuse the connection instead of forwarding under the
 // honest default it applies to a merely malformed stream.
+//
+// Every response's status also reaches the request filter, which on an
+// origin lane passes a connection through only once the server grants the
+// switch a request asked for. The gate decodes a response before it
+// forwards it, so the filter knows before the client can act on it.
 func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
 	stmts, n, err := c.Inspector.Decode(dir, data)
 	var liftErr error
 	for i := range stmts {
+		if dir == inspect.FromServer && stmts[i].HTTP != nil && stmts[i].HTTP.StatusCode != 0 {
+			c.via.answer(stmts[i].HTTP.StatusCode)
+		}
 		stripConnectGatewayPrefix(&stmts[i])
 		if e := c.creds.lift(&stmts[i]); e != nil && liftErr == nil {
 			liftErr = e
@@ -160,8 +174,9 @@ func (c *Codec) InspectResponse(resp *http.Response, req *http.Request, body []b
 }
 
 // Filter is the gate's StreamFilter: it marks client requests with Via and
-// refuses one that already carries this process's mark. The server stream
-// is returned unchanged. See via.go.
+// refuses one that already carries this process's mark, and with an Origin
+// points each request at it. The server stream is returned unchanged. See
+// via.go and origin.go.
 func (c *Codec) Filter(dir inspect.Direction, data []byte) ([]byte, error) {
 	if dir != inspect.FromClient {
 		return data, nil
