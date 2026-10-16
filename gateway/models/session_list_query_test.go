@@ -228,7 +228,7 @@ func TestSessionListShapeWhereGolden(t *testing.T) {
 		`SELECT 1 FROM private.users u ` +
 		`INNER JOIN private.user_groups ug ON ug.user_id = u.id ` +
 		`INNER JOIN private.review_groups rg ON rg.group_name = ug.name ` +
-		`WHERE rg.review_id = rv.id AND u.subject = @user_id ) ELSE true END`
+		`WHERE rg.review_id = rv.id AND NOT rg.added_on_denial AND u.subject = @user_id ) ELSE true END`
 
 	for _, tt := range []struct {
 		msg   string
@@ -272,7 +272,7 @@ func TestSessionListShapeWhereGolden(t *testing.T) {
 				`SELECT 1 FROM private.users u ` +
 				`INNER JOIN private.user_groups ug ON ug.user_id = u.id ` +
 				`INNER JOIN private.review_groups rg ON rg.group_name = ug.name ` +
-				`WHERE rg.review_id = rv.id AND u.email = @review_approver_email )`,
+				`WHERE rg.review_id = rv.id AND NOT rg.added_on_denial AND u.email = @review_approver_email )`,
 		},
 		{
 			msg:   "a connection filter emits exactly one session predicate",
