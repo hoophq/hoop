@@ -364,7 +364,8 @@ func (m firstRunModel) render() string {
 			"or use the Enterprise version with your own Control Plane or a license."
 	case m.managed != nil:
 		introText = "Connected to hoop as " + m.managed.Name + ". Now set up what it protects: " +
-			"the config stays in a file on this machine, and hoop shows it."
+			"the config stays in a file on this machine, and hoop shows it. " +
+			"Configured it in the web app instead? It starts here as soon as hoop has it."
 	}
 	intro := wrap.Inherit(stText).Render(introText)
 	flow := m.frFlow(now)

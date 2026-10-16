@@ -310,7 +310,9 @@ the screen stays open, connected, on the setup: the config is set up there
 and stays in a file on this machine, which the plane shows (`load_from_disk`).
 The saved login remembers that file, so the next bare run boots it, connected.
 "Configure in hoop instead" boots with no file; the sidecar then waits and
-names the page where its listeners are added. Off a terminal, a login with no
+names the page where its listeners are added. The setup screen does not need
+the choice: it asks the plane every few seconds, and boots on a configuration
+set in the web app as soon as there is one. Off a terminal, a login with no
 file waits the same way.
 
 An organization without an Enterprise license holds one sidecar, under the

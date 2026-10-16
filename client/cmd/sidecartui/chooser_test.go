@@ -8,7 +8,61 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/hoophq/hoop/sidecar/daemon"
 )
+
+// Configured in the web app while the screen waits: the plane check finds a
+// configuration, and the screen boots on it, as Save and boot would.
+func TestAConfigurationSetInHoopBootsTheConnectedScreen(t *testing.T) {
+	m := homeModel(t, t.TempDir(), validateFile)
+	m.managed = &testPlane
+	m.buildHome()
+	ready := false
+	m.connectCheck = func(url, token string) (*daemon.Config, error) {
+		if url != testPlane.URL || token != testPlane.Token {
+			t.Errorf("checked %s with %s", url, token)
+		}
+		if !ready {
+			return nil, daemon.ErrPlaneHasNoConfig
+		}
+		return &daemon.Config{}, nil
+	}
+
+	// Nothing in hoop yet: it keeps asking, and boots nothing.
+	tm, cmd := m.Update(frProbeTickMsg{})
+	tm, next := tm.Update(cmd())
+	if tm.(firstRunModel).boot != nil || next == nil {
+		t.Fatalf("an empty plane booted, or the screen stopped asking")
+	}
+
+	// The web app set its listener: the next check boots on the plane.
+	ready = true
+	tm, cmd = tm.Update(frProbeTickMsg{})
+	tm, quit := tm.Update(cmd())
+	fm := tm.(firstRunModel)
+	if fm.boot == nil || fm.boot.ConfigPath != "" || fm.boot.ControlPlaneURL != testPlane.URL || fm.boot.Token != testPlane.Token {
+		t.Fatalf("boot = %+v, want the plane and no file", fm.boot)
+	}
+	if !fm.planeReady {
+		t.Error("the screen does not know the plane holds the configuration")
+	}
+	if _, ok := quit().(tea.QuitMsg); !ok {
+		t.Error("the screen did not quit to boot")
+	}
+}
+
+// Without a login nothing is asked.
+func TestOnlyAConnectedScreenAsksThePlane(t *testing.T) {
+	m := homeModel(t, t.TempDir(), validateFile)
+	m.connectCheck = func(string, string) (*daemon.Config, error) {
+		t.Error("asked a plane without a login")
+		return nil, nil
+	}
+	if _, cmd := m.Update(frProbeTickMsg{}); cmd != nil {
+		t.Error("a screen with no login keeps asking")
+	}
+}
 
 // chooserModel is the first-run screen offering the hoop-managed plane.
 func chooserModel(t *testing.T) firstRunModel {
@@ -47,7 +101,7 @@ type fakeLogin struct {
 }
 
 func (f fakeLogin) Begin(context.Context) (LoginTicket, error) { return f.ticket, nil }
-func (f fakeLogin) Wait(context.Context) (ManagedPlane, error)  { return f.plane, f.waitErr }
+func (f fakeLogin) Wait(context.Context) (ManagedPlane, error) { return f.plane, f.waitErr }
 
 var testPlane = ManagedPlane{URL: "https://use.hoop.dev", Token: "hsc_x", Name: "edge-1",
 	Page: "https://use.hoop.dev/sidecars/id-1"}

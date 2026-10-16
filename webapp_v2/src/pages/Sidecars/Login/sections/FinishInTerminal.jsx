@@ -101,7 +101,7 @@ export default function FinishInTerminal({ sidecar }) {
               <Anchor component="button" type="button" size="sm" onClick={() => navigate(page)}>
                 Configure it in Hoop
               </Anchor>
-              {', then choose "Configure in hoop instead" in the terminal.'}
+              {': as soon as it has a listener, the terminal starts it.'}
             </Text>
           </>
         )}

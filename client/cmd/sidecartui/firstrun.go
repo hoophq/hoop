@@ -103,7 +103,19 @@ type (
 		plane ManagedPlane
 		err   error
 	}
+	// frProbeTickMsg asks the plane again; frPlaneReadyMsg is its answer:
+	// ready when the plane holds a configuration for this sidecar.
+	frProbeTickMsg  struct{}
+	frPlaneReadyMsg struct{ ready bool }
 )
+
+// planeProbeEvery is how often a logged-in screen asks the plane whether the
+// web app gave this sidecar a configuration.
+const planeProbeEvery = 4 * time.Second
+
+func probeTick() tea.Cmd {
+	return tea.Tick(planeProbeEvery, func(time.Time) tea.Msg { return frProbeTickMsg{} })
+}
 
 // frFrame is the animation step: fast enough that the wordmark's band and a
 // visit's pulse move smoothly, and it costs one small redraw.
@@ -181,6 +193,10 @@ type firstRunModel struct {
 	// stays for every boot from here: the sidecar is logged in, whichever
 	// config it boots.
 	managed *ManagedPlane
+	// probing is a plane check in flight; planeReady is the plane holding a
+	// configuration, which the screen then boots on.
+	probing    bool
+	planeReady bool
 
 	stop     func()
 	stopping bool
@@ -494,7 +510,12 @@ func frTick() tea.Cmd {
 	return tea.Tick(frFrame, func(t time.Time) tea.Msg { return frFrameMsg(t) })
 }
 
-func (m firstRunModel) Init() tea.Cmd { return frTick() }
+func (m firstRunModel) Init() tea.Cmd {
+	if m.managed != nil {
+		return tea.Batch(frTick(), probeTick())
+	}
+	return frTick()
+}
 
 func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -584,7 +605,31 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.managed, m.choosing = &plane, false
 		m.home.cur = 0
 		m.buildHome()
-		return m, nil
+		return m, probeTick()
+	case frProbeTickMsg:
+		// Configured in the web app instead: the plane now serves this
+		// sidecar a configuration, and the screen boots on it, as a
+		// Save and boot here would. The check is the Connect page's own.
+		if m.managed == nil || m.boot != nil || m.connectCheck == nil {
+			return m, nil
+		}
+		if m.probing || m.checking != "" {
+			return m, probeTick()
+		}
+		m.probing = true
+		check, url, token := m.connectCheck, m.managed.URL, m.managed.Token
+		return m, func() tea.Msg {
+			_, err := check(url, token)
+			return frPlaneReadyMsg{ready: err == nil}
+		}
+	case frPlaneReadyMsg:
+		m.probing = false
+		if !msg.ready || m.managed == nil || m.boot != nil || m.checking != "" {
+			return m, probeTick()
+		}
+		m.planeReady = true
+		m.boot = &Boot{ControlPlaneURL: m.managed.URL, Token: m.managed.Token}
+		return m, tea.Quit
 	case frCheckedMsg:
 		if msg.path != m.checking {
 			return m, nil
@@ -830,6 +875,9 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 			return nil, fmt.Errorf("stopping the first-run listener before boot: %w", derr)
 		}
 		switch {
+		case fm.planeReady:
+			fmt.Fprintf(os.Stdout, "hoop sidecar: %q runs the configuration set in hoop at %s\n  next time: hoop start sidecar\n",
+				fm.managed.Name, fm.managed.URL)
 		case fm.managed != nil && fm.boot.ConfigPath == "":
 			fmt.Fprintf(os.Stdout, "hoop sidecar: %q waits for its configuration from %s\n", fm.managed.Name, fm.managed.URL)
 		case fm.managed != nil:
