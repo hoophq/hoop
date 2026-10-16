@@ -23,14 +23,6 @@ var wordmark = []string{
 	"╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝     ",
 }
 
-// The band's two brighter steps over the brand blue. Light and dark
-// terminals need opposite directions: lighter reads as a glint on black,
-// deeper reads as one on white.
-var (
-	colGlint = shade(lipgloss.Color("#1F3A9E"), lipgloss.Color("#DCE3FF"))
-	colGlow  = shade(lipgloss.Color("#2E4FC4"), lipgloss.Color("#8AA0EE"))
-)
-
 // frWordmark paints the wordmark with a diagonal band sweeping left to
 // right, about once every two seconds. The frame is a function of the clock,
 // like shimmer, so every redraw moves it and nothing keeps a timer.
@@ -38,8 +30,12 @@ func frWordmark(now time.Time) string {
 	width := len([]rune(wordmark[0])) + len(wordmark)
 	period := width + 14
 	head := int(now.UnixMilli()/55) % period
-	glint := lipgloss.NewStyle().Foreground(colGlint).Bold(true)
-	glow := lipgloss.NewStyle().Foreground(colGlow).Bold(true)
+	// The band's two brighter steps over the brand blue, read from shade on
+	// each frame so a background change (see setTheme) is picked up live.
+	// Light and dark terminals need opposite directions: lighter reads as a
+	// glint on black, deeper reads as one on white.
+	glint := lipgloss.NewStyle().Foreground(shade(lipgloss.Color("#1F3A9E"), lipgloss.Color("#DCE3FF"))).Bold(true)
+	glow := lipgloss.NewStyle().Foreground(shade(lipgloss.Color("#2E4FC4"), lipgloss.Color("#8AA0EE"))).Bold(true)
 	base := lipgloss.NewStyle().Foreground(colPrimary).Bold(true)
 	rows := make([]string, len(wordmark))
 	for y, line := range wordmark {

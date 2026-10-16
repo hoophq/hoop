@@ -175,13 +175,20 @@ func tick() tea.Cmd {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.spin.Tick, tick())
+	// RequestBackgroundColor asks the terminal for its real background; the
+	// reply arrives as tea.BackgroundColorMsg and corrects the palette picked
+	// from COLORFGBG at startup (see styles.go). A terminal that never answers
+	// keeps that guess and nothing waits on it.
+	return tea.Batch(m.spin.Tick, tick(), tea.RequestBackgroundColor)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+	case tea.BackgroundColorMsg:
+		setTheme(msg.IsDark())
 		return m, nil
 	case logMsg:
 		m.st.ApplyLog(LogRecord(msg))
