@@ -18,11 +18,21 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
+// The database tests share one embedded database, the costly part of each: CI
+// runs other packages that start their own at the same time.
+func TestWithDatabase(t *testing.T) {
+	startTestDB(t)
+	t.Run("WALStopsWritingPastStreamCap", testWALStopsWritingPastStreamCap)
+	t.Run("FlushWhileWritingKeepsOrder", testFlushWhileWritingKeepsOrder)
+	t.Run("CloseKeepsWriteDuringFinalFlush", testCloseKeepsWriteDuringFinalFlush)
+	t.Run("FlushWithoutChunksFlagAppendsOnce", testFlushWithoutChunksFlagAppendsOnce)
+	t.Run("ChunksFlagFlipBetweenFlushesKeepsOrder", testChunksFlagFlipBetweenFlushesKeepsOrder)
+}
+
 // A result set larger than the stream cap must not be written to the WAL past
 // the cap, must be flushed one bounded window at a time, and the session must
 // persist the same stream as when it was neither.
-func TestWALStopsWritingPastStreamCap(t *testing.T) {
-	startTestDB(t)
+func testWALStopsWritingPastStreamCap(t *testing.T) {
 
 	origAuditPath, origCap, origWindow := plugintypes.AuditPath, maxStreamBytes, flushWindowBytes
 	t.Cleanup(func() { plugintypes.AuditPath, maxStreamBytes, flushWindowBytes = origAuditPath, origCap, origWindow })
@@ -205,8 +215,7 @@ func TestFlushDoesNotBlockWritesDuringAppend(t *testing.T) {
 
 // Writes, flushes and close at the same time must persist the written rows in
 // order, without gaps or duplicates.
-func TestFlushWhileWritingKeepsOrder(t *testing.T) {
-	startTestDB(t)
+func testFlushWhileWritingKeepsOrder(t *testing.T) {
 	origAuditPath, origCap, origWindow := plugintypes.AuditPath, maxStreamBytes, flushWindowBytes
 	t.Cleanup(func() { plugintypes.AuditPath, maxStreamBytes, flushWindowBytes = origAuditPath, origCap, origWindow })
 	plugintypes.AuditPath = t.TempDir()
@@ -291,8 +300,7 @@ func TestFlushWhileWritingKeepsOrder(t *testing.T) {
 
 // A write that lands while the final flush writes to the database must be
 // persisted, not removed with the WAL.
-func TestCloseKeepsWriteDuringFinalFlush(t *testing.T) {
-	startTestDB(t)
+func testCloseKeepsWriteDuringFinalFlush(t *testing.T) {
 	origAuditPath, origAppend := plugintypes.AuditPath, appendStream
 	t.Cleanup(func() { plugintypes.AuditPath, appendStream = origAuditPath, origAppend })
 	plugintypes.AuditPath = t.TempDir()
@@ -366,8 +374,7 @@ func TestCloseKeepsWriteDuringFinalFlush(t *testing.T) {
 
 // With AuditStreamChunksFlag off, a flush appends its whole tail once to the
 // stream, as before the flag, and stores the same rows.
-func TestFlushWithoutChunksFlagAppendsOnce(t *testing.T) {
-	startTestDB(t)
+func testFlushWithoutChunksFlagAppendsOnce(t *testing.T) {
 	origAuditPath, origCap, origWindow, origAppend := plugintypes.AuditPath, maxStreamBytes, flushWindowBytes, appendStream
 	t.Cleanup(func() {
 		plugintypes.AuditPath, maxStreamBytes, flushWindowBytes, appendStream = origAuditPath, origCap, origWindow, origAppend
@@ -443,8 +450,7 @@ func TestFlushWithoutChunksFlagAppendsOnce(t *testing.T) {
 
 // Turning AuditStreamChunksFlag on or off between two flushes of a session
 // keeps its stored rows in order. A session with chunk rows keeps writing rows.
-func TestChunksFlagFlipBetweenFlushesKeepsOrder(t *testing.T) {
-	startTestDB(t)
+func testChunksFlagFlipBetweenFlushesKeepsOrder(t *testing.T) {
 	origAuditPath, origCap, origWindow := plugintypes.AuditPath, maxStreamBytes, flushWindowBytes
 	t.Cleanup(func() { plugintypes.AuditPath, maxStreamBytes, flushWindowBytes = origAuditPath, origCap, origWindow })
 	plugintypes.AuditPath = t.TempDir()
