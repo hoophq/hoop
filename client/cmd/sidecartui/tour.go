@@ -2,17 +2,22 @@ package sidecartui
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/jackc/pgx/v5/pgproto3"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/sidecar/audit"
@@ -103,6 +108,9 @@ func (t *tour) see(ev audit.Event) {
 		if s.SeenKind == "" || string(ev.Kind) != s.SeenKind {
 			continue
 		}
+		if s.SeenTable != "" && !slices.ContainsFunc(ev.Tables, func(tb string) bool { return strings.EqualFold(tb, s.SeenTable) }) {
+			continue
+		}
 		if s.SeenOp == "" || strings.EqualFold(op, s.SeenOp) {
 			t.done[i] = true
 		}
@@ -145,15 +153,24 @@ func (t *tour) runHTTP(i int) tea.Cmd {
 	}
 }
 
+// runPG runs step i's statement as the demo's read-only role. Through the
+// sidecar it connects to the loopback listener in plaintext, the way the
+// listener serves; the comparison step connects to the database itself over
+// TLS, verified against the RDS roots the demo carries.
 func (t *tour) runPG(i int) tea.Cmd {
 	s := t.steps[i]
-	addr := t.ports.Listen
-	if s.Direct {
-		addr = t.ports.API
-	}
+	target := pgTarget{addr: t.ports.Listen}
 	return func() tea.Msg {
+		if s.Direct {
+			roots, err := sidecardemo.RDSRoots()
+			if err != nil {
+				return tourResultMsg{step: i, err: err}
+			}
+			host, _, _ := net.SplitHostPort(t.ports.API)
+			target = pgTarget{addr: t.ports.API, tls: &tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12}}
+		}
 		start := time.Now()
-		res, err := pgQuery(addr, s.SQL)
+		res, err := pgQuery(target, s.SQL)
 		if err != nil {
 			return tourResultMsg{step: i, err: err}
 		}
@@ -183,8 +200,11 @@ func (t *tour) summary(s sidecardemo.Step) string {
 // own phrases; Postgres has only an answer or a refusal.
 func (t *tour) statusText(status int) string {
 	if t.pg() {
-		if status >= 400 {
+		switch {
+		case status == 403:
 			return "refused"
+		case status >= 400:
+			return "error"
 		}
 		return "ok"
 	}
@@ -255,7 +275,8 @@ func (t *tour) view(w, h int, now time.Time) string {
 	intro := "Requests to " + t.ports.Listen + " go through the sidecar to an invented API. " +
 		"Run each step here, or paste its curl into another terminal, then open Wire to see what the sidecar recorded."
 	if t.pg() {
-		intro = "Statements sent to " + t.ports.Listen + " go through the sidecar to an invented database. " +
+		intro = "Statements sent to " + t.ports.Listen + " go through the sidecar to hoop's demo database, " +
+			"a read-only copy of the dellstore sample shop. " +
 			"Run each step here, or paste its psql into another terminal, then open Wire to see what the sidecar recorded."
 	}
 	lines := []string{
@@ -347,106 +368,98 @@ func (t *tour) next() string {
 		stText.Render(" for Wire: every request above, as the sidecar recorded it.")
 }
 
-// pgQuery runs one simple-protocol statement against addr and returns the
-// result as the tour shows it: rows rendered as text, a command tag, or a
-// refusal. A connection failure is the returned error; a Postgres error frame
-// (a guardrail denial among them) is a result with a 403 status, so the view
-// styles it like a refused HTTP request.
-func pgQuery(addr, sql string) (tourResult, error) {
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+// pgTarget is where a tour statement goes: an address, and the TLS to speak
+// there (nil for plaintext).
+type pgTarget struct {
+	addr string
+	tls  *tls.Config
+}
+
+// sqlstateRefused is the SQLSTATE the sidecar's Postgres denial carries
+// (proxy.PostgresError: 42501 insufficient_privilege, severity FATAL).
+const sqlstateRefused = "42501"
+
+// pgQuery runs one statement, over the simple query protocol the way psql
+// does, as the demo's read-only role, and returns the result as the tour shows
+// it: rows rendered as text, or a command tag. A Postgres error is an answer
+// too, not a failure of the step: the sidecar's refusal is a 403 the view
+// styles like a refused HTTP request, and any other (a mistyped column, a
+// failed login) a 400 that carries the database's own message. Only a
+// connection that never answered is the returned error.
+func pgQuery(t pgTarget, sql string) (tourResult, error) {
+	host, port, err := net.SplitHostPort(t.addr)
 	if err != nil {
 		return tourResult{}, err
 	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-
-	fe := pgproto3.NewFrontend(conn, conn)
-	fe.Send(&pgproto3.StartupMessage{
-		ProtocolVersion: pgproto3.ProtocolVersionNumber,
-		Parameters:      map[string]string{"user": "demo", "database": "postgres"},
-	})
-	if err := fe.Flush(); err != nil {
+	p, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return tourResult{}, fmt.Errorf("port %q: %w", port, err)
+	}
+	cfg, err := pgx.ParseConfig("")
+	if err != nil {
 		return tourResult{}, err
 	}
-	if err := pgDrain(fe); err != nil {
-		return tourResult{}, err
-	}
+	// Every field that decides where and how the connection goes is set
+	// here, so a PG* variable in the person's shell cannot send the tour
+	// anywhere else.
+	cfg.Host, cfg.Port = host, uint16(p)
+	cfg.User, cfg.Password, cfg.Database = sidecardemo.PGUser, sidecardemo.PGPassword, sidecardemo.PGDatabase
+	cfg.TLSConfig, cfg.Fallbacks = t.tls, nil
+	cfg.ConnectTimeout = 10 * time.Second
+	cfg.RuntimeParams = map[string]string{"application_name": "hoop sidecar demo"}
+	cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
-	fe.Send(&pgproto3.Query{String: sql})
-	if err := fe.Flush(); err != nil {
-		return tourResult{}, err
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		return pgAnswer(err)
 	}
-	return pgResult(fe)
-}
+	defer conn.Close(context.Background())
 
-// pgDrain reads the startup exchange up to the first ReadyForQuery.
-func pgDrain(fe *pgproto3.Frontend) error {
-	for {
-		msg, err := fe.Receive()
-		if err != nil {
-			return err
-		}
-		switch m := msg.(type) {
-		case *pgproto3.ErrorResponse:
-			return fmt.Errorf("%s", m.Message)
-		case *pgproto3.ReadyForQuery:
-			return nil
-		}
+	rows, err := conn.Query(ctx, sql)
+	if err != nil {
+		return pgAnswer(err)
 	}
-}
-
-// pgResult reads one statement's response up to ReadyForQuery and renders it.
-func pgResult(fe *pgproto3.Frontend) (tourResult, error) {
 	var cols []string
-	var rows [][]string
-	var tag, errMsg string
-	status := 200
-	for {
-		msg, err := fe.Receive()
-		if err != nil {
-			// A guardrail denial is a FATAL ErrorResponse followed by the
-			// sidecar closing the connection (proxy.PostgresError): no
-			// ReadyForQuery comes after it. The close is how a refusal ends,
-			// not a failure of the step.
-			if errMsg != "" {
-				return tourResult{status: status, body: errMsg}, nil
-			}
-			return tourResult{}, err
-		}
-		switch m := msg.(type) {
-		case *pgproto3.RowDescription:
-			cols = cols[:0]
-			for _, f := range m.Fields {
-				cols = append(cols, string(f.Name))
-			}
-		case *pgproto3.DataRow:
-			row := make([]string, len(m.Values))
-			for i, v := range m.Values {
-				if v == nil {
-					row[i] = "NULL"
-				} else {
-					row[i] = string(v)
-				}
-			}
-			rows = append(rows, row)
-		case *pgproto3.CommandComplete:
-			tag = string(m.CommandTag)
-		case *pgproto3.EmptyQueryResponse:
-			tag = "(empty query)"
-		case *pgproto3.ErrorResponse:
-			// A guardrail denial reaches the client as a Postgres error frame.
-			status, errMsg = 403, m.Message
-		case *pgproto3.ReadyForQuery:
-			switch {
-			case errMsg != "":
-				return tourResult{status: status, body: errMsg}, nil
-			case len(cols) > 0:
-				return tourResult{status: 200, body: renderTable(cols, rows)}, nil
-			default:
-				return tourResult{status: 200, body: tag}, nil
-			}
-		}
+	for _, f := range rows.FieldDescriptions() {
+		cols = append(cols, f.Name)
 	}
+	var out [][]string
+	for rows.Next() {
+		raw := rows.RawValues()
+		row := make([]string, len(raw))
+		for i, v := range raw {
+			if v == nil {
+				row[i] = "NULL"
+			} else {
+				row[i] = string(v)
+			}
+		}
+		out = append(out, row)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return pgAnswer(err)
+	}
+	if len(cols) == 0 {
+		return tourResult{status: 200, body: rows.CommandTag().String()}, nil
+	}
+	return tourResult{status: 200, body: renderTable(cols, out)}, nil
+}
+
+// pgAnswer turns a Postgres error into the step's answer, and passes any other
+// error through as the step's failure.
+func pgAnswer(err error) (tourResult, error) {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return tourResult{}, err
+	}
+	status := 400
+	if pgErr.Code == sqlstateRefused && pgErr.Severity == "FATAL" {
+		status = 403
+	}
+	return tourResult{status: status, body: pgErr.Message}, nil
 }
 
 // renderTable lays rows out as a simple fixed-width table, header first. The

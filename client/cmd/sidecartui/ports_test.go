@@ -105,7 +105,7 @@ func TestUsePortsMovesTheDemoAPIEverywhereItIsNamed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "c.yaml")
 	writeFile(t, path, configyaml.DemoAPIKey+": 127.0.0.1:18081\nlisteners:\n  - name: demo\n    protocol: http\n"+
 		"    listen: 127.0.0.1:18080\n    upstream: 127.0.0.1:18081\n")
-	c := []portConflict{{portUse: portUse{what: "demo API", addr: "127.0.0.1:18081", demoKey: configyaml.DemoAPIKey}, free: "127.0.0.1:18082"}}
+	c := []portConflict{{portUse: portUse{what: "demo API", addr: "127.0.0.1:18081", demo: true}, free: "127.0.0.1:18082"}}
 	if err := usePorts(path, c); err != nil {
 		t.Fatal(err)
 	}

@@ -72,22 +72,13 @@ func TestStartSidecarDemoServesTheAPIAConfigNames(t *testing.T) {
 	}
 }
 
-// The Postgres demo rides the same mechanism under its own key: the config
-// names the invented database, and booting it serves that database and a
-// tour over psql.
-func TestStartSidecarDemoServesThePostgresAConfigNames(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := ln.Addr().String()
-	ln.Close()
-
+func writePGDemoConfig(t *testing.T, dbAddr string) string {
+	t.Helper()
 	cfg := &daemon.Config{Listeners: []daemon.ListenerConfig{{
-		Name: "demo", Protocol: "postgres", Listen: "127.0.0.1:0", Upstream: addr,
+		Name: "demo", Protocol: "postgres", Listen: "127.0.0.1:0", Upstream: dbAddr,
 	}}}
 	b, err := configyaml.Render(cfg, configyaml.RenderOptions{
-		Extensions: []configyaml.Extension{{Key: configyaml.DemoPostgresKey, Value: addr}},
+		Extensions: []configyaml.Extension{{Key: configyaml.DemoPostgresKey, Value: dbAddr}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -96,12 +87,20 @@ func TestStartSidecarDemoServesThePostgresAConfigNames(t *testing.T) {
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := configyaml.Load(path)
+	return path
+}
+
+// The Postgres demo rides the same mechanism under its own key, but its
+// database is hoop's, across the network: booting the config serves nothing
+// here, refuses nothing for not being loopback, and turns the psql tour on
+// for the listener in front of it.
+func TestStartSidecarDemoFrontsTheRemoteDemoDatabase(t *testing.T) {
+	path := writePGDemoConfig(t, sidecardemo.PGAddr)
+	cfg, err := configyaml.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	d, err := startSidecarDemo(path, loaded)
+	d, err := startSidecarDemo(path, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,17 +108,34 @@ func TestStartSidecarDemoServesThePostgresAConfigNames(t *testing.T) {
 	if d.kind != sidecardemo.KindPostgres {
 		t.Errorf("kind = %q, want the Postgres demo", d.kind)
 	}
-	if d.ports == nil || d.ports.API != addr {
-		t.Errorf("ports = %+v, want the database %s", d.ports, addr)
+	if d.ports == nil || d.ports.API != sidecardemo.PGAddr || d.ports.Listen != cfg.Listeners[0].Listen {
+		t.Errorf("ports = %+v, want the listener in front of %s", d.ports, sidecardemo.PGAddr)
 	}
-	if len(d.notes) < 2 || !strings.Contains(d.notes[0], "demo database") || !strings.Contains(d.notes[1], "psql") {
+	if len(d.notes) < 2 || !strings.Contains(d.notes[0], sidecardemo.PGAddr) || !strings.Contains(d.notes[1], "psql") {
 		t.Errorf("notes = %v, want the database named and psql commands to try", d.notes)
 	}
-	conn, err := net.Dial("tcp", addr)
+}
+
+// Booting or validating a Postgres demo config first writes the RDS CA its
+// listener verifies the database with; any other config writes nothing.
+func TestPrepareSidecarDemoWritesTheRDSCAForThePostgresDemoOnly(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ca, err := sidecardemo.CAPath()
 	if err != nil {
-		t.Fatalf("the demo database is not up: %v", err)
+		t.Fatal(err)
 	}
-	conn.Close()
+	if err := prepareSidecarDemo(writeDemoConfig(t, "127.0.0.1:18081")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(ca); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the HTTP demo wrote %s (err %v)", ca, err)
+	}
+	if err := prepareSidecarDemo(writePGDemoConfig(t, sidecardemo.PGAddr)); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(ca); err != nil || !bytes.Contains(b, []byte("BEGIN CERTIFICATE")) {
+		t.Errorf("no CA bundle at %s after preparing the Postgres demo (err %v)", ca, err)
+	}
 }
 
 func TestStartSidecarDemoRefusesANonLoopbackAddress(t *testing.T) {

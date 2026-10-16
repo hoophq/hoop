@@ -77,6 +77,9 @@ type Step struct {
 	// request sent from another terminal ticks the step too. Empty for a
 	// direct request, which the sidecar never sees.
 	SeenKind, SeenOp string
+	// SeenTable, when set, is a table the event must name too: two Postgres
+	// steps are both a SELECT, and only the table tells them apart.
+	SeenTable string
 }
 
 // Command is the step as a shell command to paste into another terminal: curl

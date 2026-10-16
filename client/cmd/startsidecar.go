@@ -235,6 +235,14 @@ needs a restart.`,
 			return daemon.WriteMigrated(cfg, configyaml.IsYAML(target), out, os.Stderr)
 		}
 
+		// A Postgres demo config verifies hoop's demo database against the
+		// Amazon RDS CA the CLI ships. It is written where the config points
+		// before the sidecar reads it, so the config boots on every run, not
+		// only right after the setup screen wrote it.
+		if err := prepareSidecarDemo(sidecarConfigFlag); err != nil {
+			return err
+		}
+
 		setupOpts := []daemon.Option{
 			daemon.WithLicense(sidecarLicenseFlag),
 			daemon.WithControlPlaneToken(sidecarTokenFlag),
@@ -306,11 +314,17 @@ needs a restart.`,
 	},
 }
 
-// startSidecarDemo serves the built-in demo when the config at path carries a
-// demo key — configyaml.DemoAPIKey (the HTTP demo) or configyaml.DemoPostgresKey
-// (the Postgres demo) — and returns what stops it. A config without either
-// starts nothing. The address must be loopback: the demo answers anyone who
-// reaches it, and invented data is still not something to expose.
+// startSidecarDemo turns on the built-in demo the config at path names, and
+// returns what stops it. A config without a demo key starts nothing.
+//
+// configyaml.DemoAPIKey names the HTTP demo: the CLI serves the invented API
+// at the key's address for as long as the sidecar runs. That address must be
+// loopback, because the API answers anyone who reaches it, and invented data
+// is still not something to expose.
+//
+// configyaml.DemoPostgresKey names the Postgres demo: the database is hoop's,
+// across the network, and nothing is served here. The key's address says which
+// listener fronts it, so the tour can run.
 func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
 	none := &sidecarDemo{stop: func() {}}
 	// The setup screens write the demo key only into YAML. A JSON config
@@ -324,40 +338,33 @@ func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
 		return none, err
 	}
 
-	kind := sidecardemo.KindHTTP
-	key := configyaml.DemoAPIKey
-	what := "demo API"
+	d := &sidecarDemo{stop: func() {}}
 	addr, ok, err := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
 	if err != nil {
 		return none, err
 	}
-	if !ok {
-		addr, ok, err = configyaml.ExtensionValue(data, configyaml.DemoPostgresKey)
+	if ok {
+		bind, err := loopbackBind(addr)
 		if err != nil {
+			return none, fmt.Errorf("%s: %w", configyaml.DemoAPIKey, err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		errc, err := sidecardemo.Serve(ctx, bind)
+		if err != nil {
+			cancel()
 			return none, err
 		}
-		if !ok {
-			return none, nil
+		d.stop, d.kind, d.what = cancel, sidecardemo.KindHTTP, "demo API"
+		d.where = "demo API served at " + addr
+		go d.watch(errc)
+	} else {
+		addr, ok, err = configyaml.ExtensionValue(data, configyaml.DemoPostgresKey)
+		if err != nil || !ok {
+			return none, err
 		}
-		kind, key, what = sidecardemo.KindPostgres, configyaml.DemoPostgresKey, "demo database"
+		d.kind, d.what = sidecardemo.KindPostgres, "demo database"
+		d.where = "hoop's demo database is " + addr
 	}
-
-	bind, err := loopbackBind(addr)
-	if err != nil {
-		return none, fmt.Errorf("%s: %w", key, err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	serve := sidecardemo.Serve
-	if kind == sidecardemo.KindPostgres {
-		serve = sidecardemo.ServePostgres
-	}
-	errc, err := serve(ctx, bind)
-	if err != nil {
-		cancel()
-		return none, err
-	}
-	d := &sidecarDemo{stop: cancel, kind: kind, what: what}
-	go d.watch(errc)
 	// The tour sends its requests through the listener in front of the
 	// upstream. Without one, there is nothing to tour: a default port would
 	// reach another service, or nothing at all.
@@ -377,23 +384,46 @@ func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
 		}
 	}
 	if d.ports == nil {
-		d.notes = []string{what + " served at " + addr + ", but no listener forwards to it: " +
+		d.notes = []string{d.where + ", but no listener forwards to it: " +
 			"set a listener's upstream to " + addr + " to try the demo"}
 		return d, nil
 	}
-	d.notes = []string{what + " served at " + addr + "; try, from another terminal:"}
-	for _, c := range sidecardemo.TryCommands(kind, *d.ports) {
+	d.notes = []string{d.where + "; try, from another terminal:"}
+	for _, c := range sidecardemo.TryCommands(d.kind, *d.ports) {
 		d.notes = append(d.notes, "  "+c)
 	}
 	return d, nil
 }
 
-// sidecarDemo is the demo upstream running beside the sidecar.
+// prepareSidecarDemo puts on disk what a demo config needs before the sidecar
+// loads it: for the Postgres demo, the Amazon RDS CA its listener verifies the
+// database against (sidecardemo.EnsureCA). Any other config is left alone. A
+// config that cannot be read or parsed is left alone too: loading it is what
+// reports that, with its own message.
+func prepareSidecarDemo(path string) error {
+	if path == "" || !configyaml.IsYAML(path) {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	if _, ok, err := configyaml.ExtensionValue(data, configyaml.DemoPostgresKey); err != nil || !ok {
+		return nil
+	}
+	_, err = sidecardemo.EnsureCA()
+	return err
+}
+
+// sidecarDemo is the demo a config names, and the upstream the CLI runs for
+// it when it runs one (the HTTP demo's API).
 type sidecarDemo struct {
 	stop func()
-	// kind is which demo this is; what names it for the notes and logs.
-	kind sidecardemo.Kind
-	what string
+	// kind is which demo this is; what names its upstream for the logs, and
+	// where says where that upstream is, for the notes.
+	kind  sidecardemo.Kind
+	what  string
+	where string
 	// ports is where the tour sends requests, nil when no listener fronts
 	// the upstream and the tour stays off.
 	ports *sidecardemo.Ports
@@ -517,6 +547,9 @@ func checkControlPlane(planeURL, token string) (*daemon.Config, error) {
 // require_review validates. Then the same Validate --validate runs.
 func validateSidecarConfig(path string) (string, error) {
 	if err := refusePlainPlane(path); err != nil {
+		return "", err
+	}
+	if err := prepareSidecarDemo(path); err != nil {
 		return "", err
 	}
 	cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildSidecarPlugin,

@@ -191,19 +191,21 @@ func newDraft(id string, m machine) (*draft, error) {
 	kind := demoKindFor(id)
 	d := &draft{demoKind: kind, protocol: id, file: configyaml.StarterFile}
 	if kind != "" {
-		// A demo runs over a real protocol: HTTP, or Postgres.
-		d.protocol = "http"
-		ports := sidecardemo.DefaultPorts
-		if kind == sidecardemo.KindPostgres {
-			d.protocol = "postgres"
-			ports = sidecardemo.PGDefaultPorts
-		}
 		// Free ports, chosen now: a demo that cannot bind fails at boot,
 		// after the person was told it was ready.
 		taken := map[string]bool{}
-		d.demoPorts.Listen = freeFrom(ports.Listen, taken)
-		taken[d.demoPorts.Listen] = true
-		d.demoPorts.API = freeFrom(ports.API, taken)
+		if kind == sidecardemo.KindPostgres {
+			// The database is hoop's, across the network: only the listener
+			// binds here.
+			d.protocol = "postgres"
+			d.demoPorts.Listen = freeFrom(sidecardemo.PGListenAddr, taken)
+			d.demoPorts.API = sidecardemo.PGAddr
+		} else {
+			d.protocol = "http"
+			d.demoPorts.Listen = freeFrom(sidecardemo.ListenAddr, taken)
+			taken[d.demoPorts.Listen] = true
+			d.demoPorts.API = freeFrom(sidecardemo.Addr, taken)
+		}
 	} else {
 		protocol := id
 		upstream := defaultUpstream[protocol]
@@ -307,8 +309,21 @@ func keyFileStatus(path string) error {
 
 func (d *draft) listenerValue() (daemon.ListenerConfig, error) {
 	if d.isDemo() {
-		return daemon.ListenerConfig{Name: "demo", Protocol: d.protocol,
-			Listen: d.demoPorts.Listen, Upstream: d.demoPorts.API}, nil
+		l := daemon.ListenerConfig{Name: "demo", Protocol: d.protocol,
+			Listen: d.demoPorts.Listen, Upstream: d.demoPorts.API}
+		if d.demoKind == sidecardemo.KindPostgres {
+			// The demo database is on RDS, whose certificates chain to
+			// Amazon's own roots and to nothing in a host trust store. The
+			// relay verifies it against the bundle the CLI ships and writes
+			// there before boot (sidecardemo.EnsureCA), never by skipping
+			// verification.
+			ca, err := sidecardemo.CAPath()
+			if err != nil {
+				return daemon.ListenerConfig{}, err
+			}
+			l.UpstreamTLS = &daemon.TLSConfig{CAFile: ca}
+		}
+		return l, nil
 	}
 	return d.listener.value()
 }
@@ -410,12 +425,17 @@ func (d *draft) renderOptions(l daemon.ListenerConfig) configyaml.RenderOptions 
 		},
 	}
 	if d.isDemo() {
-		key, what := configyaml.DemoAPIKey, "an invented API"
+		key := configyaml.DemoAPIKey
 		if d.demoKind == sidecardemo.KindPostgres {
-			key, what = configyaml.DemoPostgresKey, "an invented Postgres database"
+			key = configyaml.DemoPostgresKey
+			o.Header = append(o.Header, "", "This is the demo: the sidecar fronts hoop's public demo database at "+d.demoPorts.API+",",
+				"a read-only copy of the dellstore sample shop. The "+key+" key below turns",
+				"the guided tour on, and the CLI keeps the Amazon RDS CA that verifies the",
+				"database where upstream_tls.ca_file points. Try:", "")
+		} else {
+			o.Header = append(o.Header, "", "This is the demo: the hoop CLI serves an invented API at "+d.demoPorts.API,
+				"while the sidecar runs, because of the "+key+" key below. Try:", "")
 		}
-		o.Header = append(o.Header, "", "This is the demo: the hoop CLI serves "+what+" at "+d.demoPorts.API,
-			"while the sidecar runs, because of the "+key+" key below. Try:", "")
 		for _, c := range sidecardemo.TryCommands(d.demoKind, d.demoPorts) {
 			o.Header = append(o.Header, "  "+c)
 		}

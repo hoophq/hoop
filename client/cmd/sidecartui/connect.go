@@ -156,7 +156,7 @@ func isLoopbackHost(host string) bool {
 // change them, not a rewrite here.
 func connectConflicts(cfg *daemon.Config) []string {
 	var out []string
-	for _, u := range portUses(cfg, "", "", "") {
+	for _, u := range portUses(cfg, "") {
 		if err := bindError(u.addr); err != nil {
 			out = append(out, fmt.Sprintf("%s wants %s, which another program on this machine is using", u.what, u.addr))
 		}

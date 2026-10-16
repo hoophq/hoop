@@ -1,167 +1,102 @@
 package sidecardemo
 
 import (
-	"context"
-	"net"
-	"slices"
+	"bytes"
+	"crypto/x509"
+	"encoding/pem"
+	"os"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgproto3"
 )
 
-// freePort returns a loopback address nothing is listening on. The small gap
-// between closing it and ServePostgres binding it is good enough for a test.
-func freePort(t *testing.T) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := ln.Addr().String()
-	_ = ln.Close()
-	return addr
-}
-
-// dialReady connects, completes the startup handshake, and returns a frontend
-// ready to send queries.
-func dialReady(t *testing.T, addr string) (*pgproto3.Frontend, net.Conn) {
-	t.Helper()
-	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fe := pgproto3.NewFrontend(conn, conn)
-	fe.Send(&pgproto3.StartupMessage{
-		ProtocolVersion: pgproto3.ProtocolVersionNumber,
-		Parameters:      map[string]string{"user": "demo", "database": "postgres"},
-	})
-	if err := fe.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := recvUntilReady(t, fe); !ok {
-		t.Fatal("no ReadyForQuery after startup")
-	}
-	return fe, conn
-}
-
-// recvUntilReady reads backend messages until ReadyForQuery, returning the
-// data rows seen (as strings) and whether it got there.
-func recvUntilReady(t *testing.T, fe *pgproto3.Frontend) ([][]string, bool) {
-	t.Helper()
-	var rows [][]string
+// The bundle is the three RDS us-east-1 roots, and none is near its end:
+// a demo that stops verifying its database one day is a demo that breaks
+// without a code change.
+func TestRDSBundleIsTheThreeLiveRoots(t *testing.T) {
+	var subjects []string
+	rest := rdsCABundle
 	for {
-		msg, err := fe.Receive()
+		var b *pem.Block
+		b, rest = pem.Decode(rest)
+		if b == nil {
+			break
+		}
+		c, err := x509.ParseCertificate(b.Bytes)
 		if err != nil {
-			return rows, false
+			t.Fatal(err)
 		}
-		switch m := msg.(type) {
-		case *pgproto3.DataRow:
-			row := make([]string, len(m.Values))
-			for i, v := range m.Values {
-				row[i] = string(v)
-			}
-			rows = append(rows, row)
-		case *pgproto3.ErrorResponse:
-			t.Fatalf("server error: %s", m.Message)
-		case *pgproto3.ReadyForQuery:
-			return rows, true
+		if !c.IsCA || c.Subject.String() != c.Issuer.String() {
+			t.Errorf("%s is not a self-signed root", c.Subject)
+		}
+		if time.Until(c.NotAfter) < 5*365*24*time.Hour {
+			t.Errorf("%s expires %s: refresh the bundle from the RDS truststore", c.Subject.CommonName, c.NotAfter)
+		}
+		subjects = append(subjects, c.Subject.CommonName)
+	}
+	if len(subjects) != 3 {
+		t.Fatalf("bundle holds %v, want the RSA2048, RSA4096 and ECC384 roots", subjects)
+	}
+	if _, err := RDSRoots(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// EnsureCA writes the bundle where CAPath says, and writing again over an
+// intact copy or a damaged one leaves exactly the bundle.
+func TestEnsureCAWritesTheBundleOnce(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	path, err := EnsureCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want, _ := CAPath(); path != want {
+		t.Errorf("path = %s, want %s", path, want)
+	}
+	if err := os.WriteFile(path, []byte("damaged"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := EnsureCA(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(b, rdsCABundle) {
+		t.Errorf("file at %s is not the bundle (err %v)", path, err)
+	}
+}
+
+// Through the sidecar, psql goes to the loopback listener in plaintext; the
+// comparison step goes to the database over TLS verified against the bundle.
+func TestPsqlCommands(t *testing.T) {
+	t.Setenv("HOME", "/home/demo")
+	p := Ports{Listen: "127.0.0.1:18082", API: PGAddr}
+	via := PGSteps[0].Psql(p)
+	for _, want := range []string{"PGPASSWORD=" + PGPassword, "host=127.0.0.1 port=18082", "user=" + PGUser,
+		"dbname=" + PGDatabase, "sslmode=disable", PGSteps[0].SQL} {
+		if !strings.Contains(via, want) {
+			t.Errorf("sidecar step %q lacks %q", via, want)
+		}
+	}
+	direct := PGSteps[3].Psql(p)
+	for _, want := range []string{"host=" + PGHost + " port=5432", "sslmode=verify-full",
+		"sslrootcert=/home/demo/.hoop/sidecar/demo/rds-us-east-1-bundle.pem"} {
+		if !strings.Contains(direct, want) {
+			t.Errorf("direct step %q lacks %q", direct, want)
 		}
 	}
 }
 
-func TestPostgresDemoServesUsers(t *testing.T) {
-	addr := freePort(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	if _, err := ServePostgres(ctx, addr); err != nil {
-		t.Fatal(err)
-	}
-
-	fe, conn := dialReady(t, addr)
-	defer conn.Close()
-
-	// SELECT returns the whole seeded table, with the real email addresses the
-	// sidecar would otherwise redact.
-	fe.Send(&pgproto3.Query{String: "SELECT * FROM users;"})
-	if err := fe.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	rows, ok := recvUntilReady(t, fe)
-	if !ok {
-		t.Fatal("no ReadyForQuery after SELECT")
-	}
-	if len(rows) != len(seed()) {
-		t.Fatalf("got %d rows, want %d", len(rows), len(seed()))
-	}
-	if len(rows[0]) != len(demoColumns) {
-		t.Fatalf("got %d columns, want %d", len(rows[0]), len(demoColumns))
-	}
-	if rows[0][2] != "grace.hopper@example.com" {
-		t.Errorf("email column = %q, want the seeded address", rows[0][2])
-	}
-
-	// INSERT is acknowledged and lands, so the next SELECT shows one more row.
-	fe.Send(&pgproto3.Query{String: "INSERT INTO users (name, email) VALUES ('Ada Lovelace', 'ada@example.com');"})
-	if err := fe.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := recvUntilReady(t, fe); !ok {
-		t.Fatal("no ReadyForQuery after INSERT")
-	}
-	fe.Send(&pgproto3.Query{String: "SELECT * FROM users;"})
-	if err := fe.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	rows, _ = recvUntilReady(t, fe)
-	if len(rows) != len(seed())+1 {
-		t.Fatalf("after INSERT got %d rows, want %d", len(rows), len(seed())+1)
-	}
-	last := rows[len(rows)-1]
-	if last[1] != "Ada Lovelace" || last[2] != "ada@example.com" {
-		t.Errorf("inserted row = %v, want Ada Lovelace / ada@example.com", last)
-	}
-}
-
-// The demo answers only what was asked: the columns named, in their order,
-// and the row an id filter picks. A shape it does not know is an error with
-// the SQLSTATE Postgres would use, never a table nobody asked for.
-func TestPostgresDemoParseSelect(t *testing.T) {
-	for _, c := range []struct {
-		q    string
-		cols []string
-		id   int
-		code string
-	}{
-		{q: "select * from users", cols: demoColumns},
-		{q: "select id, name, email from users", cols: []string{"id", "name", "email"}},
-		{q: "select email from users where id = 2", cols: []string{"email"}, id: 2},
-		{q: "select email from users where id=2", cols: []string{"email"}, id: 2},
-		{q: "select password from users", code: "42703"},
-		{q: "select * from orders", code: "42P01"},
-		{q: "select 1", code: "0A000"},
-		{q: "select * from users where name = 'x'", code: "0A000"},
-	} {
-		cols, id, err := parseSelect(c.q)
-		if c.code != "" {
-			if err == nil || err.code != c.code {
-				t.Errorf("%q: err = %v, want SQLSTATE %s", c.q, err, c.code)
-			}
-			continue
+// Only the comparison step goes around the sidecar, and only it carries no
+// audit event to tick it.
+func TestPGStepsShape(t *testing.T) {
+	for i, s := range PGSteps {
+		if s.SQL == "" || s.Method != "" {
+			t.Errorf("step %d (%s) is not a SQL step", i+1, s.Title)
 		}
-		if err != nil {
-			t.Errorf("%q: %s", c.q, err.msg)
-			continue
+		if s.Direct != (s.SeenKind == "") {
+			t.Errorf("step %d (%s): direct %v but SeenKind %q", i+1, s.Title, s.Direct, s.SeenKind)
 		}
-		if !slices.Equal(cols, c.cols) || id != c.id {
-			t.Errorf("%q: cols %v id %d, want %v id %d", c.q, cols, id, c.cols, c.id)
-		}
-	}
-}
-
-func TestPostgresDemoParseInsert(t *testing.T) {
-	name, email, ok := parseInsert("INSERT INTO users (name, email) VALUES ('Ada ''Countess'' Lovelace', 'ada@example.com')")
-	if !ok || name != "Ada 'Countess' Lovelace" || email != "ada@example.com" {
-		t.Fatalf("parseInsert = %q, %q, %v", name, email, ok)
 	}
 }
