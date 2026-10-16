@@ -66,17 +66,18 @@ SEED_DB_URI=... node scripts/dev/seed-sessions/seed.mjs dump > a.dump
 `org_id`. Seed two new databases, dump both, and `diff` them: it is empty.
 
 `make test-seed-sessions` checks that the ids match the gateway's, that the SQL
-does not read the clock, that the first page holds every kind the ticket lists,
-and that this README matches the catalog; CI runs it in the "Webapp v2 Lint and
-Build" job. With `SEED_DB_URI` and `API_URL` set, it also seeds that stack twice
-and compares the dumps. With `SEED_DB_URI_2` and `API_URL_2` set to a second new
-stack, it seeds both and compares them.
+does not read the clock, that the first page holds every kind the ticket lists
+but the batch, and that this README matches the catalog; CI runs it in the
+"Webapp v2 Lint and Build" job. With `SEED_DB_URI` and `API_URL` set, it also
+seeds that stack twice and compares the dumps. With `SEED_DB_URI_2` and
+`API_URL_2` set to a second new stack, it seeds both and compares them.
 
 ## Sessions
 
 The first page of `/sessions` (20 rows) holds the kinds the harness ticket
-lists, newest first, with `seed-sc-full`. Ids come from `catalog.mjs`; `seed.test.mjs` checks this
-table against it.
+lists, newest first, with `seed-sc-full`. The batch is the one exception: it is
+dated a day earlier, and `/sessions/filtered?batch_id=seed-batch-1` shows it.
+Ids come from `catalog.mjs`; `seed.test.mjs` checks this table against it.
 
 | Key | Id | What |
 |---|---|---|

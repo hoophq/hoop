@@ -46,7 +46,8 @@ test('the seed holds every kind the harness needs', () => {
   }
 })
 
-// The kinds the harness ticket lists, one session each.
+// The kinds the harness ticket lists, one session each, but the batch: its 25
+// rows are a day older (/sessions/filtered?batch_id=seed-batch-1 shows them).
 const TICKET_KINDS = [
   'exec-bash-ok', 'exec-bash-exit-1', 'exec-bash-stderr', 'exec-pg-table', 'exec-pg-error', 'connect-pty',
   'connect-ssh', 'connect-pg-wire', 'connect-http', 'review-pending', 'review-approved', 'review-rejected',
@@ -54,7 +55,7 @@ const TICKET_KINDS = [
   'workflow-short-3', 'exec-guardrail-block', 'seed-sc-full',
 ]
 
-test('the first page of /sessions holds every kind the ticket lists', () => {
+test('the first page of /sessions holds every kind the ticket lists but the batch', () => {
   // The list sorts by created_at, newest first, 20 rows a page. A sidecar
   // session starts at its session_start event.
   const starts = SIDECAR_EVENTS.filter((e) => e.event.kind === 'session_start')

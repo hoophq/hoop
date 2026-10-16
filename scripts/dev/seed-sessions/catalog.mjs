@@ -183,7 +183,8 @@ function review(key, at, fields) {
 // Kinds are written newest first, five minutes apart: LEADING in its order,
 // then the others in the order they are defined. LEADING starts with the kinds
 // the harness ticket lists, so the first page of /sessions (20 rows, with
-// seed-sc-full) holds one of each; seed.test.mjs checks it. The steps of
+// seed-sc-full) holds one of each but the batch, dated a day earlier;
+// seed.test.mjs checks it. The steps of
 // seed-wf-short are listed last to first, so they run in order.
 const KINDS_START = Date.parse('2026-10-03T18:00:00Z')
 const kindAt = (i) => iso(KINDS_START - i * 5 * 60 * 1000)
