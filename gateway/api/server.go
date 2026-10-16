@@ -277,12 +277,13 @@ func (a *Api) StartAPI() {
 // sidecars is the control plane's whole job, and the gateway serves the same
 // routes because that is where an operator's connections already live.
 //
-// Every route but the reviews needs a valid Enterprise license: the admin
-// ones through the user's org, the sidecar-authenticated ones through the
-// sidecar's. A fleet whose license lapses stops handshaking until renewed.
+// A free organization holds one sidecar, under the free rule caps the
+// handshake already enforces; an Enterprise license lifts both. A fleet whose
+// license lapses keeps its oldest sidecar and the rest stop handshaking
+// (SidecarSeatOnly). Service accounts and identity bindings stay Enterprise.
 func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
-	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.Handshake)
-	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.Configuration)
+	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.Handshake)
+	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.Configuration)
 	// No TrackRequest: SidecarAuthMiddleware installs an org context with no
 	// user, and TrackRequest requires a user email, so it would be a no-op
 	// that reads as an emitted event.
@@ -291,45 +292,60 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	r.GET("/sidecars/reviews/:id", r.SidecarAuthMiddleware, apisidecar.GetReview)
 	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apisidecar.ClaimReview)
 	r.POST("/sidecars/reviews/:id/settle", r.SidecarAuthMiddleware, apisidecar.SettleReview)
-	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.ImportConfiguration)
+	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ImportConfiguration)
 	// No TrackRequest, for the reason above. 412 while experimental.sidecar_session_events is off.
-	r.POST("/sidecars/events", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.PostEvents)
+	r.POST("/sidecars/events", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.PostEvents)
+
+	// Device-code login: a sidecar with no token asks to join the
+	// organization of the admin who approves its code. Start and poll carry
+	// only the token the sidecar made for itself, so they need no session.
+	r.POST("/sidecars/login", apisidecar.StartLogin)
+	r.POST("/sidecars/login/poll", apisidecar.PollLogin)
+	r.GET("/sidecars/login/:code",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apisidecar.GetLogin)
+	r.POST("/sidecars/login/:code/approve",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateSidecar),
+		apisidecar.ApproveLogin)
+	r.POST("/sidecars/login/:code/deny",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apisidecar.DenyLogin)
 
 	r.POST("/sidecars",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiroutes.EnterpriseLicenseOnly,
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateSidecar),
 		apisidecar.Post)
 	r.GET("/sidecars",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiroutes.EnterpriseLicenseOnly,
 		apisidecar.List)
 	r.GET("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiroutes.EnterpriseLicenseOnly,
 		apisidecar.Get)
 	r.PUT("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiroutes.EnterpriseLicenseOnly,
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventUpdateSidecar),
 		apisidecar.Put)
 	r.PATCH("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiroutes.EnterpriseLicenseOnly,
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventUpdateSidecar),
 		apisidecar.Patch)
 	r.DELETE("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiroutes.EnterpriseLicenseOnly,
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteSidecar),
 		apisidecar.Delete)

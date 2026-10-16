@@ -602,8 +602,8 @@ func (w *wizard) intro() string {
 			if u, err := url.Parse(w.plane); err == nil && u.Host != "" {
 				host = u.Host
 			}
-			return "Your config is ready. Save and boot sends it to your Control Plane at " + host +
-				", which manages this sidecar from then on."
+			return "Your config is ready. Save and boot starts the sidecar on it, connected to " + host +
+				": the file stays on this machine, and hoop shows it."
 		}
 		return "Your config is ready. Save and boot starts the sidecar on it now; Save only writes the file."
 	case pgRules:

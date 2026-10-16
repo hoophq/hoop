@@ -9,10 +9,13 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
 	"os/user"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/client/cmd/sidecartui"
@@ -58,6 +61,8 @@ var (
 	sidecarMigrateOutFlag string
 	sidecarLogFormatFlag  string
 	sidecarCodecTestFlag  string
+	sidecarLoginFlag      bool
+	sidecarNoLoginFlag    bool
 )
 
 var startSidecarCmd = &cobra.Command{
@@ -122,6 +127,8 @@ its license; moving that entry either way reaches a running sidecar on its
 next check-in, which applies what a live process can change and logs what
 needs a restart.`,
 	Example: `  hoop start sidecar
+  hoop start sidecar --login
+  hoop start sidecar --no-login
   hoop start sidecar --log-format text
   hoop start sidecar --config /etc/hoop-inspect/config.yaml
   hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
@@ -156,24 +163,34 @@ needs a restart.`,
 		stdoutTTY, stdinTTY := term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd()))
 		format := sidecartui.Resolve(logFormat, stdoutTTY, stdinTTY, os.Getenv, fileExists)
 
-		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
-			if !sidecarBareInvocation(cmd, args) {
-				// The one genuine usage error here, so let cobra show the flags.
-				cmd.SilenceUsage = false
-				return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG or %s)",
-					daemon.ControlPlaneURLEnv)
+		interactive := format == sidecartui.FormatTUI && sidecartui.Interactive(stdoutTTY, stdinTTY)
+		login, savedLoginPath, choose, err := resolveSidecarLogin(cmd, args, interactive)
+		if stoppedByPerson(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		firstRunOpts := []daemon.Option{
+			daemon.WithEntrypoint(analytics.EntrypointCLI),
+			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
+		}
+		// firstRun is the first-run screen. managedURL offers the choice
+		// between the hoop-managed plane and Enterprise; connected opens it
+		// logged in already, on the setup.
+		firstRun := func(managedURL string, connected *sidecartui.ManagedPlane) (*sidecartui.Boot, error) {
+			loginURL := managedURL
+			if connected != nil {
+				loginURL = connected.URL
 			}
-			firstRunOpts := []daemon.Option{
-				daemon.WithEntrypoint(analytics.EntrypointCLI),
-				daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias),
+			// The screen validates the file it sets up on its own. A plane
+			// left in the environment would make that check ask for a token;
+			// the screen hands the plane back with the boot instead.
+			if err := os.Unsetenv(daemon.ControlPlaneURLEnv); err != nil {
+				return nil, err
 			}
-			// A pipe, CI or NO_COLOR keeps the prose banner.
-			if format != sidecartui.FormatTUI || !sidecartui.Interactive(stdoutTTY, stdinTTY) {
-				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml", firstRunOpts...)
-			}
-			// A person at a terminal gets the first-run screen, where they
-			// can set up a config and boot it without restarting.
-			boot, err := sidecartui.RunFirstRun(sidecartui.FirstRunOptions{
+			return sidecartui.RunFirstRun(sidecartui.FirstRunOptions{
 				Version:      daemon.Version,
 				Validate:     validateSidecarConfig,
 				ConnectCheck: checkControlPlane,
@@ -181,19 +198,53 @@ needs a restart.`,
 				LicenseDir:   hoopLicenseDir(),
 				// A license saved on the Connect page is this run's
 				// --license: what is validated and booted next uses it.
-				UseLicense: func(path string) { sidecarLicenseFlag = path },
+				UseLicense:   func(path string) { sidecarLicenseFlag = path },
+				ManagedURL:   managedURL,
+				ManagedLogin: newScreenLogin(loginURL),
+				Connected:    connected,
 			}, func(ctx context.Context, obs daemon.FirstRunObserver) error {
 				return daemon.FirstRunContext(ctx, io.Discard, "hoop start sidecar --config "+configyaml.StarterFile,
 					append(firstRunOpts, daemon.WithFirstRunObserver(obs))...)
 			})
+		}
+		// waitOnPlane: the person chose to configure this sidecar in the web
+		// app, so a plane with nothing to serve is waited on, not set up here.
+		waitOnPlane := false
+
+		// choose: a bare run at a terminal with no saved login. The first-run
+		// screen asks first: log in to the hoop-managed plane, or Enterprise.
+		if sidecarConfigFlag == "" && (choose || os.Getenv(daemon.ControlPlaneURLEnv) == "") {
+			if !sidecarBareInvocation(cmd, args) {
+				// The one genuine usage error here, so let cobra show the flags.
+				cmd.SilenceUsage = false
+				return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG or %s)",
+					daemon.ControlPlaneURLEnv)
+			}
+			managedURL := ""
+			if choose {
+				managedURL = sidecarManagedPlaneURL()
+			}
+			// A pipe, CI or NO_COLOR keeps the prose banner.
+			if format != sidecartui.FormatTUI || !sidecartui.Interactive(stdoutTTY, stdinTTY) {
+				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml", firstRunOpts...)
+			}
+			// A person at a terminal gets the first-run screen, where they
+			// can log in, set up a config and boot it without restarting.
+			boot, err := firstRun(managedURL, nil)
 			if err != nil || boot == nil {
 				return err
+			}
+			if boot.ControlPlaneURL == "" {
+				// A local config: the managed plane named in the environment
+				// was only on offer, and this run does not connect to it.
+				if err := os.Unsetenv(daemon.ControlPlaneURLEnv); err != nil {
+					return err
+				}
 			}
 			// Booted from the first-run screen: from here on this is the
 			// run `hoop start sidecar --config <file>` would have been, or,
 			// connected to a Control Plane, the run with its URL and token.
-			// Both may be set: a plane with no config yet takes the file's on
-			// this first handshake, and manages it from then on.
+			// Both may be set: the sidecar runs the file and the plane shows it.
 			if boot.ControlPlaneURL != "" {
 				if err := os.Setenv(daemon.ControlPlaneURLEnv, boot.ControlPlaneURL); err != nil {
 					return err
@@ -206,6 +257,13 @@ needs a restart.`,
 				}
 			}
 			sidecarConfigFlag = boot.ConfigPath
+			// A login made on the screen: the next bare run boots this file.
+			if login = screenLoginFor(boot); login != nil {
+				waitOnPlane = boot.ConfigPath == ""
+				if err := rememberSidecarConfig(login, boot.ConfigPath); err != nil {
+					return err
+				}
+			}
 		}
 		if sidecarMigrateFlag {
 			if sidecarConfigFlag == "" {
@@ -246,8 +304,54 @@ needs a restart.`,
 			reviewer = sidecartui.NewReviewer()
 			setupOpts = append(setupOpts, daemon.WithLocalReviewer(reviewer.For))
 		}
-		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, setupOpts...)
+		var cfg *daemon.Config
+		var det daemon.Plugin
+		setup := func() (err error) {
+			cfg, det, err = daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, setupOpts...)
+			return err
+		}
+		err = setup()
+		if login != nil && sidecarConfigFlag == "" && errors.Is(err, daemon.ErrPlaneHasNoConfig) {
+			// Logged in, and nothing to run yet: at a terminal the setup
+			// happens here, connected, and the file stays on this machine.
+			if interactive && !waitOnPlane {
+				boot, ferr := firstRun("", &sidecartui.ManagedPlane{
+					URL: login.URL, Token: login.Token, Name: login.Name, Page: login.Page})
+				if ferr != nil || boot == nil {
+					return ferr
+				}
+				// The screen cleared the plane from the environment; this run
+				// connects to it again, file or not.
+				if err := useSidecarLogin(login); err != nil {
+					return err
+				}
+				if boot.ConfigPath != "" {
+					if err := refusePlainPlane(boot.ConfigPath); err != nil {
+						return err
+					}
+					if err := rememberSidecarConfig(login, boot.ConfigPath); err != nil {
+						return err
+					}
+					sidecarConfigFlag = boot.ConfigPath
+					err = setup()
+				}
+			}
+			if sidecarConfigFlag == "" {
+				// The web app supplies the config: wait for it. SIGINT ends
+				// the wait here, and Run installs its own handler later.
+				waitCtx, stopWait := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+				err = waitForPlaneConfig(waitCtx, os.Stderr, login, setup)
+				stopWait()
+				if stoppedByPerson(err) {
+					return nil
+				}
+			}
+		}
 		if err != nil {
+			if savedLoginPath != "" {
+				return fmt.Errorf("%w\n\nThis run used the sidecar login saved in %s. "+
+					"If the sidecar was deleted in the web app, run `hoop start sidecar --login`", err, savedLoginPath)
+			}
 			return err
 		}
 
@@ -458,10 +562,195 @@ func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
 	// --log-format picks how output reaches the terminal, not what runs:
 	// `--log-format text` or `json` with nothing else is the first run
 	// without the screen, the banner a pipe gets.
-	seen := func(f *pflag.Flag) { changed = changed || (f.Changed && f.Name != "log-format") }
+	// --no-login asks for exactly this path, so it is not "anything else".
+	seen := func(f *pflag.Flag) {
+		changed = changed || (f.Changed && f.Name != "log-format" && f.Name != "no-login")
+	}
 	cmd.Flags().VisitAll(seen)
 	cmd.InheritedFlags().VisitAll(seen)
 	return !changed
+}
+
+// sidecarLoginRun is what decides whether a run logs in.
+type sidecarLoginRun struct {
+	login, noLogin bool
+	// credential: --token, HOOP_SIDECAR_TOKEN or a platform identity.
+	credential bool
+	// licensed: --license, HOOP_LICENSE or the config file's license key.
+	// A licensed run is not the free plan, and runs on its own.
+	licensed bool
+	// oneShot: --validate, --migrate or --codec-test, which never serve.
+	oneShot bool
+}
+
+// errFreePlanLogsIn refuses --no-login on the free plan, which always runs
+// identified.
+var errFreePlanLogsIn = errors.New("the free plan runs logged in, so it knows whose sidecar this is: " +
+	"drop --no-login and approve the code it shows, or run with a license " +
+	"(--license, " + license.EnvVar + " or the config file's \"license\" key)")
+
+// wantsSidecarLogin: the free plan always runs identified. Every run that
+// serves logs in, a config file or not, unless it already has a credential
+// (a token or a platform identity) or a license, which is not the free plan.
+// --validate, --migrate and --codec-test never serve and never log in.
+func wantsSidecarLogin(r sidecarLoginRun) (bool, error) {
+	switch {
+	case r.login && r.noLogin:
+		return false, errors.New("--login and --no-login contradict each other; pass one")
+	case r.login && r.credential:
+		return false, fmt.Errorf("--login makes this sidecar's token; drop --token, %s and %s",
+			daemon.SidecarTokenEnv, daemon.SidecarIdentityTypeEnv)
+	case r.login && r.oneShot:
+		return false, errors.New("--login connects a running sidecar; it does not combine with " +
+			"--validate, --migrate or --codec-test")
+	case r.login:
+		return true, nil
+	case r.credential || r.licensed || r.oneShot:
+		return false, nil
+	case r.noLogin:
+		return false, errFreePlanLogsIn
+	}
+	return true, nil
+}
+
+// sidecarFileFacts is what a config file says about the connection, read
+// before the run so the login goes to the right plane. A file that does not
+// load says nothing here; Setup reports it.
+type sidecarFileFacts struct {
+	planeURL string
+	licensed bool
+}
+
+func readSidecarFileFacts(path string) sidecarFileFacts {
+	if path == "" {
+		return sidecarFileFacts{}
+	}
+	cfg, err := configyaml.Load(path)
+	if err != nil || cfg == nil {
+		return sidecarFileFacts{}
+	}
+	return sidecarFileFacts{planeURL: cfg.ControlPlaneURL, licensed: cfg.License != ""}
+}
+
+// resolveSidecarLogin logs in when wantsSidecarLogin says so. A login saved
+// for the plane is reused instead of asking again. On a login it points the
+// run at the plane: the URL env var and the token flag, exactly as if the
+// person had typed them. savedPath is set when the credential came from
+// disk, so a refusal can say where it came from.
+//
+// With canChoose (a person at the TUI), a bare run with no saved login does
+// not log in here: it answers choose, and the first-run screen asks whether
+// to log in to the hoop-managed plane or to go Enterprise. A run with a
+// config file logs in directly and boots that file, connected.
+func resolveSidecarLogin(cmd *cobra.Command, args []string, canChoose bool) (login *savedSidecarLogin, savedPath string, choose bool, err error) {
+	file := readSidecarFileFacts(sidecarConfigFlag)
+	wanted, err := wantsSidecarLogin(sidecarLoginRun{
+		login:      sidecarLoginFlag,
+		noLogin:    sidecarNoLoginFlag,
+		credential: sidecarCredentialGiven(),
+		licensed:   sidecarLicenseFlag != "" || os.Getenv(license.EnvVar) != "" || file.licensed,
+		oneShot:    sidecarValidateFlag || sidecarMigrateFlag || sidecarCodecTestFlag != "",
+	})
+	if err != nil {
+		return nil, "", false, err
+	}
+	if !wanted {
+		// A token with no plane named anywhere is a token from the hosted
+		// plane: the one value a headless free sidecar needs.
+		if sidecarCredentialGiven() && os.Getenv(daemon.ControlPlaneURLEnv) == "" && file.planeURL == "" {
+			err = os.Setenv(daemon.ControlPlaneURLEnv, DefaultSidecarControlPlaneURL)
+		}
+		return nil, "", false, err
+	}
+	plane := sidecarPlaneFor(file)
+	bare := sidecarConfigFlag == "" && sidecarBareInvocation(cmd, args)
+	if !sidecarLoginFlag {
+		dir := sidecarStateDir()
+		login, err = loadSidecarLogin(dir, plane)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if login != nil {
+			savedPath = filepath.Join(dir, sidecarLoginFile)
+			// A bare run boots the file this sidecar last booted.
+			if bare && login.Config != "" && fileExists(login.Config) {
+				sidecarConfigFlag = login.Config
+			}
+		} else if canChoose && bare {
+			return nil, "", true, nil
+		}
+	}
+	if login == nil {
+		if login, err = loginToSidecarPlane(cmd, plane, !canChoose); err != nil {
+			return nil, "", false, err
+		}
+	}
+	// The file this run boots is the one the next bare run boots.
+	if err := rememberSidecarConfig(login, sidecarConfigFlag); err != nil {
+		return nil, "", false, err
+	}
+	return login, savedPath, false, useSidecarLogin(login)
+}
+
+// sidecarPlaneFor is the plane a login goes to: HOOP_CONTROL_PLANE_URL, then
+// the config file's control_plane_url, else the hoop-managed one. A plane
+// other than hoop's is an Enterprise deployment, and its own web app
+// approves the code.
+func sidecarPlaneFor(file sidecarFileFacts) string {
+	if plane := os.Getenv(daemon.ControlPlaneURLEnv); plane != "" {
+		return plane
+	}
+	if file.planeURL != "" {
+		return file.planeURL
+	}
+	return DefaultSidecarControlPlaneURL
+}
+
+// sidecarManagedPlaneURL is the plane a bare run offers to log in to.
+func sidecarManagedPlaneURL() string { return sidecarPlaneFor(sidecarFileFacts{}) }
+
+// loginToSidecarPlane runs the device-code login and saves what it produced.
+// machine also writes the login as JSON lines on stdout, for a marketplace
+// console or an agent that relays the link to a person.
+func loginToSidecarPlane(cmd *cobra.Command, plane string, machine bool) (*savedSidecarLogin, error) {
+	l := &sidecarLoginer{planeURL: plane, name: defaultSidecarName(), out: os.Stderr,
+		client: sidecarLoginHTTPClient(), open: openBrowser, minInterval: time.Second}
+	if machine {
+		l.events = os.Stdout
+	}
+	// The login waits on a person: SIGINT ends it.
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	login, err := l.run(ctx)
+	stop()
+	if err != nil {
+		return nil, err
+	}
+	path, err := saveSidecarLogin(sidecarStateDir(), *login)
+	if err != nil {
+		// The sidecar exists in the plane now; losing the token means
+		// deleting it there, so say so rather than run once and forget.
+		return nil, fmt.Errorf("the sidecar %q was approved but its token could not be saved (%w); "+
+			"delete it in the web app and log in again", login.Name, err)
+	}
+	fmt.Fprintf(os.Stderr, "Saved the sidecar login to %s\n", path)
+	return login, nil
+}
+
+// stoppedByPerson is a login or a wait that ctrl+c ended: the person chose
+// to stop, which is not an error to print.
+func stoppedByPerson(err error) bool {
+	if errors.Is(err, context.Canceled) {
+		fmt.Fprintln(os.Stderr, "\nStopped.")
+		return true
+	}
+	return false
+}
+
+// useSidecarLogin points the run at the plane, exactly as if the person had
+// typed its URL and the token.
+func useSidecarLogin(login *savedSidecarLogin) error {
+	sidecarTokenFlag = login.Token
+	return os.Setenv(daemon.ControlPlaneURLEnv, login.URL)
 }
 
 // checkControlPlane connects to a Control Plane the way the boot that
@@ -625,6 +914,11 @@ func init() {
 	startSidecarCmd.Flags().StringVar(&sidecarTokenFlag, "token", "",
 		"The token identifying this sidecar to the control plane. Overrides "+
 			daemon.SidecarTokenEnv+". Exclusive with "+daemon.SidecarIdentityTypeEnv)
+	startSidecarCmd.Flags().BoolVar(&sidecarLoginFlag, "login", false,
+		"Log this sidecar in to the control plane ("+daemon.ControlPlaneURLEnv+", default "+
+			DefaultSidecarControlPlaneURL+") with a code approved in the web app, even when a login is saved")
+	startSidecarCmd.Flags().BoolVar(&sidecarNoLoginFlag, "no-login", false,
+		"Run standalone, without logging in. Needs a license: the free plan always runs logged in")
 	startSidecarCmd.Flags().BoolVar(&sidecarValidateFlag, "validate", false,
 		"Validate the config, report what each listener resolved to, and exit")
 	startSidecarCmd.Flags().BoolVar(&sidecarStrictFlag, "strict", false,

@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
 import AuthPageLoader from '@/components/AuthPageLoader'
 import { postAuthPath } from '@/modes'
+import { samePagePath } from '@/utils/redirect'
 
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
@@ -110,7 +111,12 @@ function Login() {
   const redirectToIdp = async (method, options = {}) => {
     setLoading(true)
     try {
-      const callbackUrl = `${window.location.origin}/auth/callback`
+      // The page to return to rides the login itself, as ?next=: the IdP
+      // sends the browser back to this exact URL, so no storage, tab or
+      // other page can lose or replace it on the way.
+      const next = samePagePath(useAuthStore.getState().peekRedirectUrl())
+      const callbackUrl =
+        `${window.location.origin}/auth/callback` + (next ? `?next=${encodeURIComponent(next)}` : '')
       const loginUrl =
         method === 'saml'
           ? await authService.getSamlLoginUrl(callbackUrl, options)
