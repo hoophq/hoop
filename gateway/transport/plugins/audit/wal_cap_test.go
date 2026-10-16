@@ -441,6 +441,92 @@ func TestFlushWithoutChunksFlagAppendsOnce(t *testing.T) {
 	}
 }
 
+// Turning AuditStreamChunksFlag on or off between two flushes of a session
+// keeps its stored rows in order. A session with chunk rows keeps writing rows.
+func TestChunksFlagFlipBetweenFlushesKeepsOrder(t *testing.T) {
+	startTestDB(t)
+	origAuditPath, origCap, origWindow := plugintypes.AuditPath, maxStreamBytes, flushWindowBytes
+	t.Cleanup(func() { plugintypes.AuditPath, maxStreamBytes, flushWindowBytes = origAuditPath, origCap, origWindow })
+	plugintypes.AuditPath = t.TempDir()
+	maxStreamBytes, flushWindowBytes = 1<<20, 1024
+
+	for _, tc := range []struct {
+		name       string
+		on1, on2   bool
+		wantChunks bool
+	}{
+		{"on then off", true, false, true},
+		{"off then on", false, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			orgID, sid := uuid.NewString(), uuid.NewString()
+			t.Cleanup(func() { featureflag.SetAll(orgID, map[string]bool{}) })
+			if err := models.DB.Exec(`INSERT INTO private.orgs (id, name) VALUES (?, ?)`, orgID, "flag-flip-"+orgID).Error; err != nil {
+				t.Fatalf("seed org: %v", err)
+			}
+			startDate := time.Now().UTC()
+			if err := models.UpsertSession(models.Session{ID: sid, OrgID: orgID, Connection: "bash",
+				ConnectionType: "custom", Verb: "exec", Status: "open", CreatedAt: startDate}); err != nil {
+				t.Fatalf("seed session: %v", err)
+			}
+			p := New()
+			pctx := plugintypes.Context{OrgID: orgID, SID: sid, ConnectionType: "custom",
+				ParamsData: plugintypes.GenericMap{"status": "open", "start_date": &startDate}}
+			if err := p.writeOnConnect(pctx); err != nil {
+				t.Fatalf("open wal: %v", err)
+			}
+			if err := models.CreateEmptySessionStreamBlob(orgID, sid, nil); err != nil {
+				t.Fatalf("create stream blob: %v", err)
+			}
+			walogm := p.walSessionStore.Get(sid).(*walLogRWMutex)
+
+			rows := make([][]byte, 60)
+			for i := range rows {
+				rows[i] = bytes.Repeat(fmt.Appendf(nil, "%04d", i), 25)
+			}
+			for half, on := range []bool{tc.on1, tc.on2} {
+				featureflag.Set(orgID, AuditStreamChunksFlag, on)
+				for _, row := range rows[half*30 : half*30+30] {
+					if err := p.writeOnReceive(pctx, eventlogv1.OutputType, row, nil); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := p.flushSession(walogm, pctx); err != nil {
+					t.Fatalf("flush %d: %v", half, err)
+				}
+			}
+			if err := p.closeSessionWAL(pctx, nil); err != nil {
+				t.Fatalf("close session: %v", err)
+			}
+
+			if n := countStreamChunks(t, orgID, sid); (n > 0) != tc.wantChunks {
+				t.Errorf("chunk rows=%d, want rows=%v", n, tc.wantChunks)
+			}
+			sess, err := models.GetSessionByID(orgID, sid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			blob, err := sess.GetBlobStream()
+			if err != nil || blob == nil {
+				t.Fatalf("read stream blob: blob=%v err=%v", blob, err)
+			}
+			var stream [][]any
+			if err := json.Unmarshal(blob.BlobStream, &stream); err != nil {
+				t.Fatalf("decode stream: %v", err)
+			}
+			if len(stream) != len(rows) {
+				t.Fatalf("persisted %d rows, want %d", len(stream), len(rows))
+			}
+			for i, ev := range stream {
+				got, _ := base64.StdEncoding.DecodeString(ev[2].(string))
+				if !bytes.Equal(got, rows[i]) {
+					t.Fatalf("row %d: persisted %q, want %q", i, got, rows[i])
+				}
+			}
+		})
+	}
+}
+
 func startTestDB(t *testing.T) {
 	t.Helper()
 	inst := pglitetest.StartMigrated(t)
