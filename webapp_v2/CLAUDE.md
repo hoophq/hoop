@@ -11,6 +11,7 @@ details: `README.md`.
 - Development (Vite only): `npm run dev`
 - Build: `npm run build`
 - Lint: `npm run lint`
+- Test: `npm test` (vitest; the session fixtures in `test/fixtures/sessions` come from `npm --prefix ../webapp run fixtures:sessions`)
 - Preview production: `npm run preview`
 
 ## Project Structure
