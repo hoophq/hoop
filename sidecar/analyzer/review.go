@@ -635,21 +635,29 @@ func reviewReason(res ReviewResult) string {
 	return "the statement was not released"
 }
 
-// maxReasonBytes bounds the approver's reason in a denial. The plane stores
-// any length, and the approval id comes after the reason: the mysql client
-// keeps only the first 512 bytes of an error (MYSQL_ERRMSG_SIZE).
+// maxReasonBytes bounds the approver's reason in a denial, quoted. The plane
+// stores any length, and the approval id comes after the reason: the mysql
+// client keeps only the first 512 bytes of an error (MYSQL_ERRMSG_SIZE).
 const maxReasonBytes = 200
 
-// rejectionReason quotes the approver's text, cut at maxReasonBytes on a rune
-// boundary. Quoted, so a newline or a NUL in it cannot break the protocol's
-// error frame, and the developer sees where the approver's words end.
+// rejectionReason quotes the approver's text, cut on a rune boundary so the
+// quoted form fits maxReasonBytes. Quoted, so a newline or a NUL in it cannot
+// break the protocol's error frame, and the developer sees where the
+// approver's words end. The bound applies after quoting, because an escape
+// takes up to 6 bytes for one byte of text.
 func rejectionReason(reason string) string {
-	if len(reason) > maxReasonBytes {
-		cut := maxReasonBytes
-		for cut > 0 && !utf8.RuneStart(reason[cut]) {
+	if q := strconv.Quote(reason); len(q) <= maxReasonBytes {
+		return q
+	}
+	// Quoting never shrinks text, so no more than maxReasonBytes of it fits.
+	cut := min(len(reason), maxReasonBytes)
+	for {
+		for cut > 0 && cut < len(reason) && !utf8.RuneStart(reason[cut]) {
 			cut--
 		}
-		reason = reason[:cut] + "..."
+		if q := strconv.Quote(reason[:cut] + "..."); len(q) <= maxReasonBytes || cut == 0 {
+			return q
+		}
+		cut--
 	}
-	return strconv.Quote(reason)
 }

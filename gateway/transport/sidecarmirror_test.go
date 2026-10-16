@@ -26,8 +26,8 @@ func TestRefuseSidecarMirror(t *testing.T) {
 	}
 }
 
-// Connect closes the session a refusal leaves open, so every gate that refuses
-// before the plugins must go through refuseConnection.
+// Both gates Connect runs before the plugins refuse through refuseConnection,
+// which is where Connect closes the session a refusal leaves open.
 func TestRefuseConnection(t *testing.T) {
 	open := types.ConnectionInfo{Name: "pg-prod", AccessModeExec: "enabled", AccessModeConnect: "enabled", AccessModeRunbooks: "enabled"}
 	if err := refuseConnection(pb.ClientVerbExec, pb.ConnectionOriginClientAPI, open); err != nil {

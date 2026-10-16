@@ -993,9 +993,9 @@ func SetSessionStatusOpenIfReady(db *gorm.DB, orgID, sessionID string) (bool, er
 
 // CloseRefusedSession ends an open session whose stream the transport refused
 // before any plugin ran, so the audit plugin never closes it. reason becomes
-// its output. Only an open session of userID on connectionName closes: a
-// client picks its own session id and must not end another session. It
-// reports whether a row closed.
+// its output. Only a row of userID on connectionName that never streamed
+// closes: a session that started has a stream blob, and its own end closes it.
+// It reports whether a row closed.
 func CloseRefusedSession(db *gorm.DB, orgID, userID, connectionName, sessionID string, exitCode int, reason string, endedAt time.Time) (bool, error) {
 	output, err := json.Marshal([][]any{{0, "e", base64.StdEncoding.EncodeToString([]byte(reason))}})
 	if err != nil {
@@ -1004,7 +1004,7 @@ func CloseRefusedSession(db *gorm.DB, orgID, userID, connectionName, sessionID s
 	var closed bool
 	err = db.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.sessions").
-			Where("org_id = ? AND id = ? AND user_id = ? AND connection = ? AND status = ?",
+			Where("org_id = ? AND id = ? AND user_id = ? AND connection = ? AND status = ? AND blob_stream_id IS NULL",
 				orgID, sessionID, userID, connectionName, string(openapi.SessionStatusOpen)).
 			Updates(map[string]any{
 				"status":    string(openapi.SessionStatusDone),
@@ -1015,12 +1015,20 @@ func CloseRefusedSession(db *gorm.DB, orgID, userID, connectionName, sessionID s
 			return res.Error
 		}
 		closed = true
-		if err := CreateEmptySessionStreamBlobTx(tx, orgID, sessionID, nil); err != nil {
-			return err
+		// A plain insert: it fails, and nothing closes, rather than rewrite a
+		// blob that some other writer owns.
+		blobID := SessionStreamBlobID(sessionID)
+		err := tx.Table("private.blobs").Create(Blob{
+			ID: blobID, OrgID: orgID, BlobStream: output, Type: "session-stream",
+		}).Error
+		if err != nil {
+			return fmt.Errorf("failed creating the session stream blob: %w", err)
 		}
-		return AppendSessionStreamTx(tx, orgID, sessionID, output)
+		return tx.Table("private.sessions").
+			Where("org_id = ? AND id = ?", orgID, sessionID).
+			Update("blob_stream_id", blobID).Error
 	})
-	return closed, err
+	return closed && err == nil, err
 }
 
 // SetSessionCredentialsExpireAt stores the credential expiry time in the session metadata.
