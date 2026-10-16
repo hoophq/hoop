@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/proto/spectypes"
@@ -41,9 +43,14 @@ var errFlushCapReached = errors.New("flush size cap reached")
 // reading past it, so writeOnReceive stops writing past it.
 var maxStreamBytes int64 = sessionwal.DefaultMaxRead
 
-// flushWindowBytes caps the WAL bytes one append carries. A flush encodes and
-// sends one window at a time, so its memory does not grow with the unflushed tail.
+// flushWindowBytes caps the WAL bytes one append carries when
+// AuditStreamChunksFlag is on. A flush encodes and sends one window at a time,
+// so its memory does not grow with the unflushed tail.
 var flushWindowBytes int64 = 16 << 20
+
+// AuditStreamChunksFlag turns on windowed flushes, written as chunk rows. When
+// off, a flush appends its whole tail in one write, as before the flag.
+const AuditStreamChunksFlag = "experimental.audit_stream_chunks"
 
 // errFlushWindowFull stops a read at the first entry of the next window.
 var errFlushWindowFull = errors.New("flush window full")
@@ -249,19 +256,23 @@ func (p *auditPlugin) flushSession(walogm *walLogRWMutex, pctx plugintypes.Conte
 	if err != nil {
 		return fmt.Errorf("failed reading wal header: %v", err)
 	}
+	window := int64(math.MaxInt64)
+	if featureflag.IsEnabled(pctx.OrgID, AuditStreamChunksFlag) {
+		window = flushWindowBytes
+	}
 	for {
-		windowFull, err := p.flushWindow(walogm, pctx, header)
+		windowFull, err := p.flushWindow(walogm, pctx, header, window)
 		if err != nil || !windowFull {
 			return err
 		}
 	}
 }
 
-// flushWindow appends the entries after lastFlushedIndex, at most
-// flushWindowBytes of them, and reports whether entries are left past the
-// window. It holds the WAL mutex to read, not to write to the database: the
-// agent stream that feeds writeOnReceive carries every session of the agent.
-func (p *auditPlugin) flushWindow(walogm *walLogRWMutex, pctx plugintypes.Context, header *sessionwal.Header) (bool, error) {
+// flushWindow appends the entries after lastFlushedIndex, at most window bytes
+// of them, and reports whether entries are left past the window. It holds the
+// WAL mutex to read, not to write to the database: the agent stream that feeds
+// writeOnReceive carries every session of the agent.
+func (p *auditPlugin) flushWindow(walogm *walLogRWMutex, pctx plugintypes.Context, header *sessionwal.Header, window int64) (bool, error) {
 	walogm.mu.Lock()
 	if walogm.closed || walogm.truncated { // truncated: reached the persisted-stream cap; stop appending
 		walogm.mu.Unlock()
@@ -274,7 +285,7 @@ func (p *auditPlugin) flushWindow(walogm *walLogRWMutex, pctx plugintypes.Contex
 	var windowBytes int64
 	capReached, windowFull := false, false
 	lastIndex, err := walogm.log.ReadFrom(startIndex, func(data []byte) error {
-		if windowBytes >= flushWindowBytes {
+		if windowBytes >= window {
 			windowFull = true
 			return errFlushWindowFull
 		}

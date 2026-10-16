@@ -86,6 +86,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.audit_stream_chunks": {
+		Name:        "experimental.audit_stream_chunks",
+		Description: "Flush the audit log of a large session in 16 MB pieces, each written as a new row of the session stream, so the gateway does not hold the whole unflushed output in memory and Postgres does not rewrite the stream for each piece. When off, each flush appends all its output to the stream in one write, as before; a session that already has rows keeps writing rows, so its entries stay in order. Session pages and downloads read both layouts.",
+		Default:     true,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 	"experimental.sidecar_session_events": {
 		Name:        "experimental.sidecar_session_events",
 		Description: "Record sidecar traffic as sessions: each sidecar connected to this gateway sends its audit events (session start and end, statements, guardrail violations, masking counts, errors) to POST /api/sidecars/events, and the gateway writes them to the session list, the session detail and its query list. The local audit file of the sidecar stays the record of truth; under pressure the sidecar drops the oldest events it has not sent. The copy is sent whatever the local audit file setting is. When off, the handshake does not offer the endpoint, sidecars send nothing, and the endpoint answers 412. Adds write volume to the gateway database.",

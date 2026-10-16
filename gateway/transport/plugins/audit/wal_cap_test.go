@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
@@ -73,7 +74,7 @@ func TestWALStopsWritingPastStreamCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	full, err := p.flushWindow(walogm, pctx, header)
+	full, err := p.flushWindow(walogm, pctx, header, flushWindowBytes)
 	if err != nil {
 		t.Fatalf("flush window: %v", err)
 	}
@@ -360,6 +361,83 @@ func TestCloseKeepsWriteDuringFinalFlush(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "first,late" {
 		t.Fatalf("stored %q, want [first late]", got)
+	}
+}
+
+// With AuditStreamChunksFlag off, a flush appends its whole tail once to the
+// stream, as before the flag, and stores the same rows.
+func TestFlushWithoutChunksFlagAppendsOnce(t *testing.T) {
+	startTestDB(t)
+	origAuditPath, origCap, origWindow, origAppend := plugintypes.AuditPath, maxStreamBytes, flushWindowBytes, appendStream
+	t.Cleanup(func() {
+		plugintypes.AuditPath, maxStreamBytes, flushWindowBytes, appendStream = origAuditPath, origCap, origWindow, origAppend
+	})
+	plugintypes.AuditPath = t.TempDir()
+	maxStreamBytes, flushWindowBytes = 4096, 1024
+	appends := 0
+	appendStream = func(orgID, sid string, entries json.RawMessage) error {
+		appends++
+		return models.AppendSessionStream(orgID, sid, entries)
+	}
+
+	orgID, sid := uuid.NewString(), uuid.NewString()
+	featureflag.Set(orgID, AuditStreamChunksFlag, false)
+	t.Cleanup(func() { featureflag.SetAll(orgID, map[string]bool{}) })
+	if err := models.DB.Exec(`INSERT INTO private.orgs (id, name) VALUES (?, 'chunks-flag-off-test')`, orgID).Error; err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	startDate := time.Now().UTC()
+	if err := models.UpsertSession(models.Session{ID: sid, OrgID: orgID, Connection: "bash",
+		ConnectionType: "custom", Verb: "exec", Status: "open", CreatedAt: startDate}); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	p := New()
+	pctx := plugintypes.Context{OrgID: orgID, SID: sid, ConnectionType: "custom",
+		ParamsData: plugintypes.GenericMap{"status": "open", "start_date": &startDate}}
+	if err := p.writeOnConnect(pctx); err != nil {
+		t.Fatalf("open wal: %v", err)
+	}
+	if err := models.CreateEmptySessionStreamBlob(orgID, sid, nil); err != nil {
+		t.Fatalf("create stream blob: %v", err)
+	}
+	rows := make([][]byte, 100)
+	for i := range rows {
+		rows[i] = bytes.Repeat(fmt.Appendf(nil, "%04d", i), 25)
+		if err := p.writeOnReceive(pctx, eventlogv1.OutputType, rows[i], nil); err != nil {
+			t.Fatalf("write row %d: %v", i, err)
+		}
+	}
+	if err := p.closeSessionWAL(pctx, nil); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+
+	if appends != 1 {
+		t.Errorf("flush appended %d times, want 1", appends)
+	}
+	if n := countStreamChunks(t, orgID, sid); n != 0 {
+		t.Errorf("wrote %d chunk rows with the flag off, want 0", n)
+	}
+	sess, err := models.GetSessionByID(orgID, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := sess.GetBlobStream()
+	if err != nil || blob == nil {
+		t.Fatalf("read stream blob: blob=%v err=%v", blob, err)
+	}
+	var stream [][]any
+	if err := json.Unmarshal(blob.BlobStream, &stream); err != nil {
+		t.Fatalf("decode stream: %v", err)
+	}
+	entry, _ := eventlogv1.New(startDate, eventlogv1.OutputType, rows[0], nil).Encode()
+	if want := int(maxStreamBytes)/len(entry) + 1; len(stream) != want {
+		t.Fatalf("persisted %d rows, want %d", len(stream), want)
+	}
+	for i, ev := range stream {
+		got, _ := base64.StdEncoding.DecodeString(ev[2].(string))
+		if !bytes.Equal(got, rows[i]) {
+			t.Fatalf("row %d: persisted %q, want %q", i, got, rows[i])
+		}
 	}
 }
 
