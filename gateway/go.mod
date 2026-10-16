@@ -42,7 +42,7 @@ require (
 	github.com/hoophq/hoop/agent v0.0.0-20260730225053-339623147f24
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20260916211709-c49b31f354b0
+	github.com/hoophq/libhoop v0.0.0-20261008153213-ab3b65b7965f
 	github.com/hoophq/mcpproxy v0.1.1
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/lib/pq v1.12.3
@@ -155,7 +155,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0 // indirect
 	github.com/honeycombio/otel-config-go v1.17.0 // indirect
-	github.com/hoophq/alcatraz v0.19.0 // indirect
+	github.com/hoophq/alcatraz v0.23.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -197,7 +197,7 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
-	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/backo-go v1.1.0 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect

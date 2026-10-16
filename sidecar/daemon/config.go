@@ -82,6 +82,13 @@ type Config struct {
 	// refuses the block in a build that did not link it.
 	MCP *MCPConfig `json:"mcp,omitempty" cap:"mcp" since:"1.199.0"`
 
+	// ICA configures the OCR/NER runtime that every ica lane in the process
+	// shares: asset paths, bounds, and overrides of the engine's production
+	// profile. With no block, the engine runs that profile. The engine lives
+	// in the nested sidecar/ica module; checkICA refuses an ica lane in a
+	// build that did not link it. See ICARuntimeConfig.
+	ICA *ICARuntimeConfig `json:"ica,omitempty" cap:"ica"`
+
 	// PII configures the optional detector plugin. This package decodes it
 	// without interpreting it: knowing what an alcatraz Options looks like
 	// would drag back the dependency the split exists to keep out.
@@ -261,12 +268,12 @@ type ListenerConfig struct {
 	Network string `json:"network,omitempty" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic"`
 
 	// Upstream is the real backend.
-	Upstream string `json:"upstream,omitempty" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource." protocols:"!ssh" ui:"required,basic"`
+	Upstream string `json:"upstream,omitempty" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource. On an ica listener, this names the single VDA; leave it empty for CIDR mode." protocols:"!ssh" ui:"required,basic"`
 
 	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
 	// its plaintext server greeting; other supported protocols negotiate
 	// before their ordinary message flow.
-	UpstreamTLS *TLSConfig `json:"upstream_tls,omitempty" label:"Upstream TLS" help:"Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic." protocols:"!ssh" ui:"presence"`
+	UpstreamTLS *TLSConfig `json:"upstream_tls,omitempty" label:"Upstream TLS" help:"Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic." protocols:"!ssh,ica" ui:"presence"`
 	// MySQLAuthKeyFile is an RSA private key whose public half MySQL clients
 	// can pin. It lets the relay decrypt direct RSA password responses before
 	// forwarding the NUL-terminated password inside UpstreamTLS.
@@ -405,6 +412,17 @@ type ListenerConfig struct {
 	// admits, the account it runs as. Required on an ssh lane and a config
 	// error anywhere else. See SSHConfig.
 	SSH *SSHConfig `json:"ssh,omitempty" label:"SSH" help:"The keys this listener trusts and what a session may do." protocols:"ssh" ui:"required"`
+
+	// ICA configures this lane's Citrix ICA engine: the tenant label, the
+	// mode (single VDA via upstream, or CIDR via transparent), and the
+	// display geometry. An ica lane requires it, and validateLane refuses
+	// it on any other protocol. See ICAConfig.
+	//
+	// Both ica blocks carry cap:"ica", one capability: a build that decodes
+	// the key decodes both, and the plane refuses either block to a build
+	// that predates it (EVL-338). The protocol entry alone cannot gate this
+	// key, because an older build refuses the whole document on it.
+	ICA *ICAConfig `json:"ica,omitempty" label:"Citrix ICA" help:"The tenant this listener serves, how it finds the VDA, and the session geometry." protocols:"ica" cap:"ica" ui:"required"`
 
 	// Plugin carries a plug-in lane's options, the `options` its module's
 	// manifest declares, to every codec the lane builds. Only valid on a
@@ -1236,6 +1254,7 @@ func (c *Config) validate(onHost bool) error {
 	// limit its license lifts. buildLanes is the single site instead.
 
 	problems = append(problems, c.MCP.validate()...)
+	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
 
 	problems = append(problems, c.validatePlugins()...)
 
@@ -1256,6 +1275,11 @@ func (c *Config) validate(onHost bool) error {
 			// the connection is encrypted end to end, so there are no relay
 			// bytes for a registry decoder to be handed. The lane terminates
 			// the handshake and enters at statements the endpoint reports.
+		} else if isICA(l) {
+			// ica has no codec for a fourth reason: the lane embeds an
+			// engine that terminates the session and masks pixels on the
+			// video channel, so the registry has no statement to decode or
+			// evaluate; see ica.go.
 		} else if isPluginLane(l) {
 			// The config declares a plug-in protocol: the module loads on
 			// the sidecar host, after this runs, and the control plane
@@ -1284,7 +1308,10 @@ func (c *Config) validate(onHost bool) error {
 		// client chooses one at a time. Neither has a fixed backend, so the
 		// key is not merely optional here — it is refused below, and its
 		// absence must not read as a missing one.
-		if l.Upstream == "" && !isSSH(l) {
+		// An ica lane in CIDR mode has none either: each connection's
+		// original destination is its VDA. ICAConfig.validate decides
+		// whether the lane needs upstream or ica.transparent.
+		if l.Upstream == "" && !isSSH(l) && !isICA(l) {
 			problems = append(problems, name+": no upstream")
 		}
 		if l.Network != "" && l.Network != "tcp" && l.Network != "unix" {
@@ -1325,6 +1352,15 @@ func (c *Config) validate(onHost bool) error {
 						"comes from the certificate this listener verified itself, mapped "+
 						"by ssh.identity", name))
 			}
+		}
+		// ICA/CGP is its own transport: the engine terminates CGP on both
+		// legs and speaks plaintext CGP to the VDA, so the daemon would
+		// have no use for a TLS client configured here. validate refuses
+		// the block, as it does for ssh.
+		if isICA(l) && l.UpstreamTLS != nil {
+			problems = append(problems, fmt.Sprintf(
+				"%s: upstream_tls is not valid on an ica listener; the VDA leg is CGP, "+
+					"which the engine speaks itself", name))
 		}
 
 		// downstream_tls is refused at startup rather than accepted and
@@ -1488,6 +1524,39 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	} else if lc.SSH != nil {
 		problems = append(problems, fmt.Sprintf(
 			"%s: an \"ssh\" block is only valid on an ssh listener, not %s",
+			name, lc.Protocol))
+	}
+
+	// An ica block follows the same rule and the same requirement: the
+	// block carries the tenant and the mode, and an ica lane without one
+	// has no tenant to serve and no VDA to reach. An ica lane also carries
+	// no rules: the engine's pipeline masks pixels, so there is no
+	// statement for a guardrail to match, a masker to rewrite or an
+	// analyzer to classify, and the lane would never query an OPA endpoint.
+	// Each would load and do nothing, which this package refuses on other
+	// lanes too.
+	//
+	// validateLane checks the RESOLVED stack, so it refuses a top-level
+	// block meant for other lanes only when that block reaches this one;
+	// the listener opts out the usual way, with an empty rules list or
+	// opa: {}.
+	if isICA(lc) {
+		problems = append(problems, lc.ICA.validate(lc, name)...)
+		if len(gc.Rules) > 0 {
+			problems = append(problems, name+": guardrail rules do not apply to an ica listener; the engine's own fail-closed pipeline is the enforcement and there is no statement for a rule to match. Write guardrails: {rules: []} on this listener to opt out of inherited rules")
+		}
+		if mc.hasRules() {
+			problems = append(problems, name+": mask rules do not apply to an ica listener; the engine masks pixels on the video channel itself. Write mask: {rules: []} on this listener to opt out of inherited rules")
+		}
+		if lc.Analyzer != nil {
+			problems = append(problems, name+": analyzer does not apply to an ica listener; there is no statement to classify")
+		}
+		if opa != nil && !opa.off() {
+			problems = append(problems, name+": opa does not apply to an ica listener; write an empty opa: {} to switch an inherited endpoint off for this lane")
+		}
+	} else if lc.ICA != nil {
+		problems = append(problems, fmt.Sprintf(
+			"%s: an \"ica\" block is only valid on an ica listener, not %s",
 			name, lc.Protocol))
 	}
 

@@ -587,6 +587,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkMCP(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkICA(cfg); err != nil {
+		return nil, err
+	}
 	// A config assembled in Go reaches here without SetupWith; a config
 	// SetupWith loaded holds its plug-ins already and this is a no-op.
 	// Validate releases the ones it loads with the report: nothing runs
@@ -637,6 +640,17 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			srv, _, err := buildSSHServer(ln, cfg.Audit, nil, validationLog)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ln.name, err)
+			}
+			notes = append(notes, srv.Notes()...)
+			_ = srv.Close()
+		}
+		if isICA(ln.cfg) {
+			// The builder resolves and validates everything it can
+			// without a socket or a model, and its Notes carry the
+			// resolved runtime profile; see ICAServer.
+			srv, _, err := buildICAServer(ln, icaRuntimeFor(cfg), cfg.Audit, nil, validationLog)
+			if err != nil {
+				return nil, err // buildICAServer names the lane
 			}
 			notes = append(notes, srv.Notes()...)
 			_ = srv.Close()
@@ -844,6 +858,9 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkMCP(cfg); err != nil {
 		return err
 	}
+	if err := checkICA(cfg); err != nil {
+		return err
+	}
 	if cfg.MCP != nil && cfg.cp == nil {
 		// checkMCP accepts a plane the file only names, which is right for
 		// -validate. A running process must hold the connection itself.
@@ -979,6 +996,15 @@ func Run(cfg *Config, det Plugin) error {
 			endpoints = append(endpoints, ssrv)
 			endpointNames = append(endpointNames, ln.name)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
+			swappers[ln.name] = rules
+		case isICA(ln.cfg):
+			isrv, rules, serr := buildICAServer(ln, icaRuntimeFor(cfg), cfg.Audit, auditSink, log)
+			if serr != nil {
+				return serr
+			}
+			endpoints = append(endpoints, isrv)
+			endpointNames = append(endpointNames, ln.name)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, isrv})
 			swappers[ln.name] = rules
 		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), cfg.reviewSettler(log), log)
@@ -1161,9 +1187,18 @@ func Run(cfg *Config, det Plugin) error {
 	for _, srv := range servers {
 		_ = srv.Close()
 	}
-	for _, srv := range endpoints {
-		_ = srv.Close()
+	// Endpoint lanes close together: an ica lane's Close drains its sessions
+	// for up to 30s, and closing lanes one after another would add those
+	// windows up past the pod's termination grace period.
+	var closing sync.WaitGroup
+	for i, srv := range endpoints {
+		closing.Go(func() {
+			if cerr := srv.Close(); cerr != nil {
+				log.Warn("listener close failed", "listener", endpointNames[i], "error", cerr)
+			}
+		})
 	}
+	closing.Wait()
 	wg.Wait()
 	close(errCh)
 
@@ -1366,6 +1401,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		}
 		if isSSH(lc) {
 			ln.notes = append(ln.notes, sshLaneNotes(lc.SSH)...)
+		}
+		if isICA(lc) {
+			ln.notes = append(ln.notes, icaLaneNotes(lc)...)
 		}
 		// Said, not silently skipped: libhoop builds this lane's upstream
 		// pool from file paths, so the trust bundle cannot reach it, and an
@@ -1746,6 +1784,20 @@ func serveAdmin(
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
+	})
+
+	// An ica lane's engine loads a model and starts OCR workers after the
+	// socket binds, which can take minutes, and the engine refuses
+	// connections until then. /readyz reports that, separate from
+	// /healthz; other lanes are ready once bound, so it returns 200 for them.
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if notReady := notReadyEndpoints(endpoints, endpointNames); len(notReady) > 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, "not ready: %s\n", strings.Join(notReady, ", "))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "ready")
 	})
 
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {

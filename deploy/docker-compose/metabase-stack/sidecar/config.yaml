@@ -27,7 +27,7 @@ audit:
   query_sessions: 500 # backs /api/sessions
 
 # The union of every entity the lane uses below. The section is optional now
-# and it NARROWS a permissive default: omit it and all 54 entity types are
+# and it NARROWS a permissive default: omit it and all 55 entity types are
 # active. It is kept because the recognizers it leaves out rewrite ordinary
 # numeric columns, since US_SSN fires on roughly a third of random nine-digit
 # ids and this schema has an amount_cents column that would qualify.

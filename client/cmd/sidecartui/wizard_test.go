@@ -59,7 +59,7 @@ func noMachine() machine { return machine{keyDir: "/nonexistent/keys"} }
 // are, except SSH: its host key and CA are files on this machine no default
 // can name, and the failure must say which field is missing.
 func TestEveryChoiceDefaultsToAValidConfig(t *testing.T) {
-	choices := append([]string{"demo"}, daemon.Protocols()...)
+	choices := append([]string{"demo"}, daemon.ServableProtocols()...)
 	for _, p := range choices {
 		d, err := newDraft(p, p == "demo", noMachine())
 		if err != nil {

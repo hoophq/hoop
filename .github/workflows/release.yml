@@ -867,11 +867,13 @@ jobs:
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
-  # hoophq/hoopsidecar — the inspection sidecar image, both targets of
+  # hoophq/hoopsidecar: the inspection sidecar image, the three targets of
   # Dockerfile.sidecar (see that file for what each ships):
   #
   #   :<version>              Ubuntu 24.04 LTS + the binary only
   #   :<version>-distroless   distroless static + the binary only
+  #   :<version>-ica          Ubuntu 24.04 LTS + hoop-inspect with the Citrix
+  #                           ICA engine, tesseract and ONNX Runtime
   #   :latest                 an alias of the unsuffixed tag
   #
   # The Ubuntu flavour carries no suffix on purpose: it is the image, and it
@@ -887,17 +889,18 @@ jobs:
   #
   # hoophq/hoopsidecar is a clean-only repository: nothing published under it
   # may carry an AGPL/SSPL component, so that the repository has none in its
-  # history. Both flavours are a stock rootfs plus the `hoop` binary and nothing
-  # built FROM hoophq/agent-tools. Do not add a tag here without reading that
-  # note.
+  # history. The slim flavours are a stock rootfs plus the `hoop` binary; the
+  # ica flavour adds Ubuntu's tesseract packages, ONNX Runtime and the
+  # libhoop-ica worker, none built FROM hoophq/agent-tools. Do not add a tag
+  # here without reading that note.
   #
-  # Needs build-tar-files and no published base: both flavours extract the
-  # release tarball directly, so nothing waits on a registry. One job, one
-  # multiarch build per target, for the same reason as hoopagent above — each
-  # build is a tar extraction plus (for the Ubuntu flavour) a single apt
-  # package, so
-  # emulating the non-native arch is cheaper than a per-arch runner plus a
-  # manifest dance, and the release artifacts are pulled once.
+  # The slim flavours need build-tar-files and no published base: they
+  # extract the release tarball directly, so nothing waits on a registry. One
+  # job, one multiarch build per target, for the same reason as hoopagent
+  # above: each build is a tar extraction plus (for the Ubuntu flavour) a
+  # single apt package, so emulating the non-native arch is cheaper than a
+  # per-arch runner plus a manifest dance, and the release artifacts are
+  # pulled once. The ica flavour compiles from source; see its step.
   docker-publish-hoopsidecar:
     runs-on: ubuntu-latest
     name: Publish Sidecar Image (hoopsidecar)
@@ -950,6 +953,29 @@ jobs:
           push: true
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless
+      # The ica flavour builds hoop-inspect from source with the libhoop-ica
+      # engine linked in (cgo, -tags ORT). It needs no tarball, and it needs
+      # a token that reads both private modules and the libhoop-ica release
+      # assets. The step passes the token and the segment key as BuildKit
+      # secrets, which stay out of the layers and the image history. The
+      # arm64 cgo build runs emulated and is the slow half of this job.
+      - name: Build and push (ica)
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica
 
   # hoophq/hoopcontrolplane — the control plane image, both targets of
   # Dockerfile.controlplane (see that file for what each ships):

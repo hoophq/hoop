@@ -79,6 +79,44 @@ jobs:
           GODEBUG: http2client=1
         run: make test-sidecar
 
+  # The ica image links hoop-inspect with cgo and -tags ORT (Dockerfile.sidecar
+  # --target ica); the other builds use CGO_ENABLED=0, which compiles out the
+  # ORT NER backend and hugot's Rust tokenizer. This job links that cgo build,
+  # so a change that breaks only the cgo path fails on the PR before it
+  # reaches the release's image step. libtokenizers.a comes from the
+  # daulet/tokenizers release at the version go.mod pins, the same source the
+  # image uses. The binary dlopens libonnxruntime at run time, so this job
+  # does not need it.
+  sidecar-ica-ort:
+    name: Sidecar ICA build (cgo, -tags ORT)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Fetch libtokenizers.a at the pinned version
+        working-directory: sidecar/cmd
+        run: |
+          set -euo pipefail
+          version=$(go list -m -f '{{.Version}}' github.com/daulet/tokenizers)
+          mkdir -p "$RUNNER_TEMP/libtokenizers"
+          curl -sSfL "https://github.com/daulet/tokenizers/releases/download/${version}/libtokenizers.linux-amd64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/libtokenizers"
+          echo "CGO_LDFLAGS=-L$RUNNER_TEMP/libtokenizers" >> "$GITHUB_ENV"
+
+      - name: Link hoop-inspect with the ORT backend
+        working-directory: sidecar/cmd
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go build -tags ORT -trimpath -o "$RUNNER_TEMP/hoop-inspect" .
+          "$RUNNER_TEMP/hoop-inspect" -version
+
   # The test-sidecar-plugins third of `make test-oss`: the codec plug-in
   # SDKs and examples. Go and Rust only; the checked-in .wasm artifacts are
   # proven against the ABI with hoop-inspect. Rebuilding them needs TinyGo

@@ -27,7 +27,7 @@
 // the config file, so an operator adding a "pii" section does not also have to
 // swap the binary out:
 //
-//   - "pii" absent: the detector covers all 54 entity types it knows, and
+//   - "pii" absent: the detector covers all 55 entity types it knows, and
 //     costs nothing until a rule asks it for one. A masker scans only for the
 //     entities its own rules name, and a "pii" guardrail intersects the scan
 //     with the entities its own rule names.
@@ -93,6 +93,9 @@ import (
 	// The gs:// descriptor fetcher, same rule: a grpc lane whose descriptor
 	// set lives in a bucket must not need a different binary.
 	_ "github.com/hoophq/hoop/sidecar/descriptors/gcs"
+	// The ICA engine an ica lane needs, same rule: libhoop-ica stays in
+	// sidecar/ica's own module, and this is the only binary that links it.
+	_ "github.com/hoophq/hoop/sidecar/ica"
 	// The MCP server an "mcp" block turns on (ADR-0021), same rule again.
 	_ "github.com/hoophq/hoop/sidecar/mcp"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"

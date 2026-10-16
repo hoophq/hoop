@@ -32,6 +32,9 @@ the decoders produce.
 
 libhoop is PRIVATE, so building or testing here needs
 `GOPRIVATE=github.com/hoophq/libhoop` and credentials for that repository.
+`cmd/` and the nested `ica/` module also link the private Citrix ICA engine,
+so they need `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`
+and credentials for both.
 
 **The edge runs one way and must stay that way.** libhoop imports nothing from
 this repository. Two mechanisms hold that:
@@ -64,7 +67,8 @@ it is removing a directory.
 | `store/sqlite/` | `modernc.org/sqlite`, pure Go because the sidecar is a static binary |
 | `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one. It wraps the `anthropic`, `gemini` and `openai` encoders from the root under a GCP bearer; the API-key providers stay in the root |
 | `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
-| `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the approval status MCP server an `mcp:` block turns on (ADR-0021) |
+| `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the review status MCP server an `mcp:` block turns on (ADR-0021) |
+| `ica/` | `github.com/hoophq/libhoop-ica`, the Citrix ICA engine a `protocol: ica` lane embeds; registers through `daemon.RegisterICAEngine`, linked into `hoop-inspect` only |
 | `codec/wasm/` | `github.com/tetratelabs/wazero`, the codec plug-in host; `daemon` only sees `LoadCodecPlugin`. `sdk/` and `examples/` hold the guest side: Rust, TinyGo and C |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
@@ -124,7 +128,7 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp lexer/conformance codec/wasm; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica lexer/conformance codec/wasm; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
 
@@ -223,6 +227,18 @@ done
   socket with no message, a missing builder makes `ai_analysis` rules
   classify nothing. README.md's Protocols section carries the table. A new
   protocol also needs a label in `daemon/schema.go` `protocolLabels`.
+
+- **ICA is an endpoint lane that embeds an engine and has no codec.** A
+  Citrix session carries pixels and no statements, so Validate refuses
+  guardrail rules, mask rules, an analyzer and OPA on a `protocol: ica`
+  lane. `daemon/ica.go` holds the whole contract (config blocks,
+  `ICALane`/`ICAServer`, `RegisterICAEngine`, the audit bridge), and the
+  engine (`sidecar/ica`, a nested module on `github.com/hoophq/libhoop-ica`)
+  registers from `init`. `Protocols()` lists `ica` in every build, so the
+  plane renders its form; the capabilities header lists `protocol:ica` only
+  when an engine is registered, so the plane does not serve an ica lane to a
+  build that `checkICA` would refuse. The engine's builder must not bind a
+  socket or load a model: Validate constructs it on the plane and on macOS.
 
 - **A new `ListenerConfig` field needs a UI tag.** The control plane renders
   its listener form from `daemon/schema.json`. Tag the field

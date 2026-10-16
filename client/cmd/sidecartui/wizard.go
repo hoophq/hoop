@@ -112,7 +112,7 @@ func newWizard(mach machine, validate func(string) (string, error), dir string, 
 	w := &wizard{now: now, page: pgProtocol, mach: mach, validate: validate, dir: dir}
 	w.protos.items = append(w.protos.items, menuItem{id: "demo", label: "Demo",
 		detail: "an invented API with fake users, nothing to set up"})
-	for _, p := range daemon.Protocols() {
+	for _, p := range daemon.ServableProtocols() {
 		detail := daemon.ProtocolLabel(p)
 		if f, ok := mach.foundFor(p); ok {
 			detail += "  · found " + f.addr + " (" + f.source + ")"
