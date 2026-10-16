@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,6 +56,7 @@ type clientExec struct {
 	connectionCommandOverride []byte
 	sessionID                 string
 	orgID                     string
+	written                   int // output bytes stored in wlog
 }
 
 type Options struct {
@@ -304,7 +306,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 			}
 
 			return &Response{
-				Output:    string(output),
+				Output:    output,
 				ExitCode:  exitCode,
 				Truncated: isTrunc,
 			}
@@ -316,36 +318,41 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 
 func (c *clientExec) Close() { c.client.Close(); c.cancelFn() }
 func (c *clientExec) write(input []byte) error {
-	if len(input) == 0 {
+	// readAll returns at most maxResponseBytes. The write that crosses it is
+	// stored, so readAll still flags the response as truncated.
+	if len(input) == 0 || c.written > maxResponseBytes {
 		return nil
 	}
 	lastIndex, err := c.wlog.LastIndex()
 	if err != nil {
 		return fmt.Errorf("failed retrieving file content, lastindex=%v, err=%v", lastIndex, err)
 	}
-	return c.wlog.Write(lastIndex+1, input)
+	if err := c.wlog.Write(lastIndex+1, input); err != nil {
+		return err
+	}
+	c.written += len(input)
+	return nil
 }
 
-func (c *clientExec) readAll() ([]byte, bool, error) {
-	var stdoutData []byte
-	isTruncated := false
+// readAll returns the first maxResponseBytes of the output, in one allocation
+// of the response size.
+func (c *clientExec) readAll() (string, bool, error) {
+	var out strings.Builder
+	out.Grow(min(c.written, maxResponseBytes))
 	for i := uint64(1); ; i++ {
 		data, err := c.wlog.Read(i)
-		if err != nil && err != wal.ErrNotFound {
-			return nil, false, err
-		}
 		if err == wal.ErrNotFound {
-			break
+			return out.String(), false, nil
 		}
-		stdoutData = append(stdoutData, data...)
-		if len(stdoutData) > maxResponseBytes {
-			stdoutData = stdoutData[0:maxResponseBytes]
-			isTruncated = true
-			break
+		if err != nil {
+			return "", false, err
 		}
+		if out.Len()+len(data) > maxResponseBytes {
+			out.Write(data[:maxResponseBytes-out.Len()])
+			return out.String(), true, nil
+		}
+		out.Write(data)
 	}
-
-	return stdoutData, isTruncated, nil
 }
 
 func generateSecureRandomKeyOrDie() string {
