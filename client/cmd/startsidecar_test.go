@@ -72,6 +72,56 @@ func TestStartSidecarDemoServesTheAPIAConfigNames(t *testing.T) {
 	}
 }
 
+// The Postgres demo rides the same mechanism under its own key: the config
+// names the invented database, and booting it serves that database and a
+// tour over psql.
+func TestStartSidecarDemoServesThePostgresAConfigNames(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	cfg := &daemon.Config{Listeners: []daemon.ListenerConfig{{
+		Name: "demo", Protocol: "postgres", Listen: "127.0.0.1:0", Upstream: addr,
+	}}}
+	b, err := configyaml.Render(cfg, configyaml.RenderOptions{
+		Extensions: []configyaml.Extension{{Key: configyaml.DemoPostgresKey, Value: addr}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), configyaml.StarterFile)
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := configyaml.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := startSidecarDemo(path, loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.stop()
+	if d.kind != sidecardemo.KindPostgres {
+		t.Errorf("kind = %q, want the Postgres demo", d.kind)
+	}
+	if d.ports == nil || d.ports.API != addr {
+		t.Errorf("ports = %+v, want the database %s", d.ports, addr)
+	}
+	if len(d.notes) < 2 || !strings.Contains(d.notes[0], "demo database") || !strings.Contains(d.notes[1], "psql") {
+		t.Errorf("notes = %v, want the database named and psql commands to try", d.notes)
+	}
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("the demo database is not up: %v", err)
+	}
+	conn.Close()
+}
+
 func TestStartSidecarDemoRefusesANonLoopbackAddress(t *testing.T) {
 	if _, err := startSidecarDemo(writeDemoConfig(t, "0.0.0.0:18081"), &daemon.Config{}); err == nil {
 		t.Fatal("the demo API was allowed to listen beyond loopback")

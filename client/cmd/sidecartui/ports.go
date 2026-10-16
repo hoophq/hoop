@@ -26,9 +26,11 @@ import (
 type portUse struct {
 	what string // "listener postgres", "admin", "MCP server", "demo API"
 	addr string
-	// demo marks the demo API's address, which the file names under the
-	// demo key and as the demo listener's upstream.
-	demo bool
+	// demoKey is the extension key the demo's address is named under (the
+	// HTTP or the Postgres demo key), "" when this is not a demo upstream.
+	// The file names that address twice — under the key and as the demo
+	// listener's upstream — so moving it rewrites both.
+	demoKey string
 }
 
 // portConflict is a portUse another program holds, and the address
@@ -49,9 +51,10 @@ func bindError(addr string) error {
 	return nil
 }
 
-// portUses lists the TCP addresses cfg binds: every tcp listener, the
-// admin and MCP servers, and the demo API when the file names one.
-func portUses(cfg *daemon.Config, demoAPI string) []portUse {
+// portUses lists the TCP addresses cfg binds: every tcp listener, the admin
+// and MCP servers, and the demo upstream when the file names one (demoAddr
+// under demoKey).
+func portUses(cfg *daemon.Config, demoAddr, demoKey, demoWhat string) []portUse {
 	var out []portUse
 	for i, l := range cfg.Listeners {
 		if l.Network == "unix" || l.Listen == "" {
@@ -69,10 +72,23 @@ func portUses(cfg *daemon.Config, demoAPI string) []portUse {
 	if cfg.MCP != nil && cfg.MCP.Listen != "" {
 		out = append(out, portUse{what: "MCP server", addr: cfg.MCP.Listen})
 	}
-	if demoAPI != "" {
-		out = append(out, portUse{what: "demo API", addr: demoAPI, demo: true})
+	if demoAddr != "" {
+		out = append(out, portUse{what: demoWhat, addr: demoAddr, demoKey: demoKey})
 	}
 	return out
+}
+
+// demoUpstream reads the demo's upstream address and the key it is named
+// under from a config's extension keys: the HTTP demo key, or the Postgres
+// one. It returns "", "", "" when the config names neither.
+func demoUpstream(data []byte) (addr, key, what string) {
+	if a, ok, _ := configyaml.ExtensionValue(data, configyaml.DemoAPIKey); ok {
+		return a, configyaml.DemoAPIKey, "demo API"
+	}
+	if a, ok, _ := configyaml.ExtensionValue(data, configyaml.DemoPostgresKey); ok {
+		return a, configyaml.DemoPostgresKey, "demo database"
+	}
+	return "", "", ""
 }
 
 // portConflicts loads the config at path and reports each address it would
@@ -86,8 +102,8 @@ func portConflicts(path string) ([]portConflict, error) {
 	if err != nil {
 		return nil, err
 	}
-	demoAPI, _, _ := configyaml.ExtensionValue(data, configyaml.DemoAPIKey)
-	uses := portUses(cfg, demoAPI)
+	demoAddr, demoKey, demoWhat := demoUpstream(data)
+	uses := portUses(cfg, demoAddr, demoKey, demoWhat)
 	taken := map[string]bool{}
 	for _, u := range uses {
 		taken[u.addr] = true
@@ -162,8 +178,8 @@ func usePorts(path string, conflicts []portConflict) error {
 			return fmt.Errorf("no free port was found near %s", c.addr)
 		}
 		keys := map[string]bool{"listen": true}
-		if c.demo {
-			keys = map[string]bool{"upstream": true, configyaml.DemoAPIKey: true}
+		if c.demoKey != "" {
+			keys = map[string]bool{"upstream": true, c.demoKey: true}
 		}
 		next, n, err := replaceKeyValues(data, keys, c.addr, c.free)
 		if err != nil {

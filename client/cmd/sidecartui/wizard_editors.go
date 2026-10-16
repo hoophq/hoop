@@ -24,10 +24,12 @@ import (
 // daemon.Config only to validate or save, so the file is always the
 // struct, marshalled, and never text this package assembled.
 type draft struct {
-	demo     bool
+	// demoKind is "" for a normal config, or which demo this is (HTTP or
+	// Postgres) when the person picked one. isDemo reports which.
+	demoKind sidecardemo.Kind
 	protocol string
 	listener *listenerForm // nil for the demo, whose listener is fixed
-	// demoPorts are the demo's listener and API, moved off the preferred
+	// demoPorts are the demo's listener and upstream, moved off the preferred
 	// ones when another program holds them.
 	demoPorts sidecardemo.Ports
 	// license is the license file the config names under its license key,
@@ -175,21 +177,35 @@ func opStrings(o []inspect.Operation) []string {
 
 // ---- defaults -----------------------------------------------------------------
 
+// isDemo reports whether this draft is one of the built-in demos.
+func (d *draft) isDemo() bool { return d.demoKind != "" }
+
 // newDraft is the config the setup screens start from: one listener, the
 // guardrail and the masking rule the free tier allows, and the analyzer
 // switched on only when its key file already exists, since a config that
 // names a missing key does not start.
-func newDraft(protocol string, demo bool, m machine) (*draft, error) {
-	d := &draft{demo: demo, protocol: protocol, file: configyaml.StarterFile}
-	if demo {
+//
+// id is a menu choice: a protocol name, or a demo id (demoHTTPID /
+// demoPGID). A demo fixes its own protocol and ports.
+func newDraft(id string, m machine) (*draft, error) {
+	kind := demoKindFor(id)
+	d := &draft{demoKind: kind, protocol: id, file: configyaml.StarterFile}
+	if kind != "" {
+		// A demo runs over a real protocol: HTTP, or Postgres.
 		d.protocol = "http"
+		ports := sidecardemo.DefaultPorts
+		if kind == sidecardemo.KindPostgres {
+			d.protocol = "postgres"
+			ports = sidecardemo.PGDefaultPorts
+		}
 		// Free ports, chosen now: a demo that cannot bind fails at boot,
 		// after the person was told it was ready.
 		taken := map[string]bool{}
-		d.demoPorts.Listen = freeFrom(sidecardemo.ListenAddr, taken)
+		d.demoPorts.Listen = freeFrom(ports.Listen, taken)
 		taken[d.demoPorts.Listen] = true
-		d.demoPorts.API = freeFrom(sidecardemo.Addr, taken)
+		d.demoPorts.API = freeFrom(ports.API, taken)
 	} else {
+		protocol := id
 		upstream := defaultUpstream[protocol]
 		var source string
 		if f, ok := m.foundFor(protocol); ok {
@@ -290,8 +306,8 @@ func keyFileStatus(path string) error {
 // ---- the config -------------------------------------------------------------
 
 func (d *draft) listenerValue() (daemon.ListenerConfig, error) {
-	if d.demo {
-		return daemon.ListenerConfig{Name: "demo", Protocol: "http",
+	if d.isDemo() {
+		return daemon.ListenerConfig{Name: "demo", Protocol: d.protocol,
 			Listen: d.demoPorts.Listen, Upstream: d.demoPorts.API}, nil
 	}
 	return d.listener.value()
@@ -393,13 +409,17 @@ func (d *draft) renderOptions(l daemon.ListenerConfig) configyaml.RenderOptions 
 			"analyzer":   {"A model rates each statement's risk; the listener's high/medium/low", "map decides. The free tier does not cap it."},
 		},
 	}
-	if d.demo {
-		o.Header = append(o.Header, "", "This is the demo: the hoop CLI serves an invented API at "+d.demoPorts.API,
-			"while the sidecar runs, because of the "+configyaml.DemoAPIKey+" key below. Try:", "")
-		for _, c := range sidecardemo.TryCommands(d.demoPorts) {
+	if d.isDemo() {
+		key, what := configyaml.DemoAPIKey, "an invented API"
+		if d.demoKind == sidecardemo.KindPostgres {
+			key, what = configyaml.DemoPostgresKey, "an invented Postgres database"
+		}
+		o.Header = append(o.Header, "", "This is the demo: the hoop CLI serves "+what+" at "+d.demoPorts.API,
+			"while the sidecar runs, because of the "+key+" key below. Try:", "")
+		for _, c := range sidecardemo.TryCommands(d.demoKind, d.demoPorts) {
 			o.Header = append(o.Header, "  "+c)
 		}
-		o.Extensions = []configyaml.Extension{{Key: configyaml.DemoAPIKey, Value: d.demoPorts.API}}
+		o.Extensions = []configyaml.Extension{{Key: key, Value: d.demoPorts.API}}
 	}
 	if !d.an.on {
 		o.Footer = analyzerHint(d.an, l.Name)
