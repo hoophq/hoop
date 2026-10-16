@@ -98,6 +98,14 @@ jobs:
           path: ${{ runner.temp }}/shards
       - name: Check the union of the shards
         run: scripts/ci/unit-shards.sh check "$RUNNER_TEMP/shards"
+      # A check that cannot fail passes forever: drop one package and expect it to.
+      - name: Check that a dropped package fails the check
+        run: |
+          cp -R "$RUNNER_TEMP/shards" "$RUNNER_TEMP/dropped"
+          sed -i 1d "$RUNNER_TEMP/dropped/packages-1.txt"
+          if scripts/ci/unit-shards.sh check "$RUNNER_TEMP/dropped"; then
+            echo "::error::the check passed with a package missing"; exit 1
+          fi
 
   # The test-sidecar half of `make test-oss`, beside Unit Test: it enters
   # each nested sidecar module to prove its go.mod builds on its own.
