@@ -218,6 +218,22 @@ jobs:
 
           echo "lane Services render per entry and leave the admin Service alone"
 
+          # podLabels reach the pod template and nothing else. GCP Marketplace
+          # tracks consumption by the label it finds on the pod; one that leaked
+          # into the selector would make every later `helm upgrade` fail.
+          pl=$(helm template t "$chart" --set config.admin.listen=0.0.0.0:19000 \
+            --set podLabels.goog-partner-solution=isol_test --show-only templates/deployment.yaml)
+          tpl=$(echo "$pl" | awk '/^  template:$/{f=1} f')
+          echo "$tpl" | grep -q 'goog-partner-solution: isol_test' \
+            || { echo "::error::podLabels did not reach the pod template"; exit 1; }
+          sel=$(echo "$pl" | awk '/^  selector:$/{f=1;next} /^  [^ ]/{f=0} f')
+          echo "$sel" | grep -q 'goog-partner-solution' \
+            && { echo "::error::podLabels leaked into the Deployment selector"; exit 1; }
+          guard "podLabels overrides a chart label" --set config.admin.listen=0.0.0.0:19000 \
+            --set podLabels.app\\.kubernetes\\.io/instance=x
+
+          echo "podLabels land on the pod template only"
+
       - name: Assert the control plane chart renders and its guards hold
         run: |
           set -euo pipefail

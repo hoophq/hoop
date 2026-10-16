@@ -479,4 +479,16 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: test-parity run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+# GCP Marketplace listing of the sidecar (RD-413). On demand, never part of a
+# release, and nothing here makes anything public. The skill at
+# .claude/skills/gcp-marketplace-publish/ walks the whole flow.
+gcp-marketplace-sidecar-setup:
+	./scripts/gcp-marketplace/sidecar.sh setup
+gcp-marketplace-sidecar-bundle:
+	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh bundle
+gcp-marketplace-sidecar-publish:
+	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh publish
+gcp-marketplace-sidecar-test:
+	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh test
+
+.PHONY: test-parity run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts gcp-marketplace-sidecar-setup gcp-marketplace-sidecar-bundle gcp-marketplace-sidecar-publish gcp-marketplace-sidecar-test
