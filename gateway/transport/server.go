@@ -16,7 +16,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
@@ -182,7 +182,8 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	}
 
 	if err := refuseConnection(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {
-		closeRefusedSession(gwctx.UserContext, gwctx.Connection.Name, commongrpc.MetaGet(md, "session-id"), err)
+		closeRefusedSession(gwctx.UserContext.OrgID, gwctx.UserContext.UserID, gwctx.Connection.Name,
+			func(key string) string { return commongrpc.MetaGet(md, key) }, err)
 		return err
 	}
 
@@ -208,13 +209,16 @@ func refuseConnection(clientVerb, clientOrigin string, connInfo types.Connection
 }
 
 // closeRefusedSession closes the session an API exec wrote as open before it
-// dialed this stream. The refusal comes before the plugins, so the audit plugin
-// never closes it. A CLI client has no row yet, and nothing closes.
-func closeRefusedSession(uctx models.Context, connectionName, sessionID string, refusal error) {
-	if sessionID == "" {
+// dialed this stream, when the stream is refused before the plugins run: the
+// audit plugin never closes it. Only the gateway's clientexec writes the row
+// first, and it proves itself with the per-process plain-exec-key. Any other
+// client picks its own session-id, so its refusal closes nothing.
+func closeRefusedSession(orgID, userID, connectionName string, meta func(key string) string, refusal error) {
+	sessionID := meta("session-id")
+	if sessionID == "" || clientexec.PlainExecSecretKey == "" || meta("plain-exec-key") != clientexec.PlainExecSecretKey {
 		return
 	}
-	err := services.CloseRefusedSession(uctx.OrgID, uctx.UserID, connectionName, sessionID,
+	err := services.CloseRefusedSession(orgID, userID, connectionName, sessionID,
 		status.Convert(refusal).Message())
 	if err != nil {
 		log.With("sid", sessionID).Warnf("failed closing the refused session: %v", err)

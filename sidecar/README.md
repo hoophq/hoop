@@ -1408,7 +1408,7 @@ ERROR:  statement held for human approval: still waiting for approval after 30m0
 ```
 
 A rejection carries the approver's reason when they gave one, quoted and cut
-at 200 bytes so the id still fits in a mysql error:
+to at most 200 bytes, so the id still fits in a mysql error:
 
 ```
 ERROR:  statement held for human approval: the approval request was rejected: "use the replica" (approval 9f97…)

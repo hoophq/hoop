@@ -1046,7 +1046,7 @@ func TestARejectionCarriesTheApproversReason(t *testing.T) {
 		{"no reason", "", "the approval request was rejected (approval 9f97)"},
 		{"a reason", "use the replica", `the approval request was rejected: "use the replica" (approval 9f97)`},
 		{"a newline", "no\nwrites", `rejected: "no\nwrites" (approval 9f97)`},
-		{"a long reason", long, `rejected: "` + strings.Repeat("é", 100) + `..." (approval 9f97)`},
+		{"a long reason", long, `rejected: "` + strings.Repeat("é", 97) + `..." (approval 9f97)`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rejected := analyzer.ReviewResult{ID: "9f97", Status: "REJECTED", Reason: tc.reason}
@@ -1064,5 +1064,26 @@ func TestARejectionCarriesTheApproversReason(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The bound holds after quoting: text that escapes to several bytes per byte
+// must not push a full-size approval id past the 512 bytes mysql keeps.
+func TestARejectionReasonFitsTheMySQLErrorBuffer(t *testing.T) {
+	const id = "0f8b2c1e-7a54-4c3e-9d2b-5e6f7a8b9c0d"
+	for name, reason := range map[string]string{
+		"tabs":              strings.Repeat("\t", 200),
+		"zero-width spaces": strings.Repeat("\u200b", 66),
+		"NUL bytes":         strings.Repeat("\x00", 300),
+		"invalid UTF-8":     strings.Repeat("\xff", 300),
+	} {
+		rev := &recordingReviewer{res: analyzer.ReviewResult{ID: id, Status: "REJECTED", Reason: reason}}
+		v := holdingEvaluator(t, rev, nil).Evaluate(deleteStatement())
+		if !v.Denied || !strings.HasSuffix(v.Message, "(approval "+id+")") {
+			t.Errorf("%s: denial %q does not end with the approval id", name, v.Message)
+		}
+		if n := len("ERROR 1105 (HY000): ") + len(v.Message); n > 512 {
+			t.Errorf("%s: the mysql error is %d bytes, over 512", name, n)
+		}
 	}
 }

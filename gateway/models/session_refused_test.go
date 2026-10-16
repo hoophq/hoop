@@ -12,8 +12,8 @@ import (
 )
 
 // A refused exec leaves the row POST /sessions wrote. Only that row closes: a
-// client picks its own session id, so a refusal must not end another user's
-// session, a session on another connection, or one that is not open.
+// refusal must not end another user's session, a session on another
+// connection, one that is not open, or one that already streamed.
 func TestCloseRefusedSession(t *testing.T) {
 	startTestDB(t)
 
@@ -80,12 +80,18 @@ func TestCloseRefusedSession(t *testing.T) {
 		msg                    string
 		id, owner, conn, state string
 		asUser, asConn         string
+		streamed               bool
 	}{
-		{"another user's session", "00000000-0000-0000-0000-000000000c02", "bob", "pg-off", "open", "alice", "pg-off"},
-		{"a session on another connection", "00000000-0000-0000-0000-000000000c03", "alice", "pg-prod", "open", "alice", "pg-off"},
-		{"a reviewed session waiting to run", "00000000-0000-0000-0000-000000000c04", "alice", "pg-off", "ready", "alice", "pg-off"},
+		{"another user's session", "00000000-0000-0000-0000-000000000c02", "bob", "pg-off", "open", "alice", "pg-off", false},
+		{"a session on another connection", "00000000-0000-0000-0000-000000000c03", "alice", "pg-prod", "open", "alice", "pg-off", false},
+		{"a reviewed session waiting to run", "00000000-0000-0000-0000-000000000c04", "alice", "pg-off", "ready", "alice", "pg-off", false},
+		{"a session that streamed", "00000000-0000-0000-0000-000000000c05", "alice", "pg-off", "open", "alice", "pg-off", true},
 	} {
 		seed(tt.id, tt.owner, tt.conn, tt.state)
+		if tt.streamed {
+			// The audit plugin creates the stream blob when a session starts.
+			require.NoError(t, models.CreateEmptySessionStreamBlob(testOrgID, tt.id, nil))
+		}
 		assert.False(t, closeIt(tt.asUser, tt.asConn, tt.id), tt.msg)
 		assert.Equal(t, tt.state, read(tt.id).Status, tt.msg)
 		assert.Nil(t, read(tt.id).EndedAt, tt.msg)
