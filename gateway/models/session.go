@@ -377,7 +377,8 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 							'owner_name', rg.owner_name,
 							'owner_slack_id', rg.owner_slack_id,
 							'forced_review', rg.forced_review,
-							'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+							'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+							'added_on_denial', rg.added_on_denial
 						)
 					)
 					FROM private.review_groups AS rg
@@ -495,7 +496,8 @@ func IsValidSessionVerb(v string) bool {
 }
 
 // sessionListVisibilityCondition restricts a non-admin to their own sessions
-// plus the ones they are a reviewer of. References `rv`.
+// plus the ones they are a reviewer of. References `rv`. A row added on denial
+// records who denied, not a reviewer group, as reviewVisibilityCondition reads it.
 //
 // Kept as a CASE rather than folded into `EXISTS(...) OR s.user_id = @user_id`:
 // s.user_id is nullable, so `s.user_id != @user_id` is NULL for an ownerless
@@ -509,7 +511,7 @@ const sessionListVisibilityCondition = `
 						SELECT 1 FROM private.users u
 						INNER JOIN private.user_groups ug ON ug.user_id = u.id
 						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.subject = @user_id
+						WHERE rg.review_id = rv.id AND NOT rg.added_on_denial AND u.subject = @user_id
 					)
 				ELSE true
 			END`
@@ -531,13 +533,14 @@ const sessionListReviewStatusConditionExact = `
 			rv.status = (@review_status)::private.enum_reviews_status`
 
 // sessionListReviewApproverCondition references `rv`. Emitted only when an
-// approver is actually set, so the IS NOT NULL guard is gone with it.
+// approver is actually set, so the IS NOT NULL guard is gone with it. A row
+// added on denial names no approver.
 const sessionListReviewApproverCondition = `
 			EXISTS (
 				SELECT 1 FROM private.users u
 				INNER JOIN private.user_groups ug ON ug.user_id = u.id
 				INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-				WHERE rg.review_id = rv.id AND u.email = @review_approver_email
+				WHERE rg.review_id = rv.id AND NOT rg.added_on_denial AND u.email = @review_approver_email
 			)`
 
 // sessionListShape records which SQL the filters in a SessionOption require.
