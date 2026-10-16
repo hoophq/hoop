@@ -58,6 +58,9 @@ export const useAuthStore = create((set, get) => ({
     sessionStorage.setItem(REDIRECT_KEY, url)
   },
 
+  // The saved URL, left in place: the login carries it to the IdP and back.
+  peekRedirectUrl: () => sessionStorage.getItem(REDIRECT_KEY) || localStorage.getItem(REDIRECT_KEY),
+
   // Get and clear redirect URL. localStorage is where the legacy CLJS app saves
   // it, so it is read when this tab saved none.
   getAndClearRedirectUrl: () => {

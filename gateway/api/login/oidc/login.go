@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
@@ -212,7 +213,13 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 
-	redirectSuccessURL := login.Redirect + "?token=" + token.AccessToken
+	// The web app's callback can carry its own query (?next=, the page the
+	// login started from), so the token joins it instead of starting a second one.
+	tokenSep := "?"
+	if strings.Contains(login.Redirect, "?") {
+		tokenSep = "&"
+	}
+	redirectSuccessURL := login.Redirect + tokenSep + "token=" + token.AccessToken
 
 	url, _ := url.Parse(login.Redirect)
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress && !appconfig.Get().ForceUrlTokenExchange() {

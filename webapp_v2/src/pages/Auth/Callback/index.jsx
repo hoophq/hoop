@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
 import AuthPageLoader from '@/components/AuthPageLoader'
 import { postAuthPath } from '@/modes'
+import { samePagePath } from '@/utils/redirect'
 
 function AuthCallback() {
   const navigate = useNavigate()
@@ -36,15 +37,16 @@ function AuthCallback() {
           return
         }
 
-        const redirectUrl = getAndClearRedirectUrl()
-        if (redirectUrl) {
+        // ?next= is the page the login started from, carried through the IdP
+        // in this URL (Login's redirectToIdp). It wins over storage, which a
+        // browser or another tab can lose or replace on the way.
+        const saved = getAndClearRedirectUrl()
+        const target = samePagePath(searchParams.get('next')) || samePagePath(saved)
+        if (target) {
           // A page of this app goes back in place: no reload to race.
-          const saved = new URL(redirectUrl, window.location.origin)
-          if (saved.origin === window.location.origin) {
-            navigate(saved.pathname + saved.search + saved.hash, { replace: true })
-          } else {
-            window.location.href = redirectUrl
-          }
+          navigate(target, { replace: true })
+        } else if (saved) {
+          window.location.href = saved
         } else {
           navigate(await postAuthPath())
         }
