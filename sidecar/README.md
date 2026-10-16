@@ -303,8 +303,15 @@ hoop start sidecar
 The sidecar makes its own `hsc_` token and sends it once; the plane keeps
 only its hash, and approving creates the sidecar with it. The login is saved
 in `~/.hoop/sidecar/controlplane.json` (mode 0600) and reused for that plane
-on the next run. Until the plane holds a listener for it, the sidecar waits
-and names the page to add one.
+on the next run.
+
+At a terminal the login happens on the first-run screen, and once approved
+the screen stays open, connected, on the setup: the config is set up there
+and stays in a file on this machine, which the plane shows (`load_from_disk`).
+The saved login remembers that file, so the next bare run boots it, connected.
+"Configure in hoop instead" boots with no file; the sidecar then waits and
+names the page where its listeners are added. Off a terminal, a login with no
+file waits the same way.
 
 An organization without an Enterprise license holds one sidecar, under the
 free rule caps below. This is the hoop CLI only: `hoop-inspect` takes a token.

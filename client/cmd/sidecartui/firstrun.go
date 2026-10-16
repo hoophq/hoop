@@ -40,9 +40,32 @@ type FirstRunOptions struct {
 	// validates and boots from here on runs under it.
 	UseLicense func(path string)
 	// ManagedURL is the hoop-managed control plane. Set, the screen opens
-	// on one choice: log in there (a Boot with Login), or Enterprise (the
-	// Connect page). Empty opens the Get started list.
-	ManagedURL string
+	// on one choice: log in there (with ManagedLogin, on the screen), or
+	// Enterprise (the Connect page). Empty opens the Get started list.
+	ManagedURL   string
+	ManagedLogin ManagedLogin
+	// Connected is a hoop-managed login this sidecar already holds, with no
+	// config yet: the screen opens on Get started, connected to it.
+	Connected *ManagedPlane
+}
+
+// ManagedPlane is this sidecar's login to the hoop-managed control plane.
+// Page is the sidecar's page in the web app.
+type ManagedPlane struct {
+	URL, Token, Name, Page string
+}
+
+// LoginTicket is what the person approves in the browser: the link, which
+// carries the code, and the code itself, shown so they can match it.
+type LoginTicket struct {
+	URL, Code string
+}
+
+// ManagedLogin is the device-code login, in two steps so the screen can show
+// the ticket while it waits. The CLI implements it and saves the login.
+type ManagedLogin interface {
+	Begin(ctx context.Context) (LoginTicket, error)
+	Wait(ctx context.Context) (ManagedPlane, error)
 }
 
 // Messages first-run mode sends the screen.
@@ -70,6 +93,15 @@ type (
 		conflicts       []string
 		// empty is a plane that took the token and holds no config yet.
 		empty bool
+	}
+	// frTicketMsg is a started login; frLoggedInMsg its approval.
+	frTicketMsg struct {
+		ticket LoginTicket
+		err    error
+	}
+	frLoggedInMsg struct {
+		plane ManagedPlane
+		err   error
 	}
 )
 
@@ -140,6 +172,15 @@ type firstRunModel struct {
 	// is set while the screen shows that choice instead of Get started.
 	managedURL string
 	choosing   bool
+	// managedLogin runs the login; login is its page while it is open, and
+	// loginCancel stops a login in flight.
+	managedLogin ManagedLogin
+	login        *loginView
+	loginCancel  context.CancelFunc
+	// managed is the hoop-managed login this sidecar holds. Unlike plane, it
+	// stays for every boot from here: the sidecar is logged in, whichever
+	// config it boots.
+	managed *ManagedPlane
 
 	stop     func()
 	stopping bool
@@ -179,6 +220,14 @@ func (m *firstRunModel) buildHome() {
 		{id: "open", label: "Open a config file", detail: "browse to a config you already have and boot it"},
 		{note: true, label: "Config files in this folder"},
 	}
+	if m.managed != nil {
+		// Logged in already: no Connect, and the file is where the setup ends.
+		items = []menuItem{
+			{id: "setup", label: "Set up a config file", detail: "pick the demo or a protocol, adjust the defaults, boot; the file stays on this machine"},
+			{id: "open", label: "Open a config file", detail: "browse to a config you already have and boot it"},
+			{note: true, label: "Config files in this folder"},
+		}
+	}
 	files := configsIn(m.dir)
 	for _, f := range files {
 		label := clean(filepath.Base(f))
@@ -190,6 +239,11 @@ func (m *firstRunModel) buildHome() {
 	}
 	if len(files) == 0 {
 		items = append(items, menuItem{note: true, label: "No config in this directory"})
+	}
+	if m.managed != nil {
+		items = append(items, menuItem{note: true, label: "Prefer the web app?"},
+			menuItem{id: "hoopconfig", label: "Configure in hoop instead",
+				detail: "boot with no file and add its listeners and rules at " + hostOf(m.managed.URL)})
 	}
 	cur := m.home.cur
 	m.home.items = items
@@ -326,6 +380,47 @@ func (m firstRunModel) continueWithLicense() (tea.Model, tea.Cmd) {
 	return m, m.startSetup()
 }
 
+// loginView is the login page: the ticket once the plane gave one, and the
+// last failure.
+type loginView struct {
+	ticket LoginTicket
+	opened bool
+	err    string
+	ctx    context.Context
+}
+
+// startLogin opens the login page and asks the plane for a code.
+func (m firstRunModel) startLogin() (tea.Model, tea.Cmd) {
+	if m.managedLogin == nil {
+		return m, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.login, m.loginCancel = &loginView{ctx: ctx}, cancel
+	ml := m.managedLogin
+	return m, func() tea.Msg {
+		t, err := ml.Begin(ctx)
+		return frTicketMsg{ticket: t, err: err}
+	}
+}
+
+func (m firstRunModel) loginCtx() context.Context { return m.login.ctx }
+
+// endLogin closes the login page and stops a login in flight.
+func (m *firstRunModel) endLogin() {
+	if m.loginCancel != nil {
+		m.loginCancel()
+	}
+	m.login, m.loginCancel = nil, nil
+}
+
+// loginError is a failed login as one line; a cancel is not a failure.
+func loginError(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return ""
+	}
+	return firstLine(err)
+}
+
 // hostOf is the host a person recognizes in a URL: use.hoop.dev, not the
 // scheme and path around it.
 func hostOf(raw string) string {
@@ -430,6 +525,8 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.wiz.license = m.licensePath
 		if m.plane != nil {
 			m.wiz.plane = m.plane.url
+		} else if m.managed != nil {
+			m.wiz.plane = m.managed.URL
 		}
 		return m, nil
 	case doneMsg:
@@ -456,6 +553,37 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.boot = &Boot{ControlPlaneURL: msg.planeURL, Token: msg.token}
 			return m, tea.Quit
 		}
+		return m, nil
+	case frTicketMsg:
+		if m.login == nil {
+			return m, nil // the person went back meanwhile
+		}
+		if msg.err != nil {
+			m.login.err = loginError(msg.err)
+			return m, nil
+		}
+		m.login.ticket = msg.ticket
+		if m.openURL != nil {
+			m.login.opened = m.openURL(msg.ticket.URL) == nil
+		}
+		ml, ctx := m.managedLogin, m.loginCtx()
+		return m, func() tea.Msg {
+			plane, err := ml.Wait(ctx)
+			return frLoggedInMsg{plane: plane, err: err}
+		}
+	case frLoggedInMsg:
+		if m.login == nil {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.login.err = loginError(msg.err)
+			return m, nil
+		}
+		m.endLogin()
+		plane := msg.plane
+		m.managed, m.choosing = &plane, false
+		m.home.cur = 0
+		m.buildHome()
 		return m, nil
 	case frCheckedMsg:
 		if msg.path != m.checking {
@@ -484,6 +612,8 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.boot = &Boot{ConfigPath: msg.path}
 		if m.plane != nil {
 			m.boot.ControlPlaneURL, m.boot.Token = m.plane.url, m.plane.token
+		} else if m.managed != nil {
+			m.boot.ControlPlaneURL, m.boot.Token = m.managed.URL, m.managed.Token
 		}
 		return m, tea.Quit
 	}
@@ -545,6 +675,19 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.login != nil {
+		switch k.String() {
+		case "esc", "q":
+			// Back to the choice; the code is left to expire.
+			m.endLogin()
+			m.buildHome()
+		case "o":
+			if m.openURL != nil && m.login.ticket.URL != "" {
+				m.login.opened = m.openURL(m.login.ticket.URL) == nil
+			}
+		}
+		return m, nil
+	}
 	if m.choosing {
 		switch k.String() {
 		case "q", "esc":
@@ -552,8 +695,7 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch m.home.update(k) {
 		case "managed":
-			m.boot = &Boot{Login: true}
-			return m, tea.Quit
+			return m.startLogin()
 		case "enterprise":
 			m.choosing = false
 			m.connect, m.invalid = newConnectPage(m.licenseDir), ""
@@ -576,6 +718,14 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connect, m.invalid = newConnectPage(m.licenseDir), ""
 	case id == "open":
 		m.picker, m.invalid = newFilePicker(m.dir), ""
+	case id == "hoopconfig" && m.managed != nil:
+		// No file: the sidecar boots on the plane and waits there for its
+		// listeners, and the web app is where they are added.
+		m.boot = &Boot{ControlPlaneURL: m.managed.URL, Token: m.managed.Token}
+		if m.openURL != nil && m.managed.Page != "" {
+			_ = m.openURL(m.managed.Page)
+		}
+		return m, tea.Quit
 	case strings.HasPrefix(id, "file:"):
 		return m, m.check(strings.TrimPrefix(id, "file:"))
 	}
@@ -583,6 +733,7 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m firstRunModel) quit() (tea.Model, tea.Cmd) {
+	m.endLogin()
 	if m.stopping {
 		// A second press leaves without waiting for the listener.
 		return m, tea.Quit
@@ -612,7 +763,12 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 	}
 	m := newFirstRunModel(opts.Version, time.Now, cancel, detect, opts.Validate, opts.Dir)
 	m.connectCheck, m.openURL, m.licenseDir, m.useLicense = opts.ConnectCheck, opts.OpenURL, opts.LicenseDir, opts.UseLicense
-	if opts.ManagedURL != "" {
+	m.managedLogin = opts.ManagedLogin
+	switch {
+	case opts.Connected != nil:
+		m.managed = opts.Connected
+		m.buildHome()
+	case opts.ManagedURL != "":
 		m.managedURL, m.choosing = opts.ManagedURL, true
 		m.buildHome()
 	}
@@ -674,8 +830,11 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 			return nil, fmt.Errorf("stopping the first-run listener before boot: %w", derr)
 		}
 		switch {
-		case fm.boot.Login:
-			fmt.Fprintf(os.Stdout, "hoop sidecar: logging in to %s\n", fm.managedURL)
+		case fm.managed != nil && fm.boot.ConfigPath == "":
+			fmt.Fprintf(os.Stdout, "hoop sidecar: %q waits for its configuration from %s\n", fm.managed.Name, fm.managed.URL)
+		case fm.managed != nil:
+			fmt.Fprintf(os.Stdout, "hoop sidecar: booting %s as %q, connected to %s\n  next time: hoop start sidecar\n",
+				fm.boot.ConfigPath, fm.managed.Name, fm.managed.URL)
 		case fm.boot.ControlPlaneURL != "":
 			fmt.Fprintf(os.Stdout, "hoop sidecar: connecting to %s\n", fm.boot.ControlPlaneURL)
 			fmt.Fprintf(os.Stdout, "  to reconnect later: %s=%s hoop start sidecar --token <your token>\n",

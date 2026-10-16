@@ -13,7 +13,45 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/hoophq/hoop/client/cmd/sidecartui"
 )
+
+// The screen's login is the terminal's, in two steps; Wait saves it, and a
+// file booted from the screen is remembered for the next bare run.
+func TestScreenLoginSavesAndRemembersTheFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	plane := &fakePlane{polls: []int{http.StatusOK}}
+	srv := httptest.NewServer(plane.handler(t))
+	defer srv.Close()
+
+	sl := newScreenLogin(srv.URL).(*screenLogin)
+	sl.l.minInterval = time.Millisecond
+	ticket, err := sl.Begin(context.Background())
+	if err != nil || ticket.Code != "BCDF-GHJK" || !strings.Contains(ticket.URL, "code=BCDF-GHJK") {
+		t.Fatalf("ticket %+v, %v", ticket, err)
+	}
+	got, err := sl.Wait(context.Background())
+	if err != nil || got.Name != "edge-1" || got.Token != plane.token {
+		t.Fatalf("plane %+v, %v", got, err)
+	}
+
+	login := screenLoginFor(&sidecartui.Boot{ControlPlaneURL: srv.URL, Token: plane.token})
+	if login == nil {
+		t.Fatal("the saved login was not found for the boot")
+	}
+	if err := rememberSidecarConfig(login, "conf.yaml"); err != nil {
+		t.Fatal(err)
+	}
+	again, err := loadSidecarLogin(sidecarSaveDir(), srv.URL)
+	if err != nil || again == nil || !filepath.IsAbs(again.Config) || filepath.Base(again.Config) != "conf.yaml" {
+		t.Fatalf("remembered %+v, %v", again, err)
+	}
+	// A boot on a plane by token is not a login made on the screen.
+	if screenLoginFor(&sidecartui.Boot{ControlPlaneURL: srv.URL, Token: "hsc_other"}) != nil {
+		t.Error("a token the screen did not make was taken for its login")
+	}
+}
 
 // fakePlane answers the two login routes the way the gateway does. polls
 // lists the answers to successive polls; the last one repeats.

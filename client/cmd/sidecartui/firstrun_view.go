@@ -303,8 +303,11 @@ func (m firstRunModel) getStarted(w, h int, now time.Time) (title, body string) 
 	} else {
 		blocks, sel := m.homeCards(w)
 		title = "Get started"
-		if m.choosing {
+		switch {
+		case m.choosing:
 			title = "How do you want to run this sidecar?"
+		case m.managed != nil:
+			title = "Finish the setup here"
 		}
 		body = fitBlocks(blocks, sel, room)
 	}
@@ -337,6 +340,9 @@ func (m firstRunModel) render() string {
 	if m.connect != nil {
 		return m.connectFrame()
 	}
+	if m.login != nil {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.loginView(m.width))
+	}
 	now := m.now()
 	w := min(m.width-2, 92)
 
@@ -352,9 +358,13 @@ func (m firstRunModel) render() string {
 	wrap := lipgloss.NewStyle().Width(w).Align(lipgloss.Center)
 	introText := "Welcome to hoop sidecar. Let's get it running: " +
 		"set up a config in a few steps, or start from one you already have."
-	if m.choosing {
+	switch {
+	case m.choosing:
 		introText = "Welcome to hoop sidecar. First, connect it: log in to hoop and start free, " +
 			"or use the Enterprise version with your own Control Plane or a license."
+	case m.managed != nil:
+		introText = "Connected to hoop as " + m.managed.Name + ". Now set up what it protects: " +
+			"the config stays in a file on this machine, and hoop shows it."
 	}
 	intro := wrap.Inherit(stText).Render(introText)
 	flow := m.frFlow(now)
@@ -393,6 +403,37 @@ func (m firstRunModel) render() string {
 	}
 	page = ansiClamp(page, m.width)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, page)
+}
+
+// loginView is the login page: the link to approve, the code to match, and
+// what the login is waiting on. The link carries the code, so nothing is
+// typed; the code is there so the person checks the page is this sidecar's.
+func (m firstRunModel) loginView(width int) string {
+	l := m.login
+	bw := min(max(width-4, 40), 84)
+	text := lipgloss.NewStyle().Width(bw - 4)
+	k := func(key, what string) string { return stKey.Render(key) + stFaint.Render(" "+what+"   ") }
+	body := []string{stStrong.Render("Log in to hoop") + stFaint.Render("  "+hostOf(m.managedURL)), ""}
+	switch {
+	case l.err != "":
+		body = append(body, text.Inherit(stDanger).Render("✕ "+l.err), "",
+			k("esc", "back")+k("q", "back"))
+	case l.ticket.URL == "":
+		body = append(body, shimmer("asking for a code…", m.now()), "", k("esc", "back"))
+	default:
+		body = append(body,
+			text.Inherit(stText).Render("Approve this sidecar in your browser:"), "",
+			"  "+stKey.Render(l.ticket.URL), "",
+			text.Inherit(stText).Render("The page shows the code "+stStrong.Render(l.ticket.Code)+
+				". Approve only if it matches this one."), "")
+		wait := "Waiting for approval…"
+		if l.opened {
+			wait = "Opened your browser. Waiting for approval…"
+		}
+		body = append(body, shimmer(wait, m.now()), "", k("o", "open the link again")+k("esc", "back"))
+	}
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colPrimary).
+		Padding(0, 1).Width(bw).Render(strings.Join(body, "\n"))
 }
 
 // connectFrame draws the Connect page over the whole screen: it is taller

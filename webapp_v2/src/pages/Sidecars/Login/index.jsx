@@ -8,6 +8,7 @@ import TextInput from '@/components/TextInput'
 import { sidecarsService } from '@/services/sidecars'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
+import FinishInTerminal from './sections/FinishInTerminal'
 
 const errorMessage = (err, fallback) => err?.response?.data?.message || fallback
 
@@ -30,6 +31,9 @@ function LoginDecision({ code }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [deciding, setDeciding] = useState(null)
+  // approved is the sidecar the approval created; the page then sends the
+  // person back to the terminal to finish the setup.
+  const [approved, setApproved] = useState(null)
 
   useEffect(() => {
     let current = true
@@ -52,9 +56,8 @@ function LoginDecision({ code }) {
     setError(null)
     try {
       const { data } = await sidecarsService.approveLogin(code, name.trim())
-      showSnackbar({ level: 'success', text: `Sidecar "${data.name}" approved. It connects in a few seconds.` })
       useSidecarStore.getState().fetchSidecars()
-      navigate(`/sidecars/${data.id}`)
+      setApproved(data)
     } catch (err) {
       setError(errorMessage(err, 'Failed to approve the sidecar.'))
       setDeciding(null)
@@ -74,6 +77,7 @@ function LoginDecision({ code }) {
     }
   }
 
+  if (approved) return <FinishInTerminal sidecar={approved} />
   if (loading) return <PageLoader h={200} />
   if (!login) return <ErrorText>{error}</ErrorText>
 

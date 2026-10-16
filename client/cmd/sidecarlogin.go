@@ -43,6 +43,9 @@ type savedSidecarLogin struct {
 	Token string `json:"token"`
 	Name  string `json:"name"`
 	Page  string `json:"page,omitempty"`
+	// Config is the file set up for this sidecar on the first-run screen,
+	// so the next bare run boots it again.
+	Config string `json:"config,omitempty"`
 }
 
 // loadSidecarLogin returns the login saved for planeURL, or nil. A login for
@@ -163,9 +166,43 @@ type sidecarLoginer struct {
 	minInterval time.Duration
 }
 
-// run logs in and returns the credential. It blocks until the code is
-// approved, denied or expired, or ctx ends.
+// loginTicket is a started login: what the person approves, and the token
+// the approval binds to this sidecar.
+type loginTicket struct {
+	planeURL string
+	token    string
+	start    sidecarLoginStart
+}
+
+// run logs in and returns the credential, printing the link for a person at
+// a plain terminal. It blocks until the code is approved, denied or expired,
+// or ctx ends.
 func (l *sidecarLoginer) run(ctx context.Context) (*savedSidecarLogin, error) {
+	t, err := l.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// The link carries the code, so nothing is typed. The code is shown so the
+	// person can check that the page they approve is this sidecar's.
+	fmt.Fprintf(l.out, "\nTo connect this sidecar, approve it in your browser:\n\n  %s\n\n"+
+		"The page shows the code %s. Approve only if it matches this one.\n\n",
+		t.start.VerificationURL, t.start.UserCode)
+	opened := l.open != nil && l.open(t.start.VerificationURL) == nil
+	if opened {
+		fmt.Fprintln(l.out, "Opened your browser. Waiting for approval...")
+	} else {
+		fmt.Fprintln(l.out, "Open the link above. Waiting for approval...")
+	}
+	login, err := l.wait(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(l.out, "Approved: this sidecar is %q at %s\n", login.Name, login.URL)
+	return login, nil
+}
+
+// begin makes this sidecar's token and asks the plane for a code.
+func (l *sidecarLoginer) begin(ctx context.Context) (*loginTicket, error) {
 	planeURL := normalizePlaneURL(l.planeURL)
 	if err := sidecartui.PlaneTransportError(planeURL); err != nil {
 		return nil, err
@@ -175,8 +212,8 @@ func (l *sidecarLoginer) run(ctx context.Context) (*savedSidecarLogin, error) {
 		return nil, err
 	}
 	body, _ := json.Marshal(map[string]string{"name": l.name})
-	var start sidecarLoginStart
-	status, raw, err := l.post(ctx, planeURL+"/api/sidecars/login", token, body, &start)
+	t := &loginTicket{planeURL: planeURL, token: token}
+	status, raw, err := l.post(ctx, planeURL+"/api/sidecars/login", token, body, &t.start)
 	if err != nil {
 		return nil, err
 	}
@@ -189,24 +226,16 @@ func (l *sidecarLoginer) run(ctx context.Context) (*savedSidecarLogin, error) {
 		return nil, fmt.Errorf("the control plane at %s refused the sidecar login (%d): %s",
 			planeURL, status, planeMessage(raw))
 	}
+	return t, nil
+}
 
-	// The link carries the code, so nothing is typed. The code is shown so the
-	// person can check that the page they approve is this sidecar's.
-	fmt.Fprintf(l.out, "\nTo connect this sidecar, approve it in your browser:\n\n  %s\n\n"+
-		"The page shows the code %s. Approve only if it matches this one.\n\n",
-		start.VerificationURL, start.UserCode)
-	opened := l.open != nil && l.open(start.VerificationURL) == nil
-	if opened {
-		fmt.Fprintln(l.out, "Opened your browser. Waiting for approval...")
-	} else {
-		fmt.Fprintln(l.out, "Open the link above. Waiting for approval...")
-	}
-
-	interval := time.Duration(start.Interval) * time.Second
+// wait polls until the code is approved, denied or expired, or ctx ends.
+func (l *sidecarLoginer) wait(ctx context.Context, t *loginTicket) (*savedSidecarLogin, error) {
+	interval := time.Duration(t.start.Interval) * time.Second
 	if interval < l.minInterval {
 		interval = l.minInterval
 	}
-	deadline := time.Now().Add(time.Duration(start.ExpiresIn)*time.Second + interval)
+	deadline := time.Now().Add(time.Duration(t.start.ExpiresIn)*time.Second + interval)
 	for {
 		select {
 		case <-ctx.Done():
@@ -214,7 +243,7 @@ func (l *sidecarLoginer) run(ctx context.Context) (*savedSidecarLogin, error) {
 		case <-time.After(interval):
 		}
 		var poll sidecarLoginPoll
-		status, raw, err := l.post(ctx, planeURL+"/api/sidecars/login/poll", token, nil, &poll)
+		status, raw, err := l.post(ctx, t.planeURL+"/api/sidecars/login/poll", t.token, nil, &poll)
 		if err != nil {
 			// A dropped request is not an answer: keep waiting until the
 			// code itself expires.
@@ -225,8 +254,7 @@ func (l *sidecarLoginer) run(ctx context.Context) (*savedSidecarLogin, error) {
 		}
 		switch status {
 		case http.StatusOK:
-			fmt.Fprintf(l.out, "Approved: this sidecar is %q at %s\n", poll.Name, planeURL)
-			return &savedSidecarLogin{URL: planeURL, Token: token, Name: poll.Name, Page: poll.URL}, nil
+			return &savedSidecarLogin{URL: t.planeURL, Token: t.token, Name: poll.Name, Page: poll.URL}, nil
 		case http.StatusPreconditionRequired:
 			if time.Now().After(deadline) {
 				return nil, errors.New("the sidecar login code expired; run the command again")
@@ -237,7 +265,7 @@ func (l *sidecarLoginer) run(ctx context.Context) (*savedSidecarLogin, error) {
 			return nil, errors.New("the sidecar login code expired; run the command again")
 		default:
 			return nil, fmt.Errorf("the control plane at %s answered the sidecar login poll with %d: %s",
-				planeURL, status, planeMessage(raw))
+				t.planeURL, status, planeMessage(raw))
 		}
 	}
 }
@@ -315,4 +343,73 @@ func waitForPlaneConfig(ctx context.Context, out io.Writer, login *savedSidecarL
 			return err
 		}
 	}
+}
+
+// screenLogin is the device-code login the first-run screen runs: the same
+// login as the terminal's, in the two steps the screen shows. Wait saves it.
+type screenLogin struct {
+	l      *sidecarLoginer
+	ticket *loginTicket
+}
+
+func newScreenLogin(planeURL string) sidecartui.ManagedLogin {
+	if planeURL == "" {
+		return nil
+	}
+	return &screenLogin{l: &sidecarLoginer{planeURL: planeURL, name: defaultSidecarName(), out: io.Discard,
+		client: sidecarLoginHTTPClient(), minInterval: time.Second}}
+}
+
+func (s *screenLogin) Begin(ctx context.Context) (sidecartui.LoginTicket, error) {
+	t, err := s.l.begin(ctx)
+	if err != nil {
+		return sidecartui.LoginTicket{}, err
+	}
+	s.ticket = t
+	return sidecartui.LoginTicket{URL: t.start.VerificationURL, Code: t.start.UserCode}, nil
+}
+
+func (s *screenLogin) Wait(ctx context.Context) (sidecartui.ManagedPlane, error) {
+	if s.ticket == nil {
+		return sidecartui.ManagedPlane{}, errors.New("the login was not started")
+	}
+	login, err := s.l.wait(ctx, s.ticket)
+	if err != nil {
+		return sidecartui.ManagedPlane{}, err
+	}
+	if _, err := saveSidecarLogin(sidecarSaveDir(), *login); err != nil {
+		// The sidecar exists in the plane now; losing the token means
+		// deleting it there, so say so rather than run once and forget.
+		return sidecartui.ManagedPlane{}, fmt.Errorf("the sidecar %q was approved but its token could not be saved (%w); "+
+			"delete it in the web app and log in again", login.Name, err)
+	}
+	return sidecartui.ManagedPlane{URL: login.URL, Token: login.Token, Name: login.Name, Page: login.Page}, nil
+}
+
+// screenLoginFor is the saved login a boot from the first-run screen runs
+// on, or nil when it boots on no plane or on a plane connected by token.
+func screenLoginFor(boot *sidecartui.Boot) *savedSidecarLogin {
+	if boot.ControlPlaneURL == "" {
+		return nil
+	}
+	login, err := loadSidecarLogin(sidecarSaveDir(), boot.ControlPlaneURL)
+	if err != nil || login == nil || login.Token != boot.Token {
+		return nil
+	}
+	return login
+}
+
+// rememberSidecarConfig records the file a logged-in sidecar runs, so the
+// next bare run boots it again. An empty path records nothing.
+func rememberSidecarConfig(login *savedSidecarLogin, path string) error {
+	if path == "" {
+		return nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	login.Config = abs
+	_, err = saveSidecarLogin(sidecarSaveDir(), *login)
+	return err
 }
