@@ -110,8 +110,13 @@ test-oss: generate-wasm test-sidecar test-sidecar-plugins test-unit
 # The unit suite without the per-module sidecar loop; CI runs the two in
 # parallel jobs. gateway/models starts an isolated PGlite instance per test.
 # Its full suite can exceed Go's default 10-minute per-package timeout in CI.
+#
+# SHARD=i SHARDS=n runs shard i of n (scripts/ci/unit-shards.sh), as CI does
+# on n runners. Without SHARD, the full suite.
 test-unit: generate-wasm
-	env CGO_ENABLED=0 go test -timeout 15m -json -v github.com/hoophq/hoop/...
+	@set -e; pkgs=github.com/hoophq/hoop/...; \
+	if [ -n "$(SHARD)" ]; then pkgs=$$(scripts/ci/unit-shards.sh list "$(SHARD)" "$(SHARDS)"); fi; \
+	env CGO_ENABLED=0 go test -timeout 15m -json -v $$pkgs
 
 # `github.com/hoophq/hoop/...` now matches the sidecar module too, since it
 # was renamed to sit under the repository path. What it does NOT do is prove
