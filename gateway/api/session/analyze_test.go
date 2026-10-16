@@ -45,7 +45,12 @@ func llmStub(t *testing.T, calls *atomic.Int32) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		body, _ := io.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("llm stub: read request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		tool, title := "LowRiskAISessionAnalyzer", "Read only"
 		switch {
 		case strings.Contains(string(body), "DROP"):
@@ -53,12 +58,19 @@ func llmStub(t *testing.T, calls *atomic.Int32) *httptest.Server {
 		case strings.Contains(string(body), "UPDATE"):
 			tool, title = "MediumRiskAISessionAnalyzer", "Changes rows"
 		}
-		args, _ := json.Marshal(map[string]string{"title": title, "explanation": title + "."})
+		args, err := json.Marshal(map[string]string{"title": title, "explanation": title + "."})
+		if err != nil {
+			t.Errorf("llm stub: encode arguments: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"id":"c1","object":"chat.completion","created":0,"model":"stub",
+		if _, err := fmt.Fprintf(w, `{"id":"c1","object":"chat.completion","created":0,"model":"stub",
 			"choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":"",
 			"tool_calls":[{"id":"t1","type":"function","function":{"name":%q,"arguments":%q}}]}}],
-			"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, tool, string(args))
+			"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, tool, string(args)); err != nil {
+			t.Errorf("llm stub: write response: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 	return srv
