@@ -431,6 +431,7 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		if err != nil {
 			return err
 		}
+		ReportHostedAnalyzer(os.Stderr, cfg)
 		return PrintLanes(os.Stdout, cfg.lic, lanes)
 	}
 
@@ -903,13 +904,21 @@ func Run(cfg *Config, det Plugin) error {
 	if err := verifyAnalyzer(analyzerDeps); err != nil {
 		return err
 	}
+	var analyzerCfg *AnalyzerConfig
 	if analyzerDeps != nil {
+		analyzerCfg = analyzerDeps.cfg
 		analyzerDeps.log = log
 		log.Info("risk analyzer attached",
-			"provider", cfg.Analyzer.Provider,
-			"model", cfg.Analyzer.Model,
-			"send", sendModeOrDefault(cfg.Analyzer.Send),
-			"fail_open", cfg.Analyzer.failOpen())
+			"provider", analyzerCfg.providerName(),
+			"model", analyzerCfg.modelName(),
+			"send", sendModeOrDefault(analyzerCfg.Send),
+			"fail_open", analyzerCfg.failOpen())
+		if analyzerCfg.hosted() {
+			log.Warn(hostedPIINotice)
+		}
+		if analyzerCfg.hostedDefault {
+			log.Warn(hostedDefaultNotice)
+		}
 	}
 
 	// SetupWith loads them for a config from a file or a plane; Run loads
@@ -1105,7 +1114,7 @@ func Run(cfg *Config, det Plugin) error {
 			am = analyzerDeps.metrics
 		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, cfg.Analyzer, am, licState, log)
+			view, ac, analyzerCfg, am, licState, log)
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
@@ -1971,8 +1980,8 @@ func serveAdmin(
 		// and which the config only ever named by file path.
 		if analyzerCfg != nil {
 			resp["analyzer"] = map[string]any{
-				"provider":      analyzerCfg.Provider,
-				"model":         analyzerCfg.Model,
+				"provider":      analyzerCfg.providerName(),
+				"model":         analyzerCfg.modelName(),
 				"endpoint_host": analyzerCfg.endpointHost(),
 				"send":          sendModeOrDefault(analyzerCfg.Send),
 				"fail_open":     analyzerCfg.failOpen(),

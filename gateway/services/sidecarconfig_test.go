@@ -422,7 +422,11 @@ func TestSpendApprovalOnALaneThatCannotSettleIsReported(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "http, grpc and spanner lanes only") {
 		t.Fatalf("spend_approval_on on a postgres lane was accepted: %v", err)
 	}
-	api := daemon.Config{Listeners: []daemon.ListenerConfig{{Name: "api", Protocol: "http", Analyzer: block()}}}
+	api := daemon.Config{
+		// The plane serves an analyzer only with a provider named.
+		Analyzer:  &daemon.AnalyzerConfig{Provider: "anthropic", Model: "m"},
+		Listeners: []daemon.ListenerConfig{{Name: "api", Protocol: "http", Analyzer: block()}},
+	}
 	if err := validateComposedAnalyzers(api); err != nil {
 		t.Errorf("spend_approval_on on an http lane was refused: %v", err)
 	}

@@ -193,6 +193,9 @@ func CheckSidecarConfiguration(cfg daemon.Config) error {
 	if err != nil {
 		return err
 	}
+	if problems := cfg.CheckServedAnalyzer(); len(problems) > 0 {
+		return ErrSidecarConfigInvalid{Err: errors.New(problems[0]), Problems: problems}
+	}
 	if err := daemon.CheckConfigBytes(raw); err != nil {
 		invalid := ErrSidecarConfigInvalid{Err: err, Problems: []string{err.Error()}}
 		var problems daemon.ConfigProblems

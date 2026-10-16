@@ -4,9 +4,12 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/license"
+	"github.com/hoophq/hoop/sidecar/license/licensetest"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -27,18 +30,6 @@ func pgLane(rules ...policy.Rule) *Config {
 			Name: "appdb", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
 			Guardrails: &GuardrailsConfig{Rules: rules},
 		}},
-	}
-}
-
-// An ai_analysis rule with no analyzer section would load and never fire.
-// This package refuses that shape everywhere else and must refuse it here.
-func TestAIRuleWithoutAnalyzerSectionIsRefused(t *testing.T) {
-	err := pgLane(aiRule("risky")).Validate()
-	if err == nil {
-		t.Fatal("an ai_analysis rule with no analyzer section was accepted")
-	}
-	if !strings.Contains(err.Error(), "analyzer") {
-		t.Errorf("the error does not name the missing section: %v", err)
 	}
 }
 
@@ -599,5 +590,83 @@ func TestSamplingRangesAreChecked(t *testing.T) {
 		case tc.want != "" && !strings.Contains(got, tc.want):
 			t.Errorf("%+v: problems %q, want one naming %s", tc.cfg, got, tc.want)
 		}
+	}
+}
+
+func boolp(b bool) *bool { return &b }
+
+// Without a provider, the license decides: a sidecar without an Enterprise
+// license uses the hosted model and says why, an Enterprise one refuses to
+// start and names both ways out, and false turns the default off.
+func TestHostedDefaultFollowsTheLicense(t *testing.T) {
+	lane := []ListenerConfig{{Name: "pg", Protocol: "postgres", Analyzer: &LaneAnalyzerConfig{HighRisk: "warn"}}}
+	expired := licensetest.Status(t, licensetest.Expiring(-time.Hour))
+
+	free := &Config{Listeners: lane}
+	if a, err := free.effectiveAnalyzer(); err != nil || a == nil || !a.hostedDefault || a.providerName() != hostedProvider {
+		t.Errorf("no license, no section: %+v, %v; want the hosted default", a, err)
+	}
+	var b strings.Builder
+	ReportHostedAnalyzer(&b, free)
+	if !strings.Contains(b.String(), "PII") || !strings.Contains(b.String(), "use_hoop_llm_provider: false") {
+		t.Errorf("default notice = %q, want the PII warning and the way to turn it off", b.String())
+	}
+
+	for name, lic := range map[string]license.Status{"valid": licensed(t), "expired": expired} {
+		ent := &Config{Listeners: lane, lic: lic}
+		if _, err := ent.effectiveAnalyzer(); err == nil || !strings.Contains(err.Error(), "use_hoop_llm_provider: true") {
+			t.Errorf("%s enterprise license, no provider: %v, want a refusal naming the opt-in", name, err)
+		}
+		ent.Analyzer = &AnalyzerConfig{UseHoopLLMProvider: boolp(true)}
+		if a, err := ent.effectiveAnalyzer(); err != nil || !a.hosted() || a.hostedDefault {
+			t.Errorf("%s enterprise license, opted in: %+v, %v", name, a, err)
+		}
+	}
+
+	withCred := &Config{Listeners: lane, Analyzer: &AnalyzerConfig{CredentialsFile: "/k"}}
+	if a, _ := withCred.effectiveAnalyzer(); len(a.validate(false, false)) == 0 {
+		t.Error("the hosted default accepted a credentials_file it would try to read")
+	}
+
+	off := &Config{Listeners: lane, Analyzer: &AnalyzerConfig{UseHoopLLMProvider: boolp(false)}}
+	if a, _ := off.effectiveAnalyzer(); a.hosted() || len(a.validate(false, false)) == 0 {
+		t.Errorf("use_hoop_llm_provider: false with no provider: hosted=%v, want off and a validation problem", a.hosted())
+	}
+
+	if a, err := (&Config{}).effectiveAnalyzer(); a != nil || err != nil {
+		t.Errorf("no lane analyzes: %+v, %v; want no analyzer", a, err)
+	}
+}
+
+// The hosted provider is chosen by use_hoop_llm_provider, never by name, and
+// cannot be combined with a provider or a credential.
+func TestHostedProviderOptInIsExclusive(t *testing.T) {
+	joined := func(c *AnalyzerConfig) string { return strings.Join(c.validate(false, false), "\n") }
+	if got := joined(&AnalyzerConfig{Provider: hostedProvider, Model: "m"}); !strings.Contains(got, "use_hoop_llm_provider") {
+		t.Errorf("provider %q accepted directly: %q", hostedProvider, got)
+	}
+	if got := joined(&AnalyzerConfig{UseHoopLLMProvider: boolp(true)}); got != "" {
+		t.Errorf("opt-in without model or endpoint refused: %q", got)
+	}
+	for name, c := range map[string]*AnalyzerConfig{
+		"with provider":    {UseHoopLLMProvider: boolp(true), Provider: "openai", Model: "m"},
+		"with credentials": {UseHoopLLMProvider: boolp(true), CredentialsFile: "/k"},
+	} {
+		if joined(c) == "" {
+			t.Errorf("opt-in %s accepted", name)
+		}
+	}
+}
+
+// The hosted model is named everywhere an operator looks.
+func TestHostedProviderIsReported(t *testing.T) {
+	a := &AnalyzerConfig{UseHoopLLMProvider: boolp(true)}
+	if a.providerName() != hostedProvider || a.modelName() != analyzer.HostedModel || a.endpointHost() != "ai-session-analyzer-default.hoop.dev" {
+		t.Errorf("reported %q %q %q", a.providerName(), a.modelName(), a.endpointHost())
+	}
+	var b strings.Builder
+	ReportHostedAnalyzer(&b, &Config{Analyzer: &AnalyzerConfig{Provider: "openai", Model: "m"}})
+	if b.Len() != 0 {
+		t.Errorf("own provider got the hosted notice: %q", b.String())
 	}
 }

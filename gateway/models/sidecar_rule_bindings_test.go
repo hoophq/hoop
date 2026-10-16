@@ -427,6 +427,8 @@ func TestASecondAnalyzerRuleOnOneListenerIsRefusedAtTheWrite(t *testing.T) {
 		KeyHash:   models.HashAPIKey("hsc_analyzer_conflict_test"),
 		CreatedBy: "tests@hoop.dev",
 		Configuration: models.SidecarConfiguration{
+			// The plane serves an analyzer only with a provider named.
+			Analyzer: &daemon.AnalyzerConfig{Provider: "anthropic", Model: "m"},
 			Listeners: []daemon.ListenerConfig{{
 				Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
 				Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40},
@@ -574,6 +576,8 @@ func TestABoundAnalyzerRuleCarriesItsApprovalRuleIntoTheServedConfig(t *testing.
 		KeyHash:   models.HashAPIKey("hsc_review_target_test"),
 		CreatedBy: "tests@hoop.dev",
 		Configuration: models.SidecarConfiguration{
+			// The plane serves an analyzer only with a provider named.
+			Analyzer: &daemon.AnalyzerConfig{Provider: "anthropic", Model: "m"},
 			Listeners: []daemon.ListenerConfig{{
 				Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
 				// The operator's own block: a budget, and no approval rule.
