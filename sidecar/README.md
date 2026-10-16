@@ -1407,6 +1407,13 @@ denial:
 ERROR:  statement held for human approval: still waiting for approval after 30m0s; run the statement again once it is approved (approval 9f97…)
 ```
 
+A rejection carries the approver's reason when they gave one, quoted and cut
+at 200 bytes so the id still fits in a mysql error:
+
+```
+ERROR:  statement held for human approval: the approval request was rejected: "use the replica" (approval 9f97…)
+```
+
 The wait ends early when the connection does. A client that hangs up, or an
 upstream that closes, stops the polling before anything is claimed, so the
 approval stays for the retry. The audit record carries the cause. Ctrl-C in

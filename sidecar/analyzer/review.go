@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -30,6 +31,11 @@ type ReviewResult struct {
 	// else reads it, so a status this package has never heard of still
 	// denies.
 	Status string
+
+	// Reason is what the approver wrote when they rejected the review, or
+	// empty. The denial carries it, so a client that waited learns why
+	// without asking an approver. A backend that predates it sends none.
+	Reason string
 }
 
 // Review statuses, spelled as the control plane reports them. They are read
@@ -382,7 +388,7 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		// answers. Waiting is worth it, since a refusal gives it back.
 		return e.wait(ctx, res.ID, notes)
 	}
-	return e.denyHold(notes, res.ID, res.Status, reviewReason(res.Status))
+	return e.denyHold(notes, res.ID, res.Status, reviewReason(res))
 }
 
 // reviewText renders the bytes the backend files and matches an approval
@@ -454,7 +460,7 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 			return e.release(ctx, notes, res)
 		}
 		if res.Status != reviewPending && res.Status != reviewProcessing {
-			return e.denyHold(notes, reviewID, res.Status, reviewReason(res.Status))
+			return e.denyHold(notes, reviewID, res.Status, reviewReason(res))
 		}
 
 		left := time.Until(deadline)
@@ -603,11 +609,14 @@ func operatorMessage(operator string) string {
 // files a new review and pages the approvers again. An expiry comes from a
 // time limit on the control plane's approval rule: nobody decided in time, or
 // the approval was not used in time.
-func reviewReason(status string) string {
-	switch status {
+func reviewReason(res ReviewResult) string {
+	switch res.Status {
 	case reviewPending:
 		return "waiting for approval"
 	case reviewRejected:
+		if res.Reason != "" {
+			return "the approval request was rejected: " + rejectionReason(res.Reason)
+		}
 		return "the approval request was rejected"
 	case reviewRevoked:
 		return "the approval was revoked"
@@ -624,4 +633,23 @@ func reviewReason(status string) string {
 		return "another request is using this approval; check the approval request before resending"
 	}
 	return "the statement was not released"
+}
+
+// maxReasonBytes bounds the approver's reason in a denial. The plane stores
+// any length, and the approval id comes after the reason: the mysql client
+// keeps only the first 512 bytes of an error (MYSQL_ERRMSG_SIZE).
+const maxReasonBytes = 200
+
+// rejectionReason quotes the approver's text, cut at maxReasonBytes on a rune
+// boundary. Quoted, so a newline or a NUL in it cannot break the protocol's
+// error frame, and the developer sees where the approver's words end.
+func rejectionReason(reason string) string {
+	if len(reason) > maxReasonBytes {
+		cut := maxReasonBytes
+		for cut > 0 && !utf8.RuneStart(reason[cut]) {
+			cut--
+		}
+		reason = reason[:cut] + "..."
+	}
+	return strconv.Quote(reason)
 }
