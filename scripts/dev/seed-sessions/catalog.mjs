@@ -84,8 +84,8 @@ const sidecarEvent = (seq, session, sec, kind, fields = {}) => ({
 })
 
 // sc-full has every event kind that writes (gateway/api/sidecar/events_test.go
-// fullSession); sc-simple is the parity check SC-10 session. They start
-// between the kinds of the first page (see FIRST_PAGE).
+// fullSession); sc-simple is the parity check SC-10 session. sc-full starts
+// on the first page of /sessions (see LEADING).
 const SC_FULL = { id: 'seed-sc-full', start: '2026-10-03T16:32:30Z' }
 const SC_SIMPLE = { id: 'seed-sc-simple', start: '2026-10-03T16:12:30Z' }
 export const SIDECAR_EVENTS = [
@@ -180,14 +180,14 @@ function review(key, at, fields) {
   }
 }
 
-// Kinds are written newest first, five minutes apart. The kinds the harness
-// ticket lists come first, so the first page of /sessions (20 rows, with
-// seed-sc-full) shows one of each; the others follow in the order they are
-// defined. The steps of seed-wf-short are listed last to first, so they run
-// in order.
+// Kinds are written newest first, five minutes apart: LEADING in its order,
+// then the others in the order they are defined. LEADING starts with the kinds
+// the harness ticket lists, so the first page of /sessions (20 rows, with
+// seed-sc-full) holds one of each; seed.test.mjs checks it. The steps of
+// seed-wf-short are listed last to first, so they run in order.
 const KINDS_START = Date.parse('2026-10-03T18:00:00Z')
 const kindAt = (i) => iso(KINDS_START - i * 5 * 60 * 1000)
-export const FIRST_PAGE = [
+export const LEADING = [
   'connect-live-pty', 'exec-bash-ok', 'exec-bash-exit-1', 'exec-bash-stderr', 'exec-pg-table', 'exec-pg-error',
   'connect-pty', 'connect-ssh', 'connect-pg-wire', 'connect-http', 'review-pending', 'review-approved',
   'review-rejected', 'review-approved-time-window', 'review-executed', 'exec-output-5mb', 'exec-input-5mb',
@@ -516,7 +516,7 @@ function kinds() {
     connection: 'seed-bash', input: 'make smoke-test', correlation_id: short, status: 'open', stream: null,
   })
 
-  const rank = (key) => (FIRST_PAGE.includes(key) ? FIRST_PAGE.indexOf(key) : FIRST_PAGE.length)
+  const rank = (key) => (LEADING.includes(key) ? LEADING.indexOf(key) : LEADING.length)
   return defs
     .map((d, i) => ({ ...d, i }))
     .sort((a, b) => rank(a.key) - rank(b.key) || a.i - b.i)

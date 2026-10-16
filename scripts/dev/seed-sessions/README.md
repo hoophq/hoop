@@ -66,9 +66,11 @@ SEED_DB_URI=... node scripts/dev/seed-sessions/seed.mjs dump > a.dump
 `org_id`. Seed two new databases, dump both, and `diff` them: it is empty.
 
 `make test-seed-sessions` checks that the ids match the gateway's, that the SQL
-does not read the clock, and that this README matches the catalog; CI runs it in
-the "Webapp v2 Lint and Build" job. With `SEED_DB_URI` and `API_URL` set, it
-also seeds that stack twice and compares the dumps.
+does not read the clock, that the first page holds every kind the ticket lists,
+and that this README matches the catalog; CI runs it in the "Webapp v2 Lint and
+Build" job. With `SEED_DB_URI` and `API_URL` set, it also seeds that stack twice
+and compares the dumps. With `SEED_DB_URI_2` and `API_URL_2` set to a second new
+stack, it seeds both and compares them.
 
 ## Sessions
 

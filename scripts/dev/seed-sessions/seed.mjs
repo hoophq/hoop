@@ -241,25 +241,29 @@ function orgId() {
 // that check, and only when neither side has them yet.
 async function sameStackLogin(org, seedUsers) {
   const admin = seedUsers.admin.email
+  // 401: the gateway has the user with another password; 404: it has none.
   const login = async () => {
     const { res } = await api('POST', '/localauth/login', {
       body: { email: admin, password: PASSWORD }, allow: [401, 404],
     })
-    return res.ok ? res.headers.get('token') : null
+    return { token: res.ok ? res.headers.get('token') : null, status: res.status }
   }
-  const where = new URL(DB_URI)
-  const mismatch = (detail) => fail(`API_URL ${API_URL} and SEED_DB_URI ${where.host}${where.pathname} are not ` +
-    `the same stack: ${detail}. Point both at one gateway and its database.`)
+  const mismatch = (detail) => fail(`API_URL ${API_URL} and SEED_DB_URI ${dbName()} are not the same stack: ` +
+    `${detail}. Point both at one gateway and its database.`)
 
-  let token = await login()
-  if (!token && psql(`SELECT 1 FROM private.users WHERE subject = ${str(admin)};`).trim()) {
+  let { token, status } = await login()
+  if (status === 404 && psql(`SELECT 1 FROM private.users WHERE subject = ${str(admin)};`).trim()) {
     mismatch(`the database has ${admin}, the gateway does not`)
   }
   if (token) await checkOrg(token)
+  // Also resets a changed password of a seed user.
   psql(`BEGIN;\n${usersSql(org, seedUsers)}\nCOMMIT;`)
   if (!token) {
-    token = await login()
-    if (!token) mismatch(`${admin} was written to the database, and the gateway does not know it`)
+    ;({ token, status } = await login())
+    if (!token) {
+      mismatch(`${admin} was written to the database, and the gateway ` +
+        (status === 404 ? 'does not know it' : 'refuses its password'))
+    }
     await checkOrg(token)
   }
   return token
@@ -267,6 +271,17 @@ async function sameStackLogin(org, seedUsers) {
   async function checkOrg(t) {
     const { json: me } = await api('GET', '/userinfo', { token: t })
     if (me.org_id !== org) mismatch(`the gateway's organization is ${me.org_id}, the database's is ${org}`)
+  }
+}
+
+// The database as host and path, without credentials; libpq keyword DSNs
+// (host=... dbname=...) are not URLs.
+function dbName() {
+  try {
+    const u = new URL(DB_URI)
+    return `${u.host}${u.pathname}`
+  } catch {
+    return '(a keyword DSN)'
   }
 }
 

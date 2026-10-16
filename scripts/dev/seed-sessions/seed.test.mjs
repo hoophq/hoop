@@ -2,12 +2,13 @@
 //
 // The SQL tests run anywhere. "two runs write the same rows" needs a stack:
 // set SEED_DB_URI and API_URL (and SEED_LICENSE_FILE on a new database).
+// "two stacks get the same rows" also needs SEED_DB_URI_2 and API_URL_2.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { FIRST_PAGE, SIDECAR, SIDECAR_SESSIONS, sessions, uuidv5 } from './catalog.mjs'
+import { LEADING, SIDECAR, SIDECAR_EVENTS, SIDECAR_SESSIONS, sessions, uuidv5 } from './catalog.mjs'
 import { seedSql, usersSql } from './seed.mjs'
 import { users } from './catalog.mjs'
 
@@ -34,7 +35,7 @@ test('the SQL does not read the clock', (t) => {
 test('the seed holds every kind the harness needs', () => {
   const list = sessions()
   const keys = new Set(list.map((s) => s.key))
-  for (const key of FIRST_PAGE) assert.ok(keys.has(key), `first page kind ${key}`)
+  for (const key of LEADING) assert.ok(keys.has(key), `leading kind ${key}`)
   assert.equal(keys.size, list.length, 'session keys are unique')
   assert.ok(list.length > 100, 'more than 100 sessions')
   assert.ok(list.filter((s) => s.correlation_id === 'seed-workflow-210-steps').length > 200, 'a workflow over 200')
@@ -43,8 +44,25 @@ test('the seed holds every kind the harness needs', () => {
   for (const status of ['PENDING', 'APPROVED', 'REJECTED', 'EXECUTED']) {
     assert.ok(list.some((s) => s.review?.status === status), `a ${status} review`)
   }
-  // The first page of /sessions is these kinds, newest first.
-  assert.deepEqual(list.slice(0, FIRST_PAGE.length).map((s) => s.key), FIRST_PAGE)
+})
+
+// The kinds the harness ticket lists, one session each.
+const TICKET_KINDS = [
+  'exec-bash-ok', 'exec-bash-exit-1', 'exec-bash-stderr', 'exec-pg-table', 'exec-pg-error', 'connect-pty',
+  'connect-ssh', 'connect-pg-wire', 'connect-http', 'review-pending', 'review-approved', 'review-rejected',
+  'review-approved-time-window', 'review-executed', 'connect-live-pty', 'exec-output-5mb', 'exec-input-5mb',
+  'workflow-short-3', 'exec-guardrail-block', 'seed-sc-full',
+]
+
+test('the first page of /sessions holds every kind the ticket lists', () => {
+  // The list sorts by created_at, newest first, 20 rows a page. A sidecar
+  // session starts at its session_start event.
+  const starts = SIDECAR_EVENTS.filter((e) => e.event.kind === 'session_start')
+    .map((e) => ({ key: e.event.session_id, at: e.event.timestamp }))
+  const rows = [...sessions().map((s) => ({ key: s.key, at: s.created_at })), ...starts]
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+  const page = rows.slice(0, 20).map((r) => r.key)
+  for (const key of TICKET_KINDS) assert.ok(page.includes(key), `${key} is on the first page`)
 })
 
 // The rows of the Sessions behavior matrix (project document) whose Data /
@@ -71,15 +89,26 @@ test('README maps every SEED row to sessions that exist', () => {
   }
 })
 
-const stack = process.env.SEED_DB_URI && process.env.API_URL
-test('two runs write the same rows', { skip: !stack && 'set SEED_DB_URI and API_URL' }, () => {
+// Seeds the stack env names, then returns its dump.
+function seedAndDump(env) {
   const run = (...args) => {
-    const r = spawnSync(process.execPath, [SEED, ...args], { encoding: 'utf8', maxBuffer: 1 << 28 })
+    const r = spawnSync(process.execPath, [SEED, ...args], { encoding: 'utf8', maxBuffer: 1 << 28, env })
     assert.equal(r.status, 0, r.stderr)
     return r.stdout
   }
   run()
-  const first = run('dump')
-  run()
-  assert.equal(run('dump'), first)
+  return run('dump')
+}
+
+const stack = process.env.SEED_DB_URI && process.env.API_URL
+test('two runs write the same rows', { skip: !stack && 'set SEED_DB_URI and API_URL' }, () => {
+  const first = seedAndDump(process.env)
+  assert.equal(seedAndDump(process.env), first)
+})
+
+// Run it on two new databases: the org ids differ, the dumps do not.
+const second = stack && process.env.SEED_DB_URI_2 && process.env.API_URL_2
+test('two stacks get the same rows', { skip: !second && 'set SEED_DB_URI_2 and API_URL_2 too' }, () => {
+  const env2 = { ...process.env, SEED_DB_URI: process.env.SEED_DB_URI_2, API_URL: process.env.API_URL_2 }
+  assert.equal(seedAndDump(env2), seedAndDump(process.env))
 })
