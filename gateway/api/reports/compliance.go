@@ -66,7 +66,7 @@ func collectComplianceSnapshot(ctx *storagev2.Context) (*complianceSnapshot, err
 		return nil, fmt.Errorf("failed listing users: %v", err)
 	}
 
-	agents, err := models.ListAgents(ctx.OrgID, "")
+	agents, err := models.ListAgents(models.DB, ctx.OrgID, models.AgentFilterOption{})
 	if err != nil {
 		return nil, fmt.Errorf("failed listing agents: %v", err)
 	}

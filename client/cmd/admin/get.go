@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -17,13 +18,16 @@ import (
 )
 
 var (
-	getShowTagsFlag bool
-	queryFlag       []string
+	getShowTagsFlag    bool
+	getTagSelectorFlag string
+	queryFlag          []string
 )
 
 func init() {
 	getCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One off: (json,wide)")
-	getCmd.Flags().BoolVar(&getShowTagsFlag, "show-tags", false, "Display the tags column (connections only)")
+	getCmd.Flags().BoolVar(&getShowTagsFlag, "show-tags", false, "Display the tags column (agents and connections)")
+	getCmd.Flags().StringVar(&getTagSelectorFlag, "tag-selector", "",
+		"Filter agents or connections by tags, supports '=' and '!=' (e.g. env=prod,team!=data)")
 	getCmd.Flags().StringSliceVarP(&queryFlag, "query", "q", []string{}, "The query attributes to append in the http request")
 }
 
@@ -43,6 +47,7 @@ var getLongDesc = `Display one or many resources. Available ones:
 
 var getExamplesDesc = `
 hoop admin get agents
+hoop admin get agents --show-tags --tag-selector 'environment=prod,team!=data'
 hoop admin get connections -o json
 hoop admin get plugins`
 
@@ -68,9 +73,27 @@ var getCmd = &cobra.Command{
 				apir.queryAttributes.Set(key, val)
 			}
 		}
+		// Its own flag: --query splits values on commas, and a selector holds them.
+		if err := setTagSelector(apir, getTagSelectorFlag); err != nil {
+			styles.PrintErrorAndExit("%s", err.Error())
+		}
 		obj, _, err := httpRequest(apir)
 		if err != nil {
 			styles.PrintErrorAndExit("%s", err.Error())
+		}
+		if isAgentResource(apir.resourceType) {
+			// A gateway without agent tags ignores the selector and lists every
+			// agent, and has no tags to show.
+			var err error
+			switch {
+			case getTagSelectorFlag != "":
+				err = checkAgentListHasTags(obj, "--tag-selector was not applied")
+			case getShowTagsFlag:
+				err = checkAgentListHasTags(obj, "--show-tags has no tags to show")
+			}
+			if err != nil {
+				styles.PrintErrorAndExit("%s", err.Error())
+			}
 		}
 		if apir.decodeTo == "raw" {
 			jsonData, _ := obj.([]byte)
@@ -81,18 +104,25 @@ var getCmd = &cobra.Command{
 		defer w.Flush()
 		switch apir.resourceType {
 		case "agent", "agents":
-			fmt.Fprintln(w, "UID\tNAME\tMODE\tVERSION\tHOSTNAME\tPLATFORM\tSTATUS\t")
-			switch contents := obj.(type) {
-			case map[string]any:
-				m := contents
+			header := "UID\tNAME\tMODE\tVERSION\tHOSTNAME\tPLATFORM\tSTATUS\t"
+			if getShowTagsFlag {
+				header += "TAGS\t"
+			}
+			fmt.Fprintln(w, header)
+			printAgent := func(m map[string]any) {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%v\t%v\t%s\t",
 					m["id"], m["name"], m["mode"], toStr(m["version"]), toStr(m["hostname"]), toStr(m["platform"]), normalizeStatus(m["status"]))
+				if getShowTagsFlag {
+					fmt.Fprintf(w, "%v\t", joinMap(m["tags"]))
+				}
 				fmt.Fprintln(w)
+			}
+			switch contents := obj.(type) {
+			case map[string]any:
+				printAgent(contents)
 			case []map[string]any:
 				for _, m := range contents {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%v\t%v\t%v\t%s\t",
-						m["id"], m["name"], m["mode"], toStr(m["version"]), toStr(m["hostname"]), toStr(m["platform"]), normalizeStatus(m["status"]))
-					fmt.Fprintln(w)
+					printAgent(m)
 				}
 			}
 		case "sessions":
@@ -558,13 +588,61 @@ func joinMap(v any) (res string) {
 		return "-"
 	}
 
-	for k, v := range m {
-		res += k + "=" + fmt.Sprintf("%v,", v)
+	// Sorted, so the column reads the same on every run.
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		res += k + "=" + fmt.Sprintf("%v,", m[k])
 	}
 	if res == "" {
 		return
 	}
 	return res[:len(res)-1]
+}
+
+func isAgentResource(resourceType string) bool {
+	return resourceType == "agent" || resourceType == "agents"
+}
+
+// setTagSelector sends selector as the tag_selector query attribute. Only the
+// agents and connections lists read it.
+func setTagSelector(apir *apiResource, selector string) error {
+	if selector == "" {
+		return nil
+	}
+	switch apir.resourceType {
+	case "agent", "agents", "conn", "connection", "connections":
+	default:
+		return fmt.Errorf("--tag-selector works with agents and connections only, got %q", apir.resourceType)
+	}
+	if apir.name != "" {
+		return fmt.Errorf("--tag-selector filters a list, remove the resource name %q", apir.name)
+	}
+	apir.queryAttributes.Set("tag_selector", selector)
+	return nil
+}
+
+// checkAgentListHasTags fails when the agents carry no tags attribute, which
+// means the gateway does not know agent tags and ignored the selector.
+func checkAgentListHasTags(obj any, what string) error {
+	var items []map[string]any
+	switch v := obj.(type) {
+	case []map[string]any:
+		items = v
+	case []byte:
+		if err := json.Unmarshal(v, &items); err != nil {
+			return fmt.Errorf("failed decoding the agents list: %v", err)
+		}
+	}
+	for _, m := range items {
+		if _, ok := m["tags"]; !ok {
+			return errNoAgentTags(what)
+		}
+	}
+	return nil
 }
 
 func redactedMetrics(v any) string {
