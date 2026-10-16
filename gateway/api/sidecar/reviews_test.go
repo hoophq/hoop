@@ -395,6 +395,17 @@ func TestToOpenApiSidecarReviewOmitsConnectionFields(t *testing.T) {
 	assert.Equal(t, []string{"security"}, got.ForceApprovalGroups)
 }
 
+// A held client reads the approver's reason in its denial, so the answer to a
+// claim carries it.
+func TestToOpenApiSidecarReviewCarriesTheRejectionReason(t *testing.T) {
+	got := toOpenApiSidecarReview(&models.Review{
+		ID:              "review-1",
+		Status:          models.ReviewStatusRejected,
+		RejectionReason: ptr.String("use the replica"),
+	})
+	assert.Equal(t, "use the replica", ptr.ToString(got.RejectionReason))
+}
+
 // Without the middleware there is no sidecar, and the handler must say so
 // rather than read a nil row: the difference between 401 and a panic.
 func TestPostReviewRefusesARequestThatSkippedTheMiddleware(t *testing.T) {

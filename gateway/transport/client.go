@@ -96,10 +96,12 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	}
 
 	if err := requestProxyConnection(stream); err != nil {
+		closeRefusedSession(pctx.OrgID, pctx.UserID, pctx.ConnectionName, stream.GetMeta, err)
 		return err
 	}
 
 	if err := validateConnectionType(clientVerb, pctx); err != nil {
+		closeRefusedSession(pctx.OrgID, pctx.UserID, pctx.ConnectionName, stream.GetMeta, err)
 		return err
 	}
 

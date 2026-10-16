@@ -182,6 +182,10 @@ func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
 	if session.Review != nil {
 		reviewersGroups := make([]string, 0)
 		for _, group := range session.Review.ReviewGroups {
+			// It records who denied, not a reviewer group: the review read skips it too.
+			if group.AddedOnDenial {
+				continue
+			}
 			reviewersGroups = append(reviewersGroups, group.GroupName)
 		}
 

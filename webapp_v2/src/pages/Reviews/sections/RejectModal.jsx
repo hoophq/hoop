@@ -19,7 +19,7 @@ export default function RejectModal({
       <Stack gap="lg">
         <Text size="sm">
           {sidecar
-            ? 'The sidecar denies this statement and the reason reaches whoever asks about it.'
+            ? 'The sidecar denies this statement. A client that waits reads the reason in its error; an agent reads it in the approval status.'
             : 'The request is denied, and the reason reaches the requester.'}
         </Text>
         <Textarea

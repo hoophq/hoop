@@ -16,6 +16,8 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
@@ -179,10 +181,9 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ExtensionsOnDisconnectFn: transportext.OnDisconnect,
 	}
 
-	if err := refuseSidecarMirror(gwctx.Connection.Name, gwctx.Connection.SidecarID); err != nil {
-		return err
-	}
-	if err := validateConnectionAccessMode(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {
+	if err := refuseConnection(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {
+		closeRefusedSession(gwctx.UserContext.OrgID, gwctx.UserContext.UserID, gwctx.Connection.Name,
+			func(key string) string { return commongrpc.MetaGet(md, key) }, err)
 		return err
 	}
 
@@ -196,6 +197,32 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 
 func (s *Server) HealthCheck(ctx context.Context, req *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) {
 	return &pb.HealthCheckResponse{Status: "OK"}, nil
+}
+
+// refuseConnection runs the gates that refuse a client stream before it
+// reaches the plugins.
+func refuseConnection(clientVerb, clientOrigin string, connInfo types.ConnectionInfo) error {
+	if err := refuseSidecarMirror(connInfo.Name, connInfo.SidecarID); err != nil {
+		return err
+	}
+	return validateConnectionAccessMode(clientVerb, clientOrigin, connInfo)
+}
+
+// closeRefusedSession closes the session an API exec wrote as open before it
+// dialed this stream, when the stream is refused before the plugins run: the
+// audit plugin never closes it. Only the gateway's clientexec writes the row
+// first, and it proves itself with the per-process plain-exec-key. Any other
+// client picks its own session-id, so its refusal closes nothing.
+func closeRefusedSession(orgID, userID, connectionName string, meta func(key string) string, refusal error) {
+	sessionID := meta("session-id")
+	if sessionID == "" || clientexec.PlainExecSecretKey == "" || meta("plain-exec-key") != clientexec.PlainExecSecretKey {
+		return
+	}
+	err := services.CloseRefusedSession(orgID, userID, connectionName, sessionID,
+		status.Convert(refusal).Message())
+	if err != nil {
+		log.With("sid", sessionID).Warnf("failed closing the refused session: %v", err)
+	}
 }
 
 // refuseSidecarMirror refuses a session on a connection that mirrors a

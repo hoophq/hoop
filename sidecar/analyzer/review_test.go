@@ -1034,3 +1034,56 @@ func TestNoConnectionReviewModeUsesTheListener(t *testing.T) {
 		t.Errorf("review_mode_source is %q, want listener", got)
 	}
 }
+
+// The approver's reason reaches the client that waited, quoted so its text
+// cannot break the error frame, and cut so the approval id still fits in the
+// 512 bytes a mysql client keeps. A backend that sends none keeps the old line.
+func TestARejectionCarriesTheApproversReason(t *testing.T) {
+	long := strings.Repeat("é", 150) // 300 bytes
+	for _, tc := range []struct {
+		name, reason, want string
+	}{
+		{"no reason", "", "the approval request was rejected (approval 9f97)"},
+		{"a reason", "use the replica", `the approval request was rejected: "use the replica" (approval 9f97)`},
+		{"a newline", "no\nwrites", `rejected: "no\nwrites" (approval 9f97)`},
+		{"a long reason", long, `rejected: "` + strings.Repeat("é", 97) + `..." (approval 9f97)`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rejected := analyzer.ReviewResult{ID: "9f97", Status: "REJECTED", Reason: tc.reason}
+			for name, rev := range map[string]*recordingReviewer{
+				"at filing": {res: rejected},
+				"in a wait": {res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+					claims: []analyzer.ReviewResult{rejected}},
+			} {
+				v := holdingEvaluator(t, rev, nil).Evaluate(deleteStatement())
+				if !v.Denied || !strings.HasSuffix(v.Message, tc.want) {
+					t.Errorf("%s: denial %q, want it to end with %q", name, v.Message, tc.want)
+				}
+				if strings.Contains(v.Message, "\n") {
+					t.Errorf("%s: the denial carries a raw newline: %q", name, v.Message)
+				}
+			}
+		})
+	}
+}
+
+// The bound holds after quoting: text that escapes to several bytes per byte
+// must not push a full-size approval id past the 512 bytes mysql keeps.
+func TestARejectionReasonFitsTheMySQLErrorBuffer(t *testing.T) {
+	const id = "0f8b2c1e-7a54-4c3e-9d2b-5e6f7a8b9c0d"
+	for name, reason := range map[string]string{
+		"tabs":              strings.Repeat("\t", 200),
+		"zero-width spaces": strings.Repeat("\u200b", 66),
+		"NUL bytes":         strings.Repeat("\x00", 300),
+		"invalid UTF-8":     strings.Repeat("\xff", 300),
+	} {
+		rev := &recordingReviewer{res: analyzer.ReviewResult{ID: id, Status: "REJECTED", Reason: reason}}
+		v := holdingEvaluator(t, rev, nil).Evaluate(deleteStatement())
+		if !v.Denied || !strings.HasSuffix(v.Message, "(approval "+id+")") {
+			t.Errorf("%s: denial %q does not end with the approval id", name, v.Message)
+		}
+		if n := len("ERROR 1105 (HY000): ") + len(v.Message); n > 512 {
+			t.Errorf("%s: the mysql error is %d bytes, over 512", name, n)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -376,7 +377,8 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 							'owner_name', rg.owner_name,
 							'owner_slack_id', rg.owner_slack_id,
 							'forced_review', rg.forced_review,
-							'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+							'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+							'added_on_denial', rg.added_on_denial
 						)
 					)
 					FROM private.review_groups AS rg
@@ -494,7 +496,8 @@ func IsValidSessionVerb(v string) bool {
 }
 
 // sessionListVisibilityCondition restricts a non-admin to their own sessions
-// plus the ones they are a reviewer of. References `rv`.
+// plus the ones they are a reviewer of. References `rv`. A row added on denial
+// records who denied, not a reviewer group, as reviewVisibilityCondition reads it.
 //
 // Kept as a CASE rather than folded into `EXISTS(...) OR s.user_id = @user_id`:
 // s.user_id is nullable, so `s.user_id != @user_id` is NULL for an ownerless
@@ -508,7 +511,7 @@ const sessionListVisibilityCondition = `
 						SELECT 1 FROM private.users u
 						INNER JOIN private.user_groups ug ON ug.user_id = u.id
 						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.subject = @user_id
+						WHERE rg.review_id = rv.id AND NOT rg.added_on_denial AND u.subject = @user_id
 					)
 				ELSE true
 			END`
@@ -530,13 +533,14 @@ const sessionListReviewStatusConditionExact = `
 			rv.status = (@review_status)::private.enum_reviews_status`
 
 // sessionListReviewApproverCondition references `rv`. Emitted only when an
-// approver is actually set, so the IS NOT NULL guard is gone with it.
+// approver is actually set, so the IS NOT NULL guard is gone with it. A row
+// added on denial names no approver.
 const sessionListReviewApproverCondition = `
 			EXISTS (
 				SELECT 1 FROM private.users u
 				INNER JOIN private.user_groups ug ON ug.user_id = u.id
 				INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-				WHERE rg.review_id = rv.id AND u.email = @review_approver_email
+				WHERE rg.review_id = rv.id AND NOT rg.added_on_denial AND u.email = @review_approver_email
 			)`
 
 // sessionListShape records which SQL the filters in a SessionOption require.
@@ -985,6 +989,46 @@ func SetSessionStatusOpenIfReady(db *gorm.DB, orgID, sessionID string) (bool, er
 		Where("org_id = ? AND id = ? AND status = ?", orgID, sessionID, "ready").
 		UpdateColumn("status", "open")
 	return res.RowsAffected > 0, res.Error
+}
+
+// CloseRefusedSession ends an open session whose stream the transport refused
+// before any plugin ran, so the audit plugin never closes it. reason becomes
+// its output. Only a row of userID on connectionName that never streamed
+// closes: a session that started has a stream blob, and its own end closes it.
+// It reports whether a row closed.
+func CloseRefusedSession(db *gorm.DB, orgID, userID, connectionName, sessionID string, exitCode int, reason string, endedAt time.Time) (bool, error) {
+	output, err := json.Marshal([][]any{{0, "e", base64.StdEncoding.EncodeToString([]byte(reason))}})
+	if err != nil {
+		return false, err
+	}
+	var closed bool
+	err = db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Table("private.sessions").
+			Where("org_id = ? AND id = ? AND user_id = ? AND connection = ? AND status = ? AND blob_stream_id IS NULL",
+				orgID, sessionID, userID, connectionName, string(openapi.SessionStatusOpen)).
+			Updates(map[string]any{
+				"status":    string(openapi.SessionStatusDone),
+				"exit_code": exitCode,
+				"ended_at":  endedAt,
+			})
+		if res.Error != nil || res.RowsAffected == 0 {
+			return res.Error
+		}
+		closed = true
+		// A plain insert: it fails, and nothing closes, rather than rewrite a
+		// blob that some other writer owns.
+		blobID := SessionStreamBlobID(sessionID)
+		err := tx.Table("private.blobs").Create(Blob{
+			ID: blobID, OrgID: orgID, BlobStream: output, Type: "session-stream",
+		}).Error
+		if err != nil {
+			return fmt.Errorf("failed creating the session stream blob: %w", err)
+		}
+		return tx.Table("private.sessions").
+			Where("org_id = ? AND id = ?", orgID, sessionID).
+			Update("blob_stream_id", blobID).Error
+	})
+	return closed && err == nil, err
 }
 
 // SetSessionCredentialsExpireAt stores the credential expiry time in the session metadata.
