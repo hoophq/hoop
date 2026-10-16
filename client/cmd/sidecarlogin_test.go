@@ -43,7 +43,7 @@ func TestScreenLoginSavesAndRemembersTheFile(t *testing.T) {
 	if err := rememberSidecarConfig(login, "conf.yaml"); err != nil {
 		t.Fatal(err)
 	}
-	again, err := loadSidecarLogin(sidecarSaveDir(), srv.URL)
+	again, err := loadSidecarLogin(sidecarStateDir(), srv.URL)
 	if err != nil || again == nil || !filepath.IsAbs(again.Config) || filepath.Base(again.Config) != "conf.yaml" {
 		t.Fatalf("remembered %+v, %v", again, err)
 	}
@@ -192,9 +192,8 @@ func TestSavedSidecarLoginIsPrivateAndPerPlane(t *testing.T) {
 	}
 }
 
-// Only a bare run and --login log in. Every other run keeps the answer it had
-// before login existed: a deployment missing its token fails fast, and
-// --validate and --migrate never wait on a person.
+// The free plan always runs identified: every run that serves logs in, unless
+// it has a credential or a license. --validate and --migrate never log in.
 func TestWantsSidecarLogin(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -202,14 +201,15 @@ func TestWantsSidecarLogin(t *testing.T) {
 		want    bool
 		wantErr string
 	}{
-		{"bare run", sidecarLoginRun{bare: true}, true, ""},
-		{"bare run with --no-login", sidecarLoginRun{bare: true, noLogin: true}, false, ""},
-		{"a config file", sidecarLoginRun{config: true}, false, ""},
-		{"a token", sidecarLoginRun{bare: true, credential: true}, false, ""},
-		{"--validate or --migrate", sidecarLoginRun{config: true, oneShot: true}, false, ""},
-		{"any other flag", sidecarLoginRun{}, false, ""},
+		{"a run with nothing", sidecarLoginRun{}, true, ""},
+		{"a config file still logs in", sidecarLoginRun{}, true, ""},
+		{"a token", sidecarLoginRun{credential: true}, false, ""},
+		{"a license runs on its own", sidecarLoginRun{licensed: true}, false, ""},
+		{"--no-login with a license", sidecarLoginRun{noLogin: true, licensed: true}, false, ""},
+		{"--no-login on the free plan", sidecarLoginRun{noLogin: true}, false, "free plan runs logged in"},
+		{"--validate or --migrate", sidecarLoginRun{oneShot: true}, false, ""},
 		{"--login", sidecarLoginRun{login: true}, true, ""},
-		{"--login with a config to import", sidecarLoginRun{login: true, config: true}, true, ""},
+		{"--login with a license", sidecarLoginRun{login: true, licensed: true}, true, ""},
 		{"--login with --no-login", sidecarLoginRun{login: true, noLogin: true}, false, "contradict"},
 		{"--login with a token", sidecarLoginRun{login: true, credential: true}, false, "drop --token"},
 		{"--login with --validate", sidecarLoginRun{login: true, oneShot: true}, false, "does not combine"},

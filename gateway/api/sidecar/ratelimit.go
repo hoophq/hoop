@@ -58,12 +58,29 @@ func (k *keyedLimiter) allow(key string) bool {
 	return e.lim.AllowN(now, 1)
 }
 
+// exhausted is whether key has no token left now, without spending one.
+func (k *keyedLimiter) exhausted(key string) bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	e, ok := k.entries[key]
+	return ok && e.lim.TokensAt(time.Now()) < 1
+}
+
 var (
 	// loginStartLimiter bounds the unauthenticated start route per client
 	// address, so one caller cannot fill the table every tenant shares.
 	loginStartLimiter = newKeyedLimiter(10, 5)
-	// loginCodeLimiter bounds reads and decisions on user codes per user. On
-	// a multi-tenant plane anyone who signs up is an admin; without it, one
-	// could walk the code space and approve another tenant's sidecar.
-	loginCodeLimiter = newKeyedLimiter(20, 10)
+	// loginCodeLimiter and loginCodeIPLimiter bound reads and decisions on
+	// user codes per user and per address. On a multi-tenant plane anyone who
+	// signs up is an admin, so a guesser can hold many accounts; the address
+	// limit stops that from multiplying the guesses.
+	loginCodeLimiter   = newKeyedLimiter(20, 10)
+	loginCodeIPLimiter = newKeyedLimiter(20, 10)
+	// loginMissLimiter is the whole plane's budget of wrong codes. Spent, code
+	// lookups refuse until it refills, whatever the accounts and addresses:
+	// at 600 a minute, hitting one live code in 20^8 takes decades.
+	loginMissLimiter = newKeyedLimiter(600, 600)
 )
+
+// loginMissKey is the one key of loginMissLimiter.
+const loginMissKey = "plane"

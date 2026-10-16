@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,9 +33,13 @@ import (
 // HOOP_CONTROL_PLANE_URL names none.
 const DefaultSidecarControlPlaneURL = clientconfig.SaaSWebURL
 
-// sidecarLoginFile is where a login is kept, under the sidecar's own folder
-// in ~/.hoop. It holds a bearer token, so it is written 0600.
-const sidecarLoginFile = "controlplane.json"
+// sidecarLoginFile holds the sidecar's logins, one per control plane, in the
+// state folder (sidecarStateDir). Tokens are bearer secrets: 0600.
+const sidecarLoginFile = "credentials.json"
+
+// SidecarStateDirEnv moves the state folder, so a container keeps its login
+// on a volume instead of a home directory it loses on restart.
+const SidecarStateDirEnv = "HOOP_SIDECAR_STATE_DIR"
 
 // savedSidecarLogin is the credential a login produced. Page is the
 // sidecar's page in the web app.
@@ -43,44 +48,123 @@ type savedSidecarLogin struct {
 	Token string `json:"token"`
 	Name  string `json:"name"`
 	Page  string `json:"page,omitempty"`
-	// Config is the file set up for this sidecar on the first-run screen,
-	// so the next bare run boots it again.
+	// Config is the file this sidecar last booted, so the next bare run
+	// boots it again.
 	Config string `json:"config,omitempty"`
+}
+
+// sidecarCredentials is the file: logins keyed by their plane's URL. A
+// token is only ever read back for the plane that issued it.
+type sidecarCredentials struct {
+	Planes map[string]savedSidecarLogin `json:"planes"`
+}
+
+// sidecarStateDir is where the sidecar keeps its logins: the env var, else
+// ~/.hoop/sidecar. Empty when neither is known.
+func sidecarStateDir() string {
+	if dir := os.Getenv(SidecarStateDirEnv); dir != "" {
+		return dir
+	}
+	return sidecarSaveDir()
+}
+
+func readSidecarCredentials(dir string) (sidecarCredentials, error) {
+	creds := sidecarCredentials{Planes: map[string]savedSidecarLogin{}}
+	if dir == "" {
+		return creds, nil
+	}
+	path := filepath.Join(dir, sidecarLoginFile)
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return creds, nil
+	}
+	if err != nil {
+		return creds, err
+	}
+	if err := json.Unmarshal(raw, &creds); err != nil {
+		return creds, fmt.Errorf("%s is not a sidecar credentials file (%v); "+
+			"run `hoop sidecar logout --all` and log in again", path, err)
+	}
+	if creds.Planes == nil {
+		creds.Planes = map[string]savedSidecarLogin{}
+	}
+	return creds, nil
 }
 
 // loadSidecarLogin returns the login saved for planeURL, or nil. A login for
 // another plane is not this one's: the token would be sent to a host that
 // did not issue it.
 func loadSidecarLogin(dir, planeURL string) (*savedSidecarLogin, error) {
-	if dir == "" {
-		return nil, nil
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, sidecarLoginFile))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
+	creds, err := readSidecarCredentials(dir)
 	if err != nil {
 		return nil, err
 	}
-	var s savedSidecarLogin
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, fmt.Errorf("%s is not a saved sidecar login (%v); delete it and log in again",
-			filepath.Join(dir, sidecarLoginFile), err)
-	}
-	if s.Token == "" || normalizePlaneURL(s.URL) != normalizePlaneURL(planeURL) {
+	s, ok := creds.Planes[normalizePlaneURL(planeURL)]
+	if !ok || s.Token == "" {
 		return nil, nil
 	}
 	return &s, nil
 }
 
+// listSidecarLogins returns every saved login, for status.
+func listSidecarLogins(dir string) ([]savedSidecarLogin, error) {
+	creds, err := readSidecarCredentials(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]savedSidecarLogin, 0, len(creds.Planes))
+	for _, s := range creds.Planes {
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].URL < out[j].URL })
+	return out, nil
+}
+
+// saveSidecarLogin records s for its plane, keeping the other planes'.
 func saveSidecarLogin(dir string, s savedSidecarLogin) (string, error) {
+	creds, err := readSidecarCredentials(dir)
+	if err != nil {
+		return "", err
+	}
+	s.URL = normalizePlaneURL(s.URL)
+	creds.Planes[s.URL] = s
+	return writeSidecarCredentials(dir, creds)
+}
+
+// removeSidecarLogin forgets planeURL's login, or every login when planeURL
+// is empty. It reports whether anything was removed.
+func removeSidecarLogin(dir, planeURL string) (bool, error) {
+	creds, err := readSidecarCredentials(dir)
+	if err != nil && planeURL != "" {
+		return false, err
+	}
+	if planeURL == "" {
+		if dir == "" {
+			return false, nil
+		}
+		err := os.Remove(filepath.Join(dir, sidecarLoginFile))
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	key := normalizePlaneURL(planeURL)
+	if _, ok := creds.Planes[key]; !ok {
+		return false, nil
+	}
+	delete(creds.Planes, key)
+	_, err = writeSidecarCredentials(dir, creds)
+	return err == nil, err
+}
+
+func writeSidecarCredentials(dir string, creds sidecarCredentials) (string, error) {
 	if dir == "" {
-		return "", errors.New("the home directory is unknown, so the sidecar login cannot be saved")
+		return "", fmt.Errorf("no folder for the sidecar login: set %s or HOME", SidecarStateDirEnv)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	raw, err := json.MarshalIndent(s, "", "  ")
+	raw, err := json.MarshalIndent(creds, "", "  ")
 	if err != nil {
 		return "", err
 	}
@@ -164,6 +248,33 @@ type sidecarLoginer struct {
 	open     func(string) error
 	// minInterval floors the plane's poll interval; tests lower it.
 	minInterval time.Duration
+	// events, when set, gets the login as JSON lines (sidecarLoginEvent) for
+	// a reader that is not a person: a marketplace console, an agent.
+	events io.Writer
+}
+
+// sidecarLoginEvent is one machine-readable step of a login, one JSON line.
+// Event is sidecar_login_required (with the link and the code a person
+// approves) or sidecar_login_approved.
+type sidecarLoginEvent struct {
+	Time            string `json:"time"`
+	Level           string `json:"level"`
+	Msg             string `json:"msg"`
+	Event           string `json:"event"`
+	Plane           string `json:"control_plane_url"`
+	VerificationURL string `json:"verification_url,omitempty"`
+	UserCode        string `json:"user_code,omitempty"`
+	ExpiresIn       int    `json:"expires_in,omitempty"`
+	Sidecar         string `json:"sidecar,omitempty"`
+}
+
+func (l *sidecarLoginer) emit(ev sidecarLoginEvent) {
+	if l.events == nil {
+		return
+	}
+	ev.Time, ev.Level = time.Now().UTC().Format(time.RFC3339), "INFO"
+	raw, _ := json.Marshal(ev)
+	fmt.Fprintln(l.events, string(raw))
 }
 
 // loginTicket is a started login: what the person approves, and the token
@@ -182,6 +293,9 @@ func (l *sidecarLoginer) run(ctx context.Context) (*savedSidecarLogin, error) {
 	if err != nil {
 		return nil, err
 	}
+	l.emit(sidecarLoginEvent{Msg: "sidecar login required: approve the code in the web app",
+		Event: "sidecar_login_required", Plane: t.planeURL, VerificationURL: t.start.VerificationURL,
+		UserCode: t.start.UserCode, ExpiresIn: t.start.ExpiresIn})
 	// The link carries the code, so nothing is typed. The code is shown so the
 	// person can check that the page they approve is this sidecar's.
 	fmt.Fprintf(l.out, "\nTo connect this sidecar, approve it in your browser:\n\n  %s\n\n"+
@@ -198,6 +312,8 @@ func (l *sidecarLoginer) run(ctx context.Context) (*savedSidecarLogin, error) {
 		return nil, err
 	}
 	fmt.Fprintf(l.out, "Approved: this sidecar is %q at %s\n", login.Name, login.URL)
+	l.emit(sidecarLoginEvent{Msg: "sidecar login approved", Event: "sidecar_login_approved",
+		Plane: login.URL, Sidecar: login.Name})
 	return login, nil
 }
 
@@ -377,7 +493,7 @@ func (s *screenLogin) Wait(ctx context.Context) (sidecartui.ManagedPlane, error)
 	if err != nil {
 		return sidecartui.ManagedPlane{}, err
 	}
-	if _, err := saveSidecarLogin(sidecarSaveDir(), *login); err != nil {
+	if _, err := saveSidecarLogin(sidecarStateDir(), *login); err != nil {
 		// The sidecar exists in the plane now; losing the token means
 		// deleting it there, so say so rather than run once and forget.
 		return sidecartui.ManagedPlane{}, fmt.Errorf("the sidecar %q was approved but its token could not be saved (%w); "+
@@ -392,7 +508,7 @@ func screenLoginFor(boot *sidecartui.Boot) *savedSidecarLogin {
 	if boot.ControlPlaneURL == "" {
 		return nil
 	}
-	login, err := loadSidecarLogin(sidecarSaveDir(), boot.ControlPlaneURL)
+	login, err := loadSidecarLogin(sidecarStateDir(), boot.ControlPlaneURL)
 	if err != nil || login == nil || login.Token != boot.Token {
 		return nil
 	}
@@ -410,6 +526,6 @@ func rememberSidecarConfig(login *savedSidecarLogin, path string) error {
 		return err
 	}
 	login.Config = abs
-	_, err = saveSidecarLogin(sidecarSaveDir(), *login)
+	_, err = saveSidecarLogin(sidecarStateDir(), *login)
 	return err
 }

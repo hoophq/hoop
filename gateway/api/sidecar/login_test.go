@@ -34,6 +34,8 @@ func startLoginDB(t *testing.T) string {
 	// Every test calls from the same address and user; a fresh budget each.
 	loginStartLimiter = newKeyedLimiter(10, 5)
 	loginCodeLimiter = newKeyedLimiter(20, 10)
+	loginCodeIPLimiter = newKeyedLimiter(20, 10)
+	loginMissLimiter = newKeyedLimiter(600, 600)
 	orgID := uuid.NewString()
 	require.NoError(t, models.DB.Exec(
 		`INSERT INTO private.orgs (id, name) VALUES (?, 'sidecar-login-test')`, orgID).Error)
@@ -287,4 +289,43 @@ func TestSidecarLoginIsRateLimited(t *testing.T) {
 		last = callDecide(orgID, "BCDF-GHJK", GetLogin, nil).Code
 	}
 	assert.Equal(t, http.StatusTooManyRequests, last, "the eleventh code read from one user")
+}
+
+// Two organizations on one plane: the sidecar joins the organization of the
+// admin who approves its code, and only that one.
+func TestApprovalPutsTheSidecarInTheApproversOrgOnly(t *testing.T) {
+	orgA := startLoginDB(t)
+	orgB := uuid.NewString()
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.orgs (id, name) VALUES (?, 'second-org')`, orgB).Error)
+	token := testSidecarToken(t)
+	resp := startedLogin(t, token, "laptop")
+
+	w := callDecide(orgB, resp.UserCode, ApproveLogin, nil)
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+
+	sc, err := models.GetSidecarByKeyHash(models.DB, models.HashAPIKey(token))
+	require.NoError(t, err)
+	assert.Equal(t, orgB, sc.OrgID)
+	inA, err := models.ListSidecars(models.DB, orgA)
+	require.NoError(t, err)
+	assert.Empty(t, inA, "the other organization holds the sidecar")
+	// Decided: the other org cannot read or take it.
+	assert.Equal(t, http.StatusGone, callDecide(orgA, resp.UserCode, GetLogin, nil).Code)
+	assert.Equal(t, http.StatusGone, callDecide(orgA, resp.UserCode, ApproveLogin, nil).Code)
+}
+
+// Wrong codes spend the plane's budget: once spent, code lookups refuse for
+// everyone, however many accounts and addresses the guesses come from.
+func TestWrongCodesSpendThePlanesBudget(t *testing.T) {
+	orgID := startLoginDB(t)
+	loginMissLimiter = newKeyedLimiter(3, 3)
+	for i := 0; i < 3; i++ {
+		// A fresh per-user budget each time: only the plane's is shared.
+		loginCodeLimiter = newKeyedLimiter(20, 10)
+		loginCodeIPLimiter = newKeyedLimiter(20, 10)
+		assert.Equal(t, http.StatusNotFound, callDecide(orgID, "BCDF-GHJK", GetLogin, nil).Code)
+	}
+	loginCodeLimiter = newKeyedLimiter(20, 10)
+	loginCodeIPLimiter = newKeyedLimiter(20, 10)
+	assert.Equal(t, http.StatusTooManyRequests, callDecide(orgID, "BCDF-GHJK", GetLogin, nil).Code)
 }

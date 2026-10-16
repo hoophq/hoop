@@ -244,13 +244,13 @@ func GetLogin(c *gin.Context) {
 	}
 	code := normalizeUserCode(c.Param("code"))
 	if code == "" {
-		c.JSON(http.StatusNotFound, gin.H{"message": "no sidecar login has this code"})
+		answerCodeMiss(c, http.StatusNotFound, "no sidecar login has this code")
 		return
 	}
 	login, err := models.GetSidecarLoginByUserCode(models.DB, code)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"message": "no sidecar login has this code"})
+		answerCodeMiss(c, http.StatusNotFound, "no sidecar login has this code")
 		return
 	case err != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the sidecar login")
@@ -259,7 +259,7 @@ func GetLogin(c *gin.Context) {
 	// Only the pending request is shown. A decided one is another tenant's
 	// business: its name and outcome would leak to whoever guessed the code.
 	if login.Status != models.SidecarLoginPending || login.Expired(time.Now().UTC()) {
-		c.JSON(http.StatusGone, gin.H{"message": errLoginGone.Error()})
+		answerCodeMiss(c, http.StatusGone, errLoginGone.Error())
 		return
 	}
 	c.JSON(http.StatusOK, openapi.SidecarLoginDetails{
@@ -292,11 +292,22 @@ func lockPendingLogin(tx *gorm.DB, code string) (*models.SidecarLogin, error) {
 // tooManyCodeRequests answers 429 when this user has spent its budget of
 // code reads and decisions.
 func tooManyCodeRequests(c *gin.Context, userID string) bool {
-	if loginCodeLimiter.allow(userID) {
+	// Both spend: an account and the address it comes from each have a budget.
+	userOK := loginCodeLimiter.allow(userID)
+	ipOK := loginCodeIPLimiter.allow(c.ClientIP())
+	if userOK && ipOK && !loginMissLimiter.exhausted(loginMissKey) {
 		return false
 	}
 	c.JSON(http.StatusTooManyRequests, gin.H{"message": "too many sidecar code requests; wait a minute and try again"})
 	return true
+}
+
+// answerCodeMiss answers a code that matches no pending login, and spends
+// from the plane's budget of wrong codes: guessing is bounded across every
+// account and address, not only per caller.
+func answerCodeMiss(c *gin.Context, status int, message string) {
+	loginMissLimiter.allow(loginMissKey)
+	c.JSON(status, gin.H{"message": message})
 }
 
 
@@ -320,7 +331,7 @@ func ApproveLogin(c *gin.Context) {
 	}
 	code := normalizeUserCode(c.Param("code"))
 	if code == "" {
-		c.JSON(http.StatusNotFound, gin.H{"message": "no sidecar login has this code"})
+		answerCodeMiss(c, http.StatusNotFound, "no sidecar login has this code")
 		return
 	}
 	var req openapi.SidecarLoginApproveRequest
@@ -382,7 +393,7 @@ func DenyLogin(c *gin.Context) {
 	}
 	code := normalizeUserCode(c.Param("code"))
 	if code == "" {
-		c.JSON(http.StatusNotFound, gin.H{"message": "no sidecar login has this code"})
+		answerCodeMiss(c, http.StatusNotFound, "no sidecar login has this code")
 		return
 	}
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
@@ -416,9 +427,9 @@ func checkSidecarName(name string) string {
 func answerLoginDecision(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"message": "no sidecar login has this code"})
+		answerCodeMiss(c, http.StatusNotFound, "no sidecar login has this code")
 	case errors.Is(err, errLoginGone):
-		c.JSON(http.StatusGone, gin.H{"message": err.Error()})
+		answerCodeMiss(c, http.StatusGone, err.Error())
 	case errors.Is(err, services.ErrSidecarSeatLimit):
 		c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
 	case errors.Is(err, models.ErrAlreadyExists):
