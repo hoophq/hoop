@@ -74,6 +74,43 @@ HOOPDEV_SLOT=1 make run-dev
 - The control plane takes its port from the shell: `PORT=8119 make run-dev-control-plane`.
 - The SPIFFE scripts target slot 0 only.
 
+### Seed sessions
+
+```sh
+make seed-dev-sessions
+```
+
+Writes every session kind of the Sessions behavior matrix into the running stack: a user per role, 283 sessions (exec, pty, SSH, wire-proto postgres, httpproxy, RDP, reviews, payloads above 4 MB, a batch, a workflow of 210), and two sidecar sessions sent to `POST /api/sidecars/events`. Two runs write the same rows. It needs `psql`, `AUTH_METHOD=local` and an Enterprise license; no Go. Users, variables and the map from matrix rows to sessions: `scripts/dev/seed-sessions/README.md`.
+
+### Compare two UIs on one stack
+
+To record one flow on the origin/main UI and on a branch UI, run one gateway and one database, and serve each UI from its own origin. Both read the same rows; only the UI differs.
+
+| UI | Served by | URL |
+|---|---|---|
+| origin/main | the gateway, from `dist/dev/resources` | `http://127.0.0.1:8009` |
+| branch | Vite, which sends `/api` to `API_URL` | `http://127.0.0.1:5173` |
+
+1. Build the origin/main UI in its own worktree, and put it where the stack's gateway reads it:
+
+   ```sh
+   git worktree add ../hoop-main origin/main
+   (cd ../hoop-main && make build-dev-webapp)
+   rm -rf dist/dev/resources && cp -a ../hoop-main/dist/dev/resources dist/dev/resources
+   ```
+
+2. Start the stack with `make run-dev`. If it already runs, restart its container: the gateway reads `index.html` once at boot.
+3. Seed it: `make seed-dev-sessions`.
+4. Serve the branch UI against the same gateway: `cd webapp_v2 && npm run dev:full`.
+5. Log in on each origin. The token is in each origin's `localStorage`, so a login on one does not log in the other.
+
+On another port (a slot, say 8109), start the two dev servers apart, so that only Vite gets `API_URL`. The CLJS bundle then calls `/api` on its own origin, through Vite:
+
+```sh
+npm --prefix webapp run dev                               # no API_URL in webapp/.env
+cd webapp_v2 && API_URL=http://127.0.0.1:8109 npm run dev
+```
+
 ### Build Dev Client
 
 By default versioned clients are builded to strict connect via TLS. In order to build a client that permits connecting to remote hosts without TLS, execute the instruction below:
