@@ -3452,6 +3452,50 @@ A request that already carries this process's pseudonym is refused with a
 `CONNECT`, the rest of that connection is another protocol and is no longer
 marked.
 
+### A browser in front: upstream as a URL
+
+An http listener takes `listen` and `upstream` as URLs, and then behaves
+like Caddy's `reverse_proxy` or nginx's `proxy_pass`:
+
+```yaml
+listeners:
+  - name: web
+    protocol: http
+    listen: http://127.0.0.1:19999
+    upstream: https://grafana.internal   # port 443, TLS, SNI and verification against grafana.internal
+```
+
+- The scheme sets the default port, 80 or 443. `https://` turns on upstream
+  TLS with an empty `upstream_tls`; write the block to add a `ca_file` or a
+  client certificate. `http://` with `upstream_tls` is refused.
+- **Every request names the origin in `Host`.** The client's Host moves to
+  `X-Forwarded-Host`, and `X-Forwarded-Proto` says `http`, or `https` on a
+  lane with `downstream_tls`. A client's own copies of those two are dropped.
+  A browser cannot be told which Host to send, and an origin that serves
+  virtual hosts or sits behind a CDN refuses the sidecar's address.
+- WebSocket works: the handshake is rewritten like any request, and the
+  frames after the `101` pass byte-exact.
+- `listen: https://...` needs `downstream_tls`; `listen: http://...` with
+  it is refused. A unix listener binds a socket path, so its `listen` takes
+  no URL; its `upstream` may. Any protocol but http takes no URL at all.
+  Only the origin is accepted: a path, query or user is refused.
+- A request target in absolute form (`GET http://other/x`) goes out in
+  origin form (`GET /x`), so the client cannot pick another virtual host.
+- After an `Upgrade` or `CONNECT`, the connection passes through only once
+  the server grants the switch; a refused upgrade leaves the next request
+  rewritten. A request the sidecar cannot frame is refused, never forwarded
+  with the client's own Host.
+
+Nothing in a response is rewritten: no `Location`, cookie domain or body. An
+application that redirects to its own absolute URL, scopes a cookie to its
+own domain, or checks `Origin` on a WebSocket will not follow the browser
+through the sidecar, the same as behind Caddy or nginx. The sidecar does not
+add `X-Forwarded-For`.
+
+A `host:port` upstream keeps the old behaviour: Host passes through as the
+client wrote it. The control plane serves a URL to a sidecar that reports
+the `address_url` capability only.
+
 ### kubectl through GKE Connect Gateway
 
 **The cluster prefix is removed before policy sees the resource.** Connect

@@ -56,7 +56,7 @@ func laneCodecFactory(lc ListenerConfig, plugins map[inspect.Protocol]CodecPlugi
 		return codecPluginFactory(plugin, lc.Plugin)
 	}
 	if proto == inspect.HTTP {
-		return newHTTPCodec(lc.HTTP, lc.credentialHeader(), analyzerHolds(lc.Analyzer))
+		return newHTTPCodec(lc.HTTP, lc.credentialHeader(), analyzerHolds(lc.Analyzer), lc.origin())
 	}
 	return clickhouseCodecFactory(proto, lc.ClickHouse)
 }
