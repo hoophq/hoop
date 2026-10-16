@@ -70,6 +70,10 @@ run-dev-postgres:
 seed-dev-sessions:
 	node scripts/dev/seed-sessions/seed.mjs
 
+# With SEED_DB_URI and API_URL set, it also seeds the stack twice and compares.
+test-seed-sessions:
+	node --test scripts/dev/seed-sessions/seed.test.mjs
+
 run-dev-presidio:
 	./scripts/dev/run-presidio.sh
 
@@ -550,4 +554,4 @@ gcp-marketplace-sidecar-publish:
 gcp-marketplace-sidecar-test:
 	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh test
 
-.PHONY: test-parity test-twins test-twins-scenario test-twins-browser twins-up twins-down run-dev run-dev-control-plane run-dev-postgres seed-dev-sessions build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: test-parity test-twins test-twins-scenario test-twins-browser twins-up twins-down run-dev run-dev-control-plane run-dev-postgres seed-dev-sessions test-seed-sessions build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

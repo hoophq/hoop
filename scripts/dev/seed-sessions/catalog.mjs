@@ -86,8 +86,8 @@ const sidecarEvent = (seq, session, sec, kind, fields = {}) => ({
 // sc-full has every event kind that writes (gateway/api/sidecar/events_test.go
 // fullSession); sc-simple is the parity check SC-10 session. They start
 // between the kinds of the first page (see FIRST_PAGE).
-const SC_FULL = { id: 'seed-sc-full', start: '2026-10-03T16:27:30Z' }
-const SC_SIMPLE = { id: 'seed-sc-simple', start: '2026-10-03T16:22:30Z' }
+const SC_FULL = { id: 'seed-sc-full', start: '2026-10-03T16:32:30Z' }
+const SC_SIMPLE = { id: 'seed-sc-simple', start: '2026-10-03T16:12:30Z' }
 export const SIDECAR_EVENTS = [
   sidecarEvent(1, SC_FULL, 0, 'session_start'),
   sidecarEvent(2, SC_FULL, 1, 'statement', { statement: 'SELECT * FROM users', allowed: true }),
@@ -109,13 +109,15 @@ export const SIDECAR_SESSIONS = [SC_FULL, SC_SIMPLE].map((s) => ({
 // ─── Session builders ──────────────────────────────────────────────────────
 
 const iso = (ms) => new Date(ms).toISOString()
+// RFC 3339 without milliseconds, as the gateway writes credential times.
+const rfc3339 = (at) => at.replace('.000Z', 'Z')
 const plus = (at, seconds) => iso(Date.parse(at) + seconds * 1000)
 
 const sizeOf = (stream) => Buffer.byteLength(JSON.stringify(stream))
 
 // base builds a session row. Fields not given keep the gateway's defaults.
-// fields.review is a function of the session's created_at. A large stream
-// (streamSql) gets its event_size in SQL.
+// fields.review, and fields.metadata when it is a function, take the
+// session's created_at. A large stream (streamSql) gets its event_size in SQL.
 function base(key, at, fields) {
   const conn = connection(fields.connection)
   const verb = fields.verb ?? 'exec'
@@ -148,6 +150,7 @@ function base(key, at, fields) {
     stream_format: null,
     ...fields,
     review: fields.review ? fields.review(at) : null,
+    metadata: typeof fields.metadata === 'function' ? fields.metadata(at) : fields.metadata ?? null,
     metrics: hasMetrics ? { event_size: stream ? sizeOf(stream) : 0, truncated: false, ...fields.metrics } : null,
   }
 }
@@ -178,15 +181,17 @@ function review(key, at, fields) {
 }
 
 // Kinds are written newest first, five minutes apart. The kinds the harness
-// ticket lists come first, so the first page of /sessions shows one of each;
-// the others follow in the order they are defined.
+// ticket lists come first, so the first page of /sessions (20 rows, with
+// seed-sc-full) shows one of each; the others follow in the order they are
+// defined. The steps of seed-wf-short are listed last to first, so they run
+// in order.
 const KINDS_START = Date.parse('2026-10-03T18:00:00Z')
 const kindAt = (i) => iso(KINDS_START - i * 5 * 60 * 1000)
 export const FIRST_PAGE = [
   'connect-live-pty', 'exec-bash-ok', 'exec-bash-exit-1', 'exec-bash-stderr', 'exec-pg-table', 'exec-pg-error',
   'connect-pty', 'connect-ssh', 'connect-pg-wire', 'connect-http', 'review-pending', 'review-approved',
   'review-rejected', 'review-approved-time-window', 'review-executed', 'exec-output-5mb', 'exec-input-5mb',
-  'exec-guardrail-block', 'workflow-short-1', 'connect-rdp',
+  'exec-guardrail-block', 'workflow-short-3', 'workflow-short-2', 'workflow-short-1', 'connect-rdp',
 ]
 
 const tableOutput = (rows) => rows.map((r) => r.join('\t')).join('\n') + '\n'
@@ -386,9 +391,10 @@ function kinds() {
       groups: [reviewGroup(REVIEW_GROUP, 'APPROVED', APPROVER, plus(at, 90))],
     }),
   })
+  // A rejection sets the status only (gateway/models/reviews.go): no end.
   add('review-rejected', {
     connection: 'seed-pg', input: 'TRUNCATE audit_log;',
-    status: 'done', exit_code: null, stream: null,
+    status: 'done', ended_at: null, exit_code: null, stream: null,
     review: (at) => review('review-rejected', at, {
       status: 'REJECTED',
       rejection_reason: 'Not during business hours.\n  Retry after 18:00 with a ticket.',
@@ -467,9 +473,10 @@ function kinds() {
       groups: [reviewGroup(REVIEW_GROUP, 'APPROVED', APPROVER, plus(at, 20))],
     }),
   })
+  // A revocation ends the session at the revocation time.
   add('jit-revoked', {
-    connection: 'seed-pg', verb: 'connect', recording_format: 'raw', stream: null,
-    metadata: { credentials_revoked_at: '2026-10-03T14:10:00Z' },
+    connection: 'seed-pg', verb: 'connect', recording_format: 'raw', stream: null, duration: 600,
+    metadata: (at) => ({ credentials_revoked_at: rfc3339(plus(at, 600)) }),
     review: (at) => review('jit-revoked', at, {
       type: 'jit', status: 'APPROVED', access_duration_sec: 3600,
       groups: [reviewGroup(REVIEW_GROUP, 'APPROVED', APPROVER, plus(at, 20))],
@@ -477,7 +484,7 @@ function kinds() {
   })
   add('jit-expired', {
     connection: 'seed-pg', verb: 'connect', recording_format: 'raw', status: 'ready', stream: null,
-    metadata: { credentials_expire_at: '2026-10-03T14:00:00Z' },
+    metadata: (at) => ({ credentials_expire_at: rfc3339(plus(at, 600)) }),
     review: (at) => review('jit-expired', at, {
       type: 'jit', status: 'APPROVED', access_duration_sec: 600,
       groups: [reviewGroup(REVIEW_GROUP, 'APPROVED', APPROVER, plus(at, 20))],

@@ -25,7 +25,9 @@ no agent. A second run deletes the seeded sessions and writes them again.
 
 What it does:
 
-1. Upserts the users below, logs in as `admin@seed.example.com`.
+1. Upserts the users below, logs in as `admin@seed.example.com`, and stops
+   when the gateway at `API_URL` does not serve the organization of
+   `SEED_DB_URI`.
 2. Upserts 67 connections, the sidecar `seed-sidecar`, and writes 283
    sessions with their blobs, reviews, review groups, RDP job and detections,
    and masking metrics, by SQL.
@@ -63,14 +65,15 @@ SEED_DB_URI=... node scripts/dev/seed-sessions/seed.mjs dump > a.dump
 `private.reviews` and `private.review_groups`, one row per line, without
 `org_id`. Seed two new databases, dump both, and `diff` them: it is empty.
 
-`node --test scripts/dev/seed-sessions/seed.test.mjs` checks that the ids match
-the gateway's and that the SQL does not read the clock. With `SEED_DB_URI` and
-`API_URL` set, it also seeds twice and compares the dumps.
+`make test-seed-sessions` checks that the ids match the gateway's, that the SQL
+does not read the clock, and that this README matches the catalog; CI runs it in
+the "Webapp v2 Lint and Build" job. With `SEED_DB_URI` and `API_URL` set, it
+also seeds that stack twice and compares the dumps.
 
 ## Sessions
 
 The first page of `/sessions` (20 rows) holds the kinds the harness ticket
-lists, newest first. Ids come from `catalog.mjs`; `seed.test.mjs` checks this
+lists, newest first, with `seed-sc-full`. Ids come from `catalog.mjs`; `seed.test.mjs` checks this
 table against it.
 
 | Key | Id | What |
@@ -93,7 +96,9 @@ table against it.
 | `exec-output-5mb` | `d9a73305-ee1f-5c7d-9d65-71e46bc03eb3` | Output above 4 MB (`event_size` 6,130,400). |
 | `exec-input-5mb` | `40c06713-e0f0-5ba0-a84c-8eb34398b0fc` | Input above 4 MB (`script_size` 5,577,786). |
 | `exec-guardrail-block` | `a17ed0e8-3ab0-5c24-a62d-8eac6daa9dcb` | A guardrail block: one input deny-words hit. |
-| `workflow-short-1` | `ee4ddbf0-4fc8-5dce-a094-41531a1d66e7` | Step 1 of workflow `seed-wf-short`. |
+| `workflow-short-3` | `975a272a-75ca-511a-b97b-7b26dd350afc` | Workflow `seed-wf-short`, step 3: still running. |
+| `workflow-short-2` | `12ee3415-1233-566c-bc7c-f23fbc4922a1` | Step 2: a machine identity, exit 2. |
+| `workflow-short-1` | `ee4ddbf0-4fc8-5dce-a094-41531a1d66e7` | Step 1: exit 0. |
 | `connect-rdp` | `1b0e6776-ad17-51ee-b0a4-f5de5af26a8e` | RDP: 41 synthetic 16 bpp bitmaps, 800x480, a finished detections job with 3 entities. |
 | `connect-live-pg` | `c662b6df-c342-5738-948f-5dbff1cbbc7e` | Live: native postgres, connect, open. |
 | `exec-pg-empty` | `05baffd6-6b34-5813-be8f-53244e7474c6` | Success, empty output. |
@@ -121,8 +126,6 @@ table against it.
 | `jit-expired` | `40317c04-a0da-5052-857e-ee9c774fa2fd` | JIT, credentials expired. |
 | `jit-ended` | `aa6c17c0-3a88-5bc2-bcea-a1f0329843b6` | JIT, session done. |
 | `credentials-link` | `9fe937f7-6595-574f-bacd-e2b5d720f3ee` | `metadata.credential_session` points to `jit-ended`. |
-| `workflow-short-2` | `12ee3415-1233-566c-bc7c-f23fbc4922a1` | Step 2: a machine identity, exit 2. |
-| `workflow-short-3` | `975a272a-75ca-511a-b97b-7b26dd350afc` | Step 3: still running. |
 | `seed-sc-full` | `e6191503-a3bf-569c-a19c-83ec8f38d912` | Sidecar: start, statement, violation, masked, error, end. |
 | `seed-sc-simple` | `b3b74113-4edc-564b-8f47-9fd73c92ed5f` | Sidecar: start, statement, end. |
 

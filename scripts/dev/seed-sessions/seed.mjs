@@ -41,7 +41,8 @@ function psql(sql) {
   return r.stdout
 }
 
-async function api(method, path, { token, sidecarToken, body } = {}) {
+// api fails on a status outside 2xx, unless allow lists it.
+async function api(method, path, { token, sidecarToken, body, allow = [] } = {}) {
   const headers = { 'content-type': 'application/json' }
   if (token) headers.authorization = `Bearer ${token}`
   if (sidecarToken) headers['hoop-sidecar-token'] = sidecarToken
@@ -52,8 +53,8 @@ async function api(method, path, { token, sidecarToken, body } = {}) {
     fail(`${method} ${API_URL}/api${path}: ${err.cause?.message || err.message}. Is the gateway up? Set API_URL.`)
   }
   const text = await res.text()
-  if (!res.ok) fail(`${method} /api${path} answered ${res.status}: ${text}`)
-  return { res, json: text ? JSON.parse(text) : null }
+  if (!res.ok && !allow.includes(res.status)) fail(`${method} /api${path} answered ${res.status}: ${text}`)
+  return { res, json: res.ok && text ? JSON.parse(text) : null }
 }
 
 // ─── SQL literals ──────────────────────────────────────────────────────────
@@ -235,6 +236,40 @@ function orgId() {
   return id
 }
 
+// The seed admin's token, when API_URL serves the organization of
+// SEED_DB_URI; otherwise it stops. The users are the only rows written before
+// that check, and only when neither side has them yet.
+async function sameStackLogin(org, seedUsers) {
+  const admin = seedUsers.admin.email
+  const login = async () => {
+    const { res } = await api('POST', '/localauth/login', {
+      body: { email: admin, password: PASSWORD }, allow: [401, 404],
+    })
+    return res.ok ? res.headers.get('token') : null
+  }
+  const where = new URL(DB_URI)
+  const mismatch = (detail) => fail(`API_URL ${API_URL} and SEED_DB_URI ${where.host}${where.pathname} are not ` +
+    `the same stack: ${detail}. Point both at one gateway and its database.`)
+
+  let token = await login()
+  if (!token && psql(`SELECT 1 FROM private.users WHERE subject = ${str(admin)};`).trim()) {
+    mismatch(`the database has ${admin}, the gateway does not`)
+  }
+  if (token) await checkOrg(token)
+  psql(`BEGIN;\n${usersSql(org, seedUsers)}\nCOMMIT;`)
+  if (!token) {
+    token = await login()
+    if (!token) mismatch(`${admin} was written to the database, and the gateway does not know it`)
+    await checkOrg(token)
+  }
+  return token
+
+  async function checkOrg(t) {
+    const { json: me } = await api('GET', '/userinfo', { token: t })
+    if (me.org_id !== org) mismatch(`the gateway's organization is ${me.org_id}, the database's is ${org}`)
+  }
+}
+
 async function seed() {
   const { json: info } = await api('GET', '/publicserverinfo')
   if (info.auth_method !== 'local') {
@@ -242,13 +277,7 @@ async function seed() {
   }
   const org = orgId()
   const seedUsers = users({ adminGroup: ADMIN_GROUP, auditorGroup: AUDITOR_GROUP })
-  psql(`BEGIN;\n${usersSql(org, seedUsers)}\nCOMMIT;`)
-
-  const { res: login } = await api('POST', '/localauth/login', {
-    body: { email: seedUsers.admin.email, password: PASSWORD },
-  })
-  const token = login.headers.get('token')
-  if (!token) fail('POST /api/localauth/login answered without a Token header')
+  const token = await sameStackLogin(org, seedUsers)
   if (LICENSE_FILE) {
     await api('PUT', '/orgs/license', { token, body: JSON.parse(readFileSync(LICENSE_FILE, 'utf8')) })
   }

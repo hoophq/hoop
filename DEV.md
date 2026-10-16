@@ -89,7 +89,7 @@ To record one flow on the origin/main UI and on a branch UI, run one gateway and
 | UI | Served by | URL |
 |---|---|---|
 | origin/main | the gateway, from `dist/dev/resources` | `http://127.0.0.1:8009` |
-| branch | Vite, which sends `/api` to `API_URL` | `http://127.0.0.1:5173` |
+| branch | Vite, which sends `/api` to `API_URL` | `http://localhost:5173` (Vite listens on `localhost` only) |
 
 1. Build the origin/main UI in its own worktree, and put it where the stack's gateway reads it:
 
