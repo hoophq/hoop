@@ -16,6 +16,8 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
@@ -179,10 +181,8 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ExtensionsOnDisconnectFn: transportext.OnDisconnect,
 	}
 
-	if err := refuseSidecarMirror(gwctx.Connection.Name, gwctx.Connection.SidecarID); err != nil {
-		return err
-	}
-	if err := validateConnectionAccessMode(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {
+	if err := refuseConnection(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {
+		closeRefusedSession(gwctx.UserContext, gwctx.Connection.Name, commongrpc.MetaGet(md, "session-id"), err)
 		return err
 	}
 
@@ -196,6 +196,29 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 
 func (s *Server) HealthCheck(ctx context.Context, req *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) {
 	return &pb.HealthCheckResponse{Status: "OK"}, nil
+}
+
+// refuseConnection runs the gates that refuse a client stream before it
+// reaches the plugins.
+func refuseConnection(clientVerb, clientOrigin string, connInfo types.ConnectionInfo) error {
+	if err := refuseSidecarMirror(connInfo.Name, connInfo.SidecarID); err != nil {
+		return err
+	}
+	return validateConnectionAccessMode(clientVerb, clientOrigin, connInfo)
+}
+
+// closeRefusedSession closes the session an API exec wrote as open before it
+// dialed this stream. The refusal comes before the plugins, so the audit plugin
+// never closes it. A CLI client has no row yet, and nothing closes.
+func closeRefusedSession(uctx models.Context, connectionName, sessionID string, refusal error) {
+	if sessionID == "" {
+		return
+	}
+	err := services.CloseRefusedSession(uctx.OrgID, uctx.UserID, connectionName, sessionID,
+		status.Convert(refusal).Message())
+	if err != nil {
+		log.With("sid", sessionID).Warnf("failed closing the refused session: %v", err)
+	}
 }
 
 // refuseSidecarMirror refuses a session on a connection that mirrors a

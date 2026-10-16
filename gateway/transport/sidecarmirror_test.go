@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -21,5 +23,24 @@ func TestRefuseSidecarMirror(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `"pay-appdb"`) || !strings.Contains(err.Error(), "sidecar listener") {
 		t.Errorf("the reason must name the connection and the way in, got %q", err)
+	}
+}
+
+// Connect closes the session a refusal leaves open, so every gate that refuses
+// before the plugins must go through refuseConnection.
+func TestRefuseConnection(t *testing.T) {
+	open := types.ConnectionInfo{Name: "pg-prod", AccessModeExec: "enabled", AccessModeConnect: "enabled", AccessModeRunbooks: "enabled"}
+	if err := refuseConnection(pb.ClientVerbExec, pb.ConnectionOriginClientAPI, open); err != nil {
+		t.Errorf("an open connection must pass, got %v", err)
+	}
+	mirror := open
+	mirror.SidecarID = "9b2a8b4e-5c0e-4a51-9b7a-1f3e2d4c5b6a"
+	if err := refuseConnection(pb.ClientVerbExec, pb.ConnectionOriginClientAPI, mirror); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("a mirror must refuse, got %v", err)
+	}
+	execOff := open
+	execOff.AccessModeExec = "disabled"
+	if err := refuseConnection(pb.ClientVerbExec, pb.ConnectionOriginClientAPI, execOff); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("exec disabled must refuse an exec, got %v", err)
 	}
 }

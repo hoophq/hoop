@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -985,6 +986,38 @@ func SetSessionStatusOpenIfReady(db *gorm.DB, orgID, sessionID string) (bool, er
 		Where("org_id = ? AND id = ? AND status = ?", orgID, sessionID, "ready").
 		UpdateColumn("status", "open")
 	return res.RowsAffected > 0, res.Error
+}
+
+// CloseRefusedSession ends an open session whose stream the transport refused
+// before any plugin ran, so the audit plugin never closes it. reason becomes
+// its output. Only an open session of userID on connectionName closes: a
+// client picks its own session id and must not end another session. It
+// reports whether a row closed.
+func CloseRefusedSession(db *gorm.DB, orgID, userID, connectionName, sessionID string, exitCode int, reason string, endedAt time.Time) (bool, error) {
+	output, err := json.Marshal([][]any{{0, "e", base64.StdEncoding.EncodeToString([]byte(reason))}})
+	if err != nil {
+		return false, err
+	}
+	var closed bool
+	err = db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Table("private.sessions").
+			Where("org_id = ? AND id = ? AND user_id = ? AND connection = ? AND status = ?",
+				orgID, sessionID, userID, connectionName, string(openapi.SessionStatusOpen)).
+			Updates(map[string]any{
+				"status":    string(openapi.SessionStatusDone),
+				"exit_code": exitCode,
+				"ended_at":  endedAt,
+			})
+		if res.Error != nil || res.RowsAffected == 0 {
+			return res.Error
+		}
+		closed = true
+		if err := CreateEmptySessionStreamBlobTx(tx, orgID, sessionID, nil); err != nil {
+			return err
+		}
+		return AppendSessionStreamTx(tx, orgID, sessionID, output)
+	})
+	return closed, err
 }
 
 // SetSessionCredentialsExpireAt stores the credential expiry time in the session metadata.
