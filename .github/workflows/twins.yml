@@ -1,0 +1,61 @@
+# ADR-0032: the twins on every same-repo PR. The twin and contract tests
+# run first, then the scenarios, which boot the real `hoop start standalone`
+# against the twins as native processes (reach option B, Linux only).
+name: Twins
+
+on: pull_request
+
+# A newer run for the same PR makes this one stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scenarios:
+    name: Twins Scenarios
+    # A fork PR gets no secrets, and building hoop needs GH_TOKEN for
+    # libhoop. There the job shows as skipped, not as passed.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Against the scenario's own 10m `go test -timeout`: the gap holds the
+    # module download and the hoop build.
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      # proxy.golang.org can reset HTTP/2 streams mid-download; see the
+      # header of pullrequest.yml. Only the download runs on HTTP/1.1.
+      - name: Download modules over HTTP/1.1
+        env:
+          GODEBUG: http2client=0
+        run: go mod download
+
+      - name: Build hoop
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/hoop-bin/hoop" ./client
+
+      - name: Twin and contract tests
+        run: make test-twins
+
+      - name: Scenarios
+        env:
+          TWINS_REACH: native
+          HOOP_BIN_DIR: ${{ runner.temp }}/hoop-bin
+          TWINS_ARTIFACTS: ${{ runner.temp }}/twins
+        run: make test-twins-scenario
+
+      - name: Upload twin states and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: twins
+          path: |
+            ${{ runner.temp }}/twins/*.json
+            ${{ runner.temp }}/twins/*.txt
+            ${{ runner.temp }}/twins/native/*.log

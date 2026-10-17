@@ -1,0 +1,67 @@
+# The scenario stack under docker compose (TWINS_REACH=proxy), for a laptop:
+# darwin ignores SSL_CERT_FILE, so the gateway runs in a linux container.
+# The scenario starts it; see stack_test.go. It is the native stack in
+# containers: the gateway sends every HTTPS request through the twin router,
+# which tunnels a twin's hostname to the twin and refuses any other host.
+name: twins
+
+x-twins: &twins
+  image: hoop-twins:scenario
+  volumes: [pki:/pki:ro]
+  depends_on: { pki: { condition: service_completed_successfully } }
+  healthcheck:
+    test: [CMD, wget, -qO-, http://127.0.0.1:8080/_twin/healthz]
+    interval: 1s
+    retries: 30
+
+services:
+  pki:
+    image: hoop-twins:scenario
+    build: ..
+    command: [pki, -dir=/pki, -leaf=oidc=oidc-twin,localhost,127.0.0.1]
+    volumes: [pki:/pki]
+
+  oidc-twin:
+    <<: *twins
+    command: [oidc, -issuer=https://oidc-twin, -cert=/pki/oidc.crt, -key=/pki/oidc.key]
+    ports: ["127.0.0.1:18081:8080"]
+
+  router:
+    <<: *twins
+    command: [router, -listen=:8080, -route=oidc-twin=oidc-twin:443]
+    ports: ["127.0.0.1:18083:8080"]
+    depends_on:
+      pki: { condition: service_completed_successfully }
+      oidc-twin: { condition: service_healthy }
+
+  # The real hoop binary, built on the host for linux and mounted, run as
+  # `hoop start standalone`: gateway, embedded PGlite and agent in one
+  # process. Keep the environment equal to gatewayEnv in up_test.go.
+  gateway:
+    image: alpine:3.20
+    entrypoint: [/hoop/hoop, start, standalone]
+    environment:
+      PORT: "18009"
+      API_URL: http://127.0.0.1:18009
+      GRPC_URL: grpc://127.0.0.1:8010
+      IDP_ISSUER: https://oidc-twin
+      IDP_CLIENT_ID: hoop
+      IDP_CLIENT_SECRET: hoop-secret
+      SSL_CERT_FILE: /pki/ca.crt
+      HTTPS_PROXY: http://router:8080
+      DO_NOT_TRACK: "1"
+      GIN_MODE: release
+      LOG_ENCODING: console
+    volumes:
+      - pki:/pki:ro
+      - ${HOOP_BIN_DIR:?set HOOP_BIN_DIR to the directory of the linux hoop binary}:/hoop:ro
+    ports: ["127.0.0.1:18009:18009"]
+    depends_on:
+      router: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, -qO-, http://127.0.0.1:18009/api/healthz]
+      interval: 1s
+      retries: 120
+
+volumes:
+  pki:
