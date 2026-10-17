@@ -1075,6 +1075,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiExecSession),
 		sessionapi.Post)
+	r.POST("/sessions/analyze",
+		r.AuthMiddleware,
+		sessionapi.Analyze)
 	r.POST("/sessions/:session_id/exec",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiExecReview),
