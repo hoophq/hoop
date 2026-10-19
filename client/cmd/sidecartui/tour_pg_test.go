@@ -102,6 +102,35 @@ func TestPgQueryLogsInAsTheDemoRoleAndRendersRows(t *testing.T) {
 	}
 }
 
+// A PG* variable in the person's shell, valid or not, neither breaks a step
+// nor changes where it goes or who it logs in as.
+func TestPgQueryIgnoresThePGEnvironment(t *testing.T) {
+	for k, v := range map[string]string{
+		"PGHOST": "nowhere.invalid", "PGPORT": "not-a-port", "PGUSER": "someone", "PGDATABASE": "other",
+		"PGPASSWORD": "wrong", "PGPASSFILE": "/missing", "PGSSLMODE": "bogus", "PGSSLROOTCERT": "/missing",
+		"PGSSLCERT": "/missing", "PGSSLKEY": "/missing", "PGSSLNEGOTIATION": "bogus", "PGSSLSNI": "x",
+		"PGCONNECT_TIMEOUT": "x", "PGTARGETSESSIONATTRS": "nope", "PGMINPROTOCOLVERSION": "9.9",
+		"PGMAXPROTOCOLVERSION": "9.9", "PGAPPNAME": "other", "PGOPTIONS": "-c x=y", "PGTZ": "Mars/Base",
+	} {
+		t.Setenv(k, v)
+	}
+	addr, got := fakePostgres(t, func(b *pgproto3.Backend, _ net.Conn) {
+		b.Send(&pgproto3.CommandComplete{CommandTag: []byte("SELECT 0")})
+		b.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
+		_ = b.Flush()
+	})
+	r, err := pgQuery(pgTarget{addr: addr}, "SELECT 1;")
+	if err != nil {
+		t.Fatalf("a PG* variable broke the step: %v", err)
+	}
+	if l := <-got; l.user != sidecardemo.PGUser || l.database != sidecardemo.PGDatabase || l.password != sidecardemo.PGPassword {
+		t.Errorf("logged in as %+v, want the demo role", l)
+	}
+	if r.status != 200 {
+		t.Errorf("status %d body %q", r.status, r.body)
+	}
+}
+
 // A guardrail denial ends the connection instead of returning to ready. The
 // tour must read that as the step's answer — refused, with the guardrail's
 // message — and not as a broken connection.

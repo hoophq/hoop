@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -391,21 +390,26 @@ func pgQuery(t pgTarget, sql string) (tourResult, error) {
 	if err != nil {
 		return tourResult{}, err
 	}
-	p, err := strconv.ParseUint(port, 10, 16)
-	if err != nil {
-		return tourResult{}, fmt.Errorf("port %q: %w", port, err)
-	}
-	cfg, err := pgx.ParseConfig("")
+	// pgx reads every PG* variable before it reads the connection string,
+	// and has no way to skip them. So every setting one of them could feed
+	// is given here, and a stray PGPORT or PGSSLMODE in the person's shell
+	// cannot break the step or send it elsewhere. TLS is set below, after
+	// parsing, so sslmode=disable only keeps the file settings unread.
+	// PGSERVICE is the one a connection string cannot clear: a broken
+	// service file fails the step with pgx's own message.
+	cfg, err := pgx.ParseConfig(sidecardemo.ConnString([][2]string{
+		{"host", host}, {"port", port},
+		{"user", sidecardemo.PGUser}, {"password", sidecardemo.PGPassword}, {"passfile", ""},
+		{"dbname", sidecardemo.PGDatabase},
+		{"sslmode", "disable"}, {"sslrootcert", ""}, {"sslcert", ""}, {"sslkey", ""},
+		{"sslpassword", ""}, {"sslsni", "1"}, {"sslnegotiation", "postgres"},
+		{"connect_timeout", "10"}, {"target_session_attrs", "any"},
+		{"min_protocol_version", "3.0"}, {"max_protocol_version", "3.0"},
+	}...))
 	if err != nil {
 		return tourResult{}, err
 	}
-	// Every field that decides where and how the connection goes is set
-	// here, so a PG* variable in the person's shell cannot send the tour
-	// anywhere else.
-	cfg.Host, cfg.Port = host, uint16(p)
-	cfg.User, cfg.Password, cfg.Database = sidecardemo.PGUser, sidecardemo.PGPassword, sidecardemo.PGDatabase
 	cfg.TLSConfig, cfg.Fallbacks = t.tls, nil
-	cfg.ConnectTimeout = 10 * time.Second
 	cfg.RuntimeParams = map[string]string{"application_name": "hoop sidecar demo"}
 	cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
@@ -415,7 +419,9 @@ func pgQuery(t pgTarget, sql string) (tourResult, error) {
 	if err != nil {
 		return pgAnswer(err)
 	}
-	defer conn.Close(context.Background())
+	// Close only sends Terminate. The answer is read in full before it runs,
+	// so a close that fails cannot change it; its error is dropped on purpose.
+	defer func() { _ = conn.Close(context.Background()) }()
 
 	rows, err := conn.Query(ctx, sql)
 	if err != nil {
@@ -438,6 +444,8 @@ func pgQuery(t pgTarget, sql string) (tourResult, error) {
 		}
 		out = append(out, row)
 	}
+	// rows.Close returns nothing; rows.Err reports what the read and the
+	// close ran into, the server's own error frame included.
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return pgAnswer(err)

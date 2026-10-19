@@ -132,7 +132,7 @@ func newWizard(mach machine, validate func(string) (string, error), dir string, 
 		menuItem{id: demoHTTPID, label: "Demo (HTTP)",
 			detail: "an invented API with fake users, nothing to set up"},
 		menuItem{id: demoPGID, label: "Demo (Postgres)",
-			detail: "an invented database, inspected like a real one, nothing to set up"})
+			detail: "hoop's public read-only demo database (dellstore on AWS RDS), nothing to set up"})
 	for _, p := range daemon.ServableProtocols() {
 		detail := daemon.ProtocolLabel(p)
 		if f, ok := mach.foundFor(p); ok {

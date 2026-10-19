@@ -116,6 +116,15 @@ func TestStartSidecarDemoFrontsTheRemoteDemoDatabase(t *testing.T) {
 	}
 }
 
+// The demo database's address reaches the commands the tour shows and copies,
+// so a config that makes it anything but a plain host:port does not boot.
+func TestStartSidecarDemoRefusesACraftedDemoDatabaseAddress(t *testing.T) {
+	_, err := startSidecarDemo(writePGDemoConfig(t, "$(touch pwned).example.com:5432"), &daemon.Config{})
+	if err == nil || !strings.Contains(err.Error(), configyaml.DemoPostgresKey) {
+		t.Errorf("err = %v, want a refusal naming %s", err, configyaml.DemoPostgresKey)
+	}
+}
+
 // Booting or validating a Postgres demo config first writes the RDS CA its
 // listener verifies the database with; any other config writes nothing.
 func TestPrepareSidecarDemoWritesTheRDSCAForThePostgresDemoOnly(t *testing.T) {

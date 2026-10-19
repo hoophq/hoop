@@ -21,8 +21,9 @@ const StarterFile = "hoop-sidecar.yaml"
 // that is not the CLI never sees it.
 const DemoAPIKey = AnchorPrefix + "hoop-demo-api"
 
-// DemoPostgresKey is DemoAPIKey's twin for the Postgres demo: the CLI serves
-// an invented Postgres database at the key's address while the sidecar runs.
+// DemoPostgresKey marks a config whose listener fronts hoop's remote demo
+// database at the key's address. The CLI serves nothing for it: the key turns
+// the guided tour on, and makes the CLI write the RDS CA before boot.
 const DemoPostgresKey = AnchorPrefix + "hoop-demo-postgres"
 
 // RenderOptions are the comments and extension keys Render adds around a

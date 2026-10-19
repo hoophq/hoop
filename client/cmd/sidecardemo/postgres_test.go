@@ -5,9 +5,13 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // The bundle is the three RDS us-east-1 roots, and none is near its end:
@@ -67,23 +71,85 @@ func TestEnsureCAWritesTheBundleOnce(t *testing.T) {
 	}
 }
 
+// psqlArgs runs cmd in /bin/sh with psql replaced by a function that prints
+// its arguments, and returns them with the PGPASSWORD psql saw. It is the
+// shell's own reading of the command a person pastes.
+func psqlArgs(t *testing.T, cmd string) (password string, args []string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := `psql() { printf '%s\n' "$PGPASSWORD"; for a in "$@"; do printf '%s\n' "$a"; done; }; ` + cmd
+	c := exec.Command("/bin/sh", "-c", script)
+	c.Dir = dir
+	out, err := c.Output()
+	if err != nil {
+		t.Fatalf("sh: %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if len(lines) != 4 || lines[2] != "-c" {
+		t.Fatalf("psql got %q, want a password, a connection string, -c and the SQL", lines)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) > 0 {
+		t.Fatalf("the command ran shell code: it wrote %s", entries[0].Name())
+	}
+	return lines[0], lines[1:]
+}
+
 // Through the sidecar, psql goes to the loopback listener in plaintext; the
 // comparison step goes to the database over TLS verified against the bundle.
+// A home directory with spaces, quotes and backslashes stays one sslrootcert
+// value: pgx parses the connection string psql would get and reads the CA.
 func TestPsqlCommands(t *testing.T) {
-	t.Setenv("HOME", "/home/demo")
+	home := filepath.Join(t.TempDir(), `it's a "home" \x`)
+	t.Setenv("HOME", home)
+	ca, err := EnsureCA()
+	if err != nil {
+		t.Fatal(err)
+	}
 	p := Ports{Listen: "127.0.0.1:18082", API: PGAddr}
-	via := PGSteps[0].Psql(p)
-	for _, want := range []string{"PGPASSWORD=" + PGPassword, "host=127.0.0.1 port=18082", "user=" + PGUser,
-		"dbname=" + PGDatabase, "sslmode=disable", PGSteps[0].SQL} {
-		if !strings.Contains(via, want) {
-			t.Errorf("sidecar step %q lacks %q", via, want)
+
+	pw, args := psqlArgs(t, PGSteps[0].Psql(p))
+	if pw != PGPassword || args[2] != PGSteps[0].SQL {
+		t.Errorf("sidecar step: password %q sql %q", pw, args[2])
+	}
+	cfg, err := pgconn.ParseConfig(args[0])
+	if err != nil || cfg.Host != "127.0.0.1" || cfg.Port != 18082 || cfg.User != PGUser ||
+		cfg.Database != PGDatabase || cfg.TLSConfig != nil {
+		t.Errorf("sidecar step connects to %+v (err %v), want the plaintext loopback listener", cfg, err)
+	}
+
+	// Parsing reads the CA at sslrootcert, so it succeeds only when the odd
+	// home directory came through as one value.
+	_, args = psqlArgs(t, PGSteps[3].Psql(p))
+	cfg, err = pgconn.ParseConfig(args[0])
+	if err != nil {
+		t.Fatalf("direct step connection string %q (CA at %s): %v", args[0], ca, err)
+	}
+	if tc := cfg.TLSConfig; cfg.Host != PGHost || tc == nil || tc.InsecureSkipVerify || tc.RootCAs == nil || tc.ServerName != PGHost {
+		t.Errorf("direct step %q does not verify %s against the bundle", args[0], PGHost)
+	}
+}
+
+// An address that reaches the copied command cannot run shell code in it,
+// even before CheckAddr refuses it at boot.
+func TestPsqlKeepsAnAddressLiteral(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	evil := "$(touch PWNED)`touch PWNED2`'\";.example.com:5432"
+	_, args := psqlArgs(t, PGSteps[3].Psql(Ports{Listen: PGListenAddr, API: evil}))
+	if !strings.Contains(args[0], "$(touch PWNED)`touch PWNED2`") {
+		t.Errorf("connection string %q lost the address's text", args[0])
+	}
+}
+
+func TestCheckAddr(t *testing.T) {
+	for _, ok := range []string{PGAddr, "127.0.0.1:5432", "[::1]:5432", "db-1.example.com:6543"} {
+		if err := CheckAddr(ok); err != nil {
+			t.Errorf("CheckAddr(%q) = %v", ok, err)
 		}
 	}
-	direct := PGSteps[3].Psql(p)
-	for _, want := range []string{"host=" + PGHost + " port=5432", "sslmode=verify-full",
-		"sslrootcert=/home/demo/.hoop/sidecar/demo/rds-us-east-1-bundle.pem"} {
-		if !strings.Contains(direct, want) {
-			t.Errorf("direct step %q lacks %q", direct, want)
+	for _, bad := range []string{"$(touch x).example.com:5432", "host:abc", "host:0", "a b:5432",
+		"host", "-x.com:5432", "x..com:5432", ":5432", "host:5432;rm"} {
+		if err := CheckAddr(bad); err == nil {
+			t.Errorf("CheckAddr(%q) accepted it", bad)
 		}
 	}
 }

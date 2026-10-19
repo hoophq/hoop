@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // The Postgres demo is the database twin of the HTTP demo in demo.go: the
@@ -146,18 +148,72 @@ var PGSteps = []Step{
 // TLS, verified against the RDS bundle at CAPath.
 func (s Step) Psql(p Ports) string {
 	target := p.Listen
-	ssl := "sslmode=disable"
+	ssl := [][2]string{{"sslmode", "disable"}}
 	if s.Direct {
 		target = p.API
-		ssl = "sslmode=require"
+		ssl = [][2]string{{"sslmode", "require"}}
 		if ca, err := CAPath(); err == nil {
-			ssl = "sslmode=verify-full sslrootcert=" + ca
+			ssl = [][2]string{{"sslmode", "verify-full"}, {"sslrootcert", ca}}
 		}
 	}
 	host, port, err := net.SplitHostPort(target)
 	if err != nil {
 		host, port = target, PGPort
 	}
-	conn := fmt.Sprintf("host=%s port=%s user=%s dbname=%s %s", host, port, PGUser, PGDatabase, ssl)
-	return fmt.Sprintf("PGPASSWORD=%s psql %q -c %q", PGPassword, conn, s.SQL)
+	conn := ConnString(append([][2]string{{"host", host}, {"port", port}, {"user", PGUser}, {"dbname", PGDatabase}}, ssl...)...)
+	return "PGPASSWORD=" + shellQuote(PGPassword) + " psql " + shellQuote(conn) + " -c " + shellQuote(s.SQL)
+}
+
+// ConnString renders key/value pairs as a libpq keyword/value connection
+// string. Each value is quoted the libpq way, so a space, a quote or a
+// backslash in it (a home directory in sslrootcert) stays part of the value.
+func ConnString(pairs ...[2]string) string {
+	parts := make([]string, len(pairs))
+	for i, kv := range pairs {
+		parts[i] = kv[0] + "=" + pqQuote(kv[1])
+	}
+	return strings.Join(parts, " ")
+}
+
+func pqQuote(v string) string {
+	if v != "" && !strings.ContainsAny(v, " \t\n\r\v\f'\\") {
+		return v
+	}
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"
+}
+
+// shellQuote quotes s for a POSIX shell. Nothing expands inside single
+// quotes, so $(), backticks and spaces in s stay literal text.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// CheckAddr refuses a demo database address that is not a plain host:port: a
+// DNS name or an IP, and a port number. The address reaches the commands the
+// tour shows and copies, so anything else is refused, not only quoted.
+func CheckAddr(addr string) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("%q is not host:port", addr)
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("%q has no valid port", addr)
+	}
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+	if host == "" || len(host) > 253 {
+		return fmt.Errorf("%q has no valid host", addr)
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return fmt.Errorf("%q has no valid host", addr)
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				return fmt.Errorf("%q has no valid host", addr)
+			}
+		}
+	}
+	return nil
 }

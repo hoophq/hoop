@@ -362,6 +362,9 @@ func startSidecarDemo(path string, cfg *daemon.Config) (*sidecarDemo, error) {
 		if err != nil || !ok {
 			return none, err
 		}
+		if err := sidecardemo.CheckAddr(addr); err != nil {
+			return none, fmt.Errorf("%s: %w", configyaml.DemoPostgresKey, err)
+		}
 		d.kind, d.what = sidecardemo.KindPostgres, "demo database"
 		d.where = "hoop's demo database is " + addr
 	}
