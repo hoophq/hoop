@@ -27,6 +27,7 @@ import (
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
@@ -163,6 +164,7 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 
 func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
+	execOnly := pctx.ClientVerb == pb.ClientVerbExec && !isGatewayProxyStream(stream)
 	recvCh := grpc.NewStreamRecv(stream.Context(), stream)
 	for {
 		var dstream *grpc.DataStream
@@ -195,6 +197,14 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		// do not process any system packets issued by the user
 		if handled := handleSystemPacketRequests(pkt.Type); handled {
 			continue
+		}
+
+		// The access rule comes from the client's verb. A proxy packet on an
+		// exec stream would skip the jit rule (hoophq/hoop#1468).
+		if execOnly && !isExecPacket(pkt.Type) {
+			log.With("sid", pctx.SID, "connection", pctx.ConnectionName).
+				Warnf("refused packet %v on an exec session", pkt.Type)
+			return status.Errorf(codes.PermissionDenied, "packet type %v is not allowed on an exec session", pkt.Type)
 		}
 
 		if pkt.Spec == nil {
@@ -847,6 +857,24 @@ func clientArgsDecode(spec map[string][]byte) []string {
 		}
 	}
 	return clientArgs
+}
+
+// isExecPacket reports whether an exec client sends this packet type.
+// Every hoop exec release and the gateway clientexec send only these.
+func isExecPacket(pktType string) bool {
+	switch pktType {
+	case pbagent.SessionOpen, pbagent.ExecWriteStdin, pbagent.SessionClose:
+		return true
+	}
+	return false
+}
+
+// isGatewayProxyStream reports whether a gateway proxy opened the stream.
+// Only the gateway process knows the impersonation secret. The sshcertproxy
+// sends database packets on exec streams and needs this exemption (ENG-766).
+func isGatewayProxyStream(stream *streamclient.ProxyStream) bool {
+	key := stream.GetMeta(grpckey.ImpersonateAuthKeyHeaderKey)
+	return key != "" && key == grpckey.ImpersonateSecretKey
 }
 
 func handleSystemPacketRequests(pktType string) (handled bool) {
