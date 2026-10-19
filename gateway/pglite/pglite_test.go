@@ -3,10 +3,13 @@ package pglite
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"net"
 	"testing"
+	"time"
 
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 // TestStartQueryAndResume boots the embedded database, exercises the PG
@@ -199,6 +202,49 @@ func TestHoopMigrations(t *testing.T) {
 		t.Fatalf("query private.orgs after resumed migration run: %v", err)
 	}
 	t.Log("upgrade path ok: migrations no-op on resumed cluster")
+}
+
+// A client that never closes its connection, such as a sql.DB nobody closed,
+// must not keep the bridge goroutine, and with it the closed instance, alive.
+func TestCloseEndsAnOpenSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping embedded pglite test in -short mode")
+	}
+	ctx := context.Background()
+	inst, err := Start(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	db := openDB(t, inst.DSN())
+	defer db.Close()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open session: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `SELECT 1`); err != nil {
+		t.Fatalf("SELECT 1: %v", err)
+	}
+	var session net.Conn
+	if err := conn.Raw(func(driverConn any) error {
+		session = driverConn.(*stdlib.Conn).Conn().PgConn().Conn()
+		return nil
+	}); err != nil {
+		t.Fatalf("reach the session socket: %v", err)
+	}
+
+	if err := inst.Close(ctx); err != nil {
+		t.Fatalf("close instance: %v", err)
+	}
+	// The client stays silent, so only the bridge can end the session.
+	if err := session.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, err = session.Read(make([]byte, 1))
+	var netErr net.Error
+	if err == nil || (errors.As(err, &netErr) && netErr.Timeout()) {
+		t.Fatalf("session still open after Close: read returned %v", err)
+	}
 }
 
 func openDB(t *testing.T, dsn string) *sql.DB {
