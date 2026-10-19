@@ -2613,6 +2613,39 @@ with `strict` or with mask rules: a lane that cannot decode a message cannot
 mask it. `-validate` reports the settings and dials nothing. A changed
 `discover` block, like a changed `descriptors` list, applies on restart.
 
+**Decoding without a schema.** `grpc.raw` is for a service with no
+descriptor set, no reflection and no `.proto` at hand. It excludes
+`descriptors`, `discover` and `strict`, and is refused on `spanner`.
+
+```yaml
+    grpc:
+      raw:
+        string_fields:                       # optional: only for masking
+          - method: /demo.v1.Ledger/GetInvoice
+            response: ["2", "4.1"]           # field 2; field 1 inside field 4
+          - method: /demo.v1.Ledger/ExportAll  # declared, nothing to mask
+      capture_payload: true
+```
+
+Messages render as JSON keyed by field number,
+`{"1":"INV-1001","2":"ada@example.com"}`, and every statement carries
+`grpc.schema: raw`. Audit, `pii` and `pattern_match` rules and the analyzer
+read that rendering. It is best effort: the wire does not say whether a
+length-delimited value is a string, bytes or a nested message, so the lane
+guesses (text that starts with a visible character is a string, a value
+that parses whole is a message, the rest is `base64:`), and a wrong guess
+can hide a value from a detector.
+
+Masking rewrites only the response paths `string_fields` declares, the type
+the wire lacks. Mask rules match a path by field number (`columns: ["2"]`)
+or by detector, and nothing undeclared is ever rewritten. On a lane with
+mask rules, a method with no `string_fields` entry is refused
+(`FAILED_PRECONDITION`) before the upstream is dialed; list it with no
+`response` when it has nothing to mask. Bytes that contradict a declaration,
+such as a number at a path declared a string, refuse the response
+(`INTERNAL`). The listener form turns `raw` on; `string_fields` is set in the
+config file.
+
 The Postgres codec is stateful because one `RowDescription` describes every
 `DataRow` after it, and those land in different TCP reads. That is why the
 registry hands out a factory rather than an instance: two connections sharing

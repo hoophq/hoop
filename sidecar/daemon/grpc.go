@@ -67,6 +67,10 @@ type GRPCCodecConfig struct {
 	// GRPCDiscoverConfig.
 	Discover *GRPCDiscoverConfig `json:"discover,omitempty" cap:"grpc_discover" label:"Discover the schema" help:"Fetches the schema from the upstream over gRPC server reflection when the listener starts, in place of descriptors." ui:"presence"`
 
+	// Raw decodes without any schema: no descriptor set, no reflection.
+	// See GRPCRawConfig for what that can and cannot do.
+	Raw *GRPCRawConfig `json:"raw,omitempty" cap:"grpc_raw" label:"Decode without a schema" help:"Renders messages by field number for audit, PII rules and AI analysis. Best effort: a value can be misread. Masks only the string fields the config file declares." ui:"presence"`
+
 	// CapturePayload renders decoded request and response messages into
 	// per-message Statements so payload-matching rules (pii, pattern_match)
 	// and OPA can read them. Requires Descriptors.
@@ -91,6 +95,49 @@ type GRPCCodecConfig struct {
 	// headers HTTPCodecConfig refuses are refused here; authorization is
 	// where a gRPC bearer token lives.
 	Metadata []string `json:"metadata,omitempty" label:"Metadata" help:"Allowlist exposed to policy. The same four headers HTTP refuses are refused here."`
+}
+
+// GRPCRawConfig is a grpc lane with no schema at all.
+//
+// Messages render as JSON keyed by field number, {"1":"INV-1001"}, so the
+// audit trail, pii and pattern_match rules and an analyzer see the values
+// without their names. The wire does not say whether a length-delimited
+// value is a string, bytes or a nested message, so the rendering guesses,
+// and a wrong guess can hide a value from a detector: best effort, not the
+// enforcement a descriptor-backed lane gives.
+//
+// Masking rewrites only StringFields: the operator states which response
+// paths are strings, the type the wire lacks. Mask rules match those paths
+// by field number (columns: ["2"]) or by detector, and nothing else is
+// ever rewritten. Bytes that contradict a declaration refuse the message.
+type GRPCRawConfig struct {
+	// StringFields declares, per method, the response field paths that are
+	// strings. Edited in the config file: the form has no list of objects.
+	StringFields []GRPCRawStringFields `json:"string_fields,omitempty" ui:"-"`
+}
+
+// GRPCRawStringFields is one method's declared string paths.
+type GRPCRawStringFields struct {
+	// Method is the canonical path, /demo.v1.Ledger/GetInvoice.
+	Method string `json:"method,omitempty"`
+	// Response lists field-number paths: "2", or "4.1" for field 1 of the
+	// message in field 4.
+	Response []string `json:"response,omitempty"`
+}
+
+// fields is the declarations in libhoop's shape. A method listed twice is
+// reported, not merged: two entries for one method is a config mistake.
+func (r *GRPCRawConfig) fields() (codecgrpc.RawFields, []string) {
+	out := codecgrpc.RawFields{}
+	var dups []string
+	for _, sf := range r.StringFields {
+		if _, seen := out[sf.Method]; seen {
+			dups = append(dups, sf.Method)
+			continue
+		}
+		out[sf.Method] = codecgrpc.RawMethod{Response: sf.Response}
+	}
+	return out, dups
 }
 
 // grpcDiscoverFromReflection is the only schema source discovery knows.
@@ -196,6 +243,25 @@ func (g *GRPCCodecConfig) validate(lane string, onHost bool) []string {
 					"grpc.strict refuses them; keep one", lane))
 		}
 	}
+	if g.Raw != nil {
+		if len(g.Descriptors) > 0 || g.Discover != nil {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.raw decodes without a schema, and grpc.descriptors or "+
+					"grpc.discover names one; keep one", lane))
+		}
+		if g.Strict {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.strict needs a schema, and grpc.raw has none", lane))
+		}
+		fields, dups := g.Raw.fields()
+		for _, m := range dups {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.raw.string_fields lists %q twice", lane, m))
+		}
+		if err := fields.Validate(); err != nil {
+			problems = append(problems, fmt.Sprintf("listener %q: %v", lane, err))
+		}
+	}
 	if g.Strict && !g.hasSchema() {
 		problems = append(problems, fmt.Sprintf(
 			"listener %q: grpc.strict needs grpc.descriptors or grpc.discover; strictness about "+
@@ -207,7 +273,7 @@ func (g *GRPCCodecConfig) validate(lane string, onHost bool) []string {
 		// would silently never fire: the failure this package refuses
 		// everywhere else.
 		problems = append(problems, fmt.Sprintf(
-			"listener %q: grpc.capture_payload needs grpc.descriptors or grpc.discover; without a "+
+			"listener %q: grpc.capture_payload needs grpc.descriptors, grpc.discover or grpc.raw; without a "+
 				"descriptor set the lane cannot decode a message", lane))
 	}
 	return problems
@@ -248,11 +314,11 @@ func (d DescriptorPaths) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]string(d))
 }
 
-// hasSchema reports whether the lane decodes payloads, from pinned sets or
-// a discovered one, tolerating a nil receiver so call sites read as one
-// condition.
+// hasSchema reports whether the lane decodes payloads: from pinned sets, a
+// discovered one, or raw without one. Tolerates a nil receiver so call
+// sites read as one condition.
 func (g *GRPCCodecConfig) hasSchema() bool {
-	return g != nil && (len(g.Descriptors) > 0 || g.Discover != nil)
+	return g != nil && (len(g.Descriptors) > 0 || g.Discover != nil || g.Raw != nil)
 }
 
 // GRPCServer is the running side of a grpc lane. Serve blocks until the
@@ -451,7 +517,12 @@ func buildGRPCServer(
 				log:     laneLog,
 				release: release,
 			}
-			state.stmts.schemaUnavailable = gap != nil
+			switch {
+			case gap != nil:
+				state.stmts.schema = "unavailable"
+			case gc.Raw != nil:
+				state.stmts.schema = "raw"
+			}
 			handler := state.callbacks()
 			if err := g.Start(ctx); err != nil {
 				if failOnAuditError {
@@ -481,6 +552,18 @@ func buildGRPCServer(
 			}
 			return handler, nil, nil
 		}
+	}
+
+	if gc.Raw != nil {
+		// No schema to load: the lane renders by field number and masks
+		// only the declared paths. validate refused a duplicate method.
+		fields, _ := gc.Raw.fields()
+		maps.Copy(opts, payloadOpts)
+		srv, err := codecgrpc.NewServerRaw(opts, fields, openFor(nil), laneLog)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
+		}
+		return srv, rules, nil
 	}
 
 	if gc.Discover != nil {

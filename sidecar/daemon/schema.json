@@ -312,6 +312,13 @@
           ]
         },
         {
+          "key": "raw",
+          "type": "object",
+          "label": "Decode without a schema",
+          "help": "Renders messages by field number for audit, PII rules and AI analysis. Best effort: a value can be misread. Masks only the string fields the config file declares.",
+          "presence": true
+        },
+        {
           "key": "capture_payload",
           "type": "boolean",
           "label": "Capture the payload",

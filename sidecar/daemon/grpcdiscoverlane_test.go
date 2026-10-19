@@ -209,7 +209,7 @@ func TestGRPCDiscoverConfigValidation(t *testing.T) {
 		"bad digest":          {grpc: `"discover":{"from":"reflection","sha256":"abc"}`, want: "not a hex SHA-256"},
 		"fail open strict":    {grpc: `"discover":{"from":"reflection","fail_open":true},"strict":true`, want: "keep one"},
 		"fail open masking":   {grpc: `"discover":{"from":"reflection","fail_open":true}`, mask: `,"mask":{"rules":[{"name":"m","entities":["EMAIL_ADDRESS"]}]}`, want: "cannot mask it"},
-		"capture with no set": {grpc: `"capture_payload":true`, want: "needs grpc.descriptors or grpc.discover"},
+		"capture with no set": {grpc: `"capture_payload":true`, want: "needs grpc.descriptors, grpc.discover or grpc.raw"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := LoadConfigBytes([]byte(`{"listeners":[{"name":"rpc","protocol":"grpc",` +

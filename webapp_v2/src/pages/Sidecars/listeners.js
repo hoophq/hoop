@@ -173,7 +173,8 @@ export function validateListener(form, others = [], original = null, config = nu
   if (listenerAccepts(l.protocol, 'grpc')) {
     const hasDescriptors = (l.grpc?.descriptors ?? []).length > 0
     const discover = l.grpc?.discover
-    const hasSchema = hasDescriptors || discover != null
+    const raw = l.grpc?.raw
+    const hasSchema = hasDescriptors || discover != null || raw != null
     const capture = l.grpc?.capture_payload === true
     const metadata = forbiddenHeader(l.grpc?.metadata)
     if (metadata) errors['grpc.metadata'] = `"${metadata}" may not be exposed to policy.`
@@ -193,6 +194,18 @@ export function validateListener(form, others = [], original = null, config = nu
     }
     if (discover?.fail_open && masking) {
       errors['grpc.discover.fail_open'] = 'This listener masks, and cannot mask a message it cannot decode.'
+    }
+    if (raw != null && (hasDescriptors || discover != null)) {
+      errors['grpc.raw'] = 'Decoding without a schema excludes descriptors and discovery; keep one.'
+    }
+    if (raw != null && l.grpc?.strict) {
+      errors['grpc.raw'] = 'Strict decoding needs a schema, and this listener decodes without one.'
+    }
+    if (raw != null && l.protocol === 'spanner') {
+      errors['grpc.raw'] = 'Spanner reads SQL from named fields; a listener without a schema has no names.'
+    }
+    if (raw != null && masking && !(raw.string_fields ?? []).length) {
+      errors['grpc.raw'] = 'This listener masks, and without a schema it rewrites only the string fields declared in the config file.'
     }
     if (analyzing && !capture) {
       errors['grpc.capture_payload'] = 'This listener runs the AI analyzer, which reads the payload.'
