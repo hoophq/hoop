@@ -3,10 +3,10 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"io"
 	"github.com/hoophq/libhoop"
 	"github.com/hoophq/libhoop/agent/dbexec"
 	redactortypes "github.com/hoophq/libhoop/redactor/types"
-	"io"
 	"strconv"
 	"strings"
 
