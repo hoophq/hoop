@@ -6,6 +6,7 @@ import (
 
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
@@ -40,7 +41,7 @@ func TestListenClientMessagesExecVerb(t *testing.T) {
 		{name: "exec stdin on exec stream", verb: pb.ClientVerbExec, pktType: pbagent.ExecWriteStdin},
 		{name: "session close on exec stream", verb: pb.ClientVerbExec, pktType: pbagent.SessionClose},
 		{name: "postgres packet on connect stream", verb: pb.ClientVerbConnect, pktType: pbagent.PGConnectionWrite},
-		{name: "gateway proxy on exec stream", verb: pb.ClientVerbExec, impersonation: grpckey.ImpersonateSecretKey, pktType: pbagent.PGConnectionWrite},
+		{name: "gateway proxy on exec stream", verb: pb.ClientVerbExec, impersonation: grpckey.ImpersonateSecretKey, pktType: pbagent.TerminalWriteStdin},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sid := "sid-execverb-" + strings.ReplaceAll(tt.name, " ", "-")
@@ -85,5 +86,16 @@ func TestListenClientMessagesExecVerb(t *testing.T) {
 				t.Fatalf("want the packet forwarded to the agent (ErrAgentOffline), got %v", err)
 			}
 		})
+	}
+}
+
+// Every hoop exec release and the gateway clientexec send this sequence on a
+// non-impersonated exec stream. SessionOpen needs a database past the gate,
+// so the test checks the gate in the order listenClientMessages applies it.
+func TestExecClientSequencePassesTheGate(t *testing.T) {
+	for _, pktType := range []string{pbgateway.KeepAlive, pbagent.SessionOpen, pbagent.ExecWriteStdin, pbagent.SessionClose} {
+		if !handleSystemPacketRequests(pktType) && !isExecPacket(pktType) {
+			t.Errorf("an exec client packet %v would close the session", pktType)
+		}
 	}
 }

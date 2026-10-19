@@ -871,7 +871,7 @@ func isExecPacket(pktType string) bool {
 
 // isGatewayProxyStream reports whether a gateway proxy opened the stream.
 // Only the gateway process knows the impersonation secret. The sshcertproxy
-// sends database packets on exec streams and needs this exemption (ENG-766).
+// sends terminal packets on exec streams and needs this exemption (ENG-766).
 func isGatewayProxyStream(stream *streamclient.ProxyStream) bool {
 	key := stream.GetMeta(grpckey.ImpersonateAuthKeyHeaderKey)
 	return key != "" && key == grpckey.ImpersonateSecretKey
