@@ -24,10 +24,16 @@ env:
   DOCKER_BUILD_CHECKS_ANNOTATIONS: "false"
 
 jobs:
+  # make test, split like Unit Test in pullrequest.yml (ENG-760): the unit
+  # suite in shards, and the sidecar targets once, in shard 1. Every job that
+  # needs test waits for all of its legs.
   test:
-    name: Test
+    name: Test (${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
     environment: production
+    strategy:
+      matrix:
+        shard: [1, 2, 3, 4]
 
     steps:
       - name: Checkout Hoop
@@ -48,10 +54,16 @@ jobs:
       - name: Download modules over HTTP/1.1
         run: go mod download
 
-      - name: Test
+      - name: Sidecar Test
+        if: matrix.shard == 1
         env:
           GODEBUG: http2client=1
-        run: make test
+        run: make test-sidecar test-sidecar-plugins
+
+      - name: Unit Test
+        env:
+          GODEBUG: http2client=1
+        run: make test-unit SHARD=${{ matrix.shard }} SHARDS=${{ strategy.job-total }}
 
   # Builds do not wait for test: they publish nothing. Every job that
   # pushes an image or a file needs test and every tarball, so a failed
