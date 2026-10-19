@@ -63,6 +63,11 @@ type laneStatements struct {
 	// request messages, which carry no headers, so message copies these
 	// onto them, and the analyzer decides between the two spellings.
 	reviewMode map[string]string
+
+	// schemaUnavailable marks every statement of an RPC a discovering lane
+	// forwarded without its schema (grpc.discover.fail_open), so the audit
+	// trail says why it holds no messages.
+	schemaUnavailable bool
 }
 
 func newLaneStatements(r *http.Request, service, methodName string, allow []string, proto inspect.Protocol, spanner *SpannerConfig) *laneStatements {
@@ -123,6 +128,9 @@ func (s *laneStatements) base(dir inspect.Direction, hdr http.Header) inspect.St
 	meta := make(map[string]string, len(s.baseMeta)+2)
 	for k, v := range s.baseMeta {
 		meta[k] = v
+	}
+	if s.schemaUnavailable {
+		meta[metadataGRPCSchema] = "unavailable"
 	}
 	return inspect.Statement{
 		Protocol:  s.protocol,

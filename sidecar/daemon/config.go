@@ -1679,12 +1679,19 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 			// A grpc-transport lane masks by decoding fields through the
 			// descriptor set and re-encoding, so the set is the capability.
 			// Without it the rules would load and never fire (ADR-0013).
-			if !lc.GRPC.hasDescriptors() {
+			if !lc.GRPC.hasSchema() {
 				problems = append(problems, fmt.Sprintf(
-					"%s: masking on a %s lane needs grpc.descriptors; without a "+
+					"%s: masking on a %s lane needs grpc.descriptors or grpc.discover; without a "+
 						"descriptor set the lane cannot decode a message to rewrite it. "+
 						"Add the descriptor set, or set mask: {rules: []} on this lane.",
 					name, lc.Protocol))
+			}
+			// A discovering lane that fails open forwards what it cannot
+			// decode, and a redactor must not.
+			if lc.GRPC != nil && lc.GRPC.Discover != nil && lc.GRPC.Discover.FailOpen {
+				problems = append(problems, fmt.Sprintf(
+					"%s: grpc.discover.fail_open cannot be true on a lane with mask rules; "+
+						"a lane that cannot decode a message cannot mask it", name))
 			}
 		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !gate.MaskSupported(p) {
 			// The loaded module answers for a plug-in lane (the rewrite
