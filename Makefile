@@ -187,6 +187,15 @@ test-sidecar-plugins:
 test-sidecar-e2e:
 	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 go test -tags integration -v -timeout 10m -count=1 ./...
 
+# ADR-0032: the twins module sits outside go.work. test-twins runs the kit
+# and twin tests and the contract suites; test-twins-scenario boots the real
+# hoop binary against the twins (twins/README.md has the variables).
+test-twins:
+	cd twins && env GOWORK=off CGO_ENABLED=0 go test -count=1 -v ./...
+
+test-twins-scenario:
+	cd twins/scenario && env GOWORK=off CGO_ENABLED=0 go test -tags scenario -count=1 -v -timeout 10m ./...
+
 # EVL-338: the previous release must decode the document this plane serves.
 # The test builds a decoder in a worktree of the newest release tag HEAD does
 # not contain, so it needs the tags (fetch-depth: 0). The grep makes a renamed
@@ -490,4 +499,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: test-parity run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: test-parity test-twins test-twins-scenario run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
