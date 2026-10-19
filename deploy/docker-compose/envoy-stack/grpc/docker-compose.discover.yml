@@ -1,0 +1,97 @@
+# Discovery: grpc lanes fetch their schema from the upstream at startup.
+#
+#   docker compose -f docker-compose.discover.yml up -d --wait --build
+#   ./demo-discover.sh
+#
+# Run it from this directory, with the envoy stack and the standalone stack
+# DOWN: all three publish 18443 and 19000 on the host. A complete stack,
+# not an overlay: the point is what is MISSING. hoop-inspect mounts no
+# descriptor set; its lanes set grpc.discover and read the schema from
+# the upstream over gRPC server reflection (config-discover.yaml).
+#
+#   grpcurl ──h2c──> hoop-inspect:18443..18446 ──h2c──> ledger-reflect:9000
+#                                                  └──> ledger:9000 (no reflection)
+
+name: hoop-grpc-discover
+
+services:
+  # The ledger image with its opt-in reflection service on (app/reflection.go),
+  # serving the two sets the image compiled from ledger.proto and reports.proto.
+  ledger-reflect:
+    image: hoop-grpc-ledger:local
+    build: ./app
+    networks: [inspect]
+    environment:
+      LEDGER_REFLECTION: /srv/ledger.pb,/srv/reports.pb
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/healthz"]
+      interval: "2s"
+      timeout: "5s"
+      retries: 10
+      start_period: "5s"
+
+  # The same image with reflection off: what most production services look like.
+  ledger:
+    image: hoop-grpc-ledger:local
+    build: ./app
+    networks: [inspect]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/healthz"]
+      interval: "2s"
+      timeout: "5s"
+      retries: 10
+      start_period: "5s"
+
+  # The CLIENT still needs the schema to encode a call, so grpcurl gets the
+  # sets the image compiled. hoop-inspect does not mount this volume.
+  grpc-descriptors:
+    image: hoop-grpc-ledger:local
+    build: ./app
+    user: "0"
+    entrypoint: ["/bin/sh", "-c", "cp /srv/*.pb /descriptors/ && chmod 444 /descriptors/*.pb"]
+    volumes:
+      - grpc-descriptors:/descriptors
+
+  hoop-inspect:
+    image: hoop-inspect:local
+    build:
+      context: ../../../../sidecar
+      dockerfile: ../deploy/docker-compose/envoy-stack/sidecar/Dockerfile
+      additional_contexts:
+        libhoop: ../../../../libhoop
+    networks: [inspect]
+    volumes:
+      - ./config-discover.yaml:/etc/hoop-inspect/config.yaml:ro
+    ports:
+      - "18443:18443"   # billing: schema discovered
+      - "18444:18444"   # legacy: reflection off, refuses
+      - "18445:18445"   # legacy-open: reflection off, fail_open
+      - "18446:18446"   # pinned: wrong digest, refuses
+      - "19000:19000"   # admin: /healthz, /readyz, /stats
+    depends_on:
+      ledger-reflect: { condition: service_healthy }
+      ledger: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+
+  # On-demand client: docker compose -f docker-compose.discover.yml \
+  #   run --rm grpcurl -plaintext -protoset /descriptors/ledger.pb \
+  #   -d '{"id":"INV-1001"}' hoop-inspect:18443 demo.v1.Ledger/GetInvoice
+  grpcurl:
+    image: fullstorydev/grpcurl:latest
+    profiles: [cli]
+    networks: [inspect]
+    volumes:
+      - grpc-descriptors:/descriptors:ro
+    depends_on:
+      grpc-descriptors: { condition: service_completed_successfully }
+
+networks:
+  inspect:
+
+volumes:
+  grpc-descriptors:

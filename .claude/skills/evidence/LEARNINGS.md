@@ -41,3 +41,21 @@ Also found on the way:
 - QA's stacks were still up with QA's seed; recording there cost nothing. The
   gateway cached `index.html`, so a UI swap needed a container restart.
 
+## Trial 3 · ENG-611 (2026-10-16)
+
+The UI part was one sentence in the reject dialog; the behaviour it describes
+(a held client reads the approver's reason) happens outside the browser.
+
+| Version | What the agent delivered | Why it did not work | Rule it produced |
+|---|---|---|---|
+| 1 | Side-by-side video: open the approval, click Reject, type a reason | "It does not help at all": both videos showed the same clicks; only one sentence differed | A video must show a difference between the two sides, not just the screen the diff touched |
+| 2 | Video dropped, the sentence quoted in `EVIDENCE.md` | Wrong fix: the human wanted a better video, not none | Improve an item that misses; never drop it |
+| 3 | The real flow: a psql held on the sidecar, the approver rejects in the web app, the psql output mirrored live in a "test overlay" panel | Accepted: "the CLI over the UI was incredible" | When a UI action lands outside the browser, put that effect on screen, live |
+
+Also found on the way:
+- The overlay is fed by the real client's output file through a local CORS
+  file server, so it shows what the client printed, not a mock. Labeled
+  "test overlay" so nobody mistakes it for product UI.
+- Main showed "was rejected (approval …)", the branch added the reason: the
+  difference sits in one line at the bottom of the frame, and the last frame
+  holds it.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
@@ -48,5 +49,26 @@ func CreateSession(_ context.Context, session models.Session, connection *models
 		return err
 	}
 	events.DeriveFromSessionStart(session.OrgID, &session, connection)
+	return nil
+}
+
+// refusedSessionExitCode is the code the audit plugin records for a session
+// that ends on a gateway error.
+const refusedSessionExitCode = 254
+
+// CloseRefusedSession closes the open session an API exec wrote before the
+// transport refused its stream, and pairs the session.started that
+// CreateSession published with a session.closed.
+func CloseRefusedSession(orgID, userID, connectionName, sessionID, reason string) error {
+	closed, err := models.CloseRefusedSession(models.DB, orgID, userID, connectionName, sessionID,
+		refusedSessionExitCode, reason, time.Now().UTC())
+	if err != nil || !closed {
+		return err
+	}
+	sess, err := models.GetSessionByID(orgID, sessionID)
+	if err != nil {
+		return fmt.Errorf("session closed, but loading it for its closed event failed: %w", err)
+	}
+	events.DeriveFromSessionEnd(orgID, sess)
 	return nil
 }

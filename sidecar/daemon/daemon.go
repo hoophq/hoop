@@ -1377,7 +1377,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if plugin != nil {
 			pluginFactory = factory
 		}
-		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasDescriptors(), pluginFactory)
+		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -1547,7 +1547,7 @@ func buildServer(
 	log *slog.Logger,
 ) (*proxy.Server, error) {
 	lc := ln.cfg
-	upstreamTLS, err := lc.UpstreamTLS.BuildTLS(ln.trustRoots)
+	upstreamTLS, err := lc.upstreamTLS().BuildTLS(ln.trustRoots)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
@@ -1591,9 +1591,9 @@ func buildServer(
 	}
 
 	return proxy.NewServer(proxy.Config{
-		Listen:              lc.Listen,
+		Listen:              lc.listenAddress(),
 		Network:             lc.Network,
-		Upstream:            lc.Upstream,
+		Upstream:            lc.upstreamAddress(),
 		UpstreamTLS:         upstreamTLS,
 		MySQLAuthPrivateKey: mysqlAuthKey,
 		DownstreamTLS:       downstreamTLS,
@@ -1649,7 +1649,7 @@ func buildServer(
 //
 // Validate reports both at startup; these checks cover a caller reaching Run
 // without going through LoadConfig.
-func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCDescriptors bool,
+func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCSchema bool,
 	pluginFactory func() inspect.Codec) (gate.Masker, error) {
 	if !mc.hasRules() {
 		return nil, nil
@@ -1659,10 +1659,10 @@ func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCDescr
 	}
 	switch {
 	case proto == inspect.GRPC || proto == inspect.Spanner:
-		if !hasGRPCDescriptors {
+		if !hasGRPCSchema {
 			return nil, fmt.Errorf(
-				"mask.rules is set but this %s lane has no grpc.descriptors; without a "+
-					"descriptor set the lane cannot decode a message to rewrite it", proto)
+				"mask.rules is set but this %s lane has no grpc.descriptors or grpc.discover; "+
+					"without a descriptor set the lane cannot decode a message to rewrite it", proto)
 		}
 	case pluginFactory != nil:
 		if !gate.MaskSupportedBy(pluginFactory) {

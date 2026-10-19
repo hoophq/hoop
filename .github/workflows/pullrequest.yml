@@ -16,9 +16,16 @@ env:
   GODEBUG: http2client=0
 
 jobs:
+  # One runner killed the whole suite when the big PGlite packages ran
+  # together (ENG-760). scripts/ci/unit-shards.sh spreads them; the number
+  # of legs here is SHARDS.
   test:
-    name: Unit Test
+    name: Unit Test (${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
 
     steps:
       - name: Checkout
@@ -50,10 +57,55 @@ jobs:
         run: go mod download
 
       # The per-module sidecar loop runs in the Sidecar Module Test job.
+      # shell: bash adds pipefail, so tee does not hide a failed test.
       - name: Test
+        shell: bash
         env:
           GODEBUG: http2client=1
-        run: make test-unit
+        run: make test-unit SHARD=${{ matrix.shard }} SHARDS=${{ strategy.job-total }} | tee "$RUNNER_TEMP/unit.jsonl"
+
+      - name: List the packages this shard ran
+        run: >-
+          jq -rR 'fromjson? | select(.Test == null and (.Action == "pass" or .Action == "fail" or .Action == "skip")) | .Package'
+          "$RUNNER_TEMP/unit.jsonl" > "$RUNNER_TEMP/packages-${{ matrix.shard }}.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: unit-packages-${{ matrix.shard }}
+          path: ${{ runner.temp }}/packages-${{ matrix.shard }}.txt
+          retention-days: 1
+
+  # Fails when a package of go list ran in no Unit Test shard, or in two.
+  test-shards:
+    name: Unit Test (every package in one shard)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: unit-packages-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/shards
+      - name: Check the union of the shards
+        run: scripts/ci/unit-shards.sh check "$RUNNER_TEMP/shards"
+      # A check that cannot fail passes forever: drop one package and expect it to.
+      - name: Check that a dropped package fails the check
+        run: |
+          cp -R "$RUNNER_TEMP/shards" "$RUNNER_TEMP/dropped"
+          sed -i 1d "$RUNNER_TEMP/dropped/packages-1.txt"
+          if scripts/ci/unit-shards.sh check "$RUNNER_TEMP/dropped"; then
+            echo "::error::the check passed with a package missing"; exit 1
+          fi
 
   # The test-sidecar half of `make test-oss`, beside Unit Test: it enters
   # each nested sidecar module to prove its go.mod builds on its own.

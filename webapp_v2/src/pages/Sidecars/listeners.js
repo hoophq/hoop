@@ -172,13 +172,40 @@ export function validateListener(form, others = [], original = null, config = nu
 
   if (listenerAccepts(l.protocol, 'grpc')) {
     const hasDescriptors = (l.grpc?.descriptors ?? []).length > 0
+    const discover = l.grpc?.discover
+    const raw = l.grpc?.raw
+    const hasSchema = hasDescriptors || discover != null || raw != null
     const capture = l.grpc?.capture_payload === true
     const metadata = forbiddenHeader(l.grpc?.metadata)
     if (metadata) errors['grpc.metadata'] = `"${metadata}" may not be exposed to policy.`
-    if (!hasDescriptors && capture) errors['grpc.descriptors'] = 'Needed to capture payloads.'
-    if (!hasDescriptors && l.grpc?.strict) errors['grpc.descriptors'] = 'Needed for strict decoding.'
-    if (masking && !hasDescriptors) {
-      errors['grpc.descriptors'] = 'Needed to mask: the listener cannot decode a message to rewrite it.'
+    if (!hasSchema && capture) errors['grpc.descriptors'] = 'Needed to capture payloads, unless the schema is discovered.'
+    if (!hasSchema && l.grpc?.strict) errors['grpc.descriptors'] = 'Needed for strict decoding, unless the schema is discovered.'
+    if (masking && !hasSchema) {
+      errors['grpc.descriptors'] = 'Needed to mask, unless the schema is discovered: the listener cannot decode a message to rewrite it.'
+    }
+    if (discover != null && hasDescriptors) {
+      errors['grpc.discover'] = 'Remove the descriptors: a discovered schema replaces them.'
+    }
+    if (discover?.sha256 && !/^[0-9a-fA-F]{64}$/.test(discover.sha256.trim())) {
+      errors['grpc.discover.sha256'] = 'Not a SHA-256 digest; copy it from -grpc-discover.'
+    }
+    if (discover?.fail_open && l.grpc?.strict) {
+      errors['grpc.discover.fail_open'] = 'Strict decoding refuses what fail open forwards; keep one.'
+    }
+    if (discover?.fail_open && masking) {
+      errors['grpc.discover.fail_open'] = 'This listener masks, and cannot mask a message it cannot decode.'
+    }
+    if (raw != null && (hasDescriptors || discover != null)) {
+      errors['grpc.raw'] = 'Decoding without a schema excludes descriptors and discovery; keep one.'
+    }
+    if (raw != null && l.grpc?.strict) {
+      errors['grpc.raw'] = 'Strict decoding needs a schema, and this listener decodes without one.'
+    }
+    if (raw != null && l.protocol === 'spanner') {
+      errors['grpc.raw'] = 'Spanner reads SQL from named fields; a listener without a schema has no names.'
+    }
+    if (raw != null && masking && !(raw.string_fields ?? []).length) {
+      errors['grpc.raw'] = 'This listener masks, and without a schema it rewrites only the string fields declared in the config file.'
     }
     if (analyzing && !capture) {
       errors['grpc.capture_payload'] = 'This listener runs the AI analyzer, which reads the payload.'

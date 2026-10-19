@@ -165,6 +165,7 @@ under `deploy/docker-compose/` binds:
 | `resources` | CPU/memory requests and limits |
 | `nodeSelector`, `tolerations`, `affinity` | Pod assignment |
 | `podAnnotations`, `deploymentAnnotations` | Annotations |
+| `podLabels` | Extra labels on the pod template, not the selector. A key the chart sets itself is refused |
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | Service account. `name` with `create: false` points at an existing one (GKE Workload Identity) |
 
 The chart reads the config document only to check that admin is on 19000.

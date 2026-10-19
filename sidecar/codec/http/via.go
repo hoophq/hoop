@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -51,6 +52,7 @@ const (
 	viaChunkData                   // one chunk's data; remaining counts down
 	viaChunkCRLF                   // the CRLF closing a chunk; remaining is 2 or 1
 	viaTrailer                     // the trailer section after the last chunk
+	viaAwaitSwitch                 // origin lanes: a switch was asked; is it granted?
 	viaPassThrough                 // no longer rewriting this connection
 )
 
@@ -93,10 +95,15 @@ const (
 //
 // Only the client stream is rewritten. Via on responses is the server's
 // side of the chain and nothing here depends on it.
+//
+// With an Origin set, the same head rewrite also points the request at the
+// origin; see origin.go. It shares this framing because both edit the same
+// heads and must agree on where each one starts.
 type viaFilter struct {
-	mu    sync.Mutex // one client pump calls this, but nothing enforces that
-	state viaState
-	err   error // a refused request; the connection is over
+	mu     sync.Mutex // one client pump calls this, but nothing enforces that
+	state  viaState
+	err    error   // a refused request; the connection is over
+	origin *Origin // nil forwards Host as the client wrote it
 
 	held    []byte      // viaHead: the head so far; viaChunkLine: the line so far
 	blankAt int         // viaHead: offset in held of the head's closing empty line
@@ -108,6 +115,17 @@ type viaFilter struct {
 	// leaving records that the request in flight switches protocols, so
 	// the connection passes through once its body is done.
 	leaving bool
+
+	// With an origin, passing through on the request alone would let a
+	// client send `Upgrade: x`, take an ordinary answer, and send the next
+	// request unrewritten. So an origin lane counts the final responses the
+	// server sends (answer) and passes through only once the one answering
+	// the switch request accepts it.
+	sent     int  // requests whose head went out
+	answered int  // final responses the server sent
+	switchAt int  // which request (1-based) asked to switch, 0 for none
+	connect  bool // that request is a CONNECT, which a 2xx accepts
+	switched bool // the server accepted the switch
 }
 
 // filter rewrites one chunk of the client stream.
@@ -135,7 +153,9 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			pos += n
 			if !done {
 				if len(f.held) > maxHeadBytes {
-					f.passThrough(&out)
+					if err := f.giveUp(&out, "the request head exceeds 1 MiB"); err != nil {
+						return nil, err
+					}
 				}
 				continue
 			}
@@ -163,7 +183,9 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			// net/http accepts exactly CRLF here; anything else desyncs
 			// the codec, which then reports the body malformed.
 			if src[pos] != "\r\n"[2-f.remaining] {
-				f.passThrough(&out)
+				if err := f.giveUp(&out, "a chunk does not end in CRLF"); err != nil {
+					return nil, err
+				}
 				continue
 			}
 			out.copy(pos, pos+1)
@@ -185,8 +207,9 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			pos = end
 			if nl < 0 {
 				if len(f.held) > maxChunkLineBytes {
-					f.held = nil
-					f.state = viaPassThrough
+					if err := f.giveUp(&out, "a chunk-size line exceeds 4 KiB"); err != nil {
+						return nil, err
+					}
 				}
 				continue
 			}
@@ -194,7 +217,9 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			f.held = f.held[:0]
 			switch {
 			case !ok:
-				f.state = viaPassThrough
+				if err := f.giveUp(&out, "a chunk size does not parse"); err != nil {
+					return nil, err
+				}
 			case size == 0:
 				f.state, f.trailer, f.line = viaTrailer, 0, lineTracker{}
 			default:
@@ -209,7 +234,29 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			if done {
 				f.endMessage()
 			} else if f.trailer > maxHeadBytes {
+				if err := f.giveUp(&out, "the trailer section exceeds 1 MiB"); err != nil {
+					return nil, err
+				}
+			}
+
+		case viaAwaitSwitch:
+			// Nothing is consumed here, only the state decided. A client
+			// sends after the switch request only once the answer reached
+			// it, and the gate decodes that answer before forwarding it, so
+			// the outcome is known then. Bytes that come before it cannot be
+			// handled: rewritten as HTTP they would corrupt a tunnel the
+			// server then opens, passed through they would skip the rewrite
+			// when it refuses, and held they would wait for client bytes
+			// that may never come. So the connection is refused.
+			switch {
+			case f.switched:
 				f.state = viaPassThrough
+			case f.switchAt == 0:
+				f.state = viaHead
+			default:
+				f.err = errors.New("this listener points every request at its upstream, and the client sent " +
+					"more data before the server answered its Upgrade or CONNECT, so it cannot; the connection is closed")
+				return nil, f.err
 			}
 		}
 	}
@@ -220,13 +267,14 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 func (f *viaFilter) finishHead(out *splice) error {
 	head := f.held
 	if len(head) > maxHeadBytes {
-		f.passThrough(out)
-		return nil
+		return f.giveUp(out, "the request head exceeds 1 MiB")
 	}
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(head)))
-	if err != nil || req.ProtoMajor != 1 {
-		f.passThrough(out)
-		return nil
+	if err != nil {
+		return f.giveUp(out, "the request head does not parse: "+err.Error())
+	}
+	if req.ProtoMajor != 1 {
+		return f.giveUp(out, "the request is not HTTP/1")
 	}
 	if elem, ok := viaNaming(req.Header.Values("Via"), pseudonym); ok {
 		return fmt.Errorf("request loop: this request already passed through this sidecar (Via %s); route the sidecar's own upstream traffic around it", elem)
@@ -237,7 +285,11 @@ func (f *viaFilter) finishHead(out *splice) error {
 	// them in order. The empty line is a bare line ending, CRLF or LF as
 	// the client wrote it; one copy ends the Via line, one ends the head.
 	eol := head[f.blankAt:]
-	out.add(head[:f.blankAt])
+	if f.origin != nil {
+		f.origin.writeHead(out, head[:f.blankAt], req, eol)
+	} else {
+		out.add(head[:f.blankAt])
+	}
 	out.addf("Via: %d.%d %s", req.ProtoMajor, req.ProtoMinor, pseudonym)
 	out.add(eol)
 	out.add(eol)
@@ -245,6 +297,10 @@ func (f *viaFilter) finishHead(out *splice) error {
 	f.held = f.held[:0]
 	f.line = lineTracker{}
 	f.leaving = req.Method == http.MethodConnect || req.Header.Get("Upgrade") != ""
+	f.sent++
+	if f.leaving {
+		f.switchAt, f.connect = f.sent, req.Method == http.MethodConnect
+	}
 	switch {
 	case len(req.TransferEncoding) > 0:
 		// net/http refuses every coding but a final chunked, so a
@@ -259,8 +315,16 @@ func (f *viaFilter) finishHead(out *splice) error {
 }
 
 // endMessage moves past a finished request: to the next head, or to
-// pass-through when the request switched protocols.
+// pass-through when the request switched protocols. An origin lane waits
+// for the server to grant the switch instead.
 func (f *viaFilter) endMessage() {
+	if f.leaving && f.origin != nil {
+		f.leaving = false
+		f.state = viaAwaitSwitch
+		f.held = f.held[:0]
+		f.line = lineTracker{}
+		return
+	}
 	if f.leaving {
 		f.state = viaPassThrough
 		f.held = nil
@@ -269,6 +333,41 @@ func (f *viaFilter) endMessage() {
 	f.state = viaHead
 	f.held = f.held[:0]
 	f.line = lineTracker{}
+}
+
+// answer records one response the server sent, by status. Interim 1xx
+// answers other than 101 are not final and do not count. Only an origin
+// lane counts; see the fields.
+func (f *viaFilter) answer(status int) {
+	if f.origin == nil || (status < 200 && status != http.StatusSwitchingProtocols) {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.answered++
+	if f.switchAt == 0 || f.answered != f.switchAt {
+		return
+	}
+	if f.connect {
+		f.switched = status/100 == 2
+	} else {
+		f.switched = status == http.StatusSwitchingProtocols
+	}
+	f.switchAt = 0
+}
+
+// giveUp handles a stream the filter cannot frame. A Via-only lane passes
+// it through as written: the codec reports such a stream itself, and a line
+// added to it would only add damage. An origin lane refuses it, because the
+// bytes would reach the origin with the client's Host and X-Forwarded
+// fields; see origin.go.
+func (f *viaFilter) giveUp(out *splice, why string) error {
+	if f.origin == nil {
+		f.passThrough(out)
+		return nil
+	}
+	f.err = fmt.Errorf("this listener points every request at its upstream, and %s, so it cannot; the connection is closed", why)
+	return f.err
 }
 
 // passThrough gives up rewriting, releasing whatever head is held exactly

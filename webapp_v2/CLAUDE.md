@@ -158,7 +158,7 @@ and avoids the cycle a call from `useAuthStore` would create. Live examples:
 **Scope:**
 - `src/components/` = Reusable across the whole app. No direct Mantine imports at call sites for any component that has a wrapper.
 - `src/pages/[Page]/components/` = Reusable **within the page** (≥2 consumers, or a clear candidate to graduate to the global `src/components/`). May still import Mantine directly if no wrapper exists yet and it's too specific to generalise.
-- `src/pages/[Page]/sections/` = **Single-consumer page decomposition.** A file that exists only to keep a tab/page body small. Not a "component" — don't put it in `components/`. Example: `pages/Roles/Configure/sections/ConnectionTagsEditor.jsx` is rendered by exactly one tab; it lives in `sections/`. A `components/SecretField` rendered by multiple renderers lives in `components/`.
+- `src/pages/[Page]/sections/` = **Single-consumer page decomposition.** A file that exists only to keep a tab/page body small. Not a "component" — don't put it in `components/`. Example: `pages/Roles/Configure/sections/MetadataFieldsInput.jsx` is rendered by exactly one tab; it lives in `sections/`. A `components/SecretField` rendered by multiple renderers lives in `components/`.
 - **Tabs / top-level page slices** live at the page root next to `index.jsx` (e.g. `pages/Roles/Configure/CredentialsTab.jsx`). They're not reusable and not decomposition — they're the page itself, sliced for readability.
 - **Before creating a new component**, check `COMPONENTS.md` — it catalogs every existing component, hook, store, and service with usage examples.
 
@@ -167,7 +167,7 @@ and avoids the cycle a call from `useAuthStore` would create. Live examples:
 | Where it lives | What it is | Examples |
 |---|---|---|
 | `pages/[Page]/<X>.jsx` | A tab body or top-level slice of the page | `CredentialsTab.jsx`, `DetailsTab.jsx`, `ConfigureHeader.jsx` |
-| `pages/[Page]/sections/` | Decomposition, single consumer, not reusable | `TestConnectionModal.jsx`, `ConnectionTagsEditor.jsx`, `MetadataFieldsInput.jsx` |
+| `pages/[Page]/sections/` | Decomposition, single consumer, not reusable | `TestConnectionModal.jsx`, `MetadataFieldsInput.jsx` |
 | `pages/[Page]/components/` | Reusable within the page (≥2 consumers) | `SecretField/`, `ToggleSection.jsx`, `ReviewSection.jsx` |
 | `src/components/` | Reusable across the whole app | `Button`, `TextInput`, `Table` |
 

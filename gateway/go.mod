@@ -42,7 +42,7 @@ require (
 	github.com/hoophq/hoop/agent v0.0.0-20260730225053-339623147f24
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20261008153213-ab3b65b7965f
+	github.com/hoophq/libhoop v0.0.0-20261019205305-20617fb21eb0
 	github.com/hoophq/mcpproxy v0.1.1
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/lib/pq v1.12.3

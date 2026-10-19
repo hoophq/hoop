@@ -78,6 +78,11 @@ break.
   - Show what the page hides. `counters` in the flow adds a fixed "test
     overlay" with request counts; `ui.click` draws a ring where each click
     lands.
+  - The two sides must differ on screen. When the UI action lands outside
+    the browser (a CLI, a database client, an agent), run that client for
+    real and mirror its output live in a "test overlay" panel (model:
+    `examples/reject-live/`). Same clicks with one changed sentence is not
+    a video worth recording.
   - Undo what the flow opened before its last step, so the last frame shows
     the answer.
   - Record on the final commit, then pull 3 or 4 frames

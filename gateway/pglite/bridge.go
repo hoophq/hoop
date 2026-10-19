@@ -28,9 +28,20 @@ func (i *Instance) serveLoop() {
 			log.Warnf("pglite bridge accept failed, err=%v", err)
 			return
 		}
+		i.mu.Lock()
+		if i.closed {
+			i.mu.Unlock()
+			_ = conn.Close()
+			return
+		}
+		i.session = conn
+		i.mu.Unlock()
 		if err := i.serveConn(context.Background(), conn); err != nil {
 			log.Warnf("pglite bridge session ended with error, err=%v", err)
 		}
+		i.mu.Lock()
+		i.session = nil
+		i.mu.Unlock()
 	}
 }
 
@@ -74,7 +85,8 @@ func (i *Instance) serveConn(ctx context.Context, conn net.Conn) error {
 	buf := make([]byte, 64*1024)
 	for {
 		n, err := conn.Read(buf)
-		if err == io.EOF {
+		// net.ErrClosed: Close ended the session.
+		if err == io.EOF || errors.Is(err, net.ErrClosed) {
 			return nil
 		}
 		if err != nil {

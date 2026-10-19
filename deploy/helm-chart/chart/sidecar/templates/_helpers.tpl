@@ -159,6 +159,16 @@ itself would print on the restart nobody is watching.
 {{- if not (or (include "hoopsidecar.hasConfigFile" .) .Values.controlPlane.url) -}}
 {{- fail "no config file was given and no control plane is configured: set config, existingConfigMap or controlPlane.url" -}}
 {{- end -}}
+{{/*
+podLabels are added after the chart's own labels. One that repeats a chart
+label key would emit a duplicate key in the pod template, and one that
+changed a selector label would detach the pods from their Deployment.
+*/}}
+{{- range $key, $_ := .Values.podLabels -}}
+{{- if has $key (list "app.kubernetes.io/name" "app.kubernetes.io/instance" "app.kubernetes.io/version" "app.kubernetes.io/managed-by" "helm.sh/chart") -}}
+{{- fail (printf "podLabels.%s is set by the chart itself: pick another key" $key) -}}
+{{- end -}}
+{{- end -}}
 {{- $cp := .Values.controlPlane -}}
 {{- if and $cp.identity (not (has $cp.identity (list "kubernetes" "gcp"))) -}}
 {{- fail (printf "controlPlane.identity is %q: use kubernetes or gcp, or leave it empty" $cp.identity) -}}

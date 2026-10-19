@@ -67,7 +67,7 @@
       "key": "listen",
       "type": "string",
       "label": "Listen on",
-      "help": "Where clients reach the sidecar: host:port, or a socket path on a unix transport.",
+      "help": "Where clients reach the sidecar: host:port, or a socket path on a unix transport. An http listener also takes a URL, such as http://0.0.0.0:8080.",
       "placeholder": "0.0.0.0:15432",
       "required": true,
       "basic": true
@@ -88,7 +88,7 @@
       "key": "upstream",
       "type": "string",
       "label": "Upstream",
-      "help": "Where the sidecar reaches your resource. On an ica listener, this names the single VDA; leave it empty for CIDR mode.",
+      "help": "Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode.",
       "placeholder": "appdb:5432",
       "required": true,
       "basic": true,
@@ -278,6 +278,45 @@
           "label": "Descriptors",
           "help": "Protobuf descriptor sets, as paths on the sidecar host or gs:// URLs. Sets merge.",
           "placeholder": "/etc/hoop-inspect/api.pb"
+        },
+        {
+          "key": "discover",
+          "type": "object",
+          "label": "Discover the schema",
+          "help": "Fetches the schema from the upstream over gRPC server reflection when the listener starts, in place of descriptors.",
+          "presence": true,
+          "fields": [
+            {
+              "key": "from",
+              "type": "string",
+              "label": "Source",
+              "help": "Where the schema comes from. The upstream must expose gRPC server reflection.",
+              "enum": [
+                "reflection"
+              ],
+              "default": "reflection"
+            },
+            {
+              "key": "sha256",
+              "type": "string",
+              "label": "Pinned SHA-256",
+              "help": "Refuses a schema with another digest, so the service cannot rename a field out from under a mask rule. Empty accepts any schema.",
+              "placeholder": "output of -grpc-discover"
+            },
+            {
+              "key": "fail_open",
+              "type": "boolean",
+              "label": "Fail open",
+              "help": "Forwards RPCs while the schema is unavailable, auditing the method and status only. Off refuses them."
+            }
+          ]
+        },
+        {
+          "key": "raw",
+          "type": "object",
+          "label": "Decode without a schema",
+          "help": "Renders messages by field number for audit, PII rules and AI analysis. Best effort: a value can be misread. Masks only the string fields the config file declares.",
+          "presence": true
         },
         {
           "key": "capture_payload",

@@ -47,12 +47,15 @@ type Connector interface {
 }
 
 // ClientDialConfig carries the parameters a client sets when opening a
-// Connect stream: the user access token, the target connection name, and the
-// client verb (connect/exec/...).
+// Connect stream: the user access token, the target connection name, the
+// client verb (connect/exec/...) and, optionally, its own session id and the
+// plain-exec-key the gateway's own clientexec sends.
 type ClientDialConfig struct {
 	Token          string
 	ConnectionName string
 	Verb           string
+	SessionID      string
+	PlainExecKey   string
 }
 
 // grpcConnector implements Connector over the production gRPC dialers in
@@ -88,10 +91,18 @@ func (c *grpcConnector) DialAgent(_ context.Context, token string) (pb.ClientTra
 }
 
 func (c *grpcConnector) DialClient(_ context.Context, cfg ClientDialConfig) (pb.ClientTransport, error) {
-	return commongrpc.Connect(c.clientConfig(cfg.Token),
+	opts := []*commongrpc.ClientOptions{
 		commongrpc.WithOption(commongrpc.OptionConnectionName, cfg.ConnectionName),
 		commongrpc.WithOption("origin", pb.ConnectionOriginClient),
-		commongrpc.WithOption("verb", cfg.Verb))
+		commongrpc.WithOption("verb", cfg.Verb),
+	}
+	if cfg.SessionID != "" {
+		opts = append(opts, commongrpc.WithOption("session-id", cfg.SessionID))
+	}
+	if cfg.PlainExecKey != "" {
+		opts = append(opts, commongrpc.WithOption("plain-exec-key", cfg.PlainExecKey))
+	}
+	return commongrpc.Connect(c.clientConfig(cfg.Token), opts...)
 }
 
 // clientConfig builds the plaintext-loopback ClientConfig every gRPC dial in

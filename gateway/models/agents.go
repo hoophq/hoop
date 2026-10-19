@@ -43,12 +43,47 @@ func (a Agent) String() string {
 		a.OrgID, a.Name, a.Mode, a.GetMeta("hostname"), a.GetMeta("platform"), a.GetMeta("version"), a.GetMeta("goversion"), a.GetMeta("kernel_version"))
 }
 
-func ListAgents(orgID string, status string) ([]Agent, error) {
-	var agentList []Agent
-	query := DB.Table("private.agents").Where("org_id = ?", orgID)
-	if status != "" {
-		query = query.Where("status = ?", status)
+// AgentFilterOption narrows ListAgents. Each attribute set applies an AND.
+type AgentFilterOption struct {
+	Status string
+	// TagSelector has the syntax and semantics of the connection tag_selector:
+	// comma separated key=value or key!=value conditions.
+	TagSelector string
+}
+
+// agentTagSelectorCondition keeps the agents whose tags satisfy every
+// selector condition. It mirrors the tag_selector clause of ListConnections.
+const agentTagSelectorCondition = `NOT EXISTS (
+	SELECT 1 FROM json_to_recordset(?::JSON) AS tsk(key TEXT, op TEXT, val TEXT)
+	WHERE NOT EXISTS (
+		SELECT 1 FROM private.agent_tags t
+		WHERE t.agent_id = agents.id
+		AND t.key = tsk.key
+		AND CASE
+			WHEN tsk.op = '=' THEN t.value = tsk.val
+			WHEN tsk.op = '!=' THEN t.value != tsk.val
+			ELSE false
+		END
+	)
+)`
+
+// ValidateTagSelector returns an error when selector cannot be parsed.
+func ValidateTagSelector(selector string) error {
+	_, err := parseTagSelector(selector)
+	return err
+}
+
+func ListAgents(db *gorm.DB, orgID string, opts AgentFilterOption) ([]Agent, error) {
+	selectorJsonData, err := parseTagSelector(opts.TagSelector)
+	if err != nil {
+		return nil, err
 	}
+	var agentList []Agent
+	query := db.Table("private.agents").Where("org_id = ?", orgID)
+	if opts.Status != "" {
+		query = query.Where("status = ?", opts.Status)
+	}
+	query = query.Where(agentTagSelectorCondition, selectorJsonData)
 	return agentList, query.Find(&agentList).Error
 }
 
@@ -96,19 +131,30 @@ func CreateAgentOrgKey(orgID, name, mode, key, secretKeyHash string) error {
 }
 
 func CreateAgent(orgID, name, mode, secretKeyHash string) error {
+	return CreateAgentWithTags(DB, orgID, name, mode, secretKeyHash, nil)
+}
+
+// CreateAgentWithTags creates an agent and its tags in one transaction.
+func CreateAgentWithTags(db *gorm.DB, orgID, name, mode, secretKeyHash string, tags map[string]string) error {
 	identifier := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join([]string{"agent", orgID, name}, "/"))).String()
-	err := DB.Table("private.agents").
-		Model(Agent{}).
-		Create(map[string]any{
-			"id":       identifier,
-			"org_id":   orgID,
-			"name":     name,
-			"mode":     mode,
-			"key_hash": secretKeyHash,
-			"status":   AgentStatusDisconnected,
-			"metadata": map[string]any{},
-		}).Error
-	if err == gorm.ErrDuplicatedKey {
+	err := db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Table("private.agents").
+			Model(Agent{}).
+			Create(map[string]any{
+				"id":       identifier,
+				"org_id":   orgID,
+				"name":     name,
+				"mode":     mode,
+				"key_hash": secretKeyHash,
+				"status":   AgentStatusDisconnected,
+				"metadata": map[string]any{},
+			}).Error
+		if err != nil {
+			return err
+		}
+		return insertAgentTags(tx, orgID, identifier, tags)
+	})
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return ErrAlreadyExists
 	}
 	return err

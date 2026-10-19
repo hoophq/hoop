@@ -1,0 +1,91 @@
+# hoop-inspect with grpc lanes that fetch their schema from the upstream
+# over gRPC server reflection (grpc.discover), instead of a descriptor set
+# mounted into the sidecar. No Envoy, no OPA, h2c on every hop.
+#
+#   grpcurl ──h2c──> hoop-inspect:18443..18446 ──h2c──> ledger-reflect:9000 / ledger:9000
+#
+# ledger-reflect serves reflection for demo.v1.Ledger and reports.v1.Reports;
+# ledger is the same image with reflection off. No descriptor volume is
+# mounted here: every schema this process decodes with came over the wire.
+# ./demo-discover.sh walks the four lanes.
+#
+# The policy budget is the stack's usual one: one guardrail rule, one mask
+# rule, both inherited by every lane that does not override them.
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - BR_CPF
+
+guardrails:
+  mode: enforce
+  rules:
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+mask:
+  rules:
+    - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+
+listeners:
+  # Discovery works: the lane loads the schema at startup, then masks
+  # customer_email and scans request fields, exactly as with descriptors.
+  - name: billing
+    protocol: grpc
+    listen: 0.0.0.0:18443
+    upstream: ledger-reflect:9000
+    grpc:
+      discover:
+        from: reflection
+      capture_payload: true
+
+  # Reflection off, the default fail_open: false. The lane still listens,
+  # refuses every RPC with UNAVAILABLE and the reason, writes an
+  # rpc_refused record, and retries in the background.
+  - name: legacy
+    protocol: grpc
+    listen: 0.0.0.0:18444
+    upstream: ledger:9000
+    grpc:
+      discover: {}            # empty means from: reflection
+      capture_payload: true
+
+  # Reflection off, fail_open: true. RPCs reach the upstream with
+  # method-level audit only, marked grpc.schema: unavailable. A lane that
+  # cannot decode cannot mask, so startup refuses fail_open next to mask
+  # rules: this lane drops the inherited one.
+  - name: legacy-open
+    protocol: grpc
+    listen: 0.0.0.0:18445
+    upstream: ledger:9000
+    grpc:
+      discover:
+        fail_open: true
+      capture_payload: true
+    mask:
+      rules: []
+
+  # The pin. ledger-reflect's schema has another digest, so the lane
+  # refuses it and names both. Put the digest -grpc-discover prints here,
+  # restart, and the lane serves.
+  - name: pinned
+    protocol: grpc
+    listen: 0.0.0.0:18446
+    upstream: ledger-reflect:9000
+    grpc:
+      discover:
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      capture_payload: true
