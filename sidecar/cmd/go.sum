@@ -195,3 +195,5 @@ k8s.io/klog/v2 v2.140.0 h1:Tf+J3AH7xnUzZyVVXhTgGhEKnFqye14aadWv7bzXdzc=
 k8s.io/klog/v2 v2.140.0/go.mod h1:o+/RWfJ6PwpnFn7OyAG3QnO47BFsymfEfrz6XyYSSp0=
 github.com/hoophq/libhoop v0.0.0-20261009183538-7a017a32f649 h1:H39rgSYZgQV4rplTmXNAv2w25xhglL3SkF04WkCesR8=
 github.com/hoophq/libhoop v0.0.0-20261009183538-7a017a32f649/go.mod h1:nHA5Pm/wX+iz3JHQR+aJm236TzmZ2RYUo2x3SgwJhWo=
+github.com/hoophq/libhoop v0.0.0-20261019205305-20617fb21eb0 h1:Epk9t/6/yswboX4F+4uJLKHiZ3hkvGvXKTrCIusq5io=
+github.com/hoophq/libhoop v0.0.0-20261019205305-20617fb21eb0/go.mod h1:nHA5Pm/wX+iz3JHQR+aJm236TzmZ2RYUo2x3SgwJhWo=

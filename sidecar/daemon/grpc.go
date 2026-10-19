@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -58,8 +59,17 @@ type GRPCCodecConfig struct {
 	//
 	// Required for any payload work: schema-less protobuf walking loses
 	// values as a function of their bytes, so no capture, masking or PII
-	// scanning happens without it (ADR-0013).
+	// scanning happens without it or Discover (ADR-0013).
 	Descriptors DescriptorPaths `json:"descriptors,omitempty" label:"Descriptors" placeholder:"/etc/hoop-inspect/api.pb" help:"Protobuf descriptor sets, as paths on the sidecar host or gs:// URLs. Sets merge."`
+
+	// Discover fetches the schema from the upstream over gRPC server
+	// reflection when the lane starts, in place of Descriptors. See
+	// GRPCDiscoverConfig.
+	Discover *GRPCDiscoverConfig `json:"discover,omitempty" cap:"grpc_discover" label:"Discover the schema" help:"Fetches the schema from the upstream over gRPC server reflection when the listener starts, in place of descriptors." ui:"presence"`
+
+	// Raw decodes without any schema: no descriptor set, no reflection.
+	// See GRPCRawConfig for what that can and cannot do.
+	Raw *GRPCRawConfig `json:"raw,omitempty" cap:"grpc_raw" label:"Decode without a schema" help:"Renders messages by field number for audit, PII rules and AI analysis. Best effort: a value can be misread. Masks only the string fields the config file declares." ui:"presence"`
 
 	// CapturePayload renders decoded request and response messages into
 	// per-message Statements so payload-matching rules (pii, pattern_match)
@@ -85,6 +95,106 @@ type GRPCCodecConfig struct {
 	// headers HTTPCodecConfig refuses are refused here; authorization is
 	// where a gRPC bearer token lives.
 	Metadata []string `json:"metadata,omitempty" label:"Metadata" help:"Allowlist exposed to policy. The same four headers HTTP refuses are refused here."`
+}
+
+// GRPCRawConfig is a grpc lane with no schema at all.
+//
+// Messages render as JSON keyed by field number, {"1":"INV-1001"}, so the
+// audit trail, pii and pattern_match rules and an analyzer see the values
+// without their names. The wire does not say whether a length-delimited
+// value is a string, bytes or a nested message, so the rendering guesses,
+// and a wrong guess can hide a value from a detector: best effort, not the
+// enforcement a descriptor-backed lane gives.
+//
+// Masking rewrites only StringFields: the operator states which response
+// paths are strings, the type the wire lacks. Mask rules match those paths
+// by field number (columns: ["2"]) or by detector, and nothing else is
+// ever rewritten. Bytes that contradict a declaration refuse the message.
+type GRPCRawConfig struct {
+	// StringFields declares, per method, the response field paths that are
+	// strings. Edited in the config file: the form has no list of objects.
+	StringFields []GRPCRawStringFields `json:"string_fields,omitempty" ui:"-"`
+}
+
+// GRPCRawStringFields is one method's declared string paths.
+type GRPCRawStringFields struct {
+	// Method is the canonical path, /demo.v1.Ledger/GetInvoice.
+	Method string `json:"method,omitempty"`
+	// Response lists field-number paths: "2", or "4.1" for field 1 of the
+	// message in field 4.
+	Response []string `json:"response,omitempty"`
+}
+
+// fields is the declarations in libhoop's shape. A method listed twice is
+// reported, not merged: two entries for one method is a config mistake.
+func (r *GRPCRawConfig) fields() (codecgrpc.RawFields, []string) {
+	out := codecgrpc.RawFields{}
+	var dups []string
+	for _, sf := range r.StringFields {
+		if _, seen := out[sf.Method]; seen {
+			dups = append(dups, sf.Method)
+			continue
+		}
+		out[sf.Method] = codecgrpc.RawMethod{Response: sf.Response}
+	}
+	return out, dups
+}
+
+// grpcDiscoverFromReflection is the only schema source discovery knows.
+const grpcDiscoverFromReflection = "reflection"
+
+// GRPCDiscoverConfig makes a grpc lane fetch its schema from the upstream
+// it fronts, the -grpc-discover bootstrap run at every start.
+//
+// The schema then comes from the service being policed, so a deploy can
+// rename a field out from under a mask rule or leave one out of what it
+// reports. SHA256 closes that: the lane refuses a schema it was not told
+// to expect.
+//
+// While discovery fails the lane still listens. It refuses every RPC with
+// UNAVAILABLE, or with FailOpen forwards them with method-level inspection
+// only, and retries in the background until a schema loads.
+type GRPCDiscoverConfig struct {
+	// From names the schema source. "reflection", the only one, is also
+	// what empty means, so `discover: {}` turns discovery on.
+	From string `json:"from,omitempty" label:"Source" enum:"reflection" default:"reflection" help:"Where the schema comes from. The upstream must expose gRPC server reflection."`
+
+	// SHA256 pins the discovered schema: the hex digest -grpc-discover
+	// prints. A schema with another digest is a discovery failure. Empty
+	// accepts whatever the upstream reports.
+	SHA256 string `json:"sha256,omitempty" label:"Pinned SHA-256" placeholder:"output of -grpc-discover" help:"Refuses a schema with another digest, so the service cannot rename a field out from under a mask rule. Empty accepts any schema."`
+
+	// FailOpen forwards RPCs while discovery fails, with method-level
+	// inspection only. Default false: the lane refuses them, because a
+	// lane that cannot decode a message cannot audit or scan it.
+	FailOpen bool `json:"fail_open,omitempty" label:"Fail open" help:"Forwards RPCs while the schema is unavailable, auditing the method and status only. Off refuses them."`
+}
+
+func (d *GRPCDiscoverConfig) validate(lane string) []string {
+	var problems []string
+	if d.From != "" && d.From != grpcDiscoverFromReflection {
+		problems = append(problems, fmt.Sprintf(
+			"listener %q: grpc.discover.from is %q; the only source is %q",
+			lane, d.From, grpcDiscoverFromReflection))
+	}
+	if d.SHA256 != "" && !isSHA256Hex(d.SHA256) {
+		problems = append(problems, fmt.Sprintf(
+			"listener %q: grpc.discover.sha256 is not a hex SHA-256 digest; copy it from -grpc-discover",
+			lane))
+	}
+	return problems
+}
+
+func isSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func (g *GRPCCodecConfig) validate(lane string, onHost bool) []string {
@@ -121,18 +231,49 @@ func (g *GRPCCodecConfig) validate(lane string, onHost bool) []string {
 					"link (%s)", lane, p, scheme, describeLinkedFetchers()))
 		}
 	}
-	if g.Strict && len(g.Descriptors) == 0 {
+	if g.Discover != nil {
+		problems = append(problems, g.Discover.validate(lane)...)
+		if len(g.Descriptors) > 0 {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.discover and grpc.descriptors both name the schema; keep one", lane))
+		}
+		if g.Discover.FailOpen && g.Strict {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.discover.fail_open forwards RPCs the lane cannot decode and "+
+					"grpc.strict refuses them; keep one", lane))
+		}
+	}
+	if g.Raw != nil {
+		if len(g.Descriptors) > 0 || g.Discover != nil {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.raw decodes without a schema, and grpc.descriptors or "+
+					"grpc.discover names one; keep one", lane))
+		}
+		if g.Strict {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.strict needs a schema, and grpc.raw has none", lane))
+		}
+		fields, dups := g.Raw.fields()
+		for _, m := range dups {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.raw.string_fields lists %q twice", lane, m))
+		}
+		if err := fields.Validate(); err != nil {
+			problems = append(problems, fmt.Sprintf("listener %q: %v", lane, err))
+		}
+	}
+	if g.Strict && !g.hasSchema() {
 		problems = append(problems, fmt.Sprintf(
-			"listener %q: grpc.strict needs grpc.descriptors; strictness about "+
+			"listener %q: grpc.strict needs grpc.descriptors or grpc.discover; strictness about "+
 				"payloads nothing can decode would refuse every RPC", lane))
 	}
-	if g.CapturePayload && len(g.Descriptors) == 0 {
+	if g.CapturePayload && !g.hasSchema() {
 		// Without a schema the lane cannot decode a message soundly, so a
 		// capture flag would produce nothing and every rule reading payloads
 		// would silently never fire: the failure this package refuses
 		// everywhere else.
 		problems = append(problems, fmt.Sprintf(
-			"listener %q: grpc.capture_payload needs grpc.descriptors; without a "+
+			"listener %q: grpc.capture_payload needs grpc.descriptors, grpc.discover or grpc.raw; without a "+
 				"descriptor set the lane cannot decode a message", lane))
 	}
 	return problems
@@ -173,10 +314,11 @@ func (d DescriptorPaths) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]string(d))
 }
 
-// hasDescriptors reports whether the lane can decode payloads, tolerating a
-// nil receiver so call sites read as one condition.
-func (g *GRPCCodecConfig) hasDescriptors() bool {
-	return g != nil && len(g.Descriptors) > 0
+// hasSchema reports whether the lane decodes payloads: from pinned sets, a
+// discovered one, or raw without one. Tolerates a nil receiver so call
+// sites read as one condition.
+func (g *GRPCCodecConfig) hasSchema() bool {
+	return g != nil && (len(g.Descriptors) > 0 || g.Discover != nil || g.Raw != nil)
 }
 
 // GRPCServer is the running side of a grpc lane. Serve blocks until the
@@ -214,7 +356,14 @@ func isGRPCTransport(lc ListenerConfig) bool {
 	return isGRPC(lc) || isSpanner(lc)
 }
 
-const grpcPermissionDenied = 7
+const (
+	grpcPermissionDenied = 7
+	grpcUnavailable      = 14
+)
+
+// metadataGRPCSchema is set to "unavailable" on every statement of an RPC a
+// discovering lane forwarded before its schema loaded.
+const metadataGRPCSchema = "grpc.schema"
 
 // grpcMetadataAllowlist is the lower-cased metadata a grpc lane exposes to
 // policy and audit. A lane that holds adds analyzer.ClientModeHeaders, the same
@@ -273,24 +422,20 @@ func buildGRPCServer(
 	if lc.MaxConns > 0 {
 		opts["max_conns"] = strconv.Itoa(lc.MaxConns)
 	}
-	// Descriptor sets do not travel as a setting: an entry may be a URL, and
-	// resolving it — a fetch with credentials — is this package's job, not
-	// the codec's. The merged schema is handed over already loaded.
-	schema, err := loadGRPCSchema(gc.Descriptors, ln.trustRoots)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
-	}
+	// Payload settings need a schema, so a discovering lane's stand-in
+	// server leaves them out until one loads.
+	payloadOpts := map[string]string{}
 	if gc.CapturePayload {
-		opts["capture_payload"] = "true"
+		payloadOpts["capture_payload"] = "true"
 	}
 	if gc.MaxPayloadBytes > 0 {
-		opts["max_payload_bytes"] = strconv.Itoa(gc.MaxPayloadBytes)
+		payloadOpts["max_payload_bytes"] = strconv.Itoa(gc.MaxPayloadBytes)
 	}
 	if gc.Strict {
-		opts["strict"] = "true"
+		payloadOpts["strict"] = "true"
 	}
 	if ln.masker != nil {
-		opts["mask_responses"] = "true"
+		payloadOpts["mask_responses"] = "true"
 	}
 	if ut := lc.UpstreamTLS; ut != nil {
 		opts["upstream_tls"] = "true"
@@ -327,72 +472,158 @@ func buildGRPCServer(
 		proto = inspect.Spanner
 	}
 
-	open := func(ctx context.Context, info codecgrpc.RPCInfo) (*codecgrpc.RPCHandler, *codecgrpc.Status, error) {
-		identity := session.Identity{PeerAddr: info.Request.RemoteAddr}
-		if lc.IdentityHeader != "" {
-			identity.Subject = info.Request.Header.Get(lc.IdentityHeader)
-		}
-		if identity.Subject == "" {
-			identity.Subject = grpcPeerSubject(info.Request)
-		}
-
-		sess := session.New(proto, identity)
-		sess.Connection = ln.name
-		sess.Upstream = lc.Upstream
-		// Acquired once per RPC: the gate keeps this generation for the RPC's
-		// whole life, and the next RPC reads what a reload swapped in. The
-		// release runs when the gate closes, which is what tells a reload
-		// the outgoing generation's analyzers are no longer reachable.
-		live, release := rules.acquire()
-		allowedMetadata := metadataPlain
-		if live.holds {
-			allowedMetadata = metadataHeld
-		}
-		g, err := gate.NewStatementGate(sess, gate.Config{
-			Protocol:         proto,
-			Policy:           live.policy,
-			Audit:            sink,
-			Masker:           live.masker,
-			FailOnAuditError: failOnAuditError,
-			Metrics:          ln.metrics,
-			Settle:           settle,
-		})
-		if err != nil {
-			// No handler, so libhoop calls no Close: release here.
-			release()
-			return nil, nil, err
-		}
-
-		state := &grpcRPCState{
-			gate:    g,
-			stmts:   newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
-			log:     laneLog,
-			release: release,
-		}
-		handler := state.callbacks()
-		if err := g.Start(ctx); err != nil {
-			if failOnAuditError {
-				return handler, &codecgrpc.Status{
-					Code:    13,
-					Message: "audit trail unavailable; RPC refused",
-				}, nil
+	// openFor builds the per-RPC callback. gap is nil on a lane that holds
+	// its schema, and set on a discovering lane's stand-in.
+	openFor := func(gap *grpcSchemaGap) codecgrpc.OpenFunc {
+		return func(ctx context.Context, info codecgrpc.RPCInfo) (*codecgrpc.RPCHandler, *codecgrpc.Status, error) {
+			identity := session.Identity{PeerAddr: info.Request.RemoteAddr}
+			if lc.IdentityHeader != "" {
+				identity.Subject = info.Request.Header.Get(lc.IdentityHeader)
 			}
-			laneLog.Warn("grpc session start not recorded", "error", err)
-		}
+			if identity.Subject == "" {
+				identity.Subject = grpcPeerSubject(info.Request)
+			}
 
-		d := g.EvaluateStatement(ctx, state.stmts.request(info.Request))
-		state.logDecisionError("request headers", d)
-		if !d.Allowed {
-			return handler, grpcDeniedStatus(d), nil
+			sess := session.New(proto, identity)
+			sess.Connection = ln.name
+			sess.Upstream = lc.Upstream
+			// Acquired once per RPC: the gate keeps this generation for the RPC's
+			// whole life, and the next RPC reads what a reload swapped in. The
+			// release runs when the gate closes, which is what tells a reload
+			// the outgoing generation's analyzers are no longer reachable.
+			live, release := rules.acquire()
+			allowedMetadata := metadataPlain
+			if live.holds {
+				allowedMetadata = metadataHeld
+			}
+			g, err := gate.NewStatementGate(sess, gate.Config{
+				Protocol:         proto,
+				Policy:           live.policy,
+				Audit:            sink,
+				Masker:           live.masker,
+				FailOnAuditError: failOnAuditError,
+				Metrics:          ln.metrics,
+				Settle:           settle,
+			})
+			if err != nil {
+				// No handler, so libhoop calls no Close: release here.
+				release()
+				return nil, nil, err
+			}
+
+			state := &grpcRPCState{
+				gate:    g,
+				stmts:   newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
+				log:     laneLog,
+				release: release,
+			}
+			switch {
+			case gap != nil:
+				state.stmts.schema = "unavailable"
+			case gc.Raw != nil:
+				state.stmts.schema = "raw"
+			}
+			handler := state.callbacks()
+			if err := g.Start(ctx); err != nil {
+				if failOnAuditError {
+					return handler, &codecgrpc.Status{
+						Code:    13,
+						Message: "audit trail unavailable; RPC refused",
+					}, nil
+				}
+				laneLog.Warn("grpc session start not recorded", "error", err)
+			}
+
+			if gap != nil && gap.refuse {
+				reason := "schema discovery failed: " + gap.reason()
+				if err := g.RecordActivity(ctx, "rpc_refused", map[string]string{
+					"method": info.Request.URL.Path,
+					"reason": reason,
+				}); err != nil {
+					laneLog.Warn("grpc refusal not recorded", "error", err)
+				}
+				return handler, &codecgrpc.Status{Code: grpcUnavailable, Message: reason}, nil
+			}
+
+			d := g.EvaluateStatement(ctx, state.stmts.request(info.Request))
+			state.logDecisionError("request headers", d)
+			if !d.Allowed {
+				return handler, grpcDeniedStatus(d), nil
+			}
+			return handler, nil, nil
 		}
-		return handler, nil, nil
 	}
 
-	srv, err := codecgrpc.NewServerWithSchema(opts, schema, open, laneLog)
+	if gc.Raw != nil {
+		// No schema to load: the lane renders by field number and masks
+		// only the declared paths. validate refused a duplicate method.
+		fields, _ := gc.Raw.fields()
+		maps.Copy(opts, payloadOpts)
+		srv, err := codecgrpc.NewServerRaw(opts, fields, openFor(nil), laneLog)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
+		}
+		return srv, rules, nil
+	}
+
+	if gc.Discover != nil {
+		// Built here, not at the first attempt, so a bad path fails
+		// -validate. Discovery dials with the lane's own upstream_tls,
+		// the way -grpc-discover does.
+		tlsConf, err := lc.UpstreamTLS.BuildTLS(nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: upstream_tls: %w", ln.name, err)
+		}
+		d := &discoveringGRPCServer{
+			name:     ln.name,
+			upstream: lc.Upstream,
+			cfg:      *gc.Discover,
+			log:      laneLog,
+			fetch: func(ctx context.Context) ([]byte, error) {
+				return codecgrpc.Discover(ctx, lc.Upstream, tlsConf, laneLog)
+			},
+		}
+		gap := &grpcSchemaGap{refuse: !gc.Discover.FailOpen, reason: d.lastFailure}
+		d.build = func(schema *codecgrpc.Schema, listen string) (*codecgrpc.Server, error) {
+			o := maps.Clone(opts)
+			if listen != "" {
+				o["listen"] = listen
+			}
+			if schema == nil {
+				return codecgrpc.NewServerWithSchema(o, nil, openFor(gap), laneLog)
+			}
+			maps.Copy(o, payloadOpts)
+			return codecgrpc.NewServerWithSchema(o, schema, openFor(nil), laneLog)
+		}
+		// The stand-in takes every setting but the payload ones; building
+		// one now refuses a bad TLS file before the lane is reported built.
+		if _, err := d.build(nil, ""); err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
+		}
+		return d, rules, nil
+	}
+
+	// Descriptor sets do not travel as a setting: an entry may be a URL, and
+	// resolving it — a fetch with credentials — is this package's job, not
+	// the codec's. The merged schema is handed over already loaded.
+	schema, err := loadGRPCSchema(gc.Descriptors, ln.trustRoots)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
+	}
+	maps.Copy(opts, payloadOpts)
+	srv, err := codecgrpc.NewServerWithSchema(opts, schema, openFor(nil), laneLog)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	return srv, rules, nil
+}
+
+// grpcSchemaGap is how a discovering lane's stand-in treats an RPC while it
+// has no schema: refuse it, or forward it with method-level inspection.
+type grpcSchemaGap struct {
+	refuse bool
+	// reason is the latest discovery failure, read per RPC.
+	reason func() string
 }
 
 // grpcDescriptorFetchTimeout bounds one remote descriptor fetch. Generous,

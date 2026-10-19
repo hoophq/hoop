@@ -1583,6 +1583,14 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	// operation or table rule written against the SQL would load, evaluate
 	// and never match a DELETE — the silent failure this package refuses
 	// everywhere else, on the lane whose whole point is reading the SQL.
+	// A spanner lane reads the SQL out of named request fields; a raw
+	// rendering has no names, so every SQL-bearing message would fall to
+	// the unreadable verdict.
+	if isSpanner(lc) && lc.GRPC != nil && lc.GRPC.Raw != nil {
+		problems = append(problems, fmt.Sprintf(
+			"%s: grpc.raw is not supported on a spanner listener: SQL extraction reads "+
+				"named fields, and a raw lane has no names; use grpc.descriptors", name))
+	}
 	if isSpanner(lc) && anySQLDerived(localRules) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
 		problems = append(problems, fmt.Sprintf(
@@ -1683,12 +1691,27 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 			// A grpc-transport lane masks by decoding fields through the
 			// descriptor set and re-encoding, so the set is the capability.
 			// Without it the rules would load and never fire (ADR-0013).
-			if !lc.GRPC.hasDescriptors() {
+			if !lc.GRPC.hasSchema() {
 				problems = append(problems, fmt.Sprintf(
-					"%s: masking on a %s lane needs grpc.descriptors; without a "+
+					"%s: masking on a %s lane needs grpc.descriptors, grpc.discover or grpc.raw; without a "+
 						"descriptor set the lane cannot decode a message to rewrite it. "+
 						"Add the descriptor set, or set mask: {rules: []} on this lane.",
 					name, lc.Protocol))
+			}
+			// A discovering lane that fails open forwards what it cannot
+			// decode, and a redactor must not.
+			if lc.GRPC != nil && lc.GRPC.Discover != nil && lc.GRPC.Discover.FailOpen {
+				problems = append(problems, fmt.Sprintf(
+					"%s: grpc.discover.fail_open cannot be true on a lane with mask rules; "+
+						"a lane that cannot decode a message cannot mask it", name))
+			}
+			// A raw lane rewrites only the paths declared strings; with
+			// none declared the rules would load and never fire.
+			if lc.GRPC != nil && lc.GRPC.Raw != nil && len(lc.GRPC.Raw.StringFields) == 0 {
+				problems = append(problems, fmt.Sprintf(
+					"%s: masking on a grpc.raw lane rewrites only the response paths "+
+						"grpc.raw.string_fields declares, and it declares none. Declare them, "+
+						"or set mask: {rules: []} on this lane.", name))
 			}
 		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !gate.MaskSupported(p) {
 			// The loaded module answers for a plug-in lane (the rewrite
