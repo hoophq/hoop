@@ -9385,6 +9385,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/analyze": {
+            "post": {
+                "description": "Run the AI Session Analyzer on the script of a ` + "`" + `POST /sessions` + "`" + ` body, before the client asks for the run forms (Jira template, required metadata). A block is final: the gateway records the blocked session as ` + "`" + `POST /sessions` + "`" + ` does. Any other verdict records nothing, and the next ` + "`" + `POST /sessions` + "`" + ` of the same user, connection and script reuses it for 15 minutes on the same gateway. Answers 412 while ` + "`" + `experimental.analyze_before_run_forms` + "`" + ` is off.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Analyze an exec before the run forms",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ExecRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The analyzer blocked the script",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ExecResponse"
+                        }
+                    },
+                    "204": {
+                        "description": "The analyzer lets the script run, or the connection has no analyzer rule"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/provision": {
             "post": {
                 "consumes": [
