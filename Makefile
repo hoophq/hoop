@@ -110,8 +110,10 @@ test-oss: generate-wasm test-sidecar test-sidecar-plugins test-unit
 # The unit suite without the per-module sidecar loop; CI runs the two in
 # parallel jobs. gateway/models starts an isolated PGlite instance per test.
 # Its full suite can exceed Go's default 10-minute per-package timeout in CI.
+# -p 2: the 16 GB CI runner shut down (exit 143) while several PGlite test
+# binaries ran at once, and a failed release test job publishes no images.
 test-unit: generate-wasm
-	env CGO_ENABLED=0 go test -timeout 15m -json -v github.com/hoophq/hoop/...
+	env CGO_ENABLED=0 go test -p 2 -timeout 15m -json -v github.com/hoophq/hoop/...
 
 # `github.com/hoophq/hoop/...` now matches the sidecar module too, since it
 # was renamed to sit under the repository path. What it does NOT do is prove
