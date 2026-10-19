@@ -51,11 +51,13 @@ claim: hoop-inspect is an ordinary upstream. To close the last port and have
 Envoy reach it over a unix socket instead, add the overlay in
 [`uds/`](uds/README.md): same lanes, same policy, no data port open at all.
 
-[`grpc/`](grpc/README.md) adds a third protocol three ways: a gRPC lane
+[`grpc/`](grpc/README.md) adds a third protocol four ways: a gRPC lane
 behind a new Envoy `:8444` listener (TLS, ALPN h2, the same OPA fat gate),
 the same lane published directly on `:18443` as the without-Envoy h2c
-path, and a self-contained standalone compose where the lane terminates
-the client's TLS itself and the demo asserts the masking. It ships a dummy
+path, a self-contained standalone compose where the lane terminates
+the client's TLS itself and the demo asserts the masking, and a discover
+compose whose lanes fetch the schema over gRPC server reflection
+(`grpc.discover`) with no descriptor set mounted. It ships a dummy
 `demo.v1.Ledger` upstream hand-rolled over stdlib h2c — no gRPC library,
 so the protocol intelligence demonstrably stays in the sidecar — and a
 `grpcurl` client service, so the host needs nothing installed. The lane
