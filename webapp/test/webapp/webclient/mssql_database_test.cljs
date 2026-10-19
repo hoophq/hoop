@@ -5,31 +5,31 @@
 
 (def ^:private user-script "SELECT * FROM dbo.t")
 
-;; One line per server language, from `USE [jd-pix]` run through the gateway and agent.
+;; One line per server language, as USE printed it through the gateway and agent.
 (deftest drops-the-database-context-line
-  (doseq [line ["Changed database context to 'jd-pix'."
-                "Changed database context to 'jd-pix'.\r"
-                "Der Datenbankkontext wurde in \"jd-pix\" geändert."
-                "Le contexte de la base de données a été modifié en 'jd-pix'."
-                "データベース コンテキストが 'jd-pix' に変更されました。"
-                "Databasekonteksten blev ændret til 'jd-pix'."
-                "Se cambió el contexto de la base de datos a 'jd-pix'."
-                "Il contesto di database è stato sostituito con 'jd-pix'."
-                "De databasecontext is gewijzigd in jd-pix."
-                "O contexto da base de dados foi alterado para 'jd-pix'."
-                "Tietokannan kontekstiksi muutettiin jd-pix."
-                "Ändrade databasens kontext till jd-pix."
-                "Kontext databáze byl změněn na jd-pix."
-                "Adatbázis-környezet módosítva a következő értékre: „jd-pix”."
-                "Zmieniono kontekst bazy danych na „jd-pix”."
-                "Το περιβάλλον της βάσης δεδομένων άλλαξε σε 'jd-pix'."
-                "Контекст базы данных изменен на \"jd-pix\"."
-                "Veritabanı bağlamı 'jd-pix' olarak değiştirildi."
-                "Contexto do banco de dados alterado para 'jd-pix'."
-                "已將資料庫內容變更為 'jd-pix'。"
-                "데이터베이스 컨텍스트가 'jd-pix'(으)로 변경되었습니다."
-                "已将数据库上下文更改为 \"jd-pix\"。"
-                "Endret databasekontekst til jd-pix."]]
+  (doseq [line ["Changed database context to 'sales-db'."
+                "Changed database context to 'sales-db'.\r"
+                "Der Datenbankkontext wurde in \"sales-db\" geändert."
+                "Le contexte de la base de données a été modifié en 'sales-db'."
+                "データベース コンテキストが 'sales-db' に変更されました。"
+                "Databasekonteksten blev ændret til 'sales-db'."
+                "Se cambió el contexto de la base de datos a 'sales-db'."
+                "Il contesto di database è stato sostituito con 'sales-db'."
+                "De databasecontext is gewijzigd in sales-db."
+                "O contexto da base de dados foi alterado para 'sales-db'."
+                "Tietokannan kontekstiksi muutettiin sales-db."
+                "Ändrade databasens kontext till sales-db."
+                "Kontext databáze byl změněn na sales-db."
+                "Adatbázis-környezet módosítva a következő értékre: „sales-db”."
+                "Zmieniono kontekst bazy danych na „sales-db”."
+                "Το περιβάλλον της βάσης δεδομένων άλλαξε σε 'sales-db'."
+                "Контекст базы данных изменен на \"sales-db\"."
+                "Veritabanı bağlamı 'sales-db' olarak değiştirildi."
+                "Contexto do banco de dados alterado para 'sales-db'."
+                "已將資料庫內容變更為 'sales-db'。"
+                "데이터베이스 컨텍스트가 'sales-db'(으)로 변경되었습니다."
+                "已将数据库上下文更改为 \"sales-db\"。"
+                "Endret databasekontekst til sales-db."]]
     (is (= "id\n--\n3\n" (mssql-database/strip-output (str line "\nid\n--\n3\n")))
         line)))
 
@@ -42,11 +42,11 @@
     (is (= output (mssql-database/strip-output output)))))
 
 (deftest keeps-an-error-that-arrives-before-the-context-line
-  (let [output "Invalid object name 'dbo.nope'.\n\nChanged database context to 'jd-pix'.\n"]
+  (let [output "Invalid object name 'dbo.nope'.\n\nChanged database context to 'sales-db'.\n"]
     (is (= output (mssql-database/strip-output output)))))
 
 (deftest keeps-a-line-that-only-starts-like-the-context-line
-  (let [output "Changed database context to 'jd-pix'. Extra\nid\n"]
+  (let [output "Changed database context to 'sales-db'. Extra\nid\n"]
     (is (= output (mssql-database/strip-output output)))))
 
 (deftest missing-output-stays-missing
@@ -54,5 +54,5 @@
 
 (deftest terminal-script-hides-its-prefix
   (is (= user-script (mssql-database/strip-script
-                      (mssql-database/with-database "jd-pix" user-script))))
+                      (mssql-database/with-database "sales-db" user-script))))
   (is (= user-script (mssql-database/strip-script user-script))))
