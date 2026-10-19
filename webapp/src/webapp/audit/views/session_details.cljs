@@ -29,9 +29,9 @@
    [webapp.sessions.components.session-details :as session-details-component]
    [webapp.sessions.components.rejection-reason :as rejection-reason]))
 
-(defn- sanitize-response [response connection-type script]
+(defn- sanitize-response [response connection-type]
   (if (= connection-type "mssql")
-    (mssql-database/strip-output response script)
+    (mssql-database/strip-output response)
     response))
 
 (defn- loading-player []
@@ -420,11 +420,10 @@
                       (if is-large-loading?
                         [loading-player]
                         (let [results (if has-large-payload?
-                                        (sanitize-response stream-data connection-subtype script-data)
+                                        (sanitize-response stream-data connection-subtype)
                                         (sanitize-response
                                          (utilities/decode-b64 (or (first (:event_stream session)) ""))
-                                         connection-subtype
-                                         script-data))
+                                         connection-subtype))
                               results-status (if has-large-payload?
                                                (if stream-data :success :error)
                                                (:status @session-details))]

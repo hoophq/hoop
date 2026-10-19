@@ -29,7 +29,7 @@
       (let [output (:output (:data @script-response))
             script (:script (:data @script-response))
             response (if (= connection-type "mssql")
-                       (mssql-database/strip-output output script)
+                       (mssql-database/strip-output output)
                        output)
             logs-content {:status (:status @script-response)
                           :response response
