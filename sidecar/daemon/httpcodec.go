@@ -33,13 +33,17 @@ import (
 // The factory returns a FRESH codec per call. Two connections sharing one
 // stateful codec corrupt each other's reassembly buffer, and would trade
 // each other's credentials.
-func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, holds bool) func() inspect.Codec {
+//
+// origin, from an upstream written as a URL, makes the codec point every
+// request at that origin; nil leaves Host as the client wrote it.
+func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, holds bool, origin *codechttp.Origin) func() inspect.Codec {
 	opts := codechttp.Options{
 		// headerNames is normalized once, the same list validate checked,
 		// nil-safe, and a fresh slice, so the append leaves cfg alone.
 		Headers:            append(cfg.headerNames(), analyzer.ClientModeHeaders()...),
 		CredentialHeader:   credentialHeader,
 		CaptureRequestBody: holds,
+		Origin:             origin,
 	}
 	if cfg != nil {
 		opts.CaptureBody = cfg.CaptureBody

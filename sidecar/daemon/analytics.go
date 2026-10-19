@@ -329,7 +329,7 @@ func shapeProperties(cfg *Config, lanes []lane, det Plugin) analytics.Properties
 		if ln.cfg.IdentityHeader != "" {
 			identityHeader++
 		}
-		if ln.cfg.UpstreamTLS != nil {
+		if ln.cfg.upstreamTLS() != nil {
 			upstreamTLS++
 		}
 		if ln.cfg.DownstreamTLS != nil {
