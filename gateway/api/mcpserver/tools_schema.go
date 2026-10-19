@@ -33,27 +33,28 @@ type connectionColumnsInput struct {
 }
 
 func registerSchemaTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "connection_databases",
+		Name:  "connection_databases",
+		Title: "List databases",
 		Description: "List databases available on a Hoop database connection (Postgres, MySQL, MSSQL, MongoDB). " +
 			"Returns the raw query output; agents can parse database names from it.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, connectionDatabasesHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "connection_tables",
+		Name:  "connection_tables",
+		Title: "List tables",
 		Description: "List tables in a given database on a Hoop database connection. " +
 			"Returns the raw query output.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, connectionTablesHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "connection_columns",
+		Name:  "connection_columns",
+		Title: "List table columns",
 		Description: "List columns of a specific table on a Hoop database connection, with types. " +
 			"Returns the raw query output.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, connectionColumnsHandler)
 }
 
@@ -95,7 +96,10 @@ func connectionTablesHandler(ctx context.Context, _ *mcp.CallToolRequest, args c
 	}
 
 	connType := pb.ToConnectionType(conn.Type, conn.SubType.String)
-	script := apiconnections.TablesQueryFor(connType, args.Database)
+	script, qErr := apiconnections.TablesQueryFor(connType, args.Database)
+	if qErr != nil {
+		return errResult(qErr.Error()), nil, nil
+	}
 	if script == "" {
 		return errResult(fmt.Sprintf("listing tables is not supported for connection type %q", connType)), nil, nil
 	}
@@ -137,7 +141,10 @@ func connectionColumnsHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 			schema = args.Database
 		}
 	}
-	script := apiconnections.ColumnsQueryFor(connType, args.Database, args.Table, schema)
+	script, qErr := apiconnections.ColumnsQueryFor(connType, args.Database, args.Table, schema)
+	if qErr != nil {
+		return errResult(qErr.Error()), nil, nil
+	}
 	if script == "" {
 		return errResult(fmt.Sprintf("listing columns is not supported for connection type %q", connType)), nil, nil
 	}

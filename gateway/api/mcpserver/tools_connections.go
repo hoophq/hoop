@@ -70,22 +70,23 @@ type connectionsDeleteInput struct {
 func boolPtr(b bool) *bool { return &b }
 
 func registerConnectionTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "connections_list",
+		Title:       "List connections",
 		Description: "List all connections accessible to the authenticated user, with optional filters by agent, type, subtype, tag_selector, or search query",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, connectionsListHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "connections_get",
+		Title:       "Get connection",
 		Description: "Get a single connection by its name or ID",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, connectionsGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "connections_create",
+		Name:  "connections_create",
+		Title: "Create connection",
 		Description: "Create a new connection. Requires admin access. " +
 			"Required envs by subtype (keys must use the 'envvar:' prefix, values base64-encoded): " +
 			"postgres/mysql/mssql -> HOST, USER, PASS, PORT, DB; " +
@@ -94,19 +95,21 @@ func registerConnectionTools(server *mcp.Server) {
 			"tcp -> HOST, PORT; httpproxy -> REMOTE_URL; " +
 			"ssh -> HOST, USER, and PASS or AUTHORIZED_SERVER_KEYS. " +
 			"For known database subtypes the gateway auto-fills the runtime command — leave 'command' empty unless overriding.",
-		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
+		Annotations: additiveHints(),
 	}, connectionsCreateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "connections_update",
+		Title:       "Update connection",
 		Description: "Update an existing connection by name. Requires admin access. Only provided fields are updated",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, connectionsUpdateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "connections_delete",
+		Title:       "Delete connection",
 		Description: "Delete a connection by name. Requires admin access. This action is irreversible",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, connectionsDeleteHandler)
 }
 

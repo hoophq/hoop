@@ -38,36 +38,39 @@ type guardrailsDeleteInput struct {
 }
 
 func registerGuardrailTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "guardrails_list",
+		Title:       "List guardrails",
 		Description: "List all guardrail rules configured for the organization",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, guardrailsListHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "guardrails_get",
+		Title:       "Get guardrail",
 		Description: "Get a single guardrail rule by its ID or name",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, guardrailsGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "guardrails_create",
+		Title:       "Create guardrail",
 		Description: "Create a new guardrail rule with input/output configurations and connection associations",
-		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
+		Annotations: additiveHints(),
 	}, guardrailsCreateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "guardrails_update",
+		Title:       "Update guardrail",
 		Description: "Update an existing guardrail rule by ID",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, guardrailsUpdateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "guardrails_delete",
+		Title:       "Delete guardrail",
 		Description: "Delete a guardrail rule by ID. This action is irreversible",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, guardrailsDeleteHandler)
 }
 

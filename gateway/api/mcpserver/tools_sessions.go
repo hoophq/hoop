@@ -43,45 +43,48 @@ type sessionsWaitAnalysisInput struct {
 }
 
 func registerSessionTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "sessions_list",
+		Name:  "sessions_list",
+		Title: "List sessions",
 		Description: fmt.Sprintf("List sessions with optional filters (user, connection, date range, status). "+
 			"Returns metadata only, not session content. Max 100 results per request. "+
 			"The total is capped for performance: when total_is_capped is true the real number of "+
 			"matching sessions is at least total, not exactly total. Report it as \"%d+\" and "+
 			"narrow the filters if an exact figure matters.", models.SessionCountCapValue),
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, sessionsListHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "sessions_get",
+		Title:       "Get session",
 		Description: "Get session details and metadata by ID. Returns metadata only, not session content or binary data",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, sessionsGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "sessions_get_content",
+		Name:  "sessions_get_content",
+		Title: "Get session content",
 		Description: "Get the input script and stdout/stderr output of a session. " +
 			"Only the session owner or an admin/auditor can read another user's session content.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, sessionsGetContentHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "sessions_get_analysis",
+		Name:  "sessions_get_analysis",
+		Title: "Get session AI analysis",
 		Description: "Get Hoop's AI analysis for a session: risk level, title, explanation, recommended action. " +
 			"Returns status=unavailable when the session has no analysis yet (e.g. still in progress).",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, sessionsGetAnalysisHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "sessions_wait_analysis",
+		Name:  "sessions_wait_analysis",
+		Title: "Wait for session AI analysis",
 		Description: "Long-poll until Hoop's AI analysis for a session is available, or the timeout elapses. " +
 			"AI analysis is generated asynchronously after a session ends, so a session that just completed " +
 			"may take a moment. Response shape mirrors sessions_get_analysis and adds timed_out and " +
 			"waited_seconds. Timeout is not an error.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, sessionsWaitAnalysisHandler)
 }
 

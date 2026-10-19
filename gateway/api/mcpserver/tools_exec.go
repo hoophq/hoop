@@ -35,17 +35,16 @@ type execInput struct {
 }
 
 func registerExecTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "exec",
+		Name:  "exec",
+		Title: "Run query or command",
 		Description: "Run a one-shot command or query against a Hoop connection on behalf of the authenticated user. " +
 			"Mirrors `hoop exec`. Returns one of three envelopes: `status=completed` with output, " +
 			"`status=pending_approval` with a review_id (call approvals_wait to long-poll; once APPROVED call approvals_execute), " +
 			"or `status=running` with a session_id (after a 50s timeout; poll sessions_get). " +
 			"Authorization, data masking, guardrails, and approval gates are enforced by the gateway — " +
 			"this tool does not bypass any of them.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: openWorldHints(),
 	}, execHandler)
 }
 

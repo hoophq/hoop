@@ -45,36 +45,39 @@ type runbookRulesDeleteInput struct {
 }
 
 func registerRunbookRuleTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "runbook_rules_list",
+		Title:       "List runbook rules",
 		Description: "List all runbook rules configured for the organization",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, runbookRulesListHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "runbook_rules_get",
+		Title:       "Get runbook rule",
 		Description: "Get a single runbook rule by its ID",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, runbookRulesGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "runbook_rules_create",
+		Title:       "Create runbook rule",
 		Description: "Create a new runbook rule with user groups, connections, and allowed runbooks",
-		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
+		Annotations: additiveHints(),
 	}, runbookRulesCreateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "runbook_rules_update",
+		Title:       "Update runbook rule",
 		Description: "Update an existing runbook rule by ID",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, runbookRulesUpdateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "runbook_rules_delete",
+		Title:       "Delete runbook rule",
 		Description: "Delete a runbook rule by ID. This action is irreversible",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, runbookRulesDeleteHandler)
 }
 

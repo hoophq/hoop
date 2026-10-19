@@ -66,47 +66,51 @@ func addApprovalTool[In any](server *mcp.Server, tool *mcp.Tool, h mcp.ToolHandl
 	mcp.AddTool(server, tool, h)
 	aliasTool := *tool
 	aliasTool.Name = alias
+	aliasTool.Title = tool.Title + " (legacy name)"
 	aliasTool.Description = "Alias of " + tool.Name + ". " + tool.Description
 	mcp.AddTool(server, &aliasTool, h)
 }
 
 func registerReviewTools(server *mcp.Server, releaseConnFn reviewapi.TransportReleaseConnectionFunc) {
-	openWorld := false
-
 	addApprovalTool(server, &mcp.Tool{
 		Name:        "approvals_list",
+		Title:       "List approval requests",
 		Description: "List the approval requests (access requests) you made or your groups can decide. Admins and auditors get all of them",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, reviewsListHandler)
 
 	addApprovalTool(server, &mcp.Tool{
 		Name:        "approvals_get",
+		Title:       "Get approval request",
 		Description: "Get a single approval request by its ID or session ID",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, reviewsGetHandler)
 
 	addApprovalTool(server, &mcp.Tool{
 		Name:        "approvals_update",
+		Title:       "Approve, reject or revoke request",
 		Description: "Update an approval request status (approve, reject, or revoke). Requires membership in an approver group",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: openWorldHints(),
 	}, makeReviewsUpdateHandler(releaseConnFn))
 
 	addApprovalTool(server, &mcp.Tool{
-		Name: "approvals_execute",
+		Name:  "approvals_execute",
+		Title: "Run approved query",
 		Description: "Execute a query that was blocked on an approved one-time request. Runs the originally " +
 			"submitted query (no drift from what the approver approved). Only the session owner or an " +
 			"admin/auditor can execute; the approval request must be in status=APPROVED. Returns the same envelope " +
 			"shape as exec: completed, or status=running after a 50s timeout (poll sessions_get).",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: openWorldHints(),
 	}, reviewsExecuteHandler)
 
 	addApprovalTool(server, &mcp.Tool{
-		Name: "approvals_wait",
+		Name:  "approvals_wait",
+		Title: "Wait for approval decision",
 		Description: "Long-poll an approval request until it reaches a terminal status (APPROVED, REJECTED, REVOKED, " +
 			"EXECUTED) or the timeout elapses. Use after exec returns status=pending_approval. The response " +
 			"shape mirrors approvals_get and adds timed_out (true when the timeout was reached without a " +
 			"terminal status — call again to keep waiting) and waited_seconds.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, reviewsWaitHandler)
 }
 

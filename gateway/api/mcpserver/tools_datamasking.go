@@ -56,36 +56,39 @@ type datamaskingDeleteInput struct {
 }
 
 func registerDataMaskingTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "datamasking_rules_list",
+		Title:       "List data masking rules",
 		Description: "List all data masking rules configured for the organization",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, datamaskingListHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "datamasking_rules_get",
+		Title:       "Get data masking rule",
 		Description: "Get a single data masking rule by its ID",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, datamaskingGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "datamasking_rules_create",
+		Title:       "Create data masking rule",
 		Description: "Create a new data masking rule with entity type detection configuration",
-		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
+		Annotations: additiveHints(),
 	}, datamaskingCreateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "datamasking_rules_update",
+		Title:       "Update data masking rule",
 		Description: "Update an existing data masking rule by ID",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, datamaskingUpdateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "datamasking_rules_delete",
+		Title:       "Delete data masking rule",
 		Description: "Delete a data masking rule by ID. This action is irreversible",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, datamaskingDeleteHandler)
 }
 

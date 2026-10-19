@@ -28,27 +28,30 @@ type usergroupsDeleteInput struct {
 }
 
 func registerUserGroupTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "usergroups_list",
+		Title:       "List user groups",
 		Description: "List all user groups in the organization",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, usergroupsListHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "usergroups_create",
+		Name:  "usergroups_create",
+		Title: "Create user group",
 		Description: "Create a user group, optionally binding it to connections and/or existing attributes in the same call. " +
 			"For 'create group X with access to connection Y' requests, pass `connections` to grant access via the access_control plugin (matches the webapp 'Create new access control group' form). " +
 			"For approval / just-in-time workflows on a connection, use access_request_rules_create instead. " +
 			"To bind an EXISTING group to connections, use access_control_set.",
-		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
+		// Binding connections can enable access_control for the org, which
+		// hides every unbound connection from non-admins.
+		Annotations: destructiveHints(),
 	}, usergroupsCreateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "usergroups_delete",
+		Title:       "Delete user group",
 		Description: "Delete a user group by name. Cannot delete the admin group. This action is irreversible",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, usergroupsDeleteHandler)
 }
 

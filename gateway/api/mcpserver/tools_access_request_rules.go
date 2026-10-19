@@ -56,40 +56,43 @@ type accessRequestRulesDeleteInput struct {
 }
 
 func registerAccessRequestRuleTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "access_request_rules_list",
+		Title:       "List access request rules",
 		Description: "List all access request rules for the organization with optional pagination",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, accessRequestRulesListHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "access_request_rules_get",
+		Title:       "Get access request rule",
 		Description: "Get a single access request rule by name",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, accessRequestRulesGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "access_request_rules_create",
+		Name:  "access_request_rules_create",
+		Title: "Create access request rule",
 		Description: "Create an approval / just-in-time access workflow rule for one or more connections — matches the webapp 'Access Request' page. " +
 			"Use this when access requires approval, one-time or time-bound. " +
 			"For simple 'this group can access this connection' visibility (no approval), use access_control_set or access_control_create_group instead. " +
 			"Do NOT set the deprecated reviewers field on the connection itself. " +
 			"Requires admin access.",
-		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
+		Annotations: additiveHints(),
 	}, accessRequestRulesCreateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "access_request_rules_update",
+		Title:       "Update access request rule",
 		Description: "Update an existing access request rule by name. Requires admin access",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, accessRequestRulesUpdateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "access_request_rules_delete",
+		Title:       "Delete access request rule",
 		Description: "Delete an access request rule by name. Requires admin access. This action is irreversible",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, accessRequestRulesDeleteHandler)
 }
 

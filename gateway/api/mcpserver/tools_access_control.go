@@ -27,36 +27,38 @@ type accessControlGetInput struct {
 type accessControlListInput struct{}
 
 func registerAccessControlTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "access_control_set",
+		Name:  "access_control_set",
+		Title: "Set connection access groups",
 		Description: "Canonical way to restrict which user groups can access a connection — matches the webapp 'Access Control' page. " +
 			"Use this for 'give group X access to connection Y' requests. " +
 			"Enables the access_control plugin if needed and REPLACES any existing group list for this connection. " +
 			"Admins and auditors always bypass the restriction. " +
 			"For approval / just-in-time workflows (require approval before access), use access_request_rules_create instead. " +
 			"Do NOT set the deprecated reviewers field on the connection itself.",
-		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, accessControlSetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "access_control_unset",
+		Name:  "access_control_unset",
+		Title: "Remove connection access groups",
 		Description: "Remove the access_control binding for a connection. After this call, " +
 			"the connection is no longer group-restricted (all users can see/access it).",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, accessControlUnsetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "access_control_get",
+		Title:       "Get connection access groups",
 		Description: "Get the list of user groups allowed to access a given connection via the access_control plugin",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, accessControlGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "access_control_list",
+		Title:       "List connection access groups",
 		Description: "List all connections currently bound to the access_control plugin with their allowed user groups",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, accessControlListHandler)
 }
 

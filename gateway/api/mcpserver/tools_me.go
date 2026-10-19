@@ -10,14 +10,13 @@ import (
 type meGetInput struct{}
 
 func registerMeTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "me_get",
+		Name:  "me_get",
+		Title: "Get current user",
 		Description: "Get the authenticated user's profile: email, name, user_id, org_id, " +
 			"the groups they belong to, and whether they are an admin or auditor. " +
 			"Useful as a first call to confirm which identity the MCP session is acting as.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, meGetHandler)
 }
 

@@ -1,65 +1,122 @@
 package apiconnections
 
 import (
+	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	pb "github.com/hoophq/hoop/common/proto"
 )
 
 // TablesQueryFor returns the backing query for listing tables on the given
-// connection type, or an empty string when the type is unsupported.
+// connection type, an empty string when the type is unsupported, or an error
+// when a name cannot be placed in the query safely.
 // Exported for reuse by the MCP schema tools.
-func TablesQueryFor(connType pb.ConnectionType, dbName string) string {
+func TablesQueryFor(connType pb.ConnectionType, dbName string) (string, error) {
 	return getTablesQuery(connType, dbName)
 }
 
 // ColumnsQueryFor returns the backing query for listing columns of a specific
-// table on the given connection type, or an empty string when unsupported.
+// table on the given connection type, an empty string when unsupported, or an
+// error when a name cannot be placed in the query safely.
 // Exported for reuse by the MCP schema tools.
-func ColumnsQueryFor(connType pb.ConnectionType, dbName, tableName, schemaName string) string {
+func ColumnsQueryFor(connType pb.ConnectionType, dbName, tableName, schemaName string) (string, error) {
 	return getColumnsQuery(connType, dbName, tableName, schemaName)
 }
 
-// getTablesQuery returns the query to list only the tables of a database
-func getTablesQuery(connType pb.ConnectionType, dbName string) string {
+// getTablesQuery returns the query to list only the tables of a database.
+// The query runs as plain-exec, which skips review and guardrails, so every
+// caller-supplied name is validated here.
+func getTablesQuery(connType pb.ConnectionType, dbName string) (string, error) {
+	var build func(dbName string) string
 	switch connType {
 	case pb.ConnectionTypeDynamoDB:
-		return getDynamoDBTablesQuery() // DynamoDB tables are listed as databases
+		return getDynamoDBTablesQuery(), nil // DynamoDB tables are listed as databases
 	case pb.ConnectionTypeCloudWatch:
-		return getCloudWatchTablesQuery()
-	case pb.ConnectionTypePostgres:
-		return getPostgresTablesQuery(dbName)
-	case pb.ConnectionTypeMSSQL:
-		return getMSSQLTablesQuery(dbName)
-	case pb.ConnectionTypeMySQL:
-		return getMySQLTablesQuery(dbName)
+		return getCloudWatchTablesQuery(), nil
 	case pb.ConnectionTypeOracleDB:
-		return getOracleDBTablesQuery()
+		return getOracleDBTablesQuery(), nil
+	case pb.ConnectionTypePostgres:
+		build = getPostgresTablesQuery
+	case pb.ConnectionTypeMSSQL:
+		build = getMSSQLTablesQuery
+	case pb.ConnectionTypeMySQL:
+		build = getMySQLTablesQuery
 	case pb.ConnectionTypeMongoDB:
-		return getMongoDBTablesQuery(dbName)
+		build = getMongoDBTablesQuery
 	default:
-		return ""
+		return "", nil
 	}
+	if err := validateDatabaseName(dbName); err != nil {
+		return "", err
+	}
+	return build(dbName), nil
 }
 
-// getColumnsQuery returns the query to get the columns of a specific table
-func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName string) string {
+// getColumnsQuery returns the query to get the columns of a specific table.
+// The query runs as plain-exec, which skips review and guardrails, so every
+// caller-supplied name is validated here.
+func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName string) (string, error) {
+	var build func(dbName, tableName, schemaName string) string
 	switch connType {
 	case pb.ConnectionTypeDynamoDB:
-		return getDynamoDBColumnsQuery(tableName)
-	case pb.ConnectionTypePostgres:
-		return getPostgresColumnsQuery(dbName, tableName, schemaName)
-	case pb.ConnectionTypeMSSQL:
-		return getMSSQLColumnsQuery(dbName, tableName, schemaName)
-	case pb.ConnectionTypeMySQL:
-		return getMySQLColumnsQuery(dbName, tableName, schemaName)
+		if !dynamoDBTableNameRe.MatchString(tableName) {
+			return "", fmt.Errorf("invalid table name. DynamoDB allows only alphanumeric characters, underscore, hyphen and dot with length between 3 and 255 characters")
+		}
+		return getDynamoDBColumnsQuery(tableName), nil
 	case pb.ConnectionTypeOracleDB:
-		return getOracleDBColumnsQuery(tableName, schemaName)
+		if err := validateObjectNames(tableName, schemaName); err != nil {
+			return "", err
+		}
+		return getOracleDBColumnsQuery(tableName, schemaName), nil
+	case pb.ConnectionTypePostgres:
+		build = getPostgresColumnsQuery
+	case pb.ConnectionTypeMSSQL:
+		build = getMSSQLColumnsQuery
+	case pb.ConnectionTypeMySQL:
+		build = getMySQLColumnsQuery
 	case pb.ConnectionTypeMongoDB:
-		return getMongoDBColumnsQuery(dbName, tableName)
+		build = func(dbName, tableName, _ string) string { return getMongoDBColumnsQuery(dbName, tableName) }
 	default:
-		return ""
+		return "", nil
 	}
+	if err := validateDatabaseName(dbName); err != nil {
+		return "", err
+	}
+	if err := validateObjectNames(tableName, schemaName); err != nil {
+		return "", err
+	}
+	return build(dbName, tableName, schemaName), nil
+}
+
+// dynamoDBTableNameRe is the AWS naming rule. It also keeps the name safe as a
+// bare shell argument.
+var dynamoDBTableNameRe = regexp.MustCompile(`^[a-zA-Z0-9_.\-]{3,255}$`)
+
+// validateObjectNames rejects table and schema names that quoting cannot make
+// safe: a line break ends a psql or sqlcmd line, MySQL reads a backslash as an
+// escape inside a string literal, and quote doubling assumes valid UTF-8.
+func validateObjectNames(tableName, schemaName string) error {
+	for _, name := range []string{tableName, schemaName} {
+		if !utf8.ValidString(name) || strings.ContainsFunc(name, func(r rune) bool { return r == '\\' || unicode.IsControl(r) }) {
+			return fmt.Errorf("invalid table or schema name %q: backslash, control characters and invalid UTF-8 are not allowed", name)
+		}
+	}
+	return nil
+}
+
+// sqlString quotes s as a SQL string literal.
+func sqlString(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// jsString quotes s as a JavaScript string literal.
+func jsString(s string) string {
+	b, _ := json.Marshal(s) // a string always marshals
+	return string(b)
 }
 
 // Queries to list only tables
@@ -120,8 +177,8 @@ SELECT
     END as object_type,
     t.TABLE_NAME as object_name
 FROM INFORMATION_SCHEMA.TABLES t
-WHERE t.TABLE_SCHEMA = '%s'
-ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME;`, dbName)
+WHERE t.TABLE_SCHEMA = %s
+ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME;`, sqlString(dbName))
 }
 
 func getOracleDBTablesQuery() string {
@@ -152,7 +209,7 @@ if (typeof noVerbose === 'function') noVerbose();
 if (typeof config !== 'undefined') config.verbosity = 0;
 
 var result = [];
-var dbName = '%s';
+var dbName = %s;
 
 db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
     result.push({
@@ -162,7 +219,7 @@ db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
     });
 });
 
-print(JSON.stringify(result));`, dbName)
+print(JSON.stringify(result));`, jsString(dbName))
 }
 
 // Query for DynamoDB tables
@@ -204,11 +261,11 @@ FROM
     JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid
     JOIN pg_catalog.pg_type t ON a.atttypid = t.oid
 WHERE
-    c.relname = '%s'
-    AND n.nspname = '%s'
+    c.relname = %s
+    AND n.nspname = %s
     AND a.attnum > 0
     AND NOT a.attisdropped
-ORDER BY a.attnum;`, dbName, tableName, schemaName)
+ORDER BY a.attnum;`, dbName, sqlString(tableName), sqlString(schemaName))
 }
 
 func getMSSQLColumnsQuery(dbName, tableName, schemaName string) string {
@@ -231,8 +288,8 @@ FROM sys.schemas s
 JOIN sys.objects o ON o.schema_id = s.schema_id
 JOIN sys.columns c ON o.object_id = c.object_id
 JOIN sys.types t ON c.user_type_id = t.user_type_id
-WHERE s.name = '%s' AND o.name = '%s' AND o.type IN ('U', 'V')
-ORDER BY c.column_id;`, dbName, schemaName, tableName)
+WHERE s.name = %s AND o.name = %s AND o.type IN ('U', 'V')
+ORDER BY c.column_id;`, dbName, sqlString(schemaName), sqlString(tableName))
 }
 
 func getMySQLColumnsQuery(dbName, tableName, schemaName string) string {
@@ -253,19 +310,21 @@ SELECT
     END as column_type,
     c.IS_NULLABLE = 'NO' as not_null
 FROM INFORMATION_SCHEMA.COLUMNS c
-WHERE c.TABLE_SCHEMA = '%s' AND c.TABLE_NAME = '%s'
-ORDER BY c.ORDINAL_POSITION;`, quotedDBName, schemaName, tableName)
+WHERE c.TABLE_SCHEMA = %s AND c.TABLE_NAME = %s
+ORDER BY c.ORDINAL_POSITION;`, quotedDBName, sqlString(schemaName), sqlString(tableName))
 }
 
 func getOracleDBColumnsQuery(tableName, schemaName string) string {
+	// sqlplus reads & as a variable even inside a literal.
 	return fmt.Sprintf(`
+SET DEFINE OFF;
 SELECT
     c.column_name,
     c.data_type as column_type,
     CASE WHEN c.nullable = 'Y' THEN '0' ELSE '1' END as not_null
 FROM all_tab_columns c
-WHERE c.owner = '%s' AND c.table_name = '%s'
-ORDER BY c.column_id;`, schemaName, tableName)
+WHERE c.owner = %s AND c.table_name = %s
+ORDER BY c.column_id;`, sqlString(schemaName), sqlString(tableName))
 }
 
 func getMongoDBColumnsQuery(dbName, tableName string) string {
@@ -275,8 +334,8 @@ if (typeof noVerbose === 'function') noVerbose();
 if (typeof config !== 'undefined') config.verbosity = 0;
 
 var result = [];
-var dbName = '%s';
-var collName = '%s';
+var dbName = %s;
+var collName = %s;
 
 var coll = db.getSiblingDB(dbName).getCollection(collName);
 var samples = coll.find().limit(10).toArray(); // Examine up to 10 documents for a better schema sample
@@ -341,5 +400,5 @@ Object.keys(collSchema).forEach(function(field) {
     });
 });
 
-print(JSON.stringify(result));`, dbName, tableName)
+print(JSON.stringify(result));`, jsString(dbName), jsString(tableName))
 }

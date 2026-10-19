@@ -135,6 +135,9 @@ func TestApprovalToolsKeepReviewAliases(t *testing.T) {
 		if approval == nil || alias == nil {
 			t.Fatalf("%s: approvals tool %v, reviews alias %v, want both", name, approval != nil, alias != nil)
 		}
+		if want := approval.Title + " (legacy name)"; alias.Title != want {
+			t.Errorf("reviews_%s title = %q, want %q", name, alias.Title, want)
+		}
 		if want := "Alias of approvals_" + name + ". " + approval.Description; alias.Description != want {
 			t.Errorf("reviews_%s description = %q, want %q", name, alias.Description, want)
 		}

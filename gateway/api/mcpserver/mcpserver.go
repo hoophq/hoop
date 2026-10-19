@@ -37,6 +37,21 @@ type MCPServer struct {
 }
 
 func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *MCPServer {
+	server := newServer(releaseConnFn)
+
+	mcpHandler := mcp.NewStreamableHTTPHandler(
+		func(r *http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{SessionTimeout: mcpSessionTimeout},
+	)
+
+	handler := http.NewCrossOriginProtection().Handler(mcpHandler)
+
+	return &MCPServer{handler: handler}
+}
+
+// newServer builds the server with every tool, so tests list exactly what the
+// gateway serves.
+func newServer(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "hoop",
 		Version: version.Get().Version,
@@ -57,15 +72,7 @@ func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *MCPServer {
 	registerSchemaTools(server)
 	registerAttributeTools(server)
 	registerAccessControlTools(server)
-
-	mcpHandler := mcp.NewStreamableHTTPHandler(
-		func(r *http.Request) *mcp.Server { return server },
-		&mcp.StreamableHTTPOptions{SessionTimeout: mcpSessionTimeout},
-	)
-
-	handler := http.NewCrossOriginProtection().Handler(mcpHandler)
-
-	return &MCPServer{handler: handler}
+	return server
 }
 
 // GinHandler bridges Gin auth context (storage context + access token) into

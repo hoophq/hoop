@@ -205,22 +205,13 @@ func ListTables(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"message": "database parameter is required for this database type"})
 			return
 		}
-
-		// Validate format
-		if err := validateDatabaseName(dbName); err != nil {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-			return
-		}
 	}
 
-	script := getTablesQuery(currentConnectionType, dbName)
-	if script == "" {
-		// Check for DynamoDB
-		if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
-			script = `aws dynamodb list-tables --output json`
-		}
+	script, err := getTablesQuery(currentConnectionType, dbName)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
 	}
-
 	if script == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
 		return
@@ -363,12 +354,6 @@ func GetTableColumns(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"message": "database parameter is required for this database type"})
 			return
 		}
-
-		// Validate format
-		if err := validateDatabaseName(dbName); err != nil {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-			return
-		}
 	}
 
 	if schemaName == "" {
@@ -381,14 +366,11 @@ func GetTableColumns(c *gin.Context) {
 		}
 	}
 
-	script := getColumnsQuery(currentConnectionType, dbName, tableName, schemaName)
-	if script == "" {
-		// Check for DynamoDB
-		if currentConnectionType == pb.ConnectionTypeDynamoDB {
-			script = fmt.Sprintf(`aws dynamodb describe-table --table-name %s --output json`, tableName)
-		}
+	script, err := getColumnsQuery(currentConnectionType, dbName, tableName, schemaName)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
 	}
-
 	if script == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
 		return

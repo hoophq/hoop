@@ -47,39 +47,42 @@ type attributesDeleteInput struct {
 }
 
 func registerAttributeTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "attributes_list",
+		Name:  "attributes_list",
+		Title: "List attributes",
 		Description: "List attributes for the organization. Attributes are tags that group connections, access-request/guardrail/data-masking rules, and access-control groups. " +
 			"Supports optional pagination (page/page_size) and substring search on name.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, attributesListHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "attributes_get",
+		Title:       "Get attribute",
 		Description: "Get a single attribute by name, including all of its associations (connections, rules, access-control groups).",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, attributesGetHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "attributes_create",
+		Name:        "attributes_create",
+		Title:       "Create attribute",
 		Description: "Create a new attribute, optionally associating it with connections, rules, and access-control groups in the same call. Requires admin access.",
-		Annotations: &mcp.ToolAnnotations{OpenWorldHint: &openWorld},
+		Annotations: additiveHints(),
 	}, attributesCreateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "attributes_update",
+		Name:  "attributes_update",
+		Title: "Update attribute",
 		Description: "Update an attribute's description and/or its associations. Requires admin access. " +
 			"Each association field uses preserve-on-omit semantics: omit a field to leave it unchanged, pass an empty array to clear all entries for that field. " +
 			"To partially modify a list (add or remove a single entry), call attributes_get first, mutate the list, then pass the full updated list back.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, attributesUpdateHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "attributes_delete",
+		Title:       "Delete attribute",
 		Description: "Delete an attribute by name. Requires admin access. This action is irreversible and removes all of the attribute's associations.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
+		Annotations: destructiveHints(),
 	}, attributesDeleteHandler)
 }
 

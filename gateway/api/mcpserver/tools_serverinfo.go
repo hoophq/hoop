@@ -18,12 +18,11 @@ import (
 type serverInfoGetInput struct{}
 
 func registerServerInfoTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "serverinfo_get",
+		Title:       "Get server info",
 		Description: "Get gateway server information including version, auth method, license info, and feature flags",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, serverInfoGetHandler)
 }
 

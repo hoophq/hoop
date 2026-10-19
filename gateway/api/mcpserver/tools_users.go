@@ -15,18 +15,18 @@ type usersGetInput struct {
 }
 
 func registerUserTools(server *mcp.Server) {
-	openWorld := false
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "users_list",
+		Title:       "List users",
 		Description: "List all users in the organization",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, usersListHandler)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "users_get",
+		Title:       "Get user",
 		Description: "Get a single user by their email address",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+		Annotations: readOnlyHints(),
 	}, usersGetHandler)
 }
 
