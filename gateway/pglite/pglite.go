@@ -36,6 +36,7 @@ import (
 	"context"
 	"crypto/rand"
 	_ "embed"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -80,6 +81,9 @@ type Instance struct {
 	ioBase   string // host path base for .s.PGSQL.5432{.in,.out,.lock.*}
 	runtime  wazero.Runtime
 	compiled wazero.CompiledModule
+	// cache owns the engine with the compiled module: wazero does not
+	// release that engine on runtime.Close when a compilation cache is set.
+	cache    wazero.CompilationCache
 	listener net.Listener
 
 	// mu guards the wasm module and all export calls: wazero's
@@ -90,7 +94,10 @@ type Instance struct {
 	interactiveOne api.Function
 	clearError     api.Function // optional, may be nil
 	pglClosed      api.Function // optional, may be nil
-	closed         bool
+	// session is the bridge connection being served, nil between sessions.
+	// Close ends it, so a client that keeps it open cannot pin this instance.
+	session net.Conn
+	closed  bool
 }
 
 // DSN returns a libpq-style connection URI for the embedded database.
@@ -142,6 +149,7 @@ func Start(ctx context.Context, dataDir string) (*Instance, error) {
 	defer func() {
 		if !ok {
 			_ = rt.Close(ctx)
+			_ = cache.Close(ctx)
 		}
 	}()
 
@@ -161,6 +169,7 @@ func Start(ctx context.Context, dataDir string) (*Instance, error) {
 		ioBase:   filepath.Join(root, guestPrefix, "base", ".s.PGSQL.5432"),
 		runtime:  rt,
 		compiled: compiled,
+		cache:    cache,
 	}
 	if err := inst.bootModuleLocked(ctx); err != nil {
 		return nil, err
@@ -181,15 +190,18 @@ func Start(ctx context.Context, dataDir string) (*Instance, error) {
 	return inst, nil
 }
 
-// Close performs a clean shutdown of the embedded database (shutdown
-// checkpoint via pgl_shutdown) and releases the wasm runtime. The data
-// directory is left intact for the next boot.
+// Close performs a clean shutdown (shutdown checkpoint via pgl_shutdown), ends
+// the open bridge session and releases the runtime and its compilation cache.
+// The data directory is left intact for the next boot.
 func (i *Instance) Close(ctx context.Context) error {
 	_ = i.listener.Close()
 
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.closed = true
+	if i.session != nil {
+		_ = i.session.Close()
+	}
 	if i.mod != nil && !i.mod.IsClosed() {
 		// Flush dirty buffers first: this build's shutdown path cannot
 		// complete its own checkpoint (it traps emitting the shutdown log
@@ -206,7 +218,7 @@ func (i *Instance) Close(ctx context.Context) error {
 		}
 	}
 	i.mod = nil
-	return i.runtime.Close(ctx)
+	return errors.Join(i.runtime.Close(ctx), i.cache.Close(ctx))
 }
 
 // bootModuleLocked (re-)instantiates the wasm module and drives the PGlite
