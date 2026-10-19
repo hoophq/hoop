@@ -215,6 +215,11 @@
                                                          "Your runbook keeps executing in the background, "
                                                          "open session details to track progress.")}])
 
+                                    (= "failed" (:output_status res))
+                                    (rf/dispatch
+                                     [:show-snackbar {:level :error
+                                                      :text "Runbook failed"}])
+
                                     ;; Stay silent when the analyzer blocked the run: the
                                     ;; ai-block-card communicates the outcome (mirrors the
                                     ;; Web Terminal behavior).

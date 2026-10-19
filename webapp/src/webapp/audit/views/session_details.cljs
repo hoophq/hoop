@@ -24,19 +24,15 @@
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
    [webapp.utilities :as utilities]
+   [webapp.webclient.mssql-database :as mssql-database]
    [webapp.sessions.components.session-header :as session-header]
    [webapp.sessions.components.session-details :as session-details-component]
    [webapp.sessions.components.rejection-reason :as rejection-reason]))
 
-;; TODO: Change it for send DB in the payload and not the response
-(defn- sanitize-response [response connection-type]
-  (cond
-    (= connection-type "mssql")
-    (when response
-      (if-let [idx (cs/index-of response "\n")]
-        (subs response (inc idx))
-        response))
-    :else response))
+(defn- sanitize-response [response connection-type script]
+  (if (= connection-type "mssql")
+    (mssql-database/strip-output response script)
+    response))
 
 (defn- loading-player []
   [:div {:class "flex gap-small items-center justify-center py-large"}
@@ -424,10 +420,11 @@
                       (if is-large-loading?
                         [loading-player]
                         (let [results (if has-large-payload?
-                                        (sanitize-response stream-data connection-subtype)
+                                        (sanitize-response stream-data connection-subtype script-data)
                                         (sanitize-response
                                          (utilities/decode-b64 (or (first (:event_stream session)) ""))
-                                         connection-subtype))
+                                         connection-subtype
+                                         script-data))
                               results-status (if has-large-payload?
                                                (if stream-data :success :error)
                                                (:status @session-details))]

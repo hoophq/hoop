@@ -9,7 +9,8 @@
             [webapp.components.results-matrix :as results-matrix]
             [webapp.features.activation-journey.views.terminal-banner :as terminal-banner]
             [webapp.webclient.log-area.output-tabs :refer [tabs]]
-            [webapp.webclient.log-area.logs :as logs]))
+            [webapp.webclient.log-area.logs :as logs]
+            [webapp.webclient.mssql-database :as mssql-database]))
 
 (def selected-tab (r/atom (or (.getItem js/localStorage "webclient-selected-tab")
                               "Logs")))
@@ -21,37 +22,24 @@
       (cs/join "\n" (drop 3 lines))  ;; Pula as 3 primeiras linhas
       script)))
 
-(defn- clean-mssql-script [script]
-  (let [lines (cs/split script #"\n")]
-    (if (and (> (count lines) 2)
-             (= (first lines) "SET NOCOUNT ON;"))
-      (cs/join "\n" (drop 2 lines))
-      script)))
-
-;; TODO: Change it for send DB in the payload and not the response
-(defn- sanitize-response [response connection-type]
-  (cond
-    (= connection-type "mssql")
-    (when response
-      (if-let [idx (cs/index-of response "\n")]
-        (subs response (inc idx))
-        response))
-    :else response))
-
 (defn main [_]
   (let [script-response (rf/subscribe [:editor-plugin->script])
         matrix-cache (results-matrix/new-cache)]
     (fn [connection-type parallel-mode-active? dark-mode?]
-      (let [response (sanitize-response (:output (:data @script-response)) connection-type)
+      (let [output (:output (:data @script-response))
+            script (:script (:data @script-response))
+            response (if (= connection-type "mssql")
+                       (mssql-database/strip-output output script)
+                       output)
             logs-content {:status (:status @script-response)
                           :response response
                           :response-status (:output_status (:data @script-response))
                           :script (cond
                                     (= connection-type "postgres")
-                                    (clean-postgres-script (:script (:data @script-response)))
+                                    (clean-postgres-script script)
                                     (= connection-type "mssql")
-                                    (clean-mssql-script (:script (:data @script-response)))
-                                    :else (:script (:data @script-response)))
+                                    (mssql-database/strip-script script)
+                                    :else script)
                           :response-id (:session_id (:data @script-response))
                           :has-review (:has_review (:data @script-response))
                           :execution-time (:execution_time (:data @script-response))
