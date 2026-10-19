@@ -388,7 +388,7 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		// answers. Waiting is worth it, since a refusal gives it back.
 		return e.wait(ctx, res.ID, notes)
 	}
-	return e.denyHold(notes, res.ID, res.Status, reviewReason(res))
+	return e.denyHold(notes, res.ID, res.Status, e.reviewReason(res))
 }
 
 // reviewText renders the bytes the backend files and matches an approval
@@ -460,7 +460,7 @@ func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]
 			return e.release(ctx, notes, res)
 		}
 		if res.Status != reviewPending && res.Status != reviewProcessing {
-			return e.denyHold(notes, reviewID, res.Status, reviewReason(res))
+			return e.denyHold(notes, reviewID, res.Status, e.reviewReason(res))
 		}
 
 		left := time.Until(deadline)
@@ -609,15 +609,19 @@ func operatorMessage(operator string) string {
 // files a new review and pages the approvers again. An expiry comes from a
 // time limit on the control plane's approval rule: nobody decided in time, or
 // the approval was not used in time.
-func reviewReason(res ReviewResult) string {
+func (e *Evaluator) reviewReason(res ReviewResult) string {
 	switch res.Status {
 	case reviewPending:
 		return "waiting for approval"
 	case reviewRejected:
-		if res.Reason != "" {
-			return "the approval request was rejected: " + rejectionReason(res.Reason)
+		const rejected = "the approval request was rejected"
+		// The reason takes only the room the operator's message and the
+		// approval id leave, so it never pushes the id out of the error.
+		room := maxDenialBytes - len(holdMessage(e.cfg.Message, res.ID, rejected+": "))
+		if q := rejectionReason(res.Reason, min(maxReasonBytes, room)); q != "" {
+			return rejected + ": " + q
 		}
-		return "the approval request was rejected"
+		return rejected
 	case reviewRevoked:
 		return "the approval was revoked"
 	case reviewExecuted:
@@ -636,26 +640,35 @@ func reviewReason(res ReviewResult) string {
 }
 
 // maxReasonBytes bounds the approver's reason in a denial, quoted. The plane
-// stores any length, and the approval id comes after the reason: the mysql
-// client keeps only the first 512 bytes of an error (MYSQL_ERRMSG_SIZE).
+// stores any length.
 const maxReasonBytes = 200
 
+// maxDenialBytes is what a mysql client keeps of an error message
+// (MYSQL_ERRMSG_SIZE). A hold denial ends with the approval id, after the
+// operator's message, so a rejection reason fits in what is left.
+const maxDenialBytes = 512
+
 // rejectionReason quotes the approver's text, cut on a rune boundary so the
-// quoted form fits maxReasonBytes. Quoted, so a newline or a NUL in it cannot
-// break the protocol's error frame, and the developer sees where the
-// approver's words end. The bound applies after quoting, because an escape
-// takes up to 6 bytes for one byte of text.
-func rejectionReason(reason string) string {
-	if q := strconv.Quote(reason); len(q) <= maxReasonBytes {
+// quoted form fits limit bytes, or "" when there is no reason or no room for
+// one. Quoted, so a newline or a NUL in it cannot break the protocol's error
+// frame, and the developer sees where the approver's words end. The bound
+// applies after quoting, because an escape takes up to 6 bytes for one byte
+// of text.
+func rejectionReason(reason string, limit int) string {
+	const cutMark = "..."
+	if reason == "" || limit < len(strconv.Quote(cutMark)) {
+		return ""
+	}
+	if q := strconv.Quote(reason); len(q) <= limit {
 		return q
 	}
-	// Quoting never shrinks text, so no more than maxReasonBytes of it fits.
-	cut := min(len(reason), maxReasonBytes)
+	// Quoting never shrinks text, so no more than limit bytes of it fits.
+	cut := min(len(reason), limit)
 	for {
 		for cut > 0 && cut < len(reason) && !utf8.RuneStart(reason[cut]) {
 			cut--
 		}
-		if q := strconv.Quote(reason[:cut] + "..."); len(q) <= maxReasonBytes || cut == 0 {
+		if q := strconv.Quote(reason[:cut] + cutMark); len(q) <= limit || cut == 0 {
 			return q
 		}
 		cut--

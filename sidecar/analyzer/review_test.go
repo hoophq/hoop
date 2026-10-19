@@ -1087,3 +1087,29 @@ func TestARejectionReasonFitsTheMySQLErrorBuffer(t *testing.T) {
 		}
 	}
 }
+
+// The operator's message has no length limit and comes first, so the reason
+// takes only the room left before the approval id: a reason never pushes out
+// an id that fit in the 512 bytes mysql keeps without it.
+func TestARejectionReasonNeverPushesOutTheApprovalID(t *testing.T) {
+	const id = "0f8b2c1e-7a54-4c3e-9d2b-5e6f7a8b9c0d"
+	reason := strings.Repeat("r", 300)
+	for _, n := range []int{34, 250, 300, 420, 470, 600} {
+		operator := strings.Repeat("o", n)
+		withMessage := func(c *analyzer.Config) { c.Message = operator }
+		rejected := func(reason string) string {
+			rev := &recordingReviewer{res: analyzer.ReviewResult{ID: id, Status: "REJECTED", Reason: reason}}
+			return holdingEvaluator(t, rev, withMessage).Evaluate(deleteStatement()).Message
+		}
+		without, with := rejected(""), rejected(reason)
+		if len(without) <= 512 && (len(with) > 512 || !strings.HasSuffix(with, "(approval "+id+")")) {
+			t.Errorf("operator message of %d bytes: the reason pushed the id out (%d bytes): %q", n, len(with), with)
+		}
+		if len(without) > 512 && with != without {
+			t.Errorf("operator message of %d bytes: no room, yet the denial carries a reason: %q", n, with)
+		}
+		if len(without)+len(`: "..."`) <= 512 && !strings.Contains(with, `rejected: "`) {
+			t.Errorf("operator message of %d bytes: there is room, yet no reason: %q", n, with)
+		}
+	}
+}
