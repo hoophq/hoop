@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type loginParam struct{ Name, Value string }
@@ -42,11 +43,13 @@ func (t *Twin) loginPage(w http.ResponseWriter, q url.Values) {
 		}
 	}
 	for _, u := range t.sortedUsers() {
-		initial := u.Name
-		if initial == "" {
-			initial = u.Email
+		name := u.Name
+		if name == "" {
+			name = u.Email
 		}
-		v.Users = append(v.Users, loginUser{User: u, Initial: strings.ToUpper(initial[:1])})
+		// The first rune, not the first byte: "Élodie" shows "É".
+		r, _ := utf8.DecodeRuneInString(name)
+		v.Users = append(v.Users, loginUser{User: u, Initial: strings.ToUpper(string(r))})
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

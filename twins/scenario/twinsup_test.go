@@ -50,7 +50,7 @@ func down(t *testing.T) {
 	t.Helper()
 	if stackReach(t) == "proxy" {
 		// compose checks HOOP_BIN_DIR before `down` too.
-		if b, err := composeCmd(os.TempDir(), "", "down", "-v", "--remove-orphans").CombinedOutput(); err != nil {
+		if b, err := composeCmd(os.TempDir(), "", false, "down", "-v", "--remove-orphans").CombinedOutput(); err != nil {
 			t.Fatalf("compose down: %v\n%s", err, b)
 		}
 		return
@@ -60,9 +60,14 @@ func down(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(envOr("TWINS_ARTIFACTS", upArtifacts(root)), "native")
-	pids, _ := filepath.Glob(filepath.Join(dir, "*.pid"))
-	for _, f := range pids {
-		stopKept(t, f)
+	for _, d := range keptNativeDirs(root, dir) {
+		pids, _ := filepath.Glob(filepath.Join(d, "*.pid"))
+		for _, f := range pids {
+			stopKept(t, f)
+		}
+	}
+	if err := os.Remove(keptNativeFile(root)); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
 	}
 }
 

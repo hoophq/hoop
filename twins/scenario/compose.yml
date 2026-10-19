@@ -41,6 +41,10 @@ services:
   gateway:
     image: alpine:3.20
     entrypoint: [/hoop/hoop, start, standalone]
+    # yes: make twins-up or TWINS_KEEP=1 left it up, and a later run must
+    # not take it down (upCompose in up_test.go).
+    labels:
+      twins.kept: ${TWINS_KEPT:-no}
     environment:
       PORT: "18009"
       API_URL: http://127.0.0.1:18009

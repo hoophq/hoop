@@ -300,6 +300,21 @@ func TestLoginPage(t *testing.T) {
 	}
 }
 
+// The avatar holds the first letter of the name, or of the email when the
+// user has no name.
+func TestLoginPageInitials(t *testing.T) {
+	s := startTwin(t)
+	s.seed(t, `{"users":[{"sub":"e","email":"elodie@example.com","name":"élodie"},{"sub":"z","email":"zed@example.com"}]}`)
+	p := authorizeParams("")
+	p.Del("login_hint")
+	_, _, page := s.get(t, "/authorize?"+p.Encode())
+	for _, want := range []string{`<span class="avatar">É</span>`, `<span class="avatar">Z</span>`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the login page lacks %s", want)
+		}
+	}
+}
+
 func TestLoginPageWithNoUsers(t *testing.T) {
 	s := startTwin(t)
 	p := authorizeParams("")

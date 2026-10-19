@@ -79,6 +79,33 @@ jobs:
           TWINS_ARTIFACTS: ${{ runner.temp }}/twins
         run: make test-twins-browser
 
+      # The stack outlives `make twins-up`, a kept stack makes the next run
+      # refuse, and `make twins-down` leaves no process and no pid file.
+      - name: twins-up and twins-down
+        env:
+          TWINS_REACH: native
+          HOOP_BIN_DIR: ${{ runner.temp }}/hoop-bin
+          HOOP_UI_DIR: ${{ github.workspace }}/dist/dev/resources/public
+        # `bash -e` does not stop on a `! cmd` that fails, so each negative
+        # check exits by hand.
+        run: |
+          set -x
+          make twins-up
+          curl -fsS -o /dev/null http://127.0.0.1:18009/
+          curl -fsS -o /dev/null http://127.0.0.1:18081/_twin/ui
+          if TWINS_KEEP=1 TWINS_ARTIFACTS="$RUNNER_TEMP/other" make test-twins-browser; then
+            echo "a run beside a kept stack must refuse to start"; exit 1
+          fi
+          curl -fsS -o /dev/null http://127.0.0.1:18009/
+          make twins-down
+          if curl -fsS -o /dev/null --max-time 2 http://127.0.0.1:18009/; then
+            echo "the gateway still answers after twins-down"; exit 1
+          fi
+          if pgrep -fa 'hoop start standalone|/twins-up/native/twins'; then
+            echo "a stack process outlived twins-down"; exit 1
+          fi
+          test -z "$(ls dist/twins-up/native/*.pid dist/twins-up/kept-native 2>/dev/null)"
+
       - name: Upload screenshots, twin states and logs
         if: always()
         uses: actions/upload-artifact@v7

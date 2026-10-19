@@ -3,11 +3,13 @@
 package scenario
 
 import (
+	"bytes"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -22,15 +24,27 @@ func (s *stack) upNative(t *testing.T, binDir, uiDir string) {
 	// A fresh dir each run: a kept PGlite home would hold the last run's
 	// users, and a kept test CA expires after a day.
 	dir := filepath.Join(s.artifacts, "native")
-	// The pid files are the only way twins-down finds a kept stack.
-	if pids, _ := filepath.Glob(filepath.Join(dir, "*.pid")); len(pids) > 0 {
-		t.Fatalf("a kept stack may still run from %s (%d pid files): run make twins-down first", dir, len(pids))
+	// The pid files are the only way twins-down finds a kept stack, and
+	// one native stack holds the ports of the host.
+	for _, d := range keptNativeDirs(s.root, dir) {
+		if pids, _ := filepath.Glob(filepath.Join(d, "*.pid")); len(pids) > 0 {
+			t.Fatalf("a kept stack may still run from %s (%d pid files): run make twins-down first", d, len(pids))
+		}
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if s.keep {
+		// twins-down reads it, whatever TWINS_ARTIFACTS it runs with.
+		if err := os.MkdirAll(upArtifacts(s.root), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(keptNativeFile(s.root), []byte(dir+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	twins := filepath.Join(dir, "twins")
 	build := exec.Command("go", "build", "-o", twins, "./cmd/twins")
@@ -63,6 +77,21 @@ func (s *stack) upNative(t *testing.T, binDir, uiDir string) {
 	}
 	exited := s.spawn(t, dir, "gateway", env, filepath.Join(binDir, "hoop"), "start", "standalone")
 	waitOK(t, apiURL+"/api/healthz", 120*time.Second, exited)
+}
+
+// keptNativeFile names the dir of the last kept native stack.
+func keptNativeFile(root string) string { return filepath.Join(upArtifacts(root), "kept-native") }
+
+// keptNativeDirs lists dir and the dir of the last kept native stack, once
+// each.
+func keptNativeDirs(root, dir string) []string {
+	dirs := []string{dir}
+	if b, err := os.ReadFile(keptNativeFile(root)); err == nil {
+		if kept := strings.TrimSpace(string(b)); kept != "" && kept != dir {
+			dirs = append(dirs, kept)
+		}
+	}
+	return dirs
 }
 
 // gatewayEnv is the whole environment of the gateway process. It inherits
@@ -158,13 +187,21 @@ func waitOK(t *testing.T, url string, timeout time.Duration, exited <-chan struc
 // uiDir, when set, is the web UI the gateway serves.
 func (s *stack) upCompose(t *testing.T, binDir, uiDir string) {
 	t.Helper()
-	compose := func(args ...string) *exec.Cmd { return composeCmd(binDir, uiDir, args...) }
+	compose := func(args ...string) *exec.Cmd { return composeCmd(binDir, uiDir, s.keep, args...) }
 	logs := func() {
 		b, _ := compose("logs", "--no-color", "--timestamps").CombinedOutput()
 		_ = os.WriteFile(filepath.Join(s.artifacts, "compose.log"), b, 0o644)
 		if t.Failed() {
 			t.Logf("last lines of compose.log:\n%s", tail(b, 40))
 		}
+	}
+	// One compose project, twins, per host: a run from any worktree takes
+	// down the last one. A kept stack is someone's, so refuse instead.
+	if b, err := exec.Command("docker", "ps", "-q", "--filter", "label=com.docker.compose.project=twins",
+		"--filter", "label=twins.kept=yes").Output(); err != nil {
+		t.Fatalf("docker ps: %v", err)
+	} else if len(bytes.TrimSpace(b)) > 0 {
+		t.Fatalf("a kept stack is up (docker compose -p twins ps): run make twins-down first")
 	}
 	_ = compose("down", "-v", "--remove-orphans").Run()
 	// Registered before `up`: a failed build or health check still leaves
@@ -182,13 +219,18 @@ func (s *stack) upCompose(t *testing.T, binDir, uiDir string) {
 
 // composeCmd runs docker compose on the stack's files. compose.ui.yml adds
 // the web UI when uiDir is set. Both variables must name a dir even for
-// `down`, because compose checks them first.
-func composeCmd(binDir, uiDir string, args ...string) *exec.Cmd {
+// `down`, because compose checks them first. keep labels the gateway
+// twins.kept=yes.
+func composeCmd(binDir, uiDir string, keep bool, args ...string) *exec.Cmd {
 	files := []string{"compose", "-f", "compose.yml"}
 	if uiDir != "" {
 		files = append(files, "-f", "compose.ui.yml")
 	}
+	kept := "no"
+	if keep {
+		kept = "yes"
+	}
 	cmd := exec.Command("docker", append(files, args...)...)
-	cmd.Env = append(os.Environ(), "HOOP_BIN_DIR="+binDir, "HOOP_UI_DIR="+uiDir)
+	cmd.Env = append(os.Environ(), "HOOP_BIN_DIR="+binDir, "HOOP_UI_DIR="+uiDir, "TWINS_KEPT="+kept)
 	return cmd
 }

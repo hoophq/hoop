@@ -210,10 +210,25 @@ func (s *stack) buildUI(t *testing.T) string {
 	t.Helper()
 	dir := os.Getenv("HOOP_UI_DIR")
 	if dir == "" {
+		// The script runs `npm install`, which can rewrite the lockfiles.
+		// Put back what was there, so a run leaves the worktree as it was.
+		locks := map[string][]byte{}
+		for _, f := range []string{"webapp/package-lock.json", "webapp_v2/package-lock.json"} {
+			b, err := os.ReadFile(filepath.Join(s.root, f))
+			if err != nil {
+				t.Fatalf("read %s before the UI build: %v", f, err)
+			}
+			locks[f] = b
+		}
 		cmd := exec.Command("bash", "scripts/dev/build-webapp.sh")
 		cmd.Dir = s.root
 		b, err := cmd.CombinedOutput()
 		_ = os.WriteFile(filepath.Join(s.artifacts, "build-webapp.log"), b, 0o644)
+		for f, lock := range locks {
+			if werr := os.WriteFile(filepath.Join(s.root, f), lock, 0o644); werr != nil {
+				t.Errorf("restore %s after the UI build: %v", f, werr)
+			}
+		}
 		if err != nil {
 			t.Fatalf("scripts/dev/build-webapp.sh: %v\n%s", err, tail(b, 30))
 		}
