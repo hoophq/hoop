@@ -17,11 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var (
-	tagsValRe, _           = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
-	connectionTagsKeyRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\./]?[a-zA-Z0-9_]+){0,}$`)
-	connectionTagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9-_\+=@\/:\s]+$`)
-)
+var tagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\.]?[a-zA-Z0-9_]+){0,128}$`)
 
 func setConnectionDefaults(req *openapi.Connection) {
 	if req.Secrets == nil {
@@ -132,22 +128,12 @@ func validatePatchConnectionRequest(req openapi.ConnectionPatch) error {
 		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
 
-	if req.ConnectionTags != nil && len(*req.ConnectionTags) > 10 {
-		return fmt.Errorf("max tag association reached (10)")
+	if req.ConnectionTags != nil && len(*req.ConnectionTags) > apivalidation.MaxTags {
+		return fmt.Errorf("max tag association reached (%d)", apivalidation.MaxTags)
 	}
 
 	if req.ConnectionTags != nil {
-		for key, val := range *req.ConnectionTags {
-			if (len(key) < 1 || len(key) > 64) || !connectionTagsKeyRe.MatchString(key) {
-				errors = append(errors,
-					fmt.Sprintf("connection_tags (%v), keys must contain between 1 and 64 alphanumeric characters, ", key)+
-						"it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-)")
-			}
-			if (len(val) < 1 || len(val) > 256) || !connectionTagsValRe.MatchString(val) {
-				errors = append(errors, fmt.Sprintf("connection_tags (%v), values must contain between 1 and 256 alphanumeric characters, ", key)+
-					"it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters")
-			}
-		}
+		errors = append(errors, apivalidation.TagErrors("connection_tags", *req.ConnectionTags)...)
 	}
 
 	if len(errors) > 0 {
@@ -171,30 +157,15 @@ func validateConnectionRequest(req openapi.Connection) error {
 		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
 
-	if len(req.ConnectionTags) > 10 {
-		return fmt.Errorf("max tag association reached (10)")
+	if len(req.ConnectionTags) > apivalidation.MaxTags {
+		return fmt.Errorf("max tag association reached (%d)", apivalidation.MaxTags)
 	}
 
 	if req.MinReviewApprovals != nil && *req.MinReviewApprovals <= 0 {
 		return fmt.Errorf("min approvals must be greater than 0 or null")
 	}
 
-	for key, val := range req.ConnectionTags {
-		// if strings.HasPrefix(key, "hoop.dev/") {
-		// 	errors = append(errors, "connection_tags: keys must not use the reserverd prefix hoop.dev/")
-		// 	continue
-		// }
-
-		if (len(key) < 1 || len(key) > 64) || !connectionTagsKeyRe.MatchString(key) {
-			errors = append(errors,
-				fmt.Sprintf("connection_tags (%v), keys must contain between 1 and 64 alphanumeric characters, ", key)+
-					"it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-)")
-		}
-		if (len(val) < 1 || len(val) > 256) || !connectionTagsValRe.MatchString(val) {
-			errors = append(errors, fmt.Sprintf("connection_tags (%v), values must contain between 1 and 256 alphanumeric characters, ", key)+
-				"it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters")
-		}
-	}
+	errors = append(errors, apivalidation.TagErrors("connection_tags", req.ConnectionTags)...)
 	if len(errors) > 0 {
 		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
