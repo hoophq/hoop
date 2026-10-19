@@ -2594,14 +2594,18 @@ discovery failure. Unpinned, the lane accepts whatever the upstream reports.
 
 Discovery fails when the upstream is unreachable, has reflection off, sends
 a set that does not load, or sends one that does not match the pin. The lane
-still binds its address and retries every 1 s, doubling to 30 s:
+binds its address before the first attempt, and retries every 1 s, doubling
+to 30 s:
 
 | | `fail_open: false` (default) | `fail_open: true` |
 |---|---|---|
 | RPCs | refused with `UNAVAILABLE` and the failure | forwarded |
 | Audit | an `rpc_refused` activity per RPC | method, metadata and status, with `grpc.schema: unavailable` |
 | Payload rules, analyzer, masking | nothing reaches the upstream | do not run |
-| `/readyz` | not ready | ready |
+
+`/readyz` waits for the first attempt to end, then counts the lane ready in
+both modes: one upstream's lasting failure must not take the sidecar's other
+listeners out of rotation. Watch the log and the `rpc_refused` records instead.
 
 When a schema loads, the lane rebinds the same address with it; RPCs in
 flight on the old server end, and clients retry. `fail_open: true` is refused

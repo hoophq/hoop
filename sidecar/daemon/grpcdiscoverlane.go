@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -54,12 +56,19 @@ type discoveringGRPCServer struct {
 	retiredDenied int64
 	methods       []string
 
-	ready   atomic.Bool
-	failure atomic.Pointer[string]
+	// attempted is set when the first discovery attempt ends. Until then
+	// the lane is not ready, whatever it would answer.
+	attempted atomic.Bool
+	failure   atomic.Pointer[string]
 }
 
-// Serve discovers the schema and serves until ctx ends, Close is called, or
-// the listener fails.
+// Serve binds the stand-in, discovers the schema, and serves until ctx ends,
+// Close is called, or the listener fails.
+//
+// The stand-in binds before the first attempt, so a stalled upstream leaves
+// the address answering (refusing, or forwarding with fail_open) instead of
+// closed for the attempt's timeout. Attempts run beside the stand-in, so a
+// bind failure ends Serve at once.
 func (d *discoveringGRPCServer) Serve(parent context.Context) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -71,15 +80,6 @@ func (d *discoveringGRPCServer) Serve(parent context.Context) error {
 	d.cancel = cancel
 	d.mu.Unlock()
 
-	schema, sum, err := d.discover(ctx)
-	if err == nil {
-		return d.serveSchema(ctx, schema, sum, "")
-	}
-	if ctx.Err() != nil {
-		return nil
-	}
-	d.recordFailure(err)
-
 	standIn, err := d.build(nil, "")
 	if err != nil {
 		return fmt.Errorf("%s: %w", d.name, err)
@@ -88,40 +88,65 @@ func (d *discoveringGRPCServer) Serve(parent context.Context) error {
 		return nil
 	}
 	served := make(chan error, 1)
-	go func() { served <- standIn.Serve(ctx) }()
+	go func() {
+		err := standIn.Serve(ctx)
+		// Closed before Serve began (a fast first attempt, or Close): libhoop
+		// answers ErrServerClosed, which is a clean stop like any other.
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		served <- err
+	}()
+
+	type attempt struct {
+		schema *codecgrpc.Schema
+		sum    string
+		err    error
+	}
+	results := make(chan attempt, 1)
+	try := func() {
+		go func() {
+			schema, sum, err := d.discover(ctx)
+			results <- attempt{schema, sum, err}
+		}()
+	}
+	try()
 
 	wait := d.retry
 	if wait <= 0 {
 		wait = grpcDiscoverRetryMin
 	}
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
+	var retry <-chan time.Time
 	for {
 		select {
 		case err := <-served:
 			// The stand-in stopped: a bind failure, Close, or ctx.
 			return err
-		case <-timer.C:
-		}
-		schema, sum, err := d.discover(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return <-served
+		case <-retry:
+			retry = nil
+			try()
+		case a := <-results:
+			if a.err != nil {
+				if ctx.Err() != nil {
+					return <-served
+				}
+				d.recordFailure(a.err)
+				d.attempted.Store(true)
+				retry = time.After(wait)
+				wait = min(wait*2, grpcDiscoverRetryMax)
+				continue
 			}
-			d.recordFailure(err)
-			wait = min(wait*2, grpcDiscoverRetryMax)
-			timer.Reset(wait)
-			continue
+			// Empty when the stand-in had not bound yet: the schema-backed
+			// server then binds the configured address.
+			var listen string
+			if addr := standIn.Addr(); addr != nil {
+				listen = addr.String()
+			}
+			if err := d.retire(standIn, served); err != nil {
+				return err
+			}
+			return d.serveSchema(ctx, a.schema, a.sum, listen)
 		}
-		var listen string
-		if addr := standIn.Addr(); addr != nil {
-			listen = addr.String()
-		}
-		d.retire(standIn)
-		if err := <-served; err != nil {
-			return err
-		}
-		return d.serveSchema(ctx, schema, sum, listen)
 	}
 }
 
@@ -167,7 +192,7 @@ func (d *discoveringGRPCServer) serveSchema(ctx context.Context, schema *codecgr
 		return nil
 	}
 	d.failure.Store(nil)
-	d.ready.Store(true)
+	d.attempted.Store(true)
 	d.log.Info("grpc schema discovered",
 		"upstream", d.upstream, "sha256", sum, "methods", len(methods), "pinned", d.cfg.SHA256 != "")
 	return srv.Serve(ctx)
@@ -210,16 +235,19 @@ func (d *discoveringGRPCServer) install(srv *codecgrpc.Server) bool {
 	return true
 }
 
-// retire closes the stand-in and banks its counters, so Stats stays
-// monotonic across the swap.
-func (d *discoveringGRPCServer) retire(srv *codecgrpc.Server) {
+// retire closes the stand-in, waits for its Serve to return, then banks its
+// counters, so Stats stays monotonic across the swap and counts every RPC
+// the stand-in accepted. Stats reads the stand-in until then.
+func (d *discoveringGRPCServer) retire(srv *codecgrpc.Server, served <-chan error) error {
+	_ = srv.Close()
+	err := <-served
 	d.mu.Lock()
 	_, total, denied := srv.Stats()
 	d.retiredTotal += total
 	d.retiredDenied += denied
 	d.current = nil
 	d.mu.Unlock()
-	_ = srv.Close()
+	return err
 }
 
 // Close stops discovery and the current server. Safe before Serve and more
@@ -260,11 +288,18 @@ func (d *discoveringGRPCServer) Stats() (active, total, denied int64) {
 	return active, total + d.retiredTotal, denied + d.retiredDenied
 }
 
-// Ready is false while a fail-closed lane has no schema, so /readyz keeps
-// traffic away from a lane that refuses it. A fail-open lane serves, so it
-// is ready.
+// Ready is true once the lane is bound and its first discovery attempt has
+// ended, in both modes. It stays true while discovery keeps failing: /readyz
+// answers for the whole process, and one upstream's lasting failure (a pin
+// mismatch, reflection turned off) must not take every other listener out
+// of rotation. That failure shows in the log and as rpc_refused records.
 func (d *discoveringGRPCServer) Ready() bool {
-	return d.cfg.FailOpen || d.ready.Load()
+	if !d.attempted.Load() {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.current != nil && d.current.Addr() != nil
 }
 
 // Notes reports the discovery settings, then the discovered methods once a

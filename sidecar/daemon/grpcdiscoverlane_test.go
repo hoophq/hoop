@@ -37,9 +37,9 @@ func TestADiscoveringLaneRefusesUntilTheSchemaLoadsThenServes(t *testing.T) {
 	addr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
 
-	if server.Ready() {
-		t.Fatal("a fail-closed lane with no schema reports ready")
-	}
+	// Ready once the first attempt failed: the lane answers, and one
+	// upstream's failure must not take the process out of rotation.
+	waitForDiscoverTestReady(t, server)
 	status, message := callDiscoverTestLane(t, addr)
 	if status != "14" || !strings.Contains(message, "schema discovery failed: connection refused") {
 		t.Fatalf("refusal = %s %q, want UNAVAILABLE naming the failure", status, message)
@@ -52,7 +52,7 @@ func TestADiscoveringLaneRefusesUntilTheSchemaLoadsThenServes(t *testing.T) {
 	}
 
 	reflectionUp.Store(true)
-	waitForDiscoverTestReady(t, server)
+	waitForDiscoverTestSchema(t, server)
 	waitForGRPCTestAddress(t, server, nil)
 	if got := server.Addr().String(); got != addr {
 		t.Fatalf("the lane moved from %s to %s when the schema loaded", addr, got)
@@ -88,9 +88,7 @@ func TestAFailOpenDiscoveringLaneForwardsWithMethodLevelAuditOnly(t *testing.T) 
 	addr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
 
-	if !server.Ready() {
-		t.Fatal("a fail-open lane that serves reports not ready")
-	}
+	waitForDiscoverTestReady(t, server)
 	status, _ := callDiscoverTestLane(t, addr)
 	if status != "0" {
 		t.Fatalf("grpc-status = %s, want the upstream's 0", status)
@@ -136,6 +134,7 @@ func TestAPinnedDiscoveringLaneRefusesAChangedSchema(t *testing.T) {
 		newGRPCTestMemorySink(), func(context.Context) ([]byte, error) { return changed, nil })
 	addr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
+	waitForDiscoverTestReady(t, server)
 
 	status, message := callDiscoverTestLane(t, addr)
 	if status != "14" || !strings.Contains(message, grpcSchemaDigest(changed)) || !strings.Contains(message, pin) {
@@ -146,7 +145,7 @@ func TestAPinnedDiscoveringLaneRefusesAChangedSchema(t *testing.T) {
 	}
 }
 
-// The pin matching serves at once, with no stand-in.
+// The pin matching serves the schema.
 func TestAPinnedDiscoveringLaneServesTheMatchingSchema(t *testing.T) {
 	upstreamAddr, _, stopUpstream := startDiscoverTestUpstream(t)
 	defer stopUpstream()
@@ -155,15 +154,48 @@ func TestAPinnedDiscoveringLaneServesTheMatchingSchema(t *testing.T) {
 	server := buildDiscoverTestServer(t, upstreamAddr,
 		&GRPCCodecConfig{Discover: &GRPCDiscoverConfig{From: "reflection", SHA256: strings.ToUpper(grpcSchemaDigest(blob))}},
 		newGRPCTestMemorySink(), func(context.Context) ([]byte, error) { return blob, nil })
+	_, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
+	waitForDiscoverTestSchema(t, server)
+
+	if status, _ := callDiscoverTestLane(t, server.Addr().String()); status != "0" {
+		t.Fatalf("grpc-status = %s, want 0", status)
+	}
+}
+
+// An upstream that stalls the first attempt does not leave the address
+// closed: the stand-in answers while the attempt runs, and the lane is not
+// ready until the attempt ends.
+func TestAStalledFirstDiscoveryStillAnswersOnTheAddress(t *testing.T) {
+	upstreamAddr, upstreamCalls, stopUpstream := startDiscoverTestUpstream(t)
+	defer stopUpstream()
+
+	release := make(chan struct{})
+	server := buildDiscoverTestServer(t, upstreamAddr,
+		&GRPCCodecConfig{Discover: &GRPCDiscoverConfig{From: "reflection"}, CapturePayload: true},
+		newGRPCTestMemorySink(), func(ctx context.Context) ([]byte, error) {
+			select {
+			case <-release:
+				return nil, errors.New("reflection is not enabled")
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		})
 	addr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
 
-	if status, _ := callDiscoverTestLane(t, addr); status != "0" {
-		t.Fatalf("grpc-status = %s, want 0", status)
+	status, message := callDiscoverTestLane(t, addr)
+	if status != "14" || !strings.Contains(message, "no schema loaded yet") {
+		t.Fatalf("refusal = %s %q during the first attempt, want UNAVAILABLE", status, message)
 	}
-	if !server.Ready() {
-		t.Fatal("a lane serving its pinned schema reports not ready")
+	if n := upstreamCalls.Load(); n != 0 {
+		t.Fatalf("the upstream received %d call(s) before a schema loaded", n)
 	}
+	if server.Ready() {
+		t.Fatal("the lane reports ready before its first attempt ended")
+	}
+	close(release)
+	waitForDiscoverTestReady(t, server)
 }
 
 func TestGRPCDiscoverConfigValidation(t *testing.T) {
@@ -292,10 +324,24 @@ func callDiscoverTestLane(t *testing.T, addr string) (string, string) {
 
 func waitForDiscoverTestReady(t *testing.T, server discoverTestServer) {
 	t.Helper()
+	waitForDiscoverTest(t, "the lane did not become ready", server.Ready)
+}
+
+// waitForDiscoverTestSchema waits until the schema-backed server is bound:
+// Ready stays true across a failing lane, so it cannot tell the two apart.
+func waitForDiscoverTestSchema(t *testing.T, server discoverTestServer) {
+	t.Helper()
+	waitForDiscoverTest(t, "the lane did not load its schema", func() bool {
+		return server.Ready() && strings.Contains(strings.Join(server.Notes(), "\n"), "/test.v1.Echo/Say")
+	})
+}
+
+func waitForDiscoverTest(t *testing.T, what string, done func() bool) {
+	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
-	for !server.Ready() {
+	for !done() {
 		if time.Now().After(deadline) {
-			t.Fatal("the lane did not load its schema")
+			t.Fatal(what)
 		}
 		time.Sleep(time.Millisecond)
 	}
