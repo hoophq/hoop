@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// TestListenClientMessagesExecVerb is the regression test for hoophq/hoop#1468.
+// TestListenClientMessagesExecVerb is the regression test for ENG-766.
 //
 // The gateway picks the access rule from the verb the client sends. A client
 // that declares exec and then sends proxy packets got an interactive session
@@ -30,6 +30,7 @@ func TestListenClientMessagesExecVerb(t *testing.T) {
 	for _, tt := range []struct {
 		name          string
 		verb          string
+		origin        string
 		impersonation string
 		before        []string
 		pktType       string
@@ -39,6 +40,8 @@ func TestListenClientMessagesExecVerb(t *testing.T) {
 		{name: "tcp packet on exec stream", verb: pb.ClientVerbExec, pktType: pbagent.TCPConnectionWrite, wantRefused: true},
 		{name: "terminal packet on exec stream", verb: pb.ClientVerbExec, pktType: pbagent.TerminalWriteStdin, wantRefused: true},
 		{name: "forged impersonation key", verb: pb.ClientVerbExec, impersonation: "forged", pktType: pbagent.PGConnectionWrite, wantRefused: true},
+		// subscribeClient does not close an API-origin stream on return.
+		{name: "postgres packet on api exec stream", verb: pb.ClientVerbExec, origin: pb.ConnectionOriginClientAPI, pktType: pbagent.PGConnectionWrite, wantRefused: true},
 		{name: "exec stdin on exec stream", verb: pb.ClientVerbExec, pktType: pbagent.ExecWriteStdin},
 		// hoop exec sends a KeepAlive first. The system packet filter must run before the gate.
 		{name: "keepalive then exec stdin on exec stream", verb: pb.ClientVerbExec, before: []string{pbgateway.KeepAlive}, pktType: pbagent.ExecWriteStdin},
@@ -48,7 +51,11 @@ func TestListenClientMessagesExecVerb(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sid := "sid-execverb-" + strings.ReplaceAll(tt.name, " ", "-")
-			md := metadata.Pairs("session-id", sid, "verb", tt.verb, "origin", pb.ConnectionOriginClient)
+			origin := tt.origin
+			if origin == "" {
+				origin = pb.ConnectionOriginClient
+			}
+			md := metadata.Pairs("session-id", sid, "verb", tt.verb, "origin", origin)
 			if tt.impersonation != "" {
 				md.Set(grpckey.ImpersonateAuthKeyHeaderKey, tt.impersonation)
 			}
@@ -83,6 +90,9 @@ func TestListenClientMessagesExecVerb(t *testing.T) {
 				}
 				if !strings.Contains(err.Error(), tt.pktType) {
 					t.Errorf("the reason must name the packet type, got %q", err)
+				}
+				if streamclient.GetProxyStream(sid) != nil {
+					t.Errorf("the refused session is still stored: the agent never gets SessionClose")
 				}
 				return
 			}

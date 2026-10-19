@@ -200,11 +200,14 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		}
 
 		// The access rule comes from the client's verb. A proxy packet on an
-		// exec stream would skip the jit rule (hoophq/hoop#1468).
+		// exec stream would skip the jit rule (ENG-766).
 		if execOnly && !isExecPacket(pkt.Type) {
 			log.With("sid", pctx.SID, "connection", pctx.ConnectionName).
 				Warnf("refused packet %v on an exec session", pkt.Type)
-			return status.Errorf(codes.PermissionDenied, "packet type %v is not allowed on an exec session", pkt.Type)
+			err := status.Errorf(codes.PermissionDenied, "packet type %v is not allowed on an exec session", pkt.Type)
+			// subscribeClient closes only client-origin streams on return.
+			_ = stream.Close(err)
+			return err
 		}
 
 		if pkt.Spec == nil {
