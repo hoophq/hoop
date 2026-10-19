@@ -31,7 +31,7 @@ func startTwin(t *testing.T) *twinServer {
 	t.Helper()
 	srv := httptest.NewUnstartedServer(nil)
 	issuer := "https://" + srv.Listener.Addr().String()
-	twin, err := oidc.New(issuer)
+	twin, err := oidc.New(issuer, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +65,18 @@ func (s *twinServer) state(t *testing.T) map[string]any {
 		t.Fatalf("state: %d", code)
 	}
 	return st.State
+}
+
+// get returns the status, the content type and the body of GET path.
+func (s *twinServer) get(t *testing.T, path string) (int, string, string) {
+	t.Helper()
+	resp, err := s.client.Get(s.issuer + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header.Get("Content-Type"), string(b)
 }
 
 // authorize runs GET /authorize and returns the redirect it answers with.

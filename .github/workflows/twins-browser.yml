@@ -1,0 +1,91 @@
+# ENG-702: the twins' browser scenarios, in a headless Chrome against the
+# web UI of this commit (twins/README.md). Nightly and on demand, not on
+# PRs: the web UI build takes minutes, and the PR job (twins.yml) stays
+# API-only.
+name: Twins Browser
+
+on:
+  schedule:
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+  # TEMPORARY: workflow_dispatch runs only a workflow that is on main, so
+  # this proves the job on its branch. Removed before merge.
+  push:
+    branches: [rogerio/eng-702-log-in-to-hoop-in-a-browser-through-the-oidc-twin-and-see]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: Twins Browser Scenarios
+    runs-on: ubuntu-latest
+    # The scenario's own 20m `go test -timeout`, plus the UI and hoop builds.
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          libhoop-pr: "false"
+
+      # proxy.golang.org can reset HTTP/2 streams mid-download; see the
+      # header of pullrequest.yml. Only the download runs on HTTP/1.1.
+      - name: Download modules over HTTP/1.1
+        env:
+          GODEBUG: http2client=0
+        run: go mod download
+
+      - name: Build hoop
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/hoop-bin/hoop" ./client
+
+      # The UI build reads only these paths, so a hit is the UI of this
+      # commit.
+      - name: Restore the web UI build
+        id: ui
+        uses: actions/cache@v6
+        with:
+          path: dist/dev/resources/public
+          key: twins-webui-${{ hashFiles('webapp/**', 'webapp_v2/**', 'scripts/dev/build-webapp.sh') }}
+
+      - name: Setup Java
+        if: steps.ui.outputs.cache-hit != 'true'
+        uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: "21"
+
+      # Matches the release build; DEP-306 moves both off Node 20.
+      - name: Setup Node
+        if: steps.ui.outputs.cache-hit != 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Build the web UI
+        if: steps.ui.outputs.cache-hit != 'true'
+        run: ./scripts/dev/build-webapp.sh
+
+      - name: Browser scenarios
+        env:
+          TWINS_REACH: native
+          HOOP_BIN_DIR: ${{ runner.temp }}/hoop-bin
+          HOOP_UI_DIR: ${{ github.workspace }}/dist/dev/resources/public
+          TWINS_ARTIFACTS: ${{ runner.temp }}/twins
+        run: make test-twins-browser
+
+      - name: Upload screenshots, twin states and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: twins-browser
+          path: |
+            ${{ runner.temp }}/twins/screenshots/
+            ${{ runner.temp }}/twins/*.json
+            ${{ runner.temp }}/twins/*.txt
+            ${{ runner.temp }}/twins/native/*.log

@@ -23,7 +23,8 @@ services:
 
   oidc-twin:
     <<: *twins
-    command: [oidc, -issuer=https://oidc-twin, -cert=/pki/oidc.crt, -key=/pki/oidc.key]
+    # A browser on the host reaches authorize on the mapped admin port.
+    command: [oidc, -issuer=https://oidc-twin, -browser-url=http://127.0.0.1:18081, -cert=/pki/oidc.crt, -key=/pki/oidc.key]
     ports: ["127.0.0.1:18081:8080"]
 
   router:
