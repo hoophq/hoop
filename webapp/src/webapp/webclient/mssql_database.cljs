@@ -14,10 +14,14 @@
     (cs/join "\n" (drop 2 (cs/split script #"\n")))
     script))
 
-;; USE prints "Changed database context to '<db>'." (localized) as the first line.
+;; SQL Server message 5701, printed by USE. A server in another language prints
+;; it translated: only the terminal prefix catches that one.
+(def ^:private database-context-line #"^Changed database context to '.*'\.\r?$")
+
 (defn strip-output [output script]
-  (if (and output (with-database? script))
-    (if-let [idx (cs/index-of output "\n")]
+  (if-let [idx (and output (cs/index-of output "\n"))]
+    (if (or (re-find database-context-line (subs output 0 idx))
+            (with-database? script))
       (subs output (inc idx))
       output)
     output))

@@ -26,6 +26,18 @@
          (mssql-database/strip-output "id\n--\n3\n\n(1 row affected)\n"
                                       "financial/select.runbook.sql"))))
 
+(deftest runbook-with-use-drops-the-database-context-line
+  (is (= "id\tname\n--\t----\n1\talpha\n"
+         (mssql-database/strip-output "Changed database context to 'jd-pix'.\nid\tname\n--\t----\n1\talpha\n"
+                                      "mssql/use-only.runbook.sql")))
+  (is (= "id\n--\n3\n"
+         (mssql-database/strip-output "Changed database context to 'jd-pix'.\r\nid\n--\n3\n"
+                                      "mssql/use-only.runbook.sql"))))
+
+(deftest runbook-keeps-a-localized-database-context-line
+  (let [output "Contexto do banco de dados alterado para 'jd-pix'.\nid\n--\n3\n"]
+    (is (= output (mssql-database/strip-output output "mssql/use-only.runbook.sql")))))
+
 (deftest missing-script-keeps-the-output
   (is (= "id\n--\n3\n" (mssql-database/strip-output "id\n--\n3\n" nil))))
 
