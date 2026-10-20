@@ -26,19 +26,49 @@ const Addr = "127.0.0.1:18081"
 const ListenAddr = "127.0.0.1:18080"
 
 // Ports are where one demo actually runs: the sidecar listener clients
-// send to, and the API behind it.
+// send to, and the upstream behind it (the HTTP API or the Postgres database).
 type Ports struct{ Listen, API string }
 
-// DefaultPorts are the preferred addresses.
+// DefaultPorts are the preferred addresses for the HTTP demo.
 var DefaultPorts = Ports{Listen: ListenAddr, API: Addr}
+
+// Kind is which demo a config runs: the HTTP API, or the Postgres database.
+// The two are the same idea over two protocols, so they share this package's
+// users and the "Try it" machinery and differ only in the steps and the
+// command each step is copied as.
+type Kind string
+
+const (
+	KindHTTP     Kind = "http"
+	KindPostgres Kind = "postgres"
+)
+
+// DefaultPortsFor are the preferred addresses for a demo of the given kind.
+func DefaultPortsFor(kind Kind) Ports {
+	if kind == KindPostgres {
+		return PGDefaultPorts
+	}
+	return DefaultPorts
+}
+
+// StepsFor is the guided demo for the given kind.
+func StepsFor(kind Kind) []Step {
+	if kind == KindPostgres {
+		return PGSteps
+	}
+	return Steps
+}
 
 // Step is one beat of the guided demo: a request, what to look for in the
 // answer, and what the sidecar did to produce it.
 type Step struct {
-	Title        string
+	Title string
+	// Method, Path and Body describe an HTTP step; SQL holds the statement of
+	// a Postgres step. A step carries one or the other, never both.
 	Method, Path string
 	Body         string
-	// Direct sends the request to the API itself, around the sidecar, so
+	SQL          string
+	// Direct sends the request to the upstream itself, around the sidecar, so
 	// the person can compare.
 	Direct bool
 	// Expect is what the answer shows; Why is what the sidecar did.
@@ -47,6 +77,18 @@ type Step struct {
 	// request sent from another terminal ticks the step too. Empty for a
 	// direct request, which the sidecar never sees.
 	SeenKind, SeenOp string
+	// SeenTable, when set, is a table the event must name too: two Postgres
+	// steps are both a SELECT, and only the table tells them apart.
+	SeenTable string
+}
+
+// Command is the step as a shell command to paste into another terminal: curl
+// for an HTTP step, psql for a Postgres one.
+func (s Step) Command(kind Kind, p Ports) string {
+	if kind == KindPostgres {
+		return s.Psql(p)
+	}
+	return s.Curl(p)
 }
 
 // URL is where the step sends its request.
@@ -100,10 +142,11 @@ var Steps = []Step{
 
 // TryCommands are the steps as commands, for the config header and the
 // dashboard notes.
-func TryCommands(p Ports) []string {
-	out := make([]string, 0, len(Steps))
-	for _, s := range Steps {
-		out = append(out, s.Curl(p))
+func TryCommands(kind Kind, p Ports) []string {
+	steps := StepsFor(kind)
+	out := make([]string, 0, len(steps))
+	for _, s := range steps {
+		out = append(out, s.Command(kind, p))
 	}
 	return out
 }

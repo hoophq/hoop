@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
@@ -108,10 +109,30 @@ type wizard struct {
 	saved      string
 }
 
+// The two built-in demos, by menu id. demoKindFor maps an id to its kind, or
+// "" for a real protocol.
+const (
+	demoHTTPID = "demo"
+	demoPGID   = "demo-postgres"
+)
+
+func demoKindFor(id string) sidecardemo.Kind {
+	switch id {
+	case demoHTTPID:
+		return sidecardemo.KindHTTP
+	case demoPGID:
+		return sidecardemo.KindPostgres
+	}
+	return ""
+}
+
 func newWizard(mach machine, validate func(string) (string, error), dir string, now func() time.Time) *wizard {
 	w := &wizard{now: now, page: pgProtocol, mach: mach, validate: validate, dir: dir}
-	w.protos.items = append(w.protos.items, menuItem{id: "demo", label: "Demo",
-		detail: "an invented API with fake users, nothing to set up"})
+	w.protos.items = append(w.protos.items,
+		menuItem{id: demoHTTPID, label: "Demo (HTTP)",
+			detail: "an invented API with fake users, nothing to set up"},
+		menuItem{id: demoPGID, label: "Demo (Postgres)",
+			detail: "hoop's public read-only demo database (dellstore on AWS RDS), nothing to set up"})
 	for _, p := range daemon.ServableProtocols() {
 		detail := daemon.ProtocolLabel(p)
 		if f, ok := mach.foundFor(p); ok {
@@ -210,9 +231,9 @@ func (w *wizard) key(k tea.KeyPressMsg) (tea.Cmd, wizEvent) {
 // choose starts a draft for protocol, or keeps the current one when the
 // person came back and picked the same thing.
 func (w *wizard) choose(id string) (tea.Cmd, wizEvent) {
-	demo := id == "demo"
-	if w.d == nil || w.d.demo != demo || (!demo && w.d.protocol != id) {
-		d, err := newDraft(id, demo, w.mach)
+	kind := demoKindFor(id)
+	if w.d == nil || w.d.demoKind != kind || (kind == "" && w.d.protocol != id) {
+		d, err := newDraft(id, w.mach)
 		if err != nil {
 			w.saveErr = err
 			return nil, wizNone
@@ -220,7 +241,7 @@ func (w *wizard) choose(id string) (tea.Cmd, wizEvent) {
 		d.license = w.license
 		w.d = d
 	}
-	if demo {
+	if kind != "" {
 		return w.toOverview()
 	}
 	w.page = pgListener
@@ -240,8 +261,12 @@ func (w *wizard) buildOverview() {
 	if err != nil {
 		ldetail = "✕ " + err.Error()
 	}
-	if w.d.demo {
-		ldetail += "  (the demo API)"
+	if w.d.isDemo() {
+		what := "API"
+		if w.d.demoKind == sidecardemo.KindPostgres {
+			what = "database"
+		}
+		ldetail += "  (the demo " + what + ")"
 	}
 	cur := w.overview.cur
 	// The actions come first: the defaults below are meant to work as they
@@ -299,13 +324,13 @@ func (w *wizard) overviewKey(k tea.KeyPressMsg) (tea.Cmd, wizEvent) {
 	}
 	switch id := w.overview.update(k); id {
 	case "back":
-		if w.d.demo {
+		if w.d.isDemo() {
 			w.page = pgProtocol
 		} else {
 			w.page = pgListener
 		}
 	case "listener":
-		if w.d.demo {
+		if w.d.isDemo() {
 			w.saveErr = errors.New("the demo's listener is fixed: pick a protocol to set your own")
 			return nil, wizNone
 		}
@@ -579,7 +604,7 @@ func (w *wizard) crumbs() string {
 		parts = append(parts, w.d.protocol)
 	default:
 		name := w.d.protocol
-		if w.d.demo {
+		if w.d.isDemo() {
 			name = "demo"
 		}
 		parts = append(parts, name)
@@ -698,7 +723,7 @@ func (w *wizard) overviewView(width, height int) string {
 	case w.vsummary != "":
 		status = append(status, stPrimary.Render("✓ valid")+stFaint.Render("  "+w.vsummary))
 	}
-	if w.d.demo {
+	if w.d.isDemo() {
 		status = append(status, "", stFaint.Render(ansi.Truncate(
 			"Once it boots, the dashboard opens on Try it, a guided tour of the demo.", width, "…")))
 	}

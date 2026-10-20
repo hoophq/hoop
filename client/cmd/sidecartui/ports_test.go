@@ -197,7 +197,7 @@ func TestNewDraftsStartOnFreePorts(t *testing.T) {
 		t.Skip("15432 is not available to hold in this environment")
 	}
 	defer ln.Close()
-	d, err := newDraft("postgres", false, noMachine())
+	d, err := newDraft("postgres", noMachine())
 	if err != nil {
 		t.Fatal(err)
 	}
