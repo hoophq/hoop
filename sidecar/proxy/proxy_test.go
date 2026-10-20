@@ -484,7 +484,9 @@ func TestHTTPBlankIdentityHeaderIsRefused(t *testing.T) {
 		if _, err := c.Write([]byte(req)); err != nil {
 			t.Fatalf("write: %v", err)
 		}
-		c.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if err := c.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatalf("set read deadline: %v", err)
+		}
 		buf := make([]byte, 512)
 		n, _ := c.Read(buf)
 		return string(buf[:n])
