@@ -5,7 +5,8 @@
    [re-frame.core :as rf]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
    [webapp.jira-templates.prompt-form :as prompt-form]
-   [webapp.webclient.components.mandatory-metadata-form :as mandatory-metadata-form]))
+   [webapp.webclient.components.mandatory-metadata-form :as mandatory-metadata-form]
+   [webapp.webclient.mssql-database :as mssql-database]))
 
 (defn discover-connection-type [connection]
   (cond
@@ -168,9 +169,7 @@
                                                                   "\\set QUIET off\n"
                                                                   script)
                         (and selected-db
-                             (= connection-type "mssql")) (str "SET NOCOUNT ON;\n"
-                                                               "USE [" selected-db "];\n"
-                                                               script)
+                             (= connection-type "mssql")) (mssql-database/with-database selected-db script)
                         (and selected-db
                              (= connection-type "mysql")) (str "use " selected-db ";\n" script)
                         (and selected-db
