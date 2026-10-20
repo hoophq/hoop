@@ -1,0 +1,50 @@
+# hoop sidecar config: one Citrix ICA lane in single mode.
+#
+# One lane serves one VDA. Register the VDA with Citrix using this host's
+# address, so the Gateway's CGP connection for that VDA lands here, and the
+# lane forwards it to `upstream`. No routing changes and no privileges.
+# For a network that cannot re-register VDAs, see config.cidr.yaml.
+#
+# The addresses below are examples; the EDIT lines are specific to the
+# deployment.
+#
+# Runs as   hoop-inspect -config config.yaml
+# or        hoop start sidecar --config config.yaml   (hands over to hoop-inspect)
+# Check it: hoop-inspect -validate -config config.yaml
+#
+# install.sh writes this file to /etc/hoop-inspect/config.yaml on a host that
+# has none, and refuses --start until the two EDIT lines are changed.
+
+log_level: info
+
+admin:
+  # /healthz, /readyz, /stats, /metrics, /config. Unauthenticated: keep it on
+  # loopback, and put a network control in front if another host must reach it.
+  listen: 127.0.0.1:19000
+
+audit:
+  # One JSON row per session event (start, end, refusal), never a frame or a
+  # pixel. '-' is stdout: the journal under systemd.
+  file: '-'
+
+# The engine's production profile and its default asset paths, which
+# install.sh lays out:
+#   /opt/libhoop-ica/current/bin/hoop-tesseract-worker
+#   /opt/libhoop-ica/current/models/KnightsAnalytics_distilbert-NER
+#   /opt/alcatraz/ort/releases/<ort>/lib/libonnxruntime.so
+#   /usr/share/tesseract-ocr/5/tessdata
+# Override a path only if the assets live elsewhere:
+#   ica: {ocr_worker: ..., ner_model: ..., ort_library: ..., tessdata: ...}
+# `max_sessions` (default 32) bounds every ica lane in the process together;
+# `options` overrides single settings of the profile, and -validate prints the
+# resolved values.
+ica: {}
+
+listeners:
+  - name: vdi
+    protocol: ica
+    listen: 0.0.0.0:2598           # CGP; the Gateway dials this host
+    upstream: 10.77.0.30:2598      # EDIT: the VDA this lane serves
+    ica:
+      tenant_id: finance           # EDIT: the principal on every audit row
+      # edt: true                  # also accept Citrix EDT (UDP) on the same port; publish it for UDP too

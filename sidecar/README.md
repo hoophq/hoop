@@ -2928,7 +2928,10 @@ sudo ica-assets/install.sh --config config.yaml --start
 rule and policy route stay yours. Rerunning the installer from a newer
 bundle upgrades the binary, the worker and ONNX Runtime, and keeps the
 config and the model. The source of the installer is
-`deploy/ica-sidecar/install.sh`.
+`deploy/ica-sidecar/install.sh`; `deploy/ica-sidecar/examples/` holds a
+commented config for each mode (`config.single.yaml`, `config.cidr.yaml`),
+shipped in the bundle, and the single one is what a host without a config
+gets to edit.
 
 With the bundle installed, `hoop start sidecar --config config.yaml` serves
 the same file: the CLI sees the ica lane, finds `hoop-inspect` (`$HOOP_INSPECT`,

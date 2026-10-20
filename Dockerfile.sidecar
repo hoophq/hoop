@@ -135,7 +135,9 @@
 # The tarball holds hoop-inspect, the worker (fetched by ica-build from the
 # libhoop-ica release the engine in this tree links, so the two stay in
 # step) with its LICENSE and NOTICE, ONNX Runtime's library and notices,
-# release.txt, and deploy/ica-sidecar/install.sh. The NER model is not in
+# release.txt, deploy/ica-sidecar/install.sh and its examples/ (a config for
+# each ica mode, which the installer also uses as the first-run template).
+# The NER model is not in
 # it: it is the same for every architecture and public at
 # releases.hoop.dev/alcatraz/current, so the installer fetches it, as the
 # `models` stage does. The `scratch` final stage makes `--output` export the
@@ -396,6 +398,7 @@ COPY --from=ica-build /out/worker/LICENSE /out/worker/NOTICE /out/worker/libhoop
 COPY --from=ica-build /out/ort/lib/libonnxruntime* /bundle/ort/lib/
 COPY --from=ica-build /out/ort/LICENSE /out/ort/ThirdPartyNotices.txt /bundle/ort/
 COPY deploy/ica-sidecar/install.sh /bundle/install.sh
+COPY deploy/ica-sidecar/examples/ /bundle/examples/
 RUN set -eu; \
     { \
       echo "version=${VERSION}"; \

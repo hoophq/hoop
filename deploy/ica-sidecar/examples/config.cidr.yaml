@@ -1,0 +1,47 @@
+# hoop sidecar config: one Citrix ICA lane in CIDR (transparent) mode.
+#
+# For a network that policy-routes Gateway-to-VDA traffic through this host
+# and cannot register VDAs with the sidecar's address. The lane accepts the
+# routed connection on an IP_TRANSPARENT socket, reads the VDA the client
+# dialed from it, checks it against the CIDRs below, and dials that VDA.
+#
+# The addresses below are examples. Every EDIT line is specific to the
+# deployment: the Gateway and VDA networks differ per site, and the engine
+# refuses (and audits) a connection from outside source_cidrs or to a VDA
+# outside upstream_cidrs/upstream_ports.
+#
+# Needs: install.sh --cidr (grants the service CAP_NET_ADMIN), and the host's
+# nftables TPROXY rule, policy route and rp_filter setting from libhoop-ica's
+# docs/transparent-linux.md; a UDP rule as well when `edt` is on.
+#
+# Runs as   hoop-inspect -config config.yaml
+# or        hoop start sidecar --config config.yaml   (hands over to hoop-inspect)
+# Check it: hoop-inspect -validate -config config.yaml
+
+log_level: info
+
+admin:
+  listen: 127.0.0.1:19000        # unauthenticated; keep it on loopback
+
+audit:
+  file: '-'
+
+ica:
+  max_sessions: 32               # across every ica lane in the process; they share one OCR/NER runtime
+  # options: {ocr_workers: 4}    # overrides of the engine's production profile; -validate prints the resolved values
+
+listeners:
+  - name: vdi
+    protocol: ica
+    listen: 0.0.0.0:2598
+    ica:
+      tenant_id: citrix-production       # EDIT: the principal on every audit row
+      transparent:
+        source_cidrs: [10.10.1.10/32]    # EDIT: the Citrix Gateway SNIP(s), or the Workspace client networks; several entries allowed
+        upstream_cidrs: [10.77.0.0/16]   # EDIT: the VDA network(s) this lane may forward to
+        upstream_ports: [2598]           # EDIT: CGP (2598); 1494 for plain ICA
+      display:
+        width: 1264                      # EDIT: the session geometry the VDAs publish
+        height: 1040
+        thinwire_channel: 9
+      # edt: true                        # also accept Citrix EDT (UDP); needs the UDP TPROXY rule

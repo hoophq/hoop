@@ -26,7 +26,8 @@
 #
 #   --config FILE       install FILE as /etc/hoop-inspect/config.yaml once it
 #                       validates; without it an existing config stays and a
-#                       new host gets a single-mode template to edit
+#                       new host gets examples/config.single.yaml to edit
+#                       (examples/config.cidr.yaml is the CIDR-mode one)
 #   --model-dir DIR     copy the NER model from DIR instead of downloading it
 #                       (air-gapped hosts). DIR is a KnightsAnalytics_distilbert-NER
 #                       directory: config.json, model.onnx, tokenizer.json, ...
@@ -279,35 +280,10 @@ if [[ -n $candidate ]]; then
   candidate=
   echo "    installed ${CONFIG} as ${CONF}"
 elif [[ ! -f $CONF ]]; then
-  # The admin endpoint stays on loopback: its routes (/healthz, /readyz,
-  # /stats, /metrics, /config) carry no authentication, so reaching them
-  # from another host is a deliberate choice, with a network control.
-  cat >"$CONF" <<'EOF'
-# Single mode: one lane serves one VDA. For CIDR mode, replace `upstream` with
-#   ica:
-#     tenant_id: citrix-production
-#     transparent:
-#       source_cidrs: [10.10.1.10/32]    # Citrix Gateway SNIP
-#       upstream_cidrs: [10.77.0.0/16]   # VDA network
-#       upstream_ports: [2598]           # CGP
-# and rerun install.sh with --cidr.
-log_level: info
-admin:
-  listen: 127.0.0.1:19000        # /healthz, /readyz, /stats, /metrics, /config; unauthenticated, keep it on loopback
-audit:
-  file: '-'                      # one JSON row per line, into the journal
-ica: {}                          # production profile and default asset paths
-listeners:
-  - name: vdi
-    protocol: ica
-    listen: 0.0.0.0:2598
-    upstream: 10.77.0.30:2598      # EDIT: the VDA this lane serves
-    ica:
-      tenant_id: finance           # EDIT: the principal on every audit row
-EOF
-  chown root:hoop "$CONF"
-  chmod 0640 "$CONF"
-  echo "    wrote a single-mode template to ${CONF}; edit upstream and tenant_id"
+  # The single-mode example from the tarball, with its EDIT markers: the
+  # --start branch below refuses to run it until they are gone.
+  install -o root -g hoop -m 0640 "$here/examples/config.single.yaml" "$CONF"
+  echo "    wrote examples/config.single.yaml to ${CONF}; edit upstream and tenant_id (examples/config.cidr.yaml for CIDR mode)"
 fi
 
 # Releases older than the one this run replaced go: the previous one stays
