@@ -3619,7 +3619,10 @@ listeners:
   input or an analyzer prompt. Validate refuses an `http.headers` entry that
   names it, and a header that the upstream, HTTP framing or the sidecar
   already uses (`authorization`, `cookie`, `host`, `content-length`, `via`,
-  and the like).
+  and the like). The strip stops a leak by accident, not by intent: it covers
+  the header in each request head. An admitted caller that copies the token
+  into another header, a chunked trailer or the body sends it on, and a
+  vault fills the secret into any header it finds the placeholder in.
 - **The reserved route is guarded too.** `/.well-known/hoop/` answers only a
   caller the token admits.
 - **Stricter framing.** As on a URL upstream, a request head the lane cannot
@@ -3646,7 +3649,9 @@ once. To rotate without a refused request:
 2. Update every caller to the new token.
 3. Remove the old line.
 
-To revoke a token, write the file without it. A missing or unusable file at
+To revoke a token, write the file without it. An empty file keeps the tokens
+in force, so to revoke the only token, write a new one in its place, or stop
+the listener. A missing or unusable file at
 startup, or under `-validate`, stops the process with an error naming the
 file. The control plane never reads it. Changing the `caller_token` block
 itself needs a restart.

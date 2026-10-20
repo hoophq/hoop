@@ -34,9 +34,11 @@ func Open(path string, log *slog.Logger) (*File, error) {
 	// Stat before the read: an edit landing between the two leaves a stat
 	// older than the content, which the next Poll reads again, rather than
 	// a newer stat that would hide the edit.
-	if st, err := os.Stat(path); err == nil {
-		f.size, f.mod = st.Size(), st.ModTime()
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, err // *PathError: names the path
 	}
+	f.size, f.mod = st.Size(), st.ModTime()
 	s, err := load(path)
 	if err != nil {
 		return nil, err
