@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -155,13 +156,17 @@ func (c *prefixConn) Read(b []byte) (int, error) {
 
 // HeaderIdentity resolves an identity header's value to the subject it
 // names, for a lane behind an authenticating proxy that sets the header
-// from a login it verified. An absent header resolves to anonymous, which
-// keeps whatever identity the connection itself carried.
+// from a login it verified.
 type HeaderIdentity struct{}
 
-// Resolve returns the trimmed value as the Subject. It never fails: the
-// value is trusted as far as the network is, see peekHTTPIdentity.
+// Resolve returns the trimmed value as the Subject; the value is trusted as
+// far as the network is, see peekHTTPIdentity. A blank value is an error: as
+// an anonymous subject it would run the request as the connection. Repeated
+// blank header lines arrive joined as ", ", so commas count as blank.
 func (HeaderIdentity) Resolve(_ context.Context, value string) (session.Identity, error) {
+	if strings.TrimFunc(value, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) == "" {
+		return session.Identity{}, errors.New("the identity header is blank")
+	}
 	return session.Identity{Subject: strings.TrimSpace(value)}, nil
 }
 
