@@ -156,6 +156,11 @@ type Config struct {
 	CredentialHeader string
 	RequestIdentity  gate.RequestIdentity
 
+	// AuthenticatesCaller marks a lane that is the authentication; see
+	// gate.Config.AuthenticatesCaller. It needs CredentialHeader and a
+	// codec that implements gate.CallerAuthenticator.
+	AuthenticatesCaller bool
+
 	// CodecFactory overrides how each connection's Gate builds its codecs.
 	// Nil uses the registry. See gate.Config.CodecFactory: it exists so a
 	// lane can turn on HTTP body capture, which the argument-free registry
@@ -641,6 +646,8 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		RequestIdentity:  requestIdentity,
 		Answer:           s.cfg.Answer,
 		Settle:           s.cfg.Settle,
+
+		AuthenticatesCaller: s.cfg.AuthenticatesCaller,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)

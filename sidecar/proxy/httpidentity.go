@@ -181,6 +181,9 @@ func checkCredentialConfig(cfg Config) error {
 	if (cfg.CredentialHeader == "") != (cfg.RequestIdentity == nil) {
 		return errors.New("sidecar/proxy: CredentialHeader and RequestIdentity are set together or not at all")
 	}
+	if cfg.AuthenticatesCaller && cfg.CredentialHeader == "" {
+		return errors.New("sidecar/proxy: AuthenticatesCaller needs a CredentialHeader, so nothing would check the caller")
+	}
 	if cfg.CredentialHeader == "" {
 		return nil
 	}
@@ -190,9 +193,22 @@ func checkCredentialConfig(cfg Config) error {
 	if cfg.CodecFactory == nil {
 		return errors.New("sidecar/proxy: a credential header needs a CodecFactory whose codec lifts it")
 	}
-	cc, ok := cfg.CodecFactory().(credentialCodec)
+	codec := cfg.CodecFactory()
+	cc, ok := codec.(credentialCodec)
 	if !ok || !strings.EqualFold(cc.CredentialHeader(), cfg.CredentialHeader) {
 		return fmt.Errorf("sidecar/proxy: the lane's codec does not lift the %s header the relay reads", cfg.CredentialHeader)
+	}
+	if cfg.AuthenticatesCaller {
+		// gate.New installs the real check on every connection's codec and
+		// refuses one that cannot take it; asking this throwaway codec
+		// stops the lane at startup instead of failing every client.
+		ca, ok := codec.(gate.CallerAuthenticator)
+		if !ok {
+			return errors.New("sidecar/proxy: the lane authenticates its caller but its codec cannot check one")
+		}
+		if err := ca.AuthenticateCallers(func(string) error { return errors.New("probe") }); err != nil {
+			return fmt.Errorf("sidecar/proxy: %w", err)
+		}
 	}
 	return nil
 }

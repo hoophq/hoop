@@ -461,7 +461,7 @@ func TestHeaderAllowlistIsNormalizedForTheCodec(t *testing.T) {
 		t.Fatalf("Validate: %v", err)
 	}
 
-	codec := newHTTPCodec(h, "", false, nil)()
+	codec := newHTTPCodec(h, "", false, false, nil)()
 	stmts, _, err := codec.Decode(inspect.FromClient, []byte("GET /x HTTP/1.1\r\nHost: h\r\nAccept: application/json\r\nKubectl-Command: kubectl get\r\n\r\n"))
 	if err != nil || len(stmts) != 1 {
 		t.Fatalf("Decode: %d statements, %v", len(stmts), err)

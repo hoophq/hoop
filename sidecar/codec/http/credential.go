@@ -1,8 +1,11 @@
 package http
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -33,9 +36,46 @@ type credentials struct {
 	header string // lowercased; "" lifts nothing
 	keep   bool   // the operator's own Options.Headers named header
 
-	mu   sync.Mutex
-	next uint64
-	held map[string]string
+	// authenticates is set on a lane that IS the authentication
+	// (Options.AuthenticatesCaller). The request filter checks each head's
+	// credential with check before forwarding any of it, then removes the
+	// header; the gate decodes what the filter forwards, so the value is
+	// handed over in request order (admit) and lift takes it in the same
+	// order.
+	authenticates bool
+
+	mu     sync.Mutex
+	check  func(credential string) error // installed by the gate; nil refuses every request
+	next   uint64
+	held   map[string]string
+	handed []string // authenticates: values the filter admitted, oldest first
+}
+
+// admit checks the credential of one request head before the filter
+// forwards it, and hands the value on for lift. The value is the header
+// joined with ", " when it was sent more than once, as libhoop renders a
+// repeated header, so the check sees what the gate's own check would.
+func (c *credentials) admit(req *http.Request) error {
+	value := strings.Join(req.Header.Values(c.header), ", ")
+	c.mu.Lock()
+	check := c.check
+	c.mu.Unlock()
+	if check == nil {
+		// The gate installs the check when it builds the codec; a codec
+		// without one cannot tell a caller from a stranger.
+		return errors.New("this listener authenticates its caller, and no caller check is installed; the connection is closed")
+	}
+	if err := check(value); err != nil {
+		return &inspect.CredentialRefusal{Request: strings.TrimSpace(req.Method + " " + req.URL.Path), Reason: err}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.handed) >= maxHeldCredentials {
+		return fmt.Errorf("%w: %d request credentials were admitted and never decoded; refusing to hold more",
+			inspect.ErrStreamUnsafe, maxHeldCredentials)
+	}
+	c.handed = append(c.handed, value)
+	return nil
 }
 
 // lift moves the credential header of one request statement into the table
@@ -60,6 +100,17 @@ func (c *credentials) lift(stmt *inspect.Statement) error {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.authenticates {
+		// One handed value per request head the filter admitted, and the
+		// codec decodes exactly those heads. A request with none waiting
+		// did not pass the filter, so nothing checked it before the
+		// upstream saw it: refuse the stream rather than guess a value.
+		if len(c.handed) == 0 {
+			return fmt.Errorf("%w: a request reached the codec without passing the filter that removes its %s header",
+				inspect.ErrStreamUnsafe, c.header)
+		}
+		value, c.handed = c.handed[0], c.handed[1:]
+	}
 	if len(c.held) >= maxHeldCredentials {
 		return fmt.Errorf("%w: %d request credentials were lifted and never taken; refusing to hold more",
 			inspect.ErrStreamUnsafe, maxHeldCredentials)

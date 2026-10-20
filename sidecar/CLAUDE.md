@@ -325,7 +325,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `proxy/` | TCP relay that pumps both directions through a Gate |
 | `daemon/` | assembles the relay from config — sinks, evaluators, listeners — and is the CLI entry point |
 | `session/` | one inspected connection and the identity behind it |
-| `identity/` | resolves a request credential to the identity behind it; `google/` verifies a Google OAuth2 bearer with tokeninfo |
+| `identity/` | resolves a request credential to the identity behind it; `google/` verifies a Google OAuth2 bearer with tokeninfo; `token/` matches a caller token against a file it re-reads |
 | `audit/` | the write side of the trail |
 | `store/` | the read side |
 | `pii/` | detectors and maskers |

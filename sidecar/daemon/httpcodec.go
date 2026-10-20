@@ -36,14 +36,18 @@ import (
 //
 // origin, from an upstream written as a URL, makes the codec point every
 // request at that origin; nil leaves Host as the client wrote it.
-func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, holds bool, origin *codechttp.Origin) func() inspect.Codec {
+//
+// authenticates makes the codec check the caller token before forwarding a
+// request and remove it after; see codechttp.Options.AuthenticatesCaller.
+func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, holds bool, origin *codechttp.Origin) func() inspect.Codec {
 	opts := codechttp.Options{
 		// headerNames is normalized once, the same list validate checked,
 		// nil-safe, and a fresh slice, so the append leaves cfg alone.
-		Headers:            append(cfg.headerNames(), analyzer.ClientModeHeaders()...),
-		CredentialHeader:   credentialHeader,
-		CaptureRequestBody: holds,
-		Origin:             origin,
+		Headers:             append(cfg.headerNames(), analyzer.ClientModeHeaders()...),
+		CredentialHeader:    credentialHeader,
+		AuthenticatesCaller: authenticates,
+		CaptureRequestBody:  holds,
+		Origin:              origin,
 	}
 	if cfg != nil {
 		opts.CaptureBody = cfg.CaptureBody

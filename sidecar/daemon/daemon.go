@@ -47,6 +47,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/audit"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
 	"github.com/hoophq/hoop/sidecar/gate"
+	"github.com/hoophq/hoop/sidecar/identity/token"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -615,6 +616,12 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Config validation never reads a token file (see
+	// CallerTokenConfig.validate), so this is where -validate learns that
+	// one is missing.
+	if _, err := openCallerTokens(lanes, nil); err != nil {
+		return nil, err
+	}
 	out := make([]LaneInfo, 0, len(lanes))
 	validationLog := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, ln := range lanes {
@@ -955,6 +962,13 @@ func Run(cfg *Config, det Plugin) error {
 		lanes[i].metrics = tel.laneMetrics(lanes[i].cfg.Protocol)
 	}
 
+	// Before any listener binds: a lane that cannot read its tokens stops
+	// startup with an error naming the file.
+	tokenFiles, err := openCallerTokens(lanes, log)
+	if err != nil {
+		return err
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -1107,6 +1121,9 @@ func Run(cfg *Config, det Plugin) error {
 			"hint", "send SIGHUP to re-read it now")
 	}
 	go rl.watchFile(ctx, log)
+	if len(tokenFiles) > 0 {
+		go watchCallerTokens(ctx, log, tokenFiles, fileWatchEvery)
+	}
 
 	if cfg.Admin.Listen != "" {
 		var am *analyzerMetrics
@@ -1313,6 +1330,12 @@ type lane struct {
 	// rather than read from the config at each use so one build of the
 	// lanes sees one read of the bundle.
 	trustRoots *x509.CertPool
+
+	// callerTokens is the caller_token file the lane's resolver reads, set
+	// by openCallerTokens in Run and Validate. A lane a reload builds has
+	// none: it feeds the rule swap and the /config report, never
+	// buildServer, and the running lane keeps its file.
+	callerTokens *token.File
 }
 
 // capturesRequestBodies reports whether the lane's codec exposes request
@@ -1585,7 +1608,7 @@ func buildServer(
 			"reason", reason)
 	}
 
-	requestIdentity, err := buildRequestIdentity(lc, ln.trustRoots)
+	requestIdentity, err := buildRequestIdentity(lc, ln.trustRoots, ln.callerTokens)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
@@ -1608,6 +1631,7 @@ func buildServer(
 		Settle:              settle,
 		CredentialHeader:    lc.credentialHeader(),
 		RequestIdentity:     requestIdentity,
+		AuthenticatesCaller: lc.authenticatesCaller(),
 		CodecFactory:        ln.codecFactory,
 		StartupMetadata:     lc.Postgres.startupMetadata(),
 		// The product default: a postgres lane with no startup_metadata list

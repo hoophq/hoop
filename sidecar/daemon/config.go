@@ -333,6 +333,15 @@ type ListenerConfig struct {
 	// who sent it.
 	GoogleIdentity *GoogleIdentityConfig `json:"google_identity,omitempty" cap:"google_identity" since:"1.198.0" ui:"-"`
 
+	// CallerToken refuses every request whose header does not hold a token
+	// listed in a file on the sidecar host, and names the caller with a
+	// configured name. http lanes only, and exclusive with identity_header
+	// and google_identity: one lane, one authority for who the caller is.
+	//
+	// It is for a lane reachable from anywhere, where identity_header would
+	// let any caller claim any name. See CallerTokenConfig.
+	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http" ui:"presence"`
+
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
 	// psql; leaving it unset is the safe default.
@@ -1413,6 +1422,21 @@ func (c *Config) validate(onHost bool) error {
 			if err := l.GoogleIdentity.validate(); err != nil {
 				problems = append(problems, fmt.Sprintf("%s: google_identity: %v", name, err))
 			}
+		}
+		if l.CallerToken != nil {
+			if inspect.Protocol(l.Protocol) != inspect.HTTP || isGRPCTransport(l) || isSSH(l) {
+				problems = append(problems, fmt.Sprintf(
+					"%s: caller_token is only supported on http, not %q", name, l.Protocol))
+			}
+			if l.IdentityHeader != "" {
+				problems = append(problems, fmt.Sprintf(
+					"%s: caller_token and identity_header both name the caller; keep one", name))
+			}
+			if l.GoogleIdentity != nil {
+				problems = append(problems, fmt.Sprintf(
+					"%s: caller_token and google_identity both name the caller; keep one", name))
+			}
+			problems = append(problems, l.CallerToken.validate(name, l.HTTP)...)
 		}
 		if l.MySQLAuthKeyFile != "" {
 			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {

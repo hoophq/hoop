@@ -75,6 +75,11 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 		"upstream_tls":    func(l map[string]any) { l["upstream_tls"] = map[string]any{} },
 		"downstream_tls":  func(l map[string]any) { l["downstream_tls"] = map[string]any{"cert_file": cert, "key_file": key} },
 		"identity_header": func(l map[string]any) { l["identity_header"] = "x-user" },
+		// Validate never reads the file, so a path that does not exist
+		// checks the protocols tag alone.
+		"caller_token": func(l map[string]any) {
+			l["caller_token"] = map[string]any{"file": "/nonexistent/tokens", "name": "ci"}
+		},
 		"idle_timeout_sec": func(l map[string]any) {
 			l["idle_timeout_sec"] = 30
 		},
