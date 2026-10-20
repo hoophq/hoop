@@ -708,6 +708,74 @@ jobs:
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless
 
+  # Preview of the ica assets bundle, the export-only target of
+  # Dockerfile.sidecar; mirrors the step release.yml runs inside its
+  # hoopsidecar job. Its own job here, and skipped unless the PR touches
+  # what goes into the bundle: the ica-build stage is a cgo build run under
+  # emulation for arm64, the slow half of the release job, and the slim
+  # preview images above should not wait on it. When it runs, the tarballs
+  # reach publish-release through dist-artifacts-ica-assets and land at
+  # releases.hoop.dev/release/<PR>.0.0-g<sha>/ beside the CLI tarballs, so
+  # the Docker-less install can be tried against the branch.
+  ica-assets:
+    runs-on: ubuntu-latest
+    name: Build ica assets bundle
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Decide whether the bundle changed
+        id: changed
+        run: |
+          set -euo pipefail
+          files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- \
+            Dockerfile.sidecar deploy/ica-sidecar sidecar/ica sidecar/cmd \
+            .github/workflows/pullrequest-release.yml || true)
+          if [ -z "$files" ]; then
+            echo "nothing the bundle is built from changed; skipping"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$files"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Set up QEMU
+        if: steps.changed.outputs.build == 'true'
+        uses: docker/setup-qemu-action@v4
+      - name: Set up Docker Buildx
+        if: steps.changed.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v4
+      - name: Set Git Tag
+        if: steps.changed.outputs.build == 'true'
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+      - name: Export the ica assets bundle
+        if: steps.changed.outputs.build == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica-assets
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+          outputs: type=local,dest=ica-assets
+      - name: Stage the ica assets bundle
+        if: steps.changed.outputs.build == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p stage/binaries
+          mv ica-assets/linux_*/binaries/* stage/binaries/
+          ls -l stage/binaries
+      - uses: actions/upload-artifact@v7
+        if: steps.changed.outputs.build == 'true'
+        with:
+          name: dist-artifacts-ica-assets
+          path: stage/
+
   # Preview build of hoophq/hoopcontrolplane, both targets of
   # Dockerfile.controlplane. Mirrors the release workflow.
   # hoophq/hoopcontrolplane is a clean-only repository — see the bright-line
@@ -783,6 +851,9 @@ jobs:
       - docker-publish-hoopsidecar
       # Same for hoopcontrolplane-chart and hoophq/hoopcontrolplane.
       - docker-publish-hoopcontrolplane
+      # The ica assets bundle, when the PR changed it; its artifact joins
+      # the merged download below and release-s3 publishes it.
+      - ica-assets
 
     steps:
       - name: Checkout Hoop
