@@ -2853,17 +2853,11 @@ terminates CGP on both legs, decodes the ThinWire video channel, OCRs each
 frame, runs the structured and NER detectors over the text, and masks the
 sensitive pixels before re-encoding the frame toward the client. The engine
 fails closed: it does not release a frame it cannot inspect. The engine is a
-nested module, `sidecar/ica`, linked by `hoop-inspect` and by the Linux
-`hoop` (`client/cmd/startsidecar_ica_linux.go`). A build without it — the
-darwin and windows CLIs — refuses an ica lane at startup and omits
+nested module, `sidecar/ica`, and only `hoop-inspect` links it, in a cgo
+`-tags ORT` build so the engine's NER runs on ONNX Runtime. A build without
+it — `hoop` on every platform — refuses an ica lane at startup and omits
 `protocol:ica` from its capabilities header, so the plane does not serve
 that build an ica lane.
-
-Production runs the lane in `hoop-inspect` built with `-tags ORT`, so the
-engine's NER runs on ONNX Runtime: the `-ica` image and the assets bundle
-below. The Linux `hoop` has no cgo and runs the same model on hugot's Go
-backend, which is for `--validate` and for testing a lane locally, not for
-serving sessions. Both read the same model files at the same paths.
 
 `upstream:` selects single mode and names the VDA. Single mode is the
 standard setup: register the VDA with Citrix using the sidecar host as its

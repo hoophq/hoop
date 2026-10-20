@@ -101,16 +101,14 @@
 # The ica flavour
 #
 # A `protocol: ica` lane embeds the libhoop-ica engine (Citrix ICA/CGP,
-# ThinWire video OCR + NER masking). Production runs it in hoop-inspect
-# built with cgo and `-tags ORT`, so NER runs on ONNX Runtime. The Linux
-# `hoop` links the engine too (client/cmd/startsidecar_ica_linux.go), but
-# without cgo its NER runs on hugot's Go backend, which is for validating a
-# config and testing a lane, not for serving sessions. At run time the
-# engine needs tesseract 5, the hoop-tesseract-worker, libonnxruntime and
-# the NER model on disk. The slim flavours carry none of that and distroless
-# cannot, so the engine gets its own target. The ica-build stage compiles
-# hoop-inspect from source against two private modules, so the build needs a
-# BuildKit secret that can read hoophq/libhoop and hoophq/libhoop-ica:
+# ThinWire video OCR + NER masking). Only hoop-inspect links the engine, and
+# only in a cgo `-tags ORT` build, so NER runs on ONNX Runtime; `hoop` does
+# not. At run time the engine needs tesseract 5, the hoop-tesseract-worker,
+# libonnxruntime and the NER model on disk. The slim flavours carry none of
+# that and distroless cannot, so the engine gets its own target. The
+# ica-build stage compiles hoop-inspect from source against two private
+# modules, so the build needs a BuildKit secret that can read hoophq/libhoop
+# and hoophq/libhoop-ica:
 #
 #   docker build -f Dockerfile.sidecar --target ica \
 #     --secret id=gh_token,env=GH_TOKEN -t hoophq/hoopsidecar:dev-ica .
