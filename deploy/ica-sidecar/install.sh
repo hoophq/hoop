@@ -15,6 +15,10 @@
 #   /opt/alcatraz/ort/releases/<ort>/lib/             libonnxruntime.so
 #   /usr/share/tesseract-ocr/5/tessdata               from the distro package
 #
+# The service runs hoop-inspect directly. A `hoop start sidecar --config`
+# on the same file works too once this is installed: the hoop CLI finds
+# /usr/local/bin/hoop-inspect and hands the process over to it.
+#
 # Usage, as root on Ubuntu 24.04 or Debian 12 (amd64 or arm64), from the
 # extracted tarball:
 #

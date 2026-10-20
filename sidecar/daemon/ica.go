@@ -505,6 +505,23 @@ func registeredICAEngine() ICABuilder {
 // startup.
 func icaEngineLinked() bool { return registeredICAEngine() != nil }
 
+// ICAEngineLinked is icaEngineLinked for an embedder: the hoop CLI hands a
+// config with an ica lane over to hoop-inspect when its own build has no
+// engine, instead of letting Run refuse it.
+func ICAEngineLinked() bool { return icaEngineLinked() }
+
+// ICALanes names the config's ica listeners, in order, as checkICA would
+// report them. Empty when there are none.
+func (c *Config) ICALanes() []string {
+	var out []string
+	for i, l := range c.Listeners {
+		if isICA(l) {
+			out = append(out, l.displayName(i))
+		}
+	}
+	return out
+}
+
 // checkICA refuses an ica lane this process cannot serve. Run and Validate
 // call it; Config.Validate does not, because the control plane validates
 // sidecar documents with the same decoder and links no engine.

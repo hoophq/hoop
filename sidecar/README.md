@@ -2870,10 +2870,10 @@ frame, runs the structured and NER detectors over the text, and masks the
 sensitive pixels before re-encoding the frame toward the client. The engine
 fails closed: it does not release a frame it cannot inspect. The engine is a
 nested module, `sidecar/ica`, and only `hoop-inspect` links it, in a cgo
-`-tags ORT` build so the engine's NER runs on ONNX Runtime. A build without
-it — `hoop` on every platform — refuses an ica lane at startup and omits
-`protocol:ica` from its capabilities header, so the plane does not serve
-that build an ica lane.
+`-tags ORT` build so the engine's NER runs on ONNX Runtime. `hoop` omits
+`protocol:ica` from its capabilities header, so a plane never serves it an
+ica lane; given a config file with one, `hoop start sidecar` hands the
+process over to `hoop-inspect` instead of refusing it — see below.
 
 `upstream:` selects single mode and names the VDA. Single mode is the
 standard setup: register the VDA with Citrix using the sidecar host as its
@@ -2929,6 +2929,16 @@ rule and policy route stay yours. Rerunning the installer from a newer
 bundle upgrades the binary, the worker and ONNX Runtime, and keeps the
 config and the model. The source of the installer is
 `deploy/ica-sidecar/install.sh`.
+
+With the bundle installed, `hoop start sidecar --config config.yaml` serves
+the same file: the CLI sees the ica lane, finds `hoop-inspect` (`$HOOP_INSPECT`,
+then `PATH`, then `/usr/local/bin/hoop-inspect` and `/app/hoop-inspect`) and
+execs it with the same `--config`, `--license`, `--token`, `--validate` and
+`--strict`, so the PID, stdio and signals carry over and a unit or an
+entrypoint that runs `hoop start sidecar` needs no change. It prints one line
+saying so; the dashboard does not survive the handoff, since `hoop-inspect`
+writes logs. Without the binary anywhere, the command fails and names the
+bundle.
 
 `ica.edt: true` also accepts Citrix EDT (UDP) on the listener's address,
 beside TCP: same port, same tenant and VDA, and the same `max_sessions`. EDT
