@@ -72,4 +72,13 @@ For the realtime RDP PII guard.
 
 - [hoop-gateway-bundle-amd64](https://releases.hoop.dev/release/${VERSION}/hoopgateway_${VERSION}-Linux_amd64.tar.gz)
 - [hoop-gateway-bundle-arm64](https://releases.hoop.dev/release/${VERSION}/hoopgateway_${VERSION}-Linux_arm64.tar.gz)
+
+### Citrix ICA sidecar without Docker
+
+What the \`-ica\` image carries, for a Linux host: \`hoop-inspect\` with the ICA
+engine, the OCR worker, ONNX Runtime and an installer. The installer fetches the
+NER model from releases.hoop.dev/alcatraz/current and runs the sidecar under systemd.
+
+- [hoop-ica-assets-amd64](https://releases.hoop.dev/release/${VERSION}/hoop-ica-assets_${VERSION}_Linux_amd64.tar.gz)
+- [hoop-ica-assets-arm64](https://releases.hoop.dev/release/${VERSION}/hoop-ica-assets_${VERSION}_Linux_arm64.tar.gz)
 EOF

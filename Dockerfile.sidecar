@@ -1,5 +1,5 @@
 # hoophq/hoopsidecar: the hoop inspection sidecar image, in two slim flavours
-# and one engine flavour.
+# and one engine flavour, plus one export-only target.
 #
 # One Dockerfile with three final stages, selected with
 # `docker build --target`. The two slim stages share the `unpack` stage, so
@@ -9,6 +9,8 @@
 #                           hoophq/hoopsidecar:latest
 #   --target distroless  -> hoophq/hoopsidecar:<version>-distroless
 #   --target ica         -> hoophq/hoopsidecar:<version>-ica
+#   --target ica-assets  -> hoop-ica-assets_<version>_Linux_<arch>.tar.gz, not
+#                           an image: see "The ica assets bundle" below
 #
 # The Ubuntu flavour carries NO SUFFIX: it is the image, and `:latest` points
 # at it. It keeps a shell, so the tag someone reaches for without thinking is
@@ -100,12 +102,13 @@
 #
 # A `protocol: ica` lane embeds the libhoop-ica engine (Citrix ICA/CGP,
 # ThinWire video OCR + NER masking). Only hoop-inspect links the engine, and
-# only in a cgo `-tags ORT` build; `hoop` does not. At run time the engine
-# needs tesseract 5, the hoop-tesseract-worker and libonnxruntime. The slim
-# flavours leave those out and distroless cannot carry them, so the engine
-# gets its own target. The ica-build stage compiles hoop-inspect from source
-# against two private modules, so the build needs a BuildKit secret that can
-# read hoophq/libhoop and hoophq/libhoop-ica:
+# only in a cgo `-tags ORT` build, so NER runs on ONNX Runtime; `hoop` does
+# not. At run time the engine needs tesseract 5, the hoop-tesseract-worker,
+# libonnxruntime and the NER model on disk. The slim flavours carry none of
+# that and distroless cannot, so the engine gets its own target. The
+# ica-build stage compiles hoop-inspect from source against two private
+# modules, so the build needs a BuildKit secret that can read hoophq/libhoop
+# and hoophq/libhoop-ica:
 #
 #   docker build -f Dockerfile.sidecar --target ica \
 #     --secret id=gh_token,env=GH_TOKEN -t hoophq/hoopsidecar:dev-ica .
@@ -116,6 +119,27 @@
 # mounted over that path, or the config's ica.ner_model, replaces it. CIDR
 # mode needs CAP_NET_ADMIN, which a non-root process cannot hold from the pod
 # spec alone: see the ica section of sidecar/README.md.
+#
+# ---------------------------------------------------------------------------
+# The ica assets bundle
+#
+# A host without Docker runs what the ica flavour runs. The `ica-assets`
+# target packs the flavour's contents with an installer into one tarball per
+# architecture, and release.yml exports it beside the CLI tarballs on
+# releases.hoop.dev:
+#
+#   docker build -f Dockerfile.sidecar --target ica-assets \
+#     --secret id=gh_token,env=GH_TOKEN --build-arg VERSION=dev \
+#     --output type=local,dest=out .
+#
+# The tarball holds hoop-inspect, the worker (fetched by ica-build from the
+# libhoop-ica release the engine in this tree links, so the two stay in
+# step) with its LICENSE and NOTICE, ONNX Runtime's library and notices,
+# release.txt, and deploy/ica-sidecar/install.sh. The NER model is not in
+# it: it is the same for every architecture and public at
+# releases.hoop.dev/alcatraz/current, so the installer fetches it, as the
+# `models` stage does. The `scratch` final stage makes `--output` export the
+# two files and nothing else.
 #
 # ---------------------------------------------------------------------------
 # Build (from the repo root, with release tarballs in dist/binaries/):
@@ -139,6 +163,11 @@ ARG ALCATRAZ_MODEL_ORIGIN=https://hoopartifacts.s3.us-east-1.amazonaws.com/alcat
 # chart mounts its ConfigMap at and the compose stacks bind, so a config moves
 # between them without also moving.
 ARG SIDECAR_CONFIG=/etc/hoop-inspect/config.yaml
+
+# ONNX Runtime for the ica flavour and the assets bundle. The engine reads
+# the library from /opt/alcatraz/ort/releases/<version>/lib by default
+# (libhoop-ica DefaultNERORTLibrary), so bump the two together.
+ARG ORT_VERSION=1.28.0
 
 # --- Stage: unpack the release tarball ---------------------------------------
 # A separate stage so the ~200MB of release tarballs in dist/binaries/ never
@@ -222,6 +251,7 @@ CMD ["hoop", "start", "sidecar"]
 FROM golang:1.26-bookworm AS ica-build
 ARG TARGETARCH
 ARG VERSION=unknown
+ARG ORT_VERSION
 WORKDIR /src
 # This stage copies the sidecar tree only: GOWORK=off below builds
 # sidecar/cmd from its own go.mod, whose replace directives reach the root and
@@ -259,9 +289,9 @@ RUN --mount=type=secret,id=gh_token,required=true \
     CGO_LDFLAGS=-L/out/tok go build -tags ORT -trimpath \
       -ldflags "-s -w -X main.version=${VERSION} -X github.com/hoophq/hoop/sidecar/analytics.writeKey=${segment}" \
       -o /out/bin/hoop-inspect .; \
-    # Fetch ONNX Runtime for the path the engine's profile reads by default
-    # (libhoop-ica DefaultNERORTLibrary). Bump the two together.
-    curl -sSfL "https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-${ort}-1.28.0.tgz" \
+    # Fetch ONNX Runtime for the path the engine's profile reads by default;
+    # see ORT_VERSION above.
+    curl -sSfL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-${ort}-${ORT_VERSION}.tgz" \
       | tar -xz -C /out/ort --strip-components=1; \
     # Fetch the worker from the libhoop-ica release this binary links. Both
     # versions come from the same go.mod, so engine and worker stay in step.
@@ -278,8 +308,10 @@ RUN --mount=type=secret,id=gh_token,required=true \
     done; \
     cd /out/worker; \
     grep -F " ${archive}" checksums.txt | sha256sum -c -; \
-    tar -xzf "${archive}" hoop-tesseract-worker LICENSE NOTICE; \
-    rm -f "${archive}" checksums.txt
+    tar -xzf "${archive}" hoop-tesseract-worker hoop-tesseract-worker.txt LICENSE NOTICE; \
+    rm -f "${archive}" checksums.txt; \
+    # The ica-assets target records which engine release the worker is from.
+    printf '%s\n' "${iv}" > /out/worker/libhoop-ica-version
 
 # --- Stage: fetch the NER model ----------------------------------------------
 # Dockerfile.agent's `models` stage, unchanged: BUILDPLATFORM, because the
@@ -307,6 +339,7 @@ RUN set -eu; \
 # must stay last.
 FROM ${UBUNTU_IMAGE} AS ica
 ARG SIDECAR_CONFIG
+ARG ORT_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -332,7 +365,7 @@ RUN groupadd --gid 10001 hoop && \
 COPY --from=ica-build /out/bin/hoop-inspect /app/hoop-inspect
 COPY --from=ica-build /out/worker/hoop-tesseract-worker /opt/libhoop-ica/releases/image/bin/
 COPY --from=ica-build /out/worker/LICENSE /out/worker/NOTICE /opt/libhoop-ica/releases/image/
-COPY --from=ica-build /out/ort/lib/ /opt/alcatraz/ort/releases/1.28.0/lib/
+COPY --from=ica-build /out/ort/lib/ /opt/alcatraz/ort/releases/${ORT_VERSION}/lib/
 # The NER model at libhoop-ica's DefaultNERModel path. COPY lands it root-owned
 # and a+rX from the models stage, so uid 10001 reads it.
 COPY --from=models /opt/alcatraz/models/KnightsAnalytics_distilbert-NER \
@@ -343,6 +376,42 @@ ENV PATH="/app:${PATH}"
 USER 10001:10001
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["hoop-inspect", "-config", "/etc/hoop-inspect/config.yaml"]
+
+# --- Stage: ica-assets (the Docker-less bundle) ------------------------------
+# Packs what the ica flavour carries, for a host that runs it without Docker:
+# hoop-inspect, the worker ica-build fetched, ONNX Runtime's library and
+# licence files, release.txt and the installer. BUILDPLATFORM, because it
+# only runs tar: every binary inside is already the TARGETARCH build. The
+# tarball is flat, like the CLI tarballs, and the _checksum.txt beside it is
+# in the form `make build-tar-files` writes, so `make release-s3` folds it
+# into checksums.txt unchanged.
+FROM --platform=${BUILDPLATFORM} ${UBUNTU_IMAGE} AS ica-assets-package
+ARG TARGETARCH
+ARG VERSION=unknown
+ARG ORT_VERSION
+COPY --from=ica-build /out/bin/hoop-inspect /bundle/hoop-inspect
+COPY --from=ica-build /out/worker/hoop-tesseract-worker /out/worker/hoop-tesseract-worker.txt /bundle/bin/
+COPY --from=ica-build /out/worker/LICENSE /out/worker/NOTICE /out/worker/libhoop-ica-version /bundle/
+# The library and its symlinks, not the cmake and pkgconfig files beside them.
+COPY --from=ica-build /out/ort/lib/libonnxruntime* /bundle/ort/lib/
+COPY --from=ica-build /out/ort/LICENSE /out/ort/ThirdPartyNotices.txt /bundle/ort/
+COPY deploy/ica-sidecar/install.sh /bundle/install.sh
+RUN set -eu; \
+    { \
+      echo "version=${VERSION}"; \
+      echo "arch=${TARGETARCH}"; \
+      echo "libhoop_ica=$(cat /bundle/libhoop-ica-version)"; \
+      echo "ort=${ORT_VERSION}"; \
+    } > /bundle/release.txt; \
+    rm /bundle/libhoop-ica-version; \
+    chmod 0755 /bundle/install.sh /bundle/hoop-inspect /bundle/bin/hoop-tesseract-worker; \
+    mkdir -p /dist/binaries; \
+    name="hoop-ica-assets_${VERSION}_Linux_${TARGETARCH}"; \
+    tar -czf "/dist/binaries/${name}.tar.gz" --owner=0 --group=0 -C /bundle .; \
+    (cd / && sha256sum "./dist/binaries/${name}.tar.gz" > "/dist/binaries/${name}_checksum.txt")
+
+FROM scratch AS ica-assets
+COPY --from=ica-assets-package /dist/ /
 
 # --- Flavour: default (Ubuntu 24.04 LTS) -------------------------------------
 # The unsuffixed image, and what :latest points at. Declared last on purpose:
