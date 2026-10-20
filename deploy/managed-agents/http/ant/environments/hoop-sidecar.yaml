@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://platform.claude.com/schemas/ant/beta/environment.json
+# A cloud sandbox that can reach the sidecar's host and nothing else.
+name: hoop-sidecar
+description: Cloud sandbox whose only network path is the hoop sidecar.
+config:
+  type: cloud
+  networking:
+    # A create request without networking gets unrestricted.
+    type: limited
+    # EDIT: the sidecar's public host. Bare host: no scheme, port or path.
+    allowed_hosts: [sidecar.example.com]
+    # True opens package hosts such as github.com.
+    allow_package_managers: false
+    allow_mcp_servers: false

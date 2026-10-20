@@ -1677,10 +1677,9 @@ stays on the raw bytes. Five consequences:
   unless `match_ignore` names that value (below).
 - A client that retries on its own timeout leaves two attempts in flight, and
   the approval releases whichever claims it first.
-- A request that arrives in more than one read reaches the upstream in part
-  before the gate decides: the request line, the headers and the start of the
-  body. A denial does not recall them, so a route that acts on headers alone
-  runs whatever the approver decides (EVL-309).
+- A request that arrives in more than one read is held whole until the
+  approver decides; nothing of it reaches the upstream before (see
+  [Limits](#limits)).
 
 **`match_ignore` unbinds a volatile body value.** `kubectl rollout restart`
 writes the current second into the patch, so its resend never matches the
@@ -3613,10 +3612,10 @@ listeners:
 - **What is refused.** No header, an empty or whitespace-only value, a value
   not in the file, or the header sent twice: each gets a 403 and reaches no
   upstream. The refusal is audited under `anonymous`.
-- **Checked before any byte goes out.** Policy judges a request once its
-  body has arrived, and the head would reach the upstream before that. The
-  token is checked on the head, so a request whose body never comes is
-  refused too, over HTTP/1 and HTTP/2.
+- **Checked on the head.** Policy judges a request once its body has
+  arrived, and the sidecar holds the request until then. The token is
+  checked earlier, on the head, so a stranger costs no held body and a
+  request whose body never comes is refused too, over HTTP/1 and HTTP/2.
 - **What is admitted.** Every row of an admitted request names `name` as
   the principal. A token names no person: per-user rows need a per-user
   credential, which this is not.
@@ -4691,6 +4690,16 @@ Read these before writing a policy against it.
   knowledge, or TLS with ALPN](#http-h2c-prior-knowledge-or-tls-with-alpn));
   HTTP/3 is not served. A pipeline that already holds a `*http.Request` uses
   `InspectRequest`, whatever framing it arrived in.
+- **An http request leaves only once it is whole.** The relay holds a
+  request until its body has arrived and policy has judged it, so a denied
+  request reaches no upstream, however its bytes were split. The cost:
+  - A request over 8 MiB, head and body, is refused with nothing forwarded.
+  - A streaming upload reaches the upstream only once it ends.
+  - A client that sends `Expect: 100-continue` (curl above 1 MiB, Go when
+    asked) sends its body only after its own wait, about 1 second, because
+    no `100` comes from an upstream that has not seen the head.
+  - A WebSocket message sent in fragments is not held: its earlier
+    fragments reach the upstream before the message is judged.
 - **Path normalization is conservative.** Numeric, UUID, hex and long opaque
   segments collapse; short slugs do not. A policy comes out too narrow rather
   than too broad.

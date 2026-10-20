@@ -294,9 +294,9 @@ func (f *viaFilter) finishHead(out *splice) error {
 	eol := head[f.blankAt:]
 	fields := head[:f.blankAt]
 	if f.auth != nil {
-		// Before a byte of the request goes out: the gate judges a
-		// request only once its body has arrived, and the head would
-		// reach the upstream first.
+		// On the head: the gate holds a request until its body has
+		// arrived, so checking here refuses a stranger before the sidecar
+		// buffers a body for them, and refuses a body that never comes.
 		if err := f.auth.admit(req); err != nil {
 			return err
 		}

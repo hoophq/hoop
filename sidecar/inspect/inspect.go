@@ -145,8 +145,25 @@ func (i *Inspector) Codec() Codec { return i.codec }
 // Passing an empty slice is a no-op that flushes nothing: incomplete messages
 // stay buffered, because a message is decoded only once it is complete.
 func (i *Inspector) Inspect(dir Direction, data []byte) ([]Statement, error) {
+	stmts, _, err := i.InspectReady(dir, data)
+	return stmts, err
+}
+
+// InspectReady is Inspect, and also returns ready: the bytes, in order, that
+// the codec reported consumed, retained ones from earlier calls included. A
+// caller that forwards ready instead of data forwards only what the codec
+// has decoded, so what leaves is as whole as the codec's own unit: an HTTP
+// request leaves whole, a WebSocket fragment as it is consumed.
+//
+// ready may alias data and the inspector's buffer: use it before the next
+// call and before data is reused. On ErrBufferOverflow it is nil: the
+// message never completed, so nothing in it was decoded. On any other error
+// it is every byte not yet returned, because the buffer is dropped and a
+// caller that forwards a malformed stream under its honest default must
+// forward all of it.
+func (i *Inspector) InspectReady(dir Direction, data []byte) (stmts []Statement, ready []byte, err error) {
 	if len(data) == 0 && len(i.buf) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Fast path: nothing buffered, so decode straight from the caller's slice
@@ -164,14 +181,14 @@ func (i *Inspector) Inspect(dir Direction, data []byte) ([]Statement, error) {
 		stmts, consumed, err := i.codec.Decode(dir, input)
 		if err != nil {
 			i.buf = nil
-			return stmts, err
+			return stmts, input, err
 		}
 		if consumed == 0 {
 			i.buf = nil
-			return stmts, ErrBufferOverflow
+			return stmts, nil, ErrBufferOverflow
 		}
 		i.retain(input, consumed)
-		return stmts, nil
+		return stmts, input[:consumed], nil
 	}
 
 	stmts, consumed, err := i.codec.Decode(dir, input)
@@ -179,10 +196,10 @@ func (i *Inspector) Inspect(dir Direction, data []byte) ([]Statement, error) {
 		// A malformed stream is unrecoverable: drop the buffer so a caller
 		// that ignores the error does not keep re-decoding the same garbage.
 		i.buf = nil
-		return stmts, err
+		return stmts, input, err
 	}
 	i.retain(input, consumed)
-	return stmts, nil
+	return stmts, input[:consumed], nil
 }
 
 // retain stores the undecoded tail of input for the next Inspect call.

@@ -284,9 +284,9 @@ func TestACallerTokenLaneAdmitsOnlyAListedToken(t *testing.T) {
 	}
 }
 
-// The gate judges a request once its body has arrived, and the head reaches
-// the upstream before that. A stranger's head must not: whether its body
-// never comes, comes chunked, or the request rides behind an admitted one.
+// The gate judges a request once its body has arrived. A stranger's head is
+// refused before that: whether its body never comes, comes chunked, or the
+// request rides behind an admitted one.
 func TestACallerTokenLaneRefusesAHeadBeforeItsBody(t *testing.T) {
 	up := newRecordingUpstream(t)
 	addr, sink, _, _ := tokenLane(t, strings.TrimPrefix(up.URL, "http://"), goodToken+"\n")

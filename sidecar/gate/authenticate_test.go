@@ -38,9 +38,9 @@ func authenticatingGate(t *testing.T, sink audit.Sink) *gate.Gate {
 	return g
 }
 
-// The gate judges a request once its body has arrived, and the head would
-// reach the upstream first. On a lane that is the authentication the codec
-// refuses the head before forwarding it, and the gate records that refusal
+// The gate judges a request once its body has arrived. On a lane that is
+// the authentication the codec refuses the head before then, and the gate
+// records that refusal
 // as the identity refusal it would have made: the same 403 text, rule
 // identity, filed under anonymous with the request line as the statement.
 func TestACallerRefusedBeforeItsBodyIsAnIdentityRefusal(t *testing.T) {

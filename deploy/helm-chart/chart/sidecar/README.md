@@ -4,9 +4,11 @@ Deploys the hoop inspection sidecar: a relay that decodes the wire protocol
 between a client and a database or API, evaluates each statement against
 policy, records an audit trail, and masks sensitive values on the way back.
 
-It routes nothing and terminates no downstream TLS. Run it behind something
-that already owns the network path and identity — typically an Envoy sidecar
-forwarding plaintext over loopback, or a Service in front of these pods.
+It routes nothing. It terminates client TLS only on a lane that sets
+`downstream_tls` (postgres, clickhouse, http, grpc and spanner). Otherwise,
+run it behind something that owns the network path and identity, typically
+an Envoy sidecar forwarding plaintext over loopback, or a Service in front of
+these pods.
 
 ## Install
 
@@ -91,12 +93,14 @@ The admin Service is separate and unaffected — always ClusterIP, always 19000.
 
 > **Before setting `type: LoadBalancer`.** The relay terminates no client TLS
 > unless the lane sets `downstream_tls`, and that is accepted on **postgres,
-> grpc and spanner only** — on http, mysql, mssql and mongodb it is refused at
-> startup, so those lanes are always plaintext. A public load balancer in front
-> of one of them puts credentials and query results in the clear on the
-> internet. Expose a lane publicly only when the lane terminates TLS itself, or
-> when something in front of it does. `loadBalancerSourceRanges` narrows who
-> can reach it; it does not encrypt.
+> clickhouse, http, grpc and spanner only**. On every other protocol it is
+> refused at startup, so those lanes are always plaintext. A
+> public load balancer in front of a plaintext lane puts credentials and query
+> results in the clear on the internet. Expose a lane publicly only when the
+> lane terminates TLS itself, or when something in front of it does.
+> `loadBalancerSourceRanges` narrows who can reach it; it does not encrypt.
+> `deploy/managed-agents/http/` is a worked example: one public http lane with
+> `downstream_tls` and a caller token.
 
 **The review MCP server** (`mcp.listen` in the sidecar config) is published
 the same way, and only on ClusterIP: it has no authentication. Bind it to

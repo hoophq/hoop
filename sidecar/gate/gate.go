@@ -122,6 +122,22 @@ type StreamFilter interface {
 	Filter(dir inspect.Direction, data []byte) ([]byte, error)
 }
 
+// RequestHolder marks a codec whose client bytes leave only once the gate
+// has judged the request they belong to. Without it the gate forwards each
+// read as it arrives, and a request split across reads reaches the upstream
+// in part before its verdict: a denial then cannot recall a head the
+// upstream may already act on.
+//
+// A codec opts in rather than every lane holding, because holding changes
+// when an upstream sees a request's first byte, and the hold has been
+// proven against the HTTP codec only. The bound is the inspector buffer: a
+// request that outgrows it is refused with nothing of it forwarded. The
+// unit held is what the codec reports consumed, so a fragmented WebSocket
+// message still leaves fragment by fragment, before the message is judged.
+type RequestHolder interface {
+	HoldsRequests()
+}
+
 // reassemblySizer lets a codec raise the default inspector buffer to the
 // largest packet its own parser admits. The codec remains the authority on
 // the packet-specific cap; this only prevents the generic 8 MiB guard from
@@ -235,10 +251,9 @@ type Config struct {
 	// the caller. False is every lane behind an authenticating proxy.
 	// Three things follow, each closing a way past RequestIdentity:
 	//
-	//   - The client codec checks each request's credential before its
-	//     head is forwarded (CallerAuthenticator). The gate judges a
-	//     request only once its body has arrived, and the head reaches
-	//     the upstream before that.
+	//   - The client codec checks each request's credential on its head
+	//     (CallerAuthenticator), so a stranger is refused before the gate
+	//     holds its body, and a body that never comes is refused too.
 	//   - Answer replies only to a caller RequestIdentity accepts: the
 	//     reserved route is as public as the listener.
 	//   - Client bytes the codec cannot decode are refused, not forwarded
@@ -407,6 +422,9 @@ type Gate struct {
 	clientFilter StreamFilter
 	serverFilter StreamFilter
 
+	// holdRequests is set when the client codec is a RequestHolder.
+	holdRequests bool
+
 	// mu guards the counters, which Close reads while a data-path goroutine
 	// may still be incrementing them, and the exchange state below, which
 	// the two pump goroutines of a byte-path gate write from opposite
@@ -556,6 +574,7 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 	if filter, ok := serverCodec.(StreamFilter); ok {
 		g.serverFilter = filter
 	}
+	_, g.holdRequests = clientCodec.(RequestHolder)
 	// Discover the re-framing capability once, so the data path does not
 	// type-assert per packet. MaskSupported asks the registry's codec for
 	// it at load; this asks the codec actually built, because a
@@ -682,8 +701,10 @@ func (g *Gate) Start(ctx context.Context) error {
 // Decision.Message in the protocol's error frame.
 //
 // Bytes that do not complete a statement are buffered and produce an allowed
-// Decision with no statements. A partial message cannot be judged, so the
-// gate holds the connection until it completes.
+// Decision with no statements. A partial message cannot be judged. On a
+// RequestHolder codec the Payload then carries none of it, and the whole
+// message leaves with the call that completes it; on any other codec the
+// Payload is the bytes as they arrived.
 func (g *Gate) Request(ctx context.Context, data []byte) Decision {
 	return g.inspect(ctx, inspect.FromClient, data)
 }
@@ -804,7 +825,10 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		insp = g.server
 	}
 
-	stmts, err := insp.Inspect(dir, data)
+	stmts, ready, err := insp.InspectReady(dir, data)
+	if g.holdRequests && dir == inspect.FromClient {
+		d.Payload = ready
+	}
 	d.Statements = stmts
 
 	// Lift every request's credential off its statement before anything
