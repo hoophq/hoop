@@ -216,6 +216,9 @@ func New(opts Options) *Client {
 	if hid := HostID(); hid != "" {
 		c.common["host-id"] = hid
 	}
+	if src := InstallSource(); src != "" {
+		c.common["install-source"] = src
+	}
 	if c.http == nil {
 		c.http = &http.Client{Timeout: sendTimeout}
 	}

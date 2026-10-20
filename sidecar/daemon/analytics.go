@@ -226,7 +226,8 @@ func newTelemetry(cfg *Config, log *slog.Logger) *telemetry {
 		analyzers: make(map[*analyzer.Evaluator]analyzer.Stats),
 	}
 	if t.client.Enabled() {
-		log.Info("usage analytics enabled", "disable", analytics.EnvVar+"=off")
+		log.Info("usage analytics enabled", "disable", analytics.EnvVar+"=off",
+			"install-source", analytics.InstallSource())
 	}
 	return t
 }

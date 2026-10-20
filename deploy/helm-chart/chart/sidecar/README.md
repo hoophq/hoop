@@ -152,6 +152,7 @@ under `deploy/docker-compose/` binds:
 | `analytics.enabled` | Usage analytics to Segment. `false` → `HOOP_SIDECAR_ANALYTICS=off`. Default `true` |
 | `analytics.sidecarId` | Stable install identity → `HOOP_SIDECAR_ID`. Default: the release's full name. Hashed before it is sent |
 | `analytics.hostId` | Machine identity → `HOOP_HOST_ID`. Default: the node name via the downward API. Hashed before it is sent |
+| `analytics.installSource` | The hoop template that installed the sidecar → `HOOP_SIDECAR_INSTALL_SOURCE`. Default empty: no property. Values: `managed-agents-http`; anything else is sent as `other` |
 | `extraSecret` | Extra environment variables, as a Secret |
 | `service.enabled` | A Service for the admin port, 19000 only. Default `true` |
 | `laneServices` | Map of Services publishing lane ports. One Service per entry; empty by default |
@@ -255,9 +256,9 @@ unnecessary. Without any of these,
 
 ## Environment variables
 
-The relay reads nine. Eight come from the Secret `sidecar-config`; the ninth
-is set directly on the container because it defaults to a downward-API field,
-which a Secret cannot express:
+The relay reads eleven. Ten come from the Secret `sidecar-config`; the
+eleventh is set directly on the container because it defaults to a
+downward-API field, which a Secret cannot express:
 
 | Variable | From |
 |---|---|
@@ -270,6 +271,7 @@ which a Secret cannot express:
 | `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `controlPlane.identityAudience` when `controlPlane.identity: gcp`, else empty. Empty means the control plane URL |
 | `HOOP_SIDECAR_ANALYTICS` | `off` when `analytics.enabled: false`, else empty |
 | `HOOP_SIDECAR_ID` | `analytics.sidecarId`, defaulting to the release's full name |
+| `HOOP_SIDECAR_INSTALL_SOURCE` | `analytics.installSource`, else empty |
 | `HOOP_HOST_ID` | `analytics.hostId`, defaulting to `fieldRef: spec.nodeName` on the container |
 
 Add anything else through `extraSecret`, which becomes a second `envFrom`

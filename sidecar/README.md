@@ -505,7 +505,8 @@ prompt, no token, no listener or upstream address — the same line
 
 Every event also carries the version, the entry point (`hoop`,
 `hoop-inspect` or `embedded`), OS and architecture, the `runtime`
-(`linux`, `docker`, `kubernetes`, `macos`, `windows`), and two identities.
+(`linux`, `docker`, `kubernetes`, `macos`, `windows`),
+`control-plane-connected`, and two identities.
 `sidecar-id` says which install: `HOOP_SIDECAR_ID` if you set one, else the
 control plane token (or, for a service account identity, the plane URL plus
 the identity's issuer and subject, never the rotating token), else the
@@ -524,6 +525,11 @@ variable the table names and nothing else:
 | Kubernetes | hostname is the pod name: set `HOOP_SIDECAR_ID`, or connect a control plane | set `HOOP_HOST_ID` from `spec.nodeName` via the downward API |
 
 A control plane credential makes `HOOP_SIDECAR_ID` unnecessary anywhere.
+
+`install-source` says which hoop template started the sidecar. The template
+sets `HOOP_SIDECAR_INSTALL_SOURCE`; unset, the property is omitted. Values
+are a fixed list, `managed-agents-http` today, and any other value is sent
+as `other`, so it can never carry a name.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends
