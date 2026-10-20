@@ -193,6 +193,41 @@
       ]
     },
     {
+      "key": "caller_token",
+      "type": "object",
+      "label": "Caller token",
+      "help": "Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere.",
+      "presence": true,
+      "protocols": [
+        "http"
+      ],
+      "fields": [
+        {
+          "key": "header",
+          "type": "string",
+          "label": "Header",
+          "help": "The request header carrying the token. The sidecar removes it before the request reaches the upstream.",
+          "placeholder": "x-hoop-token"
+        },
+        {
+          "key": "file",
+          "type": "string",
+          "label": "Token file",
+          "help": "A path on the sidecar host. One token per line, so a new token can run beside the old one. Re-read when it changes.",
+          "placeholder": "/etc/hoop-inspect/caller-tokens",
+          "required": true
+        },
+        {
+          "key": "name",
+          "type": "string",
+          "label": "Caller name",
+          "help": "Recorded as the caller of every request a token admits.",
+          "placeholder": "claude-agents",
+          "required": true
+        }
+      ]
+    },
+    {
       "key": "idle_timeout_sec",
       "type": "integer",
       "label": "Idle timeout (seconds)",

@@ -946,6 +946,15 @@ the token, not what it may do: Connect Gateway still checks the same token
 against IAM and RBAC. The example is in [kubectl through GKE Connect
 Gateway](#kubectl-through-gke-connect-gateway).
 
+**`caller_token` admits a caller by a shared token**, for an http lane on a
+public URL with nothing in front to authenticate the caller. A request whose
+header (`x-hoop-token` unless `header` names another) holds no token listed
+in `file` gets a 403 and reaches no upstream; an admitted one is recorded
+under `name`. The sidecar removes the header before the upstream, and the
+token reaches no audit row, no policy input and no analyzer prompt. `http`
+lanes only, and exclusive with `identity_header` and `google_identity`. See
+[A public URL: caller tokens](#a-public-url-caller-tokens).
+
 ### 2. Know how a listener inherits
 
 | Field | Merge | Why |
@@ -1616,8 +1625,9 @@ on a connection: behind another one, the lane closes the connection
 unanswered, because HTTP/1.1 pairs responses by order. curl and Go clients
 resend on a fresh connection. A sidecar with no control plane answers
 503. Like the MCP endpoint, it needs no credential: it answers by approval id
-only, and never with the statement. Other protocols read the status over
-MCP.
+only, and never with the statement. A `caller_token` lane is the exception:
+there it answers only a caller the token admits. Other protocols read the
+status over MCP.
 
 **The retry contract.** An agent in return mode follows four rules:
 
@@ -2824,10 +2834,10 @@ by the same rule set; client input is never rewritten, because changing what a
 user typed is a denial wearing a redaction's clothes, and the guardrails
 already refuse.
 
-**`upstream`, `upstream_tls`, `downstream_tls` and `identity_header` are
-refused** on an ssh lane. There is no fixed backend, SSH negotiates its own
-transport, and the identity comes from the certificate this listener verified
-itself.
+**`upstream`, `upstream_tls`, `downstream_tls`, `identity_header` and
+`caller_token` are refused** on an ssh lane. There is no fixed backend, SSH
+negotiates its own transport, and the identity comes from the certificate this
+listener verified itself.
 
 #### What the trail holds, and what it does not
 
@@ -2944,10 +2954,10 @@ workers takes minutes; `GET /readyz` on the admin port returns 503 until
 every ica lane's engine has loaded, and 200 for a process with no ica lane.
 
 Validate refuses `upstream_tls`, `downstream_tls`, `identity_header`,
-`google_identity`, and any guardrail, mask, analyzer or OPA that reaches an
-ica lane, because each would load and do nothing. To opt out of inherited
-ones, write `guardrails: {rules: []}`, `mask: {rules: []}` or `opa: {}` on
-the listener.
+`google_identity`, `caller_token`, and any guardrail, mask, analyzer or OPA
+that reaches an ica lane, because each would load and do nothing. To opt out
+of inherited ones, write `guardrails: {rules: []}`, `mask: {rules: []}` or
+`opa: {}` on the listener.
 
 #### The audit trail
 
@@ -3580,6 +3590,103 @@ add `X-Forwarded-For`.
 A `host:port` upstream keeps the old behaviour: Host passes through as the
 client wrote it. The control plane serves a URL to a sidecar that reports
 the `address_url` capability only.
+
+### A public URL: caller tokens
+
+`identity_header` trusts whoever reaches the listener, so it is safe only
+behind an authenticating proxy. A lane on a public URL, such as the one a
+Claude Managed Agents cloud sandbox calls, checks a shared token instead:
+
+```yaml
+listeners:
+  - name: payments-api
+    protocol: http
+    listen: 0.0.0.0:8443
+    upstream: https://payments.internal
+    downstream_tls: {cert_file: /etc/tls/tls.crt, key_file: /etc/tls/tls.key}
+    caller_token:
+      header: X-Hoop-Token                       # the default
+      file: /etc/hoop-inspect/caller-tokens      # one token per line
+      name: claude-agents                        # the caller in the trail
+```
+
+- **What is refused.** No header, an empty or whitespace-only value, a value
+  not in the file, or the header sent twice: each gets a 403 and reaches no
+  upstream. The refusal is audited under `anonymous`.
+- **Checked before any byte goes out.** Policy judges a request once its
+  body has arrived, and the head would reach the upstream before that. The
+  token is checked on the head, so a request whose body never comes is
+  refused too, over HTTP/1 and HTTP/2.
+- **What is admitted.** Every row of an admitted request names `name` as
+  the principal. A token names no person: per-user rows need a per-user
+  credential, which this is not.
+- **The token stays in the sidecar.** It is removed from the request before
+  the upstream, over HTTP/1 and HTTP/2. It never reaches an audit row, policy
+  input or an analyzer prompt. Validate refuses an `http.headers` entry that
+  names it, and a header that the upstream, HTTP framing or the sidecar
+  already uses (`authorization`, `cookie`, `host`, `content-length`, `via`,
+  and the like). The strip stops a leak by accident, not by intent: it covers
+  the header in each request head. An admitted caller that copies the token
+  into another header, a chunked trailer or the body sends it on, and a
+  vault fills the secret into any header it finds the placeholder in.
+- **The reserved route is guarded too.** `/.well-known/hoop/` answers only a
+  caller the token admits.
+- **Stricter framing.** As on a URL upstream, a request head the lane cannot
+  frame closes the connection instead of passing through. So do bytes sent
+  before the server answers an `Upgrade` or `CONNECT`, and client bytes the
+  codec cannot decode. Once the server grants the switch, the tunnel is not
+  checked again.
+- **Plaintext.** The token travels as written. Use `downstream_tls`, or TLS
+  in front of the listener.
+
+**The file.** It holds one token per line. Blank lines and surrounding
+whitespace are ignored. A token holds no whitespace, comma or control
+character, because a repeated header arrives joined as `a, b`. Only SHA-256
+digests are kept in memory, and every candidate is compared with every token
+in constant time.
+
+**Rotation.** The process stats the file every ten seconds, re-reads it when
+its size or mtime moves, and re-reads it at once on `SIGHUP`. This works under
+a control plane too, since the file lives on the sidecar host. A file that is
+missing, empty or malformed on a re-read keeps the tokens in force and warns
+once. To rotate without a refused request:
+
+1. Add the new token as a second line.
+2. Update every caller to the new token.
+3. Remove the old line.
+
+To revoke a token, write the file without it. An empty file keeps the tokens
+in force, so to revoke the only token, write a new one in its place, or stop
+the listener. A missing or unusable file at
+startup, or under `-validate`, stops the process with an error naming the
+file. The control plane never reads it. Changing the `caller_token` block
+itself needs a restart.
+
+#### Filling the token from a Managed Agents vault
+
+A vault `environment_variable` credential puts a placeholder in the sandbox
+and substitutes the real secret at egress, only toward the hosts it allows
+([vaults](https://platform.claude.com/docs/en/managed-agents/vaults)). Bind it
+to the sidecar's host and to headers only:
+
+```yaml
+# ant beta:vaults:credentials create --vault-id "$VAULT_ID"
+display_name: hoop sidecar caller token
+auth:
+  type: environment_variable
+  secret_name: HOOP_CALLER_TOKEN
+  secret_value: <a line of the token file>
+  injection_location: {header: true}
+  networking: {type: limited, allowed_hosts: [sidecar.example.com]}
+```
+
+The agent then sends `-H "X-Hoop-Token: $HOOP_CALLER_TOKEN"`. The sandbox
+holds the placeholder and the sidecar receives the token. The environment's
+own `allowed_hosts` must list the same host. A request that reaches the
+sidecar with the placeholder, for example from a host or header the
+credential does not cover, is refused like any other wrong token. A vault
+rotation reaches running sessions on its own schedule, so rotate with the
+two-line overlap above.
 
 ### kubectl through GKE Connect Gateway
 

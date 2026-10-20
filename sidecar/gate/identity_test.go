@@ -395,8 +395,9 @@ func TestEmptyLiftedCredentialIsRefusedBeforeResolution(t *testing.T) {
 	if d.Allowed || d.Rule != "identity" || d.Payload != nil {
 		t.Fatalf("decision = %+v, want an identity refusal forwarding nothing", d)
 	}
-	if !strings.Contains(d.Message, "empty credential") {
-		t.Errorf("message %q does not name the empty credential", d.Message)
+	// The client's 403 body: it says what the request lacked.
+	if d.Message != "request refused: the request carried no credential" {
+		t.Errorf("message %q does not say the request carried no credential", d.Message)
 	}
 	if resolved != 0 {
 		t.Errorf("the resolver saw %d credentials, want none", resolved)

@@ -635,6 +635,27 @@ func TestCredentialHeaderMustMatchTheCodec(t *testing.T) {
 	}
 }
 
+// A lane that is the authentication needs a credential to check and a codec
+// that checks it before forwarding. gate.New refuses both on every
+// connection; the relay refuses them once, at startup.
+func TestAuthenticatesCallerIsRefusedWithoutACheck(t *testing.T) {
+	if _, err := proxy.NewServer(proxy.Config{
+		Listen:              "127.0.0.1:0",
+		Upstream:            "127.0.0.1:1",
+		Protocol:            inspect.HTTP,
+		AuthenticatesCaller: true,
+	}); err == nil {
+		t.Error("AuthenticatesCaller accepted on a lane that reads no credential")
+	}
+
+	cfg := identityLane("127.0.0.1:1", nil) // its codec lifts the header, and checks nothing
+	cfg.Listen = "127.0.0.1:0"
+	cfg.AuthenticatesCaller = true
+	if _, err := proxy.NewServer(cfg); err == nil {
+		t.Error("AuthenticatesCaller accepted with a codec that cannot check a caller")
+	}
+}
+
 func hasKind(events []audit.Event, k audit.Kind) bool {
 	for _, e := range events {
 		if e.Kind == k {

@@ -23,7 +23,8 @@
 //     resolver without ever reaching policy input or the audit trail.
 //   - The Via loop marker (via.go): RFC 9110 requires a proxy to announce
 //     itself, and the same field lets the sidecar refuse its own traffic
-//     when a transparent MITM routes it back in.
+//     when a transparent MITM routes it back in. The same head rewrite
+//     removes a credential meant for the sidecar alone (a caller token).
 package http
 
 import (
@@ -59,6 +60,16 @@ type Options struct {
 	// Headers names it too, because then the operator asked to see it.
 	CredentialHeader string
 
+	// AuthenticatesCaller makes the lane the authentication, for a
+	// credential that is the sidecar's own (a caller token) rather than one
+	// the upstream also reads (Authorization under google_identity). The
+	// request filter checks CredentialHeader with the check the gate
+	// installs (AuthenticateCallers) before it forwards any byte of a
+	// request, then removes the header, so the upstream never sees it. It
+	// also makes the lane strict about what it forwards; see
+	// viaFilter.strict. It needs CredentialHeader.
+	AuthenticatesCaller bool
+
 	// Origin, when set, makes the lane a reverse proxy in front of one
 	// origin server: every request names it in Host. Nil forwards each
 	// request's Host as the client wrote it. See origin.go.
@@ -88,11 +99,20 @@ type Codec struct {
 // InspectRequest; narrowing to the interface here would hide all of them.
 func New(o Options) *Codec {
 	header := strings.ToLower(o.CredentialHeader)
+	if o.AuthenticatesCaller && header == "" {
+		// A programmer error, not a config one: daemon validates the
+		// header before building a codec. A lane with nothing to check
+		// would forward every caller.
+		panic("sidecar/codec/http: AuthenticatesCaller needs a CredentialHeader")
+	}
 	headers := o.Headers
 	keep := false
 	if header != "" {
-		keep = slices.ContainsFunc(o.Headers, func(h string) bool { return strings.EqualFold(h, header) })
-		if !keep {
+		listed := slices.ContainsFunc(o.Headers, func(h string) bool { return strings.EqualFold(h, header) })
+		// A caller token is the sidecar's own secret, so it never stays in
+		// the captured headers, whoever allowlisted the name.
+		keep = listed && !o.AuthenticatesCaller
+		if !listed {
 			// libhoop only reports allowlisted headers, so the credential
 			// has to be allowlisted to be lifted at all. Clip first: an
 			// append into the caller's spare capacity would change a
@@ -100,7 +120,7 @@ func New(o Options) *Codec {
 			headers = append(slices.Clip(o.Headers), header)
 		}
 	}
-	return &Codec{
+	c := &Codec{
 		Inspector: codechttp.New(codechttp.Options{
 			CaptureBody:          o.CaptureBody,
 			CaptureRequestBody:   o.CaptureRequestBody,
@@ -109,9 +129,28 @@ func New(o Options) *Codec {
 			SensitiveQueryParams: o.SensitiveQueryParams,
 			MaxMessageBytes:      o.MaxMessageBytes,
 		}),
-		creds: credentials{header: header, keep: keep},
+		creds: credentials{header: header, keep: keep, authenticates: o.AuthenticatesCaller},
 		via:   viaFilter{origin: o.Origin},
 	}
+	if o.AuthenticatesCaller {
+		c.via.auth = &c.creds
+	}
+	return c
+}
+
+// AuthenticateCallers installs the check the request filter runs on every
+// request's credential before forwarding it: the gate's own resolver, so the
+// filter and the gate admit the same callers. gate.New calls it once, before
+// the first byte. It refuses a codec built without AuthenticatesCaller,
+// whose filter would never run the check.
+func (c *Codec) AuthenticateCallers(check func(credential string) error) error {
+	if !c.creds.authenticates {
+		return errors.New("sidecar/codec/http: this codec does not authenticate its caller; build it with AuthenticatesCaller")
+	}
+	c.creds.mu.Lock()
+	defer c.creds.mu.Unlock()
+	c.creds.check = check
+	return nil
 }
 
 // CredentialHeader is the lowercased header this codec lifts from every
@@ -203,6 +242,7 @@ var _ interface {
 	EnableRewrite()
 	Filter(inspect.Direction, []byte) ([]byte, error)
 	TakeCredential(*inspect.Statement) (string, bool)
+	AuthenticateCallers(func(string) error) error
 } = (*Codec)(nil)
 
 func init() {

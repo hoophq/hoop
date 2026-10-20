@@ -10,6 +10,7 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/gate"
 	googleidentity "github.com/hoophq/hoop/sidecar/identity/google"
+	"github.com/hoophq/hoop/sidecar/identity/token"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/proxy"
 )
@@ -60,19 +61,39 @@ func (l ListenerConfig) credentialHeader() string {
 	switch {
 	case l.GoogleIdentity != nil:
 		return "authorization"
+	case l.CallerToken != nil:
+		return l.CallerToken.header()
 	case l.IdentityHeader != "":
 		return strings.ToLower(strings.TrimSpace(l.IdentityHeader))
 	}
 	return ""
 }
 
+// authenticatesCaller reports a lane that is itself the authentication: a
+// caller_token lane, reachable from anywhere. The codec factory and
+// buildServer both read this one predicate, so the codec's check and the
+// gate's cannot be configured apart; see gate.Config.AuthenticatesCaller.
+func (l ListenerConfig) authenticatesCaller() bool { return l.CallerToken != nil }
+
 // buildRequestIdentity returns the resolver for credentialHeader's value,
 // nil when the lane has none. roots is the process trust pool, so a Google
-// API reached through an intercepting proxy verifies against its CA.
-func buildRequestIdentity(l ListenerConfig, roots *x509.CertPool) (gate.RequestIdentity, error) {
+// API reached through an intercepting proxy verifies against its CA. tokens
+// is the lane's caller token file, opened by openCallerTokens.
+func buildRequestIdentity(l ListenerConfig, roots *x509.CertPool, tokens *token.File) (gate.RequestIdentity, error) {
 	switch {
 	case l.credentialHeader() == "":
 		return nil, nil
+	case l.CallerToken != nil:
+		if tokens == nil {
+			// A lane built without openCallerTokens. Serving it with no
+			// resolver would admit everyone, so it does not start.
+			return nil, errors.New("caller_token: the token file was not opened")
+		}
+		r, err := token.NewResolver(l.CallerToken.Name, tokens)
+		if err != nil {
+			return nil, fmt.Errorf("caller_token: %w", err)
+		}
+		return r, nil
 	case l.GoogleIdentity != nil:
 		client := *outboundHTTPClient(roots, "identity/google")
 		client.Timeout = googleTokenInfoTimeout

@@ -230,10 +230,37 @@ type Config struct {
 	// answers nothing, which is every lane but http.
 	Answer func(stmt inspect.Statement) func(ctx context.Context) []byte
 
+	// AuthenticatesCaller marks a lane that IS the authentication (a
+	// caller token on a public URL), where nothing in front vouched for
+	// the caller. False is every lane behind an authenticating proxy.
+	// Three things follow, each closing a way past RequestIdentity:
+	//
+	//   - The client codec checks each request's credential before its
+	//     head is forwarded (CallerAuthenticator). The gate judges a
+	//     request only once its body has arrived, and the head reaches
+	//     the upstream before that.
+	//   - Answer replies only to a caller RequestIdentity accepts: the
+	//     reserved route is as public as the listener.
+	//   - Client bytes the codec cannot decode are refused, not forwarded
+	//     as the honest default: nothing checked them.
+	//
+	// New refuses it without RequestIdentity, or with a client codec that
+	// cannot take the check.
+	AuthenticatesCaller bool
+
 	// Settle reports the upstream's answer to every statement a reserved
 	// approval released (policy.Review.Reserved). Nil settles nothing, and
 	// no backend reserves without one. See SettleFunc.
 	Settle SettleFunc
+}
+
+// CallerAuthenticator is implemented by a codec that can refuse a request's
+// credential before forwarding any of it: the HTTP codec on a lane that
+// authenticates its caller. New installs the gate's own check, so the codec
+// and the gate admit the same callers; an error means the codec was not
+// built to run it.
+type CallerAuthenticator interface {
+	AuthenticateCallers(check func(credential string) error) error
 }
 
 // CredentialSource is implemented by a codec that lifts a caller credential
@@ -552,6 +579,25 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		}
 		g.creds = cs
 	}
+	if cfg.AuthenticatesCaller {
+		if cfg.RequestIdentity == nil {
+			return nil, errors.New("sidecar/gate: AuthenticatesCaller is set without RequestIdentity, so nothing would check the caller")
+		}
+		ca, ok := clientCodec.(CallerAuthenticator)
+		if !ok {
+			return nil, fmt.Errorf("sidecar/gate: AuthenticatesCaller is set but the %s codec (%T) cannot check a caller before forwarding a request",
+				cfg.Protocol, clientCodec)
+		}
+		// The filter has no request context; the resolver behind a
+		// caller check is local and ignores it.
+		check := func(credential string) error {
+			_, err := g.callerFor(context.Background(), credential, true)
+			return err
+		}
+		if err := ca.AuthenticateCallers(check); err != nil {
+			return nil, fmt.Errorf("sidecar/gate: %w", err)
+		}
+	}
 	return g, nil
 }
 
@@ -712,6 +758,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	}
 	if filter != nil && len(data) > 0 {
 		filtered, err := filter.Filter(dir, data)
+		var refusal *inspect.CredentialRefusal
+		if errors.As(err, &refusal) {
+			// The codec refused a caller before forwarding its request,
+			// with the gate's own check: record it as the identity
+			// refusal identify would have made, under the caller it
+			// claimed. The request was never decoded, so its request line
+			// stands in for the statement.
+			stmt := inspect.Statement{Protocol: g.cfg.Protocol, Direction: dir, Text: refusal.Request}
+			r := g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr}, refusal.Error())
+			return *r
+		}
 		if err != nil {
 			d.Allowed = false
 			d.Rule = "stream-filter"
@@ -790,8 +847,13 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		// legal up to 16 MiB there against a default 8 MiB budget, so a
 		// destructive statement padded past the limit would otherwise pass
 		// a lane configured to refuse it.
+		//
+		// A lane that authenticates its caller refuses any client bytes
+		// it could not decode, for the same reason: the honest default
+		// would forward a request nothing judged.
 		if errors.Is(err, inspect.ErrStreamUnsafe) ||
-			errors.Is(err, inspect.ErrBufferOverflow) {
+			errors.Is(err, inspect.ErrBufferOverflow) ||
+			(g.cfg.AuthenticatesCaller && dir == inspect.FromClient) {
 			d.Allowed = false
 			d.Rule = "stream-unsafe"
 			d.Message = err.Error()
@@ -817,11 +879,20 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	// run and never forwarded.
 	if g.cfg.Answer != nil {
 		earlier := g.requests
-		for _, stmt := range stmts {
+		for i, stmt := range stmts {
 			if !isHTTPRequest(stmt) {
 				continue
 			}
 			if reply := g.cfg.Answer(stmt); reply != nil {
+				// Resolve only: a reply is not a statement the session
+				// runs, so it neither rotates the caller nor counts as
+				// outstanding, the same as on a lane that answers first.
+				if g.cfg.AuthenticatesCaller {
+					if _, r := g.resolveCaller(ctx, stmt, credentials[i], lifted[i]); r != nil {
+						r.Statements = stmts
+						return *r
+					}
+				}
 				if earlier > 0 {
 					return Decision{Statements: stmts, Hangup: true}
 				}
@@ -1409,24 +1480,9 @@ func isFinalHTTPResponse(stmt inspect.Statement) bool {
 // the credential did not resolve), never under the running session: that
 // would put a stranger's attempt in the previous caller's trail.
 func (g *Gate) identify(ctx context.Context, stmt inspect.Statement, credential string, lifted bool) *Decision {
-	peer := g.session().Identity.PeerAddr
-	if !lifted {
-		// New checked the codec implements the seam, so this is a codec
-		// that stopped lifting mid-connection. Serving the request under
-		// the old identity is the failure this whole path exists to stop.
-		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer},
-			"request refused: the codec lifted no credential from it")
-	}
-	if credential == "" {
-		// The WASM host answers ("", true) when the guest's credential
-		// export failed, and no caller is named by an empty value, so
-		// the request is refused before any resolver sees it.
-		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer},
-			"request refused: the codec lifted an empty credential")
-	}
-	id, err := g.cfg.RequestIdentity.Resolve(ctx, credential)
-	if err != nil {
-		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer}, "request refused: "+err.Error())
+	id, refused := g.resolveCaller(ctx, stmt, credential, lifted)
+	if refused != nil {
+		return refused
 	}
 	if sameIdentity(g.session().Identity, id) {
 		return nil
@@ -1439,6 +1495,39 @@ func (g *Gate) identify(ctx context.Context, stmt inspect.Statement, credential 
 			"request refused: the caller changed while an earlier response on this connection is still outstanding")
 	}
 	return g.rotate(ctx, id)
+}
+
+// resolveCaller is identify's first half: it names the caller one request's
+// credential resolves to, or refuses the request. It changes no session, so
+// the reserved route can ask it without the request becoming one the
+// session ran.
+func (g *Gate) resolveCaller(ctx context.Context, stmt inspect.Statement, credential string, lifted bool) (session.Identity, *Decision) {
+	id, err := g.callerFor(ctx, credential, lifted)
+	if err != nil {
+		return session.Identity{}, g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr},
+			"request refused: "+err.Error())
+	}
+	return id, nil
+}
+
+// callerFor resolves one request's credential, or says why it names nobody.
+// The reason is the client's 403 body after "request refused: ", and the
+// same text whether the gate refuses the request or a codec does before
+// forwarding it (CallerAuthenticator).
+func (g *Gate) callerFor(ctx context.Context, credential string, lifted bool) (session.Identity, error) {
+	switch {
+	case !lifted:
+		// New checked the codec implements the seam, so this is a codec
+		// that stopped lifting mid-connection. Serving the request under
+		// the old identity is the failure this whole path exists to stop.
+		return session.Identity{}, errors.New("the codec lifted no credential from it")
+	case credential == "":
+		// A request without the header, or the WASM host answering ("",
+		// true) when the guest's credential export failed: no caller is
+		// named by an empty value, so no resolver sees it.
+		return session.Identity{}, errors.New("the request carried no credential")
+	}
+	return g.cfg.RequestIdentity.Resolve(ctx, credential)
 }
 
 // sameIdentity compares the fields that name a principal. PeerAddr and

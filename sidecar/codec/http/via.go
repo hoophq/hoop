@@ -52,7 +52,7 @@ const (
 	viaChunkData                   // one chunk's data; remaining counts down
 	viaChunkCRLF                   // the CRLF closing a chunk; remaining is 2 or 1
 	viaTrailer                     // the trailer section after the last chunk
-	viaAwaitSwitch                 // origin lanes: a switch was asked; is it granted?
+	viaAwaitSwitch                 // strict lanes: a switch was asked; is it granted?
 	viaPassThrough                 // no longer rewriting this connection
 )
 
@@ -97,13 +97,17 @@ const (
 // side of the chain and nothing here depends on it.
 //
 // With an Origin set, the same head rewrite also points the request at the
-// origin; see origin.go. It shares this framing because both edit the same
-// heads and must agree on where each one starts.
+// origin; see origin.go. With auth set, it checks each request's caller
+// token before forwarding any of the request, then removes the header, so
+// the token never reaches the upstream (credentials.admit). All of them
+// share this framing because they edit the same heads and must agree on
+// where each one starts.
 type viaFilter struct {
 	mu     sync.Mutex // one client pump calls this, but nothing enforces that
 	state  viaState
-	err    error   // a refused request; the connection is over
-	origin *Origin // nil forwards Host as the client wrote it
+	err    error        // a refused request; the connection is over
+	origin *Origin      // nil forwards Host as the client wrote it
+	auth   *credentials // non-nil on a lane that authenticates its caller
 
 	held    []byte      // viaHead: the head so far; viaChunkLine: the line so far
 	blankAt int         // viaHead: offset in held of the head's closing empty line
@@ -116,9 +120,9 @@ type viaFilter struct {
 	// the connection passes through once its body is done.
 	leaving bool
 
-	// With an origin, passing through on the request alone would let a
+	// On a strict lane, passing through on the request alone would let a
 	// client send `Upgrade: x`, take an ordinary answer, and send the next
-	// request unrewritten. So an origin lane counts the final responses the
+	// request unrewritten. So a strict lane counts the final responses the
 	// server sends (answer) and passes through only once the one answering
 	// the switch request accepts it.
 	sent     int  // requests whose head went out
@@ -254,7 +258,7 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			case f.switchAt == 0:
 				f.state = viaHead
 			default:
-				f.err = errors.New("this listener points every request at its upstream, and the client sent " +
+				f.err = errors.New(f.promise() + ", and the client sent " +
 					"more data before the server answered its Upgrade or CONNECT, so it cannot; the connection is closed")
 				return nil, f.err
 			}
@@ -271,7 +275,10 @@ func (f *viaFilter) finishHead(out *splice) error {
 	}
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(head)))
 	if err != nil {
-		return f.giveUp(out, "the request head does not parse: "+err.Error())
+		// Not err's text: net/http quotes the line it refused, and that
+		// line can be a caller token or an Authorization header. The
+		// refusal reaches the audit trail and the client's 403.
+		return f.giveUp(out, "the request head does not parse")
 	}
 	if req.ProtoMajor != 1 {
 		return f.giveUp(out, "the request is not HTTP/1")
@@ -285,10 +292,20 @@ func (f *viaFilter) finishHead(out *splice) error {
 	// them in order. The empty line is a bare line ending, CRLF or LF as
 	// the client wrote it; one copy ends the Via line, one ends the head.
 	eol := head[f.blankAt:]
+	fields := head[:f.blankAt]
+	if f.auth != nil {
+		// Before a byte of the request goes out: the gate judges a
+		// request only once its body has arrived, and the head would
+		// reach the upstream first.
+		if err := f.auth.admit(req); err != nil {
+			return err
+		}
+		fields = dropField(fields, f.auth.header)
+	}
 	if f.origin != nil {
-		f.origin.writeHead(out, head[:f.blankAt], req, eol)
+		f.origin.writeHead(out, fields, req, eol)
 	} else {
-		out.add(head[:f.blankAt])
+		out.add(fields)
 	}
 	out.addf("Via: %d.%d %s", req.ProtoMajor, req.ProtoMinor, pseudonym)
 	out.add(eol)
@@ -314,11 +331,31 @@ func (f *viaFilter) finishHead(out *splice) error {
 	return nil
 }
 
+// strict reports a lane whose rewrite the upstream relies on: the origin
+// reads the Host it was promised, and a dropped header must never arrive.
+// Such a lane refuses what it cannot frame and passes a connection through
+// only once the server grants the switch, where a Via-only lane lets both
+// go as written.
+func (f *viaFilter) strict() bool { return f.origin != nil || f.auth != nil }
+
+// promise names what a strict lane does to every request, for the error
+// that refuses a stream it cannot do it to.
+func (f *viaFilter) promise() string {
+	switch {
+	case f.origin != nil && f.auth != nil:
+		return "this listener points every request at its upstream and removes its " + f.auth.header + " header"
+	case f.origin != nil:
+		return "this listener points every request at its upstream"
+	default:
+		return "this listener removes the " + f.auth.header + " header from every request"
+	}
+}
+
 // endMessage moves past a finished request: to the next head, or to
-// pass-through when the request switched protocols. An origin lane waits
+// pass-through when the request switched protocols. A strict lane waits
 // for the server to grant the switch instead.
 func (f *viaFilter) endMessage() {
-	if f.leaving && f.origin != nil {
+	if f.leaving && f.strict() {
 		f.leaving = false
 		f.state = viaAwaitSwitch
 		f.held = f.held[:0]
@@ -336,10 +373,10 @@ func (f *viaFilter) endMessage() {
 }
 
 // answer records one response the server sent, by status. Interim 1xx
-// answers other than 101 are not final and do not count. Only an origin
+// answers other than 101 are not final and do not count. Only a strict
 // lane counts; see the fields.
 func (f *viaFilter) answer(status int) {
-	if f.origin == nil || (status < 200 && status != http.StatusSwitchingProtocols) {
+	if !f.strict() || (status < 200 && status != http.StatusSwitchingProtocols) {
 		return
 	}
 	f.mu.Lock()
@@ -358,16 +395,40 @@ func (f *viaFilter) answer(status int) {
 
 // giveUp handles a stream the filter cannot frame. A Via-only lane passes
 // it through as written: the codec reports such a stream itself, and a line
-// added to it would only add damage. An origin lane refuses it, because the
-// bytes would reach the origin with the client's Host and X-Forwarded
-// fields; see origin.go.
+// added to it would only add damage. A strict lane refuses it, because the
+// bytes would reach the upstream with the client's Host and X-Forwarded
+// fields (see origin.go) or with the header the lane exists to remove.
 func (f *viaFilter) giveUp(out *splice, why string) error {
-	if f.origin == nil {
+	if !f.strict() {
 		f.passThrough(out)
 		return nil
 	}
-	f.err = fmt.Errorf("this listener points every request at its upstream, and %s, so it cannot; the connection is closed", why)
+	f.err = fmt.Errorf("%s, and %s, so it cannot; the connection is closed", f.promise(), why)
 	return f.err
+}
+
+// dropField returns fields, a request head without its closing empty line,
+// with every field of the header name removed: a repeated header is the same
+// credential twice. fields comes back as is when nothing matches, so a
+// request without the header costs no copy.
+func dropField(fields []byte, name string) []byte {
+	line, rest := cutLine(fields) // the request line, never a field
+	var out []byte                // nil while every field is kept
+	at := len(line)               // fields[:at] is decided
+	eachField(rest, func(field string, _, whole []byte) {
+		drop := strings.EqualFold(field, name)
+		switch {
+		case drop && out == nil:
+			out = append(make([]byte, 0, len(fields)), fields[:at]...)
+		case !drop && out != nil:
+			out = append(out, whole...)
+		}
+		at += len(whole)
+	})
+	if out == nil {
+		return fields
+	}
+	return out
 }
 
 // passThrough gives up rewriting, releasing whatever head is held exactly

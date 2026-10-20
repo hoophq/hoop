@@ -78,23 +78,14 @@ func (o *Origin) writeHead(out *splice, fields []byte, req *http.Request, eol []
 	out.addf("Host: %s", o.Host)
 	out.add(eol)
 	clientHost := ""
-	dropping := false
-	for len(rest) > 0 {
-		line, rest = cutLine(rest)
-		if line[0] == ' ' || line[0] == '\t' {
-			if !dropping {
-				out.add(line)
-			}
-			continue
-		}
-		name, value, _ := bytes.Cut(line, []byte(":"))
-		dropping = isReplacedField(string(name))
-		if !dropping {
-			out.add(line)
-		} else if clientHost == "" && strings.EqualFold(string(name), "Host") {
+	eachField(rest, func(name string, value, whole []byte) {
+		switch {
+		case !isReplacedField(name):
+			out.add(whole)
+		case clientHost == "" && strings.EqualFold(name, "Host"):
 			clientHost = string(bytes.TrimSpace(value))
 		}
-	}
+	})
 	if clientHost != "" {
 		out.addf("X-Forwarded-Host: %s", clientHost)
 		out.add(eol)
@@ -121,6 +112,26 @@ func isReplacedField(name string) bool {
 		}
 	}
 	return false
+}
+
+// eachField calls yield once per header field in fields, header lines with
+// the request line already cut off: the field's name, the value on its first
+// line, and all of its bytes, the folded continuation lines that follow it
+// included. Which line belongs to which field is decided here once, for every
+// rewrite that drops a field. Lines end at LF, as net/http reads them, and
+// the head already parsed, so a name has no whitespace before its colon.
+func eachField(fields []byte, yield func(name string, value, whole []byte)) {
+	for len(fields) > 0 {
+		line, rest := cutLine(fields)
+		n := len(line)
+		for len(rest) > 0 && (rest[0] == ' ' || rest[0] == '\t') {
+			cont, more := cutLine(rest)
+			n, rest = n+len(cont), more
+		}
+		name, value, _ := bytes.Cut(line, []byte(":"))
+		yield(string(name), value, fields[:n])
+		fields = rest
+	}
 }
 
 // cutLine splits data after its first LF. A last line without one is
