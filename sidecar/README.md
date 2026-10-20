@@ -2853,9 +2853,17 @@ terminates CGP on both legs, decodes the ThinWire video channel, OCRs each
 frame, runs the structured and NER detectors over the text, and masks the
 sensitive pixels before re-encoding the frame toward the client. The engine
 fails closed: it does not release a frame it cannot inspect. The engine is a
-nested module, `sidecar/ica`, and only `hoop-inspect` links it. A build
-without it refuses an ica lane at startup and omits `protocol:ica` from its
-capabilities header, so the plane does not serve that build an ica lane.
+nested module, `sidecar/ica`, linked by `hoop-inspect` and by the Linux
+`hoop` (`client/cmd/startsidecar_ica_linux.go`). A build without it — the
+darwin and windows CLIs — refuses an ica lane at startup and omits
+`protocol:ica` from its capabilities header, so the plane does not serve
+that build an ica lane.
+
+Production runs the lane in `hoop-inspect` built with `-tags ORT`, so the
+engine's NER runs on ONNX Runtime: the `-ica` image and the assets bundle
+below. The Linux `hoop` has no cgo and runs the same model on hugot's Go
+backend, which is for `--validate` and for testing a lane locally, not for
+serving sessions. Both read the same model files at the same paths.
 
 `upstream:` selects single mode and names the VDA. Single mode is the
 standard setup: register the VDA with Citrix using the sidecar host as its
@@ -2888,6 +2896,29 @@ docker run -d --name hoop-ica \
   hoophq/hoopsidecar:<version>-ica
 curl -s localhost:19000/readyz         # 503 while the model loads, then 200
 ```
+
+Without Docker, the same binary runs on an Ubuntu 24.04 or Debian 12 host.
+Each release publishes an assets bundle beside the CLI tarballs with what
+the `-ica` image carries: `hoop-inspect`, the OCR worker matched to the
+engine it links, ONNX Runtime, and an installer that puts them, the distro's
+tesseract packages and the NER model (fetched from
+`releases.hoop.dev/alcatraz/current`, or copied from `--model-dir` on an
+air-gapped host) at the paths the engine reads by default, then runs
+`hoop-inspect` as a systemd service:
+
+```sh
+V=$(curl -s https://releases.hoop.dev/release/latest.txt)
+curl -fsSLO "https://releases.hoop.dev/release/$V/hoop-ica-assets_${V}_Linux_amd64.tar.gz"
+curl -fsSL "https://releases.hoop.dev/release/$V/checksums.txt" | grep "hoop-ica-assets_${V}_Linux_amd64" | sed 's# ./dist/binaries/# #' | sha256sum -c
+mkdir ica-assets && tar -xzf "hoop-ica-assets_${V}_Linux_amd64.tar.gz" -C ica-assets
+sudo ica-assets/install.sh --config config.yaml --start
+```
+
+`--cidr` grants the service `CAP_NET_ADMIN` for CIDR mode; the host's TPROXY
+rule and policy route stay yours. Rerunning the installer from a newer
+bundle upgrades the binary, the worker and ONNX Runtime, and keeps the
+config and the model. The source of the installer is
+`deploy/ica-sidecar/install.sh`.
 
 `ica.edt: true` also accepts Citrix EDT (UDP) on the listener's address,
 beside TCP: same port, same tenant and VDA, and the same `max_sessions`. EDT

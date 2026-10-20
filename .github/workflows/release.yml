@@ -988,6 +988,37 @@ jobs:
             segment_api_key=${{ secrets.SEGMENT_API_KEY }}
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica
+      # The Docker-less bundle, from the same Dockerfile and the same
+      # ica-build stage the image above just built (same build-args, so
+      # BuildKit reuses it: this step is a tar and an export, not a second
+      # cgo build). --output lands one directory per platform; the move
+      # puts both tarballs under binaries/, where publish-release's merged
+      # download and `make release-s3` expect release tarballs.
+      - name: Export the ica assets bundle
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica-assets
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
+          outputs: type=local,dest=ica-assets
+      - name: Stage the ica assets bundle
+        run: |
+          set -euo pipefail
+          mkdir -p stage/binaries
+          mv ica-assets/linux_*/binaries/* stage/binaries/
+          ls -l stage/binaries
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-artifacts-ica-assets
+          path: stage/
 
   # hoophq/hoopcontrolplane — the control plane image, both targets of
   # Dockerfile.controlplane (see that file for what each ships):
@@ -1286,7 +1317,9 @@ jobs:
       # build-helm-chart packages hoopsidecar-chart, whose image default is
       # hoophq/hoopsidecar:latest. Publishing the chart before the image exists
       # ships a chart that pulls a stale tag, or none at all. The gateway and
-      # agent charts are gated the same way, by the two jobs above.
+      # agent charts are gated the same way, by the two jobs above. The same
+      # job also uploads dist-artifacts-ica-assets, the Docker-less ica
+      # bundle that release-s3 publishes beside the CLI tarballs.
       - docker-publish-hoopsidecar
       # Same for hoopcontrolplane-chart and hoophq/hoopcontrolplane:latest.
       - docker-publish-hoopcontrolplane
