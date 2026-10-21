@@ -306,6 +306,25 @@ func TestAnUncappedMessageNamesEveryLicenseSource(t *testing.T) {
 	}
 }
 
+// The unlicensed messages, word for word, so a change to them is on purpose.
+// deploy/managed-agents/http/README.md quotes the same sentence as a released
+// image prints it, and CI checks that quote against the image the template pins.
+func TestTheFreeTierMessagesAreWordForWord(t *testing.T) {
+	want := []string{
+		`2 guardrail rules are configured (guardrails: 1, appdb: 1) and this process enforces at most 1; merge them into one rule. A license lifts this cap: add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file. Contact our support at https://help.hoop.dev. ai_analysis rules are counted separately and are not limited`,
+		`2 data masking rules are configured (mask: 1, appdb: 1) and this process enforces at most 1; one rule may name several columns or one entity, so two rules can often become one. A license lifts this cap: add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file. Contact our support at https://help.hoop.dev.`,
+	}
+	got := overCap().checkLimits(license.Status{})
+	if len(got) != len(want) {
+		t.Fatalf("got %d messages, want %d: %q", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("message %d:\n got %q\nwant %q", i, got[i], want[i])
+		}
+	}
+}
+
 // The summary is what -validate prints and what the startup log carries. A
 // licensed process saying "1 guardrail rule(s)" while enforcing none is worse
 // than printing nothing.

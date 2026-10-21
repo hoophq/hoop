@@ -275,6 +275,55 @@ jobs:
             && { echo "::error::the pod no longer mounts the cluster CA the lane trusts"; exit 1; }
           echo "the Managed Agents kubernetes template renders"
 
+      # The quick start runs on its pinned image: the demo API it relies on,
+      # and the free-tier message its README quotes. The helm values share
+      # that image and those rules, so they fit the free tier too.
+      - name: Assert the Managed Agents http quick start works on its pinned image
+        run: |
+          set -euo pipefail
+          dir=./deploy/managed-agents/http
+          qs=$dir/quickstart
+          img=$(yq '.services.sidecar.image' "$qs/docker-compose.yml")
+          [[ "$img" == "hoophq/hoopsidecar:$(yq '.image.tag' "$dir/values.yaml")" ]] \
+            || { echo "::error::the quick start and values.yaml pin different images"; exit 1; }
+          for block in guardrails mask; do
+            [[ "$(yq -o=json ".$block" "$qs/config/sidecar.yaml")" == "$(yq -o=json ".config.$block" "$dir/values.yaml")" ]] \
+              || { echo "::error::the quick start and values.yaml differ in $block"; exit 1; }
+          done
+          tmp=$(mktemp -d)
+          echo ci-token > "$tmp/token"
+          token=(-v "$tmp/token:/run/secrets/caller-token:ro")
+
+          docker run -d --name quickstart -p 127.0.0.1:8080:8080 -p 127.0.0.1:19000:19000 \
+            -v "$PWD/$qs/config/sidecar.yaml:/etc/hoop-inspect/config.yaml:ro" "${token[@]}" "$img" >/dev/null
+          trap 'docker rm -f quickstart >/dev/null' EXIT
+          for _ in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:19000/healthz && break; sleep 1; done
+          call() { curl -sS -i -X "$1" "http://127.0.0.1:8080$2" ${3:+-H "X-Hoop-Token: $3"}; }
+          out=$(call GET /users/1 ci-token) \
+            || { echo "::error::no answer through the lane: does the image still serve x-hoop-demo-api?"; docker logs quickstart; exit 1; }
+          for want in ' 200 ' '[REDACTED:EMAIL_ADDRESS]' '[REDACTED:PHONE_NUMBER]' '[REDACTED:CREDIT_CARD]'; do
+            grep -qF -- "$want" <<<"$out" || { echo "::error::GET /users/1 lacks '$want': $out"; exit 1; }
+          done
+          call DELETE /users/1 ci-token | grep -qi '^x-hoop-denied: policy' \
+            || { echo "::error::DELETE /users/1 was not refused"; exit 1; }
+          call GET /users/1 | head -1 | grep -q ' 403 ' \
+            || { echo "::error::a request without the caller token was not refused"; exit 1; }
+
+          yq '.guardrails.rules += [{"name": "second", "type": "operation", "operations": ["delete"]}]' \
+            "$qs/config/sidecar.yaml" > "$tmp/over.yaml"
+          if out=$(docker run --rm -v "$tmp/over.yaml:/etc/hoop-inspect/config.yaml:ro" "${token[@]}" \
+              "$img" hoop start sidecar --validate 2>&1); then
+            echo "::error::the image accepted a second guardrail rule"; exit 1
+          fi
+          # Without this, an empty or header-only refusal passes the quote check.
+          grep -qF -- "2 guardrail rules are configured (guardrails: 2) and this process enforces at most 1" <<<"$out" \
+            || { echo "::error::the image refused the config, but not with the cap message: $out"; exit 1; }
+          while IFS= read -r line; do
+            grep -qxF -- "$line" "$dir/README.md" \
+              || { echo "::error::README.md does not quote this line of the message: $line"; exit 1; }
+          done <<<"$out"
+          echo "the quick start masks and refuses on its pinned image, and README.md quotes the cap message"
+
       - name: Assert the control plane chart renders and its guards hold
         run: |
           set -euo pipefail

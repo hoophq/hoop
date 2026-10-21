@@ -51,7 +51,7 @@ config:
   mask:
     rules:
       - name: pii
-        entities: [EMAIL_ADDRESS, PHONE_NUMBER]
+        entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD]
         strategy: redact
 
 extraVolumes:
