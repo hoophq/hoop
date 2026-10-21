@@ -7,7 +7,7 @@
 #
 # 1.258.0 is the first release that holds a request until it is judged.
 image:
-  tag: '1.258.0'
+  tag: '1.258.0@sha256:59ffc8db9209f8bc06c02c166ac6df93af6735bac32c840b8f83e52c15bd2136'
   pullPolicy: IfNotPresent
 
 analytics:
