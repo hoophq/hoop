@@ -153,7 +153,7 @@ func (i *Inspector) Inspect(dir Direction, data []byte) ([]Statement, error) {
 // the codec reported consumed, retained ones from earlier calls included. A
 // caller that forwards ready instead of data forwards only what the codec
 // has decoded, so what leaves is as whole as the codec's own unit: an HTTP
-// request leaves whole, a WebSocket fragment as it is consumed.
+// request or a client WebSocket message leaves whole.
 //
 // ready may alias data and the inspector's buffer: use it before the next
 // call and before data is reused. On ErrBufferOverflow it is nil: the

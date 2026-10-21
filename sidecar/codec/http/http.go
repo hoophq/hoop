@@ -227,7 +227,8 @@ func (c *Codec) Filter(dir inspect.Direction, data []byte) ([]byte, error) {
 // upstream only once it is whole and judged. libhoop decodes a request only
 // with its body, and its head alone is enough for a route that acts on the
 // method and path, so forwarding reads as they arrive would let a denied
-// request run.
+// request run. A client WebSocket message is held the same way: libhoop
+// consumes none of its frames before the final one arrives.
 func (*Codec) HoldsRequests() {}
 
 // TakeCredential returns the credential lifted from stmt and forgets it, so

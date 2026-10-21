@@ -4741,16 +4741,23 @@ Read these before writing a policy against it.
   `InspectRequest`, whatever framing it arrived in.
 - **An http request leaves only once it is whole.** The relay holds a
   request until its body has arrived and policy has judged it, so a denied
-  request reaches no upstream, however its bytes were split. The cost:
-  - A request over 8 MiB, head and body, is refused with nothing forwarded.
+  request reaches no upstream, however its bytes were split. A client
+  WebSocket message is held the same way, until its final fragment.
+  The cost:
+  - A request still incomplete at 8 MiB, head and body, is refused with
+    nothing forwarded.
+  - A WebSocket message still incomplete at 8 MiB, or in more than 16384
+    frames, is refused with nothing forwarded.
   - A chunked body the relay cannot frame is refused at once, on every
     lane: the codec would wait for it forever.
   - A streaming upload reaches the upstream only once it ends.
   - A client that sends `Expect: 100-continue` (curl above 1 MiB, Go when
     asked) sends its body only after its own wait, about 1 second, because
     no `100` comes from an upstream that has not seen the head.
-  - A WebSocket message sent in fragments is not held: its earlier
-    fragments reach the upstream before the message is judged.
+  - A ping or close the client sends between fragments waits for the
+    final fragment.
+  - A WebSocket frame from the client that the codec cannot parse ends the
+    connection, as RFC 6455 asks of the upstream.
 - **Path normalization is conservative.** Numeric, UUID, hex and long opaque
   segments collapse; short slugs do not. A policy comes out too narrow rather
   than too broad.
