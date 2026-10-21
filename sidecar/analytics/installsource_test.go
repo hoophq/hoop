@@ -14,6 +14,7 @@ func TestInstallSourceIsFixedVocabulary(t *testing.T) {
 		{"   ", ""},
 		{"managed-agents-http", InstallSourceManagedAgentsHTTP},
 		{" Managed-Agents-HTTP\n", InstallSourceManagedAgentsHTTP},
+		{"managed-agents-kubernetes", InstallSourceManagedAgentsKubernetes},
 		{"acme-prod", InstallSourceOther},
 		{"other", InstallSourceOther},
 	} {

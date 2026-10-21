@@ -222,7 +222,7 @@ analytics:
   # → HOOP_HOST_ID. Empty uses spec.nodeName; a literal replaces it.
   hostId: ''
   # → HOOP_SIDECAR_INSTALL_SOURCE. Set by hoop's templates
-  # (managed-agents-http). Empty sends nothing.
+  # (managed-agents-http, managed-agents-kubernetes). Empty sends nothing.
   installSource: ''
 
 # -- Define extra secret as environment variables

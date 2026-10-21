@@ -13,8 +13,9 @@ const InstallSourceEnvVar = "HOOP_SIDECAR_INSTALL_SOURCE"
 // Install source values. A fixed vocabulary rather than a sanitized string,
 // because any free text an operator can set can also carry a customer name.
 const (
-	InstallSourceManagedAgentsHTTP = "managed-agents-http" // deploy/managed-agents/http
-	InstallSourceOther             = "other"               // set, but not a value this build knows
+	InstallSourceManagedAgentsHTTP       = "managed-agents-http"       // deploy/managed-agents/http
+	InstallSourceManagedAgentsKubernetes = "managed-agents-kubernetes" // deploy/managed-agents/kubernetes
+	InstallSourceOther                   = "other"                     // set, but not a value this build knows
 )
 
 // InstallSource reports the install path from InstallSourceEnvVar, or ""
@@ -26,7 +27,7 @@ func InstallSource() string {
 	switch v {
 	case "":
 		return ""
-	case InstallSourceManagedAgentsHTTP:
+	case InstallSourceManagedAgentsHTTP, InstallSourceManagedAgentsKubernetes:
 		return v
 	}
 	return InstallSourceOther

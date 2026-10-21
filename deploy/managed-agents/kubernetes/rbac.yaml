@@ -1,0 +1,73 @@
+# The agent's identity in the cluster: a ServiceAccount and a long-lived
+# token, which the vault holds. The API server checks this token on every
+# request the sidecar forwards, so RBAC still decides what the agent may do.
+#
+# What the roles grant, and why:
+# - view (built in), cluster-wide: read most objects. It leaves out Secrets
+#   and the exec, attach, port-forward and proxy subresources.
+# - In one namespace, demo (EDIT: the namespace the agent manages; it must
+#   exist):
+#   - Secrets get, list, watch. The sidecar masks the values in kubectl's
+#     JSON. A read that asks for YAML or Protobuf gets them in clear, so
+#     grant this only where that is acceptable.
+#   - The scale subresource of Deployments: the agent can scale, and change
+#     nothing else in a Deployment.
+#   - Pods delete: RBAC allows it so that the sidecar's refusal is what
+#     stops it. Remove it if RBAC must refuse a delete as well.
+#
+# Never grant create, patch or update on pods or workloads: a pod spec can
+# mount a Secret or put it in an environment variable, and `kubectl logs`
+# then prints it as text, which the sidecar does not mask.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: claude-agent
+  namespace: hoop
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: claude-agent-token
+  namespace: hoop
+  annotations:
+    kubernetes.io/service-account.name: claude-agent
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: claude-agent-view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - {kind: ServiceAccount, name: claude-agent, namespace: hoop}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: claude-agent
+  namespace: demo
+rules:
+  - apiGroups: ['']
+    resources: [secrets]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    verbs: [get, patch, update]
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-agent
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: claude-agent
+subjects:
+  - {kind: ServiceAccount, name: claude-agent, namespace: hoop}

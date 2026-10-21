@@ -1,0 +1,4 @@
+# yaml-language-server: $schema=https://platform.claude.com/schemas/ant/beta/vault.json
+# The vault only. ant apply cannot hold a secret: add the credential with
+# ../../credentials/kube-token.yaml (README.md, step 4).
+display_name: hoop kubernetes
