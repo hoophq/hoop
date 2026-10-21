@@ -4744,9 +4744,10 @@ Read these before writing a policy against it.
   request reaches no upstream, however its bytes were split. A client
   WebSocket message is held the same way, until its final fragment.
   The cost:
-  - A request over 8 MiB, head and body, is refused with nothing forwarded.
-  - A WebSocket message over 8 MiB, or in more than 16384 frames, is
-    refused with nothing forwarded.
+  - A request still incomplete at 8 MiB, head and body, is refused with
+    nothing forwarded.
+  - A WebSocket message still incomplete at 8 MiB, or in more than 16384
+    frames, is refused with nothing forwarded.
   - A chunked body the relay cannot frame is refused at once, on every
     lane: the codec would wait for it forever.
   - A streaming upload reaches the upstream only once it ends.
