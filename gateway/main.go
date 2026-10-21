@@ -33,6 +33,7 @@ import (
 	"github.com/hoophq/hoop/gateway/jobs/credentialsweeper"
 	"github.com/hoophq/hoop/gateway/jobs/sidecarmirrorstatus"
 	"github.com/hoophq/hoop/gateway/jobs/sidecarsessionreaper"
+	"github.com/hoophq/hoop/gateway/liveevents"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
@@ -96,6 +97,14 @@ func Run() {
 	apiURL := appconfig.Get().FullApiURL()
 	if err := models.InitDatabaseConnection(pgURI, dbMaxOpenConns); err != nil {
 		log.Fatal(err)
+	}
+	// The embedded PGlite serves one session, so it has no LISTEN connection.
+	if !appconfig.Get().IsPgliteEnabled() {
+		sqlDB, err := models.DB.DB()
+		if err != nil {
+			log.Fatalf("failed reading the database pool, reason=%v", err)
+		}
+		go liveevents.Run(context.Background(), pgURI, sqlDB)
 	}
 
 	goMigrateStep := bootstrap.Step("Golang migrations")

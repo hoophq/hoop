@@ -267,7 +267,7 @@ One channel for every "the page should change now" case: `GET /api/events/stream
 - An event names what changed (`type`, `id`), never its content. The page reads the resource again through its own route, which keeps that route's access checks.
 - The route is `AdminOnlyAccessRole` while every type serves an admin page. A type for other roles needs a per-type role check in `gateway/api/liveevents/stream.go` first.
 - Webapp: `useLiveEvent(type, handler)` (`webapp_v2/src/hooks/useLiveEvent.js`); types in `LIVE_EVENTS` (`services/liveEvents.js`). See `webapp_v2/CLAUDE.md`.
-- In-process: a replica delivers only its own events. A page that must not miss one keeps a slow poll as fallback.
+- Replicas share events through Postgres LISTEN/NOTIFY. PGlite, and a pooler in transaction mode, keep them in-process. A page that must not miss one keeps a slow poll as fallback.
 - Content streams (session output, server logs) stay on their own routes: they carry data, not notices.
 
 ### Product Analytics Events

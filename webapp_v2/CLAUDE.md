@@ -237,7 +237,7 @@ useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (event) => {
 - A new type is added in both places: the gateway constant
   (`gateway/liveevents`) and `LIVE_EVENTS`.
 - A page that must not miss an event keeps a slow poll: the stream is
-  best effort (one replica, reconnects after 5s).
+  best effort (no replay, reconnects after 5s).
 - The first user is the sidecar setup wizard (`pages/Sidecars/Setup`).
 
 ## Snackbars / Toasts — use `showSnackbar`, never Mantine notifications
