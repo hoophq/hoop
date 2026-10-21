@@ -211,7 +211,7 @@ func (p pgTransport) listen(ctx context.Context, ready func(), onPayload func(st
 	if err != nil {
 		return err
 	}
-	// pgconn's default keepalive (5 min idle) leaves a silently dropped LISTEN deaf for minutes.
+	// Go's default keepalive (15s idle, 9 probes) takes about 2.5 min to notice a silently dropped LISTEN.
 	cfg.DialFunc = (&net.Dialer{KeepAliveConfig: net.KeepAliveConfig{
 		Enable: true, Idle: 15 * time.Second, Interval: 15 * time.Second, Count: 3,
 	}}).DialContext
