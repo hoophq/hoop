@@ -74,6 +74,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 - The codecs implement `sidecar/inspect`'s `Codec` interface and register through `inspect.Register`, so the module depends on `github.com/hoophq/hoop/sidecar`. That edge is one-way: nothing under `sidecar/` is imported by libhoop.
 - Otherwise it **must not import from the main project** — bridge via stdlib types only.
 - One build path: the proxy, in CI and locally. No stub, no symlink, no checkout step.
+- Pin libhoop only to a commit on libhoop `main`. A PR-branch commit dies with the branch. CI job `libhoop Pin On Main` (`scripts/ci/check-libhoop-pins.sh`) enforces this.
 - Build produces WASM module for RDP parsing: `make generate-wasm`.
 
 ### Agent Rust (`agentrs/`)
