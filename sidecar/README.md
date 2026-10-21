@@ -3480,6 +3480,49 @@ Those choices buy this, measured through the real Postgres path:
 | `DO $$ BEGIN DELETE FROM customers; END $$` | `unknown` by accident | `unknown`, reason "anonymous code block; body is interpreted at runtime" |
 | `CALL purge()` | `call` | `unknown`, reason "stored procedure; body is in the catalog" |
 
+#### Spark SQL (Databricks)
+
+`lexer.Spark` reads Spark SQL as Databricks runs it. No config key selects
+it yet; a caller passes it to `inspect.AnalyzeSQLIn`. Its quoting is close to
+GoogleSQL's: backslash escapes in `'...'` and `"..."`, `"..."` is a string,
+backticks escape by doubling, `r'...'` is raw, and `:name` and `?` are
+parameters. Five rules differ from every other dialect here, and each one
+dropped a table on a Databricks SQL warehouse (2026.42) behind a statement
+the other dialects read as harmless:
+
+| Rule | Spark | Elsewhere | Cost of using the wrong one |
+|---|---|---|---|
+| `\` at the end of a `--` line | the comment continues on the next line | the comment ends | `-- x \` newline `SELECT '` newline `DROP TABLE t -- '` hides the DROP in a literal |
+| U+00A0 and the other Unicode spaces in Spark's `WS` | whitespace | part of the word | `DROP` U+00A0 `TABLE t` is one word that no verb matches |
+| `/*+ ... */` | a hint, lexed as SQL tokens | a comment | a `*/` in a string inside the hint ends the comment early, and the quote after it hides a statement |
+| `/* /* */` | nests | flat in MySQL, ClickHouse, GoogleSQL and Oracle | `/* /* */ SELECT 'x */ DROP TABLE t; -- '` runs the DROP |
+| `BEGIN ... END` | a SQL script | a transaction, except in Oracle | `BEGIN DROP TABLE t; END` reads as a begin and a commit |
+
+A script is `unknown`, because its control flow decides which statements
+run, and every write in it is an effect: a rule naming `drop` refuses
+`BEGIN DROP TABLE t; END`, and a rule naming `unknown` refuses every script.
+`BEGIN TRANSACTION` and `BEGIN WORK` stay a begin. Any `${` makes the
+statement `unknown`: Spark replaces `${var}` in the raw text before it
+parses, inside literals too. Databricks SQL 2026.42 does not substitute, so
+there this costs a false `unknown` for a literal that contains `${`.
+
+Delta Lake's own parser reads VACUUM, OPTIMIZE, RESTORE and its other
+commands before Spark does, with FLAT block comments and no `--`
+continuation, so `/* /* */ VACUUM t RETAIN 0 HOURS -- */` is a comment to
+Spark and a VACUUM to Delta. When a statement starts with a Delta command,
+the scanner reads it both ways and merges the two readings, as it does for
+MySQL's backslash modes. Databricks SQL 2026.42 lexes Delta commands with
+Spark's rules; open-source Delta Lake does not.
+
+The Databricks verbs: VACUUM is a `delete`, because it removes the files
+that older table versions need. OPTIMIZE, REORG, RESTORE, CONVERT TO DELTA
+and `[MSCK] REPAIR TABLE` are `alter`, REPLACE TABLE is `create`, LOAD DATA
+is `insert`, DESCRIBE is `show`, and CACHE and UNCACHE are `other`. The
+maintenance commands, COPY INTO, INSERT OVERWRITE and the FROM-first
+multi-insert (`FROM s INSERT INTO t SELECT ...`) record their target as
+written. `Split` keeps the text whole, as for Oracle: Spark runs one
+statement or one script per call.
+
 ### The ceiling
 
 Three shapes are out of reach for any amount of parsing, this scanner's or
