@@ -141,6 +141,12 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v7
 
+      # The checkout belongs to the runner uid and the container runs as
+      # root, so git rejects the repository: GITCOMMIT in the Makefile
+      # comes out empty and go build's VCS stamp fails.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Setup Go with private modules
         uses: ./.github/actions/setup-go-private
         with:
