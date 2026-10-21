@@ -498,12 +498,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # go mod edit -json only parses the go.mod files; nothing is fetched.
+      # go mod/work edit -json only parse the files; nothing is fetched.
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.work
           cache: false
+
+      # A check that cannot fail passes forever: its fixtures run first.
+      - name: Test the pin check
+        run: scripts/ci/check-libhoop-pins_test.sh
 
       - name: libhoop pins are on libhoop main
         env:

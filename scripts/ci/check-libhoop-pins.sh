@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Fail when a go.mod pins github.com/hoophq/libhoop to a commit that is not on
-# libhoop main (ENG-821).
+# Fail when a go.mod or go.work pins github.com/hoophq/libhoop to a commit
+# that is not on libhoop main (ENG-821).
 #
 # A pseudo-version names a commit, not a ref. A commit that only lives on a
 # libhoop PR branch becomes unfetchable when that branch is squash-merged and
@@ -8,11 +8,14 @@
 # does every build of each release that carries the pin. #1986 did this on
 # 2026-10-21. A commit on main stays fetchable.
 #
-# A tagged version is accepted when the tag exists. A replace of libhoop with
-# a local path is refused: that is `make libhoop-dev`, which edits go.work.
+# A tagged version is accepted when the tag exists. A replace is accepted only
+# when it points at github.com/hoophq/libhoop itself with a version: a local
+# path is `make libhoop-dev`, for local work only, and a fork is not the
+# repository this check protects.
 #
 # Usage: scripts/ci/check-libhoop-pins.sh   (from the repo root)
 # Needs: go, jq, gh with a token that can read hoophq/libhoop (GH_TOKEN).
+# Tests: scripts/ci/check-libhoop-pins_test.sh
 
 set -euo pipefail
 
@@ -24,14 +27,21 @@ for dep in go jq gh git; do
   command -v "$dep" >/dev/null || { echo "FAIL: missing dependency: $dep" >&2; exit 1; }
 done
 
-# One "<go.mod><TAB><version>" line per libhoop reference. A local-path
-# replace has no version and prints "-". A go.mod that does not parse stops
-# the check.
-refs=$(git ls-files -- 'go.mod' '**/go.mod' | while read -r mod; do
-  go mod edit -json "$mod" | jq -r --arg m "$MODULE" --arg f "$mod" '
+# One "<file><TAB><target>" line per libhoop reference. <target> is a version
+# of the module itself, "local:<path>" or "fork:<module>@<version>". A file
+# that does not parse stops the check.
+refs=$(git ls-files -- 'go.mod' '**/go.mod' 'go.work' '**/go.work' | while IFS= read -r file; do
+  case "$file" in
+    *go.work) cmd=(go work edit -json "$file") ;;
+    *) cmd=(go mod edit -json "$file") ;;
+  esac
+  "${cmd[@]}" | jq -r --arg m "$MODULE" --arg f "$file" '
     ((.Require // [])[] | select(.Path == $m) | "\($f)\t\(.Version)"),
-    ((.Replace // [])[] | select(.Old.Path == $m) | "\($f)\t\(.New.Version // "-")")' ||
-    { echo "FAIL: cannot read $mod" >&2; exit 1; }
+    ((.Replace // [])[] | select(.Old.Path == $m) |
+      if (.New.Version // "") == "" then "\($f)\tlocal:\(.New.Path)"
+      elif .New.Path != $m then "\($f)\tfork:\(.New.Path)@\(.New.Version)"
+      else "\($f)\t\(.New.Version)" end)' ||
+    { echo "FAIL: cannot read $file" >&2; exit 1; }
 done)
 
 if [ -z "$refs" ]; then
@@ -43,19 +53,25 @@ err=$(mktemp)
 trap 'rm -f "$err"' EXIT
 
 failed=0
-fail() { # $1=version $2=message
-  local mod
-  while IFS= read -r mod; do
-    echo "::error file=$mod::$MODULE $1: $2"
+fail() { # $1=target $2=message
+  local file
+  while IFS= read -r file; do
+    echo "::error file=$file::$MODULE $1: $2"
   done < <(awk -F'\t' -v v="$1" '$2 == v { print $1 }' <<<"$refs")
   failed=1
 }
 
 while IFS= read -r version; do
-  if [ "$version" = "-" ]; then
-    fail "$version" "replaced with a local path; use make libhoop-dev (go.work) instead"
-    continue
-  fi
+  case "$version" in
+    local:*)
+      fail "$version" "replaced with a local path; make libhoop-dev is for local work, do not commit it"
+      continue
+      ;;
+    fork:*)
+      fail "$version" "replaced with another module; pin $MODULE itself"
+      continue
+      ;;
+  esac
   # The three pseudo-version forms, as golang.org/x/mod/module/pseudo.go reads them:
   # vX.0.0-yyyymmddhhmmss-<sha>, vX.Y.Z-0.yyyymmddhhmmss-<sha>, vX.Y.Z-pre.0.yyyymmddhhmmss-<sha>.
   # Anything else is a tag, even one that ends in a timestamp and a hash.
