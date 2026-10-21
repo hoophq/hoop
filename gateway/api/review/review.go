@@ -672,8 +672,21 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		SidecarID:             nullStringPtr(r.SidecarID),
 		ListenerName:          nullStringPtr(r.ListenerName),
 		Connection:            reviewConnection(r),
+		Requester:             reviewRequester(r),
 		ExpiresAt:             r.SidecarExpiresAt(),
 		ApprovalTTLSec:        r.SidecarApprovalTTLSec(),
+	}
+}
+
+func reviewRequester(r *models.Review) *openapi.ReviewOwner {
+	if r.OwnerID == "" {
+		return nil
+	}
+	return &openapi.ReviewOwner{
+		ID:      r.OwnerID,
+		Name:    ptr.ToString(r.OwnerName),
+		Email:   r.OwnerEmail,
+		SlackID: ptr.ToString(r.OwnerSlackID),
 	}
 }
 
