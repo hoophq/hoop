@@ -131,9 +131,10 @@ type StreamFilter interface {
 // A codec opts in rather than every lane holding, because holding changes
 // when an upstream sees a request's first byte, and the hold has been
 // proven against the HTTP codec only. The bound is the inspector buffer: a
-// request that outgrows it is refused with nothing of it forwarded. The
-// unit held is what the codec reports consumed, so a fragmented WebSocket
-// message still leaves fragment by fragment, before the message is judged.
+// request or message that outgrows it is refused with nothing of it
+// forwarded. The unit held is what the codec reports consumed: an HTTP
+// request, or a client WebSocket message with the control frames between
+// its fragments.
 type RequestHolder interface {
 	HoldsRequests()
 }
