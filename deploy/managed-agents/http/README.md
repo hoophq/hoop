@@ -144,6 +144,11 @@ sidecar admits shows that the swap happened.
   a person. Per-user rows need a per-user credential.
 - **Free tier.** One guardrail rule and one mask rule per process. A license
   lifts both caps.
+- **The rule reads the request method, not an override.** An API that
+  honours `X-HTTP-Method-Override`, `X-HTTP-Method` or `X-Method-Override`
+  runs a GET that carries one as the method it names. Turn overrides off at
+  the API. Or, with a license, add one `http_header` rule per override
+  header and list each header in `http.headers`.
 - **A request is held until it is whole.** A request over 8 MiB is refused.
   A client that sends `Expect: 100-continue` (curl above 1 MiB) waits about
   1 second for its own timeout before it sends the body.
