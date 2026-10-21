@@ -59,7 +59,8 @@ To use your own database:
   database. Across a network you do not trust, set `upstream_tls` on the
   lane (sidecar README, "Upstream TLS").
 - Set dbhub's `DSN` to a login like the `agent` role in `seed.sql`: SELECT
-  only, no TEMPORARY, and a `statement_timeout`. Replace the demo passwords.
+  only, no TEMPORARY, no large-object creation, read-only by default, and a
+  `statement_timeout`. Replace the demo passwords.
 
 ## 2. Create the environment, vault and agent
 
@@ -141,10 +142,14 @@ writes the transcript, audit rows and Caddy log to `evidence/`.
   unmasked. Keep a column that must not leave out of the login's grants.
 - **The read-only rule depends on the SQL classifier.** Some statements
   that write pass as reads (ENG-803), and so do `LOCK TABLE`, `SELECT ...
-  FOR UPDATE` and a function with side effects. The SELECT-only login
-  refuses them.
-- **The timeouts stop accidents, not intent.** The rule refuses `SET`, but
-  `set_config()` in a SELECT can still change a timeout for the session.
+  FOR UPDATE` and a function with side effects. The login's grants are
+  what stop them, so keep them as narrow as `seed.sql`.
+- **The login's settings are defaults.** The rule refuses `SET`, but
+  `set_config()` in a SELECT can still lift the read-only default or a
+  timeout for the session. The grants still hold.
+- **Error messages are not masked.** A cast error can quote a value, such
+  as `invalid input syntax for type integer: "ada@example.com"`, to the
+  agent and into the audit trail (ENG-805).
 - **No Claude session in the audit.** dbhub uses one login and one pool, so
   each row names `agent`, not a session or a person.
 - **One token for every agent.** Every Anthropic customer's MCP calls come

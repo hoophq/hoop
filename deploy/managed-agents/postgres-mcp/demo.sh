@@ -179,8 +179,14 @@ for s in "WITH g AS (DELETE FROM customers RETURNING *) SELECT count(*) FROM g" 
 done
 expect "$($DIRECT 'SELECT count(*) FROM customers')" 3 "3 rows remain"
 # What the classifier misses (ENG-803), the login refuses.
-contains "$(sql "/* demo-$RUN-20 */ SELECT * INTO TEMP scratch FROM customers" | text_of)" \
-    "permission denied" "the login refuses a temporary table"
+expect "$(sql "/* demo-$RUN-20 */ SELECT * INTO TEMP scratch FROM customers" | is_error)" true \
+    "the login refuses a temporary table"
+# The read-only default answers first, and set_config() can lift it; the
+# missing grant still holds.
+expect "$($DIRECT "SELECT has_database_privilege('agent', 'appdb', 'TEMPORARY')")" f \
+    "the login has no TEMPORARY privilege"
+contains "$(sql "/* demo-$RUN-21 */ SELECT lo_from_bytea(0, 'x')" | text_of)" \
+    "permission denied" "the login refuses a large object"
 
 note "A refused write inside a multi-statement call (bytebase/dbhub#479):"
 dbhub_id=$(docker compose ps -q dbhub)

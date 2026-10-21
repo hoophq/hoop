@@ -59,6 +59,20 @@ DBHUB_AUTH_TOKEN=$(sed -n 's/^DBHUB_AUTH_TOKEN=//p' .env 2>/dev/null || true)
 [[ -n "$DBHUB_AUTH_TOKEN" ]] || DBHUB_AUTH_TOKEN=$(openssl rand -hex 32)
 export DBHUB_AUTH_TOKEN MCP_HOST COMPOSE_FILE=$FILES COMPOSE_PROFILES=$PROFILES
 
+write_env() {
+    # umask: a new file is created 0600, not readable for a moment before chmod.
+    (umask 077; cat > .env) <<EOF
+# Written by ./run.sh. Holds the MCP token: keep it out of git.
+DBHUB_AUTH_TOKEN=$DBHUB_AUTH_TOKEN
+MCP_HOST=$MCP_HOST
+COMPOSE_FILE=$FILES
+COMPOSE_PROFILES=$PROFILES
+EOF
+    chmod 600 .env # a file from an older run keeps its mode otherwise
+}
+# Before `up`: if it fails, a bare `docker compose` still names this stack.
+write_env
+
 c_step "Starting postgres, sidecar, dbhub, caddy ($MODE)"
 # A tunnel from an earlier --tunnel run would stay up: its profile is only
 # inactive now. --remove-orphans covers the move to production.
@@ -78,17 +92,8 @@ if [[ "$MODE" == tunnel ]]; then
     done
     [[ -n "$host" ]] || die "no trycloudflare.com URL in the cloudflared log after 60 s"
     MCP_HOST=$host
+    write_env
 fi
-
-# umask: a new file is created 0600, not readable for a moment before chmod.
-(umask 077; cat > .env) <<EOF
-# Written by ./run.sh. Holds the MCP token: keep it out of git.
-DBHUB_AUTH_TOKEN=$DBHUB_AUTH_TOKEN
-MCP_HOST=$MCP_HOST
-COMPOSE_FILE=$FILES
-COMPOSE_PROFILES=$PROFILES
-EOF
-chmod 600 .env # a file from an older run keeps its mode otherwise
 
 case "$MODE" in
 prod)   url="https://$MCP_HOST/mcp"; next="register the agent: README.md, steps 2 to 4" ;;
