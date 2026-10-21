@@ -75,12 +75,12 @@ func newWSUpstream(t *testing.T) *wsUpstream {
 			go u.serve(c)
 		}
 	}()
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	return u
 }
 
 func (u *wsUpstream) serve(c net.Conn) {
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	var head []byte
 	upgraded := false
 	buf := make([]byte, 4096)
@@ -168,7 +168,7 @@ func dialWS(t *testing.T, srv *proxy.Server) (net.Conn, *bufio.Reader) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() { _ = c.Close() })
 	if err := c.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestAnAllowedFragmentedWebSocketMessageArrivesWholeAndInOrder(t *testing.T)
 		wsFrame(false, 0x1, "hello "),
 		wsFrame(true, 0x9, "ka"),
 		wsFrame(false, 0x0, "wor"),
-		wsFrame(true, 0x8, "\x03\xe8"),
+		wsFrame(true, 0xA, "ka"),
 		wsFrame(true, 0x0, "ld"),
 	}
 	writeFrames(t, c, up, chunks, nil)
