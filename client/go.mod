@@ -29,6 +29,7 @@ require (
 	github.com/hoophq/hoop/sidecar/codec/wasm v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/sidecar/ica v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
 	github.com/hoophq/libhoop v0.0.0-20261019205305-20617fb21eb0
 	github.com/jackc/pgx/v5 v5.9.2
@@ -158,6 +159,7 @@ require (
 	github.com/honeycombio/otel-config-go v1.17.0 // indirect
 	github.com/hoophq/alcatraz v0.23.0 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
+	github.com/hoophq/libhoop-ica v0.3.0 // indirect
 	github.com/hoophq/mcpproxy v0.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -190,6 +192,9 @@ require (
 	github.com/openai/openai-go v1.12.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.30 // indirect
+	github.com/pion/dtls/v3 v3.1.4 // indirect
+	github.com/pion/logging v0.2.4 // indirect
+	github.com/pion/transport/v4 v4.0.1 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/sftp v1.13.11 // indirect
@@ -331,5 +336,7 @@ replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../sidecar/analyzer/ve
 replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../sidecar/descriptors/gcs
 
 replace github.com/hoophq/hoop/sidecar/mcp => ../sidecar/mcp
+
+replace github.com/hoophq/hoop/sidecar/ica => ../sidecar/ica
 
 replace github.com/hoophq/hoop/sidecar/codec/wasm => ../sidecar/codec/wasm

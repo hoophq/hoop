@@ -343,8 +343,29 @@ build-tar-files:
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}_checksum.txt
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 
+# The Linux hoop links the Citrix ICA engine (client/cmd/startsidecar_ica_linux.go),
+# whose NER runs on ONNX Runtime through cgo, so it is a native CGO_ENABLED=1
+# -tags ORT build: a linux runner per architecture, gcc, and hugot's static
+# Rust tokenizer library at the version sidecar/ica pins. It cannot be
+# cross-compiled from another OS. darwin and windows keep the static build,
+# which refuses an ica lane. The release jobs run this inside a
+# debian:bullseye container, which sets the glibc floor (2.31) the Linux CLI
+# and the distroless images need.
+TOKENIZERS_VERSION = $(shell cd sidecar/ica && go list -m -f '{{.Version}}' github.com/daulet/tokenizers)
+LIBTOKENIZERS_DIR = $(DIST_FOLDER)/libtokenizers/$(TOKENIZERS_VERSION)/$(GOOS)-$(GOARCH)
+
+$(LIBTOKENIZERS_DIR)/libtokenizers.a:
+	mkdir -p $(LIBTOKENIZERS_DIR)
+	curl -sSfL https://github.com/daulet/tokenizers/releases/download/$(TOKENIZERS_VERSION)/libtokenizers.$(GOOS)-$(GOARCH).tar.gz | tar -xz -C $(LIBTOKENIZERS_DIR)
+
+ifeq ($(GOOS),linux)
+build-go: build-empty-folder $(LIBTOKENIZERS_DIR)/libtokenizers.a
+	@test "$(UNAME_S)" = Linux || { echo "build-go: the Linux hoop is a cgo build and needs a Linux host (or a container); GOOS=darwin builds the static CLI here" >&2; exit 1; }
+	env CGO_ENABLED=1 GOOS=${GOOS} GOARCH=${GOARCH} CGO_LDFLAGS="-L$(abspath $(LIBTOKENIZERS_DIR))" go build -tags ORT -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
+else
 build-go: build-empty-folder
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
+endif
 
 # Hoop Tunnel daemon (hsh-tunneld).
 #

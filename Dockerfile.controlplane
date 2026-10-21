@@ -79,7 +79,8 @@
 #
 #   default      Ubuntu 24.04 LTS rootfs, the `hoop` binary, ca-certificates
 #                and tini.
-#   distroless   Distroless static rootfs + the `hoop` binary and a static tini.
+#   distroless   Distroless cc rootfs (glibc, no shell) + the `hoop` binary and
+#                a static tini.
 #
 # Both run tini as PID 1 (ENTRYPOINT), which execs the control plane.
 #
@@ -132,7 +133,13 @@
 # and ./Dockerfile.sidecar, so builds are reproducible; bump it in a dedicated
 # PR.
 ARG UBUNTU_IMAGE=ubuntu:noble-20260911
-ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
+# distroless/cc, not distroless/static: the Linux `hoop` is a cgo build that
+# links the Citrix ICA engine (client/cmd/startsidecar_ica_linux.go and the
+# Makefile's build-go), so it is dynamically linked against glibc, libstdc++
+# and libgcc_s. cc-debian12 ships exactly those plus the CA bundle and tzdata,
+# and still has no shell and no package manager. The binary is built against
+# glibc 2.31 (debian bullseye), so debian12's 2.36 runs it.
+ARG DISTROLESS_IMAGE=gcr.io/distroless/cc-debian12:nonroot
 
 # --- Stage: unpack the release tarball ---------------------------------------
 # A separate stage so the ~200MB of release tarballs in dist/binaries/ never
@@ -169,8 +176,10 @@ RUN mkdir -p /out && \
 # container is delivered by tini or not at all.
 #
 # The package ships two binaries. The Ubuntu flavour uses /usr/bin/tini, which
-# is dynamically linked. distroless/static has no libc, so it takes
-# /usr/bin/tini-static instead — the same 0.19.0 upstream, linked statically.
+# is dynamically linked. distroless takes /usr/bin/tini-static instead — the
+# same 0.19.0 upstream, linked statically — because it needs nothing from the
+# rootfs: the cc rootfs does ship a libc, but an init shim with no dependency
+# on it is one less thing a base image bump can break.
 #
 # NOT pinned to BUILDPLATFORM, unlike `unpack` above, and that is the whole
 # reason this is its own stage. tini is a compiled binary that ends up INSIDE
@@ -184,9 +193,10 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
 
 # --- Flavour: distroless -----------------------------------------------------
-# The static rootfs already ships the CA bundle, which this process needs for
+# The cc rootfs already ships the CA bundle, which this process needs for
 # every outbound hop it makes: the identity provider's discovery document and
 # JWKS, PostgreSQL over TLS, Slack, webhooks and the AI analyzer.
+# It also ships the glibc, libstdc++ and libgcc_s the cgo-built `hoop` links.
 # Nothing is installed here — the static tini below is copied in, not
 # installed, so this rootfs still carries no OS package and no package manager.
 #
@@ -194,7 +204,7 @@ RUN apt-get update -y && \
 # plane never resolves a passwd entry.
 FROM ${DISTROLESS_IMAGE} AS distroless
 COPY --from=unpack /out/hoop /app/hoop
-# The statically linked build: this rootfs has no libc for the dynamic one.
+# The statically linked build: it needs nothing from this rootfs.
 COPY --from=tini /usr/bin/tini-static /app/tini
 ENV PATH="/app:${PATH}"
 EXPOSE 8009
