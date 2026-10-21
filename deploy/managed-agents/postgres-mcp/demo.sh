@@ -150,7 +150,8 @@ expect "$(grep -cE "$SEEDED" <<<"$t")" 0 "no stored email reaches the agent"
 contains "$t" "Ada Lovelace" "names pass unmasked"
 
 t=$(sql "/* demo-$RUN-2 */ SELECT email AS contact FROM customers" | text_of)
-expect "$(grep -cE "$SEEDED" <<<"$t")" 0 "an alias does not unmask: the rule keys on the value"
+expect "$(grep -o 'REDACTED:EMAIL_ADDRESS' <<<"$t" | count)" 3 "an alias does not unmask: the rule keys on the value"
+expect "$(grep -cE "$SEEDED" <<<"$t")" 0 "no stored email under the alias"
 
 r=$(sql "/* demo-$RUN-3 */ DELETE FROM customers WHERE id = 1")
 note "$(text_of <<<"$r" | jq -r '.error' 2>/dev/null)"

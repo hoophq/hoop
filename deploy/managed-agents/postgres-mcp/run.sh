@@ -82,6 +82,10 @@ c_ok "all services healthy"
 
 if [[ "$MODE" == tunnel ]]; then
     c_step "Waiting for the quick tunnel"
+    # A new container, so the log holds only the new URL: a restarted one
+    # keeps its old log, and the URL in it is dead.
+    docker compose up -d --force-recreate --no-deps cloudflared >/dev/null 2>&1 \
+        || die "could not recreate cloudflared"
     # Not MCP_HOST itself: compose refuses to run while that is empty.
     host=""
     for _ in $(seq 60); do

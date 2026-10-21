@@ -52,10 +52,12 @@ cleanup() {
     drop session "$SESSION_ID" beta:sessions archive --session-id
     drop agent "$AGENT_ID" beta:agents archive --agent-id
     drop environment "$ENV_ID" beta:environments delete --environment-id
-    if [[ -n "$FAILED_CLEANUP" ]]; then echo "cleanup failed for:$FAILED_CLEANUP" >&2
-    else echo "cleaned up the vault, session, agent and environment"; fi
+    if [[ -n "$FAILED_CLEANUP" ]]; then echo "cleanup failed for:$FAILED_CLEANUP" >&2; return 1; fi
+    echo "cleaned up the vault, session, agent and environment"
 }
-trap cleanup EXIT
+# A vault left behind holds the live token, so a failed cleanup fails the run.
+on_exit() { local rc=$?; cleanup || rc=1; exit "$rc"; }
+trap on_exit EXIT
 
 (cd "$WORK/ant" && ant apply --yes . >/dev/null)
 lockid() {
