@@ -434,6 +434,89 @@ func TestOracleDialectCorpus(t *testing.T) {
 	}
 }
 
+// TestSparkDialectCorpus keeps the Spark classifications in this module, as
+// the two dialects above do. No offline grammar judges them: PostgreSQL's
+// parser rejects backticks and reads '"' as an identifier, and Spark's ANTLR
+// grammar is not Databricks SQL, which refuses `$$` and does not substitute
+// `${}`. Each row is the verdict an operator's rule depends on. The bypass
+// rows (A to E′, from the ENG-817 research) and the maintenance commands
+// were run on a Databricks SQL warehouse (2026.42): A, B, C and E dropped a
+// table there behind a statement every other dialect reads as harmless.
+// E′ is Delta Lake's flat-comment reading, which the warehouse does not share
+// and open-source Delta does.
+func TestSparkDialectCorpus(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		sql      string
+		verb     lexer.Verb
+		complete bool
+		writes   []string
+	}{
+		// The bypasses: each runs a write that a reading of Spark text
+		// under another dialect's rules hides.
+		{"A: dash comment continued by backslash-newline", "-- x \\\nSELECT '\nDROP TABLE t -- '", lexer.Drop, true, []string{"t"}},
+		{"B: no-break space between DROP and TABLE", "DROP\u00a0TABLE t", lexer.Drop, true, []string{"t"}},
+		{"C: write inside a script", "BEGIN DROP TABLE t; END", lexer.Drop, false, []string{"t"}},
+		{"D: variable substitution", "SELECT * FROM ${tbl}", lexer.Select, false, nil},
+		{"E: nested comment hides a quote", "/* /* */ SELECT 'x */ DROP TABLE t; -- '", lexer.Drop, true, []string{"t"}},
+		{"E′: Delta's flat comment hides a VACUUM", "/* /* */ VACUUM t RETAIN 0 HOURS -- */", lexer.Delete, true, []string{"t"}},
+		{"hint string inside a script", "BEGIN SELECT /*+ X('*/') */ 1; DROP TABLE t; END; --'", lexer.Drop, false, []string{"t"}},
+		{"raw string ends at the first quote", `SELECT r'\'; DELETE FROM t; --'`, lexer.Delete, true, []string{"t"}},
+
+		// The keyword overrides.
+		{"VACUUM is a delete", "VACUUM t RETAIN 0 HOURS", lexer.Delete, true, []string{"t"}},
+		{"OPTIMIZE is an alter", "OPTIMIZE t ZORDER BY (a)", lexer.Alter, true, []string{"t"}},
+		{"RESTORE is an alter", "RESTORE TABLE t TO VERSION AS OF 1", lexer.Alter, true, []string{"t"}},
+		{"MSCK REPAIR is an alter", "MSCK REPAIR TABLE t", lexer.Alter, true, []string{"t"}},
+		{"REPAIR without MSCK is an alter", "REPAIR TABLE t", lexer.Alter, true, []string{"t"}},
+		{"CONVERT TO DELTA is an alter", "CONVERT TO DELTA t", lexer.Alter, true, []string{"t"}},
+		{"REORG is an alter", "REORG TABLE t APPLY (PURGE)", lexer.Alter, true, []string{"t"}},
+		{"REPLACE TABLE is a create", "REPLACE TABLE t AS SELECT * FROM s", lexer.Create, true, []string{"t"}},
+		{"DESCRIBE is a show", "DESCRIBE TABLE t", lexer.Show, true, nil},
+		{"DESC is a show", "DESC t", lexer.Show, true, nil},
+		{"CACHE is other", "CACHE TABLE t", lexer.Other, true, nil},
+		{"UNCACHE is other", "UNCACHE TABLE t", lexer.Other, true, nil},
+		{"COPY INTO writes its target", "COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", lexer.Copy, true, []string{"t"}},
+		{"INSERT OVERWRITE writes its target", "INSERT OVERWRITE t SELECT * FROM s", lexer.Insert, true, []string{"t"}},
+		{"INSERT OVERWRITE TABLE writes its target", "INSERT OVERWRITE TABLE t PARTITION (p = 1) SELECT * FROM s", lexer.Insert, true, []string{"t"}},
+		{"write after a script's DO", "BEGIN DECLARE c INT DEFAULT 0; WHILE c < 3 DO DELETE FROM t; SET c = c + 1; END WHILE; END", lexer.Delete, false, []string{"t"}},
+		{"write in a script's handler", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION DROP TABLE t; SELECT 1; END", lexer.Drop, false, []string{"t"}},
+		{"LOAD DATA is an insert", "LOAD DATA INPATH '/p' INTO TABLE t", lexer.Insert, true, []string{"t"}},
+		{"FROM-first multi-insert", "FROM s INSERT INTO t SELECT a INSERT INTO u SELECT a", lexer.Insert, true, []string{"t", "u"}},
+		{"BEGIN TRANSACTION is a begin", "BEGIN TRANSACTION", lexer.Begin, true, nil},
+
+		// Reads stay reads.
+		{"join hint", "SELECT /*+ BROADCAST(s) */ * FROM t JOIN s ON t.id = s.id", lexer.Select, true, nil},
+		{"MERGE join hint", "SELECT /*+ MERGE(t, s) */ * FROM t JOIN s ON t.id = s.id", lexer.Select, true, nil},
+		{"DELETE in a double-quoted string", `SELECT "a\"; DELETE FROM t; --"`, lexer.Select, true, nil},
+		{"DELETE in a single-quoted string", `SELECT 'a\'; DELETE FROM t; --'`, lexer.Select, true, nil},
+		{"DROP in a dollar quote", "SELECT $q$; DROP TABLE t; $q$", lexer.Select, true, nil},
+		{"DELETE in a nested comment", "/* a /* b */ DELETE FROM t */ SELECT 1", lexer.Select, true, nil},
+		{"DELETE after a continued comment", "SELECT 1 -- note \\\n; DELETE FROM t", lexer.Select, true, nil},
+		{"parameters", "SELECT * FROM t WHERE a = :into AND b = ?", lexer.Select, true, nil},
+		{"doubled backtick", "DELETE FROM `a``b`", lexer.Delete, true, []string{"a`b"}},
+		{"read-only script", "BEGIN SELECT 1; END", lexer.Select, false, nil},
+		{"CREATE TABLE USING DELTA", "CREATE TABLE t (a INT) USING DELTA", lexer.Create, true, []string{"t"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := lexer.Split(tc.sql, lexer.Spark)
+			if len(parts) != 1 {
+				t.Fatalf("Split = %q, want the whole call", parts)
+			}
+			got := lexer.Analyze(parts[0], lexer.Spark)
+			if got.Complete != tc.complete {
+				t.Errorf("complete = %v (%s), want %v", got.Complete, got.Reason, tc.complete)
+			}
+			if verb := got.Severity(); verb != tc.verb {
+				t.Errorf("verb = %q, want %q", verb, tc.verb)
+			}
+			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+				t.Errorf("writes = %v, want %v", writes, tc.writes)
+			}
+		})
+	}
+}
+
 func groups() []string {
 	return []string{"regression", "cte", "dml-shapes", "ddl", "orm"}
 }

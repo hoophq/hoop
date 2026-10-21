@@ -83,6 +83,19 @@ const (
 	// V$SESSION; and `:name` binds, which may spell a reserved word.
 	// Block comments do NOT nest, as in the standard.
 	Oracle
+
+	// Spark covers Spark SQL as Databricks runs it, the Delta Lake
+	// commands included.
+	//
+	// It looks like GoogleSQL — backticks, '"' strings, backslash
+	// escapes, r'...' — and differs exactly where SQL hides: block
+	// comments NEST, a `--` comment continues past a backslash-newline,
+	// a `/*+` hint body is live tokens, and Unicode spaces separate
+	// words. Each of the four dropped a table on a Databricks SQL
+	// warehouse (2026.42) behind a statement every other dialect here
+	// reads as harmless. Delta Lake's own parser reads its commands with
+	// flat comments, so Analyze reads Spark text twice; see analyzeSpark.
+	Spark
 )
 
 func (d Dialect) String() string {
@@ -97,6 +110,8 @@ func (d Dialect) String() string {
 		return "googlesql"
 	case Oracle:
 		return "oracle"
+	case Spark:
+		return "spark"
 	}
 	return "postgres"
 }
@@ -286,6 +301,9 @@ type lexRules struct {
 	// otherwise put a relation introducer in the middle of a predicate
 	// and invent a relation out of the next word. `:=` is PL/SQL
 	// assignment and stays punctuation.
+	//
+	// Spark too: its `:name` parameter markers, and the JSON path in
+	// `raw:from`, would otherwise put an introducer mid-expression.
 	colonBind bool
 
 	// dashCommentEndsAtCR ends a `--` comment at a carriage return, as at a
@@ -298,6 +316,60 @@ type lexRules struct {
 	// Checked against PostgreSQL's own parser in lexer/conformance. A CR LF
 	// line end reads as before: the LF after the CR is whitespace.
 	dashCommentEndsAtCR bool
+
+	// rawStringR enables r'...' and r"...", the raw form WITHOUT
+	// GoogleSQL's byte prefixes.
+	//
+	// Spark only. R is the one string prefix its lexer knows, so `b'\'...'`
+	// there is an identifier beside an ordinary, escaping string. Reading
+	// it under rawString ends that string at the backslash-quote Spark
+	// escapes, and scans the rest of the literal as SQL.
+	rawStringR bool
+
+	// dashCommentContinues lets a backslash right before a newline carry
+	// a `--` comment onto the next line (SqlBaseLexer SIMPLE_COMMENT).
+	//
+	// Spark only, and a bypass rather than a quirk. In
+	//
+	//	-- x \
+	//	SELECT '
+	//	DROP TABLE t -- '
+	//
+	// Spark's comment runs to the second newline and the DROP is live. A
+	// scanner ending the comment at the first newline reads a SELECT whose
+	// literal swallows the DROP. Verified on a Databricks SQL warehouse:
+	// the table was gone.
+	dashCommentContinues bool
+
+	// unicodeSpace makes the Unicode spaces in Spark's WS rule whitespace:
+	// U+00A0, U+1680, U+2000 to U+200A, U+2028, U+202F, U+205F, U+3000.
+	//
+	// Spark only. Everywhere else a byte >= 0x80 continues an identifier,
+	// so `DROP<U+00A0>TABLE t` is one word that no verb matches, while
+	// Spark reads DROP TABLE t and drops the table (verified on a
+	// Databricks SQL warehouse).
+	unicodeSpace bool
+
+	// liveHint scans the body of a `/*+ ... */` optimizer hint as tokens.
+	//
+	// Spark only. Its lexer emits `/*+` as a token and lexes the hint's
+	// parameters as SQL, so a string there may hold `*/`:
+	// `/*+ X('*/') */`. A scanner reading the hint as a comment ends it
+	// inside that string, and the quote after it opens a literal that
+	// can swallow a statement Spark runs. The body shares execDepth with
+	// MySQL's executable comment: it is live, and only the close is owed.
+	liveHint bool
+
+	// substitution fails the scan on any `${`.
+	//
+	// Spark replaces `${var}` in the raw text BEFORE its lexer runs —
+	// inside literals and comments too — whenever
+	// spark.sql.variable.substitute is on, its default. What the server
+	// parses is then text this scanner never saw, and a variable set by
+	// an earlier statement can hold a whole DROP. Databricks SQL 2026.42
+	// leaves `${...}` alone (verified), so on a warehouse this costs a
+	// false `unknown` for a literal that happens to contain `${`.
+	substitution bool
 }
 
 func (d Dialect) rules() lexRules {
@@ -362,6 +434,29 @@ func (d Dialect) rules() lexRules {
 			identDollarHash: true,
 			colonBind:       true,
 		}
+	case Spark:
+		// GoogleSQL's neighbour with three reversals, each one a place
+		// SQL hides: comments NEST (SqlBaseLexer
+		// NESTED_BRACKETED_COMMENT), a backtick escapes by doubling as in
+		// MySQL, and R is the only string prefix — no b, no triple
+		// quotes. Dollar quotes are Spark's own, $tag$ with letters only,
+		// which the PostgreSQL scanner already reads; Databricks SQL
+		// rejects them as a syntax error, so the literal reading only
+		// ever covers a statement that cannot run there. '#' is no
+		// comment: Spark refuses the byte, so nothing after it runs.
+		return lexRules{
+			dollarQuote:            true,
+			backtickIdent:          true,
+			nestedBlockComment:     true,
+			backslashInPlainString: true,
+			doubleQuoteString:      true,
+			colonBind:              true,
+			rawStringR:             true,
+			dashCommentContinues:   true,
+			unicodeSpace:           true,
+			liveHint:               true,
+			substitution:           true,
+		}
 	default:
 		return lexRules{
 			dollarQuote:         true,
@@ -370,5 +465,23 @@ func (d Dialect) rules() lexRules {
 			nestedBlockComment:  true,
 			dashCommentEndsAtCR: true,
 		}
+	}
+}
+
+// deltaRules are the lexical rules of Delta Lake's own parser
+// (DeltaSqlBase.g4), which reads VACUUM, OPTIMIZE, RESTORE and the other
+// Delta commands before Spark sees them.
+//
+// The quoting is Spark's; the comments are not. Block comments are FLAT,
+// `--` ends at the newline whatever precedes it, and `/*+` opens an
+// ordinary comment. There are no raw or dollar strings and no Unicode
+// whitespace either: Delta's lexer has no rule for them, so a statement
+// using one is never a Delta command. See analyzeSpark.
+func deltaRules() lexRules {
+	return lexRules{
+		backtickIdent:          true,
+		backslashInPlainString: true,
+		doubleQuoteString:      true,
+		colonBind:              true,
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/lexer"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -568,5 +569,81 @@ func TestSpannerIsAnalyzedWithTheGoogleSQLDialect(t *testing.T) {
 	stmt := inspect.AnalyzeSQL("@{USE_ADDITIONAL_PARALLELISM=TRUE} SELECT x FROM t", inspect.Spanner)
 	if stmt.Operation != inspect.OpSelect || !slices.Contains(stmt.Tables, "t") {
 		t.Errorf("statement-level hint: op = %q, tables = %v, want select on t", stmt.Operation, stmt.Tables)
+	}
+}
+
+// Databricks SQL is Spark SQL, and a lane reads it with AnalyzeSQLIn and
+// lexer.Spark. Each case is named for the verdict an operator gets.
+//
+// The refusals ran on a Databricks SQL warehouse (2026.42) and dropped,
+// vacuumed or rewrote a table there, except the flat-comment VACUUM, which
+// only open-source Delta Lake reads that way. Under every dialect that existed
+// before Spark, each one read as a select, a begin, an `other` or nothing,
+// so a guardrail refusing writes let it through. The passes are the inverse:
+// reads that a wrong reading refuses, which costs an operator their tool.
+func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
+	noWrites := rulesFor(t, "no-writes",
+		inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete, inspect.OpDrop,
+		inspect.OpAlter, inspect.OpCreate, inspect.OpTruncate)
+	unreadable := rulesFor(t, "unreadable", inspect.OpUnknown)
+	fenceT, err := policy.NewRules([]policy.Rule{{
+		Name: "t-is-read-only", Type: policy.MatchTable, Tables: []string{"t"},
+		Access: string(inspect.AccessWrite), Message: "t is read-only",
+	}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name, sql  string
+		rules      *policy.Rules
+		wantDenied bool
+	}{
+		{"a DROP after a backslash-continued comment is refused", "-- x \\\nSELECT '\nDROP TABLE t -- '", noWrites, true},
+		// \xc2\xa0 is U+00A0, a no-break space: whitespace to Spark.
+		{"a DROP joined to TABLE by a no-break space is refused", "DROP\xc2\xa0TABLE t", noWrites, true},
+		{"a DROP inside a BEGIN ... END script is refused", "BEGIN DROP TABLE t; END", noWrites, true},
+		{"a DROP after a nested comment is refused", "/* /* */ SELECT 'x */ DROP TABLE t; -- '", noWrites, true},
+		{"a DROP behind a string in a hint is refused", "BEGIN SELECT /*+ X('*/') */ 1; DROP TABLE t; END; --'", noWrites, true},
+		{"a VACUUM behind Delta's flat comment is refused", "/* /* */ VACUUM t RETAIN 0 HOURS -- */", noWrites, true},
+		{"VACUUM is refused as a delete", "VACUUM t RETAIN 0 HOURS", noWrites, true},
+		{"OPTIMIZE is refused as an alter", "OPTIMIZE t ZORDER BY (a)", noWrites, true},
+		{"RESTORE is refused as an alter", "RESTORE TABLE t TO VERSION AS OF 1", noWrites, true},
+		{"REPLACE TABLE is refused as a create", "REPLACE TABLE t AS SELECT * FROM s", noWrites, true},
+		{"COPY INTO is refused as an insert", "COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", noWrites, true},
+		{"a FROM-first INSERT is refused", "FROM s INSERT INTO t SELECT a", noWrites, true},
+		{"INSERT OVERWRITE is refused by a rule fencing its target", "INSERT OVERWRITE t SELECT * FROM s", fenceT, true},
+		{"COPY INTO is refused by a rule fencing its target", "COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", fenceT, true},
+		{"VACUUM is refused by a rule fencing its target", "VACUUM t", fenceT, true},
+		{"a substituted variable is refused as unreadable", "SELECT * FROM ${tbl}", unreadable, true},
+		{"a script is refused as unreadable", "BEGIN SELECT * FROM t; END", unreadable, true},
+
+		{"a read-only script passes a guardrail refusing writes", "BEGIN SELECT * FROM t; END", noWrites, false},
+		{"a MERGE join hint passes", "SELECT /*+ MERGE(t, s) */ * FROM t JOIN s ON t.id = s.id", noWrites, false},
+		{"a DELETE in a double-quoted string passes", `SELECT "a\"; DELETE FROM t; --"`, noWrites, false},
+		{"a DELETE after a continued comment passes", "SELECT 1 -- note \\\n; DELETE FROM t", noWrites, false},
+		{"DESCRIBE passes", "DESCRIBE TABLE t", noWrites, false},
+		{"BEGIN TRANSACTION passes", "BEGIN TRANSACTION", noWrites, false},
+		{"CACHE TABLE passes a rule fencing writes to its target", "CACHE TABLE t", fenceT, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := inspect.AnalyzeSQLIn(tc.sql, lexer.Spark)
+			stmt := inspect.Statement{
+				Protocol: inspect.HTTP, Direction: inspect.FromClient, Text: tc.sql,
+				Operation: a.Operation, Effects: a.Effects, Relations: a.Relations, Tables: a.Tables,
+			}
+			if denied := tc.rules.Evaluate(stmt).Denied; denied != tc.wantDenied {
+				t.Errorf("denied = %v, want %v: op = %q, effects = %v, relations = %v, complete = %v (%s)",
+					denied, tc.wantDenied, a.Operation, a.Effects, a.Relations, a.Complete, a.Reason)
+			}
+		})
+	}
+
+	// A `:name` parameter may spell a keyword. Read as a word, `:into` made
+	// the word after it a written relation, which a table rule then acts on.
+	for _, r := range inspect.AnalyzeSQLIn("SELECT * FROM s WHERE a = :into AND b = ?", lexer.Spark).Relations {
+		if r.Access == inspect.AccessWrite {
+			t.Errorf("a parameter spelled into wrote %q", r.Name)
+		}
 	}
 }

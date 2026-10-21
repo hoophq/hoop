@@ -146,6 +146,16 @@ type analyzer struct {
 	// position, and INTO names variables rather than tables; see plsqlDML.
 	plsql bool
 
+	// script is plsql's Spark counterpart: true once BEGIN opened a SQL
+	// script. Writes are recognised anywhere from there; see
+	// sparkScriptDML.
+	script bool
+
+	// fromFirst is true in a Spark statement that opened with FROM, the
+	// Hive form `FROM s INSERT INTO t SELECT ... INSERT INTO u SELECT ...`.
+	// Its INSERT and SELECT follow a relation, not a head position.
+	fromFirst bool
+
 	incomplete string
 }
 
@@ -155,8 +165,11 @@ type analyzer struct {
 // Complete=false and a Reason, because a caller on a data path needs a
 // verdict rather than an error to log.
 func Analyze(sql string, d Dialect) Analysis {
-	if d == MySQL {
+	switch d {
+	case MySQL:
 		return analyzeMySQL(sql)
+	case Spark:
+		return analyzeSpark(sql)
 	}
 	return analyzeWith(sql, d.rules(), d)
 }
@@ -197,18 +210,59 @@ func analyzeMySQL(sql string) Analysis {
 	return mergeAnalyses(a, b)
 }
 
+// analyzeSpark reads the statement with Spark's lexer and, when Delta Lake's
+// parser would claim it, with Delta's too, and merges the two readings.
+//
+// Delta's parser sees every statement before Spark and keeps the ones its
+// grammar names — VACUUM, OPTIMIZE, RESTORE and the rest of deltaCommand.
+// Its lexer differs from Spark's in where comments END: flat block comments,
+// no backslash-newline continuation, `/*+` as an ordinary comment. So the
+// same bytes can be a comment to one and a command to the other:
+//
+//	/* /* */ VACUUM t RETAIN 0 HOURS -- */
+//
+// is all comment to Spark, which nests, and a VACUUM to Delta, which does
+// not. Either reading alone misses a statement one of the two parsers runs,
+// so both are merged as analyzeMySQL merges its two: effects and relations
+// unioned, verb and completeness from Spark's.
+//
+// The Delta reading counts only when it begins with a Delta command. Delta
+// hands any other statement to Spark, which the first reading models, and a
+// flat reading of an ordinary statement would only add effects nothing runs:
+// a SELECT whose comment line ends in a backslash would be denied for the
+// DELETE Spark reads as comment.
+//
+// Databricks SQL 2026.42 does not reproduce the example: it lexes Delta
+// commands with Spark's rules, and the text above fails there as an empty
+// statement. Open-source Delta Lake (DeltaSqlParser) reads it flat, and on a
+// warehouse the extra reading only flags text that cannot run.
+func analyzeSpark(sql string) Analysis {
+	spark := analyzeWith(sql, Spark.rules(), Spark)
+	delta := newAnalyzer(sql, deltaRules(), Spark)
+	if len(delta.toks) == 0 || delta.toks[0].Kind != Word || !deltaCommand[delta.toks[0].Text] {
+		return spark
+	}
+	delta.walk()
+	return mergeAnalyses(spark, delta.result())
+}
+
 // analyzeWith runs one pass with an explicit rule set.
 func analyzeWith(sql string, rules lexRules, d Dialect) Analysis {
+	a := newAnalyzer(sql, rules, d)
+	a.walk()
+	return a.result()
+}
+
+// newAnalyzer scans sql and returns an analyzer ready to walk the tokens.
+func newAnalyzer(sql string, rules lexRules, d Dialect) *analyzer {
 	toks, bad := scanWith(sql, rules)
-	a := &analyzer{
+	return &analyzer{
 		toks:       toks,
 		d:          d,
 		stack:      []region{{kind: regTop, verb: Unknown}},
 		cteNames:   map[string]bool{},
 		incomplete: bad,
 	}
-	a.walk()
-	return a.result()
 }
 
 // mergeAnalyses unions two readings of the same statement, pessimistically.
@@ -298,7 +352,7 @@ func (a *analyzer) walk() {
 					a.stack = a.stack[:1]
 				}
 				*a.top() = region{kind: regTop, verb: Unknown}
-				a.inCTEList, a.expectCTEName = false, false
+				a.inCTEList, a.expectCTEName, a.fromFirst = false, false, false
 				atHead = true
 				continue
 			case ",":
@@ -382,7 +436,29 @@ func (a *analyzer) walk() {
 			continue
 		}
 
-		if (atHead || (a.plsql && plsqlDML[t.Text] && !a.plsqlNotDML(i))) && a.head(t, i) {
+		// A Spark SQL script. BEGIN opens one unless TRANSACTION or WORK
+		// follows, which Databricks reads as a transaction start and the
+		// begin verb already files. The block performs nothing itself; its
+		// statements do, and control flow decides which of them run, so the
+		// whole is incomplete as an Oracle block is. Without this, BEGIN
+		// read as a transaction and the DROP after it was not a head:
+		// `BEGIN DROP TABLE t; END` dropped a table on a Databricks SQL
+		// warehouse as a begin and a commit.
+		if a.d == Spark && atHead && t.Text == "begin" &&
+			!(i+1 < len(a.toks) && a.toks[i+1].Kind == Word && sparkTransaction[a.toks[i+1].Text]) {
+			a.script = true
+			a.sawStatement = true
+			a.fail("SQL script; control flow decides which of its statements run")
+			continue
+		}
+
+		// Spark's FROM-first form names its source before any verb; its
+		// INSERTs follow that relation. See anywhereDML.
+		if a.d == Spark && atHead && t.Text == "from" && len(a.stack) == 1 {
+			a.fromFirst = true
+		}
+
+		if (atHead || a.anywhereDML(t.Text, i)) && a.head(t, i) {
 			// A stored PL/SQL unit carries its body inline. What
 			// follows the header is source Oracle compiles and does
 			// not run, so the scan ends here with the header read.
@@ -404,6 +480,8 @@ func (a *analyzer) walk() {
 					}
 					i = j
 				}
+			} else if a.d == Spark {
+				i = a.sparkTarget(i)
 			}
 			// `BEGIN DELETE FROM t`: the block keyword is a verb AND
 			// the position before the block's first statement.
@@ -413,7 +491,9 @@ func (a *analyzer) walk() {
 
 		// A relation introducer claims the list that follows. Oracle's
 		// `FOR UPDATE OF col` locks rows: the name after it is a column.
-		if relIntro[t.Text] && !(a.d == Oracle && a.forUpdate(i)) {
+		// Spark's INSERT OVERWRITE [TABLE] t names its target after
+		// OVERWRITE, where no INTO introduces it.
+		if (relIntro[t.Text] || a.d == Spark && t.Text == "overwrite") && !(a.d == Oracle && a.forUpdate(i)) {
 			if j, rels, ok := a.relationsAfter(i); ok {
 				for _, rel := range rels {
 					a.addRelation(rel)
@@ -460,7 +540,31 @@ func (a *analyzer) headFollows(word string) bool {
 	if a.plsql && plsqlHeadAfter[word] {
 		return true
 	}
+	if a.script && sparkScriptHeadAfter[word] {
+		return true
+	}
 	return headAfter[word]
+}
+
+// anywhereDML reports whether the word at i begins a statement outside head
+// position.
+//
+// Inside an Oracle PL/SQL block, see plsqlDML. Inside a Spark SQL script, see
+// sparkScriptDML; a verb followed by `(` is a call there, not a statement —
+// it is how a MERGE join hint, `/*+ MERGE(a, b) */`, reads once hint bodies
+// are live tokens. In Spark's FROM-first form, `FROM s INSERT INTO t SELECT
+// a INSERT INTO u SELECT b`, every INSERT and SELECT at the top level is a
+// statement head behind the relation or the clause before it.
+func (a *analyzer) anywhereDML(word string, i int) bool {
+	switch {
+	case a.plsql:
+		return plsqlDML[word] && !a.plsqlNotDML(i)
+	case a.script:
+		return sparkScriptDML[word] && !a.plsqlNotDML(i) && !a.puncts(i+1, "(")
+	case a.fromFirst:
+		return (word == "insert" || word == "select") && len(a.stack) == 1
+	}
+	return false
 }
 
 // push opens a region, labelling it from the token before the parenthesis.
@@ -558,8 +662,53 @@ func (a *analyzer) statementVerb(word string) (Verb, bool) {
 			return v, true
 		}
 	}
+	if a.d == Spark {
+		if sparkNotAVerb[word] {
+			return Unknown, false
+		}
+		if v, ok := sparkVerb[word]; ok {
+			return v, true
+		}
+	}
 	v, ok := statementVerb[word]
 	return v, ok
+}
+
+// sparkTarget records the relation a Spark or Delta command names straight
+// after its keyword, where no introducer precedes it, and returns the index
+// it consumed through. i is the command keyword.
+//
+// VACUUM t, OPTIMIZE t, RESTORE [TABLE] t and CONVERT TO DELTA t change t's
+// files, so t is written; left alone, a rule fencing t never sees them.
+// CACHE [LAZY] TABLE t and UNCACHE TABLE t change only what the cluster
+// holds in memory, so t is read, where the TABLE introducer under an `other`
+// verb would have written it. Any other keyword records nothing.
+func (a *analyzer) sparkTarget(i int) int {
+	acc, j := Write, i
+	switch a.toks[i].Text {
+	case "vacuum", "optimize", "restore":
+	case "convert":
+		if !(i+2 < len(a.toks) && a.toks[i+1].isWord("to") && a.toks[i+2].isWord("delta")) {
+			return i
+		}
+		j = i + 2
+	case "cache", "uncache":
+		acc = Read
+		if i+1 < len(a.toks) && a.toks[i+1].isWord("lazy") {
+			j = i + 1
+		}
+	default:
+		return i
+	}
+	next, rel, ok := a.relationAt(j, j)
+	if !ok {
+		// `VACUUM '/path'` and `CACHE SELECT ...` name no relation, and
+		// the tokens stay for the walk.
+		return i
+	}
+	rel.Access = acc
+	a.addRelation(rel)
+	return next
 }
 
 // opaque reports why a head keyword's effect cannot be read, under the
@@ -694,6 +843,14 @@ func (a *analyzer) relationAt(i, j int) (int, Relation, bool) {
 	// Quoted identifiers never reach this test, so a table whose name is
 	// "set" still works.
 	if a.toks[j].Kind == Word && notARelation[a.toks[j].Text] {
+		return j, Relation{}, false
+	}
+	// Two Spark positions look like relations and are not: INSERT
+	// OVERWRITE [LOCAL] DIRECTORY writes files at a path, and the USING of
+	// `CREATE TABLE t (...) USING DELTA` names a data source. Left alone,
+	// every Databricks CREATE TABLE reads a relation called delta.
+	if a.d == Spark && (a.toks[i].Text == "overwrite" && a.toks[j].isWord("directory") ||
+		a.toks[i].Text == "using" && a.top().verb == Create) {
 		return j, Relation{}, false
 	}
 
@@ -848,7 +1005,9 @@ func (a *analyzer) access(r *region, intro string) Access {
 		// after EVERY `INTO`; only the first claimed a write, so
 		// `INSERT ALL INTO a ... INTO b ... SELECT ...` hid the write of b
 		// as a read. See oracleNoRelation for the INTO that names a variable.
-		if intro == "into" && (r.firstTarget || (a.d == Oracle && r.verb == Insert)) {
+		// Spark's INSERT OVERWRITE names its target after OVERWRITE, an
+		// introducer only that dialect has.
+		if (intro == "into" || intro == "overwrite") && (r.firstTarget || (a.d == Oracle && r.verb == Insert)) {
 			r.firstTarget = false
 			return Write
 		}
@@ -856,7 +1015,11 @@ func (a *analyzer) access(r *region, intro string) Access {
 		// The relation named by COPY itself; copyDirection then decides
 		// read or write from the FROM/TO that follows it. STDIN and
 		// STDOUT sit after that keyword and notARelation drops them.
-		if intro == "copy" {
+		//
+		// Databricks' COPY INTO t loads files into t, and names it after
+		// INTO. Read as the PostgreSQL form, t was a read, the copy wrote
+		// nothing, and inspect reported a bulk load as a select.
+		if intro == "copy" || a.d == Spark && intro == "into" {
 			return Write
 		}
 	default:

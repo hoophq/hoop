@@ -242,6 +242,86 @@ var triggerBody = map[string]bool{
 	"begin": true, "declare": true, "call": true, "compound": true,
 }
 
+// sparkVerb overrides statementVerb under the Spark dialect.
+//
+// The Delta Lake maintenance commands are the load-bearing rows, and their
+// targets are recorded as written; see analyzer.sparkTarget. VACUUM deletes
+// the data files older table versions need, so it is a delete rather than
+// PostgreSQL's housekeeping `other`. OPTIMIZE and REORG rewrite a table's
+// files, RESTORE rolls its rows back, CONVERT TO DELTA replaces its format,
+// and REPAIR TABLE, with or without MSCK, rewrites its partition list: all
+// of them alter the named object. REPLACE TABLE is CREATE OR REPLACE TABLE
+// without the CREATE, and LOAD DATA appends or overwrites a table from
+// files. Without these rows they classify as unknown or, for VACUUM, as
+// `other`, which no rule naming a write matches. VACUUM, OPTIMIZE and
+// RESTORE were run on a Databricks SQL warehouse to confirm the forms.
+//
+// DESCRIBE and DESC read metadata. CACHE and UNCACHE change what the
+// cluster keeps in memory and nothing in the table.
+var sparkVerb = map[string]Verb{
+	"vacuum":   Delete,
+	"optimize": Alter,
+	"reorg":    Alter,
+	"restore":  Alter,
+	"convert":  Alter,
+	"msck":     Alter,
+	"repair":   Alter,
+	"replace":  Create,
+	"load":     Insert,
+	"describe": Show,
+	"desc":     Show,
+	"cache":    Other,
+	"uncache":  Other,
+}
+
+// sparkNotAVerb are statementVerb keywords that begin no statement in
+// Spark. END closes a script block, IF, LOOP, WHILE, REPEAT, FOR or CASE;
+// left as PostgreSQL's COMMIT, every script would report a commit.
+var sparkNotAVerb = map[string]bool{
+	"end": true,
+}
+
+// sparkTransaction are the words after BEGIN that make it a transaction
+// start rather than a script: Databricks SQL runs `BEGIN TRANSACTION` and
+// `BEGIN WORK`, and rejects a bare BEGIN.
+var sparkTransaction = map[string]bool{
+	"transaction": true, "work": true,
+}
+
+// sparkScriptHeadAfter are words after which a statement begins inside a
+// Spark SQL script: `BEGIN DROP TABLE t`, `WHILE c DO DELETE ...`, `LOOP`,
+// `REPEAT`, and `BEGIN [NOT] ATOMIC`. THEN and ELSE are in headAfter for
+// every dialect.
+var sparkScriptHeadAfter = map[string]bool{
+	"begin": true, "do": true, "loop": true, "repeat": true, "atomic": true,
+}
+
+// sparkScriptDML are the verbs recognised ANYWHERE inside a Spark SQL
+// script, as plsqlDML is inside PL/SQL.
+//
+// A handler puts its statement after a condition list no keyword closes:
+// `DECLARE EXIT HANDLER FOR SQLEXCEPTION DROP TABLE t`. Spark's write verbs
+// join PL/SQL's list. REPLACE is absent because replace() is a string
+// function, and so is SELECT, which never hides a write.
+var sparkScriptDML = map[string]bool{
+	"insert": true, "update": true, "delete": true, "merge": true,
+	"create": true, "drop": true, "alter": true, "truncate": true,
+	"grant": true, "revoke": true, "execute": true, "call": true,
+	"copy": true, "load": true, "vacuum": true, "optimize": true,
+	"reorg": true, "restore": true, "convert": true, "msck": true,
+	"repair": true,
+}
+
+// deltaCommand are the first keywords of the statements Delta Lake's own
+// parser claims (DeltaSqlBase.g4 `statement`). Delta hands every other
+// statement to Spark, so the Delta reading counts only behind one of these;
+// see analyzeSpark.
+var deltaCommand = map[string]bool{
+	"vacuum": true, "desc": true, "describe": true, "generate": true,
+	"convert": true, "restore": true, "alter": true, "optimize": true,
+	"reorg": true, "create": true, "replace": true,
+}
+
 // relIntro marks keywords after which the next name is a relation.
 //
 // Some are conditional; see introduces. "index" is deliberately absent: the
