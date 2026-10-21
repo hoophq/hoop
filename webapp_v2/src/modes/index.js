@@ -1,3 +1,4 @@
+import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { TRAFFIC_AGENT, TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 import gateway from './gateway'
@@ -32,6 +33,19 @@ export function useModeConfig() {
 export async function postAuthPath(kind = 'postLoginPath') {
   await useUserStore.getState().loadAppMode()
   return getModeConfig()[kind]
+}
+
+// Sends a person who just logged in or signed up back to the page that sent
+// them to auth (ProtectedRoute saved it), else to postAuthPath(kind). Every
+// auth page goes through here, so a link such as /sidecars/<id> survives a
+// signup as it survives a login, and a saved page is never replayed later.
+export async function goAfterAuth(navigate, kind = 'postLoginPath', options) {
+  const redirectUrl = useAuthStore.getState().getAndClearRedirectUrl()
+  if (redirectUrl) {
+    window.location.href = redirectUrl
+    return
+  }
+  navigate(await postAuthPath(kind), options)
 }
 
 const AGENT_AND_SIDECAR = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
