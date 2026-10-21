@@ -16,6 +16,7 @@ OFF_MAIN=1497bdcb0715  # compare status: diverged
 API_DOWN=aaaaaaaaaaaa  # compare fails with HTTP 500
 TAG=v1.2.3
 PRE_TAG=v0.1.0-preview.20261021183309-0123456789ab
+V2_TAG=v2.0.0
 
 mkdir "$WORK/bin"
 cat >"$WORK/bin/gh" <<EOF
@@ -25,7 +26,7 @@ case "\$2" in
   repos/hoophq/libhoop/compare/$BEHIND...main) echo ahead ;;
   repos/hoophq/libhoop/compare/$OFF_MAIN...main) echo diverged ;;
   repos/hoophq/libhoop/compare/$API_DOWN...main) echo "gh: Server Error (HTTP 500)" >&2; exit 1 ;;
-  repos/hoophq/libhoop/git/ref/tags/$TAG | repos/hoophq/libhoop/git/ref/tags/$PRE_TAG) echo "refs/tags/\${2##*/}" ;;
+  repos/hoophq/libhoop/git/ref/tags/$TAG | repos/hoophq/libhoop/git/ref/tags/$PRE_TAG | repos/hoophq/libhoop/git/ref/tags/$V2_TAG) echo "refs/tags/\${2##*/}" ;;
   *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
 esac
 EOF
@@ -85,6 +86,10 @@ run "missing tag" 1 "tag v1.9.9 does not exist" \
   a/go.mod "$(gomod a "$(req v1.9.9)")"
 run "prerelease tag ending in a timestamp and hash is a tag" 0 "" \
   a/go.mod "$(gomod a "$(req $PRE_TAG)")"
+run "+incompatible version reads the bare tag" 0 "" \
+  a/go.mod "$(gomod a "$(req "$V2_TAG+incompatible")")"
+run "+incompatible version with no tag" 1 "tag v3.0.0 does not exist" \
+  a/go.mod "$(gomod a "$(req "v3.0.0+incompatible")")"
 run "local replace in go.mod" 1 "local:../libhoop: replaced with a local path" \
   a/go.mod "$(gomod a "$(req "$(pseudo $ON_MAIN)")
 replace github.com/hoophq/libhoop => ../libhoop")"

@@ -487,7 +487,7 @@ jobs:
         run: make test-sidecar-compat
 
   # A libhoop pin must name a commit on libhoop main (ENG-821). A commit on a
-  # PR branch dies with the branch: #1986 pinned one, libhoop squash-merged and
+  # PR branch dies with the branch: ENG-768 pinned one, libhoop squash-merged and
   # deleted the branch, and every Go build failed with "unknown revision".
   # The use-libhoop-pr switch above does not bump the pin, so it still passes.
   libhoop-pin:

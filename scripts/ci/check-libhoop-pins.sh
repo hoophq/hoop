@@ -5,7 +5,7 @@
 # A pseudo-version names a commit, not a ref. A commit that only lives on a
 # libhoop PR branch becomes unfetchable when that branch is squash-merged and
 # deleted: every module in go.work then fails with "unknown revision", and so
-# does every build of each release that carries the pin. #1986 did this on
+# does every build of each release that carries the pin. ENG-768 did this on
 # 2026-10-21. A commit on main stays fetchable.
 #
 # A tagged version is accepted when the tag exists. A replace is accepted only
@@ -90,12 +90,14 @@ while IFS= read -r version; do
       *) fail "$version" "commit $sha is not on $REPO $BRANCH ($status); merge the libhoop PR and pin its $BRANCH commit" ;;
     esac
   else
-    if gh api "repos/$REPO/git/ref/tags/$version" --jq .ref >/dev/null 2>"$err"; then
+    # Go reads vX.Y.Z+incompatible from the tag vX.Y.Z.
+    tag=${version%+incompatible}
+    if gh api "repos/$REPO/git/ref/tags/$tag" --jq .ref >/dev/null 2>"$err"; then
       echo "ok: $version is a $REPO tag"
     elif grep -q 'HTTP 404' "$err"; then
-      fail "$version" "tag $version does not exist in $REPO"
+      fail "$version" "tag $tag does not exist in $REPO"
     else
-      fail "$version" "could not read tag $version in $REPO: $(tr '\n' ' ' <"$err")"
+      fail "$version" "could not read tag $tag in $REPO: $(tr '\n' ' ' <"$err")"
     fi
   fi
 done < <(awk -F'\t' '{ print $2 }' <<<"$refs" | sort -u)
