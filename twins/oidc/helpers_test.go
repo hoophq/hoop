@@ -75,7 +75,10 @@ func (s *twinServer) get(t *testing.T, path string) (int, string, string) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("GET %s: read the body: %v", path, err)
+	}
 	return resp.StatusCode, resp.Header.Get("Content-Type"), string(b)
 }
 

@@ -40,7 +40,7 @@ make twins-down            # stops it
 | `HOOP_BIN_DIR=dir` | Use `dir/hoop` and build none. A linux binary for `proxy`. |
 | `HOOP_UI_DIR=dir` | A stack with the web UI serves `dir` (it holds `index.html`) and builds none. Else it runs `scripts/dev/build-webapp.sh` (npm and Java) and serves `dist/dev/resources/public`. |
 | `TWINS_ARTIFACTS=dir` | Keep `oidc-state.json`, `router-state.json`, `timings.txt`, the logs and the browser's `screenshots/`. Default: a temp dir, or `dist/twins-up` for a stack that stays up. |
-| `TWINS_KEEP=1` | Leave the stack up after the run, failed or not. `make twins-down` stops it, whatever `TWINS_ARTIFACTS` it ran with. Until then, another run on this host refuses to start. |
+| `TWINS_KEEP=1` | Leave the stack up after the run, failed or not. `make twins-down` stops it, whatever `TWINS_ARTIFACTS` and reach it ran with. Until then, another run on this host refuses to start, `make twins-up` included. |
 | `TWINS_CHROME=path` | The Chrome binary of the browser scenarios. Default: the one chromedp finds. |
 
 The native stack uses these ports: the gateway listens on all interfaces at
@@ -59,7 +59,8 @@ after her.
 `make twins-up` builds hoop and the web UI from this branch, boots the
 stack, seeds alice, bob and carol, prints the URLs and returns. The stack
 stays up (containers under `proxy`, processes in their own process group
-under `native`) until `make twins-down`. The UI build runs `npm install`;
+under `native`) until `make twins-down`. A second `make twins-up` refuses
+while it runs; `make twins-down` first. The UI build runs `npm install`;
 the stack puts the two `package-lock.json` files back as they were after
 it. `HOOP_UI_DIR` reuses a build instead.
 

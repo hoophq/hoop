@@ -2,6 +2,7 @@ package oidc_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -265,7 +266,7 @@ func TestLoginPage(t *testing.T) {
 		t.Fatalf("authorize with no login_hint: %d %s, want the login page", status, ctype)
 	}
 	for _, want := range []string{
-		`<form method="get" action="/authorize">`,
+		`<form method="get" action="` + s.issuer + `/authorize">`,
 		`<input type="hidden" name="client_id" value="hoop">`,
 		`<input type="hidden" name="nonce" value="n-1">`,
 		`<input type="hidden" name="redirect_uri" value="` + callbackURL + `">`,
@@ -324,12 +325,13 @@ func TestLoginPageWithNoUsers(t *testing.T) {
 	}
 }
 
-// A browser reaches authorize at the browser URL; the gateway reaches the
-// rest at the issuer.
+// A browser reaches authorize at the browser URL, and the login page sends
+// its form there; the gateway reaches the rest at the issuer.
 func TestDiscoveryBrowserURL(t *testing.T) {
 	for name, tc := range map[string]struct{ browserURL, want string }{
-		"default: the issuer": {"", "https://oidc-twin/authorize"},
-		"a browser URL":       {"http://127.0.0.1:18081/", "http://127.0.0.1:18081/authorize"},
+		"default: the issuer":          {"", "https://oidc-twin/authorize"},
+		"a browser URL":                {"http://127.0.0.1:18081/", "http://127.0.0.1:18081/authorize"},
+		"a browser URL behind a proxy": {"http://127.0.0.1:18081/twins/oidc", "http://127.0.0.1:18081/twins/oidc/authorize"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			twin, err := oidc.New("https://oidc-twin", tc.browserURL)
@@ -344,6 +346,20 @@ func TestDiscoveryBrowserURL(t *testing.T) {
 			}
 			if doc["authorization_endpoint"] != tc.want {
 				t.Errorf("authorization_endpoint %v, want %s", doc["authorization_endpoint"], tc.want)
+			}
+			p := authorizeParams("")
+			p.Del("login_hint")
+			resp, err := srv.Client().Get(srv.URL + "/authorize?" + p.Encode())
+			if err != nil {
+				t.Fatal(err)
+			}
+			page, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := `<form method="get" action="` + tc.want + `">`; !strings.Contains(string(page), want) {
+				t.Errorf("the login page lacks %s", want)
 			}
 			for _, k := range []string{"token_endpoint", "userinfo_endpoint", "jwks_uri"} {
 				if u, _ := doc[k].(string); !strings.HasPrefix(u, "https://oidc-twin/") {

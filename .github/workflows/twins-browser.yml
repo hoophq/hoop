@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: "30 4 * * *"
   workflow_dispatch:
+  # TEMPORARY: workflow_dispatch runs only a workflow that is on main, so
+  # this proves the job on its branch. Removed before merge.
+  push:
+    branches: [rogerio/eng-702-log-in-to-hoop-in-a-browser-through-the-oidc-twin-and-see]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -40,14 +44,16 @@ jobs:
       - name: Build hoop
         run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/hoop-bin/hoop" ./client
 
-      # The UI build reads only these paths, so a hit is the UI of this
-      # commit.
+      # The UI build reads only these paths, and this file sets its Node and
+      # Java, so a hit is the UI of this commit. Restore and save are two
+      # steps: the combined action saves only when the whole job passes, and
+      # a failed scenario would then rebuild the UI on every later run.
       - name: Restore the web UI build
         id: ui
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: dist/dev/resources/public
-          key: twins-webui-${{ hashFiles('webapp/**', 'webapp_v2/**', 'scripts/dev/build-webapp.sh') }}
+          key: twins-webui-${{ hashFiles('webapp/**', 'webapp_v2/**', 'scripts/dev/build-webapp.sh', '.github/workflows/twins-browser.yml') }}
 
       - name: Setup Java
         if: steps.ui.outputs.cache-hit != 'true'
@@ -63,9 +69,20 @@ jobs:
         with:
           node-version: 20
 
+      # The token lifts the GitHub API rate limit of the connection metadata
+      # download (webapp/scripts/download-connection-metadata.sh).
       - name: Build the web UI
         if: steps.ui.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/dev/build-webapp.sh
+
+      - name: Save the web UI build
+        if: steps.ui.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: dist/dev/resources/public
+          key: ${{ steps.ui.outputs.cache-primary-key }}
 
       - name: Browser scenarios
         env:
@@ -91,6 +108,9 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:18081/_twin/ui
           if TWINS_KEEP=1 TWINS_ARTIFACTS="$RUNNER_TEMP/other" make test-twins-browser; then
             echo "a run beside a kept stack must refuse to start"; exit 1
+          fi
+          if make twins-up; then
+            echo "twins-up beside a kept stack must refuse to start"; exit 1
           fi
           curl -fsS -o /dev/null http://127.0.0.1:18009/
           make twins-down

@@ -21,10 +21,10 @@ var upUsers = []map[string]any{
 	{"sub": "carol-sub", "email": "carol@example.com", "name": "Carol", "groups": []string{"sre"}},
 }
 
-// TestUp is `make twins-up`: it stops the stack a previous run left, boots
-// one with the web UI, seeds the users and leaves it up.
+// TestUp is `make twins-up`: it boots the stack with the web UI, seeds the
+// users and leaves it up. Like any run, it refuses beside a kept stack, so
+// replacing one takes `make twins-down` first.
 func TestUp(t *testing.T) {
-	down(t)
 	s := newStack(t, stackOpts{ui: true, up: true})
 	seedOIDC(t, map[string]any{"users": upUsers})
 	logs := "docker compose -p twins logs -f"
@@ -45,29 +45,30 @@ Stop it with: make twins-down
 // TestDown is `make twins-down`.
 func TestDown(t *testing.T) { down(t) }
 
-// down stops a stack that twins-up or TWINS_KEEP=1 left up.
+// down stops a stack that twins-up or TWINS_KEEP=1 left up, of either
+// reach: the kept stack's reach can differ from this run's TWINS_REACH.
 func down(t *testing.T) {
 	t.Helper()
-	if stackReach(t) == "proxy" {
-		// compose checks HOOP_BIN_DIR before `down` too.
-		if b, err := composeCmd(os.TempDir(), "", false, "down", "-v", "--remove-orphans").CombinedOutput(); err != nil {
-			t.Fatalf("compose down: %v\n%s", err, b)
-		}
-		return
-	}
 	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(envOr("TWINS_ARTIFACTS", upArtifacts(root)), "native")
-	for _, d := range keptNativeDirs(root, dir) {
-		pids, _ := filepath.Glob(filepath.Join(d, "*.pid"))
-		for _, f := range pids {
+	for _, d := range keptNativeDirs(t, root, dir) {
+		for _, f := range pidFiles(t, d) {
 			stopKept(t, f)
 		}
 	}
+	// Last: a failed step above keeps the record of where the stack runs.
 	if err := os.Remove(keptNativeFile(root)); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
+	}
+	if len(composeContainers(t)) > 0 {
+		// compose checks HOOP_BIN_DIR before `down` too.
+		if b, err := composeCmd(os.TempDir(), "", false, "down", "-v", "--remove-orphans").CombinedOutput(); err != nil {
+			t.Fatalf("compose down: %v\n%s", err, b)
+		}
+		t.Log("stopped the compose stack")
 	}
 }
 

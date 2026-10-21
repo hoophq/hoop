@@ -23,14 +23,8 @@ func (s *stack) upNative(t *testing.T, binDir, uiDir string) {
 	t.Helper()
 	// A fresh dir each run: a kept PGlite home would hold the last run's
 	// users, and a kept test CA expires after a day.
+	// refuseBesideKept already checked that no kept stack runs from it.
 	dir := filepath.Join(s.artifacts, "native")
-	// The pid files are the only way twins-down finds a kept stack, and
-	// one native stack holds the ports of the host.
-	for _, d := range keptNativeDirs(s.root, dir) {
-		if pids, _ := filepath.Glob(filepath.Join(d, "*.pid")); len(pids) > 0 {
-			t.Fatalf("a kept stack may still run from %s (%d pid files): run make twins-down first", d, len(pids))
-		}
-	}
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -79,19 +73,71 @@ func (s *stack) upNative(t *testing.T, binDir, uiDir string) {
 	waitOK(t, apiURL+"/api/healthz", 120*time.Second, exited)
 }
 
+// refuseBesideKept fails the test when a kept stack of either reach runs on
+// this host. One stack holds the host's ports, and a kept one is someone's.
+// It runs before any build: the UI build replaces the directory a kept
+// stack serves.
+func refuseBesideKept(t *testing.T, root, nativeDir string) {
+	t.Helper()
+	for _, d := range keptNativeDirs(t, root, nativeDir) {
+		if pids := pidFiles(t, d); len(pids) > 0 {
+			t.Fatalf("a kept stack may still run from %s (%d pid files): run make twins-down first", d, len(pids))
+		}
+	}
+	if len(composeContainers(t, "label=twins.kept=yes")) > 0 {
+		t.Fatalf("a kept stack is up (docker compose -p twins ps): run make twins-down first")
+	}
+}
+
 // keptNativeFile names the dir of the last kept native stack.
 func keptNativeFile(root string) string { return filepath.Join(upArtifacts(root), "kept-native") }
 
 // keptNativeDirs lists dir and the dir of the last kept native stack, once
 // each.
-func keptNativeDirs(root, dir string) []string {
+func keptNativeDirs(t *testing.T, root, dir string) []string {
+	t.Helper()
 	dirs := []string{dir}
-	if b, err := os.ReadFile(keptNativeFile(root)); err == nil {
-		if kept := strings.TrimSpace(string(b)); kept != "" && kept != dir {
-			dirs = append(dirs, kept)
-		}
+	b, err := os.ReadFile(keptNativeFile(root))
+	switch {
+	case os.IsNotExist(err):
+		return dirs
+	case err != nil:
+		t.Fatalf("read the kept stack's dir: %v", err)
+	}
+	if kept := strings.TrimSpace(string(b)); kept != "" && kept != dir {
+		dirs = append(dirs, kept)
 	}
 	return dirs
+}
+
+// pidFiles lists the pid files of the native stack in dir.
+func pidFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	pids, err := filepath.Glob(filepath.Join(dir, "*.pid"))
+	if err != nil {
+		t.Fatalf("find the pid files in %s: %v", dir, err)
+	}
+	return pids
+}
+
+// composeContainers lists the containers of the twins compose project that
+// match the extra docker ps filter, stopped ones included. With no docker on
+// this host, or none running, no container can hold the stack's ports.
+func composeContainers(t *testing.T, filter ...string) []string {
+	t.Helper()
+	if _, err := exec.LookPath("docker"); err != nil {
+		return nil
+	}
+	args := []string{"ps", "-aq", "--filter", "label=com.docker.compose.project=twins"}
+	for _, f := range filter {
+		args = append(args, "--filter", f)
+	}
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	if err != nil {
+		t.Logf("docker is not reachable, so no compose stack runs: %v: %s", err, bytes.TrimSpace(out))
+		return nil
+	}
+	return strings.Fields(string(out))
 }
 
 // gatewayEnv is the whole environment of the gateway process. It inherits
@@ -195,14 +241,8 @@ func (s *stack) upCompose(t *testing.T, binDir, uiDir string) {
 			t.Logf("last lines of compose.log:\n%s", tail(b, 40))
 		}
 	}
-	// One compose project, twins, per host: a run from any worktree takes
-	// down the last one. A kept stack is someone's, so refuse instead.
-	if b, err := exec.Command("docker", "ps", "-q", "--filter", "label=com.docker.compose.project=twins",
-		"--filter", "label=twins.kept=yes").Output(); err != nil {
-		t.Fatalf("docker ps: %v", err)
-	} else if len(bytes.TrimSpace(b)) > 0 {
-		t.Fatalf("a kept stack is up (docker compose -p twins ps): run make twins-down first")
-	}
+	// One compose project, twins, per host. refuseBesideKept already
+	// refused a kept one; this takes down what a crashed run left.
 	_ = compose("down", "-v", "--remove-orphans").Run()
 	// Registered before `up`: a failed build or health check still leaves
 	// containers behind, and their ports would block the next run.

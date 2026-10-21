@@ -245,10 +245,14 @@ func (t *Twin) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /jwks", t.jwks)
 }
 
+// authorizeURL is where a browser reaches authorize. Discovery advertises
+// it, and the login page sends its form there.
+func (t *Twin) authorizeURL() string { return t.browserURL + "/authorize" }
+
 func (t *Twin) discovery(w http.ResponseWriter, _ *http.Request) {
 	kit.WriteJSON(w, http.StatusOK, map[string]any{
 		"issuer":                                t.issuer,
-		"authorization_endpoint":                t.browserURL + "/authorize",
+		"authorization_endpoint":                t.authorizeURL(),
 		"token_endpoint":                        t.issuer + "/token",
 		"userinfo_endpoint":                     t.issuer + "/userinfo",
 		"jwks_uri":                              t.issuer + "/jwks",

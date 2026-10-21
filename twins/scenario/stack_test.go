@@ -116,6 +116,7 @@ func newStack(t *testing.T, opts stackOpts) *stack {
 		t.Fatal(err)
 	}
 	t.Logf("reach=%s artifacts=%s keep=%v", s.reach, s.artifacts, s.keep)
+	refuseBesideKept(t, root, filepath.Join(s.artifacts, "native"))
 
 	binDir := s.buildHoop(t)
 	s.mark(t, "hoop built")

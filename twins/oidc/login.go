@@ -17,6 +17,9 @@ type loginUser struct {
 }
 
 type loginView struct {
+	// Action is the authorize endpoint discovery advertises, path prefix
+	// included.
+	Action   string
 	Issuer   string
 	ClientID string
 	Redirect string
@@ -28,7 +31,7 @@ type loginView struct {
 // same authorize request with login_hint, so the page holds no state and
 // the approval stays in authorize. The caller holds t.mu.
 func (t *Twin) loginPage(w http.ResponseWriter, q url.Values) {
-	v := loginView{Issuer: t.issuer, ClientID: t.cfg.ClientID}
+	v := loginView{Action: t.authorizeURL(), Issuer: t.issuer, ClientID: t.cfg.ClientID}
 	if u, err := url.Parse(q.Get("redirect_uri")); err == nil {
 		v.Redirect = u.Host
 	}
@@ -92,7 +95,7 @@ code { font: 12px ui-monospace, Menlo, monospace; }
 <span class="tag">OIDC twin</span>
 <h1>Sign in</h1>
 <p>Pick a seeded user. The twin approves with no password.</p>
-<form method="get" action="/authorize">
+<form method="get" action="{{.Action}}">
 {{- range .Params}}
 <input type="hidden" name="{{.Name}}" value="{{.Value}}">
 {{- end}}
