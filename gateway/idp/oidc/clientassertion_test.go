@@ -193,7 +193,7 @@ func TestOptionsValidateClientCredentials(t *testing.T) {
 	}{
 		{name: "secret only", secret: "secret"},
 		{name: "assertion file only", file: file},
-		{name: "neither", wantErr: "missing required oidc attributes (issuer-url, client-id, client-secret)"},
+		{name: "neither", wantErr: "missing required oidc attributes (issuer-url, client-id, client-secret or client-assertion-file)"},
 		{name: "both", secret: "secret", file: file, wantErr: "not both"},
 		{name: "missing file", file: filepath.Join(dir, "missing"), wantErr: "failed reading client assertion file"},
 		{name: "empty file", file: emptyFile, wantErr: "is empty"},

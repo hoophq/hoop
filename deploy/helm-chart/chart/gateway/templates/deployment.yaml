@@ -1,3 +1,4 @@
+{{- $idpToken := (.Values.idpFederatedToken | default dict).enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -53,13 +54,13 @@ spec:
         {{- end }}
         resources:
           {{- toYaml .Values.resources.gw | nindent 10 }}
-        {{- if or .Values.persistence.enabled .Values.idpFederatedToken.enabled }}
+        {{- if or .Values.persistence.enabled $idpToken }}
         volumeMounts:
         {{- if .Values.persistence.enabled }}
         - mountPath: /opt/hoop/sessions
           name: walsessions
         {{- end }}
-        {{- if .Values.idpFederatedToken.enabled }}
+        {{- if $idpToken }}
         - mountPath: {{ include "hoopgateway.idpTokenDir" . }}
           name: idp-federated-token
           readOnly: true
@@ -93,14 +94,14 @@ spec:
         - secretRef:
             name: hoop-config
       {{ end -}}
-      {{- if or .Values.persistence.enabled .Values.idpFederatedToken.enabled }}
+      {{- if or .Values.persistence.enabled $idpToken }}
       volumes:
       {{- if .Values.persistence.enabled }}
       - name: walsessions
         persistentVolumeClaim:
           claimName: {{ .Values.persistence.existingClaim | default "walsessions" }}
       {{- end }}
-      {{- if .Values.idpFederatedToken.enabled }}
+      {{- if $idpToken }}
       - name: idp-federated-token
         projected:
           sources:

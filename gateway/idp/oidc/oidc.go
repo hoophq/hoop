@@ -53,7 +53,7 @@ type Options struct {
 
 func (o Options) validate() error {
 	if o.IssuerURL == "" || o.ClientID == "" || (o.ClientSecret == "" && o.ClientAssertionFile == "") {
-		return fmt.Errorf("missing required oidc attributes (issuer-url, client-id, client-secret)")
+		return fmt.Errorf("missing required oidc attributes (issuer-url, client-id, client-secret or client-assertion-file)")
 	}
 	if o.ClientAssertionFile == "" {
 		return nil
