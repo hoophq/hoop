@@ -3,7 +3,8 @@
 A Claude Managed Agents cloud agent reaches one REST API, and only through a
 hoop sidecar. The sidecar admits a caller by token, denies writes, masks
 personal data in responses and records each request with the Claude session
-id.
+id. The docs page:
+[Claude Managed Agents](https://hoop.dev/docs/integrations/claude-managed-agents).
 
 ```
 cloud sandbox, limited networking          your network

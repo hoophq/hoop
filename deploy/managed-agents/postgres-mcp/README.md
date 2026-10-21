@@ -2,7 +2,8 @@
 
 A Claude Managed Agents cloud agent queries Postgres with an MCP tool. The
 MCP server reaches the database only through a hoop sidecar, which refuses
-writes, masks emails and records each statement.
+writes, masks emails and records each statement. The docs page:
+[Postgres through an MCP server](https://hoop.dev/docs/integrations/claude-managed-agents#postgres-through-an-mcp-server).
 
 ```
 Anthropic's servers         your host
