@@ -81,6 +81,15 @@ spec:
         - {name: pause, image: 'registry.k8s.io/pause:3.10'}
 EOF
 kc apply -f rbac.yaml >/dev/null # its Role lives in demo
+# A certificate from an older run that expires within a day is replaced, and
+# the sidecar restarted below, so the demo's verified TLS keeps working.
+RENEWED=""
+if kc -n hoop get secret hoop-sidecar-tls >/dev/null 2>&1 \
+    && ! kc -n hoop get secret hoop-sidecar-tls -o jsonpath='{.data.tls\.crt}' | base64 -d \
+        | openssl x509 -checkend 86400 -noout >/dev/null 2>&1; then
+    kc -n hoop delete secret hoop-sidecar-tls >/dev/null
+    RENEWED=1
+fi
 if ! kc -n hoop get secret hoop-sidecar-tls >/dev/null 2>&1; then
     tmp=$(mktemp -d)
     openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=localhost \
@@ -94,6 +103,14 @@ c_ok "namespaces hoop and demo"
 c_step "Installing the sidecar chart with values.yaml"
 helm --kube-context "$CTX" upgrade --install hoop-kube ../../helm-chart/chart/sidecar \
     -n hoop -f values.yaml --wait --timeout 3m >/dev/null
+if [[ -n "$RENEWED" ]]; then
+    # Wait for the old pods to go, not only for the new one to be ready: the
+    # Service still sends some connections to an old pod while it terminates.
+    old=$(kc -n hoop get pods -l app.kubernetes.io/instance=hoop-kube -o name)
+    kc -n hoop rollout restart deploy/hoop-kube-hoopsidecar >/dev/null
+    kc -n hoop rollout status deploy/hoop-kube-hoopsidecar --timeout=2m >/dev/null
+    [[ -z "$old" ]] || kc -n hoop wait --for=delete $old --timeout=2m >/dev/null
+fi
 kc -n demo rollout status deploy/web --timeout=2m >/dev/null
 c_ok "sidecar ready on https://127.0.0.1:8443"
 
