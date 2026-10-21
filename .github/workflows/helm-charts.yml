@@ -83,7 +83,7 @@ jobs:
           fed=$(helm template t "$chart" "${base[@]}" --set idpFederatedToken.enabled=true)
           for want in "IDP_CLIENT_ASSERTION_FILE: '/var/run/secrets/hoop/idp/token'" \
                       "IDP_CLIENT_SECRET: ''" 'mountPath: /var/run/secrets/hoop/idp' \
-                      'audience: "api://AzureADTokenExchange"'; do
+                      'audience: "api://AzureADTokenExchange"' 'serviceAccountName: hoopgateway'; do
             echo "$fed" | grep -qF "$want" \
               || { echo "::error::idpFederatedToken did not render: $want"; exit 1; }
           done
@@ -488,6 +488,7 @@ jobs:
           guard "issuer, no client"   "${base[@]}" --set config.IDP_ISSUER=https://idp
           guard "issuer, no secret"   "${base[@]}" --set config.IDP_ISSUER=https://idp --set config.IDP_CLIENT_ID=i
           guard "token + secret"      "${base[@]}" --set idpFederatedToken.enabled=true --set config.IDP_CLIENT_SECRET=s
+          guard "token, no SA"        "${base[@]}" --set idpFederatedToken.enabled=true
           guard "image.command"       "${base[@]}" --set 'image.command={hoop}'
           guard "image.args"          "${base[@]}" --set 'image.args={start}'
           guard "no parentRefs"       "${base[@]}" --set gatewayApi.enabled=true --set gatewayApi.createGateway=false
@@ -522,14 +523,14 @@ jobs:
           # A federated token replaces the client secret (ENG-594), also on a
           # release whose values predate the idpFederatedToken key.
           fed=$(helm template t "$chart" "${base[@]}" --set config.IDP_ISSUER=https://idp \
-            --set config.IDP_CLIENT_ID=i --set idpFederatedToken.enabled=true) \
+            --set config.IDP_CLIENT_ID=i --set idpFederatedToken.enabled=true --set serviceAccount.create=true) \
             || { echo "::error::an IDP block with a federated token was refused"; exit 1; }
           echo "$fed" | grep -qF 'IDP_CLIENT_ASSERTION_FILE: "/var/run/secrets/hoop/idp/token"' \
             || { echo "::error::idpFederatedToken did not set IDP_CLIENT_ASSERTION_FILE"; exit 1; }
           helm template t "$chart" "${base[@]}" --set idpFederatedToken=null >/dev/null \
             || { echo "::error::a release without the idpFederatedToken key no longer renders"; exit 1; }
 
-          echo "all twelve control plane guards fire, and valid values still render"
+          echo "all thirteen control plane guards fire, and valid values still render"
 
           # The chart renders the control plane's environment and nothing else.
           # It does not police what an operator writes under config: a key it

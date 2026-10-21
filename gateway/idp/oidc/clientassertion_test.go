@@ -27,8 +27,9 @@ type fakeIdP struct {
 	*httptest.Server
 	key *rsa.PrivateKey
 
-	mu       sync.Mutex
-	requests []tokenRequest
+	mu         sync.Mutex
+	requests   []tokenRequest
+	redirectTo string
 }
 
 type tokenRequest struct {
@@ -61,6 +62,10 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 		}}})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		if idp.redirectTo != "" {
+			http.Redirect(w, r, idp.redirectTo, http.StatusTemporaryRedirect)
+			return
+		}
 		require.NoError(t, r.ParseForm())
 		id, secret, ok := r.BasicAuth()
 		idp.mu.Lock()
@@ -91,6 +96,12 @@ func (f *fakeIdP) lastRequest(t *testing.T) tokenRequest {
 	return f.requests[len(f.requests)-1]
 }
 
+// testJWT returns a compact JWS with sub in its payload. Its signature is not valid.
+func testJWT(sub string) string {
+	enc := base64.RawURLEncoding.EncodeToString
+	return enc([]byte(`{"alg":"RS256"}`)) + "." + enc([]byte(`{"sub":"`+sub+`"}`)) + ".sig"
+}
+
 func writeAssertion(t *testing.T, path, content string) {
 	require.NoError(t, os.WriteFile(path, []byte(content), 0600))
 }
@@ -108,7 +119,7 @@ func assertClientAssertion(t *testing.T, req tokenRequest, grantType, assertion 
 func TestClientAssertionTokenRequests(t *testing.T) {
 	idp := newFakeIdP(t)
 	file := filepath.Join(t.TempDir(), "token")
-	writeAssertion(t, file, "h.assertion-1.s\n")
+	writeAssertion(t, file, testJWT("assertion-1")+"\n")
 
 	p, err := New(Options{IssuerURL: idp.URL, ClientID: "client-id", ClientAssertionFile: file})
 	require.NoError(t, err)
@@ -118,7 +129,7 @@ func TestClientAssertionTokenRequests(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "alice@example.com", uinfo.Email)
 		req := idp.lastRequest(t)
-		assertClientAssertion(t, req, "authorization_code", "h.assertion-1.s")
+		assertClientAssertion(t, req, "authorization_code", testJWT("assertion-1"))
 		assert.Equal(t, "code-1", req.form.Get("code"))
 	})
 
@@ -127,7 +138,7 @@ func TestClientAssertionTokenRequests(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "access", tok.AccessToken)
 		req := idp.lastRequest(t)
-		assertClientAssertion(t, req, "refresh_token", "h.assertion-1.s")
+		assertClientAssertion(t, req, "refresh_token", testJWT("assertion-1"))
 		assert.Equal(t, "refresh-1", req.form.Get("refresh_token"))
 	})
 
@@ -135,15 +146,15 @@ func TestClientAssertionTokenRequests(t *testing.T) {
 		_, err := p.clientCredentialsToken(context.Background(), []string{graphScope}, "")
 		require.NoError(t, err)
 		req := idp.lastRequest(t)
-		assertClientAssertion(t, req, "client_credentials", "h.assertion-1.s")
+		assertClientAssertion(t, req, "client_credentials", testJWT("assertion-1"))
 		assert.Equal(t, graphScope, req.form.Get("scope"))
 	})
 
 	t.Run("rotated file is read on the next request", func(t *testing.T) {
-		writeAssertion(t, file, "h.assertion-2.s")
+		writeAssertion(t, file, testJWT("assertion-2"))
 		_, err := p.RefreshAccessToken(context.Background(), "refresh-1")
 		require.NoError(t, err)
-		assertClientAssertion(t, idp.lastRequest(t), "refresh_token", "h.assertion-2.s")
+		assertClientAssertion(t, idp.lastRequest(t), "refresh_token", testJWT("assertion-2"))
 	})
 
 	t.Run("empty file fails the request", func(t *testing.T) {
@@ -151,6 +162,22 @@ func TestClientAssertionTokenRequests(t *testing.T) {
 		_, err := p.RefreshAccessToken(context.Background(), "refresh-1")
 		assert.ErrorContains(t, err, "is empty")
 	})
+}
+
+func TestClientAssertionNotSentOnRedirect(t *testing.T) {
+	var hits int
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	t.Cleanup(other.Close)
+	idp := newFakeIdP(t)
+	file := filepath.Join(t.TempDir(), "token")
+	writeAssertion(t, file, testJWT("assertion-1"))
+	p, err := New(Options{IssuerURL: idp.URL, ClientID: "client-id", ClientAssertionFile: file})
+	require.NoError(t, err)
+
+	idp.redirectTo = other.URL + "/token"
+	_, err = p.RefreshAccessToken(context.Background(), "refresh-1")
+	assert.Error(t, err)
+	assert.Zero(t, hits, "the assertion followed a redirect to another host")
 }
 
 func TestClientSecretTokenRequestsUnchanged(t *testing.T) {
@@ -180,7 +207,9 @@ func TestClientSecretTokenRequestsUnchanged(t *testing.T) {
 func TestOptionsValidateClientCredentials(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "token")
-	writeAssertion(t, file, "h.assertion.s")
+	writeAssertion(t, file, testJWT("assertion"))
+	threeParts := filepath.Join(dir, "three-parts")
+	writeAssertion(t, threeParts, "h.assertion.s")
 	notJWT := filepath.Join(dir, "environ")
 	writeAssertion(t, notJWT, "PATH=/usr/bin\nPOSTGRES_DB_URI=postgres://u:p@db/hoop\n")
 	emptyFile := filepath.Join(dir, "empty")
@@ -200,6 +229,7 @@ func TestOptionsValidateClientCredentials(t *testing.T) {
 		{name: "missing file", file: filepath.Join(dir, "missing"), wantErr: "failed reading client assertion file"},
 		{name: "empty file", file: emptyFile, wantErr: "is empty"},
 		{name: "file that is not a JWT", file: notJWT, wantErr: "does not hold a JWT"},
+		{name: "three parts that are not a JWT", file: threeParts, wantErr: "does not hold a JWT"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := base

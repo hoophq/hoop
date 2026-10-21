@@ -488,8 +488,9 @@ resources:
 # -- Sign in with Entra ID (Azure) without a client secret. Mounts a projected
 # service account token and sets config.IDP_CLIENT_ASSERTION_FILE to it. The
 # app registration needs a federated credential with issuer = the cluster OIDC
-# issuer, subject = system:serviceaccount:<namespace>:<service account> and
-# audience = idpFederatedToken.audience. Leave config.IDP_CLIENT_SECRET empty.
+# issuer, subject = system:serviceaccount:<namespace>:hoopgateway and
+# audience = idpFederatedToken.audience. The pod runs as hoopgateway: set
+# serviceAccount.create=true or create it. Leave config.IDP_CLIENT_SECRET empty.
 idpFederatedToken:
   enabled: false
   audience: api://AzureADTokenExchange

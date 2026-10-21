@@ -2,6 +2,8 @@ package oidcprovider
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,10 +27,30 @@ func readClientAssertion(path string) (string, error) {
 	if assertion == "" {
 		return "", fmt.Errorf("client assertion file %v is empty", path)
 	}
-	if strings.Count(assertion, ".") != 2 || strings.ContainsAny(assertion, " \t\r\n") {
+	if !isJWT(assertion) {
 		return "", fmt.Errorf("client assertion file %v does not hold a JWT", path)
 	}
 	return assertion, nil
+}
+
+// isJWT reports whether s is a compact JWS: a JSON header and a JSON payload,
+// both base64url, and a signature.
+func isJWT(s string) bool {
+	parts := strings.Split(s, ".")
+	if len(parts) != 3 || parts[2] == "" {
+		return false
+	}
+	for _, part := range parts[:2] {
+		data, err := base64.RawURLEncoding.DecodeString(part)
+		if err != nil {
+			return false
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(data, &obj); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // clientAssertionTransport authenticates OAuth2 token requests with the JWT
@@ -86,5 +108,7 @@ func (p *Provider) withTokenClient(ctx context.Context) context.Context {
 		base = http.DefaultTransport
 	}
 	client.Transport = &clientAssertionTransport{file: p.ClientAssertionFile, base: base}
+	// A redirect keeps the body, so following one sends the assertion to another host.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return context.WithValue(ctx, oauth2.HTTPClient, &client)
 }

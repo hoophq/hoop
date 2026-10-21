@@ -26,7 +26,7 @@ spec:
       labels:
         app: hoopgateway
     spec:
-      {{- if .Values.serviceAccount.create }}
+      {{- if or .Values.serviceAccount.create $idpToken }}
       serviceAccountName: hoopgateway
       {{- end }}
       {{- with .Values.podSecurityContext }}

@@ -37,8 +37,9 @@ helm upgrade --install hoop \
 ### Entra ID without a client secret
 
 The gateway can authenticate its OIDC client with a Kubernetes service account
-token in place of `IDP_CLIENT_SECRET` (workload identity federation). No secret
-expires and nothing needs rotation.
+token in place of `IDP_CLIENT_SECRET` (workload identity federation). There is
+no client secret to expire or rotate: Kubernetes renews the token, and the
+gateway reads it again on each token request.
 
 1. Get the cluster OIDC issuer. On AKS, enable it with
    `az aks update -g <rg> -n <cluster> --enable-oidc-issuer`, then read it with

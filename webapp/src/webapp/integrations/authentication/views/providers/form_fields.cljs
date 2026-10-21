@@ -76,6 +76,7 @@
            [forms/input
             {:full-width? true
              :not-margin-bottom? true
+             :id "oidc-client-assertion-file"
              :label "Token file"
              :helper-text "The path the gateway operator set in IDP_CLIENT_ASSERTION_FILE. The helm chart mounts the token here with idpFederatedToken.enabled."
              :placeholder "/var/run/secrets/hoop/idp/token"
@@ -85,6 +86,7 @@
            [forms/input
             {:full-width? true
              :not-margin-bottom? true
+             :id "oidc-client-secret"
              :label "Client secret"
              :type "password"
              :value (:client-secret @config)

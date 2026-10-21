@@ -91,6 +91,9 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if and $idpAssertionFile $c.IDP_CLIENT_SECRET -}}
 {{- fail "set config.IDP_CLIENT_SECRET or a client assertion (idpFederatedToken.enabled, config.IDP_CLIENT_ASSERTION_FILE), not both" -}}
 {{- end -}}
+{{- if and (.Values.idpFederatedToken | default dict).enabled (not (include "hoopcontrolplane.serviceAccountName" .)) -}}
+{{- fail "idpFederatedToken.enabled needs the service account the federated credential trusts: set serviceAccount.create=true or serviceAccount.name" -}}
+{{- end -}}
 {{- if $c.IDP_ISSUER -}}
 {{- if not $c.IDP_CLIENT_ID -}}
 {{- fail "config.IDP_CLIENT_ID is required when config.IDP_ISSUER is set" -}}
