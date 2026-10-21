@@ -40,10 +40,11 @@ config:
   # The free tier enforces one guardrail rule and one mask rule per process.
   guardrails:
     rules:
+      # Every method but GET, HEAD and OPTIONS. `other` is any method HTTP
+      # does not define, such as MOVE or MKCOL.
       - name: read-only
-        type: http_resource
-        methods: [POST, PUT, PATCH, DELETE]
-        resources: ['/**']
+        type: operation
+        operations: [post, put, patch, delete, connect, trace, other]
         message: this agent may only read from the API
   mask:
     rules:

@@ -45,7 +45,8 @@ The agent cannot skip the sidecar:
 ## 1. Run the sidecar
 
 ```bash
-openssl rand -hex 24 > caller-token    # keep it out of git
+openssl rand -hex 24 > caller-token    # keep both files out of git
+read -rs API_TOKEN && printf %s "$API_TOKEN" > api-token && unset API_TOKEN    # your API's own token
 kubectl create secret tls hoop-sidecar-tls --cert=tls.crt --key=tls.key
 kubectl create secret generic hoop-caller-token --from-file=tokens=caller-token
 ```
@@ -85,8 +86,8 @@ ant beta:vaults:credentials create --vault-id "$VAULT_ID" \
   --auth.secret-value @<(tr -d '\n' < api-token) < credentials/customer-api-token.yaml
 ```
 
-`api-token` holds your API's own token. The sidecar forwards the
-`Authorization` header unchanged.
+The sidecar forwards the `Authorization` header unchanged, so the API gets
+the token from `api-token`.
 
 ## 4. Start a session
 
@@ -112,12 +113,26 @@ kubectl logs deploy/hoop-api-hoopsidecar | jq -cR 'fromjson? | select(.kind == "
 A request row carries the session id the agent sent. A refused caller is
 recorded under `anonymous` with rule `identity`.
 
+## 6. Check that the sandbox holds no real token
+
+Ask the agent, without printing a value, for the length and SHA-256 of
+`$HOOP_CALLER_TOKEN` and `$CUSTOMER_API_TOKEN`, and of the same two values as
+`curl -v` writes them in its `>` request lines. Compare with your files:
+
+```bash
+for f in caller-token api-token; do printf '%s %s\n' "$f" "$(tr -d '\n' < $f | shasum -a 256 | cut -d' ' -f1)"; done
+```
+
+The sandbox values must differ from yours: they are vault placeholders, and
+the egress proxy swaps in the real tokens on the way out. A request the
+sidecar admits shows that the swap happened.
+
 ## What to expect
 
 | The agent | Result |
 |---|---|
 | GETs a customer | `200`, emails and phones read `[REDACTED:EMAIL_ADDRESS]` and `[REDACTED:PHONE_NUMBER]` |
-| Sends `POST`, `PUT`, `PATCH` or `DELETE` | `403`, `X-Hoop-Denied: policy`; the API receives nothing |
+| Sends any method but `GET`, `HEAD` or `OPTIONS` | `403`, `X-Hoop-Denied: policy`; the API receives nothing |
 | Omits `X-Hoop-Token` | `403`, `request refused: the request carried no credential` |
 | Calls the API host, or any other host | `Could not resolve host` |
 

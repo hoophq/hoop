@@ -152,6 +152,42 @@ func TestAnAllowedRequestSplitAcrossReadsArrivesWhole(t *testing.T) {
 	}
 }
 
+// The codec reads a chunked body it cannot frame as one still arriving, and
+// the hold forwards nothing until the codec decodes it. Such a request must
+// be refused at once, not left waiting until the connection idles out.
+func TestAnUnframableBodyIsRefusedAtOnce(t *testing.T) {
+	up := newEchoUpstream(t, nil)
+	srv := startServer(t, proxy.Config{
+		Upstream:   up.addr(),
+		Protocol:   inspect.HTTP,
+		Connection: "api",
+		Policy:     noDeletes(t),
+		DenyWriter: proxy.ProtocolDenyWriter{},
+	})
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+
+	if _, err := c.Write([]byte("POST /items HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := c.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := io.ReadAll(c)
+	if err != nil {
+		t.Fatalf("no answer for an unframable body: %v", err)
+	}
+	if !strings.Contains(string(answer), "403 Forbidden") {
+		t.Fatalf("the client read %q, want a 403", answer)
+	}
+	if got := up.got(); len(got) != 0 {
+		t.Errorf("the upstream received %q", got)
+	}
+}
+
 // A client sending Expect: 100-continue waits for the 100 before its body.
 // The held head never reaches the upstream, so no 100 comes; the client
 // sends the body when its own wait ends, and the request completes.

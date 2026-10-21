@@ -4694,6 +4694,8 @@ Read these before writing a policy against it.
   request until its body has arrived and policy has judged it, so a denied
   request reaches no upstream, however its bytes were split. The cost:
   - A request over 8 MiB, head and body, is refused with nothing forwarded.
+  - A chunked body the relay cannot frame is refused at once, on every
+    lane: the codec would wait for it forever.
   - A streaming upload reaches the upstream only once it ends.
   - A client that sends `Expect: 100-continue` (curl above 1 MiB, Go when
     asked) sends its body only after its own wait, about 1 second, because
