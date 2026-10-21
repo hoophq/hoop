@@ -26,13 +26,23 @@ LOCK=.work/ant/claude-lock.json
 AGENT=agents/demo-api.md ENVIRONMENT=environments/hoop-sidecar.yaml VAULT=vaults/hoop-sidecar.yaml
 lockid() { jq -r --arg f "./$1" '.resources[$f].id // empty' "$LOCK"; }
 
+# gone <ant args>: one removal. A resource already removed, in the console
+# for one, counts as done: the API answers it with not_found_error.
+gone() {
+    local out
+    out=$(ant "$@" 2>&1) && return 0
+    grep -qE '"type": *"not_found_error"' <<<"$out" && return 0
+    printf '%s\n' "$out" >&2
+    return 1
+}
+
 # drop <lock file key> <ant args, ending with the id flag>. A deleted resource
 # leaves the lock, so a retry after a failure touches only what is left.
 drop() {
     local id rest
     id=$(lockid "$1")
     [[ -n "$id" ]] || return 0
-    ant "${@:2}" "$id" >/dev/null || return 1
+    gone "${@:2}" "$id" || return 1
     rest=$(jq --arg f "./$1" 'del(.resources[$f])' "$LOCK") && printf '%s\n' "$rest" > "$LOCK"
 }
 
@@ -40,12 +50,12 @@ drop() {
 archive_session() {
     local id status
     id=$(cat .work/session)
-    status() { ant beta:sessions retrieve --session-id "$id" --transform status --raw-output; }
+    status() { ant beta:sessions retrieve --session-id "$id" --transform status --raw-output 2>/dev/null; }
     if [[ "$(status)" == running ]]; then
         ant beta:sessions:events send --session-id "$id" --event '{type: user.interrupt}' >/dev/null
         for _ in $(seq 30); do [[ "$(status)" != running ]] && break; sleep 1; done
     fi
-    ant beta:sessions archive --session-id "$id" >/dev/null && rm .work/session
+    gone beta:sessions archive --session-id "$id" && rm .work/session
 }
 
 delete_all() {

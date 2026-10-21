@@ -130,8 +130,10 @@ refused with a warning in the log; the old rules stay in force, and the
 next start fails.
 
 A license lifts both caps: [talk to us](https://hoop.dev/meet). In the
-quick start, put `HOOP_LICENSE=<license>` in `quickstart/.env`. On
-Kubernetes, set the chart's `license` value.
+quick start, put the license document itself in `quickstart/.env`, in
+single quotes: `HOOP_LICENSE='{"payload": ...}'`. A path does not work
+there: the file is not in the container. On Kubernetes, set the chart's
+`license` value.
 
 ## Run it against your API
 

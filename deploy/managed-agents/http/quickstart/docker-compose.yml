@@ -9,7 +9,8 @@ services:
     environment:
       HOOP_SIDECAR_CONFIG: /etc/hoop-quickstart/sidecar.yaml
       HOOP_SIDECAR_INSTALL_SOURCE: managed-agents-http
-      # Empty runs the free tier. README.md, "Free tier".
+      # Empty runs the free tier. The document itself, not a path: no host
+      # file is mounted for it. README.md, "Free tier".
       HOOP_LICENSE: ${HOOP_LICENSE:-}
     volumes:
       # The folder, not the file: an editor that saves by rename gives the
