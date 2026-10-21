@@ -66,6 +66,7 @@ import Reviews from '@/pages/Reviews'
 import Sidecars from '@/pages/Sidecars'
 import SidecarSetup from '@/pages/Sidecars/Setup'
 import SidecarDetailsPage from '@/pages/Sidecars/Details'
+import SidecarPairPage from '@/pages/Sidecars/Pair'
 import SidecarListenerPage from '@/pages/Sidecars/Listener'
 
 // The only lazily-loaded page. Every other route is imported eagerly, but the
@@ -132,6 +133,15 @@ function Router() {
         element={
           <Page adminOnly>
             <SidecarSetup mode="create" />
+          </Page>
+        }
+      />
+      {/* Before /sidecars/:id: the CLI's pairing link (`hoop start sidecar`). */}
+      <Route
+        path="/sidecars/pair"
+        element={
+          <Page adminOnly>
+            <SidecarPairPage />
           </Page>
         }
       />

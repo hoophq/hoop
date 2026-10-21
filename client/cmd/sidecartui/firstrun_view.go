@@ -278,6 +278,15 @@ func (m firstRunModel) portView(width int) string {
 func (m firstRunModel) getStarted(w, h int, now time.Time) (title, body string) {
 	var status []string
 	switch {
+	case m.pair != nil:
+		// The link is printed as well: a browser that did not open, or a
+		// machine with none, can still pair.
+		status = append(status,
+			shimmer("waiting for you to sign in and select Pair in the browser…", now),
+			stText.Render("If no browser opened, go to:"),
+			stKey.Render(ansi.Truncate("  "+m.pair.PageURL, w, "…")))
+	case m.pairStatus != "" && m.pairBad:
+		status = append(status, lipgloss.NewStyle().Width(w).Inherit(stDanger).Render(clean(m.pairStatus)))
 	case m.checking != "":
 		status = append(status, shimmer("checking "+filepath.Base(m.checking)+"…", now))
 	case m.invalid != "":
@@ -342,8 +351,17 @@ func (m firstRunModel) render() string {
 	// Wrapped to the frame, so a narrow terminal breaks the sentence
 	// instead of cutting it.
 	wrap := lipgloss.NewStyle().Width(w).Align(lipgloss.Center)
-	intro := wrap.Inherit(stText).Render("Welcome to hoop sidecar. Let's get it running: " +
-		"set up a config in a few steps, or start from one you already have.")
+	introText := "Welcome to hoop sidecar. Let's get it running: " +
+		"set up a config in a few steps, or start from one you already have."
+	switch {
+	case !m.signedIn():
+		introText = "Welcome to hoop sidecar. Sign in first: create a free account, " +
+			"or connect your company's Control Plane."
+	case m.cred != nil:
+		introText = "Welcome to hoop sidecar, signed in to " + m.cred.URL + ". " +
+			"Set up a config in a few steps, or start from one you already have."
+	}
+	intro := wrap.Inherit(stText).Render(introText)
 	flow := m.frFlow(now)
 
 	// The panel takes what the screen has left under the header, at most
@@ -361,6 +379,12 @@ func (m firstRunModel) render() string {
 
 	k := func(key, what string) string { return stKey.Render(key) + stFaint.Render(" "+what+"   ") }
 	hints := k("↑↓", "move") + k("enter", "choose") + k("w", "set up") + k("o", "open a file") + k("q", "quit")
+	switch {
+	case m.pair != nil:
+		hints = k("esc", "stop waiting")
+	case !m.signedIn():
+		hints = k("↑↓", "move") + k("enter", "choose") + k("q", "quit")
+	}
 	if m.picker != nil {
 		hints = k("type", "a path") + k("↑↓", "move") + k("tab/→", "into a folder") + k("enter", "open") + k("esc", "back")
 	}

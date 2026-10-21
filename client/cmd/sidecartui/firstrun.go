@@ -39,6 +39,13 @@ type FirstRunOptions struct {
 	// UseLicense tells the CLI a license was saved at path, so what it
 	// validates and boots from here on runs under it.
 	UseLicense func(path string)
+	// SaaSURL is the hosted Control Plane a person signs up on: "Create an
+	// account or sign in" pairs the sidecar with it.
+	SaaSURL string
+	// CredentialDir holds the stored Control Plane credential
+	// (PlaneCredentialFile). One found there signs the person in; a pairing
+	// or a connection writes it.
+	CredentialDir string
 }
 
 // Messages first-run mode sends the screen.
@@ -66,6 +73,11 @@ type (
 		conflicts       []string
 		// empty is a plane that took the token and holds no config yet.
 		empty bool
+	}
+	// frPairedMsg is the end of a browser pairing: a credential, or why not.
+	frPairedMsg struct {
+		cred PlaneCredential
+		err  error
 	}
 )
 
@@ -132,6 +144,19 @@ type firstRunModel struct {
 	plane       *pendingPlane
 	licenseNote string
 
+	// saasURL is the hosted Control Plane "Create an account or sign in"
+	// pairs with. cred is the stored credential (credDir): set, the person
+	// is signed in and every boot goes to that plane.
+	saasURL string
+	credDir string
+	cred    *PlaneCredential
+	// pair is the browser pairing while it runs, pairCancel ends it, and
+	// pairStatus says how the last one ended.
+	pair       *pairing
+	pairCancel func()
+	pairStatus string
+	pairBad    bool
+
 	stop     func()
 	stopping bool
 	done     bool
@@ -154,9 +179,18 @@ func newFirstRunModel(version string, now func() time.Time, stop func(), detect 
 // configs already in this folder. The folder is read again each time, so a
 // config the setup screens just saved appears in it.
 func (m *firstRunModel) buildHome() {
+	// Signed out, the only ways forward are the two ways in. A regular
+	// account comes first: it is what most people trying the sidecar need.
+	if !m.signedIn() {
+		m.home.items = []menuItem{
+			{id: "account", label: "Create an account or sign in", detail: "sign up on hoop, then this sidecar pairs with your account"},
+			{id: "connect", label: "Enterprise: connect to your Control Plane", detail: "your Control Plane URL and sidecar token, or a license"},
+		}
+		m.home.cur = min(m.home.cur, len(m.home.items)-1)
+		return
+	}
 	items := []menuItem{
 		{id: "setup", label: "Set up a config file", detail: "pick the demo or a protocol, adjust the defaults, boot"},
-		{id: "connect", label: "Connect to a Control Plane", detail: "Enterprise: manage this sidecar from the hoop web app, or start with a license"},
 		{id: "open", label: "Open a config file", detail: "browse to a config you already have and boot it"},
 		{note: true, label: "Config files in this folder"},
 	}
@@ -177,6 +211,51 @@ func (m *firstRunModel) buildHome() {
 	m.home.cur = min(cur, len(items)-1)
 	if m.home.items[m.home.cur].note {
 		m.home.cur = 0
+	}
+}
+
+// signedIn is whether the person may set up or boot a config: a stored or
+// just-made Control Plane credential, a connected plane, or a license saved
+// on the Connect page.
+func (m firstRunModel) signedIn() bool {
+	return m.cred != nil || m.plane != nil || m.licensePath != ""
+}
+
+// startAccount pairs this sidecar with an account on the hosted Control
+// Plane: the browser opens the web app's pairing page, the person signs up
+// or signs in and selects Pair, and the token comes back to this process.
+func (m *firstRunModel) startAccount() tea.Cmd {
+	m.pairStatus, m.pairBad = "", false
+	if m.saasURL == "" {
+		m.pairStatus, m.pairBad = "✕ this build names no hosted Control Plane", true
+		return nil
+	}
+	p, err := startPairing(m.saasURL, pairName())
+	if err != nil {
+		m.pairStatus, m.pairBad = "✕ "+err.Error(), true
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.pair, m.pairCancel = p, cancel
+	if m.openURL != nil {
+		_ = m.openURL(p.PageURL)
+	}
+	return func() tea.Msg {
+		cred, err := p.wait(ctx)
+		p.close()
+		return frPairedMsg{cred: cred, err: err}
+	}
+}
+
+// signIn keeps a credential, on disk and on the screen. A file that cannot be
+// written still signs this run in, and says so: the next run asks again.
+func (m *firstRunModel) signIn(cred PlaneCredential) {
+	m.cred = &cred
+	if m.credDir == "" {
+		return
+	}
+	if err := SavePlaneCredential(m.credDir, cred); err != nil {
+		m.pairStatus, m.pairBad = "✕ signed in, but the token was not saved: "+err.Error(), true
 	}
 }
 
@@ -424,15 +503,34 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.empty:
 			// Connected, and the plane holds no config: set one up and boot
 			// it. The plane shows it and takes it only on an admin's action.
+			m.signIn(PlaneCredential{URL: msg.planeURL, Token: msg.token})
 			m.connect, m.plane = nil, &pendingPlane{url: msg.planeURL, token: msg.token}
 			return m, m.startSetup()
 		case len(msg.conflicts) > 0:
 			p.status, p.bad = "✕ Connected, but "+strings.Join(msg.conflicts, "; ")+
 				". Change it in the Control Plane, or stop that program, then connect again.", true
 		default:
+			m.signIn(PlaneCredential{URL: msg.planeURL, Token: msg.token})
 			m.boot = &Boot{ControlPlaneURL: msg.planeURL, Token: msg.token}
 			return m, tea.Quit
 		}
+		return m, nil
+	case frPairedMsg:
+		m.pair, m.pairCancel = nil, nil
+		switch {
+		case errors.Is(msg.err, context.Canceled):
+			m.pairStatus, m.pairBad = "", false
+		case msg.err != nil:
+			m.pairStatus, m.pairBad = "✕ "+msg.err.Error(), true
+		default:
+			// Paired: the sidecar exists in Hoop with no config yet. Set one
+			// up and boot it; the browser already shows the sidecar's page.
+			m.signIn(msg.cred)
+			m.plane = &pendingPlane{url: msg.cred.URL, token: msg.cred.Token}
+			m.buildHome()
+			return m, m.startSetup()
+		}
+		m.buildHome()
 		return m, nil
 	case frCheckedMsg:
 		if msg.path != m.checking {
@@ -459,8 +557,12 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.picker = nil
 		m.boot = &Boot{ConfigPath: msg.path}
-		if m.plane != nil {
+		switch {
+		case m.plane != nil:
 			m.boot.ControlPlaneURL, m.boot.Token = m.plane.url, m.plane.token
+		case m.cred != nil:
+			// Signed in: every config boots on the person's Control Plane.
+			m.boot.ControlPlaneURL, m.boot.Token = m.cred.URL, m.cred.Token
 		}
 		return m, tea.Quit
 	}
@@ -522,16 +624,30 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.pair != nil {
+		// Waiting on the browser: esc stops waiting, nothing else acts.
+		if k.String() == "esc" {
+			m.pairCancel()
+		}
+		return m, nil
+	}
 	switch k.String() {
 	case "q", "esc":
 		return m.quit()
 	case "w", "s":
-		return m, m.startSetup()
+		if m.signedIn() {
+			return m, m.startSetup()
+		}
+		return m, nil
 	case "o":
-		m.picker, m.invalid = newFilePicker(m.dir), ""
+		if m.signedIn() {
+			m.picker, m.invalid = newFilePicker(m.dir), ""
+		}
 		return m, nil
 	}
 	switch id := m.home.update(k); {
+	case id == "account":
+		return m, m.startAccount()
 	case id == "setup":
 		return m, m.startSetup()
 	case id == "connect":
@@ -574,6 +690,15 @@ func RunFirstRun(opts FirstRunOptions, serve func(context.Context, daemon.FirstR
 	}
 	m := newFirstRunModel(opts.Version, time.Now, cancel, detect, opts.Validate, opts.Dir)
 	m.connectCheck, m.openURL, m.licenseDir, m.useLicense = opts.ConnectCheck, opts.OpenURL, opts.LicenseDir, opts.UseLicense
+	m.saasURL, m.credDir = strings.TrimRight(opts.SaaSURL, "/"), opts.CredentialDir
+	// A stored credential signs the person in; a damaged one is said, and
+	// they sign in again.
+	if cred, err := LoadPlaneCredential(m.credDir); err != nil {
+		m.pairStatus, m.pairBad = "✕ "+err.Error(), true
+	} else if cred != nil {
+		m.cred = cred
+	}
+	m.buildHome()
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout), tea.WithInput(os.Stdin), tea.WithoutSignalHandler())
 
 	// The listener's callbacks never wait on the screen. Program.Send blocks

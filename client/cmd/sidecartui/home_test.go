@@ -16,10 +16,22 @@ func homeModel(t *testing.T, dir string, validate func(string) (string, error)) 
 	t.Helper()
 	now := time.Unix(1_700_000_000, 0)
 	m := newFirstRunModel("v1", func() time.Time { return now }, func() {}, noMachine, validate, dir)
+	// Signed in, as every screen past the sign-in gate is; signedOut
+	// takes it back for the tests of the gate itself.
+	m.cred = &PlaneCredential{URL: "https://cp.example.com", Token: "hsc_test"}
+	m.buildHome()
 	var tm tea.Model = m
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	tm, _ = tm.Update(frReadyMsg{url: "http://127.0.0.1:15321"})
 	return tm.(firstRunModel)
+}
+
+// signedOut is m before any sign-in: no stored credential, no plane, no
+// license.
+func signedOut(m firstRunModel) firstRunModel {
+	m.cred, m.plane, m.licensePath = nil, nil, ""
+	m.buildHome()
+	return m
 }
 
 func writeFile(t *testing.T, path, body string) {
@@ -32,7 +44,7 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
-// Get started is set up first, connect second, open a file third, then the folder's own
+// Signed in, Get started is set up first, open a file second, then the folder's own
 // configs, and it never shows the guide's link.
 func TestGetStartedListsSetupOpenThenTheFolderConfigs(t *testing.T) {
 	dir := t.TempDir()
@@ -45,7 +57,7 @@ func TestGetStartedListsSetupOpenThenTheFolderConfigs(t *testing.T) {
 	for _, it := range m.home.items {
 		ids = append(ids, it.id)
 	}
-	want := "setup,connect,open,,file:" + filepath.Join(dir, "a.yml") + ",file:" + filepath.Join(dir, "b.yaml")
+	want := "setup,open,,file:" + filepath.Join(dir, "a.yml") + ",file:" + filepath.Join(dir, "b.yaml")
 	if got := strings.Join(ids, ","); got != want {
 		t.Errorf("home = %s\nwant   %s", got, want)
 	}

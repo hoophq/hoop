@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/client/cmd/sidecartui"
 	"github.com/hoophq/hoop/client/cmd/styles"
+	"github.com/hoophq/hoop/common/clientconfig"
 	"github.com/hoophq/hoop/common/version"
 	// Analyzer providers register themselves on import, matching the
 	// standalone hoop-inspect binary. Linking all three keeps the
@@ -120,7 +121,14 @@ registering a new sidecar. A sidecar whose control plane entry says
 "load_from_disk" runs the listeners in its own config file and receives only
 its license; moving that entry either way reaches a running sidecar on its
 next check-in, which applies what a live process can change and logs what
-needs a restart.`,
+needs a restart.
+
+On a terminal with no config, the first-run screen asks you to sign in
+first: create an account on hoop (HOOP_SAAS_URL overrides the hosted plane),
+which pairs this sidecar with it in the browser, or connect your company's
+Control Plane. The URL and token are kept in ~/.hoop/sidecar/controlplane.json,
+readable by you only, and every later start uses them unless a token flag, a
+credential env var or another Control Plane URL says otherwise.`,
 	Example: `  hoop start sidecar
   hoop start sidecar --log-format text
   hoop start sidecar --config /etc/hoop-inspect/config.yaml
@@ -182,6 +190,10 @@ needs a restart.`,
 				// A license saved on the Connect page is this run's
 				// --license: what is validated and booted next uses it.
 				UseLicense: func(path string) { sidecarLicenseFlag = path },
+				// "Create an account or sign in" pairs with the hosted
+				// Control Plane, and the token it returns is kept here.
+				SaaSURL:       sidecarSaaSURL(),
+				CredentialDir: sidecarSaveDir(),
 			}, func(ctx context.Context, obs daemon.FirstRunObserver) error {
 				return daemon.FirstRunContext(ctx, io.Discard, "hoop start sidecar --config "+configyaml.StarterFile,
 					append(firstRunOpts, daemon.WithFirstRunObserver(obs))...)
@@ -206,6 +218,9 @@ needs a restart.`,
 				}
 			}
 			sidecarConfigFlag = boot.ConfigPath
+		}
+		if err := useStoredPlaneCredential(sidecarConfigFlag); err != nil {
+			return err
 		}
 		if sidecarMigrateFlag {
 			if sidecarConfigFlag == "" {
@@ -611,6 +626,50 @@ func sidecarOperator() string {
 // sidecarSaveDir is where the TUI keeps a copy of what it shows: the hoop
 // directory the CLI already uses for its own files. Empty when the home
 // directory is unknown; the TUI then says nothing is saved.
+// SaaSURLEnv overrides the hosted Control Plane the first-run screen pairs
+// with, for a staging plane or a local one.
+const SaaSURLEnv = "HOOP_SAAS_URL"
+
+func sidecarSaaSURL() string {
+	if v := strings.TrimSpace(os.Getenv(SaaSURLEnv)); v != "" {
+		return v
+	}
+	return clientconfig.SaaSWebURL
+}
+
+// useStoredPlaneCredential connects this run to the Control Plane a pairing
+// (or the Connect page) stored, so a person signs in once. It is the lowest
+// source: a token flag, a credential env var, or a Control Plane URL that
+// names another plane keeps this run exactly as it was before the credential
+// existed, which is what every script and deployment expects.
+func useStoredPlaneCredential(configPath string) error {
+	if sidecarTokenFlag != "" || os.Getenv(daemon.SidecarTokenEnv) != "" || os.Getenv(daemon.SidecarIdentityTypeEnv) != "" {
+		return nil
+	}
+	cred, err := sidecartui.LoadPlaneCredential(sidecarSaveDir())
+	if err != nil || cred == nil {
+		// A damaged file is not a credential; the run goes on without one,
+		// and the first-run screen says so.
+		return nil
+	}
+	planeURL := strings.TrimRight(os.Getenv(daemon.ControlPlaneURLEnv), "/")
+	if planeURL == "" && configPath != "" {
+		if cfg, lerr := configyaml.Load(configPath); lerr == nil {
+			planeURL = strings.TrimRight(cfg.ControlPlaneURL, "/")
+		}
+	}
+	if planeURL != "" && planeURL != cred.URL {
+		return nil
+	}
+	if planeURL == "" {
+		if err := os.Setenv(daemon.ControlPlaneURLEnv, cred.URL); err != nil {
+			return err
+		}
+	}
+	sidecarTokenFlag = cred.Token
+	return nil
+}
+
 func sidecarSaveDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {

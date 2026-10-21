@@ -373,6 +373,8 @@ func TestFirstRunModelBootsWhatTheWizardSaved(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Unix(1_700_000_000, 0)
 	m := newFirstRunModel("v1", func() time.Time { return now }, func() {}, noMachine, validateFile, dir)
+	m.cred = &PlaneCredential{URL: "https://cp.example.com", Token: "hsc_test"}
+	m.buildHome()
 	var tm tea.Model = m
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	tm, cmd := tm.Update(wkey("w"))
@@ -423,6 +425,8 @@ func TestScreensRenderAtAnySize(t *testing.T) {
 	}
 	for _, sz := range sizes {
 		m := newFirstRunModel("v1", func() time.Time { return now }, func() {}, noMachine, validateFile, t.TempDir())
+		m.cred = &PlaneCredential{URL: "https://cp.example.com", Token: "hsc_test"}
+		m.buildHome()
 		var tm tea.Model = m
 		tm, _ = tm.Update(tea.WindowSizeMsg{Width: sz[0], Height: sz[1]})
 		tm, _ = tm.Update(frReadyMsg{url: "http://127.0.0.1:15321"})

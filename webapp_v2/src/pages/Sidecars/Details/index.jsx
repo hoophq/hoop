@@ -4,6 +4,8 @@ import { Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
+import { useLiveEvent } from '@/hooks/useLiveEvent'
+import { LIVE_EVENTS } from '@/services/liveEvents'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
@@ -27,6 +29,13 @@ export default function SidecarDetailsPage() {
   const fetchSidecar = useSidecarStore((s) => s.fetchSidecar)
   const clearSelected = useSidecarStore((s) => s.clearSelected)
   const deleteSidecar = useSidecarStore((s) => s.deleteSidecar)
+  const refreshSidecar = useSidecarStore((s) => s.refreshSidecar)
+
+  // Each check-in of this sidecar re-reads it, so a sidecar started after the
+  // page opened (a pairing lands here first) shows its file without a reload.
+  useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (event) => {
+    if (event.id === id) refreshSidecar(id).catch(() => {})
+  })
 
   const [deleting, setDeleting] = useState(false)
   const [deletingBusy, setDeletingBusy] = useState(false)

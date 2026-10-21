@@ -19,7 +19,8 @@ import (
 
 func openConnect(t *testing.T, m firstRunModel) firstRunModel {
 	t.Helper()
-	var tm tea.Model = m
+	// The Connect page is one of the two ways in, so it is offered signed out.
+	var tm tea.Model = signedOut(m)
 	for tm.(firstRunModel).home.selected() != "connect" {
 		tm, _ = tm.Update(wkey("down"))
 	}
@@ -59,12 +60,13 @@ func press(t *testing.T, m firstRunModel, button string) (firstRunModel, tea.Cmd
 	return tm.(firstRunModel), cmd
 }
 
-// Connect sits right under Set up. Its page says what it unlocks and where
-// to ask, starts on Talk to us, and offers the two ways as cards.
+// Signed out, the Enterprise Connect sits right under the account sign-in.
+// Its page says what it unlocks and where to ask, starts on Talk to us, and
+// offers the two ways as cards.
 func TestConnectPageExplainsAndStartsOnTalkToUs(t *testing.T) {
-	m := homeModel(t, t.TempDir(), validateFile)
-	if m.home.items[1].id != "connect" {
-		t.Fatalf("Connect is not under Set up: %+v", m.home.items[:2])
+	m := signedOut(homeModel(t, t.TempDir(), validateFile))
+	if m.home.items[0].id != "account" || m.home.items[1].id != "connect" {
+		t.Fatalf("signed out, the home is not account then connect: %+v", m.home.items)
 	}
 	m = openConnect(t, m)
 	if m.connect.form.focused().id != "meet" {
