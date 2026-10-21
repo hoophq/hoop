@@ -40,8 +40,9 @@ The agent cannot skip the sidecar:
 - `helm`, `kubectl`, `jq`, and `ant` 1.42.0 or later
   (`brew install anthropics/tap/ant`).
 - `ANTHROPIC_API_KEY`: a key with Managed Agents access.
-- `hoophq/hoopsidecar` newer than 1.255.0. On 1.255.0 and older, a denied
-  request whose body arrives in more than one read reaches the API in part.
+- `hoophq/hoopsidecar` 1.258.0 or later; `values.yaml` pins 1.258.0. On
+  older releases, a denied request whose body arrives in more than one read
+  reaches the API in part.
 
 ## 1. Run the sidecar
 

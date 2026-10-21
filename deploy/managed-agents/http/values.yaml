@@ -5,8 +5,10 @@
 #   helm install hoop-api oci://ghcr.io/hoophq/helm-charts/hoopsidecar-chart \
 #     -f values.yaml
 #
-# The image is the chart default, hoophq/hoopsidecar:latest. README.md names
-# the oldest release this template supports.
+# 1.258.0 is the first release that holds a request until it is judged.
+image:
+  tag: '1.258.0@sha256:59ffc8db9209f8bc06c02c166ac6df93af6735bac32c840b8f83e52c15bd2136'
+  pullPolicy: IfNotPresent
 
 analytics:
   installSource: managed-agents-http
