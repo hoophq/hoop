@@ -104,8 +104,12 @@ jobs:
   # Linux and the other targets are separate jobs so the image jobs can
   # start after the Linux builds without waiting for darwin and windows.
   # Only Linux builds receive the telemetry keys, as before.
+  #
+  # Native per-architecture cgo build in a debian:bullseye container, for
+  # the reasons release.yml gives on its build-go-linux job.
   build-go-linux:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    container: debian:bullseye
     name: Build Linux ${{ matrix.name }}
     needs: [build-webapp]
     strategy:
@@ -114,10 +118,18 @@ jobs:
           - goos: linux
             goarch: amd64
             name: Amd64
+            runner: ubuntu-latest
           - goos: linux
             goarch: arm64
             name: Arm64
+            runner: ubuntu-24.04-arm
     steps:
+      - name: Install build tools
+        run: |
+          sed -i 's|deb.debian.org|archive.debian.org|g; /bullseye-updates/d' /etc/apt/sources.list
+          apt-get -o Acquire::Check-Valid-Until=false update -q
+          apt-get install -y -q --no-install-recommends ca-certificates curl git gcc g++ libc6-dev make
+
       - name: Checkout Hoop
         uses: actions/checkout@v7
 

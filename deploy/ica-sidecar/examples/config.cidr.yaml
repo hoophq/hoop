@@ -14,9 +14,9 @@
 # nftables TPROXY rule, policy route and rp_filter setting from libhoop-ica's
 # docs/transparent-linux.md; a UDP rule as well when `edt` is on.
 #
-# Runs as   hoop-inspect -config config.yaml
-# or        hoop start sidecar --config config.yaml   (hands over to hoop-inspect)
-# Check it: hoop-inspect -validate -config config.yaml
+# Runs as   hoop-ica -config config.yaml                 (install.sh's unit)
+# or        hoop start sidecar --config config.yaml     (the Linux hoop CLI, in-process)
+# Check it: hoop-ica -validate -config config.yaml
 
 log_level: info
 

@@ -17,20 +17,27 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
-// withICAEngine installs an engine builder for one test. RegisterICAEngine
-// panics on a second registration into the process-wide registry, and a
-// test needs to replace the engine, so withICAEngine swaps the builder under
-// the lock and restores it on cleanup. Tests using it must not run in
-// parallel with tests that read the registry.
+// withICAEngine installs an engine builder for one test, with no host
+// check. RegisterICAEngine panics on a second registration into the
+// process-wide registry, and a test needs to replace the engine, so
+// withICAEngine swaps the builder under the lock and restores it on
+// cleanup. Tests using it must not run in parallel with tests that read
+// the registry.
 func withICAEngine(t *testing.T, build ICABuilder) {
 	t.Helper()
+	withICAEngineOnHost(t, build, nil)
+}
+
+// withICAEngineOnHost is withICAEngine with a host check.
+func withICAEngineOnHost(t *testing.T, build ICABuilder, check ICAHostCheck) {
+	t.Helper()
 	icaMu.Lock()
-	prev := icaBuild
-	icaBuild = build
+	prevBuild, prevCheck := icaBuild, icaHostCheck
+	icaBuild, icaHostCheck = build, check
 	icaMu.Unlock()
 	t.Cleanup(func() {
 		icaMu.Lock()
-		icaBuild = prev
+		icaBuild, icaHostCheck = prevBuild, prevCheck
 		icaMu.Unlock()
 	})
 }

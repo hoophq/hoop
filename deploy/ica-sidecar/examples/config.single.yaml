@@ -8,9 +8,9 @@
 # The addresses below are examples; the EDIT lines are specific to the
 # deployment.
 #
-# Runs as   hoop-inspect -config config.yaml
-# or        hoop start sidecar --config config.yaml   (hands over to hoop-inspect)
-# Check it: hoop-inspect -validate -config config.yaml
+# Runs as   hoop-ica -config config.yaml                 (install.sh's unit)
+# or        hoop start sidecar --config config.yaml     (the Linux hoop CLI, in-process)
+# Check it: hoop-ica -validate -config config.yaml
 #
 # install.sh writes this file to /etc/hoop-inspect/config.yaml on a host that
 # has none, and refuses --start until the two EDIT lines are changed.

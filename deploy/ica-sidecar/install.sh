@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 # Put a `protocol: ica` lane on a Linux host without Docker: install
-# hoop-inspect with the libhoop-ica engine and what the engine reads at run
-# time, at the paths it reads by default, and run it under systemd.
+# hoop-ica, the sidecar with the libhoop-ica engine and ONNX Runtime, and
+# what the engine reads at run time, at the paths it reads by default, and
+# run it under systemd.
 #
 # This script ships inside hoop-ica-assets_<version>_Linux_<arch>.tar.gz on
 # releases.hoop.dev, and it lays out what hoop's `Dockerfile.sidecar --target
 # ica` lays out, so a host and the -ica image run the same binary against the
 # same assets from the same places:
 #
-#   /usr/local/bin/hoop-inspect                       cgo, -tags ORT
+#   /usr/local/bin/hoop-ica                           the ica engine build (hoop-inspect, cgo -tags ORT)
 #   /opt/libhoop-ica/releases/<version>/bin/          hoop-tesseract-worker
 #   /opt/libhoop-ica/releases/<version>/models/       the NER model
 #   /opt/libhoop-ica/current -> releases/<version>    what the engine reads
 #   /opt/alcatraz/ort/releases/<ort>/lib/             libonnxruntime.so
 #   /usr/share/tesseract-ocr/5/tessdata               from the distro package
 #
-# The service runs hoop-inspect directly. A `hoop start sidecar --config`
-# on the same file works too once this is installed: the hoop CLI finds
-# /usr/local/bin/hoop-inspect and hands the process over to it.
+# The service runs hoop-ica. The Linux hoop CLI of the same release links
+# the engine as well, so `hoop start sidecar --config` on the same file
+# serves the lane in-process once these assets are installed; this unit is
+# the supported way to run it, and works with a CLI that predates the
+# engine.
 #
 # Usage, as root on Ubuntu 24.04 or Debian 12 (amd64 or arm64), from the
 # extracted tarball:
@@ -105,8 +108,8 @@ ORT_DIR=/opt/alcatraz/ort/releases/${ORT_VERSION}
 CONF_DIR=/etc/hoop-inspect
 CONF=$CONF_DIR/config.yaml
 ENV_FILE=$CONF_DIR/env
-BIN=/usr/local/bin/hoop-inspect
-UNIT=hoop-inspect
+BIN=/usr/local/bin/hoop-ica
+UNIT=hoop-ica
 MODEL_NAME=KnightsAnalytics_distilbert-NER
 rel=$RELEASES/$VERSION
 model=$rel/models/$MODEL_NAME
@@ -120,7 +123,7 @@ if [[ -L $CURRENT ]]; then
   [[ $previous_release == "$rel" ]] && previous_release=
 fi
 
-# Run hoop-inspect as the service runs it: the hoop user, with the variables
+# Run hoop-ica as the service runs it: the hoop user, with the variables
 # the unit's EnvironmentFile supplies (HOOP_LICENSE decides the rule limits
 # a config may use). The file is read line by line, never sourced: it is
 # KEY=VALUE lines with optional double quotes, as systemd reads it, and its
@@ -141,7 +144,7 @@ as_service() {
 }
 
 # The address the installed config's admin endpoint listens on, from the
-# normalized document hoop-inspect prints, so a config that moves or drops
+# normalized document hoop-ica prints, so a config that moves or drops
 # the endpoint is read as written, not assumed. Empty when there is none.
 admin_listen() {
   "$BIN" -migrate -config "$CONF" 2>/dev/null |
@@ -157,14 +160,14 @@ command -v tesseract >/dev/null || die "tesseract CLI is missing"
 [[ -f $tessdata/eng.traineddata ]] || die "English tessdata is missing under $tessdata"
 
 step "checking the tarball's binaries against this host"
-for bin in "$here/hoop-inspect" "$here/bin/hoop-tesseract-worker"; do
+for bin in "$here/hoop-ica" "$here/bin/hoop-tesseract-worker"; do
   [[ -x $bin ]] || die "$bin is missing or not executable"
   if ldd "$bin" | grep -q 'not found'; then
     ldd "$bin" | grep 'not found' >&2
     die "$(basename "$bin") links libraries this host does not have"
   fi
 done
-echo "    $("$here/hoop-inspect" -version 2>/dev/null || echo "hoop-inspect ${VERSION}")"
+echo "    $("$here/hoop-ica" -version 2>/dev/null || echo "hoop-ica ${VERSION}")"
 
 step "staging release ${VERSION} under ${rel}"
 [[ -d $rel ]] && echo "    release directory exists; refreshing it"
@@ -236,12 +239,12 @@ step "probing the engine from the tarball"
 probe=$(mktemp)
 trap 'rm -f "$probe"' EXIT
 echo '{"listeners":[{"name":"probe","protocol":"ica","listen":"127.0.0.1:2598","upstream":"127.0.0.1:2599","ica":{"tenant_id":"probe"}}]}' >"$probe"
-if ! out=$("$here/hoop-inspect" -validate -config "$probe" 2>&1); then
+if ! out=$("$here/hoop-ica" -validate -config "$probe" 2>&1); then
   echo "$out" >&2
   rm -rf "$staged_ort"
-  die "hoop-inspect cannot serve an ica lane"
+  die "hoop-ica cannot serve an ica lane"
 fi
-grep -q 'onnx runtime compiled in: true' <<<"$out" || { rm -rf "$staged_ort"; die "this hoop-inspect was built without ONNX Runtime; the bundle is for the ORT build"; }
+grep -q 'onnx runtime compiled in: true' <<<"$out" || { rm -rf "$staged_ort"; die "this hoop-ica was built without ONNX Runtime; the bundle is for the ORT build"; }
 
 step "user and config"
 id hoop >/dev/null 2>&1 || useradd --system --user-group --shell /usr/sbin/nologin hoop
@@ -264,15 +267,15 @@ if [[ -n $CONFIG ]]; then
   chown root:hoop "$candidate"
   chmod 0640 "$candidate"
   step "validating ${CONFIG} as the service would see it"
-  as_service "$here/hoop-inspect" -validate -config "$candidate" || { rm -rf "$staged_ort"; die "--config $CONFIG did not validate; nothing was changed"; }
+  as_service "$here/hoop-ica" -validate -config "$candidate" || { rm -rf "$staged_ort"; die "--config $CONFIG did not validate; nothing was changed"; }
 fi
 
 step "switching to release ${VERSION}"
 rm -rf "$ORT_DIR"
 mv "$staged_ort" "$ORT_DIR"
-# A running hoop-inspect keeps its mapped text; install unlinks the old file
+# A running hoop-ica keeps its mapped text; install unlinks the old file
 # before writing the new one, so this never hits ETXTBSY.
-install -m 0755 "$here/hoop-inspect" "$BIN"
+install -m 0755 "$here/hoop-ica" "$BIN"
 ln -sfn "releases/${VERSION}" "$CURRENT"
 echo "    ${CURRENT} -> releases/${VERSION}"
 if [[ -n $candidate ]]; then
@@ -305,7 +308,7 @@ CapabilityBoundingSet=CAP_NET_ADMIN'
 fi
 cat >/etc/systemd/system/${UNIT}.service <<EOF
 [Unit]
-Description=hoop sidecar (hoop-inspect) with the Citrix ICA engine
+Description=hoop sidecar (hoop-ica) with the Citrix ICA engine
 Wants=network-online.target
 After=network-online.target
 

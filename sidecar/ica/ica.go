@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"runtime"
 	"slices"
 	"strconv"
@@ -28,7 +29,34 @@ import (
 	"github.com/hoophq/libhoop-ica/ica"
 )
 
-func init() { daemon.RegisterICAEngine(Build) }
+func init() { daemon.RegisterICAEngine(Build, HostCheck) }
+
+// HostCheck implements daemon.ICAHostCheck: whether this host holds what
+// the engine's production profile reads by default — the OCR worker, the
+// tessdata, the NER model and, in a build with ONNX Runtime compiled in,
+// its library. These are the paths deploy/ica-sidecar/install.sh and the
+// hoopsidecar -ica image lay them out at. A config may point the runtime
+// elsewhere (ica.ocr_worker and friends), but the capabilities header is
+// sent before any config arrives from a plane, so the defaults are what
+// decide whether this process offers an ica lane at all. The error names
+// the first missing path.
+func HostCheck() error {
+	cfg := ica.DefaultRuntimeConfig()
+	checks := [][2]string{
+		{"ocr worker", cfg.OCRWorker},
+		{"tessdata", cfg.Tessdata + "/eng.traineddata"},
+		{"ner model", cfg.NERModel + "/config.json"},
+	}
+	if ica.ORTCompiled {
+		checks = append(checks, [2]string{"onnx runtime", cfg.NERORTLibrary})
+	}
+	for _, c := range checks {
+		if _, err := os.Stat(c[1]); err != nil {
+			return fmt.Errorf("ica: %s is not at %s; install the ica assets bundle (sidecar/README.md, the ica section)", c[0], c[1])
+		}
+	}
+	return nil
+}
 
 // These failure diagnostics file bounds match the standalone agent's, so
 // metadata-only failure files look the same whichever binary wrote them.
@@ -237,6 +265,12 @@ func notes(cfg ica.RuntimeConfig, rt daemon.ICARuntime, lane daemon.ICALane) []s
 	}
 	if lane.Transparent && runtime.GOOS != "linux" {
 		out = append(out, "ica: this host is not Linux and cannot serve CIDR mode; -validate passes, Serve will not")
+	}
+	// The same check that keeps protocol:ica out of the capabilities
+	// header: an operator running -validate on the host that will serve
+	// the lane learns what the engine will not find before it starts.
+	if err := HostCheck(); err != nil {
+		out = append(out, err.Error()+"; -validate passes, Serve will not")
 	}
 	if lane.EDT {
 		retention, budget := ica.DefaultEDTRetention, ica.DefaultEDTReplayBudgetBytes

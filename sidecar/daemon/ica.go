@@ -474,14 +474,24 @@ type ICAServer interface {
 // from init; a binary gets the engine by importing that module.
 type ICABuilder func(rt ICARuntime, lane ICALane) (ICAServer, error)
 
+// ICAHostCheck reports whether this host can run the engine now: the OCR
+// worker, the model and the inference library are where the engine's
+// defaults read them. A build may link the engine and still run on a host
+// without those (the hoop CLI on a database host), and such a process must
+// not advertise protocol:ica to a control plane, which would then hand it
+// a lane that fails at startup. The error names what is missing.
+type ICAHostCheck func() error
+
 var (
-	icaMu    sync.Mutex
-	icaBuild ICABuilder
+	icaMu        sync.Mutex
+	icaBuild     ICABuilder
+	icaHostCheck ICAHostCheck
 )
 
 // RegisterICAEngine links an ICA engine into this binary. It panics on a
 // second registration, so the engine choice cannot depend on import order.
-func RegisterICAEngine(build ICABuilder) {
+// hostCheck may be nil for an engine that needs nothing on the host.
+func RegisterICAEngine(build ICABuilder, hostCheck ICAHostCheck) {
 	if build == nil {
 		panic("sidecar/daemon: RegisterICAEngine called with a nil builder")
 	}
@@ -491,35 +501,30 @@ func RegisterICAEngine(build ICABuilder) {
 		panic("sidecar/daemon: duplicate ICA engine registration")
 	}
 	icaBuild = build
+	icaHostCheck = hostCheck
 }
 
-func registeredICAEngine() ICABuilder {
+func registeredICAEngine() (ICABuilder, ICAHostCheck) {
 	icaMu.Lock()
 	defer icaMu.Unlock()
-	return icaBuild
+	return icaBuild, icaHostCheck
 }
 
-// icaEngineLinked reports whether this build can serve an ica lane.
-// ServableProtocols uses it to build the capabilities header, so a
-// plane does not serve an ica lane to a build that would refuse it at
-// startup.
-func icaEngineLinked() bool { return registeredICAEngine() != nil }
+// icaEngineLinked reports whether this build carries an ICA engine. Run
+// and Validate refuse an ica lane without one; with one, the engine
+// itself reports a host that lacks its assets when the lane starts.
+func icaEngineLinked() bool {
+	build, _ := registeredICAEngine()
+	return build != nil
+}
 
-// ICAEngineLinked is icaEngineLinked for an embedder: the hoop CLI hands a
-// config with an ica lane over to hoop-inspect when its own build has no
-// engine, instead of letting Run refuse it.
-func ICAEngineLinked() bool { return icaEngineLinked() }
-
-// ICALanes names the config's ica listeners, in order, as checkICA would
-// report them. Empty when there are none.
-func (c *Config) ICALanes() []string {
-	var out []string
-	for i, l := range c.Listeners {
-		if isICA(l) {
-			out = append(out, l.displayName(i))
-		}
-	}
-	return out
+// icaServable reports whether this process can serve an ica lane here:
+// the engine is linked and its host check passes. ServableProtocols uses
+// it for the capabilities header, so a plane does not serve an ica lane
+// to a process that would fail it at startup.
+func icaServable() bool {
+	build, check := registeredICAEngine()
+	return build != nil && (check == nil || check() == nil)
 }
 
 // checkICA refuses an ica lane this process cannot serve. Run and Validate
@@ -590,7 +595,7 @@ func resolveICALane(lc ListenerConfig, name string, events func(ICAEvent) error,
 // ica lane carries no rules (Validate refuses guardrails, mask, analyzer and
 // opa on it).
 func buildICAServer(ln lane, rt ICARuntime, ac AuditConfig, sink audit.Sink, log *slog.Logger) (ICAServer, *liveRules, error) {
-	build := registeredICAEngine()
+	build, _ := registeredICAEngine()
 	if build == nil {
 		return nil, nil, fmt.Errorf("%s: protocol ica needs the ICA engine, and this build did not link it", ln.name)
 	}
@@ -795,15 +800,15 @@ func notReadyEndpoints(endpoints []endpointServer, names []string) []string {
 	return out
 }
 
-// ServableProtocols returns the protocols this build can serve: Protocols
-// without ica when the build did not link the engine. The capabilities header
-// lists these, so a plane does not hand a build a lane checkICA would refuse
-// at startup, and the hoop CLI's setup wizard offers only these. Protocols
-// keeps ica because the plane renders the form from it and the schema must
-// match across builds.
+// ServableProtocols returns the protocols this process can serve here:
+// Protocols without ica when the build did not link the engine or the host
+// lacks its assets (icaServable). The capabilities header lists these, so a
+// plane does not hand this process a lane that would fail at startup, and
+// the hoop CLI's setup wizard offers only these. Protocols keeps ica because
+// the plane renders the form from it and the schema must match across builds.
 func ServableProtocols() []string {
 	out := Protocols()
-	if icaEngineLinked() {
+	if icaServable() {
 		return out
 	}
 	return slices.DeleteFunc(out, func(p string) bool { return p == string(inspect.ICA) })

@@ -41,7 +41,8 @@
 # Choosing a flavour
 #
 #   minimal      Ubuntu 24.04 LTS rootfs + the `hoop` binary and nothing else.
-#   distroless   Distroless static rootfs + the `hoop` binary and nothing else.
+#   distroless   Distroless cc rootfs (glibc, no shell) + the `hoop` binary and
+#                nothing else.
 #
 # Both serve every connection type the agent handles in-process (tcp, postgres,
 # mysql, mssql, mongodb, httpproxy, ssh, ssm) and run as uid 10001. Neither
@@ -91,7 +92,13 @@
 # Ubuntu 24.04 LTS (noble). Pinned deliberately, same policy as ./Dockerfile,
 # so builds are reproducible; bump it in a dedicated PR.
 ARG UBUNTU_IMAGE=ubuntu:noble-20260730.1
-ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
+# distroless/cc, not distroless/static: the Linux `hoop` is a cgo build that
+# links the Citrix ICA engine (client/cmd/startsidecar_ica_linux.go and the
+# Makefile's build-go), so it is dynamically linked against glibc, libstdc++
+# and libgcc_s. cc-debian12 ships exactly those plus the CA bundle and tzdata,
+# and still has no shell and no package manager. The binary is built against
+# glibc 2.31 (debian bullseye), so debian12's 2.36 runs it.
+ARG DISTROLESS_IMAGE=gcr.io/distroless/cc-debian12:nonroot
 ARG CURL_IMAGE=curlimages/curl:8.11.1
 
 # Hoop's mirror of the model files, served straight from the bucket. The
@@ -157,10 +164,11 @@ RUN set -eu; \
     chmod -R a+rX /opt/alcatraz/models
 
 # --- Flavour: distroless -----------------------------------------------------
-# The static rootfs already ships the CA bundle the agent needs for grpcs://,
-# so nothing is installed here. uid 10001 is set numerically: distroless has no
-# useradd, and the agent never resolves a passwd entry (config comes from the
-# environment, see agent/config.Load).
+# The cc rootfs already ships the CA bundle the agent needs for grpcs://, and
+# the glibc, libstdc++ and libgcc_s the cgo-built `hoop` links, so nothing is
+# installed here. uid 10001 is set numerically: distroless has no useradd, and
+# the agent never resolves a passwd entry (config comes from the environment,
+# see agent/config.Load).
 FROM ${DISTROLESS_IMAGE} AS distroless
 COPY --from=unpack /out/hoop /app/hoop
 ENV PATH="/app:${PATH}"

@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -258,19 +257,6 @@ needs a restart.`,
 		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin, setupOpts...)
 		if err != nil {
 			return err
-		}
-
-		// An ica lane is served by hoop-inspect; see startsidecar_ica.go.
-		// After SetupWith, so a config that does not load fails here with
-		// this command's message, and before anything starts. The
-		// dashboard does not survive the handoff: hoop-inspect writes
-		// logs, which is what a lane under systemd or in a container gets.
-		if path, lanes, err := icaHandoff(cfg, os.Getenv, exec.LookPath, fileExists); err != nil {
-			return err
-		} else if path != "" {
-			fmt.Fprintf(os.Stderr, "ica lane %q: handing over to %s\n", lanes[0], path)
-			return execHoopInspect(path, icaHandoffArgs(sidecarConfigFlag, sidecarLicenseFlag,
-				sidecarTokenFlag, sidecarValidateFlag, sidecarStrictFlag))
 		}
 
 		// Same channel as the rename notice above, and for the same reason:

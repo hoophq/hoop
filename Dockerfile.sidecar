@@ -84,7 +84,8 @@
 #
 #   default      Ubuntu 24.04 LTS rootfs + the `hoop` binary, ca-certificates
 #                and tini.
-#   distroless   Distroless static rootfs + the `hoop` binary and a static tini.
+#   distroless   Distroless cc rootfs (glibc, no shell) + the `hoop` binary and
+#                a static tini.
 #
 # Both run tini as PID 1 (ENTRYPOINT), which execs the relay.
 #
@@ -101,14 +102,17 @@
 # The ica flavour
 #
 # A `protocol: ica` lane embeds the libhoop-ica engine (Citrix ICA/CGP,
-# ThinWire video OCR + NER masking). Only hoop-inspect links the engine, and
-# only in a cgo `-tags ORT` build, so NER runs on ONNX Runtime; `hoop` does
-# not. At run time the engine needs tesseract 5, the hoop-tesseract-worker,
-# libonnxruntime and the NER model on disk. The slim flavours carry none of
-# that and distroless cannot, so the engine gets its own target. The
-# ica-build stage compiles hoop-inspect from source against two private
-# modules, so the build needs a BuildKit secret that can read hoophq/libhoop
-# and hoophq/libhoop-ica:
+# ThinWire video OCR + NER masking), whose NER runs on ONNX Runtime through
+# cgo. hoop-inspect links it in a `-tags ORT` build, and so does the Linux
+# `hoop` since the Makefile's build-go went cgo for Linux; the slim flavours
+# below therefore carry the engine's code, but none of what it needs at run
+# time: tesseract 5, the hoop-tesseract-worker, libonnxruntime and the NER
+# model on disk. A process without those does not advertise protocol:ica to
+# a control plane (sidecar/ica HostCheck), so the slim flavours are never
+# handed an ica lane, and the assets get their own target. The ica-build
+# stage compiles hoop-inspect from source against two private modules, so
+# the build needs a BuildKit secret that can read hoophq/libhoop and
+# hoophq/libhoop-ica:
 #
 #   docker build -f Dockerfile.sidecar --target ica \
 #     --secret id=gh_token,env=GH_TOKEN -t hoophq/hoopsidecar:dev-ica .
@@ -152,7 +156,13 @@
 # Ubuntu 24.04 LTS (noble). Pinned deliberately, same policy as ./Dockerfile
 # and ./Dockerfile.agent, so builds are reproducible; bump it in a dedicated PR.
 ARG UBUNTU_IMAGE=ubuntu:noble-20260911
-ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
+# distroless/cc, not distroless/static: the Linux `hoop` is a cgo build that
+# links the Citrix ICA engine (client/cmd/startsidecar_ica_linux.go and the
+# Makefile's build-go), so it is dynamically linked against glibc, libstdc++
+# and libgcc_s. cc-debian12 ships exactly those plus the CA bundle and tzdata,
+# and still has no shell and no package manager. The binary is built against
+# glibc 2.31 (debian bullseye), so debian12's 2.36 runs it.
+ARG DISTROLESS_IMAGE=gcr.io/distroless/cc-debian12:nonroot
 ARG CURL_IMAGE=curlimages/curl:8.11.1
 
 # Hoop's mirror of the alcatraz model files, the same origin and manifest
@@ -200,8 +210,10 @@ RUN mkdir -p /out && \
 # ./Dockerfile has always done this; these images now match it.
 #
 # The package ships two binaries. The Ubuntu flavour uses /usr/bin/tini, which
-# is dynamically linked. distroless/static has no libc, so it takes
-# /usr/bin/tini-static instead — the same 0.19.0 upstream, linked statically.
+# is dynamically linked. distroless takes /usr/bin/tini-static instead — the
+# same 0.19.0 upstream, linked statically — because it needs nothing from the
+# rootfs: the cc rootfs does ship a libc, but an init shim with no dependency
+# on it is one less thing a base image bump can break.
 #
 # NOT pinned to BUILDPLATFORM, unlike `unpack` above, and that is the whole
 # reason this is its own stage. tini is a compiled binary that ends up INSIDE
@@ -215,9 +227,10 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
 
 # --- Flavour: distroless -----------------------------------------------------
-# The static rootfs already ships the CA bundle, which this process needs for
+# The cc rootfs already ships the CA bundle, which this process needs for
 # three separate hops: an upstream_tls lane where it originates TLS to the
 # database, an analyzer provider over HTTPS, and a control plane over HTTPS.
+# It also ships the glibc, libstdc++ and libgcc_s the cgo-built `hoop` links.
 # Nothing is installed here — the static tini below is copied in, not
 # installed, so this rootfs still carries no OS package and no package manager.
 #
@@ -226,7 +239,7 @@ RUN apt-get update -y && \
 FROM ${DISTROLESS_IMAGE} AS distroless
 ARG SIDECAR_CONFIG
 COPY --from=unpack /out/hoop /app/hoop
-# The statically linked build: this rootfs has no libc for the dynamic one.
+# The statically linked build: it needs nothing from this rootfs.
 COPY --from=tini /usr/bin/tini-static /app/tini
 ENV PATH="/app:${PATH}"
 # --config defaults to this, so the command below takes no arguments and
@@ -381,9 +394,10 @@ CMD ["hoop-inspect", "-config", "/etc/hoop-inspect/config.yaml"]
 
 # --- Stage: ica-assets (the Docker-less bundle) ------------------------------
 # Packs what the ica flavour carries, for a host that runs it without Docker:
-# hoop-inspect, the worker ica-build fetched, ONNX Runtime's library and
-# licence files, release.txt and the installer. BUILDPLATFORM, because it
-# only runs tar: every binary inside is already the TARGETARCH build. The
+# hoop-inspect under the name hoop-ica, the worker ica-build fetched, ONNX
+# Runtime's library and licence files, release.txt, the installer and its
+# example configs. BUILDPLATFORM, because it only runs tar: every binary
+# inside is already the TARGETARCH build. The
 # tarball is flat, like the CLI tarballs, and the _checksum.txt beside it is
 # in the form `make build-tar-files` writes, so `make release-s3` folds it
 # into checksums.txt unchanged.
@@ -391,7 +405,12 @@ FROM --platform=${BUILDPLATFORM} ${UBUNTU_IMAGE} AS ica-assets-package
 ARG TARGETARCH
 ARG VERSION=unknown
 ARG ORT_VERSION
-COPY --from=ica-build /out/bin/hoop-inspect /bundle/hoop-inspect
+# The same binary the ica flavour runs as hoop-inspect, named for what it is
+# on a host: the ica engine build. The Linux hoop CLI links the engine too,
+# so `hoop start sidecar` serves the same config in-process; hoop-ica is the
+# process the installer's unit runs, and the one to use with a CLI that
+# predates the engine.
+COPY --from=ica-build /out/bin/hoop-inspect /bundle/hoop-ica
 COPY --from=ica-build /out/worker/hoop-tesseract-worker /out/worker/hoop-tesseract-worker.txt /bundle/bin/
 COPY --from=ica-build /out/worker/LICENSE /out/worker/NOTICE /out/worker/libhoop-ica-version /bundle/
 # The library and its symlinks, not the cmake and pkgconfig files beside them.
@@ -407,7 +426,7 @@ RUN set -eu; \
       echo "ort=${ORT_VERSION}"; \
     } > /bundle/release.txt; \
     rm /bundle/libhoop-ica-version; \
-    chmod 0755 /bundle/install.sh /bundle/hoop-inspect /bundle/bin/hoop-tesseract-worker; \
+    chmod 0755 /bundle/install.sh /bundle/hoop-ica /bundle/bin/hoop-tesseract-worker; \
     mkdir -p /dist/binaries; \
     name="hoop-ica-assets_${VERSION}_Linux_${TARGETARCH}"; \
     tar -czf "/dist/binaries/${name}.tar.gz" --owner=0 --group=0 -C /bundle .; \

@@ -24,9 +24,9 @@ image: {}
   #
   # Tags: the Ubuntu flavour carries NO SUFFIX — `<version>`, with `latest`
   # pointing at it. It keeps a shell, so the default is the one you can debug.
-  # `<version>-distroless` is the same binary on a distroless static rootfs:
-  # no package manager, no shell, zero OS-package CVEs, about two thirds the
-  # size. It is the only flavour that is named; ask for it explicitly.
+  # `<version>-distroless` is the same binary on a distroless cc rootfs (glibc,
+  # no shell): no package manager, no shell, zero OS-package CVEs, about two
+  # thirds the size. It is the only flavour that is named; ask for it explicitly.
   #
   # The chart sets no command: the image's own entrypoint runs the relay, and
   # the config reaches it at /etc/hoop-inspect/config.yaml — the path this
