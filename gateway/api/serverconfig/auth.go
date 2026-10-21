@@ -193,6 +193,9 @@ func UpdateAuthConfig(c *gin.Context) {
 	log.With("auth_method", req.AuthMethod).Infof("performing pre-flight check for auth config update")
 	switch req.AuthMethod {
 	case openapi.ProviderTypeOIDC:
+		if err = idp.ValidateDatabaseClientAssertionFile(req.OidcConfig.ClientAssertionFile); err != nil {
+			break
+		}
 		_, err = oidcprovider.New(oidcprovider.Options{
 			IssuerURL:           req.OidcConfig.IssuerURL,
 			ClientID:            req.OidcConfig.ClientID,

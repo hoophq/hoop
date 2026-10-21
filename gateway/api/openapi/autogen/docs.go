@@ -20090,7 +20090,7 @@ const docTemplate = `{
                     "example": "hoop-audience"
                 },
                 "client_assertion_file": {
-                    "description": "Path on the gateway to a JWT that authenticates the client in place of client_secret (RFC 7523),\ne.g. a Kubernetes service account token trusted by an Entra ID federated credential.",
+                    "description": "Path on the gateway to a JWT that authenticates the client in place of client_secret (RFC 7523),\ne.g. a Kubernetes service account token trusted by an Entra ID federated credential.\nIt must be the path the gateway operator set in IDP_CLIENT_ASSERTION_FILE.",
                     "type": "string",
                     "example": "/var/run/secrets/hoop/idp/token"
                 },

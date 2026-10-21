@@ -82,8 +82,10 @@ helm upgrade <release> <chart> --reuse-values \
   --set serviceAccount.create=true
 ```
 
-An OIDC configuration saved at Settings → Authentication overrides these values
-and still needs a client secret.
+An OIDC configuration saved at Settings → Authentication overrides these values.
+To use the token there, select "Federated token" and keep the path
+`/var/run/secrets/hoop/idp/token`. The gateway accepts only the path in
+`IDP_CLIENT_ASSERTION_FILE`, which `idpFederatedToken.enabled` sets.
 
 ## Installing Hoop Agent
 

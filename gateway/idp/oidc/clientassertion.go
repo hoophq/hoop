@@ -25,6 +25,9 @@ func readClientAssertion(path string) (string, error) {
 	if assertion == "" {
 		return "", fmt.Errorf("client assertion file %v is empty", path)
 	}
+	if strings.Count(assertion, ".") != 2 || strings.ContainsAny(assertion, " \t\r\n") {
+		return "", fmt.Errorf("client assertion file %v does not hold a JWT", path)
+	}
 	return assertion, nil
 }
 

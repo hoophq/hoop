@@ -115,6 +115,8 @@ func TestUpdateAuthConfigClientAssertionFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(tokenFile, []byte("eyJhbGciOiJSUzI1NiJ9.e30.sig\n"), 0o600))
 	emptyFile := filepath.Join(dir, "empty")
 	require.NoError(t, os.WriteFile(emptyFile, nil, 0o600))
+	notJWT := filepath.Join(dir, "environ")
+	require.NoError(t, os.WriteFile(notJWT, []byte("POSTGRES_DB_URI=postgres://u:p@db/hoop\n"), 0o600))
 
 	t.Run("a client secret is stored as before, with no assertion key", func(t *testing.T) {
 		rec := putOidc(t, map[string]any{"issuer_url": issuer, "client_id": "cid", "client_secret": "s3cret"})
@@ -124,7 +126,8 @@ func TestUpdateAuthConfigClientAssertionFile(t *testing.T) {
 		assert.NotContains(t, cfg, "client_assertion_file")
 	})
 
-	t.Run("a client assertion file is stored and returned", func(t *testing.T) {
+	t.Run("the client assertion file the operator set is stored and returned", func(t *testing.T) {
+		t.Setenv("IDP_CLIENT_ASSERTION_FILE", tokenFile)
 		rec := putOidc(t, map[string]any{"issuer_url": issuer, "client_id": "cid", "client_assertion_file": tokenFile})
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 		assert.Equal(t, tokenFile, storedOidcConfig(t)["client_assertion_file"])
@@ -139,16 +142,21 @@ func TestUpdateAuthConfigClientAssertionFile(t *testing.T) {
 	})
 
 	for _, tt := range []struct {
-		name    string
-		config  map[string]any
-		wantErr string
+		name     string
+		operator string
+		config   map[string]any
+		wantErr  string
 	}{
-		{"both", map[string]any{"client_secret": "s3cret", "client_assertion_file": tokenFile}, "not both"},
-		{"neither", map[string]any{}, "client-secret or client-assertion-file"},
-		{"empty file", map[string]any{"client_assertion_file": emptyFile}, "is empty"},
-		{"missing file", map[string]any{"client_assertion_file": filepath.Join(dir, "missing")}, "failed reading client assertion file"},
+		{"both", tokenFile, map[string]any{"client_secret": "s3cret", "client_assertion_file": tokenFile}, "not both"},
+		{"neither", tokenFile, map[string]any{}, "client-secret or client-assertion-file"},
+		{"a path the operator did not set", tokenFile, map[string]any{"client_assertion_file": notJWT}, "must be " + tokenFile},
+		{"a path when the operator set none", "", map[string]any{"client_assertion_file": tokenFile}, "did not allow a client assertion file"},
+		{"an empty file", emptyFile, map[string]any{"client_assertion_file": emptyFile}, "is empty"},
+		{"a missing file", filepath.Join(dir, "missing"), map[string]any{"client_assertion_file": filepath.Join(dir, "missing")}, "failed reading client assertion file"},
+		{"a file that is not a JWT", notJWT, map[string]any{"client_assertion_file": notJWT}, "does not hold a JWT"},
 	} {
 		t.Run("refuses "+tt.name, func(t *testing.T) {
+			t.Setenv("IDP_CLIENT_ASSERTION_FILE", tt.operator)
 			tt.config["issuer_url"] = issuer
 			tt.config["client_id"] = "cid"
 			rec := putOidc(t, tt.config)

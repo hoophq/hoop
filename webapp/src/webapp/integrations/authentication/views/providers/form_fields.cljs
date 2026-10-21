@@ -77,7 +77,7 @@
             {:full-width? true
              :not-margin-bottom? true
              :label "Token file"
-             :helper-text "Path on the gateway. The helm chart mounts the token here with idpFederatedToken.enabled."
+             :helper-text "The path the gateway operator set in IDP_CLIENT_ASSERTION_FILE. The helm chart mounts the token here with idpFederatedToken.enabled."
              :placeholder "/var/run/secrets/hoop/idp/token"
              :value (:client-assertion-file @config)
              :on-change #(rf/dispatch [:authentication->update-config-field

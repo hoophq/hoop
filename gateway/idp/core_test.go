@@ -363,12 +363,40 @@ func TestNewOidcProviderOptionsDatabaseConfigIgnoresAssertionFile(t *testing.T) 
 }
 
 func TestNewOidcProviderOptionsDatabaseConfigAssertionFile(t *testing.T) {
-	t.Setenv("IDP_ISSUER", "https://login.microsoftonline.com/tenant/v2.0")
-	t.Setenv("IDP_CLIENT_SECRET", "env-secret")
-	opts, err := NewOidcProviderOptions(&models.ServerAuthConfig{OidcConfig: &models.ServerAuthOidcConfig{
-		IssuerURL: "https://idp.example.com", ClientID: "client-id", ClientAssertionFile: "/var/run/secrets/hoop/idp/token",
-	}})
-	assert.NoError(t, err)
-	assert.Equal(t, "/var/run/secrets/hoop/idp/token", opts.ClientAssertionFile)
-	assert.Empty(t, opts.ClientSecret)
+	const tokenFile = "/var/run/secrets/hoop/idp/token"
+	dbConfig := func(file string) *models.ServerAuthConfig {
+		return &models.ServerAuthConfig{OidcConfig: &models.ServerAuthOidcConfig{
+			IssuerURL: "https://idp.example.com", ClientID: "client-id", ClientAssertionFile: file,
+		}}
+	}
+
+	t.Run("the path the operator set is used", func(t *testing.T) {
+		t.Setenv("IDP_CLIENT_SECRET", "env-secret")
+		t.Setenv("IDP_CLIENT_ASSERTION_FILE", tokenFile)
+		opts, err := NewOidcProviderOptions(dbConfig(tokenFile))
+		assert.NoError(t, err)
+		assert.Equal(t, tokenFile, opts.ClientAssertionFile)
+		assert.Empty(t, opts.ClientSecret)
+	})
+
+	t.Run("another path is refused", func(t *testing.T) {
+		t.Setenv("IDP_CLIENT_ASSERTION_FILE", tokenFile)
+		_, err := NewOidcProviderOptions(dbConfig("/proc/self/environ"))
+		assert.ErrorContains(t, err, "must be "+tokenFile)
+	})
+
+	t.Run("no path is allowed when the operator did not set one", func(t *testing.T) {
+		t.Setenv("IDP_CLIENT_ASSERTION_FILE", "")
+		_, err := NewOidcProviderOptions(dbConfig(tokenFile))
+		assert.ErrorContains(t, err, "did not allow a client assertion file")
+	})
+}
+
+func TestHasServerConfigChangedClientAssertionFile(t *testing.T) {
+	cfg := func(file string) *models.ServerAuthConfig {
+		return &models.ServerAuthConfig{OidcConfig: &models.ServerAuthOidcConfig{IssuerURL: "https://idp", ClientID: "cid", ClientAssertionFile: file}}
+	}
+	var v userInfoTokenVerifier
+	assert.True(t, v.hasServerConfigChanged(idptypes.ProviderTypeOIDC, cfg("/a/token"), cfg("/b/token")))
+	assert.False(t, v.hasServerConfigChanged(idptypes.ProviderTypeOIDC, cfg("/a/token"), cfg("/a/token")))
 }

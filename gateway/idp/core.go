@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -351,9 +352,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oid = *newc.OidcConfig
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v,mcp=%v",
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,clientassertionfile=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v,mcp=%v",
 			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), oid.IssuerURL, oid.ClientID, oid.ClientSecret,
-			oid.Audience, oid.Scopes, oid.GroupsClaim, string(newc.OrgLicenseData), mcpConfigFingerprint(newc.McpAuthConfig))
+			oid.ClientAssertionFile, oid.Audience, oid.Scopes, oid.GroupsClaim, string(newc.OrgLicenseData), mcpConfigFingerprint(newc.McpAuthConfig))
 
 		var oldc models.ServerAuthConfig
 		if old != nil {
@@ -365,9 +366,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oldOidc = *oldc.OidcConfig
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v,mcp=%v",
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,clientassertionfile=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v,mcp=%v",
 			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldOidc.IssuerURL, oldOidc.ClientID, oldOidc.ClientSecret,
-			oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim, string(oldc.OrgLicenseData), mcpConfigFingerprint(oldc.McpAuthConfig))
+			oldOidc.ClientAssertionFile, oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim, string(oldc.OrgLicenseData), mcpConfigFingerprint(oldc.McpAuthConfig))
 
 		return newConfigStr != oldConfigStr
 	case idptypes.ProviderTypeSAML:
@@ -548,6 +549,9 @@ func NewOidcProviderOptions(serverAuthConfig *models.ServerAuthConfig) (opts oid
 	if hasAuthConfig {
 		opts.IssuerURL = serverAuthConfig.OidcConfig.IssuerURL
 		opts.ClientID = serverAuthConfig.OidcConfig.ClientID
+		if err := ValidateDatabaseClientAssertionFile(serverAuthConfig.OidcConfig.ClientAssertionFile); err != nil {
+			return opts, err
+		}
 		opts.ClientSecret = serverAuthConfig.OidcConfig.ClientSecret
 		opts.ClientAssertionFile = serverAuthConfig.OidcConfig.ClientAssertionFile
 		opts.Audience = serverAuthConfig.OidcConfig.Audience
@@ -558,6 +562,24 @@ func NewOidcProviderOptions(serverAuthConfig *models.ServerAuthConfig) (opts oid
 	}
 
 	return opts, nil
+}
+
+// ValidateDatabaseClientAssertionFile accepts only the client assertion file
+// the gateway operator set in IDP_CLIENT_ASSERTION_FILE. A hoop admin sets the
+// database config, issuer included: any other path would let the admin send a
+// gateway file to an endpoint of their choice.
+func ValidateDatabaseClientAssertionFile(path string) error {
+	if path == "" {
+		return nil
+	}
+	allowed := os.Getenv("IDP_CLIENT_ASSERTION_FILE")
+	if allowed == "" {
+		return fmt.Errorf("the gateway operator did not allow a client assertion file: set IDP_CLIENT_ASSERTION_FILE (helm chart: idpFederatedToken.enabled)")
+	}
+	if filepath.Clean(path) != filepath.Clean(allowed) {
+		return fmt.Errorf("client_assertion_file must be %v, the path the gateway operator set in IDP_CLIENT_ASSERTION_FILE", allowed)
+	}
+	return nil
 }
 
 func newOidcProvider(serverAuthConfig *models.ServerAuthConfig) (*oidcprovider.Provider, error) {
