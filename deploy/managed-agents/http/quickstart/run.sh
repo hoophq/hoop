@@ -33,6 +33,9 @@ chmod 644 .secrets/caller-token
 TOKEN=$(cat .secrets/caller-token)
 
 c_step "Starting the sidecar and the tunnel"
+# The old host dies with its tunnel: a failed start must leave none behind
+# for agent.sh.
+rm -f .work/host
 # A new cloudflared container, so its log holds only the new host.
 docker compose up -d --wait --force-recreate --remove-orphans
 c_ok "sidecar healthy"

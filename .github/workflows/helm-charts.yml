@@ -287,7 +287,7 @@ jobs:
           [[ "$img" == "hoophq/hoopsidecar:$(yq '.image.tag' "$dir/values.yaml")" ]] \
             || { echo "::error::the quick start and values.yaml pin different images"; exit 1; }
           for block in guardrails mask; do
-            [[ "$(yq -o=json ".$block" "$qs/sidecar.yaml")" == "$(yq -o=json ".config.$block" "$dir/values.yaml")" ]] \
+            [[ "$(yq -o=json ".$block" "$qs/config/sidecar.yaml")" == "$(yq -o=json ".config.$block" "$dir/values.yaml")" ]] \
               || { echo "::error::the quick start and values.yaml differ in $block"; exit 1; }
           done
           tmp=$(mktemp -d)
@@ -295,7 +295,7 @@ jobs:
           token=(-v "$tmp/token:/run/secrets/caller-token:ro")
 
           docker run -d --name quickstart -p 127.0.0.1:8080:8080 -p 127.0.0.1:19000:19000 \
-            -v "$PWD/$qs/sidecar.yaml:/etc/hoop-inspect/config.yaml:ro" "${token[@]}" "$img" >/dev/null
+            -v "$PWD/$qs/config/sidecar.yaml:/etc/hoop-inspect/config.yaml:ro" "${token[@]}" "$img" >/dev/null
           trap 'docker rm -f quickstart >/dev/null' EXIT
           for _ in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:19000/healthz && break; sleep 1; done
           call() { curl -sS -i -X "$1" "http://127.0.0.1:8080$2" ${3:+-H "X-Hoop-Token: $3"}; }
@@ -310,11 +310,14 @@ jobs:
             || { echo "::error::a request without the caller token was not refused"; exit 1; }
 
           yq '.guardrails.rules += [{"name": "second", "type": "operation", "operations": ["delete"]}]' \
-            "$qs/sidecar.yaml" > "$tmp/over.yaml"
+            "$qs/config/sidecar.yaml" > "$tmp/over.yaml"
           if out=$(docker run --rm -v "$tmp/over.yaml:/etc/hoop-inspect/config.yaml:ro" "${token[@]}" \
               "$img" hoop start sidecar --validate 2>&1); then
             echo "::error::the image accepted a second guardrail rule"; exit 1
           fi
+          # Without this, an empty or header-only refusal passes the quote check.
+          grep -qF -- "2 guardrail rules are configured (guardrails: 2) and this process enforces at most 1" <<<"$out" \
+            || { echo "::error::the image refused the config, but not with the cap message: $out"; exit 1; }
           while IFS= read -r line; do
             grep -qxF -- "$line" "$dir/README.md" \
               || { echo "::error::README.md does not quote this line of the message: $line"; exit 1; }

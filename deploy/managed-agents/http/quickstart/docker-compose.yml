@@ -7,12 +7,14 @@ services:
     # The same release as ../values.yaml; CI fails if they differ.
     image: hoophq/hoopsidecar:1.258.0@sha256:59ffc8db9209f8bc06c02c166ac6df93af6735bac32c840b8f83e52c15bd2136
     environment:
+      HOOP_SIDECAR_CONFIG: /etc/hoop-quickstart/sidecar.yaml
       HOOP_SIDECAR_INSTALL_SOURCE: managed-agents-http
       # Empty runs the free tier. README.md, "Free tier".
       HOOP_LICENSE: ${HOOP_LICENSE:-}
     volumes:
-      # The path the image's HOOP_SIDECAR_CONFIG names, so no flag.
-      - ./sidecar.yaml:/etc/hoop-inspect/config.yaml:ro
+      # The folder, not the file: an editor that saves by rename gives the
+      # file a new inode, which a file mount never sees.
+      - ./config:/etc/hoop-quickstart:ro
       - ./.secrets/caller-token:/run/secrets/caller-token:ro
     healthcheck:
       # The image has bash and no curl.

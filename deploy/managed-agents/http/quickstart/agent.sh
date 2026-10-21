@@ -12,7 +12,8 @@
 #   ./agent.sh            create, then start a session
 #   ./agent.sh --delete   delete the session, agent, vault and environment
 #
-# Prereqs: ./run.sh, ant 1.42.0 or later, jq, ANTHROPIC_API_KEY.
+# Prereqs: ./run.sh, ant 1.42.0 or later signed in (ANTHROPIC_API_KEY or
+# `ant auth login`), jq.
 # MODEL=claude-opus-5-5 ./agent.sh overrides the agent file's model.
 
 set -euo pipefail
@@ -20,7 +21,6 @@ cd "$(dirname "$0")"
 
 die() { printf '\033[31mfail\033[0m %s\n' "$*" >&2; exit 1; }
 for t in ant jq; do command -v "$t" >/dev/null || die "missing required tool: $t"; done
-[[ -n "${ANTHROPIC_API_KEY:-}" ]] || die "set ANTHROPIC_API_KEY"
 
 LOCK=.work/ant/claude-lock.json
 AGENT=agents/demo-api.md ENVIRONMENT=environments/hoop-sidecar.yaml VAULT=vaults/hoop-sidecar.yaml
@@ -106,5 +106,5 @@ ant beta:sessions:events send --session-id "$SESSION_ID" \
 cat <<EOF
 Session $SESSION_ID started against https://$HOST. Watch the agent:
 
-  ant beta:sessions connect $SESSION_ID
+  ant beta:sessions connect --session-id $SESSION_ID
 EOF

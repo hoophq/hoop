@@ -33,7 +33,7 @@ For example:
 ```bash
 curl -sS https://sidecar.example.com/users \
   -H "X-Hoop-Token: $HOOP_CALLER_TOKEN" \
-  -H "X-Claude-Session-Id: $SESSION_ID"
+  -H "X-Claude-Session-Id: <your session id>"
 ```
 
 A 403 with `X-Hoop-Denied` is the sidecar's policy. Report it; do not retry

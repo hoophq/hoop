@@ -2,7 +2,7 @@
 # README.md, "Quick start", has the steps.
 #
 # The free tier enforces one guardrail rule and one mask rule per process.
-# These two are the same as in ../values.yaml; CI fails if they differ.
+# These two are the same as in ../../values.yaml; CI fails if they differ.
 
 # The hoop CLI in the image serves its demo API (invented users) at this
 # address while the sidecar runs. Loopback: only the lane reaches it.

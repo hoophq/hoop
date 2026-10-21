@@ -44,8 +44,8 @@ The tunnel is for a trial: it has no uptime promise and gets a new host on
 each start.
 
 You need Docker, `jq`, `ant` 1.42.0 or later
-(`brew install anthropics/tap/ant`) and `ANTHROPIC_API_KEY`, a key with
-Managed Agents access.
+(`brew install anthropics/tap/ant`) signed in to an account with Managed
+Agents access: `ANTHROPIC_API_KEY`, or `ant auth login`.
 
 ### 1. Start the sidecar
 
@@ -82,7 +82,7 @@ agent to list the users and to try `DELETE /users/1`.
 ### 3. Watch the agent
 
 ```bash
-ant beta:sessions connect <session id from step 2>
+ant beta:sessions connect --session-id <session id from step 2>
 ```
 
 The agent reports masked emails, phones and cards, and the `403` on the
@@ -125,7 +125,7 @@ Check a config before you start it. The output names the limits:
 docker compose run --rm sidecar hoop start sidecar --validate
 ```
 
-The running sidecar re-reads `sidecar.yaml`. An edit over the cap is
+The running sidecar re-reads `config/sidecar.yaml`. An edit over the cap is
 refused with a warning in the log; the old rules stay in force, and the
 next start fails.
 
