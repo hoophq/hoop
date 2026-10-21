@@ -15,13 +15,21 @@ import Toast from '@/components/Snackbar/Toast'
  *   showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
  *   showSnackbar({ level: 'error',   text: 'Failed to load.', description: err.message })
  *   showSnackbar({ level: 'error',   text: 'Validation failed.', details: { field: 'name', reason: 'required' } })
+ *   showSnackbar({ text: 'Approval request', actions: [{ label: 'Open', onClick: open }], duration: 20000 })
  */
-export function showSnackbar({ level = 'info', text, description, details } = {}) {
-  const duration = level === 'error' ? 10000 : undefined
+export function showSnackbar({ level = 'info', text, description, details, actions, duration } = {}) {
+  const ms = duration ?? (level === 'error' ? 10000 : undefined)
   return toast.custom(
     (id) => (
-      <Toast id={id} type={level} title={text} description={description} details={details} />
+      <Toast
+        id={id}
+        type={level}
+        title={text}
+        description={description}
+        details={details}
+        actions={actions}
+      />
     ),
-    duration ? { duration } : undefined,
+    ms ? { duration: ms } : undefined,
   )
 }

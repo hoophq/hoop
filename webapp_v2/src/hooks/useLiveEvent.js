@@ -1,13 +1,18 @@
 import { useEffect, useRef } from 'react'
 import { liveEventsService } from '@/services/liveEvents'
 
-// One stream for the whole tab, shared by every subscriber. It opens with the
-// first subscriber and closes with the last, so a page that leaves stops
-// listening and a tab with no listening page holds no connection.
+// One stream per browser: a stream per tab would use up HTTP/1.1's 6
+// connections to the gateway. The tab holding the lock streams for the others.
 const listeners = new Map() // type -> Set of handlers
 let controller = null
+let channel = null
 
-const RETRY_MS = 5000
+const LOCK = 'hoop-live-events'
+const shared =
+  typeof navigator !== 'undefined' && !!navigator.locks && typeof BroadcastChannel !== 'undefined'
+
+// Spread, so every browser does not reconnect at once after a deploy.
+const retryDelay = () => 3000 + Math.random() * 5000
 
 function subscriberCount() {
   let n = 0
@@ -19,12 +24,28 @@ function dispatch(event) {
   for (const handler of listeners.get(event?.type) ?? []) handler(event)
 }
 
+function stream(signal) {
+  return liveEventsService.stream({
+    signal,
+    onEvent: (event) => {
+      dispatch(event)
+      channel?.postMessage(event)
+    },
+  })
+}
+
 function open() {
   if (controller) return
   const own = new AbortController()
   controller = own
-  liveEventsService
-    .stream({ signal: own.signal, onEvent: dispatch })
+  if (shared && !channel) {
+    channel = new BroadcastChannel(LOCK)
+    channel.onmessage = (message) => dispatch(message.data)
+  }
+  const run = shared
+    ? navigator.locks.request(LOCK, { signal: own.signal }, () => stream(own.signal))
+    : stream(own.signal)
+  run
     .catch(() => {})
     .finally(() => {
       if (controller !== own) return
@@ -32,13 +53,15 @@ function open() {
       // Ended by the server or the network while pages still listen: try
       // again. A page also keeps its own polling, so a lost stream only
       // costs speed.
-      if (subscriberCount() > 0) setTimeout(() => subscriberCount() > 0 && open(), RETRY_MS)
+      if (subscriberCount() > 0) setTimeout(() => subscriberCount() > 0 && open(), retryDelay())
     })
 }
 
 function close() {
   controller?.abort()
   controller = null
+  channel?.close()
+  channel = null
 }
 
 /**

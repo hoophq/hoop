@@ -58,6 +58,13 @@
   color: var(--mantine-color-text);
 }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs);
+  margin-top: var(--mantine-spacing-xs);
+}
+
 .detailsToggle {
   display: inline-flex;
   align-items: center;

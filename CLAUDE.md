@@ -266,7 +266,7 @@ this codebase.
 One channel for every "the page should change now" case: `GET /api/events/stream`, an SSE stream (not a websocket). Do not add a new stream, websocket or poll loop for this.
 - Gateway: add a type constant in `gateway/liveevents/liveevents.go`, then `liveevents.Publish(orgID, liveevents.Event{Type, ID})` where the change happens. It never blocks.
 - An event names what changed (`type`, `id`), never its content. The page reads the resource again through its own route, which keeps that route's access checks.
-- The route is `AdminOnlyAccessRole` while every type serves an admin page. A type for other roles needs a per-type role check in `gateway/api/liveevents/stream.go` first.
+- Every role can open the route. `allowed` in `gateway/api/liveevents/stream.go` checks each type; a type it does not list reaches admins only. An event for other users carries an `Audience`, which never leaves the gateway.
 - Webapp: `useLiveEvent(type, handler)` (`webapp_v2/src/hooks/useLiveEvent.js`); types in `LIVE_EVENTS` (`services/liveEvents.js`). See `webapp_v2/CLAUDE.md`.
 - In-process: a replica delivers only its own events. A page that must not miss one keeps a slow poll as fallback.
 - Content streams (session output, server logs) stay on their own routes: they carry data, not notices.
