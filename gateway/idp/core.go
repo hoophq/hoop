@@ -549,6 +549,7 @@ func NewOidcProviderOptions(serverAuthConfig *models.ServerAuthConfig) (opts oid
 		opts.IssuerURL = serverAuthConfig.OidcConfig.IssuerURL
 		opts.ClientID = serverAuthConfig.OidcConfig.ClientID
 		opts.ClientSecret = serverAuthConfig.OidcConfig.ClientSecret
+		opts.ClientAssertionFile = serverAuthConfig.OidcConfig.ClientAssertionFile
 		opts.Audience = serverAuthConfig.OidcConfig.Audience
 		opts.GroupsClaim = serverAuthConfig.OidcConfig.GroupsClaim
 		if len(serverAuthConfig.OidcConfig.Scopes) > 0 {

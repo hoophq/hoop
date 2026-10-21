@@ -20081,7 +20081,6 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "client_id",
-                "client_secret",
                 "issuer_url"
             ],
             "properties": {
@@ -20090,13 +20089,18 @@ const docTemplate = `{
                     "type": "string",
                     "example": "hoop-audience"
                 },
+                "client_assertion_file": {
+                    "description": "Path on the gateway to a JWT that authenticates the client in place of client_secret (RFC 7523),\ne.g. a Kubernetes service account token trusted by an Entra ID federated credential.",
+                    "type": "string",
+                    "example": "/var/run/secrets/hoop/idp/token"
+                },
                 "client_id": {
                     "description": "Oauth2 Client ID",
                     "type": "string",
                     "example": "hoop-client-id"
                 },
                 "client_secret": {
-                    "description": "Oauth2 Client Secret",
+                    "description": "Oauth2 Client Secret. Set it or client_assertion_file, not both.",
                     "type": "string",
                     "example": "hoop-client-secret"
                 },
