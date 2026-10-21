@@ -1,0 +1,91 @@
+# Reads each PR's diff and labels it risk:high or risk:low, plus
+# tests-weakened when it deletes, skips or loosens tests. It never fails on
+# what it finds: the gate is the human approval, and this makes the weak spot
+# impossible to miss. scripts/ci/verification-guard.sh has the rules.
+#
+# pull_request_target runs the base branch's copy of this file and of the
+# script, so a PR cannot change the guard that reads it. The PR is data here:
+# fetched for git diff, never checked out, never run.
+name: Verification Guard
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Verification Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # The base branch, with history for the merge base. Blobs load on
+      # demand, so the full history stays small.
+      - name: Checkout the base branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Fetch the PR head as data
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "+refs/pull/${PR}/head:refs/remotes/pr/head"
+
+      - name: Read the diff
+        run: |
+          scripts/ci/verification-guard.sh HEAD refs/remotes/pr/head "$RUNNER_TEMP/guard"
+          cat "$RUNNER_TEMP/guard/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Label the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          have=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')
+          args=(--add-label "$(paste -sd, "$RUNNER_TEMP/guard/labels")")
+          drop=()
+          for l in risk:high risk:low tests-weakened; do
+            gh label create "$l" --repo "$REPO" >/dev/null 2>&1 || true
+            if ! grep -qxF "$l" "$RUNNER_TEMP/guard/labels" && grep -qxF "$l" <<<"$have"; then
+              drop+=("$l")
+            fi
+          done
+          if ((${#drop[@]})); then args+=(--remove-label "$(IFS=,; echo "${drop[*]}")"); fi
+          gh pr edit "$PR" --repo "$REPO" "${args[@]}"
+
+      # One comment per PR, updated in place. A low-risk PR gets none, or the
+      # old one says the findings are gone.
+      - name: Comment on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          marker='<!-- verification-guard -->'
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if grep -qxF risk:low "$RUNNER_TEMP/guard/labels"; then
+            [ -z "$id" ] && exit 0
+            body="$marker"$'\n'"Verification guard: nothing found on the latest push."
+          else
+            body="$marker"$'\n'"$(head -c 60000 "$RUNNER_TEMP/guard/report.md")"
+          fi
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" >/dev/null
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+          fi

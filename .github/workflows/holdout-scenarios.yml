@@ -1,0 +1,240 @@
+# Runs the holdout scenarios against the hoop binary of this PR. The
+# scenarios live in hoophq/hoop-scenarios (private), out of the coding
+# agents' path. A judge (claude -p) drives the API as a user would and
+# reports each scenario by ID. The scenario text never reaches this public
+# repo: not in a log, not in a plain artifact, not in a comment.
+#
+# Repo variables:
+#   HOLDOUT_MODE           shadow (default): report only. gate: a failed
+#                          `must` scenario fails the check.
+#   HOLDOUT_MODEL          judge model alias, default opus.
+#   HOLDOUT_AGE_RECIPIENT  age public key. When set, the transcripts are
+#                          uploaded encrypted to it.
+# Secrets: HOLDOUT_READ_TOKEN (read-only, hoop-scenarios only) and
+# HOLDOUT_ANTHROPIC_API_KEY (its own workspace, with a spend limit).
+name: Holdout Scenarios
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Holdout Build
+    # Fork PRs get no secrets. A draft is still with its author's QA.
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      # proxy.golang.org can reset HTTP/2 streams; see pullrequest.yml.
+      - name: Download modules over HTTP/1.1
+        env:
+          GODEBUG: http2client=0
+        run: go mod download
+
+      - name: Build hoop from the PR
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/sut/hoop" ./client
+
+      # The twins belong to the check, not to the change. Built from the base
+      # branch, a PR cannot make a twin lenient.
+      - name: Build the twins from the base branch
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE"
+          git worktree add "$RUNNER_TEMP/base" "$BASE"
+          cd "$RUNNER_TEMP/base/twins"
+          GOWORK=off CGO_ENABLED=0 go build -o "$RUNNER_TEMP/sut/twins" ./cmd/twins
+
+      - name: Upload the binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: holdout-sut
+          path: ${{ runner.temp }}/sut
+          retention-days: 1
+
+  judge:
+    name: Holdout Judge
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # No GH_TOKEN here, and a read-only GITHUB_TOKEN.
+    permissions:
+      contents: read
+
+    steps:
+      # Audit first. After a week, copy the endpoints of the StepSecurity
+      # report into allowed-endpoints and set egress-policy: block.
+      - name: Harden the runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: Require the holdout secrets
+        env:
+          READ_TOKEN: ${{ secrets.HOLDOUT_READ_TOKEN }}
+          API_KEY: ${{ secrets.HOLDOUT_ANTHROPIC_API_KEY }}
+        run: |
+          [ -n "$READ_TOKEN" ] || { echo "::error::secret HOLDOUT_READ_TOKEN is not set"; exit 1; }
+          [ -n "$API_KEY" ] || { echo "::error::secret HOLDOUT_ANTHROPIC_API_KEY is not set"; exit 1; }
+
+      - name: Checkout the scenarios
+        uses: actions/checkout@v7
+        with:
+          repository: hoophq/hoop-scenarios
+          token: ${{ secrets.HOLDOUT_READ_TOKEN }}
+          path: holdout
+          persist-credentials: false
+
+      - name: Download the binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: holdout-sut
+          path: ${{ runner.temp }}/sut
+
+      # The code under test runs as user sut with an empty environment, so
+      # it cannot read the judge's API key from /proc.
+      - name: Boot the stack as user sut
+        run: |
+          sudo useradd --system --create-home --home-dir /home/sut sut
+          sudo install -d -o sut /home/sut/bin /home/sut/stack
+          sudo install -o sut -m 755 "$RUNNER_TEMP"/sut/* /home/sut/bin/
+          sudo install -o sut -m 755 holdout/run/up.sh /home/sut/up.sh
+          if ! sudo -u sut env -i PATH=/usr/bin:/bin /home/sut/up.sh /home/sut/bin /home/sut/stack; then
+            sudo tail -n 50 /home/sut/stack/gateway.log
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.291
+
+      # Everything goes to files. This repo is public and so are its logs: a
+      # scenario printed here is a scenario the coding agents can read.
+      - name: Judge
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.HOLDOUT_ANTHROPIC_API_KEY }}
+          HOLDOUT_MODEL: ${{ vars.HOLDOUT_MODEL || 'opus' }}
+          # What this stack provides. A scenario that needs more is not run.
+          HOLDOUT_CAPS: oidc
+        run: holdout/run/judge.sh holdout/scenarios "$RUNNER_TEMP/out" >"$RUNNER_TEMP/out.log" 2>&1
+
+      - name: Upload the public result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: holdout-public
+          path: ${{ runner.temp }}/out/public.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Encrypt the transcripts
+        if: always() && vars.HOLDOUT_AGE_RECIPIENT != ''
+        env:
+          RECIPIENT: ${{ vars.HOLDOUT_AGE_RECIPIENT }}
+        run: |
+          sudo apt-get install -y -qq age >/dev/null
+          tar -C "$RUNNER_TEMP" -czf - out/private out.log | age -r "$RECIPIENT" -o "$RUNNER_TEMP/transcripts.tgz.age"
+
+      - name: Upload the encrypted transcripts
+        if: always() && vars.HOLDOUT_AGE_RECIPIENT != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: holdout-transcripts
+          path: ${{ runner.temp }}/transcripts.tgz.age
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The required check. It reads public.json only: IDs, results and the one
+  # line each scenario allows to be public.
+  # A skipped job counts as a pass for a required check, so this job always
+  # runs and decides on its own: a draft waits, a fork PR fails closed.
+  report:
+    name: Holdout Scenarios
+    needs: [build, judge]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Download the public result
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: holdout-public
+          path: public
+
+      - name: Comment and decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          MODE: ${{ vars.HOLDOUT_MODE || 'shadow' }}
+          JUDGE: ${{ needs.judge.result }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$DRAFT" = true ]; then
+            echo "Draft PR: the scenarios run when it is ready for review."
+            exit 0
+          fi
+          if [ "$FORK" = true ]; then
+            echo "::warning::fork PR: no secrets, so the holdout scenarios did not run"
+            [ "$MODE" = gate ] && exit 1
+            exit 0
+          fi
+          marker='<!-- holdout-scenarios -->'
+          if [ -s public/public.json ]; then
+            body=$(jq -r --arg mode "$MODE" '
+              "### Holdout scenarios (\($mode))\n",
+              "| Scenario | Result | What must hold |", "|---|---|---|",
+              (.scenarios[] | "| \(.id) | \(.status) | \(if .status == "pass" then "" else (.public | gsub("\\|"; "/")) end) |"),
+              "", "Judge cost: US$ \(.cost_usd | tostring)",
+              (if any(.scenarios[]; .status == "fixed?") then
+                "\nA known-failing scenario passes now: confirm the fix and mark it active." else empty end)
+            ' public/public.json)
+            failed=$(jq '[.scenarios[] | select(.severity == "must" and (.status | IN("fail", "flaky", "blocked", "error")))] | length' public/public.json)
+          else
+            body="### Holdout scenarios ($MODE)"$'\n\n'"The judge did not finish (job result: $JUDGE). No scenario result."
+            failed=1
+          fi
+          body="$marker"$'\n'"$body"
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" >/dev/null
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+          fi
+          echo "$body" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$MODE" = gate ] && [ "$failed" -gt 0 ]; then
+            echo "::error::$failed must scenario(s) did not pass"
+            exit 1
+          fi
