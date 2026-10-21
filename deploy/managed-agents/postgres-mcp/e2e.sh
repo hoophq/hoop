@@ -90,11 +90,12 @@ SESSION_ID=$(ant beta:sessions create --agent "$AGENT_ID" --environment-id "$ENV
 echo "session $SESSION_ID"
 
 events() { ant beta:sessions:events list --session-id "$SESSION_ID" --max-items -1 --format jsonl; }
-FINISHED=""
+FINISHED="" STOP=""
 for _ in $(seq 120); do
     sleep 5
     last=$(events | jq -c 'select(.type | startswith("session."))' | tail -1)
-    case "$(jq -r '.type' <<<"$last")" in
+    STOP=$(jq -r '.type' <<<"$last")
+    case "$STOP" in
     session.status_idle)
         [[ "$(jq -r '.stop_reason.type // ""' <<<"$last")" == requires_action ]] || { FINISHED=1; break; } ;;
     session.error|session.status_terminated) FINISHED=1; break ;;
@@ -136,6 +137,9 @@ in_range='^160\.79\.(10[4-9]|11[01])\.'
 
 {
     expect "$FINISHED" 1 "the session finished within 10 minutes"
+    expect "$STOP" session.status_idle "the session ended idle, not terminated or in error"
+    expect "$(jq -rs '[.[] | select(.type | startswith("agent."))] | last | .type' "$OUT/events.jsonl")" agent.message \
+        "the agent answered after its last tool call"
     expect "$(of_type session.error | count)" 0 "no session error"
     expect "$(of_type agent.mcp_tool_use | count)" 3 "3 execute_sql calls"
     expect "$(result_of 1 | text_of | grep -o 'REDACTED:EMAIL_ADDRESS' | count)" 3 \

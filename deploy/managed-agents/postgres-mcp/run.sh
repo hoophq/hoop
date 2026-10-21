@@ -38,6 +38,7 @@ esac
 
 command -v docker >/dev/null || die "missing required tool: docker"
 command -v openssl >/dev/null || die "missing required tool: openssl"
+command -v curl >/dev/null || die "missing required tool: curl"
 
 # !reset and !override in the test overlay need Compose 2.24.
 v=$(docker compose version --short); v=${v#v}
@@ -79,6 +80,21 @@ c_step "Starting postgres, sidecar, dbhub, caddy ($MODE)"
 if [[ "$MODE" == test ]]; then docker compose rm -sf cloudflared >/dev/null 2>&1 || true; fi
 docker compose up -d --wait --remove-orphans
 c_ok "all services healthy"
+
+if [[ "$MODE" == prod ]]; then
+    c_step "Checking https://$MCP_HOST/mcp"
+    # `up --wait` cannot see the certificate. Caddy's 403 for this caller,
+    # over a verified TLS connection, proves the certificate and the route.
+    code=""
+    for _ in $(seq 90); do
+        code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST \
+            --resolve "$MCP_HOST:443:127.0.0.1" "https://$MCP_HOST/mcp") || true
+        [[ "$code" == 403 ]] && break
+        sleep 1
+    done
+    [[ "$code" == 403 ]] || die "https://$MCP_HOST/mcp gave '${code:-nothing}', not Caddy's 403: check DNS, ports 80 and 443, and docker compose logs caddy"
+    c_ok "certificate issued, route answers"
+fi
 
 if [[ "$MODE" == tunnel ]]; then
     c_step "Waiting for the quick tunnel"
