@@ -206,6 +206,7 @@ func TestPublishDoesNotWaitForTheDatabase(t *testing.T) {
 	stuck := &fakeTransport{bus: newFakeBus(), block: make(chan struct{})}
 	defer close(stuck.block)
 	h := startHub(t, stuck)
+	eventually(t, "the replica listens", func() bool { return stuck.bus.listening() == 1 })
 	local, stop := h.Subscribe("org-1")
 	defer stop()
 
@@ -312,6 +313,9 @@ func TestListenReconnectsAfterAFailure(t *testing.T) {
 	}
 	if got := matching(logsOf(a, "warn"), "LISTEN connection failed"); len(got) != 3 {
 		t.Fatalf("want 3 reconnect warnings, got %d", len(got))
+	}
+	if got := matching(logsOf(a, "warn"), "did not come back"); len(got) != 0 {
+		t.Fatalf("the probe warned while LISTEN reconnected: %q", got)
 	}
 }
 

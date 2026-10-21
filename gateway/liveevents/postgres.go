@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"net"
 	"sync"
 	"time"
 
@@ -79,14 +80,18 @@ func (h *Hub) send(ctx context.Context, t transport, outbox <-chan envelope) {
 		case <-ctx.Done():
 			return
 		case env := <-outbox:
-			payload, _ := json.Marshal(env)
+			payload, err := json.Marshal(env)
+			if err != nil {
+				h.log.Errorf("live events: failed encoding a %v event, other replicas miss it, reason=%v", env.Event.Type, err)
+				continue
+			}
 			if len(payload) > maxPayload {
 				h.log.Errorf("live events: a %v event of %d bytes is over the NOTIFY limit, other replicas miss it",
 					env.Event.Type, len(payload))
 				continue
 			}
 			nctx, cancel := context.WithTimeout(ctx, notifyTimeout)
-			err := t.notify(nctx, string(payload))
+			err = t.notify(nctx, string(payload))
 			cancel()
 			if err != nil {
 				h.log.Warnf("live events: failed sending a %v event to other replicas, reason=%v", env.Event.Type, err)
@@ -101,8 +106,12 @@ func (h *Hub) listen(ctx context.Context, t transport, probes chan<- string, tm 
 	wait := tm.minBackoff
 	for {
 		err := t.listen(ctx,
-			func() { wait = tm.minBackoff },
+			func() {
+				wait = tm.minBackoff
+				h.listening.Store(true)
+			},
 			func(payload string) { h.receive(payload, probes) })
+		h.listening.Store(false)
 		if ctx.Err() != nil {
 			return
 		}
@@ -145,6 +154,10 @@ func (h *Hub) probe(ctx context.Context, t transport, probes <-chan string, tm t
 			return
 		case <-tick.C:
 		}
+		// While LISTEN reconnects, listen already warns.
+		if !h.listening.Load() {
+			continue
+		}
 		ok := h.probeOnce(ctx, t, probes, tm.probeWait)
 		if ctx.Err() != nil {
 			return
@@ -164,7 +177,10 @@ func (h *Hub) probeOnce(ctx context.Context, t transport, probes <-chan string, 
 	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
 	nonce := uuid.NewString()
-	payload, _ := json.Marshal(envelope{Replica: h.replica, Probe: nonce})
+	payload, err := json.Marshal(envelope{Replica: h.replica, Probe: nonce})
+	if err != nil {
+		return false
+	}
 	if err := t.notify(ctx, string(payload)); err != nil {
 		return false
 	}
@@ -191,7 +207,15 @@ func (p pgTransport) notify(ctx context.Context, payload string) error {
 }
 
 func (p pgTransport) listen(ctx context.Context, ready func(), onPayload func(string)) error {
-	conn, err := pgx.Connect(ctx, p.dsn)
+	cfg, err := pgx.ParseConfig(p.dsn)
+	if err != nil {
+		return err
+	}
+	// pgconn's default keepalive (5 min idle) leaves a silently dropped LISTEN deaf for minutes.
+	cfg.DialFunc = (&net.Dialer{KeepAliveConfig: net.KeepAliveConfig{
+		Enable: true, Idle: 15 * time.Second, Interval: 15 * time.Second, Count: 3,
+	}}).DialContext
+	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
 		return err
 	}

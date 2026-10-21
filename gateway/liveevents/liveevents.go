@@ -43,7 +43,8 @@ type Hub struct {
 	subs   map[string]map[chan Event]struct{}
 	outbox chan envelope
 
-	dropping atomic.Bool
+	dropping  atomic.Bool
+	listening atomic.Bool
 }
 
 func NewHub() *Hub {
