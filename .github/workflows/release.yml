@@ -171,11 +171,12 @@ jobs:
             name: Arm64
             runner: ubuntu-24.04-arm
     steps:
-      # What the cgo build and the actions below need from the container:
-      # a C and C++ toolchain (the tokenizer library links libstdc++), git for checkout and the private modules, curl for
-      # the tokenizer library and the Rust installer. bullseye is past its
-      # LTS, so its packages come from archive.debian.org; the release's
-      # Valid-Until has lapsed, which apt is told to accept.
+      # What the cgo build and the actions below need from the container: a
+      # C and C++ toolchain (the tokenizer library links libstdc++), git for
+      # checkout and the private modules, curl for the tokenizer library and
+      # the Rust installer. bullseye is past its LTS, so its packages come
+      # from archive.debian.org; the release's Valid-Until has lapsed, which
+      # apt is told to accept. No gh: this job passes libhoop-pr "false".
       - name: Install build tools
         run: |
           sed -i 's|deb.debian.org|archive.debian.org|g; /bullseye-updates/d' /etc/apt/sources.list
