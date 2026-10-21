@@ -142,6 +142,9 @@ config:
   IDP_ISSUER: null
   IDP_CLIENT_ID: null
   IDP_CLIENT_SECRET: null
+  # Path to a JWT that authenticates the OIDC client in place of
+  # IDP_CLIENT_SECRET. idpFederatedToken.enabled sets it for you.
+  IDP_CLIENT_ASSERTION_FILE: null
   IDP_CUSTOM_SCOPES: null
   # LOG_ENCODING: 'console|json'
   # LOG_LEVEL: 'debug|info|warn|error'
@@ -481,6 +484,16 @@ resources:
     requests:
       cpu: 512m
       memory: 1Gi
+
+# -- Sign in with Entra ID (Azure) without a client secret. Mounts a projected
+# service account token and sets config.IDP_CLIENT_ASSERTION_FILE to it. The
+# app registration needs a federated credential with issuer = the cluster OIDC
+# issuer, subject = system:serviceaccount:<namespace>:<service account> and
+# audience = idpFederatedToken.audience. Leave config.IDP_CLIENT_SECRET empty.
+idpFederatedToken:
+  enabled: false
+  audience: api://AzureADTokenExchange
+  expirationSeconds: 3600
 
 serviceAccount:
   # Specifies whether a service account should be created

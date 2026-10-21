@@ -350,3 +350,14 @@ func TestUserInfoTokenVerifier_hasServerConfigChanged(t *testing.T) {
 		})
 	})
 }
+
+func TestNewOidcProviderOptionsDatabaseConfigIgnoresAssertionFile(t *testing.T) {
+	t.Setenv("IDP_ISSUER", "https://login.microsoftonline.com/tenant/v2.0")
+	t.Setenv("IDP_CLIENT_ASSERTION_FILE", "/var/run/secrets/token")
+	opts, err := NewOidcProviderOptions(&models.ServerAuthConfig{OidcConfig: &models.ServerAuthOidcConfig{
+		IssuerURL: "https://idp.example.com", ClientID: "client-id", ClientSecret: "secret",
+	}})
+	assert.NoError(t, err)
+	assert.Equal(t, "secret", opts.ClientSecret)
+	assert.Empty(t, opts.ClientAssertionFile)
+}

@@ -34,6 +34,46 @@ helm upgrade --install hoop \
   -f values.yaml
 ```
 
+### Entra ID without a client secret
+
+The gateway can authenticate its OIDC client with a Kubernetes service account
+token in place of `IDP_CLIENT_SECRET` (workload identity federation). No secret
+expires and nothing needs rotation.
+
+1. Get the cluster OIDC issuer. On AKS, enable it with
+   `az aks update -g <rg> -n <cluster> --enable-oidc-issuer`, then read it with
+   `az aks show -g <rg> -n <cluster> --query oidcIssuerProfile.issuerUrl -o tsv`.
+2. Add a federated credential to the app registration:
+
+   ```sh
+   az ad app federated-credential create --id <client-id> --parameters '{
+     "name": "hoopgateway",
+     "issuer": "<cluster-oidc-issuer>",
+     "subject": "system:serviceaccount:<namespace>:hoopgateway",
+     "audiences": ["api://AzureADTokenExchange"]
+   }'
+   ```
+
+3. Install with these values and no `IDP_CLIENT_SECRET`:
+
+   ```yaml
+   config:
+     IDP_ISSUER: 'https://login.microsoftonline.com/<tenant-id>/v2.0'
+     IDP_CLIENT_ID: '<client-id>'
+   idpFederatedToken:
+     enabled: true
+   serviceAccount:
+     create: true
+   ```
+
+The chart mounts a projected service account token and sets
+`IDP_CLIENT_ASSERTION_FILE` to it. The kubelet rotates the token and the gateway
+reads it again on each token request. Outside this chart, set
+`IDP_CLIENT_ASSERTION_FILE` to the path of a token file yourself.
+
+An OIDC configuration saved at Settings → Authentication overrides these values
+and still needs a client secret.
+
 ## Installing Hoop Agent
 
 Please refer to [agent configuration reference](https://hoop.dev/docs/setup/kubernetes) for more information.

@@ -87,7 +87,8 @@ config:
   ## are the boot defaults.
   # IDP_ISSUER: 'https://idp-issuer-url'
   # IDP_CLIENT_ID: 'client-id'          # required once IDP_ISSUER is set
-  # IDP_CLIENT_SECRET: 'client-secret'  # required once IDP_ISSUER is set
+  # IDP_CLIENT_SECRET: 'client-secret'  # required once IDP_ISSUER is set, unless idpFederatedToken.enabled
+  # IDP_CLIENT_ASSERTION_FILE: ''       # a JWT in place of the secret; idpFederatedToken.enabled sets it
   # IDP_CUSTOM_SCOPES: ''
   # IDP_GROUPS_CLAIM: ''
   # IDP_AUDIENCE: ''
@@ -348,6 +349,16 @@ podSecurityContext: {}
 # -- Container-level security context (e.g. allowPrivilegeEscalation,
 # capabilities, readOnlyRootFilesystem, runAsNonRoot)
 securityContext: {}
+
+# -- Sign in with Entra ID (Azure) without a client secret. Mounts a projected
+# service account token and sets config.IDP_CLIENT_ASSERTION_FILE to it. The
+# app registration needs a federated credential with issuer = the cluster OIDC
+# issuer, subject = system:serviceaccount:<namespace>:<service account> and
+# audience = idpFederatedToken.audience. Leave config.IDP_CLIENT_SECRET empty.
+idpFederatedToken:
+  enabled: false
+  audience: api://AzureADTokenExchange
+  expirationSeconds: 3600
 
 serviceAccount:
   # Specifies whether a service account should be created

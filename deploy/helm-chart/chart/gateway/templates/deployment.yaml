@@ -53,10 +53,17 @@ spec:
         {{- end }}
         resources:
           {{- toYaml .Values.resources.gw | nindent 10 }}
-        {{- if .Values.persistence.enabled }}
+        {{- if or .Values.persistence.enabled .Values.idpFederatedToken.enabled }}
         volumeMounts:
+        {{- if .Values.persistence.enabled }}
         - mountPath: /opt/hoop/sessions
           name: walsessions
+        {{- end }}
+        {{- if .Values.idpFederatedToken.enabled }}
+        - mountPath: {{ include "hoopgateway.idpTokenDir" . }}
+          name: idp-federated-token
+          readOnly: true
+        {{- end }}
         {{- end }}
         ports:
         - containerPort: 8010
@@ -86,11 +93,22 @@ spec:
         - secretRef:
             name: hoop-config
       {{ end -}}
-      {{- if .Values.persistence.enabled }}
+      {{- if or .Values.persistence.enabled .Values.idpFederatedToken.enabled }}
       volumes:
+      {{- if .Values.persistence.enabled }}
       - name: walsessions
         persistentVolumeClaim:
           claimName: {{ .Values.persistence.existingClaim | default "walsessions" }}
+      {{- end }}
+      {{- if .Values.idpFederatedToken.enabled }}
+      - name: idp-federated-token
+        projected:
+          sources:
+          - serviceAccountToken:
+              path: token
+              audience: {{ .Values.idpFederatedToken.audience | default "api://AzureADTokenExchange" | quote }}
+              expirationSeconds: {{ .Values.idpFederatedToken.expirationSeconds | default 3600 }}
+      {{- end }}
       {{ end -}}
       {{- with .Values.nodeSelector }}
       nodeSelector:

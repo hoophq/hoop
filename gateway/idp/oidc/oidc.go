@@ -37,9 +37,13 @@ type Provider struct {
 }
 
 type Options struct {
-	IssuerURL                string
-	ClientID                 string
-	ClientSecret             string
+	IssuerURL    string
+	ClientID     string
+	ClientSecret string
+	// ClientAssertionFile is a JWT that authenticates the client in place of
+	// ClientSecret, e.g. a Kubernetes service account token trusted by an
+	// Entra ID federated credential.
+	ClientAssertionFile      string
 	Audience                 string
 	CustomScopes             string
 	GroupsClaim              string
@@ -48,10 +52,17 @@ type Options struct {
 }
 
 func (o Options) validate() error {
-	if o.IssuerURL == "" || o.ClientID == "" || o.ClientSecret == "" {
+	if o.IssuerURL == "" || o.ClientID == "" || (o.ClientSecret == "" && o.ClientAssertionFile == "") {
 		return fmt.Errorf("missing required oidc attributes (issuer-url, client-id, client-secret)")
 	}
-	return nil
+	if o.ClientAssertionFile == "" {
+		return nil
+	}
+	if o.ClientSecret != "" {
+		return fmt.Errorf("set client-secret or client-assertion-file, not both")
+	}
+	_, err := readClientAssertion(o.ClientAssertionFile)
+	return err
 }
 
 type UserInfoToken struct {
@@ -81,7 +92,7 @@ func New(opts Options) (*Provider, error) {
 	}
 	apiURL := appconfig.Get().ApiURL()
 	redirectURL := apiURL + "/api/callback"
-	log.Infof("loaded oidc provider configuration, redirect-url=%v, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v",
+	log.Infof("loaded oidc provider configuration, redirect-url=%v, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v, client-assertion-file=%v",
 		redirectURL,
 		p.mustValidateWithUserInfo,
 		oidcProviderConfig.AuthURL,
@@ -90,13 +101,19 @@ func New(opts Options) (*Provider, error) {
 		oidcProviderConfig.JWKSURL,
 		oidcProviderConfig.Algorithms,
 		p.GroupsClaim,
-		scopes)
+		scopes,
+		p.ClientAssertionFile)
 
+	endpoint := oidcProvider.Endpoint()
+	if p.ClientAssertionFile != "" {
+		// client_id goes in the body next to the assertion, with no Basic auth header.
+		endpoint.AuthStyle = oauth2.AuthStyleInParams
+	}
 	conf := oauth2.Config{
 		ClientID:     p.ClientID,
 		ClientSecret: p.ClientSecret,
 		RedirectURL:  redirectURL,
-		Endpoint:     oidcProvider.Endpoint(),
+		Endpoint:     endpoint,
 		Scopes:       scopes,
 	}
 
@@ -122,8 +139,9 @@ func ParseOptionsFromEnv() (p Options, err error) {
 			p.ClientID = u.User.Username()
 			p.ClientSecret, _ = u.User.Password()
 		}
-		if p.ClientID == "" || p.ClientSecret == "" {
-			return p, fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=")
+		p.ClientAssertionFile = os.Getenv("IDP_CLIENT_ASSERTION_FILE")
+		if p.ClientID == "" || (p.ClientSecret == "" && p.ClientAssertionFile == "") {
+			return p, fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=, or <scheme>://<client-id>@<issuer-host> with IDP_CLIENT_ASSERTION_FILE")
 		}
 		p.Audience = os.Getenv("IDP_AUDIENCE")
 		p.GroupsClaim = u.Query().Get("groupsclaim")
@@ -153,6 +171,7 @@ func ParseOptionsFromEnv() (p Options, err error) {
 	p.IssuerURL = os.Getenv("IDP_ISSUER")
 	p.ClientID = os.Getenv("IDP_CLIENT_ID")
 	p.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
+	p.ClientAssertionFile = os.Getenv("IDP_CLIENT_ASSERTION_FILE")
 	p.Audience = os.Getenv("IDP_AUDIENCE")
 	p.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
 	p.GroupsClaim = os.Getenv("IDP_GROUPS_CLAIM")
@@ -209,7 +228,7 @@ func downloadJWKS(jwksURL string) (*keyfunc.JWKS, error) {
 // RefreshAccessToken exchanges a refresh token for a new access token using the provider's token endpoint.
 func (p *Provider) RefreshAccessToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
 	token := &oauth2.Token{RefreshToken: refreshToken}
-	tokenSource := p.oauth2Config.TokenSource(ctx, token)
+	tokenSource := p.oauth2Config.TokenSource(p.withTokenClient(ctx), token)
 	newToken, err := tokenSource.Token()
 	if err != nil {
 		return nil, fmt.Errorf("failed to refresh access token: %w", err)
@@ -246,7 +265,7 @@ func (p *Provider) GetAuthCodeURL(state string, opts ...oauth2.AuthCodeOption) s
 }
 
 func (p *Provider) VerifyIDTokenForCode(code string) (token *oauth2.Token, uinfo idptypes.ProviderUserInfo, err error) {
-	token, err = p.oauth2Config.Exchange(context.Background(), code)
+	token, err = p.oauth2Config.Exchange(p.withTokenClient(context.Background()), code)
 	if err != nil {
 		return nil, uinfo, fmt.Errorf("failed exchange authorization code, reason=%v", err)
 	}

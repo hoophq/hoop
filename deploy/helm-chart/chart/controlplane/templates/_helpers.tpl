@@ -37,6 +37,18 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 {{- end -}}
 
+{{/* Where idpFederatedToken mounts the projected service account token. */}}
+{{- define "hoopcontrolplane.idpTokenDir" -}}/var/run/secrets/hoop/idp{{- end -}}
+
+{{/* The client assertion file the control plane reads, or empty. */}}
+{{- define "hoopcontrolplane.idpClientAssertionFile" -}}
+{{- if (.Values.idpFederatedToken | default dict).enabled -}}
+{{ include "hoopcontrolplane.idpTokenDir" . }}/token
+{{- else -}}
+{{ (.Values.config | default dict).IDP_CLIENT_ASSERTION_FILE | default "" }}
+{{- end -}}
+{{- end -}}
+
 {{- define "hoopcontrolplane.configSecretName" -}}
 {{- printf "%s-config" (include "hoopcontrolplane.fullname" .) -}}
 {{- end -}}
@@ -75,12 +87,16 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- fail (printf "config.PORT is %v but this chart publishes %s. Leave PORT unset" $c.PORT $port) -}}
 {{- end -}}
 
+{{- $idpAssertionFile := include "hoopcontrolplane.idpClientAssertionFile" . -}}
+{{- if and $idpAssertionFile $c.IDP_CLIENT_SECRET -}}
+{{- fail "set config.IDP_CLIENT_SECRET or a client assertion (idpFederatedToken.enabled, config.IDP_CLIENT_ASSERTION_FILE), not both" -}}
+{{- end -}}
 {{- if $c.IDP_ISSUER -}}
 {{- if not $c.IDP_CLIENT_ID -}}
 {{- fail "config.IDP_CLIENT_ID is required when config.IDP_ISSUER is set" -}}
 {{- end -}}
-{{- if not $c.IDP_CLIENT_SECRET -}}
-{{- fail "config.IDP_CLIENT_SECRET is required when config.IDP_ISSUER is set" -}}
+{{- if not (or $c.IDP_CLIENT_SECRET $idpAssertionFile) -}}
+{{- fail "config.IDP_CLIENT_SECRET or idpFederatedToken.enabled is required when config.IDP_ISSUER is set" -}}
 {{- end -}}
 {{- end -}}
 
