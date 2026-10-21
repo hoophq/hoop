@@ -254,6 +254,27 @@ jobs:
             || { echo "::error::the template's lane lost its caller token"; exit 1; }
           echo "the Managed Agents http template renders"
 
+      - name: Assert the Managed Agents kubernetes template renders
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/sidecar
+          values=./deploy/managed-agents/kubernetes/values.yaml
+          helm lint "$chart" -f "$values"
+          out=$(helm template t "$chart" -f "$values")
+          echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "managed-agents-kubernetes"' \
+            || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q 'type: LoadBalancer' \
+            || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
+          echo "$out" | grep -qE 'port: 443$' \
+            || { echo "::error::the template's lane is not on port 443"; exit 1; }
+          echo "$out" | grep -q 'no-delete' \
+            || { echo "::error::the template lost its delete guardrail"; exit 1; }
+          # The lane verifies the API server with the CA that Kubernetes
+          # mounts in every pod that keeps its service account token.
+          echo "$out" | grep -q 'automountServiceAccountToken: false' \
+            && { echo "::error::the pod no longer mounts the cluster CA the lane trusts"; exit 1; }
+          echo "the Managed Agents kubernetes template renders"
+
       - name: Assert the control plane chart renders and its guards hold
         run: |
           set -euo pipefail

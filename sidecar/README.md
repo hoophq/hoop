@@ -528,8 +528,8 @@ A control plane credential makes `HOOP_SIDECAR_ID` unnecessary anywhere.
 
 `install-source` says which hoop template started the sidecar. The template
 sets `HOOP_SIDECAR_INSTALL_SOURCE`; unset, the property is omitted. Values
-are a fixed list, `managed-agents-http` today, and any other value is sent
-as `other`, so it can never carry a name.
+are a fixed list, `managed-agents-http` and `managed-agents-kubernetes`
+today, and any other value is sent as `other`, so it can never carry a name.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends
@@ -3763,7 +3763,12 @@ listeners:
       rules:
         - name: no-secret-contents
           type: http_header
-          resources: ["/api/v1/namespaces/*/secrets/*"]
+          # A list, a watch and one secret, in every namespace and across all.
+          resources:
+            - /api/v1/secrets
+            - /api/v1/namespaces/*/secrets/**
+            - /api/v1/watch/secrets
+            - /api/v1/watch/namespaces/*/secrets/**
           methods: [GET]
           headers_not: {Accept: ["application/json;as=Table;*"]}
           message: listing secrets is fine; reading one is not
@@ -3817,7 +3822,8 @@ policy.NewRules([]policy.Rule{
         WithMessage("upstream failure suppressed by policy"),
 
     policy.Rule{Name: "no-secret-contents", Type: policy.MatchHTTPHeader}.
-        WithResources("/api/v1/namespaces/*/secrets/*").
+        WithResources("/api/v1/secrets", "/api/v1/namespaces/*/secrets/**",
+            "/api/v1/watch/secrets", "/api/v1/watch/namespaces/*/secrets/**").
         WithMethods("GET").
         WithHeadersNot(map[string][]string{"Accept": {"application/json;as=Table;*"}}).
         WithMessage("listing secrets is fine; reading one is not"),
@@ -3847,7 +3853,10 @@ its contents with `Accept: application/json`, on the same `GET`. Two forms:
   table view through and refuses everything else on a secret: `-o yaml`,
   `Accept: application/json;q=1`, Protobuf, and a curl that sends no
   `Accept` at all. This is the form for a rule that protects something,
-  because the request it did not think of is denied.
+  because the request it did not think of is denied. The table view is safe
+  only while it carries no object: `?includeObject=Object` puts each Secret
+  whole in the table's rows, and no rule reads the query. Pair the rule with
+  a `columns: [data]` mask rule, as `deploy/managed-agents/kubernetes/` does.
 - `headers` names the shapes that are UNSAFE: the rule matches when every
   named header is present with a matching value. `kubectl-command:
   ["kubectl delete*"]` refuses a delete however kubectl spells the path. A
@@ -3861,11 +3870,13 @@ matches: a response carries the server's headers, and this rule reads the
 client's intent. `methods` and `resources` scope the rule as they scope
 `http_resource`; a `*` segment before a trailing `/**` is still a wildcard,
 so `/api/v1/namespaces/*/secrets/**` covers the collection in every namespace
-and everything under it. The codec fills `http.headers` on a statement from
-the listener's `http.headers` allowlist and nothing else, so a rule naming a
-header the lane does not capture, in either map, is refused at load with the
-name to add: a rule that loads and can never match is the failure this file
-refuses everywhere.
+and everything under it. The list across all namespaces, `/api/v1/secrets`,
+and the older watch paths under `/api/v1/watch/` need patterns of their own.
+The codec fills `http.headers` on a statement from the listener's
+`http.headers` allowlist and nothing else, so a rule naming a header the lane
+does not capture, in either map, is refused at load with the name to add: a
+rule that loads and can never match is the failure this file refuses
+everywhere.
 
 Through GKE Connect Gateway these rules match the Kubernetes path, because
 the cluster prefix is gone before policy reads the resource: see [kubectl
