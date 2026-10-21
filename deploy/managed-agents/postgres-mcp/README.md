@@ -58,8 +58,8 @@ To use your own database:
 - Put the sidecar, and only the sidecar, on a network that reaches the
   database. Across a network you do not trust, set `upstream_tls` on the
   lane (sidecar README, "Upstream TLS").
-- Set dbhub's `DSN` to a login with SELECT only and a `statement_timeout`,
-  like the `agent` role in `seed.sql`. Replace the demo passwords.
+- Set dbhub's `DSN` to a login like the `agent` role in `seed.sql`: SELECT
+  only, no TEMPORARY, and a `statement_timeout`. Replace the demo passwords.
 
 ## 2. Create the environment, vault and agent
 
@@ -139,9 +139,12 @@ writes the transcript, audit rows and Caddy log to `evidence/`.
 - **The mask matches text that looks like an email.** A statement that
   reshapes the value, such as `replace(email, '@', ' at ')`, gets it out
   unmasked. Keep a column that must not leave out of the login's grants.
-- **The read-only rule names operations.** `LOCK TABLE`, `SELECT ... FOR
-  UPDATE` and a function with side effects are not writes to the sidecar.
-  A SELECT-only login refuses them.
+- **The read-only rule depends on the SQL classifier.** Some statements
+  that write pass as reads (ENG-803), and so do `LOCK TABLE`, `SELECT ...
+  FOR UPDATE` and a function with side effects. The SELECT-only login
+  refuses them.
+- **The timeouts stop accidents, not intent.** The rule refuses `SET`, but
+  `set_config()` in a SELECT can still change a timeout for the session.
 - **No Claude session in the audit.** dbhub uses one login and one pool, so
   each row names `agent`, not a session or a person.
 - **One token for every agent.** Every Anthropic customer's MCP calls come

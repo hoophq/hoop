@@ -162,8 +162,8 @@ expect "$($DIRECT 'SELECT count(*) FROM customers')" 3 "3 rows remain"
 r=$(sql "/* demo-$RUN-4 */ SELECT count(*) AS n FROM customers")
 expect "$(text_of <<<"$r" | jq -r '.data.statements[0].rows[0].n')" 3 "the next statement works at once"
 
-# The sidecar's message, not only an error: the demo login lacks TRUNCATE
-# and CREATE, so Postgres would refuse those two by itself.
+# The sidecar's message, not only an error: the demo login may only
+# SELECT, so Postgres would refuse every write by itself.
 i=10
 for s in "WITH g AS (DELETE FROM customers RETURNING *) SELECT count(*) FROM g" \
          "MERGE INTO customers c USING (SELECT 1 AS id) s ON c.id = s.id WHEN MATCHED THEN DELETE" \
@@ -172,11 +172,15 @@ for s in "WITH g AS (DELETE FROM customers RETURNING *) SELECT count(*) FROM g" 
          "PREPARE wipe AS DELETE FROM customers" \
          "COPY customers FROM STDIN" \
          "TRUNCATE customers" \
-         "CREATE TABLE customers_copy AS SELECT * FROM customers"; do
+         "CREATE TABLE customers_copy AS SELECT * FROM customers" \
+         "SET statement_timeout = 0"; do
     i=$((i + 1))
     contains "$(sql "/* demo-$RUN-$i */ $s" | text_of)" "$REFUSAL" "the sidecar refuses: ${s:0:56}"
 done
 expect "$($DIRECT 'SELECT count(*) FROM customers')" 3 "3 rows remain"
+# What the classifier misses (ENG-803), the login refuses.
+contains "$(sql "/* demo-$RUN-20 */ SELECT * INTO TEMP scratch FROM customers" | text_of)" \
+    "permission denied" "the login refuses a temporary table"
 
 note "A refused write inside a multi-statement call (bytebase/dbhub#479):"
 dbhub_id=$(docker compose ps -q dbhub)
@@ -215,7 +219,7 @@ expect "$(grep -cE "$SEEDED" <<<"$AUDIT")" 0 "no stored email in the audit trail
 PGLOG=$(docker compose logs --no-log-prefix postgres)
 expect "$(grep -c "demo-$RUN-1 " <<<"$PGLOG")" 1 "Postgres ran the SELECT"
 reached=""
-for n in 3 $(seq 11 18); do
+for n in 3 $(seq 11 19); do
     [[ "$(grep -c "demo-$RUN-$n " <<<"$PGLOG")" == 0 ]] || reached+=" $n"
 done
 expect "${reached:-none}" none "no refused statement reached Postgres"

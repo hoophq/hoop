@@ -80,14 +80,15 @@ if [[ "$MODE" == tunnel ]]; then
     MCP_HOST=$host
 fi
 
-cat > .env <<EOF
+# umask: a new file is created 0600, not readable for a moment before chmod.
+(umask 077; cat > .env) <<EOF
 # Written by ./run.sh. Holds the MCP token: keep it out of git.
 DBHUB_AUTH_TOKEN=$DBHUB_AUTH_TOKEN
 MCP_HOST=$MCP_HOST
 COMPOSE_FILE=$FILES
 COMPOSE_PROFILES=$PROFILES
 EOF
-chmod 600 .env
+chmod 600 .env # a file from an older run keeps its mode otherwise
 
 case "$MODE" in
 prod)   url="https://$MCP_HOST/mcp"; next="register the agent: README.md, steps 2 to 4" ;;

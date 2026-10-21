@@ -24,13 +24,14 @@ listeners:
       mode: enforce
       rules:
         # The rule keys on what a statement does, not on its first word. Each
-        # operation matches exactly, so the list is spelled out. No rule for
+        # operation matches exactly, so the list is spelled out. `set` keeps
+        # the agent from lifting the login's timeouts with SET. No rule for
         # `unknown`: the server's replies are judged as `unknown` statements
         # too, and it would refuse them.
         - name: read-only
           type: operation
           operations: [insert, update, delete, truncate,
-                       create, drop, alter, grant, revoke, call]
+                       create, drop, alter, grant, revoke, call, set]
           message: this connection is read-only; writes are not permitted
 
     mask:
