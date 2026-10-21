@@ -43,11 +43,17 @@ tar -czf "$WORK/ctx/dist/binaries/hoop_e2e_Linux_${ARCH}.tar.gz" -C "$WORK/bin" 
 docker network create "$NET" >/dev/null
 docker run -d --name "$PG" --network "$NET" \
   -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=hoop postgres:16-alpine >/dev/null
+# Probe over TCP. The image first runs a temporary init server on the unix
+# socket only, then restarts it: a socket probe can pass, and the next one fail.
+pg_ready=false
 for _ in $(seq 1 30); do
-  docker exec "$PG" pg_isready -U postgres -d hoop >/dev/null 2>&1 && break
+  if docker exec "$PG" pg_isready -h 127.0.0.1 -U postgres -d hoop >/dev/null 2>&1; then
+    pg_ready=true
+    break
+  fi
   sleep 1
 done
-docker exec "$PG" pg_isready -U postgres -d hoop >/dev/null || { echo "FAIL: postgres did not start" >&2; exit 1; }
+$pg_ready || { echo "FAIL: postgres did not start" >&2; exit 1; }
 
 boot_readonly() { # $1=target
   local target=$1 image="hoopcontrolplane:$RUN_ID-$1"
