@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://platform.claude.com/schemas/ant/beta/environment.json
+# A cloud sandbox with no network path of its own. MCP calls do not leave
+# from the sandbox: Anthropic's servers make them, from 160.79.104.0/21.
+name: hoop-postgres-mcp
+description: Cloud sandbox for an agent that reaches Postgres only through MCP.
+config:
+  type: cloud
+  networking:
+    # A create request without networking gets unrestricted.
+    type: limited
+    allowed_hosts: []
+    allow_package_managers: false
+    # A limited environment refuses a session whose agent declares an MCP
+    # server, unless this is true or the host is in allowed_hosts.
+    allow_mcp_servers: true
