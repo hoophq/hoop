@@ -28,10 +28,11 @@ APISERVER_HOST=$(sed -n 's/^APISERVER_HOST=//p' .env)
 [[ -n "$SIDECAR_HOST" && -n "$APISERVER_HOST" ]] || die "no tunnel hosts in .env: run ./run.sh --tunnel first"
 kc() { kubectl --context "$CTX" "$@"; }
 # A quick tunnel can expire while its container runs on; its host then
-# resolves nowhere. The API server answers 401 to a request with no token.
+# resolves nowhere. The API server answers /version with 200 when anonymous
+# access is on (the Kubernetes default) and 401 when it is off (k3s).
+api_answers() { [[ "$(curl -s -m 10 -o /dev/null -w '%{http_code}' "https://$1/version")" =~ ^(200|401)$ ]]; }
 for h in "$SIDECAR_HOST" "$APISERVER_HOST"; do
-    [[ "$(curl -s -m 10 -o /dev/null -w '%{http_code}' "https://$h/version")" == 401 ]] \
-        || die "https://$h does not answer: run ./run.sh --tunnel again"
+    api_answers "$h" || die "https://$h does not answer: run ./run.sh --tunnel again"
 done
 
 KEEP=""; [[ "${1:-}" == "--keep" ]] && KEEP=1
@@ -174,8 +175,17 @@ rows() { jq -c --arg t "$RUN-$1" 'select(.direction == "client" and (.statement 
 between() { jq -sc --arg a "$RUN-$1" --arg b "$RUN-$2" '
     def at($t): map(.direction == "client" and (.statement // "" | contains($t))) | index(true);
     at($a) as $i | at($b) as $j | if $i and $j then .[$i + 1:$j][] else empty end' "$OUT/audit.jsonl"; }
+# The server rows that answer the request tagged <n>: same session, after its
+# client row, before that session's next client row.
+replies() { jq -sc --arg t "$RUN-$1" '
+    (to_entries | map(select(.value.direction == "client" and (.value.statement // "" | contains($t)))) | first) as $req
+    | if $req == null then empty else
+        (to_entries | map(select(.key > $req.key and .value.session_id == $req.value.session_id)) | map(.value)) as $after
+        | ($after | map(.direction == "client") | index(true) // length) as $next
+        | $after[:$next][] | select(.direction == "server")
+      end' "$OUT/audit.jsonl" | jq -r .kind | paste -sd, -; }
 refused_deletes() { jq -c 'select(.kind == "violation" and .rule == "no-delete" and (.statement | startswith("DELETE /api/v1/namespaces/demo/pods/web-")))'; }
-direct=$(curl -sk -m 10 -o /dev/null -w '%{http_code}' "https://$APISERVER_HOST/version") || true
+direct=$(api_answers "$APISERVER_HOST" && echo yes || echo no)
 
 {
     expect "$FINISHED" 1 "the session finished within 10 minutes"
@@ -199,12 +209,14 @@ direct=$(curl -sk -m 10 -o /dev/null -w '%{http_code}' "https://$APISERVER_HOST/
     expect "$(grep -cF -f <(printf '%s\n' "$TOKEN") "$OUT/events.jsonl")" 0 "the real token never appears in the session"
     expect "$(output_of 5 | grep -cE 'Could not resolve host|403')" 1 \
         "the direct call to the API server is refused inside the sandbox"
-    expect "$direct" 401 "the same API server answers from outside the sandbox"
+    expect "$direct" yes "the same API server answers from outside the sandbox"
     expect "$(rows 1 | jq -r '[.kind, .allowed] | join(" ")')" "statement true" "get pods: one row, admitted"
+    expect "$(replies 1)" statement "get pods: one server row for its response"
     expect "$(rows 2 | count)" 1 "delete pod: one row for the list kubectl sends first"
     expect "$(between 2 3 | refused_deletes | count)" 2 \
         "delete pod: one violation row per refused DELETE"
     expect "$(rows 3 | count)" 1 "get secret: one row"
+    expect "$(replies 3)" statement,masked "get secret: one server row and one masked row for its response"
     expect "$(rows 5 | count)" 0 "the direct call left no row: it never reached the sidecar"
     # Not a pass or fail: what the egress proxy negotiated with kubectl.
     headers=$(output_of 4 | tr -dc '0-9')

@@ -77,6 +77,15 @@ rows() { audit | jq -c --arg t "$1" 'select(.direction == "client" and (.stateme
 between() { audit | jq -sc --arg a "$1" --arg b "$2" '
     def at($t): map(.direction == "client" and (.statement // "" | contains($t))) | index(true);
     at($a) as $i | at($b) as $j | if $i and $j then .[$i + 1:$j][] else empty end'; }
+# The server rows that answer the request tagged <tag>: same session, after
+# its client row, before that session's next client row.
+replies() { audit | jq -sc --arg t "$1" '
+    (to_entries | map(select(.value.direction == "client" and (.value.statement // "" | contains($t)))) | first) as $req
+    | if $req == null then empty else
+        (to_entries | map(select(.key > $req.key and .value.session_id == $req.value.session_id)) | map(.value)) as $after
+        | ($after | map(.direction == "client") | index(true) // length) as $next
+        | $after[:$next][] | select(.direction == "server")
+      end' | jq -r .kind | paste -sd, -; }
 refused_deletes() { jq -c 'select(.kind == "violation" and .rule == "no-delete" and (.statement | startswith("DELETE /api/v1/namespaces/demo/pods/web-")))'; }
 
 h "1. transport: TLS with ALPN h2"
@@ -112,16 +121,18 @@ lacks "$got" "$LEAK" "the watch stream is masked event by event"
 got=$(kubectl scale deploy/web --replicas=3 2>&1; kubectl scale deploy/web --replicas=2 2>&1)
 expect "$(grep -c 'scaled' <<<"$got")" 2 "kubectl scale (a PATCH) passes: the agent can manage, not delete"
 
-h "3. audit: one client row per request"
+h "3. audit: one client row per request, one server row per response"
 sleep 1 # the sidecar writes the row before it answers; give the log a moment
 expect "$(rows "$RUN-1" | jq -r '[.kind, .operation, .allowed] | join(" ")')" "statement get true" \
     "get pods: one row, admitted"
+expect "$(replies "$RUN-1")" statement "get pods: one server row for its response"
 expect "$(rows "$RUN-2" | count)" 1 "delete pod: one row for the list kubectl sends first"
 expect "$(between "$RUN-2" "$RUN-3" | refused_deletes | count)" 2 \
     "delete pod: one violation row per refused DELETE"
 expect "$(rows "$RUN-3" | jq -r '[.kind, .rule] | join(" ")')" "violation no-delete" \
     "deletecollection: one violation row, rule no-delete"
 expect "$(rows "$RUN-4" | count)" 1 "get secret: one row"
+expect "$(replies "$RUN-4")" statement,masked "get secret: one server row and one masked row for its response"
 expect "$(rows "$RUN-1" | jq -r '.http.headers["kubectl-command"]')" "kubectl get" \
     "a row names the kubectl subcommand"
 expect "$(rows "$RUN-1" | jq -r '.principal')" "anonymous" \

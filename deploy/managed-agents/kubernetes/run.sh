@@ -83,7 +83,7 @@ EOF
 kc apply -f rbac.yaml >/dev/null # its Role lives in demo
 if ! kc -n hoop get secret hoop-sidecar-tls >/dev/null 2>&1; then
     tmp=$(mktemp -d)
-    openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj /CN=localhost \
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=localhost \
         -addext subjectAltName=DNS:localhost,IP:127.0.0.1 \
         -keyout "$tmp/tls.key" -out "$tmp/tls.crt" 2>/dev/null
     kc -n hoop create secret tls hoop-sidecar-tls --cert="$tmp/tls.crt" --key="$tmp/tls.key" >/dev/null
