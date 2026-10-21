@@ -30,7 +30,8 @@ for t in docker openssl curl; do command -v "$t" >/dev/null || die "missing requ
 mkdir -p .secrets .work && chmod 700 .secrets
 [[ -s .secrets/caller-token ]] || (umask 077; openssl rand -hex 24 > .secrets/caller-token)
 chmod 644 .secrets/caller-token
-TOKEN=$(cat .secrets/caller-token)
+# curl reads the header from this file: an argument shows in the process list.
+(umask 077; printf 'X-Hoop-Token: %s\n' "$(cat .secrets/caller-token)" > .secrets/token-header)
 
 c_step "Starting the sidecar and the tunnel"
 # The old host dies with its tunnel: a failed start must leave none behind
@@ -55,15 +56,16 @@ echo "$host" > .work/host
 c_ok "https://$host"
 
 c_step "Checking the lane through https://$host"
-# call <method> <path> [token]: prints the status line, then the body.
+# call <method> <path> [token]: prints the status line, then the body. Any
+# third argument sends the caller token.
 call() {
     curl -sS -i --max-time 10 -X "$1" "https://$host$2" \
-        ${3:+-H "X-Hoop-Token: $3"} -H "X-Claude-Session-Id: run.sh"
+        ${3:+-H @.secrets/token-header} -H "X-Claude-Session-Id: run.sh"
 }
 # A new quick tunnel takes some seconds to resolve and connect.
 out=""
 for _ in $(seq 30); do
-    out=$(call GET /users/1 "$TOKEN" 2>/dev/null) && [[ "$out" == HTTP/*" 200"* ]] && break
+    out=$(call GET /users/1 token 2>/dev/null) && [[ "$out" == HTTP/*" 200"* ]] && break
     sleep 2
 done
 [[ "$out" == HTTP/*" 200"* ]] || die "GET /users/1 did not answer 200 through the tunnel: ${out%%$'\r'*}"
@@ -75,7 +77,7 @@ done
 c_ok "GET /users/1 is masked:"
 printf '%s\n' "$body" | sed 's/^/        /'
 
-out=$(call DELETE /users/1 "$TOKEN")
+out=$(call DELETE /users/1 token)
 # The tunnel speaks HTTP/2, which sends header names in lower case.
 [[ "$out" == HTTP/*" 403"* ]] && grep -qi '^x-hoop-denied: policy' <<<"$out" \
     || die "DELETE /users/1 was not refused: ${out%%$'\r'*}"

@@ -40,7 +40,7 @@ gone() {
 # leaves the lock, so a retry after a failure touches only what is left.
 drop() {
     local id rest
-    id=$(lockid "$1")
+    id=$(lockid "$1") || return 1
     [[ -n "$id" ]] || return 0
     gone "${@:2}" "$id" || return 1
     rest=$(jq --arg f "./$1" 'del(.resources[$f])' "$LOCK") && printf '%s\n' "$rest" > "$LOCK"

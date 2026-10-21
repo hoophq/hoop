@@ -43,7 +43,7 @@ phones and cards. A Cloudflare quick tunnel gives it a public HTTPS host.
 The tunnel is for a trial: it has no uptime promise and gets a new host on
 each start.
 
-You need Docker, `jq`, `ant` 1.42.0 or later
+You need Docker, `curl`, `openssl`, `jq` and `ant` 1.42.0 or later
 (`brew install anthropics/tap/ant`) signed in to an account with Managed
 Agents access: `ANTHROPIC_API_KEY`, or `ant auth login`.
 
