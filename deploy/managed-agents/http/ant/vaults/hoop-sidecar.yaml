@@ -1,0 +1,4 @@
+# yaml-language-server: $schema=https://platform.claude.com/schemas/ant/beta/vault.json
+# The vault only. ant apply cannot hold a secret: add the two credentials
+# with the files under ../../credentials (README.md, step 3).
+display_name: hoop sidecar

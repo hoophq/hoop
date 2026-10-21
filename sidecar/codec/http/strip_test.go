@@ -78,9 +78,9 @@ func TestAnAdmittedRequestOnAnOriginLane(t *testing.T) {
 	authFilter(t, origin, in, want)
 }
 
-// The gate judges a request only once its body has arrived, and the head
-// would reach the upstream first. So the filter refuses a stranger's head
-// before forwarding a byte of it, whether its body ever comes: no header,
+// The gate judges a request only once its body has arrived. The filter
+// refuses a stranger's head before then, whether its body ever comes, so
+// the sidecar never holds a body for them: no header,
 // a wrong token, a token repeated (joined "a, b" as the gate would see it),
 // a token folded onto a second line.
 func TestARefusedHeadForwardsNothing(t *testing.T) {

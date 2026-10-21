@@ -15,6 +15,7 @@ on:
   pull_request:
     paths:
       - deploy/helm-chart/**
+      - deploy/managed-agents/**
       - .github/workflows/helm-charts.yml
 
 # A newer run for the same PR makes this one stale.
@@ -233,6 +234,25 @@ jobs:
             --set podLabels.app\\.kubernetes\\.io/instance=x
 
           echo "podLabels land on the pod template only"
+
+      # deploy/managed-agents/http/values.yaml is a template users install as
+      # is, so a chart change that breaks it must fail here, not at install.
+      - name: Assert the Managed Agents http template renders
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/sidecar
+          values=./deploy/managed-agents/http/values.yaml
+          helm lint "$chart" -f "$values"
+          out=$(helm template t "$chart" -f "$values")
+          echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "managed-agents-http"' \
+            || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q 'type: LoadBalancer' \
+            || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
+          echo "$out" | grep -qE 'port: 443$' \
+            || { echo "::error::the template's lane is not on port 443"; exit 1; }
+          echo "$out" | grep -q 'caller_token' \
+            || { echo "::error::the template's lane lost its caller token"; exit 1; }
+          echo "the Managed Agents http template renders"
 
       - name: Assert the control plane chart renders and its guards hold
         run: |

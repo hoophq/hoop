@@ -223,6 +223,13 @@ func (c *Codec) Filter(dir inspect.Direction, data []byte) ([]byte, error) {
 	return c.via.filter(data)
 }
 
+// HoldsRequests is the gate's RequestHolder: a request leaves for the
+// upstream only once it is whole and judged. libhoop decodes a request only
+// with its body, and its head alone is enough for a route that acts on the
+// method and path, so forwarding reads as they arrive would let a denied
+// request run.
+func (*Codec) HoldsRequests() {}
+
 // TakeCredential returns the credential lifted from stmt and forgets it, so
 // a second call for the same statement reports none. ok is false when stmt
 // carries no handle from this codec. A request that had no credential header
@@ -234,12 +241,14 @@ func (c *Codec) TakeCredential(stmt *inspect.Statement) (string, bool) {
 
 // The gate finds these by type assertion, so losing one is silent at
 // runtime: without Duplex the relay would split the connection over two
-// instances and never see a WebSocket message the client sends. Pin them at
-// compile time instead, against an upstream change to the embedded type.
+// instances and never see a WebSocket message the client sends, and without
+// HoldsRequests a denied request would reach the upstream in part. Pin them
+// at compile time instead, against an upstream change to the embedded type.
 var _ interface {
 	inspect.Codec
 	Duplex()
 	EnableRewrite()
+	HoldsRequests()
 	Filter(inspect.Direction, []byte) ([]byte, error)
 	TakeCredential(*inspect.Statement) (string, bool)
 	AuthenticateCallers(func(string) error) error

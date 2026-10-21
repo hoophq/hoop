@@ -185,9 +185,9 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 
 		case viaChunkCRLF:
 			// net/http accepts exactly CRLF here; anything else desyncs
-			// the codec, which then reports the body malformed.
+			// the codec, which then waits for a body that never ends.
 			if src[pos] != "\r\n"[2-f.remaining] {
-				if err := f.giveUp(&out, "a chunk does not end in CRLF"); err != nil {
+				if err := f.giveUpBody(&out, "a chunk does not end in CRLF"); err != nil {
 					return nil, err
 				}
 				continue
@@ -211,7 +211,7 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			pos = end
 			if nl < 0 {
 				if len(f.held) > maxChunkLineBytes {
-					if err := f.giveUp(&out, "a chunk-size line exceeds 4 KiB"); err != nil {
+					if err := f.giveUpBody(&out, "a chunk-size line exceeds 4 KiB"); err != nil {
 						return nil, err
 					}
 				}
@@ -221,7 +221,7 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			f.held = f.held[:0]
 			switch {
 			case !ok:
-				if err := f.giveUp(&out, "a chunk size does not parse"); err != nil {
+				if err := f.giveUpBody(&out, "a chunk size does not parse"); err != nil {
 					return nil, err
 				}
 			case size == 0:
@@ -238,7 +238,7 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			if done {
 				f.endMessage()
 			} else if f.trailer > maxHeadBytes {
-				if err := f.giveUp(&out, "the trailer section exceeds 1 MiB"); err != nil {
+				if err := f.giveUpBody(&out, "the trailer section exceeds 1 MiB"); err != nil {
 					return nil, err
 				}
 			}
@@ -294,9 +294,9 @@ func (f *viaFilter) finishHead(out *splice) error {
 	eol := head[f.blankAt:]
 	fields := head[:f.blankAt]
 	if f.auth != nil {
-		// Before a byte of the request goes out: the gate judges a
-		// request only once its body has arrived, and the head would
-		// reach the upstream first.
+		// On the head: the gate holds a request until its body has
+		// arrived, so checking here refuses a stranger before the sidecar
+		// buffers a body for them, and refuses a body that never comes.
 		if err := f.auth.admit(req); err != nil {
 			return err
 		}
@@ -394,8 +394,9 @@ func (f *viaFilter) answer(status int) {
 }
 
 // giveUp handles a stream the filter cannot frame. A Via-only lane passes
-// it through as written: the codec reports such a stream itself, and a line
-// added to it would only add damage. A strict lane refuses it, because the
+// a head it cannot frame through as written: the codec reports such a head
+// itself, and a line added to it would only add damage. A body is
+// giveUpBody's. A strict lane refuses it, because the
 // bytes would reach the upstream with the client's Host and X-Forwarded
 // fields (see origin.go) or with the header the lane exists to remove.
 func (f *viaFilter) giveUp(out *splice, why string) error {
@@ -404,6 +405,19 @@ func (f *viaFilter) giveUp(out *splice, why string) error {
 		return nil
 	}
 	f.err = fmt.Errorf("%s, and %s, so it cannot; the connection is closed", f.promise(), why)
+	return f.err
+}
+
+// giveUpBody handles a request body the filter cannot frame, and every lane
+// refuses it, a Via-only one too. Passed through it would not leave: the
+// codec reads a body it cannot frame as one still arriving, and the gate
+// forwards a request only once the codec decodes it, so the client would
+// wait unanswered until the connection idles out.
+func (f *viaFilter) giveUpBody(out *splice, why string) error {
+	if f.strict() {
+		return f.giveUp(out, why)
+	}
+	f.err = fmt.Errorf("%s, so this listener cannot judge the request; the connection is closed", why)
 	return f.err
 }
 

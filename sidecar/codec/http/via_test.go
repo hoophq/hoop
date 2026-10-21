@@ -136,6 +136,23 @@ func TestViaStopsAfterAProtocolSwitch(t *testing.T) {
 	}
 }
 
+// A body it cannot frame is refused even on a Via-only lane: the codec
+// would read it as still arriving, and the gate holds a request until the
+// codec decodes it, so passed through it would hang.
+func TestViaRefusesABodyItCannotFrame(t *testing.T) {
+	for name, in := range map[string]string{
+		"bad chunk end":  "POST / HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabcXY",
+		"bad chunk size": "POST / HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n",
+	} {
+		c := codechttp.New(codechttp.Options{})
+		if out, err := c.Filter(inspect.FromClient, []byte(in)); err == nil {
+			t.Errorf("%s: forwarded %d bytes instead of refusing", name, len(out))
+		} else if _, err := c.Filter(inspect.FromClient, []byte(get("h", "/after"))); err == nil {
+			t.Errorf("%s: the connection accepted a request after the refusal", name)
+		}
+	}
+}
+
 // What the filter cannot frame as HTTP/1 it leaves alone: the codec reports
 // such a stream itself, and a line added to it would only add damage. The
 // server stream is never rewritten.
