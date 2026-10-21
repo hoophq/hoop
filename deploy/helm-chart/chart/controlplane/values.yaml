@@ -24,11 +24,13 @@
 nameOverride: ''
 fullnameOverride: ''
 
-# -- Define a custom image configuration
-image: {}
-  # repository: hoophq/hoopcontrolplane
+# -- Container image. The reference lives here and nowhere else: the
+# Deployment reads image.repository and image.tag verbatim, so a registry
+# mirror (AWS Marketplace ECR, for one) only rewrites this block.
+image:
+  repository: hoophq/hoopcontrolplane
+  tag: latest
   # pullPolicy: Always
-  # tag: latest
   #
   # The argv belongs to the image: `command` and `args` are refused at render,
   # not merely ignored. The image runs `hoop start control-plane` from its own

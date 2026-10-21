@@ -33,6 +33,11 @@ config:
 
 Clients then reach the lane at `hoopsidecar.<namespace>.svc.cluster.local:15432`.
 
+The image reference lives only in `values.yaml` (`image.repository`,
+`image.tag`). A release installed when the defaults sat in the templates has no
+image values, so `helm upgrade --reuse-values` refuses to render. Upgrade it
+with `--reset-then-reuse-values`, or set `image.repository` and `image.tag`.
+
 ## Ports
 
 The chart declares exactly one port, literally: **19000**, the admin server.
@@ -159,6 +164,7 @@ under `deploy/docker-compose/` binds:
 | `analytics.hostId` | Machine identity → `HOOP_HOST_ID`. Default: the node name via the downward API. Hashed before it is sent |
 | `analytics.installSource` | The hoop template that installed the sidecar → `HOOP_SIDECAR_INSTALL_SOURCE`. Default empty: no property. Values: `managed-agents-http`, `managed-agents-kubernetes`; anything else is sent as `other` |
 | `extraSecret` | Extra environment variables, as a Secret |
+| `existingSecret` | A Secret in the namespace the chart references but does not manage. Loaded last: `HOOP_LICENSE` and `HOOP_SIDECAR_TOKEN` there override `license` and `controlPlane.token`, so neither has to sit in the release values |
 | `service.enabled` | A Service for the admin port, 19000 only. Default `true` |
 | `laneServices` | Map of Services publishing lane ports. One Service per entry; empty by default |
 | `service.type` | Default `ClusterIP` |

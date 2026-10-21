@@ -16,11 +16,13 @@
 nameOverride: ''
 fullnameOverride: ''
 
-# -- Define a custom image configuration
-image: {}
-  # repository: hoophq/hoopsidecar
+# -- Container image. The reference lives here and nowhere else: the
+# Deployment reads image.repository and image.tag verbatim, so a registry
+# mirror (AWS Marketplace ECR, for one) only rewrites this block.
+image:
+  repository: hoophq/hoopsidecar
+  tag: latest
   # pullPolicy: Always
-  # tag: latest
   #
   # Tags: the Ubuntu flavour carries NO SUFFIX — `<version>`, with `latest`
   # pointing at it. It keeps a shell, so the default is the one you can debug.
@@ -229,6 +231,17 @@ analytics:
 extraSecret: {}
 # ENVSECRET1: RAWVALUE1
 # ENVSECRET2: RAWVALUE2
+
+# -- Load environment variables from a Secret that already exists in the
+# namespace. The chart references it and never creates or manages it, so a
+# license or a control plane token stays out of the release values. It is
+# loaded last, so it overrides `license` and `controlPlane.token` above:
+#   HOOP_LICENSE        the license document, or a path to one
+#   HOOP_SIDECAR_TOKEN  the control plane token; with it, controlPlane.url
+#                       needs no token in values. Do not combine it with
+#                       controlPlane.identity: the relay refuses two credentials
+existingSecret: ''
+# existingSecret: hoop-sidecar-credentials
 
 # -- Readiness and liveness probes against the admin server's /healthz on
 # 19000. The port is not configurable: it is written into the Deployment, the

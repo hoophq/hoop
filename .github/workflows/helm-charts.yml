@@ -113,6 +113,19 @@ jobs:
 
           echo "sidecar chart renders hoophq/hoopsidecar on 19000 and all six guards fire"
 
+          # existingSecret is loaded last, so HOOP_LICENSE / HOOP_SIDECAR_TOKEN
+          # there win over the chart's own Secret and over extraSecret. It also
+          # satisfies the credential guard: the chart cannot read it, so it
+          # must not refuse a control plane whose token lives only there.
+          es=$(helm template t "$chart" --set controlPlane.url=https://cp.example.com \
+            --set extraSecret.K=v --set existingSecret=hoop-sidecar-credentials \
+            --show-only templates/deployment.yaml)
+          refs=$(echo "$es" | awk '/^ *envFrom:$/{f=1;next} f&&/^ *- secretRef:$/{getline; print $2; next} f&&/^ *[a-z]+:/{f=0}' | tr '\n' ' ')
+          [ "$refs" = "t-hoopsidecar-env t-hoopsidecar-extra-env hoop-sidecar-credentials " ] \
+            || { echo "::error::existingSecret is not the last envFrom Secret, after extraSecret: $refs"; exit 1; }
+
+          echo "existingSecret is loaded last and carries the control plane token"
+
           # Two releases in one namespace must be independent: the chart is
           # installed once per upstream it fronts. A hardcoded resource name or
           # a selector without the instance label makes the second install
@@ -323,6 +336,46 @@ jobs:
               || { echo "::error::README.md does not quote this line of the message: $line"; exit 1; }
           done <<<"$out"
           echo "the quick start masks and refuses on its pinned image, and README.md quotes the cap message"
+
+      - name: Assert image references live only in values.yaml
+        run: |
+          set -euo pipefail
+          # AWS Marketplace rewrites image references in values.yaml when it
+          # copies a Helm chart across regions, and rejects a chart whose
+          # templates name an image themselves (INVALID_IMAGE_REFERENCE). A
+          # template-side default would ship the Docker Hub image to a buyer.
+          for c in sidecar controlplane; do
+            chart=./deploy/helm-chart/chart/$c
+            if grep -rnE 'hoophq/|:latest' "$chart/templates"; then
+              echo "::error::$c chart names an image in a template; put it in values.yaml"
+              exit 1
+            fi
+            case $c in
+              sidecar) args=(--set config.admin.listen=0.0.0.0:19000) ;;
+              controlplane) args=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db --set config.API_URL=https://cp.example.tld) ;;
+            esac
+            img=$(helm template t "$chart" "${args[@]}" \
+              --set image.repository=709825985650.dkr.ecr.us-east-1.amazonaws.com/hoop/$c --set image.tag=1.0 \
+              --show-only templates/deployment.yaml | awk '$1=="-" && $2=="image:"{print $3}')
+            [ "$img" = "'709825985650.dkr.ecr.us-east-1.amazonaws.com/hoop/$c:1.0'" ] \
+              || { echo "::error::$c chart did not render the image from values.yaml: $img"; exit 1; }
+          done
+          # A release made when the templates held the image defaults has no
+          # image values, and `helm upgrade --reuse-values` keeps them. The
+          # chart must refuse with the way out, not render ":" as the image.
+          for c in sidecar controlplane; do
+            chart=./deploy/helm-chart/chart/$c
+            case $c in
+              sidecar) args=(--set config.admin.listen=0.0.0.0:19000) ;;
+              controlplane) args=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db --set config.API_URL=https://cp.example.tld) ;;
+            esac
+            for unset in "image=null" "image.tag=" "image.repository="; do
+              out=$(helm template t "$chart" "${args[@]}" --set "$unset" 2>&1 || true)
+              echo "$out" | grep -q 'reset-then-reuse-values' \
+                || { echo "::error::$c chart rendered with $unset instead of refusing"; exit 1; }
+            done
+          done
+          echo "both charts take their image only from values.yaml"
 
       - name: Assert the control plane chart renders and its guards hold
         run: |
