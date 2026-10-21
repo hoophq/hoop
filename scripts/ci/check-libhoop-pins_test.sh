@@ -111,7 +111,8 @@ require github.com/hoophq/libhoop-ica $(pseudo $OFF_MAIN)")"
 run "path with a space" 1 "d e/go.mod::" \
   "d e/go.mod" "$(gomod d "$(req "$(pseudo $OFF_MAIN)")")"
 run "go.mod that does not parse" 1 "cannot read a/go.mod" \
-  a/go.mod "$(gomod a "require github.com/hoophq/libhoop v9.9.9")"
+  a/go.mod "$(gomod a "require (
+	github.com/hoophq/libhoop $(pseudo $ON_MAIN)")"
 run "no libhoop reference" 1 "no go.mod requires" \
   a/go.mod "$(gomod a "")"
 
