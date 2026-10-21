@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { liveEventsService } from '@/services/liveEvents'
+import { useAuthStore } from '@/stores/useAuthStore'
+import { useUserStore } from '@/stores/useUserStore'
 
 // One stream per browser: a stream per tab would use up HTTP/1.1's 6
 // connections to the gateway. The tab holding the lock streams for the others.
@@ -14,6 +16,17 @@ const shared =
 // Spread, so every browser does not reconnect at once after a deploy.
 const retryDelay = () => 3000 + Math.random() * 5000
 
+const currentUserId = () => useUserStore.getState().user?.id ?? null
+
+const sleep = (ms, signal) =>
+  new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    signal.addEventListener('abort', () => {
+      clearTimeout(timer)
+      resolve()
+    }, { once: true })
+  })
+
 function subscriberCount() {
   let n = 0
   for (const set of listeners.values()) n += set.size
@@ -25,13 +38,20 @@ function dispatch(event) {
 }
 
 function stream(signal) {
+  const user = currentUserId()
   return liveEventsService.stream({
     signal,
     onEvent: (event) => {
       dispatch(event)
-      channel?.postMessage(event)
+      channel?.postMessage({ event, user })
     },
   })
+}
+
+// The holder keeps the lock through the delay, so the next tab waits it too.
+async function holdStream(signal) {
+  await stream(signal).catch(() => {})
+  if (!signal.aborted) await sleep(retryDelay(), signal)
 }
 
 function open() {
@@ -40,10 +60,14 @@ function open() {
   controller = own
   if (shared && !channel) {
     channel = new BroadcastChannel(LOCK)
-    channel.onmessage = (message) => dispatch(message.data)
+    channel.onmessage = ({ data }) => {
+      const me = currentUserId()
+      if (data?.user && me && data.user !== me) return
+      dispatch(data?.event)
+    }
   }
   const run = shared
-    ? navigator.locks.request(LOCK, { signal: own.signal }, () => stream(own.signal))
+    ? navigator.locks.request(LOCK, { signal: own.signal }, () => holdStream(own.signal))
     : stream(own.signal)
   run
     .catch(() => {})
@@ -53,7 +77,9 @@ function open() {
       // Ended by the server or the network while pages still listen: try
       // again. A page also keeps its own polling, so a lost stream only
       // costs speed.
-      if (subscriberCount() > 0) setTimeout(() => subscriberCount() > 0 && open(), retryDelay())
+      if (subscriberCount() === 0) return
+      if (shared) open()
+      else setTimeout(() => subscriberCount() > 0 && open(), retryDelay())
     })
 }
 
@@ -63,6 +89,13 @@ function close() {
   channel?.close()
   channel = null
 }
+
+// A stream opened with another user's token carries that user's events.
+useAuthStore.subscribe((state, prev) => {
+  if (state.token === prev.token || !controller) return
+  close()
+  if (subscriberCount() > 0) open()
+})
 
 /**
  * Calls handler with {type, id} for every live event of `type` while the
