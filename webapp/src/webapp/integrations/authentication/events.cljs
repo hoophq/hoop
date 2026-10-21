@@ -27,7 +27,11 @@
                                                      "other"))
                          (assoc :config (merge
                                          {:client-id (:client_id (:oidc_config data))
+                                          :client-auth (if (cs/blank? (:client_assertion_file (:oidc_config data)))
+                                                         "secret"
+                                                         "federated-token")
                                           :client-secret (:client_secret (:oidc_config data))
+                                          :client-assertion-file (:client_assertion_file (:oidc_config data))
                                           :custom-scopes (:scopes (:oidc_config data))
                                           :audience (:audience (:oidc_config data))
                                           :groups-claim (:groups_claim (:oidc_config data))
@@ -82,6 +86,15 @@
  (fn [db [_ field value]]
    (assoc-in db [:authentication :data :config field] value)))
 
+;; Choose how the OIDC client authenticates: "secret" or "federated-token"
+(rf/reg-event-db
+ :authentication->set-client-auth
+ (fn [db [_ client-auth]]
+   (cond-> (assoc-in db [:authentication :data :config :client-auth] client-auth)
+     (and (= client-auth "federated-token")
+          (cs/blank? (get-in db [:authentication :data :config :client-assertion-file])))
+     (assoc-in [:authentication :data :config :client-assertion-file] "/var/run/secrets/hoop/idp/token"))))
+
 ;; Update advanced configuration field
 (rf/reg-event-db
  :authentication->update-advanced-field
@@ -134,12 +147,15 @@
                        :webapp_users_management_status (if (get-in ui-config [:advanced :local-auth-enabled]) "active" "inactive")
                        :provider_name (get-in ui-config [:selected-provider])
                        :oidc_config (when (and is-idp? (= protocol "oidc"))
-                                      {:client_id (get-in ui-config [:config :client-id])
-                                       :client_secret (get-in ui-config [:config :client-secret])
-                                       :audience (get-in ui-config [:config :audience])
-                                       :groups_claim (or (get-in ui-config [:config :groups-claim]) "groups")
-                                       :issuer_url (get-in ui-config [:config :issuer-url])
-                                       :scopes (or (get-in ui-config [:config :custom-scopes]) ["openid" "email" "profile"])})
+                                      (merge
+                                       (if (= (get-in ui-config [:config :client-auth]) "federated-token")
+                                         {:client_assertion_file (get-in ui-config [:config :client-assertion-file])}
+                                         {:client_secret (get-in ui-config [:config :client-secret])})
+                                       {:client_id (get-in ui-config [:config :client-id])
+                                        :audience (get-in ui-config [:config :audience])
+                                        :groups_claim (or (get-in ui-config [:config :groups-claim]) "groups")
+                                        :issuer_url (get-in ui-config [:config :issuer-url])
+                                        :scopes (or (get-in ui-config [:config :custom-scopes]) ["openid" "email" "profile"])}))
                        :saml_config (when (and is-idp? (= protocol "saml"))
                                       {:idp_metadata_url (get-in ui-config [:saml-config :idp-metadata-url])
                                        :groups_claim (or (get-in ui-config [:saml-config :groups-claim]) "groups")})}

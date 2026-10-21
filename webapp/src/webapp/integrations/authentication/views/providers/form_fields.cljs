@@ -1,9 +1,12 @@
 (ns webapp.integrations.authentication.views.providers.form-fields
   (:require
    ["@radix-ui/themes" :refer [Box Flex Grid Heading Switch Text]]
+   ["lucide-react" :refer [FileKey KeyRound]]
    [re-frame.core :as rf]
+   [reagent.core :as r]
    [webapp.components.forms :as forms]
-   [webapp.components.multiselect :as multi-select]))
+   [webapp.components.multiselect :as multi-select]
+   [webapp.components.selection-card :as selection-card]))
 
 (defn array->select-options [array]
   (map #(into {} {"value" % "label" %}) array))
@@ -45,21 +48,48 @@
          :on-change #(rf/dispatch [:authentication->update-config-field
                                    :client-id (-> % .-target .-value)])}]]]
 
-     ;; Client Secret
-     [:> Grid {:columns "7" :gap "7"}
-      [:> Box {:grid-column "span 2 / span 2"}
-       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-        "Client Secret"]
-       [:> Text {:size "3" :class "text-[--gray-11]"}
-        "Secret key from your OAuth identity provider."]]
+     ;; Client Authentication
+     (let [federated? (= (:client-auth @config) "federated-token")]
+       [:> Grid {:columns "7" :gap "7"}
+        [:> Box {:grid-column "span 2 / span 2"}
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+          "Client Authentication"]
+         [:> Text {:size "3" :class "text-[--gray-11]"}
+          "How Hoop authenticates to your identity provider."]]
 
-      [:> Box {:grid-column "span 5 / span 5"}
-       [forms/input
-        {:full-width? true
-         :type "password"
-         :value (:client-secret @config)
-         :on-change #(rf/dispatch [:authentication->update-config-field
-                                   :client-secret (-> % .-target .-value)])}]]]
+        [:> Box {:class "space-y-radix-4" :grid-column "span 5 / span 5"}
+         [selection-card/selection-card
+          {:icon (r/as-element [:> KeyRound {:size 18}])
+           :title "Client secret"
+           :description "A secret created in your identity provider"
+           :selected? (not federated?)
+           :on-click #(rf/dispatch [:authentication->set-client-auth "secret"])}]
+
+         [selection-card/selection-card
+          {:icon (r/as-element [:> FileKey {:size 18}])
+           :title "Federated token"
+           :description "A token file that your identity provider trusts, such as a Kubernetes service account token with an Entra ID federated credential. No secret to rotate."
+           :selected? federated?
+           :on-click #(rf/dispatch [:authentication->set-client-auth "federated-token"])}]
+
+         (if federated?
+           [forms/input
+            {:full-width? true
+             :not-margin-bottom? true
+             :label "Token file"
+             :helper-text "Path on the gateway. The helm chart mounts the token here with idpFederatedToken.enabled."
+             :placeholder "/var/run/secrets/hoop/idp/token"
+             :value (:client-assertion-file @config)
+             :on-change #(rf/dispatch [:authentication->update-config-field
+                                       :client-assertion-file (-> % .-target .-value)])}]
+           [forms/input
+            {:full-width? true
+             :not-margin-bottom? true
+             :label "Client secret"
+             :type "password"
+             :value (:client-secret @config)
+             :on-change #(rf/dispatch [:authentication->update-config-field
+                                       :client-secret (-> % .-target .-value)])}])]])
 
      ;; Issuer URL
      [:> Grid {:columns "7" :gap "7"}
