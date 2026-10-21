@@ -1,0 +1,39 @@
+# One postgres lane between dbhub and the database.
+#
+# Without a license this build allows ONE guardrail rule and ONE mask rule
+# per process. This file uses both.
+
+log_level: info
+
+# Loopback only: dbhub shares a network with the sidecar and must not read
+# the audit API.
+admin:
+  listen: 127.0.0.1:19000
+
+audit:
+  file: "-" # JSON lines on stdout: docker compose logs sidecar
+  memory_buffer: 256
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: postgres:5432 # your database
+
+    guardrails:
+      mode: enforce
+      rules:
+        # The rule keys on what a statement does, not on its first word. Each
+        # operation matches exactly, so the list is spelled out. No rule for
+        # `unknown`: the server's replies are judged as `unknown` statements
+        # too, and it would refuse them.
+        - name: read-only
+          type: operation
+          operations: [insert, update, delete, truncate,
+                       create, drop, alter, grant, revoke, call]
+          message: this connection is read-only; writes are not permitted
+
+    mask:
+      rules:
+        # Keys on the value, so it holds under any column alias.
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
