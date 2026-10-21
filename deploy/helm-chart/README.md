@@ -71,8 +71,16 @@ The chart mounts a projected service account token and sets
 reads it again on each token request. Outside this chart, set
 `IDP_CLIENT_ASSERTION_FILE` to the path of a token file yourself.
 
-To move a release upgraded with `--reuse-values`, clear the old secret in the same
-upgrade: `--set idpFederatedToken.enabled=true --set config.IDP_CLIENT_SECRET=`.
+To move a release upgraded with `--reuse-values`, clear the old secret and create
+the service account in the same upgrade, so the token subject matches the
+federated credential:
+
+```sh
+helm upgrade <release> <chart> --reuse-values \
+  --set idpFederatedToken.enabled=true \
+  --set config.IDP_CLIENT_SECRET= \
+  --set serviceAccount.create=true
+```
 
 An OIDC configuration saved at Settings → Authentication overrides these values
 and still needs a client secret.

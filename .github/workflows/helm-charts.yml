@@ -92,6 +92,10 @@ jobs:
           helm template t "$chart" "${base[@]}" --set config.IDP_CLIENT_SECRET=s \
             --set idpFederatedToken=null >/dev/null \
             || { echo "::error::a release without the idpFederatedToken key no longer renders"; exit 1; }
+          # Only a client assertion makes the chart parse IDP_URI.
+          helm template t "$chart" "${base[@]}" --set config.IDP_CLIENT_SECRET=s \
+            --set 'config.IDP_URI=https://i:a%zz@idp' >/dev/null \
+            || { echo "::error::an IDP_URI was parsed without a client assertion"; exit 1; }
 
           # Each of these MUST fail to render: the gateway refuses to start.
           guard() {
