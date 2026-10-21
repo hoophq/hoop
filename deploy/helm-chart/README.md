@@ -71,6 +71,9 @@ The chart mounts a projected service account token and sets
 reads it again on each token request. Outside this chart, set
 `IDP_CLIENT_ASSERTION_FILE` to the path of a token file yourself.
 
+To move a release upgraded with `--reuse-values`, clear the old secret in the same
+upgrade: `--set idpFederatedToken.enabled=true --set config.IDP_CLIENT_SECRET=`.
+
 An OIDC configuration saved at Settings → Authentication overrides these values
 and still needs a client secret.
 
