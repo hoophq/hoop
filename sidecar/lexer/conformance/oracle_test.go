@@ -462,6 +462,9 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"E′: Delta's flat comment hides a VACUUM", "/* /* */ VACUUM t RETAIN 0 HOURS -- */", lexer.Delete, true, []string{"t"}},
 		{"hint string inside a script", "BEGIN SELECT /*+ X('*/') */ 1; DROP TABLE t; END; --'", lexer.Drop, false, []string{"t"}},
 		{"raw string ends at the first quote", `SELECT r'\'; DELETE FROM t; --'`, lexer.Delete, true, []string{"t"}},
+		{"script whose first label is work", "BEGIN work: BEGIN DROP TABLE t; END work; END", lexer.Drop, false, []string{"t"}},
+		{"REPLACE TABLE in a handler", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION REPLACE TABLE t AS SELECT 1; SELECT 1/0; END", lexer.Create, false, []string{"t"}},
+		{"hint opener inside a comment, released Spark", "/* /*+ */ DROP TABLE t -- */", lexer.Drop, true, []string{"t"}},
 
 		// The keyword overrides.
 		{"VACUUM is a delete", "VACUUM t RETAIN 0 HOURS", lexer.Delete, true, []string{"t"}},
@@ -496,6 +499,9 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"parameters", "SELECT * FROM t WHERE a = :into AND b = ?", lexer.Select, true, nil},
 		{"doubled backtick", "DELETE FROM `a``b`", lexer.Delete, true, []string{"a`b"}},
 		{"read-only script", "BEGIN SELECT 1; END", lexer.Select, false, nil},
+		{"SHOW CREATE TABLE in a script", "BEGIN SHOW CREATE TABLE t; END", lexer.Show, false, nil},
+		{"column called load in a script", "BEGIN SELECT load FROM metrics; END", lexer.Select, false, nil},
+		{"MERGE join hint in a script", "BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END", lexer.Select, false, nil},
 		{"CREATE TABLE USING DELTA", "CREATE TABLE t (a INT) USING DELTA", lexer.Create, true, []string{"t"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

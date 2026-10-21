@@ -1852,6 +1852,18 @@ func TestSparkScripts(t *testing.T) {
 		{"BEGIN LOOP REPLACE TABLE t AS SELECT 1; END LOOP; END", lexer.Create, []string{"t"}},
 		{"BEGIN REPEAT REPLACE TABLE t AS SELECT 1; UNTIL true END REPEAT; END", lexer.Create, []string{"t"}},
 		{"BEGIN lbl: BEGIN REPLACE TABLE t AS SELECT 1; END lbl; END", lexer.Create, []string{"t"}},
+		// A label may spell TRANSACTION or WORK; Databricks runs these as
+		// scripts, so they are not a transaction start.
+		{"BEGIN work: BEGIN DROP TABLE t; END work; END", lexer.Drop, []string{"t"}},
+		{"BEGIN transaction: BEGIN DELETE FROM t; END transaction; END", lexer.Delete, []string{"t"}},
+		{"BEGIN work:BEGIN DROP TABLE t; END work; END", lexer.Drop, []string{"t"}},
+		{"BEGIN lbl:LOOP DELETE FROM t; LEAVE lbl; END LOOP lbl; END", lexer.Delete, []string{"t"}},
+		// A handler's statement follows its whole condition list.
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION REPLACE TABLE t AS SELECT 1; SELECT 1/0; END", lexer.Create, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR NOT FOUND, SQLSTATE VALUE '22012' DELETE FROM t; SELECT 1; END", lexer.Delete, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR c.d DROP TABLE t; SELECT 1; END", lexer.Drop, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR drop DROP TABLE t; SELECT 1; END", lexer.Drop, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN DELETE FROM t; END; SELECT 1; END", lexer.Delete, []string{"t"}},
 	} {
 		a := lexer.Analyze(tc.sql, lexer.Spark)
 		if a.Complete {
@@ -1864,14 +1876,57 @@ func TestSparkScripts(t *testing.T) {
 			t.Errorf("effects = %v; a block keyword or a hint read as a statement: %s", a.Effects, tc.sql)
 		}
 	}
-	for _, sql := range []string{"BEGIN TRANSACTION", "BEGIN WORK", "begin transaction"} {
+	for _, sql := range []string{"BEGIN TRANSACTION", "BEGIN WORK", "begin transaction", "BEGIN TRANSACTION;"} {
 		a := lexer.Analyze(sql, lexer.Spark)
 		if a.Verb != lexer.Begin || !a.Complete {
 			t.Errorf("verb = %q, complete = %v, want a complete begin: %s", a.Verb, a.Complete, sql)
 		}
 	}
+	// Databricks rejects any clause after TRANSACTION; read as a script, the
+	// statement is incomplete rather than a begin.
+	if a := lexer.Analyze("BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE", lexer.Spark); a.Complete || a.Verb == lexer.Begin {
+		t.Errorf("verb = %q, complete = %v, want an incomplete script", a.Verb, a.Complete)
+	}
 	if a := lexer.Analyze("END", lexer.Spark); slices.Contains(a.Effects, lexer.Commit) {
 		t.Errorf("effects = %v; END read as a commit", a.Effects)
+	}
+}
+
+// Inside a script, statements begin only where the grammar puts them, so a
+// verb elsewhere is no write: SHOW CREATE TABLE reads, a column may be called
+// load, and MERGE is also a join hint. Read as writes, each refused a read.
+func TestSparkScriptsInventNoWrites(t *testing.T) {
+	for _, sql := range []string{
+		"BEGIN SHOW CREATE TABLE t; END",
+		"BEGIN SELECT load FROM metrics; END",
+		"BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END",
+		"BEGIN SELECT /*+ MERGE(a, b) */ * FROM a JOIN b ON a.id = b.id; END",
+		"BEGIN SELECT a.update, b.delete FROM a JOIN b ON a.id = b.id; END",
+		"BEGIN WHILE x < 3 DO SELECT replace(s, 'a', 'b') FROM t; END WHILE; END",
+	} {
+		a := lexer.Analyze(sql, lexer.Spark)
+		if a.Writes() || len(writes(a)) != 0 {
+			t.Errorf("effects = %v, writes = %v; a read in a script read as a write: %s", a.Effects, writes(a), sql)
+		}
+	}
+}
+
+// Released Spark reads a `/*+` inside a block comment as text, so the comment
+// ends at the first `*/` and what follows runs; Spark master and Databricks
+// SQL nest on it. Text holding `/*+` is read both ways.
+func TestSparkHintOpenerInsideACommentIsReadBothWays(t *testing.T) {
+	a := lexer.Analyze("/* /*+ */ DROP TABLE t -- */", lexer.Spark)
+	if a.Severity() != lexer.Drop || !slices.Equal(writes(a), []string{"t"}) {
+		t.Errorf("severity = %q, writes = %v; released Spark runs this DROP", a.Severity(), writes(a))
+	}
+	for _, sql := range []string{
+		"/* a /*+ b */ c */ SELECT 1",
+		"SELECT /*+ REPARTITION(3) */ * FROM t",
+		"/* a /* b */ c */ SELECT 1",
+	} {
+		if a := lexer.Analyze(sql, lexer.Spark); a.Severity() != lexer.Select || len(writes(a)) != 0 {
+			t.Errorf("severity = %q, writes = %v, want a select: %s", a.Severity(), writes(a), sql)
+		}
 	}
 }
 

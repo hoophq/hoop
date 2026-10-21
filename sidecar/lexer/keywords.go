@@ -282,34 +282,36 @@ var sparkNotAVerb = map[string]bool{
 }
 
 // sparkTransaction are the words after BEGIN that make it a transaction
-// start rather than a script: Databricks SQL runs `BEGIN TRANSACTION` and
-// `BEGIN WORK`, and rejects a bare BEGIN.
+// start rather than a script, when nothing but `;` follows them: Databricks
+// SQL runs `BEGIN TRANSACTION` and `BEGIN WORK`, and rejects both a bare
+// BEGIN and any clause after the word. Followed by anything else, the word
+// is a label, `BEGIN work: BEGIN DROP TABLE t; END work; END`, which
+// Databricks runs as a script.
 var sparkTransaction = map[string]bool{
 	"transaction": true, "work": true,
 }
 
 // sparkScriptHeadAfter are words after which a statement begins inside a
-// Spark SQL script: `BEGIN DROP TABLE t`, `WHILE c DO DELETE ...`, `LOOP`,
-// `REPEAT`, and `BEGIN [NOT] ATOMIC`. THEN and ELSE are in headAfter for
-// every dialect.
+// Spark SQL script, read from SqlBaseParser's compound statements:
+// `BEGIN DROP TABLE t`, `BEGIN [NOT] ATOMIC`, `WHILE c DO`, `FOR r AS q DO`,
+// `LOOP` and `REPEAT`. THEN and ELSE are in headAfter for every dialect, and
+// a handler's statement follows its condition list; see
+// analyzer.handlerBody. With `;`, those are every place the grammar starts a
+// statement in a script.
+//
+// Head positions rather than PL/SQL's verbs-anywhere rule: a script reads
+// rows as often as it writes them, and a verb recognised anywhere turns
+// `SHOW CREATE TABLE t`, a column called load, or a MERGE join hint into a
+// write, which refuses a read.
 var sparkScriptHeadAfter = map[string]bool{
 	"begin": true, "do": true, "loop": true, "repeat": true, "atomic": true,
 }
 
-// sparkScriptDML are the verbs recognised ANYWHERE inside a Spark SQL
-// script, as plsqlDML is inside PL/SQL.
-//
-// A handler puts its statement after a condition list no keyword closes:
-// `DECLARE EXIT HANDLER FOR SQLEXCEPTION DROP TABLE t`. Spark's write verbs
-// join PL/SQL's list. REPLACE is absent because replace() is a string
-// function, and so is SELECT, which never hides a write.
-var sparkScriptDML = map[string]bool{
-	"insert": true, "update": true, "delete": true, "merge": true,
-	"create": true, "drop": true, "alter": true, "truncate": true,
-	"grant": true, "revoke": true, "execute": true, "call": true,
-	"copy": true, "load": true, "vacuum": true, "optimize": true,
-	"reorg": true, "restore": true, "convert": true, "msck": true,
-	"repair": true,
+// sparkLabelled are the blocks a Spark SQL script may label, `lbl: LOOP`.
+// Glued to its colon, `lbl:LOOP`, the keyword must not read as a `:name`
+// parameter: the LOOP vanishes and the statement after it is no head.
+var sparkLabelled = map[string]bool{
+	"begin": true, "while": true, "repeat": true, "loop": true, "for": true,
 }
 
 // deltaCommand are the first keywords of the statements Delta Lake's own

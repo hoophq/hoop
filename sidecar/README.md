@@ -3501,7 +3501,10 @@ the other dialects read as harmless:
 A script is `unknown`, because its control flow decides which statements
 run, and every write in it is an effect: a rule naming `drop` refuses
 `BEGIN DROP TABLE t; END`, and a rule naming `unknown` refuses every script.
-`BEGIN TRANSACTION` and `BEGIN WORK` stay a begin. Any `${` makes the
+Statements begin only where the script grammar starts one (after BEGIN, DO,
+LOOP, REPEAT, THEN, ELSE, `;` and a handler's conditions), so `SHOW CREATE
+TABLE` in a script stays a read. `BEGIN TRANSACTION` and `BEGIN WORK` with
+nothing after them stay a begin. Any `${` makes the
 statement `unknown`: Spark replaces `${var}` in the raw text before it
 parses, inside literals too. Databricks SQL 2026.42 does not substitute, so
 there this costs a false `unknown` for a literal that contains `${`.
@@ -3512,7 +3515,10 @@ continuation, so `/* /* */ VACUUM t RETAIN 0 HOURS -- */` is a comment to
 Spark and a VACUUM to Delta. When a statement starts with a Delta command,
 the scanner reads it both ways and merges the two readings, as it does for
 MySQL's backslash modes. Databricks SQL 2026.42 lexes Delta commands with
-Spark's rules; open-source Delta Lake does not.
+Spark's rules; open-source Delta Lake does not. Spark versions also differ
+on a `/*+` inside a block comment: Spark master and Databricks SQL nest on
+it, every released Spark reads it as text, so text holding `/*+` is read
+both ways too.
 
 The Databricks verbs: VACUUM is a `delete`, because it removes the files
 that older table versions need. OPTIMIZE, REORG, RESTORE, CONVERT TO DELTA

@@ -1,6 +1,9 @@
 package lexer
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // Access says whether a statement reads a relation or changes it.
 //
@@ -147,9 +150,14 @@ type analyzer struct {
 	plsql bool
 
 	// script is plsql's Spark counterpart: true once BEGIN opened a SQL
-	// script. Writes are recognised anywhere from there; see
-	// sparkScriptDML.
+	// script. From there the script's block keywords restore head
+	// position; see sparkScriptHeadAfter.
 	script bool
+
+	// headAt is the index of a token the grammar puts in head position
+	// although no keyword or separator before it says so: the statement of
+	// a Spark handler, after its condition list. -1 when there is none.
+	headAt int
 
 	// fromFirst is true in a Spark statement that opened with FROM, the
 	// Hive form `FROM s INSERT INTO t SELECT ... INSERT INTO u SELECT ...`.
@@ -210,8 +218,15 @@ func analyzeMySQL(sql string) Analysis {
 	return mergeAnalyses(a, b)
 }
 
-// analyzeSpark reads the statement with Spark's lexer and, when Delta Lake's
-// parser would claim it, with Delta's too, and merges the two readings.
+// analyzeSpark reads the statement with Spark's lexer and, where another
+// lexer that runs Spark text reads it differently, with that one too, and
+// merges the readings as analyzeMySQL does: effects and relations unioned,
+// verb and completeness from the first.
+//
+// Released Spark reads a `/*+` inside a block comment as plain text, where
+// Spark master and Databricks SQL 2026.42 open a nested comment on it
+// (SPARK-59536). `/* /*+ */ DROP TABLE t -- */` is all comment to the second
+// and a DROP to the first, so text holding `/*+` is read both ways.
 //
 // Delta's parser sees every statement before Spark and keeps the ones its
 // grammar names — VACUUM, OPTIMIZE, RESTORE and the rest of deltaCommand.
@@ -222,9 +237,7 @@ func analyzeMySQL(sql string) Analysis {
 //	/* /* */ VACUUM t RETAIN 0 HOURS -- */
 //
 // is all comment to Spark, which nests, and a VACUUM to Delta, which does
-// not. Either reading alone misses a statement one of the two parsers runs,
-// so both are merged as analyzeMySQL merges its two: effects and relations
-// unioned, verb and completeness from Spark's.
+// not. Either reading alone misses a statement one of the two parsers runs.
 //
 // The Delta reading counts only when it begins with a Delta command. Delta
 // hands any other statement to Spark, which the first reading models, and a
@@ -238,6 +251,12 @@ func analyzeMySQL(sql string) Analysis {
 // warehouse the extra reading only flags text that cannot run.
 func analyzeSpark(sql string) Analysis {
 	spark := analyzeWith(sql, Spark.rules(), Spark)
+	// Without a `/*+` in the text the two Spark lexers read the same tokens.
+	if strings.Contains(sql, "/*+") {
+		released := Spark.rules()
+		released.hintOpensNestedComment = false
+		spark = mergeAnalyses(spark, analyzeWith(sql, released, Spark))
+	}
 	delta := newAnalyzer(sql, deltaRules(), Spark)
 	if len(delta.toks) == 0 || delta.toks[0].Kind != Word || !deltaCommand[delta.toks[0].Text] {
 		return spark
@@ -261,6 +280,7 @@ func newAnalyzer(sql string, rules lexRules, d Dialect) *analyzer {
 		d:          d,
 		stack:      []region{{kind: regTop, verb: Unknown}},
 		cteNames:   map[string]bool{},
+		headAt:     -1,
 		incomplete: bad,
 	}
 }
@@ -320,6 +340,9 @@ func (a *analyzer) walk() {
 	// stays in the classic form.
 	for i := 0; i < len(a.toks); i++ {
 		t := a.toks[i]
+		if i == a.headAt {
+			atHead = true
+		}
 
 		// An Oracle label, <<name>>, comes before a block or a loop and
 		// leaves the head position as it was: `<<x>> BEGIN DELETE ...`
@@ -436,20 +459,25 @@ func (a *analyzer) walk() {
 			continue
 		}
 
-		// A Spark SQL script. BEGIN opens one unless TRANSACTION or WORK
-		// follows, which Databricks reads as a transaction start and the
-		// begin verb already files. The block performs nothing itself; its
-		// statements do, and control flow decides which of them run, so the
-		// whole is incomplete as an Oracle block is. Without this, BEGIN
-		// read as a transaction and the DROP after it was not a head:
+		// A Spark SQL script. BEGIN opens one unless it is a transaction
+		// start; see sparkTransaction. The block performs nothing itself;
+		// its statements do, and control flow decides which of them run,
+		// so the whole is incomplete as an Oracle block is. Without this,
+		// BEGIN read as a transaction and the DROP after it was not a head:
 		// `BEGIN DROP TABLE t; END` dropped a table on a Databricks SQL
 		// warehouse as a begin and a commit.
-		if a.d == Spark && atHead && t.Text == "begin" &&
-			!(i+1 < len(a.toks) && a.toks[i+1].Kind == Word && sparkTransaction[a.toks[i+1].Text]) {
+		if a.d == Spark && atHead && t.Text == "begin" && !a.sparkTransactionAt(i) {
 			a.script = true
 			a.sawStatement = true
 			a.fail("SQL script; control flow decides which of its statements run")
 			continue
+		}
+
+		// A handler's statement follows its condition list, which no
+		// keyword closes: `DECLARE EXIT HANDLER FOR SQLEXCEPTION DROP
+		// TABLE t`.
+		if a.script && t.Text == "for" && i > 0 && a.toks[i-1].isWord("handler") {
+			a.headAt = a.handlerBody(i)
 		}
 
 		// Spark's FROM-first form names its source before any verb; its
@@ -549,22 +577,67 @@ func (a *analyzer) headFollows(word string) bool {
 // anywhereDML reports whether the word at i begins a statement outside head
 // position.
 //
-// Inside an Oracle PL/SQL block, see plsqlDML. Inside a Spark SQL script, see
-// sparkScriptDML; a verb followed by `(` is a call there, not a statement —
-// it is how a MERGE join hint, `/*+ MERGE(a, b) */`, reads once hint bodies
-// are live tokens. In Spark's FROM-first form, `FROM s INSERT INTO t SELECT
-// a INSERT INTO u SELECT b`, every INSERT and SELECT at the top level is a
-// statement head behind the relation or the clause before it.
+// Inside an Oracle PL/SQL block, see plsqlDML. In Spark's FROM-first form,
+// `FROM s INSERT INTO t SELECT a INSERT INTO u SELECT b`, every INSERT and
+// SELECT at the top level is a statement head behind the relation or the
+// clause before it.
 func (a *analyzer) anywhereDML(word string, i int) bool {
 	switch {
 	case a.plsql:
 		return plsqlDML[word] && !a.plsqlNotDML(i)
-	case a.script:
-		return sparkScriptDML[word] && !a.plsqlNotDML(i) && !a.puncts(i+1, "(")
 	case a.fromFirst:
 		return (word == "insert" || word == "select") && len(a.stack) == 1
 	}
 	return false
+}
+
+// sparkTransactionAt reports whether the Spark BEGIN at i starts a
+// transaction: TRANSACTION or WORK after it, and nothing but `;` after that.
+// See sparkTransaction.
+func (a *analyzer) sparkTransactionAt(i int) bool {
+	return i+1 < len(a.toks) && a.toks[i+1].Kind == Word && sparkTransaction[a.toks[i+1].Text] &&
+		(i+2 == len(a.toks) || a.puncts(i+2, ";"))
+}
+
+// handlerBody returns the index of the statement a Spark handler runs, given
+// the FOR at i:
+//
+//	DECLARE {CONTINUE | EXIT} HANDLER FOR condition [, condition ...] statement
+//
+// where a condition is SQLSTATE [VALUE] 'xxxxx', SQLEXCEPTION, NOT FOUND or a
+// condition name, dotted or not. A name is consumed as a condition even when
+// it spells a verb, `FOR drop DROP TABLE t`, because that is where the
+// grammar puts it.
+func (a *analyzer) handlerBody(i int) int {
+	j := i + 1
+	for j < len(a.toks) {
+		switch t := a.toks[j]; {
+		case t.isWord("sqlstate"):
+			j++
+			if j < len(a.toks) && a.toks[j].isWord("value") {
+				j++
+			}
+			for j < len(a.toks) && a.toks[j].Kind == Literal {
+				j++
+			}
+		case t.isWord("sqlexception"):
+			j++
+		case t.isWord("not") && j+1 < len(a.toks) && a.toks[j+1].isWord("found"):
+			j += 2
+		case t.isName():
+			j++
+			for a.puncts(j, ".") && j+1 < len(a.toks) && a.toks[j+1].isName() {
+				j += 2
+			}
+		default:
+			return j
+		}
+		if !a.puncts(j, ",") {
+			return j
+		}
+		j++
+	}
+	return j
 }
 
 // push opens a region, labelling it from the token before the parenthesis.
