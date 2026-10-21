@@ -8,10 +8,6 @@ on:
   schedule:
     - cron: "30 4 * * *"
   workflow_dispatch:
-  # TEMPORARY: workflow_dispatch runs only a workflow that is on main, so
-  # this proves the job on its branch. Removed before merge.
-  push:
-    branches: [rogerio/eng-702-log-in-to-hoop-in-a-browser-through-the-oidc-twin-and-see]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
