@@ -34,6 +34,33 @@ helm upgrade --install hoop \
   -f values.yaml
 ```
 
+### Credentials from an existing Secret
+
+To keep credentials out of the values file (GitOps, sealed-secrets,
+external-secrets), create a Secret in the release namespace and name it in
+`existingSecret`. The chart does not create or manage it.
+
+```sh
+kubectl create secret generic hoop-gateway-credentials \
+  --from-literal=POSTGRES_DB_URI='postgres://<user>:<pwd>@<db-host>:<port>/<dbname>' \
+  --from-literal=IDP_CLIENT_SECRET='client-secret'
+```
+
+```yaml
+existingSecret: hoop-gateway-credentials
+config:
+  API_URL: 'https://hoopdev.yourdomain.tld'
+  IDP_CLIENT_ID: 'client-id'
+  IDP_ISSUER: 'https://idp-issuer-url'
+```
+
+The gateway and the default agent load every key of the Secret after the
+chart's own `hoop-config` Secret, so a key in the Secret wins. With
+`existingSecret` set, the chart no longer requires `POSTGRES_DB_URI`, `API_URL`
+or `IDP_CLIENT_SECRET` in `config`, and it does not check that they are in the
+Secret. Run `kubectl rollout restart deployment/hoopgateway` after you change
+the Secret.
+
 ### Entra ID without a client secret
 
 The gateway can authenticate its OIDC client with a Kubernetes service account

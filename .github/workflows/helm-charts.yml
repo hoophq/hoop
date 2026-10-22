@@ -112,6 +112,45 @@ jobs:
 
           echo "gateway chart renders a federated token and all four guards fire"
 
+      - name: Assert the gateway chart takes credentials from existingSecret
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/gateway
+          idp=(--set config.IDP_ISSUER=https://idp --set config.IDP_CLIENT_ID=i)
+
+          # GitOps: every credential lives in a Secret the chart does not manage
+          # (ENG-681). The values hold none of them, so the render must not fail.
+          out=$(helm template t "$chart" "${idp[@]}" --set existingSecret=creds \
+            --set defaultAgent.enabled=true)
+          for key in POSTGRES_DB_URI API_URL IDP_CLIENT_SECRET API_KEY WEBHOOK_APPKEY; do
+            echo "$out" | grep -qxF "  $key: ''" \
+              || { echo "::error::hoop-config did not render $key empty"; exit 1; }
+          done
+          # Both containers load the Secret after hoop-config, so its keys win.
+          refs() { grep -A4 'envFrom:' | grep 'name:' | awk '{print $2}' | paste -sd, -; }
+          got=$(echo "$out" | refs)
+          [ "$got" = "hoop-config,creds,hoop-config,creds" ] \
+            || { echo "::error::envFrom order is '$got', want hoop-config then creds in both containers"; exit 1; }
+
+          # Without existingSecret, nothing else is loaded and the checks still fire.
+          base=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db
+                --set config.API_URL=https://gw.example.tld)
+          got=$(helm template t "$chart" "${base[@]}" --set defaultAgent.enabled=true | refs)
+          [ "$got" = "hoop-config,hoop-config" ] \
+            || { echo "::error::envFrom is '$got' without existingSecret, want hoop-config only"; exit 1; }
+          guard() {
+            local why=$1; shift
+            if helm template t "$chart" "$@" >/dev/null 2>&1; then
+              echo "::error::gateway chart guard no longer fires: $why"
+              exit 1
+            fi
+          }
+          guard "no POSTGRES_DB_URI"   --set config.API_URL=https://gw.example.tld
+          guard "no API_URL"           --set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db
+          guard "no IDP_CLIENT_SECRET" "${base[@]}" "${idp[@]}"
+
+          echo "gateway chart renders with credentials only in existingSecret, and its checks fire without it"
+
       - name: Assert the sidecar chart renders and its guards hold
         run: |
           set -euo pipefail

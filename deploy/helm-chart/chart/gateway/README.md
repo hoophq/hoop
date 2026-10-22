@@ -2,6 +2,23 @@
 
 - TODO
 
+## Credentials from an existing Secret
+
+| Value | Default | Description |
+|---|---|---|
+| `existingSecret` | empty | Name of a Secret in the release namespace that the chart does not manage (e.g. made by sealed-secrets). The `hoopgateway` and `defaultagent` containers load every key of it after `hoop-config`, so a key in the Secret overrides the same key in `config`. |
+
+When `existingSecret` is set, `config.POSTGRES_DB_URI`, `config.API_URL` and
+`config.IDP_CLIENT_SECRET` are not required. Put them, and any other credential
+(`API_KEY`, `WEBHOOK_APPKEY`, `IDP_URI`, `TLS_KEY`, ...), in the Secret. The
+chart cannot read the Secret, so it does not check that a key is there: without
+`POSTGRES_DB_URI` or `API_URL` the gateway uses its local defaults.
+
+The pods do not restart when the Secret changes. Run
+`kubectl rollout restart deployment/hoopgateway` after a change.
+
+Setup steps: "Credentials from an existing Secret" in [../../README.md](../../README.md).
+
 ## Entra ID without a client secret
 
 | Value | Default | Description |
