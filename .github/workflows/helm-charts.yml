@@ -122,10 +122,17 @@ jobs:
           # (ENG-681). The values hold none of them, so the render must not fail.
           out=$(helm template t "$chart" "${idp[@]}" --set existingSecret=creds \
             --set defaultAgent.enabled=true)
-          for key in POSTGRES_DB_URI API_URL IDP_CLIENT_SECRET API_KEY WEBHOOK_APPKEY; do
-            echo "$out" | grep -qxF "  $key: ''" \
-              || { echo "::error::hoop-config did not render $key empty"; exit 1; }
-          done
+          echo "$out" | grep -qxF "  API_URL: ''" \
+            || { echo "::error::hoop-config did not render API_URL empty"; exit 1; }
+          # Every credential-named key of hoop-config renders empty. The count
+          # stops the check from passing when it matches nothing.
+          creds=$(echo "$out" | awk '/^  name: hoop-config$/{f=1} f&&/^---/{exit} f' \
+            | grep -E "^  [A-Z_]*(SECRET|KEY|PASS|TOKEN|CREDENTIALS|_URI)[A-Z_]*: ")
+          [ "$(echo "$creds" | wc -l)" -ge 10 ] \
+            || { echo "::error::found $(echo "$creds" | wc -l) credential keys in hoop-config, want at least 10"; exit 1; }
+          leaked=$(echo "$creds" | grep -vE ": ''$" || true)
+          [ -z "$leaked" ] \
+            || { echo "::error::hoop-config renders a credential with no value set: $leaked"; exit 1; }
           # Both containers load the Secret after hoop-config, so its keys win.
           refs() { grep -A4 'envFrom:' | grep 'name:' | awk '{print $2}' | paste -sd, -; }
           got=$(echo "$out" | refs)

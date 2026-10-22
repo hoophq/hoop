@@ -59,7 +59,9 @@ chart's own `hoop-config` Secret, so a key in the Secret wins. With
 `existingSecret` set, the chart no longer requires `POSTGRES_DB_URI`, `API_URL`
 or `IDP_CLIENT_SECRET` in `config`, and it does not check that they are in the
 Secret. Run `kubectl rollout restart deployment/hoopgateway` after you change
-the Secret.
+the Secret. With `idpFederatedToken.enabled`, leave `IDP_CLIENT_SECRET` out of
+the Secret. `postgres.enabled` deploys a test database with a fixed password in
+the manifest: use an external database instead.
 
 ### Entra ID without a client secret
 

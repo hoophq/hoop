@@ -17,6 +17,10 @@ chart cannot read the Secret, so it does not check that a key is there: without
 The pods do not restart when the Secret changes. Run
 `kubectl rollout restart deployment/hoopgateway` after a change.
 
+With `idpFederatedToken.enabled`, do not put `IDP_CLIENT_SECRET` in the Secret:
+the gateway refuses to start with both. `postgres.enabled` deploys a test
+database with a fixed password in the manifest; use an external database.
+
 Setup steps: "Credentials from an existing Secret" in [../../README.md](../../README.md).
 
 ## Entra ID without a client secret
