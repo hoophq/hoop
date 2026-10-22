@@ -42,29 +42,56 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
    [`deploy/sidecar/README.md`](deploy/sidecar/README.md). Note the sidecar's
    internal IP.
 2. **Create a network attachment** in the sidecar's VPC, in the region where the
-   agent runs (agents-cli's default is `us-east1`):
+   agent runs (agents-cli's default is `us-east1`), and let the Agent Platform
+   service agent use it:
 
    ```bash
    gcloud compute networks subnets create agent-psci --network NETWORK \
-     --region REGION --range 10.200.0.0/28
+     --region REGION --range 192.168.10.0/28
    gcloud compute network-attachments create agent-psci --region REGION \
      --subnets agent-psci --connection-preference ACCEPT_AUTOMATIC
+   gcloud iam roles create agentRuntimePsci --project PROJECT \
+     --permissions compute.networkAttachments.get,compute.networkAttachments.update,compute.regionOperations.get
+   gcloud projects add-iam-policy-binding PROJECT \
+     --member serviceAccount:service-PROJECT_NUMBER@gcp-sa-aiplatform.iam.gserviceaccount.com \
+     --role projects/PROJECT/roles/agentRuntimePsci
    ```
 
-   The attachment's subnet must reach the sidecar's IP on port 15432. It must
-   not reach the database: the lock in step 1 sees to that.
-3. **Deploy the agent**, with the database password in Secret Manager:
+   The subnet is a free `/28`. Keep the `192.168.10.0/28` range if it is free:
+   with `10.10.0.0/28`, Agent Runtime failed to start the agent and logged no
+   cause. The custom role holds the three permissions Google documents for the
+   service agent; `roles/compute.networkAdmin` also works. The attachment's
+   subnet must reach the sidecar's IP on port 15432. It must not reach the
+   database: the lock in step 1 sees to that.
+3. **Deploy the agent**, with the database password in Secret Manager. The
+   agent runs as its own Agent Identity, which exists only once the deploy
+   starts, so grant the secret to every agent of the project first:
 
    ```bash
    printf %s "$APPDB_PASSWORD" | gcloud secrets create appdb-password --data-file=-
+   gcloud secrets add-iam-policy-binding appdb-password \
+     --role roles/secretmanager.secretAccessor \
+     --member principalSet://agents.global.org-ORGANIZATION_ID.system.id.goog/attribute.platformContainer/aiplatform/projects/PROJECT_NUMBER
    agents-cli deploy \
      --network-attachment projects/PROJECT/regions/REGION/networkAttachments/agent-psci \
      --env-vars APPDB_HOST=SIDECAR_IP,APPDB_USER=agent \
      --secrets APPDB_PASSWORD=appdb-password
    ```
 
-   With a private DNS name for the sidecar instead of its IP, add
+   A project with no organization uses `agents.global.proj-PROJECT_NUMBER.system.id.goog`
+   instead. With a private DNS name for the sidecar instead of its IP, add
    `--dns-peering-domain`, `--dns-peering-project` and `--dns-peering-network`.
+4. **Ask it**:
+
+   ```bash
+   agents-cli run "Which customers are on the enterprise plan?" \
+     --url https://REGION-aiplatform.googleapis.com/v1/projects/PROJECT_NUMBER/locations/REGION/reasoningEngines/AGENT_ID \
+     --mode adk
+   ```
+
+   A `DELETE` comes back as `hoop: this agent may read appdb, not change it`,
+   and the sidecar's log holds the violation with the ADK session id
+   (`postgres.option.adk.session.id`).
 
 PSC-I does not stop the agent from calling Google front ends (`*.run.app`). A
 VPC Service Controls perimeter does.
