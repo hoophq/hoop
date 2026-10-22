@@ -2028,6 +2028,9 @@ func TestSparkDeltaReading(t *testing.T) {
 		{"/* /* */ ALTER TABLE t DROP FEATURE deletionVectors -- */", lexer.Alter, []string{"t"}},
 		{"-- x \\\nVACUUM t", lexer.Delete, []string{"t"}},
 		{"/*+ x */ VACUUM t", lexer.Delete, []string{"t"}},
+		// Only Delta reads a VACUUM here, and only once a lone CR ends its
+		// dash comment.
+		{"/* /* */ -- x\rVACUUM t -- */", lexer.Delete, []string{"t"}},
 		{"-- x \\\nDELETE FROM t", lexer.Unknown, nil},
 		{"/* /* */ DELETE FROM t -- */", lexer.Unknown, nil},
 	} {
