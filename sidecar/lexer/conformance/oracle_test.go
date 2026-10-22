@@ -502,6 +502,8 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"SHOW CREATE TABLE in a script", "BEGIN SHOW CREATE TABLE t; END", lexer.Show, false, nil},
 		{"column called load in a script", "BEGIN SELECT load FROM metrics; END", lexer.Select, false, nil},
 		{"MERGE join hint in a script", "BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END", lexer.Select, false, nil},
+		{"replace() after THEN in a CASE", "SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t", lexer.Select, true, nil},
+		{"column called restore after THEN", "SELECT CASE WHEN a = 1 THEN restore ELSE 0 END FROM t", lexer.Select, true, nil},
 		{"CREATE TABLE USING DELTA", "CREATE TABLE t (a INT) USING DELTA", lexer.Create, true, []string{"t"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

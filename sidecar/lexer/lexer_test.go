@@ -1911,6 +1911,43 @@ func TestSparkScriptsInventNoWrites(t *testing.T) {
 	}
 }
 
+// In Spark, THEN and ELSE head a statement only in a MERGE clause and in a
+// script's IF or CASE statement. In a CASE expression, `THEN replace(...)`
+// is a function call BI tools emit and `THEN restore` is a column; read as
+// heads, Spark's own verbs turned both reads into writes.
+func TestSparkCaseExpressionsAreNotStatements(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t",
+		"SELECT CASE WHEN a = 1 THEN s ELSE replace(s, 'x', 'y') END AS r FROM t",
+		"SELECT CASE WHEN a = 1 THEN restore ELSE 0 END FROM t",
+		"SELECT CASE WHEN a THEN load WHEN b THEN vacuum ELSE optimize END FROM t",
+		"SELECT CASE WHEN a THEN repair ELSE convert END FROM t",
+		"WITH c AS (SELECT CASE WHEN a THEN replace(s, 'x', 'y') END AS r FROM t) SELECT * FROM c",
+		"BEGIN SELECT CASE WHEN a THEN replace(s, 'x', 'y') END FROM t; END",
+		"BEGIN IF x THEN SELECT CASE WHEN a THEN restore END FROM t; END IF; END",
+	} {
+		a := lexer.Analyze(sql, lexer.Spark)
+		if a.Writes() || len(writes(a)) != 0 {
+			t.Errorf("effects = %v, writes = %v; a CASE expression read as a write: %s", a.Effects, writes(a), sql)
+		}
+	}
+	for _, tc := range []struct {
+		sql    string
+		effect lexer.Verb
+	}{
+		{"MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = s.a WHEN NOT MATCHED THEN INSERT *", lexer.Insert},
+		{"MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED BY SOURCE THEN DELETE", lexer.Delete},
+		{"BEGIN IF x THEN SELECT 1; ELSEIF y THEN SELECT 2; ELSE DROP TABLE t; END IF; END", lexer.Drop},
+		{"BEGIN IF exists(SELECT 1 FROM s) THEN DELETE FROM t; END IF; END", lexer.Delete},
+		{"BEGIN CASE x WHEN 1 THEN SELECT 1; WHEN 2 THEN TRUNCATE TABLE t; END CASE; END", lexer.Truncate},
+		{"BEGIN CASE WHEN x THEN REPLACE TABLE t AS SELECT 1; ELSE SELECT 1; END CASE; END", lexer.Create},
+	} {
+		if a := lexer.Analyze(tc.sql, lexer.Spark); !slices.Contains(a.Effects, tc.effect) {
+			t.Errorf("effects = %v, want %q: %s", a.Effects, tc.effect, tc.sql)
+		}
+	}
+}
+
 // Released Spark reads a `/*+` inside a block comment as text, so the comment
 // ends at the first `*/` and what follows runs; Spark master and Databricks
 // SQL nest on it. Text holding `/*+` is read both ways.

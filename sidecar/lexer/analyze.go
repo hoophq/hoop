@@ -159,6 +159,11 @@ type analyzer struct {
 	// a Spark handler, after its condition list. -1 when there is none.
 	headAt int
 
+	// merging is true from a MERGE head to the end of its statement. Its
+	// WHEN clauses each put a statement after THEN, while the clause
+	// before them already set the region's verb; see headFollows.
+	merging bool
+
 	// fromFirst is true in a Spark statement that opened with FROM, the
 	// Hive form `FROM s INSERT INTO t SELECT ... INSERT INTO u SELECT ...`.
 	// Its INSERT and SELECT follow a relation, not a head position.
@@ -375,7 +380,7 @@ func (a *analyzer) walk() {
 					a.stack = a.stack[:1]
 				}
 				*a.top() = region{kind: regTop, verb: Unknown}
-				a.inCTEList, a.expectCTEName, a.fromFirst = false, false, false
+				a.inCTEList, a.expectCTEName, a.fromFirst, a.merging = false, false, false, false
 				atHead = true
 				continue
 			case ",":
@@ -571,6 +576,14 @@ func (a *analyzer) headFollows(word string) bool {
 	if a.script && sparkScriptHeadAfter[word] {
 		return true
 	}
+	// Spark has statements after THEN and ELSE in two places only: a MERGE
+	// clause, and the IF and CASE statements of a script, which begin with
+	// no verb. Anywhere else they sit in a CASE expression, where
+	// `THEN replace(s, 'x', 'y')` is a function call and `THEN restore` a
+	// column, and Spark's own verbs would read either as a write.
+	if a.d == Spark && (word == "then" || word == "else") {
+		return a.top().verb == Unknown || a.merging
+	}
 	return headAfter[word]
 }
 
@@ -721,6 +734,9 @@ func (a *analyzer) head(t Token, i int) bool {
 	r := a.top()
 	r.verb = verb
 	r.firstTarget = true
+	if verb == Merge {
+		a.merging = true
+	}
 	a.effects = append(a.effects, verb)
 	return true
 }
