@@ -104,6 +104,17 @@ func TestBypassCorpusHidesNoWrites(t *testing.T) {
 			"CTE named after a keyword",
 			`WITH delete AS (SELECT 1) DELETE FROM customers`,
 		},
+		{
+			// PostgreSQL ends a -- comment at a lone CR, and runs what
+			// follows. Read to the next LF, the DELETE was a comment, and a
+			// rule refusing delete let it through the postgres lane.
+			"a carriage return ends a dash comment",
+			"-- note\rDELETE FROM customers",
+		},
+		{
+			"a carriage return ends a dash comment after a statement",
+			"SELECT 1; -- note\rDELETE FROM customers",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stmts := inspectOne(t, tc.sql)
