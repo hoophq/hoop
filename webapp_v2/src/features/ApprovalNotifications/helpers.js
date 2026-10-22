@@ -16,7 +16,9 @@ export function describeReview(review) {
   return { title: 'Approval request', body: parts.filter(Boolean).join(' · ') }
 }
 
-export const isAttended = () => document.visibilityState === 'visible' && document.hasFocus()
+export const isVisible = () => document.visibilityState === 'visible'
+
+export const isAttended = () => isVisible() && document.hasFocus()
 
 const hasNotifications = () => typeof Notification !== 'undefined' && window.isSecureContext
 

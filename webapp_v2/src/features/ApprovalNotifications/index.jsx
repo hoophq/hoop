@@ -5,7 +5,7 @@ import { LIVE_EVENTS } from '@/services/liveEvents'
 import { reviewsService } from '@/services/reviews'
 import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
-import { canAskPermission, describeReview, isAttended, notificationsGranted } from './helpers'
+import { canAskPermission, describeReview, isAttended, isVisible, notificationsGranted } from './helpers'
 
 export const REVIEW_NOTIFICATIONS_FLAG = 'experimental.review_notifications'
 
@@ -35,11 +35,14 @@ export default function ApprovalNotifications() {
     LIVE_EVENTS.REVIEW_CREATED,
     async ({ id }) => {
       const attended = isAttended()
+      const visible = isVisible()
+      let watched = false
       if (attended) {
         tabs.current?.postMessage(id)
       } else {
         await new Promise((resolve) => setTimeout(resolve, HANDOFF_MS))
-        if (seen.current.has(id)) return
+        watched = seen.current.has(id)
+        if (watched && !visible) return
       }
 
       let review
@@ -53,14 +56,16 @@ export default function ApprovalNotifications() {
       const { title, body } = describeReview(review)
       const open = () => navigate(`/approvals/${encodeURIComponent(review.session)}`)
 
-      if (!attended && notificationsGranted()) {
+      // A visible tab without focus, such as one beside a terminal, gets both.
+      const notify = !attended && !watched && notificationsGranted()
+      if (notify) {
         const notification = new Notification(title, { body, tag: id })
         notification.onclick = () => {
           window.focus()
           open()
           notification.close()
         }
-        return
+        if (!visible) return
       }
       const actions = [{ label: 'Open', onClick: open }]
       if (canAskPermission()) {
