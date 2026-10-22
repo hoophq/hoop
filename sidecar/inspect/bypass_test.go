@@ -611,6 +611,8 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"a DROP after a hint opener inside a comment is refused", "/* /*+ */ DROP TABLE t -- */", noWrites, true},
 		{"a DROP in an IF inside a handler's block is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", noWrites, true},
 		{"a DELETE in a CASE statement inside a handler's block is refused by a rule fencing its target", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN CASE WHEN true THEN DELETE FROM t; END CASE; END; SELECT 1/0; END", fenceT, true},
+		{"a DROP in a CASE statement on a variable called case is refused", "BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN DROP TABLE t; END CASE; END", noWrites, true},
+		{"a DELETE in a FOR loop over a column called case is refused by a rule fencing its target", "BEGIN FOR r AS SELECT case FROM s DO CASE WHEN r.case = 1 THEN DELETE FROM t; END CASE; END FOR; END", fenceT, true},
 		{"VACUUM is refused as a delete", "VACUUM t RETAIN 0 HOURS", noWrites, true},
 		{"OPTIMIZE is refused as an alter", "OPTIMIZE t ZORDER BY (a)", noWrites, true},
 		{"RESTORE is refused as an alter", "RESTORE TABLE t TO VERSION AS OF 1", noWrites, true},

@@ -167,7 +167,7 @@ func (s *scanner) next() (Token, bool) {
 
 	// A bind's name is the client's choice and may spell a keyword, so it
 	// is one opaque value token, never a Word. `:=` falls through.
-	case s.rules.colonBind && c == ':' && isWordByte(s.peek(1)) && !s.labelColon():
+	case s.rules.colonBind && c == ':' && isWordByte(s.peek(1)):
 		s.pos++
 		s.word()
 		return Token{Kind: Literal}, true
@@ -388,20 +388,6 @@ func (s *scanner) skipComment() bool {
 	}
 	s.fail("unterminated block comment")
 	return true
-}
-
-// labelColon reports whether the ':' at the cursor ends a Spark script
-// label, `lbl:LOOP`, rather than opening a `:name` parameter. See
-// sparkLabelled and lexRules.scriptLabels.
-func (s *scanner) labelColon() bool {
-	if !s.rules.scriptLabels {
-		return false
-	}
-	end := s.pos + 1
-	for end < len(s.src) && isWordByte(s.src[end]) && s.unicodeSpaceAt(end) == 0 {
-		end++
-	}
-	return sparkLabelled[strings.ToLower(s.src[s.pos+1:end])]
 }
 
 // dashOpensComment reports whether the `--` at the cursor is MySQL's line

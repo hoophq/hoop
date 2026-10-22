@@ -150,23 +150,13 @@ type analyzer struct {
 	plsql bool
 
 	// script is plsql's Spark counterpart: true once BEGIN opened a SQL
-	// script. From there the script's block keywords restore head
-	// position; see sparkScriptHeadAfter.
+	// script. From there DML is recognised anywhere, as in PL/SQL; see
+	// sparkScriptDML.
 	script bool
-
-	// headAt is the index of a token the grammar puts in head position
-	// although no keyword or separator before it says so: the statement of
-	// a Spark handler, after its condition list. -1 when there is none.
-	headAt int
 
 	// merging is true from a MERGE head to the end of its statement. Its
 	// WHEN clauses each put a statement after THEN; see headFollows.
 	merging bool
-
-	// caseDepth counts the Spark CASE expressions open in the current
-	// statement. A THEN or ELSE inside one is a value, never a statement
-	// head; see headFollows and caseExpression.
-	caseDepth int
 
 	// fromFirst is true in a Spark statement that opened with FROM, the
 	// Hive form `FROM s INSERT INTO t SELECT ... INSERT INTO u SELECT ...`.
@@ -289,7 +279,6 @@ func newAnalyzer(sql string, rules lexRules, d Dialect) *analyzer {
 		d:          d,
 		stack:      []region{{kind: regTop, verb: Unknown}},
 		cteNames:   map[string]bool{},
-		headAt:     -1,
 		incomplete: bad,
 	}
 }
@@ -349,9 +338,6 @@ func (a *analyzer) walk() {
 	// stays in the classic form.
 	for i := 0; i < len(a.toks); i++ {
 		t := a.toks[i]
-		if i == a.headAt {
-			atHead = true
-		}
 
 		// An Oracle label, <<name>>, comes before a block or a loop and
 		// leaves the head position as it was: `<<x>> BEGIN DELETE ...`
@@ -385,7 +371,6 @@ func (a *analyzer) walk() {
 				}
 				*a.top() = region{kind: regTop, verb: Unknown}
 				a.inCTEList, a.expectCTEName, a.fromFirst, a.merging = false, false, false, false
-				a.caseDepth = 0
 				atHead = true
 				continue
 			case ",":
@@ -483,34 +468,13 @@ func (a *analyzer) walk() {
 			continue
 		}
 
-		// Spark CASE expressions, so a THEN or ELSE inside one heads
-		// nothing; see headFollows. A CASE in head position is a script's
-		// CASE statement, which `;` separates from its END CASE. Any END
-		// closes an open expression: a miscount that way only lets a THEN
-		// head, an effect too many, and `;` resets it either way.
-		if a.d == Spark {
-			switch {
-			case t.Text == "case" && !atHead && a.caseExpression(i):
-				a.caseDepth++
-			case t.Text == "end" && a.caseDepth > 0:
-				a.caseDepth--
-			}
-		}
-
-		// A handler's statement follows its condition list, which no
-		// keyword closes: `DECLARE EXIT HANDLER FOR SQLEXCEPTION DROP
-		// TABLE t`.
-		if a.script && t.Text == "for" && i > 0 && a.toks[i-1].isWord("handler") {
-			a.headAt = a.handlerBody(i)
-		}
-
 		// Spark's FROM-first form names its source before any verb; its
 		// INSERTs follow that relation. See anywhereDML.
 		if a.d == Spark && atHead && t.Text == "from" && len(a.stack) == 1 {
 			a.fromFirst = true
 		}
 
-		if (atHead || a.anywhereDML(t.Text, i)) && a.head(t, i) {
+		if (atHead || a.anywhereDML(t.Text, i)) && a.sparkStatementAt(i) && a.head(t, i) {
 			// A stored PL/SQL unit carries its body inline. What
 			// follows the header is source Oracle compiles and does
 			// not run, so the scan ends here with the header read.
@@ -595,66 +559,31 @@ func (a *analyzer) headFollows(word string) bool {
 	if a.script && sparkScriptHeadAfter[word] {
 		return true
 	}
-	// Spark has statements after THEN and ELSE in two places only: a MERGE
-	// clause, and the IF and CASE statements of a script. Anywhere else they
-	// sit in a CASE expression, where `THEN replace(s, 'x', 'y')` is a
-	// function call and `THEN restore` a column, and Spark's own verbs would
-	// read either as a write. Inside a MERGE every THEN heads, CASE or not:
-	// a misread there adds an effect to a statement that already writes.
+	// Outside a script, Spark has a statement after THEN only in a MERGE
+	// clause, and none after ELSE. Anywhere else they sit in a CASE
+	// expression, where `THEN replace(s, 'x', 'y')` is a function call and
+	// `THEN restore` a column, and Spark's own verbs would read either as a
+	// write. Inside a script both keep heading statements, as in every
+	// dialect: IF and CASE statements put one after each.
 	if a.d == Spark && (word == "then" || word == "else") {
-		return a.merging || a.script && a.caseDepth == 0
+		return a.script || a.merging
 	}
 	return headAfter[word]
 }
 
-// caseExpression reports whether the Spark CASE at i opens a CASE
-// expression: a WHEN follows it, at its own parenthesis depth, before any
-// THEN, END or `;`. CASE is not reserved outside ANSI mode, so `IF case = 1
-// THEN DROP TABLE t` names a column, and counting it would cost the DROP its
-// head position.
-//
-// The lookahead is bounded, so text made of CASE words stays linear. Past the
-// bound the CASE is not counted, and a THEN inside it may head a statement:
-// the cost of that misread is an effect too many, never one too few.
-func (a *analyzer) caseExpression(i int) bool {
-	depth := 0
-	for k := i + 1; k < len(a.toks) && k <= i+caseLookahead; k++ {
-		switch {
-		case a.puncts(k, "("):
-			depth++
-		case a.puncts(k, ")"):
-			if depth == 0 {
-				return false
-			}
-			depth--
-		case a.puncts(k, ";"):
-			return false
-		case depth > 0:
-		case a.toks[k].isWord("when"):
-			return true
-		case a.toks[k].isWord("then"), a.toks[k].isWord("end"):
-			return false
-		}
-	}
-	return false
-}
-
-// caseLookahead bounds caseExpression's scan. A simple CASE's operand sits
-// between CASE and its first WHEN, and none written by a person or a BI tool
-// comes near it.
-const caseLookahead = 256
-
 // anywhereDML reports whether the word at i begins a statement outside head
 // position.
 //
-// Inside an Oracle PL/SQL block, see plsqlDML. In Spark's FROM-first form,
-// `FROM s INSERT INTO t SELECT a INSERT INTO u SELECT b`, every INSERT and
-// SELECT at the top level is a statement head behind the relation or the
-// clause before it.
+// Inside an Oracle PL/SQL block, see plsqlDML, and inside a Spark SQL script,
+// sparkScriptDML. In Spark's FROM-first form, `FROM s INSERT INTO t SELECT a
+// INSERT INTO u SELECT b`, every INSERT and SELECT at the top level is a
+// statement head behind the relation or the clause before it.
 func (a *analyzer) anywhereDML(word string, i int) bool {
 	switch {
 	case a.plsql:
 		return plsqlDML[word] && !a.plsqlNotDML(i)
+	case a.script:
+		return sparkScriptDML[word] && !a.plsqlNotDML(i) && !a.sparkNotDML(i)
 	case a.fromFirst:
 		return (word == "insert" || word == "select") && len(a.stack) == 1
 	}
@@ -669,45 +598,51 @@ func (a *analyzer) sparkTransactionAt(i int) bool {
 		(i+2 == len(a.toks) || a.puncts(i+2, ";"))
 }
 
-// handlerBody returns the index of the statement a Spark handler runs, given
-// the FOR at i:
-//
-//	DECLARE {CONTINUE | EXIT} HANDLER FOR condition [, condition ...] statement
-//
-// where a condition is SQLSTATE [VALUE] 'xxxxx', SQLEXCEPTION, NOT FOUND or a
-// condition name, dotted or not. A name is consumed as a condition even when
-// it spells a verb, `FOR drop DROP TABLE t`, because that is where the
-// grammar puts it.
-func (a *analyzer) handlerBody(i int) int {
-	j := i + 1
-	for j < len(a.toks) {
-		switch t := a.toks[j]; {
-		case t.isWord("sqlstate"):
-			j++
-			if j < len(a.toks) && a.toks[j].isWord("value") {
-				j++
-			}
-			for j < len(a.toks) && a.toks[j].Kind == Literal {
-				j++
-			}
-		case t.isWord("sqlexception"):
-			j++
-		case t.isWord("not") && j+1 < len(a.toks) && a.toks[j+1].isWord("found"):
-			j += 2
-		case t.isName():
-			j++
-			for a.puncts(j, ".") && j+1 < len(a.toks) && a.toks[j+1].isName() {
-				j += 2
-			}
-		default:
-			return j
-		}
-		if !a.puncts(j, ",") {
-			return j
-		}
-		j++
+// sparkNotDML reports whether a DML word at i inside a Spark script is not a
+// statement, as plsqlNotDML does for PL/SQL: SHOW CREATE TABLE reads a
+// definition, and a MERGE neither INTO nor WITH a target is a join hint,
+// `/*+ MERGE */`.
+func (a *analyzer) sparkNotDML(i int) bool {
+	switch a.toks[i].Text {
+	case "create":
+		return i > 0 && a.toks[i-1].isWord("show")
+	case "merge":
+		return !(i+1 < len(a.toks) && (a.toks[i+1].isWord("into") || a.toks[i+1].isWord("with")))
 	}
-	return j
+	return false
+}
+
+// sparkStatementAt reports whether a verb Spark adds, at i, can begin its
+// statement here. Followed by `(` it is a function, replace(s, 'x', 'y'),
+// and each one needs the word its statement starts with: REPLACE TABLE, LOAD
+// DATA, CONVERT TO, a relation after VACUUM. A column called load or restore
+// has none of these after it. None of the shapes this rules out is a
+// statement Spark can run, so ruling them out hides no write.
+func (a *analyzer) sparkStatementAt(i int) bool {
+	word := a.toks[i].Text
+	if _, ok := sparkVerb[word]; a.d != Spark || !ok {
+		return true
+	}
+	if a.puncts(i+1, "(") {
+		return false
+	}
+	var next Token
+	if i+1 < len(a.toks) {
+		next = a.toks[i+1]
+	}
+	switch word {
+	case "replace", "reorg", "repair":
+		return next.isWord("table")
+	case "load":
+		return next.isWord("data")
+	case "convert":
+		return next.isWord("to")
+	case "msck":
+		return next.isWord("repair")
+	case "vacuum", "optimize", "restore":
+		return next.Kind == Literal || next.Kind == Quoted || next.Kind == Word && !sparkExpressionWord[next.Text]
+	}
+	return true
 }
 
 // push opens a region, labelling it from the token before the parenthesis.

@@ -4,7 +4,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/hoophq/hoop/sidecar/lexer"
 )
@@ -1959,27 +1958,16 @@ func TestSparkCaseExpressionsAreNotStatements(t *testing.T) {
 		// A column called case before a WHEN reads as an open CASE that no
 		// END closes; the next statement must start with none open.
 		{"BEGIN MERGE INTO t USING s ON t.id = s.case WHEN MATCHED THEN UPDATE SET a = 1; IF x THEN DROP TABLE u; END IF; END", lexer.Drop},
+		// A column or variable called case comes before a CASE statement;
+		// Databricks accepts the name even in ANSI mode.
+		{"BEGIN FOR r AS SELECT case FROM s DO CASE WHEN r.case = 1 THEN DELETE FROM t; END CASE; END FOR; END", lexer.Delete},
+		{"BEGIN DECLARE case INT DEFAULT 0; WHILE case < 1 DO CASE WHEN true THEN DELETE FROM t; END CASE; SET case = case + 1; END WHILE; END", lexer.Delete},
+		{"BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN DROP TABLE t; END CASE; END", lexer.Drop},
+		{"BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN REPLACE TABLE t AS SELECT 1; END CASE; END", lexer.Create},
 	} {
 		if a := lexer.Analyze(tc.sql, lexer.Spark); !slices.Contains(a.Effects, tc.effect) {
 			t.Errorf("effects = %v, want %q: %s", a.Effects, tc.effect, tc.sql)
 		}
-	}
-}
-
-// caseExpression looks ahead for a WHEN; text made of CASE words with none
-// must stay linear rather than scan to the end once per word.
-//
-// The bound is generous: this takes about 0.1 s, and an unbounded scan about
-// 25 s on the same machine.
-func TestSparkCaseLookaheadIsBounded(t *testing.T) {
-	sql := "BEGIN IF " + strings.Repeat("case ", 200_000) + "THEN DROP TABLE t; END IF; END"
-	start := time.Now()
-	a := lexer.Analyze(sql, lexer.Spark)
-	if took := time.Since(start); took > 5*time.Second {
-		t.Errorf("Analyze took %s over 200,000 CASE words; the lookahead is not bounded", took)
-	}
-	if !slices.Contains(a.Effects, lexer.Drop) {
-		t.Errorf("effects = %v; the DROP lost its head", a.Effects)
 	}
 }
 

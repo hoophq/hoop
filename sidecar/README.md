@@ -3501,10 +3501,12 @@ the other dialects read as harmless:
 A script is `unknown`, because its control flow decides which statements
 run, and every write in it is an effect: a rule naming `drop` refuses
 `BEGIN DROP TABLE t; END`, and a rule naming `unknown` refuses every script.
-Statements begin only where the script grammar starts one (after BEGIN, DO,
-LOOP, REPEAT, `;`, a handler's conditions, and the THEN and ELSE of IF and
-CASE statements, never of a CASE expression), so `SHOW CREATE TABLE` in a
-script and `CASE WHEN a THEN replace(s, 'x', 'y') END` stay reads. `BEGIN TRANSACTION` and `BEGIN WORK` with
+As in an Oracle PL/SQL block, a write verb counts anywhere in a script,
+minus the known false readings: a function call such as `replace(...)`,
+`SHOW CREATE TABLE`, a MERGE join hint, and a column called load or restore.
+A column called update, delete or insert inside a script still reads as a
+write. Outside a script, THEN starts a statement only in a MERGE, so
+`CASE WHEN a THEN replace(s, 'x', 'y') END` stays a read. `BEGIN TRANSACTION` and `BEGIN WORK` with
 nothing after them stay a begin. Any `${` makes the
 statement `unknown`: Spark replaces `${var}` in the raw text before it
 parses, inside literals too. Databricks SQL 2026.42 does not substitute, so

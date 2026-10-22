@@ -291,27 +291,35 @@ var sparkTransaction = map[string]bool{
 	"transaction": true, "work": true,
 }
 
-// sparkScriptHeadAfter are words after which a statement begins inside a
-// Spark SQL script, read from SqlBaseParser's compound statements:
-// `BEGIN DROP TABLE t`, `BEGIN [NOT] ATOMIC`, `WHILE c DO`, `FOR r AS q DO`,
-// `LOOP` and `REPEAT`. THEN and ELSE are in headAfter for every dialect, and
-// a handler's statement follows its condition list; see
-// analyzer.handlerBody. With `;`, those are every place the grammar starts a
-// statement in a script.
-//
-// Head positions rather than PL/SQL's verbs-anywhere rule: a script reads
-// rows as often as it writes them, and a verb recognised anywhere turns
-// `SHOW CREATE TABLE t`, a column called load, or a MERGE join hint into a
-// write, which refuses a read.
+// sparkScriptHeadAfter are words after which a statement may begin inside a
+// Spark SQL script, as plsqlHeadAfter does for PL/SQL: `BEGIN DROP TABLE t`,
+// `BEGIN [NOT] ATOMIC`, `WHILE c DO`, `FOR r AS q DO`, `LOOP` and `REPEAT`.
 var sparkScriptHeadAfter = map[string]bool{
 	"begin": true, "do": true, "loop": true, "repeat": true, "atomic": true,
 }
 
-// sparkLabelled are the blocks a Spark SQL script may label, `lbl: LOOP`.
-// Glued to its colon, `lbl:LOOP`, the keyword must not read as a `:name`
-// parameter: the LOOP vanishes and the statement after it is no head.
-var sparkLabelled = map[string]bool{
-	"begin": true, "while": true, "repeat": true, "loop": true, "for": true,
+// sparkScriptDML are the verbs recognised ANYWHERE inside a Spark SQL
+// script, as plsqlDML is inside PL/SQL: a handler puts its statement after a
+// condition list no keyword closes, `DECLARE EXIT HANDLER FOR SQLEXCEPTION
+// DROP TABLE t`. Spark's write verbs join PL/SQL's list. sparkNotDML and
+// sparkStatementAt rule out the known false readings, as plsqlNotDML does.
+var sparkScriptDML = map[string]bool{
+	"insert": true, "update": true, "delete": true, "merge": true,
+	"create": true, "drop": true, "alter": true, "truncate": true,
+	"grant": true, "revoke": true, "execute": true, "call": true,
+	"copy": true, "load": true, "vacuum": true, "optimize": true,
+	"reorg": true, "restore": true, "convert": true, "msck": true,
+	"repair": true, "replace": true,
+}
+
+// sparkExpressionWord are the words that may follow a column inside an
+// expression. After one of them, VACUUM, OPTIMIZE or RESTORE is a column, as
+// in `CASE WHEN a THEN restore ELSE 0 END`, not the start of a statement;
+// see analyzer.sparkStatementAt.
+var sparkExpressionWord = map[string]bool{
+	"when": true, "then": true, "else": true, "end": true, "and": true,
+	"or": true, "is": true, "in": true, "not": true, "like": true,
+	"between": true, "as": true, "from": true, "where": true, "over": true,
 }
 
 // deltaCommand are the first keywords of the statements Delta Lake's own

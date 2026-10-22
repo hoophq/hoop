@@ -379,11 +379,6 @@ type lexRules struct {
 	// `/* /*+ */ DROP TABLE t -- */` runs the DROP that this reading files
 	// as comment. analyzeSpark reads such text both ways.
 	hintOpensNestedComment bool
-
-	// scriptLabels keeps a `:` before BEGIN, WHILE, REPEAT, LOOP or FOR a
-	// label colon rather than the start of a `:name` parameter; see
-	// sparkLabelled. Spark only.
-	scriptLabels bool
 }
 
 func (d Dialect) rules() lexRules {
@@ -471,7 +466,6 @@ func (d Dialect) rules() lexRules {
 			liveHint:               true,
 			substitution:           true,
 			hintOpensNestedComment: true,
-			scriptLabels:           true,
 		}
 	default:
 		return lexRules{

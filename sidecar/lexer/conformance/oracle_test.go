@@ -465,6 +465,7 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"script whose first label is work", "BEGIN work: BEGIN DROP TABLE t; END work; END", lexer.Drop, false, []string{"t"}},
 		{"REPLACE TABLE in a handler", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION REPLACE TABLE t AS SELECT 1; SELECT 1/0; END", lexer.Create, false, []string{"t"}},
 		{"IF inside a handler's block", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", lexer.Drop, false, []string{"t"}},
+		{"variable called case before a CASE statement", "BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN DROP TABLE t; END CASE; END", lexer.Drop, false, []string{"t"}},
 		{"hint opener inside a comment, released Spark", "/* /*+ */ DROP TABLE t -- */", lexer.Drop, true, []string{"t"}},
 
 		// The keyword overrides.
