@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -8,6 +9,8 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
+	authinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/auth"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	"google.golang.org/grpc/codes"
@@ -117,6 +120,18 @@ func TestParseClientVerb(t *testing.T) {
 		if _, err := parseClientVerb(md); status.Code(err) != codes.InvalidArgument {
 			t.Errorf("verb %q must be refused with InvalidArgument, got %v", md.Get("verb"), err)
 		}
+	}
+}
+
+// An authenticated client that sends no verb must get an error, not a panic
+// that takes the gateway down.
+func TestConnectRefusesMissingVerb(t *testing.T) {
+	ctx := context.WithValue(t.Context(), authinterceptor.GatewayContextKey{}, &authinterceptor.GatewayContext{
+		Connection: types.ConnectionInfo{Name: "pg-prod", AccessModeExec: "enabled", AccessModeConnect: "enabled"},
+	})
+	stream := &fakeConnectServer{ctx: metadata.NewIncomingContext(ctx, metadata.Pairs("origin", pb.ConnectionOriginClient))}
+	if err := (&Server{}).Connect(stream); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("want InvalidArgument, got %v", err)
 	}
 }
 
