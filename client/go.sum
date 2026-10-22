@@ -357,6 +357,8 @@ github.com/hoophq/libhoop v0.0.0-20261021183309-fb73babb25df h1:MDLWAWsr/CSgVtnv
 github.com/hoophq/libhoop v0.0.0-20261021183309-fb73babb25df/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop v0.0.0-20261022142506-b0cbda82f22b h1:KL7RQY1/Y9pEVeCKDoUtkUsSGUi6YATDEzMexv3kHgM=
 github.com/hoophq/libhoop v0.0.0-20261022142506-b0cbda82f22b/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261022172255-de0ca2488bf8 h1:vwMZLzh33Y8Bqx39I8cpLCkXbRunIf7tqwCloZen0OE=
+github.com/hoophq/libhoop v0.0.0-20261022172255-de0ca2488bf8/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop-ica v0.3.0 h1:h2YsajdCeUFBX2qBsy+PIGkEbcnHwiOmLRqtx9QKPBw=
 github.com/hoophq/libhoop-ica v0.3.0/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
 github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ=

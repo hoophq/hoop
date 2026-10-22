@@ -407,6 +407,25 @@ func TestPG_Guardrails_MultiLineQuery(t *testing.T) {
 		t.Fatalf("expected the multi-line query to run and find the table with 1 row, got %+v", results)
 	}
 
+	// Extended query protocol (pgjdbc, pgx): the blocked cycle ends with the
+	// guardrail error, and the next cycle on the connection still works.
+	extQuery := func(sql string) []*pb.Packet {
+		for _, msg := range testutil.PGExtendedQuery(sql) {
+			testutil.SendPGWrite(t, tr, sessionID, connID, msg)
+		}
+		return testutil.CollectPGResponses(t, tr, pgTestTimeout)
+	}
+	if errMsg := guardrailError(extQuery("DROP\nTABLE eng797_keep")); !strings.Contains(errMsg, "no DROP TABLE") {
+		t.Fatalf("expected the guardrail to block the extended query, got error %q", errMsg)
+	}
+	pkts := extQuery("SELECT id\nFROM eng797_keep\nLIMIT 10")
+	if errMsg := guardrailError(pkts); errMsg != "" {
+		t.Fatalf("the next extended query must run, got error: %s", errMsg)
+	}
+	if results := testutil.ExtractAllQueryResults(pkts); len(results) != 1 || results[0].RowCount() != 1 {
+		t.Fatalf("expected the next extended query to find the table with 1 row, got %+v", results)
+	}
+
 	shutdownAgent(t, agent, tr)
 }
 

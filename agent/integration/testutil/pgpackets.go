@@ -51,6 +51,28 @@ func PGSimpleQuery(sql string) []byte {
 	return buf
 }
 
+// PGExtendedQuery returns the messages of one unnamed extended query cycle with
+// no parameters: Parse, Bind, Describe (portal), Execute, Sync. Send each one
+// in its own write, as the client proxy does.
+func PGExtendedQuery(sql string) [][]byte {
+	msg := func(typ byte, payload []byte) []byte {
+		buf := make([]byte, 5, 5+len(payload))
+		buf[0] = typ
+		binary.BigEndian.PutUint32(buf[1:5], uint32(4+len(payload)))
+		return append(buf, payload...)
+	}
+	parse := append([]byte{0}, sql...)     // unnamed statement, query
+	parse = append(parse, 0, 0, 0)         // NUL, no parameter types
+	bind := []byte{0, 0, 0, 0, 0, 0, 0, 0} // unnamed portal and statement, no formats, params or result formats
+	return [][]byte{
+		msg('P', parse),
+		msg('B', bind),
+		msg('D', []byte{'P', 0}),
+		msg('E', []byte{0, 0, 0, 0, 0}), // unnamed portal, no row limit
+		msg('S', nil),
+	}
+}
+
 func PGTerminate() []byte {
 	buf := make([]byte, 5)
 	buf[0] = 'X'

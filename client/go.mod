@@ -31,7 +31,7 @@ require (
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/ica v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20261022142506-b0cbda82f22b
+	github.com/hoophq/libhoop v0.0.0-20261022172255-de0ca2488bf8
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.56.0
