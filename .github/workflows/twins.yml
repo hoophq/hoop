@@ -43,6 +43,15 @@ jobs:
       - name: Twin and contract tests
         run: make test-twins
 
+      # The twins serve pages while a scenario seeds them, so their state
+      # reads must hold the lock: TestPagesWhileSeeding fails on a data race.
+      - name: Twin tests under the race detector
+        working-directory: twins
+        env:
+          GOWORK: "off"
+          CGO_ENABLED: "1"
+        run: go test -race -count=1 ./kit/... ./oidc/... ./router/...
+
       - name: Scenarios
         env:
           TWINS_REACH: native
