@@ -63,8 +63,7 @@ func configRevision(served daemon.Config) string {
 // It also sets the sidecar's mirrors online; the sidecarmirrorstatus job sets
 // them offline when the handshakes stop.
 func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
-	firstCheckIn := sc.LastSeenAt == nil
-	err := models.RecordSidecarHandshake(models.DB, sc.ID,
+	firstCheckIn, err := models.RecordSidecarHandshake(models.DB, sc.ID,
 		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
 	if err != nil {
 		log.With("sidecar", sc.ID).Warnf("failed recording the sidecar handshake, reason=%v", err)
