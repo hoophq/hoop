@@ -1,0 +1,70 @@
+# Checks the agents-cli template in deploy/gcp-agent-runtime/postgres/ on every
+# PR that touches it or the GCP Marketplace module it installs. Builders run it
+# as is (`agents-cli create -a hoophq/hoop/deploy/gcp-agent-runtime/postgres`),
+# so a break must fail here, not in their first `agents-cli deploy`.
+name: gcp-agent-runtime
+
+on:
+  pull_request:
+    paths:
+      - deploy/gcp-agent-runtime/**
+      - deploy/gcp-marketplace/sidecar/**
+      - .github/workflows/gcp-agent-runtime.yml
+
+# A newer run for the same PR makes this one stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TEMPLATE: deploy/gcp-agent-runtime/postgres
+  # The agents-cli release the template's uv.lock comes from.
+  AGENTS_CLI_VERSION: 1.11.0
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    name: postgres template
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install agents-cli
+        run: |
+          pipx install uv==0.13.5
+          uv tool install "google-agents-cli==$AGENTS_CLI_VERSION"
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+      # Without uv on PATH, agents-cli writes a pyproject.toml with no
+      # google-adk and reports success, so the step above must run first.
+      - name: Scaffold a project from the template
+        run: |
+          agents-cli create support-agent -a "local@$GITHUB_WORKSPACE/$TEMPLATE" \
+            -d agent_runtime --root-agent-name support_agent -y -s -o "$RUNNER_TEMP"
+      - name: Assert the template's uv.lock is the one agents-cli locks
+        run: |
+          cmp "$TEMPLATE/uv.lock" "$RUNNER_TEMP/support-agent/uv.lock" || {
+            echo "::error::$TEMPLATE/uv.lock is stale: copy uv.lock from a project agents-cli $AGENTS_CLI_VERSION made"
+            exit 1
+          }
+      - name: Assert the agent image holds no sidecar and no database address
+        run: "$RUNNER_TEMP/support-agent/tests/agent_image.sh"
+      - name: Validate deploy/sidecar against its pinned module release
+        run: |
+          terraform -chdir="$TEMPLATE/deploy/sidecar" init -input=false -backend=false
+          terraform -chdir="$TEMPLATE/deploy/sidecar" validate
+      # The pin moves to a newer release by hand. Validating against this
+      # branch's module catches a module change that breaks the template
+      # before that release ships.
+      - name: Validate deploy/sidecar against this branch's module
+        run: |
+          dir="$RUNNER_TEMP/sidecar-head"
+          cp -R "$TEMPLATE/deploy/sidecar" "$dir"
+          sed -i "s#source = \"github.com/hoophq/hoop//deploy/gcp-marketplace/sidecar?ref=[^\"]*\"#source = \"$GITHUB_WORKSPACE/deploy/gcp-marketplace/sidecar\"#" "$dir/main.tf"
+          grep -q "source = \"$GITHUB_WORKSPACE/deploy/gcp-marketplace/sidecar\"" "$dir/main.tf" \
+            || { echo "::error::main.tf no longer sources the module from hoophq/hoop with a ref"; exit 1; }
+          rm -rf "$dir/.terraform"
+          terraform -chdir="$dir" init -input=false -backend=false
+          terraform -chdir="$dir" validate
