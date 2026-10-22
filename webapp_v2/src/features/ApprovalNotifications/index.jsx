@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge, Group, Stack, Text } from '@mantine/core'
+import { Group, Stack, Text } from '@mantine/core'
+import Badge from '@/components/Badge'
 import { useLiveEvent } from '@/hooks/useLiveEvent'
 import { LIVE_EVENTS } from '@/services/liveEvents'
 import { reviewsService } from '@/services/reviews'
+import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { dismissSnackbar, showSnackbar } from '@/utils/snackbar'
 import { canAskPermission, describeReview, isAttended, isVisible, notificationsGranted } from './helpers'
@@ -26,7 +28,7 @@ function Summary({ who, where, kind }) {
       )}
       <Group gap={6}>
         {where.map((name) => (
-          <Badge key={name} size="sm" radius="sm" variant="light" color="gray" tt="none">
+          <Badge key={name} variant="light" color="gray" tag>
             {name}
           </Badge>
         ))}
@@ -49,6 +51,10 @@ function closeAll() {
   open = []
   all.forEach((t) => dismissSnackbar(t.id))
 }
+
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) closeAll()
+})
 
 function show(t) {
   const actions =
