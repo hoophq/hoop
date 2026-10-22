@@ -444,6 +444,17 @@ func TestPG_Guardrails_MultiLineQuery(t *testing.T) {
 	if got, want := string(types), "12TDC12nC1EZ"; got != want {
 		t.Fatalf("batch replies differ, got %q, expected %q", got, want)
 	}
+	// Two blocks in one batch: the server fails the batch at the first one, so
+	// the client gets one error, and the connection keeps working.
+	types = nil
+	for _, pkt := range extBatch("DROP TABLE eng797_keep", "SELECT 1", "DROP TABLE eng797_keep") {
+		for _, msg := range testutil.ParsePGMessages(pkt.Payload) {
+			types = append(types, msg.Type)
+		}
+	}
+	if got, want := string(types), "1EZ"; got != want {
+		t.Fatalf("batch with two blocks replies differ, got %q, expected %q", got, want)
+	}
 	results = testutil.ExtractAllQueryResults(query("SELECT count(*) FROM eng797_keep"))
 	if len(results) != 1 || results[0].RowCount() != 1 || results[0].Row(0)[0] != "1" {
 		t.Fatalf("the INSERT of the blocked batch must be rolled back, got %+v", results)
