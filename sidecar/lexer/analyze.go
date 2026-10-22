@@ -154,10 +154,6 @@ type analyzer struct {
 	// sparkScriptDML.
 	script bool
 
-	// merging is true from a MERGE head to the end of its statement. Its
-	// WHEN clauses each put a statement after THEN; see headFollows.
-	merging bool
-
 	// fromFirst is true in a Spark statement that opened with FROM, the
 	// Hive form `FROM s INSERT INTO t SELECT ... INSERT INTO u SELECT ...`.
 	// Its INSERT and SELECT follow a relation, not a head position.
@@ -370,7 +366,7 @@ func (a *analyzer) walk() {
 					a.stack = a.stack[:1]
 				}
 				*a.top() = region{kind: regTop, verb: Unknown}
-				a.inCTEList, a.expectCTEName, a.fromFirst, a.merging = false, false, false, false
+				a.inCTEList, a.expectCTEName, a.fromFirst = false, false, false
 				atHead = true
 				continue
 			case ",":
@@ -559,15 +555,6 @@ func (a *analyzer) headFollows(word string) bool {
 	if a.script && sparkScriptHeadAfter[word] {
 		return true
 	}
-	// Outside a script, Spark has a statement after THEN only in a MERGE
-	// clause, and none after ELSE. Anywhere else they sit in a CASE
-	// expression, where `THEN replace(s, 'x', 'y')` is a function call and
-	// `THEN restore` a column, and Spark's own verbs would read either as a
-	// write. Inside a script both keep heading statements, as in every
-	// dialect: IF and CASE statements put one after each.
-	if a.d == Spark && (word == "then" || word == "else") {
-		return a.script || a.merging
-	}
 	return headAfter[word]
 }
 
@@ -613,18 +600,16 @@ func (a *analyzer) sparkNotDML(i int) bool {
 }
 
 // sparkStatementAt reports whether a verb Spark adds, at i, can begin its
-// statement here. Followed by `(` it is a function, replace(s, 'x', 'y'),
-// and each one needs the word its statement starts with: REPLACE TABLE, LOAD
-// DATA, CONVERT TO, a relation after VACUUM. A column called load or restore
-// has none of these after it. None of the shapes this rules out is a
-// statement Spark can run, so ruling them out hides no write.
+// statement here, as plsqlNotDML rules out PL/SQL's known false readings.
+// Each one needs the word its statement starts with: REPLACE TABLE, LOAD
+// DATA, CONVERT TO, a relation after VACUUM. replace(s, 'x', 'y') after a
+// THEN, or a column called load or restore, has none of these after it.
+// None of the shapes this rules out is a statement Spark can run, so ruling
+// them out hides no write.
 func (a *analyzer) sparkStatementAt(i int) bool {
 	word := a.toks[i].Text
 	if _, ok := sparkVerb[word]; a.d != Spark || !ok {
 		return true
-	}
-	if a.puncts(i+1, "(") {
-		return false
 	}
 	var next Token
 	if i+1 < len(a.toks) {
@@ -726,9 +711,6 @@ func (a *analyzer) head(t Token, i int) bool {
 	r := a.top()
 	r.verb = verb
 	r.firstTarget = true
-	if verb == Merge {
-		a.merging = true
-	}
 	a.effects = append(a.effects, verb)
 	return true
 }
