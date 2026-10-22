@@ -15,8 +15,8 @@ import (
 
 // Event types. A page subscribes to one by its name.
 const (
-	// SidecarCheckedIn is a sidecar handshake the plane answered. ID is the
-	// sidecar's ID.
+	// SidecarCheckedIn is a sidecar's first handshake the plane answered. ID
+	// is the sidecar's ID.
 	SidecarCheckedIn = "sidecar.checked_in"
 	// ReviewCreated is a review that waits for approval. ID is the review's ID.
 	ReviewCreated = "review.created"
