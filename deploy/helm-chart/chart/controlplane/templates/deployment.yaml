@@ -70,13 +70,32 @@ spec:
         livenessProbe:
           {{- toYaml . | nindent 10 }}
         {{- end }}
-        {{- with .Values.extraVolumeMounts }}
+        {{- $idpToken := (.Values.idpFederatedToken | default dict).enabled }}
+        {{- if or .Values.extraVolumeMounts $idpToken }}
         volumeMounts:
+        {{- with .Values.extraVolumeMounts }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.extraVolumes }}
+        {{- if $idpToken }}
+        - name: idp-federated-token
+          mountPath: {{ include "hoopcontrolplane.idpTokenDir" . }}
+          readOnly: true
+        {{- end }}
+        {{- end }}
+      {{- if or .Values.extraVolumes $idpToken }}
       volumes:
+      {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- if $idpToken }}
+      - name: idp-federated-token
+        projected:
+          sources:
+          - serviceAccountToken:
+              path: token
+              audience: {{ .Values.idpFederatedToken.audience | default "api://AzureADTokenExchange" | quote }}
+              expirationSeconds: {{ .Values.idpFederatedToken.expirationSeconds | default 3600 }}
+      {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

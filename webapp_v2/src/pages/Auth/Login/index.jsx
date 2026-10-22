@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Paper,
@@ -21,6 +21,8 @@ import { postAuthPath } from '@/modes'
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
   code_exchange_failure:
+    'Something went wrong. Try again and if the error persists, talk to the account administrator',
+  unexpected_error:
     'Something went wrong. Try again and if the error persists, talk to the account administrator',
   pending_review: 'The organization administrator must approve your access first',
   unregistered:
@@ -58,6 +60,9 @@ function Login() {
   const [error, setError] = useState(null)
   const [authMethod, setAuthMethod] = useState(null)
   const [loadingAuthMethod, setLoadingAuthMethod] = useState(true)
+  // A failed sign-in comes back with login_error. Do not go to the IdP again:
+  // its session is still active, so it fails again in a loop.
+  const loginErrorOnLoad = useRef(localStorage.getItem('login_error'))
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -93,7 +98,7 @@ function Login() {
 
         setAuthMethod(method)
 
-        if (method !== 'local') {
+        if (method !== 'local' && !loginErrorOnLoad.current) {
           redirectToIdp(method)
         }
       } catch (err) {

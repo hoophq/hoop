@@ -3211,8 +3211,12 @@ type ServerAuthOidcConfig struct {
 	IssuerURL string `json:"issuer_url" example:"https://auth.domain.tld/oidc" binding:"required"`
 	// Oauth2 Client ID
 	ClientID string `json:"client_id" example:"hoop-client-id" binding:"required"`
-	// Oauth2 Client Secret
-	ClientSecret string `json:"client_secret" example:"hoop-client-secret" binding:"required"`
+	// Oauth2 Client Secret. Set it or client_assertion_file, not both.
+	ClientSecret string `json:"client_secret" example:"hoop-client-secret"`
+	// Path on the gateway to a JWT that authenticates the client in place of client_secret (RFC 7523),
+	// e.g. a Kubernetes service account token trusted by an Entra ID federated credential.
+	// It must be the path the gateway operator set in IDP_CLIENT_ASSERTION_FILE.
+	ClientAssertionFile string `json:"client_assertion_file,omitempty" example:"/var/run/secrets/hoop/idp/token"`
 	// Additional Oauth2 scopes to append in the request. Default values are openid, profile and email.
 	Scopes []string `json:"scopes" example:"openid,email,profile"`
 	// Identity Provider Audience (Oauth2)

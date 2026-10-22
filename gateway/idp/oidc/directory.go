@@ -67,11 +67,12 @@ func (p *Provider) clientCredentialsToken(ctx context.Context, scopes []string, 
 		ClientSecret: p.ClientSecret,
 		TokenURL:     p.oauth2Config.Endpoint.TokenURL,
 		Scopes:       scopes,
+		AuthStyle:    p.oauth2Config.Endpoint.AuthStyle,
 	}
 	if audience != "" {
 		cfg.EndpointParams = url.Values{"audience": {audience}}
 	}
-	tok, err := cfg.Token(context.WithValue(ctx, oauth2.HTTPClient, directoryHTTPClient))
+	tok, err := cfg.Token(p.withTokenClient(context.WithValue(ctx, oauth2.HTTPClient, directoryHTTPClient)))
 	if err != nil {
 		return nil, fmt.Errorf("failed obtaining client credentials token, reason=%v", err)
 	}
