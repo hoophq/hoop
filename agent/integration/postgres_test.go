@@ -426,6 +426,29 @@ func TestPG_Guardrails_MultiLineQuery(t *testing.T) {
 		t.Fatalf("expected the next extended query to find the table with 1 row, got %+v", results)
 	}
 
+	// A batch (one Sync) fails at the blocked statement like a server error: the
+	// error comes after the earlier results, and the INSERT is rolled back.
+	extBatch := func(sqls ...string) []*pb.Packet {
+		for _, msg := range testutil.PGExtendedBatch(sqls...) {
+			testutil.SendPGWrite(t, tr, sessionID, connID, msg)
+		}
+		return testutil.CollectPGResponses(t, tr, pgTestTimeout)
+	}
+	var types []byte
+	for _, pkt := range extBatch("SELECT id FROM eng797_keep", "INSERT INTO eng797_keep VALUES (99)", "DROP TABLE eng797_keep") {
+		for _, msg := range testutil.ParsePGMessages(pkt.Payload) {
+			types = append(types, msg.Type)
+		}
+	}
+	// SELECT: 1 2 T D C, INSERT: 1 2 n C, DROP: 1 (Parse only), then the error.
+	if got, want := string(types), "12TDC12nC1EZ"; got != want {
+		t.Fatalf("batch replies differ, got %q, expected %q", got, want)
+	}
+	results = testutil.ExtractAllQueryResults(query("SELECT count(*) FROM eng797_keep"))
+	if len(results) != 1 || results[0].RowCount() != 1 || results[0].Row(0)[0] != "1" {
+		t.Fatalf("the INSERT of the blocked batch must be rolled back, got %+v", results)
+	}
+
 	shutdownAgent(t, agent, tr)
 }
 
