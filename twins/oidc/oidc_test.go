@@ -395,7 +395,14 @@ func TestPagesWhileSeeding(t *testing.T) {
 				t.Errorf("seed: %v", err)
 				return
 			}
-			resp.Body.Close()
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("seed: close the answer: %v", err)
+				return
+			}
+			if resp.StatusCode != http.StatusNoContent {
+				t.Errorf("seed %d: status %d", i, resp.StatusCode)
+				return
+			}
 		}
 	}()
 	for range 30 {
