@@ -6,7 +6,7 @@ import PageLoader from '@/components/PageLoader'
 import SectionRow from '@/components/SectionRow'
 import Table from '@/components/Table'
 import { SidecarStatusBadge } from '@/pages/Sidecars/components/SidecarDetails'
-import { NO_ANALYZER_SECTION, analyzerModel, reportedConfiguration, usesConfigFile } from '@/pages/Sidecars/config'
+import { analyzerLabel, usesConfigFile } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 
@@ -19,15 +19,13 @@ function Dimmed({ children }) {
 }
 
 function Model({ sidecar }) {
-  const fromFile = usesConfigFile(sidecar)
-  const config = fromFile ? reportedConfiguration(sidecar) : sidecar.configuration
-  if (fromFile && !config) return <Dimmed>Not reported</Dimmed>
-  const model = analyzerModel(config)
-  return model ? <Text size="sm">{model}</Text> : <Dimmed>{NO_ANALYZER_SECTION}</Dimmed>
+  const { text, set } = analyzerLabel(sidecar)
+  return set ? <Text size="sm">{text}</Text> : <Dimmed>{text}</Dimmed>
 }
 
 function Rules({ sidecar }) {
   if (usesConfigFile(sidecar)) return <Dimmed>Not delivered</Dimmed>
+  if (sidecar.bound_rules_unavailable) return <Dimmed>Could not be loaded</Dimmed>
   const names = [...new Set((sidecar.bound_rules ?? []).filter((b) => b.kind === 'analyzer').map((b) => b.rule_name))]
   return names.length > 0 ? <Text size="sm">{names.join(', ')}</Text> : <Dimmed>None</Dimmed>
 }
@@ -51,7 +49,7 @@ export default function SidecarAnalyzers() {
   let body
   if (loading && sidecars.length === 0) {
     body = <PageLoader h={120} />
-  } else if (error && sidecars.length === 0) {
+  } else if (error) {
     body = <Text c="red">{error}</Text>
   } else if (sidecars.length === 0) {
     body = (

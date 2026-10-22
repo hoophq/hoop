@@ -8,7 +8,7 @@ import TextInput from '@/components/TextInput'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
-import { NO_ANALYZER_SECTION, analyzerModel, auditEnabled, hasConfiguration } from '../config'
+import { analyzerLabel, auditEnabled, hasConfiguration } from '../config'
 import { opaSummary, resolveOPA } from '../features'
 import { configState } from '../status'
 import { saveErrorMessage } from '../useListenerEditor'
@@ -66,7 +66,7 @@ export default function GlobalSettings({ sidecar, editable }) {
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
   const opa = configured ? resolveOPA(null, config) : null
-  const model = analyzerModel(config)
+  const model = analyzerLabel(sidecar)
   const configuration = configState(sidecar)
   const [editing, setEditing] = useState(null)
   const [draft, setDraft] = useState('')
@@ -200,8 +200,8 @@ export default function GlobalSettings({ sidecar, editable }) {
               <Text size="sm">{opa?.url ? opaSummary(opa) : 'Off'}</Text>
             </Row>
             <Row label="AI analyzer">
-              <Text size="sm" c={model ? undefined : 'dimmed'}>
-                {model ?? NO_ANALYZER_SECTION}
+              <Text size="sm" c={model.set ? undefined : 'dimmed'}>
+                {model.text}
               </Text>
             </Row>
             <Row label="Audit" heading>

@@ -153,3 +153,12 @@ export function analyzerModel(config) {
   if (!section.provider) return NO_ANALYZER_PROVIDER
   return section.model ? `${section.provider} · ${section.model}` : section.provider
 }
+
+// A config-file sidecar runs the file it reported, not the stored document.
+export function analyzerLabel(sidecar) {
+  const fromFile = usesConfigFile(sidecar)
+  const config = fromFile ? reportedConfiguration(sidecar) : sidecar?.configuration
+  if (fromFile && !config) return { text: 'Not reported', set: false }
+  const model = analyzerModel(config)
+  return model ? { text: model, set: true } : { text: NO_ANALYZER_SECTION, set: false }
+}
