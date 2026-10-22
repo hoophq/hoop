@@ -45,6 +45,9 @@ function Summary({ who, where, kind }) {
 // Outside the component: the layout that mounts it remounts on every move
 // between a React and a CLJS page.
 let open = []
+// Bumped on sign-out, account change and disable: an event still in flight
+// from before is dropped.
+let epoch = 0
 
 function closeAll() {
   const all = open
@@ -52,13 +55,25 @@ function closeAll() {
   all.forEach((t) => dismissSnackbar(t.id))
 }
 
+function reset() {
+  epoch++
+  closeAll()
+}
+
 useAuthStore.subscribe((state, prev) => {
-  if (prev.isAuthenticated && !state.isAuthenticated) closeAll()
+  if (state.token !== prev.token) reset()
 })
 
+function askPermission() {
+  Notification.requestPermission().then(() => open.forEach(show))
+}
+
 function show(t) {
-  const actions =
-    open.length > CLOSE_ALL_OVER ? [...t.actions, { label: `Close all (${open.length})`, onClick: closeAll }] : t.actions
+  const actions = [{ label: 'Open', onClick: t.goToReview }]
+  if (canAskPermission()) {
+    actions.push({ label: 'Enable desktop notifications', keepOpen: true, onClick: askPermission })
+  }
+  if (open.length > CLOSE_ALL_OVER) actions.push({ label: `Close all (${open.length})`, onClick: closeAll })
   t.id = showSnackbar({
     id: t.id,
     level: 'approval',
@@ -81,6 +96,10 @@ export default function ApprovalNotifications() {
   const seen = useRef(new Set())
 
   useEffect(() => {
+    if (!enabled) reset()
+  }, [enabled])
+
+  useEffect(() => {
     if (!enabled || typeof BroadcastChannel === 'undefined') return undefined
     const channel = new BroadcastChannel(SEEN_CHANNEL)
     channel.onmessage = (message) => seen.current.add(message.data)
@@ -94,6 +113,7 @@ export default function ApprovalNotifications() {
   useLiveEvent(
     LIVE_EVENTS.REVIEW_CREATED,
     async ({ id }) => {
+      const at = epoch
       const attended = isAttended()
       const visible = isVisible()
       let watched = false
@@ -112,7 +132,7 @@ export default function ApprovalNotifications() {
       } catch {
         return
       }
-      if (review?.status !== 'PENDING') return
+      if (at !== epoch || review?.status !== 'PENDING') return
       const { title, body, who, where, kind } = describeReview(review)
       const goToReview = () => navigate(`/approvals/${encodeURIComponent(review.session)}`)
 
@@ -127,11 +147,7 @@ export default function ApprovalNotifications() {
         }
         if (!visible) return
       }
-      const actions = [{ label: 'Open', onClick: goToReview }]
-      if (canAskPermission()) {
-        actions.push({ label: 'Enable desktop notifications', onClick: () => Notification.requestPermission() })
-      }
-      open.push({ title, description: <Summary who={who} where={where} kind={kind} />, actions })
+      open.push({ title, description: <Summary who={who} where={where} kind={kind} />, goToReview })
       open.forEach(show)
     },
     enabled,

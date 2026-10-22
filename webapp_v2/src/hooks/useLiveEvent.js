@@ -8,6 +8,7 @@ import { useUserStore } from '@/stores/useUserStore'
 const listeners = new Map() // type -> Set of handlers
 let controller = null
 let channel = null
+let closeTimer = null
 
 const LOCK = 'hoop-live-events'
 const shared =
@@ -15,8 +16,13 @@ const shared =
 
 // Spread, so every browser does not reconnect at once after a deploy.
 const retryDelay = () => 3000 + Math.random() * 5000
+// A layout that remounts on a React <-> CLJS page change subscribes again
+// within this, and keeps the stream.
+const CLOSE_GRACE_MS = 1000
 
 const currentUserId = () => useUserStore.getState().user?.id ?? null
+// Per account: a tab signed in as someone else holds a stream of its own.
+const lockName = () => `${LOCK}:${currentUserId() ?? ''}`
 
 const sleep = (ms, signal) =>
   new Promise((resolve) => {
@@ -55,11 +61,14 @@ async function holdStream(signal) {
 }
 
 function open() {
+  clearTimeout(closeTimer)
+  closeTimer = null
   if (controller) return
   const own = new AbortController()
   controller = own
+  const name = lockName()
   if (shared && !channel) {
-    channel = new BroadcastChannel(LOCK)
+    channel = new BroadcastChannel(name)
     channel.onmessage = ({ data }) => {
       const me = currentUserId()
       if (data?.user && me && data.user !== me) return
@@ -67,7 +76,7 @@ function open() {
     }
   }
   const run = shared
-    ? navigator.locks.request(LOCK, { signal: own.signal }, () => holdStream(own.signal))
+    ? navigator.locks.request(name, { signal: own.signal }, () => holdStream(own.signal))
     : stream(own.signal)
   run
     .catch(() => {})
@@ -84,17 +93,26 @@ function open() {
 }
 
 function close() {
+  clearTimeout(closeTimer)
+  closeTimer = null
   controller?.abort()
   controller = null
   channel?.close()
   channel = null
 }
 
-// A stream opened with another user's token carries that user's events.
-useAuthStore.subscribe((state, prev) => {
-  if (state.token === prev.token || !controller) return
+function restart() {
+  if (!controller) return
   close()
   if (subscriberCount() > 0) open()
+}
+
+// A stream opened with another user's token carries that user's events.
+useAuthStore.subscribe((state, prev) => {
+  if (state.token !== prev.token) restart()
+})
+useUserStore.subscribe((state, prev) => {
+  if (state.user?.id !== prev.user?.id) restart()
 })
 
 /**
@@ -118,7 +136,10 @@ export function useLiveEvent(type, handler, enabled = true) {
     return () => {
       listeners.get(type)?.delete(call)
       if (listeners.get(type)?.size === 0) listeners.delete(type)
-      if (subscriberCount() === 0) close()
+      if (subscriberCount() === 0) {
+        clearTimeout(closeTimer)
+        closeTimer = setTimeout(() => subscriberCount() === 0 && close(), CLOSE_GRACE_MS)
+      }
     }
   }, [type, enabled])
 }

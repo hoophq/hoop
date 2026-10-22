@@ -75,7 +75,7 @@ export default function Toast({ id, type, title, description, details, actions }
                     size="compact-sm"
                     variant={i === 0 ? 'filled' : 'default'}
                     onClick={() => {
-                      toast.dismiss(id)
+                      if (!action.keepOpen) toast.dismiss(id)
                       action.onClick()
                     }}
                   >
