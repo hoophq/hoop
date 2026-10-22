@@ -113,7 +113,6 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	md, _ := metadata.FromIncomingContext(stream.Context())
 	clientOrigin := md.Get("origin")
-	clientVerb := md.Get("verb")
 
 	if len(clientOrigin) == 0 {
 		md.Delete("authorization")
@@ -129,6 +128,10 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 	}
 	if clientOrigin[0] == pb.ConnectionOriginAgent {
 		return s.subscribeAgent(streamclient.NewAgent(gwctx.Agent, stream))
+	}
+	clientVerb, err := parseClientVerb(md)
+	if err != nil {
+		return err
 	}
 	// if the license information is not present in the database
 	// consider the type of license as open source.
@@ -181,7 +184,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ExtensionsOnDisconnectFn: transportext.OnDisconnect,
 	}
 
-	if err := refuseConnection(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {
+	if err := refuseConnection(clientVerb, clientOrigin[0], gwctx.Connection); err != nil {
 		closeRefusedSession(gwctx.UserContext.OrgID, gwctx.UserContext.UserID, gwctx.Connection.Name,
 			func(key string) string { return commongrpc.MetaGet(md, key) }, err)
 		return err
@@ -201,6 +204,20 @@ func (s *Server) HealthCheck(ctx context.Context, req *pb.HealthCheckRequest) (*
 
 // refuseConnection runs the gates that refuse a client stream before it
 // reaches the plugins.
+// parseClientVerb returns the verb a client stream declares. The access rule
+// and the exec packet check depend on it, so only the known verbs pass.
+func parseClientVerb(md metadata.MD) (string, error) {
+	verb := md.Get("verb")
+	if len(verb) == 0 {
+		return "", status.Error(codes.InvalidArgument, "missing verb")
+	}
+	switch verb[0] {
+	case pb.ClientVerbConnect, pb.ClientVerbExec, pb.ClientVerbPlainExec:
+		return verb[0], nil
+	}
+	return "", status.Errorf(codes.InvalidArgument, "unknown verb %q", verb[0])
+}
+
 func refuseConnection(clientVerb, clientOrigin string, connInfo types.ConnectionInfo) error {
 	if err := refuseSidecarMirror(connInfo.Name, connInfo.SidecarID); err != nil {
 		return err
