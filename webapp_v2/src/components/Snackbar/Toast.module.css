@@ -46,6 +46,24 @@
   color: var(--mantine-color-sky-9);
 }
 
+.approval {
+  box-shadow:
+    inset 4px 0 0 var(--mantine-color-amber-6),
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.iconApproval {
+  padding: 7px;
+  border-radius: var(--mantine-radius-md);
+  color: var(--mantine-color-amber-8);
+  background-color: var(--mantine-color-amber-1);
+}
+
+.titleStrong {
+  font-weight: 600;
+}
+
 .content {
   flex: 1;
   min-width: 0;

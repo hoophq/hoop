@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Clock, X } from 'lucide-react'
+import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Clock, Hourglass, X } from 'lucide-react'
 import Button from '@/components/Button'
 import classes from './Toast.module.css'
 
@@ -8,6 +8,7 @@ const ICON_FOR_TYPE = {
   success: { Icon: CheckCircle, className: classes.iconSuccess },
   error: { Icon: AlertCircle, className: classes.iconError },
   info: { Icon: Clock, className: classes.iconInfo },
+  approval: { Icon: Hourglass, className: classes.iconApproval },
 }
 
 function capitalize(value) {
@@ -47,19 +48,25 @@ export default function Toast({ id, type, title, description, details, actions }
   const meta = ICON_FOR_TYPE[type]
   const hasDetails = type === 'error' && details != null
   const Icon = meta?.Icon
+  const approval = type === 'approval'
 
   return (
-    <div className={classes.root}>
+    <div className={approval ? `${classes.root} ${classes.approval}` : classes.root}>
       <div className={classes.header}>
         <div className={classes.body}>
           {Icon && (
             <span className={`${classes.iconWrapper} ${meta.className}`}>
-              <Icon size={20} />
+              <Icon size={approval ? 18 : 20} />
             </span>
           )}
           <div className={classes.content}>
-            <p className={classes.title}>{title}</p>
-            {description && <p className={classes.description}>{description}</p>}
+            <p className={approval ? `${classes.title} ${classes.titleStrong}` : classes.title}>{title}</p>
+            {description &&
+              (typeof description === 'string' ? (
+                <p className={classes.description}>{description}</p>
+              ) : (
+                <div className={classes.description}>{description}</div>
+              ))}
             {actions?.length > 0 && (
               <div className={classes.actions}>
                 {actions.map((action, i) => (

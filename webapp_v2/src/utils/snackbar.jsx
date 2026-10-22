@@ -15,14 +15,20 @@ import Toast from '@/components/Snackbar/Toast'
  *   showSnackbar({ level: 'success', text: 'AI Agent deactivated.' })
  *   showSnackbar({ level: 'error',   text: 'Failed to load.', description: err.message })
  *   showSnackbar({ level: 'error',   text: 'Validation failed.', details: { field: 'name', reason: 'required' } })
- *   showSnackbar({ text: 'Approval request', actions: [{ label: 'Open', onClick: open }], duration: 20000 })
+ *   showSnackbar({ level: 'approval', text: 'Approval request', actions: [{ label: 'Open', onClick: open }], duration: Infinity })
+ *   showSnackbar({ id, text: 'Updated in place' })  // pass a returned id to replace that toast
  */
-export function showSnackbar({ level = 'info', text, description, details, actions, duration } = {}) {
+export function showSnackbar({ level = 'info', text, description, details, actions, duration, id, onDismiss } = {}) {
   const ms = duration ?? (level === 'error' ? 10000 : undefined)
+  const options = {
+    ...(ms ? { duration: ms } : {}),
+    ...(id != null ? { id } : {}),
+    ...(onDismiss ? { onDismiss } : {}),
+  }
   return toast.custom(
-    (id) => (
+    (toastId) => (
       <Toast
-        id={id}
+        id={toastId}
         type={level}
         title={text}
         description={description}
@@ -30,6 +36,8 @@ export function showSnackbar({ level = 'info', text, description, details, actio
         actions={actions}
       />
     ),
-    ms ? { duration: ms } : undefined,
+    Object.keys(options).length ? options : undefined,
   )
 }
+
+export const dismissSnackbar = (id) => toast.dismiss(id)

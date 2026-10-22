@@ -6,14 +6,19 @@ const TYPE_LABELS = { onetime: 'One-time access', jit: 'Time-based access' }
 export function describeReview(review) {
   const sidecars = new Map([[review.sidecar_id, { name: review.requester?.name }]])
   const source = reviewSource(review, sidecars)
-  const parts = isSidecarReview(review)
-    ? [source.sidecar ? `Sidecar ${source.sidecar}` : 'Sidecar', source.listener, source.resource, 'Statement']
-    : [
-        review.requester?.name || review.requester?.email,
-        source.resource,
-        TYPE_LABELS[review.type] ?? review.type,
-      ]
-  return { title: 'Approval request', body: parts.filter(Boolean).join(' · ') }
+  const sidecar = isSidecarReview(review)
+  const who = sidecar
+    ? source.sidecar ? `Sidecar ${source.sidecar}` : 'Sidecar'
+    : review.requester?.name || review.requester?.email
+  const where = (sidecar ? [source.listener, source.resource] : [source.resource]).filter(Boolean)
+  const kind = sidecar ? 'Statement' : TYPE_LABELS[review.type] ?? review.type
+  return {
+    title: 'Approval request',
+    body: [who, ...where, kind].filter(Boolean).join(' · '),
+    who,
+    where,
+    kind,
+  }
 }
 
 export const isVisible = () => document.visibilityState === 'visible'

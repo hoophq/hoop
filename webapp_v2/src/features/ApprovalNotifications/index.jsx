@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Badge, Group, Stack, Text } from '@mantine/core'
 import { useLiveEvent } from '@/hooks/useLiveEvent'
 import { LIVE_EVENTS } from '@/services/liveEvents'
 import { reviewsService } from '@/services/reviews'
 import { useUserStore } from '@/stores/useUserStore'
-import { showSnackbar } from '@/utils/snackbar'
+import { dismissSnackbar, showSnackbar } from '@/utils/snackbar'
 import { canAskPermission, describeReview, isAttended, isVisible, notificationsGranted } from './helpers'
 
 export const REVIEW_NOTIFICATIONS_FLAG = 'experimental.review_notifications'
@@ -12,13 +13,62 @@ export const REVIEW_NOTIFICATIONS_FLAG = 'experimental.review_notifications'
 const SEEN_CHANNEL = 'hoop-approval-seen'
 // How long a tab nobody looks at waits for an attended tab to claim the event.
 const HANDOFF_MS = 300
-const TOAST_MS = 20000
+// With more open than this, each toast offers "Close all".
+const CLOSE_ALL_OVER = 2
+
+function Summary({ who, where, kind }) {
+  return (
+    <Stack gap={6} mt={4}>
+      {who && (
+        <Text size="sm" fw={500}>
+          {who}
+        </Text>
+      )}
+      <Group gap={6}>
+        {where.map((name) => (
+          <Badge key={name} size="sm" radius="sm" variant="light" color="gray" tt="none">
+            {name}
+          </Badge>
+        ))}
+        {kind && (
+          <Text size="xs" c="dimmed">
+            {kind}
+          </Text>
+        )}
+      </Group>
+    </Stack>
+  )
+}
 
 export default function ApprovalNotifications() {
   const enabled = useUserStore((s) => Boolean(s.featureFlags?.[REVIEW_NOTIFICATIONS_FLAG]))
   const navigate = useNavigate()
   const tabs = useRef(null)
   const seen = useRef(new Set())
+  const open = useRef([])
+
+  const closeAll = () => {
+    const all = open.current
+    open.current = []
+    all.forEach((t) => dismissSnackbar(t.id))
+  }
+
+  const show = (t) => {
+    const count = open.current.length
+    const actions = count > CLOSE_ALL_OVER ? [...t.actions, { label: `Close all (${count})`, onClick: closeAll }] : t.actions
+    t.id = showSnackbar({
+      id: t.id,
+      level: 'approval',
+      text: t.title,
+      description: t.description,
+      actions,
+      duration: Infinity,
+      onDismiss: () => {
+        open.current = open.current.filter((o) => o !== t)
+        open.current.forEach(show)
+      },
+    })
+  }
 
   useEffect(() => {
     if (!enabled || typeof BroadcastChannel === 'undefined') return undefined
@@ -53,8 +103,8 @@ export default function ApprovalNotifications() {
         return
       }
       if (review?.status !== 'PENDING') return
-      const { title, body } = describeReview(review)
-      const open = () => navigate(`/approvals/${encodeURIComponent(review.session)}`)
+      const { title, body, who, where, kind } = describeReview(review)
+      const goToReview = () => navigate(`/approvals/${encodeURIComponent(review.session)}`)
 
       // A visible tab without focus, such as one beside a terminal, gets both.
       const notify = !attended && !watched && notificationsGranted()
@@ -62,16 +112,17 @@ export default function ApprovalNotifications() {
         const notification = new Notification(title, { body, tag: id })
         notification.onclick = () => {
           window.focus()
-          open()
+          goToReview()
           notification.close()
         }
         if (!visible) return
       }
-      const actions = [{ label: 'Open', onClick: open }]
+      const actions = [{ label: 'Open', onClick: goToReview }]
       if (canAskPermission()) {
         actions.push({ label: 'Enable desktop notifications', onClick: () => Notification.requestPermission() })
       }
-      showSnackbar({ text: title, description: body, actions, duration: TOAST_MS })
+      open.current.push({ title, description: <Summary who={who} where={where} kind={kind} />, actions })
+      open.current.forEach(show)
     },
     enabled,
   )
