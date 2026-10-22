@@ -63,7 +63,9 @@ func down(t *testing.T) {
 	if err := os.Remove(keptNativeFile(root)); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	if len(composeContainers(t)) > 0 {
+	// Only a kept compose stack: a scenario run on this host owns its
+	// containers until it ends, and its next run takes down a crashed one.
+	if len(composeContainers(t, "label=twins.kept=yes")) > 0 {
 		// compose checks HOOP_BIN_DIR before `down` too.
 		if b, err := composeCmd(os.TempDir(), "", false, "down", "-v", "--remove-orphans").CombinedOutput(); err != nil {
 			t.Fatalf("compose down: %v\n%s", err, b)

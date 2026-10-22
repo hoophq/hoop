@@ -27,11 +27,12 @@ type loginView struct {
 	Users    []loginUser
 }
 
-// loginPage lists the seeded users. Each one is a button that sends the
-// same authorize request with login_hint, so the page holds no state and
-// the approval stays in authorize. The caller holds t.mu.
-func (t *Twin) loginPage(w http.ResponseWriter, q url.Values) {
-	v := loginView{Action: t.authorizeURL(), Issuer: t.issuer, ClientID: t.cfg.ClientID}
+// newLoginView builds the login page of the authorize request q. Each user
+// is a button that sends the same request with login_hint, so the page
+// holds no state and the approval stays in authorize. It takes values, not
+// the twin: the caller reads the twin's state under its lock.
+func newLoginView(action, issuer, clientID string, q url.Values, users []User) loginView {
+	v := loginView{Action: action, Issuer: issuer, ClientID: clientID}
 	if u, err := url.Parse(q.Get("redirect_uri")); err == nil {
 		v.Redirect = u.Host
 	}
@@ -45,7 +46,7 @@ func (t *Twin) loginPage(w http.ResponseWriter, q url.Values) {
 			v.Params = append(v.Params, loginParam{Name: k, Value: val})
 		}
 	}
-	for _, u := range t.sortedUsers() {
+	for _, u := range users {
 		name := u.Name
 		if name == "" {
 			name = u.Email
@@ -54,6 +55,10 @@ func (t *Twin) loginPage(w http.ResponseWriter, q url.Values) {
 		r, _ := utf8.DecodeRuneInString(name)
 		v.Users = append(v.Users, loginUser{User: u, Initial: strings.ToUpper(string(r))})
 	}
+	return v
+}
+
+func writeLoginPage(w http.ResponseWriter, v loginView) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if err := loginTemplate.Execute(w, v); err != nil {

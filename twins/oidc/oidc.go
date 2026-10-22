@@ -106,14 +106,19 @@ type Twin struct {
 //
 // browserURL is the base URL of the authorize endpoint in discovery, for a
 // browser that cannot resolve or trust the issuer host. Empty means the
-// issuer.
+// issuer. It takes a path prefix, but no query or fragment: authorize goes
+// at the end of its path.
 func New(issuer, browserURL string) (*Twin, error) {
 	issuer = strings.TrimSuffix(issuer, "/")
 	if browserURL == "" {
 		browserURL = issuer
 	}
-	if u, err := url.Parse(browserURL); err != nil || !u.IsAbs() || u.Host == "" {
+	u, err := url.Parse(browserURL)
+	if err != nil || !u.IsAbs() || u.Host == "" {
 		return nil, fmt.Errorf("browser URL %q must be an absolute URL", browserURL)
+	}
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(browserURL, "#") {
+		return nil, fmt.Errorf("browser URL %q must have no query and no fragment", browserURL)
 	}
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -222,14 +227,15 @@ func (t *Twin) State() any {
 	}
 	slices.Sort(expired)
 	return state{Issuer: t.issuer, BrowserURL: t.browserURL, ClientID: t.cfg.ClientID, GroupsClaim: t.cfg.GroupsClaim,
-		TokenTTLSec: t.cfg.TokenTTLSec, Users: t.sortedUsers(), Codes: codes,
+		TokenTTLSec: t.cfg.TokenTTLSec, Users: sortUsers(t.users), Codes: codes,
 		Tokens: append([]issued{}, t.issued...), ExpiredTokens: expired}
 }
 
-// sortedUsers lists the seeded users by email. The caller holds t.mu.
-func (t *Twin) sortedUsers() []User {
-	users := make([]User, 0, len(t.users))
-	for _, u := range t.users {
+// sortUsers lists users by email. It takes the map, not the twin: the
+// caller reads t.users under t.mu.
+func sortUsers(byEmail map[string]User) []User {
+	users := make([]User, 0, len(byEmail))
+	for _, u := range byEmail {
 		users = append(users, u)
 	}
 	sort.Slice(users, func(i, j int) bool { return users[i].Email < users[j].Email })
@@ -300,7 +306,8 @@ func (t *Twin) authorize(w http.ResponseWriter, r *http.Request) {
 	// which sends this request again with login_hint. An unknown user is a
 	// broken scenario, so answer here with the reason.
 	if !q.Has("login_hint") {
-		t.loginPage(w, q)
+		// authorize holds t.mu, so it reads the client and the users here.
+		writeLoginPage(w, newLoginView(t.authorizeURL(), t.issuer, t.cfg.ClientID, q, sortUsers(t.users)))
 		return
 	}
 	u, ok := t.users[strings.ToLower(q.Get("login_hint"))]

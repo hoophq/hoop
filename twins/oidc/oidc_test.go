@@ -2,6 +2,7 @@ package oidc_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -368,9 +369,43 @@ func TestDiscoveryBrowserURL(t *testing.T) {
 			}
 		})
 	}
-	if _, err := oidc.New("https://oidc-twin", "127.0.0.1:18081"); err == nil {
-		t.Error("a browser URL with no scheme must be refused")
+	// authorize goes at the end of the path: a query or a fragment would
+	// hide it from the request.
+	for _, bad := range []string{"127.0.0.1:18081", "http://127.0.0.1:18081?mode=test",
+		"http://127.0.0.1:18081/?", "http://127.0.0.1:18081/#top", "http://127.0.0.1:18081/twins#"} {
+		if _, err := oidc.New("https://oidc-twin", bad); err == nil {
+			t.Errorf("browser URL %q must be refused", bad)
+		}
 	}
+}
+
+// The login page and the state page read what /_twin/seed writes. Run with
+// -race: a read outside the twin's lock is a data race.
+func TestPagesWhileSeeding(t *testing.T) {
+	s := startTwin(t)
+	p := authorizeParams("")
+	p.Del("login_hint")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 100 {
+			body := fmt.Sprintf(`{"client_id":"hoop","client_secret":"hoop-secret","users":[{"sub":"u%d","email":"u%d@example.com","name":"U%d"}]}`, i, i, i)
+			resp, err := s.client.Post(s.issuer+"/_twin/seed", "application/json", strings.NewReader(body))
+			if err != nil {
+				t.Errorf("seed: %v", err)
+				return
+			}
+			resp.Body.Close()
+		}
+	}()
+	for range 30 {
+		for _, path := range []string{"/authorize?" + p.Encode(), "/_twin/ui"} {
+			if status, _, _ := s.get(t, path); status != http.StatusOK {
+				t.Fatalf("GET %s while seeding: %d", path, status)
+			}
+		}
+	}
+	<-done
 }
 
 // The OIDC page of /_twin/ui shows the users with their groups, the codes

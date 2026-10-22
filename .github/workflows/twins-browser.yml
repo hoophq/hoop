@@ -128,3 +128,14 @@ jobs:
             ${{ runner.temp }}/twins/*.json
             ${{ runner.temp }}/twins/*.txt
             ${{ runner.temp }}/twins/native/*.log
+
+      # The stack of the "twins-up and twins-down" step logs under
+      # dist/twins-up, outside the scenario's artifacts dir. A separate
+      # artifact keeps the layout of twins-browser.
+      - name: Upload the twins-up logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: twins-up-logs
+          path: dist/twins-up/native/*.log
+          if-no-files-found: ignore
