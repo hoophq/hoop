@@ -131,3 +131,14 @@ export const usesConfigFile = (sidecar) => sidecar?.configuration?.load_from_dis
 // adopts it only when an admin moves the configuration. Null for a sidecar
 // too old to report it.
 export const reportedConfiguration = (sidecar) => sidecar?.reported_configuration ?? null
+
+export const NO_ANALYZER_SECTION = 'No analyzer section'
+
+// AnalyzerConfig in sidecar/daemon/analyzer.go.
+export function analyzerModel(config) {
+  const section = config?.analyzer
+  if (!section) return null
+  if (section.use_hoop_llm_provider === true) return 'Hoop-hosted model'
+  if (!section.provider) return 'No provider'
+  return section.model ? `${section.provider} · ${section.model}` : section.provider
+}

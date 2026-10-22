@@ -11,11 +11,15 @@ import TagsInput from '@/components/TagsInput'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
+import { NO_ANALYZER_SECTION } from '@/pages/Sidecars/config'
+import { takesAnalyzerRule } from '@/pages/Sidecars/resolve'
 import { REVIEW_MODE_HOLD, REVIEW_MODES } from '@/pages/sidecarRuleVocabulary'
 import TriggerItemsInput from './sections/TriggerItemsInput'
 
 // Provider, model and credential are not here: they live in the sidecar's own
 // analyzer section, a file path the control plane cannot supply.
+const analyzerBlocked = (sidecar, listener) =>
+  takesAnalyzerRule(listener, sidecar.configuration) ? null : NO_ANALYZER_SECTION
 
 const LEVELS = [
   ['high', 'High risk'],
@@ -76,7 +80,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
         title="Distribute to listeners"
         description="One rule per listener. The sidecar needs its analyzer section (provider and model) in its config."
       >
-        <SidecarTargetPicker value={targets} onChange={setTargets} />
+        <SidecarTargetPicker value={targets} onChange={setTargets} listenerBlocked={analyzerBlocked} />
       </SectionRow>
 
       <SectionRow

@@ -1,6 +1,7 @@
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
+import { takesAnalyzerRule } from './resolve'
 
 // Guardrail and masking rules are addressed by id, analyzer rules by name.
 export const RULE_APIS = {
@@ -26,9 +27,11 @@ export const RULE_APIS = {
 }
 
 // A rule binds to listeners, never to a sidecar, so the sidecar level fans out.
-export function targetLanes(sidecar, listener) {
-  if (listener) return listener.name ? [listener.name] : []
-  return (sidecar.configuration?.listeners ?? []).map((l) => l.name).filter(Boolean)
+export function targetLanes(sidecar, listener, featureKey) {
+  const config = sidecar.configuration
+  return (listener ? [listener] : (config?.listeners ?? []))
+    .filter((l) => l?.name && (featureKey !== 'ai-analyzer' || takesAnalyzerRule(l, config)))
+    .map((l) => l.name)
 }
 
 export const lanesAsTargets = (sidecar, lanes) =>

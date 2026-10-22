@@ -724,7 +724,7 @@ import SidecarTargetPicker from '@/components/SidecarTargetPicker'
   onChange={(targets) => setField({ sidecarTargets: targets })}
 />
 ```
-Props: `value` (targets[]), `onChange(targets)`, `label`, `description`. A listener with no name is left out of the list: the name is the only handle the control plane has on a lane, and a binding to a nameless one is refused on save.
+Props: `value` (targets[]), `onChange(targets)`, `label`, `description`, `listenerBlocked(sidecar, listener)` (returns a reason to disable that listener, or null; keep it a stable reference). A listener with no name is left out of the list: the name is the only handle the control plane has on a lane, and a binding to a nameless one is refused on save.
 
 **The payload distinction that matters:** an *absent* `sidecar_targets` leaves a rule's bindings alone; `[]` unbinds it from every sidecar. The three `formToPayload` helpers omit the key entirely where the picker did not render, so a gateway save cannot silently unbind a fleet.
 
