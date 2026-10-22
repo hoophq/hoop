@@ -464,6 +464,7 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"raw string ends at the first quote", `SELECT r'\'; DELETE FROM t; --'`, lexer.Delete, true, []string{"t"}},
 		{"script whose first label is work", "BEGIN work: BEGIN DROP TABLE t; END work; END", lexer.Drop, false, []string{"t"}},
 		{"REPLACE TABLE in a handler", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION REPLACE TABLE t AS SELECT 1; SELECT 1/0; END", lexer.Create, false, []string{"t"}},
+		{"IF inside a handler's block", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", lexer.Drop, false, []string{"t"}},
 		{"hint opener inside a comment, released Spark", "/* /*+ */ DROP TABLE t -- */", lexer.Drop, true, []string{"t"}},
 
 		// The keyword overrides.
@@ -504,6 +505,7 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"MERGE join hint in a script", "BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END", lexer.Select, false, nil},
 		{"replace() after THEN in a CASE", "SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t", lexer.Select, true, nil},
 		{"column called restore after THEN", "SELECT CASE WHEN a = 1 THEN restore ELSE 0 END FROM t", lexer.Select, true, nil},
+		{"replace() in a CASE in an IF condition", "BEGIN IF CASE WHEN a THEN replace(s, 'x', 'y') ELSE s END = 'z' THEN SELECT 1; END IF; END", lexer.Select, false, nil},
 		{"CREATE TABLE USING DELTA", "CREATE TABLE t (a INT) USING DELTA", lexer.Create, true, []string{"t"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1925,6 +1925,10 @@ func TestSparkCaseExpressionsAreNotStatements(t *testing.T) {
 		"WITH c AS (SELECT CASE WHEN a THEN replace(s, 'x', 'y') END AS r FROM t) SELECT * FROM c",
 		"BEGIN SELECT CASE WHEN a THEN replace(s, 'x', 'y') END FROM t; END",
 		"BEGIN IF x THEN SELECT CASE WHEN a THEN restore END FROM t; END IF; END",
+		"(SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') END FROM t)",
+		"(SELECT a FROM t) UNION ALL (SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') END FROM t)",
+		"BEGIN IF CASE WHEN a THEN replace(s, 'x', 'y') ELSE s END = 'z' THEN SELECT 1; END IF; END",
+		"BEGIN WHILE CASE x WHEN 1 THEN restore ELSE 0 END > 0 DO SELECT 1; END WHILE; END",
 	} {
 		a := lexer.Analyze(sql, lexer.Spark)
 		if a.Writes() || len(writes(a)) != 0 {
@@ -1941,10 +1945,30 @@ func TestSparkCaseExpressionsAreNotStatements(t *testing.T) {
 		{"BEGIN IF exists(SELECT 1 FROM s) THEN DELETE FROM t; END IF; END", lexer.Delete},
 		{"BEGIN CASE x WHEN 1 THEN SELECT 1; WHEN 2 THEN TRUNCATE TABLE t; END CASE; END", lexer.Truncate},
 		{"BEGIN CASE WHEN x THEN REPLACE TABLE t AS SELECT 1; ELSE SELECT 1; END CASE; END", lexer.Create},
+		// A handler's body block keeps its IF and CASE statements: DECLARE's
+		// own verb must not decide whether their THEN heads.
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", lexer.Drop},
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN CASE WHEN true THEN DELETE FROM t; END CASE; END; SELECT 1/0; END", lexer.Delete},
+		// A CASE expression closes before the IF's THEN.
+		{"BEGIN IF CASE x WHEN 1 THEN true END THEN DROP TABLE t; END IF; END", lexer.Drop},
+		{"BEGIN IF CASE WHEN a THEN CASE WHEN b THEN 1 END END = 1 THEN DROP TABLE t; END IF; END", lexer.Drop},
+		// CASE is a column outside ANSI mode; it opens no expression here.
+		{"BEGIN IF case = 1 THEN DROP TABLE t; END IF; END", lexer.Drop},
+		{"BEGIN SELECT case FROM s; IF x THEN DELETE FROM t; END IF; END", lexer.Delete},
 	} {
 		if a := lexer.Analyze(tc.sql, lexer.Spark); !slices.Contains(a.Effects, tc.effect) {
 			t.Errorf("effects = %v, want %q: %s", a.Effects, tc.effect, tc.sql)
 		}
+	}
+}
+
+// caseExpression looks ahead for a WHEN; text made of CASE words with none
+// must stay linear rather than scan to the end once per word.
+func TestSparkCaseLookaheadIsBounded(t *testing.T) {
+	sql := "BEGIN IF " + strings.Repeat("case ", 200_000) + "THEN DROP TABLE t; END IF; END"
+	a := lexer.Analyze(sql, lexer.Spark)
+	if !slices.Contains(a.Effects, lexer.Drop) {
+		t.Errorf("effects = %v; the DROP lost its head", a.Effects)
 	}
 }
 

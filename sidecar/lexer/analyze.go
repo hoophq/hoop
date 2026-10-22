@@ -160,9 +160,13 @@ type analyzer struct {
 	headAt int
 
 	// merging is true from a MERGE head to the end of its statement. Its
-	// WHEN clauses each put a statement after THEN, while the clause
-	// before them already set the region's verb; see headFollows.
+	// WHEN clauses each put a statement after THEN; see headFollows.
 	merging bool
+
+	// caseDepth counts the Spark CASE expressions open in the current
+	// statement. A THEN or ELSE inside one is a value, never a statement
+	// head; see headFollows and caseExpression.
+	caseDepth int
 
 	// fromFirst is true in a Spark statement that opened with FROM, the
 	// Hive form `FROM s INSERT INTO t SELECT ... INSERT INTO u SELECT ...`.
@@ -381,6 +385,7 @@ func (a *analyzer) walk() {
 				}
 				*a.top() = region{kind: regTop, verb: Unknown}
 				a.inCTEList, a.expectCTEName, a.fromFirst, a.merging = false, false, false, false
+				a.caseDepth = 0
 				atHead = true
 				continue
 			case ",":
@@ -476,6 +481,20 @@ func (a *analyzer) walk() {
 			a.sawStatement = true
 			a.fail("SQL script; control flow decides which of its statements run")
 			continue
+		}
+
+		// Spark CASE expressions, so a THEN or ELSE inside one heads
+		// nothing; see headFollows. A CASE in head position is a script's
+		// CASE statement, closed by END CASE, and the END of IF, WHILE and
+		// the other blocks names its block the same way.
+		if a.d == Spark {
+			switch {
+			case t.Text == "case" && !atHead && a.caseExpression(i):
+				a.caseDepth++
+			case t.Text == "end" && a.caseDepth > 0 &&
+				!(i+1 < len(a.toks) && a.toks[i+1].Kind == Word && sparkBlockEnd[a.toks[i+1].Text]):
+				a.caseDepth--
+			}
 		}
 
 		// A handler's statement follows its condition list, which no
@@ -577,15 +596,53 @@ func (a *analyzer) headFollows(word string) bool {
 		return true
 	}
 	// Spark has statements after THEN and ELSE in two places only: a MERGE
-	// clause, and the IF and CASE statements of a script, which begin with
-	// no verb. Anywhere else they sit in a CASE expression, where
-	// `THEN replace(s, 'x', 'y')` is a function call and `THEN restore` a
-	// column, and Spark's own verbs would read either as a write.
+	// clause, and the IF and CASE statements of a script. Anywhere else they
+	// sit in a CASE expression, where `THEN replace(s, 'x', 'y')` is a
+	// function call and `THEN restore` a column, and Spark's own verbs would
+	// read either as a write. Inside a MERGE every THEN heads, CASE or not:
+	// a misread there adds an effect to a statement that already writes.
 	if a.d == Spark && (word == "then" || word == "else") {
-		return a.top().verb == Unknown || a.merging
+		return a.merging || a.script && a.caseDepth == 0
 	}
 	return headAfter[word]
 }
+
+// caseExpression reports whether the Spark CASE at i opens a CASE
+// expression: a WHEN follows it, at its own parenthesis depth, before any
+// THEN, END or `;`. CASE is not reserved outside ANSI mode, so `IF case = 1
+// THEN DROP TABLE t` names a column, and counting it would cost the DROP its
+// head position.
+//
+// The lookahead is bounded, so text made of CASE words stays linear. Past the
+// bound the CASE is not counted, and a THEN inside it may head a statement:
+// the cost of that misread is an effect too many, never one too few.
+func (a *analyzer) caseExpression(i int) bool {
+	depth := 0
+	for k := i + 1; k < len(a.toks) && k <= i+caseLookahead; k++ {
+		switch {
+		case a.puncts(k, "("):
+			depth++
+		case a.puncts(k, ")"):
+			if depth == 0 {
+				return false
+			}
+			depth--
+		case a.puncts(k, ";"):
+			return false
+		case depth > 0:
+		case a.toks[k].isWord("when"):
+			return true
+		case a.toks[k].isWord("then"), a.toks[k].isWord("end"):
+			return false
+		}
+	}
+	return false
+}
+
+// caseLookahead bounds caseExpression's scan. A simple CASE's operand sits
+// between CASE and its first WHEN, and none written by a person or a BI tool
+// comes near it.
+const caseLookahead = 256
 
 // anywhereDML reports whether the word at i begins a statement outside head
 // position.
