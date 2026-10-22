@@ -593,6 +593,13 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRules: %v", err)
 	}
+	fenceReadT, err := policy.NewRules([]policy.Rule{{
+		Name: "t-is-hidden", Type: policy.MatchTable, Tables: []string{"t"},
+		Access: string(inspect.AccessRead), Message: "t is hidden",
+	}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
 
 	for _, tc := range []struct {
 		name, sql  string
@@ -609,6 +616,10 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"a DROP in a script whose first label is work is refused", "BEGIN work: BEGIN DROP TABLE t; END work; END", noWrites, true},
 		{"a REPLACE TABLE in a handler is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION REPLACE TABLE t AS SELECT 1; SELECT 1/0; END", noWrites, true},
 		{"a DROP after a hint opener inside a comment is refused", "/* /*+ */ DROP TABLE t -- */", noWrites, true},
+		{"a DROP after a dash comment ended by a carriage return is refused", "-- x\rDROP TABLE t", noWrites, true},
+		{"dynamic SQL only released Spark reads is refused as unreadable", "/* /*+ */ EXECUTE IMMEDIATE 'DROP TABLE t' -- */", unreadable, true},
+		{"GENERATE is refused as an alter", "GENERATE symlink_format_manifest FOR TABLE t", noWrites, true},
+		{"DESCRIBE TABLE EXTENDED is refused by a rule fencing reads of its table", "DESCRIBE TABLE EXTENDED t", fenceReadT, true},
 		{"a DROP in an IF inside a handler's block is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", noWrites, true},
 		{"a DELETE in a CASE statement inside a handler's block is refused by a rule fencing its target", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN CASE WHEN true THEN DELETE FROM t; END CASE; END; SELECT 1/0; END", fenceT, true},
 		{"a DROP in a CASE statement on a variable called case is refused", "BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN DROP TABLE t; END CASE; END", noWrites, true},

@@ -315,6 +315,9 @@ type lexRules struct {
 	// the DELETE as commentary, and a rule refusing `delete` never sees it.
 	// Checked against PostgreSQL's own parser in lexer/conformance. A CR LF
 	// line end reads as before: the LF after the CR is whitespace.
+	//
+	// Spark and Delta too: SqlBaseLexer's SIMPLE_COMMENT and DeltaSqlBase.g4
+	// stop the comment body at `[\r\n]`.
 	dashCommentEndsAtCR bool
 
 	// rawStringR enables r'...' and r"...", the raw form WITHOUT
@@ -466,6 +469,7 @@ func (d Dialect) rules() lexRules {
 			liveHint:               true,
 			substitution:           true,
 			hintOpensNestedComment: true,
+			dashCommentEndsAtCR:    true,
 		}
 	default:
 		return lexRules{
@@ -493,5 +497,6 @@ func deltaRules() lexRules {
 		backslashInPlainString: true,
 		doubleQuoteString:      true,
 		colonBind:              true,
+		dashCommentEndsAtCR:    true,
 	}
 }

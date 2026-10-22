@@ -250,14 +250,28 @@ func analyzeSpark(sql string) Analysis {
 	if strings.Contains(sql, "/*+") {
 		released := Spark.rules()
 		released.hintOpensNestedComment = false
-		spark = mergeAnalyses(spark, analyzeWith(sql, released, Spark))
+		spark = mergeReading(spark, analyzeWith(sql, released, Spark))
 	}
 	delta := newAnalyzer(sql, deltaRules(), Spark)
 	if len(delta.toks) == 0 || delta.toks[0].Kind != Word || !deltaCommand[delta.toks[0].Text] {
 		return spark
 	}
 	delta.walk()
-	return mergeAnalyses(spark, delta.result())
+	return mergeReading(spark, delta.result())
+}
+
+// mergeReading merges another lexer's reading of Spark text as mergeAnalyses
+// does, and keeps that reading's incompleteness when it found an effect the
+// first reading did not. The statement it could not read in full is then
+// one the first reading never saw: `/* /*+ */ EXECUTE IMMEDIATE '...' -- */`
+// is all comment to Spark master and dynamic SQL to released Spark, and
+// reporting it complete would let it past a rule naming unknown.
+func mergeReading(primary, alt Analysis) Analysis {
+	out := mergeAnalyses(primary, alt)
+	if out.Complete && !alt.Complete && len(out.Effects) > len(primary.Effects) {
+		out.Complete, out.Reason = false, alt.Reason
+	}
+	return out
 }
 
 // analyzeWith runs one pass with an explicit rule set.
@@ -746,7 +760,10 @@ func (a *analyzer) statementVerb(word string) (Verb, bool) {
 // files, so t is written; left alone, a rule fencing t never sees them.
 // CACHE [LAZY] TABLE t and UNCACHE TABLE t change only what the cluster
 // holds in memory, so t is read, where the TABLE introducer under an `other`
-// verb would have written it. Any other keyword records nothing.
+// verb would have written it. DESCRIBE [TABLE] [EXTENDED] t, and Delta's
+// DESCRIBE HISTORY or DETAIL t, read t's definition, so t is read; without
+// this, DESCRIBE TABLE EXTENDED t read a relation called extended. Any other
+// keyword records nothing.
 func (a *analyzer) sparkTarget(i int) int {
 	acc, j := Write, i
 	switch a.toks[i].Text {
@@ -760,6 +777,14 @@ func (a *analyzer) sparkTarget(i int) int {
 		acc = Read
 		if i+1 < len(a.toks) && a.toks[i+1].isWord("lazy") {
 			j = i + 1
+		}
+	case "describe", "desc":
+		acc = Read
+		for j+1 < len(a.toks) && a.toks[j+1].Kind == Word && sparkDescribeSkip[a.toks[j+1].Text] {
+			j++
+		}
+		if j+1 < len(a.toks) && a.toks[j+1].Kind == Word && sparkDescribeObject[a.toks[j+1].Text] {
+			return i
 		}
 	default:
 		return i

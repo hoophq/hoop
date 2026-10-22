@@ -249,8 +249,9 @@ var triggerBody = map[string]bool{
 // the data files older table versions need, so it is a delete rather than
 // PostgreSQL's housekeeping `other`. OPTIMIZE and REORG rewrite a table's
 // files, RESTORE rolls its rows back, CONVERT TO DELTA replaces its format,
-// and REPAIR TABLE, with or without MSCK, rewrites its partition list: all
-// of them alter the named object. REPLACE TABLE is CREATE OR REPLACE TABLE
+// GENERATE writes manifest files into its directory, and REPAIR TABLE, with
+// or without MSCK, rewrites its partition list: all of them alter the named
+// object. REPLACE TABLE is CREATE OR REPLACE TABLE
 // without the CREATE, and LOAD DATA appends or overwrites a table from
 // files. Without these rows they classify as unknown or, for VACUUM, as
 // `other`, which no rule naming a write matches. VACUUM, OPTIMIZE and
@@ -264,6 +265,7 @@ var sparkVerb = map[string]Verb{
 	"reorg":    Alter,
 	"restore":  Alter,
 	"convert":  Alter,
+	"generate": Alter,
 	"msck":     Alter,
 	"repair":   Alter,
 	"replace":  Create,
@@ -309,7 +311,24 @@ var sparkScriptDML = map[string]bool{
 	"grant": true, "revoke": true, "execute": true, "call": true,
 	"copy": true, "load": true, "vacuum": true, "optimize": true,
 	"reorg": true, "restore": true, "convert": true, "msck": true,
-	"repair": true, "replace": true,
+	"repair": true, "replace": true, "generate": true,
+}
+
+// sparkDescribeSkip are the words DESCRIBE may put before the relation it
+// reads: DESCRIBE [TABLE] [EXTENDED | FORMATTED] t, DESCRIBE HISTORY t and
+// DESCRIBE DETAIL t.
+var sparkDescribeSkip = map[string]bool{
+	"table": true, "extended": true, "formatted": true, "history": true, "detail": true,
+}
+
+// sparkDescribeObject are the objects other than a relation that DESCRIBE
+// reads: DESCRIBE FUNCTION f, DESCRIBE SCHEMA s, DESCRIBE QUERY SELECT ...
+// The word after them names no relation.
+var sparkDescribeObject = map[string]bool{
+	"function": true, "procedure": true, "schema": true, "database": true,
+	"namespace": true, "catalog": true, "query": true, "volume": true,
+	"connection": true, "location": true, "external": true, "storage": true,
+	"credential": true, "provider": true, "recipient": true, "share": true,
 }
 
 // deltaCommand are the first keywords of the statements Delta Lake's own

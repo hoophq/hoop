@@ -88,6 +88,8 @@ var hostile = []string{
 	"SELECT#",
 	"UPDATE#",
 	"DELETE$x FROM t",
+	"$SELECT 1",
+	"#SELECT 1",
 }
 
 func TestAnalyzeNeverPanics(t *testing.T) {
@@ -159,13 +161,14 @@ func violatesDMLInvariant(sql string, d lexer.Dialect, a lexer.Analysis) (bool, 
 //
 // Oracle continues an identifier through `$` and `#` as well, the way its
 // catalog spells V$SESSION, so under Oracle `SELECT#` is one name and the
-// word runs through them, as lexer's identDollarHash row reads it.
+// word runs through them, as lexer's identDollarHash row reads it. They
+// continue a word and never start one.
 func firstWord(sql string, d lexer.Dialect) string {
 	trimmed := strings.TrimLeft(sql, " \t\r\n\f\v")
 	end := len(trimmed)
 	for i := range len(trimmed) {
 		c := trimmed[i]
-		if d == lexer.Oracle && (c == '$' || c == '#') {
+		if d == lexer.Oracle && i > 0 && (c == '$' || c == '#') {
 			continue
 		}
 		if !isWordByte(c) {

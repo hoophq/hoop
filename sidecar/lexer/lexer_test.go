@@ -1604,6 +1604,10 @@ func TestSparkDashCommentContinuesPastBackslashNewline(t *testing.T) {
 		{"SELECT 1 AS x -- note \\\\\n; DELETE FROM t", lexer.Select},
 		{"SELECT 1 AS x -- note \\\r\n; DELETE FROM t", lexer.Delete},
 		{"SELECT 1 AS x -- note \\ \n; DELETE FROM t", lexer.Delete},
+		// A lone CR ends the comment too, as LF does (SIMPLE_COMMENT).
+		{"SELECT 1 AS x -- note\r; DELETE FROM t", lexer.Delete},
+		{"-- x\rDROP TABLE t", lexer.Drop},
+		{"-- x\rVACUUM t", lexer.Delete},
 	} {
 		if got := lexer.Analyze(tc.sql, lexer.Spark).Severity(); got != tc.want {
 			t.Errorf("severity = %q, want %q: %q", got, tc.want, tc.sql)
@@ -1781,7 +1785,15 @@ func TestSparkMaintenanceCommands(t *testing.T) {
 		{"REPLACE TABLE t AS SELECT * FROM s", lexer.Create, []string{"t"}, []string{"s"}},
 		{"LOAD DATA INPATH '/p' OVERWRITE INTO TABLE t", lexer.Insert, []string{"t"}, nil},
 		{"DESCRIBE TABLE t", lexer.Show, nil, []string{"t"}},
-		{"DESC HISTORY t", lexer.Show, nil, nil},
+		{"DESC HISTORY t", lexer.Show, nil, []string{"t"}},
+		{"DESCRIBE t", lexer.Show, nil, []string{"t"}},
+		{"DESCRIBE TABLE EXTENDED t", lexer.Show, nil, []string{"t"}},
+		{"DESC FORMATTED c.s.t", lexer.Show, nil, []string{"c.s.t"}},
+		{"DESCRIBE DETAIL t", lexer.Show, nil, []string{"t"}},
+		{"DESCRIBE FUNCTION f", lexer.Show, nil, nil},
+		{"DESCRIBE SCHEMA s", lexer.Show, nil, nil},
+		{"DESCRIBE QUERY SELECT * FROM t", lexer.Show, nil, []string{"t"}},
+		{"GENERATE symlink_format_manifest FOR TABLE t", lexer.Alter, []string{"t"}, nil},
 		{"CACHE TABLE t", lexer.Other, nil, []string{"t"}},
 		{"CACHE LAZY TABLE t AS SELECT * FROM s", lexer.Other, nil, []string{"t", "s"}},
 		{"UNCACHE TABLE IF EXISTS t", lexer.Other, nil, []string{"t"}},
@@ -1982,6 +1994,12 @@ func TestSparkHintOpenerInsideACommentIsReadBothWays(t *testing.T) {
 	a := lexer.Analyze("/* /*+ */ DROP TABLE t -- */", lexer.Spark)
 	if a.Severity() != lexer.Drop || !slices.Equal(writes(a), []string{"t"}) {
 		t.Errorf("severity = %q, writes = %v; released Spark runs this DROP", a.Severity(), writes(a))
+	}
+	// Only released Spark sees this statement, and it is dynamic SQL: the
+	// merged reading must stay incomplete, or a rule naming unknown misses
+	// it.
+	if a := lexer.Analyze("/* /*+ */ EXECUTE IMMEDIATE 'DROP TABLE t' -- */", lexer.Spark); a.Complete {
+		t.Errorf("Complete = true; dynamic SQL that only released Spark reads was reported readable, effects %v", a.Effects)
 	}
 	for _, sql := range []string{
 		"/* a /*+ b */ c */ SELECT 1",

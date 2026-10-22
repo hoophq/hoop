@@ -414,6 +414,9 @@ func TestOracleDialectCorpus(t *testing.T) {
 		{"row lock is not DML", `DECLARE CURSOR c IS SELECT * FROM t FOR UPDATE OF x; BEGIN NULL; END;`, lexer.Call, false, nil},
 		{"rename", `RENAME customers TO c_old`, lexer.Alter, true, []string{"customers"}},
 		{"alter session is set", `ALTER SESSION SET NLS_LANGUAGE = 'AMERICAN'`, lexer.Set, true, nil},
+		// `#` and `$` continue an Oracle name, so these name no verb.
+		{"SELECT# is one name", `SELECT#`, lexer.Unknown, true, nil},
+		{"DELETE$x is one name", `DELETE$x FROM t`, lexer.Unknown, true, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			parts := lexer.Split(tc.sql, lexer.Oracle)
@@ -467,6 +470,8 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"IF inside a handler's block", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", lexer.Drop, false, []string{"t"}},
 		{"variable called case before a CASE statement", "BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN DROP TABLE t; END CASE; END", lexer.Drop, false, []string{"t"}},
 		{"hint opener inside a comment, released Spark", "/* /*+ */ DROP TABLE t -- */", lexer.Drop, true, []string{"t"}},
+		{"CR ends a dash comment", "-- x\rDROP TABLE t", lexer.Drop, true, []string{"t"}},
+		{"dynamic SQL only released Spark sees", "/* /*+ */ EXECUTE IMMEDIATE 'DROP TABLE t' -- */", lexer.Call, false, nil},
 
 		// The keyword overrides.
 		{"VACUUM is a delete", "VACUUM t RETAIN 0 HOURS", lexer.Delete, true, []string{"t"}},
@@ -477,6 +482,7 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"REPAIR without MSCK is an alter", "REPAIR TABLE t", lexer.Alter, true, []string{"t"}},
 		{"CONVERT TO DELTA is an alter", "CONVERT TO DELTA t", lexer.Alter, true, []string{"t"}},
 		{"REORG is an alter", "REORG TABLE t APPLY (PURGE)", lexer.Alter, true, []string{"t"}},
+		{"GENERATE is an alter", "GENERATE symlink_format_manifest FOR TABLE t", lexer.Alter, true, []string{"t"}},
 		{"REPLACE TABLE is a create", "REPLACE TABLE t AS SELECT * FROM s", lexer.Create, true, []string{"t"}},
 		{"DESCRIBE is a show", "DESCRIBE TABLE t", lexer.Show, true, nil},
 		{"DESC is a show", "DESC t", lexer.Show, true, nil},
