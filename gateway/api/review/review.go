@@ -683,10 +683,9 @@ func reviewRequester(r *models.Review) *openapi.ReviewOwner {
 		return nil
 	}
 	return &openapi.ReviewOwner{
-		ID:      r.OwnerID,
-		Name:    ptr.ToString(r.OwnerName),
-		Email:   r.OwnerEmail,
-		SlackID: ptr.ToString(r.OwnerSlackID),
+		ID:    r.OwnerID,
+		Name:  ptr.ToString(r.OwnerName),
+		Email: r.OwnerEmail,
 	}
 }
 
