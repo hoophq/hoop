@@ -307,13 +307,6 @@ var sparkScriptHeadAfter = map[string]bool{
 	"begin": true, "do": true, "loop": true, "repeat": true, "atomic": true,
 }
 
-// sparkBlockEnd are the words after END that close a Spark script block, as
-// in END IF and END CASE. An END followed by anything else closes a CASE
-// expression or a BEGIN block.
-var sparkBlockEnd = map[string]bool{
-	"if": true, "case": true, "while": true, "loop": true, "repeat": true, "for": true,
-}
-
 // sparkLabelled are the blocks a Spark SQL script may label, `lbl: LOOP`.
 // Glued to its colon, `lbl:LOOP`, the keyword must not read as a `:name`
 // parameter: the LOOP vanishes and the statement after it is no head.

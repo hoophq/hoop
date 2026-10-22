@@ -485,14 +485,14 @@ func (a *analyzer) walk() {
 
 		// Spark CASE expressions, so a THEN or ELSE inside one heads
 		// nothing; see headFollows. A CASE in head position is a script's
-		// CASE statement, closed by END CASE, and the END of IF, WHILE and
-		// the other blocks names its block the same way.
+		// CASE statement, which `;` separates from its END CASE. Any END
+		// closes an open expression: a miscount that way only lets a THEN
+		// head, an effect too many, and `;` resets it either way.
 		if a.d == Spark {
 			switch {
 			case t.Text == "case" && !atHead && a.caseExpression(i):
 				a.caseDepth++
-			case t.Text == "end" && a.caseDepth > 0 &&
-				!(i+1 < len(a.toks) && a.toks[i+1].Kind == Word && sparkBlockEnd[a.toks[i+1].Text]):
+			case t.Text == "end" && a.caseDepth > 0:
 				a.caseDepth--
 			}
 		}
