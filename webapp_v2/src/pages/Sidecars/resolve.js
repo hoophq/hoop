@@ -82,11 +82,6 @@ export function laneAnalyzer(listener, config) {
   return { block, deprecated, on: Boolean(block) || deprecated.length > 0 }
 }
 
-// validateSpecForLane in gateway/services/sidecarrules.go refuses any other bind.
-export function takesAnalyzerRule(listener, config) {
-  return Boolean(config?.analyzer || listener?.analyzer)
-}
-
 export function guardrailMode(listener, config) {
   return listener?.guardrails?.mode || config?.guardrails?.mode || MODE_ENFORCE
 }

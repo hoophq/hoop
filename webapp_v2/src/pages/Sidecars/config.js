@@ -134,6 +134,16 @@ export const reportedConfiguration = (sidecar) => sidecar?.reported_configuratio
 
 export const NO_ANALYZER_SECTION = 'No analyzer section'
 
+// Why an analyzer rule cannot bind to this sidecar, or null. The gateway refuses
+// both on save: validateSpecForLane (gateway/services/sidecarrules.go) and
+// Config.CheckServedAnalyzer (sidecar/daemon/analyzer.go).
+export function analyzerBlocked(config) {
+  const section = config?.analyzer
+  if (!section) return NO_ANALYZER_SECTION
+  if (!section.provider && section.use_hoop_llm_provider !== true) return 'No analyzer provider'
+  return null
+}
+
 // AnalyzerConfig in sidecar/daemon/analyzer.go.
 export function analyzerModel(config) {
   const section = config?.analyzer
