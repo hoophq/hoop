@@ -470,6 +470,7 @@ func TestSparkDialectCorpus(t *testing.T) {
 
 		// The keyword overrides.
 		{"VACUUM is a delete", "VACUUM t RETAIN 0 HOURS", lexer.Delete, true, []string{"t"}},
+		{"VACUUM of a table called over", "VACUUM over RETAIN 0 HOURS", lexer.Delete, true, []string{"over"}},
 		{"OPTIMIZE is an alter", "OPTIMIZE t ZORDER BY (a)", lexer.Alter, true, []string{"t"}},
 		{"RESTORE is an alter", "RESTORE TABLE t TO VERSION AS OF 1", lexer.Alter, true, []string{"t"}},
 		{"MSCK REPAIR is an alter", "MSCK REPAIR TABLE t", lexer.Alter, true, []string{"t"}},
@@ -505,7 +506,7 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"column called load in a script", "BEGIN SELECT load FROM metrics; END", lexer.Select, false, nil},
 		{"MERGE join hint in a script", "BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END", lexer.Select, false, nil},
 		{"replace() after THEN in a CASE", "SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t", lexer.Select, true, nil},
-		{"column called restore after THEN", "SELECT CASE WHEN a = 1 THEN restore ELSE 0 END FROM t", lexer.Select, true, nil},
+		{"column called load after THEN", "SELECT CASE WHEN a = 1 THEN load ELSE 0 END FROM t", lexer.Select, true, nil},
 		{"replace() in a CASE in an IF condition", "BEGIN IF CASE WHEN a THEN replace(s, 'x', 'y') ELSE s END = 'z' THEN SELECT 1; END IF; END", lexer.Select, false, nil},
 		{"CREATE TABLE USING DELTA", "CREATE TABLE t (a INT) USING DELTA", lexer.Create, true, []string{"t"}},
 	} {

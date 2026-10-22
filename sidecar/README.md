@@ -3503,10 +3503,12 @@ run, and every write in it is an effect: a rule naming `drop` refuses
 `BEGIN DROP TABLE t; END`, and a rule naming `unknown` refuses every script.
 As in an Oracle PL/SQL block, a write verb counts anywhere in a script,
 minus the known false readings: `SHOW CREATE TABLE`, a MERGE join hint, and
-a verb Spark adds without the word its statement starts with, so
-`CASE WHEN a THEN replace(s, 'x', 'y') END` and a column called load or
-restore stay reads. A column called update, delete or insert inside a
-script still reads as a write. `BEGIN TRANSACTION` and `BEGIN WORK` with
+REPLACE, LOAD, CONVERT, MSCK, REORG or REPAIR without the keyword their
+statement starts with, so `CASE WHEN a THEN replace(s, 'x', 'y') END` and a
+column called load stay reads. A column named like another write verb
+(update, delete, vacuum, restore, copy ...) after THEN, or anywhere inside a
+script, still reads as a write, as a column called update does in every
+dialect. `BEGIN TRANSACTION` and `BEGIN WORK` with
 nothing after them stay a begin. Any `${` makes the
 statement `unknown`: Spark replaces `${var}` in the raw text before it
 parses, inside literals too. Databricks SQL 2026.42 does not substitute, so

@@ -622,6 +622,7 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"INSERT OVERWRITE is refused by a rule fencing its target", "INSERT OVERWRITE t SELECT * FROM s", fenceT, true},
 		{"COPY INTO is refused by a rule fencing its target", "COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", fenceT, true},
 		{"VACUUM is refused by a rule fencing its target", "VACUUM t", fenceT, true},
+		{"VACUUM of a table called over is refused as a delete", "VACUUM over RETAIN 0 HOURS", noWrites, true},
 		{"a substituted variable is refused as unreadable", "SELECT * FROM ${tbl}", unreadable, true},
 		{"a script is refused as unreadable", "BEGIN SELECT * FROM t; END", unreadable, true},
 
@@ -630,7 +631,7 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"a column called load in a script passes", "BEGIN SELECT load FROM metrics; END", noWrites, false},
 		{"a MERGE join hint in a script passes", "BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END", noWrites, false},
 		{"a CASE that calls replace() passes", "SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t", noWrites, false},
-		{"a CASE that returns a column called restore passes", "SELECT CASE WHEN a = 1 THEN restore ELSE 0 END FROM t", noWrites, false},
+		{"a CASE that returns a column called load passes", "SELECT CASE WHEN a = 1 THEN load ELSE 0 END FROM t", noWrites, false},
 		{"a parenthesized query that calls replace() passes", "(SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') END FROM t)", noWrites, false},
 		{"a CASE in an IF condition that calls replace() passes", "BEGIN IF CASE WHEN a THEN replace(s, 'x', 'y') ELSE s END = 'z' THEN SELECT 1; END IF; END", noWrites, false},
 		{"every MERGE clause still counts", "MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = s.a WHEN NOT MATCHED BY SOURCE THEN DELETE", rulesFor(t, "no-deletes", inspect.OpDelete), true},

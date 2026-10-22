@@ -601,11 +601,14 @@ func (a *analyzer) sparkNotDML(i int) bool {
 
 // sparkStatementAt reports whether a verb Spark adds, at i, can begin its
 // statement here, as plsqlNotDML rules out PL/SQL's known false readings.
-// Each one needs the word its statement starts with: REPLACE TABLE, LOAD
-// DATA, CONVERT TO, a relation after VACUUM. replace(s, 'x', 'y') after a
-// THEN, or a column called load or restore, has none of these after it.
-// None of the shapes this rules out is a statement Spark can run, so ruling
-// them out hides no write.
+// Six of them start with a fixed pair of keywords: REPLACE TABLE, LOAD
+// DATA, CONVERT TO, MSCK REPAIR, REORG TABLE, REPAIR TABLE. replace(s, 'x',
+// 'y') after a THEN, or a column called load, has no such keyword after it,
+// and no statement Spark can run lacks it, so ruling them out hides no
+// write. VACUUM, OPTIMIZE and RESTORE take a relation next, and any word can
+// name one (`VACUUM over` parses on Databricks SQL), so they are always
+// statements: a column with their name after THEN reads as a write, as a
+// column called update does in every dialect.
 func (a *analyzer) sparkStatementAt(i int) bool {
 	word := a.toks[i].Text
 	if _, ok := sparkVerb[word]; a.d != Spark || !ok {
@@ -624,8 +627,6 @@ func (a *analyzer) sparkStatementAt(i int) bool {
 		return next.isWord("to")
 	case "msck":
 		return next.isWord("repair")
-	case "vacuum", "optimize", "restore":
-		return next.Kind == Literal || next.Kind == Quoted || next.Kind == Word && !sparkExpressionWord[next.Text]
 	}
 	return true
 }

@@ -1767,6 +1767,10 @@ func TestSparkMaintenanceCommands(t *testing.T) {
 		{"VACUUM t RETAIN 0 HOURS", lexer.Delete, []string{"t"}, nil},
 		{"VACUUM c.s.t DRY RUN", lexer.Delete, []string{"c.s.t"}, nil},
 		{"VACUUM '/mnt/t'", lexer.Delete, nil, nil},
+		// Any word names a relation here: Databricks SQL parses these.
+		{"VACUUM over RETAIN 0 HOURS", lexer.Delete, []string{"over"}, nil},
+		{"OPTIMIZE between ZORDER BY (a)", lexer.Alter, []string{"between"}, nil},
+		{"RESTORE like TO VERSION AS OF 1", lexer.Alter, []string{"like"}, nil},
 		{"OPTIMIZE t WHERE d > '2024' ZORDER BY (a)", lexer.Alter, []string{"t"}, nil},
 		{"RESTORE TABLE t TO VERSION AS OF 1", lexer.Alter, []string{"t"}, nil},
 		{"RESTORE t TO TIMESTAMP AS OF '2024-01-01'", lexer.Alter, []string{"t"}, nil},
@@ -1911,25 +1915,24 @@ func TestSparkScriptsInventNoWrites(t *testing.T) {
 	}
 }
 
-// In Spark, THEN and ELSE head a statement only in a MERGE clause and in a
-// script's IF or CASE statement. In a CASE expression, `THEN replace(...)`
-// is a function call BI tools emit and `THEN restore` is a column; read as
-// heads, Spark's own verbs turned both reads into writes.
+// THEN and ELSE head a statement in every dialect, for MERGE clauses and
+// IF and CASE statements. In a CASE expression, `THEN replace(...)` is a
+// function call BI tools emit and `THEN load` a column; neither carries the
+// keyword its statement would start with, so neither reads as a write.
 func TestSparkCaseExpressionsAreNotStatements(t *testing.T) {
 	for _, sql := range []string{
 		"SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t",
 		"SELECT CASE WHEN a = 1 THEN s ELSE replace(s, 'x', 'y') END AS r FROM t",
-		"SELECT CASE WHEN a = 1 THEN restore ELSE 0 END FROM t",
-		"SELECT CASE WHEN a THEN load WHEN b THEN vacuum ELSE optimize END FROM t",
+		"SELECT CASE WHEN a = 1 THEN load ELSE 0 END FROM t",
 		"SELECT CASE WHEN a THEN repair ELSE convert END FROM t",
 		"SELECT CASE WHEN a THEN msck WHEN b THEN reorg END FROM t",
 		"WITH c AS (SELECT CASE WHEN a THEN replace(s, 'x', 'y') END AS r FROM t) SELECT * FROM c",
 		"BEGIN SELECT CASE WHEN a THEN replace(s, 'x', 'y') END FROM t; END",
-		"BEGIN IF x THEN SELECT CASE WHEN a THEN restore END FROM t; END IF; END",
+		"BEGIN IF x THEN SELECT CASE WHEN a THEN load END FROM t; END IF; END",
 		"(SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') END FROM t)",
 		"(SELECT a FROM t) UNION ALL (SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') END FROM t)",
 		"BEGIN IF CASE WHEN a THEN replace(s, 'x', 'y') ELSE s END = 'z' THEN SELECT 1; END IF; END",
-		"BEGIN WHILE CASE x WHEN 1 THEN restore ELSE 0 END > 0 DO SELECT 1; END WHILE; END",
+		"BEGIN WHILE CASE x WHEN 1 THEN load ELSE 0 END > 0 DO SELECT 1; END WHILE; END",
 	} {
 		a := lexer.Analyze(sql, lexer.Spark)
 		if a.Writes() || len(writes(a)) != 0 {

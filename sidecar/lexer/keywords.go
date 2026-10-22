@@ -312,16 +312,6 @@ var sparkScriptDML = map[string]bool{
 	"repair": true, "replace": true,
 }
 
-// sparkExpressionWord are the words that may follow a column inside an
-// expression. After one of them, VACUUM, OPTIMIZE or RESTORE is a column, as
-// in `CASE WHEN a THEN restore ELSE 0 END`, not the start of a statement;
-// see analyzer.sparkStatementAt.
-var sparkExpressionWord = map[string]bool{
-	"when": true, "then": true, "else": true, "end": true, "and": true,
-	"or": true, "is": true, "in": true, "not": true, "like": true,
-	"between": true, "as": true, "from": true, "where": true, "over": true,
-}
-
 // deltaCommand are the first keywords of the statements Delta Lake's own
 // parser claims (DeltaSqlBase.g4 `statement`). Delta hands every other
 // statement to Spark, so the Delta reading counts only behind one of these;
