@@ -362,6 +362,54 @@ func TestPG_ErrorBadQuery(t *testing.T) {
 	shutdownAgent(t, agent, tr)
 }
 
+// pgGuardRailRules blocks DROP TABLE, in the shape the gateway ships rules to
+// the agent. With no DLP provider, libhoop runs it on the local RE2 engine.
+const pgGuardRailRules = `{"input_rules":[{"name":"no-drop-table","rules":[{"type":"pattern_match","words":[],"pattern_regex":"(?i)\\bdrop\\s+table\\b","message":"blocked by hoop guardrail: no DROP TABLE"}]}],"output_rules":[]}`
+
+// TestPG_Guardrails_MultiLineQuery is the ENG-797 regression test: input rules
+// must see a multi-line query as the client sent it. Before the fix, libhoop
+// escaped the line break, so `\bdrop` missed DROP at the start of a line.
+func TestPG_Guardrails_MultiLineQuery(t *testing.T) {
+	pg := testutil.StartPostgres(t)
+	agent, tr := startAgent(t)
+	sessionID := testutil.OpenPGSessionWithGuardRails(t, tr, pg.Host, pg.Port, pg.User, pg.Password, pg.Database, []byte(pgGuardRailRules))
+	connID := "conn-1"
+
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID, pg.User, pg.Database)
+	testutil.WaitForPGReady(t, tr, pgTestTimeout)
+
+	query := func(sql string) []*pb.Packet {
+		testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery(sql))
+		return testutil.CollectPGResponses(t, tr, pgTestTimeout)
+	}
+	guardrailError := func(pkts []*pb.Packet) string {
+		for _, pkt := range pkts {
+			for _, msg := range testutil.ParsePGMessages(pkt.Payload) {
+				if msg.Type == 'E' {
+					return msg.AsErrorResponse()['M']
+				}
+			}
+		}
+		return ""
+	}
+
+	if errMsg := guardrailError(query("CREATE TABLE eng797_keep (id int);\nINSERT INTO eng797_keep VALUES (1)")); errMsg != "" {
+		t.Fatalf("setup must not be blocked, got error: %s", errMsg)
+	}
+
+	errMsg := guardrailError(query("SELECT 1;\nDROP TABLE eng797_keep"))
+	if !strings.Contains(errMsg, "no DROP TABLE") {
+		t.Fatalf("expected the guardrail to block DROP TABLE on a new line, got error %q", errMsg)
+	}
+
+	results := testutil.ExtractAllQueryResults(query("SELECT id\nFROM eng797_keep\nLIMIT 10"))
+	if len(results) != 1 || results[0].HasError() || results[0].RowCount() != 1 {
+		t.Fatalf("expected the multi-line query to run and find the table with 1 row, got %+v", results)
+	}
+
+	shutdownAgent(t, agent, tr)
+}
+
 func TestPG_ErrorBadCredentials(t *testing.T) {
 	pg := testutil.StartPostgres(t)
 	_, tr := startAgent(t)
