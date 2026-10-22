@@ -40,35 +40,39 @@ function Summary({ who, where, kind }) {
   )
 }
 
+// Outside the component: the layout that mounts it remounts on every move
+// between a React and a CLJS page.
+let open = []
+
+function closeAll() {
+  const all = open
+  open = []
+  all.forEach((t) => dismissSnackbar(t.id))
+}
+
+function show(t) {
+  const actions =
+    open.length > CLOSE_ALL_OVER ? [...t.actions, { label: `Close all (${open.length})`, onClick: closeAll }] : t.actions
+  t.id = showSnackbar({
+    id: t.id,
+    level: 'approval',
+    text: t.title,
+    description: t.description,
+    actions,
+    duration: Infinity,
+    onDismiss: () => {
+      open = open.filter((o) => o !== t)
+      // sonner's Toaster resubscribes while onDismiss runs: an update sent now is lost.
+      setTimeout(() => open.forEach(show))
+    },
+  })
+}
+
 export default function ApprovalNotifications() {
   const enabled = useUserStore((s) => Boolean(s.featureFlags?.[REVIEW_NOTIFICATIONS_FLAG]))
   const navigate = useNavigate()
   const tabs = useRef(null)
   const seen = useRef(new Set())
-  const open = useRef([])
-
-  const closeAll = () => {
-    const all = open.current
-    open.current = []
-    all.forEach((t) => dismissSnackbar(t.id))
-  }
-
-  const show = (t) => {
-    const count = open.current.length
-    const actions = count > CLOSE_ALL_OVER ? [...t.actions, { label: `Close all (${count})`, onClick: closeAll }] : t.actions
-    t.id = showSnackbar({
-      id: t.id,
-      level: 'approval',
-      text: t.title,
-      description: t.description,
-      actions,
-      duration: Infinity,
-      onDismiss: () => {
-        open.current = open.current.filter((o) => o !== t)
-        open.current.forEach(show)
-      },
-    })
-  }
 
   useEffect(() => {
     if (!enabled || typeof BroadcastChannel === 'undefined') return undefined
@@ -121,8 +125,8 @@ export default function ApprovalNotifications() {
       if (canAskPermission()) {
         actions.push({ label: 'Enable desktop notifications', onClick: () => Notification.requestPermission() })
       }
-      open.current.push({ title, description: <Summary who={who} where={where} kind={kind} />, actions })
-      open.current.forEach(show)
+      open.push({ title, description: <Summary who={who} where={where} kind={kind} />, actions })
+      open.forEach(show)
     },
     enabled,
   )
