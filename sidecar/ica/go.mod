@@ -4,11 +4,11 @@
 // this module; one that does not refuses the lane at startup.
 module github.com/hoophq/hoop/sidecar/ica
 
-go 1.26.8
+go 1.26.9
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
-	github.com/hoophq/libhoop-ica v0.3.0
+	github.com/hoophq/libhoop-ica v0.5.0
 )
 
 require (
