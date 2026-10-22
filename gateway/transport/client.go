@@ -164,7 +164,9 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 
 func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
-	execOnly := pctx.ClientVerb == pb.ClientVerbExec && !isGatewayProxyStream(stream)
+	// Connect refuses unknown verbs; any verb but connect and plain-exec still gets the check.
+	execOnly := pctx.ClientVerb != pb.ClientVerbConnect && pctx.ClientVerb != pb.ClientVerbPlainExec &&
+		!isGatewayProxyStream(stream)
 	recvCh := grpc.NewStreamRecv(stream.Context(), stream)
 	for {
 		var dstream *grpc.DataStream

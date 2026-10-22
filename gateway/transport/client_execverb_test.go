@@ -40,6 +40,8 @@ func TestListenClientMessagesExecVerb(t *testing.T) {
 		{name: "tcp packet on exec stream", verb: pb.ClientVerbExec, pktType: pbagent.TCPConnectionWrite, wantRefused: true},
 		{name: "terminal packet on exec stream", verb: pb.ClientVerbExec, pktType: pbagent.TerminalWriteStdin, wantRefused: true},
 		{name: "forged impersonation key", verb: pb.ClientVerbExec, impersonation: "forged", pktType: pbagent.PGConnectionWrite, wantRefused: true},
+		{name: "postgres packet on mixed-case exec verb", verb: "Exec", pktType: pbagent.PGConnectionWrite, wantRefused: true},
+		{name: "postgres packet on unknown verb", verb: "x", pktType: pbagent.PGConnectionWrite, wantRefused: true},
 		// subscribeClient does not close an API-origin stream on return.
 		{name: "postgres packet on api exec stream", verb: pb.ClientVerbExec, origin: pb.ConnectionOriginClientAPI, pktType: pbagent.PGConnectionWrite, wantRefused: true},
 		{name: "exec stdin on exec stream", verb: pb.ClientVerbExec, pktType: pbagent.ExecWriteStdin},
@@ -100,6 +102,21 @@ func TestListenClientMessagesExecVerb(t *testing.T) {
 				t.Fatalf("want the packet forwarded to the agent (ErrAgentOffline), got %v", err)
 			}
 		})
+	}
+}
+
+// Connect reads the verb before anything else. A missing verb used to index an
+// empty slice and panic the gateway; an unknown one skipped the exec check.
+func TestParseClientVerb(t *testing.T) {
+	for _, verb := range []string{pb.ClientVerbConnect, pb.ClientVerbExec, pb.ClientVerbPlainExec} {
+		if got, err := parseClientVerb(metadata.Pairs("verb", verb)); err != nil || got != verb {
+			t.Errorf("verb %q must pass, got %q, %v", verb, got, err)
+		}
+	}
+	for _, md := range []metadata.MD{{}, metadata.Pairs("verb", "Exec"), metadata.Pairs("verb", "exec "), metadata.Pairs("verb", "x")} {
+		if _, err := parseClientVerb(md); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("verb %q must be refused with InvalidArgument, got %v", md.Get("verb"), err)
+		}
 	}
 }
 
