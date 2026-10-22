@@ -1922,6 +1922,7 @@ func TestSparkCaseExpressionsAreNotStatements(t *testing.T) {
 		"SELECT CASE WHEN a = 1 THEN restore ELSE 0 END FROM t",
 		"SELECT CASE WHEN a THEN load WHEN b THEN vacuum ELSE optimize END FROM t",
 		"SELECT CASE WHEN a THEN repair ELSE convert END FROM t",
+		"SELECT CASE WHEN a THEN msck WHEN b THEN reorg END FROM t",
 		"WITH c AS (SELECT CASE WHEN a THEN replace(s, 'x', 'y') END AS r FROM t) SELECT * FROM c",
 		"BEGIN SELECT CASE WHEN a THEN replace(s, 'x', 'y') END FROM t; END",
 		"BEGIN IF x THEN SELECT CASE WHEN a THEN restore END FROM t; END IF; END",
