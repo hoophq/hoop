@@ -72,7 +72,8 @@ wait, not you.
   works. It leaves draft only after QA says PASS and CI is green.
 - Every PR is born **draft**, its "Testing" section built from the evidence.
 - Evidence lives in `~/evidencias/<TICKET-ID>/`, raw captures in
-  `~/evidencias/.archive/<TICKET-ID>/`.
+  `~/evidencias/.archive/<TICKET-ID>/`. PR images go to the `claude/evidence`
+  branch through `skills/evidence/publish.sh`.
 - Linear ticket gets the PR link and moves to In Review.
 
 ## Support agent
@@ -88,6 +89,8 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
   `HOOP_AGENT_OWNER`, `HOOP_AGENT_SLACK_CHANNEL` (channel ID),
   `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: draft PRs) and
   `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`.
+  Its setup script installs `freeze` for evidence:
+  `GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2`.
 - The task selects the repos `hoop`, `libhoop` and `libhoop-ica`, and only the
   Linear and Slack connectors. Hourly is the shortest schedule.
 - A second task runs `/support-agent digest` at the end of the day.

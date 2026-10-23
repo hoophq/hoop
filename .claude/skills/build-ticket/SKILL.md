@@ -24,8 +24,9 @@ schedule and no person reads the session. Then:
   `ai-disclosure` hook refuses description edits.
 - No Docker: run each stack with `scripts/dev/run-sandbox.sh`, one at a time,
   instead of `make run-dev` and `HOOPDEV_SLOT`.
-- The sandbox is discarded after the run: push the branch after each commit,
-  and put the evidence on the ticket and the PR, not only in `~/evidencias`.
+- The sandbox is discarded after the run: push the branch after each commit.
+  The evidence is how a person knows the work is right: a PR without its
+  comparison images in "Testing" is not done. `evidence` step 6 publishes them.
 - `gh` can be missing: use the GitHub MCP tools.
 - The PR description starts with `Opened by the support agent (AI) from <ID>.`
   The PR stays a draft. A person marks it ready and merges it.

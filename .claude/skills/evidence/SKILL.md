@@ -156,13 +156,14 @@ group, the filter) and what differs there.
 ## 6. Show, then publish
 
 Show the EVIDENCE.md and the images to the user, in their language, before
-publishing. In autonomous mode (`HOOP_AGENT` set) nobody is there to show and
-no gist can be made: skip the PR images, and under "Testing" write that the
-evidence is attached to the ticket, by its ID. Then:
+publishing. In autonomous mode (`HOOP_AGENT` set) nobody is there to show:
+publish, and the PR stays a draft until a person reads it. Then:
 - Linear: attach `EVIDENCE.md` and the images to the ticket (the MP4 for a
   video).
 - PR: the result line, the images (the GIF for a video) and "What it solves" under "Testing".
-  Host the images in a secret gist and link the raw URLs.
+  Host the images with `.claude/skills/evidence/publish.sh <TICKET-ID> <files>`:
+  it pushes them to the `claude/evidence` branch and prints the Markdown
+  links. Cloud sessions cannot create gists.
   The repo is public: no customer data, tokens, internal hosts or real emails
   in any image.
 
@@ -170,6 +171,9 @@ evidence is attached to the ticket, by its ID. Then:
 
 - Homebrew `ffmpeg` has no `drawtext`; `compare.sh` renders labels with
   `freeze` instead.
+- A cloud sandbox has `ffmpeg` and Chromium, not `freeze`:
+  `GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2`.
+  `freeze` draws no emoji; render such output with Chromium instead.
 - In zsh, `$VAR[...]` is an array subscript: write `${VAR}[...]` inside
   ffmpeg filters.
 - Routes behind `EnterpriseLicenseOnly` (sidecar config) need the dev
