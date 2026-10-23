@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 # usage: compose-video.sh <out-basename> "LABEL=left.mp4" "LABEL=right.mp4"
 # Writes <out-basename>.mp4 (full size, for Linear) and <out-basename>.gif (1800 px,
-# 8 fps, for the PR body). Needs ffmpeg, ffprobe, freeze and python3.
+# 8 fps, for the PR body). Needs ffmpeg, ffprobe and python3, and freeze when ffmpeg
+# has no drawtext (label.sh).
 # Side by side, a label band on top of each panel; the shorter side holds its last frame.
 set -euo pipefail
 out=$1; l=${2%%=*}; lp=${2#*=}; r=${3%%=*}; rp=${3#*=}
+source "$(dirname "$0")/label.sh"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-for i in 0 1; do
-  label=$([ $i = 0 ] && echo "$l" || echo "$r")
-  printf '%s' "$label" > "$tmp/l$i.txt"
-  freeze "$tmp/l$i.txt" --language text --window=false --border.radius 0 --background "#1f2937" \
-    --padding 22,30 --margin 0 --font.size 28 --theme dracula -o "$tmp/l$i.png" >/dev/null 2>&1 </dev/null
-done
+label_png "$l" "$tmp/l0.png"; label_png "$r" "$tmp/l1.png"
 dur() { ffprobe -v error -show_entries format=duration -of csv=p=0 "$1"; }
 d=$(python3 -c "print(max($(dur "$lp"), $(dur "$rp")) + 1.5)")
 w=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$lp" | head -1 | tr -d ,)

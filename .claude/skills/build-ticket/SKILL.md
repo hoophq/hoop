@@ -59,7 +59,9 @@ schedule and no person reads the session. Then:
   wrote it.
 - The sandbox is discarded after the run: push the branch after each commit.
   The evidence is how a person knows the work is right: a PR without its
-  comparison images in "Testing" is not done. QA's captures are raw material:
+  comparison images in "Testing" is not done. Run the `evidence` skill (Skill
+  tool): a flow, in the UI or in a terminal, is a video with its steps
+  explained on screen. QA's captures are raw material:
   compose them (`evidence` step 4), then publish them with
   `.claude/skills/evidence/publish.sh` (`evidence` step 6). That is the upload
   route of a cloud session; a capture left in the sandbox is lost with it.
@@ -158,8 +160,8 @@ After 3 `FAIL` rounds: stop. Leave the PR as a draft. Report the open findings
 and what you think the real blocker is.
 
 On `PASS`: run the `evidence` skill from QA's last-round captures (steps 4 and 5:
-compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI ticket, record the flow on the final commit,
-against QA's stacks (evidence skill, step 3).
+compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI or terminal flow, record it on the final
+commit, against QA's stacks (evidence skill, step 3).
 Continue only after the user has seen it. Step 7 publishes it.
 
 For a `spike`, there is no PR. Deliver the evidence and a proposed cut into

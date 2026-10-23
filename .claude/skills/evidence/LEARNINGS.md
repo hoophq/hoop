@@ -59,3 +59,10 @@ Also found on the way:
 - Main showed "was rejected (approval …)", the branch added the reason: the
   difference sits in one line at the bottom of the frame, and the last frame
   holds it.
+
+## Direction · support agent (2026-10-23)
+
+The owner asked for video whenever a flow has steps, a terminal one too, with
+the steps explained on screen. Trial 1's "a GIF of typing is a still image"
+still holds for a tape without explanations: each command now follows a
+`# Step` line, and the last frame holds the answer.
