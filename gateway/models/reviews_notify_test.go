@@ -14,9 +14,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func enableReviewNotifications(t *testing.T) {
-	featureflag.Set(testOrgID, featureflag.FlagReviewNotifications, true)
-	t.Cleanup(func() { featureflag.Set(testOrgID, featureflag.FlagReviewNotifications, false) })
+func setReviewNotifications(t *testing.T, on bool) {
+	featureflag.Set(testOrgID, featureflag.FlagReviewNotifications, on)
+	t.Cleanup(func() { featureflag.Set(testOrgID, featureflag.FlagReviewNotifications, true) })
 }
 
 func orgEvents(t *testing.T) <-chan liveevents.Event {
@@ -58,7 +58,7 @@ func seedForceApprovedConnection(t *testing.T) {
 
 func TestANewReviewTellsTheReviewersAndTheConnectionForceApprovers(t *testing.T) {
 	startTestDB(t)
-	enableReviewNotifications(t)
+	setReviewNotifications(t, true)
 	seedForceApprovedConnection(t)
 	events := orgEvents(t)
 
@@ -76,7 +76,7 @@ func TestANewReviewTellsTheReviewersAndTheConnectionForceApprovers(t *testing.T)
 
 func TestAnAccessRuleReviewUsesTheRuleForceApprovers(t *testing.T) {
 	startTestDB(t)
-	enableReviewNotifications(t)
+	setReviewNotifications(t, true)
 	seedForceApprovedConnection(t)
 	events := orgEvents(t)
 
@@ -93,6 +93,7 @@ func TestAnAccessRuleReviewUsesTheRuleForceApprovers(t *testing.T) {
 
 func TestNoReviewEventWhenTheFlagIsOff(t *testing.T) {
 	startTestDB(t)
+	setReviewNotifications(t, false)
 	events := orgEvents(t)
 
 	require.NoError(t, models.CreateReview(connectionReview(t, models.ReviewStatusPending), ""))
@@ -102,7 +103,7 @@ func TestNoReviewEventWhenTheFlagIsOff(t *testing.T) {
 
 func TestNoReviewEventForAReviewThatDoesNotWait(t *testing.T) {
 	startTestDB(t)
-	enableReviewNotifications(t)
+	setReviewNotifications(t, true)
 	events := orgEvents(t)
 
 	require.NoError(t, models.CreateReview(connectionReview(t, models.ReviewStatusApproved), ""))
@@ -112,7 +113,7 @@ func TestNoReviewEventForAReviewThatDoesNotWait(t *testing.T) {
 
 func TestASidecarReviewTellsItsApproversOnce(t *testing.T) {
 	startTestDB(t)
-	enableReviewNotifications(t)
+	setReviewNotifications(t, true)
 	sc := seedSidecar(t, "notify")
 	events := orgEvents(t)
 	const statement = "DELETE FROM x;"

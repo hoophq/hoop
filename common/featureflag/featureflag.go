@@ -179,7 +179,7 @@ var catalog = map[string]Flag{
 	FlagReviewNotifications: {
 		Name:        FlagReviewNotifications,
 		Description: "Notify approvers in the web app when a request waits for their approval: a toast while they look at the Control Plane, a browser notification when they do not. Only users who can approve the request get it. Needs a Control Plane tab open; browser notifications need the user's permission and HTTPS.",
-		Default:     false,
+		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
