@@ -7,6 +7,7 @@
    [bidi.bidi :as bidi]
    [clojure.string :as cs]
    [re-frame.core :as rf]
+   [webapp.shell :as shell]
    [webapp.agents.new :as create-agent]
    [webapp.agents.panel :as agents]
    [webapp.audit.views.main :as audit]
@@ -222,7 +223,7 @@
 
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])
-        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
+        react-shell? (shell/react-shell?)]
     (if (nil? (.getItem js/localStorage "jwt-token"))
       (do
         ;; React shell handles auth redirect — skip if in shell mode
@@ -706,7 +707,7 @@
   (let [active-panel (rf/subscribe [::subs/active-panel])
         route-path (rf/subscribe [::subs/route-path])
         gateway-public-info (rf/subscribe [:gateway->public-info])
-        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
+        react-shell? (shell/react-shell?)]
     ;; In shell mode skip refetch if public info already loaded (avoids loading flash on remount)
     (when-not (and react-shell? (-> @gateway-public-info :data some?))
       (rf/dispatch [:gateway->get-public-info]))

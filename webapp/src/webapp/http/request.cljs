@@ -1,6 +1,7 @@
 (ns webapp.http.request
   (:require
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.shell :as shell]))
 
 (defn- maybe-update-token!
   [headers]
@@ -20,7 +21,7 @@
   [{:keys [status on-failure]}]
   (when (= status 401)
     ;; In React shell mode, let React handle the auth redirect
-    (if (.getItem js/localStorage "react-shell")
+    (if (shell/react-shell?)
       (set! js/window.location.href "/login")
       (rf/dispatch [:navigate :logout-hoop])))
   (when (> status 399) (on-failure)))
