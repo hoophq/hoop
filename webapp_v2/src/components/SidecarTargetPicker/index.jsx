@@ -40,7 +40,7 @@ function decodeTarget(value) {
   }
 }
 
-function listenerItems(sc, locked) {
+function listenerItems(sc, locked, listenerBlocked) {
   // Listeners only. The sidecar row in the tree picks each of these, never
   // the sidecar itself: a sidecar-wide rule writes the document's top-level
   // block, which a lane carrying its own mask block silently replaces, so the
@@ -51,12 +51,16 @@ function listenerItems(sc, locked) {
   // refused on save.
   return (sc.configuration?.listeners ?? [])
     .filter((l) => l?.name)
-    .map((l) => ({
-      value: encodeTarget({ sidecar_id: sc.id, listener_name: l.name }),
-      name: l.name,
-      protocol: l.protocol ?? '',
-      disabled: locked,
-    }))
+    .map((l) => {
+      const blocked = locked ? null : (listenerBlocked?.(sc, l) ?? null)
+      return {
+        value: encodeTarget({ sidecar_id: sc.id, listener_name: l.name }),
+        name: l.name,
+        protocol: l.protocol ?? '',
+        disabled: locked || Boolean(blocked),
+        blocked,
+      }
+    })
 }
 
 // Option values carry which row was clicked, so one submit handler can route
@@ -65,14 +69,19 @@ const SIDECAR_PREFIX = 'sc:'
 const LISTENER_PREFIX = 'ln:'
 
 // One node per sidecar, its listeners under it.
-function buildTree(sidecars) {
+function buildTree(sidecars, listenerBlocked) {
   return sidecars.map((sc) => {
     const locked = usesConfigFile(sc)
+    const listeners = listenerItems(sc, locked, listenerBlocked)
+    const reasons = new Set(listeners.map((l) => l.blocked))
+    // One reason for every listener names the sidecar row too.
+    const blocked = listeners.length > 0 && reasons.size === 1 ? [...reasons][0] : null
     return {
       id: sc.id,
       name: sc.name,
       locked,
-      listeners: listenerItems(sc, locked),
+      blocked,
+      listeners,
     }
   })
 }
@@ -185,7 +194,7 @@ function PillHint({ names }) {
  * be calling, so the component never mounts and never fetches.
  */
 
-export default function SidecarTargetPicker({ value = [], onChange, label, description }) {
+export default function SidecarTargetPicker({ value = [], onChange, label, description, listenerBlocked }) {
   const sidecars = useSidecarStore((s) => s.sidecars)
   const loading = useSidecarStore((s) => s.loading)
   const error = useSidecarStore((s) => s.error)
@@ -197,7 +206,7 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
     fetchSidecars()
   }, [fetchSidecars])
 
-  const tree = useMemo(() => buildTree(sidecars), [sidecars])
+  const tree = useMemo(() => buildTree(sidecars, listenerBlocked), [sidecars, listenerBlocked])
   const selected = useMemo(() => value.map(encodeTarget), [value])
   const selectedSet = useMemo(() => new Set(selected), [selected])
   const visible = useMemo(() => filterTree(tree, search), [tree, search])
@@ -284,12 +293,12 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
               aria-hidden
               className={classes.check}
             />
-            <Text size="sm" fw={600} c={node.locked ? 'dimmed' : undefined}>
+            <Text size="sm" fw={600} c={node.locked || node.blocked ? 'dimmed' : undefined}>
               {node.name}
             </Text>
           </Group>
           <Text size="xs" c="dimmed">
-            {node.locked ? CONFIG_FILE_REASON : 'Sidecar'}
+            {node.locked ? CONFIG_FILE_REASON : (node.blocked ?? 'Sidecar')}
           </Text>
         </Group>
       </Combobox.Option>,
@@ -315,10 +324,16 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
                 {l.name}
               </Text>
             </Group>
-            {l.protocol && (
-              <Text size="xs" c="dimmed" tt="lowercase" flex="0 0 auto">
-                {l.protocol}
+            {l.blocked ? (
+              <Text size="xs" c="dimmed" flex="0 0 auto">
+                {l.blocked}
               </Text>
+            ) : (
+              l.protocol && (
+                <Text size="xs" c="dimmed" tt="lowercase" flex="0 0 auto">
+                  {l.protocol}
+                </Text>
+              )
             )}
           </Group>
         </Combobox.Option>

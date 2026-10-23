@@ -17,7 +17,7 @@ function Picker({ feature, sidecar, listener, onClose, onCreate, onSaved }) {
   const api = RULE_APIS[feature.key]
   // A listener runs one analyzer block, so that picker takes one rule.
   const single = feature.key === 'ai-analyzer'
-  const lanes = useMemo(() => targetLanes(sidecar, listener), [sidecar, listener])
+  const lanes = useMemo(() => targetLanes(sidecar, listener, feature.key), [sidecar, listener, feature.key])
   const [rules, setRules] = useState([])
   const [status, setStatus] = useState('loading')
   const [query, setQuery] = useState('')
