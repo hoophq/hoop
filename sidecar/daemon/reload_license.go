@@ -74,6 +74,18 @@ func (r *reloader) licenseFile() license.Ref {
 	return ref
 }
 
+// planeLicenseAdopted runs after a plane's document put its own license in
+// force. Under a plane that does not manage the license, a local file (the
+// flag's, HOOP_LICENSE's or the config key's) may have been watched; it no
+// longer backs the license in force, so a later edit of it must not replace
+// the plane's.
+func (r *reloader) planeLicenseAdopted() {
+	if r.planeOwned && r.licPinned.Value != "" {
+		r.licPinned = license.Ref{}
+		r.seedLicenseFile()
+	}
+}
+
 // seedLicenseFile starts watching the license file in force. The baseline is
 // the license in force, not a fresh read: a file replaced between the load
 // that put it in force and this seed would otherwise become the baseline and

@@ -684,7 +684,9 @@ restart picks the same license the running process ends up with:
   `HOOP_LICENSE` outranks it. It applies with the next config reload.
 - **`PUT /license` on the admin listener**, with the document as the body.
   Off unless `HOOP_SIDECAR_ADMIN_SECRET` is set; then the request needs
-  `Authorization: Bearer <secret>`:
+  `Authorization: Bearer <secret>`. The admin listener is plain HTTP, so
+  send it from the host or through an encrypted tunnel (`kubectl
+  port-forward`, SSH), never across a network others can read:
 
   ```bash
   curl -X PUT --data-binary @license.json \

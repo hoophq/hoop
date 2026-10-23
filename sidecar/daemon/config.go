@@ -257,6 +257,13 @@ func (c *Config) UseLicense(ref license.Ref) error {
 		return s.Err
 	}
 	c.lic = s
+	// The reference a running process watches follows the license in
+	// force: a path is re-read when its file is replaced, a document is
+	// not, and a flag or HOOP_LICENSE path Setup pinned no longer applies.
+	c.licPinned = license.Ref{}
+	if licenseIsPath(ref.Value) {
+		c.licPinned = ref
+	}
 	return nil
 }
 

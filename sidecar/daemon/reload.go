@@ -305,7 +305,12 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 		switch src := cfg.lic.Source; {
 		case src != "" && src != fileLicenseSource:
 			r.licOver = src
-			r.licPinned = cfg.licPinned
+			// Only the reference that produced the license in force: an
+			// embedder's UseLicense after Setup leaves no stale flag or
+			// HOOP_LICENSE path to poll.
+			if cfg.licPinned.Source == src {
+				r.licPinned = cfg.licPinned
+			}
 		case src == fileLicenseSource && cfg.cp != nil:
 			// A plane that does not manage the license (a gateway older
 			// than the feature) leaves the file's key in force, but the
@@ -802,6 +807,9 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		r.licRaw, r.licClaimed = newCfg.License, false
 		r.lic.set(newCfg.lic)
 		r.lic.overCap.Store(true)
+		if licRotated {
+			r.planeLicenseAdopted()
+		}
 		log.Warn("an Enterprise license is now installed and the analyzer uses the model Hoop hosts "+
 			"by default; stopping the relay so it restarts under the new license",
 			"hint", "set use_hoop_llm_provider: true, or a provider and model")
@@ -834,6 +842,7 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			r.licRaw, r.licClaimed = newCfg.License, false
 			r.lic.set(newCfg.lic)
 			r.lic.overCap.Store(true)
+			r.planeLicenseAdopted()
 			log.Warn("the "+from+"'s license no longer covers the running rules; "+
 				"stopping the relay so it restarts under the new one",
 				"license", newCfg.lic.Line(), "error", err)
@@ -916,6 +925,9 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	if licRotated || r.licClaimed {
 		r.lic.set(newCfg.lic)
 		log.Info(newCfg.lic.Line())
+		if licRotated {
+			r.planeLicenseAdopted()
+		}
 	}
 	// The reference that produced this generation is the one later
 	// documents compare against, rotated or not: a reference that loaded

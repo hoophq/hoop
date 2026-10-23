@@ -167,6 +167,13 @@ func legacyPlaneReloader(t *testing.T, raw string) *reloader {
 	}
 	cfg.lic = ResolveLicense("", cfg.License)
 	cfg.cp = &controlPlane{url: "http://plane", cred: tokenCredential("hsc_x"), lastRaw: []byte(raw)}
+	return reloaderFor(t, cfg)
+}
+
+// reloaderFor builds a reloader over cfg as it stands, with no swap targets:
+// enough for the license paths, which swap no lane.
+func reloaderFor(t *testing.T, cfg *Config) *reloader {
+	t.Helper()
 	lanes, err := buildLanes(cfg, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -179,6 +186,55 @@ func legacyPlaneReloader(t *testing.T, raw string) *reloader {
 		t.Fatal(err)
 	}
 	return rl
+}
+
+// A legacy plane whose document starts carrying its own license: that license
+// is in force, and the local file that backed the one before no longer
+// replaces it.
+func TestALegacyPlanesOwnLicenseStopsTheLocalFileWatch(t *testing.T) {
+	t.Setenv(license.EnvVar, "")
+	signer := licensetest.NewSigner(t)
+	licPath := writeLicenseFile(t, signer.Document(licensetest.Enterprise()))
+	rl := legacyPlaneReloader(t, withLicense(t, reloadBase, licPath))
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	planeDoc := withLicense(t, reloadBase, signer.Document(licensetest.Enterprise()))
+	if out := rl.handleAnswer(log, []byte(planeDoc), false); out != reloadApplied {
+		t.Fatalf("plane document = %v, want applied; log:\n%s", out, &buf)
+	}
+	plane := rl.lic.get()
+	if plane.Source != PlaneLicenseSource {
+		t.Fatalf("license from %q, want %s; log:\n%s", plane.Source, PlaneLicenseSource, &buf)
+	}
+	editFile(t, licPath, signer.Document(licensetest.Enterprise()))
+	rl.pollLicense(log, true)
+	if !sameLicenseDoc(rl.lic.get(), plane) {
+		t.Errorf("the local file replaced the plane's license; log:\n%s", &buf)
+	}
+}
+
+// An embedder that calls UseLicense after Setup runs under that license. The
+// HOOP_LICENSE path Setup resolved first is not polled in its place.
+func TestUseLicenseAfterSetupIsNotReplacedByTheEnvFile(t *testing.T) {
+	signer := licensetest.NewSigner(t)
+	envPath := writeLicenseFile(t, signer.Document(licensetest.Enterprise()))
+	t.Setenv(license.EnvVar, envPath)
+	cfg, err := LoadConfigBytes([]byte(reloadBase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.lic = ResolveLicense("", cfg.License)
+	cfg.licPinned = pinnedLicenseRef(cfg.lic, "")
+	if err := cfg.UseLicense(license.Ref{Value: signer.Document(licensetest.Enterprise()), Source: "the embedder"}); err != nil {
+		t.Fatal(err)
+	}
+	rl := reloaderFor(t, cfg)
+	var buf bytes.Buffer
+	rl.pollLicense(slog.New(slog.NewTextHandler(&buf, nil)), true)
+	if got := rl.lic.get(); got.Source != "the embedder" {
+		t.Errorf("license from %q after a poll, want the embedder's; log:\n%s", got.Source, &buf)
+	}
 }
 
 // Under a legacy plane the file the config key names is still watched. When
