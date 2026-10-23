@@ -1,0 +1,39 @@
+# The OpenTelemetry Collector the sidecar pushes to (sidecar/config.yaml,
+# `telemetry:` block).
+#
+# Metrics go out twice: as a Prometheus scrape endpoint on :8889, which
+# prometheus and then grafana read, and to the debug exporter so
+# `docker compose logs otel-collector` shows what arrived. Traces and audit
+# events (log records) go to the debug exporter only: this stack carries no
+# trace or log store, and the point here is the metrics. Point the traces and
+# logs pipelines at a Tempo or Loki exporter to keep them.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # Resource attributes become labels, so service_instance_id and
+    # deployment_environment are on every series rather than only on
+    # target_info. Two sidecars behind one collector then stay apart.
+    resource_to_telemetry_conversion:
+      enabled: true
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus, debug]
+    traces:
+      receivers: [otlp]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      exporters: [debug]
