@@ -1,0 +1,7 @@
+{
+  "name": "customer-api",
+  "model": "gpt-6-sol",
+  "reasoning": {"effort": "low"},
+  "tools": [],
+  "metadata": {"template": "hoop deploy/openai-agents/http"}
+}
