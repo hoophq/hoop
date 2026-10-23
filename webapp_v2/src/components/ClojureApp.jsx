@@ -156,8 +156,9 @@ function ClojureApp() {
   // paints the empty <div ref={containerRef} /> React just rendered.
   useLayoutEffect(() => {
     // Read synchronously by the CLJS keydown handler. Window globals avoid a
-    // storage read on every keystroke and let the parked Reagent listener distinguish "CLJS visible"
-    // from "React route active" without changing the bridge contract.
+    // storage read on every keystroke and let the parked Reagent listener
+    // distinguish "CLJS visible" from "React route active" without changing
+    // the bridge contract.
     window.__hoopReactShellCljsVisible = true
     enableCLJSCSS('/css/site.css')
 
