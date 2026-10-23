@@ -106,14 +106,13 @@ func (h *handler) List(c *gin.Context) {
 // Count
 //
 //	@Summary		Count Approvals
-//	@Description	Count the approval requests with the given status that `GET /approvals` returns to the user. Only `PENDING` is supported. `/reviews/count` is an alias.
+//	@Description	Count the approval requests with the given status that `GET /approvals` returns to the user. Only `PENDING` is supported.
 //	@Tags			Approvals
 //	@Param			status	query	string	true	"The status to count"	Enums(PENDING)
 //	@Produce		json
 //	@Success		200		{object}	openapi.ReviewCount
 //	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/approvals/count [get]
-//	@Router			/reviews/count [get]
 func (h *handler) Count(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 

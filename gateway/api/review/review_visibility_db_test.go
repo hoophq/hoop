@@ -227,7 +227,7 @@ func serveCount(userID string, groups []string, query string) *httptest.Response
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/reviews/count"+query, nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/approvals/count"+query, nil)
 	c.Set(storagev2.ContextKey, &storagev2.Context{APIContext: &types.APIContext{
 		OrgID: decisionTestOrgID, UserID: userID, UserGroups: groups}})
 	NewHandler(nil).Count(c)

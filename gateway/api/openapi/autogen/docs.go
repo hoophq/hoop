@@ -1509,7 +1509,7 @@ const docTemplate = `{
         },
         "/approvals/count": {
             "get": {
-                "description": "Count the approval requests with the given status that ` + "`" + `GET /approvals` + "`" + ` returns to the user. Only ` + "`" + `PENDING` + "`" + ` is supported. ` + "`" + `/reviews/count` + "`" + ` is an alias.",
+                "description": "Count the approval requests with the given status that ` + "`" + `GET /approvals` + "`" + ` returns to the user. Only ` + "`" + `PENDING` + "`" + ` is supported.",
                 "produces": [
                     "application/json"
                 ],
@@ -7623,50 +7623,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/reviews/count": {
-            "get": {
-                "description": "Count the approval requests with the given status that ` + "`" + `GET /approvals` + "`" + ` returns to the user. Only ` + "`" + `PENDING` + "`" + ` is supported. ` + "`" + `/reviews/count` + "`" + ` is an alias.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Approvals"
-                ],
-                "summary": "Count Approvals",
-                "parameters": [
-                    {
-                        "enum": [
-                            "PENDING"
-                        ],
-                        "type": "string",
-                        "description": "The status to count",
-                        "name": "status",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.ReviewCount"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }

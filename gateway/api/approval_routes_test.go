@@ -10,8 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Each review route is served under its approval path with the same handler.
-func TestApprovalRoutesAliasReviewRoutes(t *testing.T) {
+func registeredRoutes() map[string]string {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	(&Api{}).buildRoutes(apiroutes.New(engine.Group("/api")))
@@ -20,9 +19,14 @@ func TestApprovalRoutesAliasReviewRoutes(t *testing.T) {
 	for _, ri := range engine.Routes() {
 		routes[ri.Method+" "+ri.Path] = ri.Handler
 	}
+	return routes
+}
+
+// Each review route is served under its approval path with the same handler.
+func TestApprovalRoutesAliasReviewRoutes(t *testing.T) {
+	routes := registeredRoutes()
 	for _, tt := range []struct{ method, review, approval string }{
 		{http.MethodGet, "/api/reviews", "/api/approvals"},
-		{http.MethodGet, "/api/reviews/count", "/api/approvals/count"},
 		{http.MethodGet, "/api/reviews/:id", "/api/approvals/:id"},
 		{http.MethodPut, "/api/reviews/:id", "/api/approvals/:id"},
 		{http.MethodPut, "/api/sessions/:session_id/review", "/api/sessions/:session_id/approval"},
@@ -33,4 +37,11 @@ func TestApprovalRoutesAliasReviewRoutes(t *testing.T) {
 		require.True(t, ok, "%s %s is not registered", tt.method, tt.approval)
 		assert.Equal(t, review, approval, "%s %s and %s run different handlers", tt.method, tt.review, tt.approval)
 	}
+}
+
+// The count came after the rename, so no old client needs a /reviews path.
+func TestApprovalCountHasNoReviewsAlias(t *testing.T) {
+	routes := registeredRoutes()
+	assert.Contains(t, routes, "GET /api/approvals/count")
+	assert.NotContains(t, routes, "GET /api/reviews/count")
 }

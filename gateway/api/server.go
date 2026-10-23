@@ -855,7 +855,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	}
 	r.GET("/reviews", listReviews...)
 	r.GET("/approvals", listReviews...)
-	r.GET("/reviews/count", countReviews...)
 	r.GET("/approvals/count", countReviews...)
 	r.GET("/reviews/:id", getReview...)
 	r.GET("/approvals/:id", getReview...)

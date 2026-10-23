@@ -16,7 +16,7 @@ export const reviewsService = {
   list: () => api.get('/reviews'),
   get: (id) => api.get(`/reviews/${encodeURIComponent(id)}`),
   // → { count }, the reviews `list` returns with this status. Only PENDING.
-  count: (status) => api.get('/reviews/count', { params: { status } }),
+  count: (status) => api.get('/approvals/count', { params: { status } }),
   // status ∈ APPROVED | REJECTED | REVOKED. REVOKED takes an APPROVED review
   // that is `jit`, or one a sidecar filed, until the sidecar uses it.
   update: (id, payload) => api.put(`/reviews/${encodeURIComponent(id)}`, payload),
