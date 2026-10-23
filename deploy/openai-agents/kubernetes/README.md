@@ -172,13 +172,16 @@ can run at once.
 OpenAI's:
 
 - **US data residency only, no ZDR.** The Agents API keeps data in the
-  United States only and does not support Zero Data Retention. The sidecar
-  does not change this: the prompts and the masked responses the agent
-  reads go to OpenAI.
+  United States only and does not support Zero Data Retention
+  ([Agents API](https://developers.openai.com/api/docs/guides/agents-api/overview)).
+  The sidecar does not change this: the prompts and the masked responses the
+  agent reads go to OpenAI.
 - **Exact hosts only.** `allowed_domains` takes exact host names: no
-  wildcard, scheme, port or path. A redirect to another host fails.
+  wildcard, scheme, port or path. A redirect to another host fails
+  ([hosted environments](https://developers.openai.com/api/docs/guides/agents-api/environments/openai-hosted)).
 - **An idle sandbox is deleted after one hour.** Its files go with it,
-  kubectl and its kubeconfig included. The timeout is not configurable.
+  kubectl and its kubeconfig included. The timeout is not configurable
+  (same page).
 - **Keep the lane on 443 only.** The egress proxy also lets port 80 through
   to the sidecar's host, unencrypted, and the vault fills nothing there.
 - **The vault fills a placeholder anywhere in the request.** Toward the
