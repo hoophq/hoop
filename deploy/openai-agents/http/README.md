@@ -125,8 +125,8 @@ Error: invalid config:
 ```
 
 Check a config before the next start. The output names the limits. Run it
-in `quickstart/` after the first `./run.sh`, which makes the caller token
-the command mounts:
+in `quickstart/` after the first `./run.sh`: it creates the token file that
+this command mounts.
 
 ```bash
 docker compose run --rm sidecar hoop start sidecar --validate

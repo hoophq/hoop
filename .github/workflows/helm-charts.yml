@@ -411,6 +411,12 @@ jobs:
           # The demo API takes no token; AGENT_DIR picks the demo agent.
           jq -e '[.credentials[].auth.secret_name] == ["HOOP_CALLER_TOKEN"] and .agent.name == "hoop-demo-api"' <<<"$demo" >/dev/null \
             || { echo "::error::the quick start's vault holds more than the caller token, or its agent is not the demo agent"; exit 1; }
+          # A short-form mount turns a missing token into a folder, which
+          # run.sh then takes for the token. ENG-878 brings this to the
+          # Claude quick start; then this moves to the quick start loop.
+          mount=$(yq -o=json -I=0 '[.services.sidecar.volumes[] | select(tag == "!!map" and .target == "/run/secrets/caller-token") | .bind.create_host_path]' "$dir/quickstart/docker-compose.yml")
+          [[ "$mount" == '[false]' ]] \
+            || { echo "::error::the quick start's token mount creates a folder when the token is missing: $mount"; exit 1; }
           echo "the OpenAI Agents http template renders and its OpenAI side reaches only the sidecar"
 
       # Each quick start runs on its pinned image: the demo API it relies on,

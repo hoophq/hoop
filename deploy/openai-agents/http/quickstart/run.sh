@@ -40,9 +40,12 @@ rm -f .work/host
 # A new cloudflared container, so its log holds only the new host.
 docker compose up -d --wait --force-recreate --remove-orphans || {
     # Compose names only the exit code. The reason, such as a config over
-    # the free tier, is in the sidecar's log.
-    docker compose logs --no-log-prefix --tail 20 sidecar >&2
-    die "the sidecar did not start; its log is above"
+    # the free tier or a refused tunnel request, is in the log of the
+    # service that stopped. Neither stopped: the sidecar never got healthy.
+    failed=$(docker compose ps -a --status exited --format '{{.Service}}' | head -1)
+    failed=${failed:-sidecar}
+    docker compose logs --no-log-prefix --tail 20 "$failed" >&2
+    die "$failed did not start; its log is above"
 }
 c_ok "sidecar healthy"
 
@@ -83,20 +86,29 @@ done
 c_ok "GET /users/1 is masked:"
 printf '%s\n' "$body" | sed 's/^/        /'
 
-# again <command>: retries a transport error, not an HTTP answer. A
-# resolver can drop one lookup of a new host.
+# again <method> <path> [token]: call, retried on a transport error or a
+# 5xx. For some seconds after the first 200, a new tunnel can still drop a
+# lookup or answer 530 from Cloudflare's edge. The lane refuses both of
+# these requests before the API, so a 5xx is never its answer. Prints the
+# answer, or the last status line and fails.
 again() {
-    local o
-    for _ in 1 2 3; do o=$("$@") && { printf '%s' "$o"; return 0; }; sleep 2; done
+    local o=""
+    for _ in 1 2 3 4 5; do
+        o=$(call "$@") && [[ "${o%%$'\r'*}" != HTTP/*" 5"[0-9][0-9]* ]] && { printf '%s' "$o"; return 0; }
+        sleep 2
+    done
+    printf '%s' "${o%%$'\r'*}"
     return 1
 }
-out=$(again call DELETE /users/1 token) || die "DELETE /users/1 got no answer through the tunnel"
+out=$(again DELETE /users/1 token) \
+    || die "the tunnel did not pass DELETE /users/1 to the sidecar (${out:-no answer}); run ./run.sh again"
 # The tunnel speaks HTTP/2, which sends header names in lower case.
 [[ "$out" == HTTP/*" 403"* ]] && grep -qi '^x-hoop-denied: policy' <<<"$out" \
     || die "DELETE /users/1 was not refused: ${out%%$'\r'*}"
 c_ok "DELETE /users/1 is refused: ${out##*$'\r\n\r\n'}"
 
-out=$(again call GET /users/1) || die "a request without X-Hoop-Token got no answer through the tunnel"
+out=$(again GET /users/1) \
+    || die "the tunnel did not pass a request without X-Hoop-Token to the sidecar (${out:-no answer}); run ./run.sh again"
 [[ "$out" == HTTP/*" 403"* ]] || die "a request without X-Hoop-Token was not refused: ${out%%$'\r'*}"
 c_ok "a request without X-Hoop-Token is refused: ${out##*$'\r\n\r\n'}"
 
