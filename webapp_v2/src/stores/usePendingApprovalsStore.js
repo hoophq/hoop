@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { reviewsService } from '@/services/reviews'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { useUIStore } from '@/stores/useUIStore'
 
 export const usePendingApprovalsStore = create((set, get) => ({
   count: 0,
@@ -9,6 +10,8 @@ export const usePendingApprovalsStore = create((set, get) => ({
   requestId: 0,
 
   fetchCount: async () => {
+    // The collapsed sidebar shows no count, so it reads none.
+    if (useUIStore.getState().sidebarCollapsed) return
     const requestId = get().requestId + 1
     set({ requestId })
     try {
