@@ -2813,7 +2813,7 @@ type DataMaskingRule struct {
 }
 
 type DataMaskingRuleRequest struct {
-	// The unique name of the data masking rule, it's immutable after creation
+	// The unique name of the data masking rule. An update with a new name renames it
 	Name string `json:"name" binding:"required" example:"mask-email"`
 	// The description of the data masking rule
 	Description string `json:"description" example:"Mask email addresses in the data"`

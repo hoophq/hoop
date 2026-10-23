@@ -126,6 +126,17 @@ func UpdateDataMaskingRuleTx(tx *gorm.DB, rule *DataMaskingRule) error {
 	if rule.Name == "" {
 		return fmt.Errorf("failed updating data masking rule: name is required")
 	}
+	// Checked first: the unique violation reaches the caller wrapped in a
+	// second error, which hides gorm.ErrDuplicatedKey.
+	var taken int64
+	if err := tx.Table("private.datamasking_rules").
+		Where("org_id = ? AND name = ? AND id <> ?", rule.OrgID, rule.Name, rule.ID).
+		Count(&taken).Error; err != nil {
+		return fmt.Errorf("failed checking data masking rule name: %v", err)
+	}
+	if taken > 0 {
+		return ErrAlreadyExists
+	}
 	res := tx.Table("private.datamasking_rules").
 		Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
 		Select("name", "description", "supported_entity_types", "custom_entity_types", "score_threshold", "sidecar_spec", "rulepack_id", "updated_at").

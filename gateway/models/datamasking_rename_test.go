@@ -1,6 +1,7 @@
 package models_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -62,8 +63,8 @@ func TestUpdateDataMaskingRuleRenameConflict(t *testing.T) {
 		}
 		if name == "second" {
 			r.Name = "first"
-			if err := models.UpdateDataMaskingRuleTx(models.DB, r); err == nil {
-				t.Fatal("rename to a taken name: want an error")
+			if err := models.UpdateDataMaskingRuleTx(models.DB, r); !errors.Is(err, models.ErrAlreadyExists) {
+				t.Fatalf("rename to a taken name: err = %v, want ErrAlreadyExists", err)
 			}
 		}
 	}

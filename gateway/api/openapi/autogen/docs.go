@@ -3541,6 +3541,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
@@ -15932,7 +15938,7 @@ const docTemplate = `{
                     "example": "hoop"
                 },
                 "name": {
-                    "description": "The unique name of the data masking rule, it's immutable after creation",
+                    "description": "The unique name of the data masking rule. An update with a new name renames it",
                     "type": "string",
                     "example": "mask-email"
                 },
@@ -16059,7 +16065,7 @@ const docTemplate = `{
                     "example": "Mask email addresses in the data"
                 },
                 "name": {
-                    "description": "The unique name of the data masking rule, it's immutable after creation",
+                    "description": "The unique name of the data masking rule. An update with a new name renames it",
                     "type": "string",
                     "example": "mask-email"
                 },
