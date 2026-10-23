@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -21,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
+	telem "github.com/hoophq/hoop/sidecar/telemetry"
 	codecgrpc "github.com/hoophq/libhoop/v2/codec/grpc"
 )
 
@@ -496,6 +498,18 @@ func buildGRPCServer(
 			if live.holds {
 				allowedMetadata = metadataHeld
 			}
+			// The RPC span encloses the request headers, every message and
+			// the trailers; the trace is sampled here, once per call.
+			var spanCtx context.Context
+			var endExchange telem.EndExchange
+			if ln.telemetry != nil {
+				spanCtx, endExchange = ln.telemetry.BeginExchange(ctx, telem.ExchangeRPC,
+					telem.Attr{Key: "rpc.method", Value: info.Request.URL.Path},
+					telem.Attr{Key: "hoop.session_id", Value: string(sess.ID)},
+					telem.Attr{Key: "hoop.principal", Value: sess.Identity.Principal()},
+				)
+				ctx = spanCtx
+			}
 			g, err := gate.NewStatementGate(sess, gate.Config{
 				Protocol:         proto,
 				Policy:           live.policy,
@@ -503,19 +517,26 @@ func buildGRPCServer(
 				Masker:           live.masker,
 				FailOnAuditError: failOnAuditError,
 				Metrics:          ln.metrics,
+				Telemetry:        ln.telemetry,
 				Settle:           settle,
 			})
 			if err != nil {
 				// No handler, so libhoop calls no Close: release here.
 				release()
+				if endExchange != nil {
+					endExchange(err)
+				}
 				return nil, nil, err
 			}
 
 			state := &grpcRPCState{
-				gate:    g,
-				stmts:   newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
-				log:     laneLog,
-				release: release,
+				gate:        g,
+				stmts:       newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
+				log:         laneLog,
+				release:     release,
+				telemetry:   ln.telemetry,
+				spanCtx:     spanCtx,
+				endExchange: endExchange,
 			}
 			switch {
 			case gap != nil:
@@ -681,6 +702,69 @@ type grpcRPCState struct {
 	// release returns the RPC's rule generation to its liveRules. libhoop
 	// calls Close for every RPC that got a handler, refused or not.
 	release func()
+
+	// telemetry is the lane's recorder, nil without a telemetry block.
+	// spanCtx carries the RPC's exchange span and endExchange closes it;
+	// libhoop hands each callback its own request context, so the span is
+	// merged back in by evalCtx rather than threaded through libhoop.
+	telemetry   telem.LaneRecorder
+	spanCtx     context.Context
+	endExchange telem.EndExchange
+
+	// requestAt is when the last request message was judged (and so left
+	// for the upstream), as UnixNano, and answered says whether the first
+	// response has been timed against it. One gate per RPC makes the
+	// pairing exact: the RPC's first response answers the RPC's request.
+	// A streaming call measures to its first response only. Atomics,
+	// because libhoop judges request messages on the transport's body
+	// writer and responses on the handler goroutine, and a bidirectional
+	// call has both running at once.
+	requestAt atomic.Int64
+	answered  atomic.Bool
+}
+
+// evalCtx is the context a statement is judged under: the callback's own,
+// for its deadline and cancellation, with the RPC span's values layered on
+// top so the statement span nests under the RPC.
+func (r *grpcRPCState) evalCtx(ctx context.Context) context.Context {
+	if r.spanCtx == nil {
+		return ctx
+	}
+	return spanValuesCtx{Context: ctx, span: r.spanCtx}
+}
+
+// spanValuesCtx reads values from span first, everything else from the
+// embedded context. The stdlib merges nothing across two contexts, and the
+// span is the only value the exchange needs to lend.
+type spanValuesCtx struct {
+	context.Context
+	span context.Context
+}
+
+func (c spanValuesCtx) Value(key any) any {
+	if v := c.span.Value(key); v != nil {
+		return v
+	}
+	return c.Context.Value(key)
+}
+
+// requestSent stamps the request for the upstream measurement; firstAnswer
+// records it when the first response arrives.
+func (r *grpcRPCState) requestSent() {
+	if r.telemetry != nil {
+		r.requestAt.Store(time.Now().UnixNano())
+	}
+}
+
+func (r *grpcRPCState) firstAnswer(ctx context.Context) {
+	if r.telemetry == nil {
+		return
+	}
+	sent := r.requestAt.Load()
+	if sent == 0 || !r.answered.CompareAndSwap(false, true) {
+		return
+	}
+	r.telemetry.Upstream(ctx, time.Since(time.Unix(0, sent)), telem.PairingExact)
 }
 
 func (r *grpcRPCState) callbacks() *codecgrpc.RPCHandler {
@@ -695,11 +779,16 @@ func (r *grpcRPCState) callbacks() *codecgrpc.RPCHandler {
 }
 
 func (r *grpcRPCState) requestMessage(
-	ctx context.Context,
+	cbCtx context.Context,
 	rendered string,
 	truncated bool,
 	index int,
 ) *codecgrpc.Status {
+	ctx := r.evalCtx(cbCtx)
+	// Stamped on the way out, allowed or not: a denied message is never
+	// forwarded, and a later response then answers an earlier request,
+	// which the first-response rule in firstAnswer already tolerates.
+	defer r.requestSent()
 	// A spanner lane reads THROUGH the message when it can: the SQL inside
 	// an ExecuteSql or a DDL batch is what operation and table rules were
 	// written against, and the protojson wrapper around it matches nothing.
@@ -761,11 +850,13 @@ func (r *grpcRPCState) evaluateSpannerUnreadable(ctx context.Context, rendered s
 }
 
 func (r *grpcRPCState) responseMessage(
-	ctx context.Context,
+	cbCtx context.Context,
 	rendered string,
 	truncated bool,
 	index int,
 ) *codecgrpc.Status {
+	ctx := r.evalCtx(cbCtx)
+	r.firstAnswer(ctx)
 	d := r.gate.EvaluateStatement(ctx,
 		r.stmts.message(inspect.FromServer, rendered, truncated, index))
 	r.logDecisionError("response message", d)
@@ -776,13 +867,16 @@ func (r *grpcRPCState) responseMessage(
 }
 
 func (r *grpcRPCState) responseStatus(
-	ctx context.Context,
+	cbCtx context.Context,
 	trailers http.Header,
 	code int,
 	message string,
 ) *codecgrpc.Status {
-	d := r.gate.EvaluateStatement(context.WithoutCancel(ctx),
-		r.stmts.trailer(trailers, code, message))
+	ctx := r.evalCtx(context.WithoutCancel(cbCtx))
+	// A unary error answers with trailers alone, so the status is the
+	// first answer when no message preceded it.
+	r.firstAnswer(ctx)
+	d := r.gate.EvaluateStatement(ctx, r.stmts.trailer(trailers, code, message))
 	r.logDecisionError("response trailers", d)
 	if !d.Allowed {
 		return grpcDeniedStatus(d)
@@ -802,9 +896,12 @@ func (r *grpcRPCState) recordMasked(ctx context.Context, entities []string, coun
 }
 
 func (r *grpcRPCState) close(ctx context.Context) error {
-	err := r.gate.Close(context.WithoutCancel(ctx))
+	err := r.gate.Close(r.evalCtx(context.WithoutCancel(ctx)))
 	// After Close: the gate's last statement has been evaluated.
 	r.release()
+	if r.endExchange != nil {
+		r.endExchange(err)
+	}
 	if err != nil {
 		r.log.Warn("grpc session end not recorded", "error", err)
 	}

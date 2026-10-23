@@ -21,6 +21,10 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/policy"
+	// Aliased: this package's own `telemetry` type is the usage analytics
+	// holder (analytics.go), and a file-scope import may not repeat a
+	// package-scope name.
+	telem "github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // Config is the on-disk configuration.
@@ -125,6 +129,13 @@ type Config struct {
 	// plug-in's protocol the way it names postgres. The list is baseline:
 	// a module is loaded once at startup, and a change to it restarts.
 	Plugins []CodecPluginConfig `json:"plugins,omitempty" cap:"plugins"`
+
+	// Telemetry pushes metrics, traces and audit events over OTLP to a
+	// collector. Absent means off: no SDK is built and every data-path
+	// hook stays nil. The exporter lives in the nested
+	// sidecar/telemetry/otlp module; checkTelemetry refuses the block in a
+	// build that did not link it. See telemetry.Config.
+	Telemetry *telem.Config `json:"telemetry,omitempty" cap:"telemetry"`
 
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level,omitempty"`
@@ -1266,6 +1277,7 @@ func (c *Config) validate(onHost bool) error {
 
 	problems = append(problems, c.MCP.validate()...)
 	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
+	problems = append(problems, c.Telemetry.Validate()...)
 
 	problems = append(problems, c.validatePlugins()...)
 
@@ -2025,6 +2037,10 @@ type analyzerDeps struct {
 	// generation of every evaluator, so a reload does not reset a counter.
 	// Nil in tests that build deps by hand, which then count nothing.
 	metrics *analyzerMetrics
+
+	// otel mirrors the analyzer's observers onto the telemetry exporter,
+	// beside metrics. Nil without a telemetry block.
+	otel *otelExporter
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.
