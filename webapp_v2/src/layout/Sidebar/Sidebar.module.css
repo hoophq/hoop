@@ -326,6 +326,10 @@
 
 /* The chevron points down while closed and up while open. It turns alone, so
    the count beside it stays upright. */
+.groupChevron {
+  transition: transform 150ms ease;
+}
+
 .groupChevron[data-opened] {
   transform: rotate(180deg);
 }
