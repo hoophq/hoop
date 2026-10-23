@@ -528,8 +528,9 @@ A control plane credential makes `HOOP_SIDECAR_ID` unnecessary anywhere.
 
 `install-source` says which hoop template started the sidecar. The template
 sets `HOOP_SIDECAR_INSTALL_SOURCE`; unset, the property is omitted. Values
-are a fixed list, `managed-agents-http` and `managed-agents-kubernetes`
-today, and any other value is sent as `other`, so it can never carry a name.
+are a fixed list, `managed-agents-http`, `managed-agents-kubernetes`,
+`openai-agents-http` and `openai-agents-kubernetes` today, and any other
+value is sent as `other`, so it can never carry a name.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends
@@ -825,6 +826,10 @@ license: /etc/hoop-inspect/license.json
 
 admin:
   listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*
+
+# Metrics, traces and audit events over OTLP. See "OpenTelemetry".
+# telemetry:
+#   otlp: {endpoint: otel-collector:4317, insecure: true}
 
 # Approval status for agents; needs a control plane. See "Agents over MCP".
 # mcp:
@@ -2261,6 +2266,161 @@ already contains `hoopsidecar`; `kubectl get svc` shows it.
 Every pod in the cluster can reach a ClusterIP Service; a NetworkPolicy
 narrows that to the agent. See the chart's
 [README](../deploy/helm-chart/chart/sidecar/README.md#ports).
+
+## OpenTelemetry
+
+A `telemetry` block pushes metrics, traces and audit events to an OTLP
+collector, so one Grafana, Honeycomb or Datadog shows every sidecar: how much
+each lane judged, what it denied, and where a statement's time went, split
+into the sidecar's own policy cost, the AI analyzer, a human review and the
+upstream itself. Absent, nothing is built and the data path has no telemetry
+code in it. The exporter lives in the nested `sidecar/telemetry/otlp`
+module; a build without it refuses the block, and the control plane serves
+it only to a sidecar whose capabilities header carries `telemetry`.
+
+```yaml
+telemetry:
+  otlp:
+    endpoint: otel-collector:4317   # host:port for grpc, a URL for http
+    protocol: grpc                  # grpc (default) | http
+    insecure: true                  # a collector in the same pod
+    # headers: {authorization: "Bearer ..."}   # a vendor endpoint
+    # ca_file: /etc/ssl/collector-ca.pem
+  resource:                         # extra resource attributes
+    deployment.environment: prod
+  metrics:
+    interval_sec: 60                # on with the block; enabled: false turns it off
+  traces:
+    sample_ratio: 0.1               # 0 (default) is off; decided once per connection or RPC
+  events:
+    enabled: true                   # audit events as log records; default off
+    statement_text: false           # default: a sha256 fingerprint, as redact_statements writes
+```
+
+`grpc` is protobuf over HTTP/2 on one long-lived connection, the OTel
+default; `http` is protobuf over HTTP/1.1 POSTs to `/v1/metrics`,
+`/v1/traces` and `/v1/logs`, for a path that blocks HTTP/2. Same data either
+way. The SDK's `OTEL_EXPORTER_OTLP_*` environment variables are not read:
+the block is the configuration, so `-validate` and the plane can check it.
+
+Every signal carries the resource `service.name=hoop-sidecar` (override it
+under `resource`), `service.version`, `service.instance.id` (the same
+install id usage analytics derives), `host.name`, `hoop.sidecar.runtime`
+and `hoop.schema.version=1.0`, with the schema URL
+`https://hoop.dev/schemas/sidecar-telemetry/1.0`. An attribute or series
+added bumps the minor; one renamed or removed bumps the major, because a
+dashboard written against the old name goes dark.
+
+### Metrics
+
+| Series | Instrument | Attributes |
+|---|---|---|
+| `hoop.sidecar.connections` | counter | `hoop.lane`, `hoop.protocol` |
+| `hoop.sidecar.connections.active` | gauge | `hoop.lane`, `hoop.protocol` |
+| `hoop.sidecar.statements` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.operation`, `hoop.verdict` (`allow`/`deny`), `hoop.deny.source` (denials: the rule type, `opa`, `analyzer`, `review`, `audit`, `stream`, `identity`) |
+| `hoop.sidecar.statement.duration` | histogram, seconds | `hoop.lane`, `hoop.protocol`, `hoop.stage`, `hoop.engine`, `hoop.pairing`, `hoop.outcome` |
+| `hoop.sidecar.masked_values` | counter | `hoop.lane`, `hoop.protocol` |
+| `hoop.sidecar.audit.errors` | counter | `hoop.lane` |
+| `hoop.sidecar.analyzer.request.duration` | histogram, seconds | `hoop.analyzer`, `hoop.provider`, `hoop.model`, `hoop.outcome` |
+| `hoop.sidecar.analyzer.retries` | counter | `hoop.analyzer`, `hoop.provider`, `hoop.model` |
+| `hoop.sidecar.analyzer.statements` | counter | `hoop.analyzer`, `hoop.status`, `hoop.risk_level`, `hoop.action` |
+| `hoop.sidecar.session_events.sent`, `.dropped` | counter | the control plane copy's counters |
+| `hoop.sidecar.config.generation` | gauge | reloads applied since start |
+
+No metric carries a principal, a session id, a table or statement text:
+those are unbounded, and they belong on the span and the log record below.
+The analyzer families are the ones `GET /metrics` serves in Prometheus text,
+which stays as it is. Counters survive a hot reload.
+
+**Latency.** `hoop.sidecar.statement.duration` has one series per stage of a
+statement's life:
+
+- `stage=policy`, `engine=rules` or `engine=opa`: a local rule set or one
+  OPA round trip. The cost the sidecar adds to decide. Exact on every
+  protocol.
+- `stage=analyzer`: the model-backed evaluator, cache hits included. The
+  provider call alone is `hoop.sidecar.analyzer.request.duration`.
+- `stage=review`: the hold while a human decides, with `hoop.outcome` set to
+  `approved`, `rejected`, `expired`, `revoked`, `disconnected` (the client
+  left mid-hold) or `denied` (any other refusal: the plane unreachable, a
+  status this build does not know). Its own stage, so a ten-minute approval does not read as
+  a slow policy. A lane in return mode (`review_mode: return`) shows no
+  wait here: the client is denied at once and resends after approval, and
+  only the control plane knows the time between filing and approval.
+- `stage=upstream`: from the request leaving the sidecar to its answer
+  arriving. `hoop.pairing` says how exact that is. `exact` is a protocol
+  that pairs them itself: one gRPC call, or HTTP/1, where responses answer
+  requests in order. `unpipelined` is pgwire, MySQL, MSSQL, MongoDB,
+  Oracle and ClickHouse, whose codecs do not expose the pairing: the
+  sample is taken only when one request is outstanding and dropped when
+  the client pipelines, so the series describes unpipelined exchanges and
+  never guesses which answer belongs to which request. An extended-protocol
+  client that sends two statements per query is therefore not sampled.
+
+Other stages carry `hoop.outcome` as `allow` or `deny`. Two queries worth
+having, in PromQL after the collector's Prometheus exporter:
+
+```
+histogram_quantile(0.99, sum by (le, hoop_lane, hoop_stage) (rate(hoop_sidecar_statement_duration_seconds_bucket[5m])))
+sum by (hoop_lane) (rate(hoop_sidecar_statement_duration_seconds_sum{hoop_stage="policy"}[5m]))
+  / sum by (hoop_lane) (rate(hoop_sidecar_statement_duration_seconds_sum[5m]))
+```
+
+The first is p99 per lane and stage; the second is the share of a lane's
+time the sidecar itself costs.
+
+### Traces
+
+`traces.sample_ratio` above zero opens one span per exchange — `hoop.session`
+for a byte-path connection, `hoop.rpc` for a gRPC call — with a child
+`hoop.statement` per judged statement and, under it, one span per stage
+(`policy`, `analyzer`, `review`). The upstream measurement is an event on
+the enclosing span. The sampling decision is taken once, at the exchange, so
+every statement of a sampled connection is in and a 1% ratio costs 1%. A
+denied statement's span carries `hoop.verdict=deny`, `hoop.deny.source`,
+`hoop.rule` and an error status naming the rule. The OPA decision and the
+analyzer's provider call carry the span as a W3C `traceparent`, so a Rego
+service or a model gateway that is itself traced joins the same trace.
+
+### Events and alerts
+
+`events.enabled` adds a sink to the audit chain that sends every event as a
+log record: body is the kind (`session_start`, `statement`, `violation`,
+`masked`, `error`, `session_end`), severity `WARN` for `violation` and
+`masked`, `ERROR` for `error`, and attributes `hoop.lane`, `hoop.protocol`,
+`hoop.session_id`, `hoop.principal`, `hoop.operation`, `hoop.direction`,
+`hoop.verdict`, `hoop.rule`, `hoop.message`, `hoop.statement`,
+`hoop.tables`, the HTTP detail as `hoop.http.*` (`query`, `target` and `body`
+under the same redaction as the statement), each metadata key as
+`hoop.meta.<key>`, and `hoop.review.id` when a review was filed. A record
+written under a sampled span carries its trace and span id.
+
+The record goes through the same redaction as the audit file and the plane
+copy. `hoop.statement` is a `sha256:` fingerprint unless `statement_text:
+true`, because the collector is a new place audit data leaves the process;
+the file keeps the text under the audit block's own setting. The sink never
+fails a write and never blocks a statement: a bounded queue
+(`events.queue_size`, default 4096) drops the oldest record when the
+collector falls behind, and `GET /stats` reports `telemetry.events_sent`
+and `telemetry.events_dropped`. The audit file stays the record of truth.
+
+Alerts live in the backend. Three worth having:
+
+```
+# denials on a lane, per minute
+sum by (hoop_lane) (rate(hoop_sidecar_statements_total{hoop_verdict="deny"}[5m])) * 60 > 10
+# analyzer failing: statements left unscored
+sum by (hoop_analyzer) (rate(hoop_sidecar_analyzer_request_duration_seconds_count{hoop_outcome!="ok"}[5m])) > 0
+# the audit trail is dropping records
+rate(hoop_sidecar_audit_errors_total[5m]) > 0
+```
+
+and, on the log records, a `violation` burst for one `hoop.principal`, which
+no metric can express because the principal is only on the record.
+
+A collector that is down costs nothing but the signals: exports fail, one
+warning per 30 seconds per message reaches the sidecar's log, and traffic
+is unaffected. Shutdown flushes once, bounded by three seconds.
 
 ## Overlap with Envoy
 

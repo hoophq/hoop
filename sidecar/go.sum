@@ -104,6 +104,16 @@ github.com/hoophq/libhoop v0.0.0-20261019205305-20617fb21eb0 h1:Epk9t/6/yswboX4F
 github.com/hoophq/libhoop v0.0.0-20261019205305-20617fb21eb0/go.mod h1:nHA5Pm/wX+iz3JHQR+aJm236TzmZ2RYUo2x3SgwJhWo=
 github.com/hoophq/libhoop v0.0.0-20261021183309-fb73babb25df h1:MDLWAWsr/CSgVtnvQLMTqJWX2xAb6Iml1UAeBpTkf0c=
 github.com/hoophq/libhoop v0.0.0-20261021183309-fb73babb25df/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261022142506-b0cbda82f22b h1:KL7RQY1/Y9pEVeCKDoUtkUsSGUi6YATDEzMexv3kHgM=
+github.com/hoophq/libhoop v0.0.0-20261022142506-b0cbda82f22b/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261022172255-de0ca2488bf8 h1:vwMZLzh33Y8Bqx39I8cpLCkXbRunIf7tqwCloZen0OE=
+github.com/hoophq/libhoop v0.0.0-20261022172255-de0ca2488bf8/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261022174836-c4a38f9b7601 h1:d0NvwTS7rbgwlfEcAHKymlKOBPI+8J24lhEKjKL7ZwU=
+github.com/hoophq/libhoop v0.0.0-20261022174836-c4a38f9b7601/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261022185949-702b499e4e27 h1:G/wXqLy2ALPITqy9/Ec8qkSz4GnPUNSL0Lre86CMjaI=
+github.com/hoophq/libhoop v0.0.0-20261022185949-702b499e4e27/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261022191641-55dc7bef0843 h1:6NE6iJLeYNxbvVbqLjkeKTi59M9tvWnCL5aag8Y576c=
+github.com/hoophq/libhoop v0.0.0-20261022191641-55dc7bef0843/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=

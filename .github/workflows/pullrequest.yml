@@ -486,6 +486,34 @@ jobs:
       - name: Sidecar Config Compat
         run: make test-sidecar-compat
 
+  # A libhoop pin must name a commit on libhoop main (ENG-821). A commit on a
+  # PR branch dies with the branch: ENG-768 pinned one, libhoop squash-merged and
+  # deleted the branch, and every Go build failed with "unknown revision".
+  # The use-libhoop-pr switch above does not bump the pin, so it still passes.
+  libhoop-pin:
+    name: libhoop Pin On Main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # go mod/work edit -json only parse the files; nothing is fetched.
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache: false
+
+      # A check that cannot fail passes forever: its fixtures run first.
+      - name: Test the pin check
+        run: scripts/ci/check-libhoop-pins_test.sh
+
+      - name: libhoop pins are on libhoop main
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: scripts/ci/check-libhoop-pins.sh
+
   # Development Release builds webapp_v2 only after the CLJS bundle; fail fast here.
   webapp-v2:
     name: Webapp v2 Lint and Build

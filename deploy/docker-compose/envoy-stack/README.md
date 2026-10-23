@@ -42,9 +42,9 @@ compiles in `golang:1.26.5-alpine`, matching the `go 1.26.5` every module in
 `sidecar/` declares.
 
 Ports: `8443` HTTPS, `5433` postgres, `19000` sidecar admin, `9901` Envoy
-admin. Inside the compose network the postgres listener is `envoy:5432`; 5433
-is only the host-side publication, because a laptop usually has something on
-5432 already.
+admin, `3000` Grafana, `9090` Prometheus. Inside the compose network the
+postgres listener is `envoy:5432`; 5433 is only the host-side publication,
+because a laptop usually has something on 5432 already.
 
 Envoy reaches the sidecar over TCP here, which keeps the topology to one
 claim: hoop-inspect is an ordinary upstream. To close the last port and have
@@ -315,6 +315,38 @@ docker compose logs hoop-inspect | ./sidecar/read-audit.py
 
 `read-audit.py` also asserts the trail contains no value that masking removed;
 recording a masked value in the clear has un-masked it.
+
+### Watch the metrics
+
+The sidecar pushes OTLP to the `otel-collector` service (`telemetry:` block
+in `sidecar/config.yaml`); the collector serves the metrics to Prometheus
+and Grafana renders them. Open <http://localhost:3000> (no login) and the
+**hoop sidecar** dashboard: statements per lane and verdict, denials by
+source, p99 per stage (`policy`, `analyzer`, `review`, `upstream`), the
+share of each statement's time the sidecar itself costs, masked values,
+audit write failures. Run `./demo.sh` and watch it move; the `lane`
+selector splits `appdb` from `httpbin`.
+
+Raw series are at <http://localhost:9090> under `hoop_sidecar_*`, for
+example:
+
+```
+sum by (hoop_lane, hoop_verdict) (rate(hoop_sidecar_statements_total[1m]))
+histogram_quantile(0.99, sum by (le, hoop_stage) (rate(hoop_sidecar_statement_duration_seconds_bucket[1m])))
+```
+
+Traces (one per connection, a span per statement and per stage) and the
+audit events as log records reach the collector too, but this stack keeps
+no trace or log store, so they only show in its log:
+
+```bash
+docker compose logs otel-collector | grep -E 'Traces|Logs|Metrics'
+```
+
+Point `telemetry/otelcol.yaml`'s traces and logs pipelines at a Tempo or
+Loki exporter to keep them. The series, attributes and latency stages are
+documented in the "OpenTelemetry" section of
+[`sidecar/README.md`](../../../sidecar/README.md).
 
 ## Tier 2c: producers report, OPA decides (off in this stack)
 

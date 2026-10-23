@@ -1,6 +1,8 @@
 Gateway deployed
+{{- with .Values.config.API_URL }}
 
-Visit {{ .Values.config.API_URL }} to begin.
+Visit {{ . }} to begin.
+{{- end }}
 
 Documentation:
 https://hoop.dev/docs

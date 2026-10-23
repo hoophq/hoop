@@ -87,7 +87,7 @@
           [selection-card/selection-card
            {:icon (r/as-element [:> KeyRound {:size 18}])
             :title "OIDC"
-            :description "OpenID Connect — standard protocol using Client ID and Secret"
+            :description "OpenID Connect — standard protocol using a Client ID with a secret or a federated token"
             :selected? (= @protocol "oidc")
             :on-click #(rf/dispatch [:authentication->set-protocol "oidc"])}]
 

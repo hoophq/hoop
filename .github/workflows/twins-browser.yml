@@ -1,0 +1,141 @@
+# ENG-702: the twins' browser scenarios, in a headless Chrome against the
+# web UI of this commit (twins/README.md). Nightly and on demand, not on
+# PRs: the web UI build takes minutes, and the PR job (twins.yml) stays
+# API-only.
+name: Twins Browser
+
+on:
+  schedule:
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: Twins Browser Scenarios
+    runs-on: ubuntu-latest
+    # The scenario's own 20m `go test -timeout`, plus the UI and hoop builds.
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          libhoop-pr: "false"
+
+      # proxy.golang.org can reset HTTP/2 streams mid-download; see the
+      # header of pullrequest.yml. Only the download runs on HTTP/1.1.
+      - name: Download modules over HTTP/1.1
+        env:
+          GODEBUG: http2client=0
+        run: go mod download
+
+      - name: Build hoop
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/hoop-bin/hoop" ./client
+
+      # The UI build reads only these paths, and this file sets its Node and
+      # Java, so a hit is the UI of this commit. Restore and save are two
+      # steps: the combined action saves only when the whole job passes, and
+      # a failed scenario would then rebuild the UI on every later run.
+      - name: Restore the web UI build
+        id: ui
+        uses: actions/cache/restore@v6
+        with:
+          path: dist/dev/resources/public
+          key: twins-webui-${{ hashFiles('webapp/**', 'webapp_v2/**', 'scripts/dev/build-webapp.sh', '.github/workflows/twins-browser.yml') }}
+
+      - name: Setup Java
+        if: steps.ui.outputs.cache-hit != 'true'
+        uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: "21"
+
+      # Matches the release build; DEP-306 moves both off Node 20.
+      - name: Setup Node
+        if: steps.ui.outputs.cache-hit != 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      # The token lifts the GitHub API rate limit of the connection metadata
+      # download (webapp/scripts/download-connection-metadata.sh).
+      - name: Build the web UI
+        if: steps.ui.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/dev/build-webapp.sh
+
+      - name: Save the web UI build
+        if: steps.ui.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: dist/dev/resources/public
+          key: ${{ steps.ui.outputs.cache-primary-key }}
+
+      - name: Browser scenarios
+        env:
+          TWINS_REACH: native
+          HOOP_BIN_DIR: ${{ runner.temp }}/hoop-bin
+          HOOP_UI_DIR: ${{ github.workspace }}/dist/dev/resources/public
+          TWINS_ARTIFACTS: ${{ runner.temp }}/twins
+        run: make test-twins-browser
+
+      # The stack outlives `make twins-up`, a kept stack makes the next run
+      # refuse, and `make twins-down` leaves no process and no pid file.
+      - name: twins-up and twins-down
+        env:
+          TWINS_REACH: native
+          HOOP_BIN_DIR: ${{ runner.temp }}/hoop-bin
+          HOOP_UI_DIR: ${{ github.workspace }}/dist/dev/resources/public
+        # `bash -e` does not stop on a `! cmd` that fails, so each negative
+        # check exits by hand.
+        run: |
+          set -x
+          make twins-up
+          curl -fsS -o /dev/null http://127.0.0.1:18009/
+          curl -fsS -o /dev/null http://127.0.0.1:18081/_twin/ui
+          if TWINS_KEEP=1 TWINS_ARTIFACTS="$RUNNER_TEMP/other" make test-twins-browser; then
+            echo "a run beside a kept stack must refuse to start"; exit 1
+          fi
+          if make twins-up; then
+            echo "twins-up beside a kept stack must refuse to start"; exit 1
+          fi
+          curl -fsS -o /dev/null http://127.0.0.1:18009/
+          make twins-down
+          if curl -fsS -o /dev/null --max-time 2 http://127.0.0.1:18009/; then
+            echo "the gateway still answers after twins-down"; exit 1
+          fi
+          if pgrep -fa 'hoop start standalone|/twins-up/native/twins'; then
+            echo "a stack process outlived twins-down"; exit 1
+          fi
+          test -z "$(ls dist/twins-up/native/*.pid dist/twins-up/kept-native 2>/dev/null)"
+
+      - name: Upload screenshots, twin states and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: twins-browser
+          path: |
+            ${{ runner.temp }}/twins/screenshots/
+            ${{ runner.temp }}/twins/*.json
+            ${{ runner.temp }}/twins/*.txt
+            ${{ runner.temp }}/twins/native/*.log
+
+      # The stack of the "twins-up and twins-down" step logs under
+      # dist/twins-up, outside the scenario's artifacts dir. A separate
+      # artifact keeps the layout of twins-browser.
+      - name: Upload the twins-up logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: twins-up-logs
+          path: dist/twins-up/native/*.log
+          if-no-files-found: ignore

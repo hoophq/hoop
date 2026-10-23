@@ -9,7 +9,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 - `agentrs/` — Rust companion binary for RDP/TLS proxy workloads.
 - `webapp/` — legacy ClojureScript SPA; see `webapp/CLAUDE.md` for its own conventions.
 - `webapp_v2/` — React frontend that is replacing it.
-- `libhoop` is not in this repo. It is one private module, `github.com/hoophq/libhoop`, resolved from the module proxy like any other dependency. Builds need `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it. To work against a local clone, `make libhoop-dev`.
+- `libhoop` is not in this repo. It is one private module, `github.com/hoophq/libhoop`, resolved from the module proxy like any other dependency. Builds need `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica` and credentials for both: `client/`, `sidecar/ica` and `sidecar/cmd` also link the private `libhoop-ica` (Citrix ICA engine). To work against a local clone, `make libhoop-dev`.
 
 ## Toolchain & Prerequisites
 
@@ -74,6 +74,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 - The codecs implement `sidecar/inspect`'s `Codec` interface and register through `inspect.Register`, so the module depends on `github.com/hoophq/hoop/sidecar`. That edge is one-way: nothing under `sidecar/` is imported by libhoop.
 - Otherwise it **must not import from the main project** — bridge via stdlib types only.
 - One build path: the proxy, in CI and locally. No stub, no symlink, no checkout step.
+- Pin libhoop only to a commit on libhoop `main`. A PR-branch commit dies with the branch. CI job `libhoop Pin On Main` (`scripts/ci/check-libhoop-pins.sh`) enforces this.
 - Build produces WASM module for RDP parsing: `make generate-wasm`.
 
 ### Agent Rust (`agentrs/`)
@@ -156,8 +157,9 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 |------|---------|-------|
 | Start Postgres | `make run-dev-postgres` | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG |
 | Start Presidio (DLP) | `make run-dev-presidio` | Optional, for data masking dev |
-| Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
+| Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first). In a cloud session: start `dockerd`, set `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT` |
 | Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/bin/hoop` |
+| Run gateway + agent without Docker | `scripts/dev/run-sandbox.sh start` | PGlite, one stack at a time; for cloud sandboxes |
 | Build webapp into gateway | `make build-dev-webapp` | Then rerun `make run-dev` |
 | Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
 | Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |

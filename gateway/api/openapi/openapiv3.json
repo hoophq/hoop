@@ -7426,13 +7426,18 @@
             "example": "hoop-audience",
             "type": "string"
           },
+          "client_assertion_file": {
+            "description": "Path on the gateway to a JWT that authenticates the client in place of client_secret (RFC 7523),\ne.g. a Kubernetes service account token trusted by an Entra ID federated credential.\nIt must be the path the gateway operator set in IDP_CLIENT_ASSERTION_FILE.",
+            "example": "/var/run/secrets/hoop/idp/token",
+            "type": "string"
+          },
           "client_id": {
             "description": "Oauth2 Client ID",
             "example": "hoop-client-id",
             "type": "string"
           },
           "client_secret": {
-            "description": "Oauth2 Client Secret",
+            "description": "Oauth2 Client Secret. Set it or client_assertion_file, not both.",
             "example": "hoop-client-secret",
             "type": "string"
           },
@@ -7461,7 +7466,6 @@
         },
         "required": [
           "client_id",
-          "client_secret",
           "issuer_url"
         ],
         "type": "object"

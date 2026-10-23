@@ -18,5 +18,6 @@ use (
 	./sidecar/mcp
 	./sidecar/pii/alcatraz
 	./sidecar/store/sqlite
+	./sidecar/telemetry/otlp
 	./tunnel
 )

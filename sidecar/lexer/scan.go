@@ -242,6 +242,11 @@ func (s *scanner) skipComment() bool {
 	// the second statement never analyzed.
 	if s.peek(0) == '-' && s.peek(1) == '-' && (!s.rules.dashCommentNeedsSpace || s.dashOpensComment()) {
 		for s.pos < len(s.src) && s.src[s.pos] != '\n' {
+			// A lone CR ends the comment too where the engine says so;
+			// see lexRules.dashCommentEndsAtCR.
+			if s.rules.dashCommentEndsAtCR && s.src[s.pos] == '\r' {
+				break
+			}
 			s.pos++
 		}
 		return true

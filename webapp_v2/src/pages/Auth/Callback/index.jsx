@@ -25,6 +25,7 @@ function AuthCallback() {
         const token = initializeToken()
 
         if (!token) {
+          localStorage.setItem('login_error', 'No authentication token received')
           setError('No authentication token received')
           setTimeout(() => navigate('/login'), 2000)
           return
@@ -39,6 +40,7 @@ function AuthCallback() {
         }
       } catch (err) {
         console.error('Auth callback error:', err)
+        localStorage.setItem('login_error', 'Authentication failed')
         setError('Authentication failed')
         setTimeout(() => navigate('/login'), 2000)
       }

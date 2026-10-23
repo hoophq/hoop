@@ -196,6 +196,18 @@ test-twins:
 test-twins-scenario:
 	cd twins/scenario && env GOWORK=off CGO_ENABLED=0 go test -tags scenario -count=1 -v -timeout 10m ./...
 
+# The same stack with the web UI of this branch. test-twins-browser drives
+# it in a headless Chrome (nightly in CI); twins-up leaves it up for a
+# browser on this host, and twins-down stops it.
+test-twins-browser:
+	cd twins/scenario && env GOWORK=off CGO_ENABLED=0 go test -tags scenario,browser -run '^TestBrowser' -count=1 -v -timeout 20m ./...
+
+twins-up:
+	cd twins/scenario && env GOWORK=off CGO_ENABLED=0 go test -tags scenario,twinsup -run '^TestUp$$' -count=1 -v -timeout 20m ./...
+
+twins-down:
+	cd twins/scenario && env GOWORK=off CGO_ENABLED=0 go test -tags scenario,twinsup -run '^TestDown$$' -count=1 -v -timeout 2m ./...
+
 # EVL-338: the previous release must decode the document this plane serves.
 # The test builds a decoder in a worktree of the newest release tag HEAD does
 # not contain, so it needs the tags (fetch-depth: 0). The grep makes a renamed
@@ -533,4 +545,4 @@ gcp-marketplace-sidecar-publish:
 gcp-marketplace-sidecar-test:
 	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh test
 
-.PHONY: test-parity test-twins test-twins-scenario run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: test-parity test-twins test-twins-scenario test-twins-browser twins-up twins-down run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

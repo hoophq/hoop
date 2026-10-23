@@ -142,6 +142,9 @@ config:
   IDP_ISSUER: null
   IDP_CLIENT_ID: null
   IDP_CLIENT_SECRET: null
+  # Path to a JWT that authenticates the OIDC client in place of
+  # IDP_CLIENT_SECRET. idpFederatedToken.enabled sets it for you.
+  IDP_CLIENT_ASSERTION_FILE: null
   IDP_CUSTOM_SCOPES: null
   # LOG_ENCODING: 'console|json'
   # LOG_LEVEL: 'debug|info|warn|error'
@@ -199,9 +202,15 @@ config:
   # HOOP_SPIFFE_BUNDLE_JWKS: ''
 
 # -- Load environment variables from a Secret that already exists in the
-# namespace. The chart only references it, it does not create or manage it.
-# Every key of the Secret becomes an environment variable, loaded after
-# 'hoop-config', so it overrides the same key defined in '.Values.config'.
+# namespace (e.g. made by sealed-secrets). The chart only references it, it does
+# not create or manage it. The gateway and the default agent load every key of
+# the Secret after 'hoop-config', so it overrides the same key defined in
+# '.Values.config'.
+# When it is set, config.POSTGRES_DB_URI, config.API_URL and
+# config.IDP_CLIENT_SECRET are not required: put them in the Secret. The chart
+# cannot read the Secret, so it does not check that they are there. A change to
+# the Secret does not restart the pods: run
+# 'kubectl rollout restart deployment/hoopgateway'.
 existingSecret: ''
 # existingSecret: hoop-gateway-credentials
 
@@ -481,6 +490,17 @@ resources:
     requests:
       cpu: 512m
       memory: 1Gi
+
+# -- Sign in with Entra ID (Azure) without a client secret. Mounts a projected
+# service account token and sets config.IDP_CLIENT_ASSERTION_FILE to it. The
+# app registration needs a federated credential with issuer = the cluster OIDC
+# issuer, subject = system:serviceaccount:<namespace>:hoopgateway and
+# audience = idpFederatedToken.audience. The pod runs as hoopgateway: set
+# serviceAccount.create=true or create it. Leave config.IDP_CLIENT_SECRET empty.
+idpFederatedToken:
+  enabled: false
+  audience: api://AzureADTokenExchange
+  expirationSeconds: 3600
 
 serviceAccount:
   # Specifies whether a service account should be created

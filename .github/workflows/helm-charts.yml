@@ -70,6 +70,94 @@ jobs:
             || { echo "::error::hoopagent-ng did not render hoophq/hoopdev-ng"; exit 1; }
           echo "clean-line charts resolve dependencies and render the -ng images"
 
+      - name: Assert the gateway chart IDP client credential guards hold
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/gateway
+          base=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db
+                --set config.API_URL=https://gw.example.tld
+                --set config.IDP_ISSUER=https://idp
+                --set config.IDP_CLIENT_ID=i)
+
+          # A federated token in place of the client secret (ENG-594).
+          fed=$(helm template t "$chart" "${base[@]}" --set idpFederatedToken.enabled=true)
+          for want in "IDP_CLIENT_ASSERTION_FILE: '/var/run/secrets/hoop/idp/token'" \
+                      "IDP_CLIENT_SECRET: ''" 'mountPath: /var/run/secrets/hoop/idp' \
+                      'audience: "api://AzureADTokenExchange"' 'serviceAccountName: hoopgateway'; do
+            echo "$fed" | grep -qF "$want" \
+              || { echo "::error::idpFederatedToken did not render: $want"; exit 1; }
+          done
+          # helm upgrade --reuse-values keeps the values of a release from an
+          # older chart, which have no idpFederatedToken key.
+          helm template t "$chart" "${base[@]}" --set config.IDP_CLIENT_SECRET=s \
+            --set idpFederatedToken=null >/dev/null \
+            || { echo "::error::a release without the idpFederatedToken key no longer renders"; exit 1; }
+          # Only a client assertion makes the chart parse IDP_URI.
+          helm template t "$chart" "${base[@]}" --set config.IDP_CLIENT_SECRET=s \
+            --set 'config.IDP_URI=https://i:a%zz@idp' >/dev/null \
+            || { echo "::error::an IDP_URI was parsed without a client assertion"; exit 1; }
+
+          # Each of these MUST fail to render: the gateway refuses to start.
+          guard() {
+            local why=$1; shift
+            if helm template t "$chart" "$@" >/dev/null 2>&1; then
+              echo "::error::gateway chart guard no longer fires: $why"
+              exit 1
+            fi
+          }
+          guard "issuer, no secret or assertion" "${base[@]}"
+          guard "token + IDP_CLIENT_SECRET"  "${base[@]}" --set idpFederatedToken.enabled=true --set config.IDP_CLIENT_SECRET=s
+          guard "file + IDP_CLIENT_SECRET"   "${base[@]}" --set config.IDP_CLIENT_ASSERTION_FILE=/f --set config.IDP_CLIENT_SECRET=s
+          guard "token + IDP_URI secret"     "${base[@]}" --set idpFederatedToken.enabled=true --set config.IDP_URI=https://i:s@idp
+
+          echo "gateway chart renders a federated token and all four guards fire"
+
+      - name: Assert the gateway chart takes credentials from existingSecret
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/gateway
+          idp=(--set config.IDP_ISSUER=https://idp --set config.IDP_CLIENT_ID=i)
+
+          # GitOps: every credential lives in a Secret the chart does not manage
+          # (ENG-681). The values hold none of them, so the render must not fail.
+          out=$(helm template t "$chart" "${idp[@]}" --set existingSecret=creds \
+            --set defaultAgent.enabled=true)
+          echo "$out" | grep -qxF "  API_URL: ''" \
+            || { echo "::error::hoop-config did not render API_URL empty"; exit 1; }
+          # Every credential-named key of hoop-config renders empty. The count
+          # stops the check from passing when it matches nothing.
+          creds=$(echo "$out" | awk '/^  name: hoop-config$/{f=1} f&&/^---/{exit} f' \
+            | grep -E "^  [A-Z_]*(SECRET|KEY|PASS|TOKEN|CREDENTIALS|_URI)[A-Z_]*: ")
+          [ "$(echo "$creds" | wc -l)" -ge 10 ] \
+            || { echo "::error::found $(echo "$creds" | wc -l) credential keys in hoop-config, want at least 10"; exit 1; }
+          leaked=$(echo "$creds" | grep -vE ": ''$" || true)
+          [ -z "$leaked" ] \
+            || { echo "::error::hoop-config renders a credential with no value set: $leaked"; exit 1; }
+          # Both containers load the Secret after hoop-config, so its keys win.
+          refs() { grep -A4 'envFrom:' | grep 'name:' | awk '{print $2}' | paste -sd, -; }
+          got=$(echo "$out" | refs)
+          [ "$got" = "hoop-config,creds,hoop-config,creds" ] \
+            || { echo "::error::envFrom order is '$got', want hoop-config then creds in both containers"; exit 1; }
+
+          # Without existingSecret, nothing else is loaded and the checks still fire.
+          base=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db
+                --set config.API_URL=https://gw.example.tld)
+          got=$(helm template t "$chart" "${base[@]}" --set defaultAgent.enabled=true | refs)
+          [ "$got" = "hoop-config,hoop-config" ] \
+            || { echo "::error::envFrom is '$got' without existingSecret, want hoop-config only"; exit 1; }
+          guard() {
+            local why=$1; shift
+            if helm template t "$chart" "$@" >/dev/null 2>&1; then
+              echo "::error::gateway chart guard no longer fires: $why"
+              exit 1
+            fi
+          }
+          guard "no POSTGRES_DB_URI"   --set config.API_URL=https://gw.example.tld
+          guard "no API_URL"           --set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db
+          guard "no IDP_CLIENT_SECRET" "${base[@]}" "${idp[@]}"
+
+          echo "gateway chart renders with credentials only in existingSecret, and its checks fire without it"
+
       - name: Assert the sidecar chart renders and its guards hold
         run: |
           set -euo pipefail
@@ -444,6 +532,9 @@ jobs:
           guard "API_URL no scheme"   --set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db --set config.API_URL=cp.example.tld
           guard "PORT moved"          "${base[@]}" --set config.PORT=9000
           guard "issuer, no client"   "${base[@]}" --set config.IDP_ISSUER=https://idp
+          guard "issuer, no secret"   "${base[@]}" --set config.IDP_ISSUER=https://idp --set config.IDP_CLIENT_ID=i
+          guard "token + secret"      "${base[@]}" --set idpFederatedToken.enabled=true --set config.IDP_CLIENT_SECRET=s
+          guard "token, no SA"        "${base[@]}" --set idpFederatedToken.enabled=true
           guard "image.command"       "${base[@]}" --set 'image.command={hoop}'
           guard "image.args"          "${base[@]}" --set 'image.args={start}'
           guard "no parentRefs"       "${base[@]}" --set gatewayApi.enabled=true --set gatewayApi.createGateway=false
@@ -475,7 +566,17 @@ jobs:
           echo "$idp" | grep -q 'IDP_ISSUER' \
             || { echo "::error::the IDP block did not reach the Secret"; exit 1; }
 
-          echo "all ten control plane guards fire, and valid values still render"
+          # A federated token replaces the client secret (ENG-594), also on a
+          # release whose values predate the idpFederatedToken key.
+          fed=$(helm template t "$chart" "${base[@]}" --set config.IDP_ISSUER=https://idp \
+            --set config.IDP_CLIENT_ID=i --set idpFederatedToken.enabled=true --set serviceAccount.create=true) \
+            || { echo "::error::an IDP block with a federated token was refused"; exit 1; }
+          echo "$fed" | grep -qF 'IDP_CLIENT_ASSERTION_FILE: "/var/run/secrets/hoop/idp/token"' \
+            || { echo "::error::idpFederatedToken did not set IDP_CLIENT_ASSERTION_FILE"; exit 1; }
+          helm template t "$chart" "${base[@]}" --set idpFederatedToken=null >/dev/null \
+            || { echo "::error::a release without the idpFederatedToken key no longer renders"; exit 1; }
+
+          echo "all thirteen control plane guards fire, and valid values still render"
 
           # The chart renders the control plane's environment and nothing else.
           # It does not police what an operator writes under config: a key it

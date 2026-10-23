@@ -49,6 +49,13 @@ helm upgrade --install hoopcontrolplane \
 There is no `AUTH_METHOD`. Setting any of `IDP_ISSUER`, `IDP_CLIENT_ID`,
 `IDP_CLIENT_SECRET` or `IDP_URI` selects OIDC; setting none leaves local auth.
 
+To sign in with Entra ID without a client secret, set `idpFederatedToken.enabled`
+and leave `IDP_CLIENT_SECRET` empty. The chart mounts a projected service
+account token and sets `IDP_CLIENT_ASSERTION_FILE` to it. The app registration
+needs a federated credential: issuer = the cluster OIDC issuer, subject =
+`system:serviceaccount:<namespace>:<service account>`, audience =
+`api://AzureADTokenExchange`. Steps in [the chart README](../../README.md#entra-id-without-a-client-secret).
+
 SAML is not configurable by environment at all — `newSamlProvider` reads it
 from the database and refuses otherwise, and once that row exists the database
 supplies the method too. An `authconfig` row overrides all of the above at
@@ -276,8 +283,11 @@ are rendered by the gateway chart and not by this one; naming one under
 | `image.pullPolicy` | `Always` | |
 | `config.POSTGRES_DB_URI` | — | **Required.** External PostgreSQL |
 | `config.API_URL` | — | **Required.** Must carry a scheme |
-| `config.IDP_ISSUER` | `''` | Setting any `IDP_*` key selects OIDC. Requires `IDP_CLIENT_ID` and `IDP_CLIENT_SECRET` |
+| `config.IDP_ISSUER` | `''` | Setting any `IDP_*` key selects OIDC. Requires `IDP_CLIENT_ID`, and `IDP_CLIENT_SECRET` or a client assertion |
 | `config.IDP_CLIENT_ID` / `IDP_CLIENT_SECRET` / `IDP_CUSTOM_SCOPES` / `IDP_GROUPS_CLAIM` / `IDP_AUDIENCE` | `''` | |
+| `config.IDP_CLIENT_ASSERTION_FILE` | `''` | Path to a JWT that authenticates the OIDC client in place of `IDP_CLIENT_SECRET`. Set by `idpFederatedToken.enabled` |
+| `idpFederatedToken.enabled` | `false` | Mounts a projected service account token for an Entra ID federated credential. See Authentication |
+| `idpFederatedToken.audience` / `idpFederatedToken.expirationSeconds` | `api://AzureADTokenExchange` / `3600` | |
 | `config.MIGRATION_PATH_FILES` | `''` | Migrations are embedded and the image ships no SQL files; set this only to override them with files you mount |
 | `config.GIN_MODE` | `release` | |
 | `config.LOG_ENCODING` / `config.LOG_LEVEL` | `json` / `info` | |
