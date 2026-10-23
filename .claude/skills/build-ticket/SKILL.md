@@ -59,7 +59,10 @@ schedule and no person reads the session. Then:
   wrote it.
 - The sandbox is discarded after the run: push the branch after each commit.
   The evidence is how a person knows the work is right: a PR without its
-  comparison images in "Testing" is not done. `evidence` step 6 publishes them.
+  comparison images in "Testing" is not done. QA's captures are raw material:
+  compose them (`evidence` step 4), then publish them with
+  `.claude/skills/evidence/publish.sh` (`evidence` step 6). That is the upload
+  route of a cloud session; a capture left in the sandbox is lost with it.
 - `gh` can be missing: use the GitHub MCP tools.
 - The PR description starts with `Opened by the support agent (AI) from <ID>.`
   The PR stays a draft. A person marks it ready and merges it.

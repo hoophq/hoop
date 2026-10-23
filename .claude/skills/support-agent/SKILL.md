@@ -87,8 +87,10 @@ Never send it to the customer. Label `agent:drafted`.
 - `HOOP_AGENT_MODE=spec`: run `build-ticket` steps 1 and 2 only. The spec and
   the design note go on the ticket as comments. Label `agent:drafted`.
 - `HOOP_AGENT_MODE=build`: run `/build-ticket <ID>`, in its autonomous mode.
-  Label `agent:pr-open` when the draft PR exists, `agent:stuck` after 3 QA
-  FAIL rounds. A ticket specced by an earlier run reaches here through
+  Label `agent:pr-open` only when the draft PR's "Testing" shows the published
+  comparison images; without them the build is not done. Label `agent:stuck`
+  after 3 QA FAIL rounds, or when the evidence cannot be captured, with the
+  reason. A ticket specced by an earlier run reaches here through
   `agent:go`: build from that spec comment, and post a new one only where the
   code proves it wrong.
 
