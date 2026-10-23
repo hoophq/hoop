@@ -19,7 +19,7 @@
 // The dependency runs one way. libhoop imports nothing from this repository.
 module github.com/hoophq/hoop/sidecar
 
-go 1.26.9
+go 1.26.10
 
 require github.com/hoophq/libhoop v0.0.0-20261022191641-55dc7bef0843
 
