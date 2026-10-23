@@ -13,6 +13,7 @@ import {
   declineDesktop,
   describeReview,
   isAttended,
+  isDesktopAskKey,
   isVisible,
   notificationsGranted,
   shouldAskDesktop,
@@ -75,6 +76,11 @@ useAuthStore.subscribe((state, prev) => {
 })
 
 const showAll = () => open.forEach(show)
+
+// "Not now" in another tab takes the ask off the toasts open here.
+window.addEventListener('storage', (e) => {
+  if (isDesktopAskKey(e.key)) showAll()
+})
 
 function DesktopAsk() {
   return (

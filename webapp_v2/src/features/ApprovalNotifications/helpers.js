@@ -1,4 +1,5 @@
 import { isSidecarReview, reviewSource } from '@/pages/Reviews/helpers'
+import { useUserStore } from '@/stores/useUserStore'
 
 const TYPE_LABELS = { onetime: 'One-time access', jit: 'Time-based access' }
 
@@ -31,23 +32,33 @@ export const notificationsGranted = () => hasNotifications() && Notification.per
 
 export const canAskPermission = () => hasNotifications() && Notification.permission === 'default'
 
-// "Not now" on the desktop-alerts ask, kept per browser.
+// "Not now" on the desktop-alerts ask, kept per user in this browser. Read
+// on every check, so a choice made in another tab applies here too.
 const ASK_KEY = 'hoop-desktop-alerts-ask'
-let declined = (() => {
+const askKey = () => `${ASK_KEY}:${useUserStore.getState().user?.id ?? ''}`
+// Without storage, the answer lasts until the page reloads.
+const declinedHere = new Set()
+
+function declined() {
+  const key = askKey()
+  if (declinedHere.has(key)) return true
   try {
-    return localStorage.getItem(ASK_KEY) === 'not-now'
+    return localStorage.getItem(key) === 'not-now'
   } catch {
     return false
   }
-})()
+}
 
-export const shouldAskDesktop = () => canAskPermission() && !declined
+export const shouldAskDesktop = () => canAskPermission() && !declined()
+
+export const isDesktopAskKey = (key) => Boolean(key?.startsWith(ASK_KEY))
 
 export function declineDesktop() {
-  declined = true
+  const key = askKey()
+  declinedHere.add(key)
   try {
-    localStorage.setItem(ASK_KEY, 'not-now')
+    localStorage.setItem(key, 'not-now')
   } catch {
-    // Without storage the answer lasts until the page reloads.
+    // Kept in declinedHere.
   }
 }
