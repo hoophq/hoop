@@ -518,12 +518,8 @@ func (a *analyzer) walk() {
 		// A relation introducer claims the list that follows. Oracle's
 		// `FOR UPDATE OF col` locks rows: the name after it is a column.
 		// Spark's INSERT OVERWRITE [TABLE] t names its target after
-		// OVERWRITE, where no INTO introduces it. Only while an INSERT has
-		// not claimed its target, which allows `INSERT WITH SCHEMA
-		// EVOLUTION OVERWRITE t`: elsewhere overwrite is a name, and
-		// `SELECT id overwrite FROM s` read as an introducer took FROM for
-		// the table and lost s.
-		if (relIntro[t.Text] || a.d == Spark && t.Text == "overwrite" && a.top().verb == Insert && a.top().firstTarget) &&
+		// OVERWRITE, where no INTO introduces it; see sparkOverwriteTarget.
+		if (relIntro[t.Text] || a.d == Spark && t.Text == "overwrite" && a.sparkOverwriteTarget(i)) &&
 			!(a.d == Oracle && a.forUpdate(i)) {
 			if j, rels, ok := a.relationsAfter(i); ok {
 				for _, rel := range rels {
@@ -616,6 +612,28 @@ func (a *analyzer) sparkNotDML(i int) bool {
 		return !(i+1 < len(a.toks) && (a.toks[i+1].isWord("into") || a.toks[i+1].isWord("with")))
 	}
 	return false
+}
+
+// sparkOverwriteTarget reports whether the Spark OVERWRITE at i names an
+// INSERT's target. It does while the INSERT has not claimed one, which
+// allows `INSERT WITH SCHEMA EVOLUTION OVERWRITE t`. Elsewhere overwrite is
+// a name: `SELECT id overwrite FROM s`, read as an introducer, took FROM for
+// the table and lost s.
+//
+// EXPLAIN without ANALYZE heads no statement, so the INSERT it plans claims
+// nothing, and only position tells: EXPLAIN [mode] INSERT [WITH SCHEMA
+// EVOLUTION] OVERWRITE t. The plan shows t's location and statistics, so t
+// is read.
+func (a *analyzer) sparkOverwriteTarget(i int) bool {
+	if r := a.top(); r.verb == Insert && r.firstTarget {
+		return true
+	}
+	j := i - 1
+	if j >= 3 && a.toks[j].isWord("evolution") && a.toks[j-1].isWord("schema") && a.toks[j-2].isWord("with") {
+		j -= 3
+	}
+	return a.explainSeen && j >= 1 && a.toks[j].isWord("insert") &&
+		(a.toks[j-1].isWord("explain") || a.toks[j-1].Kind == Word && sparkExplainMode[a.toks[j-1].Text])
 }
 
 // sparkStatementAt reports whether a verb Spark adds, at i, can begin its

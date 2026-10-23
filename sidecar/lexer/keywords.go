@@ -293,6 +293,12 @@ var sparkTransaction = map[string]bool{
 	"transaction": true, "work": true,
 }
 
+// sparkExplainMode are the modes Spark's EXPLAIN takes before the statement
+// it plans: EXPLAIN [EXTENDED | CODEGEN | COST | FORMATTED] statement.
+var sparkExplainMode = map[string]bool{
+	"extended": true, "codegen": true, "cost": true, "formatted": true,
+}
+
 // sparkScriptHeadAfter are words after which a statement may begin inside a
 // Spark SQL script, as plsqlHeadAfter does for PL/SQL: `BEGIN DROP TABLE t`,
 // `BEGIN [NOT] ATOMIC`, `WHILE c DO`, `FOR r AS q DO`, `LOOP` and `REPEAT`.

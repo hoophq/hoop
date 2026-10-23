@@ -1838,6 +1838,11 @@ func TestSparkWriteTargets(t *testing.T) {
 		{"CREATE TABLE t AS SELECT x overwrite FROM s", lexer.Create, []string{"t"}, []string{"s"}},
 		{"INSERT INTO t SELECT x overwrite FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
 		{"INSERT OVERWRITE t SELECT x overwrite FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		// EXPLAIN plans the INSERT and writes nothing; the plan shows t.
+		{"EXPLAIN INSERT OVERWRITE t SELECT 1", lexer.Explain, nil, []string{"t"}},
+		{"EXPLAIN FORMATTED INSERT OVERWRITE t SELECT 1", lexer.Explain, nil, []string{"t"}},
+		{"EXPLAIN INSERT WITH SCHEMA EVOLUTION OVERWRITE t SELECT 1", lexer.Explain, nil, []string{"t"}},
+		{"EXPLAIN SELECT insert overwrite FROM s", lexer.Explain, nil, []string{"s"}},
 		{"LOAD DATA INPATH '/p' OVERWRITE INTO TABLE t", lexer.Insert, []string{"t"}, nil},
 	} {
 		a := lexer.Analyze(tc.sql, lexer.Spark)

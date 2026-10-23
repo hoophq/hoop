@@ -621,6 +621,7 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"GENERATE is refused as an alter", "GENERATE symlink_format_manifest FOR TABLE t", noWrites, true},
 		{"DESCRIBE TABLE EXTENDED is refused by a rule fencing reads of its table", "DESCRIBE TABLE EXTENDED t", fenceReadT, true},
 		{"a column aliased overwrite is refused by a rule fencing reads of its table", "SELECT id overwrite FROM t", fenceReadT, true},
+		{"EXPLAIN INSERT OVERWRITE is refused by a rule fencing reads of its table", "EXPLAIN INSERT OVERWRITE t SELECT 1", fenceReadT, true},
 		{"a DROP in an IF inside a handler's block is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", noWrites, true},
 		{"a DELETE in a CASE statement inside a handler's block is refused by a rule fencing its target", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN CASE WHEN true THEN DELETE FROM t; END CASE; END; SELECT 1/0; END", fenceT, true},
 		{"a DROP in a CASE statement on a variable called case is refused", "BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN DROP TABLE t; END CASE; END", noWrites, true},

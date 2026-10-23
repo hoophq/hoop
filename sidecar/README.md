@@ -3504,7 +3504,7 @@ run, and every write in it is an effect: a rule naming `drop` refuses
 As in an Oracle PL/SQL block, a write verb counts anywhere in a script,
 minus the known false readings: `SHOW CREATE TABLE`, a MERGE join hint, and
 REPLACE, LOAD, CONVERT, MSCK, REORG or REPAIR without the keyword their
-statement starts with, so `CASE WHEN a THEN replace(s, 'x', 'y') END` and a
+statement starts with, and GENERATE without its FOR, so `CASE WHEN a THEN replace(s, 'x', 'y') END` and a
 column called load stay reads. A column named like another write verb
 (update, delete, vacuum, restore, copy ...) after THEN, or anywhere inside a
 script, still reads as a write, as a column called update does in every
@@ -3526,8 +3526,8 @@ it, every released Spark reads it as text, so text holding `/*+` is read
 both ways too.
 
 The Databricks verbs: VACUUM is a `delete`, because it removes the files
-that older table versions need. OPTIMIZE, REORG, RESTORE, CONVERT TO DELTA
-and `[MSCK] REPAIR TABLE` are `alter`, REPLACE TABLE is `create`, LOAD DATA
+that older table versions need. OPTIMIZE, REORG, RESTORE, CONVERT TO DELTA,
+GENERATE and `[MSCK] REPAIR TABLE` are `alter`, REPLACE TABLE is `create`, LOAD DATA
 is `insert`, DESCRIBE is `show`, and CACHE and UNCACHE are `other`. The
 maintenance commands, COPY INTO, INSERT OVERWRITE and the FROM-first
 multi-insert (`FROM s INSERT INTO t SELECT ...`) record their target as
