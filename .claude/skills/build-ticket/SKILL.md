@@ -66,6 +66,13 @@ schedule and no person reads the session. Then:
 - `gh` can be missing: use the GitHub MCP tools.
 - The PR description starts with `Opened by the support agent (AI) from <ID>.`
   The PR stays a draft. A person marks it ready and merges it.
+- Once the draft PR exists, `subscribe_pr_activity` on it. Its CI results and
+  review comments (Qodo when a person marks it ready, reviewers) wake this
+  session after the run ends. On each wake: fix a red check this PR caused and
+  push; verify each review finding, then fix and push it or reply why not;
+  reply on each thread you addressed and resolve it. Each reply starts with
+  `Support agent (AI):`. Never mark the PR ready or merge it. Unsubscribe when
+  it is merged or closed.
 
 ## 1. Context
 

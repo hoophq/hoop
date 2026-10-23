@@ -38,14 +38,18 @@ claim (below), end the run with "busy: <ID>". Post nothing.
 1. **Answered:** a ticket labeled `agent:needs-info` or `agent:needs-customer`
    with a human reply newer than your last question. Look at its Linear
    comments and at its Slack thread (the link attached to the ticket).
-2. **Asked for:** a ticket labeled `agent:go`, or a message in
+2. **Reviewed:** a ticket labeled `agent:pr-open` whose PR has a review thread
+   or a red check left without your answer for an hour. The session that built
+   it did not wake. Address it as `build-ticket` autonomous mode says, then
+   label it `agent:pr-open` again.
+3. **Asked for:** a ticket labeled `agent:go`, or a message in
    `HOOP_AGENT_SLACK_CHANNEL` that names a ticket ID and does not start with
    🤖. Add `agent:go` to that ticket.
-3. **New:** label `Support`, status `Todo`, no assignee, no `agent:*` label.
+4. **New:** label `Support`, status `Todo`, no assignee, no `agent:*` label.
    Oldest first.
 
 Never take a ticket labeled `agent:working`, `agent:drafted`, `agent:pr-open`,
-`agent:stuck` or `agent:skip` unless step 1.1 or 1.2 selects it. One exception:
+`agent:stuck` or `agent:skip` unless steps 1.1 to 1.3 select it. One exception:
 `agent:working` with no ticket update for 6 hours is a stale claim, left by a
 run that stopped. With no other `agent:*` label, take it first, and say so in
 a comment. With another one, that run finished its work: remove
