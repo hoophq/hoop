@@ -15,8 +15,10 @@ export const REVIEW_NOTIFICATIONS_FLAG = 'experimental.review_notifications'
 const SEEN_CHANNEL = 'hoop-approval-seen'
 // How long a tab nobody looks at waits for an attended tab to claim the event.
 const HANDOFF_MS = 300
-// With more open than this, each toast offers "Close all".
-const CLOSE_ALL_OVER = 2
+// With more open than this, the newest toast (in front) offers "Close all".
+const CLOSE_ALL_OVER = 3
+// The logo on white: the OS draws the app's own icon (the browser's) beside it.
+const NOTIFICATION_ICON = '/notification-icon.png'
 
 function Summary({ who, where, kind }) {
   return (
@@ -73,7 +75,9 @@ function show(t) {
   if (canAskPermission()) {
     actions.push({ label: 'Enable desktop notifications', keepOpen: true, onClick: askPermission })
   }
-  if (open.length > CLOSE_ALL_OVER) actions.push({ label: `Close all (${open.length})`, onClick: closeAll })
+  if (open.length > CLOSE_ALL_OVER && t === open[open.length - 1]) {
+    actions.push({ label: `Close all (${open.length})`, onClick: closeAll })
+  }
   t.id = showSnackbar({
     id: t.id,
     level: 'approval',
@@ -136,16 +140,15 @@ export default function ApprovalNotifications() {
       const { title, body, who, where, kind } = describeReview(review)
       const goToReview = () => navigate(`/approvals/${encodeURIComponent(review.session)}`)
 
-      // A visible tab without focus, such as one beside a terminal, gets both.
-      const notify = !attended && !watched && notificationsGranted()
-      if (notify) {
-        const notification = new Notification(title, { body, tag: id })
+      // The toast always shows, so a hidden tab has it on return. Without
+      // focus, the OS notification shows too.
+      if (!attended && !watched && notificationsGranted()) {
+        const notification = new Notification(title, { body, tag: id, icon: NOTIFICATION_ICON })
         notification.onclick = () => {
           window.focus()
           goToReview()
           notification.close()
         }
-        if (!visible) return
       }
       open.push({ title, description: <Summary who={who} where={where} kind={kind} />, goToReview })
       open.forEach(show)

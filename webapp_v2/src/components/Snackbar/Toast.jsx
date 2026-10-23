@@ -51,7 +51,7 @@ export default function Toast({ id, type, title, description, details, actions }
   const approval = type === 'approval'
 
   return (
-    <div className={approval ? `${classes.root} ${classes.approval}` : classes.root}>
+    <div className={classes.root}>
       <div className={classes.header}>
         <div className={classes.body}>
           {Icon && (
