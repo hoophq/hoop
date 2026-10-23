@@ -182,7 +182,10 @@ publish, and the PR stays a draft until a person reads it. Then:
   output with Chromium instead.
 - VHS in a cloud sandbox: it needs `ttyd` and a `chromium` in `PATH`, and runs
   as root only with `VHS_NO_SANDBOX=true`. The agent's setup script installs
-  them (`.claude/README.md`); elsewhere, run the same lines.
+  them (`.claude/README.md`); elsewhere, run the same lines. That script goes
+  on after a failed download, so check `command -v vhs ttyd chromium` before
+  you record and run its lines again for a missing one. Still missing: a PNG
+  of the last state, and the missing video under "Open items".
 - A UI flow in a cloud sandbox: `make build-dev-webapp` and `make run-dev`
   (or `scripts/dev/run-sandbox.sh start --ui`), then `rec.mjs` as usual: it
   finds Chromium. In our cloud runs Docker Hub answered 429, and Maven Central
