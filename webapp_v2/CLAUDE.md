@@ -217,10 +217,11 @@ When something in `pages/[Page]/components/` starts getting reused outside the p
 ## Real-time updates — use `useLiveEvent`, never a new stream or socket
 
 When a page must react to a change made elsewhere (a sidecar checked in, a
-record changed), subscribe with `useLiveEvent`. The tab holds one shared
-connection to `GET /api/events/stream`: it opens with the first subscriber and
-closes when the last page unmounts. Do not open an `EventSource`, a websocket or
-a new `fetch` stream for this.
+record changed), subscribe with `useLiveEvent`. The browser holds one shared
+connection to `GET /api/events/stream`: one tab streams and passes events to the
+others. It opens with the first subscriber and closes when the last page
+unmounts. Do not open an `EventSource`, a websocket or a new `fetch` stream for
+this.
 
 ```jsx
 import { useLiveEvent } from '@/hooks/useLiveEvent'
@@ -237,8 +238,9 @@ useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (event) => {
 - A new type is added in both places: the gateway constant
   (`gateway/liveevents`) and `LIVE_EVENTS`.
 - A page that must not miss an event keeps a slow poll: the stream is
-  best effort (one replica, reconnects after 5s).
-- The first user is the sidecar setup wizard (`pages/Sidecars/Setup`).
+  best effort (one replica, no replay, reconnects after 3-8s).
+- Users: the sidecar setup wizard (`pages/Sidecars/Setup`) and approval
+  notifications (`features/ApprovalNotifications`).
 
 ## Snackbars / Toasts — use `showSnackbar`, never Mantine notifications
 

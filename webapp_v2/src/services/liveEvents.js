@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/useAuthStore'
 // The event types the gateway sends (gateway/liveevents).
 export const LIVE_EVENTS = {
   SIDECAR_CHECKED_IN: 'sidecar.checked_in',
+  REVIEW_CREATED: 'review.created',
 }
 
 export const liveEventsService = {
