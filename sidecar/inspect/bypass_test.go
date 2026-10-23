@@ -632,6 +632,7 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"COPY INTO is refused as an insert", "COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", noWrites, true},
 		{"a FROM-first INSERT is refused", "FROM s INSERT INTO t SELECT a", noWrites, true},
 		{"INSERT OVERWRITE is refused by a rule fencing its target", "INSERT OVERWRITE t SELECT * FROM s", fenceT, true},
+		{"INSERT WITH SCHEMA EVOLUTION OVERWRITE is refused by a rule fencing its target", "INSERT WITH SCHEMA EVOLUTION OVERWRITE t SELECT * FROM s", fenceT, true},
 		{"COPY INTO is refused by a rule fencing its target", "COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", fenceT, true},
 		{"VACUUM is refused by a rule fencing its target", "VACUUM t", fenceT, true},
 		{"VACUUM of a table called over is refused as a delete", "VACUUM over RETAIN 0 HOURS", noWrites, true},

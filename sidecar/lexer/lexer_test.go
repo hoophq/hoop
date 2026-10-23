@@ -1824,6 +1824,10 @@ func TestSparkWriteTargets(t *testing.T) {
 		{"INSERT OVERWRITE TABLE t PARTITION (p = 1) SELECT * FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
 		{"INSERT OVERWRITE LOCAL DIRECTORY '/tmp/x' SELECT * FROM s", lexer.Insert, nil, []string{"s"}},
 		{"FROM s INSERT INTO t SELECT a INSERT OVERWRITE TABLE u SELECT b", lexer.Insert, []string{"t", "u"}, []string{"s"}},
+		{"INSERT WITH SCHEMA EVOLUTION INTO t SELECT * FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"INSERT WITH SCHEMA EVOLUTION OVERWRITE t SELECT * FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"INSERT WITH SCHEMA EVOLUTION OVERWRITE TABLE t SELECT * FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"FROM s INSERT INTO t SELECT a INSERT WITH SCHEMA EVOLUTION OVERWRITE TABLE u SELECT b", lexer.Insert, []string{"t", "u"}, []string{"s"}},
 		{"FROM s SELECT a", lexer.Select, nil, []string{"s"}},
 		{"MERGE WITH SCHEMA EVOLUTION INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET *", lexer.Merge, []string{"t"}, []string{"s"}},
 		{"CREATE TABLE t (a INT) USING DELTA", lexer.Create, []string{"t"}, nil},
@@ -1832,6 +1836,8 @@ func TestSparkWriteTargets(t *testing.T) {
 		// name, here an alias, and the FROM after it still names s.
 		{"SELECT id overwrite FROM s", lexer.Select, nil, []string{"s"}},
 		{"CREATE TABLE t AS SELECT x overwrite FROM s", lexer.Create, []string{"t"}, []string{"s"}},
+		{"INSERT INTO t SELECT x overwrite FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"INSERT OVERWRITE t SELECT x overwrite FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
 		{"LOAD DATA INPATH '/p' OVERWRITE INTO TABLE t", lexer.Insert, []string{"t"}, nil},
 	} {
 		a := lexer.Analyze(tc.sql, lexer.Spark)

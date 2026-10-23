@@ -518,10 +518,12 @@ func (a *analyzer) walk() {
 		// A relation introducer claims the list that follows. Oracle's
 		// `FOR UPDATE OF col` locks rows: the name after it is a column.
 		// Spark's INSERT OVERWRITE [TABLE] t names its target after
-		// OVERWRITE, where no INTO introduces it. Only right after INSERT:
-		// elsewhere overwrite is a name, and `SELECT id overwrite FROM s`
-		// read as an introducer took FROM for the table and lost s.
-		if (relIntro[t.Text] || a.d == Spark && t.Text == "overwrite" && i > 0 && a.toks[i-1].isWord("insert")) &&
+		// OVERWRITE, where no INTO introduces it. Only while an INSERT has
+		// not claimed its target, which allows `INSERT WITH SCHEMA
+		// EVOLUTION OVERWRITE t`: elsewhere overwrite is a name, and
+		// `SELECT id overwrite FROM s` read as an introducer took FROM for
+		// the table and lost s.
+		if (relIntro[t.Text] || a.d == Spark && t.Text == "overwrite" && a.top().verb == Insert && a.top().firstTarget) &&
 			!(a.d == Oracle && a.forUpdate(i)) {
 			if j, rels, ok := a.relationsAfter(i); ok {
 				for _, rel := range rels {
