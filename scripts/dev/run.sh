@@ -85,14 +85,13 @@ if [[ $WEBAPP_BUILD == "1" ]]; then
 fi
 
 # A cloud sandbox re-signs TLS: HOOPDEV_CA_CERT names its CA, and the image
-# trusts it (scripts/dev/Dockerfile).
-BUILD_ARGS=()
+# trusts it (scripts/dev/Dockerfile). Unset, no CA reaches the image.
+rm -f ./scripts/dev/extra-ca/extra-ca.crt
 if [[ -n ${HOOPDEV_CA_CERT:-} ]]; then
   [[ -f $HOOPDEV_CA_CERT ]] || { echo "HOOPDEV_CA_CERT is not a file: $HOOPDEV_CA_CERT" >&2; exit 1; }
-  BUILD_ARGS=(--secret "id=extra_ca,src=$HOOPDEV_CA_CERT"
-    --build-arg "EXTRA_CA_SHA=$(sha256sum <"$HOOPDEV_CA_CERT" | cut -d' ' -f1)")
+  cp "$HOOPDEV_CA_CERT" ./scripts/dev/extra-ca/extra-ca.crt
 fi
-docker build "${BUILD_ARGS[@]}" -t "$IMAGE_NAME" -f ./scripts/dev/Dockerfile .
+docker build -t "$IMAGE_NAME" -f ./scripts/dev/Dockerfile .
 mkdir -p ./dist/dev/bin
 cp ./scripts/dev/entrypoint.sh ./dist/dev/bin/entrypoint.sh
 

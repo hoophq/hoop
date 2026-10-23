@@ -1,14 +1,13 @@
 FROM hoophq/agent-tools:noble-20260709-6890906
 
-# A cloud sandbox re-signs TLS with its own CA. run.sh passes it as the
-# secret extra_ca when HOOPDEV_CA_CERT is set; without it this step does nothing.
-# A secret is not in the build cache key: EXTRA_CA_SHA reruns the step when it changes.
-ARG EXTRA_CA_SHA=
-RUN --mount=type=secret,id=extra_ca \
-  if [ -s /run/secrets/extra_ca ]; then \
-    cp /run/secrets/extra_ca /usr/local/share/ca-certificates/hoopdev-extra-ca.crt && \
+# A cloud sandbox re-signs TLS with its own CA. run.sh copies it into
+# scripts/dev/extra-ca/ when HOOPDEV_CA_CERT is set; otherwise the folder holds
+# only its README and this step does nothing.
+COPY scripts/dev/extra-ca/ /tmp/extra-ca/
+RUN if [ -s /tmp/extra-ca/extra-ca.crt ]; then \
+    cp /tmp/extra-ca/extra-ca.crt /usr/local/share/ca-certificates/hoopdev-extra-ca.crt && \
     update-ca-certificates; \
-  fi
+  fi && rm -rf /tmp/extra-ca
 
 RUN mkdir -p /opt/hoop/sessions && \
   mkdir -p /opt/hoop/bin && \

@@ -161,9 +161,9 @@ publish, and the PR stays a draft until a person reads it. Then:
 - Linear: attach `EVIDENCE.md` and the images to the ticket (the MP4 for a
   video).
 - PR: the result line, the images (the GIF for a video) and "What it solves" under "Testing".
-  Host the images with `.claude/skills/evidence/publish.sh <TICKET-ID> <files>`:
-  it pushes them to the `claude/evidence` branch and prints the Markdown
-  links. Cloud sessions cannot create gists.
+  Host the images in a secret gist and link the raw URLs. A cloud session
+  cannot create gists: there, `.claude/skills/evidence/publish.sh <TICKET-ID>
+  <files>` pushes them to the `claude/evidence` branch and prints the links.
   The repo is public: no customer data, tokens, internal hosts or real emails
   in any image.
 

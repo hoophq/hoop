@@ -72,8 +72,9 @@ wait, not you.
   works. It leaves draft only after QA says PASS and CI is green.
 - Every PR is born **draft**, its "Testing" section built from the evidence.
 - Evidence lives in `~/evidencias/<TICKET-ID>/`, raw captures in
-  `~/evidencias/.archive/<TICKET-ID>/`. PR images go to the `claude/evidence`
-  branch through `skills/evidence/publish.sh`.
+  `~/evidencias/.archive/<TICKET-ID>/`. From a cloud session, where gists are
+  blocked, PR images go to the `claude/evidence` branch through
+  `skills/evidence/publish.sh`.
 - Linear ticket gets the PR link and moves to In Review.
 
 ## Support agent
