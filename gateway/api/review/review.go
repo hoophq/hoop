@@ -103,6 +103,32 @@ func (h *handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, openapiReviews)
 }
 
+// Count
+//
+//	@Summary		Count Approvals
+//	@Description	Count the approval requests with the given status that `GET /approvals` returns to the user. Only `PENDING` is supported. `/reviews/count` is an alias.
+//	@Tags			Approvals
+//	@Param			status	query	string	true	"The status to count"	Enums(PENDING)
+//	@Produce		json
+//	@Success		200		{object}	openapi.ReviewCount
+//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Router			/approvals/count [get]
+//	@Router			/reviews/count [get]
+func (h *handler) Count(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	if status := c.Query("status"); status != string(models.ReviewStatusPending) {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("unsupported status %q, only %s is supported", status, models.ReviewStatusPending)})
+		return
+	}
+	count, err := models.CountPendingReviewsForViewer(models.DB, ctx.GetOrgID(), Viewer(ctx))
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed counting approval requests: %v", err)
+		return
+	}
+	c.JSON(http.StatusOK, openapi.ReviewCount{Count: count})
+}
+
 // Viewer takes the request's groups: the ones DoReview checks to decide.
 func Viewer(ctx *storagev2.Context) models.ReviewViewer {
 	return models.ReviewViewer{

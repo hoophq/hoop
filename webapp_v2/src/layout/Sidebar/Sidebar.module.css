@@ -324,8 +324,9 @@
   font-weight: 500;
 }
 
-/* The chevron points down while closed and up while open. */
-.navLinkSection[data-rotate] {
+/* The chevron points down while closed and up while open. It turns alone, so
+   the count beside it stays upright. */
+.groupChevron[data-opened] {
   transform: rotate(180deg);
 }
 

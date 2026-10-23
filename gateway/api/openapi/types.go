@@ -1620,6 +1620,10 @@ type SessionReview struct {
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
 }
 
+type ReviewCount struct {
+	Count int64 `json:"count" readonly:"true" example:"4"`
+}
+
 type ReviewSessionTimeWindow struct {
 	Type          ReviewTimeWindowType `json:"type" binding:"required" enums:"time_range"`
 	Configuration map[string]string    `json:"configuration" binding:"required" example:"start_time:09:00,end_time:18:00"`

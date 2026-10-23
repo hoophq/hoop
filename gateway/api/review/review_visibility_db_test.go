@@ -222,3 +222,73 @@ func assertVisibleReviews(t *testing.T, all []*models.Review, userID string, gro
 		assert.Equal(t, wantCode, serveReviews(userID, groups, r.SessionID).Code, "get by session %s", r.SessionID)
 	}
 }
+
+func serveCount(userID string, groups []string, query string) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/reviews/count"+query, nil)
+	c.Set(storagev2.ContextKey, &storagev2.Context{APIContext: &types.APIContext{
+		OrgID: decisionTestOrgID, UserID: userID, UserGroups: groups}})
+	NewHandler(nil).Count(c)
+	return w
+}
+
+func listedPendingCount(t *testing.T, userID string, groups []string) int64 {
+	t.Helper()
+	w := serveReviews(userID, groups, "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var got []openapi.Review
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	var n int64
+	for _, r := range got {
+		if r.Status == openapi.ReviewStatusPending {
+			n++
+		}
+	}
+	return n
+}
+
+func TestCountMatchesThePendingReviewsListed(t *testing.T) {
+	startDecisionTestDB(t)
+
+	seedGatewayReview(t, "user-requester", "dba")
+	seedGatewayReview(t, "user-other", "sre")
+	approved := seedGatewayReview(t, "user-requester", "dba")
+	require.NoError(t, models.UpdateReviewStatus(decisionTestOrgID, approved.ID, models.ReviewStatusApproved))
+	live := seedApprovedSidecarReview(t)
+	lapsed := seedApprovedSidecarReview(t)
+	require.NoError(t, models.DB.Exec(`UPDATE private.reviews SET status = 'PENDING', expires_at = ? WHERE id = ?`,
+		time.Now().UTC().Add(time.Hour), live.ID).Error)
+	require.NoError(t, models.DB.Exec(`UPDATE private.reviews SET status = 'PENDING', expires_at = ? WHERE id = ?`,
+		time.Now().UTC().Add(-time.Minute), lapsed.ID).Error)
+
+	for _, tt := range []struct {
+		name   string
+		userID string
+		groups []string
+		want   int64
+	}{
+		{"the requester", "user-requester", []string{"finance"}, 1},
+		{"a reviewer group member", "user-dba", []string{"dba"}, 2},
+		{"a user outside every review", "user-outsider", nil, 0},
+		{"an admin", "user-admin", []string{types.GroupAdmin}, 3},
+		{"an auditor", "user-auditor", []string{types.GroupAuditor}, 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w := serveCount(tt.userID, tt.groups, "?status=PENDING")
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			var got openapi.ReviewCount
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+			assert.Equal(t, tt.want, got.Count)
+			assert.Equal(t, listedPendingCount(t, tt.userID, tt.groups), got.Count)
+		})
+	}
+}
+
+func TestCountRefusesAStatusOtherThanPending(t *testing.T) {
+	for _, query := range []string{"", "?status=APPROVED", "?status=pending"} {
+		w := serveCount("user-admin", []string{types.GroupAdmin}, query)
+		assert.Equal(t, http.StatusBadRequest, w.Code, "query %q", query)
+	}
+}

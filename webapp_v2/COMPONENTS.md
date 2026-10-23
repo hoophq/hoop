@@ -923,6 +923,11 @@ Non-obvious notes only:
   on navigation, on window focus and on the `hoop:session-executed` DOM event
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
+- `usePendingApprovalsStore` — the sidebar's pending approvals count. One call
+  to `GET /reviews/count?status=PENDING`; never count the list. Read on
+  navigation and window focus while the sidebar is expanded
+  (`layout/Sidebar/usePendingApprovalsCount`) and after every `decide`. Resets
+  on logout.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
   `updateSidecar`, `patchSidecar`, `deleteSidecar`) and the one record `/sidecars/:id` reads
   (`selected`, `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
