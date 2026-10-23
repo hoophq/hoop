@@ -158,6 +158,12 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 				pkt.Spec[pb.SpecAgentVersion] = []byte(agentVersion)
 			}
 		case pbclient.PGConnectionWrite:
+			// libhoop keeps the guardrails info on every packet from the
+			// ErrorResponse to the ReadyForQuery. Persist it on the
+			// ErrorResponse only: the update appends, so once per block.
+			if isPGErrorResponsePacket(pkt) {
+				updateGuardRailsInfoFromPacket(pctx, pkt)
+			}
 			rewritePGGuardRailsErrorPacket(pkt)
 		case pbclient.MSSQLConnectionWrite:
 			// A native MSSQL guardrail block returns a TDS error but keeps the
@@ -199,6 +205,16 @@ func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) b
 	return true
 }
 
+// isPGErrorResponsePacket reports whether the packet payload is a Postgres
+// ErrorResponse.
+func isPGErrorResponsePacket(pkt *pb.Packet) bool {
+	if len(pkt.Payload) == 0 {
+		return false
+	}
+	decoded, err := pgtypes.Decode(bytes.NewBuffer(pkt.Payload))
+	return err == nil && decoded != nil && decoded.Type() == pgtypes.ServerErrorResponse
+}
+
 func rewritePGGuardRailsErrorPacket(pkt *pb.Packet) {
 	rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]
 	if len(rawInfo) == 0 || len(pkt.Payload) == 0 {
@@ -209,11 +225,7 @@ func rewritePGGuardRailsErrorPacket(pkt *pb.Packet) {
 		return
 	}
 
-	decoded, err := pgtypes.Decode(bytes.NewBuffer(pkt.Payload))
-	if err != nil || decoded == nil {
-		return
-	}
-	if decoded.Type() != pgtypes.ServerErrorResponse {
+	if !isPGErrorResponsePacket(pkt) {
 		return
 	}
 
