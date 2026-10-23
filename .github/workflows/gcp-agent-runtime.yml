@@ -49,6 +49,21 @@ jobs:
             echo "::error::$TEMPLATE/uv.lock is stale: copy uv.lock from a project agents-cli $AGENTS_CLI_VERSION made"
             exit 1
           }
+      # The template ships agents-cli's Dockerfile plus one line. Compare it
+      # with the one agents-cli makes for a project of its own.
+      - name: Assert the template's Dockerfile is agents-cli's plus UV_NO_SYNC
+        run: |
+          agents-cli create plain -d agent_runtime -y -s -o "$RUNNER_TEMP"
+          strip() { grep -v -e '^#' -e '^$' "$1"; }
+          grep -qx 'ENV UV_NO_SYNC=1' "$RUNNER_TEMP/support-agent/Dockerfile" || {
+            echo "::error::$TEMPLATE/Dockerfile lost ENV UV_NO_SYNC=1"
+            exit 1
+          }
+          diff <(strip "$RUNNER_TEMP/plain/Dockerfile") \
+            <(strip "$RUNNER_TEMP/support-agent/Dockerfile" | grep -vx 'ENV UV_NO_SYNC=1') || {
+            echo "::error::$TEMPLATE/Dockerfile differs from agents-cli $AGENTS_CLI_VERSION's: copy its base Dockerfile again and keep ENV UV_NO_SYNC=1"
+            exit 1
+          }
       - name: Assert the agent image holds no sidecar and no database address
         run: "$RUNNER_TEMP/support-agent/tests/agent_image.sh"
       - name: Validate deploy/sidecar against its pinned module release

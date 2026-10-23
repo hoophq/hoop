@@ -6,6 +6,9 @@
 # agents-cli copies this directory into the new project after its own base
 # template, and leaves this .template/ directory out.
 description: "ADK agent that reaches its Postgres database only through a hoop sidecar"
+# Rendered with agents-cli's cookiecutter context (agents-cli 1.11 or later):
+# the Dockerfile keeps the base template's fields.
+render_files: ["Dockerfile"]
 example_question: "Which customers are on the enterprise plan?"
 settings:
   language: "python"

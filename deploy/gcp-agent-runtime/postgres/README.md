@@ -21,7 +21,7 @@ control plane later, with no change to the agent.
 
 ## Create the project
 
-Needs [uv](https://docs.astral.sh/uv/) and agents-cli
+Needs [uv](https://docs.astral.sh/uv/) and agents-cli 1.11 or later
 (`uv tool install google-agents-cli`).
 
 ```bash
@@ -117,15 +117,18 @@ psycopg2 and pg8000 report only the closed connection.
 `tests/agent_image.sh` builds the image that `agents-cli deploy` builds. It
 fails when the image holds the sidecar, its config or the database address
 from `deploy/sidecar/sidecar.yaml`, when the image sets `APPDB_HOST`, or when
-its root agent is not the one in `agents-cli-manifest.yaml`. It needs Docker.
-The address is the upstream's `host:port`, and also its host when the host is
-an FQDN or an IP: a one-label host such as `postgres` is an ordinary word too.
+its root agent is not the one in `agents-cli-manifest.yaml`, or when the agent
+does not start with no network (a PSC-I agent has no route to pypi.org). It
+needs Docker. The address is the upstream's `host:port`, and also its host
+when the host is an FQDN or an IP: a one-label host such as `postgres` is an
+ordinary word too, so for it only `host:port` counts.
 
 ## Files
 
 | Path | Holds |
 |---|---|
 | `app/agent.py` | The agent and its `run_sql` tool |
+| `Dockerfile` | agents-cli's, plus `UV_NO_SYNC=1`: the agent starts with no network |
 | `deploy/sidecar/` | The sidecar: Terraform root, its rules, the database lock, its README |
 | `tests/agent_image.sh` | The image test |
 
