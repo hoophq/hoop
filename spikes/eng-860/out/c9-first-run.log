@@ -1,0 +1,73 @@
+File: recording.tape
+Output .gif out/recording.gif
+Output .mp4 out/recording.mp4
+Set Shell bash
+Set FontSize 13
+Set Width 1500
+Set Height 950
+Set TypingSpeed 15ms
+Set WaitTimeout 240s
+Hide 
+Type cd <repo>/spikes/eng-860 && export OPENAI_API_KEY=$(cat ~/.hoop/secrets/openai.key) SIDECAR_HOST=$(sed -n 's/^LANE=//p' stack/.work/hosts) CALLER_TOKEN_FILE=stack/.secrets/caller-token START=$(date -u +%FT%TZ) PS1='$ ' && clear
+Enter 1
+Show 
+Type # OpenAI-hosted sandbox, restricted to one host: a hoop sidecar http lane ($SIDECAR_HOST)
+Enter 1
+Type ./setup.sh
+Enter 1
+Wait Screen turn: (completed|failed)
+failed to execute command: timeout waiting for "Screen turn: (completed|failed)" to match turn: (completed|failed); last value was: $ # OpenAI-hosted sandbox, restricted to one host: a hoop sidecar http lane ($SIDECAR_HOST)
+$ ./setup.sh                                                                                                                                                                                                                   
+TEMPLATE_ID=envtmpl_9b8b1abb7d094ad295d3d9adc5288637a868d390d4594eb499                                                                                                                                                         
+VAULT_ID=vault_3ac6b3cbcec74af584b0b1dab3a31a8fd22c40d312c84f4a88                                                                                                                                                              
+AGENT_ID=agent_114a14c41f2946cda486d733a8517e74c6e01655895a4f47bb                                                                                                                                                              
+SESSION_ID=sess_0236075d76d00ae1006adb8f96a60481978bf943857b24ccf5                                                                                                                                                             
+waiting for the agent...                                                                                                                                                                                                       
+                                                                                                                                                                                                                               
+[agent] I’ll fetch `/users` through the sidecar, then send the single DELETE request and report its response.                                                                                                                  
+                                                                                                                                                                                                                               
+$ /bin/bash -lc "python - <<'PY'                                                                                                                                                                                               
+import os, urllib.request, urllib.error                                                                                                                                                                                        
+base='https://offer-blogs-please-achieving.trycloudflare.com'                                                                                                                                                                  
+headers={'X-Hoop-Token':os.environ['HOOP_CALLER_TOKEN'],'X-OpenAI-Session-Id':'sess_0236075d76d00ae1006adb8f96a60481978bf943857b24ccf5'}                                                                                       
+for method,path in [('GET','/users'),('DELETE','/users/1')]:                                                                                                                                                                   
+    req=urllib.request.Request(base+path,headers=headers,method=method)                                                                                                                                                        
+    try:                                                                                                                                                                                                                       
+        with urllib.request.urlopen(req) as resp:                                                                                                                                                                              
+            print(method,path,'STATUS',resp.status)                                                                                                                                                                            
+            print('BODY',resp.read().decode('utf-8','replace'))                                                                                                                                                                
+    except urllib.error.HTTPError as err:                                                                                                                                                                                      
+        print(method,path,'STATUS',err.code)                                                                                                                                                                                   
+        print('X-Hoop-Denied',err.headers.get('X-Hoop-Denied'))                                                                                                                                                                
+        print('BODY',err.read().decode('utf-8','replace'))                                                                                                                                                                     
+PY"                                                                                                                                                                                                                            
+GET /users STATUS 200                                                                                                                                                                                                          
+BODY [                                                                                                                                                                                                                         
+  {                                                                                                                                                                                                                            
+    "id": 1,                                                                                                                                                                                                                   
+    "name": "Grace Hopper",                                                                                                                                                                                                    
+    "email": "[REDACTED:EMAIL_ADDRESS]",                                                                                                                                                                                       
+    "phone": "[REDACTED:PHONE_NUMBER]",                                                                                                                                                                                        
+    "card": "[REDACTED:CREDIT_CARD]",                                                                                                                                                                                          
+    "plan": "enterprise"                                                                                                                                                                                                       
+  },                                                                                                                                                                                                                           
+  {                                                                                                                                                                                                                            
+    "id": 2,                                                                                                                                                                                                                   
+    "name": "Alan Turing",                                                                                                                                                                                                     
+    "email": "[REDACTED:EMAIL_ADDRESS]",                                                                                                                                                                                       
+    "phone": "[REDACTED:PHONE_NUMBER]",                                                                                                                                                                                        
+    "card": "[REDACTED:CREDIT_CARD]",                                                                                                                                                                                          
+    "plan": "free"                                                                                                                                                                                                             
+  }                                                                                                                                                                                                                            
+]                                                                                                                                                                                                                              
+                                                                                                                                                                                                                               
+DELETE /users/1 STATUS 403                                                                                                                                                                                                     
+X-Hoop-Denied policy                                                                                                                                                                                                           
+BODY this agent may not delete                                                                                                                                                                                                 
+                                                                                                                                                                                                                               
+                                                                                                                                                                                                                               
+[agent] `GET /users` returned these values exactly as provided by the sidecar:                                                                                                                                                 
+                                                                                                                                                                                                                               
+| Name | Email | Phone | Card |                                                                                                                                                                                                
+|---|---|---|---|                                                                                                                                                                                                              
+recording failed

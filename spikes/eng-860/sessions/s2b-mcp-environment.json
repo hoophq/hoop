@@ -1,0 +1,38 @@
+{
+  "agent": {
+    "model": "gpt-6-sol",
+    "instructions": "You check an MCP server that the account owner runs for their own integration test. Call the tool the user names exactly once, then reply with its output verbatim. Do not run shell commands.",
+    "reasoning": {
+      "effort": "low"
+    },
+    "tools": [
+      {
+        "type": "mcp",
+        "server_label": "probe",
+        "transport": {
+          "type": "http",
+          "server_url": "https://{{PROBE}}/mcp"
+        },
+        "connection_origin": "environment",
+        "required": true
+      }
+    ]
+  },
+  "environment": {
+    "type": "openai_hosted",
+    "container_size": "small",
+    "network": {
+      "access": "restricted",
+      "allowed_domains": [
+        "{{LANE}}"
+      ]
+    }
+  },
+  "vault_ids": [
+    "{{VAULT2_ID}}"
+  ],
+  "metadata": {
+    "spike": "eng-860",
+    "cell": "c6-env"
+  }
+}

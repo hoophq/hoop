@@ -1,0 +1,51 @@
+== c2 raw TCP to a public Postgres, network enabled
+dns hh-pgsql-public.ebi.ac.uk ['193.62.192.243']
+tcp direct FAIL hh-pgsql-public.ebi.ac.uk:5432 after 0.2s: [Errno 101] Network is unreachable
+tcp via proxy CONNECT OK hh-pgsql-public.ebi.ac.uk:5432 in 0.13s
+  postgres SSLRequest answer: b''
+psql: error: connection to server at "hh-pgsql-public.ebi.ac.uk" (193.62.192.243), port 5432 failed: Network is unreachable
+	Is the server running on that host and accepting TCP/IP connections?
+
+== c4 TLS with network enabled
+dns example.com ['104.20.23.154', '172.66.147.243', '2606:4700:10::6814:179a', '2606:4700:10::ac42:93f3']
+tls OK example.com TLSv1.3 alpn=http/1.1
+  subject: commonName=example.com
+  issuer:  commonName=rcgen self signed cert
+dns offer-blogs-please-achieving.trycloudflare.com ['104.16.230.132', '104.16.231.132', '2606:4700::6810:e684', '2606:4700::6810:e784']
+tls OK offer-blogs-please-achieving.trycloudflare.com TLSv1.3 alpn=http/1.1
+  subject: commonName=offer-blogs-please-achieving.trycloudflare.com
+  issuer:  commonName=rcgen self signed cert
+* Uses proxy env variable no_proxy == 'localhost,127.0.0.1,::1'
+* Uses proxy env variable https_proxy == 'http://proxy:8080'
+* Connected to proxy (172.31.6.205) port 8080 (#0)
+* allocate connect buffer
+* Establish HTTP proxy tunnel to example.com:443
+> CONNECT example.com:443 HTTP/1.1
+> Proxy-Connection: Keep-Alive
+< HTTP/1.1 200 OK
+* CONNECT phase completed
+* CONNECT tunnel established, response 200
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384
+*  subject: CN=example.com
+*  issuer: CN=rcgen self signed cert
+< HTTP/2 200 
+* Connection #0 to host proxy left intact
+
+== c5 WebSocket and CONNECT, network enabled
+dns ws.postman-echo.com ['100.25.244.77', '184.193.65.143', '23.23.174.77']
+ws reply: HTTP/1.1 101 Switching Protocols | date: Fri, 23 Oct 2026 16:33:21 GMT | connection: upgrade | server: envoy | upgrade: websocket | sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+ws echo 0: b'eng-860 frame 0' rtt=23ms
+ws echo 1: b'eng-860 frame 1' rtt=20ms
+ws echo 2: b'eng-860 frame 2' rtt=20ms
+dns offer-blogs-please-achieving.trycloudflare.com ['104.16.230.132', '104.16.231.132', '2606:4700::6810:e684', '2606:4700::6810:e784']
+connect reply: HTTP/1.1 403 Forbidden | content-length: 19 | content-type: text/plain | date: Fri, 23 Oct 2026 16:33:26 GMT | server: envoy | connection: close
+connect body: b'RBAC: access denied'
+
+== egress IP (the probe logs the source)
+    "src_ip": "135.232.239.100",
+    "user_agent": "curl/7.88.1",
+
+== end
+[assistant] done
+[turn turn_0d8a3399b972584f006adb8c1b4f34819684cafd325bdf4cce] status=completed error=null usage={"input_tokens": 73655, "input_tokens_details": {"cached_tokens": 52965}, "output_tokens": 349, "output_tokens_details": {"reasoning_tokens": 31}, "total_tokens": 74004}
+[session] status=idle spend=null

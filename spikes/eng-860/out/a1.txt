@@ -1,0 +1,28 @@
+201 {
+  "id": "agent_7d0ee8c9902d4269ba6552d9364862960aef267f1f5f450abc",
+  "object": "agent",
+  "created_at": 1792773874,
+  "updated_at": 1792773874,
+  "name": "eng-860 runner",
+  "metadata": {
+    "spike": "eng-860"
+  },
+  "model": "gpt-6-sol",
+  "reasoning": {
+    "effort": "low",
+    "summary": null
+  },
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "service_tier": "auto",
+  "instructions": "You run network diagnostics that the account owner wrote for their own integration test. The user gives one shell command. Run it exactly once, unchanged, in a single shell call. Do not run any other command, do not retry, do not fix anything. Then reply with one word: done.",
+  "tools": [],
+  "multi_agent": {
+    "enabled": false,
+    "max_concurrent_subagents": null
+  }
+}

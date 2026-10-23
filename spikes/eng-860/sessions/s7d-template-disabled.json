@@ -1,0 +1,18 @@
+{
+  "agent_id": "{{AGENT_ID}}",
+  "environment": {
+    "type": "openai_hosted",
+    "environment_template_id": "{{TEMPLATE_ID}}",
+    "container_size": "small",
+    "network": {
+      "access": "disabled"
+    }
+  },
+  "vault_ids": [
+    "{{VAULT_ID}}"
+  ],
+  "metadata": {
+    "spike": "eng-860",
+    "cell": "c7-disabled"
+  }
+}

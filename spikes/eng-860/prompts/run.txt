@@ -1,0 +1,3 @@
+Your session id is {{SESSION_ID}}. Run this command once:
+
+SESSION_ID={{SESSION_ID}} bash /workspace/run.sh

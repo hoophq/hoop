@@ -1,0 +1,217 @@
+{
+  "request": {
+    "agent": {
+      "model": "gpt-6-sol",
+      "instructions": "You check an MCP server that the account owner runs for their own integration test. Call the tool the user names exactly once, then reply with its output verbatim. Do not run shell commands.",
+      "reasoning": {
+        "effort": "low"
+      },
+      "tools": [
+        {
+          "type": "mcp",
+          "server_label": "probe",
+          "transport": {
+            "type": "http",
+            "server_url": "https://departments-freelance-democrats-floral.trycloudflare.com/mcp"
+          },
+          "connection_origin": "environment",
+          "required": true
+        }
+      ]
+    },
+    "environment": {
+      "type": "openai_hosted",
+      "container_size": "small",
+      "network": {
+        "access": "restricted",
+        "allowed_domains": [
+          "offer-blogs-please-achieving.trycloudflare.com",
+          "departments-freelance-democrats-floral.trycloudflare.com"
+        ]
+      }
+    },
+    "metadata": {
+      "spike": "eng-860",
+      "cell": "c6-env-allowed"
+    },
+    "input": "Call the whoami tool of the probe MCP server once and give me its output verbatim.\n"
+  },
+  "session": {
+    "metadata": {
+      "cell": "c6-env-allowed",
+      "spike": "eng-860"
+    },
+    "id": "sess_0e4f3bce567f5b60006adb8ea3c0488193aae0453691d7836a",
+    "object": "agent.session",
+    "created_at": 1792773795,
+    "last_active_at": 1792773795,
+    "status": "idle",
+    "required_actions": [],
+    "error": null,
+    "agent": {
+      "id": "agent_4a9db13b1d864cb1b11ea96eddb197d92f2ccff34c9a41b0ad",
+      "name": null,
+      "model": "gpt-6-sol",
+      "reasoning": {
+        "effort": "low",
+        "summary": null
+      },
+      "text": {
+        "format": {
+          "type": "text"
+        },
+        "verbosity": "medium"
+      },
+      "service_tier": "auto",
+      "instructions": "You check an MCP server that the account owner runs for their own integration test. Call the tool the user names exactly once, then reply with its output verbatim. Do not run shell commands.",
+      "tools": [
+        {
+          "type": "mcp",
+          "server_label": "probe",
+          "credential_id": null,
+          "transport": {
+            "type": "http",
+            "server_url": "https://departments-freelance-democrats-floral.trycloudflare.com/mcp"
+          },
+          "request_metadata": {},
+          "allowed_tools": null,
+          "required": true,
+          "connection_origin": "environment"
+        }
+      ],
+      "multi_agent": {
+        "enabled": false,
+        "max_concurrent_subagents": null
+      }
+    },
+    "environment": {
+      "type": "openai_hosted",
+      "id": "ccarenv_b64_Y2NhcmVudl82YWRiOGVhM2MzYjg4MTkxYjU4Njg2NTQwYTUwMTNlYw",
+      "container_size": "small",
+      "packages": {
+        "python": [],
+        "system": [],
+        "npm": []
+      },
+      "network": {
+        "access": "restricted",
+        "allowed_domains": [
+          "offer-blogs-please-achieving.trycloudflare.com",
+          "departments-freelance-democrats-floral.trycloudflare.com"
+        ]
+      },
+      "desktop": {
+        "enabled": false
+      },
+      "capability_directories": [
+        "/opt/artifact-sdk/skills/documents",
+        "/opt/artifact-sdk/skills/presentations",
+        "/opt/artifact-sdk/skills/spreadsheets"
+      ],
+      "skills": [],
+      "plugins": [],
+      "files": []
+    },
+    "vault_ids": [],
+    "usage": null
+  },
+  "turns": {
+    "object": "list",
+    "data": [
+      {
+        "id": "turn_0e4f3bce567f5b60006adb8ea92e0c81939385b8f03db14c7a",
+        "object": "agent.session.turn",
+        "session_id": "sess_0e4f3bce567f5b60006adb8ea3c0488193aae0453691d7836a",
+        "agent_id": "agent_4a9db13b1d864cb1b11ea96eddb197d92f2ccff34c9a41b0ad",
+        "subagent_id": null,
+        "status": "completed",
+        "created_at": 1792773800,
+        "started_at": 1792773800,
+        "completed_at": 1792773836,
+        "error": null,
+        "usage": null
+      }
+    ],
+    "first_id": "turn_0e4f3bce567f5b60006adb8ea92e0c81939385b8f03db14c7a",
+    "last_id": "turn_0e4f3bce567f5b60006adb8ea92e0c81939385b8f03db14c7a",
+    "has_more": false
+  },
+  "items": [
+    {
+      "type": "message",
+      "id": "msg_226b39d2813c6da1ddebd42df0ab5ce13e03db363018e85615",
+      "turn_id": "turn_0e4f3bce567f5b60006adb8ea92e0c81939385b8f03db14c7a",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Call the whoami tool of the probe MCP server once and give me its output verbatim.\n"
+        }
+      ],
+      "status": "completed",
+      "phase": null
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_0c33385a8d31c404016adb8ea8a88c87d1a0a7a31b2c88b425",
+      "turn_id": "turn_0e4f3bce567f5b60006adb8ea92e0c81939385b8f03db14c7a",
+      "summary": [],
+      "status": "completed"
+    },
+    {
+      "type": "message",
+      "id": "msg_0c33385a8d31c404016adb8ea8ca7487d1af67230b263116b3",
+      "turn_id": "turn_0e4f3bce567f5b60006adb8ea92e0c81939385b8f03db14c7a",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "I\u2019ll call the probe server\u2019s `whoami` tool once and return its output exactly as received."
+        }
+      ],
+      "status": "completed",
+      "phase": "commentary"
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_0c33385a8d31c404016adb8eaa0e1887d19bd8f8119e6cd45b",
+      "turn_id": "turn_0e4f3bce567f5b60006adb8ea92e0c81939385b8f03db14c7a",
+      "summary": [],
+      "status": "completed"
+    },
+    {
+      "type": "mcp_call",
+      "id": "exec_a6e00d1b5985700a3598578bd8fedc57882ae209bfde1f228e",
+      "turn_id": "turn_0e4f3bce567f5b60006adb8ea92e0c81939385b8f03db14c7a",
+      "server_label": "probe",
+      "name": "whoami",
+      "arguments": {},
+      "status": "completed",
+      "output": {
+        "_meta": null,
+        "content": [
+          {
+            "text": "{\"mcp_call_src_ip\": \"20.55.172.117\", \"user_agent\": \"codex-mcp-client/0.0.0\", \"authorization\": null}",
+            "type": "text"
+          }
+        ],
+        "structuredContent": null
+      },
+      "error": null
+    },
+    {
+      "type": "message",
+      "id": "msg_0c33385a8d31c404016adb8ebd4eb887d19fc83c76142c7196",
+      "turn_id": "turn_0e4f3bce567f5b60006adb8ea92e0c81939385b8f03db14c7a",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"mcp_call_src_ip\": \"20.55.172.117\", \"user_agent\": \"codex-mcp-client/0.0.0\", \"authorization\": null}"
+        }
+      ],
+      "status": "completed",
+      "phase": "final_answer"
+    }
+  ]
+}

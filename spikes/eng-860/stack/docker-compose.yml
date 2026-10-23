@@ -1,0 +1,32 @@
+# ENG-860 stack. Throwaway. Local only: the probe and the sidecar lane in
+# front of it, on host loopback. The public hosts are added separately.
+name: eng860
+
+services:
+  probe:
+    image: python:3.12-alpine
+    command: ["python", "-u", "/app/probe_server.py", "8088"]
+    volumes:
+      - ./probe_server.py:/app/probe_server.py:ro
+      - ./.secrets:/run/secrets/probe:ro
+      - ./out:/out
+    ports:
+      - "127.0.0.1:18088:8088"
+
+  sidecar:
+    # The release deploy/managed-agents/http pins.
+    image: hoophq/hoopsidecar:1.258.0@sha256:59ffc8db9209f8bc06c02c166ac6df93af6735bac32c840b8f83e52c15bd2136
+    environment:
+      HOOP_SIDECAR_CONFIG: /etc/eng860/sidecar.yaml
+      HOOP_SIDECAR_ANALYTICS: "off"
+    volumes:
+      - ./sidecar.yaml:/etc/eng860/sidecar.yaml:ro
+      - ./.secrets/caller-token:/run/secrets/caller-token:ro
+    ports:
+      - "127.0.0.1:18080:8080"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/19000 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+    depends_on: [probe]

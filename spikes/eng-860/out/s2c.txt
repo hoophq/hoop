@@ -1,0 +1,78 @@
+201 {
+  "metadata": {
+    "cell": "c6-env",
+    "spike": "eng-860"
+  },
+  "id": "sess_0f4d000603198091006adb8e2bf958819482ec91412a39f8d5",
+  "object": "agent.session",
+  "created_at": 1792773676,
+  "last_active_at": 1792773676,
+  "status": "idle",
+  "required_actions": [],
+  "error": null,
+  "agent": {
+    "id": "agent_658b95d76bc9494b9880bc28c40e4baaf769aa2c5b6f42ea96",
+    "name": null,
+    "model": "gpt-6-sol",
+    "reasoning": {
+      "effort": "low",
+      "summary": null
+    },
+    "text": {
+      "format": {
+        "type": "text"
+      },
+      "verbosity": "medium"
+    },
+    "service_tier": "auto",
+    "instructions": "You check an MCP server that the account owner runs for their own integration test. Call the tool the user names exactly once, then reply with its output verbatim. Do not run shell commands.",
+    "tools": [
+      {
+        "type": "mcp",
+        "server_label": "probe",
+        "credential_id": null,
+        "transport": {
+          "type": "http",
+          "server_url": "https://departments-freelance-democrats-floral.trycloudflare.com/mcp"
+        },
+        "request_metadata": {},
+        "allowed_tools": null,
+        "required": true,
+        "connection_origin": "environment"
+      }
+    ],
+    "multi_agent": {
+      "enabled": false,
+      "max_concurrent_subagents": null
+    }
+  },
+  "environment": {
+    "type": "openai_hosted",
+    "id": "ccarenv_b64_Y2NhcmVudl82YWRiOGUyYmZjZWM4MTkxYWIwODgxNjk4YzMxNGFjOA",
+    "container_size": "small",
+    "packages": {
+      "python": [],
+      "system": [],
+      "npm": []
+    },
+    "network": {
+      "access": "restricted",
+      "allowed_domains": [
+        "offer-blogs-please-achieving.trycloudflare.com"
+      ]
+    },
+    "desktop": {
+      "enabled": false
+    },
+    "capability_directories": [
+      "/opt/artifact-sdk/skills/documents",
+      "/opt/artifact-sdk/skills/presentations",
+      "/opt/artifact-sdk/skills/spreadsheets"
+    ],
+    "skills": [],
+    "plugins": [],
+    "files": []
+  },
+  "vault_ids": [],
+  "usage": null
+}

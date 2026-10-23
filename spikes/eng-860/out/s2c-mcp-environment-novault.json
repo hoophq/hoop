@@ -1,0 +1,184 @@
+{
+  "request": {
+    "agent": {
+      "model": "gpt-6-sol",
+      "instructions": "You check an MCP server that the account owner runs for their own integration test. Call the tool the user names exactly once, then reply with its output verbatim. Do not run shell commands.",
+      "reasoning": {
+        "effort": "low"
+      },
+      "tools": [
+        {
+          "type": "mcp",
+          "server_label": "probe",
+          "transport": {
+            "type": "http",
+            "server_url": "https://departments-freelance-democrats-floral.trycloudflare.com/mcp"
+          },
+          "connection_origin": "environment",
+          "required": true
+        }
+      ]
+    },
+    "environment": {
+      "type": "openai_hosted",
+      "container_size": "small",
+      "network": {
+        "access": "restricted",
+        "allowed_domains": [
+          "offer-blogs-please-achieving.trycloudflare.com"
+        ]
+      }
+    },
+    "metadata": {
+      "spike": "eng-860",
+      "cell": "c6-env"
+    },
+    "input": "Call the whoami tool of the probe MCP server once and give me its output verbatim.\n"
+  },
+  "session": {
+    "metadata": {
+      "cell": "c6-env",
+      "spike": "eng-860"
+    },
+    "id": "sess_07d5d6a49637fde4006adb8e7666288195a673ef0f96dfe025",
+    "object": "agent.session",
+    "created_at": 1792773750,
+    "last_active_at": 1792773763,
+    "status": "idle",
+    "required_actions": [],
+    "error": null,
+    "agent": {
+      "id": "agent_4169030e13404e4da0b43ebcc7e0c69a1ecf6f8684384b49a4",
+      "name": null,
+      "model": "gpt-6-sol",
+      "reasoning": {
+        "effort": "low",
+        "summary": null
+      },
+      "text": {
+        "format": {
+          "type": "text"
+        },
+        "verbosity": "medium"
+      },
+      "service_tier": "auto",
+      "instructions": "You check an MCP server that the account owner runs for their own integration test. Call the tool the user names exactly once, then reply with its output verbatim. Do not run shell commands.",
+      "tools": [
+        {
+          "type": "mcp",
+          "server_label": "probe",
+          "credential_id": null,
+          "transport": {
+            "type": "http",
+            "server_url": "https://departments-freelance-democrats-floral.trycloudflare.com/mcp"
+          },
+          "request_metadata": {},
+          "allowed_tools": null,
+          "required": true,
+          "connection_origin": "environment"
+        }
+      ],
+      "multi_agent": {
+        "enabled": false,
+        "max_concurrent_subagents": null
+      }
+    },
+    "environment": {
+      "type": "openai_hosted",
+      "id": "ccarenv_b64_Y2NhcmVudl82YWRiOGU3NjZjOWM4MTkxYjEzY2RiMjViMTY0OWFlZQ",
+      "container_size": "small",
+      "packages": {
+        "python": [],
+        "system": [],
+        "npm": []
+      },
+      "network": {
+        "access": "restricted",
+        "allowed_domains": [
+          "offer-blogs-please-achieving.trycloudflare.com"
+        ]
+      },
+      "desktop": {
+        "enabled": false
+      },
+      "capability_directories": [
+        "/opt/artifact-sdk/skills/documents",
+        "/opt/artifact-sdk/skills/presentations",
+        "/opt/artifact-sdk/skills/spreadsheets"
+      ],
+      "skills": [],
+      "plugins": [],
+      "files": []
+    },
+    "vault_ids": [],
+    "usage": null
+  },
+  "turns": {
+    "object": "list",
+    "data": [
+      {
+        "id": "turn_07d5d6a49637fde4006adb8e7a7c248195875b47a69b9965f1",
+        "object": "agent.session.turn",
+        "session_id": "sess_07d5d6a49637fde4006adb8e7666288195a673ef0f96dfe025",
+        "agent_id": "agent_4169030e13404e4da0b43ebcc7e0c69a1ecf6f8684384b49a4",
+        "subagent_id": null,
+        "status": "failed",
+        "created_at": 1792773753,
+        "started_at": 1792773753,
+        "completed_at": 1792773762,
+        "error": {
+          "code": "connection_failed",
+          "message": "Could not connect to MCP server 'probe'. Check its URL, availability, and network access."
+        },
+        "usage": null
+      }
+    ],
+    "first_id": "turn_07d5d6a49637fde4006adb8e7a7c248195875b47a69b9965f1",
+    "last_id": "turn_07d5d6a49637fde4006adb8e7a7c248195875b47a69b9965f1",
+    "has_more": false
+  },
+  "items": [
+    {
+      "type": "message",
+      "id": "msg_852281d0557650f8b7dac3d3468ba49e8a7e852559b44c7103",
+      "turn_id": "turn_07d5d6a49637fde4006adb8e7a7c248195875b47a69b9965f1",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Call the whoami tool of the probe MCP server once and give me its output verbatim.\n"
+        }
+      ],
+      "status": "completed",
+      "phase": null
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_0fef9b9fda2a726e016adb8e7a504887d18f0b2da3b63fb1db",
+      "turn_id": "turn_07d5d6a49637fde4006adb8e7a7c248195875b47a69b9965f1",
+      "summary": [],
+      "status": "completed"
+    },
+    {
+      "type": "message",
+      "id": "msg_0fef9b9fda2a726e016adb8e7a75e087d19136b30fba6fadd2",
+      "turn_id": "turn_07d5d6a49637fde4006adb8e7a7c248195875b47a69b9965f1",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "I\u2019ll call the probe server\u2019s `whoami` tool once and return its output exactly as received."
+        }
+      ],
+      "status": "completed",
+      "phase": "commentary"
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_0fef9b9fda2a726e016adb8e7c6ee087d1b47d6af85421ee4f",
+      "turn_id": "turn_07d5d6a49637fde4006adb8e7a7c248195875b47a69b9965f1",
+      "summary": [],
+      "status": "completed"
+    }
+  ]
+}

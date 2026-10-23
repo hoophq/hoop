@@ -1,0 +1,19 @@
+201 {
+  "id": "credential_51456bce25734aed9a9a9973e0cbdb477e88dc1e9b7347cebd",
+  "object": "vault.credential",
+  "vault_id": "vault_4a68c36de50d4950b86f78c78a33fa73b38aa3082b1645609e",
+  "name": "customer API token",
+  "auth": {
+    "type": "environment_variable",
+    "secret_name": "CUSTOMER_API_TOKEN",
+    "networking": {
+      "type": "limited",
+      "allowed_hosts": [
+        "offer-blogs-please-achieving.trycloudflare.com"
+      ]
+    }
+  },
+  "metadata": {},
+  "created_at": 1792772938,
+  "updated_at": 1792772938
+}

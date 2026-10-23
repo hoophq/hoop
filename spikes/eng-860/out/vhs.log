@@ -1,0 +1,31 @@
+File: recording.tape
+Output .gif out/recording.gif
+Output .mp4 out/recording.mp4
+Set Shell bash
+Set FontSize 13
+Set Width 1500
+Set Height 1150
+Set TypingSpeed 15ms
+Set WaitTimeout 240s
+Hide 
+Type cd <repo>/spikes/eng-860 && export OPENAI_API_KEY=$(cat ~/.hoop/secrets/openai.key) SIDECAR_HOST=$(sed -n 's/^LANE=//p' stack/.work/hosts) CALLER_TOKEN_FILE=stack/.secrets/caller-token START=$(date -u +%FT%TZ) PS1='$ ' && clear
+Enter 1
+Show 
+Type # OpenAI-hosted sandbox, restricted to one host: a hoop sidecar http lane ($SIDECAR_HOST)
+Enter 1
+Type ./setup.sh
+Enter 1
+Wait Line ^\$ *$
+Sleep 4s
+Type clear; # the sidecar audit trail for this session
+Enter 1
+Type ./audit.sh $START
+Enter 1
+Sleep 6s
+Type ./setup.sh --delete
+Enter 1
+Wait Line ^\$ *$
+Sleep 2s
+Creating out/recording.gif...
+Creating out/recording.mp4...
+Host your GIF on vhs.charm.sh: vhs publish <file>.gif

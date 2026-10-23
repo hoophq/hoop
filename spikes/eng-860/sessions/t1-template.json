@@ -1,0 +1,16 @@
+{
+  "name": "eng-860 hoop sidecar",
+  "network": {
+    "access": "restricted",
+    "allowed_domains": [
+      "{{LANE}}"
+    ]
+  },
+  "files": [
+    {
+      "type": "inline",
+      "path": "/workspace/run.sh",
+      "data": "{{B64:sandbox/s7.sh}}"
+    }
+  ]
+}

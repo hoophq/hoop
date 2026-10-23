@@ -1,0 +1,211 @@
+{
+  "request": {
+    "agent": {
+      "model": "gpt-6-sol",
+      "instructions": "You run network diagnostics that the account owner wrote for their own integration test. The user gives one shell command. Run it exactly once, unchanged, in a single shell call. Do not run any other command, do not retry, do not fix anything. Then reply with one word: done.",
+      "reasoning": {
+        "effort": "low"
+      }
+    },
+    "environment": {
+      "type": "openai_hosted",
+      "container_size": "small",
+      "network": {
+        "access": "restricted",
+        "allowed_domains": [
+          "offer-blogs-please-achieving.trycloudflare.com",
+          "departments-freelance-democrats-floral.trycloudflare.com",
+          "postman-echo.com",
+          "hh-pgsql-public.ebi.ac.uk"
+        ]
+      },
+      "files": [
+        {
+          "type": "inline",
+          "path": "/workspace/probe.py",
+          "data": "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiJFTkctODYwIHNhbmRib3ggcHJvYmUuIFRocm93YXdheS4gU3RhbmRhcmQgbGlicmFyeSBvbmx5LgoKICBwcm9iZS5weSBlbnYgICAgICAgICAgICAgICAgICAgICAgcHJveHksIENBIGFuZCBzZXNzaW9uIHZhcmlhYmxlczsgdmF1bHQgcGxhY2Vob2xkZXIgbGVuZ3RocwogIHByb2JlLnB5IGRucyBIT1NUCiAgcHJvYmUucHkgdGNwIEhPU1QgUE9SVCAgICAgICAgICAgIHJhdyBUQ1AsIGRpcmVjdCBhbmQgdGhyb3VnaCBIVFRQU19QUk9YWTsgYSBQb3N0Z3JlcyBwb3J0IGdldHMgYW4gU1NMUmVxdWVzdAogIHByb2JlLnB5IHRscyBIT1NUICAgICAgICAgICAgICAgICBjZXJ0aWZpY2F0ZSB0aGUgc2FuZGJveCBzZWVzIG9uIDQ0MwogIHByb2JlLnB5IHdzIEhPU1QgUEFUSCBbSzpWIC4uLl0gICBXZWJTb2NrZXQgdXBncmFkZSBvbiA0NDMsIHRoZW4gMyBlY2hvIGZyYW1lcwogIHByb2JlLnB5IGNvbm5lY3QgSE9TVCBUQVJHRVQgICAgICBIVFRQIENPTk5FQ1Qgc2VudCBpbnNpZGUgVExTIHRvIEhPU1Q6NDQzCgpFYWNoIGxpbmUgbmFtZXMgdGhlIHN0ZXAgdGhhdCBmYWlsZWQ6IGRucywgdGNwLCB0bHMsIGh0dHAuIFN0cmVhbXMgdG8gNDQzCmdvIHRocm91Z2ggSFRUUFNfUFJPWFkgKENPTk5FQ1QpIHdoZW4gaXQgaXMgc2V0LCBhcyBjdXJsIGRvZXMuCiIiIgppbXBvcnQgb3MKaW1wb3J0IHJlCmltcG9ydCBzb2NrZXQKaW1wb3J0IHNzbAppbXBvcnQgc3RydWN0CmltcG9ydCBzeXMKaW1wb3J0IHRpbWUKClZBVUxUX05BTUVTID0gKCJIT09QX0NBTExFUl9UT0tFTiIsICJDVVNUT01FUl9BUElfVE9LRU4iKQpTSE9XID0gcmUuY29tcGlsZShyIlBST1hZfFNTTF98Q0FffENFUlR8U0VTU0lPTnxPUEVOQUl8Q09ERVh8QUdFTlR8VFVSTnxFTlZJUk9OTUVOVHxIT1NUTkFNRXxeSE9NRSR8XlVTRVIkIiwgcmUuSSkKCgpkZWYgb3V0KCphKToKICAgIHByaW50KCphLCBmbHVzaD1UcnVlKQoKCmRlZiBlbnYoKToKICAgIG5hbWVzID0gc29ydGVkKG9zLmVudmlyb24pCiAgICBvdXQoIm5hbWVzOiIsICIgIi5qb2luKG5hbWVzKSkKICAgIGZvciBrIGluIG5hbWVzOgogICAgICAgIHYgPSBvcy5lbnZpcm9uW2tdCiAgICAgICAgaWYgayBpbiBWQVVMVF9OQU1FUzoKICAgICAgICAgICAgb3V0KGYie2t9OiBsZW49e2xlbih2KX0gdmFsdWU9e3Z9IikKICAgICAgICBlbGlmIFNIT1cuc2VhcmNoKGspOgogICAgICAgICAgICBvdXQoZiJ7a309e3ZbOjIwMF19IikKICAgIGZvciBmIGluICgiL2V0Yy9vcy1yZWxlYXNlIiwpOgogICAgICAgIHRyeToKICAgICAgICAgICAgb3V0KGYsIG9wZW4oZikucmVhZCgpLnNwbGl0KCJcbiIpWzBdKQogICAgICAgIGV4Y2VwdCBPU0Vycm9yIGFzIGU6CiAgICAgICAgICAgIG91dChmLCBlKQogICAgb3V0KCJyZXNvbHYuY29uZjoiLCBvcGVuKCIvZXRjL3Jlc29sdi5jb25mIikucmVhZCgpLnJlcGxhY2UoIlxuIiwgIiB8ICIpIGlmIG9zLnBhdGguZXhpc3RzKCIvZXRjL3Jlc29sdi5jb25mIikgZWxzZSAiLSIpCgoKZGVmIGRucyhob3N0KToKICAgIHRyeToKICAgICAgICBvdXQoImRucyIsIGhvc3QsIHNvcnRlZCh7YVs0XVswXSBmb3IgYSBpbiBzb2NrZXQuZ2V0YWRkcmluZm8oaG9zdCwgNDQzKX0pKQogICAgICAgIHJldHVybiBUcnVlCiAgICBleGNlcHQgT1NFcnJvciBhcyBlOgogICAgICAgIG91dCgiZG5zIEZBSUwiLCBob3N0LCByZXByKGUpKQogICAgICAgIHJldHVybiBGYWxzZQoKCmRlZiBwcm94eSgpOgogICAgcCA9IG9zLmVudmlyb24uZ2V0KCJIVFRQU19QUk9YWSIpIG9yIG9zLmVudmlyb24uZ2V0KCJodHRwc19wcm94eSIpCiAgICBpZiBub3QgcDoKICAgICAgICByZXR1cm4gTm9uZQogICAgaHAgPSBwLnNwbGl0KCI6Ly8iLCAxKVstMV0ucnN0cmlwKCIvIikKICAgIGgsIF8sIHBvcnQgPSBocC5ycGFydGl0aW9uKCI6IikKICAgIHJldHVybiBoLCBpbnQocG9ydCkKCgpkZWYgb3Blbl90Y3AoaG9zdCwgcG9ydCwgdmlhX3Byb3h5PVRydWUpOgogICAgIiIiQSBUQ1Agc3RyZWFtIHRvIGhvc3Q6cG9ydDogdGhyb3VnaCBIVFRQU19QUk9YWSB3aXRoIENPTk5FQ1Qgd2hlbiBzZXQuIiIiCiAgICBweCA9IHByb3h5KCkgaWYgdmlhX3Byb3h5IGVsc2UgTm9uZQogICAgaWYgbm90IHB4OgogICAgICAgIHJldHVybiBzb2NrZXQuY3JlYXRlX2Nvbm5lY3Rpb24oKGhvc3QsIHBvcnQpLCB0aW1lb3V0PTE1KQogICAgcyA9IHNvY2tldC5jcmVhdGVfY29ubmVjdGlvbihweCwgdGltZW91dD0xNSkKICAgIHMuc2VuZGFsbChmIkNPTk5FQ1Qge2hvc3R9Ontwb3J0fSBIVFRQLzEuMVxyXG5Ib3N0OiB7aG9zdH06e3BvcnR9XHJcblxyXG4iLmVuY29kZSgpKQogICAgaCwgcmVzdCA9IGhlYWQocykKICAgIHN0YXR1cyA9IGguc3BsaXQoIlxyXG4iKVswXQogICAgaWYgIiAyMDAgIiBub3QgaW4gc3RhdHVzICsgIiAiOgogICAgICAgIHJhaXNlIE9TRXJyb3IoZiJwcm94eSB7cHhbMF19OntweFsxXX0gcmVmdXNlZCBDT05ORUNUIHtob3N0fTp7cG9ydH06IHtoLnJlcGxhY2UoY2hyKDEzKSArIGNocigxMCksICcgfCAnKX0gYm9keT17cmVzdFs6MjAwXSFyfSIpCiAgICByZXR1cm4gcwoKCmRlZiB0Y3AoaG9zdCwgcG9ydCk6CiAgICBwb3J0ID0gaW50KHBvcnQpCiAgICBpZiBub3QgZG5zKGhvc3QpIGFuZCBub3QgcHJveHkoKToKICAgICAgICByZXR1cm4KICAgIGZvciB2aWEgaW4gKEZhbHNlLCBUcnVlKToKICAgICAgICBob3cgPSAidmlhIHByb3h5IENPTk5FQ1QiIGlmIHZpYSBlbHNlICJkaXJlY3QiCiAgICAgICAgaWYgdmlhIGFuZCBub3QgcHJveHkoKToKICAgICAgICAgICAgY29udGludWUKICAgICAgICB0ID0gdGltZS50aW1lKCkKICAgICAgICB0cnk6CiAgICAgICAgICAgIHMgPSBvcGVuX3RjcChob3N0LCBwb3J0LCB2aWEpCiAgICAgICAgZXhjZXB0IE9TRXJyb3IgYXMgZToKICAgICAgICAgICAgb3V0KGYidGNwIHtob3d9IEZBSUwge2hvc3R9Ontwb3J0fSBhZnRlciB7dGltZS50aW1lKCkgLSB0Oi4xZn1zOiB7ZX0iKQogICAgICAgICAgICBjb250aW51ZQogICAgICAgIG91dChmInRjcCB7aG93fSBPSyB7aG9zdH06e3BvcnR9IGluIHt0aW1lLnRpbWUoKSAtIHQ6LjJmfXMiKQogICAgICAgIGlmIHBvcnQgPT0gNTQzMjoKICAgICAgICAgICAgcy5zZW5kYWxsKHN0cnVjdC5wYWNrKCI+SUkiLCA4LCA4MDg3NzEwMykpCiAgICAgICAgICAgIHMuc2V0dGltZW91dCgxMCkKICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgb3V0KCIgIHBvc3RncmVzIFNTTFJlcXVlc3QgYW5zd2VyOiIsIHMucmVjdigxKSkKICAgICAgICAgICAgZXhjZXB0IE9TRXJyb3IgYXMgZToKICAgICAgICAgICAgICAgIG91dCgiICBwb3N0Z3JlcyBTU0xSZXF1ZXN0IEZBSUwiLCByZXByKGUpKQogICAgICAgIHMuY2xvc2UoKQoKCmRlZiB0bHNfY29ubihob3N0LCB2ZXJpZnk9VHJ1ZSk6CiAgICBjdHggPSBzc2wuY3JlYXRlX2RlZmF1bHRfY29udGV4dCgpCiAgICBpZiBub3QgdmVyaWZ5OgogICAgICAgIGN0eC5jaGVja19ob3N0bmFtZSwgY3R4LnZlcmlmeV9tb2RlID0gRmFsc2UsIHNzbC5DRVJUX05PTkUKICAgIGN0eC5zZXRfYWxwbl9wcm90b2NvbHMoWyJodHRwLzEuMSJdKQogICAgcmV0dXJuIGN0eC53cmFwX3NvY2tldChvcGVuX3RjcChob3N0LCA0NDMpLCBzZXJ2ZXJfaG9zdG5hbWU9aG9zdCkKCgpkZWYgbmFtZSh0KToKICAgIHJldHVybiAiLCAiLmpvaW4oZiJ7a309e3Z9IiBmb3IgcmRuIGluIHQgZm9yIGssIHYgaW4gcmRuKQoKCmRlZiB0bHMoaG9zdCk6CiAgICBpZiBub3QgZG5zKGhvc3QpIGFuZCBub3QgcHJveHkoKToKICAgICAgICByZXR1cm4KICAgIHRyeToKICAgICAgICBzID0gdGxzX2Nvbm4oaG9zdCkKICAgICAgICBjID0gcy5nZXRwZWVyY2VydCgpCiAgICAgICAgb3V0KGYidGxzIE9LIHtob3N0fSB7cy52ZXJzaW9uKCl9IGFscG49e3Muc2VsZWN0ZWRfYWxwbl9wcm90b2NvbCgpfSIpCiAgICAgICAgb3V0KCIgIHN1YmplY3Q6IiwgbmFtZShjWyJzdWJqZWN0Il0pKQogICAgICAgIG91dCgiICBpc3N1ZXI6ICIsIG5hbWUoY1siaXNzdWVyIl0pKQogICAgICAgIHMuY2xvc2UoKQogICAgZXhjZXB0IHNzbC5TU0xFcnJvciBhcyBlOgogICAgICAgIG91dChmInRscyBWRVJJRlkgRkFJTCB7aG9zdH06IHtlIXJ9IikKICAgICAgICBzID0gdGxzX2Nvbm4oaG9zdCwgdmVyaWZ5PUZhbHNlKQogICAgICAgIG91dCgiICAodW52ZXJpZmllZCkgY2VydCBieXRlczoiLCBsZW4ocy5nZXRwZWVyY2VydChiaW5hcnlfZm9ybT1UcnVlKSkpCiAgICBleGNlcHQgT1NFcnJvciBhcyBlOgogICAgICAgIG91dChmInRscyBGQUlMIHtob3N0fToge2Uhcn0iKQoKCmRlZiBoZWFkKHMpOgogICAgYnVmID0gYiIiCiAgICB3aGlsZSBiIlxyXG5cclxuIiBub3QgaW4gYnVmOgogICAgICAgIGNodW5rID0gcy5yZWN2KDQwOTYpCiAgICAgICAgaWYgbm90IGNodW5rOgogICAgICAgICAgICBicmVhawogICAgICAgIGJ1ZiArPSBjaHVuawogICAgaCwgXywgcmVzdCA9IGJ1Zi5wYXJ0aXRpb24oYiJcclxuXHJcbiIpCiAgICByZXR1cm4gaC5kZWNvZGUoZXJyb3JzPSJyZXBsYWNlIiksIHJlc3QKCgpkZWYgd3MoaG9zdCwgcGF0aCwgKmhkcnMpOgogICAgaWYgbm90IGRucyhob3N0KSBhbmQgbm90IHByb3h5KCk6CiAgICAgICAgcmV0dXJuCiAgICB0cnk6CiAgICAgICAgcyA9IHRsc19jb25uKGhvc3QpCiAgICBleGNlcHQgT1NFcnJvciBhcyBlOgogICAgICAgIG91dCgid3MgdGxzIEZBSUwiLCByZXByKGUpKQogICAgICAgIHJldHVybgogICAga2V5ID0gImRHaGxJSE5oYlhCc1pTQnViMjVqWlE9PSIKICAgIHJlcSA9IChmIkdFVCB7cGF0aH0gSFRUUC8xLjFcclxuSG9zdDoge2hvc3R9XHJcblVwZ3JhZGU6IHdlYnNvY2tldFxyXG5Db25uZWN0aW9uOiBVcGdyYWRlXHJcbiIKICAgICAgICAgICBmIlNlYy1XZWJTb2NrZXQtS2V5OiB7a2V5fVxyXG5TZWMtV2ViU29ja2V0LVZlcnNpb246IDEzXHJcbiIpCiAgICByZXEgKz0gIiIuam9pbihoICsgIlxyXG4iIGZvciBoIGluIGhkcnMpICsgIlxyXG4iCiAgICBzLnNlbmRhbGwocmVxLmVuY29kZSgpKQogICAgaCwgcmVzdCA9IGhlYWQocykKICAgIG91dCgid3MgcmVwbHk6IiwgaC5yZXBsYWNlKCJcclxuIiwgIiB8ICIpKQogICAgaWYgIiAxMDEgIiBub3QgaW4gaC5zcGxpdCgiXHJcbiIpWzBdOgogICAgICAgIG91dCgid3MgYm9keToiLCByZXN0WzozMDBdKQogICAgICAgIHJldHVybgogICAgcy5zZXR0aW1lb3V0KDEwKQogICAgZm9yIGkgaW4gcmFuZ2UoMyk6CiAgICAgICAgbXNnID0gZiJlbmctODYwIGZyYW1lIHtpfSIuZW5jb2RlKCkKICAgICAgICBtYXNrID0gb3MudXJhbmRvbSg0KQogICAgICAgIGZyYW1lID0gYnl0ZXMoWzB4ODEsIDB4ODAgfCBsZW4obXNnKV0pICsgbWFzayArIGJ5dGVzKGIgXiBtYXNrW2ogJSA0XSBmb3IgaiwgYiBpbiBlbnVtZXJhdGUobXNnKSkKICAgICAgICB0ID0gdGltZS50aW1lKCkKICAgICAgICBzLnNlbmRhbGwoZnJhbWUpCiAgICAgICAgZ290ID0gcmVzdCBvciBzLnJlY3YoNDA5NikKICAgICAgICByZXN0ID0gYiIiCiAgICAgICAgb3V0KGYid3MgZWNobyB7aX06IHtnb3RbMjoyICsgZ290WzFdXSFyfSBydHQ9ezEwMDAgKiAodGltZS50aW1lKCkgLSB0KTouMGZ9bXMiKQogICAgcy5zZW5kYWxsKGJ5dGVzKFsweDg4LCAweDgwXSkgKyBvcy51cmFuZG9tKDQpKQogICAgcy5jbG9zZSgpCgoKZGVmIGNvbm5lY3QoaG9zdCwgdGFyZ2V0KToKICAgIGlmIG5vdCBkbnMoaG9zdCkgYW5kIG5vdCBwcm94eSgpOgogICAgICAgIHJldHVybgogICAgdHJ5OgogICAgICAgIHMgPSB0bHNfY29ubihob3N0KQogICAgZXhjZXB0IE9TRXJyb3IgYXMgZToKICAgICAgICBvdXQoImNvbm5lY3QgdGxzIEZBSUwiLCByZXByKGUpKQogICAgICAgIHJldHVybgogICAgcy5zZW5kYWxsKGYiQ09OTkVDVCB7dGFyZ2V0fSBIVFRQLzEuMVxyXG5Ib3N0OiB7dGFyZ2V0fVxyXG5cclxuIi5lbmNvZGUoKSkKICAgIHMuc2V0dGltZW91dCgxNSkKICAgIHRyeToKICAgICAgICBoLCByZXN0ID0gaGVhZChzKQogICAgZXhjZXB0IE9TRXJyb3IgYXMgZToKICAgICAgICBvdXQoImNvbm5lY3QgRkFJTCByZWFkaW5nIHJlcGx5IiwgcmVwcihlKSkKICAgICAgICByZXR1cm4KICAgIG91dCgiY29ubmVjdCByZXBseToiLCBoLnJlcGxhY2UoIlxyXG4iLCAiIHwgIikpCiAgICBvdXQoImNvbm5lY3QgYm9keToiLCByZXN0WzozMDBdKQoKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBjbWQsIGFyZ3MgPSBzeXMuYXJndlsxXSwgc3lzLmFyZ3ZbMjpdCiAgICB7ImVudiI6IGVudiwgImRucyI6IGRucywgInRjcCI6IHRjcCwgInRscyI6IHRscywgIndzIjogd3MsICJjb25uZWN0IjogY29ubmVjdH1bY21kXSgqYXJncykK"
+        },
+        {
+          "type": "inline",
+          "path": "/workspace/run.sh",
+          "data": "IyBFTkctODYwIFMxYjogcmVzdHJpY3RlZCwgYWxsb3dlZF9kb21haW5zID0gdGhlIGxhbmUsIHRoZSBwcm9iZSBob3N0LAojIHBvc3RtYW4tZWNoby5jb20gYW5kIHRoZSBwdWJsaWMgUG9zdGdyZXMgaG9zdC4gU2FtZSB2YXVsdCBhcyBTMWEuCkw9b2ZmZXItYmxvZ3MtcGxlYXNlLWFjaGlldmluZy50cnljbG91ZGZsYXJlLmNvbSBQPWRlcGFydG1lbnRzLWZyZWVsYW5jZS1kZW1vY3JhdHMtZmxvcmFsLnRyeWNsb3VkZmxhcmUuY29tCnN0ZXAoKSB7IHByaW50ZiAnXG49PSAlc1xuJyAiJCoiOyB9ClBHPSJob3N0PWhoLXBnc3FsLXB1YmxpYy5lYmkuYWMudWsgcG9ydD01NDMyIHVzZXI9cmVhZGVyIHBhc3N3b3JkPU5XRE1DRTV4ZGlwSWpScnAgZGJuYW1lPXBmbWVncm5hcmdzIGNvbm5lY3RfdGltZW91dD0xMCIKCnN0ZXAgImMzIHRoZSBzYW1lIGhlYWRlcnMgdG93YXJkIGFub3RoZXIgYWxsb3dlZCBob3N0ICh0aGUgcHJvYmUsIG5vdCB0aGUgbGFuZSkiCmN1cmwgLXNTIC0tbWF4LXRpbWUgMjAgImh0dHBzOi8vJFAvZWNobyIgLUggIlgtSG9vcC1Ub2tlbjogJEhPT1BfQ0FMTEVSX1RPS0VOIiBcCiAgLUggIkF1dGhvcml6YXRpb246IEJlYXJlciAkQ1VTVE9NRVJfQVBJX1RPS0VOIiAtSCAiWC1PcGVuQUktU2Vzc2lvbi1JZDogJFNFU1NJT05fSUQiCgpzdGVwICJjNCBUTFMgdG93YXJkIGEgcHVibGljIGhvc3Qgb3V0c2lkZSBDbG91ZGZsYXJlIgpweXRob24zIC93b3Jrc3BhY2UvcHJvYmUucHkgdGxzIHBvc3RtYW4tZWNoby5jb20KY3VybCAtc1MgLW8gL2Rldi9udWxsIC13ICJwb3N0bWFuLWVjaG8gaHR0cD0le2h0dHBfY29kZX1cbiIgLS1tYXgtdGltZSAxNSBodHRwczovL3Bvc3RtYW4tZWNoby5jb20vZ2V0CnB5dGhvbjMgL3dvcmtzcGFjZS9wcm9iZS5weSB0bHMgIiRQIgoKc3RlcCAiYzIgcmF3IFRDUCB0byBhIHB1YmxpYyBQb3N0Z3JlcyBpbiBhbGxvd2VkX2RvbWFpbnMiCnB5dGhvbjMgL3dvcmtzcGFjZS9wcm9iZS5weSB0Y3AgaGgtcGdzcWwtcHVibGljLmViaS5hYy51ayA1NDMyCmNvbW1hbmQgLXYgcHNxbCA+L2Rldi9udWxsICYmIHBzcWwgIiRQRyIgLUF0YyAnc2VsZWN0IDEnIDI+JjEKCnN0ZXAgImMxIGEgaG9zdCBvdXRzaWRlIGFsbG93ZWRfZG9tYWlucyIKY3VybCAtc1MgLW8gL2Rldi9udWxsIC13ICJleGFtcGxlLmNvbSBodHRwPSV7aHR0cF9jb2RlfVxuIiAtLW1heC10aW1lIDE1IGh0dHBzOi8vZXhhbXBsZS5jb20vCnN0ZXAgImMxIHRoZSBsYW5lIgpjdXJsIC1zUyAtbyAvZGV2L251bGwgLXcgImxhbmUgaHR0cD0le2h0dHBfY29kZX1cbiIgLS1tYXgtdGltZSAyMCAiaHR0cHM6Ly8kTC91c2Vycy8xIiBcCiAgLUggIlgtSG9vcC1Ub2tlbjogJEhPT1BfQ0FMTEVSX1RPS0VOIiAtSCAiWC1PcGVuQUktU2Vzc2lvbi1JZDogJFNFU1NJT05fSUQiCnN0ZXAgImVuZCIK"
+        }
+      ],
+      "packages": {
+        "system": [
+          "postgresql-client"
+        ]
+      }
+    },
+    "metadata": {
+      "spike": "eng-860",
+      "cell": "s1b.sh"
+    },
+    "vault_ids": [
+      "vault_4a68c36de50d4950b86f78c78a33fa73b38aa3082b1645609e"
+    ]
+  },
+  "session": {
+    "metadata": {
+      "cell": "s1b.sh",
+      "spike": "eng-860"
+    },
+    "id": "sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275",
+    "object": "agent.session",
+    "created_at": 1792773443,
+    "last_active_at": 1792773443,
+    "status": "idle",
+    "required_actions": [],
+    "error": null,
+    "agent": {
+      "id": "agent_759737cabdb14489a16fc4050e02d132ce588686e0e3406bb8",
+      "name": null,
+      "model": "gpt-6-sol",
+      "reasoning": {
+        "effort": "low",
+        "summary": null
+      },
+      "text": {
+        "format": {
+          "type": "text"
+        },
+        "verbosity": "medium"
+      },
+      "service_tier": "auto",
+      "instructions": "You run network diagnostics that the account owner wrote for their own integration test. The user gives one shell command. Run it exactly once, unchanged, in a single shell call. Do not run any other command, do not retry, do not fix anything. Then reply with one word: done.",
+      "tools": [],
+      "multi_agent": {
+        "enabled": false,
+        "max_concurrent_subagents": null
+      }
+    },
+    "environment": {
+      "type": "openai_hosted",
+      "id": "ccarenv_b64_Y2NhcmVudl82YWRiOGQ0M2RiNWM4MTkxYTQxNTMwNWUwMjczMDUxOQ",
+      "container_size": "small",
+      "packages": {
+        "python": [],
+        "system": [
+          "postgresql-client"
+        ],
+        "npm": []
+      },
+      "network": {
+        "access": "restricted",
+        "allowed_domains": [
+          "offer-blogs-please-achieving.trycloudflare.com",
+          "departments-freelance-democrats-floral.trycloudflare.com",
+          "postman-echo.com",
+          "hh-pgsql-public.ebi.ac.uk"
+        ]
+      },
+      "desktop": {
+        "enabled": false
+      },
+      "capability_directories": [
+        "/opt/artifact-sdk/skills/documents",
+        "/opt/artifact-sdk/skills/presentations",
+        "/opt/artifact-sdk/skills/spreadsheets"
+      ],
+      "skills": [],
+      "plugins": [],
+      "files": [
+        {
+          "type": "inline",
+          "id": "cfile_9071e49a19da42a286e2aca15793566e83208440007b42f78a",
+          "path": "/workspace/probe.py",
+          "size_bytes": 6372
+        },
+        {
+          "type": "inline",
+          "id": "cfile_3cf9b505ceec4326b0a651feb7fbf40a7ec8135ef618427daa",
+          "path": "/workspace/run.sh",
+          "size_bytes": 1416
+        }
+      ]
+    },
+    "vault_ids": [
+      "vault_4a68c36de50d4950b86f78c78a33fa73b38aa3082b1645609e"
+    ],
+    "usage": null
+  },
+  "turns": {
+    "object": "list",
+    "data": [
+      {
+        "id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+        "object": "agent.session.turn",
+        "session_id": "sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275",
+        "agent_id": "agent_759737cabdb14489a16fc4050e02d132ce588686e0e3406bb8",
+        "subagent_id": null,
+        "status": "completed",
+        "created_at": 1792773449,
+        "started_at": 1792773449,
+        "completed_at": 1792773488,
+        "error": null,
+        "usage": null
+      }
+    ],
+    "first_id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+    "last_id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+    "has_more": false
+  },
+  "items": [
+    {
+      "type": "message",
+      "id": "msg_9956efa79da233fc736a33e04ea335ffea071fa2274ef6567a",
+      "turn_id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Your session id is sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275. Run this command once:\n\nSESSION_ID=sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275 bash /workspace/run.sh\n"
+        }
+      ],
+      "status": "completed",
+      "phase": null
+    },
+    {
+      "type": "message",
+      "id": "msg_0520af609e3e3b29016adb8d49814887d1aeb098043e9cedb8",
+      "turn_id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "I\u2019ll run the command once as provided."
+        }
+      ],
+      "status": "completed",
+      "phase": "commentary"
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_0520af609e3e3b29016adb8d4acfac87d1a1f5e52fff1ff89a",
+      "turn_id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+      "summary": [],
+      "status": "completed"
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_0520af609e3e3b29016adb8d6f0fc487d18320914c6ce8f485",
+      "turn_id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+      "summary": [],
+      "status": "completed"
+    },
+    {
+      "type": "message",
+      "id": "msg_0520af609e3e3b29016adb8d6f762887d1b66cfc44b2118d50",
+      "turn_id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "done"
+        }
+      ],
+      "status": "completed",
+      "phase": "final_answer"
+    }
+  ]
+}

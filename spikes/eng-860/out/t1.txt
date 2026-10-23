@@ -1,0 +1,31 @@
+201 {
+  "id": "envtmpl_0a232ea300264d319beb33f89eaf92c570775508a75a466b87",
+  "name": "eng-860 hoop sidecar",
+  "object": "agent.environment.template",
+  "created_at": 1792773873,
+  "updated_at": 1792773873,
+  "packages": {
+    "python": [],
+    "system": [],
+    "npm": []
+  },
+  "network": {
+    "access": "restricted",
+    "allowed_domains": [
+      "offer-blogs-please-achieving.trycloudflare.com"
+    ]
+  },
+  "desktop": {
+    "enabled": false
+  },
+  "capability_directories": [],
+  "skills": [],
+  "plugins": [],
+  "files": [
+    {
+      "type": "inline",
+      "path": "/workspace/run.sh",
+      "size_bytes": 621
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+{"name": "hoop caller token", "auth": {"type": "environment_variable", "secret_name": "HOOP_CALLER_TOKEN",
+  "secret_value": "{{SECRET:caller-token}}", "networking": {"type": "limited", "allowed_hosts": ["{{LANE}}"]}}}

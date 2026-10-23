@@ -1,0 +1,23 @@
+session sess_07621eab3328284c006adb8f034f48819486962fa2621fe307 environment={"type": "openai_hosted", "id": "ccarenv_b64_Y2NhcmVudl82YWRiOGYwMzk4YTA4MTkxYTY0MTgwN2I4NzY5YzJlYQ", "container_size": "small", "packages": {"python": [], "system": [], "npm": []}, "network": {"access": "restricted", "allowed_domains": ["offer-blogs-please-achieving.trycloudflare.com"]}, "desktop": {"enabled": false}, "capability_directories": ["/opt/artifact-sdk/skills/documents", "/opt/artifact-sdk/skills/presentations", "/opt/artifact-sdk/skills/spreadsheets"], "skills": [], "plugins": [], "files": [{"type": "inline", "id": "cfile_0182dc678298465db73b8cf77a69433fc8223cd939c54f7888", "path": "/workspace/run.sh", "size_bytes": 621}]}
+[user] Your session id is sess_07621eab3328284c006adb8f034f48819486962fa2621fe307. Run this command once:
+
+SESSION_ID=sess_07621eab3328284c006adb8f034f48819486962fa2621fe307 bash /workspace/run.sh
+
+[assistant] I’ll run the command once.
+--> $ /bin/bash -lc 'SESSION_ID=sess_07621eab3328284c006adb8f034f48819486962fa2621fe307 bash /workspace/run.sh'
+<-- exit=0 status=completed
+
+== c7 vault placeholders present
+HOOP_CALLER_TOKEN len=71 CUSTOMER_API_TOKEN len=72
+
+== c7 the lane
+lane http=200
+
+== c7 a host the template does not allow
+example.com http=000
+curl: (56) CONNECT tunnel failed, response 403
+
+== end
+[assistant] done
+[turn turn_07621eab3328284c006adb8f08c4a881948b7bbd7ca18e1f92] status=completed error=null usage={"input_tokens": 27620, "input_tokens_details": {"cached_tokens": 8967}, "output_tokens": 166, "output_tokens_details": {"reasoning_tokens": 10}, "total_tokens": 27786}
+[session] status=idle spend=null

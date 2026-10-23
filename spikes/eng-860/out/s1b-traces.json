@@ -1,0 +1,251 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+      "object": "agent.session.trace",
+      "session_id": "sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275",
+      "created_at": 1792773449,
+      "otlp": {
+        "resourceSpans": [
+          {
+            "resource": {
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "openai-managed-agents"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "entityRefs": []
+            },
+            "scopeSpans": [
+              {
+                "scope": {
+                  "name": "openai.managed_agents",
+                  "version": "0.0.0",
+                  "attributes": [],
+                  "droppedAttributesCount": 0
+                },
+                "spans": [
+                  {
+                    "traceId": "5ef62351dc923e76af601ce114b30bfe",
+                    "spanId": "07463e6939a1dae4",
+                    "traceState": "",
+                    "status": null,
+                    "flags": 1,
+                    "name": "invoke_agent",
+                    "kind": 1,
+                    "startTimeUnixNano": "1792773448000000000",
+                    "endTimeUnixNano": "1792773488000000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "invoke_agent"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.agent.id",
+                        "value": {
+                          "stringValue": "agent_759737cabdb14489a16fc4050e02d132ce588686e0e3406bb8"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-6-sol"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.system_instructions",
+                        "value": {
+                          "stringValue": "[{\"type\":\"text\",\"content\":\"You run network diagnostics that the account owner wrote for their own integration test. The user gives one shell command. Run it exactly once, unchanged, in a single shell call. Do not run any other command, do not retry, do not fix anything. Then reply with one word: done.\"}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Your session id is sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275. Run this command once:\\n\\nSESSION_ID=sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275 bash /workspace/run.sh\\n\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"I\u2019ll run the command once as provided.\"},{\"type\":\"text\",\"content\":\"done\"}],\"finish_reason\":\"stop\"}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.input_tokens",
+                        "value": {
+                          "intValue": "36875"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.cache_read.input_tokens",
+                        "value": {
+                          "intValue": "17435"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.output_tokens",
+                        "value": {
+                          "intValue": "257"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.usage.reasoning.output_tokens",
+                        "value": {
+                          "intValue": "35"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.usage.total.input_tokens",
+                        "value": {
+                          "intValue": "36875"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.usage.total.cache_read.input_tokens",
+                        "value": {
+                          "intValue": "17435"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.usage.total.output_tokens",
+                        "value": {
+                          "intValue": "257"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.usage.total.reasoning.output_tokens",
+                        "value": {
+                          "intValue": "35"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.usage.total.total_tokens",
+                        "value": {
+                          "intValue": "37132"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.conversation.id",
+                        "value": {
+                          "stringValue": "sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.session.id",
+                        "value": {
+                          "stringValue": "sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.turn.id",
+                        "value": {
+                          "stringValue": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.trace.completeness",
+                        "value": {
+                          "stringValue": "{\"status\":\"partial\",\"missing_outputs\":[{\"agent_id\":\"agent_759737cabdb14489a16fc4050e02d132ce588686e0e3406bb8\",\"turn_id\":\"turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6\",\"output_id\":\"exec-d37748d7-ac29-410c-a309-92b73335a7db\",\"expected_index\":2,\"previous_output_id\":\"rs_0520af609e3e3b29016adb8d4acfac87d1a1f5e52fff1ff89a\",\"next_output_id\":\"rs_0520af609e3e3b29016adb8d6f0fc487d18320914c6ce8f485\"}],\"ordering_issues\":[]}"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "links": [],
+                    "droppedLinksCount": 0
+                  },
+                  {
+                    "traceId": "5ef62351dc923e76af601ce114b30bfe",
+                    "spanId": "07ac3173dfb641dd",
+                    "traceState": "",
+                    "parentSpanId": "07463e6939a1dae4",
+                    "flags": 1,
+                    "name": "chat gpt-6-sol",
+                    "kind": 3,
+                    "startTimeUnixNano": "1792773448000000000",
+                    "endTimeUnixNano": "1792773487517000000",
+                    "attributes": [
+                      {
+                        "key": "gen_ai.operation.name",
+                        "value": {
+                          "stringValue": "chat"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.provider.name",
+                        "value": {
+                          "stringValue": "openai"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.input.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"system\",\"parts\":[{\"type\":\"text\",\"content\":\"You run network diagnostics that the account owner wrote for their own integration test. The user gives one shell command. Run it exactly once, unchanged, in a single shell call. Do not run any other command, do not retry, do not fix anything. Then reply with one word: done.\"}]},{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Your session id is sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275. Run this command once:\\n\\nSESSION_ID=sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275 bash /workspace/run.sh\\n\"}]}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.output.messages",
+                        "value": {
+                          "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"I\u2019ll run the command once as provided.\"},{\"type\":\"text\",\"content\":\"done\"}],\"finish_reason\":\"stop\"}]"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.request.model",
+                        "value": {
+                          "stringValue": "gpt-6-sol"
+                        }
+                      },
+                      {
+                        "key": "gen_ai.conversation.id",
+                        "value": {
+                          "stringValue": "sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.session.id",
+                        "value": {
+                          "stringValue": "sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275"
+                        }
+                      },
+                      {
+                        "key": "openai.managed_agents.turn.id",
+                        "value": {
+                          "stringValue": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6"
+                        }
+                      }
+                    ],
+                    "droppedAttributesCount": 0,
+                    "events": [],
+                    "droppedEventsCount": 0,
+                    "links": [],
+                    "droppedLinksCount": 0,
+                    "status": null
+                  }
+                ],
+                "schemaUrl": "https://opentelemetry.io/schemas/1.42.0"
+              }
+            ],
+            "schemaUrl": ""
+          }
+        ]
+      }
+    }
+  ],
+  "first_id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+  "last_id": "turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6",
+  "has_more": false
+}

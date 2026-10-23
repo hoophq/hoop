@@ -1,0 +1,183 @@
+{
+  "request": {
+    "agent_id": "agent_7d0ee8c9902d4269ba6552d9364862960aef267f1f5f450abc",
+    "environment": {
+      "type": "openai_hosted",
+      "environment_template_id": "envtmpl_0a232ea300264d319beb33f89eaf92c570775508a75a466b87",
+      "container_size": "small"
+    },
+    "vault_ids": [
+      "vault_4a68c36de50d4950b86f78c78a33fa73b38aa3082b1645609e"
+    ],
+    "metadata": {
+      "spike": "eng-860",
+      "cell": "c7"
+    }
+  },
+  "session": {
+    "metadata": {
+      "cell": "c7",
+      "spike": "eng-860"
+    },
+    "id": "sess_07621eab3328284c006adb8f034f48819486962fa2621fe307",
+    "object": "agent.session",
+    "created_at": 1792773891,
+    "last_active_at": 1792773891,
+    "status": "idle",
+    "required_actions": [],
+    "error": null,
+    "agent": {
+      "id": "agent_7d0ee8c9902d4269ba6552d9364862960aef267f1f5f450abc",
+      "name": "eng-860 runner",
+      "model": "gpt-6-sol",
+      "reasoning": {
+        "effort": "low",
+        "summary": null
+      },
+      "text": {
+        "format": {
+          "type": "text"
+        },
+        "verbosity": "medium"
+      },
+      "service_tier": "auto",
+      "instructions": "You run network diagnostics that the account owner wrote for their own integration test. The user gives one shell command. Run it exactly once, unchanged, in a single shell call. Do not run any other command, do not retry, do not fix anything. Then reply with one word: done.",
+      "tools": [],
+      "multi_agent": {
+        "enabled": false,
+        "max_concurrent_subagents": null
+      }
+    },
+    "environment": {
+      "type": "openai_hosted",
+      "id": "ccarenv_b64_Y2NhcmVudl82YWRiOGYwMzk4YTA4MTkxYTY0MTgwN2I4NzY5YzJlYQ",
+      "container_size": "small",
+      "packages": {
+        "python": [],
+        "system": [],
+        "npm": []
+      },
+      "network": {
+        "access": "restricted",
+        "allowed_domains": [
+          "offer-blogs-please-achieving.trycloudflare.com"
+        ]
+      },
+      "desktop": {
+        "enabled": false
+      },
+      "capability_directories": [
+        "/opt/artifact-sdk/skills/documents",
+        "/opt/artifact-sdk/skills/presentations",
+        "/opt/artifact-sdk/skills/spreadsheets"
+      ],
+      "skills": [],
+      "plugins": [],
+      "files": [
+        {
+          "type": "inline",
+          "id": "cfile_0182dc678298465db73b8cf77a69433fc8223cd939c54f7888",
+          "path": "/workspace/run.sh",
+          "size_bytes": 621
+        }
+      ]
+    },
+    "vault_ids": [
+      "vault_4a68c36de50d4950b86f78c78a33fa73b38aa3082b1645609e"
+    ],
+    "usage": null
+  },
+  "turns": {
+    "object": "list",
+    "data": [
+      {
+        "id": "turn_07621eab3328284c006adb8f08c4a881948b7bbd7ca18e1f92",
+        "object": "agent.session.turn",
+        "session_id": "sess_07621eab3328284c006adb8f034f48819486962fa2621fe307",
+        "agent_id": "agent_7d0ee8c9902d4269ba6552d9364862960aef267f1f5f450abc",
+        "subagent_id": null,
+        "status": "completed",
+        "created_at": 1792773896,
+        "started_at": 1792773896,
+        "completed_at": 1792773915,
+        "error": null,
+        "usage": {
+          "input_tokens": 27620,
+          "input_tokens_details": {
+            "cached_tokens": 8967
+          },
+          "output_tokens": 166,
+          "output_tokens_details": {
+            "reasoning_tokens": 10
+          },
+          "total_tokens": 27786
+        }
+      }
+    ],
+    "first_id": "turn_07621eab3328284c006adb8f08c4a881948b7bbd7ca18e1f92",
+    "last_id": "turn_07621eab3328284c006adb8f08c4a881948b7bbd7ca18e1f92",
+    "has_more": false
+  },
+  "items": [
+    {
+      "type": "message",
+      "id": "msg_cf41b52b6145c662b29f2eaa04aa41bda21e6262e7c840aa9f",
+      "turn_id": "turn_07621eab3328284c006adb8f08c4a881948b7bbd7ca18e1f92",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Your session id is sess_07621eab3328284c006adb8f034f48819486962fa2621fe307. Run this command once:\n\nSESSION_ID=sess_07621eab3328284c006adb8f034f48819486962fa2621fe307 bash /workspace/run.sh\n"
+        }
+      ],
+      "status": "completed",
+      "phase": null
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_0c4b146b7adfdba9016adb8f08d5d087d19c2ffbf50e5dc4f3",
+      "turn_id": "turn_07621eab3328284c006adb8f08c4a881948b7bbd7ca18e1f92",
+      "summary": [],
+      "status": "completed"
+    },
+    {
+      "type": "message",
+      "id": "msg_0c4b146b7adfdba9016adb8f08e56087d1923bfaeb4222b5db",
+      "turn_id": "turn_07621eab3328284c006adb8f08c4a881948b7bbd7ca18e1f92",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "I\u2019ll run the command once."
+        }
+      ],
+      "status": "completed",
+      "phase": "commentary"
+    },
+    {
+      "type": "command_execution",
+      "id": "exec_bad40107eed3bc4fb4ec8215945cf3aa79c4a575414f07d347",
+      "turn_id": "turn_07621eab3328284c006adb8f08c4a881948b7bbd7ca18e1f92",
+      "command": "/bin/bash -lc 'SESSION_ID=sess_07621eab3328284c006adb8f034f48819486962fa2621fe307 bash /workspace/run.sh'",
+      "cwd": "/workspace",
+      "status": "completed",
+      "output": "\n== c7 vault placeholders present\nHOOP_CALLER_TOKEN len=71 CUSTOMER_API_TOKEN len=72\n\n== c7 the lane\nlane http=200\n\n== c7 a host the template does not allow\nexample.com http=000\ncurl: (56) CONNECT tunnel failed, response 403\n\n== end\n",
+      "exit_code": 0,
+      "duration_ms": 523
+    },
+    {
+      "type": "message",
+      "id": "msg_0c4b146b7adfdba9016adb8f19a08087d1ac9b56280cd72ece",
+      "turn_id": "turn_07621eab3328284c006adb8f08c4a881948b7bbd7ca18e1f92",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "done"
+        }
+      ],
+      "status": "completed",
+      "phase": "final_answer"
+    }
+  ]
+}

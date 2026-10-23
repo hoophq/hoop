@@ -1,0 +1,70 @@
+ENG-860 operator notes, 2026-10-23. Verbatim terminal output that no other file
+in out/ keeps: a later run overwrote the file, or the output came from the
+operator's machine.
+
+== cloudflared on the host (both quick tunnels)
+$ cloudflared --version
+cloudflared version 2026.10.2 (built 2026-10-20T08:30:48Z)
+
+== Laptop control: the same public Postgres, no OpenAI in the path
+$ python3 sandbox/probe.py tcp hh-pgsql-public.ebi.ac.uk 5432
+dns hh-pgsql-public.ebi.ac.uk ['193.62.192.243']
+tcp direct OK hh-pgsql-public.ebi.ac.uk:5432 in 0.21s
+  postgres SSLRequest answer: b'N'
+$ psql -h hh-pgsql-public.ebi.ac.uk -U reader -d pfmegrnargs -Atc 'select 1, version()'
+1|PostgreSQL 16.11 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 8.5.0 20210514
+(reader / NWDMCE5xdipIjRrp is EBI RNAcentral's published read-only login.)
+
+== First S0 create, with spend_control (out/s0.json was overwritten by the rerun without it)
+$ oai.py run sessions/s0.json out/s0.json prompts/run.txt
+create refused: HTTP 400
+{
+  "error": {
+    "type": "invalid_request_error",
+    "code": "unknown_parameter",
+    "message": "Unknown parameter: 'spend_control'.",
+    "param": "spend_control"
+  }
+}
+
+== openai Python SDK 3.37.0, read from the unpacked wheel (pypi.org, openai-3.37.0-py3-none-any.whl)
+openai-3.37.0.dist-info/ has no entry_points.txt: the package installs no CLI.
+openai/types/beta/agents/session_create_params.py:
+    spend_control: Optional[SpendControl]
+    """Optional spending limit in USD cents.
+    Omission or null creates an unlimited session.
+openai/resources/beta/agents/*: every request sends "OpenAI-Beta": "agents=v1".
+
+== First S2d create (out/s2d-mcp-environment-allowed.txt was overwritten by the retry)
+create refused: HTTP 409
+{
+  "error": {
+    "type": "conflict_error",
+    "code": "conflict_error",
+    "message": "session changed during parent-guarded runtime write",
+    "param": null
+  }
+}
+
+== Token usage from session traces (GET /v1/agents/sessions/{id}/traces, span invoke_agent), before cleanup
+session  cell  network  input_tokens  cached_input_tokens  output_tokens
+sess_07621eab3328284c006adb8f034f48819486962fa2621fe307 c7 restricted 27620 8967 166
+sess_0e4f3bce567f5b60006adb8ea3c0488193aae0453691d7836a c6-env-allowed restricted 54375 35472 331
+sess_07d5d6a49637fde4006adb8e7666288195a673ef0f96dfe025 c6-env restricted 16701 8294 163
+sess_088ebde31e3e3c22006adb8df7c5f881958bb39542f506f0f0 c6 restricted 16806 8297 187
+sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275 s1b.sh restricted 47348 27824 318
+sess_0c7fb6cf27d3366c006adb8cd750d081959b556262426b52b1 s1a.sh restricted 81973 59454 427
+sess_012c698bbc7bcd83006adb8c6e0e8c819797d5827cd0cea9f3 s1a.sh restricted 53168 32205 307
+sess_0d8a3399b972584f006adb8c157f648196b600d10c86d78bdb s0.sh enabled 73655 52965 349
+sess_0a759c28305e0d23006adb8b904380819796544bb5e46152ab s0.sh enabled 28682 8974 181
+sessions listed: 9 tokens: {'in': 400328, 'cached': 242452, 'out': 2429} model USD 0.39
+
+Price used (developers.openai.com/api/llms-full.txt, "Standard pricing data"):
+gpt-6-sol short context: input $2.00, output $10.00, cached input $0.20 per 1M tokens.
+Containers (same file, built-in tools): 1 GB $0.03 per 20-minute session per container.
+
+== Account after cleanup (out/cleanup.txt), rechecked
+No spike session, template, agent or vault is left. The one vault left,
+"eng-862 field probe", was created by another session during the spike, holds
+no credentials, and was not touched. The agent counted in out/cleanup.txt was
+gone on recheck; its owner was not identified.

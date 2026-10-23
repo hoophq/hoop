@@ -1,0 +1,19 @@
+201 {
+  "id": "credential_554d9ee402284641a5a24b8f62ca2021ef9b24ebc52149328c",
+  "object": "vault.credential",
+  "vault_id": "vault_4a68c36de50d4950b86f78c78a33fa73b38aa3082b1645609e",
+  "name": "hoop caller token",
+  "auth": {
+    "type": "environment_variable",
+    "secret_name": "HOOP_CALLER_TOKEN",
+    "networking": {
+      "type": "limited",
+      "allowed_hosts": [
+        "offer-blogs-please-achieving.trycloudflare.com"
+      ]
+    }
+  },
+  "metadata": {},
+  "created_at": 1792772937,
+  "updated_at": 1792772937
+}

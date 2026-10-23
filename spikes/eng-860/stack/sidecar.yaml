@@ -1,0 +1,30 @@
+# ENG-860 lane: the shape of deploy/managed-agents/http/quickstart, with the
+# probe as upstream. Free tier: 1 guardrail rule + 1 mask rule per process.
+# The rule refuses DELETE only, so a POST reaches the probe (c3 body test).
+admin:
+  listen: '0.0.0.0:19000'
+audit:
+  file: '-'
+listeners:
+  - name: probe-api
+    protocol: http
+    # Plain HTTP: the quick tunnel holds TLS, as in the quick start.
+    listen: 'http://0.0.0.0:8080'
+    upstream: 'http://probe:8088'
+    caller_token:
+      file: /run/secrets/caller-token
+      name: openai-agents
+    http:
+      headers: [X-OpenAI-Session-Id]
+
+guardrails:
+  rules:
+    - name: no-delete
+      type: operation
+      operations: [delete]
+      message: this agent may not delete
+mask:
+  rules:
+    - name: pii
+      entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD]
+      strategy: redact

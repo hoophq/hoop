@@ -1,0 +1,9 @@
+session sess_088ebde31e3e3c22006adb8df7c5f881958bb39542f506f0f0 environment={"type": "openai_hosted", "id": "ccarenv_b64_Y2NhcmVudl82YWRiOGRmN2Y4YjA4MTkxOWMyNDI3YzEwODc4NjUyZg", "container_size": "small", "packages": {"python": [], "system": [], "npm": []}, "network": {"access": "restricted", "allowed_domains": ["offer-blogs-please-achieving.trycloudflare.com"]}, "desktop": {"enabled": false}, "capability_directories": ["/opt/artifact-sdk/skills/documents", "/opt/artifact-sdk/skills/presentations", "/opt/artifact-sdk/skills/spreadsheets"], "skills": [], "plugins": [], "files": []}
+[user] Call the whoami tool of the probe MCP server once and give me its output verbatim.
+
+[assistant] I’ll call the probe server’s `whoami` tool once and return its output exactly.
+--> mcp probe.whoami {}
+<-- {"_meta": null, "content": [{"text": "{\"mcp_call_src_ip\": \"9.129.44.24\", \"user_agent\": \"openai-mcp/1.0.0 (Codex)\", \"authorization\": {\"len\": 55, \"value\": \"Bearer <REAL:mcp-token>\", \"real\": true}}", "type": "text"}], "structuredContent": null} error=null
+[assistant] {"mcp_call_src_ip": "9.129.44.24", "user_agent": "openai-mcp/1.0.0 (Codex)", "authorization": {"len": 55, "value": "Bearer <REAL:mcp-token>", "real": true}}
+[turn turn_088ebde31e3e3c22006adb8e02f6ac8195bed0da40c36fad3d] status=completed error=null usage=null
+[session] status=idle spend=null

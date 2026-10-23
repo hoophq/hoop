@@ -1,0 +1,6 @@
+session sess_07d5d6a49637fde4006adb8e7666288195a673ef0f96dfe025 environment={"type": "openai_hosted", "id": "ccarenv_b64_Y2NhcmVudl82YWRiOGU3NjZjOWM4MTkxYjEzY2RiMjViMTY0OWFlZQ", "container_size": "small", "packages": {"python": [], "system": [], "npm": []}, "network": {"access": "restricted", "allowed_domains": ["offer-blogs-please-achieving.trycloudflare.com"]}, "desktop": {"enabled": false}, "capability_directories": ["/opt/artifact-sdk/skills/documents", "/opt/artifact-sdk/skills/presentations", "/opt/artifact-sdk/skills/spreadsheets"], "skills": [], "plugins": [], "files": []}
+[user] Call the whoami tool of the probe MCP server once and give me its output verbatim.
+
+[assistant] I’ll call the probe server’s `whoami` tool once and return its output exactly as received.
+[turn turn_07d5d6a49637fde4006adb8e7a7c248195875b47a69b9965f1] status=failed error={"code": "connection_failed", "message": "Could not connect to MCP server 'probe'. Check its URL, availability, and network access."} usage=null
+[session] status=idle spend=null

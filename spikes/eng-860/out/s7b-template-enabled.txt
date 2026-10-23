@@ -1,0 +1,8 @@
+400 {
+  "error": {
+    "type": "invalid_request_error",
+    "code": "invalid_request_error",
+    "message": "session environment.network cannot broaden the environment template network policy",
+    "param": null
+  }
+}

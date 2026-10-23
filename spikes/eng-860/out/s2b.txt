@@ -1,0 +1,8 @@
+400 {
+  "error": {
+    "type": "invalid_request_error",
+    "code": "invalid_request_error",
+    "message": "MCP server https://departments-freelance-democrats-floral.trycloudflare.com/mcp with connection_origin=environment cannot use an attached vault credential",
+    "param": null
+  }
+}

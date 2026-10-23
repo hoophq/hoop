@@ -1,0 +1,1 @@
+Call the whoami tool of the probe MCP server once and give me its output verbatim.

@@ -1,0 +1,70 @@
+session sess_0a759c28305e0d23006adb8b904380819796544bb5e46152ab environment={"type": "openai_hosted", "id": "ccarenv_b64_Y2NhcmVudl82YWRiOGI5MDQ3ODg4MTkxOGQyNDhiMjAzMDEwYjY1MQ", "container_size": "small", "packages": {"python": [], "system": ["postgresql-client"], "npm": []}, "network": {"access": "enabled", "allowed_domains": []}, "desktop": {"enabled": false}, "capability_directories": ["/opt/artifact-sdk/skills/documents", "/opt/artifact-sdk/skills/presentations", "/opt/artifact-sdk/skills/spreadsheets"], "skills": [], "plugins": [], "files": [{"type": "inline", "id": "cfile_91a141e44ed84514bc9104ee6930d17ca0c12482898a41c287", "path": "/workspace/probe.py", "size_bytes": 5230}, {"type": "inline", "id": "cfile_cbfa20f7fcd1464490eb2eb89a80b97e94a961c1f459403d96", "path": "/workspace/run.sh", "size_bytes": 904}]}
+[user] Your session id is sess_0a759c28305e0d23006adb8b904380819796544bb5e46152ab. Run this command once:
+
+SESSION_ID=sess_0a759c28305e0d23006adb8b904380819796544bb5e46152ab bash /workspace/run.sh
+
+[assistant] I’ll run the command once and report when it finishes.
+--> $ /bin/bash -lc 'SESSION_ID=sess_0a759c28305e0d23006adb8b904380819796544bb5e46152ab bash /workspace/run.sh'
+<-- exit=0 status=completed
+
+== c8 environment
+names: CAAS_IMAGE_GIT_COMMIT_SHA CAAS_IMAGE_VERSION CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS CODEX_CI CODEX_ENVIRONMENT_COMPUTE_RESOURCE_ID CODEX_ENVIRONMENT_ID CODEX_EXEC_SERVER_REMOTE_BASE_URL CODEX_HOME CODEX_PRIMARY_RUNTIME CODEX_PRIMARY_RUNTIME_NODE CODEX_PRIMARY_RUNTIME_NODE_MODULES CODEX_PRIMARY_RUNTIME_PYTHON CODEX_PROXY_CERT CODEX_SESSION_ID CODEX_THREAD_ID CODEX_TOOL_CALL_ID CODEX_VERSION COLORTERM GH_PAGER GIT_PAGER GPG_KEY HOME HTTPS_PROXY HTTP_PROXY LANG LC_ALL LC_CTYPE NODE_EXTRA_CA_CERTS NO_COLOR NO_PROXY OLDPWD OPENAI_CLUSTER PAGER PATH PIP_CERT PROXY_CA_CERT_PATH PWD PYTHON_SHA256 PYTHON_VERSION REQUESTS_CA_BUNDLE RUNTIME_BIN_DIR RUNTIME_NODE RUNTIME_NODE_MODULES RUNTIME_PYTHON SESSION_ID SHLVL SSL_CERT_FILE TERM _ http_proxy https_proxy no_proxy
+CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS=1
+CODEX_CI=1
+CODEX_ENVIRONMENT_COMPUTE_RESOURCE_ID=cb971a09fb7743949f446d5bb298fb10
+CODEX_ENVIRONMENT_ID=ccarenv_b64_Y2NhcmVudl82YWRiOGI5MDQ3ODg4MTkxOGQyNDhiMjAzMDEwYjY1MQ
+CODEX_EXEC_SERVER_REMOTE_BASE_URL=https://codex-cloud-environments.chatgpt.com/api
+CODEX_HOME=/run/managed-agents/codex-home.FojMqT
+CODEX_PRIMARY_RUNTIME=/opt/artifact-sdk
+CODEX_PRIMARY_RUNTIME_NODE=/usr/local/bin/node
+CODEX_PRIMARY_RUNTIME_NODE_MODULES=/opt/artifact-sdk/node_modules
+CODEX_PRIMARY_RUNTIME_PYTHON=/usr/local/bin/python
+CODEX_PROXY_CERT=/usr/local/share/ca-certificates/envoy-mitmproxy-ca-cert.crt
+CODEX_SESSION_ID=01a16999-3620-74a3-9cc9-d9d5377cd017
+CODEX_THREAD_ID=01a16999-3620-74a3-9cc9-d9d5377cd017
+CODEX_TOOL_CALL_ID=exec-02d8184a-daf1-4096-97a7-1f7c527eb5a7
+CODEX_VERSION=0.0.0
+HOME=/root
+HTTPS_PROXY=http://proxy:8080
+HTTP_PROXY=http://proxy:8080
+NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/envoy-mitmproxy-ca-cert.crt
+NO_PROXY=localhost,127.0.0.1,::1
+OPENAI_CLUSTER=applied-caas28
+PIP_CERT=/etc/ssl/certs/ca-certificates.crt
+PROXY_CA_CERT_PATH=/usr/local/share/ca-certificates/envoy-mitmproxy-ca-cert.crt
+REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+SESSION_ID=sess_0a759c28305e0d23006adb8b904380819796544bb5e46152ab
+SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+http_proxy=http://proxy:8080
+https_proxy=http://proxy:8080
+no_proxy=localhost,127.0.0.1,::1
+/etc/os-release PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+resolv.conf: nameserver 172.31.0.45 | 
+
+== tools
+/usr/bin/curl
+/usr/bin/psql
+/usr/local/bin/python3
+Python 3.12.12
+x86_64
+
+== c2 raw TCP to a public Postgres, network enabled
+dns hh-pgsql-public.ebi.ac.uk ['193.62.192.243']
+tcp FAIL hh-pgsql-public.ebi.ac.uk:5432 after 0.3s: OSError(101, 'Network is unreachable')
+psql: error: connection to server at "hh-pgsql-public.ebi.ac.uk" (193.62.192.243), port 5432 failed: Network is unreachable
+	Is the server running on that host and accepting TCP/IP connections?
+
+== c4 TLS with network enabled
+dns example.com ['104.20.23.154', '172.66.147.243', '2606:4700:10::6814:179a', '2606:4700:10::ac42:93f3']
+tls FAIL example.com: OSError(101, 'Network is unreachable')
+dns offer-blogs-please-achieving.trycloudflare.com ['104.16.230.132', '104.16.231.132', '2606:4700::6810:e684', '2606:4700::6810:e784']
+tls FAIL offer-blogs-please-achieving.trycloudflare.com: OSError(101, 'Network is unreachable')
+
+== egress IP (the probe logs the source)
+    "src_ip": "52.161.209.43",
+    "user_agent": "curl/7.88.1",
+
+== end
+[assistant] done
+[turn turn_0a759c28305e0d23006adb8b978264819781e6b8ef0b26b9d7] status=completed error=null usage={"input_tokens": 28682, "input_tokens_details": {"cached_tokens": 8974}, "output_tokens": 181, "output_tokens_details": {"reasoning_tokens": 14}, "total_tokens": 28863}
+[session] status=idle spend=null

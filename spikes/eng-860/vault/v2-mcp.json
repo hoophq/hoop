@@ -1,0 +1,1 @@
+{"name": "probe MCP bearer", "auth": {"type": "static_bearer", "token": "{{SECRET:mcp-token}}", "mcp_server_url": "https://{{PROBE}}/mcp"}}

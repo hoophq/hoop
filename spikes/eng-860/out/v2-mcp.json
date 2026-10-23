@@ -1,0 +1,13 @@
+201 {
+  "id": "credential_7477983aad5b4020a1228b9f5acc1a3758648112f233459d95",
+  "object": "vault.credential",
+  "vault_id": "vault_a01ea72c92324c6ab968a2d014d6207963c307342a4649fb8d",
+  "name": "probe MCP bearer",
+  "auth": {
+    "type": "static_bearer",
+    "mcp_server_url": "https://departments-freelance-democrats-floral.trycloudflare.com/mcp"
+  },
+  "metadata": {},
+  "created_at": 1792773617,
+  "updated_at": 1792773617
+}

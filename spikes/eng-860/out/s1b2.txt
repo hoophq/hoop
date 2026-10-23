@@ -1,0 +1,82 @@
+--> $ /bin/bash -lc 'SESSION_ID=sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275 bash /workspace/run.sh'
+<-- exit=0 status=completed
+
+== c3 the same headers toward another allowed host (the probe, not the lane)
+{
+  "probe": "eng-860",
+  "seen": {
+    "method": "GET",
+    "path": "/echo",
+    "src_ip": "20.125.182.211",
+    "user_agent": "curl/7.88.1",
+    "headers": {
+      "authorization": {
+        "len": 79,
+        "value": "Bearer __OPENAI_SECRET__[CUSTOMER_API_TOKEN:f48a0a288e5d48e39c2ce638793e181e]__",
+        "real": false
+      },
+      "cdn-loop": {
+        "len": 30,
+        "value": "cloudflare; loops=1; subreqs=1",
+        "real": false
+      },
+      "cf-ray": {
+        "len": 20,
+        "value": "a4f22b543fecc6f1-EWR",
+        "real": false
+      },
+      "x-forwarded-for": {
+        "len": 14,
+        "value": "20.125.182.211",
+        "real": false
+      },
+      "x-hoop-token": {
+        "len": 71,
+        "value": "__OPENAI_SECRET__[HOOP_CALLER_TOKEN:439abaee162c475fb025b358a849035a]__",
+        "real": false
+      },
+      "x-openai-session-id": {
+        "len": 55,
+        "value": "sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275",
+        "real": false
+      }
+    },
+    "body": "",
+    "body_real": false
+  }
+}
+
+== c4 TLS toward a public host outside Cloudflare
+dns FAIL postman-echo.com gaierror(-3, 'Temporary failure in name resolution')
+tls OK postman-echo.com TLSv1.3 alpn=http/1.1
+  subject: commonName=postman-echo.com
+  issuer:  commonName=rcgen self signed cert
+postman-echo http=200
+dns FAIL departments-freelance-democrats-floral.trycloudflare.com gaierror(-3, 'Temporary failure in name resolution')
+tls OK departments-freelance-democrats-floral.trycloudflare.com TLSv1.3 alpn=http/1.1
+  subject: commonName=departments-freelance-democrats-floral.trycloudflare.com
+  issuer:  commonName=rcgen self signed cert
+
+== c2 raw TCP to a public Postgres in allowed_domains
+dns FAIL hh-pgsql-public.ebi.ac.uk gaierror(-3, 'Temporary failure in name resolution')
+tcp direct FAIL hh-pgsql-public.ebi.ac.uk:5432 after 5.0s: [Errno -3] Temporary failure in name resolution
+tcp via proxy CONNECT OK hh-pgsql-public.ebi.ac.uk:5432 in 0.12s
+  postgres SSLRequest answer: b''
+psql: error: could not translate host name "hh-pgsql-public.ebi.ac.uk" to address: Temporary failure in name resolution
+
+== c1 a host outside allowed_domains
+curl: (56) CONNECT tunnel failed, response 403
+example.com http=000
+
+== c1 the lane
+lane http=200
+
+== end
+[user] Run the same command once more, unchanged:
+
+SESSION_ID=sess_00a5157952780c40006adb8d4397748196ab35bf4771a55275 bash /workspace/run.sh
+
+[assistant] done
+[turn turn_00a5157952780c40006adb8d4a14fc819680638b2b2e96d5f6] status=completed error=null usage={"input_tokens": 36875, "input_tokens_details": {"cached_tokens": 17435}, "output_tokens": 257, "output_tokens_details": {"reasoning_tokens": 35}, "total_tokens": 37132}
+[turn turn_00a5157952780c40006adb8db738b081969d77649194fc9b9a] status=completed error=null usage={"input_tokens": 10473, "input_tokens_details": {"cached_tokens": 10389}, "output_tokens": 61, "output_tokens_details": {"reasoning_tokens": 54}, "total_tokens": 10534}
+[session] status=idle spend=null

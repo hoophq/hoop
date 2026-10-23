@@ -1,0 +1,2 @@
+{"name": "customer API token", "auth": {"type": "environment_variable", "secret_name": "CUSTOMER_API_TOKEN",
+  "secret_value": "{{SECRET:api-token}}", "networking": {"type": "limited", "allowed_hosts": ["{{LANE}}"]}}}

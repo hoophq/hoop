@@ -1,0 +1,37 @@
+{
+  "agent": {
+    "model": "gpt-6-sol",
+    "instructions": "You run network diagnostics that the account owner wrote for their own integration test. The user gives one shell command. Run it exactly once, unchanged, in a single shell call. Do not run any other command, do not retry, do not fix anything. Then reply with one word: done.",
+    "reasoning": {
+      "effort": "low"
+    }
+  },
+  "environment": {
+    "type": "openai_hosted",
+    "container_size": "small",
+    "network": {
+      "access": "enabled"
+    },
+    "files": [
+      {
+        "type": "inline",
+        "path": "/workspace/probe.py",
+        "data": "{{B64:sandbox/probe.py}}"
+      },
+      {
+        "type": "inline",
+        "path": "/workspace/run.sh",
+        "data": "{{B64:sandbox/s0.sh}}"
+      }
+    ],
+    "packages": {
+      "system": [
+        "postgresql-client"
+      ]
+    }
+  },
+  "metadata": {
+    "spike": "eng-860",
+    "cell": "s0.sh"
+  }
+}
