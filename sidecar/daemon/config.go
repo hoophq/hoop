@@ -745,8 +745,8 @@ type AuditConfig struct {
 	// estimate. Past it the oldest events are dropped from whichever session
 	// holds them, and that session reports events_dropped. A session count
 	// alone never bounds a connection pool or an agent that keeps a few
-	// sessions open for days. Zero uses 64 MiB. The Go heap holding it runs
-	// to about 1.6x under steady churn, for allocator fragmentation.
+	// sessions open for days. Zero uses 64 MiB. Size a container for about
+	// 2.5x this: allocator fragmentation and the runtime come on top.
 	QueryMaxBytes int64 `json:"query_max_bytes,omitempty" cap:"audit_query_max_bytes"`
 
 	// FailOpen allows a statement whose audit record could not be written.

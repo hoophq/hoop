@@ -180,6 +180,7 @@ function Form({ sidecar, onClose }) {
           label="Query memory (MiB)"
           description="Memory for /api/* events. Past it the oldest events are dropped. Empty uses 64 MiB."
           min={0}
+          allowDecimal={false}
           placeholder="64"
           value={form.query_max_bytes > 0 ? Math.round(form.query_max_bytes / MIB) : ''}
           onChange={(v) => set({ query_max_bytes: count(v) * MIB })}
