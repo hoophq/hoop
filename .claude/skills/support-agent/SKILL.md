@@ -21,7 +21,9 @@ Stop at once, with the reason as your final message, when one is false:
 - The Linear and Slack tools answer.
 
 Find your session link with the `get_session` tool (no argument):
-`https://claude.ai/code/<id>`. Every text you write carries it.
+`https://claude.ai/code/<id>`. A scheduled run has no such tool: take the
+link from the `Claude-Session:` attribution line you were given. Every text
+you write carries it.
 
 With the argument `digest`, go to step 7.
 
@@ -83,6 +85,10 @@ Ask, label, and end the run. Do not wait: a later run resumes (step 1.1).
   (`git log`), or the ticket creator. Label `agent:needs-info`.
 - **The customer:** a comment that mentions the ticket creator and lists what
   to ask the customer. Label `agent:needs-customer`.
+
+A mention notifies only in the tool's own form. Linear: `@<displayName>`, from
+`get_user`. Slack: `<@USER_ID>`, from `slack_search_users`. A plain name
+notifies nobody.
 
 ## 6. Disclose
 
