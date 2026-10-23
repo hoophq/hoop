@@ -1,15 +1,12 @@
 import { useLocation } from 'react-router-dom'
 import { useAgentsEnabled } from '@/modes/agents'
 import Home from '@/pages/Home'
-import { LICENSE_INTRO_PATH } from '@/utils/licenseIntro'
 import ProtectedRoute from './ProtectedRoute'
 
 // The terminal (where login lands), the home and the agent onboarding (where
 // setup lands).
 const isAgentLanding = (pathname) =>
-  pathname === '/' ||
-  pathname === '/client' ||
-  (pathname.startsWith('/onboarding') && pathname !== LICENSE_INTRO_PATH)
+  pathname === '/' || pathname === '/client' || pathname.startsWith('/onboarding')
 
 // Without agents, an agent landing gives way to the pages a sidecar org uses
 // (pages/Home: Sidecars or Reviews). Checked on every location change, not once:

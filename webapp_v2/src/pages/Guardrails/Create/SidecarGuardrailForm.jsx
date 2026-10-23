@@ -101,7 +101,7 @@ function FormFields({ guardrail, id, isEdit }) {
   )
 }
 
-export default function ControlPlaneGuardrailForm() {
+export default function SidecarGuardrailForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
 
