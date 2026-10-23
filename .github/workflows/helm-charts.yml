@@ -417,6 +417,59 @@ jobs:
             || { echo "::error::a request body kept the example host or holds a secret"; exit 1; }
           echo "the OpenAI Agents http template renders and its OpenAI side reaches only the sidecar"
 
+      # The OpenAI kubernetes template copies the Managed Agents one's policy
+      # and exposure, so a fix to either must reach both.
+      - name: Assert the OpenAI Agents kubernetes template renders
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/sidecar
+          dir=./deploy/openai-agents/kubernetes
+          values=$dir/values.yaml
+          helm lint "$chart" -f "$values"
+          out=$(helm template t "$chart" -f "$values")
+          echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "openai-agents-kubernetes"' \
+            || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q 'type: LoadBalancer' \
+            || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
+          echo "$out" | grep -qE 'port: 443$' \
+            || { echo "::error::the template's lane is not on port 443"; exit 1; }
+          echo "$out" | grep -q 'no-delete' \
+            || { echo "::error::the template lost its delete guardrail"; exit 1; }
+          # Each row names the session only while the lane records this header.
+          echo "$out" | grep -q 'Impersonate-Extra-Hoop-Session' \
+            || { echo "::error::the lane no longer records the session header"; exit 1; }
+          echo "$out" | grep -q 'automountServiceAccountToken: false' \
+            && { echo "::error::the pod no longer mounts the cluster CA the lane trusts"; exit 1; }
+          # Older releases report the install source as "other".
+          tag=$(yq '.image.tag' "$values")
+          [[ "$tag" =~ ^([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
+            && [[ "$(printf '1.263.0\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.263.0 ]] \
+            || { echo "::error::values.yaml must pin hoophq/hoopsidecar 1.263.0 or later by digest: $tag"; exit 1; }
+          # Assigned first, so a yq failure stops the step instead of comparing
+          # two empty strings.
+          for block in .config.guardrails .config.mask .extraVolumes .extraVolumeMounts .laneServices; do
+            ours=$(yq -o=json "$block" "$values")
+            twin=$(yq -o=json "$block" ./deploy/managed-agents/kubernetes/values.yaml)
+            [[ "$ours" == "$twin" ]] \
+              || { echo "::error::$values and the Managed Agents kubernetes template differ in $block"; exit 1; }
+          done
+          # setup.sh: the sandbox reaches only the sidecar host and gets kubectl
+          # as a file; the vault fills the token toward that host only.
+          host=sidecar.ci.example
+          bodies=$(SIDECAR_HOST=$host "$dir/setup.sh" create --dry-run)
+          jq -e --arg h "$host" '.environment_template.network == {access: "restricted", allowed_domains: [$h]}' <<<"$bodies" >/dev/null \
+            || { echo "::error::the environment template reaches more than the sidecar host"; exit 1; }
+          jq -e '.environment_template.files | map(.path) == ["/workspace/.hoop/kubernetes-client-linux-amd64.tar.gz", "/workspace/.hoop/kubeconfig.sh"]' <<<"$bodies" >/dev/null \
+            || { echo "::error::the environment template lost the kubectl tarball or kubeconfig.sh"; exit 1; }
+          jq -r '.environment_template.files[] | select(.type == "inline") | .data' <<<"$bodies" | base64 -d \
+            | grep -qx "SIDECAR_HOST=$host # setup.sh writes the real host" \
+            || { echo "::error::kubeconfig.sh in the template does not name the sidecar host"; exit 1; }
+          jq -e --arg h "$host" '[.credentials[].auth | .type == "environment_variable" and .networking == {type: "limited", allowed_hosts: [$h]}] == [true]' <<<"$bodies" >/dev/null \
+            || { echo "::error::the vault credential is not bound to the sidecar host alone"; exit 1; }
+          jq -e '([.. | strings | select(test("sidecar\\.example\\.com"))] == []) and all(.. | objects; has("secret_value") | not)' <<<"$bodies" >/dev/null \
+            || { echo "::error::a request body kept the example host or holds a secret"; exit 1; }
+          echo "the OpenAI Agents kubernetes template renders and its OpenAI side reaches only the sidecar"
+
       # The quick start runs on its pinned image: the demo API it relies on,
       # and the free-tier message its README quotes. The helm values share
       # that image and those rules, so they fit the free tier too.
