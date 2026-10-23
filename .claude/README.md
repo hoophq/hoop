@@ -95,7 +95,9 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
   `HOOP_RS_BUILD=0`, `HOOPDEV_CA_CERT=/root/.ccr/ca-bundle.crt` (the
   sandbox re-signs TLS; the dev image must trust it) and `HOOPDEV_LICENSE`:
   an Enterprise license as one line of JSON (`jq -c`), for the sidecar
-  routes. The gateway accepts any license host on localhost. Sign it with
+  routes. Not `HOOP_LICENSE`: every sidecar reads that one by itself, so a
+  standalone run would never meet the free-tier caps. The gateway accepts any
+  license host on localhost. Sign it with
   `POST /api/orgs/license/sign`; `"expire_at": "17520h"` is two years.
   Its setup script installs `freeze` for evidence, sets mirrors (in our cloud
   runs Docker Hub answered 429, and Maven Central sent error pages), and pulls
