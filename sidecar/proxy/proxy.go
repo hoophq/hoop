@@ -41,6 +41,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // DenyWriter renders a policy denial in the wire protocol's own error frame.
@@ -185,6 +186,11 @@ type Config struct {
 	// Metrics is handed to every connection's Gate. Optional. See
 	// gate.Config.Metrics for the contract it must meet.
 	Metrics gate.Metrics
+
+	// Telemetry is the lane's OpenTelemetry recorder: a span per
+	// connection, one per statement, and the upstream round trip the pumps
+	// measure. Optional; nil records nothing. See gate.Config.Telemetry.
+	Telemetry telemetry.LaneRecorder
 
 	// DialTimeout bounds the upstream connect. Default 10s.
 	DialTimeout time.Duration
@@ -635,6 +641,11 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	}
 	log := sessionLog()
 
+	// The session span encloses every statement of this connection, and the
+	// trace is sampled here, once per connection. No-op without telemetry.
+	ctx, endExchange := s.beginSession(ctx, sess)
+	defer endExchange(nil)
+
 	g, err := gate.New(sess, gate.Config{
 		Protocol:         s.cfg.Protocol,
 		Policy:           rules.policy,
@@ -643,6 +654,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		FailOnAuditError: s.cfg.FailOnAuditError,
 		CodecFactory:     rules.codecFactory,
 		Metrics:          s.cfg.Metrics,
+		Telemetry:        s.cfg.Telemetry,
 		RequestIdentity:  requestIdentity,
 		Answer:           s.cfg.Answer,
 		Settle:           s.cfg.Settle,
@@ -670,10 +682,15 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	if err != nil {
 		log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
 		if s.cfg.Audit != nil {
-			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil && s.cfg.Metrics != nil {
+			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil {
 				// The one audit write that happens outside a Gate, so it
-				// reports its own failure into the same counter.
-				s.cfg.Metrics.AuditError()
+				// reports its own failure into the same counters.
+				if s.cfg.Metrics != nil {
+					s.cfg.Metrics.AuditError()
+				}
+				if s.cfg.Telemetry != nil {
+					s.cfg.Telemetry.AuditError()
+				}
 			}
 		}
 		return
@@ -767,19 +784,22 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	defer endConn(nil)
 
 	// Both directions run concurrently; the first to finish tears down the
-	// other by closing its peer, which unblocks the pending Read.
+	// other by closing its peer, which unblocks the pending Read. They
+	// share one upstream clock: the client pump stamps what it forwards,
+	// the server pump reads the stamp when the answer arrives.
+	clock := newUpstreamClock(s.cfg.Protocol, s.cfg.Telemetry)
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
 		defer upstream.Close()
-		s.pump(connCtx, endConn, g, client, upstream, inspect.FromClient, log)
+		s.pump(connCtx, endConn, g, client, upstream, inspect.FromClient, clock, log)
 	}()
 	go func() {
 		defer wg.Done()
 		defer client.Close()
-		s.pump(connCtx, endConn, g, upstream, client, inspect.FromServer, log)
+		s.pump(connCtx, endConn, g, upstream, client, inspect.FromServer, clock, log)
 	}()
 
 	wg.Wait()
@@ -849,6 +869,7 @@ func (s *Server) pump(
 	g *gate.Gate,
 	src, dst net.Conn,
 	dir inspect.Direction,
+	clock *upstreamClock,
 	log *slog.Logger,
 ) {
 	// A re-framing codec holds rows back until its result set ends. Release
@@ -923,6 +944,10 @@ func (s *Server) pump(
 				d = g.Request(ctx, chunk)
 			} else {
 				d = g.Response(ctx, chunk)
+				// The answer is in: stamped before the forward below so the
+				// measurement ends when the sidecar saw the response, not
+				// when the client read it.
+				clock.answered(ctx, len(d.Statements))
 			}
 
 			if d.Err != nil {
@@ -991,6 +1016,11 @@ func (s *Server) pump(
 						log.Debug("forward failed", "direction", string(dir), "error", err)
 					}
 					return
+				}
+				if dir == inspect.FromClient {
+					// Stamped after the write: the measurement starts when the
+					// request left, not when the sidecar finished judging it.
+					clock.sent(len(d.Statements))
 				}
 			}
 		}

@@ -231,8 +231,17 @@ func (c *OPAClient) Evaluate(stmt inspect.Statement) Verdict {
 // input.findings. On the gate phase it writes ec.Requested from the policy's
 // answer. Both directions travel in-process: a producer has no connection to
 // OPA and OPA has none to any producer.
+//
+// The request runs under ConnCtx's VALUES and not its cancellation: the
+// stage span rides to OPA as a traceparent, while the deadline stays the
+// client's own Timeout, as it was before telemetry existed. A connection
+// that ends mid-decision still gets a verdict recorded for the statement.
 func (c *OPAClient) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
-	return c.evaluate(context.Background(), stmt, ec)
+	ctx := context.Background()
+	if ec != nil && ec.ConnCtx != nil {
+		ctx = context.WithoutCancel(ec.ConnCtx)
+	}
+	return c.evaluate(ctx, stmt, ec)
 }
 
 // EvaluateContext evaluates under a caller-supplied context.
