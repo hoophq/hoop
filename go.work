@@ -14,6 +14,8 @@ use (
 	./sidecar/config/yaml
 	./sidecar/descriptors/gcs
 	./sidecar/ica
+	./sidecar/identity/krb5
+	./sidecar/identity/spiffe
 	./sidecar/lexer/conformance
 	./sidecar/mcp
 	./sidecar/pii/alcatraz

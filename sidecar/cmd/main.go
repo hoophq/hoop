@@ -97,6 +97,12 @@ import (
 	// The ICA engine an ica lane needs, same rule: libhoop-ica stays in
 	// sidecar/ica's own module, and this is the only binary that links it.
 	_ "github.com/hoophq/hoop/sidecar/ica"
+	// The SPIFFE identity type and credential source, and the Kerberos
+	// credential source, same rule: a lane that swaps credentials must not
+	// need a different binary. go-spiffe and gokrb5 stay in their own
+	// modules, and this is the only binary that links them.
+	_ "github.com/hoophq/hoop/sidecar/identity/krb5"
+	_ "github.com/hoophq/hoop/sidecar/identity/spiffe"
 	// The MCP server an "mcp" block turns on (ADR-0021), same rule again.
 	_ "github.com/hoophq/hoop/sidecar/mcp"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
