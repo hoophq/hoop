@@ -18,7 +18,7 @@ cfg="$dir/deploy/sidecar/sidecar.yaml"
 # The database addresses: every listener's upstream (host:port) in sidecar.yaml,
 # and its host when the host holds a dot (an FQDN or an IP). A one-label host
 # such as "postgres" is also an ordinary word, so only its host:port counts.
-upstreams=$(sed -n 's/^[[:space:]]*upstream:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$cfg" | sort -u)
+upstreams=$(sed -n 's/^[[:space:]]*upstream:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$cfg" | tr -d "\"'" | sort -u)
 [[ -n $upstreams ]] || { echo "FAIL: no upstream in $cfg" >&2; exit 1; }
 hosts=$(echo "$upstreams" | sed 's/:[0-9]*$//' | grep -F . | sort -u || true)
 
@@ -45,34 +45,26 @@ if grep -E '(^|/)(hoopsidecar|hoop|sidecar\.yaml)$|(^|/)deploy/sidecar(/|$)' "$w
   echo "FAIL: the image holds the sidecar or its config (paths above)"
   fail=1
 fi
-# 2. No database address: not in the image config, not as host:port in any
-# file, and not as a host in the project's own files (the working directory,
-# its virtualenv aside). The base image's files are searched for host:port
-# only.
+# 2. No database address, in the image config or in any file of the image.
 for a in $upstreams $hosts; do
   if grep -qF "$a" "$work/config.json"; then
     echo "FAIL: the image config holds the database address $a"
     fail=1
   fi
 done
-workdir=$(docker image inspect "$tag" --format '{{.Config.WorkingDir}}')
 # shellcheck disable=SC2086 # one argument per address
-python3 -I - "$work/fs.tar" "$workdir" $upstreams -- $hosts <<'EOF' || fail=1
+python3 -I - "$work/fs.tar" $upstreams $hosts <<'EOF' || fail=1
 import sys, tarfile
-path, workdir, args = sys.argv[1], sys.argv[2].strip("/"), sys.argv[3:]
-sep = args.index("--")
-ups, hosts = args[:sep], args[sep + 1:]
+path, needles = sys.argv[1], [n.encode() for n in sys.argv[2:]]
 bad = 0
 with tarfile.open(path) as tar:
     for m in tar:
         if not m.isfile():
             continue
         data = tar.extractfile(m).read()
-        own = bool(workdir) and m.name.startswith(workdir + "/") \
-            and not m.name.startswith(workdir + "/.venv/")
-        for needle in ups + (hosts if own else []):
-            if needle.encode() in data:
-                print(f"FAIL: /{m.name} holds the database address {needle}")
+        for n in needles:
+            if n in data:
+                print(f"FAIL: /{m.name} holds the database address {n.decode()}")
                 bad = 1
 sys.exit(bad)
 EOF
@@ -81,12 +73,23 @@ if grep -q '"APPDB_HOST=' "$work/config.json"; then
   echo "FAIL: the image sets APPDB_HOST"
   fail=1
 fi
-# 4. The image loads the agent, under the name agents-cli recorded: a project
-# created without --root-agent-name support_agent records another one.
+# 4. The image loads the agent with `uv run`, as its CMD does, with no network
+# and an empty uv cache: a cold start on Agent Runtime with PSC-I has no route
+# to pypi.org. There, uv built the project again at every start; touching
+# pyproject.toml makes uv do the same here. The agent's name must be the one
+# agents-cli recorded: a project created without --root-agent-name
+# support_agent records another one.
 want=$(sed -n 's/^[[:space:]]*root_agent_name:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$/\1/p' "$dir/agents-cli-manifest.yaml")
-name=$(docker run --rm "$tag" uv run --no-sync python -c 'from app.agent import root_agent; print(root_agent.name)')
-if [[ $name != "$want" ]]; then
-  echo "FAIL: the image's root agent is '$name'; agents-cli-manifest.yaml records '$want'"
+if name=$(docker run --rm --network none -e UV_CACHE_DIR=/tmp/uv-cold "$tag" sh -c \
+  'touch pyproject.toml && exec uv run python -c "from app.agent import root_agent; print(root_agent.name)"' \
+  2>"$work/run.err"); then
+  if [[ $name != "$want" ]]; then
+    echo "FAIL: the image's root agent is '$name'; agents-cli-manifest.yaml records '$want'"
+    fail=1
+  fi
+else
+  echo "FAIL: the image cannot load the agent offline:"
+  tail -5 "$work/run.err"
   fail=1
 fi
 
