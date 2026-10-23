@@ -99,6 +99,10 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
   standalone run would never meet the free-tier caps. The gateway accepts any
   license host on localhost. Sign it with
   `POST /api/orgs/license/sign`; `"expire_at": "17520h"` is 730 days.
+  `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and
+  `GIT_COMMITTER_EMAIL` hold the owner's name and the email of their GitHub
+  account: the CLA check reads the commit author, and a cloud session
+  otherwise commits as `Claude`, which the CLA refuses.
   Its setup script installs `freeze` for evidence, sets mirrors (in our cloud
   runs Docker Hub answered 429, and Maven Central sent error pages), and pulls
   the dev images into the environment cache. The pulls only fill the cache, so

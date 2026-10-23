@@ -53,6 +53,10 @@ schedule and no person reads the session. Then:
   `HOOP_CONTROL_PLANE_URL=http://127.0.0.1:8009 hoop start sidecar --token <token>`.
   When a test fails here, read the same test in the PR's CI job before you
   chase it: a cloud sandbox can differ from the CI runner.
+- Commits go in the owner's name (the environment sets `GIT_AUTHOR_*` and
+  `GIT_COMMITTER_*`) and end with the `Co-Authored-By: Claude` and
+  `Claude-Session:` lines: the CLA passes, and each commit still says an AI
+  wrote it.
 - The sandbox is discarded after the run: push the branch after each commit.
   The evidence is how a person knows the work is right: a PR without its
   comparison images in "Testing" is not done. `evidence` step 6 publishes them.
