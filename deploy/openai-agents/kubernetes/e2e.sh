@@ -2,9 +2,9 @@
 #
 # The real end to end: kubectl in an OpenAI-hosted session reaches the k3d
 # cluster through the sidecar's quick tunnel, and fails to reach the API
-# server's own tunnel. It creates the OpenAI side with ./openai.sh, so it
-# checks openai/ and openai.sh against the live API too, with ids in a
-# temporary file: never your .openai.
+# server's own tunnel. It creates the OpenAI side with ./setup.sh, so it
+# checks openai/ and setup.sh against the live API too, with ids in a
+# temporary file: never your .openai-ids.
 #
 # It writes evidence/<time>/, then deletes the session, vault, agent,
 # template and file it made; --keep leaves them.
@@ -46,12 +46,12 @@ export OPENAI_IDS
 OPENAI_IDS=$(mktemp)
 cleanup() {
     if [[ -n "$KEEP" ]]; then echo "kept: $(tr '\n' ' ' < "$OPENAI_IDS")"; return; fi
-    ./openai.sh delete
+    ./setup.sh delete
 }
 # A vault left behind holds the live token, so a failed cleanup fails the run.
 on_exit() { local rc=$?; cleanup || rc=1; exit "$rc"; }
 trap on_exit EXIT
-SIDECAR_HOST=$SIDECAR_HOST KUBE_CONTEXT=$CTX ./openai.sh create
+SIDECAR_HOST=$SIDECAR_HOST KUBE_CONTEXT=$CTX ./setup.sh create
 
 # ----------------------------------------------------------------- session
 PODS_BEFORE=$(kc -n demo get pods -o jsonpath='{.items[*].metadata.uid}')
@@ -69,7 +69,7 @@ is a reachability check of a host that the sandbox is expected to block.
 4. GODEBUG=http2debug=1 kubectl get pods -n demo -l 'e2e notin ($RUN-4)' 2>&1 | grep -c 'http2: Transport encoding header'
 5. curl -sS -m 10 'https://$APISERVER_HOST/version?e2e=$RUN-5' 2>&1"
 ASKED=1
-./openai.sh ask "$PROMPT" "$OUT" > "$OUT/transcript.txt" || ASKED=""
+./setup.sh session "$PROMPT" "$OUT" > "$OUT/transcript.txt" || ASKED=""
 SESSION_ID=$(jq -r '.id // empty' "$OUT/session.json" 2>/dev/null || true)
 echo "session $SESSION_ID"
 

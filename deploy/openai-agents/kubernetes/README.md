@@ -3,7 +3,8 @@
 An agent in an OpenAI Agents API hosted sandbox runs kubectl against one
 Kubernetes cluster, and only through a hoop sidecar. The sidecar refuses
 deletes, masks Secret values in kubectl's JSON responses and records each
-request with the OpenAI session id.
+request with the OpenAI session id. `deploy/managed-agents/kubernetes` is the
+Claude twin.
 
 ```
 hosted sandbox, restricted network         your cluster
@@ -18,7 +19,8 @@ hosted sandbox, restricted network         your cluster
 The agent cannot skip the sidecar:
 
 - The environment template allows one host, the sidecar's. The egress proxy
-  refuses every other host, the API server's included.
+  refuses every other host, the API server's included, and a session cannot
+  widen the template's network.
 - The sandbox holds a vault placeholder. The egress proxy writes the real
   token into the `Authorization` header, and only toward the sidecar's host.
 - The sidecar refuses a `DELETE` before any byte of it reaches the API
@@ -31,8 +33,8 @@ The agent cannot skip the sidecar:
 |---|---|
 | `values.yaml` | Sidecar chart values: one HTTPS lane to the API server of the cluster it runs in, the `no-delete` guardrail, the `secret-values` mask rule, `analytics.installSource` |
 | `rbac.yaml` | The agent's ServiceAccount, its token and its roles: object access in one namespace, plus one cluster-scoped rule for the session extra |
-| `openai/` | The environment template, the vault, its credential without the secret, the agent and its instructions, and `kubeconfig.sh`, which runs in the sandbox |
-| `openai.sh` | Creates and deletes the OpenAI side with `curl` and `jq`, and starts a session |
+| `setup.sh` | Creates and deletes the OpenAI side from `openai/`, and starts a session |
+| `openai/` | The request bodies: the environment template, the vault, the credential without its secret, the agent (`agent.json`, instructions in `agent.md`), the session; and `kubeconfig.sh`, which runs in the sandbox |
 | `run.sh`, `demo.sh`, `e2e.sh` | A local cluster, checks with no OpenAI call, and a real session (see "Try it without a public host") |
 
 ## Before you start
@@ -40,8 +42,10 @@ The agent cannot skip the sidecar:
 - A Kubernetes cluster that can publish a `LoadBalancer` Service, and a DNS
   name for it. Below, `SIDECAR_HOST` is that name.
 - A TLS certificate for `SIDECAR_HOST` from a public CA.
-- `helm`, `kubectl`, `jq`, `curl` and `shasum`.
+- `helm`, `kubectl`, `shasum`, `curl` 7.76 or later and `jq` 1.6 or later.
 - `OPENAI_API_KEY`: a key with Agents API access.
+- `hoophq/hoopsidecar` 1.263.0 or later; `values.yaml` pins 1.263.0. Older
+  releases report this template's install source as `other`.
 
 ## 1. Run the sidecar
 
@@ -62,31 +66,32 @@ kubectl -n hoop get svc hoop-kube-hoopsidecar-public    # point SIDECAR_HOST at 
 ## 2. Create the OpenAI side
 
 ```bash
-SIDECAR_HOST=sidecar.example.com ./openai.sh create
+SIDECAR_HOST=sidecar.example.com ./setup.sh create
 ```
 
 It reads the agent's token from the cluster in your current kubectl context
 (`KUBE_CONTEXT=` picks another), writes `SIDECAR_HOST` in place of
-`sidecar.example.com`, and records each id in `.openai`. The token goes to
-the vault through a pipe: it is in no file and no process's argv. It
-creates:
+`sidecar.example.com`, and writes each id to `./.openai-ids`. It refuses a
+second run until `delete`. The token goes to the vault through a pipe: it is
+in no file and no process's argv. `./setup.sh create --dry-run` prints the
+request bodies, with no secret and no API call. It creates:
 
 - **A file: kubectl.** The sandbox has no kubectl and no route to a
   download host. kubectl is 56 MiB and an environment file holds 50 MiB at
   most, so the file is the release's client tarball (33 MiB), checked
-  against its published SHA-512. `KUBECTL_VERSION=` picks the version; keep
-  it within one minor release of your API server.
+  against its published SHA-512 on each run. `KUBECTL_VERSION=` picks the
+  version; keep it within one minor release of your API server.
 - **An environment template**: `restricted` network access with
   `SIDECAR_HOST` as the only allowed host, the tarball, and
   `openai/kubeconfig.sh`.
 - **A vault** with one credential, `KUBE_TOKEN`, bound to `SIDECAR_HOST`.
-- **An agent**, `kubernetes-operator`, with `openai/instructions.md`.
-  `MODEL=` overrides its model.
+- **An agent**, `kubernetes-operator`, with `openai/agent.md`. `MODEL=`
+  overrides its model.
 
 ## 3. Start a session
 
 ```bash
-./openai.sh ask 'Which pods run in namespace demo?'
+./setup.sh session 'Which pods run in namespace demo?'
 ```
 
 The sandbox has no variable that names the session, so the first message
@@ -96,6 +101,11 @@ ServiceAccount with one extra, `hoop-session`. kubectl sends that extra as
 the `Impersonate-Extra-Hoop-Session` header, and the sidecar records it.
 The API server runs the request as the same ServiceAccount, with the same
 groups.
+
+In your own agent, use `$KUBE_TOKEN` only through that kubeconfig: never in
+a kubectl argument, a URL or a body. Toward the sidecar's host the vault
+fills a placeholder anywhere in the request. `openai/agent.md` says so to
+the model.
 
 ## 4. Read the audit trail
 
@@ -109,6 +119,23 @@ kubectl -n hoop logs deploy/hoop-kube-hoopsidecar | jq -cR 'fromjson?
 Each request writes one `client` row: `statement`, or `violation` when the
 sidecar refuses it. An admitted request also writes a `server` row for its
 response, and a masked response a `masked` row.
+
+## 5. Clean up
+
+```bash
+./setup.sh delete
+helm -n hoop uninstall hoop-kube
+kubectl delete -f rbac.yaml
+```
+
+`delete` removes the vault, the sessions, the agent, the template and the
+file. If it fails halfway, run it again: it retries only what is left.
+
+A network error during `create` or `session` can leave a resource that
+`.openai-ids` does not list. Find it with `GET /v1/vaults`, `/v1/agents`,
+`/v1/agents/environments/templates`, `/v1/agents/sessions` or `/v1/files`,
+by the name `hoop kubernetes`, `kubernetes-operator` or
+`kubernetes-client-linux-amd64.tar.gz`, and delete the ones you made.
 
 ## What to expect
 
@@ -135,37 +162,67 @@ can run at once.
   `openai/kubeconfig.sh` writes.
 - `./run.sh --tunnel && ./e2e.sh` adds two Cloudflare quick tunnels, one to
   the lane and one straight to the API server, and runs a real hosted
-  session. It creates the OpenAI side with `openai.sh`, checks the
-  session's output and the audit trail, writes `evidence/<time>/`, and
-  deletes what it created. `MODEL=` overrides the agent's model.
+  session. It creates the OpenAI side with `setup.sh`, checks the session's
+  output and the audit trail, writes `evidence/<time>/`, and deletes what
+  it created. `MODEL=` overrides the agent's model.
 - `./run.sh down` removes the tunnels and the cluster.
 
 ## Limits
 
-- **No caller check at the sidecar.** kubectl cannot send `X-Hoop-Token`, so
-  the lane admits any caller and the API server's token check is the only
-  gate. The public URL exposes the API server: a stranger gets its `401`, or
-  what its anonymous access allows. Rows name `anonymous`. ENG-811 tracks a
-  bearer check at the sidecar.
-- **The session id is the agent's to send.** It comes from the first
-  message, and the agent writes it: a row names the session the agent
-  claims. A kubeconfig without the extra still works, and its rows name no
-  session.
-- **The vault fills a placeholder anywhere in a request.** In a URL or a
-  body too, not only in the `Authorization` header (ENG-860), and the vault
-  has no setting to limit it. An agent that runs
-  `kubectl get pod "$KUBE_TOKEN"` reads the real token in the API server's
-  `not found` error, and the sidecar's row for that request records it.
-  With the token and no caller check, a caller reaches the sidecar from
-  outside the sandbox; the sidecar's policy still applies. ENG-871 tracks a
-  fix at the sidecar.
+OpenAI's:
+
+- **US data residency only, no ZDR.** The Agents API keeps data in the
+  United States only and does not support Zero Data Retention. The sidecar
+  does not change this: the prompts and the masked responses the agent
+  reads go to OpenAI.
+- **Exact hosts only.** `allowed_domains` takes exact host names: no
+  wildcard, scheme, port or path. A redirect to another host fails.
+- **An idle sandbox is deleted after one hour.** Its files go with it,
+  kubectl and its kubeconfig included. The timeout is not configurable.
+- **Keep the lane on 443 only.** The egress proxy also lets port 80 through
+  to the sidecar's host, unencrypted, and the vault fills nothing there.
+- **The vault fills a placeholder anywhere in the request.** Toward the
+  sidecar's host it fills the URL and the body too, not only the
+  `Authorization` header, and OpenAI has no setting to stop it. An agent
+  that runs `kubectl get pod "$KUBE_TOKEN"` reads the real token in the API
+  server's `not found` error, and the sidecar's row for that request
+  records it. With the token and no caller check, a caller reaches the
+  sidecar from outside the sandbox; the sidecar's policy still applies. The
+  agent's instructions keep the token in the kubeconfig; a prompt is not a
+  control. ENG-871 tracks a fix at the sidecar.
+- **Hosted tools are untested.** `agent.json` lists no tools. Whether
+  `allowed_domains` limits a hosted tool such as web search is untested; add
+  none.
+- **The lane's own certificate is untested from a hosted session.**
+  `e2e.sh` reaches the lane through a Cloudflare tunnel, so the egress proxy
+  saw Cloudflare's certificate, not the one in `hoop-sidecar-tls`, and the
+  protocol from the egress proxy to the lane is not checked. kubectl in the
+  sandbox speaks HTTP/2 to the egress proxy (`e2e.sh`), and the lane serves
+  kubectl HTTP/2 and HTTP/1.1 (`demo.sh`).
+- **linux/amd64 only.** The tarball is the amd64 build, the architecture of
+  the hosted sandbox.
+
+The sidecar's:
+
+- **No caller check.** kubectl cannot send `X-Hoop-Token`, so the lane
+  admits any caller and the API server's token check is the only gate. The
+  public URL exposes the API server: a stranger gets its `401`, or what its
+  anonymous access allows. Rows name `anonymous`. ENG-811 tracks a bearer
+  check at the sidecar.
+- **The session id is a label.** It comes from the first message, and the
+  agent writes it, so it can write any value. It correlates rows; it does
+  not prove identity. A kubeconfig without the extra still works, and its
+  rows name no session.
+- **One token for every agent.** The API server sees `openai-agent` for
+  every session. Per-user rows need a per-user ServiceAccount.
 - **The extra needs one cluster-scoped rule.** Kubernetes checks an
   impersonated extra with no namespace, so `rbac.yaml` holds a ClusterRole
   for `userextras/hoop-session`. It grants no access to any object, and the
   agent can impersonate no ServiceAccount but its own.
 - **Free tier.** One guardrail rule and one mask rule per process, spent on
-  `no-delete` and `secret-values`. A license lifts both caps; `values.yaml`
-  carries the `no-secret-contents` rule to add then.
+  `no-delete` and `secret-values`. These are the Managed Agents kubernetes
+  template's rules; CI keeps the two templates equal. A license lifts both
+  caps; `values.yaml` carries the `no-secret-contents` rule to add then.
 - **Only JSON is masked.** kubectl asks for JSON. A client that asks for YAML
   or Protobuf gets Secret values in clear, and the agent can send one with
   curl and `$KUBE_TOKEN`. This includes a YAML Table with
@@ -184,22 +241,8 @@ can run at once.
 - **Delete means the `DELETE` method.** An eviction is a `POST` and scaling
   to zero is a `PATCH`. `rbac.yaml` grants no eviction, but it grants the
   scale subresource: remove it if zero replicas is as bad as a delete.
-- **HTTP/2 toward a real `LoadBalancer` is untested.** kubectl in the
-  sandbox speaks HTTP/2 to the egress proxy (`e2e.sh`), and the lane serves
-  kubectl HTTP/2 (`demo.sh`). `e2e.sh` reaches the lane through a Cloudflare
-  tunnel, so the protocol from the egress proxy to the lane is not checked.
-  The lane serves HTTP/1.1 too.
 - **A response over 16 MiB passes unmasked.** kubectl pages a list at 500
   objects, and a page of large Secrets can still pass that size.
 - **One long-lived token.** To rotate it, delete `openai-agent-token`, apply
   `rbac.yaml` again so Kubernetes fills a new one, then run
-  `./openai.sh delete` and `./openai.sh create`.
-- **linux/amd64 only.** The tarball is the amd64 build, the architecture of
-  the hosted sandbox.
-- **OpenAI's own limits.** The Agents API keeps data in the US only and is
-  not eligible for Zero Data Retention
-  ([Agents API](https://developers.openai.com/api/docs/guides/agents-api/overview)).
-  `allowed_domains` takes exact hosts only: a redirect target needs its own
-  entry. A sandbox with no activity and no keep-alive for an hour can be
-  deleted, and the timeout is not configurable
-  ([hosted environments](https://developers.openai.com/api/docs/guides/agents-api/environments/openai-hosted)).
+  `./setup.sh delete` and `./setup.sh create`.

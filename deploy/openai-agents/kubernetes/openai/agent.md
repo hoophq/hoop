@@ -15,7 +15,9 @@ It installs kubectl and writes a kubeconfig that names the session in each
 request. Do not edit that kubeconfig, and do not set a certificate
 authority: the egress proxy inspects TLS with a CA that the system already
 trusts. `$KUBE_TOKEN` is a vault placeholder: the egress proxy writes the
-real token into each request to the sidecar. Do not print it.
+real token into each request to the sidecar. Use it only through that
+kubeconfig: never in a kubectl argument, a URL or a request body, and never
+print it.
 
 `Error from server (Forbidden)` followed by a plain sentence, such as
 `this agent may not delete cluster objects`, is the sidecar's policy. Report

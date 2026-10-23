@@ -6,10 +6,10 @@
 #   helm install hoop-kube oci://ghcr.io/hoophq/helm-charts/hoopsidecar-chart \
 #     -n hoop -f values.yaml
 
-# 1.263.0 is the first release that knows the openai-agents-kubernetes
-# install source.
+# 1.263.0 is the first release that reports this template's install source.
 image:
-  tag: '1.263.0'
+  tag: '1.263.0@sha256:1cbddabd563ea67a885e4fa5767f97599f978e8edd2cb6ac3f1eba4e385f5992'
+  pullPolicy: IfNotPresent
 
 analytics:
   installSource: openai-agents-kubernetes

@@ -11,7 +11,7 @@
 
 set -eu
 
-SIDECAR_HOST=sidecar.example.com # openai.sh writes the real host
+SIDECAR_HOST=sidecar.example.com # setup.sh writes the real host
 AGENT=system:serviceaccount:hoop:openai-agent # EDIT with ../rbac.yaml
 NAMESPACE=demo # EDIT with ../rbac.yaml
 

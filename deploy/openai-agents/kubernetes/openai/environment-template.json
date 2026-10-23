@@ -8,12 +8,12 @@
     {
       "type": "file_id",
       "path": "/workspace/.hoop/kubernetes-client-linux-amd64.tar.gz",
-      "file_id": "openai.sh uploads the tarball and sets this"
+      "file_id": "setup.sh uploads the tarball and sets this"
     },
     {
       "type": "inline",
       "path": "/workspace/.hoop/kubeconfig.sh",
-      "data": "openai.sh sets this to kubeconfig.sh in base64"
+      "data": "setup.sh sets this to kubeconfig.sh in base64"
     }
   ]
 }
