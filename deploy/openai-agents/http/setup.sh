@@ -11,13 +11,18 @@
 #   ./setup.sh session <question>  start a session, ask <question>, print the turn
 #   ./setup.sh delete              delete what create and session made
 #
+# create --no-api-token makes no CUSTOMER_API_TOKEN credential, for an API
+# that takes no token, such as the quick start's demo API.
+#
 # Reads SIDECAR_HOST (create), CALLER_TOKEN_FILE and API_TOKEN_FILE (create),
 # OPENAI_API_KEY (all but --dry-run). Ids go to OPENAI_IDS, default
-# ./.openai-ids. Needs curl and jq 1.6 or later.
+# ./.openai-ids. AGENT_DIR holds agent.json and agent.md, default openai/.
+# Needs curl and jq 1.6 or later.
 
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 ids=${OPENAI_IDS:-.openai-ids}
+agent_dir=${AGENT_DIR:-$here/openai}
 
 die() { printf '\033[31mfail\033[0m %s\n' "$*" >&2; exit 1; }
 for t in curl jq; do command -v "$t" >/dev/null || die "missing required tool: $t"; done
@@ -46,8 +51,8 @@ forget() { awk -v k="$1" -v v="$2" '!($1 == k && $2 == v)' "$ids" > "$ids.tmp" &
 # The committed files name sidecar.example.com; each request names SIDECAR_HOST.
 body() { jq --arg h "$SIDECAR_HOST" '(.. | strings) |= gsub("sidecar\\.example\\.com"; $h)' "$here/openai/$1"; }
 agent_body() {
-    jq --arg h "$SIDECAR_HOST" --rawfile i "$here/openai/agent.md" \
-        '.instructions = $i | (.. | strings) |= gsub("sidecar\\.example\\.com"; $h)' "$here/openai/agent.json"
+    jq --arg h "$SIDECAR_HOST" --rawfile i "$agent_dir/agent.md" \
+        '.instructions = $i | (.. | strings) |= gsub("sidecar\\.example\\.com"; $h)' "$agent_dir/agent.json"
 }
 
 # credential <file in openai/> <secret file> <vault id>: --rawfile keeps the
@@ -58,19 +63,28 @@ credential() {
 }
 
 create() {
+    local dry="" api_token=1 a
+    for a in "$@"; do
+        case $a in
+            --dry-run) dry=1 ;;
+            --no-api-token) api_token="" ;;
+            *) die "unknown argument: $a" ;;
+        esac
+    done
     : "${SIDECAR_HOST:?set SIDECAR_HOST to the public host of the sidecar}"
     [[ "$SIDECAR_HOST" =~ ^[A-Za-z0-9.-]+$ ]] \
         || die "SIDECAR_HOST must be a bare host name: no scheme, port or path"
-    if [[ "${1:-}" == --dry-run ]]; then
+    if [[ -n "$dry" ]]; then
         jq -n --argjson t "$(body environment-template.json)" --argjson v "$(body vault.json)" \
-            --argjson c "$(jq -s . <(body credentials/caller-token.json) <(body credentials/customer-api-token.json))" \
+            --argjson c "$({ body credentials/caller-token.json; [[ -z "$api_token" ]] || body credentials/customer-api-token.json; } | jq -s .)" \
             --argjson a "$(agent_body)" '{environment_template: $t, vault: $v, credentials: $c, agent: $a}'
         return
     fi
-    [[ -z "${1:-}" ]] || die "unknown argument: $1"
     : "${OPENAI_API_KEY:?set OPENAI_API_KEY}"
-    local f
-    for f in "${CALLER_TOKEN_FILE:?set CALLER_TOKEN_FILE}" "${API_TOKEN_FILE:?set API_TOKEN_FILE}"; do
+    local files f
+    files=("${CALLER_TOKEN_FILE:?set CALLER_TOKEN_FILE}")
+    [[ -z "$api_token" ]] || files+=("${API_TOKEN_FILE:?set API_TOKEN_FILE, or pass --no-api-token}")
+    for f in "${files[@]}"; do
         [[ -s "$f" ]] || die "$f is missing or empty"
     done
     [[ ! -s "$ids" ]] || die "$ids already lists resources: run ./setup.sh delete first"
@@ -81,7 +95,7 @@ create() {
     vault=$(body vault.json | api POST /vaults --data-binary @- | jq -er .id)
     record vault "$vault"
     credential credentials/caller-token.json "$CALLER_TOKEN_FILE" "$vault"
-    credential credentials/customer-api-token.json "$API_TOKEN_FILE" "$vault"
+    [[ -z "$api_token" ]] || credential credentials/customer-api-token.json "$API_TOKEN_FILE" "$vault"
     agent=$(agent_body | api POST /agents --data-binary @- | jq -er .id)
     record agent "$agent"
     echo "created template $template, vault $vault, agent $agent for https://$SIDECAR_HOST"
@@ -167,5 +181,5 @@ case "${1:-}" in
     create) create "${@:2}" ;;
     session) session "${@:2}" ;;
     delete) delete ;;
-    *) die "usage: ./setup.sh create [--dry-run] | session <question> | delete" ;;
+    *) die "usage: ./setup.sh create [--dry-run] [--no-api-token] | session <question> | delete" ;;
 esac
