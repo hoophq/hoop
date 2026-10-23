@@ -91,7 +91,7 @@ version that ships its PR is out, the agent comments it on the ticket.
   `HOOP_AGENT` turns on the `ai-disclosure` hook in every session there. It sets
   `HOOP_AGENT=support`,
   `HOOP_AGENT_OWNER`, `HOOP_AGENT_SLACK_CHANNEL` (channel ID),
-  `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: draft PRs),
+  `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: PRs),
   `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`,
   `HOOP_RS_BUILD=0`, `HOOPDEV_CA_CERT=/root/.ccr/ca-bundle.crt` (the
   sandbox re-signs TLS; the dev image must trust it) and `HOOPDEV_LICENSE`:
