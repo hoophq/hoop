@@ -13,6 +13,8 @@
 # agent and one bash connection, and writes $DIR/env: `source` it to point
 # the hoop CLI and curl at the stack. Logs go to $DIR, not to the terminal.
 # $DIR is HOOP_SANDBOX_DIR, by default $TMPDIR/hoop-sandbox.
+# HOOPDEV_LICENSE, a signed Enterprise license (JSON), is uploaded to the org:
+# the sidecar routes answer 403 without one.
 #
 # One stack at a time: the gRPC port is fixed (gateway/transport/server.go).
 # To compare origin/main with a branch, build each binary, then start, capture
@@ -124,6 +126,15 @@ cmd_start() {
     "$API_URL/api/localauth/register" | sed -nE 's/^[Tt]oken: (.*)\r?$/\1/p' | tr -d '\r')
   [[ -n "$TOKEN" ]] || die "admin registration returned no token"
 
+  # The gateway accepts any license host on 127.0.0.1, so one license serves
+  # every sandbox.
+  if [[ -n "$HOOPDEV_LICENSE" ]]; then
+    jq -e '.payload.type == "enterprise"' <<<"$HOOPDEV_LICENSE" >/dev/null 2>&1 ||
+      die "HOOPDEV_LICENSE is not an enterprise license document (JSON)"
+    api -o /dev/null -X PUT -d "$HOOPDEV_LICENSE" "$API_URL/api/orgs/license" ||
+      die "the gateway refused HOOPDEV_LICENSE; the reason is in $DIR/gateway.log"
+  fi
+
   local key
   key=$(api -d '{"name":"sandbox-agent","mode":"standard"}' "$API_URL/api/agents" | jq -r '.token')
   [[ -n "$key" && "$key" != null ]] || die "agent creation returned no key"
@@ -145,7 +156,7 @@ export HOOP_TOKEN=$TOKEN
 export HOOP_SANDBOX_DIR=$DIR
 EOF
   trap - EXIT
-  echo "run-sandbox: up. API $API_URL, admin $ADMIN_EMAIL, agent sandbox-agent, connection bash${STATIC_UI_PATH:+, web UI}"
+  echo "run-sandbox: up. API $API_URL, admin $ADMIN_EMAIL, agent sandbox-agent, connection bash${HOOPDEV_LICENSE:+, enterprise license}${STATIC_UI_PATH:+, web UI}"
   echo "run-sandbox: source $DIR/env  # then: hoop exec bash -i 'echo ok'"
 }
 

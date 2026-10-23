@@ -28,11 +28,22 @@ schedule and no person reads the session. Then:
      `echo AUTH_METHOD=local >> .env` (the first value of a key wins).
   3. `make run-dev-postgres`, then `make run-dev` in the background; wait for
      `/api/healthz`. The environment sets `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT`.
+  4. After you register the admin, upload the Enterprise license, or the
+     sidecar routes answer 403:
+     `curl -sf -X PUT $API_URL/api/orgs/license -H "authorization: Bearer $TOKEN" -d "$HOOPDEV_LICENSE"`.
 
   After `make build-dev-webapp`, `git checkout` the two `package-lock.json`
   unless the ticket changes them. Without Docker, `scripts/dev/run-sandbox.sh`
   (`--ui` for the UI) runs gateway and agent on PGlite, with no database for a
-  connection to test against.
+  connection to test against. It uploads the license itself.
+- A sidecar: `make test-sidecar-e2e` runs here. By hand,
+  `hoop start sidecar --config <file>` in front of the dev Postgres
+  (`127.0.0.1:5449`); unlicensed it takes one guardrail and one mask rule,
+  and `HOOP_LICENSE="$HOOPDEV_LICENSE"` lifts that. Managed by the gateway:
+  `POST /api/sidecars` returns its `token`, then
+  `HOOP_CONTROL_PLANE_URL=http://127.0.0.1:8009 hoop start sidecar --token <token>`.
+  In our cloud runs `TestOracleThickSQLPlus` failed on the SQL*Plus logout and
+  passed in CI: compare with the PR's `Sidecar E2E Test` job first.
 - The sandbox is discarded after the run: push the branch after each commit.
   The evidence is how a person knows the work is right: a PR without its
   comparison images in "Testing" is not done. `evidence` step 6 publishes them.

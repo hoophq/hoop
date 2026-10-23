@@ -92,8 +92,11 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
   `HOOP_AGENT_OWNER`, `HOOP_AGENT_SLACK_CHANNEL` (channel ID),
   `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: draft PRs),
   `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`,
-  `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT=/root/.ccr/ca-bundle.crt` (the
-  sandbox re-signs TLS; the dev image must trust it).
+  `HOOP_RS_BUILD=0`, `HOOPDEV_CA_CERT=/root/.ccr/ca-bundle.crt` (the
+  sandbox re-signs TLS; the dev image must trust it) and `HOOPDEV_LICENSE`:
+  an Enterprise license as one line of JSON (`jq -c`), for the sidecar
+  routes. The gateway accepts any license host on localhost. Sign it with
+  `POST /api/orgs/license/sign`; `"expire_at": "17520h"` is two years.
   Its setup script installs `freeze` for evidence, sets mirrors (in our cloud
   runs Docker Hub answered 429, and Maven Central sent error pages), and pulls
   the dev images into the environment cache. The pulls only fill the cache, so

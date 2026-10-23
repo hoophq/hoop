@@ -185,8 +185,9 @@ publish, and the PR stays a draft until a person reads it. Then:
 - In zsh, `$VAR[...]` is an array subscript: write `${VAR}[...]` inside
   ffmpeg filters.
 - Routes behind `EnterpriseLicenseOnly` (sidecar config) need the dev
-  license from `.env`; tests that call handlers directly skip it, a real stack
-  does not.
+  license: from `.env` locally, from `HOOPDEV_LICENSE` in a cloud session
+  (`run-sandbox.sh` uploads it). Tests that call handlers directly skip it, a
+  real stack does not.
 - In control-plane mode the rule screen opens the sidecar form, which does not
   show connections; use gateway mode for that screen.
 - `Page.captureScreenshot` of `about:blank` never answers. `rec.mjs` starts the
