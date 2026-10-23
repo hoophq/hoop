@@ -287,7 +287,7 @@ func TestCountMatchesThePendingReviewsListed(t *testing.T) {
 }
 
 func TestCountRefusesAStatusOtherThanPending(t *testing.T) {
-	for _, query := range []string{"", "?status=APPROVED", "?status=pending"} {
+	for _, query := range []string{"", "?status=APPROVED", "?status=pending", "?status=PENDING&status=APPROVED"} {
 		w := serveCount("user-admin", []string{types.GroupAdmin}, query)
 		assert.Equal(t, http.StatusBadRequest, w.Code, "query %q", query)
 	}

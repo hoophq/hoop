@@ -22,6 +22,7 @@ func TestApprovalRoutesAliasReviewRoutes(t *testing.T) {
 	}
 	for _, tt := range []struct{ method, review, approval string }{
 		{http.MethodGet, "/api/reviews", "/api/approvals"},
+		{http.MethodGet, "/api/reviews/count", "/api/approvals/count"},
 		{http.MethodGet, "/api/reviews/:id", "/api/approvals/:id"},
 		{http.MethodPut, "/api/reviews/:id", "/api/approvals/:id"},
 		{http.MethodPut, "/api/sessions/:session_id/review", "/api/sessions/:session_id/approval"},

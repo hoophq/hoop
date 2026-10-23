@@ -117,8 +117,9 @@ func (h *handler) List(c *gin.Context) {
 func (h *handler) Count(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	if status := c.Query("status"); status != string(models.ReviewStatusPending) {
-		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("unsupported status %q, only %s is supported", status, models.ReviewStatusPending)})
+	if statuses := c.QueryArray("status"); len(statuses) != 1 || statuses[0] != string(models.ReviewStatusPending) {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("unsupported status %q, only %s is supported",
+			strings.Join(statuses, ","), models.ReviewStatusPending)})
 		return
 	}
 	count, err := models.CountPendingReviewsForViewer(models.DB, ctx.GetOrgID(), Viewer(ctx))
