@@ -16,7 +16,7 @@ import {
 import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
 import PageLoader from '@/components/PageLoader'
-import { goAfterAuth } from '@/modes'
+import { POST_LOGIN_PATH, goAfterAuth } from '@/modes'
 
 function Register() {
   const navigate = useNavigate()
@@ -33,7 +33,7 @@ function Register() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      goAfterAuth(navigate)
+      goAfterAuth(navigate, POST_LOGIN_PATH)
       return
     }
 
@@ -72,7 +72,7 @@ function Register() {
     try {
       const { token } = await authService.registerLocal(email, password, fullName)
       setToken(token)
-      await goAfterAuth(navigate)
+      goAfterAuth(navigate, POST_LOGIN_PATH)
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed. Please try again.')
     } finally {

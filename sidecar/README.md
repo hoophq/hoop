@@ -29,9 +29,10 @@ The root shipped zero dependencies until the decoders moved to libhoop. They
 produce the `Statement` a policy evaluates, so this module cannot describe its
 own inputs without naming their types.
 
-**Go 1.26.5.** Every module here declares `go 1.26.5`, so an older toolchain
-refuses the build instead of miscompiling it. The repo's `go.work` and the
-sidecar image pin the same version.
+**Go 1.26.10.** Every module here declares `go 1.26.10`, so an older toolchain
+refuses the build instead of miscompiling it. The repo's `go.work` pins the
+same version. 1.26.10 is the first release whose `crypto/x509` refuses the
+compromised eMudhra intermediates (ENG-847).
 
 ```go
 import (
@@ -181,8 +182,8 @@ go build -o hoop-inspect .
 ./hoop-inspect -version
 ```
 
-Go 1.26.5 or newer builds it. Below that the module's own `go` directive stops
-the build with `requires go >= 1.26.5`, and `GOTOOLCHAIN=auto` (the default)
+Go 1.26.10 or newer builds it. Below that the module's own `go` directive stops
+the build with `requires go >= 1.26.10`, and `GOTOOLCHAIN=auto` (the default)
 fetches the right one rather than failing.
 
 As a container, with the `sidecar` tree as the build context. From the repo
@@ -3702,6 +3703,62 @@ Those choices buy this, measured through the real Postgres path:
 | `INSERT INTO staging SELECT * FROM customers` | `insert`, tables `[staging customers]` | staging write, customers read |
 | `DO $$ BEGIN DELETE FROM customers; END $$` | `unknown` by accident | `unknown`, reason "anonymous code block; body is interpreted at runtime" |
 | `CALL purge()` | `call` | `unknown`, reason "stored procedure; body is in the catalog" |
+
+#### Spark SQL (Databricks)
+
+`lexer.Spark` reads Spark SQL as Databricks runs it. No config key selects
+it yet; a caller passes it to `inspect.AnalyzeSQLIn`. Its quoting is close to
+GoogleSQL's: backslash escapes in `'...'` and `"..."`, `"..."` is a string,
+backticks escape by doubling, `r'...'` is raw, and `:name` and `?` are
+parameters. Five rules differ from every other dialect here, and each one
+dropped a table on a Databricks SQL warehouse (2026.42) behind a statement
+the other dialects read as harmless:
+
+| Rule | Spark | Elsewhere | Cost of using the wrong one |
+|---|---|---|---|
+| `\` at the end of a `--` line | the comment continues on the next line | the comment ends | `-- x \` newline `SELECT '` newline `DROP TABLE t -- '` hides the DROP in a literal |
+| U+00A0 and the other Unicode spaces in Spark's `WS` | whitespace | part of the word | `DROP` U+00A0 `TABLE t` is one word that no verb matches |
+| `/*+ ... */` | a hint, lexed as SQL tokens | a comment | a `*/` in a string inside the hint ends the comment early, and the quote after it hides a statement |
+| `/* /* */` | nests | flat in MySQL, ClickHouse, GoogleSQL and Oracle | `/* /* */ SELECT 'x */ DROP TABLE t; -- '` runs the DROP |
+| `BEGIN ... END` | a SQL script | a transaction, except in Oracle | `BEGIN DROP TABLE t; END` reads as a begin and a commit |
+
+A script is `unknown`, because its control flow decides which statements
+run, and every write in it is an effect: a rule naming `drop` refuses
+`BEGIN DROP TABLE t; END`, and a rule naming `unknown` refuses every script.
+As in an Oracle PL/SQL block, a write verb counts anywhere in a script,
+minus the known false readings: `SHOW CREATE TABLE`, a MERGE join hint, and
+REPLACE, LOAD, CONVERT, MSCK, REORG or REPAIR without the keyword their
+statement starts with, and GENERATE without its FOR, so `CASE WHEN a THEN replace(s, 'x', 'y') END` and a
+column called load stay reads. A column named like another write verb
+(update, delete, vacuum, restore, copy ...) after THEN, or anywhere inside a
+script, still reads as a write, as a column called update does in every
+dialect. `BEGIN TRANSACTION` and `BEGIN WORK` with
+nothing after them stay a begin. Any `${` makes the
+statement `unknown`: Spark replaces `${var}` in the raw text before it
+parses, inside literals too. Databricks SQL 2026.42 does not substitute, so
+there this costs a false `unknown` for a literal that contains `${`.
+
+Delta Lake's own parser reads VACUUM, OPTIMIZE, RESTORE and its other
+commands before Spark does, with FLAT block comments and no `--`
+continuation, so `/* /* */ VACUUM t RETAIN 0 HOURS -- */` is a comment to
+Spark and a VACUUM to Delta. When a statement starts with a Delta command,
+the scanner reads it both ways and merges the two readings, as it does for
+MySQL's backslash modes. Databricks SQL 2026.42 lexes Delta commands with
+Spark's rules; open-source Delta Lake does not. Spark versions also differ
+on a `/*+` inside a block comment: Spark master and Databricks SQL nest on
+it, every released Spark reads it as text, so text holding `/*+` is read
+both ways too.
+
+The Databricks verbs: VACUUM is a `delete`, because it removes the files
+that older table versions need. OPTIMIZE, REORG, RESTORE, CONVERT TO DELTA,
+GENERATE and `[MSCK] REPAIR TABLE` are `alter`, REPLACE TABLE is `create`, LOAD DATA
+is `insert`, DESCRIBE is `show`, and CACHE and UNCACHE are `other`. The
+maintenance commands, COPY INTO, INSERT OVERWRITE and the FROM-first
+multi-insert (`FROM s INSERT INTO t SELECT ...`) record their target as
+written. Their previews read the same: `VACUUM t DRY RUN` is a `delete` and
+`COPY INTO t ... VALIDATE` writes t, though neither changes the table, so a
+rule that refuses the write refuses its preview too. `Split` keeps the text whole, as for Oracle: Spark runs one
+statement or one script per call.
 
 ### The ceiling
 

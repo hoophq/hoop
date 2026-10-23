@@ -65,6 +65,15 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
 {{- define "hoopcontrolplane.validate" -}}
+{{- /*
+The image reference lives only in values.yaml (AWS Marketplace rewrites it
+there). A release made when the templates held the defaults has no image
+values, and `helm upgrade --reuse-values` keeps exactly those: without this
+guard it would render ":" as the image.
+*/ -}}
+{{- if not (and .Values.image .Values.image.repository .Values.image.tag) -}}
+{{- fail "image.repository and image.tag must both be set. An upgrade with --reuse-values from a release whose chart kept the image defaults in its templates carries no image values: upgrade with --reset-then-reuse-values, or set image.repository and image.tag" -}}
+{{- end -}}
 {{- $c := .Values.config | default dict -}}
 
 {{- if not $c.POSTGRES_DB_URI -}}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
 import AuthPageLoader from '@/components/AuthPageLoader'
-import { postAuthPath } from '@/modes'
+import { POST_LOGIN_PATH } from '@/modes'
 import { samePagePath } from '@/utils/redirect'
 
 function AuthCallback() {
@@ -49,7 +49,7 @@ function AuthCallback() {
         } else if (saved) {
           window.location.href = saved
         } else {
-          navigate(await postAuthPath())
+          navigate(POST_LOGIN_PATH)
         }
       } catch (err) {
         console.error('Auth callback error:', err)

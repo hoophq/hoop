@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import PageLoader from '@/components/PageLoader'
 import NotImplemented from '@/components/NotImplemented'
-import { useModeConfig } from '@/modes'
+import gateway from '@/modes/gateway'
 import ByRuleTraffic from '@/modes/ByRuleTraffic'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { dataMaskingService } from '@/services/dataMasking'
@@ -30,7 +30,6 @@ import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
 import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
-import OnboardingLicense from '@/pages/Onboarding/License'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import SettingsServerLogs from '@/pages/Settings/ServerLogs'
 import Users from '@/pages/Organization/Users'
@@ -42,18 +41,18 @@ import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 import DataMasking from '@/pages/Features/DataMasking'
 import GatewayDataMaskingForm from '@/pages/Features/DataMasking/Create/GatewayDataMaskingForm'
-import ControlPlaneDataMaskingForm from '@/pages/Features/DataMasking/Create/ControlPlaneDataMaskingForm'
+import SidecarDataMaskingForm from '@/pages/Features/DataMasking/Create/SidecarDataMaskingForm'
 import AccessControl from '@/pages/Features/AccessControl'
 import AccessControlForm from '@/pages/Features/AccessControl/Create'
 import AccessRequest from '@/pages/Features/AccessRequest'
 import AccessRequestForm from '@/pages/Features/AccessRequest/Create'
 import AiSessionAnalyzer from '@/pages/Features/AiSessionAnalyzer'
 import GatewayAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/GatewayAiAnalyzerForm'
-import ControlPlaneAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/ControlPlaneAiAnalyzerForm'
+import SidecarAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/SidecarAiAnalyzerForm'
 import GatewayAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/GatewayConfigureTab'
 import Guardrails from '@/pages/Guardrails'
 import GatewayGuardrailForm from '@/pages/Guardrails/Create/GatewayGuardrailForm'
-import ControlPlaneGuardrailForm from '@/pages/Guardrails/Create/ControlPlaneGuardrailForm'
+import SidecarGuardrailForm from '@/pages/Guardrails/Create/SidecarGuardrailForm'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
@@ -83,7 +82,7 @@ function ReviewsRedirect() {
 }
 
 /**
- * The route table (src/modes/gateway.jsx is the product manifest):
+ * The route table (the wrappers come from src/modes/gateway.jsx):
  *   - `Page`: the shell a React page renders in (ProtectedRoute + Layout).
  *   - `Guard`: a React route without the shell (onboarding).
  *   - `Home`, `Onboarding`, `CatchAll`: the ClojureScript leaves.
@@ -97,7 +96,7 @@ function ReviewsRedirect() {
  *   3. Delete the corresponding panel from app.cljs
  */
 function Router() {
-  const { Page, Guard, Home, Onboarding, CatchAll } = useModeConfig()
+  const { Page, Guard, Home, Onboarding, CatchAll } = gateway
   return (
     <Routes>
       {/* Public Auth Routes — no Layout, no auth required */}
@@ -421,7 +420,7 @@ function Router() {
               listPath="/features/data-masking"
               fetchRule={dataMaskingService.get}
               agent={<GatewayDataMaskingForm />}
-              sidecar={<ControlPlaneDataMaskingForm />}
+              sidecar={<SidecarDataMaskingForm />}
             />
           </Page>
         }
@@ -435,7 +434,7 @@ function Router() {
               listPath="/features/data-masking"
               fetchRule={dataMaskingService.get}
               agent={<GatewayDataMaskingForm />}
-              sidecar={<ControlPlaneDataMaskingForm />}
+              sidecar={<SidecarDataMaskingForm />}
             />
           </Page>
         }
@@ -517,7 +516,7 @@ function Router() {
               fetchRule={aiSessionAnalyzerService.getRule}
               param="ruleName"
               agent={<GatewayAiAnalyzerForm />}
-              sidecar={<ControlPlaneAiAnalyzerForm />}
+              sidecar={<SidecarAiAnalyzerForm />}
             />
           </Page>
         }
@@ -532,7 +531,7 @@ function Router() {
               fetchRule={aiSessionAnalyzerService.getRule}
               param="ruleName"
               agent={<GatewayAiAnalyzerForm />}
-              sidecar={<ControlPlaneAiAnalyzerForm />}
+              sidecar={<SidecarAiAnalyzerForm />}
             />
           </Page>
         }
@@ -556,7 +555,7 @@ function Router() {
               listPath="/guardrails"
               fetchRule={guardrailsService.get}
               agent={<GatewayGuardrailForm />}
-              sidecar={<ControlPlaneGuardrailForm />}
+              sidecar={<SidecarGuardrailForm />}
             />
           </Page>
         }
@@ -570,7 +569,7 @@ function Router() {
               listPath="/guardrails"
               fetchRule={guardrailsService.get}
               agent={<GatewayGuardrailForm />}
-              sidecar={<ControlPlaneGuardrailForm />}
+              sidecar={<SidecarGuardrailForm />}
             />
           </Page>
         }
@@ -681,14 +680,6 @@ function Router() {
         element={
           <Guard adminOnly>
             <OnboardingProtectionRules />
-          </Guard>
-        }
-      />
-      <Route
-        path="/onboarding/license"
-        element={
-          <Guard adminOnly>
-            <OnboardingLicense />
           </Guard>
         }
       />

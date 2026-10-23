@@ -3270,7 +3270,7 @@
             "type": "string"
           },
           "name": {
-            "description": "The unique name of the data masking rule, it's immutable after creation",
+            "description": "The unique name of the data masking rule. An update with a new name renames it",
             "example": "mask-email",
             "type": "string"
           },
@@ -3397,7 +3397,7 @@
             "type": "string"
           },
           "name": {
-            "description": "The unique name of the data masking rule, it's immutable after creation",
+            "description": "The unique name of the data masking rule. An update with a new name renames it",
             "example": "mask-email",
             "type": "string"
           },
@@ -6119,6 +6119,15 @@
             "example": "This command is not allowed in production.",
             "readOnly": true,
             "type": "string"
+          },
+          "requester": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.ReviewOwner"
+              }
+            ],
+            "description": "Who filed the approval request. On a sidecar approval request, the sidecar",
+            "readOnly": true
           },
           "review_groups_data": {
             "description": "Contains the groups that must approve this request",
@@ -14576,6 +14585,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -14749,7 +14768,7 @@
     },
     "/events/stream": {
       "get": {
-        "description": "Streams change notices of the organization via SSE, one \"event: \u003ctype\u003e\" frame per change, with {\"type\",\"id\"} as data. A notice names what changed and never its content: read the resource again through its own route. Types: sidecar.checked_in.",
+        "description": "Streams change notices of the organization via SSE, one \"event: \u003ctype\u003e\" frame per change, with {\"type\",\"id\"} as data. A notice names what changed and never its content: read the resource again through its own route. Types: sidecar.checked_in (admins), review.created (users who can approve the review). The stream ends after 30 minutes; reconnect.",
         "responses": {
           "200": {
             "content": {

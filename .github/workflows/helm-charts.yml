@@ -16,6 +16,7 @@ on:
     paths:
       - deploy/helm-chart/**
       - deploy/managed-agents/**
+      - deploy/openai-agents/**
       - .github/workflows/helm-charts.yml
 
 # A newer run for the same PR makes this one stale.
@@ -201,6 +202,19 @@ jobs:
 
           echo "sidecar chart renders hoophq/hoopsidecar on 19000 and all six guards fire"
 
+          # existingSecret is loaded last, so HOOP_LICENSE / HOOP_SIDECAR_TOKEN
+          # there win over the chart's own Secret and over extraSecret. It also
+          # satisfies the credential guard: the chart cannot read it, so it
+          # must not refuse a control plane whose token lives only there.
+          es=$(helm template t "$chart" --set controlPlane.url=https://cp.example.com \
+            --set extraSecret.K=v --set existingSecret=hoop-sidecar-credentials \
+            --show-only templates/deployment.yaml)
+          refs=$(echo "$es" | awk '/^ *envFrom:$/{f=1;next} f&&/^ *- secretRef:$/{getline; print $2; next} f&&/^ *[a-z]+:/{f=0}' | tr '\n' ' ')
+          [ "$refs" = "t-hoopsidecar-env t-hoopsidecar-extra-env hoop-sidecar-credentials " ] \
+            || { echo "::error::existingSecret is not the last envFrom Secret, after extraSecret: $refs"; exit 1; }
+
+          echo "existingSecret is loaded last and carries the control plane token"
+
           # Two releases in one namespace must be independent: the chart is
           # installed once per upstream it fronts. A hardcoded resource name or
           # a selector without the instance label makes the second install
@@ -363,6 +377,46 @@ jobs:
             && { echo "::error::the pod no longer mounts the cluster CA the lane trusts"; exit 1; }
           echo "the Managed Agents kubernetes template renders"
 
+      - name: Assert the OpenAI Agents http template renders
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/sidecar
+          dir=./deploy/openai-agents/http
+          values=$dir/values.yaml
+          helm lint "$chart" -f "$values"
+          out=$(helm template t "$chart" -f "$values")
+          echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "openai-agents-http"' \
+            || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q 'type: LoadBalancer' \
+            || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
+          echo "$out" | grep -qE 'port: 443$' \
+            || { echo "::error::the template's lane is not on port 443"; exit 1; }
+          echo "$out" | grep -q 'name: openai-agents' \
+            || { echo "::error::the template's lane lost its caller token"; exit 1; }
+          echo "$out" | grep -q 'X-OpenAI-Session-Id' \
+            || { echo "::error::the template's lane no longer records the OpenAI session header"; exit 1; }
+          # Older releases report the install source as "other".
+          tag=$(yq '.image.tag' "$values")
+          [[ "$tag" =~ ^([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
+            && [[ "$(printf '1.263.0\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.263.0 ]] \
+            || { echo "::error::values.yaml must pin hoophq/hoopsidecar 1.263.0 or later by digest: $tag"; exit 1; }
+          # The README promises the Claude template's free-tier rules and exposure.
+          for block in .config.guardrails .config.mask .extraVolumes .extraVolumeMounts .laneServices; do
+            [[ "$(yq -o=json "$block" "$values")" == "$(yq -o=json "$block" ./deploy/managed-agents/http/values.yaml)" ]] \
+              || { echo "::error::$values and the Managed Agents http template differ in $block"; exit 1; }
+          done
+          # setup.sh: the sandbox reaches only the sidecar host, and the vault
+          # fills both tokens toward that host only.
+          host=sidecar.ci.example
+          bodies=$(SIDECAR_HOST=$host "$dir/setup.sh" create --dry-run)
+          jq -e --arg h "$host" '.environment_template.network == {access: "restricted", allowed_domains: [$h]}' <<<"$bodies" >/dev/null \
+            || { echo "::error::the environment template reaches more than the sidecar host"; exit 1; }
+          jq -e --arg h "$host" '[.credentials[].auth | .type == "environment_variable" and .networking == {type: "limited", allowed_hosts: [$h]}] == [true, true]' <<<"$bodies" >/dev/null \
+            || { echo "::error::a vault credential is not bound to the sidecar host alone"; exit 1; }
+          jq -e '([.. | strings | select(test("sidecar\\.example\\.com"))] == []) and all(.. | objects; has("secret_value") | not)' <<<"$bodies" >/dev/null \
+            || { echo "::error::a request body kept the example host or holds a secret"; exit 1; }
+          echo "the OpenAI Agents http template renders and its OpenAI side reaches only the sidecar"
+
       # The quick start runs on its pinned image: the demo API it relies on,
       # and the free-tier message its README quotes. The helm values share
       # that image and those rules, so they fit the free tier too.
@@ -411,6 +465,46 @@ jobs:
               || { echo "::error::README.md does not quote this line of the message: $line"; exit 1; }
           done <<<"$out"
           echo "the quick start masks and refuses on its pinned image, and README.md quotes the cap message"
+
+      - name: Assert image references live only in values.yaml
+        run: |
+          set -euo pipefail
+          # AWS Marketplace rewrites image references in values.yaml when it
+          # copies a Helm chart across regions, and rejects a chart whose
+          # templates name an image themselves (INVALID_IMAGE_REFERENCE). A
+          # template-side default would ship the Docker Hub image to a buyer.
+          for c in sidecar controlplane; do
+            chart=./deploy/helm-chart/chart/$c
+            if grep -rnE 'hoophq/|:latest' "$chart/templates"; then
+              echo "::error::$c chart names an image in a template; put it in values.yaml"
+              exit 1
+            fi
+            case $c in
+              sidecar) args=(--set config.admin.listen=0.0.0.0:19000) ;;
+              controlplane) args=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db --set config.API_URL=https://cp.example.tld) ;;
+            esac
+            img=$(helm template t "$chart" "${args[@]}" \
+              --set image.repository=709825985650.dkr.ecr.us-east-1.amazonaws.com/hoop/$c --set image.tag=1.0 \
+              --show-only templates/deployment.yaml | awk '$1=="-" && $2=="image:"{print $3}')
+            [ "$img" = "'709825985650.dkr.ecr.us-east-1.amazonaws.com/hoop/$c:1.0'" ] \
+              || { echo "::error::$c chart did not render the image from values.yaml: $img"; exit 1; }
+          done
+          # A release made when the templates held the image defaults has no
+          # image values, and `helm upgrade --reuse-values` keeps them. The
+          # chart must refuse with the way out, not render ":" as the image.
+          for c in sidecar controlplane; do
+            chart=./deploy/helm-chart/chart/$c
+            case $c in
+              sidecar) args=(--set config.admin.listen=0.0.0.0:19000) ;;
+              controlplane) args=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db --set config.API_URL=https://cp.example.tld) ;;
+            esac
+            for unset in "image=null" "image.tag=" "image.repository="; do
+              out=$(helm template t "$chart" "${args[@]}" --set "$unset" 2>&1 || true)
+              echo "$out" | grep -q 'reset-then-reuse-values' \
+                || { echo "::error::$c chart rendered with $unset instead of refusing"; exit 1; }
+            done
+          done
+          echo "both charts take their image only from values.yaml"
 
       - name: Assert the control plane chart renders and its guards hold
         run: |

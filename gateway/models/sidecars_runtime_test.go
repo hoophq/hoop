@@ -35,8 +35,12 @@ func TestRecordSidecarHandshake(t *testing.T) {
 	}
 
 	const revision = "8f14e45fceea167a5a36dedd4bea2543"
-	if err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", "", "", "", revision, nil); err != nil {
+	first, err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", "", "", "", revision, nil)
+	if err != nil {
 		t.Fatalf("record the first handshake: %v", err)
+	}
+	if !first {
+		t.Error("the first handshake did not report a first check-in")
 	}
 	got, err := models.GetSidecarByNameOrID(models.DB, testOrgID, sc.Name)
 	if err != nil {
@@ -59,8 +63,12 @@ func TestRecordSidecarHandshake(t *testing.T) {
 	}
 
 	// The next handshake reports what was done with that document.
-	if err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", revision, "applied", "", revision, nil); err != nil {
+	first, err = models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", revision, "applied", "", revision, nil)
+	if err != nil {
 		t.Fatalf("record the second handshake: %v", err)
+	}
+	if first {
+		t.Error("the second handshake reported a first check-in")
 	}
 	got, err = models.GetSidecarByNameOrID(models.DB, testOrgID, sc.Name)
 	if err != nil {

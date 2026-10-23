@@ -58,8 +58,23 @@ function FeatureIcon({ feature }) {
   )
 }
 
+function AddAction({ blocked, onAdd }) {
+  if (blocked) {
+    return (
+      <Text size="xs" c="dimmed">
+        {blocked}
+      </Text>
+    )
+  }
+  return (
+    <Button variant="subtle" size="compact-xs" leftSection={<CirclePlus size={14} />} onClick={onAdd}>
+      Add
+    </Button>
+  )
+}
+
 // The label carries the control's block padding, so the row matches an accordion header's height.
-function EmptyFeatureRow({ feature, observing, onAdd }) {
+function EmptyFeatureRow({ feature, observing, onAdd, blocked }) {
   return (
     <div className={classes.item} data-feature={feature.key}>
       <Group className={classes.row} px="md" gap="sm" align="center" wrap="nowrap">
@@ -75,11 +90,7 @@ function EmptyFeatureRow({ feature, observing, onAdd }) {
             Observe
           </Badge>
         )}
-        {onAdd && (
-          <Button variant="subtle" size="compact-xs" leftSection={<CirclePlus size={14} />} onClick={onAdd}>
-            Add
-          </Button>
-        )}
+        {onAdd && <AddAction blocked={blocked} onAdd={onAdd} />}
       </Group>
     </div>
   )
@@ -115,6 +126,7 @@ export default function FeatureAccordions({ listener = null, config, boundRules,
                 feature={feature}
                 observing={observing}
                 onAdd={actions ? () => actions.onAdd(feature.key) : undefined}
+                blocked={actions?.addBlocked(feature.key)}
               />
             )
           }
@@ -144,14 +156,7 @@ export default function FeatureAccordions({ listener = null, config, boundRules,
                       )}
                     </Group>
                     {actions && (
-                      <Button
-                        variant="subtle"
-                        size="compact-xs"
-                        leftSection={<CirclePlus size={14} />}
-                        onClick={() => actions.onAdd(feature.key)}
-                      >
-                        Add
-                      </Button>
+                      <AddAction blocked={actions.addBlocked(feature.key)} onAdd={() => actions.onAdd(feature.key)} />
                     )}
                   </Group>
                   <Stack gap={0}>

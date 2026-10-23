@@ -44,6 +44,11 @@ helm upgrade --install hoopcontrolplane \
   -f values.yaml
 ```
 
+The image reference lives only in `values.yaml` (`image.repository`,
+`image.tag`). A release installed when the defaults sat in the templates has no
+image values, so `helm upgrade --reuse-values` refuses to render. Upgrade it
+with `--reset-then-reuse-values`, or set `image.repository` and `image.tag`.
+
 ## Authentication
 
 There is no `AUTH_METHOD`. Setting any of `IDP_ISSUER`, `IDP_CLIENT_ID`,

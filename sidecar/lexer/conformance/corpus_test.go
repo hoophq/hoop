@@ -20,7 +20,7 @@ import (
 //     the whole statement and it does nothing", which is a lie the caller
 //     cannot detect. Not understanding is fine; it spells Complete=false.
 
-var dialects = []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.Oracle}
+var dialects = []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.Oracle, lexer.Spark}
 
 // hostile is input designed to walk the scanner off the end of something.
 // Every entry is a construct that terminated a previous implementation early
@@ -80,6 +80,16 @@ var hostile = []string{
 	"UPDATE\x93",
 	"DELETE\xc2\xa0FROM t",
 	"SELECT\xff",
+
+	// Found by FuzzAnalyze under Oracle. `$` and `#` continue an Oracle
+	// identifier (V$SESSION), so each of these is one name, not a verb, and
+	// Oracle refuses it as an invalid statement. Kept here so the
+	// invariant's word-splitting follows the dialect it checks.
+	"SELECT#",
+	"UPDATE#",
+	"DELETE$x FROM t",
+	"$SELECT 1",
+	"#SELECT 1",
 }
 
 func TestAnalyzeNeverPanics(t *testing.T) {
@@ -98,7 +108,7 @@ func TestAnalyzeNeverPanics(t *testing.T) {
 			// input that caused it instead of the whole test.
 			t.Run(caseName(d.String()+" "+in), func(t *testing.T) {
 				got := lexer.Analyze(in, d)
-				if bad, why := violatesDMLInvariant(in, got); bad {
+				if bad, why := violatesDMLInvariant(in, d, got); bad {
 					t.Errorf("%s\n  input: %q", why, in)
 				}
 			})
@@ -117,7 +127,7 @@ func FuzzAnalyze(f *testing.F) {
 	f.Fuzz(func(t *testing.T, sql string) {
 		for _, d := range dialects {
 			got := lexer.Analyze(sql, d)
-			if bad, why := violatesDMLInvariant(sql, got); bad {
+			if bad, why := violatesDMLInvariant(sql, d, got); bad {
 				t.Errorf("%s (dialect %s)", why, d)
 			}
 		}
@@ -126,11 +136,11 @@ func FuzzAnalyze(f *testing.F) {
 
 // violatesDMLInvariant reports the "understood it completely, it does
 // nothing" contradiction described above.
-func violatesDMLInvariant(sql string, a lexer.Analysis) (bool, string) {
+func violatesDMLInvariant(sql string, d lexer.Dialect, a lexer.Analysis) (bool, string) {
 	if !a.Complete || len(a.Effects) > 0 {
 		return false, ""
 	}
-	switch firstWord(sql) {
+	switch firstWord(sql, d) {
 	case "select", "insert", "update", "delete", "merge":
 		return true, "Complete=true with no effects for a statement that starts with a DML verb"
 	}
@@ -148,11 +158,20 @@ func violatesDMLInvariant(sql string, a lexer.Analysis) (bool, string) {
 // rejects both as syntax errors and neither is a DML statement. A friendlier
 // split would read "update" and "select" out of them and then blame the
 // scanner for not finding a statement that was never there.
-func firstWord(sql string) string {
+//
+// Oracle continues an identifier through `$` and `#` as well, the way its
+// catalog spells V$SESSION, so under Oracle `SELECT#` is one name and the
+// word runs through them, as lexer's identDollarHash row reads it. They
+// continue a word and never start one.
+func firstWord(sql string, d lexer.Dialect) string {
 	trimmed := strings.TrimLeft(sql, " \t\r\n\f\v")
 	end := len(trimmed)
 	for i := range len(trimmed) {
-		if !isWordByte(trimmed[i]) {
+		c := trimmed[i]
+		if d == lexer.Oracle && i > 0 && (c == '$' || c == '#') {
+			continue
+		}
+		if !isWordByte(c) {
 			end = i
 			break
 		}
@@ -211,7 +230,7 @@ func TestPostgresRegressionCorpus(t *testing.T) {
 			} else {
 				reasons[got.Reason]++
 			}
-			if bad, why := violatesDMLInvariant(sql, got); bad {
+			if bad, why := violatesDMLInvariant(sql, lexer.Postgres, got); bad {
 				t.Errorf("%s\n  file:  %s\n  input: %q", why, path, sql)
 			}
 		}
