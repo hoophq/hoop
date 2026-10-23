@@ -728,8 +728,7 @@ type AuditConfig struct {
 	// QuerySessions enables the queryable in-memory store behind the admin
 	// query API (/api/sessions, /api/events, /api/stats), the endpoints a UI
 	// renders. The value bounds how many sessions are retained; when full the
-	// oldest session and its whole timeline are evicted, and the API reports
-	// the drop count so a reader can tell the window is partial.
+	// oldest session and its whole timeline are evicted.
 	//
 	// In-memory by design. A durable, queryable backend lives in the nested
 	// module github.com/hoophq/hoop/sidecar/store/sqlite, which this binary
@@ -741,6 +740,14 @@ type AuditConfig struct {
 	// Zero disables the query API; the JSONL file remains the record of truth
 	// either way.
 	QuerySessions int `json:"query_sessions,omitempty"`
+
+	// QueryMaxBytes bounds the memory the query store's events hold, by
+	// estimate. Past it the oldest events are dropped from whichever session
+	// holds them, and that session reports events_dropped. A session count
+	// alone never bounds a connection pool or an agent that keeps a few
+	// sessions open for days. Zero uses 64 MiB. Size a container for about
+	// 2.5x this: allocator fragmentation and the runtime come on top.
+	QueryMaxBytes int64 `json:"query_max_bytes,omitempty" cap:"audit_query_max_bytes"`
 
 	// FailOpen allows a statement whose audit record could not be written.
 	//
@@ -1278,6 +1285,9 @@ func (c *Config) validate(onHost bool) error {
 	problems = append(problems, c.MCP.validate()...)
 	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
 	problems = append(problems, c.Telemetry.Validate()...)
+	if c.Audit.QueryMaxBytes < 0 {
+		problems = append(problems, fmt.Sprintf("audit.query_max_bytes: %d is negative; omit it for the 64 MiB default", c.Audit.QueryMaxBytes))
+	}
 
 	problems = append(problems, c.validatePlugins()...)
 

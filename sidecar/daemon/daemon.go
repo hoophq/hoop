@@ -1843,9 +1843,14 @@ func buildAudit(cfg AuditConfig, cp *controlPlane, otel *otelExporter, log *slog
 	}
 
 	// The query store is both a sink and the read side, so it indexes on the
-	// same write that records the event. Two pipelines would drift.
+	// same write that records the event. Two pipelines would drift. It takes
+	// the file's options: the API must not serve what the file redacted.
 	if cfg.QuerySessions > 0 {
-		out.query = store.NewMemoryStore(cfg.QuerySessions)
+		out.query = store.NewMemoryStore(store.MemoryOptions{
+			MaxSessions: cfg.QuerySessions,
+			MaxBytes:    cfg.QueryMaxBytes,
+			Sink:        opts,
+		})
 		sinks = append(sinks, out.query)
 	}
 

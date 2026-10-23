@@ -17,6 +17,7 @@ import { saveErrorMessage } from '../useListenerEditor'
 const STDOUT = '-'
 const OFF = '/dev/null'
 const DEFAULT_MAX_STATEMENT_BYTES = 8192
+const MIB = 1024 * 1024
 
 const DESTINATIONS = [
   { value: 'stdout', label: 'Stdout (JSON lines)' },
@@ -38,6 +39,8 @@ function toForm(audit = {}) {
     async_queue_size: audit.async_queue_size ?? 0,
     memory_buffer: audit.memory_buffer ?? 0,
     query_sessions: audit.query_sessions ?? 0,
+    // Bytes, as stored: the field shows MiB, and an untouched value saves as it was.
+    query_max_bytes: audit.query_max_bytes ?? 0,
     redact_statements: audit.redact_statements === true,
     max_statement_bytes: audit.max_statement_bytes || DEFAULT_MAX_STATEMENT_BYTES,
     // The daemon reads the deprecated fail_closed inverted when fail_open is absent.
@@ -54,6 +57,8 @@ function toAudit(f) {
     async_queue_size: count(f.async_queue_size),
     memory_buffer: count(f.memory_buffer),
     query_sessions: count(f.query_sessions),
+    // Absent means the 64 MiB default; a sidecar older than the key refuses it.
+    ...(count(f.query_max_bytes) > 0 && { query_max_bytes: count(f.query_max_bytes) }),
     redact_statements: f.redact_statements,
     max_statement_bytes: count(f.max_statement_bytes) || DEFAULT_MAX_STATEMENT_BYTES,
     fail_open: f.fail_open,
@@ -170,6 +175,16 @@ function Form({ sidecar, onClose }) {
             onChange={(v) => set({ query_sessions: v })}
           />
         </SimpleGrid>
+        <NumberInput
+          {...hinted}
+          label="Query memory (MiB)"
+          description="Memory for /api/* events. Past it the oldest events are dropped. Empty uses 64 MiB."
+          min={0}
+          allowDecimal={false}
+          placeholder="64"
+          value={form.query_max_bytes > 0 ? Math.round(form.query_max_bytes / MIB) : ''}
+          onChange={(v) => set({ query_max_bytes: count(v) * MIB })}
+        />
       </Stack>
       <Divider />
 
