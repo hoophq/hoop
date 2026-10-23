@@ -22,6 +22,14 @@ issuer=C=US, O=Let's Encrypt, CN=YE2
 $ dig +short postman-echo.com
 162.159.142.41
 https://www.cloudflare.com/ips-v4 lists 162.158.0.0/15, which holds that address.
+$ dig +short ws.postman-echo.com
+100.25.244.77
+184.193.65.143
+23.23.174.77
+$ openssl s_client -connect ws.postman-echo.com:443 -servername ws.postman-echo.com </dev/null | openssl x509 -noout -subject -issuer
+subject=CN=postman-echo.com
+issuer=C=US, O=Amazon, CN=Amazon RSA 2048 M01
+None of the three addresses is in https://www.cloudflare.com/ips-v4. S0b reached this host (out/s0b.txt).
 
 == First S0 create, with spend_control (out/s0.json was overwritten by the rerun without it)
 $ oai.py run sessions/s0.json out/s0.json prompts/run.txt
