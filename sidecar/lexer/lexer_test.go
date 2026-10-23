@@ -1828,6 +1828,11 @@ func TestSparkWriteTargets(t *testing.T) {
 		{"MERGE WITH SCHEMA EVOLUTION INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET *", lexer.Merge, []string{"t"}, []string{"s"}},
 		{"CREATE TABLE t (a INT) USING DELTA", lexer.Create, []string{"t"}, nil},
 		{"CREATE TABLE t USING DELTA AS SELECT * FROM s", lexer.Create, []string{"t"}, []string{"s"}},
+		// OVERWRITE names a target only after INSERT. Elsewhere it is a
+		// name, here an alias, and the FROM after it still names s.
+		{"SELECT id overwrite FROM s", lexer.Select, nil, []string{"s"}},
+		{"CREATE TABLE t AS SELECT x overwrite FROM s", lexer.Create, []string{"t"}, []string{"s"}},
+		{"LOAD DATA INPATH '/p' OVERWRITE INTO TABLE t", lexer.Insert, []string{"t"}, nil},
 	} {
 		a := lexer.Analyze(tc.sql, lexer.Spark)
 		if a.Verb != tc.verb || !slices.Equal(writes(a), tc.writes) || !slices.Equal(reads(a), tc.reads) || !a.Complete {

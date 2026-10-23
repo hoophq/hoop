@@ -3531,7 +3531,9 @@ and `[MSCK] REPAIR TABLE` are `alter`, REPLACE TABLE is `create`, LOAD DATA
 is `insert`, DESCRIBE is `show`, and CACHE and UNCACHE are `other`. The
 maintenance commands, COPY INTO, INSERT OVERWRITE and the FROM-first
 multi-insert (`FROM s INSERT INTO t SELECT ...`) record their target as
-written. `Split` keeps the text whole, as for Oracle: Spark runs one
+written. Their previews read the same: `VACUUM t DRY RUN` is a `delete` and
+`COPY INTO t ... VALIDATE` writes t, though neither changes the table, so a
+rule that refuses the write refuses its preview too. `Split` keeps the text whole, as for Oracle: Spark runs one
 statement or one script per call.
 
 ### The ceiling
