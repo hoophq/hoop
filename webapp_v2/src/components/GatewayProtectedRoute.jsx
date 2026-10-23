@@ -20,7 +20,7 @@ function WithoutAgents({ children }) {
 }
 
 // The gateway's gate: the shared ProtectedRoute plus the agents landing swap.
-// Onboarding is reached only from the initial setup (postSetupPath) or by
+// Onboarding is reached only from the initial setup (POST_SETUP_PATH) or by
 // navigating to it; no redirect sends an admin there.
 function GatewayProtectedRoute({ children, ...props }) {
   return (

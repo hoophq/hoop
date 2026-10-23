@@ -188,10 +188,6 @@ function PillHint({ names }) {
  * The dropdown is a tree: a sidecar row selects or clears all its listeners,
  * and the listener rows under it pick one at a time. The field shows one pill
  * per sidecar, so a sidecar bound on twelve lanes is one chip, not twelve.
- *
- * Rendered only in the control plane, where the page is given the prop that
- * asks for it. In the gateway the fleet endpoint is not something a page should
- * be calling, so the component never mounts and never fetches.
  */
 
 export default function SidecarTargetPicker({ value = [], onChange, label, description, listenerBlocked }) {
