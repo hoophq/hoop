@@ -40,6 +40,9 @@ Start the stack and exercise the change as a user would.
 - Slot: use `HOOPDEV_SLOT=N make run-dev` so you do not stop another worktree's
   stack. The worktree's `.env` must carry that slot's `API_URL` and `GRPC_URL`
   and its own database.
+- A cloud sandbox: start Docker first (`build-ticket`, autonomous mode), then
+  slots work as above. Without Docker, `scripts/dev/run-sandbox.sh start` runs
+  one stack at a time: start, capture and stop each side in turn (`--bin`).
 - UI: drive Chrome.
 - CLI and protocols: the `hoop` binary against the local gateway only.
 
