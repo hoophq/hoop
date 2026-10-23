@@ -642,9 +642,10 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	log := sessionLog()
 
 	// The session span encloses every statement of this connection, and the
-	// trace is sampled here, once per connection. No-op without telemetry.
-	ctx, endExchange := s.beginSession(ctx, sess)
-	defer endExchange(nil)
+	// trace is sampled here, once per connection. It ends with the failure
+	// that ended the session, when one did. No-op without telemetry.
+	ctx, span := s.beginSession(ctx, sess)
+	defer span.end()
 
 	g, err := gate.New(sess, gate.Config{
 		Protocol:         s.cfg.Protocol,
@@ -681,6 +682,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	upstream, err := s.dialUpstream(ctx)
 	if err != nil {
 		log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
+		span.fail(err)
 		if s.cfg.Audit != nil {
 			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil {
 				// The one audit write that happens outside a Gate, so it
@@ -794,12 +796,12 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	go func() {
 		defer wg.Done()
 		defer upstream.Close()
-		s.pump(connCtx, endConn, g, client, upstream, inspect.FromClient, clock, log)
+		s.pump(connCtx, endConn, g, client, upstream, inspect.FromClient, clock, span, log)
 	}()
 	go func() {
 		defer wg.Done()
 		defer client.Close()
-		s.pump(connCtx, endConn, g, upstream, client, inspect.FromServer, clock, log)
+		s.pump(connCtx, endConn, g, upstream, client, inspect.FromServer, clock, span, log)
 	}()
 
 	wg.Wait()
@@ -870,6 +872,7 @@ func (s *Server) pump(
 	src, dst net.Conn,
 	dir inspect.Direction,
 	clock *upstreamClock,
+	span *sessionSpan,
 	log *slog.Logger,
 ) {
 	// A re-framing codec holds rows back until its result set ends. Release
@@ -947,7 +950,7 @@ func (s *Server) pump(
 				// The answer is in: stamped before the forward below so the
 				// measurement ends when the sidecar saw the response, not
 				// when the client read it.
-				clock.answered(ctx, len(d.Statements))
+				clock.answered(ctx, finalAnswers(d.Statements))
 			}
 
 			if d.Err != nil {
@@ -1011,16 +1014,20 @@ func (s *Server) pump(
 			}
 
 			if len(d.Payload) > 0 {
+				if dir == inspect.FromClient {
+					// Stamped BEFORE the write, not after: a fast upstream
+					// can answer, and the server pump record the answer,
+					// before Write returns to this goroutine. A stamp that
+					// came second would miss its answer and pair with the
+					// next one. A failed write ends the connection, so its
+					// stamp never meets an answer.
+					clock.sent(len(d.Statements))
+				}
 				if _, err := dst.Write(d.Payload); err != nil {
 					if !isClosed(err) {
 						log.Debug("forward failed", "direction", string(dir), "error", err)
 					}
 					return
-				}
-				if dir == inspect.FromClient {
-					// Stamped after the write: the measurement starts when the
-					// request left, not when the sidecar finished judging it.
-					clock.sent(len(d.Statements))
 				}
 			}
 		}
@@ -1029,6 +1036,7 @@ func (s *Server) pump(
 			end(endCause(dir, readErr))
 			if readErr != io.EOF && !isClosed(readErr) {
 				log.Debug("read ended", "direction", string(dir), "error", readErr)
+				span.fail(endCause(dir, readErr))
 			}
 			return
 		}

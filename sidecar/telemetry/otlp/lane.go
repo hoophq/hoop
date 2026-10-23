@@ -164,7 +164,10 @@ func (l *lane) BeginStatement(ctx context.Context, stmt inspect.Statement) (cont
 			l.count(direction, operation, v)
 		}
 	}
-	kvs := make([]attribute.KeyValue, 0, 7)
+	// Lane and protocol ride on every span, not only the exchange, so a
+	// backend that indexes spans on their own can still filter by lane.
+	kvs := make([]attribute.KeyValue, 0, len(l.spanAttrs)+7)
+	kvs = append(kvs, l.spanAttrs...)
 	kvs = append(kvs,
 		attribute.String(attrDirection, string(direction)),
 		attribute.String(attrOperation, string(operation)),
@@ -228,7 +231,8 @@ func (l *lane) BeginStage(ctx context.Context, stage telemetry.Stage, engine str
 				l.stageOpt(stageKey{stage: stage, engine: engine, outcome: outcome})...)
 		}
 	}
-	var kvs []attribute.KeyValue
+	kvs := make([]attribute.KeyValue, 0, len(l.spanAttrs)+1)
+	kvs = append(kvs, l.spanAttrs...)
 	if engine != "" {
 		kvs = append(kvs, attribute.String(attrEngine, engine))
 	}

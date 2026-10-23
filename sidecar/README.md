@@ -2340,8 +2340,9 @@ statement's life:
 - `stage=analyzer`: the model-backed evaluator, cache hits included. The
   provider call alone is `hoop.sidecar.analyzer.request.duration`.
 - `stage=review`: the hold while a human decides, with `hoop.outcome` set to
-  `approved`, `rejected`, `expired`, `revoked` or `disconnected` (the client
-  left mid-hold). Its own stage, so a ten-minute approval does not read as
+  `approved`, `rejected`, `expired`, `revoked`, `disconnected` (the client
+  left mid-hold) or `denied` (any other refusal: the plane unreachable, a
+  status this build does not know). Its own stage, so a ten-minute approval does not read as
   a slow policy. A lane in return mode (`review_mode: return`) shows no
   wait here: the client is denied at once and resends after approval, and
   only the control plane knows the time between filing and approval.
@@ -2388,7 +2389,8 @@ log record: body is the kind (`session_start`, `statement`, `violation`,
 `masked`, `ERROR` for `error`, and attributes `hoop.lane`, `hoop.protocol`,
 `hoop.session_id`, `hoop.principal`, `hoop.operation`, `hoop.direction`,
 `hoop.verdict`, `hoop.rule`, `hoop.message`, `hoop.statement`,
-`hoop.tables`, the HTTP detail as `hoop.http.*`, each metadata key as
+`hoop.tables`, the HTTP detail as `hoop.http.*` (`query`, `target` and `body`
+under the same redaction as the statement), each metadata key as
 `hoop.meta.<key>`, and `hoop.review.id` when a review was filed. A record
 written under a sampled span carries its trace and span id.
 

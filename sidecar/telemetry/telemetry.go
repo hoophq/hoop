@@ -82,12 +82,15 @@ const (
 )
 
 // Review outcomes a StageReview record names, in place of allow and deny.
+// A fixed set: a status the plane may add later lands in ReviewDenied
+// rather than minting a series a dashboard was not written for.
 const (
 	ReviewApproved     = "approved"
 	ReviewRejected     = "rejected"
 	ReviewExpired      = "expired"
 	ReviewRevoked      = "revoked"
 	ReviewDisconnected = "disconnected"
+	ReviewDenied       = "denied"
 )
 
 // Stage outcomes for every stage but review.

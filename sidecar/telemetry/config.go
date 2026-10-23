@@ -113,13 +113,13 @@ func (c *Config) Validate() []string {
 	case "", ProtocolGRPC:
 		if c.OTLP.Endpoint == "" {
 			add(`otlp.endpoint is required; remove the block to turn telemetry off`)
-		} else if _, _, err := net.SplitHostPort(c.OTLP.Endpoint); err != nil {
+		} else if host, _, err := net.SplitHostPort(c.OTLP.Endpoint); err != nil || host == "" {
 			add("otlp.endpoint %q: a grpc endpoint is host:port, such as otel-collector:4317", c.OTLP.Endpoint)
 		}
 	case ProtocolHTTP:
 		if c.OTLP.Endpoint == "" {
 			add(`otlp.endpoint is required; remove the block to turn telemetry off`)
-		} else if u, err := url.Parse(c.OTLP.Endpoint); err != nil || u.Host == "" ||
+		} else if u, err := url.Parse(c.OTLP.Endpoint); err != nil || u.Hostname() == "" ||
 			(u.Scheme != "http" && u.Scheme != "https") {
 			add("otlp.endpoint %q: an http endpoint is a URL, such as http://otel-collector:4318", c.OTLP.Endpoint)
 		}

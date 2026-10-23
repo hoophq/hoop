@@ -711,14 +711,15 @@ type grpcRPCState struct {
 	spanCtx     context.Context
 	endExchange telem.EndExchange
 
-	// requestAt is when the last request message was judged (and so left
-	// for the upstream), as UnixNano, and answered says whether the first
-	// response has been timed against it. One gate per RPC makes the
-	// pairing exact: the RPC's first response answers the RPC's request.
-	// A streaming call measures to its first response only. Atomics,
-	// because libhoop judges request messages on the transport's body
-	// writer and responses on the handler goroutine, and a bidirectional
-	// call has both running at once.
+	// requestAt is when the FIRST request message libhoop forwarded was
+	// judged, as UnixNano, and answered says whether the first response
+	// has been timed against it. One gate per RPC makes the pairing exact
+	// for a unary call; on a streaming call the measurement is from the
+	// first forwarded request to the first response, which is the one
+	// pairing the protocol defines. A denied message is never forwarded,
+	// so it leaves no stamp. Atomics, because libhoop judges request
+	// messages on the transport's body writer and responses on the handler
+	// goroutine, and a bidirectional call has both running at once.
 	requestAt atomic.Int64
 	answered  atomic.Bool
 }
@@ -752,7 +753,7 @@ func (c spanValuesCtx) Value(key any) any {
 // records it when the first response arrives.
 func (r *grpcRPCState) requestSent() {
 	if r.telemetry != nil {
-		r.requestAt.Store(time.Now().UnixNano())
+		r.requestAt.CompareAndSwap(0, time.Now().UnixNano())
 	}
 }
 
@@ -785,10 +786,16 @@ func (r *grpcRPCState) requestMessage(
 	index int,
 ) *codecgrpc.Status {
 	ctx := r.evalCtx(cbCtx)
-	// Stamped on the way out, allowed or not: a denied message is never
-	// forwarded, and a later response then answers an earlier request,
-	// which the first-response rule in firstAnswer already tolerates.
-	defer r.requestSent()
+	status := r.judgeRequestMessage(ctx, rendered, truncated, index)
+	if status == nil {
+		// Stamped only when the message is forwarded: a denied one never
+		// leaves, so the upstream's answer cannot be measured from it.
+		r.requestSent()
+	}
+	return status
+}
+
+func (r *grpcRPCState) judgeRequestMessage(ctx context.Context, rendered string, truncated bool, index int) *codecgrpc.Status {
 	// A spanner lane reads THROUGH the message when it can: the SQL inside
 	// an ExecuteSql or a DDL batch is what operation and table rules were
 	// written against, and the protojson wrapper around it matches nothing.

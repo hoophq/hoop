@@ -31,6 +31,8 @@ func TestValidateNamesTheField(t *testing.T) {
 	no(Config{}, "otlp.endpoint is required")
 	no(Config{OTLP: OTLPConfig{Endpoint: "http://x:4318"}}, "a grpc endpoint is host:port")
 	no(Config{OTLP: OTLPConfig{Endpoint: "x:4318", Protocol: ProtocolHTTP}}, "an http endpoint is a URL")
+	no(Config{OTLP: OTLPConfig{Endpoint: ":4317"}}, "a grpc endpoint is host:port")
+	no(Config{OTLP: OTLPConfig{Endpoint: "http://:4318", Protocol: ProtocolHTTP}}, "an http endpoint is a URL")
 	no(Config{OTLP: OTLPConfig{Endpoint: "x:4317", Protocol: "thrift"}}, "otlp.protocol")
 	no(Config{OTLP: OTLPConfig{Endpoint: "x:4317"}, Traces: &TracesConfig{SampleRatio: 1.5}}, "traces.sample_ratio")
 	no(Config{OTLP: OTLPConfig{Endpoint: "x:4317"}, Events: &EventsConfig{QueueSize: -1}}, "events.queue_size")

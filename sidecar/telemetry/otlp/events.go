@@ -2,6 +2,7 @@ package otlp
 
 import (
 	"context"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -119,6 +120,15 @@ func record(ev audit.Event) log.Record {
 		}
 		str(attrHTTPHost, h.Host)
 		str(attrHTTPResource, h.Resource)
+		// Query, target and body are content, and SinkOptions.Apply has
+		// already done to them what it did to the statement: fingerprints
+		// unless statement_text is on. The record carries what the file
+		// would, no more.
+		if len(h.Query) > 0 {
+			str(attrHTTPQuery, url.Values(h.Query).Encode())
+		}
+		str(attrHTTPTarget, h.Target)
+		str(attrHTTPBody, h.Body)
 	}
 	for k, v := range ev.Metadata {
 		attrs = append(attrs, log.String(attrMetaPrefix+k, v))

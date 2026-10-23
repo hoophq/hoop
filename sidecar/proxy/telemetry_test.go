@@ -88,3 +88,47 @@ func TestNilUpstreamClockIsSafe(t *testing.T) {
 		t.Fatal("a lane with no recorder got a clock")
 	}
 }
+
+// A 100 Continue is a response statement to the codec and not an answer to
+// the request: the final response behind it is. Counting it would hand the
+// interim reply the request's sample and shift every later pairing on the
+// connection by one.
+func TestFinalAnswersSkipsInterimHTTPResponses(t *testing.T) {
+	stmts := []inspect.Statement{
+		{HTTP: &inspect.HTTPDetail{StatusCode: 100}},
+		{HTTP: &inspect.HTTPDetail{StatusCode: 101}}, // a switch IS final
+		{HTTP: &inspect.HTTPDetail{StatusCode: 200}},
+		{}, // a pgwire result: no HTTP detail, always an answer
+	}
+	if got := finalAnswers(stmts); got != 3 {
+		t.Fatalf("finalAnswers = %d, want 3 (100 skipped; 101, 200 and the SQL result count)", got)
+	}
+}
+
+// The session span ends with the failure that ended the session, and only
+// the first one: the second is the teardown the first caused.
+func TestSessionSpanKeepsTheFirstFailure(t *testing.T) {
+	var got error
+	ended := 0
+	s := &sessionSpan{endExchange: func(err error) { got = err; ended++ }}
+	s.fail(nil)
+	s.fail(errUpstreamDown)
+	s.fail(errClientGone)
+	s.end()
+	if ended != 1 || got != errUpstreamDown {
+		t.Fatalf("span ended %d time(s) with %v, want once with the first failure", ended, got)
+	}
+
+	var nilSpan *sessionSpan
+	nilSpan.fail(errUpstreamDown)
+	nilSpan.end() // a lane without telemetry has no span
+}
+
+var (
+	errUpstreamDown = errorString("dial tcp: connection refused")
+	errClientGone   = errorString("the client closed the connection")
+)
+
+type errorString string
+
+func (e errorString) Error() string { return string(e) }

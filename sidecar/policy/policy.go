@@ -1345,7 +1345,10 @@ func (c Chain) resolveReview(r *ReviewRequest, ec *EvalContext) Verdict {
 	return v
 }
 
-// reviewOutcome names how a hold ended, for telemetry.
+// reviewOutcome names how a hold ended, for telemetry. The set is closed:
+// a status this build does not know, or a denial with no status (the
+// plane unreachable, a second review request), is ReviewDenied, so the
+// label never grows a value no dashboard was written for.
 func reviewOutcome(v Verdict, connCtx context.Context) string {
 	if !v.Denied {
 		return telemetry.ReviewApproved
@@ -1364,10 +1367,8 @@ func reviewOutcome(v Verdict, connCtx context.Context) string {
 		return telemetry.ReviewExpired
 	case "revoked":
 		return telemetry.ReviewRevoked
-	case "":
-		return telemetry.OutcomeDeny
 	}
-	return status
+	return telemetry.ReviewDenied
 }
 
 func ctxOrBackground(ctx context.Context) context.Context {

@@ -11,18 +11,65 @@ import (
 )
 
 // beginSession opens the connection's exchange span, or returns ctx and a
-// no-op when the lane exports nothing.
-func (s *Server) beginSession(ctx context.Context, sess *session.Session) (context.Context, telemetry.EndExchange) {
+// nil span, whose methods do nothing, when the lane exports nothing.
+func (s *Server) beginSession(ctx context.Context, sess *session.Session) (context.Context, *sessionSpan) {
 	if s.cfg.Telemetry == nil {
-		return ctx, endNothing
+		return ctx, nil
 	}
-	return s.cfg.Telemetry.BeginExchange(ctx, telemetry.ExchangeSession,
+	ctx, end := s.cfg.Telemetry.BeginExchange(ctx, telemetry.ExchangeSession,
 		telemetry.Attr{Key: "hoop.session_id", Value: string(sess.ID)},
 		telemetry.Attr{Key: "hoop.principal", Value: sess.Identity.Principal()},
 	)
+	return ctx, &sessionSpan{endExchange: end}
 }
 
-func endNothing(error) {}
+// sessionSpan holds the connection's exchange span open until handle
+// returns, and the failure that ended the session, if one did. Both pumps
+// may report one; the first is kept, because the second is the teardown
+// the first caused. A connection that ends because a side closed it is
+// not a failure: that is how every session ends.
+type sessionSpan struct {
+	endExchange telemetry.EndExchange
+	mu          sync.Mutex
+	err         error
+}
+
+func (s *sessionSpan) fail(err error) {
+	if s == nil || err == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.err == nil {
+		s.err = err
+	}
+	s.mu.Unlock()
+}
+
+func (s *sessionSpan) end() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	err := s.err
+	s.mu.Unlock()
+	s.endExchange(err)
+}
+
+// finalAnswers counts the response statements that answer a request. An
+// HTTP interim response (1xx other than 101) is a statement to the codec
+// but leaves its request pending: a 100 Continue must not take the sample
+// that belongs to the final response behind it. Every other protocol's
+// response statements count as they are.
+func finalAnswers(stmts []inspect.Statement) int {
+	n := 0
+	for i := range stmts {
+		if h := stmts[i].HTTP; h != nil && h.StatusCode >= 100 && h.StatusCode < 200 && h.StatusCode != 101 {
+			continue
+		}
+		n++
+	}
+	return n
+}
 
 // upstreamClock measures the upstream's share of a statement's latency on
 // the byte path: from the client pump forwarding a request to the server
