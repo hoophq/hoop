@@ -118,6 +118,8 @@ psycopg2 and pg8000 report only the closed connection.
 fails when the image holds the sidecar, its config or the database address
 from `deploy/sidecar/sidecar.yaml`, when the image sets `APPDB_HOST`, or when
 its root agent is not the one in `agents-cli-manifest.yaml`. It needs Docker.
+The address is the upstream's `host:port`, and also its host when the host is
+an FQDN or an IP: a one-label host such as `postgres` is an ordinary word too.
 
 ## Files
 
