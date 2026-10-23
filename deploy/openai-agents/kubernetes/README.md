@@ -157,8 +157,8 @@ can run at once.
   `kubectl get pod "$KUBE_TOKEN"` reads the real token in the API server's
   `not found` error, and the sidecar's row for that request records it.
   With the token and no caller check, a caller reaches the sidecar from
-  outside the sandbox; the sidecar's policy still applies. ENG-872 tracks a
-  refusal at the sidecar.
+  outside the sandbox; the sidecar's policy still applies. ENG-871 tracks a
+  fix at the sidecar.
 - **The extra needs one cluster-scoped rule.** Kubernetes checks an
   impersonated extra with no namespace, so `rbac.yaml` holds a ClusterRole
   for `userextras/hoop-session`. It grants no access to any object, and the

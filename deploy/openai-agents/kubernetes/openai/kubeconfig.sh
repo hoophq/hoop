@@ -30,7 +30,9 @@ if ! command -v kubectl >/dev/null; then
     chmod 0755 /usr/local/bin/kubectl
 fi
 
-# demo.sh points KUBECONFIG elsewhere; the sandbox sets none.
+# No certificate-authority: kubectl goes through HTTPS_PROXY, which inspects
+# TLS, and the system bundle trusts its CA (ENG-860 c4). demo.sh points
+# KUBECONFIG elsewhere; the sandbox sets none.
 CONFIG=${KUBECONFIG:-$HOME/.kube/config}
 mkdir -p "$(dirname "$CONFIG")"
 (umask 077; cat > "$CONFIG") <<YAML
