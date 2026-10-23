@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
@@ -22,7 +23,22 @@ const (
 	pgGSSEncRequestCode uint32 = 80877104
 	pgCancelRequestCode uint32 = 80877102
 	pgNegotiateLen             = 8
+	pgCancelRequestLen         = 16
 )
+
+// errCancelHandled says the connection carried a CancelRequest the relay
+// answered (or dropped) itself; it never becomes a session.
+var errCancelHandled = errors.New("cancel request handled")
+
+// pgCancelRequest encodes a CancelRequest for the backend (pid, key).
+func pgCancelRequest(pid, key int32) []byte {
+	b := make([]byte, pgCancelRequestLen)
+	binary.BigEndian.PutUint32(b[0:4], pgCancelRequestLen)
+	binary.BigEndian.PutUint32(b[4:8], pgCancelRequestCode)
+	binary.BigEndian.PutUint32(b[8:12], uint32(pid))
+	binary.BigEndian.PutUint32(b[12:16], uint32(key))
+	return b
+}
 
 // maxNegotiationRounds bounds the pre-startup exchange.
 //
@@ -67,11 +83,21 @@ const maxNegotiationRounds = 4
 // caller records `user` as the session principal and lifts the operator's
 // startup_metadata fields from the rest. See startupParams for what those
 // values are worth.
+//
+// # CancelRequest
+//
+// A cancel arrives on a connection of its own and names a backend by the
+// (pid, key) the client was shown. On a lane that terminated the login
+// those are the relay's, so it looks them up in cancelRegistry and sends
+// the upstream's own pair; an unknown pair is dropped, because forwarding
+// it would cancel whatever backend happens to hold those numbers. A
+// pass-through lane hands the packet through as before.
 func negotiateDownstream(
 	conn net.Conn,
 	proto inspect.Protocol,
 	tlsCfg *tls.Config,
 	timeout time.Duration,
+	terminated bool,
 ) (net.Conn, startupPacket, error) {
 	if proto == inspect.ClickHouse && tlsCfg != nil {
 		if timeout > 0 {
@@ -121,6 +147,29 @@ func negotiateDownstream(
 		// Every negotiation packet is exactly 8 bytes and self-describing.
 		// Anything else is the StartupMessage, so it belongs to the caller and
 		// stays in the buffer unread.
+		if length == pgCancelRequestLen && code == pgCancelRequestCode {
+			pkt, err := br.Peek(pgCancelRequestLen)
+			if err != nil {
+				return nil, nil, fmt.Errorf("reading the cancel request: %w", err)
+			}
+			pid := int32(binary.BigEndian.Uint32(pkt[8:12]))
+			key := int32(binary.BigEndian.Uint32(pkt[12:16]))
+			ctx, cancel := context.Background(), func() {}
+			if timeout > 0 {
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+			}
+			defer cancel()
+			relayed, err := relayCancel(ctx, pid, key)
+			switch {
+			case err != nil:
+				return nil, nil, fmt.Errorf("relaying the cancel request: %w", err)
+			case relayed || terminated:
+				return nil, nil, errCancelHandled
+			}
+			// A cancel carries no session. Hand it through; the upstream
+			// answers it and closes.
+			return finishNegotiation(conn, br, timeout, nil)
+		}
 		if length != pgNegotiateLen {
 			return finishNegotiation(conn, br, timeout, startupParams(br, length))
 		}
@@ -161,11 +210,6 @@ func negotiateDownstream(
 			// packet, and may legitimately negotiate again first.
 			conn = tc
 			br = bufio.NewReaderSize(tc, 16<<10)
-
-		case pgCancelRequestCode:
-			// A cancel carries no session. Hand it through; the upstream
-			// answers it and closes.
-			return finishNegotiation(conn, br, timeout, nil)
 
 		default:
 			return finishNegotiation(conn, br, timeout, nil)
