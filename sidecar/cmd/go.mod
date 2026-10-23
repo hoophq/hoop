@@ -8,7 +8,7 @@
 // it, so `go build ./...` at the root still resolves nothing.
 module github.com/hoophq/hoop/sidecar/cmd
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0

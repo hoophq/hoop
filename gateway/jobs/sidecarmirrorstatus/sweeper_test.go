@@ -51,7 +51,8 @@ func TestASweepSetsASilentSidecarsMirrorOffline(t *testing.T) {
 	require.NoError(t, models.DB.Exec(`INSERT INTO private.connections (org_id, name, type, subtype, resource_name, status, managed_by, sidecar_id, sidecar_listener)
 		VALUES (?, 'pay-appdb', 'database', 'postgres', 'pay-appdb', 'offline', 'sidecar', ?, 'appdb')`, testOrgID, sc.ID).Error)
 
-	require.NoError(t, models.RecordSidecarHandshake(models.DB, sc.ID, "1.0.0", "", "", "", "", nil))
+	_, err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.0.0", "", "", "", "", nil)
+	require.NoError(t, err)
 	require.NoError(t, models.MarkSidecarConnectionsOnline(models.DB, testOrgID, sc.ID))
 	sweep(ctx, models.DB)
 	require.Equal(t, models.ConnectionStatusOnline, status(t), "fresh check-in: online")

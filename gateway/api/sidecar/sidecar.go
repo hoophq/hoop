@@ -63,7 +63,7 @@ func configRevision(served daemon.Config) string {
 // It also sets the sidecar's mirrors online; the sidecarmirrorstatus job sets
 // them offline when the handshakes stop.
 func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
-	err := models.RecordSidecarHandshake(models.DB, sc.ID,
+	firstCheckIn, err := models.RecordSidecarHandshake(models.DB, sc.ID,
 		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
 	if err != nil {
 		log.With("sidecar", sc.ID).Warnf("failed recording the sidecar handshake, reason=%v", err)
@@ -72,9 +72,11 @@ func recordHandshake(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, se
 	if err := models.MarkSidecarConnectionsOnline(models.DB, sc.OrgID, sc.ID); err != nil {
 		log.With("sidecar", sc.ID).Warnf("%v", err)
 	}
-	// A page waiting for this sidecar, such as the setup wizard, reads it
-	// again now instead of on its next poll.
-	liveevents.Publish(sc.OrgID, liveevents.Event{Type: liveevents.SidecarCheckedIn, ID: sc.ID})
+	// The setup wizard waits for the first check-in. A heartbeat would reach
+	// every admin's stream, which is open on every page, once a minute per pod.
+	if firstCheckIn {
+		liveevents.Publish(sc.OrgID, liveevents.Event{Type: liveevents.SidecarCheckedIn, ID: sc.ID})
+	}
 }
 
 // refuseOverCap answers 422 when a configuration authors more rules than the

@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Clock, X } from 'lucide-react'
+import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Clock, Hourglass, X } from 'lucide-react'
+import Button from '@/components/Button'
 import classes from './Toast.module.css'
 
 const ICON_FOR_TYPE = {
   success: { Icon: CheckCircle, className: classes.iconSuccess },
   error: { Icon: AlertCircle, className: classes.iconError },
   info: { Icon: Clock, className: classes.iconInfo },
+  approval: { Icon: Hourglass, className: classes.iconApproval },
 }
 
 function capitalize(value) {
@@ -41,11 +43,12 @@ function renderDetails(details) {
  * Always rendered through sonner's `toast.custom`. Use `showSnackbar`
  * from `@/utils/snackbar` rather than instantiating this directly.
  */
-export default function Toast({ id, type, title, description, details }) {
+export default function Toast({ id, type, title, description, details, actions, footer }) {
   const [expanded, setExpanded] = useState(false)
   const meta = ICON_FOR_TYPE[type]
   const hasDetails = type === 'error' && details != null
   const Icon = meta?.Icon
+  const approval = type === 'approval'
 
   return (
     <div className={classes.root}>
@@ -53,12 +56,35 @@ export default function Toast({ id, type, title, description, details }) {
         <div className={classes.body}>
           {Icon && (
             <span className={`${classes.iconWrapper} ${meta.className}`}>
-              <Icon size={20} />
+              <Icon size={approval ? 18 : 20} />
             </span>
           )}
           <div className={classes.content}>
-            <p className={classes.title}>{title}</p>
-            {description && <p className={classes.description}>{description}</p>}
+            <p className={approval ? `${classes.title} ${classes.titleStrong}` : classes.title}>{title}</p>
+            {description &&
+              (typeof description === 'string' ? (
+                <p className={classes.description}>{description}</p>
+              ) : (
+                <div className={classes.description}>{description}</div>
+              ))}
+            {actions?.length > 0 && (
+              <div className={classes.actions}>
+                {actions.map((action, i) => (
+                  <Button
+                    key={action.label}
+                    size="compact-sm"
+                    variant={i === 0 ? 'filled' : 'default'}
+                    onClick={() => {
+                      toast.dismiss(id)
+                      action.onClick()
+                    }}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {footer && <div className={classes.footer}>{footer}</div>}
             {hasDetails && (
               <div
                 className={classes.detailsToggle}

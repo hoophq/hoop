@@ -13,7 +13,7 @@
 // refuses one at config validation.
 module github.com/hoophq/hoop/sidecar/descriptors/gcs
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0

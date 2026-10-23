@@ -33,6 +33,11 @@ config:
 
 Clients then reach the lane at `hoopsidecar.<namespace>.svc.cluster.local:15432`.
 
+The image reference lives only in `values.yaml` (`image.repository`,
+`image.tag`). A release installed when the defaults sat in the templates has no
+image values, so `helm upgrade --reuse-values` refuses to render. Upgrade it
+with `--reset-then-reuse-values`, or set `image.repository` and `image.tag`.
+
 ## Ports
 
 The chart declares exactly one port, literally: **19000**, the admin server.
@@ -160,6 +165,7 @@ under `deploy/docker-compose/` binds:
 | `analytics.hostId` | Machine identity → `HOOP_HOST_ID`. Default: the node name via the downward API. Hashed before it is sent |
 | `analytics.installSource` | The hoop template that installed the sidecar → `HOOP_SIDECAR_INSTALL_SOURCE`. Default empty: no property. Values: `managed-agents-http`, `managed-agents-kubernetes`, `openai-agents-http`, `openai-agents-kubernetes`; anything else is sent as `other` |
 | `extraSecret` | Extra environment variables, as a Secret |
+| `existingSecret` | A Secret in the namespace the chart references but does not manage. Loaded last: `HOOP_LICENSE` and `HOOP_SIDECAR_TOKEN` there override `license` and `controlPlane.token`, so neither has to sit in the release values |
 | `service.enabled` | A Service for the admin port, 19000 only. Default `true` |
 | `laneServices` | Map of Services publishing lane ports. One Service per entry; empty by default |
 | `service.type` | Default `ClusterIP` |
@@ -260,6 +266,11 @@ GitOps tool that annotates the pods for you (Reloader, Argo CD) makes it
 unnecessary. Without any of these,
 `kubectl rollout restart deploy/<release>-hoopsidecar` is the manual equivalent.
 
+`existingSecret` has the same gap, with no in-place path: its variables are
+read when the pod starts, and the chart cannot see the Secret change. After
+rotating `HOOP_SIDECAR_TOKEN` or `HOOP_LICENSE` there, change `configRevision`
+(or run the restart above) so the pods pick the new values up.
+
 ## Rotating the license without a restart
 
 `license` is an environment variable, so changing it rolls the pods. Two ways
@@ -287,13 +298,18 @@ kubectl create secret generic hoop-sidecar-license \
   --from-file=license.json=./license.json --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-**Send it to the admin port.** Set `adminSecret`, then `PUT` the document to
-each pod. It lasts until the license source changes or the pod restarts, so
-also update the source:
+**Send it to the admin port.** Set `adminSecret` (or `HOOP_SIDECAR_ADMIN_SECRET`
+in `existingSecret`), then `PUT` the document to each pod. It lasts until the
+license source changes or the pod restarts, so also update the source.
+
+The admin port speaks plain HTTP, so the bearer secret must not cross a
+network someone else can read. Reach each pod through `kubectl port-forward`,
+which carries the request over the API server's TLS connection:
 
 ```bash
+kubectl port-forward pod/<pod> 19000:19000 &
 curl -X PUT --data-binary @license.json \
-  -H "Authorization: Bearer $ADMIN_SECRET" http://<pod-ip>:19000/license
+  -H "Authorization: Bearer $ADMIN_SECRET" http://127.0.0.1:19000/license
 ```
 
 Under a control plane that owns the license, set it in the control plane;

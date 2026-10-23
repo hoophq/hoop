@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Stack, Text, Title } from '@mantine/core'
 import PageLoader from '@/components/PageLoader'
@@ -86,6 +86,14 @@ export default function Reviews() {
     () => reviews.find((review) => review.session === sessionId) ?? null,
     [reviews, sessionId],
   )
+
+  // A review filed after the list loaded, opened from a notification or a link.
+  const refetchedFor = useRef(null)
+  useEffect(() => {
+    if (!sessionId || selected || reviewsStatus !== 'success' || refetchedFor.current === sessionId) return
+    refetchedFor.current = sessionId
+    fetchReviews()
+  }, [sessionId, selected, reviewsStatus, fetchReviews])
 
   const loading = reviewsStatus === 'idle' || reviewsStatus === 'loading'
   const showLoader = loading

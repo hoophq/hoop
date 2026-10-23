@@ -724,7 +724,7 @@ import SidecarTargetPicker from '@/components/SidecarTargetPicker'
   onChange={(targets) => setField({ sidecarTargets: targets })}
 />
 ```
-Props: `value` (targets[]), `onChange(targets)`, `label`, `description`. A listener with no name is left out of the list: the name is the only handle the control plane has on a lane, and a binding to a nameless one is refused on save.
+Props: `value` (targets[]), `onChange(targets)`, `label`, `description`, `listenerBlocked(sidecar, listener)` (returns a reason to disable that listener, or null; keep it a stable reference). A listener with no name is left out of the list: the name is the only handle the control plane has on a lane, and a binding to a nameless one is refused on save.
 
 **The payload distinction that matters:** an *absent* `sidecar_targets` leaves a rule's bindings alone; `[]` unbinds it from every sidecar. The three `formToPayload` helpers omit the key entirely where the picker did not render, so a gateway save cannot silently unbind a fleet.
 
@@ -855,7 +855,7 @@ Reference: `pages/Settings/Infrastructure/index.jsx`.
 The Traffic filter of the guardrail, masking and analyzer lists: `filterProps` for a `ValueFilter`, `matches(rule)`, `trafficOf(rule)` for the badge, and `showAgentFilters` / `showSidecarFilter`. `classifiable` is false where the list response carries no `sidecar_spec` (guardrails today).
 
 ### `useLiveEvent(type, handler, enabled = true)`
-Calls `handler({ type, id })` for each live event of `type` from the gateway (`GET /events/stream`) while mounted. One connection per tab, shared by every subscriber, closed when the last one unmounts. Types are in `LIVE_EVENTS` (`services/liveEvents.js`). The event carries no data: read the resource again. Rules in `CLAUDE.md` (Real-time updates).
+Calls `handler({ type, id })` for each live event of `type` from the gateway (`GET /events/stream`) while mounted. One connection per browser: the tab holding the `hoop-live-events` Web Lock streams and passes events to the other tabs. It closes when the last subscriber of the tab unmounts. Types are in `LIVE_EVENTS` (`services/liveEvents.js`). The event carries no data: read the resource again. Rules in `CLAUDE.md` (Real-time updates).
 ```jsx
 useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (e) => e.id === id && refresh(id))
 ```
@@ -1146,6 +1146,14 @@ showSnackbar({
   level: 'error',
   text: 'Validation failed.',
   details: { field: 'name', reason: 'required' },
+})
+
+// Buttons under the text; a click dismisses the toast. The first is the primary one.
+showSnackbar({
+  text: 'Approval request',
+  description: 'maria · pg-prod · One-time access',
+  actions: [{ label: 'Open', onClick: open }],
+  duration: 20000,
 })
 ```
 

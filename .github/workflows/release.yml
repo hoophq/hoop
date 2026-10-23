@@ -1428,15 +1428,30 @@ jobs:
             gh release upload "$GIT_TAG" dist/release-binaries/* --clobber
           else
             # `--generate-notes` populates the release body from PRs merged
-            # since the previous tag. `--latest=false` keeps Brew / S3 in
-            # charge of marking the canonical latest; we just need the assets
-            # available at a predictable URL.
+            # since the previous tag. `--latest=false` here; the next step
+            # lets GitHub pick Latest.
             gh release create "$GIT_TAG" \
               --title "$GIT_TAG" \
               --generate-notes \
               --latest=false \
               dist/release-binaries/*
           fi
+
+      # auto-release.yml creates the release as a prerelease, so a consumer of
+      # the latest stable release (the infra sandbox canary) never gets a
+      # version whose chart is not on GHCR yet. The charts, S3 bundles and
+      # hsh-tunneld assets exist now. make_latest=legacy lets GitHub pick Latest
+      # from creation date and semver in the same request, so two releases that
+      # finish out of order cannot race each other for it.
+      - name: Mark GitHub Release stable
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |-
+          set -euo pipefail
+          RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GIT_TAG}" --jq .id)
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -F prerelease=false -f make_latest=legacy --jq '"Release \(.tag_name) is stable (prerelease: \(.prerelease))."'
 
       - name: Publish Brew Recipe
         run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/brew
