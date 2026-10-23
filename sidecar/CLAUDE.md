@@ -70,6 +70,7 @@ it is removing a directory.
 | `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the review status MCP server an `mcp:` block turns on (ADR-0021) |
 | `ica/` | `github.com/hoophq/libhoop-ica`, the Citrix ICA engine a `protocol: ica` lane embeds; registers through `daemon.RegisterICAEngine`, linked into `hoop-inspect` only |
 | `codec/wasm/` | `github.com/tetratelabs/wazero`, the codec plug-in host; `daemon` only sees `LoadCodecPlugin`. `sdk/` and `examples/` hold the guest side: Rust, TinyGo and C |
+| `telemetry/otlp/` | the OpenTelemetry SDK and its OTLP exporters, behind the `telemetry` block; `daemon` sees only `telemetry.Builder`, injected by `cmd` like `LoadCodecPlugin`. The contract is the root package `telemetry/` |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
 Adding a dependency to the root still needs a reason. Add a nested module, or
@@ -128,7 +129,7 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica lexer/conformance codec/wasm; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica lexer/conformance codec/wasm telemetry/otlp; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
 

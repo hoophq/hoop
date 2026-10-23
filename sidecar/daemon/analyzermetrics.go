@@ -183,16 +183,24 @@ func labels(kv ...string) string {
 
 var labelEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
 
-// callObserver is the OnCall hook: the histogram, and a debug line per call.
-// Nil when there is nothing to report into, which is every build that never
-// serves (-validate, tests).
+// callObserver is the OnCall hook: the histogram, the exporter, and a
+// debug line per call. Nil when there is nothing to report into, which is
+// every build that never serves (-validate, tests).
 func (ac *analyzerDeps) callObserver() func(analyzer.Call) {
-	if ac.metrics == nil && ac.log == nil {
+	if ac.metrics == nil && ac.log == nil && ac.otel == nil {
 		return nil
 	}
+	var provider, model string
+	if ac.cfg != nil {
+		provider, model = ac.cfg.providerName(), ac.cfg.modelName()
+	}
+	export := ac.otel.analyzerCall(provider, model)
 	return func(c analyzer.Call) {
 		if ac.metrics != nil {
 			ac.metrics.call(c)
+		}
+		if export != nil {
+			export(c)
 		}
 		if ac.log != nil {
 			ac.log.Debug("analyzer call",
@@ -205,12 +213,20 @@ func (ac *analyzerDeps) callObserver() func(analyzer.Call) {
 	}
 }
 
-// outcomeObserver is the OnOutcome hook. Nil without metrics.
+// outcomeObserver is the OnOutcome hook. Nil without metrics or exporter.
 func (ac *analyzerDeps) outcomeObserver() func(analyzer.Outcome) {
-	if ac.metrics == nil {
+	export := ac.otel.analyzerOutcome()
+	if ac.metrics == nil && export == nil {
 		return nil
 	}
-	return ac.metrics.outcome
+	return func(o analyzer.Outcome) {
+		if ac.metrics != nil {
+			ac.metrics.outcome(o)
+		}
+		if export != nil {
+			export(o)
+		}
+	}
 }
 
 // metricsContentType is the Prometheus text exposition format, version 0.0.4.

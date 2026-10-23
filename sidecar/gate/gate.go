@@ -38,6 +38,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // Masker rewrites sensitive values out of a payload.
@@ -222,6 +223,13 @@ type Config struct {
 	// implementation, so it MUST be safe for concurrent use and MUST cost
 	// no more than an atomic increment: it runs on the data path.
 	Metrics Metrics
+
+	// Telemetry receives per-statement spans, stage durations and counts
+	// for the lane's OpenTelemetry export. Optional; nil records nothing,
+	// which is every lane without a telemetry block. Shared by every
+	// connection on the lane, so it MUST be safe for concurrent use, and
+	// it runs on the data path, so it costs one instrument record.
+	Telemetry telemetry.LaneRecorder
 
 	// RequestIdentity re-derives the caller from every HTTP request instead
 	// of trusting the identity the connection opened with. Optional; nil
@@ -1025,6 +1033,7 @@ type judgment struct {
 // caller forwards, because a crash between the write and the forward must
 // not lose the record of the statement that ran.
 func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
+	ctx, endStatement := g.beginStatement(ctx, stmt)
 	verdict := g.evaluate(ctx, stmt)
 
 	ev := audit.StatementEvent(
@@ -1059,6 +1068,13 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 	}
 	g.mu.Unlock()
 	g.countStatement(denied, source)
+	endStatement(telemetry.Verdict{
+		Denied:    denied,
+		Source:    source,
+		Rule:      verdict.Rule,
+		RiskLevel: verdict.Annotations[policy.AnnotationRiskLevel],
+		Err:       verdict.Err,
+	})
 
 	if refused {
 		// Nothing is forwarded, so an approval the policy just reserved for
@@ -1355,7 +1371,7 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) policy.Verd
 	if !ok {
 		return g.policy.Evaluate(stmt)
 	}
-	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx}
+	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx, Telemetry: g.stageRecorder()}
 	g.seedExchange(stmt, ec)
 	v := ce.EvaluateWith(stmt, ec)
 	g.recordExchange(stmt, ec, &v)
@@ -1422,8 +1438,13 @@ func (g *Gate) writeAudit(ctx context.Context, ev audit.Event) error {
 		return nil
 	}
 	err := g.audit.Write(context.WithoutCancel(ctx), ev)
-	if err != nil && g.cfg.Metrics != nil {
-		g.cfg.Metrics.AuditError()
+	if err != nil {
+		if g.cfg.Metrics != nil {
+			g.cfg.Metrics.AuditError()
+		}
+		if g.cfg.Telemetry != nil {
+			g.cfg.Telemetry.AuditError()
+		}
 	}
 	return err
 }
@@ -1678,4 +1699,31 @@ func (g *Gate) countMasked(values int) {
 	if g.cfg.Metrics != nil {
 		g.cfg.Metrics.Masked(values)
 	}
+	if g.cfg.Telemetry != nil {
+		g.cfg.Telemetry.Masked(values)
+	}
+}
+
+// beginStatement opens the statement's span, or returns ctx and a no-op
+// when the lane exports nothing. The no-op is a package-level func so the
+// off path allocates no closure per statement, and stmt travels by value
+// so it never escapes to the heap on that path either.
+func (g *Gate) beginStatement(ctx context.Context, stmt inspect.Statement) (context.Context, telemetry.EndStatement) {
+	if g.cfg.Telemetry == nil {
+		return ctx, endNothing
+	}
+	return g.cfg.Telemetry.BeginStatement(ctx, stmt)
+}
+
+func endNothing(telemetry.Verdict) {}
+
+// stageRecorder is what the policy chain times its stages into: the lane's
+// recorder, or a nil interface. The nil check matters: a nil LaneRecorder
+// assigned to a StageRecorder field would be a non-nil interface holding
+// nothing, and the chain would call through it.
+func (g *Gate) stageRecorder() telemetry.StageRecorder {
+	if g.cfg.Telemetry == nil {
+		return nil
+	}
+	return g.cfg.Telemetry
 }

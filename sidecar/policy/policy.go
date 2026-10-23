@@ -34,6 +34,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // Verdict is the outcome of evaluating one statement.
@@ -206,6 +207,13 @@ type EvalContext struct {
 	// this struct already lives for exactly one statement. The analyzer's
 	// hold reads it, so a wait for a human ends with the connection.
 	ConnCtx context.Context
+
+	// Telemetry times each evaluator and the review hold, when the lane
+	// exports telemetry. Nil records nothing, which is every lane without
+	// a telemetry block and every test. Set by the caller that owns the
+	// statement (the gate), read only by Chain: an evaluator reports
+	// nothing itself, it is measured from outside.
+	Telemetry telemetry.StageRecorder
 
 	// review is the hold a producer asked for, run by the outermost Chain
 	// after every evaluator allowed (ADR-0030). depth is how many Chains
@@ -1229,12 +1237,7 @@ func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 
 	var errs error
 	for _, e := range c {
-		var v Verdict
-		if ce, ok := e.(ContextualEvaluator); ok {
-			v = ce.EvaluateWith(stmt, ec)
-		} else {
-			v = e.Evaluate(stmt)
-		}
+		v := c.runElement(e, stmt, ec)
 		// Annotations survive an allow, which is the point of them: the
 		// analyzer's risk level belongs in the audit record whether or
 		// not anything denied.
@@ -1257,13 +1260,122 @@ func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 			v.Annotations = ec.Annotations
 			return v
 		}
-		v := r.Resolve()
+		v := c.resolveReview(r, ec)
 		ec.Annotations = mergeAnnotations(ec.Annotations, v.Annotations)
 		v.Err = errors.Join(errs, v.Err)
 		v.Annotations = ec.Annotations
 		return v
 	}
 	return Verdict{Err: errs, Annotations: ec.Annotations}
+}
+
+// Staged is implemented by an evaluator that knows which telemetry stage
+// it is: the local rules and the OPA client are policy with an engine, the
+// analyzer is its own stage. Chain times an element only when it says.
+// Declared as an optional interface rather than a method on Evaluator so a
+// test fake or a third-party evaluator stays one method.
+type Staged interface {
+	TelemetryStage() (stage telemetry.Stage, engine string)
+}
+
+// TelemetryStage implements Staged.
+func (r *Rules) TelemetryStage() (telemetry.Stage, string) {
+	return telemetry.StagePolicy, telemetry.EngineRules
+}
+
+// TelemetryStage implements Staged.
+func (c *OPAClient) TelemetryStage() (telemetry.Stage, string) {
+	return telemetry.StagePolicy, telemetry.EngineOPA
+}
+
+// runElement evaluates one element, timed as its stage when the context
+// records telemetry and the element names one.
+//
+// The stage's context replaces ConnCtx for the duration, so an evaluator
+// that makes an HTTP call under ConnCtx (OPA, a model provider) carries the
+// stage's span to it. ConnCtx is restored after: a later element must not
+// nest under an earlier one's span.
+func (c Chain) runElement(e Evaluator, stmt inspect.Statement, ec *EvalContext) Verdict {
+	var end telemetry.EndStage
+	if ec.Telemetry != nil {
+		if s, ok := e.(Staged); ok {
+			stage, engine := s.TelemetryStage()
+			var stageCtx context.Context
+			stageCtx, end = ec.Telemetry.BeginStage(ctxOrBackground(ec.ConnCtx), stage, engine)
+			saved := ec.ConnCtx
+			ec.ConnCtx = stageCtx
+			defer func() { ec.ConnCtx = saved }()
+		}
+	}
+	var v Verdict
+	if ce, ok := e.(ContextualEvaluator); ok {
+		v = ce.EvaluateWith(stmt, ec)
+	} else {
+		v = e.Evaluate(stmt)
+	}
+	if end != nil {
+		outcome := telemetry.OutcomeAllow
+		if v.Denied {
+			outcome = telemetry.OutcomeDeny
+		}
+		end(outcome, v.Err)
+	}
+	return v
+}
+
+// resolveReview runs the hold, timed as the review stage.
+//
+// The outcome is the review's own vocabulary rather than allow/deny: a
+// denial because the client left mid-hold and one because an approver
+// rejected are the same verdict to the gate and different facts to the
+// operator reading the histogram.
+//
+// The stage's context is not handed to the hold: Resolve takes none, and
+// the producer captured its own (the analyzer's, with the hold detail on
+// it) when it asked. The review span therefore has the duration and the
+// outcome and no children; the hold's control-plane calls carry the
+// analyzer stage's trace context, which is where the hold was requested.
+func (c Chain) resolveReview(r *ReviewRequest, ec *EvalContext) Verdict {
+	if ec.Telemetry == nil {
+		return r.Resolve()
+	}
+	_, end := ec.Telemetry.BeginStage(ctxOrBackground(ec.ConnCtx), telemetry.StageReview, "")
+	v := r.Resolve()
+	end(reviewOutcome(v, ec.ConnCtx), v.Err)
+	return v
+}
+
+// reviewOutcome names how a hold ended, for telemetry. The set is closed:
+// a status this build does not know, or a denial with no status (the
+// plane unreachable, a second review request), is ReviewDenied, so the
+// label never grows a value no dashboard was written for.
+func reviewOutcome(v Verdict, connCtx context.Context) string {
+	if !v.Denied {
+		return telemetry.ReviewApproved
+	}
+	if connCtx != nil && connCtx.Err() != nil {
+		return telemetry.ReviewDisconnected
+	}
+	status := ""
+	if v.Review != nil {
+		status = strings.ToLower(v.Review.Status)
+	}
+	switch status {
+	case "rejected":
+		return telemetry.ReviewRejected
+	case "expired":
+		return telemetry.ReviewExpired
+	case "revoked":
+		return telemetry.ReviewRevoked
+	}
+	return telemetry.ReviewDenied
+}
+
+func ctxOrBackground(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
 }
 
 // --- observe mode --------------------------------------------------------

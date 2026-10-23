@@ -626,7 +626,7 @@ func TestTheCapabilitiesNameSessionEvents(t *testing.T) {
 func TestBuildAuditAddsTheSinkOnlyWithAPlane(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 	file := filepath.Join(t.TempDir(), "audit.jsonl")
-	standalone, err := buildAudit(AuditConfig{File: file}, nil, log)
+	standalone, err := buildAudit(AuditConfig{File: file}, nil, nil, log)
 	if err != nil {
 		t.Fatalf("buildAudit: %v", err)
 	}
@@ -637,7 +637,7 @@ func TestBuildAuditAddsTheSinkOnlyWithAPlane(t *testing.T) {
 
 	plane := newEventsPlane(t)
 	cp := &controlPlane{url: plane.srv.URL, cred: tokenCredential("hsc_x"), sessionEvents: true}
-	chain, err := buildAudit(AuditConfig{File: file, RedactStatements: true}, cp, log)
+	chain, err := buildAudit(AuditConfig{File: file, RedactStatements: true}, cp, nil, log)
 	if err != nil {
 		t.Fatalf("buildAudit: %v", err)
 	}
