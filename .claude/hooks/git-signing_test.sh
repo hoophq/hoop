@@ -40,4 +40,10 @@ git init -q "$tmp/repo"
 git -C "$tmp/repo" -c user.name=Test -c user.email=test@example.com commit -q --allow-empty -m t
 git -C "$tmp/repo" verify-commit HEAD 2>/dev/null; check "good key: commit verifies" "$?" "0"
 
+# Repo and user settings both register the hook: two runs start at once.
+fresh_home twice
+for i in 1 2 3 4; do GIT_SIGNING_KEY=$good bash "$hook" >"$tmp/twice.$i" & done; wait
+out=$(sort -u "$tmp"/twice.*); check "four at once: all signed" "$out" "Commits are signed with GPG key $want."
+check "four at once: signing key" "$(git config --global --get user.signingkey)" "$want"
+
 exit $fail
