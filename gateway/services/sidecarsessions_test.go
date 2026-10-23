@@ -1043,6 +1043,62 @@ func TestPlanSidecarSessionLearnsThePrincipal(t *testing.T) {
 	})
 }
 
+// With the flag on, a session nobody is known for is filed under the sidecar's
+// owner until the principal arrives; the credential the sidecar used lands in
+// metadata.sidecar. With the flag off nothing changes.
+func TestPlanSidecarSessionOwnerStandsIn(t *testing.T) {
+	anonymous := func(e *audit.Event) { e.Principal = sidecarsession.AnonymousPrincipal }
+	swapped := func(e *audit.Event) {
+		e.Metadata = map[string]string{"credential": "app-rw", "identity_type": "kubernetes", "verified": "true", "other": "x"}
+	}
+	owned := testSidecarIdent
+	owned.ReviewOwner, owned.OwnerEmail = true, "owner@acme.com"
+
+	t.Run("an anonymous start is filed under the owner", func(t *testing.T) {
+		plan, err := planSidecarSession(owned, testSidecarSessionID, nil, []daemon.SessionEvent{
+			sidecarEvent(1, audit.KindSessionStart, 0, anonymous, swapped),
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "owner@acme.com", plan.Create.UserEmail)
+		assert.Equal(t, sidecarsession.AnonymousPrincipal, plan.Create.UserName)
+		assert.Equal(t, "app-rw", plan.Sidecar["credential"])
+		assert.Equal(t, "kubernetes", plan.Sidecar["identity_type"])
+		assert.Equal(t, "true", plan.Sidecar["verified"])
+		assert.NotContains(t, plan.Sidecar, "other")
+	})
+
+	t.Run("a known principal is not replaced by the owner", func(t *testing.T) {
+		plan, err := planSidecarSession(owned, testSidecarSessionID, nil, []daemon.SessionEvent{
+			sidecarEvent(1, audit.KindSessionStart, 0, func(e *audit.Event) { e.Principal = "postgres" }),
+		})
+		require.NoError(t, err)
+		assert.Empty(t, plan.Create.UserEmail)
+		assert.Equal(t, "postgres", plan.Create.UserName)
+	})
+
+	t.Run("the owner gives way to the principal learnt later", func(t *testing.T) {
+		prior := existingSidecarSession(1)
+		prior.Principal = "owner@acme.com"
+		plan, err := planSidecarSession(owned, testSidecarSessionID, prior, []daemon.SessionEvent{
+			sidecarEvent(2, audit.KindStatement, time.Second, func(e *audit.Event) { e.Principal = "alice@acme.com" }),
+		})
+		require.NoError(t, err)
+		require.NotNil(t, plan.User)
+		assert.Equal(t, sidecarUser{Email: "alice@acme.com"}, *plan.User)
+	})
+
+	t.Run("flag off keeps the legacy row", func(t *testing.T) {
+		legacy := testSidecarIdent
+		legacy.OwnerEmail = "owner@acme.com"
+		plan, err := planSidecarSession(legacy, testSidecarSessionID, nil, []daemon.SessionEvent{
+			sidecarEvent(1, audit.KindSessionStart, 0, anonymous, swapped),
+		})
+		require.NoError(t, err)
+		assert.Empty(t, plan.Create.UserEmail)
+		assert.NotContains(t, plan.Sidecar, "credential")
+	})
+}
+
 // guardrails_info stops at maxSidecarGuardRails per session; the stream keeps
 // every denial and metadata.sidecar counts what the column left out.
 func TestPlanSidecarSessionCapsGuardRails(t *testing.T) {

@@ -1431,7 +1431,7 @@ func TestAnEditKeepsABindingToAConfigFileSidecar(t *testing.T) {
 	}
 	on := true
 	if _, err := models.UpdateSidecarConfiguration(models.DB, testOrgID, sc.ID,
-		models.SidecarConfiguration{LoadFromDisk: &on, Listeners: lanes}); err != nil {
+		models.SidecarConfiguration{LoadFromDisk: &on, Listeners: lanes}, nil); err != nil {
 		t.Fatalf("switch to the file: %v", err)
 	}
 

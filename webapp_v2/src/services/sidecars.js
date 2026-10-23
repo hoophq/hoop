@@ -35,6 +35,10 @@ import api from './api'
 // of `listeners`, and writes all of it back. With no ETag, two admins editing
 // at once means the second write wins silently.
 //
+// `setOwner` is `update` with `owner_email` beside the document: the owner is
+// a column of the row, not a key of the configuration, and PUT is the only
+// write that takes it. Omitting it keeps the stored owner; "" clears it.
+//
 // `slackChannels` reads where the reviews of each listener are posted:
 // `{ listeners: [{ name, channels }] }`. `updateSlackChannels` sets only the
 // listeners in the body; the others keep their channels.
@@ -44,6 +48,8 @@ export const sidecarsService = {
   create: ({ name }) => api.post('/sidecars', { name }),
   patch: (nameOrId, configuration) => api.patch(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration }),
   update: (nameOrId, configuration) => api.put(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration }),
+  setOwner: (nameOrId, configuration, ownerEmail) =>
+    api.put(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration, owner_email: ownerEmail }),
   delete: (nameOrId) => api.delete(`/sidecars/${encodeURIComponent(nameOrId)}`),
   slackChannels: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}/slack-channels`),
   updateSlackChannels: (nameOrId, body) =>

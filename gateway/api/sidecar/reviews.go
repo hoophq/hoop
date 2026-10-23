@@ -31,11 +31,9 @@ import (
 )
 
 const (
-	// reviewOwnerEmail stands in for the requester a sidecar review does not
-	// have. The control plane registers no ordinary users, so nothing here
-	// identifies a person. Known debt: every sidecar review shows the same
-	// requester until there is something real to record, which is where the
-	// database user or the source address behind the statement will go.
+	// reviewOwnerEmail stands in for the requester when nothing names a
+	// person: no principal that is an email, no sidecar owner, or the
+	// experimental.sidecar_review_owner flag off.
 	reviewOwnerEmail = "hoop@hoop.dev"
 
 	// maxStatementBytes caps the decoded statement. It is stored twice, as the
@@ -159,6 +157,10 @@ func PostReview(c *gin.Context) {
 	// What the reviewer reads. The match stays on statementHash.
 	display := displayStatement(statement)
 
+	// Who the review is filed under. Read once: the owner is a row an admin
+	// edits, and both passes must file the same person.
+	person := reviewPerson(sidecar, req.Principal)
+
 	// Two passes. A match can be consumed between the read and the insert, and
 	// an insert can lose the index to a racing request whose review is then
 	// consumed before the re-read. Either way one more pass settles it.
@@ -177,7 +179,7 @@ func PostReview(c *gin.Context) {
 			return
 		}
 
-		rev, expiredIDs, err := createSidecarReview(sidecar, req.ListenerName, display, statementHash, rule, policy, now)
+		rev, expiredIDs, err := createSidecarReview(sidecar, req.ListenerName, display, statementHash, rule, policy, person, now)
 		switch {
 		case errors.Is(err, gorm.ErrDuplicatedKey):
 			// A racing request filed first. Look again rather than answer: its
@@ -201,7 +203,7 @@ func PostReview(c *gin.Context) {
 			}
 		}
 
-		answerFiledReview(c, sidecar, req, rule, rev, display)
+		answerFiledReview(c, sidecar, req, rule, rev, display, person)
 		return
 	}
 
@@ -438,7 +440,7 @@ func authenticatedSidecar(c *gin.Context) *models.Sidecar {
 // answerFiledReview reports a review this request filed. Forward is false: it
 // was filed a moment ago and no human has seen it.
 func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
-	rule *models.AccessRequestRule, rev *models.Review, display string) {
+	rule *models.AccessRequestRule, rev *models.Review, display string, person services.SidecarPerson) {
 	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
 		"listener", req.ListenerName, "rule", rule.Name).
 		Infof("registered a sidecar review")
@@ -461,7 +463,7 @@ func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 	//
 	// Nothing in the response depends on it: the review is already persisted
 	// and visible to an approver either way.
-	go notifySlack(sidecar, rev, req.ListenerName, display)
+	go notifySlack(sidecar, rev, req.ListenerName, display, person)
 
 	// Forward is false: the review was filed a moment ago and no human has
 	// seen it. The sidecar denies this statement and carries the review id.
@@ -575,14 +577,26 @@ func trackConsumedReview(sidecar *models.Sidecar, listenerName string) {
 }
 
 // notifySlack posts the review to the org's Slack channel, so a human learns it
-// exists rather than finding it by looking.
+// exists rather than finding it by looking, and sends the person it is filed
+// under a direct message when their hoop user has a linked Slack ID.
 //
 // Slack is optional everywhere else in this codebase and stays optional here:
 // an org that has not configured it gets no message and no error.
-func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) {
+func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string, person services.SidecarPerson) {
 	slackSvc := slackservice.GetServiceInstance(sidecar.OrgID)
 	if slackSvc == nil {
 		return
+	}
+
+	req := newSlackReviewRequest(sidecar, rev, listenerName, display)
+
+	// Before the channel: the person is told even when no channel is set.
+	if person.SlackID != "" {
+		text := slackservice.SidecarReviewFiledMessage(req.Connection, display, req.WebappURL)
+		if err := slackSvc.PostMessage(person.SlackID, text); err != nil {
+			log.With("sid", rev.SessionID, "review-id", rev.ID).
+				Warnf("failed sending the filed DM to %s, reason=%v", person.Email, err)
+		}
 	}
 
 	// The listener's channels, else the org default channel as a fallback.
@@ -600,7 +614,6 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 		return
 	}
 
-	req := newSlackReviewRequest(sidecar, rev, listenerName, display)
 	req.SlackChannels = channels
 	req.DefaultChannelAsFallback = true
 	// The same ceiling both existing senders apply. Two groups today, but a
@@ -644,7 +657,7 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		// saying who may act beats an empty field.
 		Name:           sidecar.Name,
 		UserGroups:     slackplugin.ParseGroups(rev.ReviewGroups),
-		Email:          reviewOwnerEmail,
+		Email:          rev.OwnerEmail,
 		Connection:     connection,
 		ConnectionType: reviewSlackType,
 
@@ -810,7 +823,7 @@ func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, 
 // so the review and the session show the resource the admin sees. A listener
 // without a mirror (a row that fell behind the reconcile) files them with the
 // listener alone.
-func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) (*models.Review, []string, error) {
+func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, person services.SidecarPerson, now time.Time) (*models.Review, []string, error) {
 	sessionID := uuid.NewString()
 
 	mirror, err := models.GetSidecarMirror(models.DB, sidecar.OrgID, sidecar.ID, listenerName)
@@ -821,9 +834,9 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 	// A review is one per session (private.reviews is UNIQUE on org and
 	// session), and UpdateReview syncs the session's status when the review
 	// settles, so the session is not optional bookkeeping.
-	sess := newSidecarSession(sidecar, sessionID, display, now)
+	sess := newSidecarSession(sidecar, sessionID, display, person, now)
 
-	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
+	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, person, now)
 	if mirror != nil {
 		sess.Connection = mirror.Name
 		rev.ConnectionName = mirror.Name
@@ -836,8 +849,40 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 	return rev, expiredIDs, nil
 }
 
-// newSidecarSession is the session a sidecar review waits in. Its user is the sidecar.
-func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, now time.Time) models.Session {
+// reviewPerson is who a review is filed under: the principal when it is an
+// email, else the sidecar's owner; nobody while the flag is off. A failed
+// user lookup keeps the email and files under no user.
+func reviewPerson(sidecar *models.Sidecar, principal string) services.SidecarPerson {
+	if !services.SidecarReviewOwnerEnabled(sidecar.OrgID) {
+		return services.SidecarPerson{}
+	}
+	person, err := services.ResolveSidecarPerson(models.DB, sidecar.OrgID, principal, sidecar.OwnerEmail)
+	if err != nil {
+		log.With("sidecar", sidecar.Name).Warnf("failed resolving the user of %s, filing under the email alone, reason=%v", person.Email, err)
+	}
+	return person
+}
+
+// reviewRequester is the user fields of the session and the review: the
+// person when one is named, else the sidecar with the placeholder email.
+func reviewRequester(sidecar *models.Sidecar, person services.SidecarPerson) (id, name, email string) {
+	id, name, email = sidecar.ID, sidecar.Name, reviewOwnerEmail
+	if person.Email == "" {
+		return id, name, email
+	}
+	email = person.Email
+	if person.UserID != "" {
+		id = person.UserID
+	}
+	if person.Name != "" {
+		name = person.Name
+	}
+	return id, name, email
+}
+
+// newSidecarSession is the session a sidecar review waits in.
+func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, person services.SidecarPerson, now time.Time) models.Session {
+	userID, userName, userEmail := reviewRequester(sidecar, person)
 	return models.Session{
 		ID:             sessionID,
 		OrgID:          sidecar.OrgID,
@@ -845,9 +890,9 @@ func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, now t
 		ConnectionType: reviewConnectionType,
 		Verb:           pb.ClientVerbExec,
 		Status:         string(openapi.SessionStatusOpen),
-		UserID:         sidecar.ID,
-		UserName:       sidecar.Name,
-		UserEmail:      reviewOwnerEmail,
+		UserID:         userID,
+		UserName:       userName,
+		UserEmail:      userEmail,
 		CreatedAt:      now,
 	}
 }
@@ -856,7 +901,8 @@ func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, now t
 // named rule describes. Nothing in the review path spells that out, so an
 // omission here is silent: without MinApprovals the review needs every group,
 // and without a group row a role cannot approve at all.
-func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) *models.Review {
+func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, person services.SidecarPerson, now time.Time) *models.Review {
+	ownerID, ownerName, ownerEmail := reviewRequester(sidecar, person)
 	return &models.Review{
 		ID:        uuid.NewString(),
 		OrgID:     sidecar.OrgID,
@@ -876,9 +922,9 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		// bytes are never reviewed twice while this review is live.
 		StatementHash: sql.NullString{String: statementHash, Valid: statementHash != ""},
 
-		OwnerID:    sidecar.ID,
-		OwnerEmail: reviewOwnerEmail,
-		OwnerName:  ptr.String(sidecar.Name),
+		OwnerID:    ownerID,
+		OwnerEmail: ownerEmail,
+		OwnerName:  ptr.String(ownerName),
 
 		MinApprovals:          &policy.MinApprovals,
 		ReviewGroups:          policy.Groups,

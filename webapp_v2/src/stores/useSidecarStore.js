@@ -189,6 +189,19 @@ export const useSidecarStore = create((set, get) => ({
     }
   },
 
+  // Set who approval requests and anonymous sessions are filed under; "" clears
+  // it. The stored document rides along unchanged. `{ ok, error }` like updateSidecar.
+  setOwner: async (nameOrId, configuration, ownerEmail) => {
+    try {
+      const session = get().session
+      const { data: updated } = await sidecarsService.setOwner(nameOrId, configuration, ownerEmail)
+      set((state) => (state.session === session ? written(state, updated) : {}))
+      return { ok: true, sidecar: updated }
+    } catch (error) {
+      return { ok: false, error }
+    }
+  },
+
   deleteSidecar: async (id) => {
     await sidecarsService.delete(id)
     set((state) => ({

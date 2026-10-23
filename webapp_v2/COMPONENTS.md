@@ -924,14 +924,16 @@ Non-obvious notes only:
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
-  `updateSidecar`, `patchSidecar`, `deleteSidecar`) and the one record `/sidecars/:id` reads
+  `updateSidecar`, `patchSidecar`, `setOwner`, `deleteSidecar`) and the one record `/sidecars/:id` reads
   (`selected`, `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
   `clearSelected`). `createSidecar` returns the response with the one-time token
   and keeps none of it. `updateSidecar(nameOrId, configuration)` replaces the
   whole configuration document and returns `{ ok, error }` instead of throwing,
   so a listener form can put the gateway's message next to the field.
   `patchSidecar(nameOrId, configuration)` is a shallow top-level merge: only the
-  keys sent change, so a nested block such as `audit` travels whole. Both commit
+  keys sent change, so a nested block such as `audit` travels whole.
+  `setOwner(nameOrId, configuration, ownerEmail)` writes `owner_email` beside the
+  stored document (PUT is the only write that takes it); "" clears it. All commit
   through `written()`, which writes the document into the list and moves the
   list and refresh counters; `selected` and `selectedRequestId` move only when
   the written sidecar is the one on screen. Three generation counters (list,

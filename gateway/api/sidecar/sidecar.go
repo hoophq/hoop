@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -221,7 +223,7 @@ const licenseManagedHeader = daemon.LicenseManagedHeader
 // Create Sidecar
 //
 //	@Summary		Create Sidecar
-//	@Description	Register a sidecar. The token is returned only once in this response and cannot be recovered.
+//	@Description	Register a sidecar. The token is returned only once in this response and cannot be recovered. owner_email names the person its approval requests and anonymous sessions are filed under.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -243,6 +245,11 @@ func Post(c *gin.Context) {
 	}
 	if services.IsReservedSidecarName(req.Name) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "name \"" + req.Name + "\" is reserved"})
+		return
+	}
+	ownerEmail, err := normalizeOwnerEmail(req.OwnerEmail)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -273,6 +280,7 @@ func Post(c *gin.Context) {
 		Name:          req.Name,
 		KeyHash:       models.HashAPIKey(rawKey),
 		Configuration: models.SidecarConfiguration(cfg),
+		OwnerEmail:    ownerEmail,
 		CreatedBy:     ctx.UserEmail,
 	}
 
@@ -446,7 +454,7 @@ func ClearIdentity(c *gin.Context) {
 // Update Sidecar
 //
 //	@Summary		Update Sidecar
-//	@Description	Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat. A change of load_from_disk is refused: use PATCH.
+//	@Description	Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat. A change of load_from_disk is refused: use PATCH. owner_email omitted keeps the stored owner; empty clears it.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -472,6 +480,16 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": licenseIsNotASidecarKey})
 		return
 	}
+	var ownerEmail *string
+	if req.OwnerEmail != nil {
+		owner, err := normalizeOwnerEmail(*req.OwnerEmail)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+		// Empty, not nil: the caller asked to clear it.
+		ownerEmail = ptrOrEmpty(owner)
+	}
 	licenseData, err := models.GetOrgLicenseData(models.DB, ctx.OrgID)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
@@ -490,7 +508,7 @@ func Put(c *gin.Context) {
 			return nil, errSwitchNeedsPatch
 		}
 		return models.UpdateSidecarConfiguration(tx, ctx.OrgID,
-			c.Param("nameOrID"), models.SidecarConfiguration(cfg))
+			c.Param("nameOrID"), models.SidecarConfiguration(cfg), ownerEmail)
 	})
 	if err != nil {
 		answerSidecarWrite(c, err)
@@ -615,6 +633,29 @@ func Patch(c *gin.Context) {
 }
 
 var errSwitchNeedsPatch = errors.New("load_from_disk cannot change here: use PATCH")
+
+// normalizeOwnerEmail trims the owner and refuses one that is not a bare
+// address. Nil for empty, so the column stays NULL.
+func normalizeOwnerEmail(raw string) (*string, error) {
+	email := strings.TrimSpace(raw)
+	if email == "" {
+		return nil, nil
+	}
+	addr, err := mail.ParseAddress(email)
+	if err != nil || addr.Address != email {
+		return nil, errors.New("owner_email is not an email address")
+	}
+	return &email, nil
+}
+
+// ptrOrEmpty turns an absent owner into the empty string a PUT clears with.
+func ptrOrEmpty(s *string) *string {
+	if s == nil {
+		empty := ""
+		return &empty
+	}
+	return s
+}
 
 const switchBackAlone = "send load_from_disk false alone: the switch back replaces the stored document"
 
@@ -1064,6 +1105,7 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 		Name:          s.Name,
 		CreatedBy:     s.CreatedBy,
 		CreatedAt:     s.CreatedAt,
+		OwnerEmail:    derefOrEmpty(s.OwnerEmail),
 		Configuration: daemon.Config(s.Configuration),
 	}
 	// A row written before this feature can carry one, and Put refuses it:

@@ -66,7 +66,7 @@ func TestReturnIsServedOnlyToASidecarThatReportsIt(t *testing.T) {
 	require.NoError(t, models.CreateSidecar(models.DB, sc))
 	cfg, err := services.ParseSidecarConfiguration(json.RawMessage(reviewModeConfig("return")))
 	require.NoError(t, err)
-	stored, err := models.UpdateSidecarConfiguration(models.DB, switchOrgID, sc.ID, models.SidecarConfiguration(cfg))
+	stored, err := models.UpdateSidecarConfiguration(models.DB, switchOrgID, sc.ID, models.SidecarConfiguration(cfg), nil)
 	require.NoError(t, err)
 
 	w := handshake(t, stored, "")

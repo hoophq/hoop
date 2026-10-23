@@ -938,6 +938,33 @@ func (s *SlackService) PostMessage(slackOrChannelID, message string) error {
 	return nil
 }
 
+// SidecarReviewFiledMessage is the direct message to the person a sidecar
+// approval request was filed under. webappURL opens the request.
+func SidecarReviewFiledMessage(connection, statement, webappURL string) string {
+	return fmt.Sprintf("Your statement on *%s* is waiting for approval.\n```%s```\nFollow this link to see the request: %s",
+		connection, statement, webappURL)
+}
+
+// SidecarReviewApprovedMessage tells the person the statement may run again.
+func SidecarReviewApprovedMessage(connection, webappURL string) string {
+	return fmt.Sprintf("Your statement on *%s* was *approved*. Run it again to release it.\nFollow this link to see the request: %s",
+		connection, webappURL)
+}
+
+// SidecarReviewDeniedMessage tells the person who denied the statement and
+// why, when a reason was given.
+func SidecarReviewDeniedMessage(connection, reviewer, reason, webappURL string) string {
+	text := fmt.Sprintf("Your statement on *%s* was *denied*", connection)
+	if reviewer != "" {
+		text += " by " + reviewer
+	}
+	text += "."
+	if reason != "" {
+		text += "\n>" + reason
+	}
+	return text + "\nFollow this link to see the request: " + webappURL
+}
+
 func (s *SlackService) PostEphemeralMessage(msg *MessageReviewResponse, message string, msgArgs ...any) error {
 	channelID := msg.item.Channel.ID
 	userID := msg.item.User.ID

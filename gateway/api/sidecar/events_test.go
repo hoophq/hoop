@@ -606,7 +606,7 @@ func TestHandshakeOffersSessionEventsOnlyWithTheFlag(t *testing.T) {
 	sc := seedEventsSidecar(t, eventsHandshakeOrgID, "edge-hs")
 	cfg, err := services.ParseSidecarConfiguration(json.RawMessage(listenerDoc(5432, "")))
 	require.NoError(t, err)
-	served, err := models.UpdateSidecarConfiguration(models.DB, eventsHandshakeOrgID, sc.ID, models.SidecarConfiguration(cfg))
+	served, err := models.UpdateSidecarConfiguration(models.DB, eventsHandshakeOrgID, sc.ID, models.SidecarConfiguration(cfg), nil)
 	require.NoError(t, err)
 	// The handshake reads the sidecar the token resolved, not the row.
 	on := true

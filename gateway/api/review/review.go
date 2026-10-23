@@ -363,6 +363,10 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	if err != nil {
 		log.Warnf("failed updating slack review, err=%v", err)
 	}
+	// Detached: a DM is a courtesy and the Slack client has no timeout.
+	if IsSidecarReview(rev) && (rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected) {
+		go notifySidecarDecision(rev, reviewerName(ctx))
+	}
 
 	if rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected {
 		trackClient := analytics.New()
