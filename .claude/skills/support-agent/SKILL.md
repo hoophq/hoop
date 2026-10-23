@@ -151,7 +151,15 @@ A PR description starts with `Opened by the support agent (AI) from <ID>.`
 
 ## 7. Digest
 
-With `digest`: post one Slack message for today. List each ticket with an
+With `digest`: post one Slack message for today. First what was delivered
+today, with its link:
+
+- a ticket labeled `agent:released` today: the version and its GitHub release;
+- a ticket whose agent PR merged today: the PR (its version comes later);
+- a `Support` ticket a person moved to Done today, with or without an
+  `agent:*` label.
+
+Then list each ticket with an
 `agent:*` label changed today: its ID, its label, one line on what happened,
 and the PR or thread link. Then the questions still open and on whom they
 wait, and every `agent:working` ticket (a person removes a stale one). Nothing
