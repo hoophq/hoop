@@ -31,6 +31,17 @@ With the argument `digest`, go to step 7.
 
 Read these in order and take the first ticket you find. One ticket per run.
 
+First, every run and outside that limit: **Released.** For each ticket labeled
+`agent:pr-open` whose PR is merged, find the version that ships it. List the
+`hoop-release` releases created after the merge (`list_releases`). The one
+whose issues hold the ticket (`list_issues` with `release` and label
+`agent:pr-open`) is that version. Linear creates it once the artifacts are
+out, about 80 minutes after the merge, and versions can land out of order.
+Comment the version, its GitHub release
+(`https://github.com/hoophq/hoop/releases/tag/<version>`) and the PR, and
+mention the ticket creator. Replace `agent:pr-open` with `agent:released`.
+None holds it yet: look again next run.
+
 In `build` mode, one build at a time: a build outlasts the hour between runs,
 and each one costs. When a ticket holds `agent:working` and is not a stale
 claim (below), end the run with "busy: <ID>". Post nothing.
@@ -49,12 +60,12 @@ claim (below), end the run with "busy: <ID>". Post nothing.
    Oldest first.
 
 Never take a ticket labeled `agent:working`, `agent:drafted`, `agent:pr-open`,
-`agent:stuck` or `agent:skip` unless steps 1.1 to 1.3 select it. One exception:
-`agent:working` with no ticket update for 6 hours is a stale claim, left by a
-run that stopped. With no other `agent:*` label, take it first, and say so in
-a comment. With another one, that run finished its work: remove
-`agent:working` only, and look again. Nothing to take: end
-the run with "nothing to do". Post nothing.
+`agent:released`, `agent:stuck` or `agent:skip` unless steps 1.1 to 1.3 select
+it. One exception: `agent:working` with no ticket update for 6 hours is a
+stale claim, left by a run that stopped. With no other `agent:*` label, take
+it first, and say so in a comment. With another one, that run finished its
+work: remove `agent:working` only, and look again. Nothing to take: end the
+run with "nothing to do". Post nothing.
 
 Claim it: add `agent:working`, remove `agent:go` and `agent:needs-*`, and
 move it to In Progress.
@@ -66,6 +77,7 @@ The board follows the labels. Each label change moves the status in the same
 |---|---|
 | `agent:working`, `agent:needs-info`, `agent:needs-customer`, `agent:stuck` | In Progress |
 | `agent:drafted`, `agent:pr-open` | In Review |
+| `agent:released` | unchanged: the release moves it to Done |
 | `agent:skip` | unchanged |
 
 Never move a ticket to Done or Canceled: a person closes it.
