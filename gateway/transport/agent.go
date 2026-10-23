@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -209,18 +210,22 @@ func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) b
 	return true
 }
 
-// hasPGErrorResponse reports whether any Postgres message in the packet
-// payload is an ErrorResponse.
+// hasPGErrorResponse reports whether any Postgres backend message in the
+// packet payload is an ErrorResponse. It walks the frames by hand: every
+// backend message has a type byte and a length, but pgtypes.Decode reads a
+// server-only type ('1', '2', 'T', 'Z', ...) as an untyped startup frame.
 func hasPGErrorResponse(pkt *pb.Packet) bool {
-	buf := bytes.NewBuffer(pkt.Payload)
-	for buf.Len() > 0 {
-		decoded, err := pgtypes.Decode(buf)
-		if err != nil || decoded == nil {
-			return false
-		}
-		if decoded.Type() == pgtypes.ServerErrorResponse {
+	payload := pkt.Payload
+	for len(payload) >= 5 {
+		if pgtypes.PacketType(payload[0]) == pgtypes.ServerErrorResponse {
 			return true
 		}
+		// the length includes itself, not the type byte
+		msgLen := int(binary.BigEndian.Uint32(payload[1:5]))
+		if msgLen < 4 || msgLen > len(payload)-1 {
+			return false
+		}
+		payload = payload[1+msgLen:]
 	}
 	return false
 }

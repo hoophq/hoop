@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"testing"
 
@@ -76,10 +77,9 @@ func TestListenAgentMessagesPersistsPGGuardRailsInfo(t *testing.T) {
 		return &pb.Packet{Type: pbclient.PGConnectionWrite, Spec: spec, Payload: payload}
 	}
 	errResp := pgtypes.NewError("%s", "blocked").Encode()
-	readyForQuery := []byte{'Z', 0, 0, 0, 5, 'I'}
-	// A pipelined batch: libhoop's redactor flushes DataRow,
-	// CommandComplete, ErrorResponse and ReadyForQuery in one packet.
-	combined := bytes.Join([][]byte{dataRow, commandComplete, errResp, readyForQuery}, nil)
+	// A pipelined batch: libhoop's redactor flushes the held-back messages,
+	// the guardrail ErrorResponse and the ReadyForQuery in one packet.
+	combined := bytes.Join([][]byte{dataRow, commandComplete, parseComplete, bindComplete, errResp, readyForQuery}, nil)
 
 	// Two blocks: each an ErrorResponse and a ReadyForQuery with the same
 	// info, then a ReadyForQuery without info. Then a third block in one
@@ -112,25 +112,36 @@ func TestListenAgentMessagesPersistsPGGuardRailsInfo(t *testing.T) {
 	require.Equal(t, "rule-3", got[2].RuleName)
 }
 
+// pgMsg encodes one Postgres backend message.
+func pgMsg(typ pgtypes.PacketType, body []byte) []byte {
+	msg := []byte{byte(typ), 0, 0, 0, 0}
+	binary.BigEndian.PutUint32(msg[1:], uint32(4+len(body)))
+	return append(msg, body...)
+}
+
 var (
-	dataRow         = []byte{'D', 0, 0, 0, 11, 0, 1, 0, 0, 0, 1, '1'}
-	commandComplete = append([]byte{'C', 0, 0, 0, 13}, "SELECT 1\x00"...)
+	dataRow         = pgMsg(pgtypes.ServerDataRow, []byte{0, 1, 0, 0, 0, 1, '1'})
+	commandComplete = pgMsg(pgtypes.ServerCommandComplete, []byte("SELECT 1\x00"))
+	parseComplete   = pgMsg(pgtypes.ServerParseComplete, nil)
+	bindComplete    = pgMsg(pgtypes.ServerBindComplete, nil)
+	readyForQuery   = pgMsg(pgtypes.ServerReadyForQuery, []byte{'I'})
 )
 
 func TestHasPGErrorResponse(t *testing.T) {
 	errResp := pgtypes.NewError("%s", "x").Encode()
-	readyForQuery := []byte{'Z', 0, 0, 0, 5, 'I'}
 	for name, tc := range map[string]struct {
 		payload []byte
 		first   bool
 		any     bool
 	}{
-		"error response":       {errResp, true, true},
-		"ready for query":      {readyForQuery, false, false},
-		"empty":                {nil, false, false},
-		"error after data row": {bytes.Join([][]byte{dataRow, commandComplete, errResp, readyForQuery}, nil), false, true},
-		"rows only":            {bytes.Join([][]byte{dataRow, commandComplete, readyForQuery}, nil), false, false},
-		"truncated":            {dataRow[:6], false, false},
+		"error response":                {errResp, true, true},
+		"ready for query":               {readyForQuery, false, false},
+		"empty":                         {nil, false, false},
+		"error after data row":          {bytes.Join([][]byte{dataRow, commandComplete, errResp, readyForQuery}, nil), false, true},
+		"error after row description":   {bytes.Join([][]byte{pgMsg(pgtypes.ServerRowDescription, []byte{0, 0}), errResp}, nil), false, true},
+		"error after server-only types": {bytes.Join([][]byte{parseComplete, bindComplete, readyForQuery, errResp}, nil), false, true},
+		"rows only":                     {bytes.Join([][]byte{dataRow, commandComplete, readyForQuery}, nil), false, false},
+		"truncated":                     {dataRow[:6], false, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := &pb.Packet{Payload: tc.payload}
