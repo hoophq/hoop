@@ -57,9 +57,9 @@ break.
   wait for it to exit before starting the next. A health check can answer
   from the previous process. If a run overlapped, discard it and redo it from
   an empty database.
-- No Docker (a cloud sandbox): `scripts/dev/run-sandbox.sh start --bin <hoop>`
-  for each side in turn, `stop` between them. Each start begins from an empty
-  database, so run the seed script on both.
+- No Docker: `scripts/dev/run-sandbox.sh start --bin <hoop>` for each side in
+  turn, `stop` between them. Each start begins from an empty database, so run
+  the seed script on both.
 - QA's stacks, still running with QA's seed, are the cheapest place to record.
   Ask QA to leave them up. After you swap the UI assets under a running stack,
   restart its container: the gateway reads `index.html` once at boot.
@@ -174,11 +174,11 @@ publish, and the PR stays a draft until a person reads it. Then:
 - A cloud sandbox has `ffmpeg` and Chromium, not `freeze`:
   `GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2`.
   `freeze` draws no emoji; render such output with Chromium instead.
-- A UI flow in a cloud sandbox: `scripts/dev/run-sandbox.sh start --ui`, then
-  `rec.mjs` as usual (it finds Chromium). Maven Central and Docker Hub limit
-  the sandbox's shared IP: a Maven "Checksum validation failed, expected Your"
-  is that limit. The agent's environment points shadow-cljs at a mirror in
-  `~/.shadow-cljs/config.edn` (see `.claude/README.md`).
+- A UI flow in a cloud sandbox: `make build-dev-webapp` and `make run-dev`
+  (or `scripts/dev/run-sandbox.sh start --ui`), then `rec.mjs` as usual: it
+  finds Chromium. Maven Central and Docker Hub limit the sandbox's shared IP:
+  a Maven "Checksum validation failed, expected Your" or a Docker 429 is that
+  limit. The agent's environment sets mirrors for both (`.claude/README.md`).
 - `publish.sh` links the GIF for the PR. GitHub does not play an MP4 link:
   attach the MP4 to the Linear ticket.
 - In zsh, `$VAR[...]` is an array subscript: write `${VAR}[...]` inside

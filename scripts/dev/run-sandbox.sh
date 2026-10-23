@@ -66,21 +66,12 @@ cmd_status() {
 }
 
 build_ui() {
-  local meta=webapp/resources/public/data/connections-metadata.json docs="$DIR/documentation"
-  if [[ ! -s $meta ]]; then
-    # The webapp build reads this file through the GitHub API, which a cloud
-    # session cannot call. The repository is public: read it with git.
-    [[ -d $docs/.git ]] || git clone -q --depth 1 --filter=blob:none --sparse \
-      https://github.com/hoophq/documentation "$docs"
-    git -C "$docs" sparse-checkout set store
-    mkdir -p "$(dirname "$meta")" && cp "$docs/store/connections.json" "$meta"
-  fi
   echo "run-sandbox: building the web UI (log: $DIR/ui.log)"
   # npm install rewrites the lockfiles when its version differs. Undo only
   # that, so a commit after this never carries it.
   local locks=(webapp/package-lock.json webapp_v2/package-lock.json) clean=0
   git diff --quiet -- "${locks[@]}" && clean=1
-  SKIP_CONNECTION_METADATA_DOWNLOAD=1 ./scripts/dev/build-webapp.sh >"$DIR/ui.log" 2>&1 &&
+  ./scripts/dev/build-webapp.sh >"$DIR/ui.log" 2>&1 &&
     [[ -f dist/dev/resources/public/index.html ]] || {
     tail -20 "$DIR/ui.log" >&2
     die "web UI build failed; a Maven checksum error is a rate limit: see the evidence skill pitfalls"

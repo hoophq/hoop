@@ -157,7 +157,7 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 |------|---------|-------|
 | Start Postgres | `make run-dev-postgres` | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG |
 | Start Presidio (DLP) | `make run-dev-presidio` | Optional, for data masking dev |
-| Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
+| Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first). In a cloud session: start `dockerd`, set `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT` |
 | Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/bin/hoop` |
 | Run gateway + agent without Docker | `scripts/dev/run-sandbox.sh start` | PGlite, one stack at a time; for cloud sandboxes |
 | Build webapp into gateway | `make build-dev-webapp` | Then rerun `make run-dev` |

@@ -87,15 +87,24 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
 
 - Its cloud environment, used by nothing else, sets `HOOP_AGENT=support`,
   `HOOP_AGENT_OWNER`, `HOOP_AGENT_SLACK_CHANNEL` (channel ID),
-  `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: draft PRs) and
-  `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`.
-  Its setup script installs `freeze` for evidence, and a Maven Central mirror
-  for the UI build (Maven Central rate-limits the sandbox's shared IP):
+  `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: draft PRs),
+  `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`,
+  `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT=/root/.ccr/ca-bundle.crt` (the
+  sandbox re-signs TLS; the dev image must trust it).
+  Its setup script installs `freeze` for evidence, sets mirrors (Docker Hub
+  and Maven Central rate-limit the sandbox's shared IP), and pulls the dev
+  images into the environment cache:
 
   ```bash
   GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2 || true
-  mkdir -p ~/.shadow-cljs
+  mkdir -p ~/.shadow-cljs /etc/docker
   echo '{:maven {:repositories {"central" {:url "https://maven-central.storage-download.googleapis.com/maven2/"} "clojars" {:url "https://repo.clojars.org/"}}}}' > ~/.shadow-cljs/config.edn
+  echo '{"registry-mirrors": ["https://mirror.gcr.io"]}' > /etc/docker/daemon.json
+  (dockerd >/tmp/dockerd.log 2>&1 &)
+  for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+  docker pull postgres:16 || true
+  docker pull hoophq/agent-tools:noble-20260709-6890906 || true
+  pkill dockerd || true
   ```
 - The task selects the repos `hoop`, `libhoop` and `libhoop-ica`, and only the
   Linear and Slack connectors. Hourly is the shortest schedule.
