@@ -779,6 +779,8 @@ type AgentRequest struct {
 	// * standard - Is the default mode, which is suitable to run the agent as a standalone process
 	// * embedded - This mode is suitable when the agent needs to be run close to another process or application
 	Mode string `json:"mode" default:"standard" enums:"standard,embedded"`
+	// Tags are key/value pairs to select agents (optional, max 10)
+	Tags map[string]string `json:"tags,omitempty" example:"environment:prod"`
 }
 
 type AgentCreateResponse struct {
@@ -809,6 +811,8 @@ type AgentResponse struct {
 	// * machine-id - The machine id of server
 	// * kernel-version - The kernel version of the server
 	Metadata map[string]string `json:"metadata" example:"hostname:johnwick.local,version:1.23.14,compiler:gcc,kernel-version:Linux 9acfe93d8195 5.15.49-linuxkit,platform:amd64,machine-id:id"`
+	// Tags are the key/value pairs of the agent. It is an empty object when the agent has no tags
+	Tags map[string]string `json:"tags" example:"environment:prod"`
 	// DEPRECATE top level metadata keys
 	Hostname      string `json:"hostname" example:"john.wick.local"`
 	MachineID     string `json:"machine_id" example:""`
@@ -817,6 +821,17 @@ type AgentResponse struct {
 	GoVersion     string `json:"goversion" example:"1.22.4"`
 	Compiler      string `json:"compiler" example:"gcc"`
 	Platform      string `json:"platform" example:"amd64"`
+}
+
+type AgentTagList struct {
+	Items []AgentTag `json:"items"`
+}
+
+type AgentTag struct {
+	// Key is the identifier for the tag category
+	Key string `json:"key" example:"environment"`
+	// Value is the tag value associated with the key
+	Value string `json:"value" example:"prod"`
 }
 
 type Connection struct {
@@ -3241,8 +3256,12 @@ type ServerAuthOidcConfig struct {
 	IssuerURL string `json:"issuer_url" example:"https://auth.domain.tld/oidc" binding:"required"`
 	// Oauth2 Client ID
 	ClientID string `json:"client_id" example:"hoop-client-id" binding:"required"`
-	// Oauth2 Client Secret
-	ClientSecret string `json:"client_secret" example:"hoop-client-secret" binding:"required"`
+	// Oauth2 Client Secret. Set it or client_assertion_file, not both.
+	ClientSecret string `json:"client_secret" example:"hoop-client-secret"`
+	// Path on the gateway to a JWT that authenticates the client in place of client_secret (RFC 7523),
+	// e.g. a Kubernetes service account token trusted by an Entra ID federated credential.
+	// It must be the path the gateway operator set in IDP_CLIENT_ASSERTION_FILE.
+	ClientAssertionFile string `json:"client_assertion_file,omitempty" example:"/var/run/secrets/hoop/idp/token"`
 	// Additional Oauth2 scopes to append in the request. Default values are openid, profile and email.
 	Scopes []string `json:"scopes" example:"openid,email,profile"`
 	// Identity Provider Audience (Oauth2)

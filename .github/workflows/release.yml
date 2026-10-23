@@ -24,10 +24,16 @@ env:
   DOCKER_BUILD_CHECKS_ANNOTATIONS: "false"
 
 jobs:
+  # make test, split like Unit Test in pullrequest.yml (ENG-760): the unit
+  # suite in shards, and the sidecar targets once, in shard 1. Every job that
+  # needs test waits for all of its legs.
   test:
-    name: Test
+    name: Test (${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
     environment: production
+    strategy:
+      matrix:
+        shard: [1, 2, 3, 4, 5]
 
     steps:
       - name: Checkout Hoop
@@ -48,10 +54,16 @@ jobs:
       - name: Download modules over HTTP/1.1
         run: go mod download
 
-      - name: Test
+      - name: Sidecar Test
+        if: matrix.shard == 1
         env:
           GODEBUG: http2client=1
-        run: make test
+        run: make test-sidecar test-sidecar-plugins
+
+      - name: Unit Test
+        env:
+          GODEBUG: http2client=1
+        run: make test-unit SHARD=${{ matrix.shard }} SHARDS=${{ strategy.job-total }}
 
   # Builds do not wait for test: they publish nothing. Every job that
   # pushes an image or a file needs test and every tarball, so a failed
@@ -134,8 +146,16 @@ jobs:
   # Linux and the other targets are separate jobs so the image jobs can
   # start after the Linux builds without waiting for darwin and windows.
   # Only Linux builds receive the telemetry keys, as before.
+  #
+  # The Linux hoop links the Citrix ICA engine, whose NER runs on ONNX
+  # Runtime through cgo (see build-go in the Makefile), so each architecture
+  # builds natively on its own runner, as build-rust-linux does, inside a
+  # debian:bullseye container: the binary links the container's glibc, and
+  # bullseye's 2.31 is the floor that keeps the CLI running on Ubuntu 20.04+
+  # and Debian 11+, and the distroless images on their debian12 base.
   build-go-linux:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    container: debian:bullseye
     name: Build Linux ${{ matrix.name }}
     environment: production
     needs: [build-webapp]
@@ -145,12 +165,32 @@ jobs:
           - goos: linux
             goarch: amd64
             name: Amd64
+            runner: ubuntu-latest
           - goos: linux
             goarch: arm64
             name: Arm64
+            runner: ubuntu-24.04-arm
     steps:
+      # What the cgo build and the actions below need from the container: a
+      # C and C++ toolchain (the tokenizer library links libstdc++), git for
+      # checkout and the private modules, curl for the tokenizer library and
+      # the Rust installer. bullseye is past its LTS, so its packages come
+      # from archive.debian.org; the release's Valid-Until has lapsed, which
+      # apt is told to accept. No gh: this job passes libhoop-pr "false".
+      - name: Install build tools
+        run: |
+          sed -i 's|deb.debian.org|archive.debian.org|g; /bullseye-updates/d' /etc/apt/sources.list
+          apt-get -o Acquire::Check-Valid-Until=false update -q
+          apt-get install -y -q --no-install-recommends ca-certificates curl git gcc g++ libc6-dev make
+
       - name: Checkout Hoop
         uses: actions/checkout@v7
+
+      # The checkout belongs to the runner uid and the container runs as
+      # root, so git rejects the repository: GITCOMMIT in the Makefile
+      # comes out empty and go build's VCS stamp fails.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Setup Go with private modules
         uses: ./.github/actions/setup-go-private
@@ -867,11 +907,13 @@ jobs:
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
-  # hoophq/hoopsidecar — the inspection sidecar image, both targets of
+  # hoophq/hoopsidecar: the inspection sidecar image, the three targets of
   # Dockerfile.sidecar (see that file for what each ships):
   #
   #   :<version>              Ubuntu 24.04 LTS + the binary only
   #   :<version>-distroless   distroless static + the binary only
+  #   :<version>-ica          Ubuntu 24.04 LTS + hoop-inspect with the Citrix
+  #                           ICA engine, tesseract and ONNX Runtime
   #   :latest                 an alias of the unsuffixed tag
   #
   # The Ubuntu flavour carries no suffix on purpose: it is the image, and it
@@ -887,17 +929,18 @@ jobs:
   #
   # hoophq/hoopsidecar is a clean-only repository: nothing published under it
   # may carry an AGPL/SSPL component, so that the repository has none in its
-  # history. Both flavours are a stock rootfs plus the `hoop` binary and nothing
-  # built FROM hoophq/agent-tools. Do not add a tag here without reading that
-  # note.
+  # history. The slim flavours are a stock rootfs plus the `hoop` binary; the
+  # ica flavour adds Ubuntu's tesseract packages, ONNX Runtime and the
+  # libhoop-ica worker, none built FROM hoophq/agent-tools. Do not add a tag
+  # here without reading that note.
   #
-  # Needs build-tar-files and no published base: both flavours extract the
-  # release tarball directly, so nothing waits on a registry. One job, one
-  # multiarch build per target, for the same reason as hoopagent above — each
-  # build is a tar extraction plus (for the Ubuntu flavour) a single apt
-  # package, so
-  # emulating the non-native arch is cheaper than a per-arch runner plus a
-  # manifest dance, and the release artifacts are pulled once.
+  # The slim flavours need build-tar-files and no published base: they
+  # extract the release tarball directly, so nothing waits on a registry. One
+  # job, one multiarch build per target, for the same reason as hoopagent
+  # above: each build is a tar extraction plus (for the Ubuntu flavour) a
+  # single apt package, so emulating the non-native arch is cheaper than a
+  # per-arch runner plus a manifest dance, and the release artifacts are
+  # pulled once. The ica flavour compiles from source; see its step.
   docker-publish-hoopsidecar:
     runs-on: ubuntu-latest
     name: Publish Sidecar Image (hoopsidecar)
@@ -950,6 +993,60 @@ jobs:
           push: true
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless
+      # The ica flavour builds hoop-inspect from source with the libhoop-ica
+      # engine linked in (cgo, -tags ORT). It needs no tarball, and it needs
+      # a token that reads both private modules and the libhoop-ica release
+      # assets. The step passes the token and the segment key as BuildKit
+      # secrets, which stay out of the layers and the image history. The
+      # arm64 cgo build runs emulated and is the slow half of this job.
+      - name: Build and push (ica)
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica
+      # The Docker-less bundle, from the same Dockerfile and the same
+      # ica-build stage the image above just built (same build-args, so
+      # BuildKit reuses it: this step is a tar and an export, not a second
+      # cgo build). --output lands one directory per platform; the move
+      # puts both tarballs under binaries/, where publish-release's merged
+      # download and `make release-s3` expect release tarballs.
+      - name: Export the ica assets bundle
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica-assets
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
+          outputs: type=local,dest=ica-assets
+      - name: Stage the ica assets bundle
+        run: |
+          set -euo pipefail
+          mkdir -p stage/binaries
+          mv ica-assets/linux_*/binaries/* stage/binaries/
+          ls -l stage/binaries
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-artifacts-ica-assets
+          path: stage/
 
   # hoophq/hoopcontrolplane — the control plane image, both targets of
   # Dockerfile.controlplane (see that file for what each ships):
@@ -1248,7 +1345,9 @@ jobs:
       # build-helm-chart packages hoopsidecar-chart, whose image default is
       # hoophq/hoopsidecar:latest. Publishing the chart before the image exists
       # ships a chart that pulls a stale tag, or none at all. The gateway and
-      # agent charts are gated the same way, by the two jobs above.
+      # agent charts are gated the same way, by the two jobs above. The same
+      # job also uploads dist-artifacts-ica-assets, the Docker-less ica
+      # bundle that release-s3 publishes beside the CLI tarballs.
       - docker-publish-hoopsidecar
       # Same for hoopcontrolplane-chart and hoophq/hoopcontrolplane:latest.
       - docker-publish-hoopcontrolplane

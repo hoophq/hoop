@@ -1,0 +1,9 @@
+# Added to compose.yml for a stack with the web UI: the gateway serves the
+# build of this branch from STATIC_UI_PATH. Keep it equal to upNative in
+# up_test.go.
+services:
+  gateway:
+    environment:
+      STATIC_UI_PATH: /hoop-ui
+    volumes:
+      - ${HOOP_UI_DIR:?set HOOP_UI_DIR to the directory of the web UI build}:/hoop-ui:ro

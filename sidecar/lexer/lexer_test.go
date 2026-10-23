@@ -226,6 +226,29 @@ func TestParameterPlaceholdersAreNotDollarQuotes(t *testing.T) {
 
 // Both engines nest block comments, unlike the standard. Stopping at the
 // first close reads the tail of an outer comment as live SQL.
+// PostgreSQL ends a -- comment at a lone CR as well as at LF; the DELETE
+// after `-- x<CR>` runs. A CR LF line end reads as before (ENG-855).
+func TestDashCommentEndsAtCarriageReturn(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		want lexer.Verb
+	}{
+		{"-- note\rDELETE FROM customers", lexer.Delete},
+		{"SELECT 1; -- note\rDELETE FROM customers", lexer.Delete},
+		{"SELECT 1 -- note\r\n; DELETE FROM customers", lexer.Delete},
+		{"SELECT 1 -- note\r\n", lexer.Select},
+		{"SELECT 1 -- note DELETE FROM customers", lexer.Select},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Postgres)
+		if a.Severity() != tc.want || !a.Complete {
+			t.Errorf("severity = %q, complete = %v, want %q: %q", a.Severity(), a.Complete, tc.want, tc.sql)
+		}
+	}
+	if got := lexer.Split("SELECT 1; -- note\rDELETE FROM customers", lexer.Postgres); len(got) != 2 {
+		t.Errorf("Split = %q, want the DELETE as its own statement", got)
+	}
+}
+
 func TestNestedBlockComments(t *testing.T) {
 	a := lexer.Analyze(`/* outer /* inner */ DELETE FROM customers */ SELECT 1`, lexer.Postgres)
 	if a.Writes() {

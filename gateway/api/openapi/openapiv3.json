@@ -1252,6 +1252,16 @@
             "description": "Unique name of the resource",
             "example": "default",
             "type": "string"
+          },
+          "tags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Tags are key/value pairs to select agents (optional, max 10)",
+            "example": {
+              "environment": "prod"
+            },
+            "type": "object"
           }
         },
         "required": [
@@ -1330,6 +1340,16 @@
             "example": "DISCONNECTED",
             "type": "string"
           },
+          "tags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Tags are the key/value pairs of the agent. It is an empty object when the agent has no tags",
+            "example": {
+              "environment": "prod"
+            },
+            "type": "object"
+          },
           "token": {
             "description": "The token/key of the resource, this value is always empty for now",
             "type": "string"
@@ -1403,6 +1423,32 @@
         "required": [
           "trust_domain"
         ],
+        "type": "object"
+      },
+      "openapi.AgentTag": {
+        "properties": {
+          "key": {
+            "description": "Key is the identifier for the tag category",
+            "example": "environment",
+            "type": "string"
+          },
+          "value": {
+            "description": "Value is the tag value associated with the key",
+            "example": "prod",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.AgentTagList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/openapi.AgentTag"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "openapi.AnalyticsModeType": {
@@ -7380,13 +7426,18 @@
             "example": "hoop-audience",
             "type": "string"
           },
+          "client_assertion_file": {
+            "description": "Path on the gateway to a JWT that authenticates the client in place of client_secret (RFC 7523),\ne.g. a Kubernetes service account token trusted by an Entra ID federated credential.\nIt must be the path the gateway operator set in IDP_CLIENT_ASSERTION_FILE.",
+            "example": "/var/run/secrets/hoop/idp/token",
+            "type": "string"
+          },
           "client_id": {
             "description": "Oauth2 Client ID",
             "example": "hoop-client-id",
             "type": "string"
           },
           "client_secret": {
-            "description": "Oauth2 Client Secret",
+            "description": "Oauth2 Client Secret. Set it or client_assertion_file, not both.",
             "example": "hoop-client-secret",
             "type": "string"
           },
@@ -7415,7 +7466,6 @@
         },
         "required": [
           "client_id",
-          "client_secret",
           "issuer_url"
         ],
         "type": "object"
@@ -10385,6 +10435,37 @@
         ]
       }
     },
+    "/agent-tags": {
+      "get": {
+        "description": "List the agent tag suggestions: the predefined tags and every key/value in use on the agents of the organization.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AgentTagList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List Agent Tags",
+        "tags": [
+          "Agents"
+        ]
+      }
+    },
     "/agents": {
       "get": {
         "description": "List all agent keys",
@@ -10394,6 +10475,15 @@
             "in": "query",
             "name": "status",
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Selector tags to filter on, supports '=' and '!=' (e.g. key1=value1,key2!=value2)",
+            "in": "query",
+            "name": "tag_selector",
+            "schema": {
+              "format": "string",
               "type": "string"
             }
           }
@@ -10411,6 +10501,16 @@
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "500": {
             "content": {
@@ -10590,6 +10690,83 @@
           }
         },
         "summary": "Get Agent Key",
+        "tags": [
+          "Agents"
+        ]
+      }
+    },
+    "/agents/{nameOrID}/tags": {
+      "put": {
+        "description": "Replace the tags of an agent. Send `{}` to remove all tags. No other attribute changes.",
+        "parameters": [
+          {
+            "description": "The name or ID of the resource",
+            "in": "path",
+            "name": "nameOrID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            }
+          },
+          "description": "The tags of the agent",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AgentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Update Agent Tags",
         "tags": [
           "Agents"
         ]
@@ -21710,6 +21887,82 @@
           }
         },
         "summary": "Exec",
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
+    "/sessions/analyze": {
+      "post": {
+        "description": "Run the AI Session Analyzer on the script of a `POST /sessions` body, before the client asks for the run forms (Jira template, required metadata). A block is final: the gateway records the blocked session as `POST /sessions` does. Any other verdict records nothing, and the next `POST /sessions` of the same user, connection and script reuses it for 15 minutes on the same gateway. Answers 412 while `experimental.analyze_before_run_forms` is off.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.ExecRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.ExecResponse"
+                }
+              }
+            },
+            "description": "The analyzer blocked the script"
+          },
+          "204": {
+            "description": "The analyzer lets the script run, or the connection has no analyzer rule"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Analyze an exec before the run forms",
         "tags": [
           "Sessions"
         ]

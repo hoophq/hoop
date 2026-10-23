@@ -21,6 +21,10 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/policy"
+	// Aliased: this package's own `telemetry` type is the usage analytics
+	// holder (analytics.go), and a file-scope import may not repeat a
+	// package-scope name.
+	telem "github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // Config is the on-disk configuration.
@@ -82,6 +86,13 @@ type Config struct {
 	// refuses the block in a build that did not link it.
 	MCP *MCPConfig `json:"mcp,omitempty" cap:"mcp" since:"1.199.0"`
 
+	// ICA configures the OCR/NER runtime that every ica lane in the process
+	// shares: asset paths, bounds, and overrides of the engine's production
+	// profile. With no block, the engine runs that profile. The engine lives
+	// in the nested sidecar/ica module; checkICA refuses an ica lane in a
+	// build that did not link it. See ICARuntimeConfig.
+	ICA *ICARuntimeConfig `json:"ica,omitempty" cap:"ica"`
+
 	// PII configures the optional detector plugin. This package decodes it
 	// without interpreting it: knowing what an alcatraz Options looks like
 	// would drag back the dependency the split exists to keep out.
@@ -118,6 +129,13 @@ type Config struct {
 	// plug-in's protocol the way it names postgres. The list is baseline:
 	// a module is loaded once at startup, and a change to it restarts.
 	Plugins []CodecPluginConfig `json:"plugins,omitempty" cap:"plugins"`
+
+	// Telemetry pushes metrics, traces and audit events over OTLP to a
+	// collector. Absent means off: no SDK is built and every data-path
+	// hook stays nil. The exporter lives in the nested
+	// sidecar/telemetry/otlp module; checkTelemetry refuses the block in a
+	// build that did not link it. See telemetry.Config.
+	Telemetry *telem.Config `json:"telemetry,omitempty" cap:"telemetry"`
 
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level,omitempty"`
@@ -252,21 +270,23 @@ type ListenerConfig struct {
 	Protocol string `json:"protocol,omitempty" label:"Protocol" help:"Picks the codec that reads this listener's traffic." ui:"required,basic"`
 
 	// Listen is the bind address, or a filesystem path when Network is
-	// "unix".
-	Listen string `json:"listen,omitempty" label:"Listen on" placeholder:"0.0.0.0:15432" help:"Where clients reach the sidecar: host:port, or a socket path on a unix transport." ui:"required,basic"`
+	// "unix". An http listener also takes a URL; see address.go.
+	Listen string `json:"listen,omitempty" label:"Listen on" placeholder:"0.0.0.0:15432" help:"Where clients reach the sidecar: host:port, or a socket path on a unix transport. An http listener also takes a URL, such as http://0.0.0.0:8080." ui:"required,basic"`
 
 	// Network is "tcp" (default) or "unix". Pick a unix socket for a sandbox
 	// with no network egress: filesystem permissions decide who can reach the
 	// proxy.
 	Network string `json:"network,omitempty" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic"`
 
-	// Upstream is the real backend.
-	Upstream string `json:"upstream,omitempty" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource." protocols:"!ssh" ui:"required,basic"`
+	// Upstream is the real backend. An http listener also takes a URL,
+	// which makes it a reverse proxy in front of that origin; see
+	// address.go.
+	Upstream string `json:"upstream,omitempty" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode." protocols:"!ssh" ui:"required,basic"`
 
 	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
 	// its plaintext server greeting; other supported protocols negotiate
 	// before their ordinary message flow.
-	UpstreamTLS *TLSConfig `json:"upstream_tls,omitempty" label:"Upstream TLS" help:"Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic." protocols:"!ssh" ui:"presence"`
+	UpstreamTLS *TLSConfig `json:"upstream_tls,omitempty" label:"Upstream TLS" help:"Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic." protocols:"!ssh,ica" ui:"presence"`
 	// MySQLAuthKeyFile is an RSA private key whose public half MySQL clients
 	// can pin. It lets the relay decrypt direct RSA password responses before
 	// forwarding the NUL-terminated password inside UpstreamTLS.
@@ -323,6 +343,15 @@ type ListenerConfig struct {
 	// already holds. The upstream still authorizes the request; this names
 	// who sent it.
 	GoogleIdentity *GoogleIdentityConfig `json:"google_identity,omitempty" cap:"google_identity" since:"1.198.0" ui:"-"`
+
+	// CallerToken refuses every request whose header does not hold a token
+	// listed in a file on the sidecar host, and names the caller with a
+	// configured name. http lanes only, and exclusive with identity_header
+	// and google_identity: one lane, one authority for who the caller is.
+	//
+	// It is for a lane reachable from anywhere, where identity_header would
+	// let any caller claim any name. See CallerTokenConfig.
+	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http" ui:"presence"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
@@ -405,6 +434,17 @@ type ListenerConfig struct {
 	// admits, the account it runs as. Required on an ssh lane and a config
 	// error anywhere else. See SSHConfig.
 	SSH *SSHConfig `json:"ssh,omitempty" label:"SSH" help:"The keys this listener trusts and what a session may do." protocols:"ssh" ui:"required"`
+
+	// ICA configures this lane's Citrix ICA engine: the tenant label, the
+	// mode (single VDA via upstream, or CIDR via transparent), and the
+	// display geometry. An ica lane requires it, and validateLane refuses
+	// it on any other protocol. See ICAConfig.
+	//
+	// Both ica blocks carry cap:"ica", one capability: a build that decodes
+	// the key decodes both, and the plane refuses either block to a build
+	// that predates it (EVL-338). The protocol entry alone cannot gate this
+	// key, because an older build refuses the whole document on it.
+	ICA *ICAConfig `json:"ica,omitempty" label:"Citrix ICA" help:"The tenant this listener serves, how it finds the VDA, and the session geometry." protocols:"ica" cap:"ica" ui:"required"`
 
 	// Plugin carries a plug-in lane's options, the `options` its module's
 	// manifest declares, to every codec the lane builds. Only valid on a
@@ -1236,6 +1276,8 @@ func (c *Config) validate(onHost bool) error {
 	// limit its license lifts. buildLanes is the single site instead.
 
 	problems = append(problems, c.MCP.validate()...)
+	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
+	problems = append(problems, c.Telemetry.Validate()...)
 
 	problems = append(problems, c.validatePlugins()...)
 
@@ -1256,6 +1298,11 @@ func (c *Config) validate(onHost bool) error {
 			// the connection is encrypted end to end, so there are no relay
 			// bytes for a registry decoder to be handed. The lane terminates
 			// the handshake and enters at statements the endpoint reports.
+		} else if isICA(l) {
+			// ica has no codec for a fourth reason: the lane embeds an
+			// engine that terminates the session and masks pixels on the
+			// video channel, so the registry has no statement to decode or
+			// evaluate; see ica.go.
 		} else if isPluginLane(l) {
 			// The config declares a plug-in protocol: the module loads on
 			// the sidecar host, after this runs, and the control plane
@@ -1284,17 +1331,22 @@ func (c *Config) validate(onHost bool) error {
 		// client chooses one at a time. Neither has a fixed backend, so the
 		// key is not merely optional here — it is refused below, and its
 		// absence must not read as a missing one.
-		if l.Upstream == "" && !isSSH(l) {
+		// An ica lane in CIDR mode has none either: each connection's
+		// original destination is its VDA. ICAConfig.validate decides
+		// whether the lane needs upstream or ica.transparent.
+		if l.Upstream == "" && !isSSH(l) && !isICA(l) {
 			problems = append(problems, name+": no upstream")
 		}
 		if l.Network != "" && l.Network != "tcp" && l.Network != "unix" {
 			problems = append(problems, fmt.Sprintf("%s: network must be tcp or unix, got %q", name, l.Network))
 		}
-		key := l.Network + "|" + l.Listen
+		// Keyed by the bound address, so http://h:1 and h:1 collide.
+		key := l.Network + "|" + l.listenAddress()
 		if seen[key] {
 			problems = append(problems, fmt.Sprintf("%s: duplicate listen address %q", name, l.Listen))
 		}
 		seen[key] = true
+		problems = append(problems, l.addressProblems(name)...)
 
 		// Three listener keys do not apply to an ssh lane and are refused
 		// rather than ignored. There is no fixed upstream to dial, and SSH
@@ -1325,6 +1377,15 @@ func (c *Config) validate(onHost bool) error {
 						"comes from the certificate this listener verified itself, mapped "+
 						"by ssh.identity", name))
 			}
+		}
+		// ICA/CGP is its own transport: the engine terminates CGP on both
+		// legs and speaks plaintext CGP to the VDA, so the daemon would
+		// have no use for a TLS client configured here. validate refuses
+		// the block, as it does for ssh.
+		if isICA(l) && l.UpstreamTLS != nil {
+			problems = append(problems, fmt.Sprintf(
+				"%s: upstream_tls is not valid on an ica listener; the VDA leg is CGP, "+
+					"which the engine speaks itself", name))
 		}
 
 		// downstream_tls is refused at startup rather than accepted and
@@ -1373,6 +1434,21 @@ func (c *Config) validate(onHost bool) error {
 			if err := l.GoogleIdentity.validate(); err != nil {
 				problems = append(problems, fmt.Sprintf("%s: google_identity: %v", name, err))
 			}
+		}
+		if l.CallerToken != nil {
+			if inspect.Protocol(l.Protocol) != inspect.HTTP || isGRPCTransport(l) || isSSH(l) {
+				problems = append(problems, fmt.Sprintf(
+					"%s: caller_token is only supported on http, not %q", name, l.Protocol))
+			}
+			if l.IdentityHeader != "" {
+				problems = append(problems, fmt.Sprintf(
+					"%s: caller_token and identity_header both name the caller; keep one", name))
+			}
+			if l.GoogleIdentity != nil {
+				problems = append(problems, fmt.Sprintf(
+					"%s: caller_token and google_identity both name the caller; keep one", name))
+			}
+			problems = append(problems, l.CallerToken.validate(name, l.HTTP)...)
 		}
 		if l.MySQLAuthKeyFile != "" {
 			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {
@@ -1491,6 +1567,39 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 			name, lc.Protocol))
 	}
 
+	// An ica block follows the same rule and the same requirement: the
+	// block carries the tenant and the mode, and an ica lane without one
+	// has no tenant to serve and no VDA to reach. An ica lane also carries
+	// no rules: the engine's pipeline masks pixels, so there is no
+	// statement for a guardrail to match, a masker to rewrite or an
+	// analyzer to classify, and the lane would never query an OPA endpoint.
+	// Each would load and do nothing, which this package refuses on other
+	// lanes too.
+	//
+	// validateLane checks the RESOLVED stack, so it refuses a top-level
+	// block meant for other lanes only when that block reaches this one;
+	// the listener opts out the usual way, with an empty rules list or
+	// opa: {}.
+	if isICA(lc) {
+		problems = append(problems, lc.ICA.validate(lc, name)...)
+		if len(gc.Rules) > 0 {
+			problems = append(problems, name+": guardrail rules do not apply to an ica listener; the engine's own fail-closed pipeline is the enforcement and there is no statement for a rule to match. Write guardrails: {rules: []} on this listener to opt out of inherited rules")
+		}
+		if mc.hasRules() {
+			problems = append(problems, name+": mask rules do not apply to an ica listener; the engine masks pixels on the video channel itself. Write mask: {rules: []} on this listener to opt out of inherited rules")
+		}
+		if lc.Analyzer != nil {
+			problems = append(problems, name+": analyzer does not apply to an ica listener; there is no statement to classify")
+		}
+		if opa != nil && !opa.off() {
+			problems = append(problems, name+": opa does not apply to an ica listener; write an empty opa: {} to switch an inherited endpoint off for this lane")
+		}
+	} else if lc.ICA != nil {
+		problems = append(problems, fmt.Sprintf(
+			"%s: an \"ica\" block is only valid on an ica listener, not %s",
+			name, lc.Protocol))
+	}
+
 	// A pii guardrail on a grpc lane scans Statement.Text, and Text holds
 	// only the method path unless the lane captures payloads. The rule
 	// would load, evaluate and never fire: refuse it, the same bargain the
@@ -1510,6 +1619,14 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	// operation or table rule written against the SQL would load, evaluate
 	// and never match a DELETE — the silent failure this package refuses
 	// everywhere else, on the lane whose whole point is reading the SQL.
+	// A spanner lane reads the SQL out of named request fields; a raw
+	// rendering has no names, so every SQL-bearing message would fall to
+	// the unreadable verdict.
+	if isSpanner(lc) && lc.GRPC != nil && lc.GRPC.Raw != nil {
+		problems = append(problems, fmt.Sprintf(
+			"%s: grpc.raw is not supported on a spanner listener: SQL extraction reads "+
+				"named fields, and a raw lane has no names; use grpc.descriptors", name))
+	}
 	if isSpanner(lc) && anySQLDerived(localRules) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
 		problems = append(problems, fmt.Sprintf(
@@ -1610,12 +1727,27 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 			// A grpc-transport lane masks by decoding fields through the
 			// descriptor set and re-encoding, so the set is the capability.
 			// Without it the rules would load and never fire (ADR-0013).
-			if !lc.GRPC.hasDescriptors() {
+			if !lc.GRPC.hasSchema() {
 				problems = append(problems, fmt.Sprintf(
-					"%s: masking on a %s lane needs grpc.descriptors; without a "+
+					"%s: masking on a %s lane needs grpc.descriptors, grpc.discover or grpc.raw; without a "+
 						"descriptor set the lane cannot decode a message to rewrite it. "+
 						"Add the descriptor set, or set mask: {rules: []} on this lane.",
 					name, lc.Protocol))
+			}
+			// A discovering lane that fails open forwards what it cannot
+			// decode, and a redactor must not.
+			if lc.GRPC != nil && lc.GRPC.Discover != nil && lc.GRPC.Discover.FailOpen {
+				problems = append(problems, fmt.Sprintf(
+					"%s: grpc.discover.fail_open cannot be true on a lane with mask rules; "+
+						"a lane that cannot decode a message cannot mask it", name))
+			}
+			// A raw lane rewrites only the paths declared strings; with
+			// none declared the rules would load and never fire.
+			if lc.GRPC != nil && lc.GRPC.Raw != nil && len(lc.GRPC.Raw.StringFields) == 0 {
+				problems = append(problems, fmt.Sprintf(
+					"%s: masking on a grpc.raw lane rewrites only the response paths "+
+						"grpc.raw.string_fields declares, and it declares none. Declare them, "+
+						"or set mask: {rules: []} on this lane.", name))
 			}
 		} else if p := inspect.Protocol(lc.Protocol); p != "" && !isPluginLane(lc) && !gate.MaskSupported(p) {
 			// The loaded module answers for a plug-in lane (the rewrite
@@ -1905,6 +2037,10 @@ type analyzerDeps struct {
 	// generation of every evaluator, so a reload does not reset a counter.
 	// Nil in tests that build deps by hand, which then count nothing.
 	metrics *analyzerMetrics
+
+	// otel mirrors the analyzer's observers onto the telemetry exporter,
+	// beside metrics. Nil without a telemetry block.
+	otel *otelExporter
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.

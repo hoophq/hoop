@@ -57,6 +57,9 @@ break.
   wait for it to exit before starting the next. A health check can answer
   from the previous process. If a run overlapped, discard it and redo it from
   an empty database.
+- No Docker: `scripts/dev/run-sandbox.sh start --bin <hoop>` for each side in
+  turn, `stop` between them. Each start begins from an empty database, so run
+  the seed script on both.
 - QA's stacks, still running with QA's seed, are the cheapest place to record.
   Ask QA to leave them up. After you swap the UI assets under a running stack,
   restart its container: the gateway reads `index.html` once at boot.
@@ -78,6 +81,11 @@ break.
   - Show what the page hides. `counters` in the flow adds a fixed "test
     overlay" with request counts; `ui.click` draws a ring where each click
     lands.
+  - The two sides must differ on screen. When the UI action lands outside
+    the browser (a CLI, a database client, an agent), run that client for
+    real and mirror its output live in a "test overlay" panel (model:
+    `examples/reject-live/`). Same clicks with one changed sentence is not
+    a video worth recording.
   - Undo what the flow opened before its last step, so the last frame shows
     the answer.
   - Record on the final commit, then pull 3 or 4 frames
@@ -148,11 +156,15 @@ group, the filter) and what differs there.
 ## 6. Show, then publish
 
 Show the EVIDENCE.md and the images to the user, in their language, before
-publishing. Then:
+publishing. In autonomous mode (`HOOP_AGENT` set) nobody is there to show:
+publish, and the PR stays a draft until a person reads it. Then:
 - Linear: attach `EVIDENCE.md` and the images to the ticket (the MP4 for a
   video).
 - PR: the result line, the images (the GIF for a video) and "What it solves" under "Testing".
-  Host the images in a secret gist and link the raw URLs.
+  Host the images in a secret gist and link the raw URLs. A cloud session
+  cannot create gists (the GitHub API answers 403): there,
+  `.claude/skills/evidence/publish.sh <TICKET-ID> <files>` pushes them to the
+  `claude/evidence` branch and prints the links.
   The repo is public: no customer data, tokens, internal hosts or real emails
   in any image.
 
@@ -160,11 +172,22 @@ publishing. Then:
 
 - Homebrew `ffmpeg` has no `drawtext`; `compare.sh` renders labels with
   `freeze` instead.
+- A cloud sandbox has `ffmpeg` and Chromium, not `freeze`:
+  `GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2`.
+  `freeze` draws no emoji; render such output with Chromium instead.
+- A UI flow in a cloud sandbox: `make build-dev-webapp` and `make run-dev`
+  (or `scripts/dev/run-sandbox.sh start --ui`), then `rec.mjs` as usual: it
+  finds Chromium. In our cloud runs Docker Hub answered 429, and Maven Central
+  sent error pages that fail as "Checksum validation failed, expected Your".
+  The agent's environment sets mirrors for both (`.claude/README.md`).
+- `publish.sh` links the GIF for the PR. GitHub does not play an MP4 link:
+  attach the MP4 to the Linear ticket.
 - In zsh, `$VAR[...]` is an array subscript: write `${VAR}[...]` inside
   ffmpeg filters.
 - Routes behind `EnterpriseLicenseOnly` (sidecar config) need the dev
-  license from `.env`; tests that call handlers directly skip it, a real stack
-  does not.
+  license: from `.env` locally, from `HOOPDEV_LICENSE` in a cloud session
+  (`run-sandbox.sh` uploads it). Tests that call handlers directly skip it, a
+  real stack does not.
 - In control-plane mode the rule screen opens the sidecar form, which does not
   show connections; use gateway mode for that screen.
 - `Page.captureScreenshot` of `about:blank` never answers. `rec.mjs` starts the

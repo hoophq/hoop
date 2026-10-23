@@ -21,7 +21,9 @@ decoders, the gRPC HTTP/2 endpoint, and the wire types this module aliases.
 The root module declares only libhoop. Sidecar-specific gRPC identity,
 statement, policy, audit, and masking behavior is injected from `daemon/`
 into `libhoop/v2/codec/grpc`. libhoop is private, so builds need
-`GOPRIVATE=github.com/hoophq/libhoop` and credentials.
+`GOPRIVATE=github.com/hoophq/libhoop` and credentials. Building `cmd/` or the
+nested `ica/` module also needs the private ICA engine:
+`GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`.
 
 The root shipped zero dependencies until the decoders moved to libhoop. They
 produce the `Statement` a policy evaluates, so this module cannot describe its
@@ -193,7 +195,7 @@ docker build -f deploy/docker-compose/envoy-stack/sidecar/Dockerfile \
 
 There are no build tags. The config file decides every capability, so an
 operator turning on PII detection does not also have to swap the binary. Omit
-the `pii` section and the detector still runs, holding all 54 entity types:
+the `pii` section and the detector still runs, holding all 55 entity types:
 the section narrows that set rather than switching it on. A binary built
 without the alcatraz plugin is the case that refuses a `mask` block at
 startup.
@@ -566,7 +568,8 @@ prompt, no token, no listener or upstream address — the same line
 
 Every event also carries the version, the entry point (`hoop`,
 `hoop-inspect` or `embedded`), OS and architecture, the `runtime`
-(`linux`, `docker`, `kubernetes`, `macos`, `windows`), and two identities.
+(`linux`, `docker`, `kubernetes`, `macos`, `windows`),
+`control-plane-connected`, and two identities.
 `sidecar-id` says which install: `HOOP_SIDECAR_ID` if you set one, else the
 control plane token (or, for a service account identity, the plane URL plus
 the identity's issuer and subject, never the rotating token), else the
@@ -585,6 +588,12 @@ variable the table names and nothing else:
 | Kubernetes | hostname is the pod name: set `HOOP_SIDECAR_ID`, or connect a control plane | set `HOOP_HOST_ID` from `spec.nodeName` via the downward API |
 
 A control plane credential makes `HOOP_SIDECAR_ID` unnecessary anywhere.
+
+`install-source` says which hoop template started the sidecar. The template
+sets `HOOP_SIDECAR_INSTALL_SOURCE`; unset, the property is omitted. Values
+are a fixed list, `managed-agents-http`, `managed-agents-kubernetes`,
+`openai-agents-http` and `openai-agents-kubernetes` today, and any other
+value is sent as `other`, so it can never carry a name.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends
@@ -799,7 +808,7 @@ example below. Every config written against the old reference needs a pass.
 | `mask.enabled: false` with rules | drop the rules from that scope | stays authoritative, masking stays off, warns |
 | `listeners[].connection` | `listeners[].name` | maps onto `name` when `name` is empty, warns |
 | `audit.fail_closed: <x>` | `audit.fail_open: <the opposite of x>` | works, warns |
-| `pii` omitted | still omitted | the detector gains all 54 entity types |
+| `pii` omitted | still omitted | the detector gains all 55 entity types |
 | `guardrails.rules[].type: ai_analysis` | the listener's own `analyzer` block | works, warns; see [Migrating from `type: ai_analysis` rules](#migrating-from-type-ai_analysis-rules) |
 
 Three of those move traffic on the upgrade, and each one deserves a read
@@ -881,6 +890,10 @@ license: /etc/hoop-inspect/license.json
 admin:
   listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*
 
+# Metrics, traces and audit events over OTLP. See "OpenTelemetry".
+# telemetry:
+#   otlp: {endpoint: otel-collector:4317, insecure: true}
+
 # Approval status for agents; needs a control plane. See "Agents over MCP".
 # mcp:
 #   listen: 127.0.0.1:8765
@@ -892,7 +905,7 @@ audit:
   query_sessions: 500       # backs GET /api/sessions
   fail_open: false          # the default: a statement whose audit write failed is refused
 
-pii:                        # omit the section and all 54 entity types are active
+pii:                        # omit the section and all 55 entity types are active
   entities: [EMAIL_ADDRESS, US_SSN, CREDIT_CARD, BR_CPF, IBAN_CODE]
 
 guardrails:                 # Hoop's own rules, inherited by every listener
@@ -1000,6 +1013,15 @@ prompt. `http` lanes only, and exclusive with `identity_header`.
 the token, not what it may do: Connect Gateway still checks the same token
 against IAM and RBAC. The example is in [kubectl through GKE Connect
 Gateway](#kubectl-through-gke-connect-gateway).
+
+**`caller_token` admits a caller by a shared token**, for an http lane on a
+public URL with nothing in front to authenticate the caller. A request whose
+header (`x-hoop-token` unless `header` names another) holds no token listed
+in `file` gets a 403 and reaches no upstream; an admitted one is recorded
+under `name`. The sidecar removes the header before the upstream, and the
+token reaches no audit row, no policy input and no analyzer prompt. `http`
+lanes only, and exclusive with `identity_header` and `google_identity`. See
+[A public URL: caller tokens](#a-public-url-caller-tokens).
 
 ### 2. Know how a listener inherits
 
@@ -1184,7 +1206,7 @@ protocol would otherwise get: no statements to render means no verdict,
 silently.
 
 ```yaml
-pii:                           # optional; omitting it activates all 54 types
+pii:                           # optional; omitting it activates all 55 types
   entities: [EMAIL_ADDRESS, US_SSN, BR_CPF]
 
 analyzer:                      # one provider serves every lane; the rest are
@@ -1468,6 +1490,14 @@ denial:
 ERROR:  statement held for human approval: still waiting for approval after 30m0s; run the statement again once it is approved (approval 9f97…)
 ```
 
+A rejection carries the approver's reason when they gave one, quoted, at most
+200 bytes, and only in the room the operator's message leaves, so the id
+still fits in the 512 bytes of a mysql error:
+
+```
+ERROR:  statement held for human approval: the approval request was rejected: "use the replica" (approval 9f97…)
+```
+
 The wait ends early when the connection does. A client that hangs up, or an
 upstream that closes, stops the polling before anything is claimed, so the
 approval stays for the retry. The audit record carries the cause. Ctrl-C in
@@ -1663,8 +1693,9 @@ on a connection: behind another one, the lane closes the connection
 unanswered, because HTTP/1.1 pairs responses by order. curl and Go clients
 resend on a fresh connection. A sidecar with no control plane answers
 503. Like the MCP endpoint, it needs no credential: it answers by approval id
-only, and never with the statement. Other protocols read the status over
-MCP.
+only, and never with the statement. A `caller_token` lane is the exception:
+there it answers only a caller the token admits. Other protocols read the
+status over MCP.
 
 **The retry contract.** An agent in return mode follows four rules:
 
@@ -1714,10 +1745,9 @@ stays on the raw bytes. Five consequences:
   unless `match_ignore` names that value (below).
 - A client that retries on its own timeout leaves two attempts in flight, and
   the approval releases whichever claims it first.
-- A request that arrives in more than one read reaches the upstream in part
-  before the gate decides: the request line, the headers and the start of the
-  body. A denial does not recall them, so a route that acts on headers alone
-  runs whatever the approver decides (EVL-309).
+- A request that arrives in more than one read is held whole until the
+  approver decides; nothing of it reaches the upstream before (see
+  [Limits](#limits)).
 
 **`match_ignore` unbinds a volatile body value.** `kubectl rollout restart`
 writes the current second into the patch, so its resend never matches the
@@ -1926,6 +1956,27 @@ to the audit trail.
 | `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global); `thinking_level`, `thinking_budget` |
 | `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi`; with `publisher: google`, also `thinking_level`, `thinking_budget`, `labels` |
 
+**The model Hoop hosts.** Analysis works without an LLM of your own: Hoop
+hosts a small model. Statement text, which can contain PII, is then sent to
+Hoop. The sidecar logs that warning at startup and in `-validate`, and the
+control plane shows it on the sidecar's page. No key is needed: each request
+is signed and expires after 30 seconds.
+
+When a listener analyses and no `provider` is set, the license decides:
+
+| License | `use_hoop_llm_provider` unset | `true` | `false` |
+|---|---|---|---|
+| none | hosted model, with a warning | hosted model | refused: set a provider |
+| Enterprise (valid or expired) | refused: set a provider or `true` | hosted model | refused: set a provider |
+
+```yaml
+analyzer:
+  use_hoop_llm_provider: true
+```
+
+`provider`, `credentials_file` and `use_hoop_llm_provider: true` are
+exclusive. A config with no analyzer block on any listener sends nothing.
+
 **Gemini** with an API key goes through `provider: gemini`. `api: developer`
 is the Gemini Developer API on `generativelanguage.googleapis.com`, billed to
 a Google account. `api: vertex` is Vertex AI in express mode on
@@ -2018,7 +2069,7 @@ rather than send a setting that does nothing:
 | | `temperature` | `top_p` | `top_k` | `seed` |
 |---|---|---|---|---|
 | `anthropic`, `vertex` + `anthropic` | sent | sent | sent | refused |
-| `openai`, `vertex` + `openapi` | sent | sent | refused | sent |
+| `openai`, `use_hoop_llm_provider`, `vertex` + `openapi` | sent | sent | refused | sent |
 | `gemini`, `vertex` + `google` | sent | sent | sent | sent |
 
 Gemini 3 and later models accept `temperature`, `top_p` and `top_k` and
@@ -2279,6 +2330,161 @@ Every pod in the cluster can reach a ClusterIP Service; a NetworkPolicy
 narrows that to the agent. See the chart's
 [README](../deploy/helm-chart/chart/sidecar/README.md#ports).
 
+## OpenTelemetry
+
+A `telemetry` block pushes metrics, traces and audit events to an OTLP
+collector, so one Grafana, Honeycomb or Datadog shows every sidecar: how much
+each lane judged, what it denied, and where a statement's time went, split
+into the sidecar's own policy cost, the AI analyzer, a human review and the
+upstream itself. Absent, nothing is built and the data path has no telemetry
+code in it. The exporter lives in the nested `sidecar/telemetry/otlp`
+module; a build without it refuses the block, and the control plane serves
+it only to a sidecar whose capabilities header carries `telemetry`.
+
+```yaml
+telemetry:
+  otlp:
+    endpoint: otel-collector:4317   # host:port for grpc, a URL for http
+    protocol: grpc                  # grpc (default) | http
+    insecure: true                  # a collector in the same pod
+    # headers: {authorization: "Bearer ..."}   # a vendor endpoint
+    # ca_file: /etc/ssl/collector-ca.pem
+  resource:                         # extra resource attributes
+    deployment.environment: prod
+  metrics:
+    interval_sec: 60                # on with the block; enabled: false turns it off
+  traces:
+    sample_ratio: 0.1               # 0 (default) is off; decided once per connection or RPC
+  events:
+    enabled: true                   # audit events as log records; default off
+    statement_text: false           # default: a sha256 fingerprint, as redact_statements writes
+```
+
+`grpc` is protobuf over HTTP/2 on one long-lived connection, the OTel
+default; `http` is protobuf over HTTP/1.1 POSTs to `/v1/metrics`,
+`/v1/traces` and `/v1/logs`, for a path that blocks HTTP/2. Same data either
+way. The SDK's `OTEL_EXPORTER_OTLP_*` environment variables are not read:
+the block is the configuration, so `-validate` and the plane can check it.
+
+Every signal carries the resource `service.name=hoop-sidecar` (override it
+under `resource`), `service.version`, `service.instance.id` (the same
+install id usage analytics derives), `host.name`, `hoop.sidecar.runtime`
+and `hoop.schema.version=1.0`, with the schema URL
+`https://hoop.dev/schemas/sidecar-telemetry/1.0`. An attribute or series
+added bumps the minor; one renamed or removed bumps the major, because a
+dashboard written against the old name goes dark.
+
+### Metrics
+
+| Series | Instrument | Attributes |
+|---|---|---|
+| `hoop.sidecar.connections` | counter | `hoop.lane`, `hoop.protocol` |
+| `hoop.sidecar.connections.active` | gauge | `hoop.lane`, `hoop.protocol` |
+| `hoop.sidecar.statements` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.operation`, `hoop.verdict` (`allow`/`deny`), `hoop.deny.source` (denials: the rule type, `opa`, `analyzer`, `review`, `audit`, `stream`, `identity`) |
+| `hoop.sidecar.statement.duration` | histogram, seconds | `hoop.lane`, `hoop.protocol`, `hoop.stage`, `hoop.engine`, `hoop.pairing`, `hoop.outcome` |
+| `hoop.sidecar.masked_values` | counter | `hoop.lane`, `hoop.protocol` |
+| `hoop.sidecar.audit.errors` | counter | `hoop.lane` |
+| `hoop.sidecar.analyzer.request.duration` | histogram, seconds | `hoop.analyzer`, `hoop.provider`, `hoop.model`, `hoop.outcome` |
+| `hoop.sidecar.analyzer.retries` | counter | `hoop.analyzer`, `hoop.provider`, `hoop.model` |
+| `hoop.sidecar.analyzer.statements` | counter | `hoop.analyzer`, `hoop.status`, `hoop.risk_level`, `hoop.action` |
+| `hoop.sidecar.session_events.sent`, `.dropped` | counter | the control plane copy's counters |
+| `hoop.sidecar.config.generation` | gauge | reloads applied since start |
+
+No metric carries a principal, a session id, a table or statement text:
+those are unbounded, and they belong on the span and the log record below.
+The analyzer families are the ones `GET /metrics` serves in Prometheus text,
+which stays as it is. Counters survive a hot reload.
+
+**Latency.** `hoop.sidecar.statement.duration` has one series per stage of a
+statement's life:
+
+- `stage=policy`, `engine=rules` or `engine=opa`: a local rule set or one
+  OPA round trip. The cost the sidecar adds to decide. Exact on every
+  protocol.
+- `stage=analyzer`: the model-backed evaluator, cache hits included. The
+  provider call alone is `hoop.sidecar.analyzer.request.duration`.
+- `stage=review`: the hold while a human decides, with `hoop.outcome` set to
+  `approved`, `rejected`, `expired`, `revoked`, `disconnected` (the client
+  left mid-hold) or `denied` (any other refusal: the plane unreachable, a
+  status this build does not know). Its own stage, so a ten-minute approval does not read as
+  a slow policy. A lane in return mode (`review_mode: return`) shows no
+  wait here: the client is denied at once and resends after approval, and
+  only the control plane knows the time between filing and approval.
+- `stage=upstream`: from the request leaving the sidecar to its answer
+  arriving. `hoop.pairing` says how exact that is. `exact` is a protocol
+  that pairs them itself: one gRPC call, or HTTP/1, where responses answer
+  requests in order. `unpipelined` is pgwire, MySQL, MSSQL, MongoDB,
+  Oracle and ClickHouse, whose codecs do not expose the pairing: the
+  sample is taken only when one request is outstanding and dropped when
+  the client pipelines, so the series describes unpipelined exchanges and
+  never guesses which answer belongs to which request. An extended-protocol
+  client that sends two statements per query is therefore not sampled.
+
+Other stages carry `hoop.outcome` as `allow` or `deny`. Two queries worth
+having, in PromQL after the collector's Prometheus exporter:
+
+```
+histogram_quantile(0.99, sum by (le, hoop_lane, hoop_stage) (rate(hoop_sidecar_statement_duration_seconds_bucket[5m])))
+sum by (hoop_lane) (rate(hoop_sidecar_statement_duration_seconds_sum{hoop_stage="policy"}[5m]))
+  / sum by (hoop_lane) (rate(hoop_sidecar_statement_duration_seconds_sum[5m]))
+```
+
+The first is p99 per lane and stage; the second is the share of a lane's
+time the sidecar itself costs.
+
+### Traces
+
+`traces.sample_ratio` above zero opens one span per exchange — `hoop.session`
+for a byte-path connection, `hoop.rpc` for a gRPC call — with a child
+`hoop.statement` per judged statement and, under it, one span per stage
+(`policy`, `analyzer`, `review`). The upstream measurement is an event on
+the enclosing span. The sampling decision is taken once, at the exchange, so
+every statement of a sampled connection is in and a 1% ratio costs 1%. A
+denied statement's span carries `hoop.verdict=deny`, `hoop.deny.source`,
+`hoop.rule` and an error status naming the rule. The OPA decision and the
+analyzer's provider call carry the span as a W3C `traceparent`, so a Rego
+service or a model gateway that is itself traced joins the same trace.
+
+### Events and alerts
+
+`events.enabled` adds a sink to the audit chain that sends every event as a
+log record: body is the kind (`session_start`, `statement`, `violation`,
+`masked`, `error`, `session_end`), severity `WARN` for `violation` and
+`masked`, `ERROR` for `error`, and attributes `hoop.lane`, `hoop.protocol`,
+`hoop.session_id`, `hoop.principal`, `hoop.operation`, `hoop.direction`,
+`hoop.verdict`, `hoop.rule`, `hoop.message`, `hoop.statement`,
+`hoop.tables`, the HTTP detail as `hoop.http.*` (`query`, `target` and `body`
+under the same redaction as the statement), each metadata key as
+`hoop.meta.<key>`, and `hoop.review.id` when a review was filed. A record
+written under a sampled span carries its trace and span id.
+
+The record goes through the same redaction as the audit file and the plane
+copy. `hoop.statement` is a `sha256:` fingerprint unless `statement_text:
+true`, because the collector is a new place audit data leaves the process;
+the file keeps the text under the audit block's own setting. The sink never
+fails a write and never blocks a statement: a bounded queue
+(`events.queue_size`, default 4096) drops the oldest record when the
+collector falls behind, and `GET /stats` reports `telemetry.events_sent`
+and `telemetry.events_dropped`. The audit file stays the record of truth.
+
+Alerts live in the backend. Three worth having:
+
+```
+# denials on a lane, per minute
+sum by (hoop_lane) (rate(hoop_sidecar_statements_total{hoop_verdict="deny"}[5m])) * 60 > 10
+# analyzer failing: statements left unscored
+sum by (hoop_analyzer) (rate(hoop_sidecar_analyzer_request_duration_seconds_count{hoop_outcome!="ok"}[5m])) > 0
+# the audit trail is dropping records
+rate(hoop_sidecar_audit_errors_total[5m]) > 0
+```
+
+and, on the log records, a `violation` burst for one `hoop.principal`, which
+no metric can express because the principal is only on the record.
+
+A collector that is down costs nothing but the signals: exports fail, one
+warning per 30 seconds per message reaches the sidecar's log, and traffic
+is unaffected. Shutdown flushes once, bounded by three seconds.
+
 ## Overlap with Envoy
 
 Envoy already parses some of this.
@@ -2496,6 +2702,7 @@ ABI.md.
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
 | `spanner` | like `grpc`, plus one SQL statement per query or DDL string extracted from known Cloud Spanner methods | as `grpc` | yes, per HTTP/2 stream |
 | `ssh` | the command of an `exec`, the name of an `env`, the path of each file operation | none — the lane rewrites output in flight and records none of it | yes, per connection |
+| `ica` | none: a Citrix session carries pixels and no statements | ThinWire video frames, OCR'd and NER-scanned; the engine masks sensitive pixels before the frame reaches the client | yes, per session |
 
 An `oracle` lane applies Oracle SQL classification to each decoded statement for
 policy decisions. It masks supported character results (VARCHAR, CHAR and
@@ -2545,8 +2752,8 @@ reusable protocol mechanics live in `libhoop/v2/codec/grpc`, but it has no
 `inspect.Codec`. The sidecar daemon injects statement, Gate, policy, audit,
 and masking callbacks, so one denied RPC does not close sibling streams and
 masked protobuf messages are re-encoded with correct lengths. A
-descriptor set is mandatory for capture or masking; method-only policy works
-without one. See [ADR-0013](https://github.com/hoophq/adr/blob/main/0013-grpc-terminates-http2-in-process.md).
+schema — `grpc.descriptors` or `grpc.discover` — is mandatory for capture or
+masking; method-only policy works without one. See [ADR-0013](https://github.com/hoophq/adr/blob/main/0013-grpc-terminates-http2-in-process.md).
 
 ```yaml
 listeners:
@@ -2609,11 +2816,81 @@ naming what is linked; the fetcher lives in the nested module
 `-grpc-discover <listener>` bootstraps that set when the upstream exposes
 gRPC server reflection: it dials the named lane's upstream with the lane's
 own `upstream_tls` facts, prints every method with its maskable field
-paths, and with `-grpc-discover-out billing.pb` writes the descriptor set
-for the operator to review and pin as `grpc.descriptors`. Discovery is an
-offline tool, not a lane capability — ADR-0013 keeps runtime lanes on
-pinned files so the policed service cannot rename fields out from under
-the mask rules.
+paths and the set's sha256, and with `-grpc-discover-out billing.pb` writes
+the descriptor set for the operator to review and pin as `grpc.descriptors`.
+
+**Discovering the schema at startup.** `grpc.discover` replaces `grpc.descriptors`: the lane fetches the schema
+from its upstream over gRPC server reflection each time it starts, with the
+lane's `upstream_tls`. The two keys are exclusive.
+
+```yaml
+    grpc:
+      discover:
+        from: reflection          # the only source
+        sha256: e0bb9d1b…fc83     # optional pin, printed by -grpc-discover
+        fail_open: false          # the default
+      capture_payload: true
+```
+
+The schema then comes from the service being policed. A deploy can rename
+a field out from under a mask rule, or leave a field out of what reflection
+reports, and that field then decodes as unknown and is missing from the
+audit trail. `sha256` closes this: a schema with another digest is a
+discovery failure. Unpinned, the lane accepts whatever the upstream reports.
+
+Discovery fails when the upstream is unreachable, has reflection off, sends
+a set that does not load, or sends one that does not match the pin. The lane
+binds its address before the first attempt, and retries every 1 s, doubling
+to 30 s:
+
+| | `fail_open: false` (default) | `fail_open: true` |
+|---|---|---|
+| RPCs | refused with `UNAVAILABLE` and the failure | forwarded |
+| Audit | an `rpc_refused` activity per RPC | method, metadata and status, with `grpc.schema: unavailable` |
+| Payload rules, analyzer, masking | nothing reaches the upstream | do not run |
+
+`/readyz` waits for the first attempt to end, then counts the lane ready in
+both modes: one upstream's lasting failure must not take the sidecar's other
+listeners out of rotation. Watch the log and the `rpc_refused` records instead.
+
+When a schema loads, the lane rebinds the same address with it; RPCs in
+flight on the old server end, and clients retry. `fail_open: true` is refused
+with `strict` or with mask rules: a lane that cannot decode a message cannot
+mask it. `-validate` reports the settings and dials nothing. A changed
+`discover` block, like a changed `descriptors` list, applies on restart.
+
+**Decoding without a schema.** `grpc.raw` is for a service with no
+descriptor set, no reflection and no `.proto` at hand. It excludes
+`descriptors`, `discover` and `strict`, and is refused on `spanner`.
+
+```yaml
+    grpc:
+      raw:
+        string_fields:                       # optional: only for masking
+          - method: /demo.v1.Ledger/GetInvoice
+            response: ["2", "4.1"]           # field 2; field 1 inside field 4
+          - method: /demo.v1.Ledger/ExportAll  # declared, nothing to mask
+      capture_payload: true
+```
+
+Messages render as JSON keyed by field number,
+`{"1":"INV-1001","2":"ada@example.com"}`, and every statement carries
+`grpc.schema: raw`. Audit, `pii` and `pattern_match` rules and the analyzer
+read that rendering. It is best effort: the wire does not say whether a
+length-delimited value is a string, bytes or a nested message, so the lane
+guesses (text that starts with a visible character is a string, a value
+that parses whole is a message, the rest is `base64:`), and a wrong guess
+can hide a value from a detector.
+
+Masking rewrites only the response paths `string_fields` declares, the type
+the wire lacks. Mask rules match a path by field number (`columns: ["2"]`)
+or by detector, and nothing undeclared is ever rewritten. On a lane with
+mask rules, a method with no `string_fields` entry is refused
+(`FAILED_PRECONDITION`) before the upstream is dialed; list it with no
+`response` when it has nothing to mask. Bytes that contradict a declaration,
+such as a number at a path declared a string, refuse the response
+(`INTERNAL`). The listener form turns `raw` on; `string_fields` is set in the
+config file.
 
 The Postgres codec is stateful because one `RowDescription` describes every
 `DataRow` after it, and those land in different TCP reads. That is why the
@@ -2779,10 +3056,10 @@ by the same rule set; client input is never rewritten, because changing what a
 user typed is a denial wearing a redaction's clothes, and the guardrails
 already refuse.
 
-**`upstream`, `upstream_tls`, `downstream_tls` and `identity_header` are
-refused** on an ssh lane. There is no fixed backend, SSH negotiates its own
-transport, and the identity comes from the certificate this listener verified
-itself.
+**`upstream`, `upstream_tls`, `downstream_tls`, `identity_header` and
+`caller_token` are refused** on an ssh lane. There is no fixed backend, SSH
+negotiates its own transport, and the identity comes from the certificate this
+listener verified itself.
 
 #### What the trail holds, and what it does not
 
@@ -2803,6 +3080,169 @@ what ADR-0015 refuses.
 
 Everything that is not a statement is written as `kind: activity`, with what
 happened in `metadata.activity`.
+
+### ica: the lane that embeds an engine
+
+A `protocol: ica` lane uses no relay and no codec. A Citrix ICA session
+carries a screen and no statements, so a guardrail has nothing to match and
+a masker has nothing to rewrite. The lane embeds the
+[libhoop-ica](https://github.com/hoophq/libhoop-ica) engine, which
+terminates CGP on both legs, decodes the ThinWire video channel, OCRs each
+frame, runs the structured and NER detectors over the text, and masks the
+sensitive pixels before re-encoding the frame toward the client. The engine
+fails closed: it does not release a frame it cannot inspect. The engine is a
+nested module, `sidecar/ica`, linked by `hoop-inspect` and by the Linux
+`hoop` (`client/cmd/startsidecar_ica_linux.go`); both are cgo `-tags ORT`
+builds, so the engine's NER runs on ONNX Runtime. The darwin and windows
+CLIs stay static and refuse an ica lane at startup. A process advertises
+`protocol:ica` to a control plane only when it links the engine *and* the
+host holds the engine's assets at their default paths (the worker, the
+tessdata, the model, the ONNX Runtime library): a Linux `hoop` on a
+database host is never handed an ica lane, and `--validate` on a host
+without them says what is missing.
+
+`upstream:` selects single mode and names the VDA. Single mode is the
+standard setup: register the VDA with Citrix using the sidecar host as its
+address, so the Gateway's connection for that VDA lands on the sidecar, and
+the lane forwards it to the VDA in `upstream`. It needs no routing changes
+and no privileges, and each lane serves one VDA:
+
+```yaml
+ica:                                   # one OCR/NER runtime for every ica lane in the process
+  options: {ocr_workers: 4}            # overrides of the engine's production profile
+
+listeners:
+  - name: vdi-finance
+    protocol: ica
+    listen: 0.0.0.0:2598
+    upstream: 10.77.0.30:2598
+    ica:
+      tenant_id: finance
+      edt: true                        # optional: EDT over UDP on the same port
+```
+
+The `hoophq/hoopsidecar:<version>-ica` image runs `hoop-inspect` with the
+engine, tesseract, ONNX Runtime and the NER model in place, so a config like
+the one above is all it needs:
+
+```sh
+docker run -d --name hoop-ica \
+  -p 2598:2598/tcp -p 2598:2598/udp -p 19000:19000 \
+  -v "$PWD/config.yaml:/etc/hoop-inspect/config.yaml:ro" \
+  hoophq/hoopsidecar:<version>-ica
+curl -s localhost:19000/readyz         # 503 while the model loads, then 200
+```
+
+Without Docker, the same runs on an Ubuntu 24.04 or Debian 12 host. Each
+release publishes an assets bundle beside the CLI tarballs with what the
+`-ica` image carries: `hoop-ica` (the engine build of the sidecar), the OCR
+worker matched to the engine it links, ONNX Runtime, two example configs,
+and an installer that puts them, the distro's tesseract packages and the
+NER model (fetched from `releases.hoop.dev/alcatraz/current`, or copied
+from `--model-dir` on an air-gapped host) at the paths the engine reads by
+default, then runs `hoop-ica` as a systemd service:
+
+```sh
+V=$(curl -s https://releases.hoop.dev/release/latest.txt)
+curl -fsSLO "https://releases.hoop.dev/release/$V/hoop-ica-assets_${V}_Linux_amd64.tar.gz"
+curl -fsSL "https://releases.hoop.dev/release/$V/checksums.txt" | grep "hoop-ica-assets_${V}_Linux_amd64" | sed 's# ./dist/binaries/# #' | sha256sum -c
+mkdir ica-assets && tar -xzf "hoop-ica-assets_${V}_Linux_amd64.tar.gz" -C ica-assets
+sudo ica-assets/install.sh --config config.yaml --start
+```
+
+`--cidr` grants the service `CAP_NET_ADMIN` for CIDR mode; the host's TPROXY
+rule and policy route stay yours. Rerunning the installer from a newer
+bundle upgrades the binary, the worker and ONNX Runtime, and keeps the
+config and the model. The source of the installer is
+`deploy/ica-sidecar/install.sh`; `deploy/ica-sidecar/examples/` holds a
+commented config for each mode (`config.single.yaml`, `config.cidr.yaml`),
+shipped in the bundle, and the single one is what a host without a config
+gets to edit.
+
+With the assets installed, the Linux `hoop` CLI serves the same file
+in-process: `hoop start sidecar --config /etc/hoop-inspect/config.yaml`.
+The installer's unit runs `hoop-ica` rather than the CLI so that an
+upgrade of the bundle and an upgrade of the CLI stay independent, and so
+that a CLI from before the engine still has a way to run the lane.
+
+`ica.edt: true` also accepts Citrix EDT (UDP) on the listener's address,
+beside TCP: same port, same tenant and VDA, and the same `max_sessions`. EDT
+is experimental in the engine. Publish the port for UDP as well; a client
+that cannot reach it falls back to TCP, which the lane inspects the same
+way. The top-level `ica.edt` block tunes it: `retention_sec` (1..600,
+default 120) is how long a suspended EDT session waits for its client to
+reconnect, and `replay_budget_bytes` (up to 8 GiB, default 512 MiB) bounds
+the bytes queued for replay. EDT needs an IPv4 listen address.
+
+`ica.transparent:` selects CIDR mode instead, for a network that routes
+Gateway-to-VDA traffic through the sidecar host and cannot register VDAs
+with the sidecar's address. Each connection's original destination is its
+VDA:
+
+```yaml
+  - name: vdi
+    protocol: ica
+    listen: 0.0.0.0:2598
+    ica:
+      tenant_id: citrix-production
+      transparent:
+        source_cidrs: [10.10.1.10/32]  # the Citrix Gateway SNIP, or the Workspace client networks
+        upstream_cidrs: [10.77.0.0/16] # the VDA network
+        upstream_ports: [2598]         # CGP
+      display: {width: 1264, height: 1040, thinwire_channel: 9}
+```
+
+CIDR mode intercepts traffic through an `IP_TRANSPARENT` listening socket,
+so an accepted connection's local address is the VDA the client dialed. The
+engine checks that address against `upstream_cidrs`/`upstream_ports` and
+the source against `source_cidrs`, then dials the VDA. CIDR mode is
+Linux-only: the process needs `CAP_NET_ADMIN` (`docker run --cap-add
+NET_ADMIN --network host`), and the host needs the nftables TPROXY rule and
+policy route that the engine's `docs/transparent-linux.md` lists, with a
+UDP rule as well when the lane sets `edt`. Both modes run the same engine
+after accept.
+
+The top-level `ica` block configures the runtime: asset paths,
+`max_sessions`, and `options`, which override individual settings of the
+engine's production profile (the profile the engine's own agent runs by
+default). The engine owns that profile and this page does not copy it, so
+`-validate` prints the resolved values in the lane's notes. `max_sessions`
+(default 32) bounds the sessions of every ica lane in the process together,
+since they share one OCR/NER runtime; a connection past it is refused with
+`session_admission` as the rule. Loading the NER model and spawning the OCR
+workers takes minutes; `GET /readyz` on the admin port returns 503 until
+every ica lane's engine has loaded, and 200 for a process with no ica lane.
+
+Validate refuses `upstream_tls`, `downstream_tls`, `identity_header`,
+`google_identity`, `caller_token`, and any guardrail, mask, analyzer or OPA
+that reaches an ica lane, because each would load and do nothing. To opt out
+of inherited ones, write `guardrails: {rules: []}`, `mask: {rules: []}` or
+`opa: {}` on the listener.
+
+#### The audit trail
+
+The bridge writes one row per lifecycle event and none per frame. The
+principal is `ica.tenant_id`, because a session authenticates to the VDA and
+the sidecar does not see a user name.
+
+| Event | Row |
+|---|---|
+| a refused connection | `kind: violation` with the engine's stage as the rule (`gateway_source_policy`, `original_destination`, `session_admission`) and the reason as the message. No session id, because the engine admitted no session. For EDT, one row per source and stage every 10 seconds; `metadata.suppressed` counts the datagrams folded into it, and `metadata.dropped` the refusal rows the engine could not queue |
+| a session | `session_start`; then `session_end` with the engine's decision as the rule (`release`, `release_uninspected`; for EDT also `expired`, when a suspended session outlived `retention_sec`), the duration, and the frame and OCR batch counts in `metadata` |
+| a blocked session | `kind: violation` in place of the end row, `rule: block`, `denied_count: 1` |
+| a failed session | `kind: error` with the engine's stage and reason |
+
+Session rows and EDT refusal rows carry `metadata.transport`, `tcp` or
+`edt-v4`; a refused TCP connection has none.
+
+The trail omits pixels, recognized text, detections, and ICA/CGP bytes. The
+engine's own JSON audit stream is off inside the sidecar, so the rows above
+are the whole trail.
+
+With audit fail-closed (the default; `audit.fail_open: true` turns it off),
+a session whose `session_start` row the sink refuses is stopped: the engine
+has admitted it by the time it reports, so the lane ends it, where the ssh
+and grpc lanes refuse the connection.
 
 ### Postgres: trace ids from the startup packet
 
@@ -3366,6 +3806,148 @@ A request that already carries this process's pseudonym is refused with a
 `CONNECT`, the rest of that connection is another protocol and is no longer
 marked.
 
+### A browser in front: upstream as a URL
+
+An http listener takes `listen` and `upstream` as URLs, and then behaves
+like Caddy's `reverse_proxy` or nginx's `proxy_pass`:
+
+```yaml
+listeners:
+  - name: web
+    protocol: http
+    listen: http://127.0.0.1:19999
+    upstream: https://grafana.internal   # port 443, TLS, SNI and verification against grafana.internal
+```
+
+- The scheme sets the default port, 80 or 443. `https://` turns on upstream
+  TLS with an empty `upstream_tls`; write the block to add a `ca_file` or a
+  client certificate. `http://` with `upstream_tls` is refused.
+- **Every request names the origin in `Host`.** The client's Host moves to
+  `X-Forwarded-Host`, and `X-Forwarded-Proto` says `http`, or `https` on a
+  lane with `downstream_tls`. A client's own copies of those two are dropped.
+  A browser cannot be told which Host to send, and an origin that serves
+  virtual hosts or sits behind a CDN refuses the sidecar's address.
+- WebSocket works: the handshake is rewritten like any request, and the
+  frames after the `101` pass byte-exact.
+- `listen: https://...` needs `downstream_tls`; `listen: http://...` with
+  it is refused. A unix listener binds a socket path, so its `listen` takes
+  no URL; its `upstream` may. Any protocol but http takes no URL at all.
+  Only the origin is accepted: a path, query or user is refused.
+- A request target in absolute form (`GET http://other/x`) goes out in
+  origin form (`GET /x`), so the client cannot pick another virtual host.
+- After an `Upgrade` or `CONNECT`, the connection passes through only once
+  the server grants the switch; a refused upgrade leaves the next request
+  rewritten. Bytes the client sends before that answer close the
+  connection. A request the sidecar cannot frame is refused, never forwarded
+  with the client's own Host.
+
+Nothing in a response is rewritten: no `Location`, cookie domain or body. An
+application that redirects to its own absolute URL, scopes a cookie to its
+own domain, or checks `Origin` on a WebSocket will not follow the browser
+through the sidecar, the same as behind Caddy or nginx. The sidecar does not
+add `X-Forwarded-For`.
+
+A `host:port` upstream keeps the old behaviour: Host passes through as the
+client wrote it. The control plane serves a URL to a sidecar that reports
+the `address_url` capability only.
+
+### A public URL: caller tokens
+
+`identity_header` trusts whoever reaches the listener, so it is safe only
+behind an authenticating proxy. A lane on a public URL, such as the one a
+Claude Managed Agents cloud sandbox calls, checks a shared token instead:
+
+```yaml
+listeners:
+  - name: payments-api
+    protocol: http
+    listen: 0.0.0.0:8443
+    upstream: https://payments.internal
+    downstream_tls: {cert_file: /etc/tls/tls.crt, key_file: /etc/tls/tls.key}
+    caller_token:
+      header: X-Hoop-Token                       # the default
+      file: /etc/hoop-inspect/caller-tokens      # one token per line
+      name: claude-agents                        # the caller in the trail
+```
+
+- **What is refused.** No header, an empty or whitespace-only value, a value
+  not in the file, or the header sent twice: each gets a 403 and reaches no
+  upstream. The refusal is audited under `anonymous`.
+- **Checked on the head.** Policy judges a request once its body has
+  arrived, and the sidecar holds the request until then. The token is
+  checked earlier, on the head, so a stranger costs no held body and a
+  request whose body never comes is refused too, over HTTP/1 and HTTP/2.
+- **What is admitted.** Every row of an admitted request names `name` as
+  the principal. A token names no person: per-user rows need a per-user
+  credential, which this is not.
+- **The token stays in the sidecar.** It is removed from the request before
+  the upstream, over HTTP/1 and HTTP/2. It never reaches an audit row, policy
+  input or an analyzer prompt. Validate refuses an `http.headers` entry that
+  names it, and a header that the upstream, HTTP framing or the sidecar
+  already uses (`authorization`, `cookie`, `host`, `content-length`, `via`,
+  and the like). The strip stops a leak by accident, not by intent: it covers
+  the header in each request head. An admitted caller that copies the token
+  into another header, a chunked trailer or the body sends it on, and a
+  vault fills the secret into any header it finds the placeholder in.
+- **The reserved route is guarded too.** `/.well-known/hoop/` answers only a
+  caller the token admits.
+- **Stricter framing.** As on a URL upstream, a request head the lane cannot
+  frame closes the connection instead of passing through. So do bytes sent
+  before the server answers an `Upgrade` or `CONNECT`, and client bytes the
+  codec cannot decode. Once the server grants the switch, the tunnel is not
+  checked again.
+- **Plaintext.** The token travels as written. Use `downstream_tls`, or TLS
+  in front of the listener.
+
+**The file.** It holds one token per line. Blank lines and surrounding
+whitespace are ignored. A token holds no whitespace, comma or control
+character, because a repeated header arrives joined as `a, b`. Only SHA-256
+digests are kept in memory, and every candidate is compared with every token
+in constant time.
+
+**Rotation.** The process stats the file every ten seconds, re-reads it when
+its size or mtime moves, and re-reads it at once on `SIGHUP`. This works under
+a control plane too, since the file lives on the sidecar host. A file that is
+missing, empty or malformed on a re-read keeps the tokens in force and warns
+once. To rotate without a refused request:
+
+1. Add the new token as a second line.
+2. Update every caller to the new token.
+3. Remove the old line.
+
+To revoke a token, write the file without it. An empty file keeps the tokens
+in force, so to revoke the only token, write a new one in its place, or stop
+the listener. A missing or unusable file at
+startup, or under `-validate`, stops the process with an error naming the
+file. The control plane never reads it. Changing the `caller_token` block
+itself needs a restart.
+
+#### Filling the token from a Managed Agents vault
+
+A vault `environment_variable` credential puts a placeholder in the sandbox
+and substitutes the real secret at egress, only toward the hosts it allows
+([vaults](https://platform.claude.com/docs/en/managed-agents/vaults)). Bind it
+to the sidecar's host and to headers only:
+
+```yaml
+# ant beta:vaults:credentials create --vault-id "$VAULT_ID"
+display_name: hoop sidecar caller token
+auth:
+  type: environment_variable
+  secret_name: HOOP_CALLER_TOKEN
+  secret_value: <a line of the token file>
+  injection_location: {header: true}
+  networking: {type: limited, allowed_hosts: [sidecar.example.com]}
+```
+
+The agent then sends `-H "X-Hoop-Token: $HOOP_CALLER_TOKEN"`. The sandbox
+holds the placeholder and the sidecar receives the token. The environment's
+own `allowed_hosts` must list the same host. A request that reaches the
+sidecar with the placeholder, for example from a host or header the
+credential does not cover, is refused like any other wrong token. A vault
+rotation reaches running sessions on its own schedule, so rotate with the
+two-line overlap above.
+
 ### kubectl through GKE Connect Gateway
 
 **The cluster prefix is removed before policy sees the resource.** Connect
@@ -3404,7 +3986,12 @@ listeners:
       rules:
         - name: no-secret-contents
           type: http_header
-          resources: ["/api/v1/namespaces/*/secrets/*"]
+          # A list, a watch and one secret, in every namespace and across all.
+          resources:
+            - /api/v1/secrets
+            - /api/v1/namespaces/*/secrets/**
+            - /api/v1/watch/secrets
+            - /api/v1/watch/namespaces/*/secrets/**
           methods: [GET]
           headers_not: {Accept: ["application/json;as=Table;*"]}
           message: listing secrets is fine; reading one is not
@@ -3458,7 +4045,8 @@ policy.NewRules([]policy.Rule{
         WithMessage("upstream failure suppressed by policy"),
 
     policy.Rule{Name: "no-secret-contents", Type: policy.MatchHTTPHeader}.
-        WithResources("/api/v1/namespaces/*/secrets/*").
+        WithResources("/api/v1/secrets", "/api/v1/namespaces/*/secrets/**",
+            "/api/v1/watch/secrets", "/api/v1/watch/namespaces/*/secrets/**").
         WithMethods("GET").
         WithHeadersNot(map[string][]string{"Accept": {"application/json;as=Table;*"}}).
         WithMessage("listing secrets is fine; reading one is not"),
@@ -3488,7 +4076,10 @@ its contents with `Accept: application/json`, on the same `GET`. Two forms:
   table view through and refuses everything else on a secret: `-o yaml`,
   `Accept: application/json;q=1`, Protobuf, and a curl that sends no
   `Accept` at all. This is the form for a rule that protects something,
-  because the request it did not think of is denied.
+  because the request it did not think of is denied. The table view is safe
+  only while it carries no object: `?includeObject=Object` puts each Secret
+  whole in the table's rows, and no rule reads the query. Pair the rule with
+  a `columns: [data]` mask rule, as `deploy/managed-agents/kubernetes/` does.
 - `headers` names the shapes that are UNSAFE: the rule matches when every
   named header is present with a matching value. `kubectl-command:
   ["kubectl delete*"]` refuses a delete however kubectl spells the path. A
@@ -3502,11 +4093,13 @@ matches: a response carries the server's headers, and this rule reads the
 client's intent. `methods` and `resources` scope the rule as they scope
 `http_resource`; a `*` segment before a trailing `/**` is still a wildcard,
 so `/api/v1/namespaces/*/secrets/**` covers the collection in every namespace
-and everything under it. The codec fills `http.headers` on a statement from
-the listener's `http.headers` allowlist and nothing else, so a rule naming a
-header the lane does not capture, in either map, is refused at load with the
-name to add: a rule that loads and can never match is the failure this file
-refuses everywhere.
+and everything under it. The list across all namespaces, `/api/v1/secrets`,
+and the older watch paths under `/api/v1/watch/` need patterns of their own.
+The codec fills `http.headers` on a statement from the listener's
+`http.headers` allowlist and nothing else, so a rule naming a header the lane
+does not capture, in either map, is refused at load with the name to add: a
+rule that loads and can never match is the failure this file refuses
+everywhere.
 
 Through GKE Connect Gateway these rules match the Kubernetes path, because
 the cluster prefix is gone before policy reads the resource: see [kubectl
@@ -3866,7 +4459,7 @@ that `mask.enabled` is gone, so a lane that used to load by omitting the
 flag refuses to start.
 
 Detection and rewriting both come from
-[alcatraz](https://github.com/hoophq/alcatraz): 51 entity types across 12
+[alcatraz](https://github.com/hoophq/alcatraz): 52 entity types across 13
 countries, 25 of them checksum-verified with Luhn on cards, ISO 7064 mod-97 on
 IBAN, Verhoeff on Aadhaar, mod-11 on the Brazilian schemes. It lives in the
 nested `pii/alcatraz` module, so the root library never links it.
@@ -4369,6 +4962,25 @@ Read these before writing a policy against it.
   knowledge, or TLS with ALPN](#http-h2c-prior-knowledge-or-tls-with-alpn));
   HTTP/3 is not served. A pipeline that already holds a `*http.Request` uses
   `InspectRequest`, whatever framing it arrived in.
+- **An http request leaves only once it is whole.** The relay holds a
+  request until its body has arrived and policy has judged it, so a denied
+  request reaches no upstream, however its bytes were split. A client
+  WebSocket message is held the same way, until its final fragment.
+  The cost:
+  - A request still incomplete at 8 MiB, head and body, is refused with
+    nothing forwarded.
+  - A WebSocket message still incomplete at 8 MiB, or in more than 16384
+    frames, is refused with nothing forwarded.
+  - A chunked body the relay cannot frame is refused at once, on every
+    lane: the codec would wait for it forever.
+  - A streaming upload reaches the upstream only once it ends.
+  - A client that sends `Expect: 100-continue` (curl above 1 MiB, Go when
+    asked) sends its body only after its own wait, about 1 second, because
+    no `100` comes from an upstream that has not seen the head.
+  - A ping or close the client sends between fragments waits for the
+    final fragment.
+  - A WebSocket frame from the client that the codec cannot parse ends the
+    connection, as RFC 6455 asks of the upstream.
 - **Path normalization is conservative.** Numeric, UUID, hex and long opaque
   segments collapse; short slugs do not. A policy comes out too narrow rather
   than too broad.

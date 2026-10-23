@@ -615,6 +615,16 @@ import Autocomplete from '@/components/Autocomplete'
 />
 ```
 
+### `TagsEditor`
+Controlled key/value tags editor: one Key/Value `Autocomplete` pair per tag plus an Add row. Suggestions come from `pool` (`[{ key, value }]`); custom keys and values are accepted. `hoop.dev/<category>.` keys show their short label (`labelForTag` in `utils/tags.js`). Used by Roles → Configure (connection tags) and Agents (agent tags).
+```jsx
+import TagsEditor from '@/components/TagsEditor'
+
+<TagsEditor value={tags} onChange={setTags} pool={tagsPool} disabled={saved} />
+```
+`onChange` receives the whole next tags object. `disabled` makes the rows read-only and hides the Add row.
+`rules` sets what it accepts: `{ keyPattern, keyError, valuePattern?, valueError?, maxTags?, warnPendingDraft? }`. The default is the Roles → Configure set (key letters, numbers and hyphens). Agents pass `AGENT_TAG_RULES` from `utils/tags.js`, which follows the gateway rules in `gateway/api/validation/tags.go`.
+
 ### `NumberInput`
 Numeric input. Supports `min`, `max`, `step`, and clamping.
 ```jsx

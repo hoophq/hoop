@@ -461,6 +461,73 @@ func TestHTTPPooledConnectionAttributesEachCaller(t *testing.T) {
 	}
 }
 
+// A blank identity header is refused, as a missing one is. Parsers trim
+// ASCII blanks to ""; Unicode spaces and repeated blank lines, joined as
+// ", ", reach the resolver.
+func TestHTTPBlankIdentityHeaderIsRefused(t *testing.T) {
+	const ok = "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
+	refusingLane := func(t *testing.T) (*echoUpstream, net.Conn) {
+		t.Helper()
+		up := newEchoUpstream(t, []byte(ok))
+		cfg := identityLane(up.addr(), nil)
+		cfg.DenyWriter = proxy.ProtocolDenyWriter{}
+		srv := startServer(t, cfg)
+		c, err := net.Dial("tcp", srv.Addr().String())
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		t.Cleanup(func() { c.Close() })
+		return up, c
+	}
+	exchange := func(t *testing.T, c net.Conn, req string) string {
+		t.Helper()
+		if _, err := c.Write([]byte(req)); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := c.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatalf("set read deadline: %v", err)
+		}
+		buf := make([]byte, 512)
+		n, _ := c.Read(buf)
+		return string(buf[:n])
+	}
+	blanks := []struct{ name, header string }{
+		{"spaces", "X-Forwarded-User:   \r\n"},
+		{"no-break space", "X-Forwarded-User: \u00a0\r\n"},
+		{"ideographic space", "X-Forwarded-User: \u3000\r\n"},
+		{"repeated blank lines", "X-Forwarded-User: \r\nX-Forwarded-User: \r\n"},
+	}
+	for _, tc := range blanks {
+		t.Run(tc.name, func(t *testing.T) {
+			up, c := refusingLane(t)
+			got := exchange(t, c, "GET / HTTP/1.1\r\nHost: api\r\n"+tc.header+"\r\n")
+			if !strings.HasPrefix(got, "HTTP/1.1 403") {
+				t.Errorf("response = %q, want a 403", got)
+			}
+			if n := len(up.got()); n != 0 {
+				t.Errorf("upstream received %d bytes of a request that named nobody", n)
+			}
+		})
+	}
+
+	// A pooling proxy sends a blank header after a named caller: the
+	// request must not run as that caller or as the connection.
+	t.Run("after a named caller", func(t *testing.T) {
+		up, c := refusingLane(t)
+		const named = "GET / HTTP/1.1\r\nHost: api\r\nX-Forwarded-User: alice@example.com\r\n\r\n"
+		if got := exchange(t, c, named); got != ok {
+			t.Fatalf("named request: response = %q", got)
+		}
+		got := exchange(t, c, "GET / HTTP/1.1\r\nHost: api\r\n"+blanks[1].header+"\r\n")
+		if !strings.HasPrefix(got, "HTTP/1.1 403") {
+			t.Errorf("blank request: response = %q, want a 403", got)
+		}
+		if sent := viaLine.ReplaceAllString(string(up.got()), ""); sent != named {
+			t.Errorf("upstream received %q, want only the named request", sent)
+		}
+	})
+}
+
 func countKind(events []audit.Event, k audit.Kind) int {
 	n := 0
 	for _, e := range events {
@@ -565,6 +632,27 @@ func TestCredentialHeaderMustMatchTheCodec(t *testing.T) {
 	cfg.CredentialHeader = "Authorization"
 	if _, err := proxy.NewServer(cfg); err == nil {
 		t.Fatal("a relay peeking Authorization accepted a codec lifting X-Forwarded-User")
+	}
+}
+
+// A lane that is the authentication needs a credential to check and a codec
+// that checks it before forwarding. gate.New refuses both on every
+// connection; the relay refuses them once, at startup.
+func TestAuthenticatesCallerIsRefusedWithoutACheck(t *testing.T) {
+	if _, err := proxy.NewServer(proxy.Config{
+		Listen:              "127.0.0.1:0",
+		Upstream:            "127.0.0.1:1",
+		Protocol:            inspect.HTTP,
+		AuthenticatesCaller: true,
+	}); err == nil {
+		t.Error("AuthenticatesCaller accepted on a lane that reads no credential")
+	}
+
+	cfg := identityLane("127.0.0.1:1", nil) // its codec lifts the header, and checks nothing
+	cfg.Listen = "127.0.0.1:0"
+	cfg.AuthenticatesCaller = true
+	if _, err := proxy.NewServer(cfg); err == nil {
+		t.Error("AuthenticatesCaller accepted with a codec that cannot check a caller")
 	}
 }
 

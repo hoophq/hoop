@@ -187,8 +187,16 @@ func (a *Agent) newDBExecProxy(driver string, connParams *pb.AgentConnectionPara
 	if connenv.insecure {
 		opts[dbexec.OptKeyInsecure] = "true"
 	}
-	if connenv.resultMetadata == "off" {
+	if !dbExecResultMetadata(connenv, connParams.ClientVerb) {
 		opts[dbexec.OptKeyResultMetadata] = "off"
 	}
 	return libhoop.NewAdHocDBExec(driver, payload, stdoutw, stderrw, opts)
+}
+
+// dbExecResultMetadata reports whether driver exec adds MySQL's result
+// metadata lines ("N rows in set", "Query OK, N rows affected"). Plain exec
+// carries the gateway's own queries (schema explorer, MCP schema tools, AI
+// analyzer), which parse the batch output, so it never gets them.
+func dbExecResultMetadata(connenv *connEnv, clientVerb string) bool {
+	return connenv.resultMetadata != "off" && clientVerb != pb.ClientVerbPlainExec
 }

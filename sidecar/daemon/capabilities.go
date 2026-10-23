@@ -28,7 +28,7 @@ import (
 // refuse such a document at save and at serve instead; see CheckServable.
 const CapabilitiesHeader = "hoop-sidecar-capabilities"
 
-// Four kinds of entry travel in the header. SidecarCapabilities generates
+// Five kinds of entry travel in the header. SidecarCapabilities generates
 // the first three from what the build links, so a new field, rule type or
 // protocol is reported without anyone listing it (ADR-0022):
 //
@@ -44,6 +44,10 @@ const CapabilitiesHeader = "hoop-sidecar-capabilities"
 //   - A bare name no field carries is a BEHAVIOUR this build has toward the
 //     plane, listed in behaviourCapabilities. CheckServable never reads one:
 //     it says what the sidecar does, not what it decodes.
+//   - A bare name in valueCapabilities is a VALUE FORM: a key every build
+//     decodes, holding a value only newer builds read. An older build
+//     decodes the value and then fails on it, so no tag can catch it, and
+//     CheckServable names each such form by hand.
 const (
 	// CapabilityReviewMode means this build decodes an analyzer block's
 	// review_mode.
@@ -70,6 +74,10 @@ const (
 	// links it. The field tag is the source of truth; this names it for
 	// CheckServable's listener rule.
 	CapabilityPlugins = "plugins"
+	// CapabilityAddressURL means this build reads an http listener's
+	// listen and upstream written as URLs (address.go). An older build
+	// decodes the string and binds or dials it verbatim, which fails.
+	CapabilityAddressURL = "address_url"
 
 	capabilityRulePrefix     = "rule:"
 	capabilityProtocolPrefix = "protocol:"
@@ -158,20 +166,27 @@ func capabilitySince() map[string]string {
 // generates. A behaviour has no type to generate it from, so it is listed.
 var behaviourCapabilities = []string{CapabilitySessionEvents}
 
+// valueCapabilities are the value forms this build reads; see the kinds
+// above. CheckServable checks each one by hand.
+var valueCapabilities = []string{CapabilityAddressURL}
+
 // SidecarCapabilities is what this build sends in CapabilitiesHeader: every
 // cap-tagged field of the config, every rule type and every protocol it
-// links, and every behaviour it has. Sorted, so two builds that decode the
-// same document send the same header.
+// links, every behaviour it has and every value form it reads. Sorted, so
+// two builds that decode the same document send the same header.
 func SidecarCapabilities() []string {
 	var out []string
 	for _, f := range capFields() {
 		out = append(out, f.name)
 	}
 	out = append(out, behaviourCapabilities...)
+	out = append(out, valueCapabilities...)
 	for _, t := range policy.RuleTypes() {
 		out = append(out, capabilityRulePrefix+string(t))
 	}
-	for _, p := range Protocols() {
+	// Protocols minus ica in a build without the engine, so the header does
+	// not list a lane that checkICA would refuse at startup (ica.go).
+	for _, p := range ServableProtocols() {
 		out = append(out, capabilityProtocolPrefix+p)
 	}
 	slices.Sort(out)
@@ -206,10 +221,11 @@ func servedView(cfg Config) (Config, error) {
 }
 
 // CheckServable refuses a document that the sidecar behind hs cannot decode:
-// a set field whose entry it lacks, a rule of a type it does not list, or a
-// listener protocol it does not speak. It reads the document as the sidecar
-// will, so a default the plane never serves and a value the wire drops need
-// no entry. The error names the listener and the release that adds support.
+// a set field whose entry it lacks, a rule of a type it does not list, a
+// listener protocol it does not speak, or a value form it does not read. It
+// reads the document as the sidecar will, so a default the plane never
+// serves and a value the wire drops need no entry. The error names the
+// listener and the release that adds support.
 //
 // A since-tagged field is granted to any build whose reported release
 // parses and reaches the release the field shipped in, because a build can
@@ -254,6 +270,9 @@ func CheckServable(cfg Config, hs Handshake) error {
 			continue
 		}
 		where := fmt.Sprintf("listener %q", l.Name)
+		if l.usesAddressURL() {
+			need(where, "writes listen or upstream as a URL", CapabilityAddressURL)
+		}
 		// A plug-in protocol is no build's: the header never lists it, and
 		// the build that decodes a plugins list decodes any lane on one.
 		if analyzer.IsPluginProtocol(inspect.Protocol(l.Protocol)) {

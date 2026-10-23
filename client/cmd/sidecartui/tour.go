@@ -2,18 +2,25 @@ package sidecartui
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/hoophq/hoop/client/cmd/sidecardemo"
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
 // The "Try it" section: when the sidecar fronts the demo API, the dashboard
@@ -28,6 +35,8 @@ type DemoOptions struct {
 	OpenURL func(string) error
 	// Ports are where this demo runs; the zero value means the defaults.
 	Ports sidecardemo.Ports
+	// Kind is which demo this is: HTTP or Postgres. The zero value is HTTP.
+	Kind sidecardemo.Kind
 }
 
 type tourResult struct {
@@ -41,6 +50,7 @@ type tourResult struct {
 type tourResultMsg tourResult
 
 type tour struct {
+	kind    sidecardemo.Kind
 	steps   []sidecardemo.Step
 	cur     int
 	done    []bool
@@ -55,13 +65,21 @@ type tour struct {
 }
 
 func newTour(o *DemoOptions) *tour {
+	kind := o.Kind
+	if kind == "" {
+		kind = sidecardemo.KindHTTP
+	}
 	p := o.Ports
 	if p.Listen == "" || p.API == "" {
-		p = sidecardemo.DefaultPorts
+		p = sidecardemo.DefaultPortsFor(kind)
 	}
-	return &tour{steps: sidecardemo.Steps, done: make([]bool, len(sidecardemo.Steps)), running: -1,
+	steps := sidecardemo.StepsFor(kind)
+	return &tour{kind: kind, steps: steps, done: make([]bool, len(steps)), running: -1,
 		open: o.OpenURL, ports: p}
 }
+
+// pg reports whether this is the Postgres demo.
+func (t *tour) pg() bool { return t.kind == sidecardemo.KindPostgres }
 
 // see ticks the step an audit event shows happened.
 //
@@ -69,9 +87,14 @@ func newTour(o *DemoOptions) *tour {
 // it answers was recorded just before it on the same session. Its operation
 // is that statement's, so the POST step's masked reply does not pass for
 // the GET that "See masking" asks for.
+//
+// Only a statement the client sent sets that operation. The Postgres lane also
+// records the server's CommandComplete as a statement ("SELECT 4", operation
+// unknown) between the query and its masked rows; letting it count would leave
+// the masked event matched to "unknown" and "See masking" never ticked.
 func (t *tour) see(ev audit.Event) {
 	op := string(ev.Operation)
-	if ev.Kind == audit.KindStatement || ev.Kind == "violation" {
+	if (ev.Kind == audit.KindStatement || ev.Kind == "violation") && ev.Direction != inspect.FromServer {
 		if t.lastOp == nil {
 			t.lastOp = map[string]string{}
 		}
@@ -84,15 +107,25 @@ func (t *tour) see(ev audit.Event) {
 		if s.SeenKind == "" || string(ev.Kind) != s.SeenKind {
 			continue
 		}
+		if s.SeenTable != "" && !slices.ContainsFunc(ev.Tables, func(tb string) bool { return strings.EqualFold(tb, s.SeenTable) }) {
+			continue
+		}
 		if s.SeenOp == "" || strings.EqualFold(op, s.SeenOp) {
 			t.done[i] = true
 		}
 	}
 }
 
-// run sends step i's request off the UI goroutine.
+// run sends step i's request off the UI goroutine, over the demo's protocol.
 func (t *tour) run(i int) tea.Cmd {
 	t.running, t.flash = i, ""
+	if t.pg() {
+		return t.runPG(i)
+	}
+	return t.runHTTP(i)
+}
+
+func (t *tour) runHTTP(i int) tea.Cmd {
 	s := t.steps[i]
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -119,12 +152,62 @@ func (t *tour) run(i int) tea.Cmd {
 	}
 }
 
+// runPG runs step i's statement as the demo's read-only role. Through the
+// sidecar it connects to the loopback listener in plaintext, the way the
+// listener serves; the comparison step connects to the database itself over
+// TLS, verified against the RDS roots the demo carries.
+func (t *tour) runPG(i int) tea.Cmd {
+	s := t.steps[i]
+	target := pgTarget{addr: t.ports.Listen}
+	return func() tea.Msg {
+		if s.Direct {
+			roots, err := sidecardemo.RDSRoots()
+			if err != nil {
+				return tourResultMsg{step: i, err: err}
+			}
+			host, _, _ := net.SplitHostPort(t.ports.API)
+			target = pgTarget{addr: t.ports.API, tls: &tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12}}
+		}
+		start := time.Now()
+		res, err := pgQuery(target, s.SQL)
+		if err != nil {
+			return tourResultMsg{step: i, err: err}
+		}
+		res.step, res.dur = i, time.Since(start)
+		return tourResultMsg(res)
+	}
+}
+
 func (t *tour) apply(r tourResult) {
 	t.running = -1
 	t.result = &r
 	if r.err == nil {
 		t.done[r.step] = true
 	}
+}
+
+// summary is the one-line "what runs" for a step: the HTTP method and path, or
+// the SQL statement.
+func (t *tour) summary(s sidecardemo.Step) string {
+	if t.pg() {
+		return s.SQL
+	}
+	return s.Method + " " + s.Path
+}
+
+// statusText names a result's status the way the view reads it. HTTP uses its
+// own phrases; Postgres has only an answer or a refusal.
+func (t *tour) statusText(status int) string {
+	if t.pg() {
+		switch {
+		case status == 403:
+			return "refused"
+		case status >= 400:
+			return "error"
+		}
+		return "ok"
+	}
+	return http.StatusText(status)
 }
 
 // key handles the section's own keys and reports whether it used k.
@@ -139,6 +222,10 @@ func (t *tour) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 			return t.run(t.cur), true
 		}
 	case "o":
+		if t.pg() {
+			t.flash = "the Postgres demo has no browser step; copy the psql command with c"
+			break
+		}
 		s := t.steps[t.cur]
 		switch {
 		case t.open == nil:
@@ -153,8 +240,12 @@ func (t *tour) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 			}
 		}
 	case "c":
-		t.flash = "copied the curl command"
-		return tea.SetClipboard(t.steps[t.cur].Curl(t.ports)), true
+		label := "curl"
+		if t.pg() {
+			label = "psql"
+		}
+		t.flash = "copied the " + label + " command"
+		return tea.SetClipboard(t.steps[t.cur].Command(t.kind, t.ports)), true
 	default:
 		return nil, false
 	}
@@ -163,10 +254,13 @@ func (t *tour) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 
 func (t *tour) hints() []keyHint {
 	keys := []keyHint{{"↑↓", "step"}, {"enter", "run it here"}}
-	if t.open != nil && t.steps[t.cur].Method == "GET" {
+	copyLabel := "copy curl"
+	if t.pg() {
+		copyLabel = "copy psql"
+	} else if t.open != nil && t.steps[t.cur].Method == "GET" {
 		keys = append(keys, keyHint{"o", "open in browser"})
 	}
-	return append(keys, keyHint{"c", "copy curl"}, keyHint{"1", "see it in Wire"}, keyHint{"q", "quit"})
+	return append(keys, keyHint{"c", copyLabel}, keyHint{"1", "see it in Wire"}, keyHint{"q", "quit"})
 }
 
 func (t *tour) view(w, h int, now time.Time) string {
@@ -177,10 +271,16 @@ func (t *tour) view(w, h int, now time.Time) string {
 		}
 	}
 	text := lipgloss.NewStyle().Width(w)
+	intro := "Requests to " + t.ports.Listen + " go through the sidecar to an invented API. " +
+		"Run each step here, or paste its curl into another terminal, then open Wire to see what the sidecar recorded."
+	if t.pg() {
+		intro = "Statements sent to " + t.ports.Listen + " go through the sidecar to hoop's demo database, " +
+			"a read-only copy of the dellstore sample shop. " +
+			"Run each step here, or paste its psql into another terminal, then open Wire to see what the sidecar recorded."
+	}
 	lines := []string{
 		stStrong.Render("Try the demo") + stFaint.Render(fmt.Sprintf("   %d of %d done", done, len(t.steps))),
-		text.Inherit(stText).Render("Requests to " + t.ports.Listen + " go through the sidecar to an invented API. " +
-			"Run each step here, or paste its curl into another terminal, then open Wire to see what the sidecar recorded."),
+		text.Inherit(stText).Render(intro),
 		"",
 	}
 	titleW := 0
@@ -196,7 +296,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 		if i == t.cur {
 			cursor, title = stPrimary.Render("› "), stStrong.Render(fmt.Sprintf("%-*s", titleW, s.Title))
 		}
-		target := s.Method + " " + s.Path
+		target := t.summary(s)
 		if s.Direct {
 			target += stFaint.Render("  (" + t.ports.API + ", no sidecar)")
 		}
@@ -210,7 +310,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 	s := t.steps[t.cur]
 	lines = append(lines, "", stLabel.Render(strings.ToUpper(s.Title)),
 		text.Inherit(stText).Render("Expect: "+s.Expect),
-		stFaint.Render("$ ")+stKey.Render(ansi.Truncate(s.Curl(t.ports), w-2, "…")))
+		stFaint.Render("$ ")+stKey.Render(ansi.Truncate(s.Command(t.kind, t.ports), w-2, "…")))
 	if t.flash != "" {
 		lines = append(lines, stPrimary.Render(t.flash))
 	}
@@ -218,7 +318,11 @@ func (t *tour) view(w, h int, now time.Time) string {
 
 	switch r := t.result; {
 	case t.running == t.cur:
-		lines = append(lines, shimmer("sending "+s.Method+" "+s.Path+"…", now))
+		verb := "sending "
+		if t.pg() {
+			verb = "running "
+		}
+		lines = append(lines, shimmer(verb+t.summary(s)+"…", now))
 	case r != nil && r.step == t.cur && r.err != nil:
 		lines = append(lines, stDanger.Bold(true).Render("✕ "+r.err.Error()))
 	case r != nil && r.step == t.cur:
@@ -226,7 +330,7 @@ func (t *tour) view(w, h int, now time.Time) string {
 		if r.status >= 400 {
 			st = stDanger.Bold(true)
 		}
-		lines = append(lines, st.Render(fmt.Sprintf("%d %s", r.status, http.StatusText(r.status)))+
+		lines = append(lines, st.Render(fmt.Sprintf("%d %s", r.status, t.statusText(r.status)))+
 			stFaint.Render("  ·  "+short(r.dur)))
 		lines = append(lines, text.Inherit(stFaint).Render(s.Why))
 		lines = append(lines, t.next(), "")
@@ -261,6 +365,147 @@ func (t *tour) next() string {
 	}
 	return stPrimary.Render("✓ All done. ") + stText.Render("Press ") + stKey.Render("1") +
 		stText.Render(" for Wire: every request above, as the sidecar recorded it.")
+}
+
+// pgTarget is where a tour statement goes: an address, and the TLS to speak
+// there (nil for plaintext).
+type pgTarget struct {
+	addr string
+	tls  *tls.Config
+}
+
+// sqlstateRefused is the SQLSTATE the sidecar's Postgres denial carries
+// (proxy.PostgresError: 42501 insufficient_privilege, severity FATAL).
+const sqlstateRefused = "42501"
+
+// pgQuery runs one statement, over the simple query protocol the way psql
+// does, as the demo's read-only role, and returns the result as the tour shows
+// it: rows rendered as text, or a command tag. A Postgres error is an answer
+// too, not a failure of the step: the sidecar's refusal is a 403 the view
+// styles like a refused HTTP request, and any other (a mistyped column, a
+// failed login) a 400 that carries the database's own message. Only a
+// connection that never answered is the returned error.
+func pgQuery(t pgTarget, sql string) (tourResult, error) {
+	host, port, err := net.SplitHostPort(t.addr)
+	if err != nil {
+		return tourResult{}, err
+	}
+	// pgx reads every PG* variable before it reads the connection string,
+	// and has no way to skip them. So every setting one of them could feed
+	// is given here, and a stray PGPORT or PGSSLMODE in the person's shell
+	// cannot break the step or send it elsewhere. TLS is set below, after
+	// parsing, so sslmode=disable only keeps the file settings unread.
+	// PGSERVICE is the one a connection string cannot clear: a broken
+	// service file fails the step with pgx's own message.
+	cfg, err := pgx.ParseConfig(sidecardemo.ConnString([][2]string{
+		{"host", host}, {"port", port},
+		{"user", sidecardemo.PGUser}, {"password", sidecardemo.PGPassword}, {"passfile", ""},
+		{"dbname", sidecardemo.PGDatabase},
+		{"sslmode", "disable"}, {"sslrootcert", ""}, {"sslcert", ""}, {"sslkey", ""},
+		{"sslpassword", ""}, {"sslsni", "1"}, {"sslnegotiation", "postgres"},
+		{"connect_timeout", "10"}, {"target_session_attrs", "any"},
+		{"min_protocol_version", "3.0"}, {"max_protocol_version", "3.0"},
+	}...))
+	if err != nil {
+		return tourResult{}, err
+	}
+	cfg.TLSConfig, cfg.Fallbacks = t.tls, nil
+	cfg.RuntimeParams = map[string]string{"application_name": "hoop sidecar demo"}
+	cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		return pgAnswer(err)
+	}
+	// Close only sends Terminate. The answer is read in full before it runs,
+	// so a close that fails cannot change it; its error is dropped on purpose.
+	defer func() { _ = conn.Close(context.Background()) }()
+
+	rows, err := conn.Query(ctx, sql)
+	if err != nil {
+		return pgAnswer(err)
+	}
+	var cols []string
+	for _, f := range rows.FieldDescriptions() {
+		cols = append(cols, f.Name)
+	}
+	var out [][]string
+	for rows.Next() {
+		raw := rows.RawValues()
+		row := make([]string, len(raw))
+		for i, v := range raw {
+			if v == nil {
+				row[i] = "NULL"
+			} else {
+				row[i] = string(v)
+			}
+		}
+		out = append(out, row)
+	}
+	// rows.Close returns nothing; rows.Err reports what the read and the
+	// close ran into, the server's own error frame included.
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return pgAnswer(err)
+	}
+	if len(cols) == 0 {
+		return tourResult{status: 200, body: rows.CommandTag().String()}, nil
+	}
+	return tourResult{status: 200, body: renderTable(cols, out)}, nil
+}
+
+// pgAnswer turns a Postgres error into the step's answer, and passes any other
+// error through as the step's failure.
+func pgAnswer(err error) (tourResult, error) {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return tourResult{}, err
+	}
+	status := 400
+	if pgErr.Code == sqlstateRefused && pgErr.Severity == "FATAL" {
+		status = 403
+	}
+	return tourResult{status: status, body: pgErr.Message}, nil
+}
+
+// renderTable lays rows out as a simple fixed-width table, header first. The
+// values are the ones the sidecar let through, so a masked column already
+// reads [REDACTED:…] here and highlightMasked colors it.
+func renderTable(cols []string, rows [][]string) string {
+	width := make([]int, len(cols))
+	for i, c := range cols {
+		width[i] = ansi.StringWidth(c)
+	}
+	for _, r := range rows {
+		for i, v := range r {
+			if i < len(width) && ansi.StringWidth(v) > width[i] {
+				width[i] = ansi.StringWidth(v)
+			}
+		}
+	}
+	pad := func(cells []string) string {
+		parts := make([]string, len(cells))
+		for i, v := range cells {
+			n := 0
+			if i < len(width) {
+				n = width[i]
+			}
+			parts[i] = v + strings.Repeat(" ", max(n-ansi.StringWidth(v), 0))
+		}
+		return strings.TrimRight(strings.Join(parts, "  "), " ")
+	}
+	lines := []string{pad(cols)}
+	sep := make([]string, len(cols))
+	for i := range sep {
+		sep[i] = strings.Repeat("-", width[i])
+	}
+	lines = append(lines, pad(sep))
+	for _, r := range rows {
+		lines = append(lines, pad(r))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // highlightMasked draws a masked value in the brand blue, so the eye finds

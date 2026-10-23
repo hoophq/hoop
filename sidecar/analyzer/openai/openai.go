@@ -31,36 +31,49 @@ const defaultMaxTokens = 1024
 
 func init() {
 	analyzer.Register(Name, func(opts analyzer.Options) (analyzer.Provider, error) {
-		if opts.Credential.IsZero() {
-			return nil, fmt.Errorf("analyzer/openai: no api key configured")
-		}
-		if opts.Model == "" {
-			return nil, fmt.Errorf("analyzer/openai: no model configured")
-		}
-		endpoint := opts.Endpoint
-		if endpoint == "" {
-			endpoint = DefaultEndpoint
-		}
-		maxTokens := opts.MaxOutputTokens
-		if maxTokens <= 0 {
-			maxTokens = defaultMaxTokens
-		}
-		if err := opts.Sampling.Unsupported("analyzer/"+Name, UnsupportedSampling...); err != nil {
+		p, err := New(Name, opts)
+		if err != nil {
 			return nil, err
 		}
-		return &Provider{
-			endpoint:  endpoint,
-			model:     opts.Model,
-			key:       opts.Credential,
-			maxTokens: maxTokens,
-			sampling:  opts.Sampling,
-			client:    opts.Client(),
-		}, nil
+		return p, nil
 	})
+}
+
+// New builds a provider that reports itself, in Name and in every error, as
+// name. A provider that speaks this dialect under its own name (hoop) uses
+// it, so an operator reading an error is sent to the right config block.
+func New(name string, opts analyzer.Options) (*Provider, error) {
+	if opts.Credential.IsZero() {
+		return nil, fmt.Errorf("analyzer/%s: no api key configured", name)
+	}
+	if opts.Model == "" {
+		return nil, fmt.Errorf("analyzer/%s: no model configured", name)
+	}
+	endpoint := opts.Endpoint
+	if endpoint == "" {
+		endpoint = DefaultEndpoint
+	}
+	maxTokens := opts.MaxOutputTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxTokens
+	}
+	if err := opts.Sampling.Unsupported("analyzer/"+name, UnsupportedSampling...); err != nil {
+		return nil, err
+	}
+	return &Provider{
+		name:      name,
+		endpoint:  endpoint,
+		model:     opts.Model,
+		key:       opts.Credential,
+		maxTokens: maxTokens,
+		sampling:  opts.Sampling,
+		client:    opts.Client(),
+	}, nil
 }
 
 // Provider classifies statements with an OpenAI-compatible API.
 type Provider struct {
+	name      string
 	endpoint  string
 	model     string
 	key       analyzer.Secret
@@ -70,29 +83,29 @@ type Provider struct {
 }
 
 // Name implements analyzer.Provider.
-func (p *Provider) Name() string { return Name }
+func (p *Provider) Name() string { return p.name }
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
 	body, err := json.Marshal(BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, false))
 	if err != nil {
-		return nil, fmt.Errorf("analyzer/openai: encoding request: %w", err)
+		return nil, fmt.Errorf("analyzer/%s: encoding request: %w", p.name, err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("analyzer/openai: building request: %w", err)
+		return nil, fmt.Errorf("analyzer/%s: building request: %w", p.name, err)
 	}
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("authorization", "Bearer "+string(p.key.Bytes()))
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("analyzer/openai: %w", err)
+		return nil, fmt.Errorf("analyzer/%s: %w", p.name, err)
 	}
 	defer resp.Body.Close()
 
-	return ParseResponse("analyzer/"+Name, resp)
+	return ParseResponse("analyzer/"+p.name, resp)
 }
 
 // --- wire format, shared with Vertex ---------------------------------------

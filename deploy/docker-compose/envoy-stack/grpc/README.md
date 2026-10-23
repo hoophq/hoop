@@ -164,6 +164,38 @@ It also shows the flip side of TLS ownership: the `-plaintext` dial that
 is the overlay's direct path fails here at the handshake, before gRPC
 exists.
 
+## Discovery: the lane fetches the schema from the upstream
+
+Every other stack here mounts a descriptor set into the sidecar.
+`docker-compose.discover.yml` mounts none: its lanes set `grpc.discover`
+and read the schema from the upstream over gRPC server reflection when
+they start. The ledger image serves reflection only when
+`LEDGER_REFLECTION` names descriptor sets (`app/reflection.go`), so one
+image plays both a service with reflection (`ledger-reflect`) and one
+without (`ledger`).
+
+```
+grpcurl ──h2c──> hoop-inspect:18443..18446 ──h2c──> ledger-reflect:9000
+                                               └──> ledger:9000 (no reflection)
+```
+
+```bash
+# from this directory, with the envoy and standalone stacks down (same host ports)
+docker compose -f docker-compose.discover.yml up -d --wait --build
+./demo-discover.sh
+```
+
+| Lane | Port | Config | What the demo asserts |
+|---|---|---|---|
+| `billing` | 18443 | `discover` against `ledger-reflect` | `customer_email` masked; a CPF in a request field refused |
+| `legacy` | 18444 | `discover` against `ledger`, default `fail_open: false` | `UNAVAILABLE` naming the missing reflection; ledger never called |
+| `legacy-open` | 18445 | same, `fail_open: true`, `mask: {rules: []}` | forwarded, email in the clear, audit marked `grpc.schema: unavailable` |
+| `pinned` | 18446 | `discover` with a wrong `sha256` | `UNAVAILABLE` naming both digests |
+
+The demo also runs `-grpc-discover billing` inside the container, which
+prints the digest to pin. grpcurl still mounts the descriptor sets: a
+client needs the schema to encode a call; the sidecar does not.
+
 ## Files
 
 | File | Role |
@@ -173,9 +205,12 @@ exists.
 | `envoy-grpc.yaml` | base Envoy config plus the `:8444` gRPC listener and h2 cluster |
 | `docker-compose.standalone.yml` | self-contained no-Envoy stack: the lane terminates TLS |
 | `config-standalone.yaml` | one TLS lane, no identity header, same two rules |
-| `app/` | three protos, hand-rolled server, image build (binary + one descriptor set per proto) |
+| `docker-compose.discover.yml` | self-contained no-Envoy stack: lanes discover the schema over reflection |
+| `config-discover.yaml` | four `discover` lanes: works, refuses, fails open, wrong pin |
+| `app/` | three protos, hand-rolled server with opt-in reflection, image build (binary + one descriptor set per proto) |
 | `demo-grpc.sh` | the overlay walk (through Envoy, and direct h2c) |
 | `demo-standalone.sh` | the standalone walk; asserts the masking |
+| `demo-discover.sh` | the discovery walk; asserts masking, refusals and the pin |
 
 The OPA policy is shared with the base stack; `opa/authz.rego` keys the
 service on the listener port (`:8443` → httpbin, `:8444` → ledger), so one

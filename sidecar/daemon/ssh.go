@@ -155,6 +155,7 @@ func buildSSHServer(
 			Masker:           live.masker,
 			FailOnAuditError: failOnAuditError,
 			Metrics:          ln.metrics,
+			Telemetry:        ln.telemetry,
 		})
 		if err != nil {
 			// No handler, so libhoop calls no Close: release here.
@@ -918,5 +919,5 @@ func sshLaneNotes(sc *SSHConfig) []string {
 // life. Swapping a masker into a server built without it would show an
 // operator masking that is not happening.
 func isEndpointLane(lc ListenerConfig) bool {
-	return isGRPCTransport(lc) || isSSH(lc)
+	return isGRPCTransport(lc) || isSSH(lc) || isICA(lc)
 }

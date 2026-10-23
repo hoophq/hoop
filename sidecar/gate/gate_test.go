@@ -1273,6 +1273,57 @@ func TestBufferOverflowIsDenied(t *testing.T) {
 	}
 }
 
+// An http request is held until whole, and one that outgrows the buffer is
+// refused with nothing of it in a Payload: a padded forbidden request must
+// not stream out in pieces past the bound.
+func TestHTTPRequestIsHeldUntilWholeAndBounded(t *testing.T) {
+	newGate := func(t *testing.T) *gate.Gate {
+		t.Helper()
+		g, err := gate.New(session.New(inspect.HTTP, session.Identity{}), gate.Config{
+			Protocol:  inspect.HTTP,
+			MaxBuffer: 1024,
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		return g
+	}
+	ctx := context.Background()
+
+	t.Run("whole", func(t *testing.T) {
+		g := newGate(t)
+		head := "POST /items HTTP/1.1\r\nHost: h\r\nContent-Length: 2\r\n\r\n"
+		if d := g.Request(ctx, []byte(head)); !d.Allowed || len(d.Payload) != 0 {
+			t.Fatalf("head alone: allowed %v with %d bytes to forward, want allowed with none", d.Allowed, len(d.Payload))
+		}
+		d := g.Request(ctx, []byte("{}"))
+		if !d.Allowed {
+			t.Fatalf("the completed request was refused: %s", d.Message)
+		}
+		if got := string(d.Payload); !strings.HasPrefix(got, "POST /items HTTP/1.1\r\n") || !strings.HasSuffix(got, "\r\n\r\n{}") {
+			t.Errorf("Payload = %q, want the whole request", got)
+		}
+	})
+
+	t.Run("past the bound", func(t *testing.T) {
+		g := newGate(t)
+		head := "DELETE /items/1 HTTP/1.1\r\nHost: h\r\nContent-Length: 4096\r\n\r\n"
+		d := g.Request(ctx, []byte(head))
+		for range 3 {
+			if !d.Allowed {
+				break
+			}
+			if len(d.Payload) != 0 {
+				t.Fatalf("%d bytes of an incomplete request were released", len(d.Payload))
+			}
+			d = g.Request(ctx, make([]byte, 512))
+		}
+		if d.Allowed || d.Rule != "stream-unsafe" {
+			t.Fatalf("allowed %v rule %q, want a stream-unsafe refusal", d.Allowed, d.Rule)
+		}
+	})
+}
+
 // neverCompletesCodec consumes nothing, modelling a logical message larger
 // than the reassembly budget.
 type neverCompletesCodec struct{}

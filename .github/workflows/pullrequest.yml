@@ -16,9 +16,16 @@ env:
   GODEBUG: http2client=0
 
 jobs:
+  # One runner killed the whole suite when the big PGlite packages ran
+  # together (ENG-760). scripts/ci/unit-shards.sh spreads them; the number
+  # of legs here is SHARDS.
   test:
-    name: Unit Test
+    name: Unit Test (${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
 
     steps:
       - name: Checkout
@@ -50,10 +57,55 @@ jobs:
         run: go mod download
 
       # The per-module sidecar loop runs in the Sidecar Module Test job.
+      # shell: bash adds pipefail, so tee does not hide a failed test.
       - name: Test
+        shell: bash
         env:
           GODEBUG: http2client=1
-        run: make test-unit
+        run: make test-unit SHARD=${{ matrix.shard }} SHARDS=${{ strategy.job-total }} | tee "$RUNNER_TEMP/unit.jsonl"
+
+      - name: List the packages this shard ran
+        run: >-
+          jq -rR 'fromjson? | select(.Test == null and (.Action == "pass" or .Action == "fail" or .Action == "skip")) | .Package'
+          "$RUNNER_TEMP/unit.jsonl" > "$RUNNER_TEMP/packages-${{ matrix.shard }}.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: unit-packages-${{ matrix.shard }}
+          path: ${{ runner.temp }}/packages-${{ matrix.shard }}.txt
+          retention-days: 1
+
+  # Fails when a package of go list ran in no Unit Test shard, or in two.
+  test-shards:
+    name: Unit Test (every package in one shard)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: unit-packages-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/shards
+      - name: Check the union of the shards
+        run: scripts/ci/unit-shards.sh check "$RUNNER_TEMP/shards"
+      # A check that cannot fail passes forever: drop one package and expect it to.
+      - name: Check that a dropped package fails the check
+        run: |
+          cp -R "$RUNNER_TEMP/shards" "$RUNNER_TEMP/dropped"
+          sed -i 1d "$RUNNER_TEMP/dropped/packages-1.txt"
+          if scripts/ci/unit-shards.sh check "$RUNNER_TEMP/dropped"; then
+            echo "::error::the check passed with a package missing"; exit 1
+          fi
 
   # The test-sidecar half of `make test-oss`, beside Unit Test: it enters
   # each nested sidecar module to prove its go.mod builds on its own.
@@ -78,6 +130,44 @@ jobs:
         env:
           GODEBUG: http2client=1
         run: make test-sidecar
+
+  # The ica image links hoop-inspect with cgo and -tags ORT (Dockerfile.sidecar
+  # --target ica); the other builds use CGO_ENABLED=0, which compiles out the
+  # ORT NER backend and hugot's Rust tokenizer. This job links that cgo build,
+  # so a change that breaks only the cgo path fails on the PR before it
+  # reaches the release's image step. libtokenizers.a comes from the
+  # daulet/tokenizers release at the version go.mod pins, the same source the
+  # image uses. The binary dlopens libonnxruntime at run time, so this job
+  # does not need it.
+  sidecar-ica-ort:
+    name: Sidecar ICA build (cgo, -tags ORT)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Fetch libtokenizers.a at the pinned version
+        working-directory: sidecar/cmd
+        run: |
+          set -euo pipefail
+          version=$(go list -m -f '{{.Version}}' github.com/daulet/tokenizers)
+          mkdir -p "$RUNNER_TEMP/libtokenizers"
+          curl -sSfL "https://github.com/daulet/tokenizers/releases/download/${version}/libtokenizers.linux-amd64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/libtokenizers"
+          echo "CGO_LDFLAGS=-L$RUNNER_TEMP/libtokenizers" >> "$GITHUB_ENV"
+
+      - name: Link hoop-inspect with the ORT backend
+        working-directory: sidecar/cmd
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go build -tags ORT -trimpath -o "$RUNNER_TEMP/hoop-inspect" .
+          "$RUNNER_TEMP/hoop-inspect" -version
 
   # The test-sidecar-plugins third of `make test-oss`: the codec plug-in
   # SDKs and examples. Go and Rust only; the checked-in .wasm artifacts are
@@ -306,6 +396,26 @@ jobs:
       - name: Standalone Single-Binary E2E
         run: make test-standalone-e2e
 
+  controlplane-readonly:
+    name: Control Plane Read-only Boot
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Builds both Dockerfile.controlplane flavours and boots each with
+      # --read-only against a throwaway PostgreSQL (ENG-602). Fails when the
+      # boot needs a writable path that the image does not provide.
+      - name: Setup Go with private modules
+        uses: ./.github/actions/setup-go-private
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Control Plane Read-only Boot
+        run: make test-controlplane-readonly
+
   sidecar-e2e:
     name: Sidecar E2E Test
     runs-on: ubuntu-latest
@@ -375,6 +485,34 @@ jobs:
 
       - name: Sidecar Config Compat
         run: make test-sidecar-compat
+
+  # A libhoop pin must name a commit on libhoop main (ENG-821). A commit on a
+  # PR branch dies with the branch: ENG-768 pinned one, libhoop squash-merged and
+  # deleted the branch, and every Go build failed with "unknown revision".
+  # The use-libhoop-pr switch above does not bump the pin, so it still passes.
+  libhoop-pin:
+    name: libhoop Pin On Main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # go mod/work edit -json only parse the files; nothing is fetched.
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache: false
+
+      # A check that cannot fail passes forever: its fixtures run first.
+      - name: Test the pin check
+        run: scripts/ci/check-libhoop-pins_test.sh
+
+      - name: libhoop pins are on libhoop main
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: scripts/ci/check-libhoop-pins.sh
 
   # Development Release builds webapp_v2 only after the CLJS bundle; fail fast here.
   webapp-v2:

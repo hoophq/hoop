@@ -86,9 +86,10 @@ else
 fi
 
 # ----------------------------------------------------------------- 2. compose
-c_step "Starting upstreams, hoop-inspect, opa, envoy"
+c_step "Starting upstreams, hoop-inspect, opa, envoy, otel-collector, prometheus, grafana"
 docker compose up -d --wait
 c_ok "https :8443, postgres :5433, sidecar admin :19000, envoy admin :9901"
+c_ok "grafana :3000 (dashboard \"hoop sidecar\"), prometheus :9090"
 
 cat <<'EOF'
 

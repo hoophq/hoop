@@ -1,12 +1,16 @@
-# hoophq/hoopsidecar — the hoop inspection sidecar image, in two slim flavours.
+# hoophq/hoopsidecar: the hoop inspection sidecar image, in two slim flavours
+# and one engine flavour, plus one export-only target.
 #
-# One Dockerfile, two final stages selected with `docker build --target`. They
-# share the `unpack` stage, so release-tarball handling exists in exactly one
-# place:
+# One Dockerfile with three final stages, selected with
+# `docker build --target`. The two slim stages share the `unpack` stage, so
+# release-tarball handling lives in one place:
 #
 #   --target default     -> hoophq/hoopsidecar:<version>
 #                           hoophq/hoopsidecar:latest
 #   --target distroless  -> hoophq/hoopsidecar:<version>-distroless
+#   --target ica         -> hoophq/hoopsidecar:<version>-ica
+#   --target ica-assets  -> hoop-ica-assets_<version>_Linux_<arch>.tar.gz, not
+#                           an image: see "The ica assets bundle" below
 #
 # The Ubuntu flavour carries NO SUFFIX: it is the image, and `:latest` points
 # at it. It keeps a shell, so the tag someone reaches for without thinking is
@@ -57,27 +61,31 @@
 # which supplies the whole running config over its handshake.
 #
 # ---------------------------------------------------------------------------
-# Why there is no -alcatraz flavour
+# The NER model: in the ica flavour only
 #
 # The agent images publish `-alcatraz` tags that bake in an ONNX model for the
-# statistical entity types (PERSON, LOCATION, NRP). This process cannot use it:
+# statistical entity types (PERSON, LOCATION, NRP). The relay cannot use it:
 # sidecar/pii/alcatraz wires the pattern-and-checksum core only and does not
 # wire the alcatraz/ner module, so those three entities are refused by name at
-# config load however the weights are mounted. Baking them in would add ~250MB
-# of bytes nothing here reads.
+# config load however the weights are mounted. The default and distroless
+# flavours therefore leave the ~250MB of weights out.
 #
-# The other 51 entity types need no model on disk and are active in both
+# The other 52 entity types need no model on disk and are active in both
 # flavours below without any configuration.
 #
-# If sidecar/pii/alcatraz ever wires ner, add the `models` stage and the two
-# derived targets from Dockerfile.agent rather than inventing a second shape.
+# The ica flavour does carry the model: the ICA engine's NER reads it to mask
+# names and places on screen. It comes from the `models` stage, copied from
+# Dockerfile.agent, which fetches the same files from hoop's mirror. If
+# sidecar/pii/alcatraz ever wires ner, derive -alcatraz targets from that
+# stage as Dockerfile.agent does rather than inventing a second shape.
 #
 # ---------------------------------------------------------------------------
 # Choosing a flavour
 #
 #   default      Ubuntu 24.04 LTS rootfs + the `hoop` binary, ca-certificates
 #                and tini.
-#   distroless   Distroless static rootfs + the `hoop` binary and a static tini.
+#   distroless   Distroless cc rootfs (glibc, no shell) + the `hoop` binary and
+#                a static tini.
 #
 # Both run tini as PID 1 (ENTRYPOINT), which execs the relay.
 #
@@ -91,6 +99,55 @@
 # debuggability matters, distroless when the smallest possible surface does.
 #
 # ---------------------------------------------------------------------------
+# The ica flavour
+#
+# A `protocol: ica` lane embeds the libhoop-ica engine (Citrix ICA/CGP,
+# ThinWire video OCR + NER masking), whose NER runs on ONNX Runtime through
+# cgo. hoop-inspect links it in a `-tags ORT` build, and so does the Linux
+# `hoop` since the Makefile's build-go went cgo for Linux; the slim flavours
+# below therefore carry the engine's code, but none of what it needs at run
+# time: tesseract 5, the hoop-tesseract-worker, libonnxruntime and the NER
+# model on disk. A process without those does not advertise protocol:ica to
+# a control plane (sidecar/ica HostCheck), so the slim flavours are never
+# handed an ica lane, and the assets get their own target. The ica-build
+# stage compiles hoop-inspect from source against two private modules, so
+# the build needs a BuildKit secret that can read hoophq/libhoop and
+# hoophq/libhoop-ica:
+#
+#   docker build -f Dockerfile.sidecar --target ica \
+#     --secret id=gh_token,env=GH_TOKEN -t hoophq/hoopsidecar:dev-ica .
+#
+# The image runs hoop-inspect where the slim flavours run `hoop start
+# sidecar`; the config path is the same. The image carries the NER model at
+# the engine's default path, so a config needs no asset paths; a volume
+# mounted over that path, or the config's ica.ner_model, replaces it. CIDR
+# mode needs CAP_NET_ADMIN, which a non-root process cannot hold from the pod
+# spec alone: see the ica section of sidecar/README.md.
+#
+# ---------------------------------------------------------------------------
+# The ica assets bundle
+#
+# A host without Docker runs what the ica flavour runs. The `ica-assets`
+# target packs the flavour's contents with an installer into one tarball per
+# architecture, and release.yml exports it beside the CLI tarballs on
+# releases.hoop.dev:
+#
+#   docker build -f Dockerfile.sidecar --target ica-assets \
+#     --secret id=gh_token,env=GH_TOKEN --build-arg VERSION=dev \
+#     --output type=local,dest=out .
+#
+# The tarball holds hoop-inspect, the worker (fetched by ica-build from the
+# libhoop-ica release the engine in this tree links, so the two stay in
+# step) with its LICENSE and NOTICE, ONNX Runtime's library and notices,
+# release.txt, deploy/ica-sidecar/install.sh and its examples/ (a config for
+# each ica mode, which the installer also uses as the first-run template).
+# The NER model is not in
+# it: it is the same for every architecture and public at
+# releases.hoop.dev/alcatraz/current, so the installer fetches it, as the
+# `models` stage does. The `scratch` final stage makes `--output` export the
+# two files and nothing else.
+#
+# ---------------------------------------------------------------------------
 # Build (from the repo root, with release tarballs in dist/binaries/):
 #   GOOS=linux GOARCH=arm64 make build-go build-tar-files
 #   docker build -f Dockerfile.sidecar --target default -t hoophq/hoopsidecar:dev .
@@ -99,12 +156,30 @@
 # Ubuntu 24.04 LTS (noble). Pinned deliberately, same policy as ./Dockerfile
 # and ./Dockerfile.agent, so builds are reproducible; bump it in a dedicated PR.
 ARG UBUNTU_IMAGE=ubuntu:noble-20260911
-ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
+# distroless/cc, not distroless/static: the Linux `hoop` is a cgo build that
+# links the Citrix ICA engine (client/cmd/startsidecar_ica_linux.go and the
+# Makefile's build-go), so it is dynamically linked against glibc, libstdc++
+# and libgcc_s. cc-debian12 ships exactly those plus the CA bundle and tzdata,
+# and still has no shell and no package manager. The binary is built against
+# glibc 2.31 (debian bullseye), so debian12's 2.36 runs it.
+ARG DISTROLESS_IMAGE=gcr.io/distroless/cc-debian12:nonroot
+ARG CURL_IMAGE=curlimages/curl:8.11.1
+
+# Hoop's mirror of the alcatraz model files, the same origin and manifest
+# Dockerfile.agent reads; see the note there. Public-read, so the ica target
+# needs no credential for the model. An ARG so an air-gapped build can swap in
+# its own. A moving alias: rebuilding an old tag may pick up a newer model.
+ARG ALCATRAZ_MODEL_ORIGIN=https://hoopartifacts.s3.us-east-1.amazonaws.com/alcatraz/current
 
 # Where both flavours look for the config document. The same path the helm
 # chart mounts its ConfigMap at and the compose stacks bind, so a config moves
 # between them without also moving.
 ARG SIDECAR_CONFIG=/etc/hoop-inspect/config.yaml
+
+# ONNX Runtime for the ica flavour and the assets bundle. The engine reads
+# the library from /opt/alcatraz/ort/releases/<version>/lib by default
+# (libhoop-ica DefaultNERORTLibrary), so bump the two together.
+ARG ORT_VERSION=1.28.0
 
 # --- Stage: unpack the release tarball ---------------------------------------
 # A separate stage so the ~200MB of release tarballs in dist/binaries/ never
@@ -135,8 +210,10 @@ RUN mkdir -p /out && \
 # ./Dockerfile has always done this; these images now match it.
 #
 # The package ships two binaries. The Ubuntu flavour uses /usr/bin/tini, which
-# is dynamically linked. distroless/static has no libc, so it takes
-# /usr/bin/tini-static instead — the same 0.19.0 upstream, linked statically.
+# is dynamically linked. distroless takes /usr/bin/tini-static instead — the
+# same 0.19.0 upstream, linked statically — because it needs nothing from the
+# rootfs: the cc rootfs does ship a libc, but an init shim with no dependency
+# on it is one less thing a base image bump can break.
 #
 # NOT pinned to BUILDPLATFORM, unlike `unpack` above, and that is the whole
 # reason this is its own stage. tini is a compiled binary that ends up INSIDE
@@ -150,9 +227,10 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
 
 # --- Flavour: distroless -----------------------------------------------------
-# The static rootfs already ships the CA bundle, which this process needs for
+# The cc rootfs already ships the CA bundle, which this process needs for
 # three separate hops: an upstream_tls lane where it originates TLS to the
 # database, an analyzer provider over HTTPS, and a control plane over HTTPS.
+# It also ships the glibc, libstdc++ and libgcc_s the cgo-built `hoop` links.
 # Nothing is installed here — the static tini below is copied in, not
 # installed, so this rootfs still carries no OS package and no package manager.
 #
@@ -161,7 +239,7 @@ RUN apt-get update -y && \
 FROM ${DISTROLESS_IMAGE} AS distroless
 ARG SIDECAR_CONFIG
 COPY --from=unpack /out/hoop /app/hoop
-# The statically linked build: this rootfs has no libc for the dynamic one.
+# The statically linked build: it needs nothing from this rootfs.
 COPY --from=tini /usr/bin/tini-static /app/tini
 ENV PATH="/app:${PATH}"
 # --config defaults to this, so the command below takes no arguments and
@@ -179,6 +257,183 @@ USER 10001:10001
 # override to a full argv, or leave it alone and override args instead.
 ENTRYPOINT ["/app/tini", "--"]
 CMD ["hoop", "start", "sidecar"]
+
+# --- Stage: ica-build (hoop-inspect with the Citrix ICA engine) --------------
+# This stage uses cgo, so it is not pinned to BUILDPLATFORM like `unpack`: it
+# compiles natively for each target platform (emulated for the non-native one
+# in a multiarch build). Bookworm's glibc is older than noble's, so the binary
+# runs on the ica flavour below.
+FROM golang:1.26-bookworm AS ica-build
+ARG TARGETARCH
+ARG VERSION=unknown
+ARG ORT_VERSION
+WORKDIR /src
+# This stage copies the sidecar tree only: GOWORK=off below builds
+# sidecar/cmd from its own go.mod, whose replace directives reach the root and
+# every nested module, sidecar/ica included. The repo's go.work lists modules
+# this image does not need, and using it would make the build depend on them.
+COPY sidecar/ ./sidecar/
+# A single RUN keeps the token in this step's environment: GIT_CONFIG_*
+# reaches the git calls `go` makes without writing a ~/.gitconfig into a
+# layer. The final image does not ship this stage; the single RUN also keeps
+# the build cache clean. The segment key is optional: without it the build
+# produces a binary that sends no analytics, as the local stacks do.
+RUN --mount=type=secret,id=gh_token,required=true \
+    --mount=type=secret,id=segment_api_key \
+    --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    set -eu; \
+    token=$(cat /run/secrets/gh_token); \
+    segment=$(cat /run/secrets/segment_api_key 2>/dev/null || true); \
+    export GOPRIVATE='github.com/hoophq/*' GOWORK=off CGO_ENABLED=1 \
+      GIT_CONFIG_COUNT=1 \
+      GIT_CONFIG_KEY_0="url.https://x-access-token:${token}@github.com/hoophq/.insteadOf" \
+      GIT_CONFIG_VALUE_0="https://github.com/hoophq/"; \
+    case "${TARGETARCH}" in \
+      amd64) tok=linux-amd64; ort=linux-x64 ;; \
+      arm64) tok=linux-arm64; ort=linux-aarch64 ;; \
+      *) echo "the ica flavour has no prebuilt tokenizer/onnxruntime for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /out/tok /out/ort /out/bin /out/worker; \
+    cd sidecar/cmd; \
+    # Fetch libtokenizers.a (hugot's Rust tokenizer, which the ORT build tag
+    # links statically) at the version go.mod pins.
+    tv=$(go list -m -f '{{.Version}}' github.com/daulet/tokenizers); \
+    curl -sSfL "https://github.com/daulet/tokenizers/releases/download/${tv}/libtokenizers.${tok}.tar.gz" \
+      | tar -xz -C /out/tok; \
+    CGO_LDFLAGS=-L/out/tok go build -tags ORT -trimpath \
+      -ldflags "-s -w -X main.version=${VERSION} -X github.com/hoophq/hoop/sidecar/analytics.writeKey=${segment}" \
+      -o /out/bin/hoop-inspect .; \
+    # Fetch ONNX Runtime for the path the engine's profile reads by default;
+    # see ORT_VERSION above.
+    curl -sSfL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-${ort}-${ORT_VERSION}.tgz" \
+      | tar -xz -C /out/ort --strip-components=1; \
+    # Fetch the worker from the libhoop-ica release this binary links. Both
+    # versions come from the same go.mod, so engine and worker stay in step.
+    # The repository is private, so this step downloads the assets through
+    # the GitHub API.
+    iv=$(go list -m -f '{{.Version}}' github.com/hoophq/libhoop-ica); \
+    archive="libhoop-ica_${iv#v}_linux_${TARGETARCH}.tar.gz"; \
+    release=$(curl -sSfL -H "Authorization: Bearer ${token}" \
+      "https://api.github.com/repos/hoophq/libhoop-ica/releases/tags/${iv}"); \
+    for name in "${archive}" checksums.txt; do \
+      url=$(printf '%s' "${release}" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["url"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "${name}"); \
+      curl -sSfL -H "Authorization: Bearer ${token}" -H 'Accept: application/octet-stream' \
+        "${url}" -o "/out/worker/${name}"; \
+    done; \
+    cd /out/worker; \
+    grep -F " ${archive}" checksums.txt | sha256sum -c -; \
+    tar -xzf "${archive}" hoop-tesseract-worker hoop-tesseract-worker.txt LICENSE NOTICE; \
+    rm -f "${archive}" checksums.txt; \
+    # The ica-assets target records which engine release the worker is from.
+    printf '%s\n' "${iv}" > /out/worker/libhoop-ica-version
+
+# --- Stage: fetch the NER model ----------------------------------------------
+# Dockerfile.agent's `models` stage, unchanged: BUILDPLATFORM, because the
+# weights are the same for every architecture, so a multiarch build fetches
+# them once. Only the ica target depends on it.
+FROM --platform=${BUILDPLATFORM} ${CURL_IMAGE} AS models
+ARG ALCATRAZ_MODEL_ORIGIN
+# curlimages/curl cannot write under /opt. Throwaway stage only.
+USER root
+WORKDIR /opt/alcatraz/models
+# -f: an origin answering 404 fails the build instead of saving the error page
+# as a model file. A digest mismatch is not transient; the one benign cause is
+# reading the manifest mid-publish, so retry it, never soften this step.
+RUN set -eu; \
+    curl -fsSL "${ALCATRAZ_MODEL_ORIGIN}/checksums.txt" -o checksums.txt; \
+    while read -r _ path; do \
+      [ -n "$path" ] || continue; \
+      curl -fsSL "${ALCATRAZ_MODEL_ORIGIN}/${path}" --create-dirs -o "$path"; \
+    done < checksums.txt; \
+    sha256sum -c checksums.txt; \
+    chmod -R a+rX /opt/alcatraz/models
+
+# --- Flavour: ica (Ubuntu 24.04 LTS + the Citrix ICA engine) -----------------
+# hoophq/hoopsidecar:<version>-ica. This stage sits before `default`, which
+# must stay last.
+FROM ${UBUNTU_IMAGE} AS ica
+ARG SIDECAR_CONFIG
+ARG ORT_VERSION
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Packages added to the default flavour's ca-certificates and tini:
+#
+#   libtesseract5, tesseract-ocr, tesseract-ocr-eng
+#       the worker links libtesseract.so.5; the engine also checks the
+#       `tesseract` CLI's major version, and reads English tessdata from
+#       /usr/share/tesseract-ocr/5/tessdata, its default.
+#
+# The engine's default paths follow its installed-release layout,
+# /opt/libhoop-ica/current/{bin,models}; `current` points at this image's
+# release directory the way the Azure installer's points at a versioned one.
+RUN groupadd --gid 10001 hoop && \
+    useradd --uid 10001 --gid 10001 --shell /sbin/nologin hoop && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends ca-certificates tini \
+      libtesseract5 tesseract-ocr tesseract-ocr-eng && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives && \
+    mkdir -p /opt/libhoop-ica/releases/image/bin /opt/libhoop-ica/releases/image/models && \
+    ln -s releases/image /opt/libhoop-ica/current
+
+COPY --from=ica-build /out/bin/hoop-inspect /app/hoop-inspect
+COPY --from=ica-build /out/worker/hoop-tesseract-worker /opt/libhoop-ica/releases/image/bin/
+COPY --from=ica-build /out/worker/LICENSE /out/worker/NOTICE /opt/libhoop-ica/releases/image/
+COPY --from=ica-build /out/ort/lib/ /opt/alcatraz/ort/releases/${ORT_VERSION}/lib/
+# The NER model at libhoop-ica's DefaultNERModel path. COPY lands it root-owned
+# and a+rX from the models stage, so uid 10001 reads it.
+COPY --from=models /opt/alcatraz/models/KnightsAnalytics_distilbert-NER \
+  /opt/libhoop-ica/releases/image/models/KnightsAnalytics_distilbert-NER
+ENV PATH="/app:${PATH}"
+# Numeric, so a pod with runAsNonRoot can verify the user without a
+# runAsUser of its own; the kubelet refuses a named user under it.
+USER 10001:10001
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["hoop-inspect", "-config", "/etc/hoop-inspect/config.yaml"]
+
+# --- Stage: ica-assets (the Docker-less bundle) ------------------------------
+# Packs what the ica flavour carries, for a host that runs it without Docker:
+# hoop-inspect under the name hoop-ica, the worker ica-build fetched, ONNX
+# Runtime's library and licence files, release.txt, the installer and its
+# example configs. BUILDPLATFORM, because it only runs tar: every binary
+# inside is already the TARGETARCH build. The
+# tarball is flat, like the CLI tarballs, and the _checksum.txt beside it is
+# in the form `make build-tar-files` writes, so `make release-s3` folds it
+# into checksums.txt unchanged.
+FROM --platform=${BUILDPLATFORM} ${UBUNTU_IMAGE} AS ica-assets-package
+ARG TARGETARCH
+ARG VERSION=unknown
+ARG ORT_VERSION
+# The same binary the ica flavour runs as hoop-inspect, named for what it is
+# on a host: the ica engine build. The Linux hoop CLI links the engine too,
+# so `hoop start sidecar` serves the same config in-process; hoop-ica is the
+# process the installer's unit runs, and the one to use with a CLI that
+# predates the engine.
+COPY --from=ica-build /out/bin/hoop-inspect /bundle/hoop-ica
+COPY --from=ica-build /out/worker/hoop-tesseract-worker /out/worker/hoop-tesseract-worker.txt /bundle/bin/
+COPY --from=ica-build /out/worker/LICENSE /out/worker/NOTICE /out/worker/libhoop-ica-version /bundle/
+# The library and its symlinks, not the cmake and pkgconfig files beside them.
+COPY --from=ica-build /out/ort/lib/libonnxruntime* /bundle/ort/lib/
+COPY --from=ica-build /out/ort/LICENSE /out/ort/ThirdPartyNotices.txt /bundle/ort/
+COPY deploy/ica-sidecar/install.sh /bundle/install.sh
+COPY deploy/ica-sidecar/examples/ /bundle/examples/
+RUN set -eu; \
+    { \
+      echo "version=${VERSION}"; \
+      echo "arch=${TARGETARCH}"; \
+      echo "libhoop_ica=$(cat /bundle/libhoop-ica-version)"; \
+      echo "ort=${ORT_VERSION}"; \
+    } > /bundle/release.txt; \
+    rm /bundle/libhoop-ica-version; \
+    chmod 0755 /bundle/install.sh /bundle/hoop-ica /bundle/bin/hoop-tesseract-worker; \
+    mkdir -p /dist/binaries; \
+    name="hoop-ica-assets_${VERSION}_Linux_${TARGETARCH}"; \
+    tar -czf "/dist/binaries/${name}.tar.gz" --owner=0 --group=0 -C /bundle .; \
+    (cd / && sha256sum "./dist/binaries/${name}.tar.gz" > "/dist/binaries/${name}_checksum.txt")
+
+FROM scratch AS ica-assets
+COPY --from=ica-assets-package /dist/ /
 
 # --- Flavour: default (Ubuntu 24.04 LTS) -------------------------------------
 # The unsuffixed image, and what :latest points at. Declared last on purpose:

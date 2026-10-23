@@ -114,6 +114,53 @@ func TestInspectorRetainsUndecodedTail(t *testing.T) {
 	}
 }
 
+// ready is what a holding caller forwards, so it must be exactly the bytes
+// the returned statements came from: nothing of a partial message, and a
+// retained prefix once its message completes.
+func TestInspectReadyReturnsOnlyDecodedBytes(t *testing.T) {
+	c := &stubCodec{consume: func(d []byte) (int, error) {
+		return len(d) / 4 * 4, nil
+	}}
+	insp := inspect.NewWithCodec(c)
+
+	for _, step := range []struct{ in, ready string }{
+		{"ab", ""},
+		{"cdef", "abcd"},
+		{"gh", "efgh"},
+	} {
+		_, ready, err := insp.InspectReady(inspect.FromClient, []byte(step.in))
+		if err != nil {
+			t.Fatalf("InspectReady(%q): %v", step.in, err)
+		}
+		if string(ready) != step.ready {
+			t.Errorf("InspectReady(%q) ready = %q, want %q", step.in, ready, step.ready)
+		}
+	}
+}
+
+// On overflow nothing of the message was decoded, so nothing is ready.
+func TestInspectReadyOnOverflowIsEmpty(t *testing.T) {
+	c := &stubCodec{consume: func(d []byte) (int, error) { return 0, nil }}
+	insp := inspect.NewWithCodec(c)
+	insp.SetMaxBuffer(64)
+
+	var (
+		ready []byte
+		err   error
+	)
+	for range 3 {
+		if _, ready, err = insp.InspectReady(inspect.FromClient, make([]byte, 32)); err != nil {
+			break
+		}
+	}
+	if !errors.Is(err, inspect.ErrBufferOverflow) {
+		t.Fatalf("err = %v, want ErrBufferOverflow", err)
+	}
+	if len(ready) != 0 {
+		t.Errorf("ready = %d bytes on overflow, want none", len(ready))
+	}
+}
+
 func TestInspectorDropsBufferOnError(t *testing.T) {
 	boom := errors.New("boom")
 	c := &stubCodec{consume: func(d []byte) (int, error) { return 0, boom }}

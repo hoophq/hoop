@@ -543,16 +543,18 @@ func (cp *controlPlane) reviewError(resp *http.Response, raw []byte) error {
 
 // decodeReview reads the answer.
 //
-// Only three fields are read of the review document the plane returns, and
+// Only four fields are read of the review document the plane returns, and
 // the rest is ignored on purpose: the reviewer groups, the approval count and
 // the timestamps belong to whoever is deciding, and a sidecar that parsed
-// them would be a second reader of a policy it does not enforce.
+// them would be a second reader of a policy it does not enforce. The
+// rejection reason is read only to word the denial.
 func decodeReview(raw []byte) (analyzer.ReviewResult, error) {
 	var answer struct {
 		Forward bool `json:"forward"`
 		Review  *struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
+			ID              string `json:"id"`
+			Status          string `json:"status"`
+			RejectionReason string `json:"rejection_reason"`
 		} `json:"review"`
 	}
 	if err := json.Unmarshal(raw, &answer); err != nil {
@@ -562,6 +564,7 @@ func decodeReview(raw []byte) (analyzer.ReviewResult, error) {
 	if answer.Review != nil {
 		out.ID = answer.Review.ID
 		out.Status = answer.Review.Status
+		out.Reason = answer.Review.RejectionReason
 	}
 	// A release has to name the review it spent. The plane always does, so
 	// anything answering `{"forward":true}` and nothing else is not the

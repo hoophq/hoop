@@ -1,0 +1,153 @@
+apiVersion: blueprints.cloud.google.com/v1alpha1
+kind: BlueprintMetadata
+metadata:
+  name: hoop-sidecar-on-google-kubernetes-engine
+  annotations:
+    config.kubernetes.io/local-config: "true"
+spec:
+  info:
+    title: hoop sidecar on Google Kubernetes Engine
+    source:
+      repo: https://github.com/hoophq/hoop.git
+      sourceType: git
+      dir: /deploy/gcp-marketplace/sidecar
+    actuationTool:
+      flavor: Terraform
+      version: ">= 1.5"
+    description: {}
+  content:
+    subBlueprints:
+      - name: values
+        location: modules/values
+  interfaces:
+    variables:
+      - name: project_id
+        description: The project the cluster is in.
+        varType: string
+        required: true
+      - name: helm_chart_repo
+        description: OCI repository of the sidecar chart, for example oci://us-docker.pkg.dev/PROJECT/REPO.
+        varType: string
+        required: true
+      - name: helm_chart_name
+        description: Name of the sidecar chart in helm_chart_repo.
+        varType: string
+        required: true
+      - name: helm_chart_version
+        description: Version of the sidecar chart.
+        varType: string
+        required: true
+      - name: image_repo
+        description: Sidecar image repository, registry included. Declared in schema.yaml.
+        varType: string
+        required: true
+      - name: image_tag
+        description: Sidecar image tag. Declared in schema.yaml.
+        varType: string
+        required: true
+      - name: consumption_tracking_label
+        description: The product's Producer Portal consumption tracking label. Empty adds no label.
+        varType: string
+        defaultValue: ""
+      - name: create_cluster
+        description: Create a new GKE Autopilot cluster instead of using an existing one.
+        varType: bool
+        defaultValue: false
+      - name: cluster_name
+        description: Name of the GKE cluster.
+        varType: string
+        required: true
+      - name: cluster_location
+        description: Region or zone of the GKE cluster. A new Autopilot cluster needs a region.
+        varType: string
+        required: true
+      - name: namespace
+        description: Namespace for the sidecar. Created when missing.
+        varType: string
+        defaultValue: hoop-sidecar
+      - name: goog_cm_deployment_name
+        description: Name of the deployment, used as the Helm release name.
+        varType: string
+        required: true
+      - name: config_source
+        description: "Where the sidecar config comes from: simple (the fields below), document (a whole config), configmap (an existing ConfigMap) or control_plane."
+        varType: string
+        defaultValue: simple
+      - name: protocol
+        description: "simple: protocol of the resource."
+        varType: string
+        defaultValue: postgres
+      - name: upstream
+        description: "simple: the resource the sidecar fronts, as host:port."
+        varType: string
+        defaultValue: ""
+      - name: service_port
+        description: "simple: port clients connect to. 0 uses the protocol's usual port."
+        varType: number
+        defaultValue: 0
+      - name: config_document
+        description: "document: the whole sidecar config as JSON or YAML. admin.listen must be 0.0.0.0:19000."
+        varType: string
+        defaultValue: ""
+      - name: existing_config_map
+        description: "configmap: name of a ConfigMap in the namespace whose key config.yaml is the config."
+        varType: string
+        defaultValue: ""
+      - name: control_plane_url
+        description: "control_plane: URL of the hoop control plane."
+        varType: string
+        defaultValue: ""
+      - name: control_plane_token
+        description: "control_plane: the sidecar token from the control plane."
+        varType: string
+        defaultValue: ""
+      - name: lane_ports
+        description: "configmap and control_plane: listener ports the lane Service publishes, comma separated, e.g. 15432,18080."
+        varType: string
+        defaultValue: ""
+      - name: service_type
+        description: "Lane Service type: ClusterIP, or InternalLoadBalancer to reach it from the VPC."
+        varType: string
+        defaultValue: ClusterIP
+      - name: license
+        description: "Hoop license document. Empty runs the free tier: one guardrail rule and one masking rule. Ignored in control_plane mode, where the organization's license applies."
+        varType: string
+        defaultValue: ""
+      - name: cpu
+        description: CPU request and limit of the sidecar.
+        varType: string
+        defaultValue: 500m
+      - name: memory
+        description: Memory request and limit of the sidecar.
+        varType: string
+        defaultValue: 512Mi
+      - name: replicas
+        description: Number of sidecar pods. Each is an independent proxy; the lane Service spreads connections.
+        varType: number
+        defaultValue: 1
+    outputs:
+      - name: admin_service
+        description: "Service of the admin server on 19000: /healthz, /stats, /config."
+      - name: lane_ports
+        description: Ports of the lane Service.
+      - name: lane_service
+        description: Service clients connect to. Empty when no lane port is published.
+      - name: namespace
+        description: Namespace of the sidecar.
+      - name: release_name
+        description: Helm release of the sidecar.
+  # Roles the deploying identity needs on the project. container.admin covers
+  # the cluster (create or read) and every object the chart creates in it;
+  # serviceUsageAdmin enables the GKE API and iam.serviceAccountUser lets a new
+  # Autopilot cluster run as the default compute service account. The last two
+  # only matter with create_cluster = true.
+  requirements:
+    roles:
+      - level: Project
+        roles:
+          - roles/container.admin
+          - roles/serviceusage.serviceUsageAdmin
+          - roles/iam.serviceAccountUser
+    services:
+      - container.googleapis.com
+      - serviceusage.googleapis.com

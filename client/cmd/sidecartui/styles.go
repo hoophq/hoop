@@ -16,40 +16,86 @@ import (
 // (#C4060A) means refused or broken: denials, errors, high risk. A color
 // anywhere else would dilute those two, so allowed traffic stays gray.
 //
-// The grays follow the terminal's background, read from COLORFGBG once at
-// startup (see darkBackground). Never from a terminal query: asking the
-// terminal stalls up to five seconds in one that does not answer, and this
-// package is linked into every hoop command.
-var (
-	shade = lipgloss.LightDark(darkBackground(os.Getenv("COLORFGBG")))
+// The grays follow the terminal's background. setTheme picks the light or the
+// dark variant of each, and runs twice: once at init from COLORFGBG, so the
+// first frame is reasonable before the terminal has answered, and again from
+// tea.BackgroundColorMsg once the terminal reports its real background (see
+// model.Update and firstRunModel.Update). COLORFGBG on its own is not enough:
+// Warp and other terminals never set it, which would strand every one of them
+// on the dark palette and paint light text onto a light background.
+//
+// Nothing here queries the terminal synchronously. Bubble Tea asks for the
+// background with tea.RequestBackgroundColor and delivers the reply as a
+// message; a terminal that never answers (tmux, screen) simply keeps the
+// COLORFGBG guess, and no frame stalls waiting for it.
 
+// Colors that do not depend on the terminal's background.
+var (
 	colPrimary = lipgloss.Color("#3E63DD")
 	colDanger  = lipgloss.Color("#C4060A")
 	// colInk is text on a blue or red background.
-	colInk    = lipgloss.Color("#FFFFFF")
-	colFaint  = shade(lipgloss.Color("#8B8B8B"), lipgloss.Color("#7A7A7A"))
+	colInk = lipgloss.Color("#FFFFFF")
+)
+
+// Background-dependent colors and the styles built from them. setTheme assigns
+// every one; init below runs it, so they are set before the first render.
+var (
+	shade lipgloss.LightDarkFunc
+
+	colFaint   color.Color
+	colStrong  color.Color
+	colBorder  color.Color
+	colSelBg   color.Color
+	colNeutral color.Color
+
+	stBrand   lipgloss.Style
+	stFaint   lipgloss.Style
+	stBold    lipgloss.Style
+	stText    lipgloss.Style
+	stStrong  lipgloss.Style
+	stPrimary lipgloss.Style
+	stDanger  lipgloss.Style
+	stKey     lipgloss.Style
+	stLabel   lipgloss.Style
+	stTabOn   lipgloss.Style
+	stTabOff  lipgloss.Style
+	stSel     lipgloss.Style
+	stPane    lipgloss.Style
+	stTitle   lipgloss.Style
+)
+
+func init() { setTheme(darkBackground(os.Getenv("COLORFGBG"))) }
+
+// setTheme rebuilds the background-dependent palette for a light or a dark
+// terminal. It is safe to call from Update: the TUI runs on the single Bubble
+// Tea goroutine, so the reassignment and the next frame that reads it never
+// race.
+func setTheme(isDark bool) {
+	shade = lipgloss.LightDark(isDark)
+
+	colFaint = shade(lipgloss.Color("#8B8B8B"), lipgloss.Color("#7A7A7A"))
 	colStrong = shade(lipgloss.Color("#1A1A1A"), lipgloss.Color("#EDEDED"))
 	colBorder = shade(lipgloss.Color("#D4D4D4"), lipgloss.Color("#3A3A3A"))
-	colSelBg  = shade(lipgloss.Color("#EBEBEB"), lipgloss.Color("#2B2B2B"))
+	colSelBg = shade(lipgloss.Color("#EBEBEB"), lipgloss.Color("#2B2B2B"))
 	// colNeutral fills a button that is safe and not an action: the No of
 	// a "stop the sidecar?" prompt. Gray, so blue keeps meaning "act".
 	colNeutral = shade(lipgloss.Color("#D4D4D4"), lipgloss.Color("#4A4A4A"))
 
-	stBrand   = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 1)
-	stFaint   = lipgloss.NewStyle().Foreground(colFaint)
-	stBold    = lipgloss.NewStyle().Bold(true)
-	stText    = lipgloss.NewStyle().Foreground(colStrong)
-	stStrong  = lipgloss.NewStyle().Foreground(colStrong).Bold(true)
+	stBrand = lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(colPrimary).Padding(0, 1)
+	stFaint = lipgloss.NewStyle().Foreground(colFaint)
+	stBold = lipgloss.NewStyle().Bold(true)
+	stText = lipgloss.NewStyle().Foreground(colStrong)
+	stStrong = lipgloss.NewStyle().Foreground(colStrong).Bold(true)
 	stPrimary = lipgloss.NewStyle().Foreground(colPrimary).Bold(true)
-	stDanger  = lipgloss.NewStyle().Foreground(colDanger)
-	stKey     = lipgloss.NewStyle().Foreground(colPrimary)
-	stLabel   = lipgloss.NewStyle().Foreground(colFaint)
-	stTabOn   = lipgloss.NewStyle().Bold(true).Foreground(colPrimary).Underline(true)
-	stTabOff  = lipgloss.NewStyle().Foreground(colFaint)
-	stSel     = lipgloss.NewStyle().Background(colSelBg)
-	stPane    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBorder).Padding(0, 1)
-	stTitle   = stStrong
-)
+	stDanger = lipgloss.NewStyle().Foreground(colDanger)
+	stKey = lipgloss.NewStyle().Foreground(colPrimary)
+	stLabel = lipgloss.NewStyle().Foreground(colFaint)
+	stTabOn = lipgloss.NewStyle().Bold(true).Foreground(colPrimary).Underline(true)
+	stTabOff = lipgloss.NewStyle().Foreground(colFaint)
+	stSel = lipgloss.NewStyle().Background(colSelBg)
+	stPane = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBorder).Padding(0, 1)
+	stTitle = stStrong
+}
 
 func badge(text string, bg color.Color) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(colInk).Background(bg).Padding(0, 1).Render(text)

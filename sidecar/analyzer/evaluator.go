@@ -11,6 +11,7 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // DefaultTimeout bounds one classification. It is deliberately short: the
@@ -427,6 +428,13 @@ func (e *Evaluator) Evaluate(stmt inspect.Statement) policy.Verdict {
 	return e.EvaluateWith(stmt, nil)
 }
 
+// TelemetryStage implements policy.Staged: the model-backed evaluator is
+// its own stage in a statement's latency, apart from the local rules and
+// OPA it sits between.
+func (e *Evaluator) TelemetryStage() (telemetry.Stage, string) {
+	return telemetry.StageAnalyzer, ""
+}
+
 // EvaluateWith implements policy.ContextualEvaluator.
 //
 // It reads one thing from the context and writes one. A gate-phase policy
@@ -438,7 +446,16 @@ func (e *Evaluator) Evaluate(stmt inspect.Statement) policy.Verdict {
 // Chain carries to whatever decides next. That hop is the entire connection
 // between the model and OPA: neither has any idea the other exists.
 func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext) policy.Verdict {
-	res, status, err := e.classify(context.Background(), stmt, ec)
+	// The provider call runs under ConnCtx's VALUES and not its
+	// cancellation: the stage span rides to the model endpoint as a
+	// traceparent, while the deadline stays the configured timeout, as
+	// the comment on Evaluate says. The hold, which does read ConnCtx's
+	// cancellation, takes it from ec itself.
+	ctx := context.Background()
+	if ec != nil && ec.ConnCtx != nil {
+		ctx = context.WithoutCancel(ec.ConnCtx)
+	}
+	res, status, err := e.classify(ctx, stmt, ec)
 	if status == "" {
 		// Not eligible: a response frame, a protocol with no builder.
 		// Reporting would put a finding on rows where no analyzer could

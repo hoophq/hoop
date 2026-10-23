@@ -600,3 +600,18 @@ func TestADecideDenialOnAHoldingLaneFilesNothing(t *testing.T) {
 		t.Fatalf("decide saw input.review = %v", review)
 	}
 }
+
+// A rejected review's reason is the one field of the plane's answer that the
+// developer reads, so it travels from the claim to the hold's denial.
+func TestAClaimReadsTheRejectionReason(t *testing.T) {
+	cp, _ := reviewPlane(t, http.StatusOK,
+		`{"forward":false,"review":{"id":"9f97","status":"REJECTED","rejection_reason":"use the replica"}}`)
+
+	res, err := cp.reviewer("payments", "payments-approvers", false, nil).Claim(context.Background(), "9f97")
+	if err != nil {
+		t.Fatalf("claimReview: %v", err)
+	}
+	if res.Status != "REJECTED" || res.Reason != "use the replica" {
+		t.Errorf("status %q reason %q, want REJECTED and the approver's reason", res.Status, res.Reason)
+	}
+}

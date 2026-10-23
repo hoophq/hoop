@@ -472,6 +472,13 @@ func corpus() []stmtCase {
 		// the privilege it tested, so the refusal hit every table.
 		`SELECT 1 AS delete`,
 		`SELECT 1 AS update, 2 AS insert, 3 AS drop`,
+		// A lone CR ends a -- comment in PostgreSQL, so the DELETE after
+		// it runs. The scanner read the comment to the next LF and filed
+		// the DELETE as commentary (ENG-855). A CR LF line end reads the
+		// same either way.
+		"-- note\rDELETE FROM customers",
+		"SELECT 1; -- note\rDELETE FROM customers",
+		"SELECT 1 -- note\r\n",
 		`WITH p AS (SELECT 1 AS delete) SELECT * FROM p`,
 		`SELECT has_table_privilege(current_user, t.tablename, 'delete') AS delete,
 		        has_table_privilege(current_user, t.tablename, 'update') AS update

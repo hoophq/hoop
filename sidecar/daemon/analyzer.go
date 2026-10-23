@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/url"
 	"slices"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/license"
 
 	"github.com/hoophq/hoop/sidecar/policy"
 	codecssh "github.com/hoophq/libhoop/v2/codec/ssh"
@@ -140,10 +142,27 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 // is a DEFAULT a listener's own analyzer block overrides per lane.
 type AnalyzerConfig struct {
 	// Provider names a registered provider: anthropic, openai, gemini,
-	// vertex. Availability depends on what the binary links.
+	// vertex. Availability depends on what the binary links. Empty selects
+	// the model Hoop hosts when no Enterprise license is installed; see
+	// UseHoopLLMProvider.
 	Provider string `json:"provider,omitempty"`
 
-	// Model names the model. Provider-specific format.
+	// UseHoopLLMProvider selects the small model Hoop hosts, so analysis
+	// works without an LLM of your own. Statement text, which can contain
+	// PII, is sent to Hoop.
+	//
+	// Unset, it follows the license: with no provider named, a sidecar
+	// without an Enterprise license uses the hosted model and warns, and
+	// one with an Enterprise license refuses to start until a provider or
+	// true is set. false turns the hosted model off.
+	UseHoopLLMProvider *bool `json:"use_hoop_llm_provider,omitempty" cap:"analyzer_hoop_llm_provider"`
+
+	// hostedDefault records that the hosted model was chosen by the license
+	// default, not by the config. Never serialized.
+	hostedDefault bool
+
+	// Model names the model. Provider-specific format. Optional with
+	// UseHoopLLMProvider.
 	Model string `json:"model,omitempty"`
 
 	// Endpoint overrides the provider's default URL. Empty uses the
@@ -600,14 +619,37 @@ func (a *AnalyzerConfig) validate(hasScanner, onHost bool) []string {
 	}
 	var problems []string
 
-	if a.Provider == "" {
-		problems = append(problems, "analyzer: no provider set")
-	} else if onHost && !providerLinked(a.Provider) {
+	switch {
+	case a.hosted():
+		// The hosted model is one fixed service: nothing here picks a
+		// different one, and a credential has nowhere to go.
+		if a.Provider != "" {
+			problems = append(problems, fmt.Sprintf(
+				"analyzer: use_hoop_llm_provider and provider %q are exclusive; remove one", a.Provider))
+		}
+		if a.CredentialsFile != "" {
+			problems = append(problems,
+				"analyzer: use_hoop_llm_provider takes no credentials_file; its requests are signed")
+		}
+		if onHost && !providerLinked(hostedProvider) {
+			problems = append(problems, "analyzer: use_hoop_llm_provider is set but this binary does not link the hosted provider")
+		}
+	case a.Provider == hostedProvider:
+		problems = append(problems, fmt.Sprintf(
+			"analyzer: provider %q is not set directly; set use_hoop_llm_provider: true", hostedProvider))
+	case a.Provider == "" && a.UseHoopLLMProvider != nil:
+		problems = append(problems, "analyzer: use_hoop_llm_provider is false and no provider is set; "+
+			"set provider and model to use your own LLM")
+	case a.Provider == "":
+		// The license decides: effectiveAnalyzer, on the sidecar host.
+	case onHost && !providerLinked(a.Provider):
 		problems = append(problems, fmt.Sprintf(
 			"analyzer: provider %q is not linked into this binary (linked: %s)",
 			a.Provider, strings.Join(analyzer.RegisteredProviders(), ", ")))
 	}
-	if a.Model == "" {
+	// Only once a real provider is named: before that, the provider error
+	// above is the one to fix.
+	if a.Model == "" && a.Provider != "" && a.Provider != hostedProvider {
 		problems = append(problems, "analyzer: no model set")
 	}
 
@@ -707,10 +749,17 @@ func providerLinked(name string) bool {
 // endpointHost renders the endpoint for /config: host only, never the path or
 // anything that could carry a token.
 func (a *AnalyzerConfig) endpointHost() string {
-	if a == nil || a.Endpoint == "" {
+	if a == nil {
 		return ""
 	}
-	u, err := url.Parse(a.Endpoint)
+	endpoint := a.Endpoint
+	if endpoint == "" && a.hosted() {
+		endpoint = analyzer.HostedEndpoint
+	}
+	if endpoint == "" {
+		return ""
+	}
+	u, err := url.Parse(endpoint)
 	if err != nil {
 		return ""
 	}
@@ -736,15 +785,145 @@ func buildAnalyzer(cfg *AnalyzerConfig, roots *x509.CertPool) (analyzer.Provider
 		}
 	}
 
-	return analyzer.NewProvider(cfg.Provider, analyzer.Options{
+	provider := cfg.providerName()
+	return analyzer.NewProvider(provider, analyzer.Options{
 		Model:           cfg.Model,
 		Endpoint:        cfg.Endpoint,
 		Credential:      cred,
 		Extra:           cfg.Extra,
 		MaxOutputTokens: cfg.MaxOutputTokens,
 		Sampling:        cfg.sampling(),
-		HTTPClient:      outboundHTTPClient(roots, "analyzer/"+cfg.Provider),
+		HTTPClient:      outboundHTTPClient(roots, "analyzer/"+provider),
 	})
+}
+
+// hostedProvider is the registered name of the provider for the model Hoop
+// hosts. Config never names it: use_hoop_llm_provider selects it, so the
+// choice to send statements to Hoop is a flag of its own.
+const hostedProvider = "hoop"
+
+// hostedPIINotice is logged whenever the hosted model is in use.
+const hostedPIINotice = "analyzer uses the model Hoop hosts: statement text, which can contain PII, is sent to Hoop for classification"
+
+// hostedDefaultNotice follows hostedPIINotice when the license default, not
+// the config, chose the hosted model.
+const hostedDefaultNotice = "no analyzer provider is set and no Enterprise license is installed, so this is the default; " +
+	"set use_hoop_llm_provider: false, or a provider and model, to keep statements in your network"
+
+// hostedNeedsOptIn refuses the license default on an Enterprise sidecar.
+const hostedNeedsOptIn = "analyzer: an Enterprise license is installed, so the analyzer needs a " +
+	"provider. Set provider and model to use your own LLM, or set use_hoop_llm_provider: true " +
+	"to use the model Hoop hosts (statement text, which can contain PII, is then sent to Hoop)"
+
+var errHostedNeedsOptIn = fmt.Errorf("invalid config:\n  - %s", hostedNeedsOptIn)
+
+// CheckServedAnalyzer reports an analyzer the control plane must not serve:
+// a listener that analyses while the config names neither a provider nor
+// use_hoop_llm_provider: true. The license default exists for a sidecar's
+// own file; a served document says what it means, because a sidecar older
+// than the default refuses a provider-less section, and only the explicit
+// flag is capability-checked.
+func (c Config) CheckServedAnalyzer() []string {
+	if !c.lanesAnalyze() {
+		return nil
+	}
+	if a := c.Analyzer; a != nil && (a.Provider != "" || a.hostedOptIn()) {
+		return nil
+	}
+	return []string{servedNeedsProvider}
+}
+
+const servedNeedsProvider = "analyzer: a listener analyses but the configuration names no provider. " +
+	"Set provider and model to use your own LLM, or set use_hoop_llm_provider: true to use the model " +
+	"Hoop hosts (statement text, which can contain PII, is then sent to Hoop)"
+
+// hostedOptIn reports use_hoop_llm_provider: true.
+func (a *AnalyzerConfig) hostedOptIn() bool {
+	return a.UseHoopLLMProvider != nil && *a.UseHoopLLMProvider
+}
+
+// hosted reports whether the section uses the model Hoop hosts.
+func (a *AnalyzerConfig) hosted() bool { return a.hostedOptIn() || a.hostedDefault }
+
+// providerName is the provider the section selects.
+func (a *AnalyzerConfig) providerName() string {
+	if a.hosted() {
+		return hostedProvider
+	}
+	return a.Provider
+}
+
+// enterpriseLicensed reports an Enterprise license, expired or not: a
+// customer whose license lapsed must not start sending statements to Hoop.
+func (c *Config) enterpriseLicensed() bool {
+	switch c.lic.State() {
+	case license.StateValid, license.StateExpired:
+		return c.lic.License.Payload.Type == license.EnterpriseType
+	}
+	return false
+}
+
+// lanesAnalyze reports whether any listener asks for analysis.
+func (c *Config) lanesAnalyze() bool {
+	for _, lc := range c.Listeners {
+		if lc.Analyzer != nil {
+			return true
+		}
+		gc, _, _ := c.resolve(lc)
+		if _, ai := splitAnalyzerRules(gc.Rules); len(ai) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// effectiveAnalyzer is the analyzer section the process runs: the config's,
+// or, when it names no provider, the hosted model for a sidecar without an
+// Enterprise license. It never changes c.Analyzer, so nothing the config
+// did not say is written back or served.
+func (c *Config) effectiveAnalyzer() (*AnalyzerConfig, error) {
+	a := c.Analyzer
+	if a != nil && (a.Provider != "" || a.UseHoopLLMProvider != nil) {
+		return a, nil
+	}
+	if a == nil && !c.lanesAnalyze() {
+		return nil, nil
+	}
+	if c.enterpriseLicensed() {
+		return nil, errHostedNeedsOptIn
+	}
+	out := AnalyzerConfig{}
+	if a != nil {
+		out = *a
+	}
+	out.hostedDefault = true
+	return &out, nil
+}
+
+// modelName is the model in use, the hosted default when the hosted model
+// is selected with no model named.
+func (a *AnalyzerConfig) modelName() string {
+	if a.Model == "" && a.hosted() {
+		return analyzer.HostedModel
+	}
+	return a.Model
+}
+
+// ReportHostedAnalyzer writes the PII notice to w when the process uses the
+// model Hoop hosts. Both validate entry points call it, on stderr: stdout
+// carries the -validate report.
+func ReportHostedAnalyzer(w io.Writer, cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	a, err := cfg.effectiveAnalyzer()
+	if err != nil || a == nil || !a.hosted() {
+		return
+	}
+	fmt.Fprintln(w, "warn:", hostedPIINotice)
+	if a.hostedDefault {
+		fmt.Fprintln(w, "warn:", hostedDefaultNotice)
+	}
 }
 
 // splitAnalyzerRules separates ai_analysis rules from the local rule set.
@@ -1096,10 +1275,14 @@ func actionMap(la LaneAnalyzerConfig, hasOPA bool) (analyzer.ActionMap, error) {
 // existed, and an ai_analysis rule fails later with a message naming the
 // missing section.
 func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
-	if cfg == nil || cfg.Analyzer == nil {
+	if cfg == nil {
 		return nil, nil
 	}
-	if problems := cfg.Analyzer.validate(det != nil, true); len(problems) > 0 {
+	a, err := cfg.effectiveAnalyzer()
+	if err != nil || a == nil {
+		return nil, err
+	}
+	if problems := a.validate(det != nil, true); len(problems) > 0 {
 		return nil, fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
 	}
 
@@ -1107,18 +1290,18 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 	if err != nil {
 		return nil, err
 	}
-	provider, err := buildAnalyzer(cfg.Analyzer, roots)
+	provider, err := buildAnalyzer(a, roots)
 	if err != nil {
 		return nil, err
 	}
 	return &analyzerDeps{
-		cfg:      cfg.Analyzer,
+		cfg:      a,
 		provider: provider,
 		cp:       cfg.cp,
 		local:    cfg.localReviewer,
 		det:      det,
 		mcp:      cfg.MCP != nil,
-		metrics:  newAnalyzerMetrics(cfg.Analyzer.Provider, cfg.Analyzer.Model),
+		metrics:  newAnalyzerMetrics(a.providerName(), a.modelName()),
 	}, nil
 }
 
@@ -1227,15 +1410,8 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	}
 	var problems []string
 
-	if cfg == nil {
-		what := "has ai_analysis rule(s)"
-		if la != nil {
-			what = "has an analyzer block"
-		}
-		problems = append(problems, fmt.Sprintf(
-			"%s: %s but the config has no top-level \"analyzer\" section "+
-				"(the provider, the model and the credential live there)", lane, what))
-	}
+	// A missing top-level section is not a problem here: the license
+	// decides whether it means the hosted model (effectiveAnalyzer).
 
 	if la != nil {
 		// The rule-without-a-hold pairing is checked; the hold-without-a-rule

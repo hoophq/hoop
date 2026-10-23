@@ -24,19 +24,15 @@
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
    [webapp.utilities :as utilities]
+   [webapp.webclient.mssql-database :as mssql-database]
    [webapp.sessions.components.session-header :as session-header]
    [webapp.sessions.components.session-details :as session-details-component]
    [webapp.sessions.components.rejection-reason :as rejection-reason]))
 
-;; TODO: Change it for send DB in the payload and not the response
 (defn- sanitize-response [response connection-type]
-  (cond
-    (= connection-type "mssql")
-    (when response
-      (if-let [idx (cs/index-of response "\n")]
-        (subs response (inc idx))
-        response))
-    :else response))
+  (if (= connection-type "mssql")
+    (mssql-database/strip-output response)
+    response))
 
 (defn- loading-player []
   [:div {:class "flex gap-small items-center justify-center py-large"}

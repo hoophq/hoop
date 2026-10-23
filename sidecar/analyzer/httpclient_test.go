@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	"github.com/hoophq/hoop/sidecar/analyzer/gemini"
+	"github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	"github.com/hoophq/hoop/sidecar/analyzer/openai"
 )
 
@@ -24,11 +25,14 @@ import (
 // without it must be refused before the request reaches the server.
 func TestProvidersSendThroughTheInjectedClient(t *testing.T) {
 	for _, tc := range []struct {
-		name, reply string
+		name, cred, reply string
 	}{
-		{anthropic.Name, `{"content":[{"type":"tool_use","name":"report_low_risk","input":{}}],"stop_reason":"tool_use"}`},
-		{openai.Name, `{"choices":[{"message":{"tool_calls":[{"function":{"name":"report_low_risk","arguments":"{}"}}]}}]}`},
-		{gemini.Name, `{"candidates":[{"content":{"parts":[{"functionCall":{"name":"report_low_risk","args":{}}}]},"finishReason":"STOP"}]}`},
+		{anthropic.Name, "k", `{"content":[{"type":"tool_use","name":"report_low_risk","input":{}}],"stop_reason":"tool_use"}`},
+		{openai.Name, "k", `{"choices":[{"message":{"tool_calls":[{"function":{"name":"report_low_risk","arguments":"{}"}}]}}]}`},
+		{gemini.Name, "k", `{"candidates":[{"content":{"parts":[{"functionCall":{"name":"report_low_risk","args":{}}}]},"finishReason":"STOP"}]}`},
+		// hoop wraps the injected transport in a signer; it must not
+		// replace it.
+		{hoop.Name, "", `{"choices":[{"message":{"tool_calls":[{"function":{"name":"report_low_risk","arguments":"{}"}}]}}]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var hits atomic.Int32
@@ -47,7 +51,7 @@ func TestProvidersSendThroughTheInjectedClient(t *testing.T) {
 				p, err := analyzer.NewProvider(tc.name, analyzer.Options{
 					Model:      "m",
 					Endpoint:   srv.URL,
-					Credential: analyzer.NewSecret([]byte("k")),
+					Credential: analyzer.NewSecret([]byte(tc.cred)),
 					HTTPClient: client,
 				})
 				if err != nil {

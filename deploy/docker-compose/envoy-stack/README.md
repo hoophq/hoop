@@ -42,20 +42,22 @@ compiles in `golang:1.26.5-alpine`, matching the `go 1.26.5` every module in
 `sidecar/` declares.
 
 Ports: `8443` HTTPS, `5433` postgres, `19000` sidecar admin, `9901` Envoy
-admin. Inside the compose network the postgres listener is `envoy:5432`; 5433
-is only the host-side publication, because a laptop usually has something on
-5432 already.
+admin, `3000` Grafana, `9090` Prometheus. Inside the compose network the
+postgres listener is `envoy:5432`; 5433 is only the host-side publication,
+because a laptop usually has something on 5432 already.
 
 Envoy reaches the sidecar over TCP here, which keeps the topology to one
 claim: hoop-inspect is an ordinary upstream. To close the last port and have
 Envoy reach it over a unix socket instead, add the overlay in
 [`uds/`](uds/README.md): same lanes, same policy, no data port open at all.
 
-[`grpc/`](grpc/README.md) adds a third protocol three ways: a gRPC lane
+[`grpc/`](grpc/README.md) adds a third protocol four ways: a gRPC lane
 behind a new Envoy `:8444` listener (TLS, ALPN h2, the same OPA fat gate),
 the same lane published directly on `:18443` as the without-Envoy h2c
-path, and a self-contained standalone compose where the lane terminates
-the client's TLS itself and the demo asserts the masking. It ships a dummy
+path, a self-contained standalone compose where the lane terminates
+the client's TLS itself and the demo asserts the masking, and a discover
+compose whose lanes fetch the schema over gRPC server reflection
+(`grpc.discover`) with no descriptor set mounted. It ships a dummy
 `demo.v1.Ledger` upstream hand-rolled over stdlib h2c — no gRPC library,
 so the protocol intelligence demonstrably stays in the sidecar — and a
 `grpcurl` client service, so the host needs nothing installed. The lane
@@ -159,8 +161,8 @@ The image builds `hoop-inspect` with
 [alcatraz](https://github.com/hoophq/alcatraz) PII detection linked in, so the
 demo can deny a query that embeds a Brazilian CPF and redact email addresses
 out of a response. The `pii` section of `sidecar/config.yaml` names which of
-the 54 entity types are active, five here. Omitting the section activates all
-54, and this file narrows on purpose: a mask rule naming `US_SSN` rewrites
+the 55 entity types are active, five here. Omitting the section activates all
+55, and this file narrows on purpose: a mask rule naming `US_SSN` rewrites
 ordinary numeric columns, because that recognizer fires on roughly a third of
 random nine-digit business ids.
 
@@ -313,6 +315,38 @@ docker compose logs hoop-inspect | ./sidecar/read-audit.py
 
 `read-audit.py` also asserts the trail contains no value that masking removed;
 recording a masked value in the clear has un-masked it.
+
+### Watch the metrics
+
+The sidecar pushes OTLP to the `otel-collector` service (`telemetry:` block
+in `sidecar/config.yaml`); the collector serves the metrics to Prometheus
+and Grafana renders them. Open <http://localhost:3000> (no login) and the
+**hoop sidecar** dashboard: statements per lane and verdict, denials by
+source, p99 per stage (`policy`, `analyzer`, `review`, `upstream`), the
+share of each statement's time the sidecar itself costs, masked values,
+audit write failures. Run `./demo.sh` and watch it move; the `lane`
+selector splits `appdb` from `httpbin`.
+
+Raw series are at <http://localhost:9090> under `hoop_sidecar_*`, for
+example:
+
+```
+sum by (hoop_lane, hoop_verdict) (rate(hoop_sidecar_statements_total[1m]))
+histogram_quantile(0.99, sum by (le, hoop_stage) (rate(hoop_sidecar_statement_duration_seconds_bucket[1m])))
+```
+
+Traces (one per connection, a span per statement and per stage) and the
+audit events as log records reach the collector too, but this stack keeps
+no trace or log store, so they only show in its log:
+
+```bash
+docker compose logs otel-collector | grep -E 'Traces|Logs|Metrics'
+```
+
+Point `telemetry/otelcol.yaml`'s traces and logs pipelines at a Tempo or
+Loki exporter to keep them. The series, attributes and latency stages are
+documented in the "OpenTelemetry" section of
+[`sidecar/README.md`](../../../sidecar/README.md).
 
 ## Tier 2c: producers report, OPA decides (off in this stack)
 

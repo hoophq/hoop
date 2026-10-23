@@ -59,9 +59,9 @@ func noMachine() machine { return machine{keyDir: "/nonexistent/keys"} }
 // are, except SSH: its host key and CA are files on this machine no default
 // can name, and the failure must say which field is missing.
 func TestEveryChoiceDefaultsToAValidConfig(t *testing.T) {
-	choices := append([]string{"demo"}, daemon.Protocols()...)
+	choices := append([]string{demoHTTPID, demoPGID}, daemon.ServableProtocols()...)
 	for _, p := range choices {
-		d, err := newDraft(p, p == "demo", noMachine())
+		d, err := newDraft(p, noMachine())
 		if err != nil {
 			t.Fatalf("newDraft(%s): %v", p, err)
 		}
@@ -82,14 +82,14 @@ func TestEveryChoiceDefaultsToAValidConfig(t *testing.T) {
 // config it then writes must validate with that key.
 func TestAnalyzerDefaultsFollowTheKeyFile(t *testing.T) {
 	dir := t.TempDir()
-	d, _ := newDraft("postgres", false, machine{keyDir: dir})
+	d, _ := newDraft("postgres", machine{keyDir: dir})
 	if d.an.on {
 		t.Fatal("analyzer on with no key file")
 	}
 	if err := os.WriteFile(filepath.Join(dir, "anthropic.key"), []byte("sk-test"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	d, _ = newDraft("postgres", false, machine{keyDir: dir})
+	d, _ = newDraft("postgres", machine{keyDir: dir})
 	if !d.an.on {
 		t.Fatal("analyzer off although its key file exists")
 	}
@@ -120,7 +120,7 @@ func TestEveryRuleTypeFormBuildsAValidRule(t *testing.T) {
 	}
 	for _, protocol := range []string{"postgres", "http", "grpc"} {
 		for _, typ := range ruleTypesFor(protocol, false) {
-			d, _ := newDraft(protocol, false, noMachine())
+			d, _ := newDraft(protocol, noMachine())
 			f := ruleForm(policy.Rule{Type: policy.MatchType(typ)}, protocol, false, true)
 			if _, err := ruleFromForm(f); err == nil {
 				t.Errorf("%s/%s: an empty rule was accepted", protocol, typ)
@@ -163,7 +163,7 @@ func TestMaskFormRoundTrips(t *testing.T) {
 }
 
 func TestListenerFormReadsBackAndRefusesABadNumber(t *testing.T) {
-	d, err := newDraft("postgres", false, machine{found: []found{{"postgres", "db.internal:6543", "test"}}})
+	d, err := newDraft("postgres", machine{found: []found{{"postgres", "db.internal:6543", "test"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestARemoteFoundUpstreamDefaultsToTLS(t *testing.T) {
 	for _, p := range []string{"postgres", "mysql", "mssql", "mongodb", "clickhouse"} {
 		remote := machine{found: []found{{p, "db.example.com:" + map[string]string{
 			"postgres": "5432", "mysql": "3306", "mssql": "1433", "mongodb": "27017", "clickhouse": "8123"}[p], "DATABASE_URL"}}}
-		d, err := newDraft(p, false, remote)
+		d, err := newDraft(p, remote)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -489,7 +489,7 @@ func TestARemoteFoundUpstreamDefaultsToTLS(t *testing.T) {
 		}
 	}
 	local := machine{found: []found{{"postgres", "127.0.0.1:5432", "port 5432 is open"}}}
-	d, _ := newDraft("postgres", false, local)
+	d, _ := newDraft("postgres", local)
 	if l, _ := d.listener.value(); l.UpstreamTLS != nil {
 		t.Error("a backend on this machine defaults to TLS")
 	}

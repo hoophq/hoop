@@ -19,14 +19,15 @@ const grpcDiscoverTimeout = 30 * time.Second
 // DiscoverGRPC implements -grpc-discover: dial the named grpc or spanner
 // lane's upstream with the lane's own upstream_tls facts, fetch its
 // descriptor set over gRPC server reflection, and report every method with
-// its maskable field paths. With out set, the serialized set lands there
-// for the operator to review and pin as listeners[].grpc.descriptors.
+// its maskable field paths and the set's sha256. With out set, the
+// serialized set lands there for the operator to review and pin as
+// listeners[].grpc.descriptors; the digest pins a lane that discovers at
+// startup instead (grpc.discover.sha256).
 //
 // It reads the lane's config rather than taking an address flag so
 // discovery dials exactly what the lane will dial — same upstream, same
 // TLS material — and a config mistake surfaces here instead of at the
-// first proxied RPC. Runtime lanes never touch reflection; ADR-0013 keeps
-// them on pinned files.
+// first proxied RPC.
 func DiscoverGRPC(ctx context.Context, cfg *Config, name, out string, w io.Writer) error {
 	var lc *ListenerConfig
 	var grpcNames []string
@@ -101,6 +102,7 @@ func DiscoverGRPC(ctx context.Context, cfg *Config, name, out string, w io.Write
 	for _, m := range methods {
 		fmt.Fprintf(&b, "  %s\n", m)
 	}
+	fmt.Fprintf(&b, "sha256: %s (pin it as listeners[].grpc.discover.sha256)\n", grpcSchemaDigest(raw))
 	if out != "" {
 		fmt.Fprintf(&b, "wrote %s (%d bytes); review it, then set listeners[].grpc.descriptors\n",
 			out, len(raw))

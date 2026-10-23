@@ -110,8 +110,13 @@ test-oss: generate-wasm test-sidecar test-sidecar-plugins test-unit
 # The unit suite without the per-module sidecar loop; CI runs the two in
 # parallel jobs. gateway/models starts an isolated PGlite instance per test.
 # Its full suite can exceed Go's default 10-minute per-package timeout in CI.
+#
+# SHARD=i SHARDS=n runs shard i of n (scripts/ci/unit-shards.sh), as CI does
+# on n runners. Without SHARD, the full suite.
 test-unit: generate-wasm
-	env CGO_ENABLED=0 go test -timeout 15m -json -v github.com/hoophq/hoop/...
+	@set -e; pkgs=github.com/hoophq/hoop/...; \
+	if [ -n "$(SHARD)" ]; then pkgs=$$(scripts/ci/unit-shards.sh list "$(SHARD)" "$(SHARDS)"); fi; \
+	env CGO_ENABLED=0 go test -timeout 15m -json -v $$pkgs
 
 # `github.com/hoophq/hoop/...` now matches the sidecar module too, since it
 # was renamed to sit under the repository path. What it does NOT do is prove
@@ -181,6 +186,27 @@ test-sidecar-plugins:
 # its own CI job (sidecar-e2e in .github/workflows/pullrequest.yml).
 test-sidecar-e2e:
 	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 go test -tags integration -v -timeout 10m -count=1 ./...
+
+# ADR-0032: the twins module sits outside go.work. test-twins runs the kit
+# and twin tests and the contract suites; test-twins-scenario boots the real
+# hoop binary against the twins (twins/README.md has the variables).
+test-twins:
+	cd twins && env GOWORK=off CGO_ENABLED=0 go test -count=1 -v ./...
+
+test-twins-scenario:
+	cd twins/scenario && env GOWORK=off CGO_ENABLED=0 go test -tags scenario -count=1 -v -timeout 10m ./...
+
+# The same stack with the web UI of this branch. test-twins-browser drives
+# it in a headless Chrome (nightly in CI); twins-up leaves it up for a
+# browser on this host, and twins-down stops it.
+test-twins-browser:
+	cd twins/scenario && env GOWORK=off CGO_ENABLED=0 go test -tags scenario,browser -run '^TestBrowser' -count=1 -v -timeout 20m ./...
+
+twins-up:
+	cd twins/scenario && env GOWORK=off CGO_ENABLED=0 go test -tags scenario,twinsup -run '^TestUp$$' -count=1 -v -timeout 20m ./...
+
+twins-down:
+	cd twins/scenario && env GOWORK=off CGO_ENABLED=0 go test -tags scenario,twinsup -run '^TestDown$$' -count=1 -v -timeout 2m ./...
 
 # EVL-338: the previous release must decode the document this plane serves.
 # The test builds a decoder in a worktree of the newest release tag HEAD does
@@ -285,6 +311,12 @@ test-standalone-e2e:
 test-parity:
 	cd gateway && env CGO_ENABLED=0 go test -tags integration,parity -v -timeout 30m -count=1 ./integration/parity/
 
+# Boots both flavours of the control plane image with a read-only root
+# filesystem (ENG-602). Fails when the boot needs a writable path that the
+# image does not provide. Needs Docker.
+test-controlplane-readonly:
+	./scripts/controlplane-readonly-e2e.sh
+
 generate-openapi-docs:
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
 	go run gateway/cmd/openapi-gen/main.go
@@ -323,8 +355,29 @@ build-tar-files:
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}_checksum.txt
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 
+# The Linux hoop links the Citrix ICA engine (client/cmd/startsidecar_ica_linux.go),
+# whose NER runs on ONNX Runtime through cgo, so it is a native CGO_ENABLED=1
+# -tags ORT build: a linux runner per architecture, gcc, and hugot's static
+# Rust tokenizer library at the version sidecar/ica pins. It cannot be
+# cross-compiled from another OS. darwin and windows keep the static build,
+# which refuses an ica lane. The release jobs run this inside a
+# debian:bullseye container, which sets the glibc floor (2.31) the Linux CLI
+# and the distroless images need.
+TOKENIZERS_VERSION = $(shell cd sidecar/ica && go list -m -f '{{.Version}}' github.com/daulet/tokenizers)
+LIBTOKENIZERS_DIR = $(DIST_FOLDER)/libtokenizers/$(TOKENIZERS_VERSION)/$(GOOS)-$(GOARCH)
+
+$(LIBTOKENIZERS_DIR)/libtokenizers.a:
+	mkdir -p $(LIBTOKENIZERS_DIR)
+	curl -sSfL https://github.com/daulet/tokenizers/releases/download/$(TOKENIZERS_VERSION)/libtokenizers.$(GOOS)-$(GOARCH).tar.gz | tar -xz -C $(LIBTOKENIZERS_DIR)
+
+ifeq ($(GOOS),linux)
+build-go: build-empty-folder $(LIBTOKENIZERS_DIR)/libtokenizers.a
+	@test "$(UNAME_S)" = Linux || { echo "build-go: the Linux hoop is a cgo build and needs a Linux host (or a container); GOOS=darwin builds the static CLI here" >&2; exit 1; }
+	env CGO_ENABLED=1 GOOS=${GOOS} GOARCH=${GOARCH} CGO_LDFLAGS="-L$(abspath $(LIBTOKENIZERS_DIR))" go build -tags ORT -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
+else
 build-go: build-empty-folder
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
+endif
 
 # Hoop Tunnel daemon (hsh-tunneld).
 #
@@ -479,4 +532,17 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: test-parity run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+# GCP Marketplace listing of the sidecar (RD-413). On demand, never part of a
+# release, and nothing here makes anything public. The skill at
+# .claude/skills/gcp-marketplace-publish/ walks the whole flow.
+.PHONY: gcp-marketplace-sidecar-setup gcp-marketplace-sidecar-bundle gcp-marketplace-sidecar-publish gcp-marketplace-sidecar-test
+gcp-marketplace-sidecar-setup:
+	./scripts/gcp-marketplace/sidecar.sh setup
+gcp-marketplace-sidecar-bundle:
+	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh bundle
+gcp-marketplace-sidecar-publish:
+	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh publish
+gcp-marketplace-sidecar-test:
+	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh test
+
+.PHONY: test-parity test-twins test-twins-scenario test-twins-browser twins-up twins-down run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

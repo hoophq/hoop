@@ -1,0 +1,32 @@
+# The quick start: the sidecar, with hoop's demo API inside it, and a
+# Cloudflare quick tunnel that gives it a public HTTPS host. ./run.sh starts it.
+name: hoop-managed-agents-quickstart
+
+services:
+  sidecar:
+    # The same release as ../values.yaml; CI fails if they differ.
+    image: hoophq/hoopsidecar:1.258.0@sha256:59ffc8db9209f8bc06c02c166ac6df93af6735bac32c840b8f83e52c15bd2136
+    environment:
+      HOOP_SIDECAR_CONFIG: /etc/hoop-quickstart/sidecar.yaml
+      HOOP_SIDECAR_INSTALL_SOURCE: managed-agents-http
+      # Empty runs the free tier. The document itself, not a path: no host
+      # file is mounted for it. README.md, "Free tier".
+      HOOP_LICENSE: ${HOOP_LICENSE:-}
+    volumes:
+      # The folder, not the file: an editor that saves by rename gives the
+      # file a new inode, which a file mount never sees.
+      - ./config:/etc/hoop-quickstart:ro
+      - ./.secrets/caller-token:/run/secrets/caller-token:ro
+    healthcheck:
+      # The image has bash and no curl.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/19000 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    command: ["tunnel", "--no-autoupdate", "--url", "http://sidecar:8080"]
+    depends_on:
+      sidecar: { condition: service_healthy }

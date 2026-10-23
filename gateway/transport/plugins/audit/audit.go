@@ -2,7 +2,6 @@ package audit
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,21 +41,41 @@ type auditPlugin struct {
 	mu              sync.RWMutex
 }
 
+// unwritableAuditPathDelay holds the boot after the warning, so an operator
+// who reads the logs sees it before the ready banner.
+var unwritableAuditPathDelay = 10 * time.Second
+
 func New() *auditPlugin {
 	return &auditPlugin{walSessionStore: memory.New()}
 }
 func (p *auditPlugin) Name() string { return plugintypes.PluginAuditName }
+
+// OnStartup does not stop the boot when the session directory is not
+// writable: the gateway still serves everything else, and each session that
+// needs the directory fails in writeOnConnect with an error that names it.
 func (p *auditPlugin) OnStartup(pctx plugintypes.Context) error {
 	if p.started {
 		return nil
 	}
-
-	if fi, _ := os.Stat(plugintypes.AuditPath); fi == nil || !fi.IsDir() {
-		return fmt.Errorf("failed to retrieve audit path info, path=%v", plugintypes.AuditPath)
+	if err := plugintypes.CheckAuditPath(); err != nil {
+		warnUnwritableAuditPath(err)
 	}
 	p.started = true
 	return nil
 }
+
+func warnUnwritableAuditPath(err error) {
+	const rule = "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+	log.Warn(rule)
+	log.Warn("!!! SESSION STORAGE IS NOT WRITABLE")
+	log.Warnf("!!! %v", err)
+	log.Warn("!!! Every session through an agent fails until this is fixed.")
+	log.Warnf("!!! Set PLUGIN_AUDIT_PATH or mount a writable volume on %s.", plugintypes.AuditPath)
+	log.Warnf("!!! The gateway continues to start in %v.", unwritableAuditPathDelay)
+	log.Warn(rule)
+	time.Sleep(unwritableAuditPathDelay)
+}
+
 func (p *auditPlugin) OnUpdate(_, _ plugintypes.PluginResource) error { return nil }
 func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 	log.With("sid", pctx.SID).Infof("processing on-connect")

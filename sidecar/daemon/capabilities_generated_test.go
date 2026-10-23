@@ -1,16 +1,25 @@
 package daemon
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
 // The header is generated from what the build links: every cap-tagged field,
-// every rule type and every protocol. Only behaviourCapabilities is listed by
-// hand, because a behaviour has no type to generate it from.
+// every rule type and every protocol. Only behaviourCapabilities and
+// valueCapabilities are listed by hand, because neither has a type to
+// generate it from.
+//
+// ica is the one build-dependent protocol. Protocols() lists it in every
+// build, so the plane renders its form; the header lists it only when an
+// engine is registered (ica.go). This test registers no engine and expects
+// the entry absent; TestTheHeaderCarriesICAOnlyWithAnEngine covers the
+// registered case.
 func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 	caps := SidecarCapabilities()
 	if !slices.IsSorted(caps) {
@@ -21,6 +30,9 @@ func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 		want = append(want, "rule:"+string(mt))
 	}
 	for _, p := range Protocols() {
+		if p == string(inspect.ICA) {
+			continue
+		}
 		want = append(want, "protocol:"+p)
 	}
 	for _, w := range want {
@@ -28,10 +40,47 @@ func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 			t.Errorf("the header lacks %q: %v", w, caps)
 		}
 	}
+	if icaEngineLinked() {
+		t.Fatal("this test package must not register an ICA engine; TestTheHeaderCarriesICAOnlyWithAnEngine covers the header's ica entry")
+	}
+	if slices.Contains(caps, "protocol:ica") {
+		t.Errorf("the header lists protocol:ica with no engine registered; the plane would serve a lane checkICA refuses: %v", caps)
+	}
+	seen := map[string]bool{}
 	for _, c := range caps {
-		if strings.Count(strings.Join(caps, ","), c) != 1 {
+		if seen[c] {
 			t.Errorf("%q is reported twice: %v", c, caps)
 		}
+		seen[c] = true
+	}
+}
+
+// With an engine registered the header carries protocol:ica, so a plane
+// serves ica lanes only to a binary that links sidecar/ica. The
+// registration is process-wide, so this test installs it under the
+// registry lock and restores the previous one on cleanup.
+func TestTheHeaderCarriesICAOnlyWithAnEngine(t *testing.T) {
+	withICAEngine(t, func(daemonICARuntime ICARuntime, lane ICALane) (ICAServer, error) { return nil, nil })
+	if !slices.Contains(SidecarCapabilities(), "protocol:ica") {
+		t.Fatalf("engine registered but the header lacks protocol:ica: %v", SidecarCapabilities())
+	}
+}
+
+// A linked engine whose host check fails — the Linux hoop CLI on a host
+// without the worker, model or library — keeps protocol:ica out of the
+// header, so a plane does not hand it a lane that fails at startup. A
+// config file with an ica lane still validates: the engine, not the
+// daemon, reports the missing assets when the lane starts, with their
+// paths.
+func TestTheHeaderDropsICAWhenTheHostCannotRunIt(t *testing.T) {
+	withICAEngineOnHost(t, func(ICARuntime, ICALane) (ICAServer, error) { return &fakeICAServer{}, nil },
+		func() error { return errors.New("no worker at /opt/libhoop-ica/current/bin/hoop-tesseract-worker") })
+	if slices.Contains(SidecarCapabilities(), "protocol:ica") {
+		t.Fatalf("host check fails but the header carries protocol:ica: %v", SidecarCapabilities())
+	}
+	cfg := &Config{Listeners: []ListenerConfig{{Name: "vdi", Protocol: "ica", Listen: "127.0.0.1:0", Upstream: "10.0.0.1:2598", ICA: &ICAConfig{TenantID: "t"}}}}
+	if err := checkICA(cfg); err != nil {
+		t.Fatalf("checkICA refused a lane the linked engine can report on itself: %v", err)
 	}
 }
 

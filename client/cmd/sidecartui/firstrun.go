@@ -511,16 +511,21 @@ func frTick() tea.Cmd {
 }
 
 func (m firstRunModel) Init() tea.Cmd {
+	// See model.Init: ask for the real terminal background so the palette
+	// picked from COLORFGBG at startup is corrected once the terminal answers.
 	if m.managed != nil {
-		return tea.Batch(frTick(), probeTick())
+		return tea.Batch(frTick(), probeTick(), tea.RequestBackgroundColor)
 	}
-	return frTick()
+	return tea.Batch(frTick(), tea.RequestBackgroundColor)
 }
 
 func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+	case tea.BackgroundColorMsg:
+		setTheme(msg.IsDark())
 		return m, nil
 	case frReadyMsg:
 		m.url, m.fellBack, m.ready = msg.url, msg.fellBack, true

@@ -27,7 +27,7 @@
 // the config file, so an operator adding a "pii" section does not also have to
 // swap the binary out:
 //
-//   - "pii" absent: the detector covers all 54 entity types it knows, and
+//   - "pii" absent: the detector covers all 55 entity types it knows, and
 //     costs nothing until a rule asks it for one. A masker scans only for the
 //     entities its own rules name, and a "pii" guardrail intersects the scan
 //     with the entities its own rule names.
@@ -82,6 +82,7 @@ import (
 	// module so the root does not carry it.
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/gemini"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	// The codec plug-in host, same rule: a `plugins` block must not need a
@@ -93,9 +94,16 @@ import (
 	// The gs:// descriptor fetcher, same rule: a grpc lane whose descriptor
 	// set lives in a bucket must not need a different binary.
 	_ "github.com/hoophq/hoop/sidecar/descriptors/gcs"
+	// The ICA engine an ica lane needs, same rule: libhoop-ica stays in
+	// sidecar/ica's own module, and this is the only binary that links it.
+	_ "github.com/hoophq/hoop/sidecar/ica"
 	// The MCP server an "mcp" block turns on (ADR-0021), same rule again.
 	_ "github.com/hoophq/hoop/sidecar/mcp"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
+	// The OpenTelemetry exporter a "telemetry" block turns on, same rule:
+	// the SDK and its OTLP exporters stay in sidecar/telemetry/otlp's own
+	// module, injected below like the codec plug-in host.
+	"github.com/hoophq/hoop/sidecar/telemetry/otlp"
 )
 
 // version is the release this binary reports at -version and on the admin
@@ -115,6 +123,7 @@ func main() {
 		return wasm.Load(ctx, module)
 	}
 	daemon.CodecTester = conformance.Run
+	daemon.NewTelemetryExporter = otlp.New
 
 	err := daemon.Main(version, configyaml.Load, func(raw json.RawMessage) (daemon.Plugin, error) {
 		// An absent "pii" section no longer means no detector: the plugin

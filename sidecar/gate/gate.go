@@ -38,6 +38,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
+	"github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // Masker rewrites sensitive values out of a payload.
@@ -120,6 +121,23 @@ type Duplex interface {
 // chunk cannot reconstruct the stream.
 type StreamFilter interface {
 	Filter(dir inspect.Direction, data []byte) ([]byte, error)
+}
+
+// RequestHolder marks a codec whose client bytes leave only once the gate
+// has judged the request they belong to. Without it the gate forwards each
+// read as it arrives, and a request split across reads reaches the upstream
+// in part before its verdict: a denial then cannot recall a head the
+// upstream may already act on.
+//
+// A codec opts in rather than every lane holding, because holding changes
+// when an upstream sees a request's first byte, and the hold has been
+// proven against the HTTP codec only. The bound is the inspector buffer: a
+// request or message that outgrows it is refused with nothing of it
+// forwarded. The unit held is what the codec reports consumed: an HTTP
+// request, or a client WebSocket message with the control frames between
+// its fragments.
+type RequestHolder interface {
+	HoldsRequests()
 }
 
 // reassemblySizer lets a codec raise the default inspector buffer to the
@@ -206,6 +224,13 @@ type Config struct {
 	// no more than an atomic increment: it runs on the data path.
 	Metrics Metrics
 
+	// Telemetry receives per-statement spans, stage durations and counts
+	// for the lane's OpenTelemetry export. Optional; nil records nothing,
+	// which is every lane without a telemetry block. Shared by every
+	// connection on the lane, so it MUST be safe for concurrent use, and
+	// it runs on the data path, so it costs one instrument record.
+	Telemetry telemetry.LaneRecorder
+
 	// RequestIdentity re-derives the caller from every HTTP request instead
 	// of trusting the identity the connection opened with. Optional; nil
 	// keeps one identity per connection, which is every lane but http.
@@ -230,10 +255,36 @@ type Config struct {
 	// answers nothing, which is every lane but http.
 	Answer func(stmt inspect.Statement) func(ctx context.Context) []byte
 
+	// AuthenticatesCaller marks a lane that IS the authentication (a
+	// caller token on a public URL), where nothing in front vouched for
+	// the caller. False is every lane behind an authenticating proxy.
+	// Three things follow, each closing a way past RequestIdentity:
+	//
+	//   - The client codec checks each request's credential on its head
+	//     (CallerAuthenticator), so a stranger is refused before the gate
+	//     holds its body, and a body that never comes is refused too.
+	//   - Answer replies only to a caller RequestIdentity accepts: the
+	//     reserved route is as public as the listener.
+	//   - Client bytes the codec cannot decode are refused, not forwarded
+	//     as the honest default: nothing checked them.
+	//
+	// New refuses it without RequestIdentity, or with a client codec that
+	// cannot take the check.
+	AuthenticatesCaller bool
+
 	// Settle reports the upstream's answer to every statement a reserved
 	// approval released (policy.Review.Reserved). Nil settles nothing, and
 	// no backend reserves without one. See SettleFunc.
 	Settle SettleFunc
+}
+
+// CallerAuthenticator is implemented by a codec that can refuse a request's
+// credential before forwarding any of it: the HTTP codec on a lane that
+// authenticates its caller. New installs the gate's own check, so the codec
+// and the gate admit the same callers; an error means the codec was not
+// built to run it.
+type CallerAuthenticator interface {
+	AuthenticateCallers(check func(credential string) error) error
 }
 
 // CredentialSource is implemented by a codec that lifts a caller credential
@@ -379,6 +430,9 @@ type Gate struct {
 	// both fields; each direction still owns its independent stream cursor.
 	clientFilter StreamFilter
 	serverFilter StreamFilter
+
+	// holdRequests is set when the client codec is a RequestHolder.
+	holdRequests bool
 
 	// mu guards the counters, which Close reads while a data-path goroutine
 	// may still be incrementing them, and the exchange state below, which
@@ -529,6 +583,7 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 	if filter, ok := serverCodec.(StreamFilter); ok {
 		g.serverFilter = filter
 	}
+	_, g.holdRequests = clientCodec.(RequestHolder)
 	// Discover the re-framing capability once, so the data path does not
 	// type-assert per packet. MaskSupported asks the registry's codec for
 	// it at load; this asks the codec actually built, because a
@@ -551,6 +606,25 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 				cfg.Protocol, clientCodec)
 		}
 		g.creds = cs
+	}
+	if cfg.AuthenticatesCaller {
+		if cfg.RequestIdentity == nil {
+			return nil, errors.New("sidecar/gate: AuthenticatesCaller is set without RequestIdentity, so nothing would check the caller")
+		}
+		ca, ok := clientCodec.(CallerAuthenticator)
+		if !ok {
+			return nil, fmt.Errorf("sidecar/gate: AuthenticatesCaller is set but the %s codec (%T) cannot check a caller before forwarding a request",
+				cfg.Protocol, clientCodec)
+		}
+		// The filter has no request context; the resolver behind a
+		// caller check is local and ignores it.
+		check := func(credential string) error {
+			_, err := g.callerFor(context.Background(), credential, true)
+			return err
+		}
+		if err := ca.AuthenticateCallers(check); err != nil {
+			return nil, fmt.Errorf("sidecar/gate: %w", err)
+		}
 	}
 	return g, nil
 }
@@ -636,8 +710,10 @@ func (g *Gate) Start(ctx context.Context) error {
 // Decision.Message in the protocol's error frame.
 //
 // Bytes that do not complete a statement are buffered and produce an allowed
-// Decision with no statements. A partial message cannot be judged, so the
-// gate holds the connection until it completes.
+// Decision with no statements. A partial message cannot be judged. On a
+// RequestHolder codec the Payload then carries none of it, and the whole
+// message leaves with the call that completes it; on any other codec the
+// Payload is the bytes as they arrived.
 func (g *Gate) Request(ctx context.Context, data []byte) Decision {
 	return g.inspect(ctx, inspect.FromClient, data)
 }
@@ -712,6 +788,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	}
 	if filter != nil && len(data) > 0 {
 		filtered, err := filter.Filter(dir, data)
+		var refusal *inspect.CredentialRefusal
+		if errors.As(err, &refusal) {
+			// The codec refused a caller before forwarding its request,
+			// with the gate's own check: record it as the identity
+			// refusal identify would have made, under the caller it
+			// claimed. The request was never decoded, so its request line
+			// stands in for the statement.
+			stmt := inspect.Statement{Protocol: g.cfg.Protocol, Direction: dir, Text: refusal.Request}
+			r := g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr}, refusal.Error())
+			return *r
+		}
 		if err != nil {
 			d.Allowed = false
 			d.Rule = "stream-filter"
@@ -747,7 +834,10 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		insp = g.server
 	}
 
-	stmts, err := insp.Inspect(dir, data)
+	stmts, ready, err := insp.InspectReady(dir, data)
+	if g.holdRequests && dir == inspect.FromClient {
+		d.Payload = ready
+	}
 	d.Statements = stmts
 
 	// Lift every request's credential off its statement before anything
@@ -790,8 +880,13 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		// legal up to 16 MiB there against a default 8 MiB budget, so a
 		// destructive statement padded past the limit would otherwise pass
 		// a lane configured to refuse it.
+		//
+		// A lane that authenticates its caller refuses any client bytes
+		// it could not decode, for the same reason: the honest default
+		// would forward a request nothing judged.
 		if errors.Is(err, inspect.ErrStreamUnsafe) ||
-			errors.Is(err, inspect.ErrBufferOverflow) {
+			errors.Is(err, inspect.ErrBufferOverflow) ||
+			(g.cfg.AuthenticatesCaller && dir == inspect.FromClient) {
 			d.Allowed = false
 			d.Rule = "stream-unsafe"
 			d.Message = err.Error()
@@ -817,11 +912,20 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	// run and never forwarded.
 	if g.cfg.Answer != nil {
 		earlier := g.requests
-		for _, stmt := range stmts {
+		for i, stmt := range stmts {
 			if !isHTTPRequest(stmt) {
 				continue
 			}
 			if reply := g.cfg.Answer(stmt); reply != nil {
+				// Resolve only: a reply is not a statement the session
+				// runs, so it neither rotates the caller nor counts as
+				// outstanding, the same as on a lane that answers first.
+				if g.cfg.AuthenticatesCaller {
+					if _, r := g.resolveCaller(ctx, stmt, credentials[i], lifted[i]); r != nil {
+						r.Statements = stmts
+						return *r
+					}
+				}
 				if earlier > 0 {
 					return Decision{Statements: stmts, Hangup: true}
 				}
@@ -929,6 +1033,7 @@ type judgment struct {
 // caller forwards, because a crash between the write and the forward must
 // not lose the record of the statement that ran.
 func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
+	ctx, endStatement := g.beginStatement(ctx, stmt)
 	verdict := g.evaluate(ctx, stmt)
 
 	ev := audit.StatementEvent(
@@ -963,6 +1068,13 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 	}
 	g.mu.Unlock()
 	g.countStatement(denied, source)
+	endStatement(telemetry.Verdict{
+		Denied:    denied,
+		Source:    source,
+		Rule:      verdict.Rule,
+		RiskLevel: verdict.Annotations[policy.AnnotationRiskLevel],
+		Err:       verdict.Err,
+	})
 
 	if refused {
 		// Nothing is forwarded, so an approval the policy just reserved for
@@ -1259,7 +1371,7 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) policy.Verd
 	if !ok {
 		return g.policy.Evaluate(stmt)
 	}
-	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx}
+	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx, Telemetry: g.stageRecorder()}
 	g.seedExchange(stmt, ec)
 	v := ce.EvaluateWith(stmt, ec)
 	g.recordExchange(stmt, ec, &v)
@@ -1326,8 +1438,13 @@ func (g *Gate) writeAudit(ctx context.Context, ev audit.Event) error {
 		return nil
 	}
 	err := g.audit.Write(context.WithoutCancel(ctx), ev)
-	if err != nil && g.cfg.Metrics != nil {
-		g.cfg.Metrics.AuditError()
+	if err != nil {
+		if g.cfg.Metrics != nil {
+			g.cfg.Metrics.AuditError()
+		}
+		if g.cfg.Telemetry != nil {
+			g.cfg.Telemetry.AuditError()
+		}
 	}
 	return err
 }
@@ -1409,24 +1526,9 @@ func isFinalHTTPResponse(stmt inspect.Statement) bool {
 // the credential did not resolve), never under the running session: that
 // would put a stranger's attempt in the previous caller's trail.
 func (g *Gate) identify(ctx context.Context, stmt inspect.Statement, credential string, lifted bool) *Decision {
-	peer := g.session().Identity.PeerAddr
-	if !lifted {
-		// New checked the codec implements the seam, so this is a codec
-		// that stopped lifting mid-connection. Serving the request under
-		// the old identity is the failure this whole path exists to stop.
-		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer},
-			"request refused: the codec lifted no credential from it")
-	}
-	if credential == "" {
-		// The WASM host answers ("", true) when the guest's credential
-		// export failed, and no caller is named by an empty value, so
-		// the request is refused before any resolver sees it.
-		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer},
-			"request refused: the codec lifted an empty credential")
-	}
-	id, err := g.cfg.RequestIdentity.Resolve(ctx, credential)
-	if err != nil {
-		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer}, "request refused: "+err.Error())
+	id, refused := g.resolveCaller(ctx, stmt, credential, lifted)
+	if refused != nil {
+		return refused
 	}
 	if sameIdentity(g.session().Identity, id) {
 		return nil
@@ -1439,6 +1541,39 @@ func (g *Gate) identify(ctx context.Context, stmt inspect.Statement, credential 
 			"request refused: the caller changed while an earlier response on this connection is still outstanding")
 	}
 	return g.rotate(ctx, id)
+}
+
+// resolveCaller is identify's first half: it names the caller one request's
+// credential resolves to, or refuses the request. It changes no session, so
+// the reserved route can ask it without the request becoming one the
+// session ran.
+func (g *Gate) resolveCaller(ctx context.Context, stmt inspect.Statement, credential string, lifted bool) (session.Identity, *Decision) {
+	id, err := g.callerFor(ctx, credential, lifted)
+	if err != nil {
+		return session.Identity{}, g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr},
+			"request refused: "+err.Error())
+	}
+	return id, nil
+}
+
+// callerFor resolves one request's credential, or says why it names nobody.
+// The reason is the client's 403 body after "request refused: ", and the
+// same text whether the gate refuses the request or a codec does before
+// forwarding it (CallerAuthenticator).
+func (g *Gate) callerFor(ctx context.Context, credential string, lifted bool) (session.Identity, error) {
+	switch {
+	case !lifted:
+		// New checked the codec implements the seam, so this is a codec
+		// that stopped lifting mid-connection. Serving the request under
+		// the old identity is the failure this whole path exists to stop.
+		return session.Identity{}, errors.New("the codec lifted no credential from it")
+	case credential == "":
+		// A request without the header, or the WASM host answering ("",
+		// true) when the guest's credential export failed: no caller is
+		// named by an empty value, so no resolver sees it.
+		return session.Identity{}, errors.New("the request carried no credential")
+	}
+	return g.cfg.RequestIdentity.Resolve(ctx, credential)
 }
 
 // sameIdentity compares the fields that name a principal. PeerAddr and
@@ -1564,4 +1699,31 @@ func (g *Gate) countMasked(values int) {
 	if g.cfg.Metrics != nil {
 		g.cfg.Metrics.Masked(values)
 	}
+	if g.cfg.Telemetry != nil {
+		g.cfg.Telemetry.Masked(values)
+	}
+}
+
+// beginStatement opens the statement's span, or returns ctx and a no-op
+// when the lane exports nothing. The no-op is a package-level func so the
+// off path allocates no closure per statement, and stmt travels by value
+// so it never escapes to the heap on that path either.
+func (g *Gate) beginStatement(ctx context.Context, stmt inspect.Statement) (context.Context, telemetry.EndStatement) {
+	if g.cfg.Telemetry == nil {
+		return ctx, endNothing
+	}
+	return g.cfg.Telemetry.BeginStatement(ctx, stmt)
+}
+
+func endNothing(telemetry.Verdict) {}
+
+// stageRecorder is what the policy chain times its stages into: the lane's
+// recorder, or a nil interface. The nil check matters: a nil LaneRecorder
+// assigned to a StageRecorder field would be a non-nil interface holding
+// nothing, and the chain would call through it.
+func (g *Gate) stageRecorder() telemetry.StageRecorder {
+	if g.cfg.Telemetry == nil {
+		return nil
+	}
+	return g.cfg.Telemetry
 }

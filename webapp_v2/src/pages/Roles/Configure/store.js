@@ -341,21 +341,6 @@ export const useConfigureRoleStore = create((set, get) => ({
       return { drafts: { ...state.drafts, mandatory_metadata_fields: next } }
     }),
 
-  setTag: (key, value) =>
-    set((state) => ({
-      drafts: {
-        ...state.drafts,
-        connection_tags: { ...state.drafts.connection_tags, [key]: value },
-      },
-    })),
-
-  removeTag: (key) =>
-    set((state) => {
-      const next = { ...state.drafts.connection_tags }
-      delete next[key]
-      return { drafts: { ...state.drafts, connection_tags: next } }
-    }),
-
   replaceSecret: (key, base64Value) => {
     set((state) => {
       const isExisting = state.connection?.secret && key in state.connection.secret

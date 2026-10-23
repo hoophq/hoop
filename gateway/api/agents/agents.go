@@ -47,6 +47,10 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	if err := apivalidation.ValidateTags("tags", req.Tags); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
 
 	secretKey, secretKeyHash, err := keys.GenerateSecureRandomKey("", 32)
 	if err != nil {
@@ -64,7 +68,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	err = models.CreateAgent(ctx.OrgID, req.Name, req.Mode, secretKeyHash)
+	err = models.CreateAgentWithTags(models.DB, ctx.OrgID, req.Name, req.Mode, secretKeyHash, req.Tags)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
@@ -139,22 +143,12 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, openapi.AgentResponse{
-		ID:       agent.ID,
-		Token:    "", // don't show the hashed token
-		Name:     agent.Name,
-		Mode:     agent.Mode,
-		Status:   agent.Status,
-		Metadata: agent.Metadata,
-		// DEPRECATE top level metadata keys
-		Hostname:      agent.Metadata["hostname"],
-		MachineID:     agent.Metadata["machine_id"],
-		KernelVersion: agent.Metadata["kernel_version"],
-		Version:       agent.Metadata["version"],
-		GoVersion:     agent.Metadata["goversion"],
-		Compiler:      agent.Metadata["compiler"],
-		Platform:      agent.Metadata["platform"],
-	})
+	tags, err := models.GetAgentTags(models.DB, ctx.OrgID, agent.ID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting agent tags: %v", err)
+		return
+	}
+	c.JSON(http.StatusOK, toAgentResponse(*agent, tags))
 }
 
 // ListAgents
@@ -163,16 +157,29 @@ func Get(c *gin.Context) {
 //	@Description	List all agent keys
 //	@Tags			Agents
 //	@Produce		json
-//	@Param			status	query		string	false	"Filter by status (CONNECTED or DISCONNECTED)"
-//	@Success		200		{array}		openapi.AgentResponse
-//	@Failure		500		{object}	openapi.HTTPError
+//	@Param			status			query		string	false	"Filter by status (CONNECTED or DISCONNECTED)"
+//	@Param			tag_selector	query		string	false	"Selector tags to filter on, supports '=' and '!=' (e.g. key1=value1,key2!=value2)"	Format(string)
+//	@Success		200				{array}		openapi.AgentResponse
+//	@Failure		400,500			{object}	openapi.HTTPError
 //	@Router			/agents [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	status := c.Query("status")
-	items, err := models.ListAgents(ctx.OrgID, status)
+	opts := models.AgentFilterOption{
+		Status:      c.Query("status"),
+		TagSelector: c.Query("tag_selector"),
+	}
+	if err := models.ValidateTagSelector(opts.TagSelector); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	items, err := models.ListAgents(models.DB, ctx.OrgID, opts)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing agents")
+		return
+	}
+	tagsByAgent, err := models.ListAgentTags(models.DB, ctx.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing agent tags")
 		return
 	}
 	result := []openapi.AgentResponse{}
@@ -187,22 +194,32 @@ func List(c *gin.Context) {
 			// set to default mode if the entity doesn't contain any value
 			a.Mode = proto.AgentModeStandardType
 		}
-		result = append(result, openapi.AgentResponse{
-			ID:       a.ID,
-			Token:    "", // don't show the hashed token
-			Name:     a.Name,
-			Mode:     a.Mode,
-			Status:   a.Status,
-			Metadata: a.Metadata,
-			// DEPRECATE top level metadata keys
-			Hostname:      a.Metadata["hostname"],
-			MachineID:     a.Metadata["machine_id"],
-			KernelVersion: a.Metadata["kernel_version"],
-			Version:       a.Metadata["version"],
-			GoVersion:     a.Metadata["goversion"],
-			Compiler:      a.Metadata["compiler"],
-			Platform:      a.Metadata["platform"],
-		})
+		result = append(result, toAgentResponse(a, tagsByAgent[a.ID]))
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// toAgentResponse returns tags as an empty object, never null, when the agent
+// has none.
+func toAgentResponse(a models.Agent, tags map[string]string) openapi.AgentResponse {
+	if tags == nil {
+		tags = map[string]string{}
+	}
+	return openapi.AgentResponse{
+		ID:       a.ID,
+		Token:    "", // don't show the hashed token
+		Name:     a.Name,
+		Mode:     a.Mode,
+		Status:   a.Status,
+		Metadata: a.Metadata,
+		Tags:     tags,
+		// DEPRECATE top level metadata keys
+		Hostname:      a.Metadata["hostname"],
+		MachineID:     a.Metadata["machine_id"],
+		KernelVersion: a.Metadata["kernel_version"],
+		Version:       a.Metadata["version"],
+		GoVersion:     a.Metadata["goversion"],
+		Compiler:      a.Metadata["compiler"],
+		Platform:      a.Metadata["platform"],
+	}
 }

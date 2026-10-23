@@ -11,6 +11,59 @@ evidence.
 Write every Linear and GitHub field in English, whatever the conversation
 language.
 
+## Autonomous mode
+
+When `HOOP_AGENT` is set, the `support-agent` skill started this run from a
+schedule and no person reads the session. Then:
+
+- A step that says show the human a result: attach it to the ticket and
+  continue.
+- A step that says stop, wait for or ask the human: ask as `support-agent`
+  step 5 says, and end the run. A later run resumes from the ticket.
+- A support ticket is shaped as a comment, never in its description. The
+  `ai-disclosure` hook refuses description edits.
+- The stack: the usual `make` targets, in this order in a cloud session:
+  1. Start Docker: `pgrep dockerd || (dockerd >/tmp/dockerd.log 2>&1 &)`.
+  2. Make the `.env`: `cp .env.sample .env`, `sed -i '/^AUTH_METHOD=/d' .env`,
+     `echo AUTH_METHOD=local >> .env` (the first value of a key wins).
+  3. `make run-dev-postgres`, then `make run-dev` in the background; wait for
+     `/api/healthz`. The environment sets `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT`.
+  4. Register the admin and upload the Enterprise license, or the sidecar
+     routes answer 403. The token goes to a file: shell variables do not
+     survive between commands, and `rec.mjs` reads the same file.
+
+     ```bash
+     curl -s -D - -o /dev/null -H 'content-type: application/json' \
+       -d '{"email":"admin@example.com","password":"Dev-Passw0rd","name":"Admin"}' \
+       http://127.0.0.1:8009/api/localauth/register |
+       sed -nE 's/^[Tt]oken: (.*)\r?$/\1/p' | tr -d '\r' > /tmp/hoop-dev-token
+     curl -sf -X PUT http://127.0.0.1:8009/api/orgs/license -H 'content-type: application/json' \
+       -H "authorization: Bearer $(cat /tmp/hoop-dev-token)" -d "$HOOPDEV_LICENSE"
+     ```
+
+  After `make build-dev-webapp`, `git checkout` the two `package-lock.json`
+  unless the ticket changes them. Without Docker, `scripts/dev/run-sandbox.sh`
+  (`--ui` for the UI) runs gateway and agent on PGlite, with no database for a
+  connection to test against. It uploads the license itself.
+- A sidecar: `make test-sidecar-e2e` runs here. By hand,
+  `hoop start sidecar --config <file>` in front of the dev Postgres
+  (`127.0.0.1:5449`); unlicensed it takes one guardrail and one mask rule,
+  and `HOOP_LICENSE="$HOOPDEV_LICENSE"` lifts that. Managed by the gateway:
+  `POST /api/sidecars` returns its `token`, then
+  `HOOP_CONTROL_PLANE_URL=http://127.0.0.1:8009 hoop start sidecar --token <token>`.
+  When a test fails here, read the same test in the PR's CI job before you
+  chase it: a cloud sandbox can differ from the CI runner.
+- Commits go in the owner's name (the environment sets `GIT_AUTHOR_*` and
+  `GIT_COMMITTER_*`) and end with the `Co-Authored-By: Claude` and
+  `Claude-Session:` lines: the CLA passes, and each commit still says an AI
+  wrote it.
+- The sandbox is discarded after the run: push the branch after each commit.
+  The evidence is how a person knows the work is right: a PR without its
+  comparison images in "Testing" is not done. `evidence` step 6 publishes them.
+- `gh` can be missing: use the GitHub MCP tools.
+- The PR description starts with `Opened by the support agent (AI) from <ID>.`
+  The PR stays a draft. A person marks it ready and merges it.
+
 ## 1. Context
 
 Fetch the ticket through the Linear MCP server: title, description, comments,
@@ -71,14 +124,16 @@ name, stop and report what is missing.
 
 ## 5. Validate
 
-- Go: `make test-oss`
+- Go: `go vet` and `go test` on the packages you changed, and on the packages
+  that import a changed exported API. Add `-race` when the change touches
+  goroutines, locks or channels. Do not run `make test-oss` here: the PR's CI
+  runs the full suite (unit, sidecar modules, integration, smoke).
 - `webapp_v2/`: `npm run lint` and `npm run build`
 - New endpoint or schema: `make generate-openapi-docs`
 - Migration: test `down 1`
 
-`make test-oss` red on a busy machine: compare the package times with CI
-(`gh api repos/hoophq/hoop/actions/jobs/<id>/logs`) before blaming the branch,
-and rerun with the Makefile's `-timeout 15m`, not `go test`'s 10m default.
+Then push the branch and open the PR as a draft, title `<ID>: <summary>`
+(`gh pr create --draft`), so CI runs while QA works. Step 7 fills it.
 
 ## 6. Independent QA
 
@@ -89,8 +144,8 @@ it judges against the ticket, not against you.
 On `FAIL`: fix each finding, commit, then resume the SAME qa agent and ask it to
 re-check, so it remembers what it already raised.
 
-After 3 `FAIL` rounds: stop. Do not open the PR. Report the open findings and
-what you think the real blocker is.
+After 3 `FAIL` rounds: stop. Leave the PR as a draft. Report the open findings
+and what you think the real blocker is.
 
 On `PASS`: run the `evidence` skill from QA's last-round captures (steps 4 and 5:
 compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI ticket, record the flow on the final commit,
@@ -100,10 +155,10 @@ Continue only after the user has seen it. Step 7 publishes it.
 For a `spike`, there is no PR. Deliver the evidence and a proposed cut into
 vertical tickets, then stop.
 
-## 7. Draft PR
+## 7. Fill the PR
 
-`gh pr create --draft`, title `<ID>: <summary>`. Fill every section of
-`.github/PULL_REQUEST_TEMPLATE.md`. Put:
+Fill every section of `.github/PULL_REQUEST_TEMPLATE.md` in the draft from
+step 5. Put:
 
 - **Description**: what and why, 2-6 lines.
 - **Related Issue**: the ticket ID only, never a Linear URL.
@@ -121,6 +176,8 @@ removed or renamed analytics event with its dashboard and successor, a new env
 var with the helm chart change.
 
 Add exactly one release label: `major`, `minor`, `patch` or `skip-release`.
+
+CI must be green before step 8: a red check goes back to step 4.
 
 ## 8. Close the loop
 

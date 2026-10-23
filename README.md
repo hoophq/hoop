@@ -184,7 +184,7 @@ hoop.dev began as a gateway for human access to infrastructure. The sidecar and 
 
 Policy rule types, masking strategies, protocol coverage, documentation. Start with [the docs](https://hoop.dev/docs).
 
-The wire protocol codecs live in a private module (`github.com/hoophq/libhoop`). Building the `sidecar/` module needs `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it. Everything else in this repository builds without them.
+The wire protocol codecs live in a private module (`github.com/hoophq/libhoop`). Building the `sidecar/` module needs `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it. The `hoop-inspect` binary (`sidecar/cmd`) links the Citrix ICA engine, so building it also needs `github.com/hoophq/libhoop-ica` in `GOPRIVATE` and credentials for that repository. Everything else in this repository builds without them.
 
 Questions and ideas go in [Discussions](https://github.com/hoophq/hoop/discussions).
 

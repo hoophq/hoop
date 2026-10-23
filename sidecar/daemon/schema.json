@@ -13,6 +13,10 @@
       "label": "HTTP"
     },
     {
+      "value": "ica",
+      "label": "Citrix ICA"
+    },
+    {
       "value": "mongodb",
       "label": "MongoDB"
     },
@@ -63,7 +67,7 @@
       "key": "listen",
       "type": "string",
       "label": "Listen on",
-      "help": "Where clients reach the sidecar: host:port, or a socket path on a unix transport.",
+      "help": "Where clients reach the sidecar: host:port, or a socket path on a unix transport. An http listener also takes a URL, such as http://0.0.0.0:8080.",
       "placeholder": "0.0.0.0:15432",
       "required": true,
       "basic": true
@@ -84,7 +88,7 @@
       "key": "upstream",
       "type": "string",
       "label": "Upstream",
-      "help": "Where the sidecar reaches your resource.",
+      "help": "Where the sidecar reaches your resource. An http listener also takes a URL, such as https://api.example.com: requests then name that origin in Host, as a reverse proxy does, and https implies upstream TLS. On an ica listener, this names the single VDA; leave it empty for CIDR mode.",
       "placeholder": "appdb:5432",
       "required": true,
       "basic": true,
@@ -99,7 +103,8 @@
       "help": "Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic.",
       "presence": true,
       "except_protocols": [
-        "ssh"
+        "ssh",
+        "ica"
       ],
       "fields": [
         {
@@ -188,6 +193,41 @@
       ]
     },
     {
+      "key": "caller_token",
+      "type": "object",
+      "label": "Caller token",
+      "help": "Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere.",
+      "presence": true,
+      "protocols": [
+        "http"
+      ],
+      "fields": [
+        {
+          "key": "header",
+          "type": "string",
+          "label": "Header",
+          "help": "The request header carrying the token. The sidecar removes it before the request reaches the upstream.",
+          "placeholder": "x-hoop-token"
+        },
+        {
+          "key": "file",
+          "type": "string",
+          "label": "Token file",
+          "help": "A path on the sidecar host. One token per line, so a new token can run beside the old one. Re-read when it changes.",
+          "placeholder": "/etc/hoop-inspect/caller-tokens",
+          "required": true
+        },
+        {
+          "key": "name",
+          "type": "string",
+          "label": "Caller name",
+          "help": "Recorded as the caller of every request a token admits.",
+          "placeholder": "claude-agents",
+          "required": true
+        }
+      ]
+    },
+    {
       "key": "idle_timeout_sec",
       "type": "integer",
       "label": "Idle timeout (seconds)",
@@ -273,6 +313,45 @@
           "label": "Descriptors",
           "help": "Protobuf descriptor sets, as paths on the sidecar host or gs:// URLs. Sets merge.",
           "placeholder": "/etc/hoop-inspect/api.pb"
+        },
+        {
+          "key": "discover",
+          "type": "object",
+          "label": "Discover the schema",
+          "help": "Fetches the schema from the upstream over gRPC server reflection when the listener starts, in place of descriptors.",
+          "presence": true,
+          "fields": [
+            {
+              "key": "from",
+              "type": "string",
+              "label": "Source",
+              "help": "Where the schema comes from. The upstream must expose gRPC server reflection.",
+              "enum": [
+                "reflection"
+              ],
+              "default": "reflection"
+            },
+            {
+              "key": "sha256",
+              "type": "string",
+              "label": "Pinned SHA-256",
+              "help": "Refuses a schema with another digest, so the service cannot rename a field out from under a mask rule. Empty accepts any schema.",
+              "placeholder": "output of -grpc-discover"
+            },
+            {
+              "key": "fail_open",
+              "type": "boolean",
+              "label": "Fail open",
+              "help": "Forwards RPCs while the schema is unavailable, auditing the method and status only. Off refuses them."
+            }
+          ]
+        },
+        {
+          "key": "raw",
+          "type": "object",
+          "label": "Decode without a schema",
+          "help": "Renders messages by field number for audit, PII rules and AI analysis. Best effort: a value can be misread. Masks only the string fields the config file declares.",
+          "presence": true
         },
         {
           "key": "capture_payload",
@@ -437,6 +516,94 @@
               "help": "Extensions whose values reach policy and the audit trail, such as permit-pty. Not hoop attributes."
             }
           ]
+        }
+      ]
+    },
+    {
+      "key": "ica",
+      "type": "object",
+      "label": "Citrix ICA",
+      "help": "The tenant this listener serves, how it finds the VDA, and the session geometry.",
+      "required": true,
+      "protocols": [
+        "ica"
+      ],
+      "fields": [
+        {
+          "key": "tenant_id",
+          "type": "string",
+          "label": "Tenant",
+          "help": "Labels every session and audit row from this listener.",
+          "placeholder": "citrix-production",
+          "required": true
+        },
+        {
+          "key": "transparent",
+          "type": "object",
+          "label": "Transparent (CIDR) mode",
+          "help": "Selects the VDA for each connection from its intercepted destination. Requires Linux, CAP_NET_ADMIN and a TPROXY rule.",
+          "presence": true,
+          "fields": [
+            {
+              "key": "source_cidrs",
+              "type": "list",
+              "label": "Source CIDRs",
+              "help": "Networks allowed to connect: the Citrix Gateway SNIP or the Workspace client networks.",
+              "placeholder": "10.10.1.10/32",
+              "required": true
+            },
+            {
+              "key": "upstream_cidrs",
+              "type": "list",
+              "label": "VDA CIDRs",
+              "help": "VDA networks a connection may be destined to.",
+              "placeholder": "10.77.0.0/16",
+              "required": true
+            },
+            {
+              "key": "upstream_ports",
+              "type": "list",
+              "label": "VDA ports",
+              "help": "Allowed VDA ports; 2598 is CGP.",
+              "placeholder": "2598",
+              "required": true
+            }
+          ]
+        },
+        {
+          "key": "display",
+          "type": "object",
+          "label": "Display",
+          "help": "Framebuffer geometry and ThinWire channel. Leave empty for the engine defaults.",
+          "fields": [
+            {
+              "key": "width",
+              "type": "integer",
+              "label": "Width",
+              "help": "Framebuffer width, 320..4096.",
+              "placeholder": "1264"
+            },
+            {
+              "key": "height",
+              "type": "integer",
+              "label": "Height",
+              "help": "Framebuffer height, 200..4096.",
+              "placeholder": "1040"
+            },
+            {
+              "key": "thinwire_channel",
+              "type": "integer",
+              "label": "ThinWire channel",
+              "help": "The ICA virtual channel carrying ThinWire video, 1..255.",
+              "placeholder": "9"
+            }
+          ]
+        },
+        {
+          "key": "edt",
+          "type": "boolean",
+          "label": "EDT (experimental)",
+          "help": "Also accept Citrix EDT over UDP on the same address and port. Experimental; clients fall back to TCP."
         }
       ]
     }

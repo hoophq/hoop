@@ -4,9 +4,11 @@ Deploys the hoop inspection sidecar: a relay that decodes the wire protocol
 between a client and a database or API, evaluates each statement against
 policy, records an audit trail, and masks sensitive values on the way back.
 
-It routes nothing and terminates no downstream TLS. Run it behind something
-that already owns the network path and identity — typically an Envoy sidecar
-forwarding plaintext over loopback, or a Service in front of these pods.
+It routes nothing. It terminates client TLS only on a lane that sets
+`downstream_tls` (postgres, clickhouse, http, grpc and spanner). Otherwise,
+run it behind something that owns the network path and identity, typically
+an Envoy sidecar forwarding plaintext over loopback, or a Service in front of
+these pods.
 
 ## Install
 
@@ -91,12 +93,15 @@ The admin Service is separate and unaffected — always ClusterIP, always 19000.
 
 > **Before setting `type: LoadBalancer`.** The relay terminates no client TLS
 > unless the lane sets `downstream_tls`, and that is accepted on **postgres,
-> grpc and spanner only** — on http, mysql, mssql and mongodb it is refused at
-> startup, so those lanes are always plaintext. A public load balancer in front
-> of one of them puts credentials and query results in the clear on the
-> internet. Expose a lane publicly only when the lane terminates TLS itself, or
-> when something in front of it does. `loadBalancerSourceRanges` narrows who
-> can reach it; it does not encrypt.
+> clickhouse, http, grpc and spanner only**. On every other protocol it is
+> refused at startup, so those lanes are always plaintext. A
+> public load balancer in front of a plaintext lane puts credentials and query
+> results in the clear on the internet. Expose a lane publicly only when the
+> lane terminates TLS itself, or when something in front of it does.
+> `loadBalancerSourceRanges` narrows who can reach it; it does not encrypt.
+> `deploy/managed-agents/http/` is a worked example: one public http lane with
+> `downstream_tls` and a caller token. `deploy/managed-agents/kubernetes/` is
+> another, for kubectl.
 
 **The review MCP server** (`mcp.listen` in the sidecar config) is published
 the same way, and only on ClusterIP: it has no authentication. Bind it to
@@ -152,6 +157,7 @@ under `deploy/docker-compose/` binds:
 | `analytics.enabled` | Usage analytics to Segment. `false` → `HOOP_SIDECAR_ANALYTICS=off`. Default `true` |
 | `analytics.sidecarId` | Stable install identity → `HOOP_SIDECAR_ID`. Default: the release's full name. Hashed before it is sent |
 | `analytics.hostId` | Machine identity → `HOOP_HOST_ID`. Default: the node name via the downward API. Hashed before it is sent |
+| `analytics.installSource` | The hoop template that installed the sidecar → `HOOP_SIDECAR_INSTALL_SOURCE`. Default empty: no property. Values: `managed-agents-http`, `managed-agents-kubernetes`, `openai-agents-http`, `openai-agents-kubernetes`; anything else is sent as `other` |
 | `extraSecret` | Extra environment variables, as a Secret |
 | `service.enabled` | A Service for the admin port, 19000 only. Default `true` |
 | `laneServices` | Map of Services publishing lane ports. One Service per entry; empty by default |
@@ -165,6 +171,7 @@ under `deploy/docker-compose/` binds:
 | `resources` | CPU/memory requests and limits |
 | `nodeSelector`, `tolerations`, `affinity` | Pod assignment |
 | `podAnnotations`, `deploymentAnnotations` | Annotations |
+| `podLabels` | Extra labels on the pod template, not the selector. A key the chart sets itself is refused |
 | `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | Service account. `name` with `create: false` points at an existing one (GKE Workload Identity) |
 
 The chart reads the config document only to check that admin is on 19000.
@@ -254,9 +261,9 @@ unnecessary. Without any of these,
 
 ## Environment variables
 
-The relay reads nine. Eight come from the Secret `sidecar-config`; the ninth
-is set directly on the container because it defaults to a downward-API field,
-which a Secret cannot express:
+The relay reads eleven. Ten come from the Secret `sidecar-config`; the
+eleventh is set directly on the container because it defaults to a
+downward-API field, which a Secret cannot express:
 
 | Variable | From |
 |---|---|
@@ -269,6 +276,7 @@ which a Secret cannot express:
 | `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `controlPlane.identityAudience` when `controlPlane.identity: gcp`, else empty. Empty means the control plane URL |
 | `HOOP_SIDECAR_ANALYTICS` | `off` when `analytics.enabled: false`, else empty |
 | `HOOP_SIDECAR_ID` | `analytics.sidecarId`, defaulting to the release's full name |
+| `HOOP_SIDECAR_INSTALL_SOURCE` | `analytics.installSource`, else empty |
 | `HOOP_HOST_ID` | `analytics.hostId`, defaulting to `fieldRef: spec.nodeName` on the container |
 
 Add anything else through `extraSecret`, which becomes a second `envFrom`

@@ -6,13 +6,13 @@
    [reagent.core :as r]))
 
 (defn- form-label
-  [text]
-  [:> Text {:size "1" :as "label" :weight "bold" :class "text-gray-12"}
+  [text & [html-for]]
+  [:> Text {:size "1" :as "label" :weight "bold" :class "text-gray-12" :html-for html-for}
    text])
 
 (defn- form-label-dark
-  [text]
-  [:> Text {:size "1" :as "label" :weight "bold" :class "text-gray-12"}
+  [text & [html-for]]
+  [:> Text {:size "1" :as "label" :weight "bold" :class "text-gray-12" :html-for html-for}
    text])
 
 (defn- form-helper-text
@@ -63,8 +63,8 @@
          [:div {:class "flex items-center mb-1 gap-2"}
           (when label
             (if dark
-              [form-label-dark label]
-              [form-label label]))
+              [form-label-dark label id]
+              [form-label label id]))
           (when (not (cs/blank? helper-text))
             [form-helper-text helper-text dark])])
 

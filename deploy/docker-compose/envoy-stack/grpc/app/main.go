@@ -31,10 +31,21 @@ import (
 	"strings"
 )
 
+// reflection is the opt-in schema service (reflection.go); nil unless
+// LEDGER_REFLECTION names descriptor sets.
+var reflection *reflectionIndex
+
 func main() {
 	addr := ":9000"
 	if v := os.Getenv("LEDGER_LISTEN"); v != "" {
 		addr = v
+	}
+	var err error
+	if reflection, err = loadReflection(); err != nil {
+		log.Fatalf("LEDGER_REFLECTION: %v", err)
+	}
+	if reflection != nil {
+		log.Printf("ledger serves gRPC reflection for %s", strings.Join(reflection.services, ", "))
 	}
 	// Cleartext HTTP/2 with prior knowledge, which is what every gRPC
 	// client sends on a plaintext dial. HTTP/1 stays on for the one
@@ -58,6 +69,18 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodPost || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
 		http.Error(w, "this port speaks gRPC; see ledger.proto", http.StatusNotFound)
+		return
+	}
+	// Reflection is a bidirectional stream: the client waits for each
+	// answer before it sends again, so it is answered before the unary
+	// ReadAll below, which would wait for an EOF that never comes. With
+	// reflection off it is refused at once, the way a real server is.
+	if r.URL.Path == reflectionV1 || r.URL.Path == reflectionV1Alpha {
+		if reflection == nil {
+			reply(w, nil, 12, "unknown service "+r.URL.Path) // UNIMPLEMENTED
+			return
+		}
+		reflection.serve(w, r)
 		return
 	}
 	body, err := io.ReadAll(r.Body)

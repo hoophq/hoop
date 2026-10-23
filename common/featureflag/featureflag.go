@@ -34,6 +34,9 @@ type Flag struct {
 // every IsEnabled call read it from here.
 const FlagAgents = "experimental.agents"
 
+// FlagAnalyzeBeforeRunForms is spelled here for the same reason.
+const FlagAnalyzeBeforeRunForms = "experimental.analyze_before_run_forms"
+
 // catalog is the single source of truth for all known feature flags.
 // A flag not registered here cannot be enabled, stored, or read.
 var catalog = map[string]Flag{
@@ -82,6 +85,13 @@ var catalog = map[string]Flag{
 	"experimental.http_session_analyzer": {
 		Name:        "experimental.http_session_analyzer",
 		Description: "Run the AI Session Analyzer on individual requests made through native HTTP resources (httpproxy/kubernetes/claude-code) and on individual MCP tool calls (mcpproxy). Each request or tool call is warned or blocked per its risk tier without dropping the session. For WebSocket sessions only the initial upgrade request is analyzed; bytes exchanged after the upgrade are not inspected.",
+		Default:     true,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	"experimental.audit_stream_chunks": {
+		Name:        "experimental.audit_stream_chunks",
+		Description: "Flush the audit log of a large session in 16 MB pieces, each written as a new row of the session stream, so the gateway does not hold the whole unflushed output in memory and Postgres does not rewrite the stream for each piece. When off, each flush appends all its output to the stream in one write, as before; a session that already has rows keeps writing rows, so its entries stay in order. Session pages and downloads read both layouts.",
 		Default:     true,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
@@ -152,6 +162,13 @@ var catalog = map[string]Flag{
 	FlagAgents: {
 		Name:        FlagAgents,
 		Description: "Show the agent pages in the web app menu (agents, terminal, runbooks, machine identities, provisioning, resource discovery, event routing) and the agent onboarding. When off, the menu hides them, and the web app opens on Sidecars for admins and on Approvals for other users. Agents and their sessions keep working. Turned on once for every organization that already had an agent.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
+	FlagAnalyzeBeforeRunForms: {
+		Name:        FlagAnalyzeBeforeRunForms,
+		Description: "Run the AI Session Analyzer before the web editor opens the forms of a run (Jira template, required metadata). A blocked script stops before any form, so the user does not fill them in for nothing. The verdict is kept for 15 minutes and the run reuses it, so the analyzer runs once. When off, the forms open first and the analyzer runs when the script is sent.",
 		Default:     false,
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},

@@ -1,0 +1,41 @@
+# Sidecar config for the quick start: hoop's demo API behind one http lane.
+# README.md, "Quick start", has the steps.
+#
+# The free tier enforces one guardrail rule and one mask rule per process.
+# These two are the same as in ../../values.yaml; CI fails if they differ.
+
+# The hoop CLI in the image serves its demo API (invented users) at this
+# address while the sidecar runs. Loopback: only the lane reaches it.
+x-hoop-demo-api: 127.0.0.1:18081
+
+admin:
+  listen: '0.0.0.0:19000'
+audit:
+  file: '-'
+listeners:
+  - name: demo-api
+    protocol: http
+    # Plain HTTP: the tunnel holds TLS, so the sandbox still sends HTTPS and
+    # the vault still fills its headers.
+    listen: 'http://0.0.0.0:8080'
+    upstream: 'http://127.0.0.1:18081'
+    caller_token:
+      file: /run/secrets/caller-token
+      name: claude-managed-agents
+    http:
+      # The agent sends its session id here, so each audit row names it.
+      headers: [X-Claude-Session-Id]
+
+guardrails:
+  rules:
+    # Every method but GET, HEAD and OPTIONS. `other` is any method HTTP
+    # does not define, such as MOVE or MKCOL.
+    - name: read-only
+      type: operation
+      operations: [post, put, patch, delete, connect, trace, other]
+      message: this agent may only read from the API
+mask:
+  rules:
+    - name: pii
+      entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD]
+      strategy: redact

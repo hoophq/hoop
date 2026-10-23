@@ -1,2 +1,4 @@
 github.com/hoophq/alcatraz v0.16.0 h1:WJzaKH6fGcfUKfFrI+FR8RkCxUPVZeT5Ne30KGdFhUc=
 github.com/hoophq/alcatraz v0.16.0/go.mod h1:B5ZNcwna5qCRZpVN6MMjmUbzEDpk5Q04jnKxqfZucdM=
+github.com/hoophq/alcatraz v0.23.0 h1:KsFXDo8jDd4Ah328rrT0jgoqeSrtgjc10/bEM+6F4AM=
+github.com/hoophq/alcatraz v0.23.0/go.mod h1:B5ZNcwna5qCRZpVN6MMjmUbzEDpk5Q04jnKxqfZucdM=

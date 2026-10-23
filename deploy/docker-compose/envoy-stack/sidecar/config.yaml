@@ -27,8 +27,27 @@ audit:
   async_queue_size: 1024 # a slow disk must not block a user's query
   query_sessions: 500 # backs /api/sessions
 
+# Metrics, traces and audit events over OTLP to the collector in this stack;
+# grafana at :3000 renders the metrics. Every signal is on so the collector's
+# log shows spans and audit records too; a production config starts with
+# metrics alone (traces and events are off by default). See the
+# "OpenTelemetry" section of sidecar/README.md for the series and the
+# latency stages.
+telemetry:
+  otlp:
+    endpoint: otel-collector:4317
+    insecure: true # loopback inside the compose network
+  resource:
+    deployment.environment: envoy-stack
+  metrics:
+    interval_sec: 5 # a demo wants to see the dashboard move; production: 60
+  traces:
+    sample_ratio: 1
+  events:
+    enabled: true # statement text stays a fingerprint: statement_text is off
+
 # One detector engine for the process. The section is optional now and it
-# NARROWS a permissive default: omit it and all 54 entity types are active.
+# NARROWS a permissive default: omit it and all 55 entity types are active.
 # It is kept because the recognizers it leaves out rewrite ordinary numeric
 # columns (US_SSN fires on roughly a third of random nine-digit business
 # ids), and these five are the union of every entity any lane references

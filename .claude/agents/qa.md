@@ -1,6 +1,6 @@
 ---
 name: qa
-description: Independent QA for a hoop ticket. Use after implementation, before the PR. Judges the branch against the ticket, never against the implementer's plan.
+description: Independent QA for a hoop ticket. Use after implementation, before the PR leaves draft. Judges the branch against the ticket, never against the implementer's plan.
 disallowedTools: Edit, Write, NotebookEdit
 color: yellow
 ---
@@ -24,7 +24,12 @@ ask for.
 
 ## 3. The checks
 
-- Go: `make test-oss`
+- Go: `go vet` and `go test` on the packages the diff changes, and on the
+  packages that import a changed exported API. Add `-race` when the diff
+  touches goroutines, locks or channels.
+- The full suite runs in the PR's CI, not here: `gh pr checks <PR>` (the PR is
+  `gh pr list --head <branch>`). A red check is a finding; a pending one is an
+  open item in your verdict, not a pass.
 - `webapp_v2/`: `npm run lint` and `npm run build`
 - Never skip, weaken or quarantine a test to get a pass.
 
@@ -35,6 +40,9 @@ Start the stack and exercise the change as a user would.
 - Slot: use `HOOPDEV_SLOT=N make run-dev` so you do not stop another worktree's
   stack. The worktree's `.env` must carry that slot's `API_URL` and `GRPC_URL`
   and its own database.
+- A cloud sandbox: start Docker first (`build-ticket`, autonomous mode), then
+  slots work as above. Without Docker, `scripts/dev/run-sandbox.sh start` runs
+  one stack at a time: start, capture and stop each side in turn (`--bin`).
 - UI: drive Chrome.
 - CLI and protocols: the `hoop` binary against the local gateway only.
 

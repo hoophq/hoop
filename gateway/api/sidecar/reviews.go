@@ -931,6 +931,10 @@ func toOpenApiSidecarReview(r *models.Review) *openapi.Review {
 
 		ExpiresAt:      r.SidecarExpiresAt(),
 		ApprovalTTLSec: r.SidecarApprovalTTLSec(),
+
+		// A held client reads it in the denial. A sidecar that predates it
+		// ignores the field.
+		RejectionReason: r.RejectionReason,
 	}
 }
 

@@ -64,6 +64,7 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 	mysqlKey := rsaKeyFile(t)
 	hostKey, trustedCA := sshKeys(t)
 	sshBlock := map[string]any{"host_key": hostKey, "trusted_ca": trustedCA}
+	icaBlock := map[string]any{"tenant_id": "t"}
 
 	fixtures := map[string]func(l map[string]any){
 		"network": func(l map[string]any) {
@@ -74,6 +75,11 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 		"upstream_tls":    func(l map[string]any) { l["upstream_tls"] = map[string]any{} },
 		"downstream_tls":  func(l map[string]any) { l["downstream_tls"] = map[string]any{"cert_file": cert, "key_file": key} },
 		"identity_header": func(l map[string]any) { l["identity_header"] = "x-user" },
+		// Validate never reads the file, so a path that does not exist
+		// checks the protocols tag alone.
+		"caller_token": func(l map[string]any) {
+			l["caller_token"] = map[string]any{"file": "/nonexistent/tokens", "name": "ci"}
+		},
 		"idle_timeout_sec": func(l map[string]any) {
 			l["idle_timeout_sec"] = 30
 		},
@@ -87,12 +93,19 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 		"grpc":       func(l map[string]any) { l["grpc"] = map[string]any{} },
 		"spanner":    func(l map[string]any) { l["spanner"] = map[string]any{} },
 		"ssh":        func(l map[string]any) { l["ssh"] = sshBlock },
+		"ica":        func(l map[string]any) { l["ica"] = icaBlock },
 	}
 	baseline := func(protocol string) map[string]any {
 		l := map[string]any{"name": "l", "protocol": protocol, "listen": "127.0.0.1:1"}
-		if protocol == "ssh" {
+		switch protocol {
+		case "ssh":
 			l["ssh"] = sshBlock
-		} else {
+		case "ica":
+			// Single-VDA mode: upstream names the VDA and the block names
+			// the tenant. TestICAListenerValidation covers CIDR mode.
+			l["upstream"] = "h:1"
+			l["ica"] = icaBlock
+		default:
 			l["upstream"] = "h:1"
 		}
 		return l

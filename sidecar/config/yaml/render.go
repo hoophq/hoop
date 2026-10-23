@@ -21,6 +21,11 @@ const StarterFile = "hoop-sidecar.yaml"
 // that is not the CLI never sees it.
 const DemoAPIKey = AnchorPrefix + "hoop-demo-api"
 
+// DemoPostgresKey marks a config whose listener fronts hoop's remote demo
+// database at the key's address. The CLI serves nothing for it: the key turns
+// the guided tour on, and makes the CLI write the RDS CA before boot.
+const DemoPostgresKey = AnchorPrefix + "hoop-demo-postgres"
+
 // RenderOptions are the comments and extension keys Render adds around a
 // config. The config itself is never written by hand: it is the struct,
 // marshalled, so the file cannot drift from the schema.

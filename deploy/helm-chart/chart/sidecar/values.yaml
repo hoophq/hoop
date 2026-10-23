@@ -24,9 +24,9 @@ image: {}
   #
   # Tags: the Ubuntu flavour carries NO SUFFIX — `<version>`, with `latest`
   # pointing at it. It keeps a shell, so the default is the one you can debug.
-  # `<version>-distroless` is the same binary on a distroless static rootfs:
-  # no package manager, no shell, zero OS-package CVEs, about two thirds the
-  # size. It is the only flavour that is named; ask for it explicitly.
+  # `<version>-distroless` is the same binary on a distroless cc rootfs (glibc,
+  # no shell): no package manager, no shell, zero OS-package CVEs, about two
+  # thirds the size. It is the only flavour that is named; ask for it explicitly.
   #
   # The chart sets no command: the image's own entrypoint runs the relay, and
   # the config reaches it at /etc/hoop-inspect/config.yaml — the path this
@@ -45,7 +45,7 @@ image: {}
   # `args:` replaces CMD entirely and runs nothing.
   #
   # PII detection needs NO special image. The detector is linked into every
-  # build above and holds all 54 entity types without a model on disk. The
+  # build above and holds all 55 entity types without a model on disk. The
   # `-alcatraz` tags exist for the gateway's statistical entity types
   # (PERSON, LOCATION, NRP) and are not read by this process.
 
@@ -79,7 +79,7 @@ config: {}
   #   memory_buffer: 256
   #   async_queue_size: 1024 # a slow disk must not block a user's query
   #
-  # # NARROWS a permissive default: omit the section and all 54 entity types
+  # # NARROWS a permissive default: omit the section and all 55 entity types
   # # are active. Name the union of what your rules below reference, so an
   # # ordinary numeric column is not rewritten by a recognizer nobody asked
   # # for (US_SSN fires on roughly a third of random nine-digit ids).
@@ -221,6 +221,10 @@ analytics:
   sidecarId: ''
   # → HOOP_HOST_ID. Empty uses spec.nodeName; a literal replaces it.
   hostId: ''
+  # → HOOP_SIDECAR_INSTALL_SOURCE. Set by hoop's templates
+  # (managed-agents-http, managed-agents-kubernetes, openai-agents-http,
+  # openai-agents-kubernetes). Empty sends nothing.
+  installSource: ''
 
 # -- Define extra secret as environment variables
 extraSecret: {}
@@ -261,10 +265,11 @@ service:
 #
 # WARNING — read before setting `type: LoadBalancer`.
 #   The relay terminates NO client TLS unless the lane says `downstream_tls`,
-#   and that is accepted on postgres, grpc and spanner ONLY. On http, mysql,
-#   mssql and mongodb it is refused at startup, so those lanes are always
-#   plaintext. A public load balancer in front of one of them puts credentials
-#   and query results in the clear on the internet.
+#   and that is accepted on postgres, clickhouse, http, grpc and spanner
+#   ONLY. On every other protocol it is refused at startup, so those lanes
+#   are always plaintext. A public load balancer in front of a
+#   plaintext lane puts credentials and query results in the clear on the
+#   internet.
 #   Expose a lane publicly only when the lane terminates TLS itself, or when
 #   something in front of it does (Envoy, an ingress controller, a mesh).
 #   `loadBalancerSourceRanges` narrows who can reach it; it does not encrypt.
@@ -357,6 +362,13 @@ affinity: {}
 ## Set pod annotations
 ##
 podAnnotations: {}
+
+## Set pod labels. They go on the pod template only, never the selector, and
+## a key the chart already sets is refused at render. GCP Marketplace puts
+## its consumption tracking label here:
+##   podLabels:
+##     goog-partner-solution: isol_plb32_...
+podLabels: {}
 
 ## Set deployment annotations
 ##

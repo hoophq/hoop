@@ -913,6 +913,16 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiagents.Get)
+	r.PUT("/agents/:nameOrID/tags",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiagents.UpdateTags)
+	// Top-level path, so it never shadows an agent named "tags".
+	r.GET("/agent-tags",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiagents.ListTags)
 	r.DELETE("/agents/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -1091,6 +1101,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiExecSession),
 		sessionapi.Post)
+	r.POST("/sessions/analyze",
+		r.AuthMiddleware,
+		sessionapi.Analyze)
 	r.POST("/sessions/:session_id/exec",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventApiExecReview),

@@ -287,6 +287,17 @@ type lexRules struct {
 	// and invent a relation out of the next word. `:=` is PL/SQL
 	// assignment and stays punctuation.
 	colonBind bool
+
+	// dashCommentEndsAtCR ends a `--` comment at a carriage return, as at a
+	// newline.
+	//
+	// PostgreSQL, and a bypass rather than a nicety: scan.l reads the
+	// comment body as `[^\n\r]*`, so `-- x<CR>DELETE FROM t` is a comment
+	// and then a DELETE that runs. A scanner reading to the next LF files
+	// the DELETE as commentary, and a rule refusing `delete` never sees it.
+	// Checked against PostgreSQL's own parser in lexer/conformance. A CR LF
+	// line end reads as before: the LF after the CR is whitespace.
+	dashCommentEndsAtCR bool
 }
 
 func (d Dialect) rules() lexRules {
@@ -353,10 +364,11 @@ func (d Dialect) rules() lexRules {
 		}
 	default:
 		return lexRules{
-			dollarQuote:        true,
-			escapeString:       true,
-			unicodeIdent:       true,
-			nestedBlockComment: true,
+			dollarQuote:         true,
+			escapeString:        true,
+			unicodeIdent:        true,
+			nestedBlockComment:  true,
+			dashCommentEndsAtCR: true,
 		}
 	}
 }

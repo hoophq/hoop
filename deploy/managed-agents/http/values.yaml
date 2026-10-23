@@ -1,0 +1,78 @@
+# hoopsidecar chart values: one public http lane in front of one REST API,
+# for a Claude Managed Agents cloud sandbox. README.md has the steps.
+#
+# Edit the marked line, create the two secrets, then:
+#   helm install hoop-api oci://ghcr.io/hoophq/helm-charts/hoopsidecar-chart \
+#     -f values.yaml
+#
+# 1.258.0 is the first release that holds a request until it is judged.
+image:
+  tag: '1.258.0@sha256:59ffc8db9209f8bc06c02c166ac6df93af6735bac32c840b8f83e52c15bd2136'
+  pullPolicy: IfNotPresent
+
+analytics:
+  installSource: managed-agents-http
+
+config:
+  admin:
+    listen: '0.0.0.0:19000'
+  audit:
+    file: '-'
+  listeners:
+    - name: customer-api
+      protocol: http
+      listen: 'https://0.0.0.0:8443'
+      # EDIT: the REST API. The lane forwards the agent's Authorization
+      # header unchanged; the vault fills it.
+      upstream: 'https://api.example.com'
+      # The vault substitutes secrets only into HTTPS requests, so the lane
+      # serves TLS. Use a certificate from a public CA: the sandbox reaches
+      # the lane through an egress proxy that inspects TLS, and a private CA
+      # is untested.
+      downstream_tls:
+        cert_file: /run/secrets/hoop-tls/tls.crt
+        key_file: /run/secrets/hoop-tls/tls.key
+      caller_token:
+        file: /run/secrets/hoop-caller-token/tokens
+        name: claude-managed-agents
+      http:
+        # The agent sends its session id here, so each audit row names it.
+        headers: [X-Claude-Session-Id]
+
+  # The free tier enforces one guardrail rule and one mask rule per process.
+  guardrails:
+    rules:
+      # Every method but GET, HEAD and OPTIONS. `other` is any method HTTP
+      # does not define, such as MOVE or MKCOL.
+      - name: read-only
+        type: operation
+        operations: [post, put, patch, delete, connect, trace, other]
+        message: this agent may only read from the API
+  mask:
+    rules:
+      - name: pii
+        entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD]
+        strategy: redact
+
+extraVolumes:
+  - name: tls
+    secret:
+      secretName: hoop-sidecar-tls
+  - name: caller-token
+    secret:
+      secretName: hoop-caller-token
+extraVolumeMounts:
+  - name: tls
+    mountPath: /run/secrets/hoop-tls
+    readOnly: true
+  - name: caller-token
+    mountPath: /run/secrets/hoop-caller-token
+    readOnly: true
+
+laneServices:
+  public:
+    enabled: true
+    type: LoadBalancer
+    # Port 443: the egress proxy and the vault work on HTTPS.
+    ports:
+      - {name: https, port: 443, targetPort: 8443}

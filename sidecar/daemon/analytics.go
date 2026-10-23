@@ -226,7 +226,8 @@ func newTelemetry(cfg *Config, log *slog.Logger) *telemetry {
 		analyzers: make(map[*analyzer.Evaluator]analyzer.Stats),
 	}
 	if t.client.Enabled() {
-		log.Info("usage analytics enabled", "disable", analytics.EnvVar+"=off")
+		log.Info("usage analytics enabled", "disable", analytics.EnvVar+"=off",
+			"install-source", analytics.InstallSource())
 	}
 	return t
 }
@@ -329,7 +330,7 @@ func shapeProperties(cfg *Config, lanes []lane, det Plugin) analytics.Properties
 		if ln.cfg.IdentityHeader != "" {
 			identityHeader++
 		}
-		if ln.cfg.UpstreamTLS != nil {
+		if ln.cfg.upstreamTLS() != nil {
 			upstreamTLS++
 		}
 		if ln.cfg.DownstreamTLS != nil {
@@ -381,8 +382,8 @@ func shapeProperties(cfg *Config, lanes []lane, det Plugin) analytics.Properties
 	// Provider is one of the registered names (openai, anthropic, vertex);
 	// the model is free text the operator typed, so it stays out. Same
 	// rule as the prompt: whether one is set, never what it says.
-	if a := cfg.Analyzer; a != nil {
-		p["analyzer-provider"] = a.Provider
+	if a, _ := cfg.effectiveAnalyzer(); a != nil {
+		p["analyzer-provider"] = a.providerName()
 		p["analyzer-send"] = string(sendModeOrDefault(a.Send))
 		p["analyzer-fail-open"] = a.failOpen()
 		p["analyzer-custom-prompt"] = a.Prompt != ""

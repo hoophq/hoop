@@ -13,9 +13,11 @@ use (
 	./sidecar/codec/wasm
 	./sidecar/config/yaml
 	./sidecar/descriptors/gcs
+	./sidecar/ica
 	./sidecar/lexer/conformance
 	./sidecar/mcp
 	./sidecar/pii/alcatraz
 	./sidecar/store/sqlite
+	./sidecar/telemetry/otlp
 	./tunnel
 )
