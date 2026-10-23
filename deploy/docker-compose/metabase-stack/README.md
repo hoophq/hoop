@@ -93,7 +93,7 @@ and will not provision a per-tool user.
 ```
 
 Needs `docker`, `curl`, `openssl`, `python3`. No local Go: the sidecar image
-compiles in `golang:1.26.5-alpine` from the same Dockerfile `../envoy-stack`
+compiles in `golang:1.26-alpine` from the same Dockerfile `../envoy-stack`
 uses, so building `hoop-inspect:local` in either stack serves the other.
 
 Ports: `3000` Metabase, `19000` sidecar admin, `15432` the postgres lane.

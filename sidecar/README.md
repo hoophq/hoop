@@ -29,9 +29,10 @@ The root shipped zero dependencies until the decoders moved to libhoop. They
 produce the `Statement` a policy evaluates, so this module cannot describe its
 own inputs without naming their types.
 
-**Go 1.26.5.** Every module here declares `go 1.26.5`, so an older toolchain
-refuses the build instead of miscompiling it. The repo's `go.work` and the
-sidecar image pin the same version.
+**Go 1.26.10.** Every module here declares `go 1.26.10`, so an older toolchain
+refuses the build instead of miscompiling it. The repo's `go.work` pins the
+same version. 1.26.10 is the first release whose `crypto/x509` refuses the
+compromised eMudhra intermediates (ENG-847).
 
 ```go
 import (
@@ -181,8 +182,8 @@ go build -o hoop-inspect .
 ./hoop-inspect -version
 ```
 
-Go 1.26.5 or newer builds it. Below that the module's own `go` directive stops
-the build with `requires go >= 1.26.5`, and `GOTOOLCHAIN=auto` (the default)
+Go 1.26.10 or newer builds it. Below that the module's own `go` directive stops
+the build with `requires go >= 1.26.10`, and `GOTOOLCHAIN=auto` (the default)
 fetches the right one rather than failing.
 
 As a container, with the `sidecar` tree as the build context. From the repo
