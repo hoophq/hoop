@@ -57,6 +57,9 @@ break.
   wait for it to exit before starting the next. A health check can answer
   from the previous process. If a run overlapped, discard it and redo it from
   an empty database.
+- No Docker (a cloud sandbox): `scripts/dev/run-sandbox.sh start --bin <hoop>`
+  for each side in turn, `stop` between them. Each start begins from an empty
+  database, so run the seed script on both.
 - QA's stacks, still running with QA's seed, are the cheapest place to record.
   Ask QA to leave them up. After you swap the UI assets under a running stack,
   restart its container: the gateway reads `index.html` once at boot.
@@ -153,7 +156,9 @@ group, the filter) and what differs there.
 ## 6. Show, then publish
 
 Show the EVIDENCE.md and the images to the user, in their language, before
-publishing. Then:
+publishing. In autonomous mode (`HOOP_AGENT` set) nobody is there to show and
+no gist can be made: skip the PR images, and under "Testing" write that the
+evidence is attached to the ticket, by its ID. Then:
 - Linear: attach `EVIDENCE.md` and the images to the ticket (the MP4 for a
   video).
 - PR: the result line, the images (the GIF for a video) and "What it solves" under "Testing".

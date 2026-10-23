@@ -11,6 +11,25 @@ evidence.
 Write every Linear and GitHub field in English, whatever the conversation
 language.
 
+## Autonomous mode
+
+When `HOOP_AGENT` is set, the `support-agent` skill started this run from a
+schedule and no person reads the session. Then:
+
+- A step that says show the human a result: attach it to the ticket and
+  continue.
+- A step that says stop, wait for or ask the human: ask as `support-agent`
+  step 5 says, and end the run. A later run resumes from the ticket.
+- A support ticket is shaped as a comment, never in its description. The
+  `ai-disclosure` hook refuses description edits.
+- No Docker: run each stack with `scripts/dev/run-sandbox.sh`, one at a time,
+  instead of `make run-dev` and `HOOPDEV_SLOT`.
+- The sandbox is discarded after the run: push the branch after each commit,
+  and put the evidence on the ticket and the PR, not only in `~/evidencias`.
+- `gh` can be missing: use the GitHub MCP tools.
+- The PR description starts with `Opened by the support agent (AI) from <ID>.`
+  The PR stays a draft. A person marks it ready and merges it.
+
 ## 1. Context
 
 Fetch the ticket through the Linear MCP server: title, description, comments,

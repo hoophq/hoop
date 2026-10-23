@@ -14,6 +14,8 @@ behaves the same way in this repo. Change it via PR like any code.
 | `agents/qa.md` | `qa` — independent QA; judges the branch against the ticket only, never edits |
 | `skills/evidence/` | `/evidence` — the same flow on `origin/main` and the branch, as before/after images |
 | `skills/gcp-marketplace-publish/` | `/gcp-marketplace-publish` — a release of the sidecar to the GCP Marketplace listing, on demand |
+| `skills/support-agent/` | `/support-agent` — one scheduled run of the support agent: one Linear support ticket per run |
+| `hooks/ai-disclosure.sh` | With `HOOP_AGENT` set: refuses a Slack post or Linear comment that does not say an AI wrote it, and Slack posts outside the agent's channel |
 | `../.mcp.json` | Linear + Figma MCP servers for everyone (first run: approve + `/mcp` to authenticate) |
 
 ## First-time setup (each engineer, once)
@@ -72,3 +74,21 @@ wait, not you.
 - Evidence lives in `~/evidencias/<TICKET-ID>/`, raw captures in
   `~/evidencias/.archive/<TICKET-ID>/`.
 - Linear ticket gets the PR link and moves to In Review.
+
+## Support agent
+
+A Claude Code scheduled task (claude.ai/code/routines) runs `/support-agent`
+every hour on one person's account. It takes one Linear ticket labeled
+`Support` per run, and asks in Slack or Linear when blocked. A later run
+resumes when someone answers. Its state lives in Linear labels: `agent:go`,
+`agent:working`, `agent:needs-info`, `agent:needs-customer`, `agent:drafted`,
+`agent:pr-open`, `agent:stuck`, `agent:skip`.
+
+- Its cloud environment, used by nothing else, sets `HOOP_AGENT=support`,
+  `HOOP_AGENT_OWNER`, `HOOP_AGENT_SLACK_CHANNEL` (channel ID),
+  `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: draft PRs) and
+  `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`.
+- The task selects the repos `hoop`, `libhoop` and `libhoop-ica`, and only the
+  Linear and Slack connectors. Hourly is the shortest schedule.
+- A second task runs `/support-agent digest` at the end of the day.
+- To stop it, pause the task. To ask for a ticket, label it `agent:go`.
