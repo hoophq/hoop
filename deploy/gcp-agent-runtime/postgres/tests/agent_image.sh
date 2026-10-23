@@ -15,9 +15,12 @@ cfg="$dir/deploy/sidecar/sidecar.yaml"
 [[ -f $dir/Dockerfile ]] || { echo "FAIL: no Dockerfile in $dir; run this in a project made by agents-cli create" >&2; exit 1; }
 [[ -f $cfg ]] || { echo "FAIL: no $cfg" >&2; exit 1; }
 
-# The database addresses: the host of every listener's upstream in sidecar.yaml.
-hosts=$(sed -n 's/^[[:space:]]*upstream:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$cfg" | sed 's/:[0-9]*$//' | sort -u)
-[[ -n $hosts ]] || { echo "FAIL: no upstream in $cfg" >&2; exit 1; }
+# The database addresses: every listener's upstream (host:port) in sidecar.yaml,
+# and its host when the host holds a dot (an FQDN or an IP). A one-label host
+# such as "postgres" is also an ordinary word, so only its host:port counts.
+upstreams=$(sed -n 's/^[[:space:]]*upstream:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$cfg" | sort -u)
+[[ -n $upstreams ]] || { echo "FAIL: no upstream in $cfg" >&2; exit 1; }
+hosts=$(echo "$upstreams" | sed 's/:[0-9]*$//' | grep -F . | sort -u || true)
 
 tag="agent-image-test:$$"
 cid=""
@@ -42,25 +45,37 @@ if grep -E '(^|/)(hoopsidecar|hoop|sidecar\.yaml)$|(^|/)deploy/sidecar(/|$)' "$w
   echo "FAIL: the image holds the sidecar or its config (paths above)"
   fail=1
 fi
-# 2. No database address, in the image's config or in any of its files.
-for h in $hosts; do
-  if grep -qF "$h" "$work/config.json"; then
-    echo "FAIL: the image config holds the database address $h"
-    fail=1
-  fi
-  if grep -qaF "$h" "$work/fs.tar"; then
-    echo "FAIL: a file in the image holds the database address $h:"
-    python3 -I - "$work/fs.tar" "$h" <<'EOF'
-import sys, tarfile
-path, needle = sys.argv[1], sys.argv[2].encode()
-with tarfile.open(path) as tar:
-    for m in tar:
-        if m.isfile() and needle in tar.extractfile(m).read():
-            print("  /" + m.name)
-EOF
+# 2. No database address: not in the image config, not as host:port in any
+# file, and not as a host in the project's own files (the working directory,
+# its virtualenv aside). The base image's files are searched for host:port
+# only.
+for a in $upstreams $hosts; do
+  if grep -qF "$a" "$work/config.json"; then
+    echo "FAIL: the image config holds the database address $a"
     fail=1
   fi
 done
+workdir=$(docker image inspect "$tag" --format '{{.Config.WorkingDir}}')
+# shellcheck disable=SC2086 # one argument per address
+python3 -I - "$work/fs.tar" "$workdir" $upstreams -- $hosts <<'EOF' || fail=1
+import sys, tarfile
+path, workdir, args = sys.argv[1], sys.argv[2].strip("/"), sys.argv[3:]
+sep = args.index("--")
+ups, hosts = args[:sep], args[sep + 1:]
+bad = 0
+with tarfile.open(path) as tar:
+    for m in tar:
+        if not m.isfile():
+            continue
+        data = tar.extractfile(m).read()
+        own = bool(workdir) and m.name.startswith(workdir + "/") \
+            and not m.name.startswith(workdir + "/.venv/")
+        for needle in ups + (hosts if own else []):
+            if needle.encode() in data:
+                print(f"FAIL: /{m.name} holds the database address {needle}")
+                bad = 1
+sys.exit(bad)
+EOF
 # 3. The sidecar's address comes at deploy time, never from the image.
 if grep -q '"APPDB_HOST=' "$work/config.json"; then
   echo "FAIL: the image sets APPDB_HOST"
@@ -76,6 +91,6 @@ if [[ $name != "$want" ]]; then
 fi
 
 if [[ $fail == 0 ]]; then
-  echo "PASS: the image holds no sidecar and no database address ($(echo $hosts)), and loads $name"
+  echo "PASS: the image holds no sidecar and no database address ($(echo $upstreams)), and loads $name"
 fi
 exit $fail
