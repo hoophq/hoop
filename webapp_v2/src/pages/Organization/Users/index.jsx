@@ -23,6 +23,7 @@ import CopyButton from '@/components/CopyButton'
 import Pagination from '@/components/Pagination'
 import Tooltip from '@/components/Tooltip'
 import { usersService } from '@/services/users'
+import { downloadCSV, toCSV } from '@/utils/csv'
 import { authService } from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
 import { formatFullDate, formatRelativeTime } from '@/utils/datetime'
@@ -32,6 +33,23 @@ import { STATUS_FILTER_OPTIONS, STATUS_OPTIONS, generatePassword, statusVariant 
 const CREATE_PREFIX = '__new__:'
 const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
+const CSV_HEADER = ['Name', 'Email', 'Role', 'Groups', 'Status', 'Last login (UTC)']
+
+// ISO 8601 UTC without milliseconds: 2026-10-23T19:13:23Z.
+function utcSeconds(iso) {
+  return iso ? new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z') : ''
+}
+
+function usersCSV(users) {
+  return toCSV(CSV_HEADER, users.map((u) => [
+    u.name,
+    u.email,
+    u.role,
+    (u.groups ?? []).join('; '),
+    u.status,
+    utcSeconds(u.last_login_at),
+  ]))
+}
 
 function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, onSaved }) {
   const [name, setName] = useState('')
@@ -207,6 +225,7 @@ export default function Users() {
   const [status, setStatus] = useState(null)
   const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState(null)
   const [isLocalAuth, setIsLocalAuth] = useState(false)
   // The form reads the groups and the auth method. The page waits for both:
@@ -299,6 +318,21 @@ export default function Users() {
     setStatus(value)
   }
 
+  // Every user that matches the table filters, from all pages: without
+  // page/page_size the gateway returns them all as one array.
+  async function handleExport() {
+    setExporting(true)
+    try {
+      const { data } = await usersService.list({ email, status })
+      const date = new Date().toLocaleDateString('en-CA')
+      downloadCSV(`hoop-users-${date}.csv`, usersCSV(data ?? []))
+    } catch {
+      showSnackbar({ level: 'error', text: 'Failed to export users.' })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   function handleSaved() {
     fetchUsers()
     fetchGroups()
@@ -332,9 +366,14 @@ export default function Users() {
               {`${total} ${total === 1 ? 'Member' : 'Members'}`}
             </Text>
           </Stack>
-          {orgTotal !== 1 && (
-            <Button onClick={handleAdd}>Add User</Button>
-          )}
+          <Group gap="sm">
+            <Button variant="outline" color="gray" loading={exporting} onClick={handleExport}>
+              Export CSV
+            </Button>
+            {orgTotal !== 1 && (
+              <Button onClick={handleAdd}>Add User</Button>
+            )}
+          </Group>
         </Group>
 
         {orgTotal > 1 && (

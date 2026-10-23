@@ -1113,6 +1113,15 @@ gateway decides expiry against its own clock, which is the clock that actually
 blocks sessions. `daysUntilExpiration` is only for the "expires in N days"
 countdown while the status is still `valid`.
 
+### `csv.js`
+CSV export for tables. Used by Users → Export CSV.
+```js
+import { toCSV, downloadCSV } from '@/utils/csv'
+
+downloadCSV('hoop-users-2026-10-23.csv', toCSV(['Name', 'Email'], [['Doe, John', 'j@x.com']]))
+```
+`toCSV` writes RFC 4180 (quotes for comma, double quote, line break; CRLF), a UTF-8 BOM for Excel, and a leading `'` on cells that start with `=`, `+`, `-`, `@`, tab or CR (CSV injection). `null`/`undefined` become empty cells.
+
 ### `support.js`
 Opens the same destination as "Contact support" in the header user menu.
 ```js
