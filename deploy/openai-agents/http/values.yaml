@@ -1,0 +1,77 @@
+# hoopsidecar chart values: one public http lane in front of one REST API,
+# for an OpenAI Agents API hosted sandbox. README.md has the steps.
+#
+# Edit the marked line, create the two secrets, then:
+#   helm install hoop-api oci://ghcr.io/hoophq/helm-charts/hoopsidecar-chart \
+#     -f values.yaml
+#
+# 1.263.0 is the first release that reports this template's install source.
+image:
+  tag: '1.263.0@sha256:1cbddabd563ea67a885e4fa5767f97599f978e8edd2cb6ac3f1eba4e385f5992'
+  pullPolicy: IfNotPresent
+
+analytics:
+  installSource: openai-agents-http
+
+config:
+  admin:
+    listen: '0.0.0.0:19000'
+  audit:
+    file: '-'
+  listeners:
+    - name: customer-api
+      protocol: http
+      listen: 'https://0.0.0.0:8443'
+      # EDIT: the REST API. The lane forwards the agent's Authorization
+      # header unchanged; the vault fills it.
+      upstream: 'https://api.example.com'
+      # The vault fills secrets only into HTTPS on 443 or 8443. Use a public
+      # CA: the egress proxy inspects TLS, and a private CA is untested.
+      downstream_tls:
+        cert_file: /run/secrets/hoop-tls/tls.crt
+        key_file: /run/secrets/hoop-tls/tls.key
+      caller_token:
+        file: /run/secrets/hoop-caller-token/tokens
+        name: openai-agents
+      http:
+        # The agent sends its session id here, so each audit row names it.
+        headers: [X-OpenAI-Session-Id]
+
+  # The free tier enforces one guardrail rule and one mask rule per process.
+  # CI keeps both equal to deploy/managed-agents/http/values.yaml.
+  guardrails:
+    rules:
+      # Every method but GET, HEAD and OPTIONS. `other` is any method HTTP
+      # does not define, such as MOVE or MKCOL.
+      - name: read-only
+        type: operation
+        operations: [post, put, patch, delete, connect, trace, other]
+        message: this agent may only read from the API
+  mask:
+    rules:
+      - name: pii
+        entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD]
+        strategy: redact
+
+extraVolumes:
+  - name: tls
+    secret:
+      secretName: hoop-sidecar-tls
+  - name: caller-token
+    secret:
+      secretName: hoop-caller-token
+extraVolumeMounts:
+  - name: tls
+    mountPath: /run/secrets/hoop-tls
+    readOnly: true
+  - name: caller-token
+    mountPath: /run/secrets/hoop-caller-token
+    readOnly: true
+
+laneServices:
+  public:
+    enabled: true
+    type: LoadBalancer
+    # Port 443: the vault fills secrets only on 443 or 8443.
+    ports:
+      - {name: https, port: 443, targetPort: 8443}
