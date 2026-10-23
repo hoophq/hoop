@@ -53,6 +53,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/store"
+	telem "github.com/hoophq/hoop/sidecar/telemetry"
 )
 
 // Version is the release this process reports: the admin /stats endpoint,
@@ -608,6 +609,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkICA(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkTelemetry(cfg); err != nil {
+		return nil, err
+	}
 	// A config assembled in Go reaches here without SetupWith; a config
 	// SetupWith loaded holds its plug-ins already and this is a no-op.
 	// Validate releases the ones it loads with the report: nothing runs
@@ -885,6 +889,9 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkICA(cfg); err != nil {
 		return err
 	}
+	if err := checkTelemetry(cfg); err != nil {
+		return err
+	}
 	if cfg.MCP != nil && cfg.cp == nil {
 		// checkMCP accepts a plane the file only names, which is right for
 		// -validate. A running process must hold the connection itself.
@@ -898,7 +905,18 @@ func Run(cfg *Config, det Plugin) error {
 		"guardrail_rules", capText(limit.guardrails),
 		"mask_rules", capText(limit.mask))
 
-	ac, err := buildAudit(cfg.Audit, cfg.cp, log)
+	// The exporter comes first because the audit chain holds its log sink
+	// and the lanes hold its recorders. Its deferred close therefore runs
+	// LAST: after the audit sink flushed the log sink's queue, and after
+	// every server closed, so the final records are in before the SDK
+	// stops.
+	otel, err := newOTelExporter(cfg, log)
+	if err != nil {
+		return err
+	}
+	defer otel.close()
+
+	ac, err := buildAudit(cfg.Audit, cfg.cp, otel, log)
 	if err != nil {
 		return err
 	}
@@ -931,6 +949,9 @@ func Run(cfg *Config, det Plugin) error {
 	if analyzerDeps != nil {
 		analyzerCfg = analyzerDeps.cfg
 		analyzerDeps.log = log
+		// Before buildLanes: the evaluators it builds capture the
+		// observers at construction.
+		analyzerDeps.otel = otel
 		log.Info("risk analyzer attached",
 			"provider", analyzerCfg.providerName(),
 			"model", analyzerCfg.modelName(),
@@ -976,6 +997,9 @@ func Run(cfg *Config, det Plugin) error {
 	defer tel.close()
 	for i := range lanes {
 		lanes[i].metrics = tel.laneMetrics(lanes[i].cfg.Protocol)
+		// One recorder per lane for the process's life: a reload swaps
+		// rules into the servers built below, which keep theirs.
+		lanes[i].telemetry = otel.lane(lanes[i].name, lanes[i].cfg.Protocol)
 	}
 
 	// Before any listener binds: a lane that cannot read its tokens stops
@@ -1011,6 +1035,10 @@ func Run(cfg *Config, det Plugin) error {
 	relayNames := make([]string, 0, len(lanes))
 	var endpoints []endpointServer
 	var endpointNames []string
+	// relayProtocols and endpointProtocols ride beside the names, for the
+	// telemetry snapshot: a metric is keyed by lane AND protocol.
+	relayProtocols := make([]string, 0, len(lanes))
+	var endpointProtocols []string
 	// statSources pairs every server with its lane's protocol, so usage
 	// can report connections per protocol without naming a lane.
 	statSources := make([]statSource, 0, len(lanes))
@@ -1025,6 +1053,7 @@ func Run(cfg *Config, det Plugin) error {
 			}
 			endpoints = append(endpoints, gsrv)
 			endpointNames = append(endpointNames, ln.name)
+			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, gsrv})
 			swappers[ln.name] = rules
 		case isSSH(ln.cfg):
@@ -1034,6 +1063,7 @@ func Run(cfg *Config, det Plugin) error {
 			}
 			endpoints = append(endpoints, ssrv)
 			endpointNames = append(endpointNames, ln.name)
+			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
 			swappers[ln.name] = rules
 		case isICA(ln.cfg):
@@ -1043,6 +1073,7 @@ func Run(cfg *Config, det Plugin) error {
 			}
 			endpoints = append(endpoints, isrv)
 			endpointNames = append(endpointNames, ln.name)
+			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, isrv})
 			swappers[ln.name] = rules
 		default:
@@ -1052,6 +1083,7 @@ func Run(cfg *Config, det Plugin) error {
 			}
 			servers = append(servers, srv)
 			relayNames = append(relayNames, ln.name)
+			relayProtocols = append(relayProtocols, ln.cfg.Protocol)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, srv})
 			swappers[ln.name] = relayRules{srv}
 		}
@@ -1088,6 +1120,34 @@ func Run(cfg *Config, det Plugin) error {
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{lanes: lanes})
 	tel.trackStarted(cfg, lanes, det)
+
+	// The gauges no data-path hook produces: connection counters per lane,
+	// the config generation, the plane copy's drop count. Read on every
+	// export from the same sources /stats renders, so the two agree.
+	otel.observe(func() telem.ProcessSnapshot {
+		snap := telem.ProcessSnapshot{
+			Lanes:            make([]telem.LaneStats, 0, len(servers)+len(endpoints)),
+			ConfigGeneration: int64(view.Load().gen),
+		}
+		for i, s := range servers {
+			active, total, _ := s.Stats()
+			snap.Lanes = append(snap.Lanes, telem.LaneStats{
+				Lane: relayNames[i], Protocol: relayProtocols[i], Active: active, Total: total,
+			})
+		}
+		for i, s := range endpoints {
+			active, total, _ := s.Stats()
+			snap.Lanes = append(snap.Lanes, telem.LaneStats{
+				Lane: endpointNames[i], Protocol: endpointProtocols[i], Active: active, Total: total,
+			})
+		}
+		if ac.events != nil {
+			st := ac.events.snapshot()
+			snap.SessionEventsSent = int64(st.Sent)
+			snap.SessionEventsDropped = int64(st.Dropped)
+		}
+		return snap
+	})
 
 	// The reloader swaps rule-only drift into the servers built above and
 	// keeps the restart log for everything else (ADR-0014). One source
@@ -1148,7 +1208,7 @@ func Run(cfg *Config, det Plugin) error {
 			am = analyzerDeps.metrics
 		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, licenseHandler(adminSecret, rl, log), log)
+			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log)
 	} else if strings.TrimSpace(adminSecret) != "" {
 		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
 			"hint", "set admin.listen to install a license through the admin API")
@@ -1343,6 +1403,11 @@ type lane struct {
 	// keyed by protocol. Run sets it after buildLanes; a lane built by
 	// Validate or a test leaves it nil and counts nothing.
 	metrics gate.Metrics
+
+	// telemetry is this lane's OpenTelemetry recorder, set by Run beside
+	// metrics and nil without a telemetry block. Per lane rather than per
+	// protocol: a metric names the lane an operator configured.
+	telemetry telem.LaneRecorder
 
 	// trustRoots is the process trust pool (the trust section) every
 	// outbound TLS client this lane builds verifies against. Nil is the
@@ -1659,6 +1724,7 @@ func buildServer(
 		AllStartupOptions: inspect.Protocol(lc.Protocol) == inspect.Postgres &&
 			lc.Postgres.recordsAllOptions(),
 		Metrics:     ln.metrics,
+		Telemetry:   ln.telemetry,
 		IdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
 		MaxConns:    lc.MaxConns,
 		Logger:      log.With("listener", ln.name),
@@ -1762,7 +1828,13 @@ type auditChain struct {
 // A process connected to a control plane also gets the session events sink,
 // last. It sends nothing until a handshake answers SessionEventsHeader, and
 // it never fails a write, so it cannot change what the sinks before it do.
-func buildAudit(cfg AuditConfig, cp *controlPlane, log *slog.Logger) (auditChain, error) {
+//
+// An exporter's log sink, when events are on, goes after the plane's copy
+// and under the same options, for the same reason: a record the file
+// redacted must not reach the collector in the clear unless the operator
+// said so (telemetry.events.statement_text), and that sink too never fails
+// a write.
+func buildAudit(cfg AuditConfig, cp *controlPlane, otel *otelExporter, log *slog.Logger) (auditChain, error) {
 	opts := audit.SinkOptions{
 		RedactStatements:  cfg.RedactStatements,
 		MaxStatementBytes: cfg.MaxStatementBytes,
@@ -1807,6 +1879,11 @@ func buildAudit(cfg AuditConfig, cp *controlPlane, log *slog.Logger) (auditChain
 		}
 	}
 
+	if s := otel.auditSink(opts); s != nil {
+		sinks = append(sinks, s)
+		log.Info("audit events are exported as telemetry log records")
+	}
+
 	out.sink = audit.NewMultiSink(sinks...)
 	if cfg.AsyncQueueSize > 0 {
 		out.sink = audit.NewAsyncSink(out.sink, cfg.AsyncQueueSize)
@@ -1830,6 +1907,7 @@ func serveAdmin(
 	analyzerCfg *AnalyzerConfig,
 	analyzerMetrics *analyzerMetrics,
 	licState *licenseState,
+	otel *otelExporter,
 	licenseAPI http.Handler,
 	log *slog.Logger,
 ) {
@@ -1902,6 +1980,15 @@ func serveAdmin(
 		// the local file does not.
 		if ac.events != nil {
 			resp["session_events"] = ac.events.snapshot()
+		}
+		// The exporter's own counters: how many audit events reached the
+		// collector's queue and how many the bounded queue dropped, the
+		// same question session_events answers for the plane's copy.
+		if st := otel.stats(); st != nil {
+			resp["telemetry"] = map[string]any{
+				"events_sent":    st.EventsSent,
+				"events_dropped": st.EventsDropped,
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)

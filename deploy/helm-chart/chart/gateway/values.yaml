@@ -202,9 +202,15 @@ config:
   # HOOP_SPIFFE_BUNDLE_JWKS: ''
 
 # -- Load environment variables from a Secret that already exists in the
-# namespace. The chart only references it, it does not create or manage it.
-# Every key of the Secret becomes an environment variable, loaded after
-# 'hoop-config', so it overrides the same key defined in '.Values.config'.
+# namespace (e.g. made by sealed-secrets). The chart only references it, it does
+# not create or manage it. The gateway and the default agent load every key of
+# the Secret after 'hoop-config', so it overrides the same key defined in
+# '.Values.config'.
+# When it is set, config.POSTGRES_DB_URI, config.API_URL and
+# config.IDP_CLIENT_SECRET are not required: put them in the Secret. The chart
+# cannot read the Secret, so it does not check that they are there. A change to
+# the Secret does not restart the pods: run
+# 'kubectl rollout restart deployment/hoopgateway'.
 existingSecret: ''
 # existingSecret: hoop-gateway-credentials
 

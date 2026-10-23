@@ -39,6 +39,10 @@ import (
 	// The MCP server an "mcp" block turns on (ADR-0021), same rule again.
 	_ "github.com/hoophq/hoop/sidecar/mcp"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
+	// The OpenTelemetry exporter a "telemetry" block turns on, same rule:
+	// the capabilities header advertises the block in every build, so
+	// every build that handshakes must be able to serve it.
+	"github.com/hoophq/hoop/sidecar/telemetry/otlp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/term"
@@ -669,6 +673,7 @@ func init() {
 		return wasm.Load(ctx, module)
 	}
 	daemon.CodecTester = conformance.Run
+	daemon.NewTelemetryExporter = otlp.New
 
 	startSidecarCmd.Flags().StringVar(&sidecarConfigFlag, "config", sidecarConfigFromEnv(),
 		"Path to the inspection config file (YAML or JSON)")
