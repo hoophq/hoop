@@ -640,6 +640,8 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"a read-only script passes a guardrail refusing writes", "BEGIN SELECT * FROM t; END", noWrites, false},
 		{"SHOW CREATE TABLE in a script passes", "BEGIN SHOW CREATE TABLE t; END", noWrites, false},
 		{"a column called load in a script passes", "BEGIN SELECT load FROM metrics; END", noWrites, false},
+		{"a column called generate in a script passes", "BEGIN SELECT generate FROM t; END", noWrites, false},
+		{"a GENERATE in a handler is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION GENERATE symlink_format_manifest FOR TABLE t; SELECT 1/0; END", noWrites, true},
 		{"a MERGE join hint in a script passes", "BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END", noWrites, false},
 		{"a CASE that calls replace() passes", "SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t", noWrites, false},
 		{"a CASE that returns a column called load passes", "SELECT CASE WHEN a = 1 THEN load ELSE 0 END FROM t", noWrites, false},

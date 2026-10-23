@@ -510,6 +510,8 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"read-only script", "BEGIN SELECT 1; END", lexer.Select, false, nil},
 		{"SHOW CREATE TABLE in a script", "BEGIN SHOW CREATE TABLE t; END", lexer.Show, false, nil},
 		{"column called load in a script", "BEGIN SELECT load FROM metrics; END", lexer.Select, false, nil},
+		{"column called generate in a script", "BEGIN SELECT generate FROM t; END", lexer.Select, false, nil},
+		{"GENERATE in a script's handler", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION GENERATE symlink_format_manifest FOR TABLE t; SELECT 1/0; END", lexer.Alter, false, []string{"t"}},
 		{"MERGE join hint in a script", "BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END", lexer.Select, false, nil},
 		{"replace() after THEN in a CASE", "SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t", lexer.Select, true, nil},
 		{"column called load after THEN", "SELECT CASE WHEN a = 1 THEN load ELSE 0 END FROM t", lexer.Select, true, nil},

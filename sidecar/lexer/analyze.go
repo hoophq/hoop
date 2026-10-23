@@ -615,9 +615,10 @@ func (a *analyzer) sparkNotDML(i int) bool {
 
 // sparkStatementAt reports whether a verb Spark adds, at i, can begin its
 // statement here, as plsqlNotDML rules out PL/SQL's known false readings.
-// Six of them start with a fixed pair of keywords: REPLACE TABLE, LOAD
-// DATA, CONVERT TO, MSCK REPAIR, REORG TABLE, REPAIR TABLE. replace(s, 'x',
-// 'y') after a THEN, or a column called load, has no such keyword after it,
+// Seven of them have fixed keywords: REPLACE TABLE, LOAD DATA, CONVERT TO,
+// MSCK REPAIR, REORG TABLE, REPAIR TABLE, and FOR two words after GENERATE
+// (GENERATE mode FOR TABLE t, DeltaSqlBase.g4). replace(s, 'x', 'y') after
+// a THEN, or a column called load or generate, has no such keyword there,
 // and no statement Spark can run lacks it, so ruling them out hides no
 // write. VACUUM, OPTIMIZE and RESTORE take a relation next, and any word can
 // name one (`VACUUM over` parses on Databricks SQL), so they are always
@@ -641,6 +642,8 @@ func (a *analyzer) sparkStatementAt(i int) bool {
 		return next.isWord("to")
 	case "msck":
 		return next.isWord("repair")
+	case "generate":
+		return i+2 < len(a.toks) && a.toks[i+2].isWord("for")
 	}
 	return true
 }

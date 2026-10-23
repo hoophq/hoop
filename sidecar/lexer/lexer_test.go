@@ -1876,6 +1876,7 @@ func TestSparkScripts(t *testing.T) {
 		{"BEGIN lbl:LOOP DELETE FROM t; LEAVE lbl; END LOOP lbl; END", lexer.Delete, []string{"t"}},
 		// A handler's statement follows its whole condition list.
 		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION REPLACE TABLE t AS SELECT 1; SELECT 1/0; END", lexer.Create, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION GENERATE symlink_format_manifest FOR TABLE t; SELECT 1/0; END", lexer.Alter, []string{"t"}},
 		{"BEGIN DECLARE EXIT HANDLER FOR NOT FOUND, SQLSTATE VALUE '22012' DELETE FROM t; SELECT 1; END", lexer.Delete, []string{"t"}},
 		{"BEGIN DECLARE EXIT HANDLER FOR c.d DROP TABLE t; SELECT 1; END", lexer.Drop, []string{"t"}},
 		{"BEGIN DECLARE EXIT HANDLER FOR drop DROP TABLE t; SELECT 1; END", lexer.Drop, []string{"t"}},
@@ -1910,11 +1911,13 @@ func TestSparkScripts(t *testing.T) {
 
 // Inside a script, statements begin only where the grammar puts them, so a
 // verb elsewhere is no write: SHOW CREATE TABLE reads, a column may be called
-// load, and MERGE is also a join hint. Read as writes, each refused a read.
+// load or generate, and MERGE is also a join hint. Read as writes, each
+// refused a read.
 func TestSparkScriptsInventNoWrites(t *testing.T) {
 	for _, sql := range []string{
 		"BEGIN SHOW CREATE TABLE t; END",
 		"BEGIN SELECT load FROM metrics; END",
+		"BEGIN SELECT generate FROM t; END",
 		"BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END",
 		"BEGIN SELECT /*+ MERGE(a, b) */ * FROM a JOIN b ON a.id = b.id; END",
 		"BEGIN SELECT a.update, b.delete FROM a JOIN b ON a.id = b.id; END",
