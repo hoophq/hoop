@@ -240,9 +240,8 @@ fixed at build. ADR-0014 records the boundary; the control plane's heartbeat
 applies the same one.
 
 `SIGHUP` is a forced reload: the document runs even when its bytes did not
-move. That is how a license file replaced behind an unchanged `license` path
-is picked up — a stat of the config file cannot see it, and a `SIGHUP` (or
-any later rule edit) re-resolves the path and adopts the new document.
+move. It also re-reads the license file, which is watched on the same ten
+second tick; see "Changing the license of a running process".
 
 On Kubernetes, mount the ConfigMap as a volume, not through `subPath`: the
 kubelet updates a volume in place (an atomic symlink swap the stat sees, on
@@ -669,6 +668,56 @@ a path is the silent downgrade this build refuses everywhere else.
 `/config` serves the same verdict under `license`, without the signature, and
 the caps under `limits`, where a `null` means the license lifted one.
 
+#### Changing the license of a running process
+
+No restart is needed to renew or replace a license. Three ways, and a
+restart picks the same license the running process ends up with:
+
+- **Replace the file.** When the source in force (`-license`,
+  `HOOP_LICENSE` or the `license` key) names a path, the process stats that
+  file every ten seconds and re-reads it when it moves, or at once on
+  `SIGHUP`. A new document is in force on that tick and logged as
+  `license file replaced`. A file that does not load keeps the license in
+  use and warns once. On Kubernetes, mount a Secret as a directory, not a
+  `subPath`, and point the source at the file in it.
+- **Edit the `license` key** in the config file, when no flag or
+  `HOOP_LICENSE` outranks it. It applies with the next config reload.
+- **`PUT /license` on the admin listener**, with the document as the body.
+  Off unless `HOOP_SIDECAR_ADMIN_SECRET` is set; then the request needs
+  `Authorization: Bearer <secret>`. The admin listener is plain HTTP, so
+  send it from the host or through an encrypted tunnel (`kubectl
+  port-forward`, SSH), never across a network others can read:
+
+  ```bash
+  curl -X PUT --data-binary @license.json \
+    -H "Authorization: Bearer $HOOP_SIDECAR_ADMIN_SECRET" localhost:19000/license
+  ```
+
+  The answer is `{"outcome": "installed" | "unchanged", "license": {...}}`,
+  the same report `/config` serves. Status `401` is a missing or wrong
+  secret, `403` means the endpoint is off, `409` means a control plane owns
+  the license, and `422` is a license this process refuses, with the reason.
+  The license lives in memory: the next change to the source in force
+  replaces it, and so does a restart. Update the source as well.
+
+A replaced file or an edited key is the owner's change, so it is in force
+even when it covers fewer rules; then the relay stops, as when a term ends.
+The admin API is stricter: it takes only a current license that covers the
+running rules, so a holder of the secret cannot stop the relay. It also
+takes only a document, never a path.
+
+A license given inline (`-license '{...}'`, `HOOP_LICENSE='{...}'`) cannot
+change in a running process; use a path, the admin API, or a restart. Under
+a control plane that owns the license, set it there: the file is not
+watched and the admin API answers `409`.
+
+Connecting a licensed standalone sidecar to a control plane takes a restart.
+After it, a control plane that manages licenses (every current gateway) is the
+only license source. Set the organization's license there first: rules past
+the free tier do not start without a current license that covers them. When
+the config file starts naming a control plane, the running process warns about
+this before the restart.
+
 #### When a term ends under a running process
 
 The verdict is a function of the clock, not a flag set at startup. A relay
@@ -826,7 +875,7 @@ license: /etc/hoop-inspect/license.json
 # control_plane_url: https://cp.example.com
 
 admin:
-  listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*
+  listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*, PUT /license
 
 # Metrics, traces and audit events over OTLP. See "OpenTelemetry".
 # telemetry:

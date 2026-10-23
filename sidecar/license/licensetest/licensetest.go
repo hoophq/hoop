@@ -56,6 +56,23 @@ func Expiring(d time.Duration) license.Payload {
 // one that reads it: no t.Parallel in a package that signs.
 func Sign(t *testing.T, p license.Payload) license.License {
 	t.Helper()
+	return NewSigner(t).Sign(p)
+}
+
+// Signer signs every document under one key. Sign and Document trust a fresh
+// key per call, which retires the previous one; a test that needs two
+// documents this process verifies at once (a renewal replacing a license in
+// force) signs both with one Signer.
+type Signer struct {
+	t   *testing.T
+	key *rsa.PrivateKey
+	id  string
+}
+
+// NewSigner generates a key and makes this process trust it until t
+// finishes. Same rule as Sign: no t.Parallel in a package that signs.
+func NewSigner(t *testing.T) *Signer {
+	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("licensetest: generate key: %v", err)
@@ -65,17 +82,32 @@ func Sign(t *testing.T, p license.Payload) license.License {
 		t.Fatalf("licensetest: marshal public key: %v", err)
 	}
 	t.Cleanup(trust.Swap(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})))
-
-	sum := sha256.Sum256(p.SigningData())
-	sig, err := rsa.SignPSS(rand.Reader, key, crypto.SHA256, sum[:], nil)
-	if err != nil {
-		t.Fatalf("licensetest: sign: %v", err)
-	}
 	id, err := license.PublicKeyID()
 	if err != nil {
 		t.Fatalf("licensetest: key id: %v", err)
 	}
-	return license.License{Payload: p, KeyID: id, Signature: base64.StdEncoding.EncodeToString(sig)}
+	return &Signer{t: t, key: key, id: id}
+}
+
+// Sign issues a license for the payload under this Signer's key.
+func (s *Signer) Sign(p license.Payload) license.License {
+	s.t.Helper()
+	sum := sha256.Sum256(p.SigningData())
+	sig, err := rsa.SignPSS(rand.Reader, s.key, crypto.SHA256, sum[:], nil)
+	if err != nil {
+		s.t.Fatalf("licensetest: sign: %v", err)
+	}
+	return license.License{Payload: p, KeyID: s.id, Signature: base64.StdEncoding.EncodeToString(sig)}
+}
+
+// Document is Sign as the JSON an operator pastes.
+func (s *Signer) Document(p license.Payload) string {
+	s.t.Helper()
+	b, err := json.Marshal(s.Sign(p))
+	if err != nil {
+		s.t.Fatalf("licensetest: marshal license: %v", err)
+	}
+	return string(b)
 }
 
 // Ref is Sign marshalled into the reference a config or a flag would carry,
@@ -88,11 +120,7 @@ func Ref(t *testing.T, p license.Payload) license.Ref {
 // Document is the signed license as the JSON an operator pastes.
 func Document(t *testing.T, p license.Payload) string {
 	t.Helper()
-	b, err := json.Marshal(Sign(t, p))
-	if err != nil {
-		t.Fatalf("licensetest: marshal license: %v", err)
-	}
-	return string(b)
+	return NewSigner(t).Document(p)
 }
 
 // Status is the verdict Load reaches for a freshly signed license. It went
