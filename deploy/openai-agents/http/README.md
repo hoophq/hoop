@@ -135,15 +135,20 @@ No variable in the sandbox names its session, so the first message gives
 the agent its session id. The script waits for the turn and prints the
 agent's commands and answer.
 
+In your own agent, put both tokens in headers only, never in a URL or a
+body: toward the sidecar's host the vault fills a placeholder anywhere in
+the request. `openai/agent.md` says so to the model.
+
 ### 7. Read the audit trail
 
 ```bash
-kubectl logs deploy/hoop-api-hoopsidecar | jq -cR 'fromjson? | select(.kind == "statement" or .kind == "violation")
-  | {kind, statement, rule, session: .http.headers["x-openai-session-id"]}'
+kubectl logs deploy/hoop-api-hoopsidecar | jq -cR 'fromjson? | select((.kind == "statement" or .kind == "violation") and .direction == "client")
+  | {kind, principal, statement, rule, session: .http.headers["x-openai-session-id"]}'
 ```
 
-A request row carries the session id the agent sent. A refused caller is
-recorded under `anonymous` with rule `identity`.
+A request row names `openai-agents` and carries the session id the agent
+sent. Two kinds of row carry no session id, although the request sent it: a
+refused caller (`anonymous`, rule `identity`) and a WebSocket frame.
 
 ### 8. Check that the sandbox holds no real token
 
@@ -169,6 +174,11 @@ kubectl delete secret hoop-sidecar-tls hoop-caller-token
 fails halfway, run it again: it retries only what is left. Then remove
 `~/hoop-openai`.
 
+A network error during `create` or `session` can leave a resource that
+`.openai-ids` does not list. Find it with `GET /v1/vaults`, `/v1/agents`,
+`/v1/agents/environments/templates` or `/v1/agents/sessions`, by the name
+`hoop sidecar` or `customer-api`, and delete the ones you made.
+
 ## What to expect
 
 | The agent | Result |
@@ -190,6 +200,8 @@ OpenAI's:
   wildcard, scheme, port or path. A redirect to another host fails.
 - **An idle sandbox is deleted after one hour.** Its files go with it. The
   timeout is not configurable.
+- **Keep the lane on 443 only.** The egress proxy also lets port 80 through
+  to the sidecar's host, unencrypted, and the vault fills nothing there.
 - **The vault fills a placeholder anywhere in the request.** Toward the
   sidecar's host it fills the URL and the body too, not only headers, and
   OpenAI has no setting to stop it. A token the agent writes into a URL
@@ -199,6 +211,9 @@ OpenAI's:
 - **Hosted tools are untested.** `agent.json` lists no tools. Whether
   `allowed_domains` limits a hosted tool such as web search is untested; add
   none.
+- **The lane's own certificate is untested from a hosted session.** The
+  test sessions reached the lane through a Cloudflare tunnel, so the egress
+  proxy saw Cloudflare's certificate, not the one in `hoop-sidecar-tls`.
 
 The sidecar's:
 
