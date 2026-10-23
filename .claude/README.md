@@ -123,6 +123,10 @@ version that ships its PR is out, the agent comments it on the ticket.
   the dev images into the environment cache. The pulls only fill the cache, so
   they may fail: a setup script that exits non-zero stops the session, and
   `make run-dev` pulls what is missing and fails loudly there.
+  It also registers the repo's hooks in `~/.claude/settings.json`. With three
+  repos, a session starts in `/home/user`, outside the repo, and does not load
+  the repo's `.claude/settings.json`: without this, neither `ai-disclosure`
+  nor `git-signing` runs in the scheduled runs.
 
   ```bash
   GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2 || true
@@ -138,6 +142,16 @@ version that ships its PR is out, the agent comments it on the ticket.
   docker pull postgres:16 || true
   docker pull hoophq/agent-tools:noble-20260709-6890906 || true
   pkill dockerd || true
+  mkdir -p ~/.claude
+  cat > ~/.claude/settings.json <<'EOF'
+  {
+    "hooks": {
+      "SessionStart": [{"hooks": [{"type": "command", "command": "bash /home/user/hoop/.claude/hooks/git-signing.sh"}]}],
+      "PreToolUse": [{"matcher": "mcp__.*([Ss]lack|[Ll]inear).*",
+        "hooks": [{"type": "command", "command": "bash /home/user/hoop/.claude/hooks/ai-disclosure.sh"}]}]
+    }
+  }
+  EOF
   ```
 - The task selects the repos `hoop`, `libhoop` and `libhoop-ica`: pushes and
   PRs use that GitHub access. Its only connectors are Linear and Slack. Hourly
