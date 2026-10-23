@@ -362,6 +362,107 @@ func TestPG_ErrorBadQuery(t *testing.T) {
 	shutdownAgent(t, agent, tr)
 }
 
+// pgGuardRailRules blocks DROP TABLE, in the shape the gateway ships rules to
+// the agent. With no DLP provider, libhoop runs it on the local RE2 engine.
+const pgGuardRailRules = `{"input_rules":[{"name":"no-drop-table","rules":[{"type":"pattern_match","words":[],"pattern_regex":"(?i)\\bdrop\\s+table\\b","message":"blocked by hoop guardrail: no DROP TABLE"}]}],"output_rules":[]}`
+
+// TestPG_Guardrails_MultiLineQuery is the ENG-797 regression test: input rules
+// must see a multi-line query as the client sent it. Before the fix, libhoop
+// escaped the line break, so `\bdrop` missed DROP at the start of a line.
+func TestPG_Guardrails_MultiLineQuery(t *testing.T) {
+	pg := testutil.StartPostgres(t)
+	agent, tr := startAgent(t)
+	sessionID := testutil.OpenPGSessionWithGuardRails(t, tr, pg.Host, pg.Port, pg.User, pg.Password, pg.Database, []byte(pgGuardRailRules))
+	connID := "conn-1"
+
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID, pg.User, pg.Database)
+	testutil.WaitForPGReady(t, tr, pgTestTimeout)
+
+	query := func(sql string) []*pb.Packet {
+		testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery(sql))
+		return testutil.CollectPGResponses(t, tr, pgTestTimeout)
+	}
+	guardrailError := func(pkts []*pb.Packet) string {
+		for _, pkt := range pkts {
+			for _, msg := range testutil.ParsePGMessages(pkt.Payload) {
+				if msg.Type == 'E' {
+					return msg.AsErrorResponse()['M']
+				}
+			}
+		}
+		return ""
+	}
+
+	if errMsg := guardrailError(query("CREATE TABLE eng797_keep (id int);\nINSERT INTO eng797_keep VALUES (1)")); errMsg != "" {
+		t.Fatalf("setup must not be blocked, got error: %s", errMsg)
+	}
+
+	errMsg := guardrailError(query("SELECT 1;\nDROP TABLE eng797_keep"))
+	if !strings.Contains(errMsg, "no DROP TABLE") {
+		t.Fatalf("expected the guardrail to block DROP TABLE on a new line, got error %q", errMsg)
+	}
+
+	results := testutil.ExtractAllQueryResults(query("SELECT id\nFROM eng797_keep\nLIMIT 10"))
+	if len(results) != 1 || results[0].HasError() || results[0].RowCount() != 1 {
+		t.Fatalf("expected the multi-line query to run and find the table with 1 row, got %+v", results)
+	}
+
+	// Extended query protocol (pgjdbc, pgx): the blocked cycle ends with the
+	// guardrail error, and the next cycle on the connection still works.
+	extQuery := func(sql string) []*pb.Packet {
+		for _, msg := range testutil.PGExtendedQuery(sql) {
+			testutil.SendPGWrite(t, tr, sessionID, connID, msg)
+		}
+		return testutil.CollectPGResponses(t, tr, pgTestTimeout)
+	}
+	if errMsg := guardrailError(extQuery("DROP\nTABLE eng797_keep")); !strings.Contains(errMsg, "no DROP TABLE") {
+		t.Fatalf("expected the guardrail to block the extended query, got error %q", errMsg)
+	}
+	pkts := extQuery("SELECT id\nFROM eng797_keep\nLIMIT 10")
+	if errMsg := guardrailError(pkts); errMsg != "" {
+		t.Fatalf("the next extended query must run, got error: %s", errMsg)
+	}
+	if results := testutil.ExtractAllQueryResults(pkts); len(results) != 1 || results[0].RowCount() != 1 {
+		t.Fatalf("expected the next extended query to find the table with 1 row, got %+v", results)
+	}
+
+	// A batch (one Sync) fails at the blocked statement like a server error: the
+	// error comes after the earlier results, and the INSERT is rolled back.
+	extBatch := func(sqls ...string) []*pb.Packet {
+		for _, msg := range testutil.PGExtendedBatch(sqls...) {
+			testutil.SendPGWrite(t, tr, sessionID, connID, msg)
+		}
+		return testutil.CollectPGResponses(t, tr, pgTestTimeout)
+	}
+	var types []byte
+	for _, pkt := range extBatch("SELECT id FROM eng797_keep", "INSERT INTO eng797_keep VALUES (99)", "DROP TABLE eng797_keep") {
+		for _, msg := range testutil.ParsePGMessages(pkt.Payload) {
+			types = append(types, msg.Type)
+		}
+	}
+	// SELECT: 1 2 T D C, INSERT: 1 2 n C, DROP: 1 (Parse only), then the error.
+	if got, want := string(types), "12TDC12nC1EZ"; got != want {
+		t.Fatalf("batch replies differ, got %q, expected %q", got, want)
+	}
+	// Two blocks in one batch: the server fails the batch at the first one, so
+	// the client gets one error, and the connection keeps working.
+	types = nil
+	for _, pkt := range extBatch("DROP TABLE eng797_keep", "SELECT 1", "DROP TABLE eng797_keep") {
+		for _, msg := range testutil.ParsePGMessages(pkt.Payload) {
+			types = append(types, msg.Type)
+		}
+	}
+	if got, want := string(types), "1EZ"; got != want {
+		t.Fatalf("batch with two blocks replies differ, got %q, expected %q", got, want)
+	}
+	results = testutil.ExtractAllQueryResults(query("SELECT count(*) FROM eng797_keep"))
+	if len(results) != 1 || results[0].RowCount() != 1 || results[0].Row(0)[0] != "1" {
+		t.Fatalf("the INSERT of the blocked batch must be rolled back, got %+v", results)
+	}
+
+	shutdownAgent(t, agent, tr)
+}
+
 func TestPG_ErrorBadCredentials(t *testing.T) {
 	pg := testutil.StartPostgres(t)
 	_, tr := startAgent(t)
