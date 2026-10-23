@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	mysqlauth "github.com/hoophq/libhoop/v2/codec/mysql/auth"
 )
 
 const (
@@ -263,12 +264,12 @@ func TestNegotiateMySQLUpstreamTLSBridgesCachingSHA2FullAuth(t *testing.T) {
 
 	client, clientDone := runMySQLPeer(t, func(conn net.Conn) error {
 		greeting := mustReadMySQLPacket(t, conn)
-		parsed, err := parseMySQLGreeting(greeting.payload)
+		parsed, err := mysqlauth.ParseHandshake(greeting.payload)
 		if err != nil {
 			return err
 		}
-		if greeting.seq != 0 || parsed.capabilities&mysqlClientSSL != 0 {
-			return fmt.Errorf("downstream greeting = seq %d, capabilities %#x", greeting.seq, parsed.capabilities)
+		if greeting.seq != 0 || parsed.Capabilities&mysqlClientSSL != 0 {
+			return fmt.Errorf("downstream greeting = seq %d, capabilities %#x", greeting.seq, parsed.Capabilities)
 		}
 		mustWriteMySQLPacket(t, conn, 1, mysqlTestHandshakeResponse(mysqlCachingSHA2))
 
