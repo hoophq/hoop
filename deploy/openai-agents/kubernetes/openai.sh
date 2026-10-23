@@ -53,10 +53,13 @@ create() {
     # A file holds 50 MiB at most and kubectl is 56: send the release tarball.
     local tgz=.cache/kubernetes-client-$KUBECTL_VERSION-linux-amd64.tar.gz
     local url=https://dl.k8s.io/$KUBECTL_VERSION/kubernetes-client-linux-amd64.tar.gz
-    if [[ ! -f $tgz ]]; then
+    local sum
+    sum=$(curl -fsSL "$url.sha512") || die "no published SHA-512 at $url.sha512"
+    # Checked on each create, not only on download: the sandbox runs this file.
+    if [[ ! -f $tgz || "$(shasum -a 512 "$tgz" | cut -d' ' -f1)" != "$sum" ]]; then
         mkdir -p .cache
         curl -fsSL -o "$tgz.part" "$url"
-        [[ "$(shasum -a 512 "$tgz.part" | cut -d' ' -f1)" == "$(curl -fsSL "$url.sha512")" ]] \
+        [[ "$(shasum -a 512 "$tgz.part" | cut -d' ' -f1)" == "$sum" ]] \
             || { rm -f "$tgz.part"; die "$url does not match its published SHA-512"; }
         mv "$tgz.part" "$tgz"
     fi
