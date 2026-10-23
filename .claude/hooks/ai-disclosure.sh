@@ -12,16 +12,16 @@ tool=$(jq -r '.tool_name' <<<"$input" | tr '[:upper:]' '[:lower:]')
 deny() { echo "BLOCKED by ai-disclosure: $1" >&2; exit 2; }
 
 # Line 1 starts with the robot and names the author as AI. A "Why:" or
-# "Por quê:" line gives the ticket and the reason. A link names the session.
+# "Por quê:" line gives the reason, not empty. A full URL names the session.
 check_text() {
   local text="$1" first
   first=$(head -n1 <<<"$text")
   [[ $first == "🤖"* && ( $first == *"(IA)"* || $first == *"(AI)"* ) ]] ||
     deny "line 1 must start with '🤖' and name the author as AI, e.g. '🤖 *Agente de suporte (IA)* · conta do ${HOOP_AGENT_OWNER:-<owner>}'"
-  grep -qE '^[*_]*(Why|Por quê):' <<<"$text" ||
+  grep -qE '^[*_]*(Why|Por quê):[*_]*[[:space:]]*[^[:space:]*_]' <<<"$text" ||
     deny "add a 'Por quê:' (Slack) or 'Why:' (Linear) line with the ticket and the reason"
-  grep -q 'claude.ai/code/session_' <<<"$text" ||
-    deny "link the session that wrote this text (https://claude.ai/code/session_...)"
+  grep -qE 'https://claude\.ai/code/session_[A-Za-z0-9]{16,}' <<<"$text" ||
+    deny "link the session that wrote this text (https://claude.ai/code/session_<id>)"
 }
 
 case "$tool" in
@@ -44,12 +44,15 @@ case "$tool" in
         check_text "$(jq -r '.tool_input.body // empty' <<<"$input")"
         ;;
       *__save_issue)
-        # Labels and state carry no text. The description is the support
-        # team's text: the agent comments instead of rewriting it.
+        # The description is the support team's text: the agent comments
+        # instead of rewriting it. It changes only labels, state and links.
         jq -e '.tool_input | has("description") or has("patch") or has("title")' <<<"$input" >/dev/null &&
           deny "do not edit the issue text; post a comment instead"
         jq -e '.tool_input | has("id")' <<<"$input" >/dev/null ||
           deny "the agent does not create issues"
+        other=$(jq -r '.tool_input | keys - ["id", "addLabels", "removeLabels", "state", "links"] | join(", ")' <<<"$input")
+        [[ -z $other ]] ||
+          deny "the agent changes only addLabels, removeLabels, state and links of an issue (got: $other)"
         ;;
       *__prepare_attachment_upload | *__create_attachment*) ;;
       *) deny "the agent only reads Linear, comments, changes labels and state, and attaches files ($tool)" ;;

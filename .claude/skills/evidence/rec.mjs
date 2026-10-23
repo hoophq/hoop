@@ -7,7 +7,7 @@
 // whose URL contains `match`, so the video shows numbers the page hides.
 // <side> is a free label (main, branch) passed to the flow; the output is
 // <outDir>/<side>.mp4. Needs Node >= 22 (global WebSocket), Chrome and ffmpeg.
-// See examples/access-control.flow.mjs.
+// CHROME=<binary> picks another browser. See examples/access-control.flow.mjs.
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

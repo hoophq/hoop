@@ -5,8 +5,8 @@ description: One run of the hoop support agent - pick one Linear support ticket,
 
 # Support agent
 
-A scheduled task runs this skill every hour in a cloud session. No person reads
-the session while it runs. The agent works with a person's Slack and Linear
+A scheduled task starts this skill in a cloud session, hourly; `.claude/README.md`
+has the setup. No person reads the session while it runs. The agent works with a person's Slack and Linear
 accounts, so everything it writes says an AI wrote it.
 
 Write every Linear and GitHub field in English and every Slack message in
@@ -39,8 +39,10 @@ Read these in order and take the first ticket you find. One ticket per run.
    Oldest first.
 
 Never take a ticket labeled `agent:working`, `agent:drafted`, `agent:pr-open`,
-`agent:stuck` or `agent:skip` unless step 1.1 or 1.2 selects it. Nothing to
-take: end the run with "nothing to do". Post nothing.
+`agent:stuck` or `agent:skip` unless step 1.1 or 1.2 selects it. One exception:
+`agent:working` with no ticket update for 6 hours is a stale claim, left by a
+run that stopped. Take it first, and say so in a comment. Nothing to take: end
+the run with "nothing to do". Post nothing.
 
 Claim it: add `agent:working`, remove `agent:go` and `agent:needs-*`.
 

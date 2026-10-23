@@ -73,28 +73,32 @@ wait, not you.
 - Every PR is born **draft**, its "Testing" section built from the evidence.
 - Evidence lives in `~/evidencias/<TICKET-ID>/`, raw captures in
   `~/evidencias/.archive/<TICKET-ID>/`. From a cloud session, where gists are
-  blocked, PR images go to the `claude/evidence` branch through
-  `skills/evidence/publish.sh`.
+  blocked (the GitHub API answers 403), PR images go to the `claude/evidence`
+  branch through `skills/evidence/publish.sh`.
 - Linear ticket gets the PR link and moves to In Review.
 
 ## Support agent
 
-A Claude Code scheduled task (claude.ai/code/routines) runs `/support-agent`
-every hour on one person's account. It takes one Linear ticket labeled
-`Support` per run, and asks in Slack or Linear when blocked. A later run
+To run it, set up a Claude Code scheduled task (claude.ai/code/routines) on one
+person's account that runs `/support-agent` hourly. Each run takes one Linear
+ticket labeled `Support`, and asks in Slack or Linear when blocked. A later run
 resumes when someone answers. Its state lives in Linear labels: `agent:go`,
 `agent:working`, `agent:needs-info`, `agent:needs-customer`, `agent:drafted`,
 `agent:pr-open`, `agent:stuck`, `agent:skip`.
 
-- Its cloud environment, used by nothing else, sets `HOOP_AGENT=support`,
+- Give the task its own cloud environment and use it for nothing else:
+  `HOOP_AGENT` turns on the `ai-disclosure` hook in every session there. It sets
+  `HOOP_AGENT=support`,
   `HOOP_AGENT_OWNER`, `HOOP_AGENT_SLACK_CHANNEL` (channel ID),
   `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: draft PRs),
   `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`,
   `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT=/root/.ccr/ca-bundle.crt` (the
   sandbox re-signs TLS; the dev image must trust it).
-  Its setup script installs `freeze` for evidence, sets mirrors (Docker Hub
-  and Maven Central rate-limit the sandbox's shared IP), and pulls the dev
-  images into the environment cache:
+  Its setup script installs `freeze` for evidence, sets mirrors (in our cloud
+  runs Docker Hub answered 429, and Maven Central sent error pages), and pulls
+  the dev images into the environment cache. The pulls only fill the cache, so
+  they may fail: a setup script that exits non-zero stops the session, and
+  `make run-dev` pulls what is missing and fails loudly there.
 
   ```bash
   GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2 || true
@@ -107,7 +111,8 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
   docker pull hoophq/agent-tools:noble-20260709-6890906 || true
   pkill dockerd || true
   ```
-- The task selects the repos `hoop`, `libhoop` and `libhoop-ica`, and only the
-  Linear and Slack connectors. Hourly is the shortest schedule.
+- The task selects the repos `hoop`, `libhoop` and `libhoop-ica`: pushes and
+  PRs use that GitHub access. Its only connectors are Linear and Slack. Hourly
+  is the shortest schedule.
 - A second task runs `/support-agent digest` at the end of the day.
 - To stop it, pause the task. To ask for a ticket, label it `agent:go`.

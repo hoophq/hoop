@@ -162,8 +162,9 @@ publish, and the PR stays a draft until a person reads it. Then:
   video).
 - PR: the result line, the images (the GIF for a video) and "What it solves" under "Testing".
   Host the images in a secret gist and link the raw URLs. A cloud session
-  cannot create gists: there, `.claude/skills/evidence/publish.sh <TICKET-ID>
-  <files>` pushes them to the `claude/evidence` branch and prints the links.
+  cannot create gists (the GitHub API answers 403): there,
+  `.claude/skills/evidence/publish.sh <TICKET-ID> <files>` pushes them to the
+  `claude/evidence` branch and prints the links.
   The repo is public: no customer data, tokens, internal hosts or real emails
   in any image.
 
@@ -176,9 +177,9 @@ publish, and the PR stays a draft until a person reads it. Then:
   `freeze` draws no emoji; render such output with Chromium instead.
 - A UI flow in a cloud sandbox: `make build-dev-webapp` and `make run-dev`
   (or `scripts/dev/run-sandbox.sh start --ui`), then `rec.mjs` as usual: it
-  finds Chromium. Maven Central and Docker Hub limit the sandbox's shared IP:
-  a Maven "Checksum validation failed, expected Your" or a Docker 429 is that
-  limit. The agent's environment sets mirrors for both (`.claude/README.md`).
+  finds Chromium. In our cloud runs Docker Hub answered 429, and Maven Central
+  sent error pages that fail as "Checksum validation failed, expected Your".
+  The agent's environment sets mirrors for both (`.claude/README.md`).
 - `publish.sh` links the GIF for the PR. GitHub does not play an MP4 link:
   attach the MP4 to the Linear ticket.
 - In zsh, `$VAR[...]` is an array subscript: write `${VAR}[...]` inside

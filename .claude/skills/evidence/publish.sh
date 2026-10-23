@@ -12,6 +12,9 @@ set -euo pipefail
 [[ $# -ge 2 ]] || { echo "usage: $0 <TICKET-ID> <file>..." >&2; exit 1; }
 folder=$1; shift
 for f in "$@"; do [[ -f $f ]] || { echo "no such file: $f" >&2; exit 1; }; done
+# Files land in one folder by name: two files with one name would collide.
+dups=$(for f in "$@"; do basename "$f"; done | sort | uniq -d)
+[[ -z $dups ]] || { echo "two files have the same name: $dups" >&2; exit 1; }
 
 branch=claude/evidence
 slug=$(git remote get-url origin | sed -E 's#^.*github\.com[:/]##; s#\.git$##')
@@ -30,8 +33,8 @@ cp "$@" "$tmp/wt/$folder/"
 git -C "$tmp/wt" add "$folder"
 git -C "$tmp/wt" diff --cached --quiet || git -C "$tmp/wt" commit -q -m "Evidence for $folder"
 
-# Another run can push first: each run writes its own folder, so a rebase
-# never conflicts.
+# Another run can push first. Runs write their own ticket folders, so the
+# rebase conflicts only when two runs write one file at once: then it stops.
 for try in 1 2 3; do
   git -C "$tmp/wt" push -q origin "HEAD:refs/heads/$branch" 2>/dev/null && break
   [[ $try == 3 ]] && { echo "push to $branch failed 3 times" >&2; exit 1; }
@@ -40,7 +43,8 @@ done
 
 sha=$(git -C "$tmp/wt" rev-parse HEAD)
 for f in "$@"; do
-  name=$(basename "$f") url="https://raw.githubusercontent.com/$slug/$sha/$folder/$name"
+  name=$(basename "$f")
+  url="https://raw.githubusercontent.com/$slug/$sha/$folder/$name"
   # GitHub renders images and GIFs inline, not an MP4 link: that one is for Linear.
   case "$name" in
     *.png | *.gif | *.jpg | *.jpeg) echo "![${name%.*}]($url)" ;;

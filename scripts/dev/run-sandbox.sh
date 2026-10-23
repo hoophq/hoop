@@ -12,6 +12,7 @@
 # start always begins from an empty database. It seeds a local admin, one
 # agent and one bash connection, and writes $DIR/env: `source` it to point
 # the hoop CLI and curl at the stack. Logs go to $DIR, not to the terminal.
+# $DIR is HOOP_SANDBOX_DIR, by default $TMPDIR/hoop-sandbox.
 #
 # One stack at a time: the gRPC port is fixed (gateway/transport/server.go).
 # To compare origin/main with a branch, build each binary, then start, capture
@@ -68,15 +69,18 @@ cmd_status() {
 build_ui() {
   echo "run-sandbox: building the web UI (log: $DIR/ui.log)"
   # npm install rewrites the lockfiles when its version differs. Undo only
-  # that, so a commit after this never carries it.
-  local locks=(webapp/package-lock.json webapp_v2/package-lock.json) clean=0
-  git diff --quiet -- "${locks[@]}" && clean=1
+  # that, on success and failure, so a commit after this never carries it.
+  local lock clean=() ok=1
+  for lock in webapp/package-lock.json webapp_v2/package-lock.json; do
+    git diff --quiet -- "$lock" && clean+=("$lock")
+  done
   ./scripts/dev/build-webapp.sh >"$DIR/ui.log" 2>&1 &&
-    [[ -f dist/dev/resources/public/index.html ]] || {
+    [[ -f dist/dev/resources/public/index.html ]] || ok=0
+  [[ ${#clean[@]} -gt 0 ]] && git checkout -q -- "${clean[@]}"
+  [[ $ok == 1 ]] || {
     tail -20 "$DIR/ui.log" >&2
-    die "web UI build failed; a Maven checksum error is a rate limit: see the evidence skill pitfalls"
+    die "web UI build failed; for a Maven checksum error in a cloud session, see the evidence skill pitfalls"
   }
-  [[ $clean == 1 ]] && git checkout -q -- "${locks[@]}"
   export STATIC_UI_PATH="$PWD/dist/dev/resources/public"
 }
 
@@ -90,11 +94,11 @@ cmd_start() {
     esac
   done
   command -v jq >/dev/null || die "jq is required"
-  alive gateway || alive agent && die "a stack is already running; run '$0 stop' first"
+  if alive gateway || alive agent; then die "a stack is already running; run '$0 stop' first"; fi
   curl -s -o /dev/null "$API_URL" && die "port 8009 is in use by another process"
 
-  mkdir -p "$DIR/bin"
-  rm -rf "$DIR/pgdata"
+  rm -rf "$DIR/pgdata" "$DIR/sessions"
+  mkdir -p "$DIR/bin" "$DIR/sessions"
   if [[ -z "$bin" ]]; then
     bin="$DIR/bin/hoop"
     echo "run-sandbox: building ./client (log: $DIR/build.log)"
@@ -106,8 +110,11 @@ cmd_start() {
   [[ -x "$bin" ]] || die "not an executable: $bin"
   [[ $ui == 1 ]] && build_ui
 
-  POSTGRES_DB_URI="pglite://$DIR/pgdata" API_URL="$API_URL" GRPC_URL="$GRPC_URL" \
-    AUTH_METHOD=local GIN_MODE=release \
+  # A failed start stops what it started, so the next start is not refused.
+  trap 'cmd_stop >/dev/null' EXIT
+  # Session logs go to $DIR: the default /opt/hoop/sessions needs root.
+  POSTGRES_DB_URI="pglite://$DIR/pgdata" PLUGIN_AUDIT_PATH="$DIR/sessions" \
+    API_URL="$API_URL" GRPC_URL="$GRPC_URL" AUTH_METHOD=local GIN_MODE=release \
     nohup "$bin" start gateway >"$DIR/gateway.log" 2>&1 &
   echo $! >"$DIR/gateway.pid"
   wait_for 120 healthy || { tail -20 "$DIR/gateway.log" >&2; die "gateway did not become healthy"; }
@@ -137,6 +144,7 @@ export HOOP_GRPCURL=$GRPC_URL
 export HOOP_TOKEN=$TOKEN
 export HOOP_SANDBOX_DIR=$DIR
 EOF
+  trap - EXIT
   echo "run-sandbox: up. API $API_URL, admin $ADMIN_EMAIL, agent sandbox-agent, connection bash${STATIC_UI_PATH:+, web UI}"
   echo "run-sandbox: source $DIR/env  # then: hoop exec bash -i 'echo ok'"
 }

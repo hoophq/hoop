@@ -25,8 +25,9 @@ comment() { jq -n --arg b "$1" '{tool_name:"mcp__Linear__save_comment",tool_inpu
 issue() { jq -n --argjson i "$1" '{tool_name:"mcp__Linear__save_issue",tool_input:$i}'; }
 call() { jq -n --arg t "$1" '{tool_name:$t,tool_input:{}}'; }
 
-SLACK_OK=$'🤖 *Agente de suporte (IA)* · conta do Rogerio\n*Por quê:* ENG-1, preciso saber X\nSessão: https://claude.ai/code/session_01\n\n@ana X acontece?'
-LINEAR_OK=$'🤖 **Support agent (AI)** · posted from Rogerio\'s account\n**Why:** spec for ENG-1\nSession: https://claude.ai/code/session_01\n\n## Goal'
+SESSION=https://claude.ai/code/session_012QTQK2LmDLxNGCeRTAu1aQ
+SLACK_OK=$'🤖 *Agente de suporte (IA)* · conta do Rogerio\n*Por quê:* ENG-1, preciso saber X\nSessão: '"$SESSION"$'\n\n@ana X acontece?'
+LINEAR_OK=$'🤖 **Support agent (AI)** · posted from Rogerio\'s account\n**Why:** spec for ENG-1\nSession: '"$SESSION"$'\n\n## Goal'
 
 expect 0 "slack: disclosed post in the agent channel" "$(slack C0SUPPORT "$SLACK_OK")"
 expect 2 "slack: other channel" "$(slack C0PRODUCT "$SLACK_OK")"
@@ -34,13 +35,19 @@ expect 2 "slack: direct message" "$(slack U02NTRQ0K1T "$SLACK_OK")"
 expect 2 "slack: no AI marker" "$(slack C0SUPPORT 'X acontece?')"
 expect 2 "slack: marker without (IA)" "$(slack C0SUPPORT "${SLACK_OK/(IA)/}")"
 expect 2 "slack: no reason line" "$(slack C0SUPPORT "${SLACK_OK/Por quê:/}")"
-expect 2 "slack: no session link" "$(slack C0SUPPORT "${SLACK_OK/claude.ai\/code\/session_01/}")"
+expect 2 "slack: empty reason" "$(slack C0SUPPORT "${SLACK_OK/ENG-1, preciso saber X/}")"
+expect 2 "slack: no session link" "$(slack C0SUPPORT "${SLACK_OK/$SESSION/}")"
+expect 2 "slack: session text, not a link" "$(slack C0SUPPORT "${SLACK_OK/$SESSION/claude.ai/code/session_fake}")"
 expect 0 "slack: read a thread" "$(call mcp__Slack__slack_read_thread)"
 expect 2 "slack: create a canvas" "$(call mcp__Slack__slack_create_canvas)"
 expect 0 "linear: disclosed comment" "$(comment "$LINEAR_OK")"
 expect 2 "linear: comment without marker" "$(comment 'Spec here')"
 expect 0 "linear: lowercase server name" "$(jq '.tool_name="mcp__linear__save_comment"' <<<"$(comment "$LINEAR_OK")")"
 expect 0 "linear: add a label" "$(issue '{"id":"ENG-1","addLabels":["agent:working"]}')"
+expect 0 "linear: state, labels and a link" "$(issue '{"id":"ENG-1","state":"In Review","removeLabels":["agent:working"],"links":[{"url":"https://x.slack.com/a","title":"t"}]}')"
+expect 2 "linear: change priority" "$(issue '{"id":"ENG-1","priority":1}')"
+expect 2 "linear: change assignee" "$(issue '{"id":"ENG-1","assignee":"me"}')"
+expect 2 "linear: replace all labels" "$(issue '{"id":"ENG-1","labels":["agent:working"]}')"
 expect 2 "linear: rewrite the description" "$(issue '{"id":"ENG-1","description":"new"}')"
 expect 2 "linear: patch the description" "$(issue '{"id":"ENG-1","patch":[{"op":"append","text":"x"}]}')"
 expect 2 "linear: create an issue" "$(issue '{"team":"ENG","addLabels":["x"]}')"

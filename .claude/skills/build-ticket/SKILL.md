@@ -22,15 +22,17 @@ schedule and no person reads the session. Then:
   step 5 says, and end the run. A later run resumes from the ticket.
 - A support ticket is shaped as a comment, never in its description. The
   `ai-disclosure` hook refuses description edits.
-- The stack: the usual `make` targets, after three steps a cloud session needs.
-  Start Docker: `pgrep dockerd || (dockerd >/tmp/dockerd.log 2>&1 &)`. Make the
-  `.env`: `cp .env.sample .env`, then `sed -i '/^AUTH_METHOD=/d' .env` and
-  `echo AUTH_METHOD=local >> .env` (the first value of a key wins). Start
-  `make run-dev` in the background and wait for `/api/healthz`. The environment
-  sets `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT`. After `make build-dev-webapp`,
-  `git checkout` the two `package-lock.json` unless the ticket changes them.
-  Without Docker, `scripts/dev/run-sandbox.sh` (`--ui` for the UI) runs gateway
-  and agent with no database to connect to.
+- The stack: the usual `make` targets, in this order in a cloud session:
+  1. Start Docker: `pgrep dockerd || (dockerd >/tmp/dockerd.log 2>&1 &)`.
+  2. Make the `.env`: `cp .env.sample .env`, `sed -i '/^AUTH_METHOD=/d' .env`,
+     `echo AUTH_METHOD=local >> .env` (the first value of a key wins).
+  3. `make run-dev-postgres`, then `make run-dev` in the background; wait for
+     `/api/healthz`. The environment sets `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT`.
+
+  After `make build-dev-webapp`, `git checkout` the two `package-lock.json`
+  unless the ticket changes them. Without Docker, `scripts/dev/run-sandbox.sh`
+  (`--ui` for the UI) runs gateway and agent on PGlite, with no database for a
+  connection to test against.
 - The sandbox is discarded after the run: push the branch after each commit.
   The evidence is how a person knows the work is right: a PR without its
   comparison images in "Testing" is not done. `evidence` step 6 publishes them.
