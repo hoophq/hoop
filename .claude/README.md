@@ -16,6 +16,7 @@ behaves the same way in this repo. Change it via PR like any code.
 | `skills/gcp-marketplace-publish/` | `/gcp-marketplace-publish` — a release of the sidecar to the GCP Marketplace listing, on demand |
 | `skills/support-agent/` | `/support-agent` — one scheduled run of the support agent: one Linear support ticket per run |
 | `hooks/ai-disclosure.sh` | With `HOOP_AGENT` set: refuses a Slack post or Linear comment that does not say an AI wrote it, and Slack posts outside the agent's channel |
+| `hooks/git-signing.sh` | With `GIT_SIGNING_KEY` set: signs every commit with that GPG key, so GitHub shows the owner's commits as Verified |
 | `../.mcp.json` | Linear + Figma MCP servers for everyone (first run: approve + `/mcp` to authenticate) |
 
 ## First-time setup (each engineer, once)
@@ -104,6 +105,18 @@ version that ships its PR is out, the agent comments it on the ticket.
   `GIT_COMMITTER_EMAIL` hold the owner's name and the email of their GitHub
   account: the CLA check reads the commit author, and a cloud session
   otherwise commits as `Claude`, which the CLA refuses.
+  `GIT_SIGNING_KEY` (optional) signs those commits with the owner's GPG key.
+  Without it GitHub shows them as Unverified: the sandbox signs with its own
+  SSH key. Make a key for this use only, add its public half to the owner's
+  GitHub account (Settings → SSH and GPG keys), and export it by fingerprint:
+  the owner's other keys with the same email must stay out.
+
+  ```bash
+  gpg --batch --passphrase '' --quick-generate-key "Your Name <you@example.com>" ed25519 sign 1y
+  gpg --armor --export <fingerprint> | pbcopy                                        # GitHub
+  gpg --armor --export-secret-keys <fingerprint> | base64 | tr -d '\n' | pbcopy     # GIT_SIGNING_KEY
+  ```
+
   Its setup script installs the evidence tools (`freeze`, VHS with `ttyd`, and
   Chromium as `chromium` in `PATH`), sets mirrors (in our cloud
   runs Docker Hub answered 429, and Maven Central sent error pages), and pulls
