@@ -52,7 +52,19 @@ a comment. With another one, that run finished its work: remove
 `agent:working` only, and look again. Nothing to take: end
 the run with "nothing to do". Post nothing.
 
-Claim it: add `agent:working`, remove `agent:go` and `agent:needs-*`.
+Claim it: add `agent:working`, remove `agent:go` and `agent:needs-*`, and
+move it to In Progress.
+
+The board follows the labels. Each label change moves the status in the same
+`save_issue` call:
+
+| Label | Status |
+|---|---|
+| `agent:working`, `agent:needs-info`, `agent:needs-customer`, `agent:stuck` | In Progress |
+| `agent:drafted`, `agent:pr-open` | In Review |
+| `agent:skip` | unchanged |
+
+Never move a ticket to Done or Canceled: a person closes it.
 
 ## 2. Classify
 
