@@ -162,8 +162,10 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			// ErrorResponse to the ReadyForQuery. Persist it on the packet
 			// that holds the ErrorResponse only: the update appends, so once
 			// per block. Its redactor can flush DataRow, ..., ErrorResponse,
-			// ReadyForQuery in one packet, so look at every message.
-			if hasPGErrorResponse(pkt) {
+			// ReadyForQuery in one packet, so look at every message. Decode
+			// only when the packet carries guardrails info: this is the hot
+			// path of every result.
+			if len(pkt.Spec[pb.SpecClientGuardRailsInfoKey]) > 0 && hasPGErrorResponse(pkt) {
 				updateGuardRailsInfoFromPacket(pctx, pkt)
 			}
 			rewritePGGuardRailsErrorPacket(pkt)
