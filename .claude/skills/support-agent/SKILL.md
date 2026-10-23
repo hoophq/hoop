@@ -41,7 +41,9 @@ Read these in order and take the first ticket you find. One ticket per run.
 Never take a ticket labeled `agent:working`, `agent:drafted`, `agent:pr-open`,
 `agent:stuck` or `agent:skip` unless step 1.1 or 1.2 selects it. One exception:
 `agent:working` with no ticket update for 6 hours is a stale claim, left by a
-run that stopped. Take it first, and say so in a comment. Nothing to take: end
+run that stopped. With no other `agent:*` label, take it first, and say so in
+a comment. With another one, that run finished its work: remove
+`agent:working` only, and look again. Nothing to take: end
 the run with "nothing to do". Post nothing.
 
 Claim it: add `agent:working`, remove `agent:go` and `agent:needs-*`.

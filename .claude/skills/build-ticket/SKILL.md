@@ -28,9 +28,18 @@ schedule and no person reads the session. Then:
      `echo AUTH_METHOD=local >> .env` (the first value of a key wins).
   3. `make run-dev-postgres`, then `make run-dev` in the background; wait for
      `/api/healthz`. The environment sets `HOOP_RS_BUILD=0` and `HOOPDEV_CA_CERT`.
-  4. After you register the admin, upload the Enterprise license, or the
-     sidecar routes answer 403:
-     `curl -sf -X PUT $API_URL/api/orgs/license -H "authorization: Bearer $TOKEN" -d "$HOOPDEV_LICENSE"`.
+  4. Register the admin and upload the Enterprise license, or the sidecar
+     routes answer 403. The token goes to a file: shell variables do not
+     survive between commands, and `rec.mjs` reads the same file.
+
+     ```bash
+     curl -s -D - -o /dev/null -H 'content-type: application/json' \
+       -d '{"email":"admin@example.com","password":"Dev-Passw0rd","name":"Admin"}' \
+       http://127.0.0.1:8009/api/localauth/register |
+       sed -nE 's/^[Tt]oken: (.*)\r?$/\1/p' | tr -d '\r' > /tmp/hoop-dev-token
+     curl -sf -X PUT http://127.0.0.1:8009/api/orgs/license -H 'content-type: application/json' \
+       -H "authorization: Bearer $(cat /tmp/hoop-dev-token)" -d "$HOOPDEV_LICENSE"
+     ```
 
   After `make build-dev-webapp`, `git checkout` the two `package-lock.json`
   unless the ticket changes them. Without Docker, `scripts/dev/run-sandbox.sh`
@@ -42,8 +51,8 @@ schedule and no person reads the session. Then:
   and `HOOP_LICENSE="$HOOPDEV_LICENSE"` lifts that. Managed by the gateway:
   `POST /api/sidecars` returns its `token`, then
   `HOOP_CONTROL_PLANE_URL=http://127.0.0.1:8009 hoop start sidecar --token <token>`.
-  In our cloud runs `TestOracleThickSQLPlus` failed on the SQL*Plus logout and
-  passed in CI: compare with the PR's `Sidecar E2E Test` job first.
+  When a test fails here, read the same test in the PR's CI job before you
+  chase it: a cloud sandbox can differ from the CI runner.
 - The sandbox is discarded after the run: push the branch after each commit.
   The evidence is how a person knows the work is right: a PR without its
   comparison images in "Testing" is not done. `evidence` step 6 publishes them.

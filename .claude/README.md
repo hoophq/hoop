@@ -98,7 +98,7 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
   routes. Not `HOOP_LICENSE`: every sidecar reads that one by itself, so a
   standalone run would never meet the free-tier caps. The gateway accepts any
   license host on localhost. Sign it with
-  `POST /api/orgs/license/sign`; `"expire_at": "17520h"` is two years.
+  `POST /api/orgs/license/sign`; `"expire_at": "17520h"` is 730 days.
   Its setup script installs `freeze` for evidence, sets mirrors (in our cloud
   runs Docker Hub answered 429, and Maven Central sent error pages), and pulls
   the dev images into the environment cache. The pulls only fill the cache, so
