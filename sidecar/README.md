@@ -3056,8 +3056,16 @@ listeners:
     upstream: 10.77.0.30:2598
     ica:
       tenant_id: finance
+      source_cidrs: [10.20.1.10/32]    # optional: only the Citrix Gateway SNIP may connect
       edt: true                        # optional: EDT over UDP on the same port
 ```
+
+This is single mode: the lane serves one VDA, named in `upstream`, and the
+Gateway (or Workspace) is pointed at this host as that VDA — the STA/broker
+hands out the sidecar's address. `ica.source_cidrs` pins who may connect;
+with no list the lane admits any source that reaches it, as the other lanes
+do. A connection from elsewhere is refused before a session exists and
+recorded with stage `gateway_source_policy`. No TPROXY, no privileges.
 
 The `hoophq/hoopsidecar:<version>-ica` image runs `hoop-inspect` with the
 engine, tesseract, ONNX Runtime and the NER model in place, so a config like
@@ -3093,9 +3101,10 @@ rule and policy route stay yours. Rerunning the installer from a newer
 bundle upgrades the binary, the worker and ONNX Runtime, and keeps the
 config and the model. The source of the installer is
 `deploy/ica-sidecar/install.sh`; `deploy/ica-sidecar/examples/` holds a
-commented config for each mode (`config.single.yaml`, `config.cidr.yaml`),
-shipped in the bundle, and the single one is what a host without a config
-gets to edit.
+commented config for each mode (`config.single.yaml`, `config.cidr.yaml`,
+and `config.gateway-direct.yaml` for a single-mode lane a Citrix Gateway
+dials directly, with its SNIP pinned in `source_cidrs`), shipped in the
+bundle, and the single one is what a host without a config gets to edit.
 
 With the assets installed, the Linux `hoop` CLI serves the same file
 in-process: `hoop start sidecar --config /etc/hoop-inspect/config.yaml`.
