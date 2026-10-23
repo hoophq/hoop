@@ -47,8 +47,9 @@ You need Docker, `curl` 7.76 or later, `openssl`, `jq` 1.6 or later, and an
 OpenAI API key with Agents API access in `OPENAI_API_KEY`
 (`read -rs OPENAI_API_KEY && export OPENAI_API_KEY`).
 
-From a clean clone with no image cached, the agent answered 71 s after
-`./run.sh` started: `run.sh` took 31 s, `agent.sh` 41 s (2026-10-23).
+From a clean clone with no image cached, `run.sh` took 23 to 100 s and
+`agent.sh` 35 to 41 s to the agent's answer, over the cold runs of
+2026-10-23. `run.sh` waits up to 2 minutes for a new tunnel host to resolve.
 
 ### 1. Start the sidecar
 
@@ -94,9 +95,10 @@ and `this agent may only read from the API` for the DELETE. The last line is
 docker compose logs --no-log-prefix sidecar | jq -cR 'fromjson? | select((.kind == "statement" or .kind == "violation") and .direction == "client") | {kind, principal, statement, rule, session: .http.headers["x-openai-session-id"]}'
 ```
 
-Each request row names `openai-agents` and the OpenAI session. The DELETE
-row names rule `read-only`. The rows with session `run.sh` are step 1's
-checks.
+An admitted caller's row names `openai-agents` and the session id it sent:
+the OpenAI session, or `run.sh` for step 1's checks. The DELETE rows name
+rule `read-only`. Step 1's request without a token is the `anonymous` row
+with rule `identity`: a refused caller's row carries no session id.
 
 ### 4. Clean up
 
@@ -114,15 +116,17 @@ One rule can carry more than one check. `read-only` names seven methods;
 `pii` names three entities. These are the Claude template's rules; CI keeps
 the guardrail and mask rules of the two templates equal.
 
-A config over the cap does not start. The sidecar prints:
+A config over the cap does not start. `./run.sh` stops and shows the
+sidecar's log, which ends:
 
 ```
 Error: invalid config:
   - 2 guardrail rules are configured (guardrails: 2) and this process enforces at most 1; merge them into one rule. A license lifts this cap: add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file. Contact our support at https://help.hoop.dev. ai_analysis rules are counted separately and are not limited
 ```
 
-Check a config before you start it. In `quickstart/`, the output names the
-limits:
+Check a config before the next start. The output names the limits. Run it
+in `quickstart/` after the first `./run.sh`, which makes the caller token
+the command mounts:
 
 ```bash
 docker compose run --rm sidecar hoop start sidecar --validate
@@ -271,7 +275,8 @@ fails halfway, run it again: it retries only what is left. Then remove
 A network error during `create` or `session` can leave a resource that
 `.openai-ids` does not list. Find it with `GET /v1/vaults`, `/v1/agents`,
 `/v1/agents/environments/templates` or `/v1/agents/sessions`, by the name
-`hoop sidecar` or `customer-api`, and delete the ones you made.
+`hoop sidecar`, `customer-api` or the quick start's `hoop-demo-api`, and
+delete the ones you made.
 
 ## What to expect
 

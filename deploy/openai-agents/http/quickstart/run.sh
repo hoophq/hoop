@@ -38,7 +38,12 @@ c_step "Starting the sidecar and the tunnel"
 # for agent.sh.
 rm -f .work/host
 # A new cloudflared container, so its log holds only the new host.
-docker compose up -d --wait --force-recreate --remove-orphans
+docker compose up -d --wait --force-recreate --remove-orphans || {
+    # Compose names only the exit code. The reason, such as a config over
+    # the free tier, is in the sidecar's log.
+    docker compose logs --no-log-prefix --tail 20 sidecar >&2
+    die "the sidecar did not start; its log is above"
+}
 c_ok "sidecar healthy"
 
 c_step "Waiting for the tunnel host"
@@ -52,7 +57,6 @@ for _ in $(seq 60); do
     sleep 1
 done
 [[ -n "$host" ]] || die "no trycloudflare.com host in the cloudflared log after 60 s"
-echo "$host" > .work/host
 c_ok "https://$host"
 
 c_step "Checking the lane through https://$host"
@@ -62,13 +66,15 @@ call() {
     curl -sS -i --max-time 10 -X "$1" "https://$host$2" \
         ${3:+-H @.secrets/token-header} -H "X-OpenAI-Session-Id: run.sh"
 }
-# A new quick tunnel takes some seconds to resolve and connect.
+# A new quick tunnel takes some seconds to resolve and connect. A resolver
+# that asked too early keeps the miss for the zone's 60 s negative TTL, so
+# wait past it.
 out=""
-for _ in $(seq 30); do
+for _ in $(seq 60); do
     out=$(call GET /users/1 token 2>/dev/null) && [[ "$out" == HTTP/*" 200"* ]] && break
     sleep 2
 done
-[[ "$out" == HTTP/*" 200"* ]] || die "GET /users/1 did not answer 200 through the tunnel: ${out%%$'\r'*}"
+[[ "$out" == HTTP/*" 200"* ]] || die "GET /users/1 did not answer 200 through the tunnel after 2 minutes: ${out%%$'\r'*}"
 body=${out#*$'\r\n\r\n'}
 for marker in EMAIL_ADDRESS PHONE_NUMBER CREDIT_CARD; do
     [[ "$body" == *"[REDACTED:$marker]"* ]] || die "GET /users/1 holds no [REDACTED:$marker]: $body"
@@ -77,15 +83,25 @@ done
 c_ok "GET /users/1 is masked:"
 printf '%s\n' "$body" | sed 's/^/        /'
 
-out=$(call DELETE /users/1 token)
+# again <command>: retries a transport error, not an HTTP answer. A
+# resolver can drop one lookup of a new host.
+again() {
+    local o
+    for _ in 1 2 3; do o=$("$@") && { printf '%s' "$o"; return 0; }; sleep 2; done
+    return 1
+}
+out=$(again call DELETE /users/1 token) || die "DELETE /users/1 got no answer through the tunnel"
 # The tunnel speaks HTTP/2, which sends header names in lower case.
 [[ "$out" == HTTP/*" 403"* ]] && grep -qi '^x-hoop-denied: policy' <<<"$out" \
     || die "DELETE /users/1 was not refused: ${out%%$'\r'*}"
 c_ok "DELETE /users/1 is refused: ${out##*$'\r\n\r\n'}"
 
-out=$(call GET /users/1)
+out=$(again call GET /users/1) || die "a request without X-Hoop-Token got no answer through the tunnel"
 [[ "$out" == HTTP/*" 403"* ]] || die "a request without X-Hoop-Token was not refused: ${out%%$'\r'*}"
 c_ok "a request without X-Hoop-Token is refused: ${out##*$'\r\n\r\n'}"
+
+# Only a lane that passed every check is a host for agent.sh.
+echo "$host" > .work/host
 
 cat <<EOF
 
