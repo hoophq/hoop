@@ -18,7 +18,7 @@ const NEW_RULE_TRAFFICS = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
  * Used in Router.jsx only:
  *
  *   <ByRuleTraffic kind="guardrail" fetchRule={guardrailsService.get} listPath="/guardrails"
- *     agent={<GatewayGuardrailForm />} sidecar={<ControlPlaneGuardrailForm />} />
+ *     agent={<GatewayGuardrailForm />} sidecar={<SidecarGuardrailForm />} />
  *
  * With one traffic available it renders that form. With both, an edit reads the
  * rule first and a new rule takes `?traffic=`; without it, the agents flag picks.

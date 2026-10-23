@@ -317,7 +317,7 @@ root and its own `AppShell.Header` uses under `layout="alt"`; that is why the ba
 the sidebar collapsing instead of recomputing its width from a store.
 
 ### `ClojureApp`
-Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere, never from a `ControlPlane*` file.
+Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere.
 
 ### `NotImplemented`
 A route that exists in the information architecture but has no backend yet. Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
@@ -325,20 +325,20 @@ A route that exists in the information architecture but has no backend yet. Name
 <NotImplemented title="Reviews" project="Reviews (Human in the Loop)" missing={['Approve and reject']} />
 ```
 
-### `useModeConfig` / `getModeConfig` / `postAuthPath` (`src/modes/`)
-The product manifest (`modes/gateway.jsx`): `id`, `theme`, `postLoginPath`, `postSetupPath`, `Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx`, `ModeThemeProvider` and the auth pages only. Pages and layout never use them — see `CLAUDE.md`, "Application modes".
+### Route wrappers (`src/modes/gateway.jsx`)
+`Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx` only — see `CLAUDE.md`, "Routing, gates and roles".
+
+### `POST_LOGIN_PATH` / `POST_SETUP_PATH` (`src/modes/`)
+Where an auth page sends the user next: `/client` after login, `/onboarding/setup` after a local org's first sign-up.
 
 ### `useRuleTraffics` (`src/modes/`)
 Answers which traffic a guardrail, masking or analyzer rule can protect: always `['agent', 'sidecar']`.
 
 ### `ByRuleTraffic` (`src/modes/`)
-`<ByRuleTraffic kind={RULE_KIND_GUARDRAIL} fetchRule={guardrailsService.get} listPath="/guardrails" agent={<GatewayGuardrailForm />} sidecar={<ControlPlaneGuardrailForm />} />` — picks a rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Used in `Router.jsx` only.
+`<ByRuleTraffic kind={RULE_KIND_GUARDRAIL} fetchRule={guardrailsService.get} listPath="/guardrails" agent={<GatewayGuardrailForm />} sidecar={<SidecarGuardrailForm />} />` — picks a rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Used in `Router.jsx` only.
 
 ### `RuleTrafficBadge` / `NewRuleButton`
 `<RuleTrafficBadge traffic="sidecar" />` marks a rule as agent, sidecar or both. `<NewRuleButton traffics={traffics} onCreate={(traffic) => …} blocked={{ agent: 'Needs a DLP provider' }}>Create</NewRuleButton>` is a button with one traffic and a menu with two.
-
-### `ModeThemeProvider` (`src/modes/`)
-The app's `MantineProvider`, fed by the product's `theme` slot. Mounted once in `main.jsx`.
 
 ### `Input` (theme-level, no wrapper)
 Global resting border color **and height scale** for every Input-based component (`TextInput`, `Select`, `Textarea`, `MultiSelect`, `DatePickerInput`, …) via `Input.extend()` in `src/components/Input/theme.js` (registered in `src/theme.js`). Fields default to `size="md"` = 40px with xs=24 / sm=32 / lg=48 variants — see "Control size scale" above. The border is `--input-bd`, which Mantine declares per variant directly on the input wrapper element — a `:root` override from `cssVariablesResolver` never reaches it, so the extension applies a co-located CSS Module rule on the wrapper instead. Scoped to `[data-variant='default']:not([data-error])` so filled/unstyled variants, the error state, and the focus swap keep Mantine's behavior. To change the app-wide input border, edit `src/components/Input/Input.module.css` — do not add border variables to `cssVariablesResolver`.
@@ -894,7 +894,7 @@ useAuthStore.getState().token
 
 Non-obvious notes only:
 
-- `useUserStore` — the signed-in user, the org's plan and the product mode.
+- `useUserStore` — the signed-in user and the org's plan.
   `installLicense(payload)` is one operation on purpose: the moment the `PUT`
   lands the plan has changed server-side, and every gate reading `isFreeLicense`
   or `licenseFeatures` is stale until `/serverinfo` is re-read. Doing the two

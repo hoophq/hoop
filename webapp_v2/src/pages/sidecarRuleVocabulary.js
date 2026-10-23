@@ -1,4 +1,4 @@
-// The sidecar's own rule vocabulary, for the three control-plane rule forms.
+// The sidecar's own rule vocabulary, for the three sidecar rule forms.
 //
 // It is NOT the gateway's. The two products share three feature names and
 // nothing under them: the gateway masks through a DLP provider with entity

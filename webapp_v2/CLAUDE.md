@@ -19,7 +19,7 @@ details: `README.md`.
 src/
 ├── components/          # Presentational components (receive props, no business logic)
 ├── layout/              # App shell
-├── modes/               # The product manifest (gateway.jsx) and ByRuleTraffic
+├── modes/               # Route wrappers (gateway.jsx), ByRuleTraffic, the agents flag
 ├── features/            # Complex features (e.g., CommandPalette)
 ├── stores/              # Zustand global stores (cross-route state)
 ├── services/            # Axios API calls (one file per domain)
@@ -39,27 +39,18 @@ src/
 └── main.jsx             # Entry point
 ```
 
-## Application modes
+## Routing, gates and roles
 
-One product: the gateway. `application_mode` is always `"gateway"` (`hoop start
-control-plane` is the gateway too), and `modes/gateway.jsx` is the only manifest.
-`src/modes/` is the only reader of `appMode` (ESLint: `appMode` anywhere else is an
-error).
+One product: the gateway. `hoop start control-plane` runs the same gateway and UI.
 
-- **The manifest is components, not flags.** `modes/gateway.jsx` exports `{ id, theme,
-  postLoginPath, postSetupPath, Page, Guard, Home, Onboarding, CatchAll }`. `Page` is the
-  shell of a React page (`layout/GatewayPage`: auth gate + Layout + PageLayout), `Guard` a
-  React route without the shell. `Home`, `Onboarding` and `CatchAll` are the ClojureScript
-  leaves `/`, `/onboarding/*` and `/*`. `Router.jsx` reads them through `useModeConfig()`;
-  nothing else does.
+- **Route wrappers.** `modes/gateway.jsx` exports `{ Page, Guard, Home, Onboarding,
+  CatchAll }`. `Page` is the shell of a React page (`layout/GatewayPage`: auth gate +
+  Layout + PageLayout), `Guard` a React route without the shell. `Home`, `Onboarding` and
+  `CatchAll` are the ClojureScript leaves `/`, `/onboarding/*` and `/*`. Only `Router.jsx`
+  reads them.
 - **Agent and sidecar rule forms are siblings.** Guardrail, masking and analyzer forms
-  come as `Gateway*Form` (agent traffic) and `ControlPlane*Form` (sidecar traffic), picked
+  come as `Gateway*Form` (agent traffic) and `Sidecar*Form` (sidecar traffic), picked
   per rule with `<ByRuleTraffic>` in `Router.jsx`.
-- **The name is the contract, enforced by lint** (`eslint.config.js`): a `ControlPlane*`
-  file cannot import `Gateway*`, `ClojureApp`, the CLJS bridge, `NativeConnections` or
-  `ConfigStatus`; a `Gateway*` file cannot import `ControlPlane*`; an un-prefixed file
-  cannot import either side (only `modes/` and `Router.jsx` may). Matching is
-  case-sensitive.
 - **Sidecar features are always on.** Every gateway serves sidecars, so the Sidecars
   pages, nav and palette items and the sidecar traffic of a rule carry no gate. The
   agents product follows `agentsEnabled()` (`modes/agents.js`, the `experimental.agents`

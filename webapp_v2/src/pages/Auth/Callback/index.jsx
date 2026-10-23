@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
 import AuthPageLoader from '@/components/AuthPageLoader'
-import { postAuthPath } from '@/modes'
+import { POST_LOGIN_PATH } from '@/modes'
 
 function AuthCallback() {
   const navigate = useNavigate()
@@ -32,11 +32,10 @@ function AuthCallback() {
         }
 
         const redirectUrl = getAndClearRedirectUrl()
-        const target = redirectUrl ? null : await postAuthPath()
         if (redirectUrl) {
           window.location.href = redirectUrl
         } else {
-          navigate(target)
+          navigate(POST_LOGIN_PATH)
         }
       } catch (err) {
         console.error('Auth callback error:', err)
