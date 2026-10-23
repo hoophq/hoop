@@ -1,0 +1,5 @@
+{
+  "name": "kubernetes-operator",
+  "model": "gpt-6-sol",
+  "instructions": "openai.sh sets this to instructions.md"
+}

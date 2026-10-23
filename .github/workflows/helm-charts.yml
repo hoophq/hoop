@@ -404,6 +404,38 @@ jobs:
             || { echo "::error::a request body kept the example host or holds a secret"; exit 1; }
           echo "the OpenAI Agents http template renders and its OpenAI side reaches only the sidecar"
 
+      # The OpenAI kubernetes template copies the Managed Agents one's policy,
+      # so a fix to either rule set must reach both.
+      - name: Assert the OpenAI Agents kubernetes template renders
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/sidecar
+          values=./deploy/openai-agents/kubernetes/values.yaml
+          helm lint "$chart" -f "$values"
+          out=$(helm template t "$chart" -f "$values")
+          echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "openai-agents-kubernetes"' \
+            || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q 'type: LoadBalancer' \
+            || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
+          echo "$out" | grep -qE 'port: 443$' \
+            || { echo "::error::the template's lane is not on port 443"; exit 1; }
+          echo "$out" | grep -q 'no-delete' \
+            || { echo "::error::the template lost its delete guardrail"; exit 1; }
+          # Each row names the session only while the lane records this header.
+          echo "$out" | grep -q 'Impersonate-Extra-Hoop-Session' \
+            || { echo "::error::the lane no longer records the session header"; exit 1; }
+          echo "$out" | grep -q 'automountServiceAccountToken: false' \
+            && { echo "::error::the pod no longer mounts the cluster CA the lane trusts"; exit 1; }
+          # Assigned first, so a yq failure stops the step instead of comparing
+          # two empty strings.
+          for block in guardrails mask; do
+            ours=$(yq -o=json ".config.$block" "$values")
+            twin=$(yq -o=json ".config.$block" ./deploy/managed-agents/kubernetes/values.yaml)
+            [[ "$ours" == "$twin" ]] \
+              || { echo "::error::the OpenAI and Managed Agents kubernetes templates differ in $block"; exit 1; }
+          done
+          echo "the OpenAI Agents kubernetes template renders"
+
       # The quick start runs on its pinned image: the demo API it relies on,
       # and the free-tier message its README quotes. The helm values share
       # that image and those rules, so they fit the free tier too.
