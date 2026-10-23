@@ -31,6 +31,10 @@ With the argument `digest`, go to step 7.
 
 Read these in order and take the first ticket you find. One ticket per run.
 
+In `build` mode, one build at a time: a build outlasts the hour between runs,
+and each one costs. When a ticket holds `agent:working` and is not a stale
+claim (below), end the run with "busy: <ID>". Post nothing.
+
 1. **Answered:** a ticket labeled `agent:needs-info` or `agent:needs-customer`
    with a human reply newer than your last question. Look at its Linear
    comments and at its Slack thread (the link attached to the ticket).
@@ -72,7 +76,9 @@ Never send it to the customer. Label `agent:drafted`.
   the design note go on the ticket as comments. Label `agent:drafted`.
 - `HOOP_AGENT_MODE=build`: run `/build-ticket <ID>`, in its autonomous mode.
   Label `agent:pr-open` when the draft PR exists, `agent:stuck` after 3 QA
-  FAIL rounds.
+  FAIL rounds. A ticket specced by an earlier run reaches here through
+  `agent:go`: build from that spec comment, and post a new one only where the
+  code proves it wrong.
 
 ## 5. Ask when blocked
 
