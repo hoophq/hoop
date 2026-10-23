@@ -172,7 +172,7 @@ license: ''
 # `token` is shown once when the sidecar is created; a lost one means
 # registering a new sidecar.
 #
-# `identity` uses the pod's own service account instead, so nothing is issued
+# `identity` uses the pod's own identity instead, so nothing is issued
 # before deploy. The control plane matches it against a sidecar
 # service account entry and creates the sidecar on first contact. It sets
 # HOOP_SIDECAR_IDENTITY_TYPE:
@@ -181,6 +181,9 @@ license: ''
 #               HOOP_SIDECAR_IDENTITY_TOKEN_FILE at it
 #   gcp:        a Google ID token from the metadata server (GKE Workload
 #               Identity, GCE) for `identityAudience`
+#   spiffe:     a JWT-SVID for `identityAudience` from the SPIFFE Workload
+#               API. The chart mounts the agent socket at /run/spire/sockets
+#               (see `spiffe` below) and sets SPIFFE_ENDPOINT_SOCKET
 # Set `serviceAccount` to the account the entry's pattern names.
 #
 # In this mode the chart cannot know which ports the plane will hand out: set
@@ -188,17 +191,73 @@ license: ''
 controlPlane:
   url: ''
   token: ''
-  # '', kubernetes or gcp
+  # '', kubernetes, gcp or spiffe
   identity: ''
   # Audience of the identity token under `identity`. Empty means `url`. Set
   # it when one control plane serves several organizations: each one needs
   # its own audience, and its sidecar service account entry names the same
-  # value. Under gcp → HOOP_SIDECAR_IDENTITY_AUDIENCE.
+  # value. Under gcp and spiffe → HOOP_SIDECAR_IDENTITY_AUDIENCE.
   identityAudience: ''
   # Lifetime of the projected token under `identity: kubernetes`; the kubelet
   # rotates it before it ends and the relay re-reads it on every request.
   # An integer, at least 600: Kubernetes refuses less.
   tokenExpirationSeconds: 3600
+
+# -- The SPIFFE Workload API socket, read under `controlPlane.identity: spiffe`
+# and by the `spiffe` credential source (`credentials.spiffe` in the config
+# document). Mounted read-only at /run/spire/sockets; the relay reads
+# SPIFFE_ENDPOINT_SOCKET=unix:///run/spire/sockets/agent.sock, the name the
+# SPIRE agent binds by default.
+#
+# `identity: spiffe` mounts it. `enabled: true` mounts it as well, for a
+# sidecar that authenticates to the control plane another way but presents
+# an X509-SVID to a database through the `spiffe` credential source.
+#
+# Two ways to reach the socket. Empty `socketHostPath` uses the SPIFFE CSI
+# driver (`csi.spiffe.io`, the spire helm chart installs it): the kubelet
+# mounts the agent's socket directory per pod and no hostPath is needed, so
+# the pod runs under a restricted PodSecurity level. A path uses hostPath
+# instead, for a cluster whose SPIRE agent is a DaemonSet with no CSI driver:
+# the directory the agent binds on every node, usually /run/spire/sockets.
+#
+# `tokenFile` is for a cluster that runs spiffe-helper beside the relay and
+# has it write the JWT-SVID to a file: the relay then reads that file through
+# HOOP_SIDECAR_IDENTITY_TOKEN_FILE instead of the socket. Mount the file with
+# extraVolumes; the socket is still mounted for the credential source.
+spiffe:
+  enabled: false
+  socketHostPath: ''
+  tokenFile: ''
+
+# -- Secrets the config document's credential pools read by path, one volume
+# and one read-only mount per entry. For `secret_files` (user/password files),
+# `x509` (client certificate and key) and the kerberos keytab. The relay
+# refuses a credential file that is group- or world-readable, so
+# `defaultMode` defaults to 0400 here; set it only to narrow further.
+#
+# `extraVolumes` can mount the same thing; this block exists so a pool entry
+# and the Secret behind it are declared the same way in every values file,
+# and so the mode cannot be forgotten.
+credentials:
+  secretMounts: []
+  # - name: appdb-rw
+  #   secretName: appdb-rw           # keys: user, password
+  #   mountPath: /run/secrets/appdb-rw
+  #   defaultMode: 0400
+
+# -- The Kerberos credential cache the `kerberos` credential source reads
+# (`credentials.kerberos.cache` in the config document). Exactly one of
+# `hostPath` and `secretName`, or neither:
+#   hostPath    a cache a node-level sssd or kinit keeps fresh. A directory
+#               (sssd's /var/lib/sss/db, or a per-host /run/krb5) or one file
+#   secretName  a Secret holding a long-lived cache, mounted 0400
+# Either lands at `mountPath`, read-only. A keytab is a file: mount it with
+# `credentials.secretMounts` and name it in `credentials.kerberos.keytab`.
+kerberos:
+  ccache:
+    hostPath: ''
+    secretName: ''
+    mountPath: /run/krb5
 
 # -- Usage analytics. A release build reports anonymous usage to Segment —
 # counts and config shape, never statement text, identities, rule names or
