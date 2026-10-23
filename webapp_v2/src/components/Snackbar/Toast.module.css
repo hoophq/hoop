@@ -76,6 +76,12 @@
   margin-top: var(--mantine-spacing-xs);
 }
 
+.footer {
+  margin-top: var(--mantine-spacing-sm);
+  padding-top: var(--mantine-spacing-xs);
+  border-top: 1px solid var(--mantine-color-gray-2);
+}
+
 .detailsToggle {
   display: inline-flex;
   align-items: center;

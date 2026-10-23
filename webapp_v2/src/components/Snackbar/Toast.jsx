@@ -43,7 +43,7 @@ function renderDetails(details) {
  * Always rendered through sonner's `toast.custom`. Use `showSnackbar`
  * from `@/utils/snackbar` rather than instantiating this directly.
  */
-export default function Toast({ id, type, title, description, details, actions }) {
+export default function Toast({ id, type, title, description, details, actions, footer }) {
   const [expanded, setExpanded] = useState(false)
   const meta = ICON_FOR_TYPE[type]
   const hasDetails = type === 'error' && details != null
@@ -75,7 +75,7 @@ export default function Toast({ id, type, title, description, details, actions }
                     size="compact-sm"
                     variant={i === 0 ? 'filled' : 'default'}
                     onClick={() => {
-                      if (!action.keepOpen) toast.dismiss(id)
+                      toast.dismiss(id)
                       action.onClick()
                     }}
                   >
@@ -84,6 +84,7 @@ export default function Toast({ id, type, title, description, details, actions }
                 ))}
               </div>
             )}
+            {footer && <div className={classes.footer}>{footer}</div>}
             {hasDetails && (
               <div
                 className={classes.detailsToggle}

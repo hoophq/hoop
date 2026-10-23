@@ -30,3 +30,24 @@ const hasNotifications = () => typeof Notification !== 'undefined' && window.isS
 export const notificationsGranted = () => hasNotifications() && Notification.permission === 'granted'
 
 export const canAskPermission = () => hasNotifications() && Notification.permission === 'default'
+
+// "Not now" on the desktop-alerts ask, kept per browser.
+const ASK_KEY = 'hoop-desktop-alerts-ask'
+let declined = (() => {
+  try {
+    return localStorage.getItem(ASK_KEY) === 'not-now'
+  } catch {
+    return false
+  }
+})()
+
+export const shouldAskDesktop = () => canAskPermission() && !declined
+
+export function declineDesktop() {
+  declined = true
+  try {
+    localStorage.setItem(ASK_KEY, 'not-now')
+  } catch {
+    // Without storage the answer lasts until the page reloads.
+  }
+}

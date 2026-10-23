@@ -17,9 +17,9 @@ import Toast from '@/components/Snackbar/Toast'
  *   showSnackbar({ level: 'error',   text: 'Validation failed.', details: { field: 'name', reason: 'required' } })
  *   showSnackbar({ level: 'approval', text: 'Approval request', actions: [{ label: 'Open', onClick: open }], duration: Infinity })
  *   showSnackbar({ id, text: 'Updated in place' })  // pass a returned id to replace that toast
- *   An action closes its toast; `keepOpen: true` on the action leaves it open.
+ *   An action closes its toast. `footer` renders below the actions, and its own buttons leave the toast open.
  */
-export function showSnackbar({ level = 'info', text, description, details, actions, duration, id, onDismiss } = {}) {
+export function showSnackbar({ level = 'info', text, description, details, actions, footer, duration, id, onDismiss } = {}) {
   const ms = duration ?? (level === 'error' ? 10000 : undefined)
   const options = {
     ...(ms ? { duration: ms } : {}),
@@ -35,6 +35,7 @@ export function showSnackbar({ level = 'info', text, description, details, actio
         description={description}
         details={details}
         actions={actions}
+        footer={footer}
       />
     ),
     Object.keys(options).length ? options : undefined,

@@ -2,13 +2,21 @@ import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Group, Stack, Text } from '@mantine/core'
 import Badge from '@/components/Badge'
+import Button from '@/components/Button'
 import { useLiveEvent } from '@/hooks/useLiveEvent'
 import { LIVE_EVENTS } from '@/services/liveEvents'
 import { reviewsService } from '@/services/reviews'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { dismissSnackbar, showSnackbar } from '@/utils/snackbar'
-import { canAskPermission, describeReview, isAttended, isVisible, notificationsGranted } from './helpers'
+import {
+  declineDesktop,
+  describeReview,
+  isAttended,
+  isVisible,
+  notificationsGranted,
+  shouldAskDesktop,
+} from './helpers'
 
 export const REVIEW_NOTIFICATIONS_FLAG = 'experimental.review_notifications'
 
@@ -66,16 +74,38 @@ useAuthStore.subscribe((state, prev) => {
   if (state.token !== prev.token) reset()
 })
 
-function askPermission() {
-  Notification.requestPermission().then(() => open.forEach(show))
+const showAll = () => open.forEach(show)
+
+function DesktopAsk() {
+  return (
+    <Stack gap={6}>
+      <Text size="xs" c="dimmed">
+        Get desktop alerts when this tab is in the background.
+      </Text>
+      <Group gap={6}>
+        <Button size="compact-xs" variant="light" onClick={() => Notification.requestPermission().then(showAll)}>
+          Enable
+        </Button>
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          color="gray"
+          onClick={() => {
+            declineDesktop()
+            showAll()
+          }}
+        >
+          Not now
+        </Button>
+      </Group>
+    </Stack>
+  )
 }
 
 function show(t) {
+  const front = t === open[open.length - 1]
   const actions = [{ label: 'Open', onClick: t.goToReview }]
-  if (canAskPermission()) {
-    actions.push({ label: 'Enable desktop notifications', keepOpen: true, onClick: askPermission })
-  }
-  if (open.length > CLOSE_ALL_OVER && t === open[open.length - 1]) {
+  if (open.length > CLOSE_ALL_OVER && front) {
     actions.push({ label: `Close all (${open.length})`, onClick: closeAll })
   }
   t.id = showSnackbar({
@@ -84,11 +114,12 @@ function show(t) {
     text: t.title,
     description: t.description,
     actions,
+    footer: front && shouldAskDesktop() ? <DesktopAsk /> : undefined,
     duration: Infinity,
     onDismiss: () => {
       open = open.filter((o) => o !== t)
       // sonner's Toaster resubscribes while onDismiss runs: an update sent now is lost.
-      setTimeout(() => open.forEach(show))
+      setTimeout(showAll)
     },
   })
 }
@@ -151,7 +182,7 @@ export default function ApprovalNotifications() {
         }
       }
       open.push({ title, description: <Summary who={who} where={where} kind={kind} />, goToReview })
-      open.forEach(show)
+      showAll()
     },
     enabled,
   )
