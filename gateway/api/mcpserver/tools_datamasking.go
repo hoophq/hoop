@@ -235,9 +235,19 @@ func datamaskingUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 		}
 	}
 
+	// This tool does not rename: it writes the stored name back.
+	existing, err := models.GetDataMaskingRuleByID(sc.GetOrgID(), args.ID)
+	if err == models.ErrNotFound {
+		return errResult("data masking rule not found"), nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed fetching data masking rule: %w", err)
+	}
+
 	rule := &models.DataMaskingRule{
 		ID:                   args.ID,
 		OrgID:                sc.GetOrgID(),
+		Name:                 existing.Name,
 		Description:          args.Description,
 		SupportedEntityTypes: supported,
 		CustomEntityTypes:    custom,

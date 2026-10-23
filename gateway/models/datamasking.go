@@ -121,10 +121,16 @@ func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 // UpdateDataMaskingRule. It runs inside the caller's transaction so the rule
 // and its connection junction rows can be composed atomically with other writes.
 func UpdateDataMaskingRuleTx(tx *gorm.DB, rule *DataMaskingRule) error {
+	// The name is written too: a rename cascades to the attribute and sidecar
+	// junctions, which the caller then writes under the new name.
+	if rule.Name == "" {
+		return fmt.Errorf("failed updating data masking rule: name is required")
+	}
 	res := tx.Table("private.datamasking_rules").
 		Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
-		Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "sidecar_spec", "rulepack_id", "updated_at").
+		Select("name", "description", "supported_entity_types", "custom_entity_types", "score_threshold", "sidecar_spec", "rulepack_id", "updated_at").
 		Updates(DataMaskingRule{
+			Name:                 rule.Name,
 			Description:          rule.Description,
 			SupportedEntityTypes: rule.SupportedEntityTypes,
 			CustomEntityTypes:    rule.CustomEntityTypes,
