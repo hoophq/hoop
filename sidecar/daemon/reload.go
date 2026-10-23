@@ -163,6 +163,11 @@ type reloader struct {
 	// document that changes it never reaches buildLanes here.
 	codecPlugins    map[inspect.Protocol]CodecPlugin
 	codecPluginInfo []CodecPluginInfo
+	// credentials is the live credential set the running verifiers read,
+	// swapped from every document the owner sends; credentialSources are
+	// the built sources, carried onto every document like the plug-ins.
+	credentials       *credentialSet
+	credentialSources map[string]CredentialSource
 
 	// lastHandled is the last document that reached a terminal outcome.
 	// Tracked apart from the fetch dedupe in the heartbeat on purpose: a
@@ -244,21 +249,23 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 		prevLanes[ln.name] = ln
 	}
 	r := &reloader{
-		baseline:        baseline,
-		piiRaw:          cfg.PII,
-		laneDocs:        laneDocs,
-		sections:        laneSections,
-		prevLanes:       prevLanes,
-		servers:         servers,
-		view:            view,
-		lic:             lic,
-		det:             det,
-		ac:              ac,
-		build:           cfg.build,
-		codecPlugins:    cfg.codecPlugins,
-		codecPluginInfo: cfg.codecPluginInfo,
-		configPath:      cfg.configPath,
-		load:            cfg.load,
+		baseline:          baseline,
+		piiRaw:            cfg.PII,
+		laneDocs:          laneDocs,
+		sections:          laneSections,
+		prevLanes:         prevLanes,
+		servers:           servers,
+		view:              view,
+		lic:               lic,
+		det:               det,
+		ac:                ac,
+		build:             cfg.build,
+		codecPlugins:      cfg.codecPlugins,
+		codecPluginInfo:   cfg.codecPluginInfo,
+		configPath:        cfg.configPath,
+		load:              cfg.load,
+		credentials:       cfg.credentials,
+		credentialSources: cfg.credentialSources,
 	}
 	if cfg.cp != nil {
 		r.planeOwned = true
@@ -507,6 +514,7 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		planeDoc.LoadFromDisk != nil && *planeDoc.LoadFromDisk
 	switch {
 	case on:
+		r.swapCredentials(log, planeDoc.CredentialSet)
 		return r.adoptFile(log, planeDoc.License)
 	case !on && r.diskMode:
 		out := r.applyOwned(log, raw, "control plane")
@@ -591,6 +599,14 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			"error", err)
 		return r.keep(reloadRefused, fmt.Sprintf("the %s sent a config this build refuses: %v", from, err))
 	}
+	// The set swaps whatever the document's fate below: a restart-bound
+	// or refused document still carries the keys in force. Under a plane
+	// the plane's document is the authority, even while the file serves
+	// the rules (apply swaps it there); a file-owned process takes the
+	// file's.
+	if from == "control plane" || !r.planeOwned {
+		r.swapCredentials(log, newCfg.CredentialSet)
+	}
 
 	doc, err := nonRuleDoc(newCfg)
 	if err != nil {
@@ -606,9 +622,13 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	}
 	// The plugins list is in the baseline, so an accepted document names
 	// the running modules: hand them over. Loading the same code a second
-	// time would leave the running lanes on the first.
+	// time would leave the running lanes on the first. The credential
+	// sources are process-wide for the same reason, and the set is the
+	// one the running verifiers read.
 	newCfg.codecPlugins = r.codecPlugins
 	newCfg.codecPluginInfo = r.codecPluginInfo
+	newCfg.credentials = r.credentials
+	newCfg.credentialSources = r.credentialSources
 
 	det, detChanged := r.det, false
 	if !bytes.Equal(bytes.TrimSpace(r.piiRaw), bytes.TrimSpace(newCfg.PII)) {
@@ -857,6 +877,20 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	return reloadApplied
 }
 
+// swapCredentials puts a document's credential set in force. A reloader
+// built by a test or a process with no pooled lane has no set and swaps
+// nothing.
+func (r *reloader) swapCredentials(log *slog.Logger, entries []CredentialSetEntry) {
+	if r.credentials == nil {
+		return
+	}
+	before := r.credentials.size()
+	r.credentials.swap(entries)
+	if after := r.credentials.size(); after != before {
+		log.Info("credential set swapped", "credentials", after)
+	}
+}
+
 // nonRuleDoc renders everything a hot swap cannot change: the config with
 // every rule-bearing section removed. Two configs with equal documents
 // differ in rules alone.
@@ -878,6 +912,9 @@ func nonRuleDoc(c *Config) ([]byte, error) {
 	cp := *c
 	cp.Guardrails, cp.OPA, cp.Mask, cp.Policy = nil, nil, nil, nil
 	cp.PII = nil
+	// The credential set is live data the reloader swaps in place: a key
+	// minted or revoked on the plane must never read as a restart.
+	cp.CredentialSet = nil
 	// The running config carries the resolved URL and the file's license
 	// reference; the fetched one carries neither. Neither is a lane fact.
 	cp.License = ""

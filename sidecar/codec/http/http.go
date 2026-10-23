@@ -21,13 +21,18 @@
 //   - Credential lifting (credential.go): the relay resolves an identity
 //     from one request header, and that header's value must reach the
 //     resolver without ever reaching policy input or the audit trail.
+//   - Credential swap (credential.go): on a lane with a credential pool
+//     the upstream credential resolved for the caller replaces the
+//     request's Authorization, with Impersonate-User/-Group when asked.
 //   - The Via loop marker (via.go): RFC 9110 requires a proxy to announce
 //     itself, and the same field lets the sidecar refuse its own traffic
 //     when a transparent MITM routes it back in. The same head rewrite
-//     removes a credential meant for the sidecar alone (a caller token).
+//     removes a credential meant for the sidecar alone (a caller token)
+//     and swaps the upstream one in.
 package http
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -39,8 +44,9 @@ import (
 
 // Options configures one lane's HTTP codec.
 //
-// Every field but CredentialHeader and Origin is forwarded to libhoop's
-// codechttp.Options unchanged; see there for their defaults.
+// Every field but CredentialHeader, AuthenticatesCaller, Origin, Swap and
+// Impersonate is forwarded to libhoop's codechttp.Options unchanged; see
+// there for their defaults.
 type Options struct {
 	CaptureBody bool
 
@@ -74,6 +80,23 @@ type Options struct {
 	// origin server: every request names it in Host. Nil forwards each
 	// request's Host as the client wrote it. See origin.go.
 	Origin *Origin
+
+	// Swap, when set, replaces every request's Authorization with the
+	// upstream credential it resolves for the request's caller: the
+	// CredentialHeader value, "" when the lane lifts none. It runs on the
+	// head, after the caller check, once per request; nothing is cached
+	// here. An error wrapping codectypes.ErrLoginRefused refuses that
+	// request as an identity refusal; any other error ends the connection.
+	// The caller's own credential never reaches the upstream, and neither
+	// does any Impersonate-* field the client wrote. Nil forwards each
+	// request's Authorization as the client wrote it. Like
+	// AuthenticatesCaller, it makes the lane strict.
+	Swap func(ctx context.Context, credential string) (SwapResult, error)
+
+	// Impersonate adds Impersonate-User (the identity's email, else its
+	// subject) and one Impersonate-Group per group from SwapResult.Identity
+	// to every swapped request. It needs Swap.
+	Impersonate bool
 }
 
 // Codec is libhoop's HTTP Inspector with the relay's additions.
@@ -134,6 +157,11 @@ func New(o Options) *Codec {
 	}
 	if o.AuthenticatesCaller {
 		c.via.auth = &c.creds
+	}
+	if o.Swap != nil {
+		c.via.swap = &swapper{header: header, resolve: o.Swap, impersonate: o.Impersonate}
+	} else if o.Impersonate {
+		panic("sidecar/codec/http: Impersonate needs a Swap")
 	}
 	return c
 }

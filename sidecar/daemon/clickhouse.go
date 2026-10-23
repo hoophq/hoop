@@ -32,12 +32,24 @@ func (c *ClickHouseCodecConfig) validate(lane string) []string {
 	return problems
 }
 
-func clickhouseCodecFactory(proto inspect.Protocol, cfg *ClickHouseCodecConfig) func() inspect.Codec {
-	if cfg == nil || proto != inspect.ClickHouse {
+// clickhouseCodecFactory builds a clickhouse lane's codec when it needs
+// more than the registry default: configured limits, or a login the lane
+// terminates in the codec itself (the native Hello carries user and
+// password in one frame).
+func clickhouseCodecFactory(proto inspect.Protocol, cfg *ClickHouseCodecConfig, auth *laneAuth, passthroughUsers []string) func() inspect.Codec {
+	if proto != inspect.ClickHouse || (cfg == nil && auth == nil) {
 		return nil
 	}
+	opts := codecclickhouse.Options{}
+	if cfg != nil {
+		opts.MaxFrameBytes, opts.MaxBlockBytes = cfg.MaxFrameBytes, cfg.MaxBlockBytes
+	}
+	if auth != nil {
+		opts.Authenticate = auth.authenticator()
+		opts.Passthrough = passthrough(passthroughUsers)
+	}
 	return func() inspect.Codec {
-		return codecclickhouse.NewWithLimits(cfg.MaxFrameBytes, cfg.MaxBlockBytes)
+		return codecclickhouse.NewWithOptions(opts)
 	}
 }
 
@@ -51,12 +63,20 @@ func clickhouseCodecFactory(proto inspect.Protocol, cfg *ClickHouseCodecConfig) 
 // loaded set, and the caller proved the lane's module is in it
 // (Config.codecPluginFor).
 func laneCodecFactory(lc ListenerConfig, plugins map[inspect.Protocol]CodecPlugin) func() inspect.Codec {
+	return authCodecFactory(lc, plugins, nil)
+}
+
+// authCodecFactory is laneCodecFactory for a lane that may terminate its
+// login: auth reaches the http and clickhouse codecs, which swap the
+// credential themselves; the relay's drivers take it from proxy.Config.
+func authCodecFactory(lc ListenerConfig, plugins map[inspect.Protocol]CodecPlugin, auth *laneAuth) func() inspect.Codec {
 	proto := inspect.Protocol(lc.Protocol)
 	if plugin, ok := plugins[proto]; ok && isPluginLane(lc) {
 		return codecPluginFactory(plugin, lc.Plugin)
 	}
 	if proto == inspect.HTTP {
-		return newHTTPCodec(lc.HTTP, lc.credentialHeader(), lc.authenticatesCaller(), analyzerHolds(lc.Analyzer), lc.origin())
+		impersonate := lc.Propagate != nil && lc.Propagate.ImpersonateUser
+		return newHTTPCodec(lc.HTTP, lc.credentialHeader(), lc.authenticatesCaller(), analyzerHolds(lc.Analyzer), lc.origin(), auth, impersonate)
 	}
-	return clickhouseCodecFactory(proto, lc.ClickHouse)
+	return clickhouseCodecFactory(proto, lc.ClickHouse, auth, lc.PassthroughUsers)
 }

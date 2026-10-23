@@ -39,7 +39,12 @@ import (
 //
 // authenticates makes the codec check the caller token before forwarding a
 // request and remove it after; see codechttp.Options.AuthenticatesCaller.
-func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, holds bool, origin *codechttp.Origin) func() inspect.Codec {
+//
+// auth, on a pooled lane, swaps every request's Authorization for the
+// upstream credential it resolves and, when the lane propagates, names the
+// caller in Impersonate-User; nil forwards Authorization as written.
+func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, holds bool,
+	origin *codechttp.Origin, auth *laneAuth, impersonate bool) func() inspect.Codec {
 	opts := codechttp.Options{
 		// headerNames is normalized once, the same list validate checked,
 		// nil-safe, and a fresh slice, so the append leaves cfg alone.
@@ -53,6 +58,10 @@ func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, 
 		opts.CaptureBody = cfg.CaptureBody
 		opts.MaxBodyBytes = cfg.MaxBodyBytes
 		opts.SensitiveQueryParams = cfg.SensitiveQueryParams
+	}
+	if auth != nil {
+		opts.Swap = auth.swap
+		opts.Impersonate = impersonate
 	}
 	return func() inspect.Codec { return codechttp.New(opts) }
 }

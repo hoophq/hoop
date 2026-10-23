@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/policy"
 )
@@ -76,12 +77,19 @@ func TestTheCompatDocumentsDecodeInThisBuild(t *testing.T) {
 // The full document leaves no field unset, so a field the filler cannot
 // reach fails here instead of passing the cross-release test unseen.
 func TestTheFullCompatDocumentSetsEveryField(t *testing.T) {
-	cfg, err := compatDocument(true, Handshake{Capabilities: SidecarCapabilities()})
+	caps := SidecarCapabilities()
+	cfg, err := compatDocument(true, Handshake{Capabilities: caps})
 	if err != nil {
 		t.Fatal(err)
 	}
 	walkConfigValue(reflect.ValueOf(cfg), "the configuration", "",
 		func(where, path string, f jsonField, v reflect.Value) {
+			// A field whose capability this build does not list (a
+			// source block whose module is not linked) is one the plane
+			// never serves it, so the filler leaves it out.
+			if c := f.tag.Get("cap"); c != "" && !slices.Contains(caps, c) {
+				return
+			}
 			if v.IsZero() {
 				t.Errorf("%s: %s is unset", where, path)
 			}
@@ -136,6 +144,21 @@ func compatDocument(full bool, hs Handshake) (Config, error) {
 	for i := range cfg.Listeners {
 		cfg.Listeners[i].Protocol = protocol
 	}
+	// A verifier type and a credential source are build facts the header
+	// lists, like a protocol; the filler's "x" is neither.
+	identityType := firstWithPrefix(hs.Capabilities, capabilityIdentityPrefix)
+	source := firstWithPrefix(hs.Capabilities, capabilityCredentialsPrefix)
+	for i := range cfg.Listeners {
+		l := &cfg.Listeners[i]
+		if l.Identity != nil {
+			l.Identity.Type = identityType
+		}
+		if l.Credentials != nil {
+			for j := range l.Credentials.Pool {
+				l.Credentials.Pool[j].Source = source
+			}
+		}
+	}
 	return cfg, nil
 }
 
@@ -155,6 +178,12 @@ func fillValue(v reflect.Value, full bool, granted func(string) bool, stack []re
 	switch v.Kind() {
 	case reflect.Struct:
 		t := v.Type()
+		if t == reflect.TypeFor[time.Time]() {
+			if full {
+				v.Set(reflect.ValueOf(time.Unix(1, 0).UTC()))
+			}
+			return nil
+		}
 		if slices.Contains(stack, t) {
 			return nil
 		}

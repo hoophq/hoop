@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -24,6 +25,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/session"
 	telem "github.com/hoophq/hoop/sidecar/telemetry"
 	codecgrpc "github.com/hoophq/libhoop/v2/codec/grpc"
+	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 )
 
 // A grpc lane is not a relay lane (ADR-0013). It terminates HTTP/2
@@ -361,6 +363,7 @@ func isGRPCTransport(lc ListenerConfig) bool {
 const (
 	grpcPermissionDenied = 7
 	grpcUnavailable      = 14
+	grpcUnauthenticated  = 16
 )
 
 // metadataGRPCSchema is set to "unavailable" on every statement of an RPC a
@@ -485,10 +488,35 @@ func buildGRPCServer(
 			if identity.Subject == "" {
 				identity.Subject = grpcPeerSubject(info.Request)
 			}
+			// A pooled lane verifies the RPC's bearer and swaps it for the
+			// upstream credential. A refusal still opens the session, so
+			// the trail records it under the claimed identity, and ends
+			// it with the handler's Close.
+			var cred Credential
+			var loginErr error
+			if ln.auth != nil {
+				user, secret := splitAuthorization(info.Request.Header.Get("Authorization"))
+				var verified session.Identity
+				verified, cred, loginErr = ln.auth.authenticate(ctx, user, secret)
+				if loginErr == nil {
+					verified.PeerAddr = identity.PeerAddr
+					identity = verified
+				} else if user != "" {
+					identity.Subject = user
+				}
+			}
 
 			sess := session.New(proto, identity)
 			sess.Connection = ln.name
 			sess.Upstream = lc.Upstream
+			if ln.auth != nil && loginErr == nil {
+				sess.Metadata = map[string]string{
+					"credential":    cred.Name,
+					"upstream_user": cred.User,
+					"identity_type": ln.auth.identityType,
+					"verified":      "true",
+				}
+			}
 			// Acquired once per RPC: the gate keeps this generation for the RPC's
 			// whole life, and the next RPC reads what a reload swapped in. The
 			// release runs when the gate closes, which is what tells a reload
@@ -545,6 +573,11 @@ func buildGRPCServer(
 				state.stmts.schema = "raw"
 			}
 			handler := state.callbacks()
+			if ln.auth != nil && loginErr == nil {
+				bearer := cred.User == "" || ln.auth.entrySource(cred.Name) == SourceGCPImpersonation
+				value := upstreamAuthorization(cred, bearer)
+				handler.UpstreamAuthorization = func(*http.Request) (string, bool) { return value, true }
+			}
 			if err := g.Start(ctx); err != nil {
 				if failOnAuditError {
 					return handler, &codecgrpc.Status{
@@ -553,6 +586,14 @@ func buildGRPCServer(
 					}, nil
 				}
 				laneLog.Warn("grpc session start not recorded", "error", err)
+			}
+			if loginErr != nil {
+				msg := "login refused"
+				if errors.Is(loginErr, codectypes.ErrLoginRefused) {
+					msg = loginErr.Error()
+				}
+				g.RefuseLogin(ctx, identity.Subject, msg)
+				return handler, &codecgrpc.Status{Code: grpcUnauthenticated, Message: msg}, nil
 			}
 
 			if gap != nil && gap.refuse {

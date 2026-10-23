@@ -1,6 +1,8 @@
 package http
 
 import (
+	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +11,8 @@ import (
 	"sync"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/session"
+	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 )
 
 // metadataCredential names the statement metadata key carrying a lifted
@@ -160,4 +164,106 @@ func (c *credentials) take(stmt *inspect.Statement) (string, bool) {
 	value, ok := c.held[handle]
 	delete(c.held, handle)
 	return value, ok
+}
+
+// SwapResult is the upstream credential Options.Swap resolved for one
+// request, and the caller it resolved it for.
+type SwapResult struct {
+	User     string
+	Password string
+
+	// Bearer sends `Authorization: Bearer <Password>`; off sends Basic
+	// with User and Password.
+	Bearer bool
+
+	// Identity is the verified caller, for Impersonate. Empty when the
+	// lane verifies nobody.
+	Identity session.Identity
+}
+
+// swapper replaces each request's credential with the upstream's.
+//
+// It runs in the request filter, on the head, after admit: the caller is
+// checked before anything is resolved for them, and the head is the one
+// place the sidecar rewrites before the upstream reads it. Nothing is
+// cached here: the resolver is called once per request, so a rotated
+// credential or a revoked caller takes effect on the next request even on a
+// pooled connection.
+type swapper struct {
+	header      string // the caller's credential, lowercased; "" sends none
+	resolve     func(ctx context.Context, credential string) (SwapResult, error)
+	impersonate bool
+}
+
+// dropsField reports a field the forwarded head must not carry: the
+// caller's credential, the Authorization the swap replaces, and every
+// Impersonate-* the client wrote (User, Group, Uid, Extra-*), on every
+// swap lane: riding a credential that holds the impersonate verb, it would
+// let the caller act as anyone.
+func (s *swapper) dropsField(name string) bool {
+	const impersonate = "Impersonate-"
+	return strings.EqualFold(name, "Authorization") ||
+		(s.header != "" && strings.EqualFold(name, s.header)) ||
+		(len(name) > len(impersonate) && strings.EqualFold(name[:len(impersonate)], impersonate))
+}
+
+// fields resolves the credential for req and returns the header lines the
+// forwarded head gets instead of the ones dropsField removes, each ended
+// by eol.
+//
+// A refusal is a CredentialRefusal, so the gate records it as the identity
+// refusal it is; any other failure is the lane's, and ends the connection
+// through the filter's deny path.
+func (s *swapper) fields(req *http.Request, eol []byte) ([]byte, error) {
+	credential := ""
+	if s.header != "" {
+		credential = strings.Join(req.Header.Values(s.header), ", ")
+	}
+	res, err := s.resolve(context.Background(), credential)
+	if err != nil {
+		if errors.Is(err, codectypes.ErrLoginRefused) {
+			return nil, &inspect.CredentialRefusal{Request: strings.TrimSpace(req.Method + " " + req.URL.Path), Reason: err}
+		}
+		return nil, fmt.Errorf("the upstream credential could not be resolved: %w", err)
+	}
+	var out []byte
+	if res.Bearer {
+		out, err = addField(out, "Authorization", "Bearer "+res.Password, eol)
+	} else {
+		out, err = addField(out, "Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(res.User+":"+res.Password)), eol)
+	}
+	if err != nil || !s.impersonate {
+		return out, err
+	}
+	user := res.Identity.Email
+	if user == "" {
+		user = res.Identity.Subject
+	}
+	if user == "" {
+		// Nobody verified: the request runs as the credential itself.
+		return out, nil
+	}
+	if out, err = addField(out, "Impersonate-User", user, eol); err != nil {
+		return nil, err
+	}
+	for _, g := range res.Identity.Groups {
+		if out, err = addField(out, "Impersonate-Group", g, eol); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// addField appends one header line. A value holding a line break would
+// write a field of its own into the head, so it is refused: the values come
+// from the credential source and the verifier, never from the client, but a
+// group name is still a claim somebody issued.
+func addField(out []byte, name, value string, eol []byte) ([]byte, error) {
+	if strings.ContainsAny(value, "\r\n") {
+		return nil, fmt.Errorf("the %s value for the upstream holds a line break", name)
+	}
+	out = append(out, name...)
+	out = append(out, ": "...)
+	out = append(out, value...)
+	return append(out, eol...), nil
 }

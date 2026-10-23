@@ -71,6 +71,8 @@ it is removing a directory.
 | `ica/` | `github.com/hoophq/libhoop-ica`, the Citrix ICA engine a `protocol: ica` lane embeds; registers through `daemon.RegisterICAEngine`, linked into `hoop-inspect` only |
 | `codec/wasm/` | `github.com/tetratelabs/wazero`, the codec plug-in host; `daemon` only sees `LoadCodecPlugin`. `sdk/` and `examples/` hold the guest side: Rust, TinyGo and C |
 | `telemetry/otlp/` | the OpenTelemetry SDK and its OTLP exporters, behind the `telemetry` block; `daemon` sees only `telemetry.Builder`, injected by `cmd` like `LoadCodecPlugin`. The contract is the root package `telemetry/` |
+| `identity/spiffe/` | `github.com/spiffe/go-spiffe/v2`: the `spiffe` identity type (JWT-SVID through the Workload API) and the `spiffe` credential source (X509-SVID by `spiffe_id`); registers through `daemon.RegisterIdentitySource`/`RegisterCredentialSource`, linked into `hoop-inspect` only |
+| `identity/krb5/` | `github.com/jcmturner/gokrb5/v8`: the `kerberos` credential source, a ccache or keytab turned into a GSSAPI/SPNEGO initiator for the upstream login; same registration, linked into `hoop-inspect` only |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
 Adding a dependency to the root still needs a reason. Add a nested module, or
@@ -129,7 +131,7 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica lexer/conformance codec/wasm telemetry/otlp; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica identity/spiffe identity/krb5 lexer/conformance codec/wasm telemetry/otlp; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
 
@@ -326,7 +328,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `proxy/` | TCP relay that pumps both directions through a Gate |
 | `daemon/` | assembles the relay from config — sinks, evaluators, listeners — and is the CLI entry point |
 | `session/` | one inspected connection and the identity behind it |
-| `identity/` | resolves a request credential to the identity behind it; `google/` verifies a Google OAuth2 bearer with tokeninfo; `token/` matches a caller token against a file it re-reads |
+| `identity/` | resolves a request credential to the identity behind it; `google/` verifies a Google OAuth2 bearer with tokeninfo; `token/` matches a caller token against a file it re-reads; `spiffe/` and `krb5/` are nested modules (table above), not root packages |
 | `audit/` | the write side of the trail |
 | `store/` | the read side |
 | `pii/` | detectors and maskers |

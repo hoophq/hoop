@@ -99,15 +99,18 @@ const (
 // With an Origin set, the same head rewrite also points the request at the
 // origin; see origin.go. With auth set, it checks each request's caller
 // token before forwarding any of the request, then removes the header, so
-// the token never reaches the upstream (credentials.admit). All of them
-// share this framing because they edit the same heads and must agree on
-// where each one starts.
+// the token never reaches the upstream (credentials.admit). With swap set,
+// it replaces the request's Authorization with the upstream credential
+// resolved for its caller (swapper.fields). All of them share this framing
+// because they edit the same heads and must agree on where each one
+// starts.
 type viaFilter struct {
 	mu     sync.Mutex // one client pump calls this, but nothing enforces that
 	state  viaState
 	err    error        // a refused request; the connection is over
 	origin *Origin      // nil forwards Host as the client wrote it
 	auth   *credentials // non-nil on a lane that authenticates its caller
+	swap   *swapper     // non-nil on a lane that swaps the credential
 
 	held    []byte      // viaHead: the head so far; viaChunkLine: the line so far
 	blankAt int         // viaHead: offset in held of the head's closing empty line
@@ -302,11 +305,22 @@ func (f *viaFilter) finishHead(out *splice) error {
 		}
 		fields = dropField(fields, f.auth.header)
 	}
+	var swapped []byte
+	if f.swap != nil {
+		// After admit: the caller is checked before anything is resolved
+		// for them.
+		var err error
+		if swapped, err = f.swap.fields(req, eol); err != nil {
+			return err
+		}
+		fields = dropFields(fields, f.swap.dropsField)
+	}
 	if f.origin != nil {
 		f.origin.writeHead(out, fields, req, eol)
 	} else {
 		out.add(fields)
 	}
+	out.add(swapped)
 	out.addf("Via: %d.%d %s", req.ProtoMajor, req.ProtoMinor, pseudonym)
 	out.add(eol)
 	out.add(eol)
@@ -332,23 +346,26 @@ func (f *viaFilter) finishHead(out *splice) error {
 }
 
 // strict reports a lane whose rewrite the upstream relies on: the origin
-// reads the Host it was promised, and a dropped header must never arrive.
-// Such a lane refuses what it cannot frame and passes a connection through
-// only once the server grants the switch, where a Via-only lane lets both
-// go as written.
-func (f *viaFilter) strict() bool { return f.origin != nil || f.auth != nil }
+// reads the Host it was promised, a dropped header must never arrive, and
+// a swapped credential must never be the client's own. Such a lane refuses
+// what it cannot frame and passes a connection through only once the
+// server grants the switch, where a Via-only lane lets both go as written.
+func (f *viaFilter) strict() bool { return f.origin != nil || f.auth != nil || f.swap != nil }
 
 // promise names what a strict lane does to every request, for the error
 // that refuses a stream it cannot do it to.
 func (f *viaFilter) promise() string {
-	switch {
-	case f.origin != nil && f.auth != nil:
-		return "this listener points every request at its upstream and removes its " + f.auth.header + " header"
-	case f.origin != nil:
-		return "this listener points every request at its upstream"
-	default:
-		return "this listener removes the " + f.auth.header + " header from every request"
+	var does []string
+	if f.origin != nil {
+		does = append(does, "points every request at its upstream")
 	}
+	if f.auth != nil {
+		does = append(does, "removes the "+f.auth.header+" header from every request")
+	}
+	if f.swap != nil {
+		does = append(does, "replaces the credential of every request")
+	}
+	return "this listener " + strings.Join(does, " and ")
 }
 
 // endMessage moves past a finished request: to the next head, or to
@@ -426,15 +443,20 @@ func (f *viaFilter) giveUpBody(out *splice, why string) error {
 // credential twice. fields comes back as is when nothing matches, so a
 // request without the header costs no copy.
 func dropField(fields []byte, name string) []byte {
+	return dropFields(fields, func(field string) bool { return strings.EqualFold(field, name) })
+}
+
+// dropFields is dropField for every field name drop reports.
+func dropFields(fields []byte, drop func(name string) bool) []byte {
 	line, rest := cutLine(fields) // the request line, never a field
 	var out []byte                // nil while every field is kept
 	at := len(line)               // fields[:at] is decided
 	eachField(rest, func(field string, _, whole []byte) {
-		drop := strings.EqualFold(field, name)
+		gone := drop(field)
 		switch {
-		case drop && out == nil:
+		case gone && out == nil:
 			out = append(make([]byte, 0, len(fields)), fields[:at]...)
-		case !drop && out != nil:
+		case !gone && out != nil:
 			out = append(out, whole...)
 		}
 		at += len(whole)

@@ -22,8 +22,9 @@ import (
 //
 //   - the token the plane issued when the sidecar was registered;
 //   - a platform identity, picked by HOOP_SIDECAR_IDENTITY_TYPE: a Kubernetes
-//     projected service account token read from a file (kubernetes), or a
-//     Google ID token from the GCE/GKE metadata server (gcp).
+//     projected service account token read from a file (kubernetes), a
+//     JWT-SVID a spiffe-helper writes to a file (spiffe), or a Google ID
+//     token from the GCE/GKE metadata server (gcp).
 //
 // Platform identities are issued and rotated by the platform. The plane maps
 // them to a sidecar row through an allowlist entry, so a fleet of workspaces
@@ -38,27 +39,32 @@ const (
 	SidecarIdentityHeader = "hoop-sidecar-identity"
 
 	// SidecarIdentityTypeEnv selects the platform identity: empty for the
-	// token, IdentityTypeKubernetes or IdentityTypeGCP.
+	// token, IdentityTypeKubernetes, IdentityTypeSPIFFE or IdentityTypeGCP.
 	SidecarIdentityTypeEnv = "HOOP_SIDECAR_IDENTITY_TYPE"
 	IdentityTypeKubernetes = "kubernetes"
+	IdentityTypeSPIFFE     = "spiffe"
 	IdentityTypeGCP        = "gcp"
 
-	// SidecarIdentityTokenFileEnv overrides where the kubernetes type reads
-	// its token. It is a path, unlike SidecarTokenEnv: the kubelet rotates a
-	// projected token in place, so the file is re-read on every request and
-	// a value copied into the environment would expire under the running
-	// process.
+	// SidecarIdentityTokenFileEnv overrides where the kubernetes and spiffe
+	// types read their token. It is a path, unlike SidecarTokenEnv: the
+	// kubelet and the spiffe-helper rotate the file in place, so it is
+	// re-read on every request and a value copied into the environment
+	// would expire under the running process.
 	SidecarIdentityTokenFileEnv = "HOOP_SIDECAR_IDENTITY_TOKEN_FILE"
-	// DefaultIdentityTokenFile is where the kubernetes type reads its token
-	// when SidecarIdentityTokenFileEnv is empty: the path the sidecar helm
-	// chart mounts its projected volume at. Never the default service
-	// account mount, whose token's audience is the API server.
+	// DefaultIdentityTokenFile is where the kubernetes and spiffe types
+	// read their token when SidecarIdentityTokenFileEnv is empty: the path
+	// the sidecar helm chart mounts the projected volume or the helper's
+	// output at. Never the default service account mount, whose token's
+	// audience is the API server.
 	DefaultIdentityTokenFile = "/var/run/hoop-sidecar/token"
 	// SidecarIdentityAudienceEnv is the gcp type's audience, default the
 	// control plane URL. A plane shared by several organizations needs one
 	// audience per organization, because the plane maps an (issuer,
-	// audience) pair to one organization. Only the gcp type reads it: a
-	// projected token's audience is fixed where the token is minted.
+	// audience) pair to one organization. The kubernetes type refuses it:
+	// a projected token's audience is fixed where the token is minted. The
+	// spiffe type accepts it as the audience the helper was told to mint,
+	// so a chart can set both from one value; this process does not read
+	// it there.
 	SidecarIdentityAudienceEnv = "HOOP_SIDECAR_IDENTITY_AUDIENCE"
 
 	// gcpMetadataHostEnv is the override the Google client libraries
@@ -274,9 +280,10 @@ func jwtClaimsUnverified(tok string) (jwtClaims, error) {
 // The token flag outranking HOOP_SIDECAR_TOKEN is not two sources: it is
 // the one token, set from two places, as it always was.
 //
-// HOOP_SIDECAR_IDENTITY_TOKEN_FILE and HOOP_SIDECAR_IDENTITY_AUDIENCE belong
-// to one type each. Either one set for another type, or for none, is an
-// error: it would do nothing, and the operator who set it expects it to.
+// HOOP_SIDECAR_IDENTITY_TOKEN_FILE belongs to the kubernetes and spiffe
+// types, HOOP_SIDECAR_IDENTITY_AUDIENCE to gcp and spiffe. Either one set
+// for another type, or for none, is an error: it would do nothing, and the
+// operator who set it expects it to.
 //
 // The returned source names the credential in startup errors.
 func resolveCredential(tokenFlag, planeURL string) (credential, string, error) {
@@ -286,28 +293,33 @@ func resolveCredential(tokenFlag, planeURL string) (credential, string, error) {
 	audience := os.Getenv(SidecarIdentityAudienceEnv)
 
 	switch identity {
-	case "", IdentityTypeKubernetes, IdentityTypeGCP:
+	case "", IdentityTypeKubernetes, IdentityTypeSPIFFE, IdentityTypeGCP:
 	default:
-		return nil, "", fmt.Errorf("%s is %q: use %s or %s, or leave it empty to authenticate with a token",
-			SidecarIdentityTypeEnv, identity, IdentityTypeKubernetes, IdentityTypeGCP)
+		return nil, "", fmt.Errorf("%s is %q: use %s, %s or %s, or leave it empty to authenticate with a token",
+			SidecarIdentityTypeEnv, identity, IdentityTypeKubernetes, IdentityTypeSPIFFE, IdentityTypeGCP)
 	}
 	identitySource := SidecarIdentityTypeEnv + "=" + identity
 	if token != "" && identity != "" {
 		return nil, "", fmt.Errorf("more than one control plane credential is set (%s, %s); set exactly one",
 			tokenSource, identitySource)
 	}
-	if file != "" && identity != IdentityTypeKubernetes {
-		return nil, "", fmt.Errorf("%s is set, but only %s=%s reads it; set the type or drop the path",
-			SidecarIdentityTokenFileEnv, SidecarIdentityTypeEnv, IdentityTypeKubernetes)
+	if file != "" && identity != IdentityTypeKubernetes && identity != IdentityTypeSPIFFE {
+		return nil, "", fmt.Errorf("%s is set, but only %s=%s or %s reads it; set the type or drop the path",
+			SidecarIdentityTokenFileEnv, SidecarIdentityTypeEnv, IdentityTypeKubernetes, IdentityTypeSPIFFE)
 	}
-	if audience != "" && identity != IdentityTypeGCP {
-		return nil, "", fmt.Errorf("%s is set, but only %s=%s reads it: it is the Google ID token's audience. "+
-			"A projected service account token's audience is set where the token is minted "+
-			"(the serviceAccountToken volume's audience)", SidecarIdentityAudienceEnv, SidecarIdentityTypeEnv, IdentityTypeGCP)
+	if audience != "" && identity != IdentityTypeGCP && identity != IdentityTypeSPIFFE {
+		return nil, "", fmt.Errorf("%s is set, but only %s=%s or %s reads it: it is the Google ID token's audience, "+
+			"or the one the spiffe-helper mints. A projected service account token's audience is set where "+
+			"the token is minted (the serviceAccountToken volume's audience)",
+			SidecarIdentityAudienceEnv, SidecarIdentityTypeEnv, IdentityTypeGCP, IdentityTypeSPIFFE)
+	}
+	if identity == IdentityTypeSPIFFE && strings.TrimSpace(audience) == "" && audience != "" {
+		return nil, "", fmt.Errorf("%s is blank under %s=%s; set the audience the helper mints, or unset it",
+			SidecarIdentityAudienceEnv, SidecarIdentityTypeEnv, IdentityTypeSPIFFE)
 	}
 
 	switch identity {
-	case IdentityTypeKubernetes:
+	case IdentityTypeKubernetes, IdentityTypeSPIFFE:
 		if file == "" {
 			file = DefaultIdentityTokenFile
 		}
