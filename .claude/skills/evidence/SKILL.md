@@ -1,6 +1,6 @@
 ---
 name: evidence
-description: Produce the human evidence for a hoop ticket - the same real flow captured on origin/main and on the branch, composed into labeled before/after images (a side-by-side video when the UI changes), plus a one-page EVIDENCE.md. Use after QA passes and before a ticket goes to review, or when asked for evidence of a change.
+description: Produce the human evidence for a hoop ticket - the same real flow captured on origin/main and on the branch, composed into labeled before/after images (a side-by-side video for a UI or terminal flow), plus a one-page EVIDENCE.md. Use after QA passes and before a ticket goes to review, or when asked for evidence of a change.
 ---
 
 # Evidence for a ticket
@@ -17,9 +17,10 @@ EVIDENCE.md
 2-<question>.png
 ```
 
-When the UI changes, the comparison is a video of the flow instead (model:
-ENG-596): `<flow>.gif` for the PR and `<flow>.mp4` for Linear, 1 or 2 flows.
-PNGs stay for API, log and CLI surfaces.
+When the change has a flow, the comparison is a video of it instead: a UI
+flow (model: ENG-596), or a terminal flow with each step explained on screen.
+`<flow>.gif` for the PR and `<flow>.mp4` for Linear, 1 or 2 flows. A PNG stays
+for a single state: one API response, one log line.
 
 Everything else (raw captures, logs, snapshots, scripts, test output) goes to
 `~/evidencias/.archive/<TICKET-ID>/`. Never inside the ticket folder.
@@ -33,6 +34,7 @@ For each `Definition of done` item, write one line:
 | "Does the sidecar get the same rules?" | `GET /api/sidecars/configuration` | `curl \| jq` → PNG |
 | "Does the admin screen change?" | rule edit page | browser screenshot |
 | "Is the page fast, and does it show X?" | the page, used end to end | recorded flow → side-by-side GIF/MP4 |
+| "Does the CLI tell the user why?" | `hoop exec`, then the session API | VHS tape → side-by-side GIF/MP4 |
 
 Surfaces, best first: the UI; an API response; a sidecar, gateway or agent log
 line; CLI output. Never an internal DB snapshot or `go test` output: a test is
@@ -66,10 +68,14 @@ break.
 
 ## 3. Capture
 
-- **Terminal / API / log:** render the final state as a PNG (`freeze`, or the
-  last frame of a VHS tape). A GIF of someone typing proves nothing; use a GIF
-  only when the steps themselves are the evidence (a UI flow), and then compose
-  before/after GIFs side by side too.
+- **Terminal / API / log:** record the flow with VHS: one tape (model:
+  `examples/terminal.tape`), run on each side against that side's stack.
+  - Before each command, type `# Step N: <what and why>`: it is the
+    explanation the reader sees. Without it, a video of typing tells nothing.
+  - Hide the setup (`Hide` … `Show`). End on the answer, held 4 s: the last
+    frame must answer the question alone.
+  - A single state with no steps (one response, one log line): a PNG
+    (`freeze`, or the last frame of the tape).
 - Keep only the lines that answer the question (`jq` filter, `grep`). The
   command and the commit on top of the panel say which version produced it.
 - **UI:** record the flow. A screenshot only for a state that has no flow.
@@ -103,7 +109,7 @@ break.
 
 `h` for screens and JSON (side by side), `v` for wide one-line logs (stacked).
 
-A recorded flow:
+A recorded flow (UI or terminal):
 
 ```bash
 .claude/skills/evidence/compose-video.sh <out-basename> \
@@ -170,11 +176,16 @@ publish, and the PR stays a draft until a person reads it. Then:
 
 ## Pitfalls already met
 
-- Homebrew `ffmpeg` has no `drawtext`; `compare.sh` renders labels with
-  `freeze` instead.
-- A cloud sandbox has `ffmpeg` and Chromium, not `freeze`:
-  `GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2`.
-  `freeze` draws no emoji; render such output with Chromium instead.
+- Labels: `label.sh` draws them with ffmpeg `drawtext` when ffmpeg has it,
+  else with `freeze`. Homebrew `ffmpeg` has no `drawtext`; `freeze` crashed
+  (SIGSEGV) in a scheduled cloud run. `freeze` draws no emoji; render such
+  output with Chromium instead.
+- VHS in a cloud sandbox: it needs `ttyd` and a `chromium` in `PATH`, and runs
+  as root only with `VHS_NO_SANDBOX=true`. The agent's setup script installs
+  them (`.claude/README.md`); elsewhere, run the same lines. That script goes
+  on after a failed download, so check `command -v vhs ttyd chromium` before
+  you record and run its lines again for a missing one. Still missing: a PNG
+  of the last state, and the missing video under "Open items".
 - A UI flow in a cloud sandbox: `make build-dev-webapp` and `make run-dev`
   (or `scripts/dev/run-sandbox.sh start --ui`), then `rec.mjs` as usual: it
   finds Chromium. In our cloud runs Docker Hub answered 429, and Maven Central

@@ -103,7 +103,8 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
   `GIT_COMMITTER_EMAIL` hold the owner's name and the email of their GitHub
   account: the CLA check reads the commit author, and a cloud session
   otherwise commits as `Claude`, which the CLA refuses.
-  Its setup script installs `freeze` for evidence, sets mirrors (in our cloud
+  Its setup script installs the evidence tools (`freeze`, VHS with `ttyd`, and
+  Chromium as `chromium` in `PATH`), sets mirrors (in our cloud
   runs Docker Hub answered 429, and Maven Central sent error pages), and pulls
   the dev images into the environment cache. The pulls only fill the cache, so
   they may fail: a setup script that exits non-zero stops the session, and
@@ -111,6 +112,10 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
 
   ```bash
   GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2 || true
+  GOBIN=/usr/local/bin go install github.com/charmbracelet/vhs@v0.10.0 || true
+  curl -fsSL -o /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 &&
+    chmod +x /usr/local/bin/ttyd || true
+  ln -sf /opt/pw-browsers/chromium /usr/local/bin/chromium
   mkdir -p ~/.shadow-cljs /etc/docker
   echo '{:maven {:repositories {"central" {:url "https://maven-central.storage-download.googleapis.com/maven2/"} "clojars" {:url "https://repo.clojars.org/"}}}}' > ~/.shadow-cljs/config.edn
   echo '{"registry-mirrors": ["https://mirror.gcr.io"]}' > /etc/docker/daemon.json
