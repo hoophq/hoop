@@ -10324,6 +10324,41 @@ const docTemplate = `{
                 }
             }
         },
+        "/sidecar-credentials/{id}": {
+            "delete": {
+                "description": "Stop a credential. A user revokes their own; an admin revokes any.",
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Revoke Sidecar Lane Credential",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The credential id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sidecar-deleted-names": {
             "get": {
                 "description": "List the names of deleted sidecars a service account identity had reached. A token that renders one of them is refused and creates nothing.",
@@ -10699,7 +10734,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Register a sidecar. The token is returned only once in this response and cannot be recovered.",
+                "description": "Register a sidecar. The token is returned only once in this response and cannot be recovered. owner_email names the person its approval requests and anonymous sessions are filed under.",
                 "consumes": [
                     "application/json"
                 ],
@@ -11517,7 +11552,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat. A change of load_from_disk is refused: use PATCH.",
+                "description": "Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat. A change of load_from_disk is refused: use PATCH. owner_email omitted keeps the stored owner; empty clears it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -11743,6 +11778,247 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/{nameOrID}/lanes/{lane}/credentials": {
+            "post": {
+                "description": "Mint a key the caller presents to this lane of the sidecar as their password. The key is shown once. Refused when no grant of the lane names the caller or one of their groups.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Mint Sidecar Lane Credential",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Listener name",
+                        "name": "lane",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarCredentialRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarCredential"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/{nameOrID}/lanes/{lane}/grants": {
+            "get": {
+                "description": "Who may mint a credential for this lane of the sidecar.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "List Sidecar Lane Grants",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Listener name",
+                        "name": "lane",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.SidecarLaneGrant"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Let a user or a group mint credentials for this lane of the sidecar. The body names one of the two.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Create Sidecar Lane Grant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Listener name",
+                        "name": "lane",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarLaneGrantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarLaneGrant"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/{nameOrID}/lanes/{lane}/grants/{id}": {
+            "delete": {
+                "description": "Remove a grant. Credentials already minted under it keep working until they expire or are revoked.",
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Delete Sidecar Lane Grant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Listener name",
+                        "name": "lane",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The grant id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "404": {
                         "description": "Not Found",
@@ -12374,6 +12650,35 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "{\"message\": \"server\terror\"}",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/sidecar-credentials": {
+            "get": {
+                "description": "The caller's live credentials, across sidecars. The key is never returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "List My Sidecar Lane Credentials",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.SidecarCredential"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -21413,6 +21718,11 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "owner_email": {
+                    "description": "The person approval requests and anonymous sessions are filed under\nwhen the statement names nobody. Empty when none is set.",
+                    "type": "string",
+                    "example": "dba@acme.com"
+                },
                 "reported_configuration": {
                     "description": "ReportedConfiguration is the config file the sidecar runs, as its last\nhandshake reported it. The control plane adopts it only when an admin\nsends load_from_disk false. Absent for a build too old to report it.",
                     "type": "object"
@@ -21435,6 +21745,67 @@ const docTemplate = `{
                     "description": "Version reported at the last handshake. Empty until the sidecar calls.",
                     "type": "string",
                     "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarCredential": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string",
+                    "readOnly": true
+                },
+                "expires_at": {
+                    "description": "When the credential stops working",
+                    "type": "string",
+                    "readOnly": true
+                },
+                "id": {
+                    "description": "Resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "key": {
+                    "description": "The key, on the mint only",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "hlc_..."
+                },
+                "listener_name": {
+                    "description": "The lane the credential is for",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "appdb"
+                },
+                "protocol": {
+                    "description": "The protocol of the lane, so a client knows how to present the key",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "postgres"
+                },
+                "sidecar_name": {
+                    "description": "The sidecar the credential is for",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "payments-sidecar"
+                },
+                "user": {
+                    "description": "The user name to present with the key",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "jane@acme.com"
+                }
+            }
+        },
+        "openapi.SidecarCredentialRequest": {
+            "type": "object",
+            "properties": {
+                "expires_in_hours": {
+                    "description": "How long the credential lives, in hours. Default 24, at most 720",
+                    "type": "integer",
+                    "example": 24
                 }
             }
         },
@@ -21510,6 +21881,64 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SidecarLaneGrant": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string",
+                    "readOnly": true
+                },
+                "created_by": {
+                    "description": "The admin who created the grant",
+                    "type": "string",
+                    "readOnly": true
+                },
+                "group_name": {
+                    "description": "The group, when the grant names one",
+                    "type": "string",
+                    "example": "dba"
+                },
+                "id": {
+                    "description": "Resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "listener_name": {
+                    "description": "The lane",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "appdb"
+                },
+                "sidecar_id": {
+                    "description": "The sidecar",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "subject": {
+                    "description": "The user, when the grant names one",
+                    "type": "string",
+                    "example": "jane@acme.com"
+                }
+            }
+        },
+        "openapi.SidecarLaneGrantRequest": {
+            "type": "object",
+            "properties": {
+                "group_name": {
+                    "description": "The group",
+                    "type": "string",
+                    "example": "dba"
+                },
+                "subject": {
+                    "description": "The user: their email or id",
+                    "type": "string",
+                    "example": "jane@acme.com"
+                }
+            }
+        },
         "openapi.SidecarListenerSlackChannels": {
             "type": "object",
             "properties": {
@@ -21556,6 +21985,11 @@ const docTemplate = `{
                     "description": "Unique name of the resource",
                     "type": "string",
                     "example": "payments-sidecar"
+                },
+                "owner_email": {
+                    "description": "The person this sidecar's approval requests and anonymous sessions are\nfiled under when the statement names nobody. Empty for none.",
+                    "type": "string",
+                    "example": "dba@acme.com"
                 }
             }
         },
@@ -21649,6 +22083,11 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "owner_email": {
+                    "description": "The person approval requests and anonymous sessions are filed under\nwhen the statement names nobody. Empty when none is set.",
+                    "type": "string",
+                    "example": "dba@acme.com"
+                },
                 "reported_configuration": {
                     "description": "ReportedConfiguration is the config file the sidecar runs, as its last\nhandshake reported it. The control plane adopts it only when an admin\nsends load_from_disk false. Absent for a build too old to report it.",
                     "type": "object"
@@ -21702,6 +22141,11 @@ const docTemplate = `{
                     "description": "The statement to approve, base64 encoded",
                     "type": "string",
                     "example": "REVMRVRFIEZST00gdXNlcnM7"
+                },
+                "principal": {
+                    "description": "The principal the sidecar authenticated on this statement. An email\nfiles the approval request under that person; otherwise the sidecar's\nowner, when one is set. A plane that predates this field ignores it.",
+                    "type": "string",
+                    "example": "alice@acme.com"
                 },
                 "reserve": {
                     "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release.",
@@ -22008,6 +22452,11 @@ const docTemplate = `{
                 "configuration": {
                     "description": "The daemon configuration this sidecar serves. Replaces the stored\ndocument entirely.",
                     "type": "object"
+                },
+                "owner_email": {
+                    "description": "The owner. Omitted keeps the stored owner; an empty string clears it.",
+                    "type": "string",
+                    "example": "dba@acme.com"
                 }
             }
         },

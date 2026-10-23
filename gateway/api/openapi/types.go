@@ -307,6 +307,9 @@ type SidecarRequest struct {
 	// sidecar config file. Omitted stores an empty document, and the sidecar
 	// then has no listeners and refuses to start.
 	Configuration json.RawMessage `json:"configuration,omitempty" swaggertype:"object"`
+	// The person this sidecar's approval requests and anonymous sessions are
+	// filed under when the statement names nobody. Empty for none.
+	OwnerEmail string `json:"owner_email,omitempty" example:"dba@acme.com"`
 }
 
 // SidecarSlackChannels is where the approval requests of each listener of a sidecar are
@@ -328,6 +331,8 @@ type SidecarUpdateRequest struct {
 	// The daemon configuration this sidecar serves. Replaces the stored
 	// document entirely.
 	Configuration json.RawMessage `json:"configuration" binding:"required" swaggertype:"object"`
+	// The owner. Omitted keeps the stored owner; an empty string clears it.
+	OwnerEmail *string `json:"owner_email,omitempty" example:"dba@acme.com"`
 }
 
 type SidecarPatchRequest struct {
@@ -364,6 +369,9 @@ type SidecarResponse struct {
 	CreatedBy string `json:"created_by"`
 	// Creation timestamp
 	CreatedAt time.Time `json:"created_at"`
+	// The person approval requests and anonymous sessions are filed under
+	// when the statement names nobody. Empty when none is set.
+	OwnerEmail string `json:"owner_email,omitempty" example:"dba@acme.com"`
 	// The stored daemon configuration.
 	Configuration daemon.Config `json:"configuration" swaggertype:"object"`
 	// BoundRules names the rules the control plane distributes to this
@@ -523,6 +531,10 @@ type SidecarReviewRequest struct {
 	// the upstream answered. A plane that predates this field ignores it and
 	// spends the approval at release.
 	Reserve bool `json:"reserve,omitempty" example:"false"`
+	// The principal the sidecar authenticated on this statement. An email
+	// files the approval request under that person; otherwise the sidecar's
+	// owner, when one is set. A plane that predates this field ignores it.
+	Principal string `json:"principal,omitempty" example:"alice@acme.com"`
 }
 
 // SidecarReviewClaimRequest is the optional body of a claim. An empty body
@@ -725,6 +737,60 @@ type SidecarDeletedName struct {
 	DeletedBy string `json:"deleted_by" example:"admin@hoop.dev"`
 	// When the sidecar was deleted
 	DeletedAt time.Time `json:"deleted_at"`
+}
+
+// SidecarLaneGrantRequest lets a user or a group mint credentials for one
+// sidecar lane. Exactly one of the two is set.
+type SidecarLaneGrantRequest struct {
+	// The user: their email or id
+	Subject string `json:"subject,omitempty" example:"jane@acme.com"`
+	// The group
+	GroupName string `json:"group_name,omitempty" example:"dba"`
+}
+
+// SidecarLaneGrant is one grant of one sidecar lane.
+type SidecarLaneGrant struct {
+	// Resource identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// The sidecar
+	SidecarID string `json:"sidecar_id" readonly:"true" format:"uuid"`
+	// The lane
+	ListenerName string `json:"listener_name" readonly:"true" example:"appdb"`
+	// The user, when the grant names one
+	Subject string `json:"subject,omitempty" example:"jane@acme.com"`
+	// The group, when the grant names one
+	GroupName string `json:"group_name,omitempty" example:"dba"`
+	// The admin who created the grant
+	CreatedBy string `json:"created_by" readonly:"true"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at" readonly:"true"`
+}
+
+// SidecarCredentialRequest mints a credential for one sidecar lane.
+type SidecarCredentialRequest struct {
+	// How long the credential lives, in hours. Default 24, at most 720
+	ExpiresInHours int `json:"expires_in_hours,omitempty" example:"24"`
+}
+
+// SidecarCredential is a credential a user minted for one sidecar lane. The
+// key is in the response of the mint only; it is stored hashed.
+type SidecarCredential struct {
+	// Resource identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// The sidecar the credential is for
+	SidecarName string `json:"sidecar_name" readonly:"true" example:"payments-sidecar"`
+	// The lane the credential is for
+	ListenerName string `json:"listener_name" readonly:"true" example:"appdb"`
+	// The protocol of the lane, so a client knows how to present the key
+	Protocol string `json:"protocol,omitempty" readonly:"true" example:"postgres"`
+	// The user name to present with the key
+	User string `json:"user" readonly:"true" example:"jane@acme.com"`
+	// The key, on the mint only
+	Key string `json:"key,omitempty" readonly:"true" example:"hlc_..."`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at" readonly:"true"`
+	// When the credential stops working
+	ExpiresAt time.Time `json:"expires_at" readonly:"true"`
 }
 
 type AgentRequest struct {

@@ -65,6 +65,11 @@ const (
 	EventDeleteSidecarServiceAccount = "hoop-delete-sidecar-service-account"
 	EventClearSidecarDeletedName     = "hoop-clear-sidecar-deleted-name"
 	EventClearSidecarIdentity        = "hoop-clear-sidecar-identity"
+	// sidecar lane credentials
+	EventSidecarCredentialCreated = "hoop-create-sidecar-credential"
+	EventSidecarCredentialRevoked = "hoop-revoke-sidecar-credential"
+	EventCreateSidecarLaneGrant   = "hoop-create-sidecar-lane-grant"
+	EventDeleteSidecarLaneGrant   = "hoop-delete-sidecar-lane-grant"
 
 	// plugins
 	EventCreatePlugin          = "hoop-create-plugin"

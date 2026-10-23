@@ -61,6 +61,7 @@ import (
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	apisidecar "github.com/hoophq/hoop/gateway/api/sidecar"
+	sidecarcredentialsapi "github.com/hoophq/hoop/gateway/api/sidecarcredentials"
 	sidecarserviceaccountsapi "github.com/hoophq/hoop/gateway/api/sidecarserviceaccounts"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
 	spiffemappingsapi "github.com/hoophq/hoop/gateway/api/spiffemappings"
@@ -350,6 +351,46 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		apisidecar.PutSlackChannels)
+}
+
+// buildSidecarCredentialRoutes registers the credentials a user mints for a
+// sidecar lane and the grants that say who may. Minting is for every user
+// a grant names; the grants and revoking another user's credential are for
+// admins.
+func (api *Api) buildSidecarCredentialRoutes(r *apiroutes.Router) {
+	r.GET("/sidecars/:nameOrID/lanes/:lane/grants",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		sidecarcredentialsapi.ListGrants)
+	r.POST("/sidecars/:nameOrID/lanes/:lane/grants",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateSidecarLaneGrant),
+		sidecarcredentialsapi.CreateGrant)
+	r.DELETE("/sidecars/:nameOrID/lanes/:lane/grants/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventDeleteSidecarLaneGrant),
+		sidecarcredentialsapi.DeleteGrant)
+	r.POST("/sidecars/:nameOrID/lanes/:lane/credentials",
+		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventSidecarCredentialCreated),
+		sidecarcredentialsapi.Mint)
+	r.GET("/users/me/sidecar-credentials",
+		r.AuthMiddleware,
+		sidecarcredentialsapi.ListMine)
+	r.DELETE("/sidecar-credentials/:id",
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventSidecarCredentialRevoked),
+		sidecarcredentialsapi.Revoke)
 }
 
 // buildSidecarServiceAccountRoutes registers the admin API for the service
@@ -916,6 +957,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 
 	api.buildSidecarRoutes(r)
 	api.buildSidecarServiceAccountRoutes(r)
+	api.buildSidecarCredentialRoutes(r)
 
 	r.POST("/orgs/keys",
 		apiroutes.AdminOnlyAccessRole,

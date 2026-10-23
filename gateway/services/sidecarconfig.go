@@ -101,7 +101,18 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 	default:
 		return cfg, fmt.Errorf("cannot compose a candidate %s rule", skipKind)
 	}
-	return foldSidecarRules(cfg, guardrails, masking, analyzers)
+	composed, err := foldSidecarRules(cfg, guardrails, masking, analyzers)
+	if err != nil {
+		return composed, err
+	}
+	// The credentials users minted for this sidecar's lanes, never stored
+	// in the document: a mint or a revoke reaches the sidecar on its next
+	// handshake, like a rule edit does.
+	composed.CredentialSet, err = sidecarCredentialSet(db, sc)
+	if err != nil {
+		return composed, fmt.Errorf("%w: failed loading the credentials minted for this sidecar: %v", ErrSidecarRulesUnavailable, err)
+	}
+	return composed, nil
 }
 
 // withoutRule drops every binding of one rule, by the name the bindings are
