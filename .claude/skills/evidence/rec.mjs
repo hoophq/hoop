@@ -9,7 +9,7 @@
 // <outDir>/<side>.mp4. Needs Node >= 22 (global WebSocket), Chrome and ffmpeg.
 // See examples/access-control.flow.mjs.
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -25,10 +25,15 @@ const token = readFileSync(tokenFile, 'utf8').trim()
 const framesDir = join(outDir, `${side}-frames`)
 mkdirSync(framesDir, { recursive: true })
 
-const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+// CHROME overrides; otherwise macOS Chrome, then the Chromium of a cloud sandbox.
+const chrome = process.env.CHROME ||
+  ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/opt/pw-browsers/chromium'].find(existsSync)
+if (!chrome) throw new Error('no Chrome found: set CHROME to the browser binary')
 const proc = spawn(chrome, [
   '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'rec-'))}`,
-  '--window-size=1440,900', '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank',
+  '--window-size=1440,900', '--no-first-run', '--no-default-browser-check', '--hide-scrollbars',
+  // Chromium refuses to start as root without it; cloud sandboxes run as root.
+  ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []), 'about:blank',
 ], { stdio: 'ignore' })
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
