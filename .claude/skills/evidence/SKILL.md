@@ -174,6 +174,13 @@ publish, and the PR stays a draft until a person reads it. Then:
 - A cloud sandbox has `ffmpeg` and Chromium, not `freeze`:
   `GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2`.
   `freeze` draws no emoji; render such output with Chromium instead.
+- A UI flow in a cloud sandbox: `scripts/dev/run-sandbox.sh start --ui`, then
+  `rec.mjs` as usual (it finds Chromium). Maven Central and Docker Hub limit
+  the sandbox's shared IP: a Maven "Checksum validation failed, expected Your"
+  is that limit. The agent's environment points shadow-cljs at a mirror in
+  `~/.shadow-cljs/config.edn` (see `.claude/README.md`).
+- `publish.sh` links the GIF for the PR. GitHub does not play an MP4 link:
+  attach the MP4 to the Linear ticket.
 - In zsh, `$VAR[...]` is an array subscript: write `${VAR}[...]` inside
   ffmpeg filters.
 - Routes behind `EnterpriseLicenseOnly` (sidecar config) need the dev

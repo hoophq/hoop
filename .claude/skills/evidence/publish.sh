@@ -40,6 +40,10 @@ done
 
 sha=$(git -C "$tmp/wt" rev-parse HEAD)
 for f in "$@"; do
-  name=$(basename "$f")
-  echo "![${name%.*}](https://raw.githubusercontent.com/$slug/$sha/$folder/$name)"
+  name=$(basename "$f") url="https://raw.githubusercontent.com/$slug/$sha/$folder/$name"
+  # GitHub renders images and GIFs inline, not an MP4 link: that one is for Linear.
+  case "$name" in
+    *.png | *.gif | *.jpg | *.jpeg) echo "![${name%.*}]($url)" ;;
+    *) echo "[$name]($url)" ;;
+  esac
 done

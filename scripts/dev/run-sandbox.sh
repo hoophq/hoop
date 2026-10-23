@@ -3,7 +3,9 @@
 # database: no Docker, no Postgres, no Rust. For cloud sandboxes, where
 # `make run-dev` cannot run, and for the support agent's QA and evidence.
 #
-#   scripts/dev/run-sandbox.sh start [--bin PATH]   build ./client (or use PATH), start, seed
+#   scripts/dev/run-sandbox.sh start [--bin PATH] [--ui]
+#                                     build ./client (or use PATH), start, seed;
+#                                     --ui also builds and serves the web UI
 #   scripts/dev/run-sandbox.sh stop
 #   scripts/dev/run-sandbox.sh status
 #
@@ -13,7 +15,7 @@
 #
 # One stack at a time: the gRPC port is fixed (gateway/transport/server.go).
 # To compare origin/main with a branch, build each binary, then start, capture
-# and stop one before the other. For the web UI, export STATIC_UI_PATH first.
+# and stop one before the other. --ui builds the UI of this checkout.
 
 set -eo pipefail
 cd "$(dirname "$0")/../.."
@@ -63,11 +65,36 @@ cmd_status() {
   alive agent && echo "agent: running" || echo "agent: down"
 }
 
+build_ui() {
+  local meta=webapp/resources/public/data/connections-metadata.json docs="$DIR/documentation"
+  if [[ ! -s $meta ]]; then
+    # The webapp build reads this file through the GitHub API, which a cloud
+    # session cannot call. The repository is public: read it with git.
+    [[ -d $docs/.git ]] || git clone -q --depth 1 --filter=blob:none --sparse \
+      https://github.com/hoophq/documentation "$docs"
+    git -C "$docs" sparse-checkout set store
+    mkdir -p "$(dirname "$meta")" && cp "$docs/store/connections.json" "$meta"
+  fi
+  echo "run-sandbox: building the web UI (log: $DIR/ui.log)"
+  # npm install rewrites the lockfiles when its version differs. Undo only
+  # that, so a commit after this never carries it.
+  local locks=(webapp/package-lock.json webapp_v2/package-lock.json) clean=0
+  git diff --quiet -- "${locks[@]}" && clean=1
+  SKIP_CONNECTION_METADATA_DOWNLOAD=1 ./scripts/dev/build-webapp.sh >"$DIR/ui.log" 2>&1 &&
+    [[ -f dist/dev/resources/public/index.html ]] || {
+    tail -20 "$DIR/ui.log" >&2
+    die "web UI build failed; a Maven checksum error is a rate limit: see the evidence skill pitfalls"
+  }
+  [[ $clean == 1 ]] && git checkout -q -- "${locks[@]}"
+  export STATIC_UI_PATH="$PWD/dist/dev/resources/public"
+}
+
 cmd_start() {
-  local bin=""
+  local bin="" ui=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --bin) bin="$2"; shift 2 ;;
+      --ui) ui=1; shift ;;
       *) die "unknown argument: $1" ;;
     esac
   done
@@ -86,6 +113,7 @@ cmd_start() {
     }
   fi
   [[ -x "$bin" ]] || die "not an executable: $bin"
+  [[ $ui == 1 ]] && build_ui
 
   POSTGRES_DB_URI="pglite://$DIR/pgdata" API_URL="$API_URL" GRPC_URL="$GRPC_URL" \
     AUTH_METHOD=local GIN_MODE=release \
@@ -118,7 +146,7 @@ export HOOP_GRPCURL=$GRPC_URL
 export HOOP_TOKEN=$TOKEN
 export HOOP_SANDBOX_DIR=$DIR
 EOF
-  echo "run-sandbox: up. API $API_URL, admin $ADMIN_EMAIL, agent sandbox-agent, connection bash"
+  echo "run-sandbox: up. API $API_URL, admin $ADMIN_EMAIL, agent sandbox-agent, connection bash${STATIC_UI_PATH:+, web UI}"
   echo "run-sandbox: source $DIR/env  # then: hoop exec bash -i 'echo ok'"
 }
 
@@ -126,5 +154,5 @@ case "$1" in
   start) shift; cmd_start "$@" ;;
   stop) cmd_stop ;;
   status) cmd_status ;;
-  *) die "usage: $0 start [--bin PATH] | stop | status" ;;
+  *) die "usage: $0 start [--bin PATH] [--ui] | stop | status" ;;
 esac

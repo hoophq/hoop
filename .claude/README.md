@@ -89,8 +89,14 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
   `HOOP_AGENT_OWNER`, `HOOP_AGENT_SLACK_CHANNEL` (channel ID),
   `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: draft PRs) and
   `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`.
-  Its setup script installs `freeze` for evidence:
-  `GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2`.
+  Its setup script installs `freeze` for evidence, and a Maven Central mirror
+  for the UI build (Maven Central rate-limits the sandbox's shared IP):
+
+  ```bash
+  GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2 || true
+  mkdir -p ~/.shadow-cljs
+  echo '{:maven {:repositories {"central" {:url "https://maven-central.storage-download.googleapis.com/maven2/"} "clojars" {:url "https://repo.clojars.org/"}}}}' > ~/.shadow-cljs/config.edn
+  ```
 - The task selects the repos `hoop`, `libhoop` and `libhoop-ica`, and only the
   Linear and Slack connectors. Hourly is the shortest schedule.
 - A second task runs `/support-agent digest` at the end of the day.

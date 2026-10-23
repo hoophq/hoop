@@ -23,7 +23,7 @@ schedule and no person reads the session. Then:
 - A support ticket is shaped as a comment, never in its description. The
   `ai-disclosure` hook refuses description edits.
 - No Docker: run each stack with `scripts/dev/run-sandbox.sh`, one at a time,
-  instead of `make run-dev` and `HOOPDEV_SLOT`.
+  instead of `make run-dev` and `HOOPDEV_SLOT`. Add `--ui` for a UI ticket.
 - The sandbox is discarded after the run: push the branch after each commit.
   The evidence is how a person knows the work is right: a PR without its
   comparison images in "Testing" is not done. `evidence` step 6 publishes them.
