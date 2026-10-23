@@ -265,6 +265,11 @@ GitOps tool that annotates the pods for you (Reloader, Argo CD) makes it
 unnecessary. Without any of these,
 `kubectl rollout restart deploy/<release>-hoopsidecar` is the manual equivalent.
 
+`existingSecret` has the same gap, with no in-place path: its variables are
+read when the pod starts, and the chart cannot see the Secret change. After
+rotating `HOOP_SIDECAR_TOKEN` or `HOOP_LICENSE` there, change `configRevision`
+(or run the restart above) so the pods pick the new values up.
+
 ## Environment variables
 
 The relay reads eleven. Ten come from the Secret `sidecar-config`; the

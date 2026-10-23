@@ -242,6 +242,10 @@ extraSecret: {}
 #                       controlPlane.identity: the relay refuses two credentials
 existingSecret: ''
 # existingSecret: hoop-sidecar-credentials
+#
+# Variables are read when the pod starts, and the chart cannot see this
+# Secret change: after rotating a key in it, change `configRevision` (above)
+# to roll the pods.
 
 # -- Readiness and liveness probes against the admin server's /healthz on
 # 19000. The port is not configurable: it is written into the Deployment, the
