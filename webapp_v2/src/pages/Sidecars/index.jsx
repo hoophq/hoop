@@ -1,8 +1,11 @@
 import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
+import { useLiveEvent } from '@/hooks/useLiveEvent'
+import { LIVE_EVENTS } from '@/services/liveEvents'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import AddSidecarModal from './components/AddSidecarModal'
@@ -16,6 +19,15 @@ export default function Sidecars() {
   const serverInfoLoaded = useUserStore((s) => s.serverInfoLoaded)
 
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false)
+  const navigate = useNavigate()
+
+  // A sidecar on this list that checks in for the first time opens its page:
+  // someone just started it, and that page is where its configuration moves
+  // to Hoop. One that already checked in keeps the list on screen.
+  useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (event) => {
+    const listed = sidecars.find((s) => s.id === event.id)
+    if (listed && !listed.last_seen_at) navigate(`/sidecars/${event.id}`)
+  })
 
   useEffect(() => {
     fetchSidecars()
