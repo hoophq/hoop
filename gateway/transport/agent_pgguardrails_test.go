@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 
@@ -76,9 +77,13 @@ func TestListenAgentMessagesPersistsPGGuardRailsInfo(t *testing.T) {
 	}
 	errResp := pgtypes.NewError("%s", "blocked").Encode()
 	readyForQuery := []byte{'Z', 0, 0, 0, 5, 'I'}
+	// A pipelined batch: libhoop's redactor flushes DataRow,
+	// CommandComplete, ErrorResponse and ReadyForQuery in one packet.
+	combined := bytes.Join([][]byte{dataRow, commandComplete, errResp, readyForQuery}, nil)
 
 	// Two blocks: each an ErrorResponse and a ReadyForQuery with the same
-	// info, then a ReadyForQuery without info.
+	// info, then a ReadyForQuery without info. Then a third block in one
+	// combined packet.
 	agentTransport := &fakeConnectServer{
 		ctx: metadata.NewIncomingContext(t.Context(), metadata.Pairs("connection-name", "pg")),
 		recv: []*pb.Packet{
@@ -87,34 +92,50 @@ func TestListenAgentMessagesPersistsPGGuardRailsInfo(t *testing.T) {
 			pkt(readyForQuery, nil),
 			pkt(errResp, info("rule-2")),
 			pkt(readyForQuery, info("rule-2")),
+			pkt(dataRow, nil),
+			pkt(combined, info("rule-3")),
 		},
 	}
 	agent := streamclient.NewAgent(models.Agent{ID: "agent-1", OrgID: orgID, Name: "agent-1"}, agentTransport)
 	_ = (&Server{}).listenAgentMessages(pctx, agent)
 
-	require.Len(t, proxyTransport.sent, 5, "every packet must reach the client")
+	require.Len(t, proxyTransport.sent, 7, "every packet must reach the client")
 
 	var raw []byte
 	require.NoError(t, models.DB.Raw(`SELECT guardrails_info FROM private.sessions WHERE id = ?`, sid).Row().Scan(&raw))
 	require.NotNil(t, raw, "guardrails_info is null: the block was not saved")
 	var got []models.SessionGuardRailsInfo
 	require.NoError(t, json.Unmarshal(raw, &got))
-	require.Len(t, got, 2, "one entry per block: %s", raw)
+	require.Len(t, got, 3, "one entry per block: %s", raw)
 	require.Equal(t, "rule-1", got[0].RuleName)
 	require.Equal(t, "rule-2", got[1].RuleName)
+	require.Equal(t, "rule-3", got[2].RuleName)
 }
 
-func TestIsPGErrorResponsePacket(t *testing.T) {
+var (
+	dataRow         = []byte{'D', 0, 0, 0, 11, 0, 1, 0, 0, 0, 1, '1'}
+	commandComplete = append([]byte{'C', 0, 0, 0, 13}, "SELECT 1\x00"...)
+)
+
+func TestHasPGErrorResponse(t *testing.T) {
+	errResp := pgtypes.NewError("%s", "x").Encode()
+	readyForQuery := []byte{'Z', 0, 0, 0, 5, 'I'}
 	for name, tc := range map[string]struct {
 		payload []byte
-		want    bool
+		first   bool
+		any     bool
 	}{
-		"error response":  {pgtypes.NewError("%s", "x").Encode(), true},
-		"ready for query": {[]byte{'Z', 0, 0, 0, 5, 'I'}, false},
-		"empty":           {nil, false},
+		"error response":       {errResp, true, true},
+		"ready for query":      {readyForQuery, false, false},
+		"empty":                {nil, false, false},
+		"error after data row": {bytes.Join([][]byte{dataRow, commandComplete, errResp, readyForQuery}, nil), false, true},
+		"rows only":            {bytes.Join([][]byte{dataRow, commandComplete, readyForQuery}, nil), false, false},
+		"truncated":            {dataRow[:6], false, false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, tc.want, isPGErrorResponsePacket(&pb.Packet{Payload: tc.payload}))
+			p := &pb.Packet{Payload: tc.payload}
+			require.Equal(t, tc.first, isPGErrorResponsePacket(p))
+			require.Equal(t, tc.any, hasPGErrorResponse(p))
 		})
 	}
 }

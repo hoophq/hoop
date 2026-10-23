@@ -159,9 +159,11 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			}
 		case pbclient.PGConnectionWrite:
 			// libhoop keeps the guardrails info on every packet from the
-			// ErrorResponse to the ReadyForQuery. Persist it on the
-			// ErrorResponse only: the update appends, so once per block.
-			if isPGErrorResponsePacket(pkt) {
+			// ErrorResponse to the ReadyForQuery. Persist it on the packet
+			// that holds the ErrorResponse only: the update appends, so once
+			// per block. Its redactor can flush DataRow, ..., ErrorResponse,
+			// ReadyForQuery in one packet, so look at every message.
+			if hasPGErrorResponse(pkt) {
 				updateGuardRailsInfoFromPacket(pctx, pkt)
 			}
 			rewritePGGuardRailsErrorPacket(pkt)
@@ -205,8 +207,24 @@ func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) b
 	return true
 }
 
-// isPGErrorResponsePacket reports whether the packet payload is a Postgres
-// ErrorResponse.
+// hasPGErrorResponse reports whether any Postgres message in the packet
+// payload is an ErrorResponse.
+func hasPGErrorResponse(pkt *pb.Packet) bool {
+	buf := bytes.NewBuffer(pkt.Payload)
+	for buf.Len() > 0 {
+		decoded, err := pgtypes.Decode(buf)
+		if err != nil || decoded == nil {
+			return false
+		}
+		if decoded.Type() == pgtypes.ServerErrorResponse {
+			return true
+		}
+	}
+	return false
+}
+
+// isPGErrorResponsePacket reports whether the first Postgres message in the
+// packet payload is an ErrorResponse.
 func isPGErrorResponsePacket(pkt *pb.Packet) bool {
 	if len(pkt.Payload) == 0 {
 		return false
