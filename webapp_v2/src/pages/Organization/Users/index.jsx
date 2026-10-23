@@ -40,8 +40,14 @@ function utcSeconds(iso) {
   return iso ? new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z') : ''
 }
 
+const byNameThenEmail = (a, b) =>
+  (a.name ?? '').toLowerCase().localeCompare((b.name ?? '').toLowerCase()) ||
+  (a.email ?? '').toLowerCase().localeCompare((b.email ?? '').toLowerCase())
+
+// Rows follow the table order (name, then email). Without a page the gateway
+// sorts by email instead.
 function usersCSV(users) {
-  return toCSV(CSV_HEADER, users.map((u) => [
+  return toCSV(CSV_HEADER, [...users].sort(byNameThenEmail).map((u) => [
     u.name,
     u.email,
     u.role,
