@@ -21,7 +21,7 @@
   [{:keys [status on-failure]}]
   (when (= status 401)
     ;; In React shell mode, let React handle the auth redirect
-    (if (shell/react-shell?)
+    (if (shell/cljs-visible?)
       (set! js/window.location.href "/login")
       (rf/dispatch [:navigate :logout-hoop])))
   (when (> status 399) (on-failure)))
