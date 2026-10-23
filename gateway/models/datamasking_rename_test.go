@@ -70,14 +70,25 @@ func TestUpdateDataMaskingRuleRenameConflict(t *testing.T) {
 	}
 }
 
-func TestUpdateDataMaskingRuleRefusesEmptyName(t *testing.T) {
+func TestUpdateDataMaskingRuleKeepsNameWhenEmpty(t *testing.T) {
 	startTestDB(t)
 	r := &models.DataMaskingRule{ID: uuid.NewString(), OrgID: testOrgID, Name: "rule", UpdatedAt: time.Now().UTC()}
 	if err := models.CreateDataMaskingRuleTx(models.DB, r); err != nil {
 		t.Fatalf("create rule: %v", err)
 	}
 	r.Name = ""
-	if err := models.UpdateDataMaskingRuleTx(models.DB, r); err == nil {
-		t.Fatal("update with an empty name: want an error")
+	r.Description = "edited"
+	if err := models.UpdateDataMaskingRuleTx(models.DB, r); err != nil {
+		t.Fatalf("update without a name: %v", err)
+	}
+	if r.Name != "rule" {
+		t.Fatalf("rule.Name after update = %q, want the stored name", r.Name)
+	}
+	got, err := models.GetDataMaskingRuleByID(testOrgID, r.ID)
+	if err != nil {
+		t.Fatalf("read rule: %v", err)
+	}
+	if got.Name != "rule" || got.Description != "edited" {
+		t.Fatalf("stored rule = %q/%q, want rule/edited", got.Name, got.Description)
 	}
 }
