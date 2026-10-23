@@ -15,6 +15,14 @@ $ psql -h hh-pgsql-public.ebi.ac.uk -U reader -d pfmegrnargs -Atc 'select 1, ver
 1|PostgreSQL 16.11 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 8.5.0 20210514
 (reader / NWDMCE5xdipIjRrp is EBI RNAcentral's published read-only login.)
 
+== Laptop control: postman-echo.com, the c4 stand-in
+$ openssl s_client -connect postman-echo.com:443 -servername postman-echo.com </dev/null | openssl x509 -noout -subject -issuer
+subject=CN=postman-echo.com
+issuer=C=US, O=Let's Encrypt, CN=YE2
+$ dig +short postman-echo.com
+162.159.142.41
+https://www.cloudflare.com/ips-v4 lists 162.158.0.0/15, which holds that address.
+
 == First S0 create, with spend_control (out/s0.json was overwritten by the rerun without it)
 $ oai.py run sessions/s0.json out/s0.json prompts/run.txt
 create refused: HTTP 400
@@ -58,6 +66,7 @@ sess_012c698bbc7bcd83006adb8c6e0e8c819797d5827cd0cea9f3 s1a.sh restricted 53168 
 sess_0d8a3399b972584f006adb8c157f648196b600d10c86d78bdb s0.sh enabled 73655 52965 349
 sess_0a759c28305e0d23006adb8b904380819796544bb5e46152ab s0.sh enabled 28682 8974 181
 sessions listed: 9 tokens: {'in': 400328, 'cached': 242452, 'out': 2429} model USD 0.39
+Measured before the WebSocket-frame turn of sess_0c7fb6cf (17:06 UTC); that turn is not counted.
 
 Price used (developers.openai.com/api/llms-full.txt, "Standard pricing data"):
 gpt-6-sol short context: input $2.00, output $10.00, cached input $0.20 per 1M tokens.

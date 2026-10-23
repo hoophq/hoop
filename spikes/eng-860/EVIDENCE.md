@@ -1,6 +1,6 @@
 # ENG-860 evidence: the Claude sidecar shape in OpenAI Agents API hosted sandboxes
 
-Tested 2026-10-23. Agents API beta `OpenAI-Beta: agents=v1`, model `gpt-6-sol` (reasoning `low`), container `small`, sidecar `hoophq/hoopsidecar:1.258.0` (the `deploy/managed-agents/http` pin), cloudflared 2026.10.2. Raw output is in `out/`; `out/operator-notes.txt` keeps the terminal output that no other file holds. Nine sessions measured from their traces used USD 0.39 of model tokens at list price, plus small-container time at USD 0.03 per 20 minutes each. Five more sessions were deleted before they were measured (four `setup.sh` runs, one create-then-delete).
+Tested 2026-10-23. Agents API beta `OpenAI-Beta: agents=v1`, model `gpt-6-sol` (reasoning `low`), container `small`, sidecar `hoophq/hoopsidecar:1.258.0` (the `deploy/managed-agents/http` pin), cloudflared 2026.10.2. Raw output is in `out/`; `out/operator-notes.txt` keeps the terminal output that no other file holds. Nine sessions measured from their traces used USD 0.39 of model tokens at list price (one later turn not counted), plus small-container time at USD 0.03 per 20 minutes each. Five more sessions were deleted before they were measured (four `setup.sh` runs, one create-then-delete).
 
 ## Answer
 
@@ -18,7 +18,7 @@ Tested 2026-10-23. Agents API beta `OpenAI-Beta: agents=v1`, model `gpt-6-sol` (
 | c1 | `restricted`, one sidecar host: lane works and is audited; another host fails | **Works** | S1a: `200` masked, `403 X-Hoop-Denied: policy`, no-token `403`; audit rows name the session, except identity refusals and WebSocket frames. Other hosts: `curl: (56) CONNECT tunnel failed, response 403`, proxy body `Domain forbidden` |
 | c2 | Raw TCP, `psql` to a public Postgres, `restricted` and `enabled` | **Fails** in both | `enabled`: `Network is unreachable`. `restricted`, host allowed: `could not translate host name`. Proxy CONNECT to `:5432`: `200`, then closed on the first Postgres byte |
 | c3 | Vault fills `X-Hoop-Token` and `Bearer <placeholder>`; `env` holds placeholders; other host, body, URL go out unchanged | **Partial**. Works: headers filled, `env` holds placeholders, other host unchanged. **Fails: body and URL are filled too** | Probe: `Bearer <REAL:api-token>`, `/echo?t=<REAL:api-token>`, body `token=<REAL:api-token>`. Placeholder `__OPENAI_SECRET__[NAME:<32 hex>]__`, 71 and 72 chars |
-| c4 | TLS inspection; lane with a public CA certificate; quick tunnel | **Partial**. Works: TLS is inspected, a quick tunnel host works, a public-CA host outside Cloudflare works. **Not tested: the sidecar's own `downstream_tls`** | Issuer `CN=rcgen self signed cert` for the tunnel and for `postman-echo.com`; both answer `200`. `postman-echo.com` stands in for a public-CA lane |
+| c4 | TLS inspection; lane with a public CA certificate; quick tunnel | **Partial**. Works: TLS is inspected, a quick tunnel host works. **Not tested: an origin outside Cloudflare, and the sidecar's own `downstream_tls`** | Issuer `CN=rcgen self signed cert` for the tunnel and for `postman-echo.com`; both answer `200`. `postman-echo.com` has a Let's Encrypt certificate but a Cloudflare address |
 | c5 | WebSocket over 443 to a lane; HTTP CONNECT | **Works** (WebSocket), **Fails** (CONNECT inside TLS) | `101` through the lane, 3 echoes at 215 to 217 ms; CONNECT inside TLS: `403`, `RBAC: access denied` (envoy) |
 | c6 | `service` MCP: source IP vs the lists; `allowed_domains`; `static_bearer` | **Works**; `allowed_domains` **does not apply** | One session: 14 requests from `9.129.44.16..29`, `openai-mcp/1.0.0 (Codex)`, in `9.129.0.0/16` of both lists; `Bearer <REAL:mcp-token>`; the MCP host was not in `allowed_domains` |
 | c6b | `environment` MCP under `restricted` (extra) | **Works** with the host allowed, **fails** without it; **no vault** | Allowed: requests from `20.55.172.114/117` (in `chatgpt-agents.json`), `codex-mcp-client/0.0.0`. Not allowed: turn `connection_failed`. Matching vault credential: create `400` |
@@ -82,8 +82,8 @@ From the laptop, the same Postgres answers `N` to the SSLRequest (`out/operator-
 Credentials: `environment_variable`, `networking: {type: limited, allowed_hosts: [<lane host>]}`. The probe upstream prints a real secret as `<REAL:name>`.
 
 ```
-CUSTOMER_API_TOKEN: len=72 value=__OPENAI_SECRET__[CUSTOMER_API_TOKEN:d2c085886b6b47b28475611bbccd965c]__
-HOOP_CALLER_TOKEN: len=71 value=__OPENAI_SECRET__[HOOP_CALLER_TOKEN:e71aa1f6dfa447a395474c24110c3f5c]__
+CUSTOMER_API_TOKEN: len=72 value=__OPENAI_SECRET__[CUSTOMER_API_TOKEN:052dc9044580404b8a40c19182b6c912]__
+HOOP_CALLER_TOKEN: len=71 value=__OPENAI_SECRET__[HOOP_CALLER_TOKEN:e4a7ac15330d40328d8ea0af4758f2ac]__
 == toward the lane host (headers, URL, body)
 "path": "/echo?t=<REAL:api-token>"
 "authorization": "Bearer <REAL:api-token>"
@@ -114,7 +114,8 @@ postman-echo http=200
 ```
 
 - Sandbox variables: `CODEX_PROXY_CERT=/usr/local/share/ca-certificates/envoy-mitmproxy-ca-cert.crt`, `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` = the system bundle, `NODE_EXTRA_CA_CERTS` = the proxy CA. Debian 12, Python 3.12, `curl` 7.88.1.
-- The sidecar's own `downstream_tls` with a public CA certificate was not tested: this machine has no public host for it. `postman-echo.com` shows that the proxy accepts a public-CA origin outside Cloudflare.
+- The sidecar's own `downstream_tls` with a public CA certificate was not tested: this machine has no public host for it.
+- `postman-echo.com` does not fill that gap. From the laptop it shows a Let's Encrypt certificate, but it resolves to `162.159.142.41`, in Cloudflare's `162.158.0.0/15` (`out/operator-notes.txt`). So no origin outside Cloudflare was tested.
 
 ### c5. WebSocket and CONNECT (S1a rerun)
 
@@ -226,7 +227,7 @@ The `openai` Python SDK 3.37.0 has `client.beta.agents.*` but no CLI, and declar
 
 **One-click on OpenAI** is `setup.sh` once (template, vault, saved agent), then each session names three ids: `agent_id`, `environment.environment_template_id`, `vault_ids`. The template holds the guarantee: no session can broaden its network. The vault is a separate id; a session without it has no tokens and the lane refuses it.
 
-**MCP: re-decide ENG-864 before it starts.** `environment` origin under `restricted` is enforced by the egress like REST; `service` origin is not. The open part is auth: `environment` origin cannot use a vault credential. Test a plugin `.mcp.json` with `bearer_token_env_var` that names a vault variable before choosing.
+**MCP: re-decide ENG-864 before it starts.** In one session each, `environment` origin under `restricted` obeyed `allowed_domains` like REST; `service` origin did not. The open part is auth: `environment` origin cannot use a vault credential. Test a plugin `.mcp.json` with `bearer_token_env_var` that names a vault variable before choosing.
 
 **Databases:** keep the milestone 5 plan. Postgres bytes do not pass the proxy; a WebSocket through a lane works.
 
@@ -234,7 +235,7 @@ The `openai` Python SDK 3.37.0 has `client.beta.agents.*` but no CLI, and declar
 
 | Ticket | Change |
 |---|---|
-| ENG-862 REST template | Context: replace "secrets go only into HTTPS headers" with c3. Test the lane's own public-CA TLS (`downstream_tls`) first: c4 did not. DoD "each audit row names the session": identity refusals and WebSocket frame rows do not. README: a direct call fails with `CONNECT tunnel failed, response 403`; tokens in headers only; the lane listens on 443 only (port 80 passes the proxy). Session id: first message, as Claude; `$CODEX_ENVIRONMENT_ID` as an option. Setup: `setup.sh` (curl + jq), no `ant apply` equivalent. One-click: three ids per session |
+| ENG-862 REST template | Context: replace "secrets go only into HTTPS headers" with c3. Test the lane's own public-CA TLS (`downstream_tls`) first: c4 did not, and it reached no origin outside Cloudflare. DoD "each audit row names the session": identity refusals and WebSocket frame rows do not. README: a direct call fails with `CONNECT tunnel failed, response 403`; tokens in headers only; the lane listens on 443 only (port 80 passes the proxy). Session id: first message, as Claude; `$CODEX_ENVIRONMENT_ID` as an option. Setup: `setup.sh` (curl + jq), no `ant apply` equivalent. One-click: three ids per session |
 | ENG-863 Kubernetes | kubectl must use `HTTPS_PROXY` and trust the system bundle (it holds the proxy CA), not a pinned cluster CA. Packages under `restricted`: not verified here |
 | ENG-864 MCP | DoD line "environment origin needs `enabled`" does not match c6b. Decide between `environment` origin (enforced, auth open) and `service` origin (`allowed_domains` does not apply; the addresses are in lists shared by all OpenAI customers) |
 | ENG-865 quick start | c4: a quick tunnel host works. `agent.sh` is `setup.sh` (no CLI to install). The recording runs `setup.sh`, the audit query and `--delete` in 54 s, sidecar already running |
