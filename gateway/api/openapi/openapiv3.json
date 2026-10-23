@@ -3270,7 +3270,7 @@
             "type": "string"
           },
           "name": {
-            "description": "The unique name of the data masking rule, it's immutable after creation",
+            "description": "The unique name of the data masking rule. An update with a new name renames it",
             "example": "mask-email",
             "type": "string"
           },
@@ -3397,7 +3397,7 @@
             "type": "string"
           },
           "name": {
-            "description": "The unique name of the data masking rule, it's immutable after creation",
+            "description": "The unique name of the data masking rule. An update with a new name renames it",
             "example": "mask-email",
             "type": "string"
           },
@@ -14491,6 +14491,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
