@@ -5,8 +5,15 @@
 # which tunnels a twin's hostname to the twin and refuses any other host.
 name: twins
 
+# yes: make twins-up or TWINS_KEEP=1 left the stack up, and a later run must
+# not take it down (refuseBesideKept in up_test.go). Every service carries
+# it, so twins-down also finds a kept start that failed before the gateway.
+x-kept: &kept
+  twins.kept: ${TWINS_KEPT:-no}
+
 x-twins: &twins
   image: hoop-twins:scenario
+  labels: *kept
   volumes: [pki:/pki:ro]
   depends_on: { pki: { condition: service_completed_successfully } }
   healthcheck:
@@ -19,11 +26,13 @@ services:
     image: hoop-twins:scenario
     build: ..
     command: [pki, -dir=/pki, -leaf=oidc=oidc-twin,localhost,127.0.0.1]
+    labels: *kept
     volumes: [pki:/pki]
 
   oidc-twin:
     <<: *twins
-    command: [oidc, -issuer=https://oidc-twin, -cert=/pki/oidc.crt, -key=/pki/oidc.key]
+    # A browser on the host reaches authorize on the mapped admin port.
+    command: [oidc, -issuer=https://oidc-twin, -browser-url=http://127.0.0.1:18081, -cert=/pki/oidc.crt, -key=/pki/oidc.key]
     ports: ["127.0.0.1:18081:8080"]
 
   router:
@@ -40,6 +49,7 @@ services:
   gateway:
     image: alpine:3.20
     entrypoint: [/hoop/hoop, start, standalone]
+    labels: *kept
     environment:
       PORT: "18009"
       API_URL: http://127.0.0.1:18009
