@@ -67,9 +67,10 @@ type scanner struct {
 	pos   int
 	rules lexRules
 
-	// execDepth counts open `/*! ... */` executable comments. Their bodies
-	// are live SQL, so the scanner stays inside the statement and only owes
-	// the closing delimiter; see skipComment.
+	// execDepth counts open `/*! ... */` executable comments, or Spark
+	// `/*+ ... */` hints. Their bodies are live tokens, so the scanner stays
+	// inside the statement and only owes the closing delimiter; see
+	// skipComment.
 	execDepth int
 
 	// incomplete records the first construct the scanner could not finish.
@@ -91,17 +92,25 @@ func scan(src string, d Dialect) ([]Token, string) {
 // analyzeMySQL.
 func scanWith(src string, rules lexRules) ([]Token, string) {
 	s := &scanner{src: src, rules: rules}
+	// Checked on the raw text, not per token: the substitution runs before
+	// the server's lexer, so a `${` inside a literal is as live as one
+	// outside it. See lexRules.substitution.
+	if rules.substitution && strings.Contains(src, "${") {
+		s.fail("variable substitution; ${...} is replaced before the statement is parsed")
+	}
 	// One token per ~6 bytes is close for SQL and avoids most regrowth.
 	out := make([]Token, 0, len(src)/6+8)
 	for {
 		tok, ok := s.next()
 		if !ok {
-			// An executable comment left open ran off the end of the
-			// input. Its body was scanned as live SQL, so the tokens are
-			// real, but the statement is truncated and what follows the
-			// missing close is unknown. Fail closed rather than report a
-			// clean scan of half a statement.
-			if s.execDepth > 0 {
+			// An executable comment or hint left open ran off the end of
+			// the input. Its body was scanned as live SQL, so the tokens
+			// are real, but the statement is truncated and what follows
+			// the missing close is unknown. Fail closed rather than report
+			// a clean scan of half a statement.
+			if s.execDepth > 0 && rules.liveHint {
+				s.fail("unterminated optimizer hint")
+			} else if s.execDepth > 0 {
 				s.fail("unterminated executable comment")
 			}
 			return out, s.incomplete
@@ -179,6 +188,12 @@ func (s *scanner) next() (Token, bool) {
 		}
 		return s.word(), true
 
+	// Spark's one string prefix, gated and ahead of the word case for the
+	// reason above. Only a quote glued to the r makes it a prefix.
+	case s.rules.rawStringR && (c == 'r' || c == 'R') && (s.peek(1) == '\'' || s.peek(1) == '"'):
+		s.pos++
+		return s.rawStringLit(s.src[s.pos]), true
+
 	// Ahead of the identifier case below: under GoogleSQL '"' delimits a
 	// STRING, interchangeable with '\'', and identifiers are backticked.
 	case s.rules.doubleQuoteString && c == '"':
@@ -228,9 +243,32 @@ func (s *scanner) skipSpace() {
 		case ' ', '\t', '\r', '\n', '\f', '\v':
 			s.pos++
 		default:
-			return
+			n := s.unicodeSpaceAt(s.pos)
+			if n == 0 {
+				return
+			}
+			s.pos += n
 		}
 	}
+}
+
+// unicodeSpaceAt returns the byte length of the Unicode space at pos, or 0
+// when there is none or the dialect does not read them as spaces.
+//
+// The set is Spark's WS rule exactly. unicode.IsSpace is wider — it takes
+// U+0085 and U+2029 — and splitting a word Spark keeps whole invents a verb
+// out of an identifier.
+func (s *scanner) unicodeSpaceAt(pos int) int {
+	if !s.rules.unicodeSpace || s.src[pos] < 0x80 {
+		return 0
+	}
+	r, n := utf8.DecodeRuneInString(s.src[pos:])
+	switch {
+	case r == '\u00a0', r == '\u1680', r >= '\u2000' && r <= '\u200a',
+		r == '\u2028', r == '\u202f', r == '\u205f', r == '\u3000':
+		return n
+	}
+	return 0
 }
 
 // skipComment consumes one comment and reports whether it did.
@@ -242,6 +280,13 @@ func (s *scanner) skipComment() bool {
 	// the second statement never analyzed.
 	if s.peek(0) == '-' && s.peek(1) == '-' && (!s.rules.dashCommentNeedsSpace || s.dashOpensComment()) {
 		for s.pos < len(s.src) && s.src[s.pos] != '\n' {
+			// Spark carries the comment over a backslash-newline. Only
+			// LF: before CR LF the backslash is an ordinary byte and the
+			// comment ends at that line.
+			if s.rules.dashCommentContinues && s.src[s.pos] == '\\' && s.peek(1) == '\n' {
+				s.pos += 2
+				continue
+			}
 			// A lone CR ends the comment too where the engine says so;
 			// see lexRules.dashCommentEndsAtCR.
 			if s.rules.dashCommentEndsAtCR && s.src[s.pos] == '\r' {
@@ -299,6 +344,15 @@ func (s *scanner) skipComment() bool {
 		s.execDepth++
 		return true
 	}
+	// A Spark optimizer hint. Its body is lexed like any SQL, so it is
+	// scanned in place as the executable comment above is; see
+	// lexRules.liveHint. Spark only asks at this outer `/*`: inside a
+	// comment, `/*+` nests as an ordinary opener, as below.
+	if s.rules.liveHint && s.peek(2) == '+' {
+		s.pos += 3
+		s.execDepth++
+		return true
+	}
 	// PostgreSQL and T-SQL NEST block comments, unlike the standard. A
 	// scanner stopping at the first close reads the tail of an outer
 	// comment as live SQL: `/* a /* b */ DELETE FROM t */` is entirely
@@ -308,6 +362,13 @@ func (s *scanner) skipComment() bool {
 	depth := 0
 	for s.pos < len(s.src) {
 		switch {
+		// Released Spark reads a `/*+` inside a comment as text: its
+		// nested opener carries the same hint check as the outer one, so
+		// only a `/*` without `+` nests. The outer `/*` never lands here
+		// as a hint; the branch above took it.
+		case s.rules.liveHint && !s.rules.hintOpensNestedComment &&
+			s.peek(0) == '/' && s.peek(1) == '*' && s.peek(2) == '+':
+			s.pos++
 		case s.peek(0) == '/' && s.peek(1) == '*':
 			depth++
 			s.pos += 2
@@ -725,6 +786,11 @@ func (s *scanner) word() Token {
 	start := s.pos
 	for s.pos < len(s.src) && (isWordByte(s.src[s.pos]) ||
 		(s.rules.identDollarHash && (s.src[s.pos] == '$' || s.src[s.pos] == '#'))) {
+		// A Unicode space is a byte >= 0x80, which isWordByte takes; under
+		// Spark it ends the word instead. See lexRules.unicodeSpace.
+		if s.unicodeSpaceAt(s.pos) > 0 {
+			break
+		}
 		s.pos++
 	}
 	return Token{Kind: Word, Text: strings.ToLower(s.src[start:s.pos])}
@@ -769,11 +835,16 @@ func isTagByte(c byte) bool {
 // 21c). Its only inner semicolons belong to PL/SQL, and a fragment of a
 // block loses the context Analyze needs: `FORALL i IN 1 .. n DELETE FROM t`
 // alone reports no delete. Analyze reads the whole text instead.
+//
+// Spark is the same: its grammar takes one statement or one BEGIN ... END
+// script per call, and `SELECT 1; SELECT 2` fails with PARSE_SYNTAX_ERROR on
+// Databricks SQL. A fragment of a script loses the BEGIN that makes `WHILE c
+// DO DELETE FROM t` a statement.
 func Split(sql string, d Dialect) []string {
 	switch d {
 	case MySQL:
 		return splitMySQL(sql)
-	case Oracle:
+	case Oracle, Spark:
 		if t := strings.TrimSpace(sql); t != "" {
 			return []string{t}
 		}

@@ -460,10 +460,13 @@ func TestAnalyzeDoesNotPanic(t *testing.T) {
 		"q'", "q'[", "nq'", "Nq'x", "q'\xff", "q'\xc3", ":", ":a", "a@", "a@b.", "begin", "declare",
 		"create trigger", "create trigger t on", "create trigger t on nested", "create procedure",
 		"with", "with as", "with x as", "select from", "delete from",
+		"/*+", "/*+ x", "/*+ /*", "${", "--\\", "--\\\n", "\u00a0", "\xc2", "r'", `R"`, "begin",
+		"begin transaction", "from", "copy into", "insert overwrite", "convert", "convert to",
+		"convert to delta", "cache", "cache lazy", "vacuum", "restore table",
 		strings.Repeat("(", 200), strings.Repeat(")", 200),
-		strings.Repeat("with x as (", 50),
+		strings.Repeat("with x as (", 50), strings.Repeat("/*+ ", 50),
 	} {
-		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse, lexer.GoogleSQL, lexer.Oracle} {
+		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse, lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
 			lexer.Analyze(sql, d)
 			lexer.Split(sql, d)
 		}
@@ -1574,6 +1577,524 @@ func TestOracleRenameIsAnAlterOfItsTable(t *testing.T) {
 		a := lexer.Analyze(sql, lexer.Oracle)
 		if a.Verb != lexer.Alter || !slices.Equal(writes(a), []string{"customers"}) || !a.Complete {
 			t.Errorf("verb = %v, writes = %v, complete = %v: %s", a.Verb, writes(a), a.Complete, sql)
+		}
+	}
+}
+
+// Spark carries a `--` comment over a backslash-newline, so the quote on the
+// next line is commentary and the DROP after it runs. Verified on a
+// Databricks SQL warehouse: this dropped the table. Only LF continues: before
+// CR LF the backslash is an ordinary byte.
+func TestSparkDashCommentContinuesPastBackslashNewline(t *testing.T) {
+	const bypass = "-- x \\\nSELECT '\nDROP TABLE t -- '"
+	a := lexer.Analyze(bypass, lexer.Spark)
+	if a.Severity() != lexer.Drop || !slices.Equal(writes(a), []string{"t"}) || !a.Complete {
+		t.Errorf("severity = %q, writes = %v, complete = %v; the DROP hid in a literal", a.Severity(), writes(a), a.Complete)
+	}
+	if a := lexer.Analyze(bypass, lexer.Postgres); a.Severity() != lexer.Select {
+		t.Errorf("postgres severity = %q; the continuation leaked out of Spark", a.Severity())
+	}
+
+	for _, tc := range []struct {
+		sql  string
+		want lexer.Verb
+	}{
+		{"SELECT 1 AS x -- note \\\n; DELETE FROM t", lexer.Select},
+		{"SELECT 1 AS x -- a \\\n b \\\n; DELETE FROM t", lexer.Select},
+		{"SELECT 1 AS x -- note \\\\\n; DELETE FROM t", lexer.Select},
+		{"SELECT 1 AS x -- note \\\r\n; DELETE FROM t", lexer.Delete},
+		{"SELECT 1 AS x -- note \\ \n; DELETE FROM t", lexer.Delete},
+		// A lone CR ends the comment too, as LF does (SIMPLE_COMMENT).
+		{"SELECT 1 AS x -- note\r; DELETE FROM t", lexer.Delete},
+		{"-- x\rDROP TABLE t", lexer.Drop},
+		{"-- x\rVACUUM t", lexer.Delete},
+	} {
+		if got := lexer.Analyze(tc.sql, lexer.Spark).Severity(); got != tc.want {
+			t.Errorf("severity = %q, want %q: %q", got, tc.want, tc.sql)
+		}
+	}
+}
+
+// Spark's whitespace includes the Unicode spaces of its WS rule, so a
+// no-break space between DROP and TABLE is two words to Spark and one to
+// every other dialect here. Verified on a Databricks SQL warehouse: the table
+// was dropped. A zero-width space and U+2029 are not in the rule; splitting
+// on them would invent verbs out of identifiers.
+func TestSparkUnicodeSpaceSeparatesWords(t *testing.T) {
+	for _, sp := range []string{"\u00a0", "\u1680", "\u2000", "\u2005", "\u200a", "\u2028", "\u202f", "\u205f", "\u3000"} {
+		sql := "DROP" + sp + "TABLE" + sp + "t"
+		a := lexer.Analyze(sql, lexer.Spark)
+		if a.Severity() != lexer.Drop || !slices.Equal(writes(a), []string{"t"}) {
+			t.Errorf("U+%04X: severity = %q, writes = %v", []rune(sp)[0], a.Severity(), writes(a))
+		}
+		if got := lexer.Analyze(sql, lexer.Postgres).Severity(); got == lexer.Drop {
+			t.Errorf("U+%04X: postgres reads a drop; Unicode spaces leaked out of Spark", []rune(sp)[0])
+		}
+	}
+	for _, sp := range []string{"\u200b", "\u2029", "\u0085", "\ufeff"} {
+		if got := lexer.Analyze("DROP"+sp+"TABLE t", lexer.Spark).Severity(); got == lexer.Drop {
+			t.Errorf("U+%04X is not Spark whitespace, but split the word into a drop", []rune(sp)[0])
+		}
+	}
+	if a := lexer.Analyze("SELECT a\u3000FROM t", lexer.Spark); !slices.Equal(reads(a), []string{"t"}) {
+		t.Errorf("reads = %v, want [t]", reads(a))
+	}
+}
+
+// A `/*+ ... */` hint is live tokens in Spark: a string inside it may hold
+// `*/`, and a scanner that reads the hint as a comment ends it there and
+// opens a literal on the quote after it. Verified on a Databricks SQL
+// warehouse: the script below dropped the table.
+func TestSparkHintBodyIsLive(t *testing.T) {
+	a := lexer.Analyze("BEGIN SELECT /*+ X('*/') */ 1; DROP TABLE t; END; --'", lexer.Spark)
+	if !slices.Contains(a.Effects, lexer.Drop) || !slices.Equal(writes(a), []string{"t"}) {
+		t.Errorf("effects = %v, writes = %v; the DROP hid behind the hint", a.Effects, writes(a))
+	}
+	if a := lexer.Analyze("SELECT /*+ X('*/') */ * FROM t --'", lexer.Spark); !slices.Equal(reads(a), []string{"t"}) || !a.Complete {
+		t.Errorf("reads = %v, complete = %v; the hint swallowed the FROM", reads(a), a.Complete)
+	}
+	for _, sql := range []string{
+		"SELECT /*+ BROADCAST(s) */ * FROM t JOIN s ON t.id = s.id",
+		"SELECT /*+ MERGE(t, s) */ * FROM t JOIN s ON t.id = s.id",
+		"SELECT /*+ REPARTITION(3) /* why */ */ * FROM t",
+		"INSERT /*+ REBALANCE */ INTO t SELECT * FROM s",
+	} {
+		a := lexer.Analyze(sql, lexer.Spark)
+		if !a.Complete || slices.Contains(a.Effects, lexer.Merge) || slices.Contains(a.Effects, lexer.Delete) {
+			t.Errorf("complete = %v (%s), effects = %v: %s", a.Complete, a.Reason, a.Effects, sql)
+		}
+	}
+	if a := lexer.Analyze("SELECT /*+ REPARTITION(3) FROM t", lexer.Spark); a.Complete {
+		t.Error("Complete = true with the hint never closed")
+	}
+	// Elsewhere `/*+` is an ordinary comment.
+	if a := lexer.Analyze("SELECT 1 /*+ DROP TABLE t */", lexer.Postgres); a.Severity() != lexer.Select {
+		t.Errorf("postgres severity = %q; the live hint leaked out of Spark", a.Severity())
+	}
+}
+
+// Spark replaces ${var} in the raw text before it parses, inside literals
+// too, so the statement it runs is one this scanner never saw.
+func TestSparkVariableSubstitutionFailsClosed(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT * FROM ${tbl}",
+		"SELECT '${x}' AS y",
+		"SELECT 1 -- ${x}",
+		"/* ${x} */ SELECT 1",
+	} {
+		if a := lexer.Analyze(sql, lexer.Spark); a.Complete {
+			t.Errorf("Complete = true with a substitution: %s", sql)
+		}
+	}
+	for _, sql := range []string{"SELECT '$x' AS y", "SELECT '{x}' AS y", "SELECT $$it's$$ AS y"} {
+		if a := lexer.Analyze(sql, lexer.Spark); !a.Complete {
+			t.Errorf("Complete = false (%s) without a substitution: %s", a.Reason, sql)
+		}
+	}
+	if a := lexer.Analyze("SELECT '${x}' AS y", lexer.Postgres); !a.Complete {
+		t.Error("postgres conceded on ${; the substitution leaked out of Spark")
+	}
+}
+
+// Spark nests block comments. In the first statement the DROP sits after
+// the comment closes, and Spark ran it on a Databricks SQL warehouse; a flat
+// reader ends the comment early and the quote hides the DROP. In the second
+// the DELETE is inside the comment.
+func TestSparkBlockCommentsNest(t *testing.T) {
+	a := lexer.Analyze("/* /* */ SELECT 'x */ DROP TABLE t; -- '", lexer.Spark)
+	if a.Severity() != lexer.Drop || !slices.Equal(writes(a), []string{"t"}) {
+		t.Errorf("severity = %q, writes = %v; a flat comment hid the DROP", a.Severity(), writes(a))
+	}
+	if a := lexer.Analyze("/* a /* b */ DELETE FROM t */ SELECT 1", lexer.Spark); a.Severity() != lexer.Select || len(a.Relations) != 0 {
+		t.Errorf("severity = %q, relations = %v; a nested comment leaked a DELETE", a.Severity(), a.Relations)
+	}
+}
+
+// Spark's quoting: backslash escapes in both quote styles, '"' a string,
+// backticks doubled, R the only raw prefix, $tag$ quotes, and no '#' comment.
+// Each row is a statement whose literal boundary decides whether a DELETE is
+// live.
+func TestSparkQuoting(t *testing.T) {
+	for _, tc := range []struct {
+		why, sql string
+		want     lexer.Verb
+		writes   []string
+	}{
+		{"backslash escapes a quote", `SELECT 'a\'; DELETE FROM t; --'`, lexer.Select, nil},
+		{"'\"' is a string", `SELECT "a\"; DELETE FROM t; --"`, lexer.Select, nil},
+		{"a string is no relation", `DELETE FROM "t"`, lexer.Delete, nil},
+		{"r'' is raw", `SELECT r'\'; DELETE FROM t; --'`, lexer.Delete, []string{"t"}},
+		{"R\"\" is raw", `SELECT R"\"; DELETE FROM t; --"`, lexer.Delete, []string{"t"}},
+		{"b'' is no prefix", `SELECT b'\'; DELETE FROM t; --'`, lexer.Select, nil},
+		{"rb'' is no prefix", `SELECT rb'\'; DELETE FROM t; --'`, lexer.Select, nil},
+		{"no triple quotes", `SELECT '''; DELETE FROM t; --'`, lexer.Select, nil},
+		{"doubled backtick", "DELETE FROM `a``b`", lexer.Delete, []string{"a`b"}},
+		{"backslash in a backtick is a byte", "DELETE FROM `a\\`", lexer.Delete, []string{`a\`}},
+		{"dollar quote", `SELECT $q$; DELETE FROM t; $q$`, lexer.Select, nil},
+		{"'#' is no comment", "SELECT 1 # ;DELETE FROM t", lexer.Delete, []string{"t"}},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Spark)
+		if a.Severity() != tc.want || !slices.Equal(writes(a), tc.writes) || !a.Complete {
+			t.Errorf("%s: severity = %q, writes = %v, complete = %v (%s), want %q %v: %s",
+				tc.why, a.Severity(), writes(a), a.Complete, a.Reason, tc.want, tc.writes, tc.sql)
+		}
+	}
+}
+
+// `:name` parameters and JSON paths may spell a keyword; `?` is punctuation.
+// Read as words, `:from` or `raw:from` would put an introducer mid-predicate
+// and invent a relation from the next word.
+func TestSparkParametersInventNoRelations(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT * FROM t WHERE a = :from AND b = ?",
+		"SELECT raw:from, raw:into FROM t",
+		"SELECT x::int FROM t",
+	} {
+		a := lexer.Analyze(sql, lexer.Spark)
+		if !slices.Equal(reads(a), []string{"t"}) || len(writes(a)) != 0 || a.Severity() != lexer.Select {
+			t.Errorf("reads = %v, writes = %v, severity = %q: %s", reads(a), writes(a), a.Severity(), sql)
+		}
+	}
+}
+
+// The Delta Lake commands and Spark's own maintenance verbs. VACUUM deletes
+// the files older versions need; the rest rewrite, roll back or re-register
+// the table. Each names its target, written. DESCRIBE reads metadata, and
+// CACHE and UNCACHE read the table into memory or drop it from there.
+func TestSparkMaintenanceCommands(t *testing.T) {
+	for _, tc := range []struct {
+		sql    string
+		verb   lexer.Verb
+		writes []string
+		reads  []string
+	}{
+		{"VACUUM t RETAIN 0 HOURS", lexer.Delete, []string{"t"}, nil},
+		{"VACUUM c.s.t DRY RUN", lexer.Delete, []string{"c.s.t"}, nil},
+		{"VACUUM '/mnt/t'", lexer.Delete, nil, nil},
+		// Any word names a relation here: Databricks SQL parses these.
+		{"VACUUM over RETAIN 0 HOURS", lexer.Delete, []string{"over"}, nil},
+		{"OPTIMIZE between ZORDER BY (a)", lexer.Alter, []string{"between"}, nil},
+		{"RESTORE like TO VERSION AS OF 1", lexer.Alter, []string{"like"}, nil},
+		{"OPTIMIZE t WHERE d > '2024' ZORDER BY (a)", lexer.Alter, []string{"t"}, nil},
+		{"RESTORE TABLE t TO VERSION AS OF 1", lexer.Alter, []string{"t"}, nil},
+		{"RESTORE t TO TIMESTAMP AS OF '2024-01-01'", lexer.Alter, []string{"t"}, nil},
+		{"REORG TABLE t APPLY (PURGE)", lexer.Alter, []string{"t"}, nil},
+		{"CONVERT TO DELTA parquet.`/mnt/t` PARTITIONED BY (d DATE)", lexer.Alter, []string{"parquet./mnt/t"}, nil},
+		{"MSCK REPAIR TABLE t SYNC PARTITIONS", lexer.Alter, []string{"t"}, nil},
+		{"REPAIR TABLE t", lexer.Alter, []string{"t"}, nil},
+		{"REPLACE TABLE t AS SELECT * FROM s", lexer.Create, []string{"t"}, []string{"s"}},
+		{"LOAD DATA INPATH '/p' OVERWRITE INTO TABLE t", lexer.Insert, []string{"t"}, nil},
+		{"DESCRIBE TABLE t", lexer.Show, nil, []string{"t"}},
+		{"DESC HISTORY t", lexer.Show, nil, []string{"t"}},
+		{"DESCRIBE t", lexer.Show, nil, []string{"t"}},
+		{"DESCRIBE TABLE EXTENDED t", lexer.Show, nil, []string{"t"}},
+		{"DESC FORMATTED c.s.t", lexer.Show, nil, []string{"c.s.t"}},
+		{"DESCRIBE DETAIL t", lexer.Show, nil, []string{"t"}},
+		{"DESCRIBE FUNCTION f", lexer.Show, nil, nil},
+		{"DESCRIBE SCHEMA s", lexer.Show, nil, nil},
+		{"DESCRIBE QUERY SELECT * FROM t", lexer.Show, nil, []string{"t"}},
+		{"GENERATE symlink_format_manifest FOR TABLE t", lexer.Alter, []string{"t"}, nil},
+		{"CACHE TABLE t", lexer.Other, nil, []string{"t"}},
+		{"CACHE LAZY TABLE t AS SELECT * FROM s", lexer.Other, nil, []string{"t", "s"}},
+		{"UNCACHE TABLE IF EXISTS t", lexer.Other, nil, []string{"t"}},
+		{"CACHE SELECT * FROM t", lexer.Other, nil, []string{"t"}},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Spark)
+		if a.Verb != tc.verb || !slices.Equal(writes(a), tc.writes) || !slices.Equal(reads(a), tc.reads) || !a.Complete {
+			t.Errorf("verb = %q, writes = %v, reads = %v, complete = %v, want %q %v %v: %s",
+				a.Verb, writes(a), reads(a), a.Complete, tc.verb, tc.writes, tc.reads, tc.sql)
+		}
+	}
+}
+
+// Statements whose target no INTO-after-INSERT introduces, all of which ran
+// on a Databricks SQL warehouse: COPY INTO, INSERT OVERWRITE with and
+// without TABLE, and the FROM-first multi-insert. Read as PostgreSQL, the
+// first was a select and the targets of the others were reads or missing.
+func TestSparkWriteTargets(t *testing.T) {
+	for _, tc := range []struct {
+		sql    string
+		verb   lexer.Verb
+		writes []string
+		reads  []string
+	}{
+		{"COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", lexer.Copy, []string{"t"}, nil},
+		{"COPY INTO t FROM (SELECT a FROM 's3://b/p') FILEFORMAT = PARQUET", lexer.Copy, []string{"t"}, nil},
+		{"INSERT OVERWRITE t SELECT * FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"INSERT OVERWRITE TABLE t PARTITION (p = 1) SELECT * FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"INSERT OVERWRITE LOCAL DIRECTORY '/tmp/x' SELECT * FROM s", lexer.Insert, nil, []string{"s"}},
+		{"FROM s INSERT INTO t SELECT a INSERT OVERWRITE TABLE u SELECT b", lexer.Insert, []string{"t", "u"}, []string{"s"}},
+		{"INSERT WITH SCHEMA EVOLUTION INTO t SELECT * FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"INSERT WITH SCHEMA EVOLUTION OVERWRITE t SELECT * FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"INSERT WITH SCHEMA EVOLUTION OVERWRITE TABLE t SELECT * FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"FROM s INSERT INTO t SELECT a INSERT WITH SCHEMA EVOLUTION OVERWRITE TABLE u SELECT b", lexer.Insert, []string{"t", "u"}, []string{"s"}},
+		{"FROM s SELECT a", lexer.Select, nil, []string{"s"}},
+		{"MERGE WITH SCHEMA EVOLUTION INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET *", lexer.Merge, []string{"t"}, []string{"s"}},
+		{"CREATE TABLE t (a INT) USING DELTA", lexer.Create, []string{"t"}, nil},
+		{"CREATE TABLE t USING DELTA AS SELECT * FROM s", lexer.Create, []string{"t"}, []string{"s"}},
+		// OVERWRITE names a target only after INSERT. Elsewhere it is a
+		// name, here an alias, and the FROM after it still names s.
+		{"SELECT id overwrite FROM s", lexer.Select, nil, []string{"s"}},
+		{"CREATE TABLE t AS SELECT x overwrite FROM s", lexer.Create, []string{"t"}, []string{"s"}},
+		{"INSERT INTO t SELECT x overwrite FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		{"INSERT OVERWRITE t SELECT x overwrite FROM s", lexer.Insert, []string{"t"}, []string{"s"}},
+		// EXPLAIN plans the INSERT and writes nothing; the plan shows t.
+		{"EXPLAIN INSERT OVERWRITE t SELECT 1", lexer.Explain, nil, []string{"t"}},
+		{"EXPLAIN FORMATTED INSERT OVERWRITE t SELECT 1", lexer.Explain, nil, []string{"t"}},
+		{"EXPLAIN INSERT WITH SCHEMA EVOLUTION OVERWRITE t SELECT 1", lexer.Explain, nil, []string{"t"}},
+		{"EXPLAIN SELECT insert overwrite FROM s", lexer.Explain, nil, []string{"s"}},
+		{"LOAD DATA INPATH '/p' OVERWRITE INTO TABLE t", lexer.Insert, []string{"t"}, nil},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Spark)
+		if a.Verb != tc.verb || !slices.Equal(writes(a), tc.writes) || !slices.Equal(reads(a), tc.reads) || !a.Complete {
+			t.Errorf("verb = %q, writes = %v, reads = %v, complete = %v, want %q %v %v: %s",
+				a.Verb, writes(a), reads(a), a.Complete, tc.verb, tc.writes, tc.reads, tc.sql)
+		}
+	}
+}
+
+// A Spark SQL script runs its statements under control flow: it is
+// incomplete, and every write in it is an effect, wherever the grammar puts
+// it — after BEGIN, DO, LOOP, REPEAT, a label, or a handler's condition list.
+// BEGIN TRANSACTION and BEGIN WORK are a transaction start, and END is never
+// a commit.
+func TestSparkScripts(t *testing.T) {
+	for _, tc := range []struct {
+		sql    string
+		effect lexer.Verb
+		writes []string
+	}{
+		{"BEGIN DROP TABLE t; END", lexer.Drop, []string{"t"}},
+		{"BEGIN NOT ATOMIC DELETE FROM t; END", lexer.Delete, []string{"t"}},
+		{"BEGIN ATOMIC UPDATE t SET a = 1; END", lexer.Update, []string{"t"}},
+		{"BEGIN DECLARE c INT DEFAULT 0; WHILE c < 3 DO DELETE FROM t; SET c = c + 1; END WHILE; END", lexer.Delete, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION DROP TABLE t; SELECT 1; END", lexer.Drop, []string{"t"}},
+		{"BEGIN DECLARE CONTINUE HANDLER FOR SQLSTATE '22012' VACUUM t; SELECT 1; END", lexer.Delete, []string{"t"}},
+		{"BEGIN lbl: LOOP UPDATE t SET a = 1; LEAVE lbl; END LOOP lbl; END", lexer.Update, []string{"t"}},
+		{"BEGIN lbl:BEGIN DROP TABLE t; END lbl; END", lexer.Drop, []string{"t"}},
+		{"BEGIN REPEAT INSERT INTO t VALUES (1); UNTIL true END REPEAT; END", lexer.Insert, []string{"t"}},
+		{"BEGIN IF x THEN SELECT 1; ELSE TRUNCATE TABLE t; END IF; END", lexer.Truncate, []string{"t"}},
+		{"BEGIN FOR r AS SELECT a FROM s DO MERGE INTO t USING s ON t.a = s.a WHEN MATCHED THEN DELETE; END FOR; END", lexer.Delete, []string{"t"}},
+		{"BEGIN SELECT /*+ MERGE(a, b) */ * FROM a JOIN b ON a.id = b.id; END", lexer.Select, nil},
+		// REPLACE is no verb anywhere in a script, since replace() is a
+		// function, so these depend on the head position each keyword
+		// restores.
+		{"BEGIN NOT ATOMIC REPLACE TABLE t AS SELECT 1; END", lexer.Create, []string{"t"}},
+		{"BEGIN WHILE c DO REPLACE TABLE t AS SELECT 1; END WHILE; END", lexer.Create, []string{"t"}},
+		{"BEGIN LOOP REPLACE TABLE t AS SELECT 1; END LOOP; END", lexer.Create, []string{"t"}},
+		{"BEGIN REPEAT REPLACE TABLE t AS SELECT 1; UNTIL true END REPEAT; END", lexer.Create, []string{"t"}},
+		{"BEGIN lbl: BEGIN REPLACE TABLE t AS SELECT 1; END lbl; END", lexer.Create, []string{"t"}},
+		// A label may spell TRANSACTION or WORK; Databricks runs these as
+		// scripts, so they are not a transaction start.
+		{"BEGIN work: BEGIN DROP TABLE t; END work; END", lexer.Drop, []string{"t"}},
+		{"BEGIN transaction: BEGIN DELETE FROM t; END transaction; END", lexer.Delete, []string{"t"}},
+		{"BEGIN work:BEGIN DROP TABLE t; END work; END", lexer.Drop, []string{"t"}},
+		{"BEGIN lbl:LOOP DELETE FROM t; LEAVE lbl; END LOOP lbl; END", lexer.Delete, []string{"t"}},
+		// A handler's statement follows its whole condition list.
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION REPLACE TABLE t AS SELECT 1; SELECT 1/0; END", lexer.Create, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION GENERATE symlink_format_manifest FOR TABLE t; SELECT 1/0; END", lexer.Alter, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR NOT FOUND, SQLSTATE VALUE '22012' DELETE FROM t; SELECT 1; END", lexer.Delete, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR c.d DROP TABLE t; SELECT 1; END", lexer.Drop, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR drop DROP TABLE t; SELECT 1; END", lexer.Drop, []string{"t"}},
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN DELETE FROM t; END; SELECT 1; END", lexer.Delete, []string{"t"}},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Spark)
+		if a.Complete {
+			t.Errorf("Complete = true on a script: %s", tc.sql)
+		}
+		if !slices.Contains(a.Effects, tc.effect) || !slices.Equal(writes(a), tc.writes) {
+			t.Errorf("effects = %v, writes = %v, want %q %v: %s", a.Effects, writes(a), tc.effect, tc.writes, tc.sql)
+		}
+		if slices.Contains(a.Effects, lexer.Begin) || slices.Contains(a.Effects, lexer.Commit) || slices.Contains(a.Effects, lexer.Merge) && tc.effect == lexer.Select {
+			t.Errorf("effects = %v; a block keyword or a hint read as a statement: %s", a.Effects, tc.sql)
+		}
+	}
+	for _, sql := range []string{"BEGIN TRANSACTION", "BEGIN WORK", "begin transaction", "BEGIN TRANSACTION;"} {
+		a := lexer.Analyze(sql, lexer.Spark)
+		if a.Verb != lexer.Begin || !a.Complete {
+			t.Errorf("verb = %q, complete = %v, want a complete begin: %s", a.Verb, a.Complete, sql)
+		}
+	}
+	// Databricks rejects any clause after TRANSACTION; read as a script, the
+	// statement is incomplete rather than a begin.
+	if a := lexer.Analyze("BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE", lexer.Spark); a.Complete || a.Verb == lexer.Begin {
+		t.Errorf("verb = %q, complete = %v, want an incomplete script", a.Verb, a.Complete)
+	}
+	if a := lexer.Analyze("END", lexer.Spark); slices.Contains(a.Effects, lexer.Commit) {
+		t.Errorf("effects = %v; END read as a commit", a.Effects)
+	}
+}
+
+// Inside a script, statements begin only where the grammar puts them, so a
+// verb elsewhere is no write: SHOW CREATE TABLE reads, a column may be called
+// load or generate, and MERGE is also a join hint. Read as writes, each
+// refused a read.
+func TestSparkScriptsInventNoWrites(t *testing.T) {
+	for _, sql := range []string{
+		"BEGIN SHOW CREATE TABLE t; END",
+		"BEGIN SELECT load FROM metrics; END",
+		"BEGIN SELECT generate FROM t; END",
+		"BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END",
+		"BEGIN SELECT /*+ MERGE(a, b) */ * FROM a JOIN b ON a.id = b.id; END",
+		"BEGIN SELECT a.update, b.delete FROM a JOIN b ON a.id = b.id; END",
+		"BEGIN WHILE x < 3 DO SELECT replace(s, 'a', 'b') FROM t; END WHILE; END",
+	} {
+		a := lexer.Analyze(sql, lexer.Spark)
+		if a.Writes() || len(writes(a)) != 0 {
+			t.Errorf("effects = %v, writes = %v; a read in a script read as a write: %s", a.Effects, writes(a), sql)
+		}
+	}
+}
+
+// THEN and ELSE head a statement in every dialect, for MERGE clauses and
+// IF and CASE statements. In a CASE expression, `THEN replace(...)` is a
+// function call BI tools emit and `THEN load` a column; neither carries the
+// keyword its statement would start with, so neither reads as a write.
+func TestSparkCaseExpressionsAreNotStatements(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t",
+		"SELECT CASE WHEN a = 1 THEN s ELSE replace(s, 'x', 'y') END AS r FROM t",
+		"SELECT CASE WHEN a = 1 THEN load ELSE 0 END FROM t",
+		"SELECT CASE WHEN a THEN repair ELSE convert END FROM t",
+		"SELECT CASE WHEN a THEN msck WHEN b THEN reorg END FROM t",
+		"WITH c AS (SELECT CASE WHEN a THEN replace(s, 'x', 'y') END AS r FROM t) SELECT * FROM c",
+		"BEGIN SELECT CASE WHEN a THEN replace(s, 'x', 'y') END FROM t; END",
+		"BEGIN IF x THEN SELECT CASE WHEN a THEN load END FROM t; END IF; END",
+		"(SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') END FROM t)",
+		"(SELECT a FROM t) UNION ALL (SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') END FROM t)",
+		"BEGIN IF CASE WHEN a THEN replace(s, 'x', 'y') ELSE s END = 'z' THEN SELECT 1; END IF; END",
+		"BEGIN WHILE CASE x WHEN 1 THEN load ELSE 0 END > 0 DO SELECT 1; END WHILE; END",
+	} {
+		a := lexer.Analyze(sql, lexer.Spark)
+		if a.Writes() || len(writes(a)) != 0 {
+			t.Errorf("effects = %v, writes = %v; a CASE expression read as a write: %s", a.Effects, writes(a), sql)
+		}
+	}
+	for _, tc := range []struct {
+		sql    string
+		effect lexer.Verb
+	}{
+		{"MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = s.a WHEN NOT MATCHED THEN INSERT *", lexer.Insert},
+		{"MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED BY SOURCE THEN DELETE", lexer.Delete},
+		{"BEGIN IF x THEN SELECT 1; ELSEIF y THEN SELECT 2; ELSE DROP TABLE t; END IF; END", lexer.Drop},
+		{"BEGIN IF exists(SELECT 1 FROM s) THEN DELETE FROM t; END IF; END", lexer.Delete},
+		{"BEGIN CASE x WHEN 1 THEN SELECT 1; WHEN 2 THEN TRUNCATE TABLE t; END CASE; END", lexer.Truncate},
+		{"BEGIN CASE WHEN x THEN REPLACE TABLE t AS SELECT 1; ELSE SELECT 1; END CASE; END", lexer.Create},
+		// A handler's body block keeps its IF and CASE statements: DECLARE's
+		// own verb must not decide whether their THEN heads.
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", lexer.Drop},
+		{"BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN CASE WHEN true THEN DELETE FROM t; END CASE; END; SELECT 1/0; END", lexer.Delete},
+		// A CASE expression closes before the IF's THEN.
+		{"BEGIN IF CASE x WHEN 1 THEN true END THEN DROP TABLE t; END IF; END", lexer.Drop},
+		{"BEGIN IF CASE WHEN a THEN CASE WHEN b THEN 1 END END = 1 THEN DROP TABLE t; END IF; END", lexer.Drop},
+		// CASE is a column outside ANSI mode; it opens no expression here.
+		{"BEGIN IF case = 1 THEN DROP TABLE t; END IF; END", lexer.Drop},
+		{"BEGIN SELECT case FROM s; IF x THEN DELETE FROM t; END IF; END", lexer.Delete},
+		// A column called case before a WHEN reads as an open CASE that no
+		// END closes; the next statement must start with none open.
+		{"BEGIN MERGE INTO t USING s ON t.id = s.case WHEN MATCHED THEN UPDATE SET a = 1; IF x THEN DROP TABLE u; END IF; END", lexer.Drop},
+		// A column or variable called case comes before a CASE statement;
+		// Databricks accepts the name even in ANSI mode.
+		{"BEGIN FOR r AS SELECT case FROM s DO CASE WHEN r.case = 1 THEN DELETE FROM t; END CASE; END FOR; END", lexer.Delete},
+		{"BEGIN DECLARE case INT DEFAULT 0; WHILE case < 1 DO CASE WHEN true THEN DELETE FROM t; END CASE; SET case = case + 1; END WHILE; END", lexer.Delete},
+		{"BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN DROP TABLE t; END CASE; END", lexer.Drop},
+		{"BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN REPLACE TABLE t AS SELECT 1; END CASE; END", lexer.Create},
+	} {
+		if a := lexer.Analyze(tc.sql, lexer.Spark); !slices.Contains(a.Effects, tc.effect) {
+			t.Errorf("effects = %v, want %q: %s", a.Effects, tc.effect, tc.sql)
+		}
+	}
+}
+
+// Released Spark reads a `/*+` inside a block comment as text, so the comment
+// ends at the first `*/` and what follows runs; Spark master and Databricks
+// SQL nest on it. Text holding `/*+` is read both ways.
+func TestSparkHintOpenerInsideACommentIsReadBothWays(t *testing.T) {
+	a := lexer.Analyze("/* /*+ */ DROP TABLE t -- */", lexer.Spark)
+	if a.Severity() != lexer.Drop || !slices.Equal(writes(a), []string{"t"}) {
+		t.Errorf("severity = %q, writes = %v; released Spark runs this DROP", a.Severity(), writes(a))
+	}
+	// Only released Spark sees this statement, and it is dynamic SQL: the
+	// merged reading must stay incomplete, or a rule naming unknown misses
+	// it.
+	if a := lexer.Analyze("/* /*+ */ EXECUTE IMMEDIATE 'DROP TABLE t' -- */", lexer.Spark); a.Complete {
+		t.Errorf("Complete = true; dynamic SQL that only released Spark reads was reported readable, effects %v", a.Effects)
+	}
+	for _, sql := range []string{
+		"/* a /*+ b */ c */ SELECT 1",
+		"SELECT /*+ REPARTITION(3) */ * FROM t",
+		"/* a /* b */ c */ SELECT 1",
+	} {
+		if a := lexer.Analyze(sql, lexer.Spark); a.Severity() != lexer.Select || len(writes(a)) != 0 {
+			t.Errorf("severity = %q, writes = %v, want a select: %s", a.Severity(), writes(a), sql)
+		}
+	}
+}
+
+// Delta Lake's parser reads its commands with flat comments, so text that is
+// all comment to Spark can be a VACUUM to Delta. The second reading counts
+// only behind a Delta command: a DELETE after a continued comment is
+// commentary to Spark, and Delta hands it to Spark.
+func TestSparkDeltaReading(t *testing.T) {
+	for _, tc := range []struct {
+		sql    string
+		want   lexer.Verb
+		writes []string
+	}{
+		{"/* /* */ VACUUM t RETAIN 0 HOURS -- */", lexer.Delete, []string{"t"}},
+		{"/* /* */ OPTIMIZE t -- */", lexer.Alter, []string{"t"}},
+		{"/* /* */ RESTORE TABLE t TO VERSION AS OF 1 -- */", lexer.Alter, []string{"t"}},
+		{"/* /* */ ALTER TABLE t DROP FEATURE deletionVectors -- */", lexer.Alter, []string{"t"}},
+		{"-- x \\\nVACUUM t", lexer.Delete, []string{"t"}},
+		{"/*+ x */ VACUUM t", lexer.Delete, []string{"t"}},
+		// Only Delta reads a VACUUM here, and only once a lone CR ends its
+		// dash comment.
+		{"/* /* */ -- x\rVACUUM t -- */", lexer.Delete, []string{"t"}},
+		{"-- x \\\nDELETE FROM t", lexer.Unknown, nil},
+		{"/* /* */ DELETE FROM t -- */", lexer.Unknown, nil},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Spark)
+		if a.Severity() != tc.want || !slices.Equal(writes(a), tc.writes) {
+			t.Errorf("severity = %q, writes = %v, want %q %v: %q", a.Severity(), writes(a), tc.want, tc.writes, tc.sql)
+		}
+	}
+}
+
+// Spark runs one statement or one script per call, and a script fragment
+// loses the BEGIN that makes its statements heads. Split keeps the text
+// whole, as it does for Oracle.
+func TestSparkSplitKeepsTheWholeCall(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT 'a;b' FROM t",
+		"BEGIN WHILE c DO DELETE FROM t; END WHILE; END",
+	} {
+		if parts := lexer.Split("  "+sql+"\n", lexer.Spark); !slices.Equal(parts, []string{sql}) {
+			t.Errorf("Split = %q, want the whole call", parts)
+		}
+	}
+	if got := lexer.Split("   ", lexer.Spark); len(got) != 0 {
+		t.Errorf("Split of blank text = %q", got)
+	}
+}
+
+// The Spark rows are off everywhere else. Each statement below reads one way
+// under Spark and the other way under every other dialect.
+func TestSparkRulesDoNotLeakIntoOtherDialects(t *testing.T) {
+	others := []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse, lexer.GoogleSQL, lexer.Oracle}
+	for _, sql := range []string{
+		"SELECT 1 -- x \\\n; DELETE FROM t",
+		"DELETE\u00a0FROM t",
+		"VACUUM t",
+		"BEGIN SELECT /*+ X('*/') */ 1; DELETE FROM t; END; --'",
+		"SELECT '${x}' AS y",
+		"FROM s INSERT INTO t SELECT a",
+	} {
+		spark := lexer.Analyze(sql, lexer.Spark)
+		for _, d := range others {
+			a := lexer.Analyze(sql, d)
+			if a.Severity() == spark.Severity() && a.Complete == spark.Complete && slices.Equal(writes(a), writes(spark)) {
+				t.Errorf("%s reads %q as Spark does (%q, complete = %v)", d, sql, a.Severity(), a.Complete)
+			}
 		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/lexer"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -568,5 +569,113 @@ func TestSpannerIsAnalyzedWithTheGoogleSQLDialect(t *testing.T) {
 	stmt := inspect.AnalyzeSQL("@{USE_ADDITIONAL_PARALLELISM=TRUE} SELECT x FROM t", inspect.Spanner)
 	if stmt.Operation != inspect.OpSelect || !slices.Contains(stmt.Tables, "t") {
 		t.Errorf("statement-level hint: op = %q, tables = %v, want select on t", stmt.Operation, stmt.Tables)
+	}
+}
+
+// Databricks SQL is Spark SQL, and a lane reads it with AnalyzeSQLIn and
+// lexer.Spark. Each case is named for the verdict an operator gets.
+//
+// The refusals ran on a Databricks SQL warehouse (2026.42) and dropped,
+// vacuumed or rewrote a table there, except the flat-comment VACUUM, which
+// only open-source Delta Lake reads that way. Under every dialect that existed
+// before Spark, each one read as a select, a begin, an `other` or nothing,
+// so a guardrail refusing writes let it through. The passes are the inverse:
+// reads that a wrong reading refuses, which costs an operator their tool.
+func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
+	noWrites := rulesFor(t, "no-writes",
+		inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete, inspect.OpDrop,
+		inspect.OpAlter, inspect.OpCreate, inspect.OpTruncate)
+	unreadable := rulesFor(t, "unreadable", inspect.OpUnknown)
+	fenceT, err := policy.NewRules([]policy.Rule{{
+		Name: "t-is-read-only", Type: policy.MatchTable, Tables: []string{"t"},
+		Access: string(inspect.AccessWrite), Message: "t is read-only",
+	}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	fenceReadT, err := policy.NewRules([]policy.Rule{{
+		Name: "t-is-hidden", Type: policy.MatchTable, Tables: []string{"t"},
+		Access: string(inspect.AccessRead), Message: "t is hidden",
+	}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name, sql  string
+		rules      *policy.Rules
+		wantDenied bool
+	}{
+		{"a DROP after a backslash-continued comment is refused", "-- x \\\nSELECT '\nDROP TABLE t -- '", noWrites, true},
+		// \xc2\xa0 is U+00A0, a no-break space: whitespace to Spark.
+		{"a DROP joined to TABLE by a no-break space is refused", "DROP\xc2\xa0TABLE t", noWrites, true},
+		{"a DROP inside a BEGIN ... END script is refused", "BEGIN DROP TABLE t; END", noWrites, true},
+		{"a DROP after a nested comment is refused", "/* /* */ SELECT 'x */ DROP TABLE t; -- '", noWrites, true},
+		{"a DROP behind a string in a hint is refused", "BEGIN SELECT /*+ X('*/') */ 1; DROP TABLE t; END; --'", noWrites, true},
+		{"a VACUUM behind Delta's flat comment is refused", "/* /* */ VACUUM t RETAIN 0 HOURS -- */", noWrites, true},
+		{"a DROP in a script whose first label is work is refused", "BEGIN work: BEGIN DROP TABLE t; END work; END", noWrites, true},
+		{"a REPLACE TABLE in a handler is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION REPLACE TABLE t AS SELECT 1; SELECT 1/0; END", noWrites, true},
+		{"a DROP after a hint opener inside a comment is refused", "/* /*+ */ DROP TABLE t -- */", noWrites, true},
+		{"a DROP after a dash comment ended by a carriage return is refused", "-- x\rDROP TABLE t", noWrites, true},
+		{"dynamic SQL only released Spark reads is refused as unreadable", "/* /*+ */ EXECUTE IMMEDIATE 'DROP TABLE t' -- */", unreadable, true},
+		{"GENERATE is refused as an alter", "GENERATE symlink_format_manifest FOR TABLE t", noWrites, true},
+		{"DESCRIBE TABLE EXTENDED is refused by a rule fencing reads of its table", "DESCRIBE TABLE EXTENDED t", fenceReadT, true},
+		{"a column aliased overwrite is refused by a rule fencing reads of its table", "SELECT id overwrite FROM t", fenceReadT, true},
+		{"EXPLAIN INSERT OVERWRITE is refused by a rule fencing reads of its table", "EXPLAIN INSERT OVERWRITE t SELECT 1", fenceReadT, true},
+		{"a DROP in an IF inside a handler's block is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", noWrites, true},
+		{"a DELETE in a CASE statement inside a handler's block is refused by a rule fencing its target", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN CASE WHEN true THEN DELETE FROM t; END CASE; END; SELECT 1/0; END", fenceT, true},
+		{"a DROP in a CASE statement on a variable called case is refused", "BEGIN DECLARE case INT DEFAULT 1; CASE case WHEN 1 THEN DROP TABLE t; END CASE; END", noWrites, true},
+		{"a DELETE in a FOR loop over a column called case is refused by a rule fencing its target", "BEGIN FOR r AS SELECT case FROM s DO CASE WHEN r.case = 1 THEN DELETE FROM t; END CASE; END FOR; END", fenceT, true},
+		{"VACUUM is refused as a delete", "VACUUM t RETAIN 0 HOURS", noWrites, true},
+		{"OPTIMIZE is refused as an alter", "OPTIMIZE t ZORDER BY (a)", noWrites, true},
+		{"RESTORE is refused as an alter", "RESTORE TABLE t TO VERSION AS OF 1", noWrites, true},
+		{"REPLACE TABLE is refused as a create", "REPLACE TABLE t AS SELECT * FROM s", noWrites, true},
+		{"COPY INTO is refused as an insert", "COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", noWrites, true},
+		{"a FROM-first INSERT is refused", "FROM s INSERT INTO t SELECT a", noWrites, true},
+		{"INSERT OVERWRITE is refused by a rule fencing its target", "INSERT OVERWRITE t SELECT * FROM s", fenceT, true},
+		{"INSERT WITH SCHEMA EVOLUTION OVERWRITE is refused by a rule fencing its target", "INSERT WITH SCHEMA EVOLUTION OVERWRITE t SELECT * FROM s", fenceT, true},
+		{"COPY INTO is refused by a rule fencing its target", "COPY INTO t FROM 's3://b/p' FILEFORMAT = CSV", fenceT, true},
+		{"VACUUM is refused by a rule fencing its target", "VACUUM t", fenceT, true},
+		{"VACUUM of a table called over is refused as a delete", "VACUUM over RETAIN 0 HOURS", noWrites, true},
+		{"a substituted variable is refused as unreadable", "SELECT * FROM ${tbl}", unreadable, true},
+		{"a script is refused as unreadable", "BEGIN SELECT * FROM t; END", unreadable, true},
+
+		{"a read-only script passes a guardrail refusing writes", "BEGIN SELECT * FROM t; END", noWrites, false},
+		{"SHOW CREATE TABLE in a script passes", "BEGIN SHOW CREATE TABLE t; END", noWrites, false},
+		{"a column called load in a script passes", "BEGIN SELECT load FROM metrics; END", noWrites, false},
+		{"a column called generate in a script passes", "BEGIN SELECT generate FROM t; END", noWrites, false},
+		{"a GENERATE in a handler is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION GENERATE symlink_format_manifest FOR TABLE t; SELECT 1/0; END", noWrites, true},
+		{"a MERGE join hint in a script passes", "BEGIN SELECT /*+ MERGE */ * FROM a JOIN b ON a.id = b.id; END", noWrites, false},
+		{"a CASE that calls replace() passes", "SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') ELSE s END AS r FROM t", noWrites, false},
+		{"a CASE that returns a column called load passes", "SELECT CASE WHEN a = 1 THEN load ELSE 0 END FROM t", noWrites, false},
+		{"a parenthesized query that calls replace() passes", "(SELECT CASE WHEN a = 1 THEN replace(s, 'x', 'y') END FROM t)", noWrites, false},
+		{"a CASE in an IF condition that calls replace() passes", "BEGIN IF CASE WHEN a THEN replace(s, 'x', 'y') ELSE s END = 'z' THEN SELECT 1; END IF; END", noWrites, false},
+		{"every MERGE clause still counts", "MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = s.a WHEN NOT MATCHED BY SOURCE THEN DELETE", rulesFor(t, "no-deletes", inspect.OpDelete), true},
+		{"a MERGE join hint passes", "SELECT /*+ MERGE(t, s) */ * FROM t JOIN s ON t.id = s.id", noWrites, false},
+		{"a DELETE in a double-quoted string passes", `SELECT "a\"; DELETE FROM t; --"`, noWrites, false},
+		{"a DELETE after a continued comment passes", "SELECT 1 -- note \\\n; DELETE FROM t", noWrites, false},
+		{"DESCRIBE passes", "DESCRIBE TABLE t", noWrites, false},
+		{"BEGIN TRANSACTION passes", "BEGIN TRANSACTION", noWrites, false},
+		{"CACHE TABLE passes a rule fencing writes to its target", "CACHE TABLE t", fenceT, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := inspect.AnalyzeSQLIn(tc.sql, lexer.Spark)
+			stmt := inspect.Statement{
+				Protocol: inspect.HTTP, Direction: inspect.FromClient, Text: tc.sql,
+				Operation: a.Operation, Effects: a.Effects, Relations: a.Relations, Tables: a.Tables,
+			}
+			if denied := tc.rules.Evaluate(stmt).Denied; denied != tc.wantDenied {
+				t.Errorf("denied = %v, want %v: op = %q, effects = %v, relations = %v, complete = %v (%s)",
+					denied, tc.wantDenied, a.Operation, a.Effects, a.Relations, a.Complete, a.Reason)
+			}
+		})
+	}
+
+	// A `:name` parameter may spell a keyword. Read as a word, `:into` made
+	// the word after it a written relation, which a table rule then acts on.
+	for _, r := range inspect.AnalyzeSQLIn("SELECT * FROM s WHERE a = :into AND b = ?", lexer.Spark).Relations {
+		if r.Access == inspect.AccessWrite {
+			t.Errorf("a parameter spelled into wrote %q", r.Name)
+		}
 	}
 }
