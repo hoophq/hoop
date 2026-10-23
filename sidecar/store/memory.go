@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
-	"time"
+	"unsafe"
 
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -31,85 +33,167 @@ import (
 //
 // # Boundaries
 //
-// The store keeps nothing across a restart. It is a bounded ring: when full
-// it evicts the OLDEST session and every event belonging to it. For a
-// complete trail, pair it with a JSONL or SQLite sink via audit.MultiSink.
-// The API reports how many sessions were dropped, so a reader can tell the
-// window is partial.
+// The store keeps nothing across a restart. Two bounds hold it, and either
+// one evicts:
+//
+//   - MaxSessions: a new session past the bound evicts the OLDEST session
+//     and every event belonging to it.
+//   - MaxBytes: events past the byte budget are dropped oldest first, from
+//     whichever session holds them. A session still retained that lost an
+//     event reports it in SessionRecord.EventsDropped, so its timeline is
+//     never shown as whole when it is not. Its counters stay exact.
+//
+// The byte budget is what bounds a long-lived session: a connection pool or
+// an agent keeps a few sessions open for days, and a session count alone
+// never evicts them.
+//
+// For a complete trail, pair it with a JSONL or SQLite sink via
+// audit.MultiSink.
 type MemoryStore struct {
 	mu sync.RWMutex
 
-	// maxSessions bounds retention. Eviction is by session rather than by
-	// event so a session's timeline is never half-present, which would make
-	// the detail view show a truncated session as a whole one.
 	maxSessions int
+	maxBytes    int64
 
-	sessions map[session.ID]*SessionRecord
+	// opts is the policy the JSONL sink applies, so the store never holds a
+	// statement the file redacted, or a longer one than the file kept.
+	opts audit.SinkOptions
 
-	// order tracks insertion order for eviction, oldest first.
+	sessions map[session.ID]*memSession
+
+	// order tracks session insertion order for eviction, oldest first.
 	order []session.ID
 
-	// events holds every retained event, in arrival order. seq is the index
-	// into this slice plus one, so paging is a slice operation.
-	events  []EventRecord
+	// oldest and newest hold every retained event in arrival order. A list,
+	// not a slice: dropping one session's events from the middle is O(1)
+	// per event, and a dropped event is freed at once instead of pinning
+	// the capacity of a slice that once held millions.
+	oldest, newest *memEvent
+
+	// bytes is the estimated size of the retained events; see eventSize.
+	bytes   int64
 	nextSeq int64
 
-	// droppedSessions counts evictions, so the API can say the window is
-	// incomplete instead of implying it is whole.
+	// droppedSessions counts session evictions, so a reader can tell the
+	// window is incomplete instead of implying it is whole.
 	droppedSessions int64
 
 	closed bool
 }
 
-// DefaultMemorySessions bounds a MemoryStore created with 0. Sized so a busy
-// sidecar keeps roughly a day of sessions in a few tens of MB.
+// memEvent is one retained event with its two list links.
+type memEvent struct {
+	EventRecord
+	size int64
+
+	// prev and next link every retained event in arrival order.
+	prev, next *memEvent
+	// sessionNext links the events of one session in arrival order.
+	sessionNext *memEvent
+}
+
+// memSession is a session's record and its retained timeline. first is
+// always the session's oldest retained event, and so the first of them the
+// byte budget drops.
+type memSession struct {
+	rec         SessionRecord
+	first, last *memEvent
+}
+
+// MemoryOptions configures a MemoryStore. The zero value is usable.
+type MemoryOptions struct {
+	// MaxSessions bounds how many sessions are retained. Zero or less uses
+	// DefaultMemorySessions.
+	MaxSessions int
+
+	// MaxBytes bounds the estimated size of the retained events. Zero or
+	// less uses DefaultMemoryBytes. The newest event is always kept, so one
+	// event larger than the budget holds the store alone.
+	MaxBytes int64
+
+	// Sink is applied to each event before it is stored: redaction, the
+	// statement cap and timestamp normalization, as audit.JSONLSink does.
+	Sink audit.SinkOptions
+}
+
+// DefaultMemorySessions bounds a MemoryStore created with no MaxSessions.
 const DefaultMemorySessions = 1000
 
+// DefaultMemoryBytes bounds a MemoryStore created with no MaxBytes. At the
+// default 8 KiB statement cap that is at least eight thousand events, and
+// tens of thousands of typical ones.
+const DefaultMemoryBytes int64 = 64 << 20
+
 // NewMemoryStore returns a bounded in-memory Store.
-func NewMemoryStore(maxSessions int) *MemoryStore {
-	if maxSessions <= 0 {
-		maxSessions = DefaultMemorySessions
+func NewMemoryStore(o MemoryOptions) *MemoryStore {
+	if o.MaxSessions <= 0 {
+		o.MaxSessions = DefaultMemorySessions
+	}
+	if o.MaxBytes <= 0 {
+		o.MaxBytes = DefaultMemoryBytes
 	}
 	return &MemoryStore{
-		maxSessions: maxSessions,
-		sessions:    make(map[session.ID]*SessionRecord, maxSessions),
+		maxSessions: o.MaxSessions,
+		maxBytes:    o.MaxBytes,
+		opts:        o.Sink,
+		sessions:    make(map[session.ID]*memSession),
 	}
 }
 
 // Write implements audit.Sink. It records the event and maintains the
 // denormalized session counters.
 func (m *MemoryStore) Write(_ context.Context, ev audit.Event) error {
+	// Outside the lock: the policy the file applies, then a copy of every
+	// string into memory the store owns. A statement's table names and text
+	// can be slices of a larger buffer, and holding them would hold all of it
+	// while the budget counts a few bytes.
+	ev, content := own(m.opts.Apply(ev))
+	size := eventSize(&ev, content)
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.closed {
 		return errors.New("sidecar/store: memory store closed")
 	}
-	if ev.Timestamp.IsZero() {
-		ev.Timestamp = time.Now().UTC()
-	}
 
-	rec := m.sessions[ev.SessionID]
-	if rec == nil {
+	s := m.sessions[ev.SessionID]
+	if s == nil {
 		// An event may arrive with no preceding session_start when a sink is
-		// attached mid-session. Build the row from whatever the event
-		// carries rather than dropping it.
-		rec = &SessionRecord{
-			ID:         ev.SessionID,
-			Principal:  ev.Principal,
-			Protocol:   ev.Protocol,
-			Connection: ev.Connection,
-			StartedAt:  ev.Timestamp,
-		}
-		m.sessions[ev.SessionID] = rec
-		m.order = append(m.order, ev.SessionID)
-		m.evictLocked()
+		// attached mid-session. applyEvent builds the row from whatever the
+		// event carries rather than dropping it. The id is the record's own,
+		// so the map key does not pin this event.
+		id := session.ID(strings.Clone(string(ev.SessionID)))
+		s = &memSession{rec: SessionRecord{ID: id, StartedAt: ev.Timestamp}}
+		m.sessions[id] = s
+		m.order = append(m.order, id)
+		m.evictSessionsLocked()
 	}
 
-	applyEvent(rec, ev)
+	before := s.rec
+	applyEvent(&s.rec, ev)
+	ownRecord(&s.rec, &before)
 
 	m.nextSeq++
-	m.events = append(m.events, EventRecord{Seq: m.nextSeq, Event: ev})
+	e := &memEvent{EventRecord: EventRecord{Seq: m.nextSeq, Event: ev}, size: size}
+	if m.newest == nil {
+		m.oldest = e
+	} else {
+		m.newest.next = e
+		e.prev = m.newest
+	}
+	m.newest = e
+	if s.last == nil {
+		s.first = e
+	} else {
+		s.last.sessionNext = e
+	}
+	s.last = e
+	m.bytes += e.size
+
+	for m.bytes > m.maxBytes && m.oldest != e {
+		m.dropOldestLocked()
+	}
 	return nil
 }
 
@@ -191,23 +275,256 @@ func riskRank(level string) int {
 	return 0
 }
 
-// evictLocked drops oldest sessions until the store is within its bound.
-func (m *MemoryStore) evictLocked() {
+// evictSessionsLocked drops oldest sessions until the store is within its
+// session bound. Each eviction walks only the victim's own events.
+func (m *MemoryStore) evictSessionsLocked() {
 	for len(m.order) > m.maxSessions {
 		victim := m.order[0]
 		m.order = m.order[1:]
+		s := m.sessions[victim]
 		delete(m.sessions, victim)
 		m.droppedSessions++
 
 		// Drop the victim's events too, so a session is never half-present.
-		kept := m.events[:0]
-		for _, e := range m.events {
-			if e.SessionID != victim {
-				kept = append(kept, e)
-			}
+		for e := s.first; e != nil; {
+			next := e.sessionNext
+			m.unlinkLocked(e)
+			e = next
 		}
-		m.events = kept
 	}
+}
+
+// dropOldestLocked drops the oldest retained event and marks its session's
+// timeline as incomplete. The oldest event overall is the oldest of its
+// session, so it is always that session's first.
+func (m *MemoryStore) dropOldestLocked() {
+	e := m.oldest
+	s := m.sessions[e.SessionID]
+	s.first = e.sessionNext
+	if s.first == nil {
+		s.last = nil
+	}
+	s.rec.EventsDropped++
+	m.unlinkLocked(e)
+}
+
+// unlinkLocked removes e from the arrival-order list and releases its bytes.
+// The caller owns the session list.
+func (m *MemoryStore) unlinkLocked(e *memEvent) {
+	if e.prev == nil {
+		m.oldest = e.next
+	} else {
+		e.prev.next = e.next
+	}
+	if e.next == nil {
+		m.newest = e.prev
+	} else {
+		e.next.prev = e.prev
+	}
+	e.prev, e.next, e.sessionNext = nil, nil, nil
+	m.bytes -= e.size
+}
+
+// memEventOverhead is the fixed part of a retained event: the struct with
+// its links, the session map and order slots are not counted.
+const memEventOverhead = int64(unsafe.Sizeof(memEvent{}))
+
+// stringHeader is the size of a string or a slice element pointing to one.
+const stringHeader = int64(unsafe.Sizeof(""))
+
+// mapEntryOverhead approximates what a Go map spends per entry beyond the
+// key and value bytes: their headers and the slot's share of a group.
+const mapEntryOverhead = 3 * stringHeader
+
+// mapBaseOverhead is what a non-empty map costs before its first entry: the
+// map header and one group of eight slots, which even a one-entry map
+// allocates whole.
+const mapBaseOverhead = 48 + 8*(1+2*stringHeader)
+
+// own returns a copy of ev whose every string lives in one allocation of
+// content bytes, and whose slices, maps and HTTP detail are its own. ev and
+// everything it references stay untouched: the caller and the other sinks
+// still hold them. TestOwnDetachesEveryString fails when a field is added
+// to audit.Event or HTTPDetail without a line in ownStrings.
+func own(ev audit.Event) (_ audit.Event, content int) {
+	var a arena
+	ownStrings(&a, &ev) // measures, and writes nothing
+	a.buf = make([]byte, 0, a.n)
+	a.copying = true
+	ownStrings(&a, &ev)
+	return ev, a.n
+}
+
+// arena measures strings on the first pass and copies them into buf on the
+// second. buf is sized by the first pass, so it never moves while strings
+// point into it.
+type arena struct {
+	n       int
+	copying bool
+	buf     []byte
+}
+
+func (a *arena) str(s string) string {
+	if !a.copying {
+		a.n += len(s)
+		return s
+	}
+	if s == "" {
+		return ""
+	}
+	off := len(a.buf)
+	a.buf = append(a.buf, s...)
+	return unsafe.String(&a.buf[off], len(s))
+}
+
+func setStr[S ~string](a *arena, p *S) {
+	if s := a.str(string(*p)); a.copying {
+		*p = S(s)
+	}
+}
+
+func setStrs(a *arena, p *[]string) {
+	if !a.copying {
+		for _, s := range *p {
+			a.str(s)
+		}
+		return
+	}
+	if *p == nil {
+		return
+	}
+	out := make([]string, len(*p))
+	for i, s := range *p {
+		out[i] = a.str(s)
+	}
+	*p = out
+}
+
+func setStrMap(a *arena, p *map[string]string) {
+	if !a.copying {
+		for k, v := range *p {
+			a.str(k)
+			a.str(v)
+		}
+		return
+	}
+	if *p == nil {
+		return
+	}
+	out := make(map[string]string, len(*p))
+	for k, v := range *p {
+		out[a.str(k)] = a.str(v)
+	}
+	*p = out
+}
+
+// ownStrings visits every string ev references. On the copying pass it
+// replaces each container before writing into it, so nothing the caller
+// shares is written.
+func ownStrings(a *arena, ev *audit.Event) {
+	setStr(a, &ev.Kind)
+	setStr(a, &ev.SessionID)
+	setStr(a, &ev.Principal)
+	setStr(a, &ev.Protocol)
+	setStr(a, &ev.Connection)
+	setStr(a, &ev.Operation)
+	setStr(a, &ev.Statement)
+	setStr(a, &ev.Rule)
+	setStr(a, &ev.Message)
+	setStr(a, &ev.Direction)
+	setStr(a, &ev.Error)
+	setStrs(a, &ev.Tables)
+	setStrs(a, &ev.MaskedEntities)
+	setStrMap(a, &ev.Metadata)
+
+	if ev.HTTP == nil {
+		return
+	}
+	h := ev.HTTP
+	if a.copying {
+		c := *h
+		h, ev.HTTP = &c, &c
+	}
+	setStr(a, &h.Method)
+	setStr(a, &h.Path)
+	setStr(a, &h.Target)
+	setStr(a, &h.Host)
+	setStr(a, &h.Resource)
+	setStr(a, &h.ContentType)
+	setStr(a, &h.Body)
+	setStrMap(a, &h.Headers)
+	if a.copying && h.Query != nil {
+		q := make(map[string][]string, len(h.Query))
+		for k, vs := range h.Query {
+			setStrs(a, &vs)
+			q[a.str(k)] = vs
+		}
+		h.Query = q
+	} else if !a.copying {
+		for k, vs := range h.Query {
+			a.str(k)
+			setStrs(a, &vs)
+		}
+	}
+
+	if h.WebSocket == nil {
+		return
+	}
+	w := h.WebSocket
+	if a.copying {
+		c := *w
+		w, h.WebSocket = &c, &c
+	}
+	setStr(a, &w.Opcode)
+	setStr(a, &w.Subprotocol)
+	setStr(a, &w.CloseReason)
+}
+
+// ownRecord copies each string or map applyEvent just took from an event,
+// so a session record does not pin the event once the budget drops it.
+func ownRecord(rec, before *SessionRecord) {
+	keep := func(s, old string) string {
+		if len(s) == len(old) && unsafe.StringData(s) == unsafe.StringData(old) {
+			return s
+		}
+		return strings.Clone(s)
+	}
+	rec.Principal = keep(rec.Principal, before.Principal)
+	rec.Protocol = inspect.Protocol(keep(string(rec.Protocol), string(before.Protocol)))
+	rec.Connection = keep(rec.Connection, before.Connection)
+	rec.RiskLevel = keep(rec.RiskLevel, before.RiskLevel)
+	if reflect.ValueOf(rec.Metadata).UnsafePointer() != reflect.ValueOf(before.Metadata).UnsafePointer() {
+		md := make(map[string]string, len(rec.Metadata))
+		for k, v := range rec.Metadata {
+			md[strings.Clone(k)] = strings.Clone(v)
+		}
+		rec.Metadata = md
+	}
+}
+
+// eventSize estimates the heap an owned event holds: the fixed struct, its
+// content bytes and the slices and maps around them.
+func eventSize(ev *audit.Event, content int) int64 {
+	n := memEventOverhead + int64(content)
+	n += int64(cap(ev.Tables)+cap(ev.MaskedEntities)) * stringHeader
+	n += mapSize(len(ev.Metadata))
+	if h := ev.HTTP; h != nil {
+		n += int64(unsafe.Sizeof(*h)) + mapSize(len(h.Headers)) + mapSize(len(h.Query))
+		for _, vs := range h.Query {
+			n += int64(cap(vs)) * stringHeader
+		}
+		if w := h.WebSocket; w != nil {
+			n += int64(unsafe.Sizeof(*w))
+		}
+	}
+	return n
+}
+
+func mapSize(entries int) int64 {
+	if entries == 0 {
+		return 0
+	}
+	return mapBaseOverhead + int64(entries)*mapEntryOverhead
 }
 
 // Close implements audit.Sink. The retained data stays readable so a
@@ -231,11 +548,11 @@ func (m *MemoryStore) Dropped() int64 {
 func (m *MemoryStore) Session(_ context.Context, id session.ID) (SessionRecord, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	rec, ok := m.sessions[id]
+	s, ok := m.sessions[id]
 	if !ok {
 		return SessionRecord{}, fmt.Errorf("%w: session %q", ErrNotFound, id)
 	}
-	return *rec, nil
+	return s.rec, nil
 }
 
 // Sessions implements Store, newest first.
@@ -247,9 +564,9 @@ func (m *MemoryStore) Sessions(ctx context.Context, f SessionFilter) (SessionPag
 
 	m.mu.RLock()
 	matched := make([]SessionRecord, 0, len(m.sessions))
-	for _, rec := range m.sessions {
-		if matchSession(*rec, f) {
-			matched = append(matched, *rec)
+	for _, s := range m.sessions {
+		if matchSession(s.rec, f) {
+			matched = append(matched, s.rec)
 		}
 	}
 	m.mu.RUnlock()
@@ -294,6 +611,7 @@ func (m *MemoryStore) Sessions(ctx context.Context, f SessionFilter) (SessionPag
 }
 
 // Events implements Store, oldest first so a timeline reads top to bottom.
+// A query for one session walks only that session's events.
 func (m *MemoryStore) Events(ctx context.Context, f EventFilter) (EventPage, error) {
 	if err := ctx.Err(); err != nil {
 		return EventPage{}, err
@@ -312,10 +630,18 @@ func (m *MemoryStore) Events(ctx context.Context, f EventFilter) (EventPage, err
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	first, next := m.oldest, func(e *memEvent) *memEvent { return e.next }
+	if f.SessionID != "" {
+		first, next = nil, func(e *memEvent) *memEvent { return e.sessionNext }
+		if s := m.sessions[f.SessionID]; s != nil {
+			first = s.first
+		}
+	}
+
 	matched := make([]EventRecord, 0, f.Limit)
 	var total int64
-	for _, e := range m.events {
-		if !matchEvent(e, f) {
+	for e := first; e != nil; e = next(e) {
+		if !matchEvent(e.EventRecord, f) {
 			continue
 		}
 		total++
@@ -323,7 +649,7 @@ func (m *MemoryStore) Events(ctx context.Context, f EventFilter) (EventPage, err
 			continue
 		}
 		if len(matched) < f.Limit {
-			matched = append(matched, e)
+			matched = append(matched, e.EventRecord)
 		}
 	}
 
@@ -347,13 +673,14 @@ func (m *MemoryStore) Stats(ctx context.Context, f SessionFilter) (Stats, error)
 	byPrincipal := map[string]int64{}
 	byConnection := map[string]int64{}
 	byRisk := map[string]int64{}
+	byOperation := map[string]int64{}
+	byRule := map[string]int64{}
 
-	live := map[session.ID]bool{}
-	for _, rec := range m.sessions {
+	for _, s := range m.sessions {
+		rec := &s.rec
 		if !matchSession(*rec, f) {
 			continue
 		}
-		live[rec.ID] = true
 		out.Sessions++
 		out.Statements += int64(rec.StatementCount)
 		out.Denied += int64(rec.DeniedCount)
@@ -369,19 +696,17 @@ func (m *MemoryStore) Stats(ctx context.Context, f SessionFilter) (Stats, error)
 		if rec.RiskLevel != "" {
 			byRisk[rec.RiskLevel]++
 		}
-	}
 
-	byOperation := map[string]int64{}
-	byRule := map[string]int64{}
-	for _, e := range m.events {
-		if !live[e.SessionID] {
-			continue
-		}
-		if e.Operation != "" {
-			byOperation[string(e.Operation)]++
-		}
-		if e.Rule != "" {
-			byRule[e.Rule]++
+		// The retained events only. The budget may have dropped some that
+		// the totals above count; EventsDropped says so.
+		out.EventsDropped += rec.EventsDropped
+		for e := s.first; e != nil; e = e.sessionNext {
+			if e.Operation != "" {
+				byOperation[string(e.Operation)]++
+			}
+			if e.Rule != "" {
+				byRule[e.Rule]++
+			}
 		}
 	}
 

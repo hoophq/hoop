@@ -840,6 +840,7 @@ audit:
   async_queue_size: 1024    # a slow sink must not block a user's query
   memory_buffer: 256        # last N events, readable at GET /events
   query_sessions: 500       # backs GET /api/sessions
+  query_max_bytes: 67108864 # memory for those events (the default); past it the oldest go, and their session reports events_dropped
   fail_open: false          # the default: a statement whose audit write failed is refused
 
 pii:                        # omit the section and all 55 entity types are active
