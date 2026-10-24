@@ -264,6 +264,11 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 			if dba.ExpireAt.Before(time.Now().UTC()) {
 				return nil, fmt.Errorf("invalid secret access key credentials")
 			}
+			isServiceCredential, err := models.IsServiceIdentityCredential(models.DB, dba.OrgID, dba.ID, dba.UserSubject)
+			if err != nil {
+				return nil, fmt.Errorf("failed identifying connection credential owner: %v", err)
+			}
+			isMachineCredential := models.IsMachineIdentityCredential(dba.ID)
 
 			// Session duration remaining based on the expiration time
 			ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
@@ -278,10 +283,14 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 				"hoop-connection-name":  dba.ConnectionName,
 				"hoop-context-duration": ctxDuration.String(),
 			}
-			if models.IsMachineIdentityCredential(dba.ID) {
+			if isMachineCredential {
 				extensions["hoop-is-machine-credential"] = "true"
 				extensions["hoop-machine-identity-org-id"] = dba.OrgID
-			} else if dba.SessionID != "" {
+			} else if isServiceCredential {
+				extensions[grpckey.ServiceIdentityFlagHeaderKey] = "true"
+				extensions[grpckey.ServiceIdentityOrgIDHeaderKey] = dba.OrgID
+			}
+			if !isMachineCredential && dba.SessionID != "" {
 				extensions["hoop-credential-session-id"] = dba.SessionID
 			}
 			return &ssh.Permissions{Extensions: extensions}, nil
@@ -314,6 +323,8 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 	credentialID := sshConn.Permissions.Extensions["hoop-credential-id"]
 	isMachineCredential := sshConn.Permissions.Extensions["hoop-is-machine-credential"] == "true"
 	machineIdentityOrgID := sshConn.Permissions.Extensions["hoop-machine-identity-org-id"]
+	isServiceCredential := isMachineCredential || sshConn.Permissions.Extensions[grpckey.ServiceIdentityFlagHeaderKey] == "true"
+	serviceIdentityOrgID := sshConn.Permissions.Extensions[grpckey.ServiceIdentityOrgIDHeaderKey]
 
 	if connectionName == "" || userSubject == "" {
 		return nil, fmt.Errorf("missing required SSH connection attributes")
@@ -325,7 +336,7 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 	}
 
 	var tokenVerifier idp.UserInfoTokenVerifier
-	if !isMachineCredential {
+	if !isServiceCredential {
 		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
 		if err != nil {
 			log.Errorf("failed to load IDP provider: %v", err)
@@ -352,7 +363,13 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 			grpc.WithOption(grpckey.MachineIdentityFlagHeaderKey, "true"),
 			grpc.WithOption(grpckey.MachineIdentityOrgIDHeaderKey, machineIdentityOrgID),
 		)
-	} else if credentialSessionID != "" {
+	} else if isServiceCredential {
+		grpcOpts = append(grpcOpts,
+			grpc.WithOption(grpckey.ServiceIdentityFlagHeaderKey, "true"),
+			grpc.WithOption(grpckey.ServiceIdentityOrgIDHeaderKey, serviceIdentityOrgID),
+		)
+	}
+	if !isMachineCredential && credentialSessionID != "" {
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", credentialSessionID))
 	}
 
@@ -389,7 +406,7 @@ func newPasswordConnection(sid, connID string, conn net.Conn, server *passwordSe
 		clientNewSshChannel: clientNewCh,
 	}
 
-	if !isMachineCredential {
+	if !isServiceCredential {
 		usertoken.PollingUserToken(c.ctx, func(cause error) {
 			c.cancelFn(cause.Error())
 		}, tokenVerifier, userSubject)

@@ -70,13 +70,22 @@ func ListAIAgents(orgID string) ([]AIAgent, error) {
 }
 
 func GetAIAgentByNameOrID(orgID, nameOrID string) (*AIAgent, error) {
+	return getAIAgentByNameOrID(DB, orgID, nameOrID)
+}
+
+// GetAIAgentByID loads an AI agent using the supplied database handle.
+func GetAIAgentByID(db *gorm.DB, orgID, id string) (*AIAgent, error) {
+	return getAIAgentByNameOrID(db, orgID, id)
+}
+
+func getAIAgentByNameOrID(db *gorm.DB, orgID, nameOrID string) (*AIAgent, error) {
 	var item AIAgent
 	identifierClause := "ak.name = ?"
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		identifierClause = "ak.id = ?"
 	}
 
-	err := DB.Raw(`
+	err := db.Raw(`
 	SELECT ak.id, ak.org_id, ak.name, ak.masked_key, ak.status,
 	ak.created_by, ak.deactivated_by, ak.created_at, ak.deactivated_at, ak.last_used_at,
 	COALESCE((
