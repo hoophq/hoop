@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
@@ -142,7 +141,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 	// TODO: we should redirect to an ui that will render errors properly
-	redirectErrorURL := login.Redirect + "?error=unexpected_error"
+	redirectErrorURL := httputils.WithQueryParam(login.Redirect, "error", "unexpected_error")
 
 	// update the login state when this method returns
 	defer updateLoginState(login)
@@ -215,11 +214,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 
 	// The web app's callback can carry its own query (?next=, the page the
 	// login started from), so the token joins it instead of starting a second one.
-	tokenSep := "?"
-	if strings.Contains(login.Redirect, "?") {
-		tokenSep = "&"
-	}
-	redirectSuccessURL := login.Redirect + tokenSep + "token=" + token.AccessToken
+	redirectSuccessURL := httputils.WithQueryParam(login.Redirect, "token", token.AccessToken)
 
 	url, _ := url.Parse(login.Redirect)
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress && !appconfig.Get().ForceUrlTokenExchange() {

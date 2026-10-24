@@ -36,6 +36,7 @@ func startLoginDB(t *testing.T) string {
 	loginCodeLimiter = newKeyedLimiter(20, 10)
 	loginCodeIPLimiter = newKeyedLimiter(20, 10)
 	loginMissLimiter = newKeyedLimiter(600, 600)
+	loginMissers = newRecentKeys(limiterIdle)
 	orgID := uuid.NewString()
 	require.NoError(t, models.DB.Exec(
 		`INSERT INTO private.orgs (id, name) VALUES (?, 'sidecar-login-test')`, orgID).Error)
@@ -74,6 +75,11 @@ func callPollLogin(token string) *httptest.ResponseRecorder {
 
 // callDecide runs approve or deny as an admin of orgID.
 func callDecide(orgID, code string, handler gin.HandlerFunc, body any) *httptest.ResponseRecorder {
+	return callDecideAs(orgID, "user-1", "192.0.2.1:1234", code, handler, body)
+}
+
+// callDecideAs is callDecide from another user and client address.
+func callDecideAs(orgID, userID, remoteAddr, code string, handler gin.HandlerFunc, body any) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	var reader *bytes.Reader
 	if body != nil {
@@ -86,7 +92,8 @@ func callDecide(orgID, code string, handler gin.HandlerFunc, body any) *httptest
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/login/"+code, reader)
 	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set(storagev2.ContextKey, storagev2.NewContext("user-1", orgID).
+	c.Request.RemoteAddr = remoteAddr
+	c.Set(storagev2.ContextKey, storagev2.NewContext(userID, orgID).
 		WithUserInfo("Admin", "admin@hoop.dev", "active", "", nil))
 	c.Params = gin.Params{{Key: "code", Value: code}}
 	handler(c)
@@ -315,9 +322,11 @@ func TestApprovalPutsTheSidecarInTheApproversOrgOnly(t *testing.T) {
 }
 
 // Wrong codes spend the plane's budget: once spent, code lookups refuse for
-// everyone, however many accounts and addresses the guesses come from.
+// every account and address that guessed wrong, however many there are. A
+// caller that never guessed wrong still reads and approves its own code.
 func TestWrongCodesSpendThePlanesBudget(t *testing.T) {
 	orgID := startLoginDB(t)
+	resp := startedLogin(t, testSidecarToken(t), "edge")
 	loginMissLimiter = newKeyedLimiter(3, 3)
 	for i := 0; i < 3; i++ {
 		// A fresh per-user budget each time: only the plane's is shared.
@@ -328,4 +337,13 @@ func TestWrongCodesSpendThePlanesBudget(t *testing.T) {
 	loginCodeLimiter = newKeyedLimiter(20, 10)
 	loginCodeIPLimiter = newKeyedLimiter(20, 10)
 	assert.Equal(t, http.StatusTooManyRequests, callDecide(orgID, "BCDF-GHJK", GetLogin, nil).Code)
+	// The guesser's account from another address, and its address as another
+	// account: both refused.
+	assert.Equal(t, http.StatusTooManyRequests,
+		callDecideAs(orgID, "user-1", "198.51.100.9:1", resp.UserCode, GetLogin, nil).Code)
+	assert.Equal(t, http.StatusTooManyRequests,
+		callDecideAs(orgID, "user-2", "192.0.2.1:1", resp.UserCode, GetLogin, nil).Code)
+	// Another admin, from another address, is not locked out.
+	assert.Equal(t, http.StatusOK,
+		callDecideAs(orgID, "user-3", "203.0.113.7:1", resp.UserCode, GetLogin, nil).Code)
 }

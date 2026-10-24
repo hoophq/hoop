@@ -429,8 +429,11 @@ func sidecarLoginHTTPClient() *http.Client {
 // sidecarCredentialGiven is whether this run already names a credential:
 // the token flag, its env var, or a platform identity.
 func sidecarCredentialGiven() bool {
-	return sidecarTokenFlag != "" || os.Getenv(daemon.SidecarTokenEnv) != "" ||
-		os.Getenv(daemon.SidecarIdentityTypeEnv) != ""
+	return sidecarTokenGiven() || os.Getenv(daemon.SidecarIdentityTypeEnv) != ""
+}
+
+func sidecarTokenGiven() bool {
+	return sidecarTokenFlag != "" || os.Getenv(daemon.SidecarTokenEnv) != ""
 }
 
 // waitForPlaneConfig runs setup until the plane holds a listener for this

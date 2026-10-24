@@ -77,10 +77,54 @@ var (
 	loginCodeLimiter   = newKeyedLimiter(20, 10)
 	loginCodeIPLimiter = newKeyedLimiter(20, 10)
 	// loginMissLimiter is the whole plane's budget of wrong codes. Spent, code
-	// lookups refuse until it refills, whatever the accounts and addresses:
-	// at 600 a minute, hitting one live code in 20^8 takes decades.
+	// lookups refuse until it refills for every account and address that sent
+	// a wrong code recently (loginMissers): at 600 a minute, hitting one live
+	// code in 20^8 takes decades. Callers with no recent miss are not
+	// refused, so guessers cannot block approvals for other organizations.
 	loginMissLimiter = newKeyedLimiter(600, 600)
+	loginMissers     = newRecentKeys(limiterIdle)
 )
 
 // loginMissKey is the one key of loginMissLimiter.
 const loginMissKey = "plane"
+
+// recentKeys remembers which keys (users, addresses) did something within a
+// window: here, sent a wrong code.
+type recentKeys struct {
+	mu     sync.Mutex
+	window time.Duration
+	seen   map[string]time.Time
+}
+
+func newRecentKeys(window time.Duration) *recentKeys {
+	return &recentKeys{window: window, seen: map[string]time.Time{}}
+}
+
+func (r *recentKeys) mark(keys ...string) {
+	now := time.Now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.seen) >= limiterPruneAt {
+		for key, at := range r.seen {
+			if now.Sub(at) > r.window {
+				delete(r.seen, key)
+			}
+		}
+	}
+	for _, key := range keys {
+		r.seen[key] = now
+	}
+}
+
+// any is whether one of keys was marked within the window.
+func (r *recentKeys) any(keys ...string) bool {
+	now := time.Now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, key := range keys {
+		if at, ok := r.seen[key]; ok && now.Sub(at) <= r.window {
+			return true
+		}
+	}
+	return false
+}

@@ -117,6 +117,24 @@ func TestATokenAloneGoesToTheHostedPlane(t *testing.T) {
 	}
 }
 
+// A platform identity with no plane named is not sent to the hosted plane:
+// its token belongs to the customer's own cluster.
+func TestAnIdentityAloneIsNotSentToTheHostedPlane(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HOOP_CONTROL_PLANE_URL", "")
+	t.Setenv("HOOP_SIDECAR_TOKEN", "")
+	t.Setenv("HOOP_SIDECAR_IDENTITY_TYPE", "kubernetes")
+	defer func(c string) { sidecarConfigFlag = c }(sidecarConfigFlag)
+	sidecarConfigFlag = ""
+
+	if _, _, _, err := resolveSidecarLogin(startSidecarCmd, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("HOOP_CONTROL_PLANE_URL"); got != "" {
+		t.Fatalf("an identity went to %q, want no plane", got)
+	}
+}
+
 // A headless login writes JSON lines a marketplace console or an agent can
 // read: the link and code first, the approval last.
 func TestSidecarLoginWritesMachineReadableEvents(t *testing.T) {

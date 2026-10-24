@@ -716,8 +716,11 @@ func resolveSidecarLogin(cmd *cobra.Command, args []string, canChoose bool) (log
 	}
 	if !wanted {
 		// A token with no plane named anywhere is a token from the hosted
-		// plane: the one value a headless free sidecar needs.
-		if sidecarCredentialGiven() && os.Getenv(daemon.ControlPlaneURLEnv) == "" && file.planeURL == "" {
+		// plane: the one value a headless free sidecar needs. A platform
+		// identity (a cluster's service account token) is never sent to a
+		// plane nobody named: the daemon refuses it as before.
+		if sidecarTokenGiven() && os.Getenv(daemon.SidecarIdentityTypeEnv) == "" &&
+			os.Getenv(daemon.ControlPlaneURLEnv) == "" && file.planeURL == "" {
 			err = os.Setenv(daemon.ControlPlaneURLEnv, DefaultSidecarControlPlaneURL)
 		}
 		return nil, "", false, err
