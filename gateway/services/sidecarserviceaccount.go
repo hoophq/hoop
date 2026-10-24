@@ -36,7 +36,7 @@ const SidecarDeletedMessage = "this sidecar was deleted in the control plane; an
 
 // sidecarReservedNames would shadow the static routes registered beside
 // /sidecars/:nameOrID.
-var sidecarReservedNames = []string{"handshake", "configuration"}
+var sidecarReservedNames = []string{"handshake", "configuration", "login"}
 
 // IsReservedSidecarName reports a name no sidecar may take, whoever creates it.
 func IsReservedSidecarName(name string) bool { return slices.Contains(sidecarReservedNames, name) }

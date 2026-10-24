@@ -64,6 +64,7 @@ import ComplianceReport from '@/pages/ComplianceReport'
 import Reviews from '@/pages/Reviews'
 import Sidecars from '@/pages/Sidecars'
 import SidecarSetup from '@/pages/Sidecars/Setup'
+import SidecarLogin from '@/pages/Sidecars/Login'
 import SidecarDetailsPage from '@/pages/Sidecars/Details'
 import SidecarListenerPage from '@/pages/Sidecars/Listener'
 
@@ -123,6 +124,15 @@ function Router() {
         element={
           <Page adminOnly>
             <SidecarSetup mode="connect" />
+          </Page>
+        }
+      />
+      {/* Approves a sidecar that logged in by device code (hoop start sidecar). */}
+      <Route
+        path="/sidecars/login"
+        element={
+          <Page adminOnly>
+            <SidecarLogin />
           </Page>
         }
       />
