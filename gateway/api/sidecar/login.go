@@ -90,8 +90,8 @@ func normalizeUserCode(raw string) string {
 //	@Failure		429,503		{object}	openapi.HTTPError
 //	@Router			/sidecars/login [post]
 func StartLogin(c *gin.Context) {
-	if !loginStartLimiter.allow(c.ClientIP()) {
-		c.JSON(http.StatusTooManyRequests, gin.H{"message": "too many sidecar logins from this address; wait a minute and try again"})
+	if !loginStartLimiter.allow(loginStartKey) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"message": "too many sidecar logins right now; wait a minute and try again"})
 		return
 	}
 	token := c.GetHeader(apiroutes.SidecarTokenHeader)
@@ -292,12 +292,10 @@ func lockPendingLogin(tx *gorm.DB, code string) (*models.SidecarLogin, error) {
 // tooManyCodeRequests answers 429 when this user has spent its budget of
 // code reads and decisions.
 func tooManyCodeRequests(c *gin.Context, userID string) bool {
-	// Both spend: an account and the address it comes from each have a budget.
 	userOK := loginCodeLimiter.allow(userID)
-	ipOK := loginCodeIPLimiter.allow(c.ClientIP())
-	// A spent plane budget refuses only callers that guessed wrong lately.
-	guessing := loginMissLimiter.exhausted(loginMissKey) && loginMissers.any(missKeys(c, userID)...)
-	if userOK && ipOK && !guessing {
+	// A spent plane budget refuses only users that guessed wrong lately.
+	guessing := loginMissLimiter.exhausted(loginMissKey) && loginMissers.any(userID)
+	if userOK && !guessing {
 		return false
 	}
 	c.JSON(http.StatusTooManyRequests, gin.H{"message": "too many sidecar code requests; wait a minute and try again"})
@@ -309,13 +307,8 @@ func tooManyCodeRequests(c *gin.Context, userID string) bool {
 // account and address, not only per caller.
 func answerCodeMiss(c *gin.Context, status int, message string) {
 	loginMissLimiter.allow(loginMissKey)
-	loginMissers.mark(missKeys(c, storagev2.ParseContext(c).UserID)...)
+	loginMissers.mark(storagev2.ParseContext(c).UserID)
 	c.JSON(status, gin.H{"message": message})
-}
-
-// missKeys are the user and the address a wrong code is held against.
-func missKeys(c *gin.Context, userID string) []string {
-	return []string{"user:" + userID, "ip:" + c.ClientIP()}
 }
 
 // ApproveLogin

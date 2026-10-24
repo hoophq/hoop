@@ -34,7 +34,6 @@ func startLoginDB(t *testing.T) string {
 	// Every test calls from the same address and user; a fresh budget each.
 	loginStartLimiter = newKeyedLimiter(10, 5)
 	loginCodeLimiter = newKeyedLimiter(20, 10)
-	loginCodeIPLimiter = newKeyedLimiter(20, 10)
 	loginMissLimiter = newKeyedLimiter(600, 600)
 	loginMissers = newRecentKeys(limiterIdle)
 	orgID := uuid.NewString()
@@ -290,7 +289,7 @@ func TestSidecarLoginIsRateLimited(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		last = callStartLogin(t, testSidecarToken(t), "laptop").Code
 	}
-	assert.Equal(t, http.StatusTooManyRequests, last, "the sixth start from one address")
+	assert.Equal(t, http.StatusTooManyRequests, last, "the sixth start past the plane budget")
 
 	for i := 0; i < 11; i++ {
 		last = callDecide(orgID, "BCDF-GHJK", GetLogin, nil).Code
@@ -322,8 +321,9 @@ func TestApprovalPutsTheSidecarInTheApproversOrgOnly(t *testing.T) {
 }
 
 // Wrong codes spend the plane's budget: once spent, code lookups refuse for
-// every account and address that guessed wrong, however many there are. A
-// caller that never guessed wrong still reads and approves its own code.
+// every account that guessed wrong, however many there are. A user that
+// never guessed wrong still reads its code, even from the guesser's address
+// (behind a proxy, every caller has the same one).
 func TestWrongCodesSpendThePlanesBudget(t *testing.T) {
 	orgID := startLoginDB(t)
 	resp := startedLogin(t, testSidecarToken(t), "edge")
@@ -331,19 +331,14 @@ func TestWrongCodesSpendThePlanesBudget(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		// A fresh per-user budget each time: only the plane's is shared.
 		loginCodeLimiter = newKeyedLimiter(20, 10)
-		loginCodeIPLimiter = newKeyedLimiter(20, 10)
 		assert.Equal(t, http.StatusNotFound, callDecide(orgID, "BCDF-GHJK", GetLogin, nil).Code)
 	}
 	loginCodeLimiter = newKeyedLimiter(20, 10)
-	loginCodeIPLimiter = newKeyedLimiter(20, 10)
 	assert.Equal(t, http.StatusTooManyRequests, callDecide(orgID, "BCDF-GHJK", GetLogin, nil).Code)
-	// The guesser's account from another address, and its address as another
-	// account: both refused.
+	// The guesser from another address: refused.
 	assert.Equal(t, http.StatusTooManyRequests,
 		callDecideAs(orgID, "user-1", "198.51.100.9:1", resp.UserCode, GetLogin, nil).Code)
-	assert.Equal(t, http.StatusTooManyRequests,
-		callDecideAs(orgID, "user-2", "192.0.2.1:1", resp.UserCode, GetLogin, nil).Code)
-	// Another admin, from another address, is not locked out.
+	// Another admin from the guesser's address: not locked out.
 	assert.Equal(t, http.StatusOK,
-		callDecideAs(orgID, "user-3", "203.0.113.7:1", resp.UserCode, GetLogin, nil).Code)
+		callDecideAs(orgID, "user-2", "192.0.2.1:1234", resp.UserCode, GetLogin, nil).Code)
 }

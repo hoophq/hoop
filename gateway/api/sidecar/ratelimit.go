@@ -67,29 +67,31 @@ func (k *keyedLimiter) exhausted(key string) bool {
 }
 
 var (
-	// loginStartLimiter bounds the unauthenticated start route per client
-	// address, so one caller cannot fill the table every tenant shares.
-	loginStartLimiter = newKeyedLimiter(10, 5)
-	// loginCodeLimiter and loginCodeIPLimiter bound reads and decisions on
-	// user codes per user and per address. On a multi-tenant plane anyone who
-	// signs up is an admin, so a guesser can hold many accounts; the address
-	// limit stops that from multiplying the guesses.
-	loginCodeLimiter   = newKeyedLimiter(20, 10)
-	loginCodeIPLimiter = newKeyedLimiter(20, 10)
+	// No limiter is keyed by client address: the engine trusts no proxy, so
+	// behind an Ingress every caller has the proxy's address.
+	//
+	// loginStartLimiter is the whole plane's budget of the unauthenticated
+	// start route. maxPendingSidecarLogins bounds the table it fills.
+	loginStartLimiter = newKeyedLimiter(300, 100)
+	// loginCodeLimiter bounds reads and decisions on user codes per user.
+	loginCodeLimiter = newKeyedLimiter(20, 10)
 	// loginMissLimiter is the whole plane's budget of wrong codes. Spent, code
-	// lookups refuse until it refills for every account and address that sent
-	// a wrong code recently (loginMissers): at 600 a minute, hitting one live
-	// code in 20^8 takes decades. Callers with no recent miss are not
-	// refused, so guessers cannot block approvals for other organizations.
+	// lookups refuse until it refills for every user that sent a wrong code
+	// recently (loginMissers), however many accounts a guesser holds: at 600
+	// a minute, hitting one live code in 20^8 takes decades. Users with no
+	// recent miss are not refused, so guessers cannot block other orgs.
 	loginMissLimiter = newKeyedLimiter(600, 600)
 	loginMissers     = newRecentKeys(limiterIdle)
 )
 
-// loginMissKey is the one key of loginMissLimiter.
-const loginMissKey = "plane"
+// loginMissKey and loginStartKey are the one key of their plane-wide limiter.
+const (
+	loginMissKey  = "plane"
+	loginStartKey = "plane"
+)
 
-// recentKeys remembers which keys (users, addresses) did something within a
-// window: here, sent a wrong code.
+// recentKeys remembers which keys (users) did something within a window:
+// here, sent a wrong code.
 type recentKeys struct {
 	mu     sync.Mutex
 	window time.Duration
