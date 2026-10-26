@@ -485,6 +485,65 @@ jobs:
             || { echo "::error::a request body kept the example host or holds a secret"; exit 1; }
           echo "the OpenAI Agents kubernetes template renders and its OpenAI side reaches only the sidecar"
 
+      # The README promises the Claude twin's rules, login and topology.
+      - name: Assert the OpenAI Agents postgres-mcp template matches its Claude twin
+        run: |
+          set -euo pipefail
+          dir=./deploy/openai-agents/postgres-mcp
+          twin=./deploy/managed-agents/postgres-mcp
+          for f in sidecar.yaml seed.sql docker-compose.test.yml; do
+            cmp -s "$dir/$f" "$twin/$f" || { echo "::error::$dir/$f differs from $twin/$f"; exit 1; }
+          done
+          # Assigned first, so a yq failure stops the step instead of comparing
+          # two empty strings.
+          for block in .services.postgres .services.dbhub '.services.sidecar | del(.image)' .networks; do
+            a=$(yq -o=json "$block" "$dir/docker-compose.yml")
+            b=$(yq -o=json "$block" "$twin/docker-compose.yml")
+            [[ "$a" == "$b" ]] \
+              || { echo "::error::$dir/docker-compose.yml and its Claude twin differ in $block"; exit 1; }
+          done
+          # ENG-855: older sidecars miss a DELETE after `-- x<CR>`.
+          img=$(yq '.services.sidecar.image' "$dir/docker-compose.yml")
+          [[ "$img" =~ ^hoophq/hoopsidecar:([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
+            && [[ "$(printf '1.260.3\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.260.3 ]] \
+            || { echo "::error::docker-compose.yml must pin hoophq/hoopsidecar 1.260.3 or later by digest: $img"; exit 1; }
+          # setup.sh: OpenAI's servers make the MCP call with the vault token,
+          # and the sandbox has no network.
+          host=mcp.ci.example
+          bodies=$(MCP_HOST=$host "$dir/setup.sh" create --dry-run)
+          jq -e '.environment_template.network == {access: "disabled"}' <<<"$bodies" >/dev/null \
+            || { echo "::error::the environment template has a network"; exit 1; }
+          jq -e --arg u "https://$host/mcp" '[.agent.tools[] | {type, connection_origin, url: .transport.server_url, required}]
+              == [{type: "mcp", connection_origin: "service", url: $u, required: true}]' <<<"$bodies" >/dev/null \
+            || { echo "::error::the agent's tools are not one required service-origin MCP server"; exit 1; }
+          jq -e --arg u "https://$host/mcp" '.credential.auth == {type: "static_bearer", mcp_server_url: $u}' <<<"$bodies" >/dev/null \
+            || { echo "::error::the vault credential does not name the agent's MCP URL, or holds a secret"; exit 1; }
+          jq -e '[.. | strings | select(test("mcp\\.example\\.com"))] == []' <<<"$bodies" >/dev/null \
+            || { echo "::error::a request body kept the example host"; exit 1; }
+          # The production Caddy config admits only the list run.sh writes.
+          # Two lists, so a prefix written into the Caddyfile cannot pass as
+          # the imported one.
+          img=$(yq '.services.caddy.image' "$dir/docker-compose.yml")
+          for range in 192.0.2.0/24 198.51.100.0/24; do
+            tmp=$(mktemp -d)
+            echo "@outside not client_ip $range" > "$tmp/openai.caddy"
+            prod=$(docker run --rm -e SITE_ADDRESS=mcp.ci.example -v "$PWD/$dir/Caddyfile:/etc/caddy/Caddyfile:ro" \
+              -v "$tmp:/etc/caddy/ranges:ro" "$img" caddy adapt --config /etc/caddy/Caddyfile)
+            jq -e --arg r "$range" '[.. | .client_ip? // empty | .ranges[]] == [$r]' <<<"$prod" >/dev/null \
+              || { echo "::error::the Caddyfile admits other than the imported list $range"; exit 1; }
+            # The 403 must run before the one proxy, or it guards nothing.
+            jq -e --arg r "$range" '[.. | objects | select(.handler? == "subroute") | .routes | select(any(.[]; .handle[0].handler == "reverse_proxy"))]
+                | length == 1 and (.[0][0] == {match: [{not: [{client_ip: {ranges: [$r]}}]}],
+                    handle: [{handler: "static_response", status_code: 403, body: "forbidden"}]})' <<<"$prod" >/dev/null \
+              || { echo "::error::the Caddyfile does not refuse a caller outside $range before it proxies"; exit 1; }
+          done
+          # A file mount would keep serving the list that ./run.sh ranges replaced.
+          yq -e '.services.caddy.volumes[] | select(. == "./ranges:/etc/caddy/ranges:ro")' "$dir/docker-compose.yml" >/dev/null \
+            || { echo "::error::Caddy does not mount the ranges directory that run.sh writes"; exit 1; }
+          jq -e '[.apps.http.servers[].trusted_proxies.ranges] == [["127.0.0.1/32"]]' <<<"$prod" >/dev/null \
+            || { echo "::error::the production Caddyfile trusts a proxy other than loopback"; exit 1; }
+          echo "the OpenAI Agents postgres-mcp template matches its Claude twin and admits only OpenAI's list"
+
       # Each quick start runs on its pinned image: the demo API it relies on,
       # and the free-tier message its README quotes. The helm values share
       # that image and those rules, so they fit the free tier too.
