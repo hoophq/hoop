@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { REVIEW_NOTIFICATIONS_FLAG } from '@/features/ApprovalNotifications'
 import { useLiveEvent } from '@/hooks/useLiveEvent'
@@ -26,7 +26,27 @@ export function usePendingApprovalsCount() {
     return () => window.removeEventListener('focus', onFocus)
   }, [fetchCount])
 
-  useLiveEvent(LIVE_EVENTS.REVIEW_CREATED, fetchCount, live)
+  // A hidden tab reads once when shown again, not once per event.
+  const stale = useRef(false)
+
+  useLiveEvent(
+    LIVE_EVENTS.REVIEW_CREATED,
+    () => {
+      if (document.hidden) stale.current = true
+      else fetchCount()
+    },
+    live,
+  )
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.hidden || !stale.current) return
+      stale.current = false
+      fetchCount()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [fetchCount])
 
   return count
 }
