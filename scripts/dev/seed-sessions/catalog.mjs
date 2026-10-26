@@ -553,7 +553,8 @@ function batch() {
   })
 }
 
-// A workflow of 210 steps: more than the 200 the timeline loads.
+// A workflow of 210 steps: more than the 200 the timeline asks for. The API
+// returns at most 100 (MaxSessionListLimit).
 function workflow() {
   const start = Date.parse('2026-10-01T08:00:00Z')
   return Array.from({ length: 210 }, (_, i) => {
