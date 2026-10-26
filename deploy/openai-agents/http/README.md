@@ -3,7 +3,8 @@
 An agent in an OpenAI Agents API hosted sandbox reaches one REST API, and
 only through a hoop sidecar. The sidecar admits a caller by token, denies
 writes, masks personal data in responses and records each request with the
-OpenAI session id. `deploy/managed-agents/http` is the Claude twin.
+OpenAI session id. `deploy/managed-agents/http` is the Claude twin. The
+docs page: [OpenAI Agents API](https://hoop.dev/docs/integrations/openai-agents).
 
 ```
 hosted sandbox, restricted        your network

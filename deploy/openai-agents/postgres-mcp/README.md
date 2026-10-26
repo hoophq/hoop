@@ -3,7 +3,8 @@
 An agent in an OpenAI Agents API hosted sandbox queries Postgres with an MCP
 tool. The MCP server reaches the database only through a hoop sidecar, which
 refuses writes, masks emails and records each statement.
-`deploy/managed-agents/postgres-mcp` is the Claude twin.
+`deploy/managed-agents/postgres-mcp` is the Claude twin. The docs page:
+[Postgres through an MCP server](https://hoop.dev/docs/integrations/openai-agents#postgres-through-an-mcp-server).
 
 ```
 OpenAI's servers            your host
