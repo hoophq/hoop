@@ -286,6 +286,69 @@ means registering a new sidecar. The token flag and `HOOP_SIDECAR_TOKEN`
 hold the token itself, never a path, and no config key exists for it: a
 bearer secret does not belong in a file that gets committed.
 
+#### Logging in instead of a token
+
+The free plan always runs identified. `hoop start sidecar` logs in on its
+first run, with a config file or without one, unless the run already has a
+credential (the token flag, `HOOP_SIDECAR_TOKEN` or a platform identity) or a
+license, which is not the free plan. `--validate`, `--migrate` and
+`--codec-test` never log in.
+
+The login goes to `HOOP_CONTROL_PLANE_URL`, then the config file's
+`control_plane_url`, else `https://use.hoop.dev`. A plane other than hoop's is
+an Enterprise deployment, and its own web app approves the code. The login
+prints a URL and a code; an admin approves the code in the web app, and the
+sidecar joins that admin's organization.
+
+```bash
+hoop start sidecar --config sidecar.yaml
+#   To connect this sidecar, approve it in your browser:
+#     https://use.hoop.dev/sidecars/login?code=BCDF-GHJK
+#   The page shows the code BCDF-GHJK. Approve only if it matches this one.
+```
+
+The sidecar makes its own `hsc_` token and sends it once; the plane keeps
+only its hash, and approving creates the sidecar with it. The token is saved
+in `~/.hoop/sidecar/credentials.json` (mode 0600; `HOOP_SIDECAR_STATE_DIR`
+moves the folder), one login per control plane, and is only ever sent to the
+plane that issued it. The next run on that plane reuses it without asking.
+
+A run with a config file boots that file, connected: the file stays the
+source and the plane shows it (`load_from_disk`). A bare run at a terminal
+asks first: **Managed by hoop (free)** logs in on the first-run screen and
+then sets the config up there, and **Enterprise** opens the Connect page (your
+own Control Plane and token, or a license). The setup screen also asks the
+plane every few seconds, and boots on a configuration set in the web app as
+soon as there is one. The next bare run boots the file the last run booted.
+
+| Command | Does |
+|---|---|
+| `hoop sidecar status` | the planes this machine is logged in to, each with its sidecar and config file |
+| `hoop sidecar status --token` | the same, with each token, to set `HOOP_SIDECAR_TOKEN` elsewhere |
+| `hoop sidecar logout` | forgets this machine's token; `--control-plane <url>` or `--all` when it holds several |
+| `--login` | logs in again even when a login is saved |
+| `--no-login` | runs standalone; refused on the free plan, accepted with a license |
+
+Logout is local, like `docker logout`: the sidecar stays in its organization.
+Delete it in the web app to remove it there, which also stops its token.
+
+**Headless** (a container, a marketplace image, an agent): log in once and
+pass the token. Get it from the web app (Connect an existing Sidecar) or from
+a machine that logged in (`hoop sidecar status --token`), and set
+`HOOP_SIDECAR_TOKEN`. With no `HOOP_CONTROL_PLANE_URL` the token goes to the
+hosted plane. A headless run with no credential logs in by itself and writes
+the login as JSON lines on stdout, for a console or an agent to show a person:
+
+```json
+{"time":"2026-10-16T20:00:00Z","level":"INFO","msg":"sidecar login required: approve the code in the web app","event":"sidecar_login_required","control_plane_url":"https://use.hoop.dev","verification_url":"https://use.hoop.dev/sidecars/login?code=BCDF-GHJK","user_code":"BCDF-GHJK","expires_in":600}
+{"time":"2026-10-16T20:01:10Z","level":"INFO","msg":"sidecar login approved","event":"sidecar_login_approved","control_plane_url":"https://use.hoop.dev","sidecar":"edge-1"}
+```
+
+Keep `HOOP_SIDECAR_STATE_DIR` on a volume, or the next restart logs in again.
+
+An organization without an Enterprise license holds one sidecar, under the
+free rule caps below. This is the hoop CLI only: `hoop-inspect` takes a token.
+
 #### Service account identity instead of a token
 
 A fleet does not have to register each sidecar. The sidecar can present an

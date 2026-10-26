@@ -172,9 +172,15 @@ func TestTheStartupReconcilePutsBackMirrorsThatFellBehind(t *testing.T) {
 		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"},
 		{"name": "app db", "protocol": "http", "listen": ":8080", "upstream": "api:80"}]}`)
 	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
-	w, stuck := postSidecar(t, "stuck", `{"listeners": [
-		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`)
-	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	// A second sidecar is past the free plan's seats, which POST refuses; an
+	// organization holds one after losing its license. Seeded as POST stores it.
+	stuckCfg, err := services.ParseSidecarConfiguration([]byte(`{"listeners": [
+		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`))
+	require.NoError(t, err)
+	stuck := &models.Sidecar{OrgID: switchOrgID, Name: "stuck", KeyHash: models.HashAPIKey("hsc_stuck"),
+		Configuration: models.SidecarConfiguration(stuckCfg), CreatedBy: "tests@hoop.dev"}
+	require.NoError(t, models.CreateSidecar(models.DB, stuck))
+	require.NoError(t, services.SyncSidecarListenerConnectionsTx(models.DB, stuck))
 	assert.Equal(t, map[string]string{
 		"early-appdb": "database/postgres",
 		models.SidecarMirrorFallbackName("early-app db", early.ID, "app db"): "httpproxy/httpproxy",
