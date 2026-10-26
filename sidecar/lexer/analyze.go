@@ -834,7 +834,12 @@ func (a *analyzer) sparkTarget(i int) int {
 	default:
 		return i
 	}
-	next, rel, ok := a.relationAt(j, j)
+	// SHOW puts no modifier before its table, so no word is skipped there.
+	resolve := a.relationAt
+	if a.toks[i].Text == "show" {
+		resolve = a.nameAt
+	}
+	next, rel, ok := resolve(j, j)
 	if !ok {
 		// `VACUUM '/path'` and `CACHE SELECT ...` name no relation, and
 		// the tokens stay for the walk.
@@ -844,7 +849,7 @@ func (a *analyzer) sparkTarget(i int) int {
 	// A qualified s.t may repeat its schema there, and keeps its name.
 	if a.toks[i].Text == "show" && a.toks[i+1].isWord("columns") && next+1 < len(a.toks) &&
 		(a.toks[next+1].isWord("in") || a.toks[next+1].isWord("from")) {
-		if end, ns, ok := a.relationAt(next+1, next+1); ok {
+		if end, ns, ok := a.nameAt(next+1, next+1); ok {
 			if !a.puncts(next-1, ".") {
 				rel.Name = ns.Name + "." + rel.Name
 			}
@@ -861,7 +866,12 @@ func (a *analyzer) sparkTarget(i int) int {
 // describes a table called history, and `DESCRIBE extended PARTITION (p =
 // 1)` one called extended. Skipped, the keyword took the statement's table
 // with it, and a rule fencing reads of that table never saw the DESCRIBE.
+// A string after it is Delta's path form, `DESCRIBE DETAIL '/data/t'`: the
+// keyword stays a keyword, and the path names no relation.
 func (a *analyzer) sparkNameAfter(k int) bool {
+	if k+1 < len(a.toks) && a.toks[k+1].Kind == Literal {
+		return true
+	}
 	if k+1 >= len(a.toks) || !a.toks[k+1].isName() {
 		return false
 	}
@@ -987,10 +997,18 @@ func (a *analyzer) relationsAfter(i int) (int, []Relation, bool) {
 // relationAt resolves one name starting after position j, under the
 // introducer at position i.
 func (a *analyzer) relationAt(i, j int) (int, Relation, bool) {
-	j++
-	for j < len(a.toks) && a.toks[j].Kind == Word && relSkip[a.toks[j].Text] {
+	for j+1 < len(a.toks) && a.toks[j+1].Kind == Word && relSkip[a.toks[j+1].Text] {
 		j++
 	}
+	return a.nameAt(i, j)
+}
+
+// nameAt resolves the name straight after position j, under the introducer
+// at position i, as relationAt does without skipping a relSkip word first.
+// Where the grammar puts no modifier before the name, a table may be called
+// only or if: `SHOW TBLPROPERTIES only` reads a table called only.
+func (a *analyzer) nameAt(i, j int) (int, Relation, bool) {
+	j++
 	if j >= len(a.toks) || !a.toks[j].isName() {
 		return j, Relation{}, false
 	}
@@ -1050,7 +1068,7 @@ func (a *analyzer) relationAt(i, j int) (int, Relation, bool) {
 	switch a.toks[i].Text {
 	case "from", "join", "using":
 		if j+1 < len(a.toks) && a.toks[j+1].Kind == Punct && a.toks[j+1].Text == "(" {
-			if a.d == Spark && strings.EqualFold(name, "table_changes") {
+			if a.d == Spark && strings.EqualFold(a.toks[j].Text, "table_changes") {
 				return a.tableChanges(j)
 			}
 			return j, Relation{}, false
@@ -1076,6 +1094,11 @@ func (a *analyzer) puncts(k int, p string) bool {
 // argument names, so it reads that table's rows: as a function it named no
 // relation, and a rule fencing reads of the table never saw the query. The
 // index returned is j, so the walk still reads the arguments.
+//
+// A qualified call, `builtin.table_changes(...)` or
+// `system.builtin.table_changes(...)`, is the same built-in, so the last part
+// of the name decides. A user function with that name in another schema is
+// read the same way, which can only add a read.
 //
 // The name is a string, parsed as a multipart identifier, so it is read from
 // the literal's bytes. Any other first argument names a table this scanner

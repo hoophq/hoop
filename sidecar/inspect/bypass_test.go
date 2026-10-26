@@ -621,6 +621,7 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"GENERATE is refused as an alter", "GENERATE symlink_format_manifest FOR TABLE t", noWrites, true},
 		{"DESCRIBE TABLE EXTENDED is refused by a rule fencing reads of its table", "DESCRIBE TABLE EXTENDED t", fenceReadT, true},
 		{"table_changes is refused by a rule fencing reads of its table", "SELECT * FROM table_changes('t', 1)", fenceReadT, true},
+		{"a qualified table_changes is refused by a rule fencing reads of its table", "SELECT * FROM system.builtin.table_changes('t', 1)", fenceReadT, true},
 		{"table_changes over an expression is refused as unreadable", "SELECT * FROM table_changes(concat('t', ''), 1)", unreadable, true},
 		{"a column aliased overwrite is refused by a rule fencing reads of its table", "SELECT id overwrite FROM t", fenceReadT, true},
 		{"EXPLAIN INSERT OVERWRITE is refused by a rule fencing reads of its table", "EXPLAIN INSERT OVERWRITE t SELECT 1", fenceReadT, true},

@@ -1796,6 +1796,9 @@ func TestSparkMaintenanceCommands(t *testing.T) {
 		{"DESC history.x", lexer.Show, nil, []string{"history.x"}},
 		{"DESCRIBE TABLE EXTENDED history", lexer.Show, nil, []string{"history"}},
 		{"DESCRIBE extended PARTITION (p = 1)", lexer.Show, nil, []string{"extended"}},
+		// Delta's path form names no table, and the keyword is no name.
+		{"DESCRIBE DETAIL '/data/events'", lexer.Show, nil, nil},
+		{"DESCRIBE HISTORY '/data/events'", lexer.Show, nil, nil},
 		{"DESCRIBE FUNCTION f", lexer.Show, nil, nil},
 		{"DESCRIBE SCHEMA s", lexer.Show, nil, nil},
 		{"DESCRIBE QUERY SELECT * FROM t", lexer.Show, nil, []string{"t"}},
@@ -1832,6 +1835,10 @@ func TestSparkMetadataAndChangeFeedReadTheirTable(t *testing.T) {
 		{"SHOW PARTITIONS salaries", []string{"salaries"}},
 		{"SHOW PARTITIONS salaries PARTITION (year = 2024)", []string{"salaries"}},
 		{"SHOW TABLES IN hr", nil},
+		// SHOW puts no modifier before its table, so a table may be called only.
+		{"SHOW TBLPROPERTIES only", []string{"only"}},
+		{"SHOW PARTITIONS if", []string{"if"}},
+		{"SHOW COLUMNS IN t IN only", []string{"only.t"}},
 		{"SELECT * FROM table_changes('salaries', 1)", []string{"salaries"}},
 		{"SELECT * FROM table_changes('c.hr.Salaries', 1, 5)", []string{"c.hr.salaries"}},
 		{"SELECT * FROM table_changes(\"`Pay Roll`.salaries\", '2024-01-01')", []string{"Pay Roll.salaries"}},
@@ -1839,6 +1846,10 @@ func TestSparkMetadataAndChangeFeedReadTheirTable(t *testing.T) {
 		{"SELECT * FROM TABLE_CHANGES ( /* feed */ 'salaries' , 1)", []string{"salaries"}},
 		{"SELECT * FROM a JOIN table_changes('salaries', 1) c ON a.id = c.id", []string{"a", "salaries"}},
 		{"SELECT * FROM table_changes('salaries', (SELECT max(v) FROM versions))", []string{"salaries", "versions"}},
+		// The qualified spellings of the same built-in.
+		{"SELECT * FROM builtin.table_changes('salaries', 1)", []string{"salaries"}},
+		{"SELECT * FROM system.builtin.table_changes('salaries', 1)", []string{"salaries"}},
+		{"SELECT * FROM `system`.`builtin`.`table_changes`('salaries', 1)", []string{"salaries"}},
 	} {
 		a := lexer.Analyze(tc.sql, lexer.Spark)
 		if !slices.Equal(reads(a), tc.reads) || len(writes(a)) != 0 || !a.Complete {
