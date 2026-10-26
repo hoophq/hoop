@@ -40,6 +40,12 @@ function utcSeconds(iso) {
   return iso ? new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z') : ''
 }
 
+// YYYY-MM-DD in the browser's time zone, without locale formatting.
+function localDate(d) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 const byNameThenEmail = (a, b) =>
   (a.name ?? '').toLowerCase().localeCompare((b.name ?? '').toLowerCase()) ||
   (a.email ?? '').toLowerCase().localeCompare((b.email ?? '').toLowerCase())
@@ -327,11 +333,18 @@ export default function Users() {
   // Every user that matches the table filters, from all pages: without
   // page/page_size the gateway returns them all as one array.
   async function handleExport() {
+    // Export what the search box shows: apply a pending debounced search now.
+    const typed = emailInput.trim()
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = null
+      setPage(1)
+      setEmail(typed)
+    }
     setExporting(true)
     try {
-      const { data } = await usersService.list({ email, status })
-      const date = new Date().toLocaleDateString('en-CA')
-      downloadCSV(`hoop-users-${date}.csv`, usersCSV(data ?? []))
+      const { data } = await usersService.list({ email: typed, status })
+      downloadCSV(`hoop-users-${localDate(new Date())}.csv`, usersCSV(data ?? []))
     } catch {
       showSnackbar({ level: 'error', text: 'Failed to export users.' })
     } finally {

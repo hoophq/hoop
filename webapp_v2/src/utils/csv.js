@@ -1,6 +1,7 @@
 // A spreadsheet runs a cell that starts with one of these as a formula.
-// A leading quote makes it text (OWASP "CSV Injection").
-const FORMULA_START = /^[=+\-@\t\r]/
+// A leading quote makes it text (OWASP "CSV Injection"). A leading line feed
+// is guarded too: some importers drop it and read the next character.
+const FORMULA_START = /^[=+\-@\t\r\n]/
 
 function cell(value) {
   let text = value == null ? '' : String(value)
@@ -23,6 +24,10 @@ export function downloadCSV(filename, text) {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  // Attached for the click and revoked later: some browsers start the
+  // download after click() returns, and an early revoke loses the file.
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
