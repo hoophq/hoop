@@ -99,7 +99,7 @@ const (
 // PostReview
 //
 //	@Summary		Create Sidecar Approval Request
-//	@Description	Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the listener's analyzer level decides who approves; with approver ai_agent the request records the approval agent's decision, is filed decided and never releases the statement.
+//	@Description	Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the listener's analyzer level decides who approves; with approver ai_agent the request records the approval agent's decision, is filed decided and never releases the statement. With handoff, the level is ai-handoff and its allowed_actions.require_approval decides who approves.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -205,8 +205,8 @@ func checkFilingFields(req openapi.SidecarReviewRequest) error {
 		switch {
 		case req.ApprovalRule == "":
 			return errors.New("approval_rule or risk_level is required")
-		case req.Approver != "" || req.Decision != "" || req.Reason != "":
-			return errors.New("approver, decision and reason are read only with risk_level")
+		case req.Approver != "" || req.Decision != "" || req.Reason != "" || req.Handoff:
+			return errors.New("approver, decision, reason and handoff are read only with risk_level")
 		}
 		return nil
 	}
@@ -242,11 +242,12 @@ func checkFilingFields(req openapi.SidecarReviewRequest) error {
 
 // postLevelReview files a statement held under a risk level. The level in the
 // listener's composed analyzer block decides who approves; the body only
-// names it.
+// names it. A hold the hand-off agent selected is authorized against the
+// level's allowed_actions.require_approval instead.
 func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest, statement []byte) {
 	level := analyzer.RiskLevel(req.RiskLevel)
 	approver := analyzer.Approver(req.Approver)
-	held, owner, err := authorizedRiskLevel(models.DB, sidecar, req.ListenerName, level, approver)
+	held, owner, err := authorizedRiskLevel(models.DB, sidecar, req.ListenerName, level, approver, req.Handoff)
 	if err != nil {
 		var refusal levelNotAuthorized
 		if errors.As(err, &refusal) {
@@ -261,14 +262,19 @@ func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Sideca
 		return
 	}
 
+	label := fmt.Sprintf("the %s risk level", level)
+	if req.Handoff {
+		label += " through a hand-off"
+	}
+	filing := sidecarFiling{
+		key:        models.SidecarReviewKey{RiskLevel: string(level), ViaHandoff: req.Handoff},
+		label:      label,
+		policy:     services.ReviewPolicyForLevel(sidecar.OrgID, held),
+		level:      string(level),
+		viaHandoff: req.Handoff,
+	}
 	// The limits live on the managed approval rule of the analyzer rule bound
 	// here; a listener's own block has none.
-	filing := sidecarFiling{
-		key:    models.SidecarReviewKey{RiskLevel: string(level)},
-		label:  fmt.Sprintf("the %s risk level", level),
-		policy: services.ReviewPolicyForLevel(sidecar.OrgID, held),
-		level:  string(level),
-	}
 	if owner != "" {
 		orgID, err := uuid.Parse(sidecar.OrgID)
 		if err != nil {
@@ -370,7 +376,8 @@ func fileAgentDecision(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 	sessionID := uuid.NewString()
 	reason := req.Reason
 
-	rev := newSidecarReview(sidecar, req.ListenerName, sessionID, "", sidecarFiling{level: req.RiskLevel}, now)
+	rev := newSidecarReview(sidecar, req.ListenerName, sessionID, "",
+		sidecarFiling{level: req.RiskLevel, viaHandoff: req.Handoff}, now)
 	rev.ApproverType = models.ApproverTypeAIAgent
 	rev.DecisionReason = &reason
 	sess := newSidecarSession(sidecar, sessionID, display, now)
@@ -389,7 +396,8 @@ func fileAgentDecision(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 		return
 	}
 	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name, "listener", req.ListenerName,
-		"risk-level", req.RiskLevel, "decision", req.Decision).Infof("recorded an approval agent decision")
+		"risk-level", req.RiskLevel, "via-handoff", req.Handoff, "decision", req.Decision).
+		Infof("recorded an approval agent decision")
 
 	trackClient := analytics.New()
 	defer trackClient.Close()
@@ -986,11 +994,12 @@ func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, 
 
 // authorizedRiskLevel reads the level a filing names in the analyzer block
 // SERVED to this listener, the composed one, as authorizedApprovalRule does.
-// The level must hold for the approver the body names. It returns the level
-// and the analyzer rule bound to the listener ("" for the listener's own
-// block).
+// The level must hold for the approver the body names, or, with handoff,
+// hand off to an agent that can select a hold for that approver. It returns
+// the held level (for a hand-off, the hold it selects) and the analyzer rule
+// bound to the listener ("" for the listener's own block).
 func authorizedRiskLevel(db *gorm.DB, sidecar *models.Sidecar, listenerName string, level analyzer.RiskLevel,
-	approver analyzer.Approver) (daemon.RiskLevel, string, error) {
+	approver analyzer.Approver, handoff bool) (daemon.RiskLevel, string, error) {
 	refuse := levelNotAuthorized{listenerName: listenerName, level: string(level), approver: string(approver)}
 	listeners := sidecar.Configuration.Listeners
 	var owners map[string]string
@@ -1001,7 +1010,7 @@ func authorizedRiskLevel(db *gorm.DB, sidecar *models.Sidecar, listenerName stri
 		}
 		listeners, owners = composed.Config.Listeners, composed.Analyzers
 	}
-	held, ok := listenerHoldsLevel(listeners, listenerName, level, approver)
+	held, ok := listenerHoldsLevel(listeners, listenerName, level, approver, handoff)
 	if !ok {
 		return daemon.RiskLevel{}, "", refuse
 	}
@@ -1009,10 +1018,12 @@ func authorizedRiskLevel(db *gorm.DB, sidecar *models.Sidecar, listenerName stri
 }
 
 // listenerHoldsLevel reports whether the served configuration holds this
-// level of this listener for this approver, and returns the level. Free of
-// the database, like listenerNamesApprovalRule.
+// level of this listener for this approver, and returns the held level. With
+// handoff the level must be ai-handoff, and the held level is the hold its
+// agent selects; without it a hand-off level holds nothing. Free of the
+// database, like listenerNamesApprovalRule.
 func listenerHoldsLevel(listeners []daemon.ListenerConfig, listenerName string, level analyzer.RiskLevel,
-	approver analyzer.Approver) (daemon.RiskLevel, bool) {
+	approver analyzer.Approver, handoff bool) (daemon.RiskLevel, bool) {
 	block := uniqueListenerAnalyzer(listeners, listenerName)
 	if block == nil {
 		return daemon.RiskLevel{}, false
@@ -1024,6 +1035,9 @@ func listenerHoldsLevel(listeners []daemon.ListenerConfig, listenerName string, 
 		return daemon.RiskLevel{}, false
 	}
 	held, ok := services.AnalyzerBlockLevel(&canonical, level)
+	if ok && handoff {
+		held, ok = services.HandoffHold(held)
+	}
 	if !ok || services.LevelApprover(held) != approver {
 		return daemon.RiskLevel{}, false
 	}
@@ -1093,6 +1107,8 @@ type sidecarFiling struct {
 	ruleName *string
 	// level is the risk level, "" under a rule.
 	level string
+	// viaHandoff marks a hold the hand-off agent of the level selected.
+	viaHandoff bool
 	// policy is nil on a review the approval agent decided.
 	policy                  *services.ReviewPolicy
 	forceGroups             pq.StringArray
@@ -1172,6 +1188,7 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		ForceApprovalGroups:   filing.forceGroups,
 		AccessRequestRuleName: filing.ruleName,
 		RiskLevel:             sql.NullString{String: filing.level, Valid: filing.level != ""},
+		ViaHandoff:            filing.viaHandoff,
 
 		// Fixed at filing like the policy, so a rule edit moves no live review.
 		ExpiresAt:      models.SidecarReviewDeadline(now, filing.pendingTTL),
@@ -1231,6 +1248,7 @@ func toOpenApiSidecarReview(r *models.Review) *openapi.Review {
 		// ignores the field.
 		RejectionReason: r.RejectionReason,
 		ApproverType:    approverType(r),
+		ViaHandoff:      r.ViaHandoff,
 		DecisionReason:  r.DecisionReason,
 	}
 }
@@ -1258,6 +1276,7 @@ func toSidecarReviewStatus(r *models.Review) *openapi.SidecarReviewStatus {
 		ApprovalRule:    ptr.ToString(r.AccessRequestRuleName),
 		RiskLevel:       r.RiskLevel.String,
 		ApproverType:    approverType(r),
+		ViaHandoff:      r.ViaHandoff,
 		DecisionReason:  r.DecisionReason,
 		CreatedAt:       r.CreatedAt,
 		DecidedAt:       reviewDecidedAt(r),

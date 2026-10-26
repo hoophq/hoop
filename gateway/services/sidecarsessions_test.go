@@ -1186,6 +1186,59 @@ func TestPlanSidecarSessionReviewIDs(t *testing.T) {
 	assert.Equal(t, []string{"review-session-0"}, plan.ReviewSessions)
 }
 
+func TestPlanSidecarSessionAIDecisions(t *testing.T) {
+	rated := func(seq int64, kind audit.Kind, md map[string]string) daemon.SessionEvent {
+		return sidecarEvent(seq, kind, time.Duration(seq)*time.Second, func(e *audit.Event) {
+			e.Statement = "UPDATE t SET x = 1"
+			e.Metadata = md
+		})
+	}
+	reviewID := uuid.NewString()
+	plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, existingSidecarSession(1), []daemon.SessionEvent{
+		rated(1, audit.KindStatement, map[string]string{analyzer.MetadataRiskLevel: "high"}),
+		rated(2, audit.KindStatement, map[string]string{
+			analyzer.MetadataRiskLevel: "medium", analyzer.MetadataAction: "ai-handoff",
+			analyzer.MetadataHandoffDecision: "block", analyzer.MetadataHandoffReason: "no\x00 where",
+			analyzer.MetadataReviewID: strings.ToUpper(reviewID),
+		}),
+		rated(3, audit.KindViolation, map[string]string{
+			analyzer.MetadataRiskLevel: "high", analyzer.MetadataApprover: "ai_agent",
+			analyzer.MetadataApprovalDecision: "rejected", analyzer.MetadataApprovalReason: "drops",
+			analyzer.MetadataReviewID: "not-a-uuid",
+		}),
+		rated(4, audit.KindStatement, map[string]string{analyzer.MetadataAIStatus: "skipped"}),
+		rated(5, audit.KindError, map[string]string{analyzer.MetadataRiskLevel: "low"}),
+		rated(5, audit.KindStatement, map[string]string{analyzer.MetadataRiskLevel: "low"}),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []sidecarAIDecision{
+		{Seq: 2, Timestamp: "2026-10-01T12:00:02Z", RiskLevel: "medium", RiskAction: "ai-handoff",
+			HandoffDecision: "block", HandoffReason: "no where", ReviewID: reviewID},
+		{Seq: 3, Timestamp: "2026-10-01T12:00:03Z", RiskLevel: "high", Approver: "ai_agent",
+			ApprovalDecision: "rejected", ApprovalReason: "drops"},
+	}, plan.AIDecisions, "seq 1 and the repeated seq 5 were applied before; an unrated or error event adds none")
+	assert.NotContains(t, plan.Sidecar, "ai_decisions_dropped")
+
+	raw, err := json.Marshal(plan.AIDecisions[1])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"seq":3,"timestamp":"2026-10-01T12:00:03Z","risk_level":"high","approver":"ai_agent",
+		"approval_decision":"rejected","approval_reason":"drops"}`, string(raw), "empty fields are left out")
+
+	// Past the cap the rest are counted, on top of what was dropped before.
+	prior := existingSidecarSession(1)
+	prior.AIDecisions = maxSidecarAIDecisions - 1
+	prior.AIDecisionsDropped = 4
+	plan, err = planSidecarSession(testSidecarIdent, testSidecarSessionID, prior, []daemon.SessionEvent{
+		rated(2, audit.KindStatement, map[string]string{analyzer.MetadataRiskLevel: "low"}),
+		rated(3, audit.KindViolation, map[string]string{analyzer.MetadataRiskLevel: "high"}),
+		rated(4, audit.KindStatement, map[string]string{analyzer.MetadataRiskLevel: "low"}),
+	})
+	require.NoError(t, err)
+	require.Len(t, plan.AIDecisions, 1, "one entry of room left")
+	assert.EqualValues(t, 2, plan.AIDecisions[0].Seq)
+	assert.EqualValues(t, 6, plan.Sidecar["ai_decisions_dropped"], "4 before, 2 now")
+}
+
 func TestMergeReviewSessions(t *testing.T) {
 	assert.Equal(t, []string{"a", "b", "c"}, mergeReviewSessions([]string{"a", "b"}, []string{"b", "c"}))
 	assert.Equal(t, []string{"a"}, mergeReviewSessions(nil, []string{"a"}))

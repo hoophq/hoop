@@ -28,6 +28,10 @@ type SidecarSessionState struct {
 	Reaped bool
 	// ReviewSessions are the sessions of the reviews this session links to.
 	ReviewSessions []string
+	// AIDecisions counts metadata.sidecar.ai_decisions entries;
+	// AIDecisionsDropped, those the cap left out.
+	AIDecisions        int
+	AIDecisionsDropped int64
 }
 
 // LockSidecarSession serializes a session's writers until tx ends. A row lock
@@ -41,15 +45,17 @@ func LockSidecarSession(tx *gorm.DB, sessionID string) error {
 // not exist yet.
 func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessionState, error) {
 	var row struct {
-		CreatedAt         time.Time
-		Metrics           []byte
-		LastSeq           *int64
-		Principal         string
-		GuardRails        int
-		GuardRailsOmitted *int64
-		Done              bool
-		Reaped            bool
-		ReviewSessions    []byte
+		CreatedAt          time.Time
+		Metrics            []byte
+		LastSeq            *int64
+		Principal          string
+		GuardRails         int
+		GuardRailsOmitted  *int64
+		Done               bool
+		Reaped             bool
+		ReviewSessions     []byte
+		AIDecisions        int    `gorm:"column:ai_decisions"`
+		AIDecisionsDropped *int64 `gorm:"column:ai_decisions_dropped"`
 	}
 	err := tx.Raw(`
 	SELECT created_at, metrics, status = 'done' AS done,
@@ -59,7 +65,10 @@ func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessi
 			THEN jsonb_array_length(guardrails_info) ELSE 0 END AS guard_rails,
 		(metadata->'sidecar'->>'guardrails_omitted')::BIGINT AS guard_rails_omitted,
 		metadata->'sidecar'->>'reaped_at' IS NOT NULL AS reaped,
-		metadata->'sidecar'->'review_sessions' AS review_sessions
+		metadata->'sidecar'->'review_sessions' AS review_sessions,
+		CASE WHEN jsonb_typeof(metadata->'sidecar'->'ai_decisions') = 'array'
+			THEN jsonb_array_length(metadata->'sidecar'->'ai_decisions') ELSE 0 END AS ai_decisions,
+		(metadata->'sidecar'->>'ai_decisions_dropped')::BIGINT AS ai_decisions_dropped
 	FROM private.sessions
 	WHERE org_id = ? AND id = ?`, orgID, sessionID).
 		Take(&row).Error
@@ -67,7 +76,10 @@ func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessi
 		return nil, err
 	}
 	state := &SidecarSessionState{CreatedAt: row.CreatedAt, Principal: row.Principal,
-		GuardRails: row.GuardRails, Done: row.Done, Reaped: row.Reaped}
+		GuardRails: row.GuardRails, Done: row.Done, Reaped: row.Reaped, AIDecisions: row.AIDecisions}
+	if row.AIDecisionsDropped != nil {
+		state.AIDecisionsDropped = *row.AIDecisionsDropped
+	}
 	if len(row.ReviewSessions) > 0 {
 		if err := json.Unmarshal(row.ReviewSessions, &state.ReviewSessions); err != nil {
 			return nil, fmt.Errorf("failed decoding review sessions: %w", err)
@@ -108,6 +120,22 @@ func SetSidecarSessionProgress(tx *gorm.DB, orgID, sessionID string, sidecar map
 	res := tx.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sessionID).
 		Updates(updates)
+	if res.Error == nil && res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return res.Error
+}
+
+// AppendSidecarSessionAIDecisionsTx appends entries, a JSON array, to
+// metadata.sidecar.ai_decisions. The caller bounds the list.
+func AppendSidecarSessionAIDecisionsTx(tx *gorm.DB, orgID, sessionID string, entries json.RawMessage) error {
+	res := tx.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		Update("metadata", gorm.Expr(`jsonb_set(COALESCE(metadata, '{}'::jsonb), '{sidecar}',
+			COALESCE(metadata->'sidecar', '{}'::jsonb) || jsonb_build_object('ai_decisions',
+				CASE WHEN jsonb_typeof(metadata->'sidecar'->'ai_decisions') = 'array'
+					THEN metadata->'sidecar'->'ai_decisions' ELSE '[]'::jsonb END || ?::jsonb), true)`,
+			string(entries)))
 	if res.Error == nil && res.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
 	}

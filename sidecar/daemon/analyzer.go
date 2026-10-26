@@ -1181,6 +1181,7 @@ func buildAnalyzerEvaluator(
 		Guidance:  guidance,
 		Actions:   actions,
 		Approvals: la.approvals(),
+		Handoffs:  la.handoffs(),
 		// Only a block reaches the approval agent, and a block is
 		// named after its lane.
 		Listener:      name,
@@ -1456,6 +1457,8 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 		problems = append(problems, validateGatedExclude(r.Trigger, gated, where)...)
 		problems = append(problems, refuseRuleFormHold(
 			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
+		problems = append(problems, refuseRuleFormHandoff(
+			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
 	}
 	return problems
 }
@@ -1484,6 +1487,24 @@ func refuseRuleFormHold(high, medium, low, where string) []string {
 				"do: it carries no approval_rule to name who may approve a held "+
 				"statement. Move this lane to a listener \"analyzer\" block, which "+
 				"takes both", where, holdAction, level.name)}
+	}
+	return nil
+}
+
+// refuseRuleFormHandoff refuses ai-handoff on the DEPRECATED ai_analysis
+// rule: it has no allowed_actions and no prompt to configure the hand-off,
+// and the listener analyzer block takes both.
+func refuseRuleFormHandoff(high, medium, low, where string) []string {
+	for _, level := range [...]struct{ name, action string }{
+		{"high", high}, {"medium", medium}, {"low", low},
+	} {
+		if analyzer.Action(level.action) != analyzer.ActionHandoff {
+			continue
+		}
+		return []string{fmt.Sprintf(
+			"%s asks for %s on %s risk, which a deprecated ai_analysis rule cannot do. "+
+				"Move this lane to a listener \"analyzer\" block, which takes allowed_actions",
+			where, analyzer.ActionHandoff, level.name)}
 	}
 	return nil
 }
@@ -1782,7 +1803,8 @@ func validateRiskActions(high, medium, low, where string) []string {
 		if !a.Valid() {
 			problems = append(problems, fmt.Sprintf(
 				"%s: unknown action %q for %s risk "+
-					"(allow, warn, block, defer or require_review, also spelled require_approval)", where, raw, level))
+					"(allow, warn, block, defer, require_review, also spelled require_approval, "+
+					"or ai-handoff)", where, raw, level))
 			continue
 		}
 		// `defer` with no OPA is not a refusal. actionMap degrades it

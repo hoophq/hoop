@@ -1174,7 +1174,7 @@ listeners:
     analyzer:                  # this lane's analyzer, beside guardrails
       trigger: {operations: [delete, update]}
       high: block
-      medium: warn
+      medium: warn             # allow | warn | block | defer | require_approval | ai-handoff
       low: allow
       message: refused by risk analysis
 
@@ -1398,10 +1398,11 @@ A level is a bare action (`low: allow`) or an object with these keys:
 
 | Key | Meaning |
 |---|---|
-| `action` | `allow`, `warn`, `block`, `defer` or `require_approval` |
+| `action` | `allow`, `warn`, `block`, `defer`, `require_approval` or `ai-handoff` |
 | `approver` | `human` or `ai_agent`, for `require_approval`. Default `ai_agent` |
 | `approval_groups` | who may approve a `human` level. Empty: the administrators |
-| `prompt` | replaces the approval agent's instruction on an `ai_agent` level |
+| `prompt` | replaces the approval agent's instruction on an `ai_agent` level, or the hand-off agent's on an `ai-handoff` level |
+| `allowed_actions` | what the hand-off agent of an `ai-handoff` level may select (below) |
 
 An object level needs no approval rule. A `human` level files its approval
 request with the risk level, and the control plane authorizes it against the
@@ -1455,6 +1456,110 @@ These load, and `-validate` and the start log warn that they do nothing:
 | `approver` other than `human` or `ai_agent` | ignored; the level uses `ai_agent` |
 | `prompt` on a `human` level | ignored |
 | `approval_rule` where every held level is an object | ignored |
+
+**Handing off to the AI agent (`ai-handoff`).** The analyzer classifies the
+statement as before, then a second model turn, the hand-off agent, selects
+the action from the level's `allowed_actions`:
+
+```yaml
+    analyzer:
+      trigger: {operations: [update, delete]}
+      high: block
+      medium:
+        action: ai-handoff
+        prompt: Prefer warn for read-only statements   # optional
+        allowed_actions:              # list form: [allow, warn, block, require_approval]
+          allow: {}                   # object form: each key is an allowed action
+          warn: {}
+          block: {}
+          require_approval:           # used only if the agent selects it
+            approver: human           # ai_agent | human. Default: ai_agent
+            approval_groups: [payments-approvers]
+      low: allow
+```
+
+`allowed_actions` takes `allow`, `warn`, `block` and `require_approval`
+(`require_review` is its alias). Absent means all four. The list form names
+them; the object form keys them, so `require_approval` can carry the fields
+of a held level: `approver`, `approval_groups` and, for `ai_agent`, `prompt`.
+`require_approval` in the list form, or `require_approval: {}`, uses the
+approval agent with its default prompt. The plane serves the object form only
+when `require_approval` carries a configuration, and the list form otherwise.
+The agent can never select `ai-handoff`.
+
+The turn uses the lane's provider and model, which must run tool calls. The
+agent reads the statement as the classification read it (`send` applies), the
+risk level and title, the listener, the protocol, the user and the allowed
+actions, and it gets one tool per allowed action and no other, each with a
+required `reason`:
+
+| Tool | Effect |
+|---|---|
+| `allow` | forward |
+| `warn` | forward and record the risk |
+| `block` | deny; the user reads the reason |
+| `require_approval` | hold under `allowed_actions.require_approval`, as a level with that approver: a `human` hold files its approval request with the risk level and `handoff: true`; the `ai_agent` approver decides with its own prompt, and its decision is filed with `handoff: true` |
+
+One call of an allowed tool with a non-blank reason decides. Anything else
+applies the most restrictive allowed action, in the order `block`,
+`require_approval`, `warn`, `allow`, with the reason "the hand-off agent did
+not decide": no call, two calls, a tool that is not allowed, a missing or
+blank reason, a refusal, a timeout, a provider error, a spent `max_calls` or
+a reached `rate_limit`. A statement longer than `max_input_bytes`, or a
+request body cut at capture, takes the same fail-safe with no model call.
+
+The call counts against `max_calls` and `rate_limit`, like the
+classification and the approval agent: a lane that hands off and approves with
+the agent can spend three calls on one statement. The decision is cached with
+the classification, on the statement shape, under a fingerprint of the
+level's hand-off configuration (prompt, allowed actions, approver and its
+prompt): a cache hit makes no call and keeps the cached reason, and a changed
+configuration misses. A fail-safe result is never cached. A cached
+`require_approval` still holds each statement for its own approval. The audit
+record keeps `risk_action: ai-handoff` and adds `handoff_decision` (`allow`,
+`warn`, `block` or `require_approval`) and `handoff_reason`.
+
+The default instruction, which the level's `prompt` replaces:
+
+```text
+You are a decision agent for a production access proxy. A risk analyzer
+rated this statement. You select what the proxy does with it.
+...
+When you are not sure, select the most restrictive action you have.
+```
+
+The full text is `analyzer.DefaultHandoffPrompt`. This suffix is always
+appended, and no config removes it:
+
+```text
+Report your decision by calling exactly one tool. You can call only the
+tools you have. Do not answer in prose.
+Put one short reason in the reason field.
+Do not quote a literal value from the statement, such as an ID, an email,
+a name or a token.
+```
+
+A level whose agent can select `require_approval` makes the lane one that
+holds: a classification that fails, or finds `max_calls` or `rate_limit`
+spent, denies whatever `fail_open` says. A level whose `require_approval` is
+`human` needs a control plane or a terminal, and counts as a level that waits
+for a person for `review_mode`, `approval_mode`, `spend_approval_on` and
+`match_ignore`. The deprecated `ai_analysis` rule form cannot hand off. These
+load, and `-validate` and the
+start log warn that they do nothing:
+
+| Setting | Warning |
+|---|---|
+| `allowed_actions` is empty, or names no action the agent can select | the level falls back to `block` |
+| `allowed_actions` contains `ai-handoff` or an unknown value | the value is ignored |
+| a configuration inside `allow`, `warn` or `block` | the configuration is ignored |
+| `allowed_actions` on a level whose action is not `ai-handoff`, or `prompt` on a level whose action is neither `ai-handoff` nor an `ai_agent` hold | the fields are ignored |
+| `approver` or `approval_groups` beside `action: ai-handoff` | ignored; write them under `allowed_actions.require_approval` |
+| `prompt` on a `human` `require_approval`, or `approval_groups` on an `ai_agent` one, or an unknown `approver` | ignored, as on a held level |
+
+`ai-handoff` and `allowed_actions` need capability `analyzer_ai_handoff`. The
+plane serves no downgrade: an older sidecar has no action that lets the agent
+choose, so the plane refuses to serve it the block and names the capability.
 
 **The bare form (deprecated).** `high: require_approval` with a listener
 `approval_rule` holds for a person under that control plane access request

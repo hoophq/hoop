@@ -83,14 +83,73 @@ func TestTheManagedRuleFollowsTheHumanLevels(t *testing.T) {
 	assert.Nil(t, groups())
 }
 
+// A hand-off level whose agent can select a human hold keeps the managed
+// rule: the hand-off reviews read its limits.
+func TestTheManagedRuleFollowsANestedHumanHold(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	sync := func(spec string) {
+		t.Helper()
+		require.NoError(t, services.SyncAnalyzerApprovalRule(models.DB, orgID, "handoff", json.RawMessage(spec), nil))
+	}
+	groups := func() []string {
+		t.Helper()
+		got, err := services.AnalyzerApprovalReviewers(models.DB, orgID, "handoff")
+		require.NoError(t, err)
+		return got
+	}
+
+	sync(`{"medium":{"action":"ai-handoff","allowed_actions":{"warn":{},` +
+		`"require_approval":{"approver":"human","approval_groups":["dba"," sre "]}}}}`)
+	assert.Equal(t, []string{"dba", "sre"}, groups())
+
+	// The limits stay while the nested hold is there.
+	pending := 900
+	require.NoError(t, services.ApplyAnalyzerApprovalTTLs(models.DB, orgID, "handoff", &pending, nil))
+	sync(`{"medium":{"action":"ai-handoff","allowed_actions":{"block":{},` +
+		`"require_approval":{"approver":"human","approval_groups":["dba"]}}}}`)
+	rule, err := services.AnalyzerApprovalRule(models.DB, orgID, "handoff")
+	require.NoError(t, err)
+	require.NotNil(t, rule)
+	require.NotNil(t, rule.PendingTTLSec)
+	assert.Equal(t, 900, *rule.PendingTTLSec)
+	assert.Equal(t, []string{"dba"}, groups())
+
+	// The highest human hold wins, direct or nested, as between levels.
+	sync(`{"high":{"action":"ai-handoff","allowed_actions":{"require_approval":{"approver":"human","approval_groups":["leads"]}}},` +
+		`"medium":{"action":"require_approval","approver":"human","approval_groups":["payments"]}}`)
+	assert.Equal(t, []string{"leads"}, groups())
+	sync(`{"high":{"action":"require_approval","approver":"human","approval_groups":["payments"]},` +
+		`"low":{"action":"ai-handoff","allowed_actions":{"require_approval":{"approver":"human","approval_groups":["leads"]}}}}`)
+	assert.Equal(t, []string{"payments"}, groups())
+
+	// No groups: the administrators.
+	sync(`{"high":{"action":"ai-handoff","allowed_actions":{"require_approval":{"approver":"human"}}}}`)
+	assert.Equal(t, []string{types.GroupAdmin}, groups())
+
+	// A hand-off whose hold is the approval agent's, or that cannot hold,
+	// needs no person: no rule.
+	sync(`{"high":{"action":"ai-handoff","allowed_actions":["allow","require_approval"]}}`)
+	assert.Nil(t, groups())
+	sync(`{"high":{"action":"ai-handoff","allowed_actions":{"require_approval":{"approver":"human"}}}}`)
+	sync(`{"high":{"action":"ai-handoff","allowed_actions":["allow","block"]}}`)
+	assert.Nil(t, groups())
+	sync(`{"high":{"action":"ai-handoff","allowed_actions":{"require_approval":{"approver":"human"}}}}`)
+	sync(`{"high":"ai-handoff"}`)
+	assert.Nil(t, groups(), "all four allowed holds for the approval agent")
+}
+
 func TestAnAnalyzerRuleHoldsForAPersonOnly(t *testing.T) {
 	for spec, want := range map[string]bool{
-		`{"high":"require_approval","approval_rule":"r"}`:                                 true,
-		`{"high":{"action":"require_approval","approver":"human"}}`:                       true,
-		`{"high":{"action":"require_review","approver":"human","approval_groups":["a"]}}`: true,
-		`{"high":{"action":"require_approval","approver":"ai_agent"}}`:                    false,
-		`{"high":{"action":"require_approval"}}`:                                          false,
-		`{"high":{"action":"warn"}}`:                                                      false,
+		`{"high":"require_approval","approval_rule":"r"}`:                                              true,
+		`{"high":{"action":"require_approval","approver":"human"}}`:                                    true,
+		`{"high":{"action":"require_review","approver":"human","approval_groups":["a"]}}`:              true,
+		`{"high":{"action":"require_approval","approver":"ai_agent"}}`:                                 false,
+		`{"high":{"action":"require_approval"}}`:                                                       false,
+		`{"high":{"action":"warn"}}`:                                                                   false,
+		`{"high":{"action":"ai-handoff","allowed_actions":{"require_approval":{"approver":"human"}}}}`: true,
+		`{"high":{"action":"ai-handoff","allowed_actions":["allow","require_approval"]}}`:              false,
+		`{"high":{"action":"ai-handoff","allowed_actions":["allow","block"]}}`:                         false,
 	} {
 		assert.Equal(t, want, services.AnalyzerRuleHolds(json.RawMessage(spec)), spec)
 	}

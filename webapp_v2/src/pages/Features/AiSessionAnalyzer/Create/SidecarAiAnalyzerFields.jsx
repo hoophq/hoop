@@ -1,6 +1,7 @@
-import { Box, Input, Paper, Stack, Text } from '@mantine/core'
+import { Box, Group, Input, Paper, Stack, Text } from '@mantine/core'
 import { Info } from 'lucide-react'
 import Alert from '@/components/Alert'
+import Checkbox from '@/components/Checkbox'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
@@ -17,8 +18,11 @@ import {
   APPROVER_AI,
   APPROVER_HUMAN,
   APPROVERS,
+  HANDOFF_CHOICES,
+  REVIEW_ACTION,
   REVIEW_MODE_HOLD,
   REVIEW_MODES,
+  isHandoffAction,
   isHoldAction,
 } from '@/pages/sidecarRuleVocabulary'
 import { APPROVER_RULE } from './useSidecarAiAnalyzerEditor'
@@ -82,6 +86,48 @@ function LevelApprover({ approval, approvalRule, groupOptions, onChange }) {
   )
 }
 
+// A hand-off level: the agent's prompt and the actions it may pick. A checked
+// "Hold for approval" shows who approves it.
+function LevelHandoff({ handoff, approval, groupOptions, onPrompt, onAllowed, onApproval }) {
+  const last = handoff.allowed.length === 1
+  return (
+    <Stack gap="sm">
+      <Textarea
+        label="Prompt (optional)"
+        placeholder="Instructions for the hand-off agent. Empty uses the default prompt."
+        minRows={3}
+        maxRows={8}
+        value={handoff.prompt}
+        onChange={(e) => onPrompt(e.currentTarget.value)}
+      />
+      <Input.Wrapper
+        label="Allowed actions"
+        description="The agent picks one of these. When it does not decide, the most restrictive one applies."
+      >
+        <Group gap="lg" mt="xs">
+          {HANDOFF_CHOICES.map(({ value, label }) => {
+            const checked = handoff.allowed.includes(value)
+            return (
+              <Checkbox
+                key={value}
+                label={label}
+                checked={checked}
+                disabled={checked && last}
+                onChange={(e) => onAllowed(value, e.currentTarget.checked)}
+              />
+            )
+          })}
+        </Group>
+      </Input.Wrapper>
+      {handoff.allowed.includes(REVIEW_ACTION) && (
+        <Paper withBorder p="sm" radius="md">
+          <LevelApprover approval={approval} groupOptions={groupOptions} onChange={onApproval} />
+        </Paper>
+      )}
+    </Stack>
+  )
+}
+
 export default function SidecarAiAnalyzerFields({ editor }) {
   const {
     isEdit,
@@ -95,6 +141,8 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     set,
     setLevelAction,
     setApproval,
+    setHandoffPrompt,
+    setAllowed,
     groupOptionsFor,
     pendingMinutes,
     editPendingMinutes,
@@ -213,7 +261,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
 
       <SectionRow
         title="What happens per risk level"
-        description="A level you leave unset allows. Hold for approval asks the AI agent at once, or waits up to 30 minutes for a person to decide, unless a time limit ends it sooner; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
+        description="A level you leave unset allows. Hold for approval asks the AI agent at once, or waits up to 30 minutes for a person to decide, unless a time limit ends it sooner; a client that times out first ends the wait, and running it again after approval lets it through. Hand off to AI Agent lets an agent pick one of the allowed actions for each statement. On an SSH listener, drop the shell capability first."
       >
         <Stack gap="md">
           {LEVELS.map(([level, label]) => (
@@ -232,6 +280,18 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                     approvalRule={form.approval_rule}
                     groupOptions={groupOptionsFor(level)}
                     onChange={(patch) => setApproval(level, patch)}
+                  />
+                </Paper>
+              )}
+              {isHandoffAction(form[level]) && (
+                <Paper withBorder p="sm" radius="md">
+                  <LevelHandoff
+                    handoff={form.handoff[level]}
+                    approval={form.approval[level]}
+                    groupOptions={groupOptionsFor(level)}
+                    onPrompt={(prompt) => setHandoffPrompt(level, prompt)}
+                    onAllowed={(value, checked) => setAllowed(level, value, checked)}
+                    onApproval={(patch) => setApproval(level, patch)}
                   />
                 </Paper>
               )}

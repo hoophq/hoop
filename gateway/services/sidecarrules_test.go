@@ -130,7 +130,7 @@ func TestValidateSidecarRuleSpec(t *testing.T) {
 			name: "the gateway's risk actions",
 			kind: SidecarRuleAnalyzer,
 			spec: `{"high":"block_execution"}`,
-			want: "allow, warn, block, defer or require_review",
+			want: "allow, warn, block, defer, require_review, also spelled require_approval, or ai-handoff",
 		},
 		{
 			// The sidecar's own refusal: a block naming no action allows every

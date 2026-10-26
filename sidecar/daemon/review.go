@@ -73,11 +73,14 @@ type planReviewer struct {
 
 // File implements analyzer.Reviewer. A hold under a level's own approver
 // (analyzer.FiledLevel) files that level and no approval_rule; the plane then
-// authorizes it against the level's approval_groups.
+// authorizes it against the level's approval_groups, or, for a hold the
+// hand-off agent selected (analyzer.ViaHandoff), against the level's
+// allowed_actions.require_approval.
 func (r planReviewer) File(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
 	f := reviewFiling{listener: r.listener, rule: r.rule, statement: statement, reserve: r.reserve}
 	if level, ok := analyzer.FiledLevel(ctx); ok {
 		f.rule, f.level, f.approver = "", level, analyzer.ApproverHuman
+		f.handoff = analyzer.ViaHandoff(ctx)
 	}
 	res, err := r.cp.fileReview(ctx, f)
 	r.checkReserved(res)
@@ -93,7 +96,7 @@ func (r planReviewer) FileDecision(ctx context.Context, statement string, d anal
 	}
 	return r.cp.fileReview(ctx, reviewFiling{
 		listener: r.listener, statement: statement, level: d.RiskLevel,
-		approver: analyzer.ApproverAIAgent, decision: decision, reason: d.Reason,
+		approver: analyzer.ApproverAIAgent, decision: decision, reason: d.Reason, handoff: d.Handoff,
 	})
 }
 
@@ -251,13 +254,15 @@ func holdsWithoutAPlane(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) b
 //
 // level set files under that level's own approver and omits approval_rule;
 // the plane reads the level in the stored block. decision and reason are the
-// approval agent's, set only with approver ai_agent.
+// approval agent's, set only with approver ai_agent. handoff marks a hold
+// the hand-off agent selected on an ai-handoff level.
 type reviewFiling struct {
 	listener, rule, statement string
 	reserve                   bool
 	level                     analyzer.RiskLevel
 	approver                  analyzer.Approver
 	decision, reason          string
+	handoff                   bool
 }
 
 // fileReview runs one POST /api/sidecars/reviews.
@@ -289,6 +294,11 @@ func (cp *controlPlane) fileReview(ctx context.Context, f reviewFiling) (analyze
 		if f.decision != "" {
 			req["decision"] = f.decision
 			req["reason"] = f.reason
+		}
+		// Only when set, so a level outside a hand-off sends the body it
+		// always sent.
+		if f.handoff {
+			req["handoff"] = true
 		}
 	}
 	// Only when set, so a lane that does not reserve sends the body it

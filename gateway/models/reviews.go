@@ -123,6 +123,9 @@ type Review struct {
 	// RiskLevel is the analyzer level a sidecar filed the review under, in
 	// place of an approval rule. Null on a review filed under a rule.
 	RiskLevel sql.NullString `gorm:"column:risk_level"`
+	// ViaHandoff marks a review filed for a hold the hand-off agent of an
+	// ai-handoff level selected.
+	ViaHandoff bool `gorm:"column:via_handoff"`
 }
 
 const (
@@ -135,14 +138,17 @@ const (
 func (r *Review) DecidedByAgent() bool { return r.ApproverType == ApproverTypeAIAgent }
 
 // SidecarReviewKey is what a sidecar filing is matched on beside the
-// statement: the approval rule, or the risk level filed in its place.
+// statement: the approval rule, or the risk level filed in its place, and
+// whether a hand-off filed it. A hand-off review never matches a direct
+// filing of the same level, nor the reverse.
 type SidecarReviewKey struct {
-	RuleName  string
-	RiskLevel string
+	RuleName   string
+	RiskLevel  string
+	ViaHandoff bool
 }
 
 func (k SidecarReviewKey) args() []any {
-	return []any{nullIfEmpty(k.RuleName), nullIfEmpty(k.RiskLevel)}
+	return []any{nullIfEmpty(k.RuleName), nullIfEmpty(k.RiskLevel), k.ViaHandoff}
 }
 
 func nullIfEmpty(s string) any {
@@ -379,7 +385,7 @@ func getReviewByIdOrSid(db *gorm.DB, orgID, id string, viewer *ReviewViewer) (*R
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	approver_type, decision_reason, risk_level
+	approver_type, decision_reason, risk_level, via_handoff
 	FROM private.reviews rv
 	WHERE org_id = ? AND (id = ? OR session_id = ?)`+visibility,
 		append([]any{orgID, id, id}, visibilityArgs...)...).
@@ -422,7 +428,7 @@ func ListReviews(db *gorm.DB, orgID string, viewer ReviewViewer) (*[]Review, err
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	approver_type, decision_reason, risk_level
+	approver_type, decision_reason, risk_level, via_handoff
 	FROM private.reviews rv
 	WHERE org_id = ?`+visibility, append([]any{orgID}, visibilityArgs...)...).
 		Find(&reviews).
@@ -763,7 +769,7 @@ const sidecarReviewSelect = `
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	approver_type, decision_reason, risk_level
+	approver_type, decision_reason, risk_level, via_handoff
 	FROM private.reviews rv`
 
 // GetLiveSidecarReview returns the review already filed for these exact
@@ -785,7 +791,7 @@ func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName string, ke
 		ReviewStatusProcessing, leaseStart(now))
 	err := db.Raw(sidecarReviewSelect+`
 	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
-	AND access_request_rule_name IS NOT DISTINCT FROM ? AND risk_level IS NOT DISTINCT FROM ?
+	AND access_request_rule_name IS NOT DISTINCT FROM ? AND risk_level IS NOT DISTINCT FROM ? AND via_handoff = ?
 	AND approver_type = ? AND statement_hash = ? AND status NOT IN (?, ?, ?, ?)
 	AND (status NOT IN (?, ?) OR expires_at IS NULL OR `+sidecarInsideDeadline+`)
 	AND (status <> ? OR reserved_at IS NULL OR `+sidecarInsideLease+`)`, args...).
@@ -1019,7 +1025,7 @@ func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string)
 	}
 	var expired []string
 	err := db.Transaction(func(tx *gorm.DB) error {
-		scope := []any{rev.OrgID, rev.SidecarID, rev.ListenerName, rev.AccessRequestRuleName, rev.RiskLevel, rev.StatementHash}
+		scope := []any{rev.OrgID, rev.SidecarID, rev.ListenerName, rev.AccessRequestRuleName, rev.RiskLevel, rev.ViaHandoff, rev.StatementHash}
 		if err := spendLapsedReservationsTx(tx, rev.CreatedAt, expireScopeStatement, scope...); err != nil {
 			return fmt.Errorf("failed spending the previous reservation: %w", err)
 		}
@@ -1085,7 +1091,7 @@ func lockSidecarReviewTx(tx *gorm.DB, orgID, reviewID string) error {
 const (
 	expireScopeReview    = `org_id = ? AND id = ?`
 	expireScopeStatement = `org_id = ? AND sidecar_id = ? AND listener_name = ? AND ` +
-		`access_request_rule_name IS NOT DISTINCT FROM ? AND risk_level IS NOT DISTINCT FROM ? AND statement_hash = ?`
+		`access_request_rule_name IS NOT DISTINCT FROM ? AND risk_level IS NOT DISTINCT FROM ? AND via_handoff = ? AND statement_hash = ?`
 )
 
 // expireSidecarReviewsTx records EXPIRED on the lapsed live sidecar reviews in

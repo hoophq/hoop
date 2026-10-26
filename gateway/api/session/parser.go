@@ -192,6 +192,7 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 		ApproverType:          r.ApproverType,
 		DecisionReason:        r.DecisionReason,
 		RiskLevel:             r.RiskLevel,
+		ViaHandoff:            r.ViaHandoff,
 	}
 }
 

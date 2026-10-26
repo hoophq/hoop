@@ -136,7 +136,7 @@ func TestAnUnknownActionNamesBothHoldSpellings(t *testing.T) {
 	la.HighRisk = RiskLevel{Action: "hold_please"}
 	problems := ValidateLaneAnalyzerBlock(la, "appdb")
 	if len(problems) == 0 || !strings.Contains(problems[0],
-		"(allow, warn, block, defer or require_review, also spelled require_approval)") {
+		"(allow, warn, block, defer, require_review, also spelled require_approval, or ai-handoff)") {
 		t.Errorf("problems %v do not list both spellings", problems)
 	}
 }

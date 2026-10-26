@@ -144,9 +144,42 @@ func LevelReviewerGroups(r daemon.RiskLevel) []string {
 	return reviewersOrDefault(r.ApprovalGroups)
 }
 
+// HandoffHold returns the hold the hand-off agent of an ai-handoff level can
+// select, as the held level it stands for: require_approval with the
+// approver, groups and prompt of allowed_actions.require_approval. ok is false
+// when the level does not hand off or cannot select require_approval.
+func HandoffHold(r daemon.RiskLevel) (daemon.RiskLevel, bool) {
+	if !r.IsHandoff() {
+		return daemon.RiskLevel{}, false
+	}
+	ap, ok := r.AllowedActions.RequireApproval()
+	if !ok {
+		return daemon.RiskLevel{}, false
+	}
+	return daemon.RiskLevel{
+		Action:         string(analyzer.ActionRequireApproval),
+		Approver:       ap.Approver,
+		ApprovalGroups: ap.ApprovalGroups,
+		Prompt:         ap.Prompt,
+	}, true
+}
+
+// humanHold returns the held level a person releases on this level: the
+// level itself with approver human, or its hand-off hold with approver human.
+func humanHold(r daemon.RiskLevel) (daemon.RiskLevel, bool) {
+	if LevelApprover(r) == analyzer.ApproverHuman {
+		return r, true
+	}
+	if h, ok := HandoffHold(r); ok && LevelApprover(h) == analyzer.ApproverHuman {
+		return h, true
+	}
+	return daemon.RiskLevel{}, false
+}
+
 // AnalyzerRuleHolds reports whether a stored analyzer spec asks to hold a
-// statement for a human on any risk level: a bare hold, or an object level
-// with approver human. An ai_agent level needs no person.
+// statement for a human on any risk level: a bare hold, an object level with
+// approver human, or an ai-handoff level whose agent can select a human hold.
+// An ai_agent level needs no person.
 //
 // A spec that does not decode is not a hold: the write gate refuses it
 // separately, with a message about the shape, and answering "yes" here would
@@ -157,7 +190,7 @@ func AnalyzerRuleHolds(spec json.RawMessage) bool {
 		return false
 	}
 	for _, l := range AnalyzerLevels(&block) {
-		if bareHold(l.Level) || LevelApprover(l.Level) == analyzer.ApproverHuman {
+		if _, human := humanHold(l.Level); human || bareHold(l.Level) {
 			return true
 		}
 	}
@@ -177,9 +210,10 @@ func holdsAction(action string) bool {
 //
 // Object levels with approver human name their own groups, and the rule
 // carries them: a sidecar that predates the object form files under it
-// (DowngradeRiskLevels), and per-level reviews read its limits. When those
-// levels name different groups the highest level's groups win; a build that
-// needs the rule is then refused at serve time instead.
+// (DowngradeRiskLevels), and per-level reviews read its limits. The human
+// hold of an ai-handoff level counts the same: its reviews read the limits
+// here. When those levels name different groups the highest level's groups
+// win; a build that needs the rule is then refused at serve time instead.
 //
 // With only bare holds that name this rule, reviewers are the groups the
 // request names. nil means the request said nothing about them: a new rule
@@ -197,8 +231,8 @@ func SyncAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spe
 	}
 	ownBare := false
 	for _, l := range AnalyzerLevels(&block) {
-		if LevelApprover(l.Level) == analyzer.ApproverHuman {
-			groups := NormalizeReviewerGroups(l.Level.ApprovalGroups)
+		if held, human := humanHold(l.Level); human {
+			groups := NormalizeReviewerGroups(held.ApprovalGroups)
 			return upsertAnalyzerApprovalRule(tx, orgID, ruleName, &groups)
 		}
 		// Only a bare hold that names this rule's own approval rule is ours

@@ -578,6 +578,7 @@ func TestToSidecarReviewStatusOmitsStatementAndReviewers(t *testing.T) {
 		"listener_name": "appdb",
 		"approval_rule": "payments-approvers",
 		"approver_type": "human",
+		"via_handoff": false,
 		"created_at": "0001-01-01T00:00:00Z",
 		"decided_at": "2026-09-28T12:00:00Z",
 		"rejection_reason": "not now"

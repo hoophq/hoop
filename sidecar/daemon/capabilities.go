@@ -266,10 +266,19 @@ func CheckServable(cfg Config, hs Handshake) error {
 		}
 	})
 	for _, l := range served.Listeners {
+		where := fmt.Sprintf("listener %q", l.Name)
+		// The action is a string every build decodes, so no cap tag
+		// marks it: a build without the capability refuses the value.
+		if l.Analyzer != nil {
+			for _, lv := range l.Analyzer.levels() {
+				if lv.level.IsHandoff() {
+					need(where, fmt.Sprintf("sets %s risk to %s", lv.name, analyzer.ActionHandoff), CapabilityAIHandoff)
+				}
+			}
+		}
 		if l.Protocol == "" {
 			continue
 		}
-		where := fmt.Sprintf("listener %q", l.Name)
 		if l.usesAddressURL() {
 			need(where, "writes listen or upstream as a URL", CapabilityAddressURL)
 		}

@@ -278,6 +278,8 @@ type SessionReview struct {
 	DecisionReason *string `json:"decision_reason"`
 	// The analyzer risk level a sidecar filed the review under.
 	RiskLevel *string `json:"risk_level"`
+	// ViaHandoff marks a review filed for a hold the hand-off agent selected.
+	ViaHandoff bool `json:"via_handoff"`
 }
 
 func (r *SessionReview) Scan(value any) error {
@@ -374,6 +376,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'approver_type', rv.approver_type,
 				'decision_reason', rv.decision_reason,
 				'risk_level', rv.risk_level,
+				'via_handoff', rv.via_handoff,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'review_groups', (

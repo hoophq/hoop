@@ -5,8 +5,11 @@ import { showSnackbar } from '@/utils/snackbar'
 import {
   APPROVER_AI,
   APPROVER_HUMAN,
+  HANDOFF_ACTION,
+  HANDOFF_CHOICES,
   REVIEW_ACTION,
   analyzerActionsFor,
+  isHandoffAction,
   isHoldAction,
   operationsFor,
   readRiskLevel,
@@ -19,9 +22,14 @@ const LEVEL_KEYS = ['high', 'medium', 'low']
 // imported file's): that rule decides, and this form cannot edit it.
 export const APPROVER_RULE = 'approval_rule'
 
-// Who approves one level's hold. A new hold uses the AI agent.
+// Who approves one level's hold. A new hold uses the AI agent. A hand-off
+// level keeps here the approver of its "Hold for approval" choice.
 const emptyApproval = () => ({ approver: APPROVER_AI, groups: [], prompt: '' })
 const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyApproval()]))
+
+// A hand-off level's own prompt and its allowed actions. A new one allows all.
+const emptyHandoff = () => ({ prompt: '', allowed: HANDOFF_CHOICES.map((c) => c.value) })
+const emptyHandoffs = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyHandoff()]))
 
 const EMPTY = {
   trigger_operations: [],
@@ -45,7 +53,7 @@ const EMPTY = {
 // `reviewers` are the groups of the rule's own approval rule. A bare hold
 // from an older spec gets them, so it keeps its meaning as a human hold.
 function specToForm(spec, ruleName, reviewers) {
-  if (!spec) return { ...EMPTY, approval: emptyApprovals() }
+  if (!spec) return { ...EMPTY, approval: emptyApprovals(), handoff: emptyHandoffs() }
   const imported = Boolean(spec.approval_rule) && spec.approval_rule !== ruleName
   const form = {
     trigger_operations: spec.trigger?.operations ?? [],
@@ -60,9 +68,16 @@ function specToForm(spec, ruleName, reviewers) {
     review_mode: spec.review_mode ?? '',
     match_ignore: spec.match_ignore ?? [],
     approval: emptyApprovals(),
+    handoff: emptyHandoffs(),
   }
   for (const level of LEVEL_KEYS) {
     const read = readRiskLevel(spec[level])
+    if (isHandoffAction(read.action)) {
+      form[level] = HANDOFF_ACTION
+      form.handoff[level] = { prompt: read.prompt, allowed: read.allowed.actions }
+      form.approval[level] = read.allowed.approval
+      continue
+    }
     const hold = isHoldAction(read.action)
     form[level] = hold ? REVIEW_ACTION : read.action
     if (!hold) continue
@@ -77,24 +92,50 @@ function specToForm(spec, ruleName, reviewers) {
   return form
 }
 
-// The approvers of the levels that hold.
+// A level can hold: its action is a hold, or a hand-off that allows one.
+function canHold(f, level) {
+  if (isHoldAction(f[level])) return true
+  return isHandoffAction(f[level]) && f.handoff[level].allowed.includes(REVIEW_ACTION)
+}
+
+// The approvers of the levels that can hold.
 function holdApprovers(f) {
-  return new Set(LEVEL_KEYS.filter((level) => isHoldAction(f[level])).map((level) => f.approval[level].approver))
+  return new Set(LEVEL_KEYS.filter((level) => canHold(f, level)).map((level) => f.approval[level].approver))
+}
+
+// The approver fields of a level object or of allowed_actions.require_approval.
+function approverFields(approval) {
+  if (approval.approver === APPROVER_HUMAN) {
+    const out = { approver: APPROVER_HUMAN }
+    if (approval.groups.length > 0) out.approval_groups = approval.groups
+    return out
+  }
+  const out = { approver: APPROVER_AI }
+  if (approval.prompt.trim() !== '') out.prompt = approval.prompt.trim()
+  return out
+}
+
+// allowed_actions is a list, or an object when require_approval has a config
+// that is not the default (AI agent with the default prompt).
+function handoffToSpec(handoff, approval) {
+  const level = { action: HANDOFF_ACTION }
+  if (handoff.prompt.trim() !== '') level.prompt = handoff.prompt.trim()
+  const cfg = handoff.allowed.includes(REVIEW_ACTION) ? approverFields(approval) : null
+  if (!cfg || (cfg.approver === APPROVER_AI && !cfg.prompt)) {
+    level.allowed_actions = [...handoff.allowed]
+  } else {
+    level.allowed_actions = Object.fromEntries(handoff.allowed.map((a) => [a, a === REVIEW_ACTION ? cfg : {}]))
+  }
+  return level
 }
 
 // A hold level is an object naming its approver (ENG-680); a bare hold stays
 // only for a level an imported approval rule decides.
-function levelToSpec(action, approval) {
+function levelToSpec(action, approval, handoff) {
+  if (isHandoffAction(action)) return handoffToSpec(handoff, approval)
   if (!isHoldAction(action)) return action
   if (approval.approver === APPROVER_RULE) return REVIEW_ACTION
-  if (approval.approver === APPROVER_HUMAN) {
-    const level = { action: REVIEW_ACTION, approver: APPROVER_HUMAN }
-    if (approval.groups.length > 0) level.approval_groups = approval.groups
-    return level
-  }
-  const level = { action: REVIEW_ACTION, approver: APPROVER_AI }
-  if (approval.prompt.trim() !== '') level.prompt = approval.prompt.trim()
-  return level
+  return { action: REVIEW_ACTION, ...approverFields(approval) }
 }
 
 // An item keeps only the fields it names, or is null when it names none.
@@ -119,7 +160,7 @@ function formToSpec(f) {
   if (exclude.length > 0) trigger.exclude = exclude
   if (Object.keys(trigger).length > 0) spec.trigger = trigger
   for (const level of LEVEL_KEYS) {
-    if (f[level] !== '') spec[level] = levelToSpec(f[level], f.approval[level])
+    if (f[level] !== '') spec[level] = levelToSpec(f[level], f.approval[level], f.handoff[level])
   }
   if (f.prompt.trim() !== '') spec.prompt = f.prompt.trim()
   if (f.message.trim() !== '') spec.message = f.message.trim()
@@ -156,16 +197,30 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     specToForm(stored?.sidecar_spec, stored?.name, stored?.reviewers_groups ?? []),
   )
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
-  // A level that starts to hold gets the default approver, not a stale imported one.
+  // A level that starts to hold or hand off gets the default approver, not a
+  // stale imported one: only a bare hold reads the imported rule.
   const setLevelAction = (level, action) =>
     setForm((f) => {
-      const fresh = isHoldAction(action) && !isHoldAction(f[level])
-      const keep = f.approval[level].approver !== APPROVER_RULE
-      const approval = fresh && !keep ? { ...f.approval, [level]: emptyApproval() } : f.approval
+      const imported = f.approval[level].approver === APPROVER_RULE
+      const fresh = isHandoffAction(action) || (isHoldAction(action) && !isHoldAction(f[level]))
+      const approval = fresh && imported ? { ...f.approval, [level]: emptyApproval() } : f.approval
       return { ...f, [level]: action, approval }
     })
   const setApproval = (level, patch) =>
     setForm((f) => ({ ...f, approval: { ...f.approval, [level]: { ...f.approval[level], ...patch } } }))
+  const setHandoffPrompt = (level, prompt) =>
+    setForm((f) => ({ ...f, handoff: { ...f.handoff, [level]: { ...f.handoff[level], prompt } } }))
+  // The last allowed action cannot be removed: an empty list blocks.
+  const setAllowed = (level, value, checked) =>
+    setForm((f) => {
+      const current = f.handoff[level].allowed
+      if (!checked && current.length === 1 && current[0] === value) return f
+      const next = new Set(current)
+      if (checked) next.add(value)
+      else next.delete(value)
+      const allowed = HANDOFF_CHOICES.map((c) => c.value).filter((v) => next.has(v))
+      return { ...f, handoff: { ...f.handoff, [level]: { ...f.handoff[level], allowed } } }
+    })
   // A limit is sent only after an edit, so a save that does not touch it keeps
   // the stored value.
   const [pendingMinutes, setPendingMinutes] = useState(secToMinutes(stored?.pending_ttl_sec))
@@ -279,6 +334,8 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     set,
     setLevelAction,
     setApproval,
+    setHandoffPrompt,
+    setAllowed,
     groupOptionsFor,
     pendingMinutes,
     editPendingMinutes,

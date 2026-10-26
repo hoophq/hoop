@@ -58,6 +58,14 @@ const maxSidecarReviewSessions = 100
 // denial; metadata.sidecar.guardrails_omitted counts the rest.
 const maxSidecarGuardRails = 100
 
+// maxSidecarAIDecisions caps metadata.sidecar.ai_decisions per session;
+// metadata.sidecar.ai_decisions_dropped counts the rest.
+const maxSidecarAIDecisions = 200
+
+// maxSidecarAIDecisionReasonChars bounds a reason an entry stores. The
+// sidecar caps the agents' reasons below it.
+const maxSidecarAIDecisionReasonChars = 4096
+
 // maxSidecarSessionStreamBytes caps the stream as the audit plugin caps its WAL
 // read; metrics.truncated marks it.
 const maxSidecarSessionStreamBytes = sessionwal.DefaultMaxRead
@@ -169,6 +177,8 @@ type sidecarSessionPlan struct {
 	ReviewIDs []string
 	// ReviewSessions are the review sessions linked before this batch.
 	ReviewSessions []string
+	// AIDecisions are appended to metadata.sidecar.ai_decisions.
+	AIDecisions []sidecarAIDecision
 
 	Accepted   int
 	Duplicates int
@@ -248,10 +258,24 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		truncated: metricBool(metrics, "truncated"),
 	}
 	guardRailsRoom, omitted := maxSidecarGuardRails, int64(0)
+	decisionsRoom, dropped := maxSidecarAIDecisions, int64(0)
 	if prior != nil {
 		guardRailsRoom -= prior.GuardRails
 		omitted = prior.GuardRailsOmitted
+		decisionsRoom -= prior.AIDecisions
+		dropped = prior.AIDecisionsDropped
 		plan.ReviewSessions = prior.ReviewSessions
+	}
+	addDecision := func(e daemon.SessionEvent) {
+		d, ok := sidecarAIDecisionFor(e)
+		switch {
+		case !ok:
+		case len(plan.AIDecisions) < decisionsRoom:
+			plan.AIDecisions = append(plan.AIDecisions, d)
+		default:
+			dropped++
+			plan.Sidecar["ai_decisions_dropped"] = dropped
+		}
 	}
 	for _, e := range fresh {
 		ev := e.Event
@@ -259,11 +283,13 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		case audit.KindStatement:
 			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
 			plan.addReview(ev)
+			addDecision(e)
 		case audit.KindViolation:
 			elapsed, added := stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
 			// 1µs later: the raw view keys rows by elapsed time.
 			stream.add(ev.Timestamp.Add(time.Microsecond), streamError, denialText(ev))
 			plan.addReview(ev)
+			addDecision(e)
 			if len(plan.GuardRails) < guardRailsRoom {
 				rail := sidecarGuardRail(ev)
 				if added {
@@ -330,6 +356,49 @@ func (p *sidecarSessionPlan) addReview(ev audit.Event) {
 	if s := id.String(); !slices.Contains(p.ReviewIDs, s) {
 		p.ReviewIDs = append(p.ReviewIDs, s)
 	}
+}
+
+// sidecarAIDecision is one entry of metadata.sidecar.ai_decisions: what the
+// analyzer decided on one statement. Empty fields are left out.
+type sidecarAIDecision struct {
+	Seq              int64  `json:"seq"`
+	Timestamp        string `json:"timestamp,omitempty"`
+	RiskLevel        string `json:"risk_level,omitempty"`
+	RiskAction       string `json:"risk_action,omitempty"`
+	HandoffDecision  string `json:"handoff_decision,omitempty"`
+	HandoffReason    string `json:"handoff_reason,omitempty"`
+	Approver         string `json:"approver,omitempty"`
+	ApprovalDecision string `json:"approval_decision,omitempty"`
+	ApprovalReason   string `json:"approval_reason,omitempty"`
+	ReviewID         string `json:"review_id,omitempty"`
+}
+
+// sidecarAIDecisionFor reads the analyzer's decision off an event. ok is
+// false when the analyzer rated nothing: the metadata has no risk_level.
+func sidecarAIDecisionFor(e daemon.SessionEvent) (sidecarAIDecision, bool) {
+	md := e.Event.Metadata
+	level := pgText(md[analyzer.MetadataRiskLevel])
+	if level == "" {
+		return sidecarAIDecision{}, false
+	}
+	d := sidecarAIDecision{
+		Seq:              e.Seq,
+		RiskLevel:        level,
+		RiskAction:       pgText(md[analyzer.MetadataAction]),
+		HandoffDecision:  pgText(md[analyzer.MetadataHandoffDecision]),
+		HandoffReason:    truncateChars(pgText(md[analyzer.MetadataHandoffReason]), maxSidecarAIDecisionReasonChars),
+		Approver:         pgText(md[analyzer.MetadataApprover]),
+		ApprovalDecision: pgText(md[analyzer.MetadataApprovalDecision]),
+		ApprovalReason:   truncateChars(pgText(md[analyzer.MetadataApprovalReason]), maxSidecarAIDecisionReasonChars),
+	}
+	if !e.Event.Timestamp.IsZero() {
+		d.Timestamp = e.Event.Timestamp.UTC().Format(time.RFC3339Nano)
+	}
+	// An id the review page can open, or nothing.
+	if id, err := uuid.Parse(md[analyzer.MetadataReviewID]); err == nil {
+		d.ReviewID = id.String()
+	}
+	return d, true
 }
 
 // mergeReviewSessions adds linked to prior, in order, up to the cap.
@@ -733,6 +802,15 @@ func applySidecarSessionPlan(tx *gorm.DB, sc sidecarIdentity, plan sidecarSessio
 		}
 		if merged := mergeReviewSessions(plan.ReviewSessions, linked); len(merged) > len(plan.ReviewSessions) {
 			plan.Sidecar["review_sessions"] = merged
+		}
+	}
+	if len(plan.AIDecisions) > 0 {
+		entries, err := json.Marshal(plan.AIDecisions)
+		if err != nil {
+			return fmt.Errorf("encoding the AI decisions: %w", err)
+		}
+		if err := models.AppendSidecarSessionAIDecisionsTx(tx, orgID, plan.SessionID, entries); err != nil {
+			return fmt.Errorf("recording the AI decisions: %w", err)
 		}
 	}
 	if err := models.SetSidecarSessionProgress(tx, orgID, plan.SessionID, plan.Sidecar, plan.Metrics); err != nil {

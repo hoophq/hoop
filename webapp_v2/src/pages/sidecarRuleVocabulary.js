@@ -208,9 +208,18 @@ export const REVIEW_ACTION = 'require_approval'
 const HOLD_ACTIONS = new Set([REVIEW_ACTION, 'require_review'])
 export const isHoldAction = (action) => HOLD_ACTIONS.has(action)
 
-// analyzerActionsFor lists the level actions, the hold included.
+// The action that lets an AI agent pick a level's final action from its
+// allowed actions (ENG-661).
+export const HANDOFF_ACTION = 'ai-handoff'
+export const isHandoffAction = (action) => action === HANDOFF_ACTION
+
+// analyzerActionsFor lists the level actions, the hold and the hand-off included.
 export function analyzerActionsFor() {
-  return [...ANALYZER_ACTIONS, { value: REVIEW_ACTION, label: 'Hold for approval' }]
+  return [
+    ...ANALYZER_ACTIONS,
+    { value: REVIEW_ACTION, label: 'Hold for approval' },
+    { value: HANDOFF_ACTION, label: 'Hand off to AI Agent' },
+  ]
 }
 
 // Who decides a held statement of one risk level (ENG-680). A level object
@@ -222,20 +231,63 @@ export const APPROVERS = [
   { value: APPROVER_HUMAN, label: 'Human' },
 ]
 
-// readRiskLevel reads one level of a stored analyzer spec. A level is a bare
-// action string or an object {action, approver, approval_groups, prompt}.
-// `approver` is null for a bare hold: the listener's approval_rule decides it.
-export function readRiskLevel(level) {
-  if (level == null || level === '') return { action: '', approver: null, groups: [], prompt: '' }
-  if (typeof level === 'string') return { action: level, approver: null, groups: [], prompt: '' }
-  const action = level.action ?? ''
-  const hold = isHoldAction(action)
+// The actions a hand-off agent may pick, from least to most restrictive.
+export const HANDOFF_CHOICES = [
+  { value: 'allow', label: 'Allow' },
+  { value: 'warn', label: 'Warn' },
+  { value: 'block', label: 'Block' },
+  { value: REVIEW_ACTION, label: 'Hold for approval' },
+]
+const HANDOFF_VALUES = HANDOFF_CHOICES.map((c) => c.value)
+
+// One approver config: {approver, approval_groups, prompt}. A missing or
+// unknown approver is the AI agent.
+function readApprover(cfg) {
   return {
-    action,
-    approver: hold ? (level.approver === APPROVER_HUMAN ? APPROVER_HUMAN : APPROVER_AI) : null,
-    groups: hold ? (level.approval_groups ?? []) : [],
-    prompt: hold ? (level.prompt ?? '') : '',
+    approver: cfg?.approver === APPROVER_HUMAN ? APPROVER_HUMAN : APPROVER_AI,
+    groups: Array.isArray(cfg?.approval_groups) ? cfg.approval_groups : [],
+    prompt: typeof cfg?.prompt === 'string' ? cfg.prompt : '',
   }
+}
+
+// readAllowedActions reads `allowed_actions` of a hand-off level: a list of
+// action names or an object keyed by action. Absent allows all four. The
+// sidecar ignores `ai-handoff` and unknown values, reads `require_review` as
+// `require_approval`, and blocks when nothing is left.
+// Returns {actions (in HANDOFF_CHOICES order), approval (of require_approval)}.
+export function readAllowedActions(value) {
+  if (value == null) return { actions: [...HANDOFF_VALUES], approval: readApprover(null) }
+  let names = []
+  let approvalCfg = null
+  if (Array.isArray(value)) {
+    names = value
+  } else if (typeof value === 'object') {
+    names = Object.keys(value)
+    approvalCfg = value[REVIEW_ACTION] ?? value.require_review ?? null
+  }
+  const set = new Set(names.map((n) => (isHoldAction(n) ? REVIEW_ACTION : n)))
+  const actions = HANDOFF_VALUES.filter((v) => set.has(v))
+  return { actions: actions.length > 0 ? actions : ['block'], approval: readApprover(approvalCfg) }
+}
+
+// readRiskLevel reads one level of a stored analyzer spec. A level is a bare
+// action string or an object {action, approver, approval_groups, prompt,
+// allowed_actions}. `approver` is null for a bare hold: the listener's
+// approval_rule decides it. `prompt` is the approval prompt of a hold or the
+// hand-off prompt of a hand-off. `allowed` is set only for a hand-off.
+export function readRiskLevel(level) {
+  const none = { approver: null, groups: [], prompt: '', allowed: null }
+  if (level == null || level === '') return { action: '', ...none }
+  if (typeof level === 'string') {
+    const allowed = isHandoffAction(level) ? readAllowedActions(null) : null
+    return { action: level, ...none, allowed }
+  }
+  const action = level.action ?? ''
+  if (isHandoffAction(action)) {
+    return { action, ...none, prompt: level.prompt ?? '', allowed: readAllowedActions(level.allowed_actions) }
+  }
+  if (!isHoldAction(action)) return { action, ...none }
+  return { action, ...readApprover(level), allowed: null }
 }
 
 // How a held statement answers its client. Hold is the sidecar's default, so

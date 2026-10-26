@@ -11228,7 +11228,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the listener's analyzer level decides who approves; with approver ai_agent the request records the approval agent's decision, is filed decided and never releases the statement.",
+                "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the listener's analyzer level decides who approves; with approver ai_agent the request records the approval agent's decision, is filed decided and never releases the statement. With handoff, the level is ai-handoff and its allowed_actions.require_approval decides who approves.",
                 "consumes": [
                     "application/json"
                 ],
@@ -13304,12 +13304,12 @@ const docTemplate = `{
                     "example": "block-dangerous-queries"
                 },
                 "pending_ttl_sec": {
-                    "description": "Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds a statement for a human approver. Absent keeps, 0 clears",
+                    "description": "Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds a statement for a human approver, directly or through an ai-handoff level. Absent keeps, 0 clears",
                     "type": "integer",
                     "example": 900
                 },
                 "reviewers_groups": {
-                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement in the bare form\n(high: require_approval) under its own approval rule. A level written\nas an object with approver human names its own approval_groups, and\nthis field is ignored.",
+                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement in the bare form\n(high: require_approval) under its own approval rule. A level written\nas an object with approver human, or an ai-handoff level whose\nallowed_actions.require_approval has approver human, names its own\napproval_groups, and this field is ignored.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -18922,6 +18922,12 @@ const docTemplate = `{
                         }
                     ],
                     "readOnly": true
+                },
+                "via_handoff": {
+                    "description": "The hand-off agent of an ai-handoff level selected the hold that filed this approval request",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": false
                 }
             }
         },
@@ -21390,6 +21396,12 @@ const docTemplate = `{
                         }
                     ],
                     "readOnly": true
+                },
+                "via_handoff": {
+                    "description": "The hand-off agent of an ai-handoff level selected the hold that filed this approval request.\nOnly GET /sessions/{session_id} returns it",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": false
                 }
             }
         },
@@ -21833,6 +21845,11 @@ const docTemplate = `{
                     ],
                     "example": "rejected"
                 },
+                "handoff": {
+                    "description": "The hand-off agent of the level selected the hold. The level must be ai-handoff and allow\nrequire_approval for this approver; its allowed_actions.require_approval names the approval groups.\nRead only with risk_level",
+                    "type": "boolean",
+                    "example": false
+                },
                 "listener_name": {
                     "description": "The sidecar listener the statement arrived on, at most 1024 bytes",
                     "type": "string",
@@ -21977,6 +21994,12 @@ const docTemplate = `{
                         }
                     ],
                     "readOnly": true
+                },
+                "via_handoff": {
+                    "description": "The hand-off agent of an ai-handoff level selected the hold",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": false
                 }
             }
         },
