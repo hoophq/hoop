@@ -60,9 +60,18 @@ for _ in $(seq 60); do
         | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | grep -v '^https://api\.' \
         | tail -1 | sed 's|https://||') || true
     [[ -n "$host" ]] && break
+    # cloudflared can still stop after `up --wait`, as on a refused tunnel
+    # request. Its log holds the reason, and the EXIT trap removes it.
+    if [[ -n "$(docker compose ps -a -q --status exited cloudflared)" ]]; then
+        docker compose logs --no-log-prefix --tail 20 cloudflared >&2
+        die "cloudflared stopped before it published a host; its log is above"
+    fi
     sleep 1
 done
-[[ -n "$host" ]] || die "no trycloudflare.com host in the cloudflared log after 60 s"
+[[ -n "$host" ]] || {
+    docker compose logs --no-log-prefix --tail 20 cloudflared >&2
+    die "no trycloudflare.com host in the cloudflared log after 60 s; its log is above"
+}
 c_ok "https://$host"
 
 c_step "Checking the lane through https://$host"

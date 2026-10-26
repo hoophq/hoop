@@ -47,9 +47,10 @@ You need Docker, `curl` 7.76 or later, `openssl`, `jq` 1.6 or later, and an
 OpenAI API key with Agents API access in `OPENAI_API_KEY`
 (`read -rs OPENAI_API_KEY && export OPENAI_API_KEY`).
 
-From a clean clone with no image cached, `run.sh` took 23 to 100 s and
-`agent.sh` 35 to 41 s to the agent's answer, over the cold runs of
-2026-10-23. `run.sh` waits up to 2 minutes for a new tunnel host to resolve.
+From a clean clone with no image cached, `run.sh` took 23 to 100 s over the
+cold runs of 2026-10-23. `agent.sh` took 35 to 69 s to the agent's answer
+over four runs on 2026-10-23 and 2026-10-26. `run.sh` waits up to 2 minutes
+for a new tunnel host to resolve.
 
 ### 1. Start the sidecar
 
