@@ -586,6 +586,15 @@ func corpus() []stmtCase {
 		`SELECT has_table_privilege(current_user, t.tablename, 'delete') AS delete,
 		        has_table_privilege(current_user, t.tablename, 'update') AS update
 		   FROM pg_catalog.pg_tables t`,
+		// A column or alias that spells a relation introducer took the
+		// FROM after it for a relation (ENG-859). Under SELECT it read a
+		// table called from; under INTO it wrote one.
+		`SELECT x.into FROM (SELECT * FROM salaries) x`,
+		`SELECT s.update, s.truncate FROM salaries s`,
+		`SELECT amount AS update, 1 AS from FROM salaries`,
+		`SELECT * FROM salaries update JOIN secrets ON true`,
+		`INSERT INTO audit SELECT s.into FROM salaries s`,
+		`INSERT INTO audit SELECT amount AS into FROM salaries`,
 	)
 
 	add("cte",

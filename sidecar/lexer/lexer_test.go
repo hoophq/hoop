@@ -572,6 +572,111 @@ func TestOnIntroducesOnlyUnderDDL(t *testing.T) {
 	}
 }
 
+// A column or alias that spells a relation introducer introduces nothing.
+// Read as one, `s.update` or `amount AS update` took the FROM after it for the
+// relation and lost the table, so a rule fencing reads of salaries let the
+// select through (ENG-859). An alias is enough to name a column update.
+func TestKeywordColumnIntroducesNoRelation(t *testing.T) {
+	type tc struct {
+		sql   string
+		reads []string
+	}
+	salaries := []string{"salaries"}
+	var cases []tc
+	for _, w := range []string{"from", "join", "into", "update", "table", "view", "truncate",
+		"using", "copy", "on", "overwrite"} {
+		cases = append(cases, tc{`SELECT s.` + w + ` FROM salaries s`, salaries})
+	}
+	cases = append(cases,
+		tc{`SELECT s.update FROM (SELECT amount AS update FROM salaries) s`, salaries},
+		tc{`SELECT x.into FROM (SELECT * FROM salaries) x`, salaries},
+		tc{`SELECT amount AS update FROM salaries`, salaries},
+		tc{`SELECT amount truncate FROM salaries`, salaries},
+		tc{`SELECT update FROM salaries`, salaries},
+		tc{`SELECT view FROM salaries`, salaries},
+		tc{`SELECT 1 AS from FROM salaries`, salaries},
+		tc{`SELECT * FROM salaries update JOIN secrets ON true`, []string{"salaries", "secrets"}},
+		tc{`SELECT * FROM salaries AS join JOIN secrets ON true`, []string{"salaries", "secrets"}},
+	)
+	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+		lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
+		// ClickHouse and Spark do not reserve AS, so `AS from FROM` may be
+		// a column called as and a real FROM, and the alias after AS is
+		// recorded too. Every relation the statement reads must still be.
+		permissive := d == lexer.ClickHouse || d == lexer.Spark
+		for _, c := range cases {
+			a := lexer.Analyze(c.sql, d)
+			got := reads(a)
+			missing := slices.ContainsFunc(c.reads, func(r string) bool { return !slices.Contains(got, r) })
+			if missing || len(writes(a)) != 0 || !permissive && !slices.Equal(got, c.reads) {
+				t.Errorf("%s: reads = %v, writes = %v, want reads %v: %s", d, got, writes(a), c.reads, c.sql)
+			}
+		}
+	}
+}
+
+// The fix above must not cost a table its name. Oracle does not reserve JOIN,
+// and ClickHouse, and Spark unless ANSI enforcement is on, reserve neither
+// keyword, so a table called join or from is legal there and a rule naming it
+// must match. Spark does not reserve AS either: `SELECT as` selects a column.
+func TestKeywordNamesKeepTheirRelations(t *testing.T) {
+	for _, tc := range []struct {
+		d             lexer.Dialect
+		sql           string
+		reads, writes []string
+	}{
+		{lexer.Oracle, `SELECT * FROM join`, []string{"join"}, nil},
+		{lexer.Oracle, `SELECT * FROM a JOIN join ON a.id = join.id`, []string{"a", "join"}, nil},
+		{lexer.Oracle, `DELETE FROM join`, nil, []string{"join"}},
+		{lexer.Oracle, `DROP VIEW join`, nil, []string{"join"}},
+		{lexer.Spark, `SELECT * FROM from`, []string{"from"}, nil},
+		{lexer.Spark, `INSERT INTO from VALUES (1)`, nil, []string{"from"}},
+		{lexer.Spark, `UPDATE from SET a = 1`, nil, []string{"from"}},
+		{lexer.Spark, `INSERT INTO TABLE from VALUES (1)`, nil, []string{"from"}},
+		{lexer.Spark, `SELECT as FROM salaries`, []string{"salaries"}, nil},
+		{lexer.Spark, `SELECT as FROM from`, []string{"from"}, nil},
+		{lexer.Spark, `SELECT id, as FROM join.salaries`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT s.as FROM join.salaries s`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT 1 + as FROM from`, []string{"from"}, nil},
+		{lexer.ClickHouse, `SELECT s.as FROM join.salaries s`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT amount AS select FROM join.salaries`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT s.select FROM join.salaries s`, []string{"join.salaries"}, nil},
+		{lexer.Spark, `SELECT DISTINCT distinct FROM from`, []string{"from"}, nil},
+		{lexer.Spark, `MERGE INTO audit AS as USING join.salaries s ON as.id = s.id WHEN MATCHED THEN DELETE`,
+			[]string{"join.salaries"}, []string{"audit"}},
+		{lexer.ClickHouse, `SELECT * FROM from`, []string{"from"}, nil},
+	} {
+		a := lexer.Analyze(tc.sql, tc.d)
+		if !slices.Equal(reads(a), tc.reads) || !slices.Equal(writes(a), tc.writes) {
+			t.Errorf("%s: reads = %v, writes = %v, want %v and %v: %s", tc.d, reads(a), writes(a), tc.reads, tc.writes, tc.sql)
+		}
+	}
+}
+
+// ClickHouse and Spark reserve none of the introducers, so any of them may
+// name a column, and ClickHouse's catalog has one called table. Read as an
+// introducer it took FROM for the relation and lost the table, as UPDATE did
+// in TestKeywordColumnIntroducesNoRelation. Those dialects cannot rule the
+// introducer reading out, so it is kept beside the column reading: the table
+// is read, and the relation the old reading named is still recorded.
+func TestPermissiveDialectKeywordColumnsKeepTheTable(t *testing.T) {
+	for _, d := range []lexer.Dialect{lexer.ClickHouse, lexer.Spark} {
+		for _, tc := range []struct{ sql, read string }{
+			{`SELECT database, table FROM system.parts`, "system.parts"},
+			{`SELECT table FROM audit`, "audit"},
+			{`SELECT DISTINCT table FROM audit`, "audit"},
+			{`SELECT into FROM audit`, "audit"},
+			{`SELECT id, using FROM audit`, "audit"},
+			{`SELECT 1 FROM audit a JOIN (SELECT table FROM audit) b ON true`, "audit"},
+		} {
+			a := lexer.Analyze(tc.sql, d)
+			if got := reads(a); !slices.Contains(got, tc.read) {
+				t.Errorf("%s: reads = %v, want %s read: %s", d, got, tc.read, tc.sql)
+			}
+		}
+	}
+}
+
 // Other spellings of "create a table from a query".
 func TestObjectCreatingForms(t *testing.T) {
 	for _, tc := range []struct{ sql, write, read string }{

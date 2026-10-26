@@ -344,6 +344,53 @@ select t.* from table_privileges t`
 	}
 }
 
+// A rule that fences reads of salaries refuses every select of it, whatever
+// its columns are called. A column or alias spelling update, into or another
+// relation introducer took the FROM after it for the relation, so the select
+// passed while `SELECT s.amount FROM salaries s` was refused (ENG-859).
+func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
+	fence, err := policy.NewRules([]policy.Rule{{
+		Name: "salaries-is-hidden", Type: policy.MatchTable, Tables: []string{"salaries"},
+		Access: string(inspect.AccessRead), Message: "salaries is hidden",
+	}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	for _, sql := range []string{
+		`SELECT s.amount FROM salaries s`,
+		`SELECT s.update FROM salaries s`,
+		`SELECT s.into FROM salaries s`,
+		`SELECT s.update FROM (SELECT amount AS update FROM salaries) s`,
+		`SELECT x.into FROM (SELECT * FROM salaries) x`,
+		`SELECT amount AS update FROM salaries`,
+		`SELECT update FROM salaries`,
+		`SELECT * FROM t update JOIN salaries ON true`,
+		// Spark does not reserve AS: here it is a column, and FROM is real.
+		`SELECT as FROM salaries`,
+	} {
+		t.Run(sql, func(t *testing.T) {
+			denied := false
+			for _, s := range inspectOne(t, sql) {
+				denied = denied || fence.Evaluate(s).Denied
+			}
+			if !denied {
+				t.Errorf("postgres wire path: a read fence on salaries passed %s", sql)
+			}
+			for _, d := range []lexer.Dialect{lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+				lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
+				a := inspect.AnalyzeSQLIn(sql, d)
+				stmt := inspect.Statement{
+					Direction: inspect.FromClient, Text: sql,
+					Operation: a.Operation, Effects: a.Effects, Relations: a.Relations, Tables: a.Tables,
+				}
+				if !fence.Evaluate(stmt).Denied {
+					t.Errorf("%s: a read fence on salaries passed, relations = %v", d, a.Relations)
+				}
+			}
+		})
+	}
+}
+
 // rulesFor builds a single MatchOperation deny rule.
 func rulesFor(t *testing.T, name string, ops ...inspect.Operation) *policy.Rules {
 	t.Helper()

@@ -519,16 +519,26 @@ func (a *analyzer) walk() {
 		// `FOR UPDATE OF col` locks rows: the name after it is a column.
 		// Spark's INSERT OVERWRITE [TABLE] t names its target after
 		// OVERWRITE, where no INTO introduces it; see sparkOverwriteTarget.
+		// A column or alias that spells an introducer introduces nothing;
+		// see namesAColumn. Where the dialect cannot tell a column from the
+		// clause, both readings are recorded; see mayBeAClause.
 		if (relIntro[t.Text] || a.d == Spark && t.Text == "overwrite" && a.sparkOverwriteTarget(i)) &&
 			!(a.d == Oracle && a.forUpdate(i)) {
-			if j, rels, ok := a.relationsAfter(i); ok {
-				for _, rel := range rels {
-					a.addRelation(rel)
+			column := a.namesAColumn(i)
+			if !column || a.mayBeAClause(i) {
+				if j, rels, ok := a.relationsAfter(i); ok {
+					for _, rel := range rels {
+						a.addRelation(rel)
+					}
+					if !column {
+						i = j
+					}
 				}
-				i = j
 			}
-			atHead = false
-			continue
+			if !column {
+				atHead = false
+				continue
+			}
 		}
 
 		atHead = a.headFollows(t.Text)
@@ -1023,7 +1033,7 @@ func (a *analyzer) relationAt(i, j int) (int, Relation, bool) {
 
 // puncts reports whether the token at k is the punctuation p.
 func (a *analyzer) puncts(k int, p string) bool {
-	return k < len(a.toks) && a.toks[k].Kind == Punct && a.toks[k].Text == p
+	return k >= 0 && k < len(a.toks) && a.toks[k].Kind == Punct && a.toks[k].Text == p
 }
 
 // oracleNoRelation reports whether an Oracle introducer names something
@@ -1223,4 +1233,67 @@ func (a *analyzer) plsqlNotDML(i int) bool {
 // row lock.
 func (a *analyzer) forUpdate(i int) bool {
 	return i > 0 && a.toks[i].isWord("update") && a.toks[i-1].isWord("for")
+}
+
+// namesAColumn reports whether the introducer word at i names a column or an
+// alias instead. Read as an introducer, it took the FROM or JOIN after it for
+// the relation, and the table behind that was lost: `SELECT s.update FROM
+// salaries s` and `SELECT amount AS update FROM salaries` passed a rule fencing
+// reads of salaries (ENG-859).
+//
+// After a dot the word always names a column: `s.update`, `t.from`.
+// Elsewhere it does only when FROM or JOIN follows, because an alias or a
+// column stands before the next clause and an introducer before its relation.
+// Then it names a column:
+//   - after AS where AS takes an alias: under a DDL verb, as headFollows
+//     decides, `CREATE VIEW v AS TABLE t` names a relation after it.
+//   - bare, for the introducers PostgreSQL does not reserve: `SELECT update
+//     FROM salaries`, `FROM t update JOIN s`. Neither keyword can be what
+//     UPDATE, TRUNCATE or COPY names outside head position. VIEW can under
+//     DDL (`DROP VIEW join` on Oracle, which does not reserve JOIN), so it
+//     counts only under other verbs.
+//   - on ClickHouse and Spark, which reserve none of the introducers, at the
+//     start of a select-list item, where no introducer can stand:
+//     `SELECT database, table FROM system.parts` is ClickHouse's catalog.
+//
+// FROM and JOIN are not banned as names: Oracle allows a table called join,
+// and ClickHouse and Spark one called from.
+func (a *analyzer) namesAColumn(i int) bool {
+	if a.puncts(i-1, ".") {
+		return true
+	}
+	if i == 0 || i+1 == len(a.toks) || !a.toks[i+1].isWord("from") && !a.toks[i+1].isWord("join") {
+		return false
+	}
+	switch {
+	case a.toks[i-1].isWord("as"):
+		return !ddlVerb(a.top().verb)
+	case (a.d == ClickHouse || a.d == Spark) && a.selectItemStart(i):
+		return true
+	}
+	switch a.toks[i].Text {
+	case "update", "truncate", "copy":
+		return true
+	case "view":
+		return !ddlVerb(a.top().verb)
+	}
+	return false
+}
+
+// mayBeAClause reports whether the introducer at i, which namesAColumn read as
+// a column or alias, may instead be the real clause. ClickHouse and Spark
+// reserve none of the words involved, so outside a dot no spelling rules it
+// out: `SELECT 1 AS from FROM t` and `SELECT s.as FROM join.t s`, or `SELECT
+// a AS select FROM join.t`, or `MERGE INTO t AS as USING join.s` are the same
+// tokens in different roles. The walker records the relations of both
+// readings: a missed one is a bypass, an extra one is a name no rule was
+// written against. After a dot the word is a member in every reading.
+func (a *analyzer) mayBeAClause(i int) bool {
+	return (a.d == ClickHouse || a.d == Spark) && !a.puncts(i-1, ".")
+}
+
+// selectItemStart reports whether the token at i starts a select-list item:
+// SELECT, DISTINCT or a comma is before it.
+func (a *analyzer) selectItemStart(i int) bool {
+	return i > 0 && (a.puncts(i-1, ",") || a.toks[i-1].isWord("select") || a.toks[i-1].isWord("distinct"))
 }
