@@ -107,6 +107,11 @@ func seedLevelSidecar(t *testing.T, name, ruleName, spec string) *models.Sidecar
 	require.NoError(t, models.SetAnalyzerRuleListenersTx(models.DB, org, ruleName,
 		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}))
 	require.NoError(t, services.SyncAnalyzerApprovalRule(models.DB, org, ruleName, rule.SidecarSpec, nil))
+	// A build that reads the object form, as a level filing needs. A test of
+	// an older build handshakes again without it.
+	_, err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.300.0", "", "", "", "",
+		[]string{daemon.CapabilityRiskLevelObject})
+	require.NoError(t, err)
 	stored, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
 	require.NoError(t, err)
 	return stored
@@ -444,9 +449,56 @@ func TestAnInheritedApprovalRuleDoesNotReleaseAnObjectLevel(t *testing.T) {
 
 		served, err := services.ServedSidecarConfiguration(models.DB, row)
 		require.NoError(t, err)
-		require.Equal(t, "payments-approvers", served.Listeners[0].Analyzer.ApprovalRule, "%s: the rule is inherited", name)
+		require.Equal(t, "payments-approvers", served.Config.Listeners[0].Analyzer.ApprovalRule, "%s: the rule is inherited", name)
 
 		rec := postLevelBody(row, "DELETE FROM t", map[string]any{"approval_rule": "payments-approvers"})
 		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s: %s", name, rec.Body.String())
+	}
+}
+
+// A level filing is authorized against the document served to the build. A
+// build without the object form is served a bare hold, or is refused, so it
+// never holds a level object and cannot file under one.
+func TestALevelFilingFromAnOldBuildIsRefused(t *testing.T) {
+	startStatusTestDB(t)
+	for name, spec := range map[string]string{
+		// Refused service: the agent level has no bare form.
+		"mixed": `{"high":{"action":"require_approval","approver":"human","approval_groups":["dba"]},` +
+			`"low":{"action":"require_approval","approver":"ai_agent"}}`,
+		// Served downgraded: a bare hold under the managed rule.
+		"human": `{"high":{"action":"require_approval","approver":"human","approval_groups":["dba"]}}`,
+	} {
+		sc := seedLevelSidecar(t, "old-"+name, "old-"+name+"-rule", spec)
+		filings := map[string]func(*models.Sidecar, string) *httptest.ResponseRecorder{
+			"human": func(row *models.Sidecar, stmt string) *httptest.ResponseRecorder { return fileLevel(row, stmt, "high") },
+		}
+		if name == "mixed" {
+			filings["ai_agent"] = func(row *models.Sidecar, stmt string) *httptest.ResponseRecorder {
+				return postAgentDecision(row, stmt, "low", "approved", "bounded")
+			}
+		}
+		reread := func() *models.Sidecar {
+			row, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
+			require.NoError(t, err)
+			return row
+		}
+
+		// The old build: no analyzer_risk_level_object.
+		handshake(t, sc, "")
+		old := reread()
+		require.NotNil(t, old.Capabilities)
+		for approver, file := range filings {
+			rec := file(old, "DELETE FROM t WHERE old = '"+name+approver+"'")
+			assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s/%s: %s", name, approver, rec.Body.String())
+			assert.Contains(t, rec.Body.String(), "is not configured to hold the", "%s/%s", name, approver)
+		}
+
+		// The new build files under the same levels.
+		require.Equal(t, http.StatusOK, handshake(t, sc, daemon.CapabilityRiskLevelObject).Code, name)
+		current := reread()
+		for approver, file := range filings {
+			rec := file(current, "DELETE FROM t WHERE new = '"+name+approver+"'")
+			assert.Equal(t, http.StatusCreated, rec.Code, "%s/%s: %s", name, approver, rec.Body.String())
+		}
 	}
 }
