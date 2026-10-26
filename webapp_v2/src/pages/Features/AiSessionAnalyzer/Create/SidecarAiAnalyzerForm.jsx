@@ -7,19 +7,19 @@ import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import { PAGE_PADDING } from '@/layout/PageLayout'
-import { useDataMaskingStore } from '../store'
-import SidecarDataMaskingFields from './SidecarDataMaskingFields'
-import { useSidecarDataMaskingEditor } from './useSidecarDataMaskingEditor'
+import { useAiSessionAnalyzerStore } from '../store'
+import SidecarAiAnalyzerFields from './SidecarAiAnalyzerFields'
+import { useSidecarAiAnalyzerEditor } from './useSidecarAiAnalyzerEditor'
 import classes from './Create.module.css'
 
-// Page shell around SidecarDataMaskingFields; Router.jsx picks this or the Gateway sibling with <ByRuleTraffic>.
+// Page shell around SidecarAiAnalyzerFields; Router.jsx picks this or the Gateway sibling with <ByRuleTraffic>.
 
-function FormFields({ rule: stored, id, isEdit }) {
+function FormFields({ rule: stored, ruleName, isEdit }) {
   const navigate = useNavigate()
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
-  const back = () => navigate('/features/data-masking')
-  const editor = useSidecarDataMaskingEditor({ rule: stored, id, isEdit, onSaved: back, onDeleted: back })
+  const back = () => navigate('/features/ai-session-analyzer')
+  const editor = useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, onSaved: back, onDeleted: back })
 
   const handleDelete = async () => {
     await editor.remove()
@@ -64,7 +64,7 @@ function FormFields({ rule: stored, id, isEdit }) {
         data-scrolled={!headerInView || undefined}
       >
         <Title order={2} lts="-0.00625em">
-          {isEdit ? 'Edit Data Masking rule' : 'Create new Data Masking rule'}
+          {isEdit ? 'Edit AI Analyzer rule' : 'Create new AI Analyzer rule'}
         </Title>
         <Group gap="sm">
           {isEdit && (
@@ -78,14 +78,12 @@ function FormFields({ rule: stored, id, isEdit }) {
         </Group>
       </Group>
 
-      <SidecarDataMaskingFields editor={editor} />
+      <SidecarAiAnalyzerFields editor={editor} />
 
-      <Modal opened={deleteOpened} onClose={deleteModal.close} title="Delete Data Masking rule?">
+      <Modal opened={deleteOpened} onClose={deleteModal.close} title="Delete rule">
         <Stack gap="lg">
           <Text size="sm">
-            This action will permanently delete this Data Masking rule and cannot be undone.
-            Every listener it is distributed to stops applying it. Are you sure you want to
-            proceed?
+            {`Are you sure you want to delete the rule "${ruleName}"? Every listener it is distributed to stops running it. This action cannot be undone.`}
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="subtle" color="gray" onClick={deleteModal.close}>
@@ -101,32 +99,32 @@ function FormFields({ rule: stored, id, isEdit }) {
   )
 }
 
-export default function ControlPlaneDataMaskingForm() {
-  const { id } = useParams()
-  const isEdit = Boolean(id)
+export default function SidecarAiAnalyzerForm() {
+  const { ruleName } = useParams()
+  const isEdit = Boolean(ruleName)
 
-  const active = useDataMaskingStore((s) => s.active)
-  const activeStatus = useDataMaskingStore((s) => s.activeStatus)
-  const fetchActive = useDataMaskingStore((s) => s.fetchActive)
-  const clearActive = useDataMaskingStore((s) => s.clearActive)
+  const active = useAiSessionAnalyzerStore((s) => s.active)
+  const activeStatus = useAiSessionAnalyzerStore((s) => s.activeStatus)
+  const fetchActive = useAiSessionAnalyzerStore((s) => s.fetchActive)
+  const clearActive = useAiSessionAnalyzerStore((s) => s.clearActive)
 
   useEffect(() => {
-    if (isEdit) fetchActive(id)
+    if (isEdit) fetchActive(ruleName)
     return () => clearActive()
-  }, [isEdit, id, fetchActive, clearActive])
+  }, [isEdit, ruleName, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />
   }
   if (isEdit && activeStatus === 'error') {
-    return <Text c="red">Failed to load data masking rule.</Text>
+    return <PageLoader error h={400} message="Failed to load rule." />
   }
 
   return (
     <FormFields
-      key={isEdit ? (active?.id ?? id) : 'new'}
+      key={isEdit ? (active?.name ?? ruleName) : 'new'}
       rule={isEdit ? active : null}
-      id={id}
+      ruleName={ruleName}
       isEdit={isEdit}
     />
   )

@@ -39,3 +39,28 @@ func TestStopEndsTheSubscription(t *testing.T) {
 	}
 	Publish("org-stop", Event{Type: SidecarCheckedIn}) // no subscriber left, no panic
 }
+
+func TestAudienceAllowsTheGroupMembersButNotTheOwner(t *testing.T) {
+	a := &Audience{Groups: []string{"dba", "sre"}, OwnerID: "owner"}
+	for _, tc := range []struct {
+		name    string
+		user    string
+		groups  []string
+		isAdmin bool
+		want    bool
+	}{
+		{"a reviewer", "u1", []string{"eng", "dba"}, false, true},
+		{"a force approver", "u2", []string{"sre"}, false, true},
+		{"outside the groups", "u3", []string{"eng"}, false, false},
+		{"an admin outside the groups", "u4", []string{"admin"}, true, false},
+		{"the owner in a group", "owner", []string{"dba"}, false, false},
+		{"the owner as an admin in a group", "owner", []string{"dba", "admin"}, true, true},
+	} {
+		if got := a.Allows(tc.user, tc.groups, tc.isAdmin); got != tc.want {
+			t.Errorf("%s: Allows = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	if (*Audience)(nil).Allows("u1", []string{"dba"}, true) {
+		t.Error("an event with no audience reached a user")
+	}
+}

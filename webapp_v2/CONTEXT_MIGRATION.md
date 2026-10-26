@@ -56,13 +56,12 @@ Gateway backend (port 8009)
 | `hoop:native-access-open` (DOM CustomEvent on `window`) | Emitted by `native_client_access/events.cljs` when `window.__hoopReactShellPresent` is set, so CLJS entry points (`/resources`, session details, the CLJS palette) open the React Native Connections drawer. Detail: `{connectionName, reopen?}`. Outlives the CLJS native-access code — those pages stay CLJS past B4.0 |
 | `hoop:native-access-resume` (DOM CustomEvent on `window`) | Same bridge for the post-review resume. Detail: `{connectionName, sessionId, accessDurationSec}` — the duration travels in the event because it comes from the CLJS session-details payload |
 
-### Application modes
+### Routes and gates
 
-One product: the gateway. `application_mode` is always `"gateway"`, and `src/modes/gateway.jsx`
-is the only manifest (the shell a page renders in and the three CLJS leaves `/`,
-`/onboarding/*`, `/*`). The per-org `experimental.agents` flag gates the agent pages. Rule
-forms come in an agent and a sidecar variant, chosen in `Router.jsx` with `<ByRuleTraffic>`.
-See `CLAUDE.md`, "Application modes".
+One product: the gateway. `src/modes/gateway.jsx` holds the shell a page renders in and the
+three CLJS leaves `/`, `/onboarding/*`, `/*`. The per-org `experimental.agents` flag gates
+the agent pages. Rule forms come in an agent and a sidecar variant, chosen in `Router.jsx`
+with `<ByRuleTraffic>`. See `CLAUDE.md`, "Routing, gates and roles".
 
 ### Routing Split (Router.jsx)
 
@@ -71,7 +70,6 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | Route | Handler | Status |
 |-------|---------|--------|
 | `/sidecars`, `/sidecars/connect`, `/sidecars/new`, `/sidecars/:id` | React | Done — control plane fleet on `/api/sidecars` (list, connect/create wizard with the one-time token, details) |
-| `/onboarding/license` | React | Done — control plane first-access license screen; reached by URL only |
 | `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane page; `NotImplemented`) |
 | `/organization/users` | React | Done — with free-form groups |
 | `/login` | React | Done |

@@ -595,9 +595,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		serverlogsapi.Stream)
-	// Admin only while every event type is about an admin page.
+	// Each event type checks its own audience in liveeventsapi.Stream.
 	r.GET("/events/stream",
-		apiroutes.AdminOnlyAccessRole,
+		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		liveeventsapi.Stream)
 

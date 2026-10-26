@@ -3,6 +3,7 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -121,10 +122,29 @@ func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 // UpdateDataMaskingRule. It runs inside the caller's transaction so the rule
 // and its connection junction rows can be composed atomically with other writes.
 func UpdateDataMaskingRuleTx(tx *gorm.DB, rule *DataMaskingRule) error {
+	// A name renames the rule: the attribute and sidecar junctions cascade,
+	// and the caller then writes them under the new name. An empty name keeps
+	// the stored one, read back inside this transaction.
+	columns := []string{"description", "supported_entity_types", "custom_entity_types", "score_threshold", "sidecar_spec", "rulepack_id", "updated_at"}
+	if rule.Name != "" {
+		// Checked first: on the embedded database the unique violation reaches
+		// the caller wrapped in a second error, which hides gorm.ErrDuplicatedKey.
+		var taken int64
+		if err := tx.Table("private.datamasking_rules").
+			Where("org_id = ? AND name = ? AND id <> ?", rule.OrgID, rule.Name, rule.ID).
+			Count(&taken).Error; err != nil {
+			return fmt.Errorf("failed checking data masking rule name: %v", err)
+		}
+		if taken > 0 {
+			return ErrAlreadyExists
+		}
+		columns = append(columns, "name")
+	}
 	res := tx.Table("private.datamasking_rules").
 		Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
-		Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "sidecar_spec", "rulepack_id", "updated_at").
+		Select(columns).
 		Updates(DataMaskingRule{
+			Name:                 rule.Name,
 			Description:          rule.Description,
 			SupportedEntityTypes: rule.SupportedEntityTypes,
 			CustomEntityTypes:    rule.CustomEntityTypes,
@@ -133,11 +153,22 @@ func UpdateDataMaskingRuleTx(tx *gorm.DB, rule *DataMaskingRule) error {
 			RulepackID:           rule.RulepackID,
 			UpdatedAt:            rule.UpdatedAt,
 		})
+	// A rename that races past the check above.
+	if errors.Is(res.Error, gorm.ErrDuplicatedKey) {
+		return ErrAlreadyExists
+	}
 	if res.Error != nil {
 		return fmt.Errorf("failed updating data masking rule: %v", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return ErrNotFound
+	}
+	if rule.Name == "" {
+		if err := tx.Table("private.datamasking_rules").
+			Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
+			Pluck("name", &rule.Name).Error; err != nil {
+			return fmt.Errorf("failed reading data masking rule name: %v", err)
+		}
 	}
 
 	err := tx.Table("private.datamasking_rules_connections").

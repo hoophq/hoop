@@ -1668,6 +1668,8 @@ type Review struct {
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
 	// The connection the approval request was filed against. On a sidecar approval request, the resource that mirrors the listener; absent while the organization has no mirror for it
 	Connection *ReviewConnection `json:"connection,omitempty" readonly:"true"`
+	// Who filed the approval request. On a sidecar approval request, the sidecar
+	Requester *ReviewOwner `json:"requester,omitempty" readonly:"true"`
 	// The deadline of a sidecar approval request: to decide while PENDING, to use the
 	// approval once APPROVED. Absent with no limit or on an approval request from a connection
 	ExpiresAt *time.Time `json:"expires_at,omitempty" readonly:"true" example:"2024-07-25T16:11:35.000Z"`
@@ -2813,7 +2815,7 @@ type DataMaskingRule struct {
 }
 
 type DataMaskingRuleRequest struct {
-	// The unique name of the data masking rule, it's immutable after creation
+	// The unique name of the data masking rule. An update with a new name renames it
 	Name string `json:"name" binding:"required" example:"mask-email"`
 	// The description of the data masking rule
 	Description string `json:"description" example:"Mask email addresses in the data"`

@@ -16,6 +16,7 @@ behaves the same way in this repo. Change it via PR like any code.
 | `skills/gcp-marketplace-publish/` | `/gcp-marketplace-publish` — a release of the sidecar to the GCP Marketplace listing, on demand |
 | `skills/support-agent/` | `/support-agent` — one scheduled run of the support agent: one Linear support ticket per run |
 | `hooks/ai-disclosure.sh` | With `HOOP_AGENT` set: refuses a Slack post or Linear comment that does not say an AI wrote it, and Slack posts outside the agent's channel |
+| `hooks/git-signing.sh` | With `GIT_SIGNING_KEY` set: signs every commit with that GPG key, so GitHub shows the owner's commits as Verified |
 | `../.mcp.json` | Linear + Figma MCP servers for everyone (first run: approve + `/mcp` to authenticate) |
 
 ## First-time setup (each engineer, once)
@@ -84,13 +85,14 @@ person's account that runs `/support-agent` hourly. Each run takes one Linear
 ticket labeled `Support`, and asks in Slack or Linear when blocked. A later run
 resumes when someone answers. Its state lives in Linear labels: `agent:go`,
 `agent:working`, `agent:needs-info`, `agent:needs-customer`, `agent:drafted`,
-`agent:pr-open`, `agent:stuck`, `agent:skip`.
+`agent:pr-open`, `agent:released`, `agent:stuck`, `agent:skip`. When the
+version that ships its PR is out, the agent comments it on the ticket.
 
 - Give the task its own cloud environment and use it for nothing else:
   `HOOP_AGENT` turns on the `ai-disclosure` hook in every session there. It sets
   `HOOP_AGENT=support`,
   `HOOP_AGENT_OWNER`, `HOOP_AGENT_SLACK_CHANNEL` (channel ID),
-  `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: draft PRs),
+  `HOOP_AGENT_MODE` (`spec`: answers and specs only; `build`: PRs),
   `GOPRIVATE=github.com/hoophq/libhoop,github.com/hoophq/libhoop-ica`,
   `HOOP_RS_BUILD=0`, `HOOPDEV_CA_CERT=/root/.ccr/ca-bundle.crt` (the
   sandbox re-signs TLS; the dev image must trust it) and `HOOPDEV_LICENSE`:
@@ -103,7 +105,20 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
   `GIT_COMMITTER_EMAIL` hold the owner's name and the email of their GitHub
   account: the CLA check reads the commit author, and a cloud session
   otherwise commits as `Claude`, which the CLA refuses.
-  Its setup script installs `freeze` for evidence, sets mirrors (in our cloud
+  `GIT_SIGNING_KEY` (optional) signs those commits with the owner's GPG key.
+  Without it GitHub shows them as Unverified: the sandbox signs with its own
+  SSH key. Make a key for this use only, add its public half to the owner's
+  GitHub account (Settings → SSH and GPG keys), and export it by fingerprint:
+  the owner's other keys with the same email must stay out.
+
+  ```bash
+  gpg --batch --passphrase '' --quick-generate-key "Your Name <you@example.com>" ed25519 sign 1y
+  gpg --armor --export <fingerprint> | pbcopy                                        # GitHub
+  gpg --armor --export-secret-keys <fingerprint> | base64 | tr -d '\n' | pbcopy     # GIT_SIGNING_KEY
+  ```
+
+  Its setup script installs the evidence tools (`freeze`, VHS with `ttyd`, and
+  Chromium as `chromium` in `PATH`), sets mirrors (in our cloud
   runs Docker Hub answered 429, and Maven Central sent error pages), and pulls
   the dev images into the environment cache. The pulls only fill the cache, so
   they may fail: a setup script that exits non-zero stops the session, and
@@ -111,6 +126,10 @@ resumes when someone answers. Its state lives in Linear labels: `agent:go`,
 
   ```bash
   GOBIN=/usr/local/bin go install github.com/charmbracelet/freeze@v0.2.2 || true
+  GOBIN=/usr/local/bin go install github.com/charmbracelet/vhs@v0.10.0 || true
+  curl -fsSL -o /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 &&
+    chmod +x /usr/local/bin/ttyd || true
+  ln -sf /opt/pw-browsers/chromium /usr/local/bin/chromium
   mkdir -p ~/.shadow-cljs /etc/docker
   echo '{:maven {:repositories {"central" {:url "https://maven-central.storage-download.googleapis.com/maven2/"} "clojars" {:url "https://repo.clojars.org/"}}}}' > ~/.shadow-cljs/config.edn
   echo '{"registry-mirrors": ["https://mirror.gcr.io"]}' > /etc/docker/daemon.json

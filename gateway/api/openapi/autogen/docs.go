@@ -3541,6 +3541,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
@@ -3711,7 +3717,7 @@ const docTemplate = `{
         },
         "/events/stream": {
             "get": {
-                "description": "Streams change notices of the organization via SSE, one \"event: \u003ctype\u003e\" frame per change, with {\"type\",\"id\"} as data. A notice names what changed and never its content: read the resource again through its own route. Types: sidecar.checked_in.",
+                "description": "Streams change notices of the organization via SSE, one \"event: \u003ctype\u003e\" frame per change, with {\"type\",\"id\"} as data. A notice names what changed and never its content: read the resource again through its own route. Types: sidecar.checked_in (admins), review.created (users who can approve the review). The stream ends after 30 minutes; reconnect.",
                 "produces": [
                     "text/event-stream"
                 ],
@@ -15932,7 +15938,7 @@ const docTemplate = `{
                     "example": "hoop"
                 },
                 "name": {
-                    "description": "The unique name of the data masking rule, it's immutable after creation",
+                    "description": "The unique name of the data masking rule. An update with a new name renames it",
                     "type": "string",
                     "example": "mask-email"
                 },
@@ -16059,7 +16065,7 @@ const docTemplate = `{
                     "example": "Mask email addresses in the data"
                 },
                 "name": {
-                    "description": "The unique name of the data masking rule, it's immutable after creation",
+                    "description": "The unique name of the data masking rule. An update with a new name renames it",
                     "type": "string",
                     "example": "mask-email"
                 },
@@ -18778,6 +18784,15 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "This command is not allowed in production."
+                },
+                "requester": {
+                    "description": "Who filed the approval request. On a sidecar approval request, the sidecar",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewOwner"
+                        }
+                    ],
+                    "readOnly": true
                 },
                 "review_groups_data": {
                     "description": "Contains the groups that must approve this request",
