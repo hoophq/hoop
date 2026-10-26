@@ -3942,6 +3942,16 @@ credential does not cover, is refused like any other wrong token. A vault
 rotation reaches running sessions on its own schedule, so rotate with the
 two-line overlap above.
 
+#### Filling the token from an OpenAI vault
+
+An OpenAI vault `environment_variable` credential also puts a placeholder
+in the sandbox, and fills the real secret only toward the hosts in its
+`networking.allowed_hosts`. It has no `injection_location`: toward the
+sidecar's host it fills the placeholder anywhere in the request, the URL
+and the body included. Keep the token in `X-Hoop-Token` only. The setup is
+in `deploy/openai-agents/http/` and on the docs page,
+[OpenAI Agents API](https://hoop.dev/docs/integrations/openai-agents).
+
 ### kubectl through GKE Connect Gateway
 
 **The cluster prefix is removed before policy sees the resource.** Connect
