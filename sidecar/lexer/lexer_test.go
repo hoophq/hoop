@@ -714,6 +714,10 @@ func TestFromListEndsAtTheNextClause(t *testing.T) {
 		{[]lexer.Dialect{lexer.Spark}, `SELECT * FROM t x DISTRIBUTE BY a, b SORT BY a, b`, []string{"t"}, nil},
 		{[]lexer.Dialect{lexer.Spark, lexer.GoogleSQL}, `SELECT * FROM t x QUALIFY row_number() OVER (PARTITION BY a) = 1, b`,
 			[]string{"t"}, nil},
+		// ClickHouse and Spark do not reserve FROM: before a comma it is a
+		// column, and no item can follow it.
+		{[]lexer.Dialect{lexer.ClickHouse, lexer.Spark}, `SELECT * FROM t ORDER BY from, salaries`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.ClickHouse, lexer.Spark}, `SELECT * FROM t ORDER BY a, from`, []string{"t"}, nil},
 	} {
 		for _, d := range tc.ds {
 			a := lexer.Analyze(tc.sql, d)

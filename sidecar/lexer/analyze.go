@@ -986,19 +986,23 @@ func (a *analyzer) claimRelations(i int) int {
 // FROM, DELETE's USING, and UPDATE as a statement head (MySQL's `UPDATE a x,
 // b SET`). A list is per region, so a subquery's list closes with it.
 //
-// The FROM of IS [NOT] DISTINCT FROM compares and opens nothing. Every other
-// FROM opens a list: the dialects that reserve FROM have no other, and on
-// ClickHouse and Spark, which do not, a column called from in a later clause
-// (`ORDER BY from, x`) cannot be told from the clause, so the list reading is
-// kept as mayBeAClause keeps it. A missed relation is a bypass; an extra one
-// is a name no rule was written against.
+// Two FROMs open nothing: the FROM of IS [NOT] DISTINCT FROM, and a FROM that
+// a comma, a closing parenthesis or the statement's end follows, where no
+// item can begin: on ClickHouse and Spark, which do not reserve FROM, `ORDER
+// BY from, x` sorts by a column called from. Every other FROM opens a list.
+// Where FROM is reserved there is no other; on ClickHouse and Spark a column
+// called from before more of an expression (`ORDER BY from NULLS LAST, x`)
+// cannot be told from the clause, so the list reading is kept as mayBeAClause
+// keeps it. A missed relation is a bypass; an extra one is a name no rule was
+// written against.
 func (a *analyzer) openList(i int) {
 	r := a.top()
 	switch intro := a.toks[i].Text; {
 	case !introduces(intro, r.verb):
 		return
 	case intro == "from":
-		if a.isDistinctFrom(i) {
+		if a.isDistinctFrom(i) || i+1 == len(a.toks) ||
+			a.puncts(i+1, ",") || a.puncts(i+1, ")") || a.puncts(i+1, ";") {
 			return
 		}
 		r.listOpen, r.listIntro = true, i
