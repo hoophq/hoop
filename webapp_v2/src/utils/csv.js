@@ -1,7 +1,8 @@
 // A spreadsheet runs a cell that starts with one of these as a formula.
 // A leading quote makes it text (OWASP "CSV Injection"). A leading line feed
-// is guarded too: some importers drop it and read the next character.
-const FORMULA_START = /^[=+\-@\t\r\n]/
+// is guarded too: some importers drop it and read the next character. The
+// full-width forms (＝ ＋ － ＠) start a formula in some locales.
+const FORMULA_START = /^[=+\-@\t\r\n\uFF1D\uFF0B\uFF0D\uFF20]/
 
 function cell(value) {
   let text = value == null ? '' : String(value)
