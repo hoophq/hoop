@@ -20,6 +20,11 @@ cfg="$dir/deploy/sidecar/sidecar.yaml"
 # such as "postgres" is also an ordinary word, so only its host:port counts.
 upstreams=$(sed -n 's/^[[:space:]]*upstream:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$cfg" | tr -d "\"'" | sort -u)
 [[ -n $upstreams ]] || { echo "FAIL: no upstream in $cfg" >&2; exit 1; }
+# An upstream this test cannot split into host and port would weaken the
+# search below without a sign, so it stops here instead.
+for u in $upstreams; do
+  [[ $u =~ ^[^:[:space:]]+:[0-9]+$ ]] || { echo "FAIL: cannot read upstream '$u' in $cfg as host:port" >&2; exit 1; }
+done
 hosts=$(echo "$upstreams" | sed 's/:[0-9]*$//' | grep -F . | sort -u || true)
 
 tag="agent-image-test:$$"
