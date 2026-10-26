@@ -15,17 +15,27 @@ cfg="$dir/deploy/sidecar/sidecar.yaml"
 [[ -f $dir/Dockerfile ]] || { echo "FAIL: no Dockerfile in $dir; run this in a project made by agents-cli create" >&2; exit 1; }
 [[ -f $cfg ]] || { echo "FAIL: no $cfg" >&2; exit 1; }
 
-# The database addresses: every listener's upstream (host:port) in sidecar.yaml,
-# and its host when the host holds a dot (an FQDN or an IP). A one-label host
-# such as "postgres" is also an ordinary word, so only its host:port counts.
-upstreams=$(sed -n 's/^[[:space:]]*upstream:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$cfg" | tr -d "\"'" | sort -u)
+# The database addresses: every listener's upstream (host:port, or
+# [ipv6]:port) in sidecar.yaml, and its host when the host holds a dot or a
+# colon (an FQDN or an IP). A one-label host such as "postgres" is also an
+# ordinary word, so only its host:port counts.
+# Block, flow and JSON forms: `upstream: x`, `{..., upstream: x}`, `"upstream": "x"`.
+read -r -d '' extract <<'EOF' || true
+import re, sys
+text = open(sys.argv[1]).read()
+for m in re.finditer(r"""["']?\bupstream["']?\s*:\s*["']?([^\s"',}#]+)""", text):
+    print(m.group(1))
+EOF
+upstreams=$(python3 -I -c "$extract" "$cfg" | sort -u)
 [[ -n $upstreams ]] || { echo "FAIL: no upstream in $cfg" >&2; exit 1; }
 # An upstream this test cannot split into host and port would weaken the
 # search below without a sign, so it stops here instead.
+addr='^([^][:space:]:]+|\[[0-9A-Fa-f:.]+\]):[0-9]+$'
 for u in $upstreams; do
-  [[ $u =~ ^[^:[:space:]]+:[0-9]+$ ]] || { echo "FAIL: cannot read upstream '$u' in $cfg as host:port" >&2; exit 1; }
+  [[ $u =~ $addr ]] \
+    || { echo "FAIL: cannot read upstream '$u' in $cfg as host:port or [ipv6]:port" >&2; exit 1; }
 done
-hosts=$(echo "$upstreams" | sed 's/:[0-9]*$//' | grep -F . | sort -u || true)
+hosts=$(echo "$upstreams" | sed 's/:[0-9]*$//' | tr -d '[]' | grep -E '[.:]' | sort -u || true)
 
 tag="agent-image-test:$$"
 cid=""
