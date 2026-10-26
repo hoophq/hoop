@@ -365,6 +365,9 @@ func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
 		`SELECT amount AS update FROM salaries`,
 		`SELECT update FROM salaries`,
 		`SELECT * FROM t update JOIN salaries ON true`,
+		`SELECT x.update FROM (VALUES (1)) x(update) JOIN salaries ON true`,
+		`WITH s AS (SELECT amount AS update FROM salaries) SELECT s.update FROM s`,
+		`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s JOIN salaries ON true`,
 		// Spark does not reserve AS: here it is a column, and FROM is real.
 		`SELECT as FROM salaries`,
 	} {

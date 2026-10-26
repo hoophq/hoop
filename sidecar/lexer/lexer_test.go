@@ -597,6 +597,12 @@ func TestKeywordColumnIntroducesNoRelation(t *testing.T) {
 		tc{`SELECT 1 AS from FROM salaries`, salaries},
 		tc{`SELECT * FROM salaries update JOIN secrets ON true`, []string{"salaries", "secrets"}},
 		tc{`SELECT * FROM salaries AS join JOIN secrets ON true`, []string{"salaries", "secrets"}},
+		// A keyword alias on a VALUES list and in a CTE. The ticket's comma
+		// forms of these (`x(update), salaries`) lose salaries to a FROM
+		// list that ends after an aliased item: a separate defect.
+		tc{`SELECT x.update FROM (VALUES (1)) x(update) JOIN salaries ON true`, salaries},
+		tc{`WITH s AS (SELECT amount AS update FROM salaries) SELECT s.update FROM s`, salaries},
+		tc{`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s JOIN salaries ON true`, salaries},
 	)
 	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
 		lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
