@@ -64,6 +64,22 @@ var ErrSidecarRulesUnavailable = errors.New("the rules bound to this sidecar cou
 // on one lane is a conflict, so a candidate laid over a composed result would
 // under-count the first and never see the second.
 func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind SidecarRuleKind, skipName string, candidates ...models.BoundRule) (daemon.Config, error) {
+	composed, err := composeNativeRules(db, sc, skipKind, skipName, candidates...)
+	if err != nil {
+		return composed, err
+	}
+	// The gateway's own rules, reaching listeners through their mirrors.
+	// Placed last: a listener's native rules keep their position.
+	reaching, err := loadMirrorRules(db, sc)
+	if err != nil {
+		return composed, err
+	}
+	return foldGatewayRules(composed, sc.Name, reaching.guardrails, reaching.masking)
+}
+
+// composeNativeRules folds the rules bound to the sidecar's listeners, with
+// the skip and the candidates composeSidecarConfiguration describes.
+func composeNativeRules(db *gorm.DB, sc *models.Sidecar, skipKind SidecarRuleKind, skipName string, candidates ...models.BoundRule) (daemon.Config, error) {
 	cfg := daemon.Config(sc.Configuration)
 
 	orgID, err := uuid.Parse(sc.OrgID)
@@ -104,21 +120,7 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 	default:
 		return cfg, fmt.Errorf("cannot compose a candidate %s rule", skipKind)
 	}
-	composed, err := foldSidecarRules(cfg, guardrails, masking, analyzers)
-	if err != nil {
-		return cfg, err
-	}
-	// The gateway's own rules, reaching listeners through their mirrors.
-	// Placed last: a listener's native rules keep their position.
-	mirrorGuardrails, err := models.ListMirrorGuardrailRules(db, orgID, sc.ID)
-	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the guardrail rules reaching this sidecar's mirrors: %v", ErrSidecarRulesUnavailable, err)
-	}
-	mirrorMasking, err := models.ListMirrorDataMaskingRules(db, orgID, sc.ID)
-	if err != nil {
-		return cfg, fmt.Errorf("%w: failed loading the data masking rules reaching this sidecar's mirrors: %v", ErrSidecarRulesUnavailable, err)
-	}
-	return foldGatewayRules(composed, sc.Name, mirrorGuardrails, mirrorMasking)
+	return foldSidecarRules(cfg, guardrails, masking, analyzers)
 }
 
 // withoutRule drops every binding of one rule, by the name the bindings are

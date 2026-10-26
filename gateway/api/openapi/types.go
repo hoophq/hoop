@@ -367,7 +367,9 @@ type SidecarResponse struct {
 	// The stored daemon configuration.
 	Configuration daemon.Config `json:"configuration" swaggertype:"object"`
 	// BoundRules names the rules the control plane distributes to this
-	// sidecar, and the listener each one lands on.
+	// sidecar, and the listener each one lands on: the rules bound to its
+	// listeners and the gateway rules reaching them through a mirror
+	// connection (source "gateway").
 	//
 	// They are NOT inside Configuration and never will be: a bound rule is
 	// folded into the SERVED document on every handshake and nothing is
@@ -459,7 +461,14 @@ type SidecarRuleBinding struct {
 	RuleName string `json:"rule_name" example:"no-destructive-sql"`
 	// The listener that enforces it
 	ListenerName string `json:"listener_name" example:"appdb"`
+	// "gateway" when the rule is a gateway rule the listener runs translated,
+	// reached through its mirror connection; empty for a sidecar rule
+	Source string `json:"source,omitempty" enums:"gateway" example:"gateway"`
 }
+
+// SidecarRuleSourceGateway marks a binding a gateway rule makes through a
+// mirror connection.
+const SidecarRuleSourceGateway = "gateway"
 
 type SidecarCreateResponse struct {
 	SidecarResponse

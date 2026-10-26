@@ -3,6 +3,7 @@ package models_test
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +110,17 @@ func TestAGatewayGuardrailReachesAMirrorByConnectionID(t *testing.T) {
 	if err != nil || len(ids) != 1 || ids[0] != sc.ID {
 		t.Fatalf("sidecars reached = %v, %v", ids, err)
 	}
+	// What the Sidecars page lists, org-wide and for one sidecar.
+	for _, scope := range []string{"", sc.ID} {
+		bound, err := models.ListMirrorRuleBindings(models.DB, uuid.MustParse(testOrgID), scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []models.SidecarRuleBinding{{SidecarID: sc.ID, Kind: "guardrail", RuleName: "no-drop", ListenerName: "appdb"}}
+		if !reflect.DeepEqual(bound, want) {
+			t.Fatalf("bindings(%q) = %+v, want %+v", scope, bound, want)
+		}
+	}
 
 	lane := composedLane(t, sc, "appdb")
 	if got := ruleNames(lane.Guardrails.Rules); got != "native,no-drop" {
@@ -142,6 +154,17 @@ func TestAGatewayRuleReachesAMirrorByAttribute(t *testing.T) {
 	ids, err := models.SidecarsReachedByDataMaskingRule(models.DB, org, "prod-mask")
 	if err != nil || len(ids) != 1 || ids[0] != sc.ID {
 		t.Fatalf("sidecars reached = %v, %v", ids, err)
+	}
+	bound, err := models.ListMirrorRuleBindings(models.DB, org, sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []models.SidecarRuleBinding{
+		{SidecarID: sc.ID, Kind: "datamasking", RuleName: "prod-mask", ListenerName: "appdb"},
+		{SidecarID: sc.ID, Kind: "guardrail", RuleName: "prod-guard", ListenerName: "appdb"},
+	}
+	if !reflect.DeepEqual(bound, want) {
+		t.Fatalf("bindings = %+v, want %+v", bound, want)
 	}
 }
 
@@ -210,6 +233,40 @@ func TestTheWriteGateRefusesAnUntranslatableRule(t *testing.T) {
 	var refused services.ErrSidecarGatewayRuleRefused
 	if !errors.As(err, &refused) {
 		t.Fatalf("want the handshake refusal, got %v", err)
+	}
+}
+
+// The gate refuses only the rule being written. A sidecar another rule
+// already breaks lets every other rule through to the handshake.
+func TestTheWriteGateRefusesOnlyTheRuleBeingWritten(t *testing.T) {
+	startTestDB(t)
+	// No native rule: the free tier runs one guardrail per listener.
+	_, mirror := mirroredSidecar(t, "crossrule",
+		`{"listeners":[{"name":"appdb","protocol":"postgres","listen":":5432","upstream":"db:5432"}]}`)
+	org := uuid.MustParse(testOrgID)
+	if err := models.UpsertConnectionAttributes(models.DB, org, mirror.Name, []string{"prod"}); err != nil {
+		t.Fatal(err)
+	}
+	gatewayGuardrail(t, "ssn-out", noRules,
+		map[string]any{"rules": []any{map[string]any{"type": "pattern_match", "pattern_regex": "\\d{3}-\\d{2}-\\d{4}"}}},
+		nil, []string{"prod"})
+
+	gatewayGuardrail(t, "no-drop", denyWords("DROP TABLE"), noRules, []string{mirror.ID}, nil)
+	if err := services.CheckSidecarsReachedByGatewayRule(models.DB, testOrgID, services.SidecarRuleGuardrail, "no-drop"); err != nil {
+		t.Fatalf("a rule the sidecar runs is refused for another rule's fault: %v", err)
+	}
+	gatewayMasking(t, "emails", []string{"EMAIL_ADDRESS"}, []string{mirror.ID}, nil)
+	if err := services.CheckSidecarsReachedByGatewayRule(models.DB, testOrgID, services.SidecarRuleMask, "emails"); err != nil {
+		t.Fatalf("a masking rule the sidecar runs is refused for another rule's fault: %v", err)
+	}
+
+	gatewayGuardrail(t, "with-output", denyWords("x"),
+		map[string]any{"rules": []any{map[string]any{"type": "pattern_match", "pattern_regex": "secret"}}},
+		[]string{mirror.ID}, nil)
+	err := services.CheckSidecarsReachedByGatewayRule(models.DB, testOrgID, services.SidecarRuleGuardrail, "with-output")
+	var broken services.ErrSidecarBindingBroken
+	if !errors.As(err, &broken) || !strings.Contains(err.Error(), `rule "with-output"`) || strings.Contains(err.Error(), "ssn-out") {
+		t.Fatalf("want a 422 refusal naming with-output alone, got %v", err)
 	}
 }
 

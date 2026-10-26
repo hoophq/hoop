@@ -115,3 +115,26 @@ func SidecarsReachedByDataMaskingRule(db *gorm.DB, orgID uuid.UUID, ruleName str
 		sql.Named("org", orgID), sql.Named("rule", ruleName)).Scan(&out).Error
 	return out, err
 }
+
+// ListMirrorRuleBindings names every gateway rule reaching a listener of any
+// sidecar in the organization, or of one sidecar when sidecarID is set, in the
+// shape of ListSidecarRuleBindings. The Sidecars page lists both: a listener
+// enforces a translated rule as it enforces a native one.
+func ListMirrorRuleBindings(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]SidecarRuleBinding, error) {
+	var out []SidecarRuleBinding
+	err := db.Raw(`
+	SELECT c.sidecar_id, 'guardrail' AS kind, r.name AS rule_name, c.sidecar_listener AS listener_name
+	FROM private.connections c
+	JOIN private.guardrail_rules r ON r.org_id = c.org_id
+	WHERE c.org_id = @org AND c.sidecar_listener IS NOT NULL AND (@sc = '' OR c.sidecar_id::text = @sc)
+	  AND `+mirrorsReachedByGuardrail+`
+	UNION ALL
+	SELECT c.sidecar_id, 'datamasking', r.name, c.sidecar_listener
+	FROM private.connections c
+	JOIN private.datamasking_rules r ON r.org_id = c.org_id
+	WHERE c.org_id = @org AND c.sidecar_listener IS NOT NULL AND (@sc = '' OR c.sidecar_id::text = @sc)
+	  AND `+mirrorsReachedByDataMasking+`
+	ORDER BY sidecar_id, listener_name, kind, rule_name`,
+		sql.Named("org", orgID), sql.Named("sc", sidecarID)).Scan(&out).Error
+	return out, err
+}

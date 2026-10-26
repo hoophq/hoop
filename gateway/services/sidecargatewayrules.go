@@ -294,10 +294,62 @@ func foldGatewayRules(cfg daemon.Config, sidecarName string, guardrails []models
 	return cfg, nil
 }
 
+// mirrorRules are the gateway rules reaching a sidecar through its mirrors.
+type mirrorRules struct {
+	guardrails []models.MirrorGuardrailRule
+	masking    []models.MirrorDataMaskingRule
+}
+
+func loadMirrorRules(db *gorm.DB, sc *models.Sidecar) (mirrorRules, error) {
+	orgID, err := uuid.Parse(sc.OrgID)
+	if err != nil {
+		return mirrorRules{}, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
+	}
+	guardrails, err := models.ListMirrorGuardrailRules(db, orgID, sc.ID)
+	if err != nil {
+		return mirrorRules{}, fmt.Errorf("%w: failed loading the guardrail rules reaching this sidecar's mirrors: %v", ErrSidecarRulesUnavailable, err)
+	}
+	masking, err := models.ListMirrorDataMaskingRules(db, orgID, sc.ID)
+	if err != nil {
+		return mirrorRules{}, fmt.Errorf("%w: failed loading the data masking rules reaching this sidecar's mirrors: %v", ErrSidecarRulesUnavailable, err)
+	}
+	return mirrorRules{guardrails: guardrails, masking: masking}, nil
+}
+
+// split parts one rule's reach from the rest, by the name it is stored under.
+func (m mirrorRules) split(kind SidecarRuleKind, name string) (alone, others mirrorRules) {
+	switch kind {
+	case SidecarRuleGuardrail:
+		others.masking = m.masking
+		for _, r := range m.guardrails {
+			if r.RuleName == name {
+				alone.guardrails = append(alone.guardrails, r)
+			} else {
+				others.guardrails = append(others.guardrails, r)
+			}
+		}
+	case SidecarRuleMask:
+		others.guardrails = m.guardrails
+		for _, r := range m.masking {
+			if r.RuleName == name {
+				alone.masking = append(alone.masking, r)
+			} else {
+				others.masking = append(others.masking, r)
+			}
+		}
+	}
+	return alone, others
+}
+
 // CheckSidecarsReachedByGatewayRule re-composes every sidecar a gateway rule
 // reaches through a mirror, in the caller's transaction, after the rule and
-// its bindings are written there. A sidecar that cannot run the rule refuses
-// the write with ErrSidecarBindingBroken, which reads 422.
+// its bindings are written there. It refuses the write with
+// ErrSidecarBindingBroken (422) only when THIS rule is what the sidecar cannot
+// run: on its own over the native rules, or together with the other rules
+// that reach it. A sidecar those other rules already break is left to the
+// handshake, which refuses it and names them on the Sidecars page; otherwise
+// every edit of every rule reaching it, a description alone, would answer
+// with the other rule's reason.
 func CheckSidecarsReachedByGatewayRule(tx *gorm.DB, orgID string, kind SidecarRuleKind, ruleName string) error {
 	org, err := uuid.Parse(orgID)
 	if err != nil {
@@ -324,26 +376,71 @@ func CheckSidecarsReachedByGatewayRule(tx *gorm.DB, orgID string, kind SidecarRu
 		if sc.Configuration.LoadFromDisk != nil && *sc.Configuration.LoadFromDisk {
 			continue
 		}
-		if err := checkComposedSidecar(tx, sc); err != nil {
-			if errors.Is(err, ErrSidecarRulesUnavailable) {
-				return err
-			}
-			return ErrSidecarBindingBroken{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
+		if err := checkSidecarWithGatewayRule(tx, sc, kind, ruleName); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// checkComposedSidecar is the document check of checkComposedWithRule over
-// the sidecar as stored, with no candidate: the write is already in the
-// transaction.
-func checkComposedSidecar(db *gorm.DB, sc *models.Sidecar) error {
-	licenseData, err := models.GetOrgLicenseData(db, sc.OrgID)
+// checkSidecarWithGatewayRule is CheckSidecarsReachedByGatewayRule for one
+// sidecar. nil is "this rule does not break it", broken or not.
+func checkSidecarWithGatewayRule(tx *gorm.DB, sc *models.Sidecar, kind SidecarRuleKind, ruleName string) error {
+	licenseData, err := models.GetOrgLicenseData(tx, sc.OrgID)
 	if err != nil {
 		return fmt.Errorf("%w: reading the license of the organization owning sidecar %q: %v",
 			ErrSidecarRulesUnavailable, sc.Name, err)
 	}
-	composed, err := ComposeSidecarConfiguration(db, sc)
+	native, err := composeNativeRules(tx, sc, "", "")
+	if err != nil {
+		if errors.Is(err, ErrSidecarRulesUnavailable) {
+			return err
+		}
+		return nil
+	}
+	reaching, err := loadMirrorRules(tx, sc)
+	if err != nil {
+		return err
+	}
+	alone, others := reaching.split(kind, ruleName)
+	refuse := func(err error) error {
+		return ErrSidecarBindingBroken{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
+	}
+	// Broken before any gateway rule: not this write's to refuse.
+	if err := checkComposedSidecar(sc, native, mirrorRules{}, licenseData); err != nil {
+		if errors.Is(err, ErrSidecarRulesUnavailable) {
+			return err
+		}
+		return nil
+	}
+	// This rule on its own: its reason, whatever the other rules do.
+	if err := checkComposedSidecar(sc, native, alone, licenseData); err != nil {
+		if errors.Is(err, ErrSidecarRulesUnavailable) {
+			return err
+		}
+		return refuse(err)
+	}
+	// Broken by the other rules alone: theirs to fix, at the handshake.
+	if err := checkComposedSidecar(sc, native, others, licenseData); err != nil {
+		if errors.Is(err, ErrSidecarRulesUnavailable) {
+			return err
+		}
+		return nil
+	}
+	// Fine without this rule, broken with it: the cap, or a mask it collides with.
+	if err := checkComposedSidecar(sc, native, reaching, licenseData); err != nil {
+		if errors.Is(err, ErrSidecarRulesUnavailable) {
+			return err
+		}
+		return refuse(err)
+	}
+	return nil
+}
+
+// checkComposedSidecar is the document check of checkComposedWithRule over
+// the native fold plus one set of reaching gateway rules.
+func checkComposedSidecar(sc *models.Sidecar, native daemon.Config, reaching mirrorRules, licenseData json.RawMessage) error {
+	composed, err := foldGatewayRules(native, sc.Name, reaching.guardrails, reaching.masking)
 	if err != nil {
 		return err
 	}

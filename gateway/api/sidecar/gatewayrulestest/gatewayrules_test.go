@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	apisidecar "github.com/hoophq/hoop/gateway/api/sidecar"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -70,6 +71,11 @@ func mirroredSidecar(t *testing.T, name string) (*models.Sidecar, *models.Sideca
 	return stored, mirror
 }
 
+// licenseDoc lifts the OSS one-rule cap of the rule APIs, which these tests
+// do not exercise. The sidecar caps still read the organization row.
+const licenseDoc = `{"payload":{"type":"enterprise","issued_at":1,"expire_at":2,` +
+	`"allowed_hosts":["*"],"description":"Acme"},"key_id":"k1","signature":"c2ln"}`
+
 func call(t *testing.T, handler gin.HandlerFunc, method, path string, body any, params ...gin.Param) *httptest.ResponseRecorder {
 	t.Helper()
 	raw, err := json.Marshal(body)
@@ -80,7 +86,8 @@ func call(t *testing.T, handler gin.HandlerFunc, method, path string, body any, 
 	c.Request = httptest.NewRequest(method, path, bytes.NewReader(raw))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set(storagev2.ContextKey, storagev2.NewContext("user-1", orgID).
-		WithUserInfo("Admin", "admin@hoop.dev", "active", "", nil))
+		WithUserInfo("Admin", "admin@hoop.dev", "active", "", nil).
+		WithOrgLicenseData(json.RawMessage(licenseDoc)))
 	c.Params = params
 	handler(c)
 	return w
@@ -146,6 +153,62 @@ func TestAGatewayGuardrailIsServedTranslated(t *testing.T) {
 	row, err := models.GetSidecarByNameOrID(models.DB, orgID, sc.ID)
 	require.NoError(t, err)
 	assert.Nil(t, row.LastError)
+
+	// The Sidecars page lists what the listener enforces, the translated
+	// rule included, with the source that tells it from a native rule.
+	w = call(t, apisidecar.Get, http.MethodGet, "/api/sidecars/"+sc.ID, nil, gin.Param{Key: "nameOrID", Value: sc.ID})
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	var page openapi.SidecarResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
+	assert.False(t, page.BoundRulesUnavailable)
+	assert.Equal(t, []openapi.SidecarRuleBinding{
+		{Kind: "guardrail", RuleName: "no-drop", ListenerName: "appdb", Source: openapi.SidecarRuleSourceGateway},
+	}, page.BoundRules)
+}
+
+// A sidecar another rule already breaks (here: an output rule bound by
+// attribute, which no save gates) does not refuse the writes of the rules
+// that reach it: the gate refuses only the rule that breaks it.
+func TestTheGateRefusesOnlyTheRuleBeingWritten(t *testing.T) {
+	startDB(t)
+	sc, mirror := mirroredSidecar(t, "crossrule")
+	w := call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
+		map[string]any{"name": "ssn-out", "input": map[string]any{"rules": []any{}},
+			"output": patternRules(`\d{3}-\d{2}-\d{4}`), "connection_ids": []string{}, "attributes": []string{"prod"}})
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	require.NoError(t, models.UpsertConnectionAttributes(models.DB, uuid.MustParse(orgID), mirror.Name, []string{"prod"}))
+	w = handshake(t, sc)
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "the sidecar is broken by ssn-out: %s", w.Body)
+
+	w = call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
+		guardrailRequest("no-drop", denyWords("DROP TABLE"), map[string]any{"rules": []any{}}, []string{mirror.ID}))
+	require.Equal(t, http.StatusCreated, w.Code, "an unrelated rule the sidecar runs saves: %s", w.Body)
+	var created struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &created))
+	req := guardrailRequest("no-drop", denyWords("DROP TABLE"), map[string]any{"rules": []any{}}, []string{mirror.ID})
+	req["description"] = "edited"
+	w = call(t, apiguardrails.Put, http.MethodPut, "/api/guardrails/"+created.ID, req, gin.Param{Key: "id", Value: created.ID})
+	require.Equal(t, http.StatusOK, w.Code, "an edit of that rule saves: %s", w.Body)
+
+	w = call(t, apidatamasking.Post, http.MethodPost, "/api/datamasking-rules",
+		maskingRequest("emails", []string{"EMAIL_ADDRESS"}, nil, []string{mirror.ID}))
+	require.Equal(t, http.StatusCreated, w.Code, "a masking rule the sidecar runs saves: %s", w.Body)
+
+	// A rule that breaks the sidecar on its own is still refused, with ITS reason.
+	w = call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
+		guardrailRequest("mask-ssn", denyWords("x"), patternRules("secret"), []string{mirror.ID}))
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
+	assert.Contains(t, w.Body.String(), `guardrail rule \"mask-ssn\", reaching listener \"appdb\", has output rules`)
+	assert.NotContains(t, w.Body.String(), "ssn-out")
+
+	// Once the other rule is unbound, every rule reaching the listener serves.
+	require.NoError(t, models.UpsertGuardrailRuleAttributes(models.DB, uuid.MustParse(orgID), "ssn-out", nil))
+	w = handshake(t, sc)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	assert.Contains(t, w.Body.String(), "DROP TABLE")
+	assert.Contains(t, w.Body.String(), "EMAIL_ADDRESS")
 }
 
 // Done when #2: a rule the sidecar cannot run is refused at the save, with
