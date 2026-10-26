@@ -39,6 +39,11 @@ import (
 //
 // authenticates makes the codec check the caller token before forwarding a
 // request and remove it after; see codechttp.Options.AuthenticatesCaller.
+//
+// The codecs of one factory share one memory of the credentials the
+// upstream accepted (codechttp.Options.Seen), so a token learned on one
+// connection is kept out of the next one's URL. A reload builds a new
+// factory, and with it an empty memory.
 func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, holds bool, origin *codechttp.Origin) func() inspect.Codec {
 	opts := codechttp.Options{
 		// headerNames is normalized once, the same list validate checked,
@@ -48,6 +53,7 @@ func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, 
 		AuthenticatesCaller: authenticates,
 		CaptureRequestBody:  holds,
 		Origin:              origin,
+		Seen:                codechttp.NewSeenCredentials(),
 	}
 	if cfg != nil {
 		opts.CaptureBody = cfg.CaptureBody

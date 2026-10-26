@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	codechttp "github.com/hoophq/libhoop/v2/codec/http"
 )
 
 // metadataCredential names the statement metadata key carrying a lifted
@@ -56,7 +57,7 @@ type credentials struct {
 // joined with ", " when it was sent more than once, as libhoop renders a
 // repeated header, so the check sees what the gate's own check would.
 func (c *credentials) admit(req *http.Request) error {
-	value := strings.Join(req.Header.Values(c.header), ", ")
+	value := c.presented(req)
 	c.mu.Lock()
 	check := c.check
 	c.mu.Unlock()
@@ -66,7 +67,10 @@ func (c *credentials) admit(req *http.Request) error {
 		return errors.New("this listener authenticates its caller, and no caller check is installed; the connection is closed")
 	}
 	if err := check(value); err != nil {
-		return &inspect.CredentialRefusal{Request: strings.TrimSpace(req.Method + " " + req.URL.Path), Reason: err}
+		// The path normalized: the lane does not know this caller's token,
+		// so cannot redact one a vault filled into the path, but it can
+		// collapse the segments shaped like one.
+		return &inspect.CredentialRefusal{Request: strings.TrimSpace(req.Method + " " + codechttp.NormalizePath(req.URL.Path)), Reason: err}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -76,6 +80,12 @@ func (c *credentials) admit(req *http.Request) error {
 	}
 	c.handed = append(c.handed, value)
 	return nil
+}
+
+// presented is the credential one request head carries, as admit checks
+// it.
+func (c *credentials) presented(req *http.Request) string {
+	return strings.Join(req.Header.Values(c.header), ", ")
 }
 
 // lift moves the credential header of one request statement into the table

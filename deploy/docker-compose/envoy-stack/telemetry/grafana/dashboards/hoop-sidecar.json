@@ -293,7 +293,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Denials by source",
-      "description": "hoop.deny.source: a rule type (operation, deny_words_list, pii, ...), opa, analyzer, review, or the gate's own audit / stream / identity.",
+      "description": "hoop.deny.source: a rule type (operation, deny_words_list, pii, ...), opa, analyzer, review, or the gate's own audit / stream / identity / placement.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"

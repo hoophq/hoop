@@ -82,16 +82,14 @@ const (
 //
 // # What stops it
 //
-// Once a request asks to leave HTTP/1 (CONNECT, or any Upgrade), the rest of
-// the connection passes through untouched: after a 2xx or a 101 the bytes
-// are another protocol, and a Via line inserted into a TLS record or a
-// WebSocket frame corrupts it. The filter cannot see the server's answer,
-// so it stops even when the server declines; later requests on that
-// connection then carry no Via and escape loop detection, which costs only
-// the loop's quick diagnosis. A head net/http cannot parse, or one that is
-// not HTTP/1.x (the HTTP/2 preface), stops it the same way: the codec reports
-// such a stream itself, and rewriting what it cannot frame would only add
-// damage.
+// Once the server accepts a request to leave HTTP/1 (a 2xx to CONNECT, a
+// 101 to an Upgrade), the rest of the connection passes through untouched:
+// the bytes are another protocol, and a Via line inserted into a TLS record
+// or a WebSocket frame corrupts it. The codec hands the filter every answer
+// (answer), so a declined switch leaves the connection framed, marked and
+// checked. A head net/http cannot parse, or one that is not HTTP/1.x (the
+// HTTP/2 preface), stops a lane that is not strict: the codec reports such
+// a stream itself, and rewriting what it cannot frame would only add damage.
 //
 // Only the client stream is rewritten. Via on responses is the server's
 // side of the chain and nothing here depends on it.
@@ -99,15 +97,18 @@ const (
 // With an Origin set, the same head rewrite also points the request at the
 // origin; see origin.go. With auth set, it checks each request's caller
 // token before forwarding any of the request, then removes the header, so
-// the token never reaches the upstream (credentials.admit). All of them
-// share this framing because they edit the same heads and must agree on
-// where each one starts.
+// the token never reaches the upstream (credentials.admit). On every lane
+// it refuses a request that carries a credential it knows outside that
+// credential's header (placementGuard). All of them share this framing
+// because they read the same heads and bodies and must agree on where each
+// one starts.
 type viaFilter struct {
 	mu     sync.Mutex // one client pump calls this, but nothing enforces that
 	state  viaState
 	err    error        // a refused request; the connection is over
 	origin *Origin      // nil forwards Host as the client wrote it
 	auth   *credentials // non-nil on a lane that authenticates its caller
+	guard  placementGuard
 
 	held    []byte      // viaHead: the head so far; viaChunkLine: the line so far
 	blankAt int         // viaHead: offset in held of the head's closing empty line
@@ -116,15 +117,15 @@ type viaFilter struct {
 	remaining uint64 // viaFixedBody, viaChunkData, viaChunkCRLF
 	trailer   int    // viaTrailer: bytes of the trailer section so far
 
-	// leaving records that the request in flight switches protocols, so
-	// the connection passes through once its body is done.
+	// leaving records that the request in flight asks to switch
+	// protocols, so the filter waits for the answer once its body is done.
 	leaving bool
 
-	// On a strict lane, passing through on the request alone would let a
-	// client send `Upgrade: x`, take an ordinary answer, and send the next
-	// request unrewritten. So a strict lane counts the final responses the
-	// server sends (answer) and passes through only once the one answering
-	// the switch request accepts it.
+	// Passing through on the request alone would let a client send
+	// `Upgrade: x`, take an ordinary answer, and send the next request
+	// unrewritten and unchecked. So the filter counts the final responses
+	// the server sends (answer) and passes through only once the one
+	// answering the switch request accepts it.
 	sent     int  // requests whose head went out
 	answered int  // final responses the server sent
 	switchAt int  // which request (1-based) asked to switch, 0 for none
@@ -140,6 +141,9 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 		return nil, f.err
 	}
 	if f.state == viaPassThrough {
+		if err := f.guard.passed(src); err != nil {
+			return f.fail(err)
+		}
 		return src, nil
 	}
 
@@ -148,6 +152,10 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 	for pos < len(src) {
 		switch f.state {
 		case viaPassThrough:
+			// Reached mid-call, after giveUp or viaAwaitSwitch.
+			if err := f.guard.passed(src[pos:]); err != nil {
+				return f.fail(err)
+			}
 			out.copy(pos, len(src))
 			pos = len(src)
 
@@ -165,12 +173,14 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			}
 			f.blankAt = len(f.held) - blankLen
 			if err := f.finishHead(&out); err != nil {
-				f.err = err
-				return nil, err
+				return f.fail(err)
 			}
 
 		case viaFixedBody, viaChunkData:
 			n := min(uint64(len(src)-pos), f.remaining)
+			if err := f.guard.scan(src[pos:pos+int(n)], "body"); err != nil {
+				return f.fail(err)
+			}
 			out.copy(pos, pos+int(n))
 			pos += int(n)
 			f.remaining -= n
@@ -217,6 +227,9 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 				}
 				continue
 			}
+			if err := f.guard.chunkLine(f.held); err != nil {
+				return f.fail(err)
+			}
 			size, ok := parseChunkSize(f.held)
 			f.held = f.held[:0]
 			switch {
@@ -226,12 +239,16 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 				}
 			case size == 0:
 				f.state, f.trailer, f.line = viaTrailer, 0, lineTracker{}
+				f.guard.trailerStart()
 			default:
 				f.state, f.remaining = viaChunkData, size
 			}
 
 		case viaTrailer:
 			n, _, done := f.line.scan(src[pos:])
+			if err := f.guard.scan(src[pos:pos+n], "trailer"); err != nil {
+				return f.fail(err)
+			}
 			out.copy(pos, pos+n)
 			pos += n
 			f.trailer += n
@@ -251,20 +268,32 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			// handled: rewritten as HTTP they would corrupt a tunnel the
 			// server then opens, passed through they would skip the rewrite
 			// when it refuses, and held they would wait for client bytes
-			// that may never come. So the connection is refused.
+			// that may never come. So a strict lane refuses the connection.
+			// A lane that is not strict passes them through, as it did
+			// before it saw answers, scanned for the credentials it knows.
 			switch {
 			case f.switched:
 				f.state = viaPassThrough
 			case f.switchAt == 0:
 				f.state = viaHead
+			case !f.strict():
+				if err := f.guard.unframe(nil); err != nil {
+					return f.fail(err)
+				}
+				f.state = viaPassThrough
 			default:
-				f.err = errors.New(f.promise() + ", and the client sent " +
-					"more data before the server answered its Upgrade or CONNECT, so it cannot; the connection is closed")
-				return nil, f.err
+				return f.fail(errors.New(f.promise() + ", and the client sent " +
+					"more data before the server answered its Upgrade or CONNECT, so it cannot; the connection is closed"))
 			}
 		}
 	}
 	return out.bytes(), nil
+}
+
+// fail ends the connection with err: every later call returns it too.
+func (f *viaFilter) fail(err error) ([]byte, error) {
+	f.err = err
+	return nil, err
 }
 
 // finishHead parses the complete head in f.held and emits it, marked.
@@ -293,6 +322,7 @@ func (f *viaFilter) finishHead(out *splice) error {
 	// the client wrote it; one copy ends the Via line, one ends the head.
 	eol := head[f.blankAt:]
 	fields := head[:f.blankAt]
+	var callerHeader, caller string
 	if f.auth != nil {
 		// On the head: the gate holds a request until its body has
 		// arrived, so checking here refuses a stranger before the sidecar
@@ -300,6 +330,14 @@ func (f *viaFilter) finishHead(out *splice) error {
 		if err := f.auth.admit(req); err != nil {
 			return err
 		}
+		callerHeader, caller = f.auth.header, f.auth.presented(req)
+	}
+	// After admit, so a stranger gets the identity refusal; on the head as
+	// the client sent it, before any rewrite.
+	if err := f.guard.begin(req, fields, callerHeader, caller); err != nil {
+		return err
+	}
+	if f.auth != nil {
 		fields = dropField(fields, f.auth.header)
 	}
 	if f.origin != nil {
@@ -333,9 +371,9 @@ func (f *viaFilter) finishHead(out *splice) error {
 
 // strict reports a lane whose rewrite the upstream relies on: the origin
 // reads the Host it was promised, and a dropped header must never arrive.
-// Such a lane refuses what it cannot frame and passes a connection through
-// only once the server grants the switch, where a Via-only lane lets both
-// go as written.
+// Such a lane refuses what it cannot frame and bytes sent before the server
+// answers a switch, where a Via-only lane lets both go as written, scanned
+// for the credentials it knows.
 func (f *viaFilter) strict() bool { return f.origin != nil || f.auth != nil }
 
 // promise names what a strict lane does to every request, for the error
@@ -351,36 +389,30 @@ func (f *viaFilter) promise() string {
 	}
 }
 
-// endMessage moves past a finished request: to the next head, or to
-// pass-through when the request switched protocols. A strict lane waits
-// for the server to grant the switch instead.
+// endMessage moves past a finished request: to the next head, or, when the
+// request asked to switch protocols, to wait for the server's answer.
 func (f *viaFilter) endMessage() {
-	if f.leaving && f.strict() {
+	f.guard.end()
+	f.state = viaHead
+	if f.leaving {
 		f.leaving = false
 		f.state = viaAwaitSwitch
-		f.held = f.held[:0]
-		f.line = lineTracker{}
-		return
 	}
-	if f.leaving {
-		f.state = viaPassThrough
-		f.held = nil
-		return
-	}
-	f.state = viaHead
 	f.held = f.held[:0]
 	f.line = lineTracker{}
 }
 
-// answer records one response the server sent, by status. Interim 1xx
-// answers other than 101 are not final and do not count. Only a strict
-// lane counts; see the fields.
+// answer records one response the server sent, by status, and pairs it
+// with its request: to learn the credentials the upstream accepts, and
+// whether it granted a switch. Interim 1xx answers other than 101 are not
+// final and do not count.
 func (f *viaFilter) answer(status int) {
-	if !f.strict() || (status < 200 && status != http.StatusSwitchingProtocols) {
+	if status < 200 && status != http.StatusSwitchingProtocols {
 		return
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.guard.settle(status)
 	f.answered++
 	if f.switchAt == 0 || f.answered != f.switchAt {
 		return
@@ -394,13 +426,18 @@ func (f *viaFilter) answer(status int) {
 }
 
 // giveUp handles a stream the filter cannot frame. A Via-only lane passes
-// a head it cannot frame through as written: the codec reports such a head
-// itself, and a line added to it would only add damage. A body is
-// giveUpBody's. A strict lane refuses it, because the
-// bytes would reach the upstream with the client's Host and X-Forwarded
-// fields (see origin.go) or with the header the lane exists to remove.
+// a head it cannot frame through as written, unless it carries a credential
+// (placementGuard.unframe): the codec reports such a head itself, and a
+// line added to it would only add damage. A body is giveUpBody's. A strict
+// lane refuses it, because the bytes would reach the upstream with the
+// client's Host and X-Forwarded fields (see origin.go) or with the header
+// the lane exists to remove.
 func (f *viaFilter) giveUp(out *splice, why string) error {
 	if !f.strict() {
+		if err := f.guard.unframe(f.held); err != nil {
+			f.err = err
+			return err
+		}
 		f.passThrough(out)
 		return nil
 	}

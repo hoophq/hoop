@@ -114,6 +114,18 @@ func TestARefusedHeadForwardsNothing(t *testing.T) {
 	}
 }
 
+// A caller the lane refuses is a stranger whose token it does not know, so
+// the identity row collapses the segments shaped like one instead of
+// redacting them.
+func TestAnIdentityRefusalRowCollapsesATokenInThePath(t *testing.T) {
+	_, err := authCodec(t, nil).Filter(inspect.FromClient,
+		[]byte("GET /pods/Unknown-Token-0123456789abcdef/log HTTP/1.1\r\n\r\n"))
+	var refusal *inspect.CredentialRefusal
+	if !errors.As(err, &refusal) || refusal.Request != "GET /pods/*/log" {
+		t.Fatalf("Filter = %v; want an identity refusal of GET /pods/*/log", err)
+	}
+}
+
 // A codec built to authenticate but given no check refuses everything: it
 // cannot tell a caller from a stranger.
 func TestAnAuthenticatingCodecWithoutACheckForwardsNothing(t *testing.T) {

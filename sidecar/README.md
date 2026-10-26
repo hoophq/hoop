@@ -2318,7 +2318,7 @@ dashboard written against the old name goes dark.
 |---|---|---|
 | `hoop.sidecar.connections` | counter | `hoop.lane`, `hoop.protocol` |
 | `hoop.sidecar.connections.active` | gauge | `hoop.lane`, `hoop.protocol` |
-| `hoop.sidecar.statements` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.operation`, `hoop.verdict` (`allow`/`deny`), `hoop.deny.source` (denials: the rule type, `opa`, `analyzer`, `review`, `audit`, `stream`, `identity`) |
+| `hoop.sidecar.statements` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.operation`, `hoop.verdict` (`allow`/`deny`), `hoop.deny.source` (denials: the rule type, `opa`, `analyzer`, `review`, `audit`, `stream`, `identity`, `placement`) |
 | `hoop.sidecar.statement.duration` | histogram, seconds | `hoop.lane`, `hoop.protocol`, `hoop.stage`, `hoop.engine`, `hoop.pairing`, `hoop.outcome` |
 | `hoop.sidecar.masked_values` | counter | `hoop.lane`, `hoop.protocol` |
 | `hoop.sidecar.audit.errors` | counter | `hoop.lane` |
@@ -3796,9 +3796,44 @@ pseudonym is random per process, so the upstream sees one extra header. RFC
 behind a transparent MITM proxy the sidecar's own upstream connection can be
 routed back into its listener, and every lap would look like a fresh client.
 A request that already carries this process's pseudonym is refused with a
-403 whose message starts `request loop:`. After a request with `Upgrade` or a
-`CONNECT`, the rest of that connection is another protocol and is no longer
-marked.
+403 whose message starts `request loop:`. Once the server accepts an
+`Upgrade` or a `CONNECT`, the rest of that connection is another protocol and
+is no longer marked; a declined one leaves it marked.
+
+**A known credential stays in its header.** A vault that fills a secret
+wherever its placeholder appears (OpenAI's fills the URL and the body too)
+turns a token an agent writes into a URL into the real token in the URL,
+where the audit row records it and an upstream that echoes the value hands
+it back. So every http lane refuses, with a 403 and before any byte reaches
+the upstream, a request that carries a credential it knows outside that
+credential's header. It knows, with no setting:
+
+- the caller token it admitted (see caller tokens below), at home in its
+  own header;
+- each `Authorization` credential of the request (the value after the
+  scheme), at home in `Authorization`;
+- the `Authorization` credentials of earlier requests on the connection
+  still awaiting an answer, and those the upstream answered with a 2xx in
+  the last hour, so a request that leaves `Authorization` off is checked
+  too. The lane remembers up to 64 values that hold a letter and a digit
+  and no whitespace, `;` or `,`; when full, it keeps the ones it has, so
+  junk the upstream accepts cannot push a real token out. A rule reload
+  empties the memory.
+
+It looks in the request line, raw and percent-decoded, every other header
+and header name, the body with chunk framing removed, chunk extensions and
+trailers. Values under 16 bytes are not looked for. The audit row is
+`METHOD path` with each credential replaced by `[redacted]` and no query,
+under rule `credential-placement` and `anonymous`. A lane that passes a head
+it cannot parse through as written refuses one with an `Authorization`
+line, and scans the rest of the connection for the credentials it knew.
+
+Not covered: a body that is compressed or encodes the token (base64, a JSON
+`\u` escape), Basic's password, bytes past a switch the server accepted, and
+a response that echoes the request's own `Authorization` header. A caller can
+send a value that other requests carry, such as a path segment with a digit,
+as a bearer to an endpoint that answers 2xx whatever the bearer: the lane
+then refuses those requests for an hour.
 
 ### A browser in front: upstream as a URL
 
@@ -3866,7 +3901,8 @@ listeners:
 
 - **What is refused.** No header, an empty or whitespace-only value, a value
   not in the file, or the header sent twice: each gets a 403 and reaches no
-  upstream. The refusal is audited under `anonymous`.
+  upstream. The refusal is audited under `anonymous`, with the method and
+  the normalized path, so a token-shaped segment is recorded as `*`.
 - **Checked on the head.** Policy judges a request once its body has
   arrived, and the sidecar holds the request until then. The token is
   checked earlier, on the head, so a stranger costs no held body and a
@@ -3879,10 +3915,9 @@ listeners:
   input or an analyzer prompt. Validate refuses an `http.headers` entry that
   names it, and a header that the upstream, HTTP framing or the sidecar
   already uses (`authorization`, `cookie`, `host`, `content-length`, `via`,
-  and the like). The strip stops a leak by accident, not by intent: it covers
-  the header in each request head. An admitted caller that copies the token
-  into another header, a chunked trailer or the body sends it on, and a
-  vault fills the secret into any header it finds the placeholder in.
+  and the like). A request that carries the token anywhere else, in the
+  URL, another header, the body or a trailer, is refused (see "A known
+  credential stays in its header" above).
 - **The reserved route is guarded too.** `/.well-known/hoop/` answers only a
   caller the token admits.
 - **Stricter framing.** As on a URL upstream, a request head the lane cannot
