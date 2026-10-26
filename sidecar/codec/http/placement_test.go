@@ -2,6 +2,7 @@ package http_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -91,6 +92,8 @@ func TestAKnownCredentialOutsideItsHeaderIsRefused(t *testing.T) {
 		"bearer in a trailer": {plainCodec,
 			"POST / HTTP/1.1\r\nHost: h\r\n" + withBearer + "Transfer-Encoding: chunked\r\n\r\n" +
 				"2\r\nok\r\n0\r\nX-Trailer: " + bearer + "\r\n\r\n", "trailer"},
+		"tab after the scheme": {plainCodec,
+			"GET /?k=" + bearer + " HTTP/1.1\r\nHost: h\r\nAuthorization: Bearer\t" + bearer + "\r\n\r\n", "request line"},
 		"scheme-less Authorization": {plainCodec,
 			"GET /?k=" + bearer + " HTTP/1.1\r\nHost: h\r\nAuthorization: " + bearer + "\r\n\r\n", "request line"},
 	} {
@@ -250,4 +253,43 @@ func TestOnlyAnAcceptedSwitchEndsTheChecks(t *testing.T) {
 	admit(t, c, upgrade)
 	answer(t, c, "101 Switching Protocols")
 	admit(t, c, "tunnelled "+bearer)
+}
+
+// An unparsed head is checked with its escapes decoded too.
+func TestAnUnparsedHeadIsCheckedDecoded(t *testing.T) {
+	lane := sharedLane()
+	c := lane()
+	admit(t, c, "GET / HTTP/1.1\r\nAuthorization: Bearer "+bearer+"\r\n\r\n")
+	answer(t, c, "200 OK")
+	_, err := lane().Filter(inspect.FromClient,
+		[]byte("not a request line /"+strings.ReplaceAll(bearer, "-", "%2D")+"\r\n\r\n"))
+	var refusal *inspect.PlacementRefusal
+	if !errors.As(err, &refusal) {
+		t.Fatalf("Filter = %v; want a PlacementRefusal", err)
+	}
+}
+
+// A head over 1 MiB is cut short, so a credential past the cut could not be
+// checked: every lane refuses it, a Via-only one too.
+func TestEveryLaneRefusesAnOversizedHead(t *testing.T) {
+	in := "GET /?t=" + bearer + " HTTP/1.1\r\nX-Pad: " + strings.Repeat("a", 1<<20) +
+		"\r\nAuthorization: Bearer " + bearer + "\r\n\r\n"
+	if out, err := plainCodec().Filter(inspect.FromClient, []byte(in)); err == nil || len(out) != 0 {
+		t.Fatalf("Filter = %d bytes, %v; want a refusal", len(out), err)
+	}
+}
+
+// A head padded with distinct Authorization lines is refused, not checked
+// line by line against each other at the cost of each.
+func TestARequestWithTooManyCredentialsIsRefused(t *testing.T) {
+	var head strings.Builder
+	head.WriteString("GET / HTTP/1.1\r\n")
+	for i := range 2000 {
+		fmt.Fprintf(&head, "Authorization: Bearer token-%04d-0123456789\r\n", i)
+	}
+	head.WriteString("\r\n")
+	_, err := plainCodec().Filter(inspect.FromClient, []byte(head.String()))
+	if err == nil || !strings.Contains(err.Error(), "more credentials than this listener checks") {
+		t.Fatalf("Filter = %v; want the credential bound", err)
+	}
 }

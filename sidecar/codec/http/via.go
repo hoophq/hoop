@@ -165,7 +165,7 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			pos += n
 			if !done {
 				if len(f.held) > maxHeadBytes {
-					if err := f.giveUp(&out, "the request head exceeds 1 MiB"); err != nil {
+					if err := f.giveUpBody(&out, "the request head exceeds 1 MiB"); err != nil {
 						return nil, err
 					}
 				}
@@ -267,20 +267,15 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			// the outcome is known then. Bytes that come before it cannot be
 			// handled: rewritten as HTTP they would corrupt a tunnel the
 			// server then opens, passed through they would skip the rewrite
-			// when it refuses, and held they would wait for client bytes
-			// that may never come. So a strict lane refuses the connection.
-			// A lane that is not strict passes them through, as it did
-			// before it saw answers, scanned for the credentials it knows.
+			// and the credential check when it refuses, and held they would
+			// wait for client bytes that may never come. So the connection
+			// is refused, on every lane: a client that follows the protocol
+			// waits for the answer.
 			switch {
 			case f.switched:
 				f.state = viaPassThrough
 			case f.switchAt == 0:
 				f.state = viaHead
-			case !f.strict():
-				if err := f.guard.unframe(nil); err != nil {
-					return f.fail(err)
-				}
-				f.state = viaPassThrough
 			default:
 				return f.fail(errors.New(f.promise() + ", and the client sent " +
 					"more data before the server answered its Upgrade or CONNECT, so it cannot; the connection is closed"))
@@ -300,7 +295,7 @@ func (f *viaFilter) fail(err error) ([]byte, error) {
 func (f *viaFilter) finishHead(out *splice) error {
 	head := f.held
 	if len(head) > maxHeadBytes {
-		return f.giveUp(out, "the request head exceeds 1 MiB")
+		return f.giveUpBody(out, "the request head exceeds 1 MiB")
 	}
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(head)))
 	if err != nil {
@@ -371,21 +366,22 @@ func (f *viaFilter) finishHead(out *splice) error {
 
 // strict reports a lane whose rewrite the upstream relies on: the origin
 // reads the Host it was promised, and a dropped header must never arrive.
-// Such a lane refuses what it cannot frame and bytes sent before the server
-// answers a switch, where a Via-only lane lets both go as written, scanned
-// for the credentials it knows.
+// Such a lane refuses a head it cannot parse, where a Via-only lane lets it
+// go as written, scanned for the credentials it knows.
 func (f *viaFilter) strict() bool { return f.origin != nil || f.auth != nil }
 
-// promise names what a strict lane does to every request, for the error
-// that refuses a stream it cannot do it to.
+// promise names what the lane does to every request, for the error that
+// refuses a stream it cannot do it to.
 func (f *viaFilter) promise() string {
 	switch {
 	case f.origin != nil && f.auth != nil:
 		return "this listener points every request at its upstream and removes its " + f.auth.header + " header"
 	case f.origin != nil:
 		return "this listener points every request at its upstream"
-	default:
+	case f.auth != nil:
 		return "this listener removes the " + f.auth.header + " header from every request"
+	default:
+		return "this listener checks the credentials in every request"
 	}
 }
 
@@ -418,7 +414,9 @@ func (f *viaFilter) answer(status int) {
 		return
 	}
 	if f.connect {
-		f.switched = status/100 == 2
+		// A 101 to CONNECT is not RFC 9110's, but libhoop takes the
+		// connection for a tunnel after one, so the filter must too.
+		f.switched = status/100 == 2 || status == http.StatusSwitchingProtocols
 	} else {
 		f.switched = status == http.StatusSwitchingProtocols
 	}
@@ -445,11 +443,12 @@ func (f *viaFilter) giveUp(out *splice, why string) error {
 	return f.err
 }
 
-// giveUpBody handles a request body the filter cannot frame, and every lane
-// refuses it, a Via-only one too. Passed through it would not leave: the
-// codec reads a body it cannot frame as one still arriving, and the gate
-// forwards a request only once the codec decodes it, so the client would
-// wait unanswered until the connection idles out.
+// giveUpBody handles a request the filter cannot frame, and every lane
+// refuses it, a Via-only one too. A body passed through would not leave:
+// the codec reads a body it cannot frame as one still arriving, and the
+// gate forwards a request only once the codec decodes it, so the client
+// would wait unanswered until the connection idles out. A head over 1 MiB
+// is cut short, so a credential past the cut would escape the check.
 func (f *viaFilter) giveUpBody(out *splice, why string) error {
 	if f.strict() {
 		return f.giveUp(out, why)

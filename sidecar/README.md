@@ -3801,10 +3801,12 @@ A request that already carries this process's pseudonym is refused with a
 is no longer marked; a declined one leaves it marked.
 
 **A known credential stays in its header.** A vault that fills a secret
-wherever its placeholder appears (OpenAI's fills the URL and the body too)
-turns a token an agent writes into a URL into the real token in the URL,
-where the audit row records it and an upstream that echoes the value hands
-it back. So every http lane refuses, with a 403 and before any byte reaches
+wherever its placeholder appears turns a token an agent writes into a URL
+into the real token in the URL. OpenAI's does toward the host it is bound
+to: hosted sessions showed the URL path, the query and a form body filled,
+although its vaults guide names headers only. The real token then sits in
+the URL, where the audit row records it and an upstream that echoes the
+value hands it back. So every http lane refuses, with a 403 and before any byte reaches
 the upstream, a request that carries a credential it knows outside that
 credential's header. It knows, with no setting:
 
@@ -3827,6 +3829,9 @@ trailers. Values under 16 bytes are not looked for. The audit row is
 under rule `credential-placement` and `anonymous`. A lane that passes a head
 it cannot parse through as written refuses one with an `Authorization`
 line, and scans the rest of the connection for the credentials it knew.
+Every lane refuses a head over 1 MiB, bytes sent before the server answers
+an `Upgrade` or `CONNECT`, and a request that would be checked against more
+than 128 credentials.
 
 Not covered: a body that is compressed or encodes the token (base64, a JSON
 `\u` escape), Basic's password, bytes past a switch the server accepted, and

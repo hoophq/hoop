@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,10 +68,19 @@ func (c *credentials) admit(req *http.Request) error {
 		return errors.New("this listener authenticates its caller, and no caller check is installed; the connection is closed")
 	}
 	if err := check(value); err != nil {
-		// The path normalized: the lane does not know this caller's token,
-		// so cannot redact one a vault filled into the path, but it can
-		// collapse the segments shaped like one.
-		return &inspect.CredentialRefusal{Request: strings.TrimSpace(req.Method + " " + codechttp.NormalizePath(req.URL.Path)), Reason: err}
+		// A vault fills a token into the path as readily as into the
+		// header, and this one names no caller: it is not a token the lane
+		// knows. So the path loses each value the head presents as a
+		// credential, then the segments shaped like one.
+		var needles [][]byte
+		for _, v := range append(authorizationCredentials(req.Header.Values("Authorization")), req.Header.Values(c.header)...) {
+			if v = strings.TrimSpace(v); len(v) >= minSecretBytes {
+				needles = append(needles, []byte(v))
+			}
+		}
+		slices.SortStableFunc(needles, func(a, b []byte) int { return len(b) - len(a) })
+		path := codechttp.NormalizePath(redact(req.URL.Path, needles))
+		return &inspect.CredentialRefusal{Request: strings.TrimSpace(req.Method + " " + path), Reason: err}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

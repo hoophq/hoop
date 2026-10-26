@@ -18,6 +18,17 @@ import (
 // answer could no longer be paired with its request.
 const maxInflight = 256
 
+// maxSecrets bounds the credentials one request is checked against. The
+// check costs each credential times each header field and body byte, so a
+// head padded with Authorization lines, or a connection that pipelines many
+// distinct ones, would otherwise buy any amount of CPU. A real request
+// carries one or two; past the bound the request is refused, since a
+// credential left out would be one left unchecked.
+const maxSecrets = 128
+
+// errTooManyCredentials refuses a request over maxSecrets.
+var errTooManyCredentials = errors.New("the request carries more credentials than this listener checks; the connection is closed")
+
 // placementGuard keeps a credential the lane knows in the header it belongs
 // in, for one connection. It runs under viaFilter.mu.
 //
@@ -64,11 +75,12 @@ type placementGuard struct {
 	seen *SeenCredentials
 
 	// The request in flight, or the unframed stream; see unframe.
-	secrets []secret
-	needles [][]byte    // the distinct secret values, longest first
-	stream  *needleScan // its body, then its trailer
-	method  string
-	path    string // escaped, without the query
+	secrets  []secret
+	overflow bool        // add met maxSecrets
+	needles  [][]byte    // the distinct secret values, longest first
+	stream   *needleScan // its body, then its trailer
+	method   string
+	path     string // escaped, without the query
 
 	// inflight holds the Authorization credentials of each request sent
 	// and not yet answered, oldest first: answers come in request order.
@@ -89,12 +101,15 @@ type secret struct {
 // the filter admitted under callerHeader, "" on a lane that admits none.
 func (g *placementGuard) begin(req *http.Request, fields []byte, callerHeader, caller string) error {
 	own := authorizationCredentials(req.Header.Values("Authorization"))
-	g.secrets = g.secrets[:0]
+	g.secrets, g.overflow = g.secrets[:0], false
 	g.add(caller, callerHeader)
 	for _, v := range own {
 		g.add(v, "authorization")
 	}
 	g.addKnown()
+	if g.overflow {
+		return errTooManyCredentials
+	}
 	g.method, g.path = req.Method, req.URL.EscapedPath()
 	if where := g.scanHead(fields); where != "" {
 		return g.refusal(where)
@@ -111,28 +126,29 @@ func (g *placementGuard) scanHead(fields []byte) string {
 	if containsAny(line, g.needles) || containsAny(unescape(line), g.needles) {
 		return "request line"
 	}
+	type field struct {
+		name  string
+		whole []byte
+	}
+	var parsed []field
+	eachField(rest, func(name string, _, whole []byte) { parsed = append(parsed, field{name, whole}) })
 	// Secret by secret, in the order begin added them, so a caller token
 	// sent as the Authorization credential too is reported where it is
 	// out of place, Authorization, rather than the other way round.
-	where := ""
 	for _, s := range g.secrets {
-		eachField(rest, func(name string, _, whole []byte) {
-			if where != "" || strings.EqualFold(name, s.home) || !bytes.Contains(whole, s.value) {
-				return
+		for _, f := range parsed {
+			if strings.EqualFold(f.name, s.home) || !bytes.Contains(f.whole, s.value) {
+				continue
 			}
 			// The name is the client's to choose, and a vault fills a
 			// placeholder written there too.
-			if containsAny([]byte(name), g.needles) {
-				where = "header name"
-			} else {
-				where = "header " + name
+			if containsAny([]byte(f.name), g.needles) {
+				return "header name"
 			}
-		})
-		if where != "" {
-			break
+			return "header " + f.name
 		}
 	}
-	return where
+	return ""
 }
 
 // scan reads the next bytes of the body, chunk framing removed, or of the
@@ -185,15 +201,15 @@ var errUnframedCredential = errors.New("the request head does not parse, and it 
 	"Authorization header this listener cannot keep out of the rest of it; the connection is closed")
 
 // unframe readies the scan of a stream a lane that is not strict passes
-// through without framing it: a head it cannot parse goes out as written
-// (viaFilter.giveUp), and so do bytes sent before the server answers a
-// switch. head is the unparsed head, nil for the second case.
+// through without framing it, from a head it cannot parse on
+// (viaFilter.giveUp).
 //
 // A head that carries an Authorization field is refused instead: unparsed,
 // its credential cannot be told from a copy of it in the URL, and the
 // codec's error would forward both under the gate's honest default. What
-// passes is scanned as raw bytes for the credentials known when it started:
-// one the upstream accepts later on this connection is not added.
+// passes is scanned as raw bytes for the credentials known when it started,
+// and the head with its escapes decoded too: one the upstream accepts later
+// on this connection is not added.
 func (g *placementGuard) unframe(head []byte) error {
 	_, fields := cutLine(head)
 	authorized := false
@@ -203,15 +219,24 @@ func (g *placementGuard) unframe(head []byte) error {
 	if authorized {
 		return errUnframedCredential
 	}
-	g.secrets = g.secrets[:0]
+	g.secrets, g.overflow = g.secrets[:0], false
 	g.addKnown()
+	if g.overflow {
+		return errTooManyCredentials
+	}
 	g.stream = newNeedleScan(g.needles)
-	return g.passed(head)
+	if err := g.passed(head); err != nil {
+		return err
+	}
+	if g.stream.contains(unescape(head)) {
+		return &inspect.PlacementRefusal{Where: "bytes this listener could not frame as requests"}
+	}
+	return nil
 }
 
 // passed scans bytes passed through unframed. Past a switch the server
-// accepted it scans nothing: endMessage dropped the scan, and unframe never
-// ran.
+// accepted it scans nothing: endMessage dropped the scan, and no switch
+// follows a head that did not parse.
 func (g *placementGuard) passed(p []byte) error {
 	if g.stream.write(p) {
 		return &inspect.PlacementRefusal{Where: "bytes this listener could not frame as requests"}
@@ -243,13 +268,18 @@ func (g *placementGuard) addKnown() {
 }
 
 func (g *placementGuard) add(v, home string) {
-	if len(v) < minSecretBytes {
+	if len(v) < minSecretBytes || g.overflow {
 		return
 	}
 	s := secret{value: []byte(v), home: home}
-	if !slices.ContainsFunc(g.secrets, func(o secret) bool { return o.home == s.home && bytes.Equal(o.value, s.value) }) {
-		g.secrets = append(g.secrets, s)
+	if slices.ContainsFunc(g.secrets, func(o secret) bool { return o.home == s.home && bytes.Equal(o.value, s.value) }) {
+		return
 	}
+	if len(g.secrets) >= maxSecrets {
+		g.overflow = true
+		return
+	}
+	g.secrets = append(g.secrets, s)
 }
 
 func (g *placementGuard) track(own []string) {
@@ -268,26 +298,35 @@ func (g *placementGuard) track(own []string) {
 // replaced, and when one is still there with its escapes decoded, the whole
 // path: the row must not hold one in any spelling.
 func (g *placementGuard) refusal(where string) error {
-	pairs := make([]string, 0, 2*len(g.needles))
-	for _, v := range g.needles {
+	return &inspect.PlacementRefusal{Request: strings.TrimSpace(g.method + " " + redact(g.path, g.needles)), Where: where}
+}
+
+// redact returns path with each of needles, longest first, replaced by a
+// marker, and the whole path replaced when one is still there with its
+// escapes decoded: an audit row must not hold one in any spelling.
+func redact(path string, needles [][]byte) string {
+	pairs := make([]string, 0, 2*len(needles))
+	for _, v := range needles {
 		pairs = append(pairs, string(v), codechttp.RedactedValue)
 	}
-	path := strings.NewReplacer(pairs...).Replace(g.path)
-	if containsAny(unescape([]byte(path)), g.needles) {
-		path = codechttp.RedactedValue
+	path = strings.NewReplacer(pairs...).Replace(path)
+	if containsAny(unescape([]byte(path)), needles) {
+		return codechttp.RedactedValue
 	}
-	return &inspect.PlacementRefusal{Request: strings.TrimSpace(g.method + " " + path), Where: where}
+	return path
 }
 
 // authorizationCredentials returns the credential in each Authorization
 // value: what follows the auth scheme, or the whole value when it names
-// none. A repeated header gives one credential per line.
+// none. A repeated header gives one credential per line. A tab ends the
+// scheme as a space does: RFC 9110 names a space, but a lenient upstream
+// takes either, and the whole value would be a needle no URL holds.
 func authorizationCredentials(values []string) []string {
 	var out []string
 	for _, v := range values {
 		v = strings.TrimSpace(v)
-		if _, cred, ok := strings.Cut(v, " "); ok {
-			v = strings.TrimLeft(cred, " \t")
+		if i := strings.IndexAny(v, " \t"); i >= 0 {
+			v = strings.TrimLeft(v[i:], " \t")
 		}
 		if v != "" {
 			out = append(out, v)

@@ -126,6 +126,19 @@ func TestAnIdentityRefusalRowCollapsesATokenInThePath(t *testing.T) {
 	}
 }
 
+// A refused caller's own credential is no token the lane knows, but it is
+// the value the head presents, so the row redacts it in the path before
+// normalizing: a lowercase token survives normalization.
+func TestAnIdentityRefusalRowRedactsThePresentedCredential(t *testing.T) {
+	const unknown = "abcdefghijklmnopqrst"
+	_, err := authCodec(t, nil).Filter(inspect.FromClient,
+		[]byte("GET /pods/"+unknown+" HTTP/1.1\r\nX-Hoop-Token: "+unknown+"\r\n\r\n"))
+	var refusal *inspect.CredentialRefusal
+	if !errors.As(err, &refusal) || refusal.Request != "GET /pods/[redacted]" {
+		t.Fatalf("Filter = %v; want an identity refusal of GET /pods/[redacted]", err)
+	}
+}
+
 // A codec built to authenticate but given no check refuses everything: it
 // cannot tell a caller from a stranger.
 func TestAnAuthenticatingCodecWithoutACheckForwardsNothing(t *testing.T) {
