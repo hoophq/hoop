@@ -1077,7 +1077,15 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 // performs reports whether stmt performs op. An unknown statement still
 // performs the effects the scanner saw: a PL/SQL block's DELETE is a delete,
 // and its operation alone would let a rule naming delete miss it.
+//
+// `unknown` names a client statement the classifier could not read. A
+// response is never one: it carries no verb, so the codecs report it as
+// unknown (a Postgres result, every HTTP response on the relay), and a rule
+// naming unknown would refuse every response on the lane (ENG-893, ENG-545).
 func performs(stmt inspect.Statement, op inspect.Operation) bool {
+	if op == inspect.OpUnknown && stmt.Direction == inspect.FromServer {
+		return false
+	}
 	return stmt.Operation == op || stmt.Operation == inspect.OpUnknown && slices.Contains(stmt.Effects, op)
 }
 

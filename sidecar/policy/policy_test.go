@@ -727,3 +727,32 @@ func TestOperationRuleMatchesEffectsOfUnknownStatements(t *testing.T) {
 		t.Error("delete-scoped table rule missed a DELETE inside an unknown statement")
 	}
 }
+
+// `unknown` names a client statement the classifier could not read. A
+// response carries no verb, so a Postgres result and an HTTP response both
+// arrive as unknown; a rule naming unknown must not refuse them (ENG-893,
+// ENG-545), and must still refuse the client statement.
+func TestUnknownRuleDoesNotMatchResponses(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{{Name: "fail-closed", Type: policy.MatchOperation,
+		Operations: []inspect.Operation{inspect.OpDrop, inspect.OpUnknown}}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	for _, resp := range []inspect.Statement{
+		{Protocol: inspect.Postgres, Direction: inspect.FromServer, Text: "SELECT 1", Operation: inspect.OpUnknown},
+		{Protocol: inspect.HTTP, Direction: inspect.FromServer, Text: "200 OK", Operation: inspect.OpUnknown,
+			HTTP: &inspect.HTTPDetail{StatusCode: 200}},
+	} {
+		if v := rules.Evaluate(resp); v.Denied {
+			t.Errorf("a %s response was refused: %+v", resp.Protocol, v)
+		}
+	}
+	unread := stmt("EXECUTE IMMEDIATE 'DROP TABLE t'", inspect.OpUnknown)
+	unread.Direction = inspect.FromClient
+	if !rules.Evaluate(unread).Denied {
+		t.Error("an unknown client statement was allowed")
+	}
+	if !rules.Evaluate(stmt("SELECT ?", inspect.OpUnknown)).Denied {
+		t.Error("an unknown statement with no direction was allowed")
+	}
+}
