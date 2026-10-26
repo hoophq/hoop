@@ -170,6 +170,23 @@ func TestABareRunWhoseFileGainedALicenseRunsItAlone(t *testing.T) {
 	}
 }
 
+// A licensed file that names a plane still connects to it: the login stays.
+func TestABareRunKeepsTheLoginOfALicensedFilesPlane(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "sidecar.yaml")
+	if err := os.WriteFile(cfg, []byte("license: lic-test\ncontrol_plane_url: https://cp.example.com\n"+
+		"listeners:\n  - name: db\n    protocol: postgres\n    listen: 127.0.0.1:15432\n    upstream: 127.0.0.1:5432\n"),
+		0o600); err != nil {
+		t.Fatal(err)
+	}
+	login, err := bareRunWith(t, savedSidecarLogin{URL: "https://cp.example.com", Token: "hsc_enterprise", Config: cfg})
+	if err != nil || login == nil || login.Token != "hsc_enterprise" {
+		t.Fatalf("login=%+v err=%v; want the plane's login kept", login, err)
+	}
+	if got := os.Getenv("HOOP_CONTROL_PLANE_URL"); got != "https://cp.example.com" {
+		t.Fatalf("the plane is %q, want the file's", got)
+	}
+}
+
 // The file a bare run boots again now names another plane: the run uses that
 // plane's login, not the one that remembered the file.
 func TestABareRunFollowsTheFilesNewPlane(t *testing.T) {

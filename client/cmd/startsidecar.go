@@ -744,9 +744,10 @@ func resolveSidecarLogin(cmd *cobra.Command, args []string, canChoose bool) (log
 		if login != nil && bare && login.Config != "" && fileExists(login.Config) {
 			sidecarConfigFlag = login.Config
 			facts := readSidecarFileFacts(login.Config)
-			// That file now holds a license: the run is licensed, so it
-			// runs the file on its own, as a licensed --config run does.
-			if facts.licensed {
+			// That file now holds a license and names no plane: the run is
+			// licensed and runs the file on its own, as a licensed --config
+			// run does. A plane named by the env or the file keeps a login.
+			if facts.licensed && facts.planeURL == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
 				return nil, "", false, nil
 			}
 			// That file now names another plane: that plane's login, or a
