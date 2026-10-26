@@ -7,7 +7,7 @@ import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import { showSnackbar } from '@/utils/snackbar'
-import { RULE_APIS, applyBindings, boundCount, ruleErrorMessage, targetLanes } from '../rules'
+import { RULE_APIS, applyBindings, boundCount, mirrorOnly, ruleErrorMessage, targetLanes } from '../rules'
 
 const matches = (rule, needle) =>
   [rule.name, rule.description].some((v) => String(v ?? '').toLowerCase().includes(needle))
@@ -42,20 +42,31 @@ function Picker({ feature, sidecar, listener, onClose, onCreate, onSaved }) {
     }
   }, [api])
 
-  // Every lane in scope: checked. Some of them: indeterminate.
+  // Every lane in scope: checked. Some of them: indeterminate. Reached only
+  // through a mirror: checked and locked, since no target of ours binds it.
   const bound = useMemo(() => {
     const all = new Set()
     const some = new Set()
+    const mirror = new Set()
     for (const rule of rules) {
       const n = boundCount(sidecar.bound_rules, api.kind, rule.name, lanes)
       if (n > 0 && n === lanes.length) all.add(rule.name)
       else if (n > 0) some.add(rule.name)
+      else if (mirrorOnly(sidecar.bound_rules, api.kind, rule.name, lanes)) mirror.add(rule.name)
     }
-    return { all, some }
+    return { all, some, mirror }
   }, [rules, sidecar.bound_rules, api.kind, lanes])
 
-  const isOn = (name) => (choices.has(name) ? choices.get(name) : bound.all.has(name))
-  const enabled = rules.filter((r) => !r.managed_by)
+  const isOn = (name) =>
+    bound.mirror.has(name) || (choices.has(name) ? choices.get(name) : bound.all.has(name))
+  const locked = (rule) => Boolean(rule.managed_by) || bound.mirror.has(rule.name)
+  const enabled = rules.filter((r) => !locked(r))
+
+  const hint = (rule) => {
+    if (rule.managed_by) return 'Managed by Hoop and cannot be applied here.'
+    if (bound.mirror.has(rule.name)) return 'Bound on its gateway form.'
+    return rule.description || undefined
+  }
 
   const choose = (names, on) =>
     setChoices((current) => {
@@ -167,16 +178,14 @@ function Picker({ feature, sidecar, listener, onClose, onCreate, onSaved }) {
                   key={rule.name}
                   checked={isOn(rule.name)}
                   indeterminate={!choices.has(rule.name) && bound.some.has(rule.name)}
-                  disabled={Boolean(rule.managed_by)}
+                  disabled={locked(rule)}
                   onChange={() => toggle(rule.name)}
                   label={
                     <Text size="sm" fw={700}>
                       {rule.name}
                     </Text>
                   }
-                  description={
-                    rule.managed_by ? 'Managed by Hoop and cannot be applied here.' : rule.description || undefined
-                  }
+                  description={hint(rule)}
                 />
               ))}
               {visible.length === 0 && (

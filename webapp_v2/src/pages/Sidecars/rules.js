@@ -2,6 +2,7 @@ import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
 import { analyzerBlocked } from './config'
+import { SOURCE_GATEWAY } from './features'
 
 // Guardrail and masking rules are addressed by id, analyzer rules by name.
 // `editPath` is the gateway's own form of the rule: a gateway rule reaching a
@@ -48,11 +49,25 @@ export function targetLanes(sidecar, listener, featureKey) {
 export const lanesAsTargets = (sidecar, lanes) =>
   lanes.map((listener_name) => ({ sidecar_id: sidecar.id, listener_name }))
 
+const bindingsOf = (boundRules, kind, ruleName) =>
+  (boundRules ?? []).filter((b) => b.kind === kind && b.rule_name === ruleName)
+
+// Native bindings only (sidecar_targets). A gateway rule reaching a lane
+// through its mirror carries source "gateway" and is not a target.
 export function boundCount(boundRules, kind, ruleName, lanes) {
   const on = new Set(
-    (boundRules ?? []).filter((b) => b.kind === kind && b.rule_name === ruleName).map((b) => b.listener_name),
+    bindingsOf(boundRules, kind, ruleName)
+      .filter((b) => b.source !== SOURCE_GATEWAY)
+      .map((b) => b.listener_name),
   )
   return lanes.filter((l) => on.has(l)).length
+}
+
+// True when the rule reaches a lane in scope through a mirror and through
+// nothing else: it is bound on its gateway form, so no target toggles it.
+export function mirrorOnly(boundRules, kind, ruleName, lanes) {
+  const rows = bindingsOf(boundRules, kind, ruleName).filter((b) => lanes.includes(b.listener_name))
+  return rows.length > 0 && rows.every((b) => b.source === SOURCE_GATEWAY)
 }
 
 // Targets on other sidecars are kept: the API replaces the whole set.
