@@ -592,8 +592,9 @@ A control plane credential makes `HOOP_SIDECAR_ID` unnecessary anywhere.
 `install-source` says which hoop template started the sidecar. The template
 sets `HOOP_SIDECAR_INSTALL_SOURCE`; unset, the property is omitted. Values
 are a fixed list, `managed-agents-http`, `managed-agents-kubernetes`,
-`openai-agents-http` and `openai-agents-kubernetes` today, and any other
-value is sent as `other`, so it can never carry a name.
+`openai-agents-http`, `openai-agents-kubernetes`, `agentcore-http`,
+`agentcore-kubernetes` and `agentcore-postgres` today, and any other value
+is sent as `other`, so it can never carry a name.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends
