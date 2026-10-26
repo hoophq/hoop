@@ -1,0 +1,93 @@
+# hoopsidecar chart values: kubectl in an OpenAI Agents API hosted sandbox
+# reaches this cluster's API server only through one public http lane.
+# README.md has the steps.
+#
+# Install the chart in the cluster it guards, then:
+#   helm install hoop-kube oci://ghcr.io/hoophq/helm-charts/hoopsidecar-chart \
+#     -n hoop -f values.yaml
+
+# 1.263.0 is the first release that reports this template's install source.
+image:
+  tag: '1.263.0@sha256:1cbddabd563ea67a885e4fa5767f97599f978e8edd2cb6ac3f1eba4e385f5992'
+  pullPolicy: IfNotPresent
+
+analytics:
+  installSource: openai-agents-kubernetes
+
+config:
+  admin:
+    listen: '0.0.0.0:19000'
+  audit:
+    file: '-'
+  listeners:
+    - name: kubernetes
+      protocol: http
+      # TLS with ALPN h2 and http/1.1: kubectl speaks either.
+      listen: 'https://0.0.0.0:8443'
+      # The API server of this cluster, verified against the CA that
+      # Kubernetes mounts with the pod's ServiceAccount token: keep
+      # automountServiceAccountToken on. The lane forwards kubectl's
+      # Authorization header unchanged: the vault fills it and the API
+      # server checks it.
+      upstream: 'https://kubernetes.default.svc'
+      upstream_tls:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      # The vault fills secrets only into HTTPS requests on 443 or 8443. Use
+      # a certificate from a public CA: the sandbox reaches the lane through
+      # an egress proxy that inspects TLS, and a private CA is untested.
+      downstream_tls:
+        cert_file: /run/secrets/hoop-tls/tls.crt
+        key_file: /run/secrets/hoop-tls/tls.key
+      http:
+        # Accept tells a Secret's table view from its contents. The other two
+        # name the kubectl subcommand and the OpenAI session (rbac.yaml). All
+        # three land in each row.
+        headers: [Accept, Kubectl-Command, Impersonate-Extra-Hoop-Session]
+
+  # The free tier enforces one guardrail rule and one mask rule per process.
+  guardrails:
+    rules:
+      # The DELETE method on any path: delete, and deletecollection.
+      - name: no-delete
+        type: operation
+        operations: [delete]
+        message: this agent may not delete cluster objects
+      # With a license, also refuse each read of a Secret's contents. Only
+      # kubectl's table view passes, so a Protobuf read is refused too:
+      # - name: no-secret-contents
+      #   type: http_header
+      #   methods: [GET]
+      #   resources:
+      #     - /api/v1/secrets
+      #     - /api/v1/namespaces/*/secrets/**
+      #     - /api/v1/watch/secrets
+      #     - /api/v1/watch/namespaces/*/secrets/**
+      #   headers_not:
+      #     accept: ['application/json;as=Table;*']
+      #   message: listing secrets is fine; reading one is not
+  mask:
+    rules:
+      # Every value under a JSON key `data`: a Secret's, and a ConfigMap's
+      # too. The annotation holds a copy of the Secret as `kubectl apply`
+      # last wrote it. The entity is only the label a masked value carries.
+      - name: secret-values
+        columns: [data, kubectl.kubernetes.io/last-applied-configuration]
+        entities: [K8S_DATA]
+        strategy: redact
+
+extraVolumes:
+  - name: tls
+    secret:
+      secretName: hoop-sidecar-tls
+extraVolumeMounts:
+  - name: tls
+    mountPath: /run/secrets/hoop-tls
+    readOnly: true
+
+laneServices:
+  public:
+    enabled: true
+    type: LoadBalancer
+    # Port 443: the egress proxy and the vault work on HTTPS.
+    ports:
+      - {name: https, port: 443, targetPort: 8443}
