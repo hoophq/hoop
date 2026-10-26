@@ -166,6 +166,10 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if err != nil {
 		return nil, nil, err
 	}
+	// The file is what runs: standalone, or a plane that delegates to disk.
+	if local != nil && cfg == local {
+		cfg.Deprecations = append(cfg.Deprecations, cfg.fileDeprecations...)
+	}
 	// Retained so a pii drift rebuilds the detector the way startup would,
 	// and so a reload re-reads the config file the way startup would: a
 	// standalone process on every edit, a plane-owned one on a mid-run
@@ -1521,14 +1525,14 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		// switches OFF rather than records: every other rule still runs
 		// and still writes what it would have done, while a review
 		// nobody filed cannot be approved later either.
-		if gc.observing() && analyzerHolds(lc.Analyzer) {
+		if gc.observing() && humanHolds(lc.Analyzer) {
 			ln.notes = append(ln.notes,
 				"observe mode files no approval request: a held statement is recorded as "+
 					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
 		// before the review wait does.
-		if !gc.observing() && analyzerHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
+		if !gc.observing() && humanHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
 			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
 			ln.notes = append(ln.notes, fmt.Sprintf(
 				"idle_timeout_sec %d ends a held statement's wait before the %s "+
@@ -1566,6 +1570,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if lc.Analyzer != nil {
 			ln.notes = append(ln.notes,
 				rateLimitNotes(cfg.Analyzer, lc.Analyzer, "the analyzer block")...)
+			// Settings that do nothing, said where -validate and the
+			// startup log read them; none of them refuses the lane.
+			ln.notes = append(ln.notes, LaneAnalyzerWarnings(lc.Analyzer)...)
 		}
 		for _, r := range gc.Rules {
 			if r.Type == policy.MatchAIAnalysis {

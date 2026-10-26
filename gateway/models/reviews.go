@@ -114,6 +114,42 @@ type Review struct {
 	// ReservedAt is when a sidecar reserved this approval to settle it after
 	// the upstream answers. Set only while the review is PROCESSING.
 	ReservedAt *time.Time `gorm:"column:reserved_at"`
+
+	// ApproverType is who decides: human, or ai_agent for a review a sidecar's
+	// approval agent filed already decided. Empty writes the column default.
+	ApproverType string `gorm:"column:approver_type;default:human"`
+	// DecisionReason is the approval agent's reason, for either decision.
+	DecisionReason *string `gorm:"column:decision_reason"`
+	// RiskLevel is the analyzer level a sidecar filed the review under, in
+	// place of an approval rule. Null on a review filed under a rule.
+	RiskLevel sql.NullString `gorm:"column:risk_level"`
+}
+
+const (
+	ApproverTypeHuman   = "human"
+	ApproverTypeAIAgent = "ai_agent"
+)
+
+// DecidedByAgent reports a review the approval agent decided. Its decision
+// is final: nothing claims, decides or revokes it.
+func (r *Review) DecidedByAgent() bool { return r.ApproverType == ApproverTypeAIAgent }
+
+// SidecarReviewKey is what a sidecar filing is matched on beside the
+// statement: the approval rule, or the risk level filed in its place.
+type SidecarReviewKey struct {
+	RuleName  string
+	RiskLevel string
+}
+
+func (k SidecarReviewKey) args() []any {
+	return []any{nullIfEmpty(k.RuleName), nullIfEmpty(k.RiskLevel)}
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // SidecarReservationLease is how long a reserved approval waits for its
@@ -342,7 +378,8 @@ func getReviewByIdOrSid(db *gorm.DB, orgID, id string, viewer *ReviewViewer) (*R
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
+	approver_type, decision_reason, risk_level
 	FROM private.reviews rv
 	WHERE org_id = ? AND (id = ? OR session_id = ?)`+visibility,
 		append([]any{orgID, id, id}, visibilityArgs...)...).
@@ -384,7 +421,8 @@ func ListReviews(db *gorm.DB, orgID string, viewer ReviewViewer) (*[]Review, err
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
+	approver_type, decision_reason, risk_level
 	FROM private.reviews rv
 	WHERE org_id = ?`+visibility, append([]any{orgID}, visibilityArgs...)...).
 		Find(&reviews).
@@ -602,8 +640,8 @@ func UpdateSidecarReview(db *gorm.DB, rev *Review, fromStatus ReviewStatusType, 
 			rev.ExpiresAt = SidecarReviewDeadline(from, rev.ApprovalTTLSec)
 		}
 		res := tx.Table("private.reviews").
-			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL AND (expires_at IS NULL OR "+
-				sidecarInsideDeadline+")", rev.OrgID, rev.ID, fromStatus, now).
+			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL AND approver_type = ? AND "+
+				"(expires_at IS NULL OR "+sidecarInsideDeadline+")", rev.OrgID, rev.ID, fromStatus, ApproverTypeHuman, now).
 			Updates(rev)
 		if res.Error != nil {
 			return res.Error
@@ -724,29 +762,33 @@ const sidecarReviewSelect = `
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
+	approver_type, decision_reason, risk_level
 	FROM private.reviews rv`
 
 // GetLiveSidecarReview returns the review already filed for these exact
-// statement bytes on this listener and rule, or gorm.ErrRecordNotFound.
+// statement bytes on this listener and key (rule or risk level), or
+// gorm.ErrRecordNotFound. A review the approval agent decided never matches.
 //
 // "Live" excludes EXECUTED, REJECTED and REVOKED, matching the partial unique
 // index: a spent approval or a refusal is final for that review, and the next
 // request files a new one. Groups load as GetReviewByIdOrSid loads them, so a
 // match carries the same policy as a fresh review. A lapsed PENDING or APPROVED holder is not live,
 // nor is a reservation past its lease; CreateSidecarReview settles exactly those, so none blocks the insert.
-func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName, statementHash string, now time.Time) (*Review, error) {
+func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName string, key SidecarReviewKey, statementHash string, now time.Time) (*Review, error) {
 	now = now.UTC()
 	var review Review
-	err := db.Raw(sidecarReviewSelect+`
-	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
-	AND access_request_rule_name = ? AND statement_hash = ? AND status NOT IN (?, ?, ?, ?)
-	AND (status NOT IN (?, ?) OR expires_at IS NULL OR `+sidecarInsideDeadline+`)
-	AND (status <> ? OR reserved_at IS NULL OR `+sidecarInsideLease+`)`,
-		orgID, sidecarID, listenerName, ruleName, statementHash,
+	args := append([]any{orgID, sidecarID, listenerName}, key.args()...)
+	args = append(args, ApproverTypeHuman, statementHash,
 		ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked, ReviewStatusExpired,
 		ReviewStatusPending, ReviewStatusApproved, now,
-		ReviewStatusProcessing, leaseStart(now)).
+		ReviewStatusProcessing, leaseStart(now))
+	err := db.Raw(sidecarReviewSelect+`
+	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
+	AND access_request_rule_name IS NOT DISTINCT FROM ? AND risk_level IS NOT DISTINCT FROM ?
+	AND approver_type = ? AND statement_hash = ? AND status NOT IN (?, ?, ?, ?)
+	AND (status NOT IN (?, ?) OR expires_at IS NULL OR `+sidecarInsideDeadline+`)
+	AND (status <> ? OR reserved_at IS NULL OR `+sidecarInsideLease+`)`, args...).
 		First(&review).
 		Error
 	if err != nil {
@@ -859,9 +901,9 @@ func takeApprovedSidecarReview(db *gorm.DB, orgID, reviewID string, now time.Tim
 		res := tx.Exec(`
 		UPDATE private.reviews
 		SET status = ?, reserved_at = ?
-		WHERE org_id = ? AND id = ? AND status = ? AND sidecar_id IS NOT NULL
+		WHERE org_id = ? AND id = ? AND status = ? AND sidecar_id IS NOT NULL AND approver_type = ?
 		AND (expires_at IS NULL OR `+sidecarInsideDeadline+`)`,
-			status, reservedAt, orgID, reviewID, ReviewStatusApproved, now)
+			status, reservedAt, orgID, reviewID, ReviewStatusApproved, ApproverTypeHuman, now)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -963,14 +1005,21 @@ func spendLapsedReservationsTx(tx *gorm.DB, now time.Time, scope string, args ..
 // display is the reviewer's text (apisidecar displayStatement): raw binary bytes
 // fail the JSONB blob write. The approval binds to rev.StatementHash. A lapsed holder of the same key
 // is expired first in the transaction, and its ids are returned; a reservation past its lease is spent.
+//
+// A review the approval agent decided is written decided, with no statement
+// hash: no filing matches it, and the unique indexes skip it.
 func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string) ([]string, error) {
 	// CreatedAt is the expiry clock: a zero one would expire no lapsed holder.
 	if rev.CreatedAt.IsZero() {
 		return nil, errors.New("a sidecar review needs its creation time")
 	}
+	if rev.DecidedByAgent() && (rev.StatementHash.Valid ||
+		(rev.Status != ReviewStatusApproved && rev.Status != ReviewStatusRejected)) {
+		return nil, errors.New("a review the approval agent decided is approved or rejected, with no statement hash")
+	}
 	var expired []string
 	err := db.Transaction(func(tx *gorm.DB) error {
-		scope := []any{rev.OrgID, rev.SidecarID, rev.ListenerName, rev.AccessRequestRuleName, rev.StatementHash}
+		scope := []any{rev.OrgID, rev.SidecarID, rev.ListenerName, rev.AccessRequestRuleName, rev.RiskLevel, rev.StatementHash}
 		if err := spendLapsedReservationsTx(tx, rev.CreatedAt, expireScopeStatement, scope...); err != nil {
 			return fmt.Errorf("failed spending the previous reservation: %w", err)
 		}
@@ -1035,7 +1084,8 @@ func lockSidecarReviewTx(tx *gorm.DB, orgID, reviewID string) error {
 // The scopes expireSidecarReviewsTx accepts. No input reaches the SQL text.
 const (
 	expireScopeReview    = `org_id = ? AND id = ?`
-	expireScopeStatement = `org_id = ? AND sidecar_id = ? AND listener_name = ? AND access_request_rule_name = ? AND statement_hash = ?`
+	expireScopeStatement = `org_id = ? AND sidecar_id = ? AND listener_name = ? AND ` +
+		`access_request_rule_name IS NOT DISTINCT FROM ? AND risk_level IS NOT DISTINCT FROM ? AND statement_hash = ?`
 )
 
 // expireSidecarReviewsTx records EXPIRED on the lapsed live sidecar reviews in

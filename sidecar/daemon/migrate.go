@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -89,8 +90,45 @@ func (c *Config) MigrateDeprecated() []string {
 
 	// A top-level rule reached every lane. It moves only when every lane
 	// can take it, because a partial move would change which lanes run it.
-	if c.Guardrails == nil {
-		return notes
+	if c.Guardrails != nil {
+		notes = append(notes, c.migrateTopLevelRule()...)
+	}
+	notes = append(notes, c.migrateApprovalSpellings()...)
+	return notes
+}
+
+// migrateApprovalSpellings writes every held level as require_approval, the
+// spelling a file is not warned about, and names each listener whose
+// approval_rule it cannot convert: the rule's groups live in the control
+// plane, and this command cannot read them.
+func (c *Config) migrateApprovalSpellings() []string {
+	var notes []string
+	for i := range c.Listeners {
+		la := c.Listeners[i].Analyzer
+		if la == nil {
+			continue
+		}
+		for _, l := range la.levels() {
+			if l.level.holds() {
+				l.level.Action = string(analyzer.ActionRequireApproval)
+			}
+		}
+		if la.ApprovalRule != "" {
+			notes = append(notes, fmt.Sprintf("%s: approval_rule %q is deprecated and left in place: "+
+				"write each held level as {action: require_approval, approver: human, "+
+				"approval_groups: [...]} with the groups of that control plane rule, then drop "+
+				"approval_rule", c.Listeners[i].displayName(i), la.ApprovalRule))
+		}
+	}
+	return notes
+}
+
+// migrateTopLevelRule moves a single top-level ai_analysis rule onto every
+// listener when each can take it.
+func (c *Config) migrateTopLevelRule() []string {
+	var notes []string
+	note := func(format string, args ...any) {
+		notes = append(notes, fmt.Sprintf(format, args...))
 	}
 	local, ai := splitAnalyzerRules(c.Guardrails.Rules)
 	switch {
@@ -149,10 +187,12 @@ func hasAIRules(gc *GuardrailsConfig) bool {
 // omitempty render their zero values ("network": "", "upstream_tls": null),
 // which an operator would have to clean by hand. So the render prunes
 // zero-ish values from the document and then PROVES the prune changed
-// nothing: the pruned document is loaded through LoadConfigBytes and
-// re-marshaled, and only a byte-identical result ships. A prune that moved
-// semantics — an explicit `fail_open: false` pointer, an `opa: {}` opt-out —
-// fails that comparison and the noisy-but-exact document ships instead.
+// nothing: the pruned and the exact document are both loaded through
+// LoadConfigBytes and re-marshaled, and only a byte-identical pair ships.
+// Loading both, not comparing with c, lets the render keep a spelling the
+// load folds (require_approval). A prune that moved semantics — an explicit
+// `fail_open: false` pointer, an `opa: {}` opt-out — fails that comparison
+// and the noisy-but-exact document ships instead.
 //
 // The prune walks an ORDER-PRESERVING decode of the document rather than a
 // Go map, because the output is a file a person maintains: json.Marshal
@@ -177,8 +217,10 @@ func RenderMigrated(c *Config) ([]byte, error) {
 
 	reloaded, err := LoadConfigBytes(pruned)
 	if err == nil {
+		want, werr := LoadConfigBytes(exact)
 		remarshal, merr := json.Marshal(reloaded)
-		if merr == nil && bytes.Equal(remarshal, exact) {
+		wantRaw, wmerr := json.Marshal(want)
+		if werr == nil && merr == nil && wmerr == nil && bytes.Equal(remarshal, wantRaw) {
 			return append(pruned, '\n'), nil
 		}
 	}

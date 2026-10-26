@@ -75,9 +75,9 @@ func TestAnApprovalSpelledConfigLoads(t *testing.T) {
 		t.Fatalf("normalize: %v", err)
 	}
 	la := cfg.Listeners[0].Analyzer
-	if la.HighRisk != "require_review" || la.ReviewMode != "return" || la.ApprovalMode != "" {
+	if la.HighRisk.Action != "require_review" || la.ReviewMode != "return" || la.ApprovalMode != "" {
 		t.Errorf("block is high=%q review_mode=%q approval_mode=%q, want require_review, return and empty",
-			la.HighRisk, la.ReviewMode, la.ApprovalMode)
+			la.HighRisk.Action, la.ReviewMode, la.ApprovalMode)
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate: %v", err)
@@ -89,7 +89,7 @@ func TestAnApprovalSpelledConfigLoads(t *testing.T) {
 // refuseRuleFormHold read one value.
 func TestRequireApprovalFoldsOntoRequireReview(t *testing.T) {
 	cfg := approvalLane(func(la *LaneAnalyzerConfig) {
-		la.HighRisk, la.MediumRisk, la.LowRisk = "require_approval", "require_approval", "allow"
+		la.HighRisk.Action, la.MediumRisk.Action, la.LowRisk.Action = "require_approval", "require_approval", "allow"
 	})
 	rule := aiRule("risky")
 	rule.MediumRisk = "require_approval"
@@ -99,8 +99,8 @@ func TestRequireApprovalFoldsOntoRequireReview(t *testing.T) {
 		t.Fatalf("normalize: %v", err)
 	}
 	la := cfg.Listeners[0].Analyzer
-	if la.HighRisk != "require_review" || la.MediumRisk != "require_review" || la.LowRisk != "allow" {
-		t.Errorf("block levels are %q/%q/%q", la.HighRisk, la.MediumRisk, la.LowRisk)
+	if la.HighRisk.Action != "require_review" || la.MediumRisk.Action != "require_review" || la.LowRisk.Action != "allow" {
+		t.Errorf("block levels are %q/%q/%q", la.HighRisk.Action, la.MediumRisk.Action, la.LowRisk.Action)
 	}
 	for _, rules := range [][]policy.Rule{cfg.Listeners[0].Guardrails.Rules, cfg.Guardrails.Rules} {
 		if rules[0].MediumRisk != "require_review" {
@@ -116,7 +116,7 @@ func TestRequireApprovalFoldsOntoRequireReview(t *testing.T) {
 // alias still holds: no check can miss a hold over its spelling.
 func TestRequireApprovalHoldsWithoutNormalize(t *testing.T) {
 	la := laneBlock()
-	la.HighRisk = "require_approval"
+	la.HighRisk = RiskLevel{Action: "require_approval"}
 	if !analyzerHolds(la) {
 		t.Error("analyzerHolds missed require_approval")
 	}
@@ -133,7 +133,7 @@ func TestRequireApprovalHoldsWithoutNormalize(t *testing.T) {
 // The action list an operator reads names both spellings.
 func TestAnUnknownActionNamesBothHoldSpellings(t *testing.T) {
 	la := laneBlock()
-	la.HighRisk = "hold_please"
+	la.HighRisk = RiskLevel{Action: "hold_please"}
 	problems := ValidateLaneAnalyzerBlock(la, "appdb")
 	if len(problems) == 0 || !strings.Contains(problems[0],
 		"(allow, warn, block, defer or require_review, also spelled require_approval)") {
@@ -145,7 +145,7 @@ func TestAnUnknownActionNamesBothHoldSpellings(t *testing.T) {
 // aliases still decodes what an admin wrote with them.
 func TestServedFormServesTheCanonicalSpellings(t *testing.T) {
 	stored := approvalLane(func(la *LaneAnalyzerConfig) {
-		la.HighRisk, la.ApprovalMode = "require_approval", "return"
+		la.HighRisk.Action, la.ApprovalMode = "require_approval", "return"
 	})
 	rule := aiRule("risky")
 	rule.HighRisk = "require_approval"
@@ -153,8 +153,8 @@ func TestServedFormServesTheCanonicalSpellings(t *testing.T) {
 
 	served := ServedForm(*stored)
 	la := served.Listeners[0].Analyzer
-	if la.HighRisk != "require_review" || la.ReviewMode != "return" || la.ApprovalMode != "" {
-		t.Errorf("served block is high=%q review_mode=%q approval_mode=%q", la.HighRisk, la.ReviewMode, la.ApprovalMode)
+	if la.HighRisk.Action != "require_review" || la.ReviewMode != "return" || la.ApprovalMode != "" {
+		t.Errorf("served block is high=%q review_mode=%q approval_mode=%q", la.HighRisk.Action, la.ReviewMode, la.ApprovalMode)
 	}
 	if served.Guardrails.Rules[0].HighRisk != "require_review" {
 		t.Errorf("served rule high is %q", served.Guardrails.Rules[0].HighRisk)
@@ -219,11 +219,11 @@ func TestAnHTTPLaneCapturesTheApprovalModeHeader(t *testing.T) {
 // Canonicalize is the fold the control plane runs on a block it decoded
 // without normalize.
 func TestCanonicalizeFoldsOneBlock(t *testing.T) {
-	la := LaneAnalyzerConfig{HighRisk: "require_approval", LowRisk: "allow", ApprovalMode: "return"}
+	la := LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "require_approval"}, LowRisk: RiskLevel{Action: "allow"}, ApprovalMode: "return"}
 	if err := la.Canonicalize(); err != nil {
 		t.Fatal(err)
 	}
-	if la.HighRisk != string(analyzer.ActionRequireReview) || la.LowRisk != "allow" ||
+	if la.HighRisk.Action != string(analyzer.ActionRequireReview) || la.LowRisk.Action != "allow" ||
 		la.ReviewMode != "return" || la.ApprovalMode != "" {
 		t.Errorf("folded %+v", la)
 	}
@@ -246,14 +246,14 @@ func TestCanonicalizeApprovalSpellingsFoldsADocument(t *testing.T) {
 		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{{Name: "r", HighRisk: "require_approval"}}},
 		Listeners: []ListenerConfig{{
 			Name:     "agents",
-			Analyzer: &LaneAnalyzerConfig{MediumRisk: "require_approval", ApprovalMode: "hold"},
+			Analyzer: &LaneAnalyzerConfig{MediumRisk: RiskLevel{Action: "require_approval"}, ApprovalMode: "hold"},
 		}},
 	}
 	if err := CanonicalizeApprovalSpellings(&cfg); err != nil {
 		t.Fatal(err)
 	}
 	la := cfg.Listeners[0].Analyzer
-	if la.MediumRisk != string(analyzer.ActionRequireReview) || la.ReviewMode != "hold" || la.ApprovalMode != "" {
+	if la.MediumRisk.Action != string(analyzer.ActionRequireReview) || la.ReviewMode != "hold" || la.ApprovalMode != "" {
 		t.Errorf("folded block %+v", la)
 	}
 	if got := cfg.Guardrails.Rules[0].HighRisk; got != string(analyzer.ActionRequireReview) {
@@ -272,7 +272,7 @@ func TestCanonicalizeApprovalSpellingsFoldsADocument(t *testing.T) {
 // is refused there instead of by every sidecar the block reaches.
 func TestValidateLaneAnalyzerBlockJudgesTheApprovalSpellings(t *testing.T) {
 	hold := func(edit func(*LaneAnalyzerConfig)) *LaneAnalyzerConfig {
-		la := &LaneAnalyzerConfig{HighRisk: "require_approval", ApprovalRule: "r"}
+		la := &LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "require_approval"}, ApprovalRule: "r"}
 		edit(la)
 		return la
 	}
@@ -282,7 +282,7 @@ func TestValidateLaneAnalyzerBlockJudgesTheApprovalSpellings(t *testing.T) {
 	}{
 		"unknown approval_mode": {hold(func(la *LaneAnalyzerConfig) { la.ApprovalMode = "bogus" }), "bogus"},
 		"two modes":             {hold(func(la *LaneAnalyzerConfig) { la.ApprovalMode, la.ReviewMode = "return", "hold" }), "not both"},
-		"mode with no hold": {&LaneAnalyzerConfig{HighRisk: "block", ApprovalMode: "return"},
+		"mode with no hold": {&LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "block"}, ApprovalMode: "return"},
 			"nothing on this lane would hold one"},
 	} {
 		problems := strings.Join(ValidateLaneAnalyzerBlock(tc.block, "rule"), "; ")
@@ -295,7 +295,7 @@ func TestValidateLaneAnalyzerBlockJudgesTheApprovalSpellings(t *testing.T) {
 	if problems := ValidateLaneAnalyzerBlock(ok, "rule"); len(problems) > 0 {
 		t.Errorf("a valid approval block was refused: %v", problems)
 	}
-	if ok.ApprovalMode != "return" || ok.HighRisk != "require_approval" {
+	if ok.ApprovalMode != "return" || ok.HighRisk.Action != "require_approval" {
 		t.Error("the validator changed the caller's block")
 	}
 }

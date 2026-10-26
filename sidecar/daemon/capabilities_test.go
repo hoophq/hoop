@@ -128,7 +128,7 @@ func TestAReturnLaneAnswersAPendingReviewAtOnce(t *testing.T) {
 		cp:       cp,
 	}
 	la := laneBlock()
-	la.HighRisk = "require_review"
+	la.HighRisk = RiskLevel{Action: "require_review"}
 	la.ApprovalRule = "payments-approvers"
 	la.ReviewMode = analyzer.ReviewReturn
 

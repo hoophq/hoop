@@ -779,7 +779,7 @@ func withOrgLicense(sc *models.Sidecar, hs daemon.Handshake) (daemon.Config, err
 	// answer is derived on every handshake. Composition touches only the
 	// sections the sidecar hot-reloads, so a rule edit reaches a running
 	// process without restarting it.
-	composed, err := services.ComposeSidecarConfiguration(models.DB, sc)
+	composed, err := services.ComposeSidecarConfigurationWithOwners(models.DB, sc)
 	if err != nil {
 		return daemon.Config(sc.Configuration), err
 	}
@@ -796,13 +796,20 @@ func withOrgLicense(sc *models.Sidecar, hs daemon.Handshake) (daemon.Config, err
 	//
 	// Answering the handshake with an error instead is the one failure the
 	// sidecar survives: fetchControlPlaneConfig logs it and keeps running.
-	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
+	if err := services.CheckSidecarConfigurationLimits(composed.Config, licenseData); err != nil {
 		return daemon.Config(sc.Configuration), err
 	}
-	if err := daemon.CheckServable(composed, hs); err != nil {
+	// A build that predates the object form of a risk level gets the bare
+	// form under the managed approval rule, or a refusal that names the
+	// capability (ErrSidecarCapabilityMissing).
+	served, err := services.DowngradeForBuild(models.DB, sc, composed, hs, "")
+	if err != nil {
+		return daemon.Config(sc.Configuration), err
+	}
+	if err := daemon.CheckServable(served, hs); err != nil {
 		return daemon.Config(sc.Configuration), services.ErrSidecarCapabilityMissing{Reason: err.Error()}
 	}
-	return servedConfig(models.SidecarConfiguration(composed), licenseData), nil
+	return servedConfig(models.SidecarConfiguration(served), licenseData), nil
 }
 
 // servedConfig is the document itself: the stored configuration with the

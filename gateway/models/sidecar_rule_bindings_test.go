@@ -637,8 +637,8 @@ func TestABoundAnalyzerRuleCarriesItsApprovalRuleIntoTheServedConfig(t *testing.
 		t.Errorf("the served listener must name the rule's approval_rule, got %q",
 			lane.Analyzer.ApprovalRule)
 	}
-	if lane.Analyzer.HighRisk != "require_review" {
-		t.Errorf("the served listener must hold on high risk, got %q", lane.Analyzer.HighRisk)
+	if lane.Analyzer.HighRisk.Action != "require_review" {
+		t.Errorf("the served listener must hold on high risk, got %q", lane.Analyzer.HighRisk.Action)
 	}
 	// The listener's own budget survives: the rule owns the decision, the
 	// listener owns what a classification may cost.
@@ -723,8 +723,8 @@ func TestAnAnalyzerRuleReachesALaneWithoutItsOwnBlock(t *testing.T) {
 	if block == nil {
 		t.Fatal("the served listener has no analyzer block")
 	}
-	if block.HighRisk != "block" || block.MaxCalls != 25 {
-		t.Errorf("served block = high %q, max_calls %d; want the rule's", block.HighRisk, block.MaxCalls)
+	if block.HighRisk.Action != "block" || block.MaxCalls != 25 {
+		t.Errorf("served block = high %q, max_calls %d; want the rule's", block.HighRisk.Action, block.MaxCalls)
 	}
 	if block.Trigger == nil || len(block.Trigger.Operations) != 1 || block.Trigger.Operations[0] != "delete" {
 		t.Errorf("served trigger = %+v; want the rule's", block.Trigger)

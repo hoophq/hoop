@@ -599,7 +599,7 @@ func boolp(b bool) *bool { return &b }
 // license uses the hosted model and says why, an Enterprise one refuses to
 // start and names both ways out, and false turns the default off.
 func TestHostedDefaultFollowsTheLicense(t *testing.T) {
-	lane := []ListenerConfig{{Name: "pg", Protocol: "postgres", Analyzer: &LaneAnalyzerConfig{HighRisk: "warn"}}}
+	lane := []ListenerConfig{{Name: "pg", Protocol: "postgres", Analyzer: &LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "warn"}}}}
 	expired := licensetest.Status(t, licensetest.Expiring(-time.Hour))
 
 	free := &Config{Listeners: lane}

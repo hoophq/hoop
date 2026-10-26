@@ -27,7 +27,7 @@ func seedReviewingSidecar(t *testing.T, name string) *models.Sidecar {
 		CreatedBy: "tests@hoop.dev",
 		Configuration: models.SidecarConfiguration{Listeners: []daemon.ListenerConfig{{
 			Name:     "appdb",
-			Analyzer: &daemon.LaneAnalyzerConfig{ApprovalRule: "payments-approvers"},
+			Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: "payments-approvers"},
 		}}},
 	}
 	require.NoError(t, models.CreateSidecar(models.DB, sc))

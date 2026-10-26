@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
 // ErrRuleHasNoReviewers reports a rule that names nobody. It is a sentinel so
@@ -62,4 +63,21 @@ func ReviewPolicyFromRule(orgID string, rule *models.AccessRequestRule) (*Review
 	}
 
 	return &ReviewPolicy{Groups: groups, MinApprovals: minApprovals}, nil
+}
+
+// ReviewPolicyForLevel is the policy of a review filed under a human risk
+// level: one pending row per approval group, or the admin group when the level
+// names none, and one approval releases.
+func ReviewPolicyForLevel(orgID string, level daemon.RiskLevel) *ReviewPolicy {
+	names := LevelReviewerGroups(level)
+	groups := make([]models.ReviewGroups, 0, len(names))
+	for _, groupName := range names {
+		groups = append(groups, models.ReviewGroups{
+			ID:        uuid.NewString(),
+			OrgID:     orgID,
+			GroupName: groupName,
+			Status:    models.ReviewStatusPending,
+		})
+	}
+	return &ReviewPolicy{Groups: groups, MinApprovals: analyzerApprovalMinApprovals}
 }

@@ -503,11 +503,13 @@ type LaneAnalyzerConfig struct {
 	Trigger *policy.AITrigger `json:"trigger,omitempty"`
 
 	// HighRisk, MediumRisk and LowRisk map a verdict onto an action:
-	// allow, warn, block or defer. An unset level defaults to allow, so an
-	// operator opts into blocking a tier by naming it.
-	HighRisk   string `json:"high,omitempty"`
-	MediumRisk string `json:"medium,omitempty"`
-	LowRisk    string `json:"low,omitempty"`
+	// allow, warn, block, defer or require_approval. An unset level
+	// defaults to allow, so an operator opts into blocking a tier by
+	// naming it. A level that holds may be an object naming its own
+	// approver; see RiskLevel.
+	HighRisk   RiskLevel `json:"high,omitzero"`
+	MediumRisk RiskLevel `json:"medium,omitzero"`
+	LowRisk    RiskLevel `json:"low,omitzero"`
 
 	// Prompt replaces the inherited risk guidance for this lane. This is
 	// where protocol-specific wording belongs: analyzer.prompt reaches
@@ -521,18 +523,16 @@ type LaneAnalyzerConfig struct {
 	Message string `json:"message,omitempty"`
 
 	// ApprovalRule names the control plane access request rule that decides
-	// who may approve a statement this lane holds. The rule carries the
-	// reviewer groups, the approval count and the force-approval list; this
-	// field carries only its name, because the sidecar never holds that
-	// policy and the control plane authorizes the review against the stored
-	// config.
+	// who may approve a statement a BARE require_approval level holds. The
+	// rule carries the reviewer groups, the approval count and the
+	// force-approval list; this field carries only its name, because the
+	// sidecar never holds that policy and the control plane authorizes the
+	// review against the stored config.
 	//
-	// PER LANE, not process-wide: the people who may release a statement
-	// against the payments database are not the people who may release one
-	// against a reporting replica, and an inherited default would make the
-	// looser of the two the accident.
+	// DEPRECATED for the object form of a level, which names its own
+	// approver and groups. Levels in the object form ignore this field.
 	//
-	// It is meaningful only where a risk level asks for require_review, and
+	// It is meaningful only where a bare level asks for require_review, and
 	// required there: the two arrive together or startup refuses the lane,
 	// because either one alone is a control nothing reads.
 	ApprovalRule string `json:"approval_rule,omitempty"`
@@ -595,9 +595,9 @@ type LaneAnalyzerConfig struct {
 func specFromRule(r policy.Rule) LaneAnalyzerConfig {
 	return LaneAnalyzerConfig{
 		Trigger:    r.Trigger,
-		HighRisk:   r.HighRisk,
-		MediumRisk: r.MediumRisk,
-		LowRisk:    r.LowRisk,
+		HighRisk:   RiskLevel{Action: r.HighRisk},
+		MediumRisk: RiskLevel{Action: r.MediumRisk},
+		LowRisk:    RiskLevel{Action: r.LowRisk},
 		Prompt:     r.Prompt,
 		Message:    r.Message,
 	}
@@ -974,13 +974,15 @@ func (ac *analyzerDeps) rateLimitLog(name string) func(limited bool, refused int
 	}
 }
 
-// reviewerFor returns the backend this lane holds statements against for human
-// approval, or nil when nothing should be filed.
+// reviewerFor returns the backend this lane files with: held statements for
+// human approval, and the approval agent's decisions. Nil when nothing should
+// be filed.
 //
-// Nil in three cases, and each one denies rather than forwards:
+// Nil in three cases, and each one denies a human hold rather than forwards:
 //
-//   - With a control plane, the lane names no approval_rule, so no level on
-//     it holds.
+//   - No level on the lane holds, or, with a control plane, a bare level
+//     holds and the lane names no approval_rule (holdRefusal refuses that
+//     lane first).
 //   - The lane is OBSERVING. A dry run that paged approvers would be a dry
 //     run with consequences, and the statement runs anyway: policy.Observe
 //     turns the hold's denial into an allow annotated would_deny, which is
@@ -989,18 +991,19 @@ func (ac *analyzerDeps) rateLimitLog(name string) func(limited bool, refused int
 //     every -validate run outside a terminal.
 //
 // The plane is asked first: a process connected to one files there even when
-// a local reviewer is linked, so its approval rule is never bypassed.
+// a local reviewer is linked, so its approvers are never bypassed. A local
+// reviewer serves human levels only; the approval agent needs none.
 func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, observing bool) analyzer.Reviewer {
 	if ac == nil || la == nil || observing {
 		return nil
 	}
 	if ac.cp != nil {
-		if la.ApprovalRule == "" {
+		if !analyzerHolds(la) || ruleHolds(la) && la.ApprovalRule == "" {
 			return nil
 		}
 		return ac.cp.reviewer(listener, la.ApprovalRule, la.reserves(), ac.log)
 	}
-	if ac.local != nil && analyzerHolds(la) {
+	if ac.local != nil && humanHolds(la) {
 		return ac.local(listener)
 	}
 	return nil
@@ -1173,10 +1176,14 @@ func buildAnalyzerEvaluator(
 		}
 	}
 	return analyzer.New(analyzer.Config{
-		Rule:          name,
-		Provider:      ac.provider,
-		Guidance:      guidance,
-		Actions:       actions,
+		Rule:      name,
+		Provider:  ac.provider,
+		Guidance:  guidance,
+		Actions:   actions,
+		Approvals: la.approvals(),
+		// Only a block reaches the approval agent, and a block is
+		// named after its lane.
+		Listener:      name,
 		Trigger:       trigger,
 		Message:       la.Message,
 		Timeout:       time.Duration(timeout) * time.Second,
@@ -1236,7 +1243,7 @@ func triggerItems(items []policy.AITriggerItem) []analyzer.TriggerItem {
 	return out
 }
 
-// actionMap turns the block's high/medium/low strings into the analyzer's
+// actionMap turns the block's high/medium/low levels into the analyzer's
 // action vocabulary.
 //
 // hasOPA false degrades `defer` to `block`. Deferring names a decision-maker,
@@ -1247,23 +1254,20 @@ func triggerItems(items []policy.AITriggerItem) []analyzer.TriggerItem {
 // `high: defer` and behaves as `high: block` has to say which one it did.
 func actionMap(la LaneAnalyzerConfig, hasOPA bool) (analyzer.ActionMap, error) {
 	m := analyzer.ActionMap{}
-	for level, raw := range map[analyzer.RiskLevel]string{
-		analyzer.RiskHigh:   la.HighRisk,
-		analyzer.RiskMedium: la.MediumRisk,
-		analyzer.RiskLow:    la.LowRisk,
-	} {
+	for _, l := range la.levels() {
+		raw := l.level.Action
 		if raw == "" {
 			continue
 		}
 		a := analyzer.Action(raw)
 		if !a.Valid() {
-			return nil, fmt.Errorf("unknown action %q for %s risk", raw, level)
+			return nil, fmt.Errorf("unknown action %q for %s risk", raw, l.risk)
 		}
 		a = a.Canonical()
 		if a == analyzer.ActionDefer && !hasOPA {
 			a = analyzer.ActionBlock
 		}
-		m[level] = a
+		m[l.risk] = a
 	}
 	return m, nil
 }
@@ -1571,7 +1575,8 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 	}
 	la = &folded
 	problems = append(problems, validateRiskActions(
-		la.HighRisk, la.MediumRisk, la.LowRisk, where)...)
+		la.HighRisk.Action, la.MediumRisk.Action, la.LowRisk.Action, where)...)
+	problems = append(problems, validateLevelObjects(la, where)...)
 	problems = append(problems, validateTriggerItems(la.Trigger, where)...)
 
 	switch la.Send {
@@ -1599,19 +1604,21 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 		}
 	}
 
-	// The approval rule and the levels that hold have to arrive together.
-	// Either one alone is a control that loads and is read by nobody: a
-	// reviewer list nothing consults, or a hold with no one able to
-	// release it. The blank case is separate because a name of spaces
-	// matches no rule in the control plane and would surface as a refused
-	// review long after startup.
+	// The approval rule and the BARE levels that hold have to arrive
+	// together. Either one alone is a control that loads and is read by
+	// nobody: a reviewer list nothing consults, or a hold with no one able
+	// to release it. A level in the object form names its own approver and
+	// ignores the rule; LaneAnalyzerWarnings says so. The blank case is
+	// separate because a name of spaces matches no rule in the control
+	// plane and would surface as a refused review long after startup.
 	holds := analyzerHolds(la)
 	switch {
-	case la.ApprovalRule == "" && holds && holdNeedsRule:
+	case la.ApprovalRule == "" && ruleHolds(la) && holdNeedsRule:
 		problems = append(problems, fmt.Sprintf(
 			"%s asks for %s and names no approval_rule; the rule is what decides who "+
 				"may approve a held statement, and the control plane refuses an approval "+
-				"request that does not name one", where, holdAction))
+				"request that does not name one. Or write the level as an object that "+
+				"names its approver", where, holdAction))
 	case la.ApprovalRule == "":
 	case strings.TrimSpace(la.ApprovalRule) == "":
 		problems = append(problems, where+
@@ -1623,34 +1630,37 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 			where, la.ApprovalRule, holdAction))
 	}
 
-	// Same pairing as approval_rule: a mode on a lane that holds nothing is
-	// read by nobody.
+	// Same pairing as approval_rule, for a person: only a review a human
+	// decides waits, matches a resend or spends an approval. The approval
+	// agent decides at once, so on its levels these are read by nobody.
+	waits := humanHolds(la)
 	switch {
 	case !la.ReviewMode.Valid():
 		problems = append(problems, fmt.Sprintf(
 			"%s: unknown review_mode (or approval_mode) %q (hold or return)", where, la.ReviewMode))
-	case la.ReviewMode != "" && !holds:
+	case la.ReviewMode != "" && !waits:
 		problems = append(problems, fmt.Sprintf(
 			"%s: review_mode (or approval_mode) %q decides how a held statement waits, "+
-				"and no risk level asks for %s, so nothing on this lane would hold one",
-			where, la.ReviewMode, holdAction))
+				"and no risk level asks for %s with a human approver, so nothing on this "+
+				"lane would hold one", where, la.ReviewMode, holdAction))
 	}
 	switch {
 	case !la.SpendApprovalOn.valid():
 		problems = append(problems, fmt.Sprintf(
 			"%s: unknown spend_approval_on %q (forward or accepted)", where, la.SpendApprovalOn))
-	case la.SpendApprovalOn != "" && !holds:
+	case la.SpendApprovalOn != "" && !waits:
 		problems = append(problems, fmt.Sprintf(
 			"%s: spend_approval_on %q decides when a held statement's approval is "+
-				"spent, and no risk level asks for %q, so nothing on this lane would hold one",
+				"spent, and no risk level asks for %q with a human approver, so nothing "+
+				"on this lane would hold one",
 			where, la.SpendApprovalOn, analyzer.ActionRequireReview))
 	}
 
-	if len(la.MatchIgnore) > 0 && !holds {
+	if len(la.MatchIgnore) > 0 && !waits {
 		problems = append(problems, fmt.Sprintf(
 			"%s: match_ignore decides how a held statement matches its approval request, "+
-				"and no risk level asks for %s, so nothing on this lane would hold one",
-			where, holdAction))
+				"and no risk level asks for %s with a human approver, so nothing on this "+
+				"lane would hold one", where, holdAction))
 	}
 	for i, m := range la.MatchIgnore {
 		if err := m.Validate(); err != nil {

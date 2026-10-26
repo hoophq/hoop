@@ -44,6 +44,25 @@ export const filterFromSearch = (searchParams) =>
 
 export const isSidecarReview = (review) => Boolean(review?.listener_name)
 
+// A review the sidecar's AI agent decided at filing (ENG-680). Its decision is
+// final: the sidecar already acted on it, so nobody can decide or revoke it.
+export const isAiReview = (review) => review?.approver_type === 'ai_agent'
+
+// Set on a review filed for one risk level of an analyzer rule.
+const RISK_LEVEL = {
+  high: { label: 'High risk', color: 'red' },
+  medium: { label: 'Medium risk', color: 'yellow' },
+  low: { label: 'Low risk', color: 'green' },
+}
+export const riskLevel = (review) => RISK_LEVEL[review?.risk_level] ?? null
+
+// The table's rule cell: the approval rule, else the risk level and approver.
+export function ruleLabel(review) {
+  if (review?.access_request_rule_name) return review.access_request_rule_name
+  const risk = riskLevel(review)?.label
+  return [risk, isAiReview(review) ? 'AI agent' : null].filter(Boolean).join(' · ') || null
+}
+
 // Only the groups that decided. A group still pending carries no reviewer and
 // no date, and the review's own status already says nobody has acted.
 export const decidedGroups = (review) =>
@@ -64,10 +83,10 @@ export const canReject = (review, user) => user.isAdmin || canApprove(review, us
 // A sidecar review is onetime, and its approval can be revoked until the sidecar
 // uses it. A gateway review keeps Reject: the gateway revokes only jit reviews.
 export const canRevoke = (review) =>
-  isSidecarReview(review) && review?.status === STATUS.APPROVED
+  isSidecarReview(review) && !isAiReview(review) && review?.status === STATUS.APPROVED
 
 export const isSettled = (review) =>
-  review?.status !== STATUS.PENDING && review?.status !== STATUS.APPROVED
+  isAiReview(review) || (review?.status !== STATUS.PENDING && review?.status !== STATUS.APPROVED)
 
 // The API sends expires_at only for a sidecar review with a time limit, and
 // reports EXPIRED itself, so no client clock decides the status.

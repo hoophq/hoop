@@ -11228,7 +11228,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed.",
+                "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the listener's analyzer level decides who approves; with approver ai_agent the request records the approval agent's decision, is filed decided and never releases the statement.",
                 "consumes": [
                     "application/json"
                 ],
@@ -13304,12 +13304,12 @@ const docTemplate = `{
                     "example": "block-dangerous-queries"
                 },
                 "pending_ttl_sec": {
-                    "description": "Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds under its own approval rule. Absent keeps, 0 clears",
+                    "description": "Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds a statement for a human approver. Absent keeps, 0 clears",
                     "type": "integer",
                     "example": 900
                 },
                 "reviewers_groups": {
-                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement.",
+                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement in the bare form\n(high: require_approval) under its own approval rule. A level written\nas an object with approver human names its own approval_groups, and\nthis field is ignored.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -18772,6 +18772,16 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": 600
                 },
+                "approver_type": {
+                    "description": "Who decided: human, or ai_agent for a sidecar approval request the sidecar's approval agent decided.\nThe decision of ai_agent is final: it is not approved, rejected or revoked again",
+                    "type": "string",
+                    "enum": [
+                        "human",
+                        "ai_agent"
+                    ],
+                    "readOnly": true,
+                    "example": "human"
+                },
                 "connection": {
                     "description": "The connection the approval request was filed against. On a sidecar approval request, the resource that mirrors the listener; absent while the organization has no mirror for it",
                     "allOf": [
@@ -18786,6 +18796,12 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "decision_reason": {
+                    "description": "The approval agent's reason for its decision. On a rejection, rejection_reason holds the same text",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "The delete names no rows."
                 },
                 "expires_at": {
                     "description": "The deadline of a sidecar approval request: to decide while PENDING, to use the\napproval once APPROVED. Absent with no limit or on an approval request from a connection",
@@ -18851,6 +18867,17 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": ""
+                },
+                "risk_level": {
+                    "description": "The analyzer risk level a sidecar filed the approval request under, in place of an approval rule",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "readOnly": true,
+                    "example": "high"
                 },
                 "session": {
                     "description": "The id of session",
@@ -21251,11 +21278,27 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "default-access-request-rule"
                 },
+                "approver_type": {
+                    "description": "Who decided: human, or ai_agent for a sidecar approval request the sidecar's approval agent decided.\nOnly GET /sessions/{session_id} returns it",
+                    "type": "string",
+                    "enum": [
+                        "human",
+                        "ai_agent"
+                    ],
+                    "readOnly": true,
+                    "example": "human"
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "decision_reason": {
+                    "description": "The approval agent's reason for its decision. On a rejection, rejection_reason holds the same text.\nOnly GET /sessions/{session_id} returns it",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "The delete names no rows."
                 },
                 "force_approval_groups": {
                     "description": "Groups that can force approve sessions for this approval request",
@@ -21306,6 +21349,17 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": ""
+                },
+                "risk_level": {
+                    "description": "The analyzer risk level a sidecar filed the approval request under, in place of an approval rule.\nOnly GET /sessions/{session_id} returns it",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "readOnly": true,
+                    "example": "high"
                 },
                 "status": {
                     "description": "The status of the approval request\n* PENDING - The resource is waiting for approval\n* APPROVED - The resource is fully approved\n* REJECTED - The resource is fully rejected\n* REVOKED - The resource was revoked after being approved\n* PROCESSING - The approval request is being executed\n* EXECUTED - The approval request was executed\n* UNKNOWN - Unable to know the status of the approval request",
@@ -21751,16 +21805,33 @@ const docTemplate = `{
         "openapi.SidecarReviewRequest": {
             "type": "object",
             "required": [
-                "approval_rule",
                 "listener_name",
                 "payload"
             ],
             "properties": {
                 "approval_rule": {
-                    "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the approver groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it.\n\nBounded at 254 to match what a rule name may be.",
+                    "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the approver groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it. Required without risk_level, refused with it.\n\nBounded at 254 to match what a rule name may be.",
                     "type": "string",
                     "maxLength": 254,
                     "example": "payments-approvers"
+                },
+                "approver": {
+                    "description": "Who approves the level: human, or ai_agent. Required with risk_level",
+                    "type": "string",
+                    "enum": [
+                        "human",
+                        "ai_agent"
+                    ],
+                    "example": "human"
+                },
+                "decision": {
+                    "description": "The approval agent's decision. Required with approver ai_agent, refused otherwise.\nThe approval request is stored decided and never releases the statement",
+                    "type": "string",
+                    "enum": [
+                        "approved",
+                        "rejected"
+                    ],
+                    "example": "rejected"
                 },
                 "listener_name": {
                     "description": "The sidecar listener the statement arrived on, at most 1024 bytes",
@@ -21772,10 +21843,25 @@ const docTemplate = `{
                     "type": "string",
                     "example": "REVMRVRFIEZST00gdXNlcnM7"
                 },
+                "reason": {
+                    "description": "The approval agent's reason, at most 4096 bytes. Required with decision",
+                    "type": "string",
+                    "example": "The delete names no rows."
+                },
                 "reserve": {
-                    "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release.",
+                    "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release. Refused with a decision.",
                     "type": "boolean",
                     "example": false
+                },
+                "risk_level": {
+                    "description": "The analyzer risk level that held the statement, when the listener\nwrites that level as an object. The control plane reads the level's\napprover and approval groups in the listener's stored configuration",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "example": "high"
                 }
             }
         },
@@ -21814,10 +21900,20 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "approval_rule": {
-                    "description": "The access request rule the approval request was filed under",
+                    "description": "The access request rule the approval request was filed under. Empty on one filed under a risk level",
                     "type": "string",
                     "readOnly": true,
                     "example": "payments-approvers"
+                },
+                "approver_type": {
+                    "description": "Who decided: human, or ai_agent for the sidecar's approval agent",
+                    "type": "string",
+                    "enum": [
+                        "human",
+                        "ai_agent"
+                    ],
+                    "readOnly": true,
+                    "example": "human"
                 },
                 "created_at": {
                     "description": "The time the approval request was created",
@@ -21830,6 +21926,12 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T16:01:12.000Z"
+                },
+                "decision_reason": {
+                    "description": "The approval agent's reason for its decision",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "The delete names no rows."
                 },
                 "expires_at": {
                     "description": "The decision deadline while PENDING, the approval deadline once APPROVED,\nthe deadline that passed when EXPIRED. Absent with no limit",
@@ -21855,6 +21957,17 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "Not during business hours."
+                },
+                "risk_level": {
+                    "description": "The analyzer risk level the approval request was filed under, in place of an approval rule",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "readOnly": true,
+                    "example": "high"
                 },
                 "status": {
                     "description": "The status of the approval request\n* PENDING - Waiting for an approver\n* APPROVED - Approved and not yet consumed; resend the identical statement\n* REJECTED - Rejected; the statement will not run\n* REVOKED - Revoked after approval\n* EXECUTED - The approval was consumed by a resent statement\n* EXPIRED - The approval request passed its deadline; it never releases the statement",

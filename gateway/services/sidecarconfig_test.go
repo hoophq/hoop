@@ -126,7 +126,7 @@ func TestComposedDocumentStillDecodesStrictly(t *testing.T) {
 	}
 
 	// The analyzer block replaces the lane's, carrying the trigger.
-	if appdb.Analyzer == nil || appdb.Analyzer.HighRisk != "block" || appdb.Analyzer.Trigger == nil {
+	if appdb.Analyzer == nil || appdb.Analyzer.HighRisk.Action != "block" || appdb.Analyzer.Trigger == nil {
 		t.Errorf("the analyzer block did not land on its lane: %+v", appdb.Analyzer)
 	}
 
@@ -286,7 +286,7 @@ func TestAnAnalyzerRuleKeepsTheListenersOwnControls(t *testing.T) {
 		MaxCalls:      40,
 		Cache:         &daemon.AnalyzerCacheConfig{Size: 4096, TTLSec: 900},
 		// A level the rule also names, to prove the rule wins on the decision.
-		HighRisk: "warn",
+		HighRisk: daemon.RiskLevel{Action: "warn"},
 	}
 
 	composed, err := foldSidecarRules(cfg, nil, nil, analyzers)
@@ -313,8 +313,8 @@ func TestAnAnalyzerRuleKeepsTheListenersOwnControls(t *testing.T) {
 	}
 
 	// Replaced: the rule owns what is classified and what each verdict does.
-	if got.HighRisk != "block" || got.MediumRisk != "warn" {
-		t.Errorf("the rule's risk actions did not win: high=%q medium=%q", got.HighRisk, got.MediumRisk)
+	if got.HighRisk.Action != "block" || got.MediumRisk.Action != "warn" {
+		t.Errorf("the rule's risk actions did not win: high=%q medium=%q", got.HighRisk.Action, got.MediumRisk.Action)
 	}
 	if got.Trigger == nil || len(got.Trigger.Operations) != 2 {
 		t.Errorf("the rule's trigger did not land: %+v", got.Trigger)
@@ -324,7 +324,7 @@ func TestAnAnalyzerRuleKeepsTheListenersOwnControls(t *testing.T) {
 	}
 
 	// And the stored row is untouched, like every other composition.
-	if cfg.Listeners[0].Analyzer.HighRisk != "warn" {
+	if cfg.Listeners[0].Analyzer.HighRisk.Action != "warn" {
 		t.Error("composition wrote back into the stored listener block")
 	}
 }
@@ -402,7 +402,7 @@ func TestAnAnalyzerRuleRateLimitMergesFieldByField(t *testing.T) {
 func TestAComposedBlockTheSidecarRefusesIsReported(t *testing.T) {
 	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{{
 		Name:     "agents",
-		Analyzer: mergeAnalyzerBlock(&daemon.LaneAnalyzerConfig{ReviewMode: "return"}, daemon.LaneAnalyzerConfig{HighRisk: "block"}),
+		Analyzer: mergeAnalyzerBlock(&daemon.LaneAnalyzerConfig{ReviewMode: "return"}, daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "block"}}),
 	}}}
 	err := validateComposedAnalyzers(cfg)
 	if err == nil || !strings.Contains(err.Error(), "nothing on this lane would hold one") {
@@ -414,7 +414,7 @@ func TestAComposedBlockTheSidecarRefusesIsReported(t *testing.T) {
 // lane never reports; the sidecar refuses such a lane, so the plane does first.
 func TestSpendApprovalOnALaneThatCannotSettleIsReported(t *testing.T) {
 	block := func() *daemon.LaneAnalyzerConfig {
-		return &daemon.LaneAnalyzerConfig{HighRisk: "require_review", ApprovalRule: "dba",
+		return &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: "dba",
 			SpendApprovalOn: daemon.SpendOnAccepted}
 	}
 	pg := daemon.Config{Listeners: []daemon.ListenerConfig{{Name: "appdb", Protocol: "postgres", Analyzer: block()}}}
@@ -439,7 +439,7 @@ func TestAGatedExcludeOnlyTriggerIsReported(t *testing.T) {
 		OPA: &daemon.OPAConfig{URL: "http://opa:8181/v1/data/hoop", Gate: true},
 		Listeners: []daemon.ListenerConfig{{
 			Name: "api",
-			Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: "block", Trigger: &policy.AITrigger{
+			Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "block"}, Trigger: &policy.AITrigger{
 				Exclude: []policy.AITriggerItem{{Resources: []string{"/healthz"}}},
 			}},
 		}},

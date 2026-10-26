@@ -202,14 +202,40 @@ export const ANALYZER_ACTIONS = [
   { value: 'defer', label: 'Defer to Rego' },
 ]
 
-// The action that holds a statement for a human. It needs a second object
-// behind it (the rule naming who may release), which the form writes beside
-// it. Every protocol holds (EVL-312).
-export const REVIEW_ACTION = 'require_review'
+// The action that holds a statement for approval. `require_review` is the
+// older spelling of the same action; the daemon reads both.
+export const REVIEW_ACTION = 'require_approval'
+const HOLD_ACTIONS = new Set([REVIEW_ACTION, 'require_review'])
+export const isHoldAction = (action) => HOLD_ACTIONS.has(action)
 
 // analyzerActionsFor lists the level actions, the hold included.
 export function analyzerActionsFor() {
   return [...ANALYZER_ACTIONS, { value: REVIEW_ACTION, label: 'Hold for approval' }]
+}
+
+// Who decides a held statement of one risk level (ENG-680). A level object
+// with no approver uses the AI agent.
+export const APPROVER_AI = 'ai_agent'
+export const APPROVER_HUMAN = 'human'
+export const APPROVERS = [
+  { value: APPROVER_AI, label: 'AI agent' },
+  { value: APPROVER_HUMAN, label: 'Human' },
+]
+
+// readRiskLevel reads one level of a stored analyzer spec. A level is a bare
+// action string or an object {action, approver, approval_groups, prompt}.
+// `approver` is null for a bare hold: the listener's approval_rule decides it.
+export function readRiskLevel(level) {
+  if (level == null || level === '') return { action: '', approver: null, groups: [], prompt: '' }
+  if (typeof level === 'string') return { action: level, approver: null, groups: [], prompt: '' }
+  const action = level.action ?? ''
+  const hold = isHoldAction(action)
+  return {
+    action,
+    approver: hold ? (level.approver === APPROVER_HUMAN ? APPROVER_HUMAN : APPROVER_AI) : null,
+    groups: hold ? (level.approval_groups ?? []) : [],
+    prompt: hold ? (level.prompt ?? '') : '',
+  }
 }
 
 // How a held statement answers its client. Hold is the sidecar's default, so

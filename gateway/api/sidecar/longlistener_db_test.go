@@ -166,7 +166,8 @@ func bindEveryRuleKind(t *testing.T, sidecarID, listener, guardrailName, maskNam
 	require.NoError(t, err)
 	require.NoError(t, models.SetDataMaskingRuleListenersTx(models.DB, org, mask.Name, target))
 	analyzer := &models.AISessionAnalyzerRules{OrgID: org, Name: analyzerName, ConnectionNames: []string{},
-		SidecarSpec: json.RawMessage(`{"high":"block"}`),
+		// Holds in the bare form, under the listener's own approval_rule.
+		SidecarSpec: json.RawMessage(`{"high":"require_review"}`),
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
 			LowRisk:    &models.AISessionAnalyzerRiskTier{Action: models.AllowExecution},
 			MediumRisk: &models.AISessionAnalyzerRiskTier{Action: models.AllowExecution},

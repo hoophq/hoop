@@ -90,7 +90,27 @@ func (p *Provider) Name() string { return Name }
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
-	body, err := json.Marshal(BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, false))
+	resp, err := p.send(ctx, BuildRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, false))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return ParseResponse("analyzer/"+Name, resp)
+}
+
+// Decide implements analyzer.ToolCaller.
+func (p *Provider) Decide(ctx context.Context, systemPrompt, content string, tools []analyzer.ToolSpec) ([]analyzer.ToolCall, error) {
+	resp, err := p.send(ctx, BuildToolRequest(p.model, p.maxTokens, p.sampling, systemPrompt, content, tools, false))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return ParseToolCalls("analyzer/"+Name, resp)
+}
+
+// send posts one request body. The caller closes the response body.
+func (p *Provider) send(ctx context.Context, request Request) (*http.Response, error) {
+	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/anthropic: encoding request: %w", err)
 	}
@@ -107,9 +127,7 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/anthropic: %w", err)
 	}
-	defer resp.Body.Close()
-
-	return ParseResponse("analyzer/"+Name, resp)
+	return resp, nil
 }
 
 // --- wire format, shared with Vertex ---------------------------------------
@@ -161,8 +179,9 @@ type InputSchema struct {
 
 // Property is one schema field.
 type Property struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Type        string   `json:"type"`
+	Description string   `json:"description"`
+	Enum        []string `json:"enum,omitempty"`
 }
 
 // ToolChoice forces the model to call a tool.
@@ -181,26 +200,23 @@ const VertexAPIVersion = "vertex-2023-10-16"
 // one encoder serves both. The caller has already refused s.Seed, which this
 // API has no field for.
 func BuildRequest(model string, maxTokens int, s analyzer.Sampling, systemPrompt, content string, forVertex bool) Request {
-	specs := analyzer.ToolSpecs()
+	return BuildToolRequest(model, maxTokens, s, systemPrompt, content, analyzer.ToolSpecs(), forVertex)
+}
+
+// BuildToolRequest renders a request that offers tools and forces a call of
+// one of them. BuildRequest is this with the risk tools.
+func BuildToolRequest(model string, maxTokens int, s analyzer.Sampling, systemPrompt, content string,
+	specs []analyzer.ToolSpec, forVertex bool) Request {
 	tools := make([]Tool, 0, len(specs))
 	for _, s := range specs {
+		props := make(map[string]Property, len(s.Input.Properties))
+		for name, p := range s.Input.Properties {
+			props[name] = Property{Type: p.Type, Description: p.Description, Enum: p.Enum}
+		}
 		tools = append(tools, Tool{
 			Name:        s.Name,
 			Description: s.Description,
-			InputSchema: InputSchema{
-				Type: "object",
-				Properties: map[string]Property{
-					"title": {
-						Type:        "string",
-						Description: "Under 80 characters. Shown to the user when the statement is blocked. Never quote a value from the statement.",
-					},
-					"explanation": {
-						Type:        "string",
-						Description: "Why the statement carries this risk. Never quote a value from the statement.",
-					},
-				},
-				Required: []string{"title", "explanation"},
-			},
+			InputSchema: InputSchema{Type: "object", Properties: props, Required: requiredList(s.Input.Required)},
 		})
 	}
 
@@ -223,6 +239,15 @@ func BuildRequest(model string, maxTokens int, s analyzer.Sampling, systemPrompt
 		req.Model = model
 	}
 	return req
+}
+
+// requiredList never renders null: a schema with "required": null is not a
+// schema some providers accept.
+func requiredList(r []string) []string {
+	if r == nil {
+		return []string{}
+	}
+	return r
 }
 
 // response is the Messages API reply.
@@ -258,16 +283,9 @@ type contentBlock struct {
 // statement — and whatever it contained — into the relay's logs and into the
 // error an operator pastes into a ticket.
 func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, error) {
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, analyzer.ResponseError(provider, resp)
-	}
-
-	var out response
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
-		return nil, fmt.Errorf("%s: decoding response: %w", provider, err)
-	}
-	if out.Error != nil {
-		return nil, fmt.Errorf("%s: provider error: %s", provider, out.Error.Type)
+	out, err := decodeResponse(provider, resp)
+	if err != nil {
+		return nil, err
 	}
 
 	for _, block := range out.Content {
@@ -307,4 +325,42 @@ func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, erro
 	}
 	return nil, fmt.Errorf("%s: model called no risk tool (stop_reason %q)",
 		provider, out.StopReason)
+}
+
+// decodeResponse reads a 2xx reply, or reports the failure without the body.
+func decodeResponse(provider string, resp *http.Response) (response, error) {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return response{}, analyzer.ResponseError(provider, resp)
+	}
+	var out response
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return response{}, fmt.Errorf("%s: decoding response: %w", provider, err)
+	}
+	if out.Error != nil {
+		return response{}, fmt.Errorf("%s: provider error: %s", provider, out.Error.Type)
+	}
+	return out, nil
+}
+
+// ParseToolCalls returns every tool_use block of a reply, in order. A refusal
+// is an error, with or without calls; a reply with no call is not. Exported
+// so analyzer/vertex reuses it.
+func ParseToolCalls(provider string, resp *http.Response) ([]analyzer.ToolCall, error) {
+	out, err := decodeResponse(provider, resp)
+	if err != nil {
+		return nil, err
+	}
+	// A refusal wins over any call beside it: a tool call next to a
+	// refusal is not a decision.
+	if out.StopReason == "refusal" {
+		return nil, fmt.Errorf("%s: model refused to answer", provider)
+	}
+	var calls []analyzer.ToolCall
+	for _, block := range out.Content {
+		if block.Type != "tool_use" {
+			continue
+		}
+		calls = append(calls, analyzer.ToolCall{Name: block.Name, Args: block.Input})
+	}
+	return calls, nil
 }

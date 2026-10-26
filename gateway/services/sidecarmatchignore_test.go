@@ -41,7 +41,7 @@ func TestAComposedMatchIgnoreOnANonHTTPLaneIsReported(t *testing.T) {
 		Analyzer: &daemon.AnalyzerConfig{Provider: "anthropic", Model: "m"},
 		Listeners: []daemon.ListenerConfig{{
 			Name: "appdb", Protocol: "postgres",
-			Analyzer: mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{HighRisk: "require_review", ApprovalRule: "dba"}),
+			Analyzer: mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: "dba"}),
 		}},
 	}
 	err := validateComposedAnalyzers(cfg)
@@ -61,7 +61,7 @@ func TestSplitSidecarConfigurationMovesMatchIgnoreToTheRule(t *testing.T) {
 	ignore := restartIgnore("/apis/apps/v1/namespaces/*/deployments/*")
 	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{{
 		Name: "k8s", Protocol: "http",
-		Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: "require_review", ApprovalRule: "ops", MatchIgnore: ignore},
+		Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: "ops", MatchIgnore: ignore},
 	}}}
 
 	stripped, items, err := SplitSidecarConfiguration("edge", cfg, nil)

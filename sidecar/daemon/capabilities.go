@@ -389,6 +389,8 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 // and refuses the whole document over one, and the canonical form is what
 // every build reads. approval_mode that disagrees with review_mode is served
 // as written: normalize refuses it, and picking one here would hide that.
+// An object risk level that holds and names no approver is served with its
+// ai_agent default written, so the cap tag on approver catches it.
 func ServedForm(cfg Config) Config {
 	listeners := make([]ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
@@ -410,9 +412,9 @@ func ServedForm(cfg Config) Config {
 		if block.SpendApprovalOn == SpendOnForward {
 			block.SpendApprovalOn = ""
 		}
-		block.HighRisk = canonicalAction(block.HighRisk)
-		block.MediumRisk = canonicalAction(block.MediumRisk)
-		block.LowRisk = canonicalAction(block.LowRisk)
+		for _, lv := range block.levels() {
+			*lv.level = lv.level.canonical()
+		}
 		if !reflect.DeepEqual(block, *l.Analyzer) {
 			listeners[i].Analyzer = &block
 		}

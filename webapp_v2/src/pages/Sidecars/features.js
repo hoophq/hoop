@@ -1,3 +1,4 @@
+import { APPROVER_HUMAN, isHoldAction, readRiskLevel } from '@/pages/sidecarRuleVocabulary'
 import { FEATURES, FEATURE_ORDER } from './config'
 import {
   SOURCE_DISTRIBUTED,
@@ -34,6 +35,16 @@ const RISK_ACTIONS = {
   warn: 'warns',
   block: 'blocks',
   defer: 'reports',
+}
+
+// A level is a bare action or an object; a hold names its approver (ENG-680).
+// A bare hold is decided through the listener's approval rule.
+function riskDetail(value) {
+  const { action, approver, groups } = readRiskLevel(value)
+  if (!isHoldAction(action)) return RISK_ACTIONS[action] ?? action
+  if (!approver) return 'hold (approval rule)'
+  if (approver !== APPROVER_HUMAN) return 'hold (AI agent)'
+  return groups.length > 0 ? `hold (Human: ${groups.join(', ')})` : 'hold (Human: administrators)'
 }
 
 const MASK_STRATEGY_LABELS = {
@@ -102,8 +113,8 @@ function analyzerDetail(spec) {
     .join(', ')
   const excluded = exclude ? `${exclude} exclusion${exclude > 1 ? 's' : ''}` : null
   const risks = ['high', 'medium', 'low']
-    .filter((level) => spec[level])
-    .map((level) => `${level} ${RISK_ACTIONS[spec[level]] ?? spec[level]}`)
+    .filter((level) => readRiskLevel(spec[level]).action)
+    .map((level) => `${level}: ${riskDetail(spec[level])}`)
   const prompt = spec.prompt ? 'custom prompt' : null
   // An omitted trigger is not "nothing": declaring the analyzer is the opt-in.
   return [trigger || 'Every statement', excluded, ...risks, prompt].filter(Boolean).join(' · ')

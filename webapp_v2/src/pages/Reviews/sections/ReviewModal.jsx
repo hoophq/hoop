@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { Box, Group, Stack, Text } from '@mantine/core'
 import {
   BadgeCheck,
+  Bot,
   CalendarArrowUp,
   CircleCheckBig,
   CircleUser,
   Container,
+  Gauge,
   Hash,
   Hourglass,
   OctagonX,
@@ -30,9 +32,11 @@ import {
   canRevoke,
   decidedGroups,
   expiryLabel,
+  isAiReview,
   isSettled,
   isSidecarReview,
   reviewSource,
+  riskLevel,
   statusLabel,
 } from '../helpers'
 
@@ -172,6 +176,8 @@ export default function ReviewModal({
   const mayReject = canReject(review, user)
   const revocable = canRevoke(review)
   const expiry = expiryLabel(review)
+  const ai = isAiReview(review)
+  const risk = riskLevel(review)
 
   return (
     <Modal opened={opened} onClose={onClose} title="Approval Details" size="xl">
@@ -209,11 +215,27 @@ export default function ReviewModal({
             </DetailRow>
           )}
 
+          {risk && (
+            <DetailRow icon={Gauge} label="Risk level">
+              <Badge variant="light" color={risk.color} fullLabel>
+                {risk.label}
+              </Badge>
+            </DetailRow>
+          )}
+
           <DetailRow icon={CircleCheckBig} label="Approval">
             <Badge variant="light" color={status.color} fullLabel>
               {status.label}
             </Badge>
           </DetailRow>
+
+          {ai && (
+            <DetailRow icon={Bot} label="Decided by">
+              <Text size="sm" fw={500}>
+                AI agent
+              </Text>
+            </DetailRow>
+          )}
 
           {decided.length > 0 && (
             <Stack gap="md" ml={32}>
@@ -260,7 +282,19 @@ export default function ReviewModal({
           />
         </Stack>
 
-        {review.rejection_reason && (
+        {/* The AI agent's reject reason is also the rejection reason; show it once. */}
+        {ai && review.decision_reason && (
+          <Alert
+            color={review.status === STATUS.REJECTED ? 'red' : 'green'}
+            variant="light"
+            radius="md"
+            title="Decided by AI agent"
+          >
+            {review.decision_reason}
+          </Alert>
+        )}
+
+        {review.rejection_reason && !(ai && review.decision_reason) && (
           <Alert color="red" variant="light" radius="md" title="Rejection reason">
             {review.rejection_reason}
           </Alert>

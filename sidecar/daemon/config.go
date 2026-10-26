@@ -190,6 +190,11 @@ type Config struct {
 	// three have to report the same thing.
 	Deprecations []string `json:"-"`
 
+	// fileDeprecations are deprecations reported only when this document
+	// is a local file; see fileDeprecations. SetupWith adds them to
+	// Deprecations when the file is what runs.
+	fileDeprecations []string
+
 	// lic is the VERIFIED license resolveLicenseFor reached. Setup fills it,
 	// UseLicense sets it for a caller assembling a Config in Go. Not a
 	// config key: the file names a license and does not carry a verdict.
@@ -934,6 +939,7 @@ func (c *Config) normalize() error {
 			warnAIRules(where+": guardrails", lc.Guardrails.Rules, warn)
 			foldRuleApprovalActions(lc.Guardrails.Rules)
 		}
+		c.fileDeprecations = append(c.fileDeprecations, fileDeprecations(where, lc.Analyzer)...)
 		if err := foldApprovalSpellings(lc.Analyzer); err != nil {
 			conflict("%s: analyzer: %v", where, err)
 		}
@@ -950,12 +956,13 @@ func (c *Config) normalize() error {
 
 // foldApprovalSpellings folds the approval spellings of an analyzer block
 // onto the canonical review ones: approval_mode onto review_mode, and
-// require_approval onto require_review on every risk level.
+// require_approval onto require_review on every risk level. An object level
+// that holds and names no approver gets the ai_agent default written down.
 //
-// Aliases, not deprecations: the product calls the concept approval, and an
-// operator who writes it that way is not behind. No warning, then. The
-// canonical names stay because the plane serves them and every released
-// sidecar decodes them; after this, nothing reads the alias.
+// Aliases, not deprecations: the plane serves the canonical names and every
+// released sidecar decodes them, so a document the plane served is never
+// warned about. A local file that writes require_review is; see
+// fileDeprecations.
 //
 // Both keys set and equal is the same setting written twice, and loads.
 // Both set and different is refused, for the reason normalize gives; the
@@ -975,10 +982,34 @@ func foldApprovalSpellings(la *LaneAnalyzerConfig) error {
 		}
 		la.ApprovalMode = ""
 	}
-	la.HighRisk = canonicalAction(la.HighRisk)
-	la.MediumRisk = canonicalAction(la.MediumRisk)
-	la.LowRisk = canonicalAction(la.LowRisk)
+	for _, l := range la.levels() {
+		*l.level = l.level.canonical()
+	}
 	return nil
+}
+
+// fileDeprecations lists the deprecated spellings of an analyzer block that
+// only a local file is told about: the require_review spelling and the
+// listener approval_rule. The plane serves both to older builds itself, so
+// a served document must not warn. Read before foldApprovalSpellings.
+func fileDeprecations(where string, la *LaneAnalyzerConfig) []string {
+	if la == nil {
+		return nil
+	}
+	var out []string
+	for _, l := range la.levels() {
+		if analyzer.Action(l.level.Action) == analyzer.ActionRequireReview {
+			out = append(out, fmt.Sprintf("%s: analyzer: %s risk: require_review is deprecated; "+
+				"write require_approval", where, l.name))
+		}
+	}
+	if la.ApprovalRule != "" {
+		out = append(out, fmt.Sprintf("%s: analyzer: approval_rule is deprecated; write each held "+
+			"level as {action: require_approval, approver: human, approval_groups: [...]}. "+
+			"-migrate cannot convert it: the groups are in the control plane's rule %q",
+			where, la.ApprovalRule))
+	}
+	return out
 }
 
 // Canonicalize folds the approval spellings of one analyzer block, as
@@ -1966,22 +1997,8 @@ func analyzerDefers(la *LaneAnalyzerConfig) bool {
 	if la == nil {
 		return false
 	}
-	for _, raw := range [...]string{la.HighRisk, la.MediumRisk, la.LowRisk} {
-		if analyzer.Action(raw) == analyzer.ActionDefer {
-			return true
-		}
-	}
-	return false
-}
-
-// analyzerHolds reports whether a lane's analyzer block holds any risk level
-// for human approval: the require_review counterpart of analyzerDefers.
-func analyzerHolds(la *LaneAnalyzerConfig) bool {
-	if la == nil {
-		return false
-	}
-	for _, raw := range [...]string{la.HighRisk, la.MediumRisk, la.LowRisk} {
-		if analyzer.Action(raw).Canonical() == analyzer.ActionRequireReview {
+	for _, l := range la.levels() {
+		if analyzer.Action(l.level.Action) == analyzer.ActionDefer {
 			return true
 		}
 	}

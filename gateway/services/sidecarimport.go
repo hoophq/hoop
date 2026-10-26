@@ -265,7 +265,7 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 			ApprovalRule: base.ApprovalRule, ReviewMode: base.ReviewMode,
 			MatchIgnore: base.MatchIgnore,
 		}
-		if rule.Trigger == nil && rule.HighRisk == "" && rule.MediumRisk == "" && rule.LowRisk == "" &&
+		if rule.Trigger == nil && rule.HighRisk.IsZero() && rule.MediumRisk.IsZero() && rule.LowRisk.IsZero() &&
 			rule.Prompt == "" && rule.Message == "" {
 			continue
 		}
@@ -273,7 +273,7 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 		if err != nil {
 			return nil, err
 		}
-		if rule.ApprovalRule == "" && holds(rule) {
+		if rule.ApprovalRule == "" && AnalyzerBareHolds(&rule) {
 			rule.ApprovalRule = ruleName
 		}
 		spec, err := json.Marshal(rule)
@@ -284,7 +284,7 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 			Targets: []ImportedTarget{{Listener: l.Name}}})
 
 		base.Trigger = nil
-		base.HighRisk, base.MediumRisk, base.LowRisk = "", "", ""
+		base.HighRisk, base.MediumRisk, base.LowRisk = daemon.RiskLevel{}, daemon.RiskLevel{}, daemon.RiskLevel{}
 		base.Prompt, base.Message, base.ApprovalRule, base.ReviewMode = "", "", "", ""
 		base.MatchIgnore = nil
 		l.Analyzer = &base
@@ -292,9 +292,12 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 	return out, nil
 }
 
-func holds(b daemon.LaneAnalyzerConfig) bool {
-	for _, a := range []string{b.HighRisk, b.MediumRisk, b.LowRisk} {
-		if holdsAction(a) {
+// AnalyzerBareHolds reports a canonical block with a level held in the bare
+// form: the only form an approval_rule serves. Object levels name their own
+// approver.
+func AnalyzerBareHolds(b *daemon.LaneAnalyzerConfig) bool {
+	for _, l := range AnalyzerLevels(b) {
+		if bareHold(l.Level) {
 			return true
 		}
 	}

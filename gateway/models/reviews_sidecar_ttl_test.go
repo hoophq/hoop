@@ -87,8 +87,7 @@ func refile(t *testing.T, first *models.Review, statement string, now time.Time)
 }
 
 func liveReview(sc *models.Sidecar, statement string, now time.Time) (*models.Review, error) {
-	return models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", ttlRule,
-		models.HashStatement([]byte(statement)), now)
+	return models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", models.SidecarReviewKey{RuleName: ttlRule}, models.HashStatement([]byte(statement)), now)
 }
 
 // approved is the decision doIndividualReview hands the write.

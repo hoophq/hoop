@@ -748,6 +748,8 @@ example below. Every config written against the old reference needs a pass.
 | `audit.fail_closed: <x>` | `audit.fail_open: <the opposite of x>` | works, warns |
 | `pii` omitted | still omitted | the detector gains all 55 entity types |
 | `guardrails.rules[].type: ai_analysis` | the listener's own `analyzer` block | works, warns; see [Migrating from `type: ai_analysis` rules](#migrating-from-type-ai_analysis-rules) |
+| `analyzer.high: require_review` (any level) | `require_approval` | works; a local file warns |
+| `analyzer.approval_rule` | an object level with `approver: human` and `approval_groups` | works; a local file warns; `-migrate` names it |
 
 Three of those move traffic on the upgrade, and each one deserves a read
 before the restart:
@@ -1371,8 +1373,9 @@ runtime lets one file serve a deployment with OPA and a deployment without
 one. See [Guardrails and OPA](#guardrails-and-opa) for what the two phases
 send and what the gate may answer.
 
-**Holding a statement for a human.** The fourth action is `require_approval`:
-the statement is refused until a person approves it.
+**Holding a statement for approval.** The fourth action is `require_approval`:
+the statement is refused until it is approved. Each level names who approves
+it, as an object:
 
 ```yaml
 listeners:
@@ -1380,30 +1383,102 @@ listeners:
     # ...
     analyzer:
       trigger: {operations: [delete, update]}
-      high: require_approval
-      approval_rule: payments-approvers
+      high:
+        action: require_approval
+        approver: human
+        approval_groups: [payments-approvers]
+      medium:
+        action: require_approval
+        approver: ai_agent
+        prompt: Approve a write only when it names its rows by id.
+      low: allow
 ```
 
-`require_review` is the earlier spelling of `require_approval`, and still
-accepted: the sidecar folds one onto the other on load, and the control plane
-serves `require_review`, so a sidecar older than the new spelling still
-decodes it.
+A level is a bare action (`low: allow`) or an object with these keys:
 
-`approval_rule` names the control plane access request rule that decides who
-may approve. The rule holds the approver groups, the approval count and the
-force-approval list; the lane holds only its name, and the control plane
-authorizes each approval request against the config it stored for that sidecar.
+| Key | Meaning |
+|---|---|
+| `action` | `allow`, `warn`, `block`, `defer` or `require_approval` |
+| `approver` | `human` or `ai_agent`, for `require_approval`. Default `ai_agent` |
+| `approval_groups` | who may approve a `human` level. Empty: the administrators |
+| `prompt` | replaces the approval agent's instruction on an `ai_agent` level |
+
+An object level needs no approval rule. A `human` level files its approval
+request with the risk level, and the control plane authorizes it against the
+level's `approval_groups`. It needs a control plane, or a terminal (below).
+
+**The approval agent (`approver: ai_agent`).** The lane's own provider and
+model decide at once, with no wait and no poll. The call counts against
+`max_calls` and `rate_limit`. The agent reads the statement as the
+classification read it (`send` applies), the risk level and title, the
+listener, the protocol and the user, and it must call exactly one of two
+tools, `approve` or `reject`, each with a required `reason`. A reject denies,
+and the user reads the reason in the error. Anything else rejects with "the
+approval agent did not decide": no call, two calls, an unknown tool, a blank
+reason, a refusal, a timeout, a provider error, a spent budget or a reached
+rate limit. The audit record carries `approver`, `approval_decision` and
+`approval_reason`. With a control plane, the decision is filed as an approval
+request already decided; an approval runs only after the plane took it, and
+a rejection denies either way. Without one, the audit record alone keeps it.
+
+The default instruction, which `prompt` replaces:
+
+```text
+You are an approval agent for a production access proxy. A risk analyzer held
+this statement. You decide to approve it or reject it.
+...
+- You are not sure. When you are not sure, reject.
+```
+
+The full text is `analyzer.DefaultApprovalPrompt`. This suffix is always
+appended, and no config removes it:
+
+```text
+Report your decision by calling exactly one tool: approve or reject.
+Do not answer in prose.
+Put one short reason in the reason field. The user reads the reject reason.
+Do not quote a literal value from the statement, such as an ID, an email,
+a name or a token.
+```
+
+`review_mode`, `approval_mode`, `spend_approval_on` and `match_ignore` apply
+only where a level waits for a person; on a lane whose holds are all
+`ai_agent` they are refused, as on a lane that holds nothing.
+
+These load, and `-validate` and the start log warn that they do nothing:
+
+| Setting | Warning |
+|---|---|
+| `approval_groups` on an `ai_agent` level | nobody consults the groups |
+| `approver`, `approval_groups` or `prompt` on a level that does not hold | nothing is held |
+| `approver` other than `human` or `ai_agent` | ignored; the level uses `ai_agent` |
+| `prompt` on a `human` level | ignored |
+| `approval_rule` where every held level is an object | ignored |
+
+**The bare form (deprecated).** `high: require_approval` with a listener
+`approval_rule` holds for a person under that control plane access request
+rule, which carries the groups, the approval count and the force-approval
+list. It keeps working. A local file that uses `approval_rule`, or the
+earlier spelling `require_review`, gets a deprecation warning; a document
+the control plane served does not. `-migrate` writes `require_approval` and
+names each listener with an `approval_rule`, which it cannot convert: the
+groups are in the plane's rule. The plane serves `require_review`, and serves
+a sidecar that predates the object form (capability
+`analyzer_risk_level_object`) the bare form under a rule with the same groups;
+an `ai_agent` level, or human levels with different groups, cannot reach such
+a sidecar, and the plane names the release it needs.
 
 **Approving in the terminal.** A sidecar with no control plane, started with
 `hoop start sidecar` in a terminal (stdin and stdout both a TTY), files each
-approval request with the person running it: the TUI's Approvals section shows the
+approval request of a `human` or bare level with the person running it: the
+TUI's Approvals section shows the
 statement, the analyzer's risk level and explanation, and the decision is
 theirs. Such a lane needs no `approval_rule`, since there is no plane to hold
 one. The same rules hold as on the plane: an approval releases one
 statement, a resend of the same bytes answers from the same approval
 request, and an approval request nobody decided expires after the 30-minute
 wait. A control plane,
-when one is configured, always wins: its `approval_rule` decides, and the
+when one is configured, always wins: its approvers decide, and the
 terminal never releases a statement the plane governs. An embedder offers the
 same with `daemon.WithLocalReviewer`.
 

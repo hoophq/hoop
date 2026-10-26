@@ -53,7 +53,7 @@ func sidecarWithListener(listenerName, ruleName string) *models.Sidecar {
 	sc := &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "payments-sidecar"}
 	listener := daemon.ListenerConfig{Name: listenerName}
 	if ruleName != "" {
-		listener.Analyzer = &daemon.LaneAnalyzerConfig{ApprovalRule: ruleName}
+		listener.Analyzer = &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: ruleName}
 	}
 	sc.Configuration = models.SidecarConfiguration{Listeners: []daemon.ListenerConfig{listener}}
 	return sc
@@ -78,7 +78,7 @@ func TestNewSidecarReviewCarriesTheWholePolicy(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 
 	assert.NotNil(t, rev.MinApprovals, "no minimum means every group must approve")
 	assert.Equal(t, 1, *rev.MinApprovals, "the rule's minimum, not a fixed one")
@@ -106,7 +106,7 @@ func TestNewSidecarReviewNamesTheRuleSoTheMinimumIsRead(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 
 	assert.NotNil(t, rev.AccessRequestRuleName,
 		"without the rule name the review needs every group and ignores its force approval list")
@@ -118,7 +118,7 @@ func TestNewSidecarReviewCarriesTheStatementHash(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 
 	assert.True(t, rev.StatementHash.Valid, "a NULL hash is excluded from the unique index")
 	assert.Equal(t, testStatementHash, rev.StatementHash.String)
@@ -217,7 +217,7 @@ func sidecarWithListeners(listeners ...daemon.ListenerConfig) *models.Sidecar {
 func lane(name, ruleName string) daemon.ListenerConfig {
 	return daemon.ListenerConfig{
 		Name:     name,
-		Analyzer: &daemon.LaneAnalyzerConfig{ApprovalRule: ruleName},
+		Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: ruleName},
 	}
 }
 
@@ -237,6 +237,26 @@ func TestListenerNamesApprovalRuleFailsClosedOnDuplicateNames(t *testing.T) {
 	sc = sidecarWithListeners(lane("appdb", "lax-approvers"), lane("reporting", "strict-approvers"))
 	assert.True(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "appdb", "lax-approvers"))
 	assert.True(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "reporting", "strict-approvers"))
+}
+
+// approval_rule releases only a bare hold. Beside object levels the sidecar
+// ignores it, so a filing under it must not let its groups release a level
+// that names other people or the approval agent.
+func TestAnIgnoredApprovalRuleAuthorizesNothing(t *testing.T) {
+	block := func(high, medium daemon.RiskLevel) []daemon.ListenerConfig {
+		return []daemon.ListenerConfig{{Name: "appdb", Analyzer: &daemon.LaneAnalyzerConfig{
+			HighRisk: high, MediumRisk: medium, ApprovalRule: "payments-approvers"}}}
+	}
+	human := daemon.RiskLevel{Action: "require_approval", Approver: "human", ApprovalGroups: []string{"dba"}}
+	agent := daemon.RiskLevel{Action: "require_approval", Approver: "ai_agent"}
+	warn := daemon.RiskLevel{Action: "warn"}
+	bare := daemon.RiskLevel{Action: "require_approval"}
+
+	assert.False(t, listenerNamesApprovalRule(block(human, warn), "appdb", "payments-approvers"), "human object level")
+	assert.False(t, listenerNamesApprovalRule(block(agent, warn), "appdb", "payments-approvers"), "ai_agent object level")
+	assert.False(t, listenerNamesApprovalRule(block(warn, warn), "appdb", "payments-approvers"), "no level holds")
+	assert.True(t, listenerNamesApprovalRule(block(agent, bare), "appdb", "payments-approvers"),
+		"a bare hold beside an object level still files under the rule")
 }
 
 // The control plane stores a sidecar rule without checking these fields, so a
@@ -330,7 +350,7 @@ func TestNewSidecarReviewSnapshotsTheTTLs(t *testing.T) {
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 
 	rule := ruleWithTTLs(ptr.Int(900), ptr.Int(600))
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), now)
 	require.NotNil(t, rev.ExpiresAt)
 	assert.Equal(t, now.Add(15*time.Minute), *rev.ExpiresAt, "the decision deadline counts from filing")
 	require.NotNil(t, rev.ApprovalTTLSec, "the approval clock starts at the approval, so the limit is kept")
@@ -340,12 +360,12 @@ func TestNewSidecarReviewSnapshotsTheTTLs(t *testing.T) {
 	assert.Equal(t, 600, *rev.ApprovalTTLSec, "a copy, not the rule's pointer")
 
 	rule = ruleWithTTLs(nil, ptr.Int(600))
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), now)
 	assert.Nil(t, rev.ExpiresAt, "no pending limit is no decision deadline")
 	require.NotNil(t, rev.ApprovalTTLSec)
 
 	rule = approvalRule()
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), now)
 	assert.Nil(t, rev.ExpiresAt)
 	assert.Nil(t, rev.ApprovalTTLSec)
 }
@@ -557,6 +577,7 @@ func TestToSidecarReviewStatusOmitsStatementAndReviewers(t *testing.T) {
 		"status": "REJECTED",
 		"listener_name": "appdb",
 		"approval_rule": "payments-approvers",
+		"approver_type": "human",
 		"created_at": "0001-01-01T00:00:00Z",
 		"decided_at": "2026-09-28T12:00:00Z",
 		"rejection_reason": "not now"
@@ -671,7 +692,7 @@ func TestReviewDecidedAt(t *testing.T) {
 func TestNewSlackReviewRequest(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 	statement := "DELETE FROM users WHERE id = 42;"
 
 	req := newSlackReviewRequest(sc, rev, "appdb", statement)
@@ -704,7 +725,7 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	assert.Nil(t, req.ExpiresAt, "a rule with no limit shows no deadline")
 
 	rule = ruleWithTTLs(ptr.Int(900), nil)
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 	req = newSlackReviewRequest(sc, rev, "appdb", statement)
 	require.NotNil(t, req.ExpiresAt, "the approvers see when the review expires")
 	assert.Equal(t, *rev.ExpiresAt, *req.ExpiresAt)

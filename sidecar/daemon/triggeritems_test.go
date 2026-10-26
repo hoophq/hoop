@@ -31,7 +31,7 @@ func TestTriggerItemsDecodeStrictly(t *testing.T) {
 func TestExcludeOnlyClassifiesEverythingElse(t *testing.T) {
 	rec := &recordingProvider{}
 	deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: rec}
-	la := &LaneAnalyzerConfig{HighRisk: "block", Trigger: &policy.AITrigger{
+	la := &LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "block"}, Trigger: &policy.AITrigger{
 		Exclude: []policy.AITriggerItem{{Tables: []string{"audit_log"}}},
 	}}
 	ev, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)

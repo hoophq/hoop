@@ -269,7 +269,7 @@ var _ = register(Check{
 		}
 		cfg, _ := rvHandshake(c, f.sc.Token)
 		lane := rvServedLane(c, cfg, rvLane)
-		if lane.Analyzer == nil || lane.Analyzer.ApprovalRule != f.rule || lane.Analyzer.HighRisk != "require_review" {
+		if lane.Analyzer == nil || lane.Analyzer.ApprovalRule != f.rule || lane.Analyzer.HighRisk.Action != "require_review" {
 			c.Fatalf("served %s analyzer = %+v, want high=require_review approval_rule=%q", rvLane, lane.Analyzer, f.rule)
 		}
 		if cfg.Analyzer == nil || cfg.Analyzer.Provider != "anthropic" {
@@ -822,7 +822,7 @@ var _ = register(Check{
 		cfg, _ := rvHandshake(c, sc.Token)
 		lane := rvServedLane(c, cfg, rvLane)
 		a := lane.Analyzer
-		if a == nil || a.HighRisk != "block" || a.MediumRisk != "warn" || a.Prompt != prompt ||
+		if a == nil || a.HighRisk.Action != "block" || a.MediumRisk.Action != "warn" || a.Prompt != prompt ||
 			a.Trigger == nil || len(a.Trigger.Operations) != 2 {
 			c.Fatalf("served %s analyzer = %+v, want the bound rule's trigger, actions and prompt", rvLane, a)
 		}
@@ -858,7 +858,7 @@ var _ = register(Check{
 
 		cfg, rev := rvHandshake(c, sc.Token)
 		lane := rvServedLane(c, cfg, rvLane)
-		if lane.Analyzer == nil || lane.Analyzer.ApprovalRule != name || lane.Analyzer.HighRisk != "require_review" {
+		if lane.Analyzer == nil || lane.Analyzer.ApprovalRule != name || lane.Analyzer.HighRisk.Action != "require_review" {
 			c.Fatalf("served %s analyzer = %+v, want the hold under %q", rvLane, lane.Analyzer, name)
 		}
 		// Authorized by the COMPOSED document: the stored listener names no rule.

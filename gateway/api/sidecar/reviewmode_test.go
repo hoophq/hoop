@@ -50,7 +50,7 @@ func handshake(t *testing.T, sc *models.Sidecar, capabilities string) *httptest.
 func TestAHoldLaneIsServedWithoutTheReviewModeKey(t *testing.T) {
 	stored := models.SidecarConfiguration(daemon.Config{Listeners: []daemon.ListenerConfig{{
 		Name:     "appdb",
-		Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: "require_review", ReviewMode: analyzer.ReviewHold},
+		Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ReviewMode: analyzer.ReviewHold},
 	}}})
 	raw, err := json.Marshal(servedConfig(stored, nil))
 	require.NoError(t, err)

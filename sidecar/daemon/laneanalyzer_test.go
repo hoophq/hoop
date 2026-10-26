@@ -19,7 +19,7 @@ func laneBlock() *LaneAnalyzerConfig {
 		Trigger: &policy.AITrigger{
 			Operations: []inspect.Operation{inspect.OpDelete},
 		},
-		HighRisk: "block",
+		HighRisk: RiskLevel{Action: "block"},
 	}
 }
 
@@ -36,7 +36,7 @@ func blockLane(la *LaneAnalyzerConfig) *Config {
 // removes exactly one piece from.
 func holdingLane() *Config {
 	la := laneBlock()
-	la.HighRisk = "require_review"
+	la.HighRisk = RiskLevel{Action: "require_review"}
 	la.ApprovalRule = "payments-approvers"
 	cfg := blockLane(la)
 	cfg.ControlPlaneURL = "https://cp.example.com"
@@ -56,7 +56,7 @@ func TestLaneAnalyzerBlockIsAccepted(t *testing.T) {
 // difference is who spends the money.
 func TestOmittedTriggerClassifiesEverythingUnlessGated(t *testing.T) {
 	build := func(gate bool) error {
-		cfg := blockLane(&LaneAnalyzerConfig{HighRisk: "block"})
+		cfg := blockLane(&LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "block"}})
 		if gate {
 			cfg.Listeners[0].OPA = &OPAConfig{
 				URL: "http://opa:8181/v1/data/hoop", Gate: true,
@@ -87,7 +87,7 @@ func TestOmittedTriggerClassifiesEverythingUnlessGated(t *testing.T) {
 		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"},
 		provider: rec,
 	}
-	ungated, err := buildLaneAnalyzer("appdb", &LaneAnalyzerConfig{HighRisk: "block"},
+	ungated, err := buildLaneAnalyzer("appdb", &LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "block"}},
 		deps, false, false, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
@@ -98,7 +98,7 @@ func TestOmittedTriggerClassifiesEverythingUnlessGated(t *testing.T) {
 			"an omitted trigger classifies everything", calls)
 	}
 
-	gated, err := buildLaneAnalyzer("payments", &LaneAnalyzerConfig{HighRisk: "block"},
+	gated, err := buildLaneAnalyzer("payments", &LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "block"}},
 		deps, true, true, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
@@ -139,7 +139,7 @@ func TestLaneAnalyzerActionVocabulary(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			la := laneBlock()
-			la.HighRisk = tc.action
+			la.HighRisk = RiskLevel{Action: tc.action}
 			err := blockLane(la).Validate()
 			if err == nil {
 				t.Fatalf("action %q was accepted", tc.action)
@@ -170,7 +170,7 @@ func TestLaneAnalyzerNegativeNumericsAreRefused(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			la := laneBlock()
 			base := tc.la
-			base.Trigger, base.HighRisk = la.Trigger, la.HighRisk
+			base.Trigger, base.HighRisk.Action = la.Trigger, la.HighRisk.Action
 			err := blockLane(&base).Validate()
 			if err == nil {
 				t.Fatalf("a negative %s was accepted", tc.name)
@@ -354,7 +354,7 @@ func TestLaneRateLimitMergesAndItsBucketKeysOnTheLane(t *testing.T) {
 // fills it.
 func TestLaneAnalyzerDeferMakesTheLaneTwoPhase(t *testing.T) {
 	la := laneBlock()
-	la.HighRisk = "defer"
+	la.HighRisk = RiskLevel{Action: "defer"}
 	s := laneStack{la: la, opa: &OPAConfig{URL: "http://opa:8181/v1/data/hoop"}}
 	pol, err := buildLane(s, nil, stubDeps())
 	if err != nil {
@@ -371,7 +371,7 @@ func TestLaneAnalyzerDeferMakesTheLaneTwoPhase(t *testing.T) {
 // the same startup note a deferring local rule gets.
 func TestLaneAnalyzerDeferWithoutOPALeavesANote(t *testing.T) {
 	la := laneBlock()
-	la.HighRisk = "defer"
+	la.HighRisk = RiskLevel{Action: "defer"}
 	lanes, err := Validate(blockLane(la), nil)
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -461,7 +461,7 @@ func TestSSHAnalyzerTriggerOnAnUnclassifiedOperationIsRefused(t *testing.T) {
 				SSH: &SSHConfig{HostKey: hostKey, TrustedCA: trustedCA},
 				Analyzer: &LaneAnalyzerConfig{
 					Trigger:  &policy.AITrigger{Operations: ops},
-					HighRisk: "block",
+					HighRisk: RiskLevel{Action: "block"},
 				},
 			}},
 		}
@@ -550,7 +550,7 @@ func TestLaneAnalyzerBlockIsInsideTheReloadBoundary(t *testing.T) {
 		name string
 		edit func(*LaneAnalyzerConfig)
 	}{
-		{"risk action", func(la *LaneAnalyzerConfig) { la.HighRisk = "warn" }},
+		{"risk action", func(la *LaneAnalyzerConfig) { la.HighRisk = RiskLevel{Action: "warn"} }},
 		{"approval_rule", func(la *LaneAnalyzerConfig) { la.ApprovalRule = "payments-approvers" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -608,7 +608,7 @@ func TestApprovalRuleNeedsARiskLevelThatHolds(t *testing.T) {
 			name: "blank name",
 			la: func() *LaneAnalyzerConfig {
 				la := laneBlock()
-				la.HighRisk = "require_review"
+				la.HighRisk = RiskLevel{Action: "require_review"}
 				la.ApprovalRule = "   "
 				return la
 			},

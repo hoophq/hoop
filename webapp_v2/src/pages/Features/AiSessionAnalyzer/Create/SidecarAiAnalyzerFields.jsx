@@ -1,10 +1,11 @@
-import { Stack } from '@mantine/core'
+import { Box, Input, Paper, Stack, Text } from '@mantine/core'
 import { Info } from 'lucide-react'
 import Alert from '@/components/Alert'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
 import SectionRow from '@/components/SectionRow'
+import SegmentedControl from '@/components/SegmentedControl'
 import Select from '@/components/Select'
 import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import TagsInput from '@/components/TagsInput'
@@ -12,7 +13,15 @@ import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
 import { analyzerBlocked } from '@/pages/Sidecars/config'
-import { REVIEW_MODE_HOLD, REVIEW_MODES } from '@/pages/sidecarRuleVocabulary'
+import {
+  APPROVER_AI,
+  APPROVER_HUMAN,
+  APPROVERS,
+  REVIEW_MODE_HOLD,
+  REVIEW_MODES,
+  isHoldAction,
+} from '@/pages/sidecarRuleVocabulary'
+import { APPROVER_RULE } from './useSidecarAiAnalyzerEditor'
 import TriggerItemsInput from './sections/TriggerItemsInput'
 
 // Provider, model and credential are not here: they live in the sidecar's own
@@ -25,6 +34,54 @@ const LEVELS = [
   ['low', 'Low risk'],
 ]
 
+// Who approves one level's hold: an AI agent with an optional prompt, or the
+// members of some groups. A bare hold from an imported file names its rule.
+function LevelApprover({ approval, approvalRule, groupOptions, onChange }) {
+  if (approval.approver === APPROVER_RULE) {
+    return (
+      <Text size="sm" c="dimmed">
+        {`The approval rule ${approvalRule} decides who approves.`}
+      </Text>
+    )
+  }
+  return (
+    <Stack gap="sm">
+      <Input.Wrapper label="Approver">
+        <Box mt={4}>
+          <SegmentedControl
+            w="fit-content"
+            data={APPROVERS}
+            value={approval.approver}
+            onChange={(v) => onChange({ approver: v })}
+          />
+        </Box>
+      </Input.Wrapper>
+      {approval.approver === APPROVER_AI && (
+        <Textarea
+          label="Prompt (optional)"
+          placeholder="Instructions for the approval agent. Empty uses the default prompt."
+          minRows={3}
+          maxRows={8}
+          value={approval.prompt}
+          onChange={(e) => onChange({ prompt: e.currentTarget.value })}
+        />
+      )}
+      {approval.approver === APPROVER_HUMAN && (
+        <MultiSelect
+          label="Approval groups"
+          description="Groups whose members may approve. Empty leaves it to the administrators."
+          placeholder="Select groups"
+          searchable
+          nothingFoundMessage="No user groups defined yet."
+          data={groupOptions}
+          value={approval.groups}
+          onChange={(v) => onChange({ groups: v })}
+        />
+      )}
+    </Stack>
+  )
+}
+
 export default function SidecarAiAnalyzerFields({ editor }) {
   const {
     isEdit,
@@ -36,15 +93,15 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     setTargets,
     form,
     set,
-    reviewers,
-    setReviewers,
-    reviewerOptions,
+    setLevelAction,
+    setApproval,
+    groupOptionsFor,
     pendingMinutes,
     editPendingMinutes,
     approvalMinutes,
     editApprovalMinutes,
-    holds,
-    ownHold,
+    waits,
+    humanHold,
     isHTTP,
     operations,
     actions,
@@ -156,20 +213,31 @@ export default function SidecarAiAnalyzerFields({ editor }) {
 
       <SectionRow
         title="What happens per risk level"
-        description="A level you leave unset allows. Hold for approval waits up to 30 minutes for a decision, unless a time limit ends it sooner; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
+        description="A level you leave unset allows. Hold for approval asks the AI agent at once, or waits up to 30 minutes for a person to decide, unless a time limit ends it sooner; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
       >
         <Stack gap="md">
           {LEVELS.map(([level, label]) => (
-            <Select
-              key={level}
-              label={label}
-              data={actions}
-              value={form[level]}
-              onChange={(v) => set({ [level]: v ?? '' })}
-              allowDeselect={false}
-            />
+            <Stack key={level} gap="sm">
+              <Select
+                label={label}
+                data={actions}
+                value={form[level]}
+                onChange={(v) => setLevelAction(level, v ?? '')}
+                allowDeselect={false}
+              />
+              {isHoldAction(form[level]) && (
+                <Paper withBorder p="sm" radius="md">
+                  <LevelApprover
+                    approval={form.approval[level]}
+                    approvalRule={form.approval_rule}
+                    groupOptions={groupOptionsFor(level)}
+                    onChange={(patch) => setApproval(level, patch)}
+                  />
+                </Paper>
+              )}
+            </Stack>
           ))}
-          {holds && (
+          {waits && (
             <Select
               label="While held for approval"
               description="Return denies the statement at once with the approval id; after approval, the client must send the identical statement again. A client can also ask for either mode itself."
@@ -179,18 +247,8 @@ export default function SidecarAiAnalyzerFields({ editor }) {
               allowDeselect={false}
             />
           )}
-          {ownHold && (
+          {humanHold && (
             <>
-              <MultiSelect
-                label="Approvers"
-                description="Groups whose members may approve. Empty leaves it to the administrators."
-                placeholder="Select groups"
-                searchable
-                nothingFoundMessage="No user groups defined yet."
-                data={reviewerOptions}
-                value={reviewers}
-                onChange={setReviewers}
-              />
               <NumberInput
                 label="Time to decide (minutes, optional)"
                 description="An approval request nobody decides in this time expires; the statement is not released."
