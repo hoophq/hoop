@@ -84,16 +84,13 @@ func normalizeUserCode(raw string) string {
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		openapi.SidecarLoginRequest	true	"The request body resource"
+//	@Param			hoop-sidecar-token	header		string						true	"A token the sidecar made for itself: hsc_ and at least 32 random bytes"
+//	@Param			request				body		openapi.SidecarLoginRequest	true	"The request body resource"
 //	@Success		201		{object}	openapi.SidecarLoginResponse
 //	@Failure		400,409,422	{object}	openapi.HTTPError
-//	@Failure		429,503		{object}	openapi.HTTPError
+//	@Failure		429,500,503	{object}	openapi.HTTPError
 //	@Router			/sidecars/login [post]
 func StartLogin(c *gin.Context) {
-	if !loginStartLimiter.allow(loginStartKey) {
-		c.JSON(http.StatusTooManyRequests, gin.H{"message": "too many sidecar logins right now; wait a minute and try again"})
-		return
-	}
 	token := c.GetHeader(apiroutes.SidecarTokenHeader)
 	if !strings.HasPrefix(token, "hsc_") || len(token) < minSidecarTokenLen {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "send a sidecar token made with at least 32 random bytes in the " +
@@ -107,6 +104,11 @@ func StartLogin(c *gin.Context) {
 	}
 	if msg := checkSidecarName(req.Name); msg != "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": msg})
+		return
+	}
+	// Spent only by a well-formed request: a malformed one costs nothing.
+	if !loginStartLimiter.allow(loginStartKey) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"message": "too many sidecar logins right now; wait a minute and try again"})
 		return
 	}
 
@@ -191,8 +193,10 @@ func webAppURL(path string) string {
 //	@Description	Answers 200 once an admin approved the login, 428 while it waits, 403 when denied and 410 when it expired or is unknown. Send the same hoop-sidecar-token header as the start.
 //	@Tags			Sidecars
 //	@Produce		json
-//	@Success		200			{object}	openapi.SidecarLoginStatus
-//	@Failure		403,410,428	{object}	openapi.SidecarLoginStatus
+//	@Param			hoop-sidecar-token	header		string	true	"The token sent to the start"
+//	@Success		200					{object}	openapi.SidecarLoginStatus
+//	@Failure		403,410,428			{object}	openapi.SidecarLoginStatus
+//	@Failure		500					{object}	openapi.HTTPError
 //	@Router			/sidecars/login/poll [post]
 func PollLogin(c *gin.Context) {
 	token := c.GetHeader(apiroutes.SidecarTokenHeader)
@@ -236,7 +240,7 @@ func PollLogin(c *gin.Context) {
 //	@Produce		json
 //	@Param			code	path		string	true	"The user code"
 //	@Success		200		{object}	openapi.SidecarLoginDetails
-//	@Failure		404,410,429	{object}	openapi.HTTPError
+//	@Failure		404,410,429,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/login/{code} [get]
 func GetLogin(c *gin.Context) {
 	if tooManyCodeRequests(c, storagev2.ParseContext(c).UserID) {
@@ -322,7 +326,7 @@ func answerCodeMiss(c *gin.Context, status int, message string) {
 //	@Param			request		body		openapi.SidecarLoginApproveRequest	false	"The request body resource"
 //	@Success		201			{object}	openapi.SidecarResponse
 //	@Failure		400,403,404	{object}	openapi.HTTPError
-//	@Failure		409,410,422,429	{object}	openapi.HTTPError
+//	@Failure		409,410,422,429,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/login/{code}/approve [post]
 func ApproveLogin(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -384,7 +388,7 @@ func ApproveLogin(c *gin.Context) {
 //	@Tags			Sidecars
 //	@Param			code	path	string	true	"The user code"
 //	@Success		204
-//	@Failure		404,410,429	{object}	openapi.HTTPError
+//	@Failure		404,410,429,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/login/{code}/deny [post]
 func DenyLogin(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)

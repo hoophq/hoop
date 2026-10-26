@@ -285,6 +285,10 @@ func TestSidecarLoginRefusesATokenASidecarHolds(t *testing.T) {
 
 func TestSidecarLoginIsRateLimited(t *testing.T) {
 	orgID := startLoginDB(t)
+	// Malformed starts spend nothing: they cannot use up the plane budget.
+	for i := 0; i < 20; i++ {
+		require.Equal(t, http.StatusBadRequest, callStartLogin(t, "hsc_short", "laptop").Code)
+	}
 	var last int
 	for i := 0; i < 6; i++ {
 		last = callStartLogin(t, testSidecarToken(t), "laptop").Code

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -114,6 +115,58 @@ func TestATokenAloneGoesToTheHostedPlane(t *testing.T) {
 	}
 	if got := os.Getenv("HOOP_CONTROL_PLANE_URL"); got != "https://cp.example.com" {
 		t.Fatalf("the Enterprise plane became %q", got)
+	}
+}
+
+// bareRunWith resolves a bare run against a state dir that holds logins.
+func bareRunWith(t *testing.T, logins ...savedSidecarLogin) (*savedSidecarLogin, error) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv(SidecarStateDirEnv, dir)
+	t.Setenv("HOOP_CONTROL_PLANE_URL", "")
+	t.Setenv("HOOP_SIDECAR_TOKEN", "")
+	t.Setenv("HOOP_SIDECAR_IDENTITY_TYPE", "")
+	t.Setenv("HOOP_LICENSE", "")
+	defer func(c, tok string) { sidecarConfigFlag, sidecarTokenFlag = c, tok }(sidecarConfigFlag, sidecarTokenFlag)
+	sidecarConfigFlag = ""
+	for _, l := range logins {
+		if _, err := saveSidecarLogin(dir, l); err != nil {
+			t.Fatal(err)
+		}
+	}
+	login, _, choose, err := resolveSidecarLogin(startSidecarCmd, nil, true)
+	if choose {
+		t.Fatal("a bare run with a saved login asked to choose a plane")
+	}
+	return login, err
+}
+
+// A bare run that names no plane uses the one login saved here, even when it
+// is an Enterprise plane's.
+func TestABareRunUsesTheOnlySavedEnterpriseLogin(t *testing.T) {
+	login, err := bareRunWith(t, savedSidecarLogin{URL: "https://cp.example.com", Token: "hsc_enterprise", Name: "edge"})
+	if err != nil || login == nil || login.Token != "hsc_enterprise" {
+		t.Fatalf("login=%+v err=%v; want the Enterprise login", login, err)
+	}
+	if got := os.Getenv("HOOP_CONTROL_PLANE_URL"); got != "https://cp.example.com" {
+		t.Fatalf("the plane is %q, want the saved Enterprise one", got)
+	}
+}
+
+// The file a bare run boots again now holds a license: the run is licensed
+// and runs that file on its own, without the saved token.
+func TestABareRunWhoseFileGainedALicenseRunsItAlone(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "sidecar.yaml")
+	if err := os.WriteFile(cfg, []byte("license: lic-test\nlisteners:\n  - name: db\n    protocol: postgres\n"+
+		"    listen: 127.0.0.1:15432\n    upstream: 127.0.0.1:5432\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	login, err := bareRunWith(t, savedSidecarLogin{URL: DefaultSidecarControlPlaneURL, Token: "hsc_free", Config: cfg})
+	if err != nil || login != nil {
+		t.Fatalf("login=%+v err=%v; want no login", login, err)
+	}
+	if sidecarTokenFlag != "" {
+		t.Fatal("the saved token was injected into a licensed run")
 	}
 }
 

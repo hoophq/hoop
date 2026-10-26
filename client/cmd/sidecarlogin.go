@@ -106,6 +106,16 @@ func loadSidecarLogin(dir, planeURL string) (*savedSidecarLogin, error) {
 	return &s, nil
 }
 
+// onlySidecarLogin returns the login saved here when there is exactly one,
+// else nil: with two, which plane to use is the person's choice.
+func onlySidecarLogin(dir string) (*savedSidecarLogin, error) {
+	logins, err := listSidecarLogins(dir)
+	if err != nil || len(logins) != 1 || logins[0].Token == "" {
+		return nil, err
+	}
+	return &logins[0], nil
+}
+
 // listSidecarLogins returns every saved login, for status.
 func listSidecarLogins(dir string) ([]savedSidecarLogin, error) {
 	creds, err := readSidecarCredentials(dir)
@@ -205,9 +215,14 @@ func newSidecarToken() (string, error) {
 var sidecarNameUnsafe = regexp.MustCompile(`[^a-z0-9-]+`)
 
 // defaultSidecarName is the name a login asks for: this host's name in the
-// plane's resource-name alphabet. The approving admin can change it.
-func defaultSidecarName() string {
-	host, _ := os.Hostname()
+// plane's resource-name alphabet. The approving admin can change it. A host
+// name the system cannot give is said on out, and the name is "sidecar".
+func defaultSidecarName(out io.Writer) string {
+	host, err := os.Hostname()
+	if err != nil {
+		fmt.Fprintf(out, "Could not read this machine's name (%v); the sidecar asks to be named \"sidecar\". "+
+			"Rename it when you approve it.\n", err)
+	}
 	return sidecarNameFromHost(host)
 }
 
@@ -399,8 +414,16 @@ func (l *sidecarLoginer) post(ctx context.Context, url, token string, body []byt
 		return 0, nil, fmt.Errorf("the control plane at %s is unreachable: %w", l.planeURL, err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	_ = json.Unmarshal(raw, into)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed reading the answer of the control plane at %s: %w", l.planeURL, err)
+	}
+	// A success must decode: empty fields would read as a login. An error
+	// answer is decoded when it can be; its message comes from raw.
+	if err := json.Unmarshal(raw, into); err != nil && resp.StatusCode/100 == 2 {
+		return 0, nil, fmt.Errorf("the control plane at %s answered %d with a body that is not a sidecar login: %w",
+			l.planeURL, resp.StatusCode, err)
+	}
 	return resp.StatusCode, raw, nil
 }
 
@@ -475,7 +498,8 @@ func newScreenLogin(planeURL string) sidecartui.ManagedLogin {
 	if planeURL == "" {
 		return nil
 	}
-	return &screenLogin{l: &sidecarLoginer{planeURL: planeURL, name: defaultSidecarName(), out: io.Discard,
+	// The approval page shows the name and lets the admin change it.
+	return &screenLogin{l: &sidecarLoginer{planeURL: planeURL, name: defaultSidecarName(io.Discard), out: io.Discard,
 		client: sidecarLoginHTTPClient(), minInterval: time.Second}}
 }
 

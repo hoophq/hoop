@@ -11165,6 +11165,13 @@ const docTemplate = `{
                 "summary": "Start a sidecar login",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "A token the sidecar made for itself: hsc_ and at least 32 random bytes",
+                        "name": "hoop-sidecar-token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
                         "description": "The request body resource",
                         "name": "request",
                         "in": "body",
@@ -11205,6 +11212,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
@@ -11224,6 +11237,15 @@ const docTemplate = `{
                     "Sidecars"
                 ],
                 "summary": "Poll a sidecar login",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The token sent to the start",
+                        "name": "hoop-sidecar-token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -11247,6 +11269,12 @@ const docTemplate = `{
                         "description": "Precondition Required",
                         "schema": {
                             "$ref": "#/definitions/openapi.SidecarLoginStatus"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     }
                 }
@@ -11292,6 +11320,12 @@ const docTemplate = `{
                     },
                     "429": {
                         "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -11377,6 +11411,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
                     }
                 }
             }
@@ -11415,6 +11455,12 @@ const docTemplate = `{
                     },
                     "429": {
                         "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }

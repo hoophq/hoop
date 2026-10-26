@@ -54,6 +54,7 @@ var (
 	ErrSidecarIdentityDeleted       = errors.New("sidecar identity: sidecar deleted")
 	ErrSidecarIdentityBound         = errors.New("sidecar identity: sidecar bound to another service account")
 	ErrSidecarIdentityHasToken      = errors.New("sidecar identity: sidecar registered with a token")
+	ErrSidecarIdentityNoSeat        = errors.New("sidecar identity: no free sidecar seat")
 )
 
 // SidecarIdentityUnverifiedMessage answers every refusal made before the
@@ -394,6 +395,9 @@ func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *ext
 	}
 
 	sa := match.ServiceAccount
+	if err := identitySeatFree(db, sa.OrgID, match.Name); err != nil {
+		return nil, err
+	}
 	sc, err := models.GetOrCreateSidecarForIdentity(db, sa.OrgID, match.Name, issuer, match.Subject,
 		sidecarCreatedByPrefix+match.Subject, sa.AdoptExistingSidecars)
 	switch {
@@ -415,6 +419,38 @@ func authenticateSidecarIdentity(ctx context.Context, db *gorm.DB, verifier *ext
 		return nil, fmt.Errorf("failed resolving sidecar %q for a service account: %w", match.Name, err)
 	}
 	return sc, nil
+}
+
+// identitySeatFree refuses a service account that would create a sidecar past
+// the organization's seats. It runs before the row exists: a refused
+// handshake must not leave a row that holds the seat. An existing sidecar, or
+// a deleted name, is left to SidecarSeatOnly and GetOrCreateSidecarForIdentity.
+func identitySeatFree(db *gorm.DB, orgID, name string) error {
+	_, err := models.GetSidecarByNameOrID(db, orgID, name)
+	switch {
+	case err == nil:
+		return nil
+	case !errors.Is(err, models.ErrNotFound):
+		return fmt.Errorf("failed reading sidecar %q: %w", name, err)
+	}
+	if deleted, err := models.SidecarNameIsDeleted(db, orgID, name); err != nil || deleted {
+		return err
+	}
+	licenseData, err := models.GetOrgLicenseData(db, orgID)
+	if err != nil {
+		return fmt.Errorf("failed reading the organization license: %w", err)
+	}
+	if OrgHasEnterpriseSidecars(licenseData) {
+		return nil
+	}
+	ids, err := models.OldestSidecarIDs(db, orgID, FreeTierSidecarSeats)
+	if err != nil {
+		return fmt.Errorf("failed counting sidecars: %w", err)
+	}
+	if len(ids) >= FreeTierSidecarSeats {
+		return refuseIdentity(ErrSidecarIdentityNoSeat, "%s", ErrSidecarSeatLimit.Error())
+	}
+	return nil
 }
 
 // verifySidecarIdentity verifies raw against every mapping and returns the

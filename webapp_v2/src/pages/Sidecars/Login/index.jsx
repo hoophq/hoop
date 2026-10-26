@@ -8,7 +8,7 @@ import TextInput from '@/components/TextInput'
 import { sidecarsService } from '@/services/sidecars'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
-import FinishInTerminal from './sections/FinishInTerminal'
+import FinishInTerminal from './FinishInTerminal'
 
 const errorMessage = (err, fallback) => err?.response?.data?.message || fallback
 

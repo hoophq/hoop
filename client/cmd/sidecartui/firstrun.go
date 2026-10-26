@@ -629,7 +629,9 @@ func (m firstRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case frPlaneReadyMsg:
 		m.probing = false
-		if !msg.ready || m.managed == nil || m.boot != nil || m.checking != "" {
+		// An open setup wizard is the person's work in progress: a config
+		// from the web app waits until they leave it, never discards it.
+		if !msg.ready || m.managed == nil || m.boot != nil || m.checking != "" || m.wiz != nil {
 			return m, probeTick()
 		}
 		m.planeReady = true

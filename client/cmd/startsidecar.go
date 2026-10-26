@@ -733,11 +733,23 @@ func resolveSidecarLogin(cmd *cobra.Command, args []string, canChoose bool) (log
 		if err != nil {
 			return nil, "", false, err
 		}
+		// A bare run that names no plane uses the one login saved here,
+		// an Enterprise plane's as well as hoop's.
+		if login == nil && bare && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
+			if login, err = onlySidecarLogin(dir); err != nil {
+				return nil, "", false, err
+			}
+		}
 		if login != nil {
 			savedPath = filepath.Join(dir, sidecarLoginFile)
 			// A bare run boots the file this sidecar last booted.
 			if bare && login.Config != "" && fileExists(login.Config) {
 				sidecarConfigFlag = login.Config
+				// That file now holds a license: the run is licensed, so it
+				// runs the file on its own, as a licensed --config run does.
+				if readSidecarFileFacts(login.Config).licensed {
+					return nil, "", false, nil
+				}
 			}
 		} else if canChoose && bare {
 			return nil, "", true, nil
@@ -776,7 +788,7 @@ func sidecarManagedPlaneURL() string { return sidecarPlaneFor(sidecarFileFacts{}
 // machine also writes the login as JSON lines on stdout, for a marketplace
 // console or an agent that relays the link to a person.
 func loginToSidecarPlane(cmd *cobra.Command, plane string, machine bool) (*savedSidecarLogin, error) {
-	l := &sidecarLoginer{planeURL: plane, name: defaultSidecarName(), out: os.Stderr,
+	l := &sidecarLoginer{planeURL: plane, name: defaultSidecarName(os.Stderr), out: os.Stderr,
 		client: sidecarLoginHTTPClient(), open: openBrowser, minInterval: time.Second}
 	if machine {
 		l.events = os.Stdout

@@ -15,8 +15,8 @@ import PasswordInput from '@/components/PasswordInput'
 import Button from '@/components/Button'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
-import classes from './Setup.module.css'
 import { POST_SETUP_PATH, goAfterAuth } from '@/modes'
+import classes from './Setup.module.css'
 
 const TRUSTED_BY = ['EBANX', 'RD Station', 'Dock', 'PicPay', 'Unico']
 

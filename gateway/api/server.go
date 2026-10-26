@@ -287,11 +287,11 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	// No TrackRequest: SidecarAuthMiddleware installs an org context with no
 	// user, and TrackRequest requires a user email, so it would be a no-op
 	// that reads as an emitted event.
-	r.POST("/sidecars/reviews", r.SidecarAuthMiddleware, apisidecar.PostReview)
-	r.GET("/sidecars/reviews", r.SidecarAuthMiddleware, apisidecar.ListReviews)
-	r.GET("/sidecars/reviews/:id", r.SidecarAuthMiddleware, apisidecar.GetReview)
-	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apisidecar.ClaimReview)
-	r.POST("/sidecars/reviews/:id/settle", r.SidecarAuthMiddleware, apisidecar.SettleReview)
+	r.POST("/sidecars/reviews", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.PostReview)
+	r.GET("/sidecars/reviews", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ListReviews)
+	r.GET("/sidecars/reviews/:id", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.GetReview)
+	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ClaimReview)
+	r.POST("/sidecars/reviews/:id/settle", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.SettleReview)
 	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.ImportConfiguration)
 	// No TrackRequest, for the reason above. 412 while experimental.sidecar_session_events is off.
 	r.POST("/sidecars/events", r.SidecarAuthMiddleware, apiroutes.SidecarSeatOnly, apisidecar.PostEvents)

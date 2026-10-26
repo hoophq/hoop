@@ -52,6 +52,26 @@ func TestAConfigurationSetInHoopBootsTheConnectedScreen(t *testing.T) {
 	}
 }
 
+// A configuration set in the web app while the person is in the setup
+// wizard waits: their unsaved setup is never thrown away for it.
+func TestAConfigurationSetInHoopWaitsForAnOpenWizard(t *testing.T) {
+	m := homeModel(t, t.TempDir(), validateFile)
+	m.managed = &testPlane
+	m.buildHome()
+	m.connectCheck = func(string, string) (*daemon.Config, error) { return &daemon.Config{}, nil }
+	m.wiz = newWizard(machine{}, m.validate, m.dir, m.now)
+
+	tm, cmd := m.Update(frProbeTickMsg{})
+	tm, next := tm.Update(cmd())
+	fm := tm.(firstRunModel)
+	if fm.boot != nil || fm.wiz == nil {
+		t.Fatalf("the plane's configuration replaced the open wizard: boot=%+v", fm.boot)
+	}
+	if next == nil {
+		t.Fatal("the screen stopped asking while the wizard is open")
+	}
+}
+
 // Without a login nothing is asked.
 func TestOnlyAConnectedScreenAsksThePlane(t *testing.T) {
 	m := homeModel(t, t.TempDir(), validateFile)

@@ -97,12 +97,11 @@ export default function FinishInTerminal({ sidecar }) {
           <>
             <Divider />
             <Text size="sm" c="dimmed">
-              {'Rather configure it here? '}
-              <Anchor component="button" type="button" size="sm" onClick={() => navigate(page)}>
-                Configure it in Hoop
-              </Anchor>
-              {': as soon as it has a listener, the terminal starts it.'}
+              {'Rather configure it here? As soon as it has a listener in Hoop, the terminal starts it.'}
             </Text>
+            <Anchor component="button" type="button" size="sm" onClick={() => navigate(page)}>
+              Configure it in Hoop
+            </Anchor>
           </>
         )}
       </Stack>

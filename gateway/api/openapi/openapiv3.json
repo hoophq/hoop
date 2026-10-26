@@ -24266,6 +24266,17 @@
     "/sidecars/login": {
       "post": {
         "description": "Starts a device-code login. Send the token the sidecar made for itself in the hoop-sidecar-token header; only its hash is stored. Show the user code and the verification URL, then poll /sidecars/login/poll.",
+        "parameters": [
+          {
+            "description": "A token the sidecar made for itself: hsc_ and at least 32 random bytes",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -24329,6 +24340,16 @@
             },
             "description": "Too Many Requests"
           },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -24349,6 +24370,17 @@
     "/sidecars/login/poll": {
       "post": {
         "description": "Answers 200 once an admin approved the login, 428 while it waits, 403 when denied and 410 when it expired or is unknown. Send the same hoop-sidecar-token header as the start.",
+        "parameters": [
+          {
+            "description": "The token sent to the start",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -24389,6 +24421,16 @@
               }
             },
             "description": "Precondition Required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
           }
         },
         "summary": "Poll a sidecar login",
@@ -24451,6 +24493,16 @@
               }
             },
             "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
           }
         },
         "summary": "Get a sidecar login",
@@ -24564,6 +24616,16 @@
               }
             },
             "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
           }
         },
         "summary": "Approve a sidecar login",
@@ -24619,6 +24681,16 @@
               }
             },
             "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
           }
         },
         "summary": "Deny a sidecar login",
