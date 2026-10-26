@@ -24,43 +24,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS index_reviews_sidecar_level_statement
       AND approver_type = 'human'
       AND status NOT IN ('EXECUTED', 'REJECTED', 'REVOKED');
 
--- A hold under the rule's own managed approval rule becomes a human level
--- that names the managed rule's groups. The managed rule stays: an older
--- sidecar files under it.
-UPDATE ai_session_analyzer_rules AS r
-SET sidecar_spec = (r.sidecar_spec - 'approval_rule')
-    || CASE WHEN jsonb_typeof(r.sidecar_spec -> 'high') = 'string'
-             AND r.sidecar_spec ->> 'high' IN ('require_review', 'require_approval')
-        THEN jsonb_build_object('high', lvl.obj) ELSE '{}'::jsonb END
-    || CASE WHEN jsonb_typeof(r.sidecar_spec -> 'medium') = 'string'
-             AND r.sidecar_spec ->> 'medium' IN ('require_review', 'require_approval')
-        THEN jsonb_build_object('medium', lvl.obj) ELSE '{}'::jsonb END
-    || CASE WHEN jsonb_typeof(r.sidecar_spec -> 'low') = 'string'
-             AND r.sidecar_spec ->> 'low' IN ('require_review', 'require_approval')
-        THEN jsonb_build_object('low', lvl.obj) ELSE '{}'::jsonb END
-FROM access_request_rules AS a,
-    LATERAL (SELECT jsonb_build_object('action', 'require_approval', 'approver', 'human')
-        || CASE WHEN COALESCE(cardinality(a.reviewers_groups), 0) > 0
-            THEN jsonb_build_object('approval_groups', to_jsonb(a.reviewers_groups))
-            ELSE '{}'::jsonb END AS obj) AS lvl
-WHERE a.org_id = r.org_id
-  AND a.name = r.name
-  AND a.managed_by = 'ai-session-analyzer'
-  -- A human level grants one approval and no force approvers. A rule an admin
-  -- edited to grant more or other keeps the bare hold, which files under it.
-  AND NOT COALESCE(a.all_groups_must_approve, false)
-  AND NOT EXISTS (SELECT 1 FROM unnest(a.force_approval_groups) AS f WHERE btrim(f) <> '')
-  AND (a.min_approvals = 1 OR (a.min_approvals IS NULL
-       AND (SELECT count(DISTINCT btrim(g)) FROM unnest(a.reviewers_groups) AS g WHERE btrim(g) <> '') = 1))
-  AND jsonb_typeof(r.sidecar_spec) = 'object'
-  AND r.sidecar_spec ->> 'approval_rule' = r.name
-  AND (
-        (jsonb_typeof(r.sidecar_spec -> 'high') = 'string'
-            AND r.sidecar_spec ->> 'high' IN ('require_review', 'require_approval'))
-     OR (jsonb_typeof(r.sidecar_spec -> 'medium') = 'string'
-            AND r.sidecar_spec ->> 'medium' IN ('require_review', 'require_approval'))
-     OR (jsonb_typeof(r.sidecar_spec -> 'low') = 'string'
-            AND r.sidecar_spec ->> 'low' IN ('require_review', 'require_approval'))
-  );
+-- No sidecar_spec is rewritten. An older gateway replica decodes the spec
+-- strictly, and a hold in the bare form under the rule's own approval rule
+-- keeps working here; the next save writes the object form.
 
 COMMIT;
