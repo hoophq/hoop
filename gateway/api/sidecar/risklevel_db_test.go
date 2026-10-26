@@ -28,7 +28,7 @@ const levelSpec = `{
 	"medium": {"action": "require_approval", "approver": "human"},
 	"low": {"action": "require_approval", "approver": "ai_agent"}}`
 
-// Migration 000146 rewrites no spec, so a hold stored before the object form
+// Migration 000147 rewrites no spec, so a hold stored before the object form
 // (bare, under the rule's own managed rule) must keep working as it is: served
 // unchanged to every build, filed under the managed rule, and released by its
 // groups.

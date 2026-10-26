@@ -14,11 +14,11 @@ import (
 
 // The migration before and the one under test, stepped to by number.
 const (
-	beforeApproverVersion = 145
-	approverVersion       = 146
+	beforeApproverVersion = 146
+	approverVersion       = 147
 )
 
-// Migration 000146 changes the schema only. An older gateway replica decodes
+// Migration 000147 changes the schema only. An older gateway replica decodes
 // sidecar_spec strictly, so the stored specs must keep every byte, and the
 // review columns must come and go with the migration.
 func TestRiskLevelApproverMigrationIsSchemaOnly(t *testing.T) {
