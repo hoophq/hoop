@@ -131,6 +131,31 @@ func TestSidecarLoginWaitsForApprovalAndKeepsItsOwnToken(t *testing.T) {
 	}
 }
 
+// A busy or restarting plane mid-poll does not end the login: the code may
+// already be approved, and the token is the only way into that sidecar.
+func TestSidecarLoginRidesOutATransientPlaneError(t *testing.T) {
+	plane := &fakePlane{polls: []int{http.StatusServiceUnavailable, http.StatusTooManyRequests,
+		http.StatusInternalServerError, http.StatusOK}}
+	srv := httptest.NewServer(plane.handler(t))
+	defer srv.Close()
+
+	got, _, err := runLogin(t, srv.URL, func(string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Token != plane.token || plane.pollCount != 4 {
+		t.Fatalf("got %+v after %d polls; want the approved login after 4", got, plane.pollCount)
+	}
+
+	// Another 4xx is an answer, and ends the login.
+	plane = &fakePlane{polls: []int{http.StatusBadRequest}}
+	srv2 := httptest.NewServer(plane.handler(t))
+	defer srv2.Close()
+	if _, _, err := runLogin(t, srv2.URL, func(string) error { return nil }); err == nil {
+		t.Fatal("a 400 from the poll did not end the login")
+	}
+}
+
 func TestSidecarLoginEndsOnDenialAndExpiry(t *testing.T) {
 	for code, want := range map[int]string{
 		http.StatusForbidden: "denied",

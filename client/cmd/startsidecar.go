@@ -740,18 +740,28 @@ func resolveSidecarLogin(cmd *cobra.Command, args []string, canChoose bool) (log
 				return nil, "", false, err
 			}
 		}
-		if login != nil {
-			savedPath = filepath.Join(dir, sidecarLoginFile)
-			// A bare run boots the file this sidecar last booted.
-			if bare && login.Config != "" && fileExists(login.Config) {
-				sidecarConfigFlag = login.Config
-				// That file now holds a license: the run is licensed, so it
-				// runs the file on its own, as a licensed --config run does.
-				if readSidecarFileFacts(login.Config).licensed {
-					return nil, "", false, nil
+		// A bare run boots the file this sidecar last booted.
+		if login != nil && bare && login.Config != "" && fileExists(login.Config) {
+			sidecarConfigFlag = login.Config
+			facts := readSidecarFileFacts(login.Config)
+			// That file now holds a license: the run is licensed, so it
+			// runs the file on its own, as a licensed --config run does.
+			if facts.licensed {
+				return nil, "", false, nil
+			}
+			// That file now names another plane: that plane's login, or a
+			// new one. The saved URL must not override the file's.
+			if facts.planeURL != "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" &&
+				normalizePlaneURL(facts.planeURL) != normalizePlaneURL(login.URL) {
+				plane = facts.planeURL
+				if login, err = loadSidecarLogin(dir, plane); err != nil {
+					return nil, "", false, err
 				}
 			}
-		} else if canChoose && bare {
+		}
+		if login != nil {
+			savedPath = filepath.Join(dir, sidecarLoginFile)
+		} else if canChoose && bare && sidecarConfigFlag == "" {
 			return nil, "", true, nil
 		}
 	}

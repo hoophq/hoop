@@ -170,6 +170,25 @@ func TestABareRunWhoseFileGainedALicenseRunsItAlone(t *testing.T) {
 	}
 }
 
+// The file a bare run boots again now names another plane: the run uses that
+// plane's login, not the one that remembered the file.
+func TestABareRunFollowsTheFilesNewPlane(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "sidecar.yaml")
+	if err := os.WriteFile(cfg, []byte("control_plane_url: https://cp.example.com\nlisteners:\n  - name: db\n"+
+		"    protocol: postgres\n    listen: 127.0.0.1:15432\n    upstream: 127.0.0.1:5432\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	login, err := bareRunWith(t,
+		savedSidecarLogin{URL: DefaultSidecarControlPlaneURL, Token: "hsc_hosted", Config: cfg},
+		savedSidecarLogin{URL: "https://cp.example.com", Token: "hsc_enterprise"})
+	if err != nil || login == nil || login.Token != "hsc_enterprise" {
+		t.Fatalf("login=%+v err=%v; want the login of the plane the file names", login, err)
+	}
+	if got := os.Getenv("HOOP_CONTROL_PLANE_URL"); got != "https://cp.example.com" {
+		t.Fatalf("the plane is %q, want the file's", got)
+	}
+}
+
 // A platform identity with no plane named is not sent to the hosted plane:
 // its token belongs to the customer's own cluster.
 func TestAnIdentityAloneIsNotSentToTheHostedPlane(t *testing.T) {

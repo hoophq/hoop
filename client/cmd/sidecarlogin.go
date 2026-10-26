@@ -395,8 +395,14 @@ func (l *sidecarLoginer) wait(ctx context.Context, t *loginTicket) (*savedSideca
 		case http.StatusGone:
 			return nil, errors.New("the sidecar login code expired; run the command again")
 		default:
-			return nil, fmt.Errorf("the control plane at %s answered the sidecar login poll with %d: %s",
-				t.planeURL, status, planeMessage(raw))
+			// A busy or restarting plane is not an answer either: the code may
+			// already be approved, and giving up would drop the token the new
+			// sidecar holds (in a free org, its only seat).
+			transient := status == http.StatusTooManyRequests || status >= 500
+			if !transient || time.Now().UTC().After(deadline) {
+				return nil, fmt.Errorf("the control plane at %s answered the sidecar login poll with %d: %s",
+					t.planeURL, status, planeMessage(raw))
+			}
 		}
 	}
 }
