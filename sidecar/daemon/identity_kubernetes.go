@@ -55,6 +55,7 @@ const (
 )
 
 type kubernetesIdentity struct {
+	kind      string // the identity type, for log and error text
 	issuer    string
 	audience  string
 	inCluster bool
@@ -84,6 +85,7 @@ func buildKubernetesIdentity(cfg IdentityConfig, deps IdentityDeps) (IdentitySou
 		log = slog.Default()
 	}
 	return &kubernetesIdentity{
+		kind:      IdentityKubernetes,
 		issuer:    issuer,
 		audience:  cfg.audience(),
 		inCluster: cfg.Issuer == "",
@@ -141,48 +143,9 @@ func (k *kubernetesIdentity) Verify(ctx context.Context, _ string, secret string
 	if secret == "" {
 		return session.Identity{}, refused("no service account token presented")
 	}
-	parts := strings.Split(secret, ".")
-	if len(parts) != 3 {
-		return session.Identity{}, refused("the secret is not a JWT")
-	}
-	var hdr jwtHeader
-	if err := decodeJWTPart(parts[0], &hdr); err != nil {
-		return session.Identity{}, refused("JWT header: %v", err)
-	}
 	var claims k8sClaims
-	if err := decodeJWTPart(parts[1], &claims); err != nil {
-		return session.Identity{}, refused("JWT claims: %v", err)
-	}
-	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return session.Identity{}, refused("JWT signature is not base64url")
-	}
-
-	now := k.now()
-	switch {
-	case hdr.Alg != "RS256" && hdr.Alg != "ES256":
-		return session.Identity{}, refused("JWT alg %q is not RS256 or ES256", hdr.Alg)
-	case claims.Iss != k.issuer:
-		return session.Identity{}, refused("JWT issuer %q is not %s", claims.Iss, k.issuer)
-	case !containsString(claims.Aud, k.audience):
-		return session.Identity{}, refused("JWT audience %v does not include %q", []string(claims.Aud), k.audience)
-	case claims.Exp == 0:
-		return session.Identity{}, refused("JWT has no exp")
-	case now.After(time.Unix(claims.Exp, 0).Add(jwtClockSkew)):
-		return session.Identity{}, refused("JWT expired at %s", time.Unix(claims.Exp, 0).UTC().Format(time.RFC3339))
-	case claims.Nbf != 0 && now.Before(time.Unix(claims.Nbf, 0).Add(-jwtClockSkew)):
-		return session.Identity{}, refused("JWT is not valid before %s", time.Unix(claims.Nbf, 0).UTC().Format(time.RFC3339))
-	case claims.Sub == "":
-		return session.Identity{}, refused("JWT has no sub")
-	}
-
-	key, err := k.keyFor(ctx, hdr.Kid)
-	if err != nil {
+	if err := k.verifyToken(ctx, secret, &claims); err != nil {
 		return session.Identity{}, err
-	}
-	signed := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
-	if !verifyJWS(hdr.Alg, key, signed[:], sig) {
-		return session.Identity{}, refused("JWT signature does not verify against key %q of %s", hdr.Kid, k.issuer)
 	}
 	if k.podUID != "" && claims.K8s.Pod.UID != k.podUID {
 		return session.Identity{}, refused("the token was issued to pod %q, and this sidecar serves pod %q", claims.K8s.Pod.Name, k.podUID)
@@ -199,6 +162,69 @@ func (k *kubernetesIdentity) Verify(ctx context.Context, _ string, secret string
 		attrs["service_account"] = claims.K8s.ServiceAccount.Name
 	}
 	return session.Identity{Subject: claims.Sub, Attributes: attrs}, nil
+}
+
+// stdClaims are the registered claims every token is checked on.
+type stdClaims struct {
+	Iss string      `json:"iss"`
+	Sub string      `json:"sub"`
+	Aud jwtAudience `json:"aud"`
+	Exp int64       `json:"exp"`
+	Nbf int64       `json:"nbf"`
+}
+
+// verifyToken checks a compact JWS end to end: shape, alg, the registered
+// claims against the issuer, audience and clock, then the signature against
+// the issuer's key. into receives the full claim set once the registered
+// ones pass; a verifier reads its own claims from it afterwards.
+func (k *kubernetesIdentity) verifyToken(ctx context.Context, secret string, into any) error {
+	parts := strings.Split(secret, ".")
+	if len(parts) != 3 {
+		return refused("the secret is not a JWT")
+	}
+	var hdr jwtHeader
+	if err := decodeJWTPart(parts[0], &hdr); err != nil {
+		return refused("JWT header: %v", err)
+	}
+	var std stdClaims
+	if err := decodeJWTPart(parts[1], &std); err != nil {
+		return refused("JWT claims: %v", err)
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return refused("JWT signature is not base64url")
+	}
+
+	now := k.now()
+	switch {
+	case hdr.Alg != "RS256" && hdr.Alg != "ES256":
+		return refused("JWT alg %q is not RS256 or ES256", hdr.Alg)
+	case std.Iss != k.issuer:
+		return refused("JWT issuer %q is not %s", std.Iss, k.issuer)
+	case !containsString(std.Aud, k.audience):
+		return refused("JWT audience %v does not include %q", []string(std.Aud), k.audience)
+	case std.Exp == 0:
+		return refused("JWT has no exp")
+	case now.After(time.Unix(std.Exp, 0).Add(jwtClockSkew)):
+		return refused("JWT expired at %s", time.Unix(std.Exp, 0).UTC().Format(time.RFC3339))
+	case std.Nbf != 0 && now.Before(time.Unix(std.Nbf, 0).Add(-jwtClockSkew)):
+		return refused("JWT is not valid before %s", time.Unix(std.Nbf, 0).UTC().Format(time.RFC3339))
+	case std.Sub == "":
+		return refused("JWT has no sub")
+	}
+
+	key, err := k.keyFor(ctx, hdr.Kid)
+	if err != nil {
+		return err
+	}
+	signed := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	if !verifyJWS(hdr.Alg, key, signed[:], sig) {
+		return refused("JWT signature does not verify against key %q of %s", hdr.Kid, k.issuer)
+	}
+	if err := decodeJWTPart(parts[1], into); err != nil {
+		return refused("JWT claims: %v", err)
+	}
+	return nil
 }
 
 func decodeJWTPart(part string, into any) error {
@@ -250,7 +276,7 @@ func (k *kubernetesIdentity) keyFor(ctx context.Context, kid string) (crypto.Pub
 		return nil, refused("JWT key %q is not one %s publishes", kid, k.issuer)
 	}
 	if err := k.fetchKeysLocked(ctx); err != nil {
-		return nil, fmt.Errorf("identity kubernetes: %w", err)
+		return nil, fmt.Errorf("identity %s: %w", k.kind, err)
 	}
 	if key, ok := k.keys[kid]; ok {
 		return key, nil

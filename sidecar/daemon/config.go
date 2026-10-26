@@ -355,19 +355,33 @@ type KerberosSourceConfig struct {
 // IdentityConfig is a listener's client-leg verifier: who a client has to
 // prove to be before the sidecar presents a credential of its own upstream.
 type IdentityConfig struct {
-	// Type is none, kubernetes, hoop_credential or spiffe.
+	// Type is none, kubernetes, hoop_credential, jwt or spiffe.
 	Type string `json:"type,omitempty"`
-	// Audience a kubernetes or spiffe token must carry. Empty is
+	// Audience a kubernetes, jwt or spiffe token must carry. Empty is
 	// hoop-sidecar.
 	Audience string `json:"audience,omitempty"`
-	// Issuer is the kubernetes API server URL the token's iss names. Empty
+	// Issuer is the token's iss. For kubernetes, the API server URL; empty
 	// is the in-cluster https://kubernetes.default.svc, reached with the
-	// mounted CA and service account token.
+	// mounted CA and service account token. For jwt it is required.
 	Issuer string `json:"issuer,omitempty"`
+	// JWKSURL is where a jwt lane reads the issuer's keys. Empty runs OIDC
+	// discovery at <issuer>/.well-known/openid-configuration.
+	JWKSURL string `json:"jwks_url,omitempty"`
+	// Claims names the token claims a jwt lane reads into the identity.
+	Claims *IdentityClaimsConfig `json:"claims,omitempty"`
 	// TrustDomain refuses a SPIFFE ID outside it.
 	TrustDomain string `json:"trust_domain,omitempty"`
 	// Prefix refuses a SPIFFE ID whose path is not under it.
 	Prefix string `json:"prefix,omitempty"`
+}
+
+// IdentityClaimsConfig maps a jwt lane's token claims onto the identity.
+// Each names a claim; empty takes the default (sub, email, groups). The
+// subject claim must be present in the token; the others are optional.
+type IdentityClaimsConfig struct {
+	Subject string `json:"subject,omitempty"`
+	Email   string `json:"email,omitempty"`
+	Groups  string `json:"groups,omitempty"`
 }
 
 // CredentialsConfig is a listener's upstream credential pool and how a
@@ -2007,18 +2021,28 @@ func (c *Config) validateLaneAuth(l ListenerConfig, name string) []string {
 		if !pool && p != inspect.Oracle {
 			pf("identity needs a credentials pool: the login is terminated only to present a credential of the sidecar's own upstream")
 		}
-		if l.Identity.Type == IdentityHoopCredential && l.network() != "unix" && l.DownstreamTLS == nil &&
+		if (l.Identity.Type == IdentityHoopCredential || l.Identity.Type == IdentityJWT) && l.network() != "unix" && l.DownstreamTLS == nil &&
 			(p == inspect.Postgres || p == inspect.MySQL || p == inspect.ClickHouse) {
-			pf("identity type hoop_credential sends the key as the login password; a tcp %s listener needs downstream_tls, or a unix socket", l.Protocol)
+			pf("identity type %s sends the secret as the login password; a tcp %s listener needs downstream_tls, or a unix socket", l.Identity.Type, l.Protocol)
+		}
+		if l.Identity.Type != IdentityJWT && (l.Identity.JWKSURL != "" || l.Identity.Claims != nil) {
+			pf("identity.jwks_url and identity.claims are jwt settings, not %s ones", l.Identity.Type)
 		}
 		switch l.Identity.Type {
 		case IdentityKubernetes:
 			if l.Identity.TrustDomain != "" || l.Identity.Prefix != "" {
 				pf("identity.trust_domain and identity.prefix are spiffe settings, not kubernetes ones")
 			}
+		case IdentityJWT:
+			if l.Identity.Issuer == "" {
+				pf("identity type jwt needs identity.issuer: the sidecar trusts only the issuer the lane names")
+			}
+			if l.Identity.TrustDomain != "" || l.Identity.Prefix != "" {
+				pf("identity.trust_domain and identity.prefix are spiffe settings, not jwt ones")
+			}
 		case IdentitySPIFFE:
 			if l.Identity.Issuer != "" {
-				pf("identity.issuer is a kubernetes setting, not a spiffe one")
+				pf("identity.issuer is a kubernetes or jwt setting, not a spiffe one")
 			}
 		case IdentityNone, IdentityHoopCredential:
 			if l.Identity.Audience != "" || l.Identity.Issuer != "" || l.Identity.TrustDomain != "" || l.Identity.Prefix != "" {

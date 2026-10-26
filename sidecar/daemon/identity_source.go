@@ -20,10 +20,11 @@ const (
 	IdentityNone           = "none"
 	IdentityKubernetes     = "kubernetes"
 	IdentityHoopCredential = "hoop_credential"
+	IdentityJWT            = "jwt"
 	IdentitySPIFFE         = "spiffe"
 
-	// DefaultIdentityAudience is the audience a kubernetes or spiffe token
-	// must carry when the lane names none.
+	// DefaultIdentityAudience is the audience a kubernetes, jwt or spiffe
+	// token must carry when the lane names none.
 	DefaultIdentityAudience = "hoop-sidecar"
 
 	// identityTypeAttribute is the Identity attribute every verifier sets
@@ -34,7 +35,7 @@ const (
 // knownIdentityTypes is the vocabulary Config.validate accepts, built-in or
 // nested, so a typo is refused everywhere and a missing module only on the
 // host.
-var knownIdentityTypes = []string{IdentityNone, IdentityKubernetes, IdentityHoopCredential, IdentitySPIFFE}
+var knownIdentityTypes = []string{IdentityNone, IdentityKubernetes, IdentityHoopCredential, IdentityJWT, IdentitySPIFFE}
 
 // PeerInfo is what a verifier may know about the connection: the lane's
 // transport, the peer address when the relay has it, and whether the client
@@ -146,4 +147,5 @@ func init() {
 	RegisterIdentitySource(IdentityNone, buildNoneIdentity)
 	RegisterIdentitySource(IdentityKubernetes, buildKubernetesIdentity)
 	RegisterIdentitySource(IdentityHoopCredential, buildHoopCredentialIdentity)
+	RegisterIdentitySource(IdentityJWT, buildJWTIdentity)
 }

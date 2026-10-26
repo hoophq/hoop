@@ -3960,6 +3960,7 @@ not yet in the control plane's form.
 | `hoop_credential` | a key the control plane minted for this lane, as the password (databases) or bearer (http, grpc) | `downstream_tls` on a tcp postgres, mysql or clickhouse lane, or a unix socket |
 | `kubernetes` | a projected service account token as the password or bearer. Verified against the issuer's JWKS through OIDC discovery: `aud` (`audience`, default `hoop-sidecar`), `exp`, `iss`; with `POD_UID` set, the token must be this pod's | `issuer` off-cluster; in-cluster the API server, reached with the mounted CA and token |
 | `spiffe` | a JWT-SVID; `trust_domain` and `prefix` narrow it | the Workload API; linked by `hoop-inspect` only |
+| `jwt` | a token from any issuer the lane names (an identity provider, a CI provider, a gateway's authorization service), as the password or bearer. Verified against the issuer's JWKS: `iss`, `aud` (`audience`, default `hoop-sidecar`), `exp`, `nbf`, signature; `claims` maps which claims become the subject, email and groups (default `sub`, `email`, `groups`); on a protocol with a login user, the user must be the subject or the email | `issuer` (https); `jwks_url` to skip discovery; `downstream_tls` on a tcp postgres, mysql or clickhouse lane |
 
 `identity` is exclusive with `identity_header`, `google_identity` and
 `caller_token`, and needs a `credentials` pool: a verified login with
