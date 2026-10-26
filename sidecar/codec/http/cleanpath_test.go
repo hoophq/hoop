@@ -112,6 +112,11 @@ func TestDotSegmentsCannotDodgeAConnectGatewayRule(t *testing.T) {
 	for _, tc := range []struct{ target, unresolved string }{
 		{gw + "/./api/v1/namespaces/kube-system/secrets/token", "/./api/v1/namespaces/kube-system/secrets/token"},
 		{gw + "/api/v1/namespaces/kube-system/secrets/../configmaps", "/api/v1/namespaces/kube-system/secrets/../configmaps"},
+		// The gateway routes the raw membership and the cluster resolves the rest.
+		{gw + "/../api/v1/namespaces/kube-system/secrets/token", "/../api/v1/namespaces/kube-system/secrets/token"},
+		{gw + "/../../api/v1/namespaces/kube-system/secrets/token", "/../../api/v1/namespaces/kube-system/secrets/token"},
+		// The gateway resolves the whole path and routes membership prod.
+		{"/v1/projects/p/locations/global/gkeMemberships/m/../prod/api/v1/namespaces/kube-system/secrets/token", "/../prod/api/v1/namespaces/kube-system/secrets/token"},
 	} {
 		t.Run(tc.target, func(t *testing.T) {
 			s := decodeRequest(t, codechttp.New(codechttp.Options{}), get("connectgateway.googleapis.com", tc.target))

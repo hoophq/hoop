@@ -45,6 +45,13 @@ func stripConnectGatewayPrefix(stmt *inspect.Statement) {
 	if d == nil || !isConnectGatewayHost(d.Host) {
 		return
 	}
+	// The unresolved form splits on its own: a ".." after the membership can
+	// move the cleaned resource out of the gateway shape.
+	if u, ok := stmt.Metadata[inspect.MetadataHTTPResourceUnresolved]; ok {
+		if _, urest, ok := splitConnectGatewayPath(u); ok {
+			stmt.Metadata[inspect.MetadataHTTPResourceUnresolved] = urest
+		}
+	}
 	prefix, rest, ok := splitConnectGatewayPath(d.Resource)
 	if !ok {
 		return
@@ -57,11 +64,6 @@ func stripConnectGatewayPrefix(stmt *inspect.Statement) {
 		stmt.Metadata = map[string]string{}
 	}
 	stmt.Metadata[metadataResourcePrefix] = prefix
-	if u, ok := stmt.Metadata[inspect.MetadataHTTPResourceUnresolved]; ok {
-		if _, urest, ok := splitConnectGatewayPath(u); ok {
-			stmt.Metadata[inspect.MetadataHTTPResourceUnresolved] = urest
-		}
-	}
 }
 
 // isConnectGatewayHost reports whether host is the global Connect Gateway

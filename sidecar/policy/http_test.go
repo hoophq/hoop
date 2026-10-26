@@ -172,6 +172,9 @@ func TestHTTPRulesMatchTheUnresolvedResource(t *testing.T) {
 	if !rules.Evaluate(stmt("/public", "/secrets/../public")).Denied {
 		t.Error("an http_header scope ignored the unresolved resource")
 	}
+	if !rules.Evaluate(stmt("/v1/namespaces", "/../admin/users")).Denied {
+		t.Error("http_resource ignored the unresolved resource resolved on its own")
+	}
 	if rules.Evaluate(stmt("/public", "")).Denied {
 		t.Error("a clean resource outside every scope was denied")
 	}

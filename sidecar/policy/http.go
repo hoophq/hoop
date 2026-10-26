@@ -2,6 +2,7 @@ package policy
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -219,11 +220,12 @@ func (r Rule) resourceAllowed(stmt inspect.Statement) bool {
 }
 
 // matchesResource also tries the resource with its dot segments unresolved,
-// for an upstream that routes the raw path.
+// raw and resolved on its own: a gateway can route the raw prefix and leave
+// the rest to a cluster that resolves it.
 func (r Rule) matchesResource(stmt inspect.Statement) bool {
 	forms := []string{stmt.HTTP.Resource}
 	if u, ok := stmt.Metadata[inspect.MetadataHTTPResourceUnresolved]; ok {
-		forms = append(forms, u)
+		forms = append(forms, u, path.Clean(u))
 	}
 	for _, pattern := range r.Resources {
 		for _, resource := range forms {
