@@ -49,6 +49,8 @@ function toForm(audit = {}) {
 }
 
 const count = (v) => Math.max(0, Math.trunc(Number(v) || 0))
+// A stored byte value the MiB field can show as it is; 0 (unset) counts as whole.
+const wholeMiB = (bytes) => bytes % MIB === 0
 
 // Every key: the patch replaces `audit` whole. fail_closed is dropped on purpose.
 function toAudit(f) {
@@ -178,11 +180,15 @@ function Form({ sidecar, onClose }) {
         <NumberInput
           {...hinted}
           label="Query memory (MiB)"
-          description="Memory for /api/* events. Past it the oldest events are dropped. Empty uses 64 MiB."
+          description={
+            wholeMiB(form.query_max_bytes)
+              ? 'Memory for /api/* events. Past it the oldest events are dropped. Empty uses 64 MiB.'
+              : `Set to ${form.query_max_bytes} bytes, not a whole MiB. Saving keeps it; typing a value replaces it.`
+          }
           min={0}
           allowDecimal={false}
-          placeholder="64"
-          value={form.query_max_bytes > 0 ? Math.round(form.query_max_bytes / MIB) : ''}
+          placeholder={wholeMiB(form.query_max_bytes) ? '64' : `${form.query_max_bytes} bytes`}
+          value={form.query_max_bytes > 0 && wholeMiB(form.query_max_bytes) ? form.query_max_bytes / MIB : ''}
           onChange={(v) => set({ query_max_bytes: count(v) * MIB })}
         />
       </Stack>

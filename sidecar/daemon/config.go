@@ -746,7 +746,9 @@ type AuditConfig struct {
 	// holds them, and that session reports events_dropped. A session count
 	// alone never bounds a connection pool or an agent that keeps a few
 	// sessions open for days. Zero uses 64 MiB. Size a container for about
-	// 2.5x this: allocator fragmentation and the runtime come on top.
+	// 2.5x this: allocator fragmentation and the runtime come on top. The
+	// session records are outside it and bounded by QuerySessions: each keeps
+	// its counters and at most one Postgres StartupMessage of metadata (10 kB).
 	QueryMaxBytes int64 `json:"query_max_bytes,omitempty" cap:"audit_query_max_bytes"`
 
 	// FailOpen allows a statement whose audit record could not be written.
