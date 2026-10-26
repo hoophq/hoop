@@ -3,15 +3,20 @@ import { CirclePlus, SquarePen } from 'lucide-react'
 import Accordion from '@/components/Accordion'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
-import { SOURCE_SIDECAR, featureList, opaSummary, overridesOPA, resolveOPA } from '../features'
+import { SOURCE_GATEWAY, SOURCE_SIDECAR, featureList, opaSummary, overridesOPA, resolveOPA } from '../features'
 import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER } from '../resolve'
 import classes from './FeatureAccordions.module.css'
 
 const SOURCE_LABELS = {
   [SOURCE_LISTENER]: { label: 'Listener', color: 'indigo' },
   [SOURCE_DISTRIBUTED]: { label: 'Hoop', color: 'sky' },
+  [SOURCE_GATEWAY]: { label: 'Gateway', color: 'violet' },
   [SOURCE_SIDECAR]: { label: 'Sidecar', color: 'gray' },
 }
+
+// The rules a form on Hoop owns: a sidecar rule bound here, or a gateway rule
+// reaching here through a mirror. Rules embedded in the document have none.
+const EDITABLE_SOURCES = new Set([SOURCE_DISTRIBUTED, SOURCE_GATEWAY])
 
 // Every rule says where it came from, because the merge is not a union:
 // guardrails concatenate, masking replaces, and each has a spelling that
@@ -100,8 +105,8 @@ function EmptyFeatureRow({ feature, observing, onAdd, blocked }) {
  * Without a `listener` it reads the sidecar's defaults, the top-level blocks
  * every lane inherits; with one, what that lane resolves to. Both include the
  * rules the control plane distributes, which are never in the stored document.
- * `actions` adds Add per feature and Edit on distributed rules; rules embedded
- * in the document have no form here.
+ * `actions` adds Add per feature and Edit on distributed and gateway rules;
+ * rules embedded in the document have no form here.
  */
 export default function FeatureAccordions({ listener = null, config, boundRules, includeLanes = false, flush = false, actions }) {
   const features = featureList(listener, config, boundRules, { includeLanes })
@@ -166,7 +171,7 @@ export default function FeatureAccordions({ listener = null, config, boundRules,
                         <RuleRow
                           rule={rule}
                           onEdit={
-                            actions && rule.source === SOURCE_DISTRIBUTED
+                            actions && EDITABLE_SOURCES.has(rule.source)
                               ? () => actions.onEdit(feature.key, rule)
                               : undefined
                           }

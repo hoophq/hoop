@@ -117,7 +117,11 @@ const scopeOf = (listener) => (listener == null ? null : listener.name || '')
 
 // Seen from the sidecar itself, its top-level rules are its own, not inherited.
 export const SOURCE_SIDECAR = 'sidecar'
+// A gateway rule reaching the listener through its mirror connection
+// (SidecarRuleBinding.Source). It is the gateway's record, not a sidecar one.
+export const SOURCE_GATEWAY = 'gateway'
 const sourceOf = (listener, source) => (listener == null && source === SOURCE_INHERITED ? SOURCE_SIDECAR : source)
+const boundSource = (b) => (b.source === SOURCE_GATEWAY ? SOURCE_GATEWAY : SOURCE_DISTRIBUTED)
 
 // The binding carries no rule body, so a row is the name and where it goes.
 function distributedRules(boundRules, listener, kind) {
@@ -125,17 +129,17 @@ function distributedRules(boundRules, listener, kind) {
   if (scope === '') return []
   const rows = (boundRules ?? []).filter((b) => b.kind === kind && (scope === null || b.listener_name === scope))
   if (scope !== null) {
-    return rows.map((b) => ({ id: `cp-${b.rule_name}`, name: b.rule_name, source: SOURCE_DISTRIBUTED }))
+    return rows.map((b) => ({ id: `cp-${b.rule_name}`, name: b.rule_name, source: boundSource(b) }))
   }
   const lanes = new Map()
   for (const b of rows) {
-    if (!lanes.has(b.rule_name)) lanes.set(b.rule_name, [])
-    lanes.get(b.rule_name).push(b.listener_name)
+    if (!lanes.has(b.rule_name)) lanes.set(b.rule_name, { source: boundSource(b), names: [] })
+    lanes.get(b.rule_name).names.push(b.listener_name)
   }
-  return [...lanes].map(([name, names]) => ({
+  return [...lanes].map(([name, { source, names }]) => ({
     id: `cp-${name}`,
     name,
-    source: SOURCE_DISTRIBUTED,
+    source,
     detail: `On ${names.join(', ')}`,
   }))
 }

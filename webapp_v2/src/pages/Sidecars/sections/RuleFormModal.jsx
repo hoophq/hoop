@@ -9,7 +9,7 @@ import SidecarDataMaskingFields from '@/pages/Features/DataMasking/Create/Sideca
 import { useSidecarDataMaskingEditor } from '@/pages/Features/DataMasking/Create/useSidecarDataMaskingEditor'
 import SidecarGuardrailFields from '@/pages/Guardrails/Create/SidecarGuardrailFields'
 import { useSidecarGuardrailEditor } from '@/pages/Guardrails/Create/useSidecarGuardrailEditor'
-import { RULE_APIS, lanesAsTargets, ruleErrorMessage, targetLanes } from '../rules'
+import { RULE_APIS, findRule, lanesAsTargets, ruleErrorMessage, targetLanes } from '../rules'
 
 function Footer({ editor, onCancel }) {
   return (
@@ -86,9 +86,7 @@ function Form({ feature, sidecar, listener, ruleName, onClose, onSaved }) {
     if (!ruleName) return
     let cancelled = false
     const load = async () => {
-      const found = (await api.list()).find((r) => r.name === ruleName)
-      if (!found) throw new Error(`Rule "${ruleName}" was not found.`)
-      const { data } = await api.get(found)
+      const { data } = await api.get(await findRule(api, ruleName))
       if (cancelled) return
       setStored(data)
       setStatus('ready')
