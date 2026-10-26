@@ -29,9 +29,23 @@ func fileHandoff(sc *models.Sidecar, statement, level string) *httptest.Response
 	return postLevelBody(sc, statement, map[string]any{"risk_level": level, "approver": "human", "handoff": true})
 }
 
+// seedHandoffSidecar is seedLevelSidecar for a build that also reads
+// ai-handoff: the plane refuses a hand-off level to any other build, and
+// authorizes a filing against what it serves.
+func seedHandoffSidecar(t *testing.T, name, ruleName, spec string) *models.Sidecar {
+	t.Helper()
+	sc := seedLevelSidecar(t, name, ruleName, spec)
+	_, err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.300.0", "", "", "", "",
+		[]string{daemon.CapabilityRiskLevelObject, daemon.CapabilityAIHandoff})
+	require.NoError(t, err)
+	stored, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
+	require.NoError(t, err)
+	return stored
+}
+
 func TestAHandoffHoldIsAuthorizedByItsAllowedActions(t *testing.T) {
 	startStatusTestDB(t)
-	sc := seedLevelSidecar(t, "handoff", "handoff-rule", handoffSpec)
+	sc := seedHandoffSidecar(t, "handoff", "handoff-rule", handoffSpec)
 
 	// high: dba approves, one approval, filed through the hand-off.
 	rec := fileHandoff(sc, "DELETE FROM payments WHERE id = 1", "high")
@@ -98,7 +112,7 @@ func TestAHandoffFilingThatDoesNotMatchTheLevelIsRefused(t *testing.T) {
 	startStatusTestDB(t)
 	// high holds directly, medium hands off with no hold, low hands off a
 	// human hold.
-	sc := seedLevelSidecar(t, "handoff-mismatch", "handoff-mismatch-rule", `{
+	sc := seedHandoffSidecar(t, "handoff-mismatch", "handoff-mismatch-rule", `{
 		"high": {"action": "require_approval", "approver": "human"},
 		"medium": {"action": "ai-handoff", "allowed_actions": ["allow", "block"]},
 		"low": {"action": "ai-handoff", "allowed_actions": {"require_approval": {"approver": "human"}}}}`)
@@ -125,7 +139,7 @@ func TestAHandoffFilingThatDoesNotMatchTheLevelIsRefused(t *testing.T) {
 
 func TestAHandoffAgentDecisionIsFiledDecided(t *testing.T) {
 	startStatusTestDB(t)
-	sc := seedLevelSidecar(t, "handoff-agent", "handoff-agent-rule", handoffSpec)
+	sc := seedHandoffSidecar(t, "handoff-agent", "handoff-agent-rule", handoffSpec)
 
 	// low's hold goes to the approval agent; a person's filing is refused.
 	rec := fileHandoff(sc, "UPDATE users SET plan = 'pro' WHERE id = 7", "low")
@@ -155,7 +169,7 @@ func TestAHandoffAgentDecisionIsFiledDecided(t *testing.T) {
 // way never answers a filing made the other way.
 func TestAHandoffReviewIsKeptApartFromADirectReview(t *testing.T) {
 	startStatusTestDB(t)
-	sc := seedLevelSidecar(t, "handoff-apart", "handoff-apart-rule", handoffSpec)
+	sc := seedHandoffSidecar(t, "handoff-apart", "handoff-apart-rule", handoffSpec)
 	const statement = "DELETE FROM payments WHERE id = 9"
 
 	handoff := decodeReviewResponse(t, fileHandoff(sc, statement, "high"))
@@ -196,6 +210,9 @@ func TestAnOldBuildIsRefusedAHandoffLevel(t *testing.T) {
 	require.NoError(t, err)
 	row, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
 	require.NoError(t, err)
+	// A filing from that build is refused: it was never served the level.
+	rec := fileHandoff(row, "DELETE FROM payments WHERE id = 2", "high")
+	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
 	row.Configuration.Analyzer = &daemon.AnalyzerConfig{Provider: "anthropic", Model: "m"}
 	_, err = models.UpdateSidecarConfiguration(models.DB, statusTestOrgID, sc.ID, row.Configuration)
 	require.NoError(t, err)
