@@ -1,5 +1,6 @@
 (ns webapp.events.users
-  (:require [re-frame.core :as rf]))
+  (:require [re-frame.core :as rf]
+            [webapp.shell :as shell]))
 
 (rf/reg-event-fx
  :users->get-users
@@ -28,7 +29,7 @@
                       :uri "/userinfo"
                       :on-failure (fn [_]
                                     (rf/dispatch [::users->clear-loading])
-                                    (when (.getItem js/localStorage "react-shell")
+                                    (when (shell/react-shell?)
                                       (set! js/window.location.href "/login")))
                       :on-success (fn [user]
                                     (rf/dispatch
@@ -37,7 +38,7 @@
                                        :uri "/serverinfo"
                                        :on-failure (fn [_]
                                                      (rf/dispatch [::users->clear-loading])
-                                                     (when (.getItem js/localStorage "react-shell")
+                                                     (when (shell/react-shell?)
                                                        (set! js/window.location.href "/login")))
                                        :on-success #(rf/dispatch [::users->set-current-user user %])}]))}]]]}))
 
