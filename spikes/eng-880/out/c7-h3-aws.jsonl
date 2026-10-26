@@ -1,0 +1,13 @@
+{"event":"http","status":200,"content_type":"application/vnd.amazon.eventstream","seconds":73.475973}
+{"event": "chunk", "contentStart": {}}
+{"event": "chunk", "contentDelta": {"stdout": "credentials: method=iam-role key=ASIA... token=yes\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "sts GetCallerIdentity (regional)             FAIL ConnectTimeoutError after 10.4s: Connect timeout on endpoint URL: \"https://sts.us-east-1.amazonaws.com/\"\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "bedrock-runtime Converse                     OK   ok\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "s3 PutObject eng880-base-otherbucket-znmkqe375ak5 OK   200\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "ecr GetAuthorizationToken                    OK   2026-10-27 08:15:51.180000+00:00\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "ecr DescribeRepositories                     DENY AccessDeniedException: User: arn:aws:sts::259815801592:assumed-role/eng880-agent/BedrockAgentCore-a32cf9b7-aaec-4233-b2a4-c434efeccae\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "logs DescribeLogGroups                       OK   5\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "secretsmanager GetSecretValue (vault key)    FAIL ConnectTimeoutError after 60.6s: Connect timeout on endpoint URL: \"https://secretsmanager.us-east-1.amazonaws.com/\"\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "bedrock-agentcore GetResourceApiKey eng880-api DENY ValidationException: WorkloadIdentity is linked to a service and cannot retrieve an access token by the caller.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "bedrock-agentcore-control ListHarnesses      FAIL AttributeError after 0.0s: 'BedrockAgentCoreControl' object has no attribute 'list_harnesses'\n"}}
+{"event": "chunk", "contentStop": {"exitCode": 0, "status": "COMPLETED"}}

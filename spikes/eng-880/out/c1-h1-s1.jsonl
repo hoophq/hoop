@@ -1,0 +1,51 @@
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolUse": {"name": "shell", "toolUseId": "tooluse_vL6RqfrzpYswOQOPwpvOVU", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "{\"command\": "}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\"uname"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": " -"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "srm; id; he"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "ad -"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "1 /etc/o"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "s-release"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_use"}
+{"event": "metadata", "metrics": {"latencyMs": 1154}, "usage": {"inputTokens": 879, "outputTokens": 64, "totalTokens": 943}}
+{"event": "messageStart", "role": "user"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_vL6RqfrzpYswOQOPwpvOVU"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolResult": [{"text": "{\"stdout\": \"Linux 6.1.161-18.298.amzn2023.aarch64 aarch64\\nuid=0(root) gid=0(root) groups=0(root)\\nPRETTY_NAME=\\\"Debian GNU/Linux 12 (bookworm)\\\"\\n\", \"stderr\": \"\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_result"}
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "Here is the output"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " of the command `"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "uname -srm;"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " id; head -1 /et"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "c/os-release`:"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n\n```\nLinux 6."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "1.161-18.298."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "amzn2023."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "aarch64 aarch"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "64\nuid=0(root"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": ") gid=0("}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "root) groups=0(root"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": ")\nPRETTY_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "NAME=\"Debian G"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "NU/"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "Linux 12 (b"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "ookworm)\"\n```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n\nThe sh"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "ell is"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " running as root (uid 0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "). The kernel is"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " Linux 6.1."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "161 on aarch64,"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " and the OS release"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " file"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " reports Debian GNU"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "/Linux 12 ("}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "bookworm)."}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "end_turn"}
+{"event": "metadata", "metrics": {"latencyMs": 1321}, "usage": {"inputTokens": 1061, "outputTokens": 181, "totalTokens": 1242}}

@@ -1,0 +1,1 @@
+{"event": "runtimeClientError", "message": "Command '['/usr/local/bin/ctr', '-a', '/run/containerd/containerd.sock', 'images', 'pull', '--user', 'AWS:<ecr-token>', '259815801592.dkr.ecr.us-east-1.amazonaws.com/eng880:agent']' returned non-zero exit status 1."}

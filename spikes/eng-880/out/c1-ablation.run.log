@@ -1,0 +1,21 @@
+18:47:54 == EpEcrDkr=false
+18:52:14 no-EcrDkr eng880_h1 shell=false http=200 32s {"event":"runtimeClientError","message":"Command '['/usr/local/bin/ctr', '-a', '/run/containerd/containerd.sock', 'images', 'pull', '--user', 'AWS:<ecr-token> 
+18:52:19 no-EcrDkr eng880_h2 shell=true http=200 5s 
+18:52:23 no-EcrDkr eng880_rt1 shell=true http=200 3s 
+18:53:37 == EpEcrApi=false
+19:03:19 no-EcrApi eng880_h1 shell=false http=200 183s {"event":"runtimeClientError","message":"Connect timeout on endpoint URL: \"https://api.ecr.us-east-1.amazonaws.com/\""} 
+19:03:25 no-EcrApi eng880_h2 shell=true http=200 5s 
+19:03:29 no-EcrApi eng880_rt1 shell=true http=200 3s 
+19:04:43 == EpS3=false
+19:08:00 no-S3 eng880_h1 shell=false http=200 151s {"event":"runtimeClientError","message":"Command '['/usr/local/bin/ctr', '-a', '/run/containerd/containerd.sock', 'images', 'pull', '--user', 'AWS:<ecr-token> 
+19:08:05 no-S3 eng880_h2 shell=true http=200 5s 
+19:08:10 no-S3 eng880_rt1 shell=true http=200 3s 
+19:08:53 == EpBedrockRuntime=false
+19:32:35 no-BedrockRuntime eng880_h1 shell=false http=0 150s 
+19:37:37 no-BedrockRuntime eng880_h2 shell=false http=0 300s 
+19:42:37 no-BedrockRuntime eng880_rt1 shell= http=0 300s 
+19:43:51 == EpLogs=false
+19:49:19 no-Logs eng880_h1 shell=true http=200 8s 
+19:49:24 no-Logs eng880_h2 shell=true http=200 5s 
+19:49:28 no-Logs eng880_rt1 shell=true http=200 2s 
+exit 0

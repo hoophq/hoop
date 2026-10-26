@@ -1,0 +1,90 @@
+{"event":"http","status":200,"content_type":"application/vnd.amazon.eventstream","seconds":65.728538}
+{"event": "chunk", "contentStart": {}}
+{"event": "chunk", "contentDelta": {"stdout": "== id\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "uid=0(root) gid=0(root) groups=0(root)\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "Linux 6.1.161-18.298.amzn2023.aarch64 aarch64\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== tools\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "curl=/usr/bin/curl psql=/usr/bin/psql python3=/usr/local/bin/python3 dig=/usr/bin/dig getent=/usr/bin/getent nc=/usr/bin/nc jq=/usr/bin/jq \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== env names\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AGENTCORE_RUNTIME_URL AGENT_OBSERVABILITY_ENABLED AWS_DEFAULT_REGION AWS_DNS_SUFFIX AWS_EXECUTION_ENV AWS_REGION GPG_KEY HOME HOOP_CALLER_TOKEN MODEL_ID OTEL_EXPORTER_OTLP_LOGS_HEADERS OTEL_EXPORTER_OTLP_TIMEOUT OTEL_PYTHON_CONFIGURATOR OTEL_PYTHON_DISTRO OTEL_PYTHON_EXCLUDED_URLS OTEL_RESOURCE_ATTRIBUTES PATH PWD PYTHON_SHA256 PYTHON_VERSION SHLVL SIDECAR_HOST _ \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== env AWS_* and *SESSION* (values cut to 12)\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_EXECUTION_ENV=AWS_BedrockA...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_DEFAULT_REGION=us-east-1...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_REGION=us-east-1...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_DNS_SUFFIX=amazonaws.co...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AGENTCORE_RUNTIME_URL=https://bedr...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== resolv.conf\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# This is /run/systemd/resolve/resolv.conf managed by man:systemd-resolved(8).\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# Do not edit.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "#\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# This file might be symlinked as /etc/resolv.conf. If you're looking at\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# /etc/resolv.conf and seeing this text, you have followed the symlink.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "#\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# This is a dynamic resolv.conf file for connecting local clients directly to\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# all known uplink DNS servers. This file lists all configured search domains.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "#\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# Third party programs should typically not access this file directly, but only\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# different way, replace this symlink by a static file or a different symlink.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "#\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# See man:systemd-resolved.service(8) for details about the supported modes of\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# operation for /etc/resolv.conf.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "nameserver 127.0.0.2\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "search .\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== routes\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT                                                       \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth1\t00000000\t0101FEA9\t0003\t0\t0\t200\t00000000\t0\t0\t0                                                                             \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth0\t00000000\t0100FEA9\t0003\t0\t0\t250\t00000000\t0\t0\t0                                                                             \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth0\t0000FEA9\t00000000\t0001\t0\t0\t0\tFCFFFFFF\t0\t0\t0                                                                               \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth1\t0001FEA9\t00000000\t0001\t0\t0\t0\tFCFFFFFF\t0\t0\t0                                                                               \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth0\tFEA9FEA9\t00000000\t0005\t0\t0\t0\tFFFFFFFF\t0\t0\t0                                                                               \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== addrs\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "169.254.0.2 169.254.1.2 2600:1f18:2b20:db16:797e:3e1f:ace2:a553 \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== pid1\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "python /app/agent.py \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== session id in files\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== mmds\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "http://169.254.169.254/latest/meta-data/ -> 401\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "http://169.254.170.2/ -> 000\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== mmds v2 token\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "200\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== otel and runtime endpoints\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "OTEL_RESOURCE_ATTRIBUTES=service.name=eng880_rt1.DEFAULT,aws.log.group.names=/aws/bedrock-agentcore/runtimes/eng880_rt1-ls8wdD5WcL-DEFAULT,aws.log.stream.names=otel-rt-logs,deployment.environment.name\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AGENTCORE_RUNTIME_URL=https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-east-1%3A259815801592%3Aruntime%2Feng880_rt1-ls8wdD5WcL/invocations\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== dns\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent sidecar.eng880.internal     exit=0   10.88.10.228    RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent db.eng880.internal          exit=0   10.88.10.175    RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent probe.eng880.internal       exit=0   10.88.10.191    RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent example.com                 exit=0   104.20.23.154   RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent api.openai.com              exit=0   172.66.0.243    RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent bedrock-runtime.us-east-1.amazonaws.com exit=0   10.88.0.77      RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent bedrock-agentcore.us-east-1.amazonaws.com exit=0   184.195.150.250 RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent sts.amazonaws.com           exit=0   52.119.199.198  RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "dig example.com @127.0.0.2         exit=0   172.66.147.243\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "dig TXT eng880.test (NX)           exit=0   ;; MSG SIZE  rcvd: 118\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== c3 lane (demo API)\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "HTTP/2 200 \r\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "  \"email\": \"[REDACTED:EMAIL_ADDRESS]\",\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "  \"phone\": \"[REDACTED:PHONE_NUMBER]\",\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "  \"card\": \"[REDACTED:CREDIT_CARD]\",\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "HTTP/2 403 \r\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "x-hoop-denied: policy\r\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "this agent may only read from the API\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "HTTP/2 403 \r\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "request refused: the request carried no credential\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== c3 outside the lane\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "https example.com                  exit=28  000  8.001364s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "https 1.1.1.1 (IP)                 exit=28  000  8.001727s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "https api.openai.com               exit=28  000  8.002040s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "probe direct :8088                 exit=28  000  8.001828s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "IPv6 [2606:4700:4700::1111]        exit=28  000  8.001795s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "IPv6 ipv6.google.com               exit=6   000  0.017561s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "bedrock-agentcore (no endpoint)    exit=28  000  7.999316s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "sts global                         exit=28  000  8.001399s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== c4 postgres\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "psql lane select                   exit=0   2|[REDACTED:EMAIL_ADDRESS]\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "psql lane delete                   exit=2   connection to server was lost\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "psql direct db:5432                exit=2   psql: error: connection to server at \"db.eng880.internal\" (10.88.10.175), port 5432 failed: timeout expired\n"}}
+{"event": "chunk", "contentStop": {"exitCode": 0, "status": "COMPLETED"}}

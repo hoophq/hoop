@@ -1,0 +1,5 @@
+# ENG-880 probe upstream, linux/arm64. Throwaway.
+FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm
+COPY probe_server.py /app/probe_server.py
+EXPOSE 8088
+CMD ["python", "-u", "/app/probe_server.py", "8088"]

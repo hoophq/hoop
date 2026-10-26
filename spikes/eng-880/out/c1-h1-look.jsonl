@@ -1,0 +1,57 @@
+{"event":"http","status":200,"content_type":"application/vnd.amazon.eventstream","seconds":0.820430}
+{"event": "chunk", "contentStart": {}}
+{"event": "chunk", "contentDelta": {"stdout": "== id\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "uid=0(root) gid=0(root) groups=0(root)\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "Linux 6.1.161-18.298.amzn2023.aarch64 aarch64\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== tools\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "curl=/usr/bin/curl psql=/usr/bin/psql python3=/usr/local/bin/python3 dig=/usr/bin/dig getent=/usr/bin/getent nc=/usr/bin/nc jq=/usr/bin/jq \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== env names\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AGENTCORE_RUNTIME_URL AGENT_OBSERVABILITY_ENABLED AWS_CUSTOMER_CONTAINER_URI AWS_DEFAULT_REGION AWS_DNS_SUFFIX AWS_EXECUTION_ENV AWS_REGION AWS_STAGE AWS_TRUNCATION_MESSAGES_COUNT AWS_TRUNCATION_STRATEGY CREWAI_DISABLE_TELEMETRY CUSTOMER_API_TOKEN GPG_KEY HOME HOOP_CALLER_TOKEN HOSTNAME LC_CTYPE OTEL_AWS_APPLICATION_SIGNALS_ENABLED OTEL_EXPORTER_OTLP_LOGS_ENDPOINT OTEL_EXPORTER_OTLP_LOGS_HEADERS OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION OTEL_EXPORTER_OTLP_PROTOCOL OTEL_EXPORTER_OTLP_TIMEOUT OTEL_EXPORTER_OTLP_TRACES_ENDPOINT OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT OTEL_LOGS_EXPORTER OTEL_METRICS_ADD_APPLICATION_SIGNALS_DIMENSIONS OTEL_PROPAGATORS OTEL_PYTHON_CONFIGURATOR OTEL_PYTHON_DISTRO OTEL_PYTHON_ID_GENERATOR OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED OTEL_PYTHON_LOG_CORRELATION OTEL_RESOURCE_ATTRIBUTES OTEL_TRACES_EXPORTER PATH PWD PYTHON_SHA256 PYTHON_VERSION SHLVL SIDECAR_HOST TIKTOKEN_CACHE_DIR _ \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== env AWS_* and *SESSION* (values cut to 12)\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_EXECUTION_ENV=AWS_BedrockA...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_DEFAULT_REGION=us-east-1...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_REGION=us-east-1...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_TRUNCATION_MESSAGES_COUNT=150...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_DNS_SUFFIX=amazonaws.co...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_TRUNCATION_STRATEGY=sliding_wind...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_STAGE=prod...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AWS_CUSTOMER_CONTAINER_URI=259815801592...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AGENTCORE_RUNTIME_URL=https://bedr...\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== resolv.conf\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# This is /run/systemd/resolve/resolv.conf managed by man:systemd-resolved(8).\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# Do not edit.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "#\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# This file might be symlinked as /etc/resolv.conf. If you're looking at\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# /etc/resolv.conf and seeing this text, you have followed the symlink.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "#\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# This is a dynamic resolv.conf file for connecting local clients directly to\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# all known uplink DNS servers. This file lists all configured search domains.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "#\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# Third party programs should typically not access this file directly, but only\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# through the symlink at /etc/resolv.conf. To manage man:resolv.conf(5) in a\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# different way, replace this symlink by a static file or a different symlink.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "#\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# See man:systemd-resolved.service(8) for details about the supported modes of\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "# operation for /etc/resolv.conf.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "nameserver 127.0.0.2\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "search .\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== routes\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT                                                       \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth1\t00000000\t0101FEA9\t0003\t0\t0\t200\t00000000\t0\t0\t0                                                                             \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth0\t00000000\t0100FEA9\t0003\t0\t0\t250\t00000000\t0\t0\t0                                                                             \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth0\t0000FEA9\t00000000\t0001\t0\t0\t0\tFCFFFFFF\t0\t0\t0                                                                               \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth1\t0001FEA9\t00000000\t0001\t0\t0\t0\tFCFFFFFF\t0\t0\t0                                                                               \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eth0\tFEA9FEA9\t00000000\t0005\t0\t0\t0\tFFFFFFFF\t0\t0\t0                                                                               \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== addrs\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "169.254.0.2 169.254.1.2 2600:1f18:2b20:db20:b890:373d:dad5:ec72 \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== pid1\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "/bin/sh -c sleep infinity \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== session id in files\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== mmds\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "http://169.254.169.254/latest/meta-data/ -> 401\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "http://169.254.170.2/ -> 000\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== mmds v2 token\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "200\n"}}
+{"event": "chunk", "contentStop": {"exitCode": 0, "status": "COMPLETED"}}

@@ -1,0 +1,2 @@
+{"t":"19:02:07","kind":"statement","principal":"agentcore","statement":"GET /users/1","rule":null,"session":"eng880-6056c975b1834a6e7a7cda0d07fec316"}
+{"t":"19:02:07","kind":"violation","principal":"agentcore","statement":"DELETE /users/1","rule":"read-only","session":"eng880-6056c975b1834a6e7a7cda0d07fec316"}

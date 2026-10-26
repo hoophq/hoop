@@ -1,0 +1,38 @@
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolUse": {"name": "shell", "toolUseId": "tooluse_bTyN4O9Wn8pNyAfY0OhP1g", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "{\"c"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "ommand\": "}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\"head -1 /"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "et"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "c/"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "os-release; "}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "python3"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": " --versi"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "on\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_use"}
+{"event": "metadata", "metrics": {"latencyMs": 1247}, "usage": {"inputTokens": 849, "outputTokens": 62, "totalTokens": 911}}
+{"event": "messageStart", "role": "user"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_bTyN4O9Wn8pNyAfY0OhP1g"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolResult": [{"text": "{\"stdout\": \"PRETTY_NAME=\\\"Debian GNU/Linux 12 (bookworm)\\\"\\nPython 3.13.17\\n\", \"stderr\": \"\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_result"}
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"reasoningContent": {"signature": "CAQSwgQKEggTEAEYAjgBQgh0aGlua2luZxIMOoh0B9OzvHDIro/DGgzLpkHXkWxNOf5UVdQiMNS1RXSClO4y7DPj6JrvlRtsEhVHZcLRLKBBlHtDBGBptprcIhJrqY6qjjoLUS+F6irdA5Qwxh07yLZUlgohKDasfbkGHP0OAH7fQixgUv6IrtvFpxZrUG5JJ2xI+sLBCN5SuI68RM0alo5iperSt3NKEoittmrxSmDRTEtCX5/m7WEscEIo6C0hsaL01LlalEapYasV+9bJg6hwLabGu/ukPEM73Be1tgVUvLDJFuCYMiYw0HnLwQnctF6mO2UZR/4nHG7MRPngWfWp6YBfyf4MSe9C4Uvh/0RwCRKXVdu3PZtWA01tfq43PDOWWDkV00w6bEkQxre7OdRB9Ai1KUAHGpas/AciuAnCVCTC7XQW5VDmVfHSj7AgFiDfWWFYSMlZyq0gSTJkTXl14VWfltS7MRzMlD/Wk7EdDULOxdQ21kpIOYCA+QSkrgd28blefgoWmeGrRUv+66ysfcTq3HmslX/o1it1lOTOjNAGLSwg9mgKQwd5+w1IH5epl38NSNKKPRqJNU5N+D82esKXq5CLmrw7WP650hwOEjBKtszNLSEsWa/HxNOxgy6CbFsyUvW9OrvGgZoXnSO80mRL3EGRl4giLTYJhOrUmXvPrhX6oo/ngzeN4hrQ0pWbzhVKBnBXRK342xnLibemD8C3qCfZ4/4My4kn1Zuspx6TIR4ODcZYwGnJo9vjSDJ5+t4f7xgB"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "The command ran success"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "fully ("}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "exit code 0):\n\n-"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " **OS:** `PR"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ETTY_NAME=\""}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Debian GNU/"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Lin"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ux 12 (bookwor"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "m)\"`\n- **"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Python:** `Python 3"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ".13.17`"}}
+{"event": "contentBlockStop", "contentBlockIndex": 1}
+{"event": "messageStop", "stopReason": "end_turn"}
+{"event": "metadata", "metrics": {"latencyMs": 2931}, "usage": {"inputTokens": 985, "outputTokens": 121, "totalTokens": 1106}}

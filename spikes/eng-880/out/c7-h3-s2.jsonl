@@ -1,0 +1,1 @@
+{"event": "runtimeClientError", "message": "Failed to load tool 'probe' (type=HarnessToolType.remote_mcp): Failed to start MCP client: the client initialization failed: unhandled errors in a TaskGroup (1 sub-exception): [SSL: CERTIFICATE_VERIFY_FAILED] CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate (_ssl.c:1017)"}

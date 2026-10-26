@@ -1,0 +1,65 @@
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolUse": {"name": "shell", "toolUseId": "tooluse_9tRaH9hhueYXLsHjKcaLt9", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "{\"command"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\": \"id; he"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "ad -1 /etc/"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "os-release"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "; for"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": " t i"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "n curl"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": " psql pyt"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "hon3"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": " dig"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "; do co"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "mmand -v"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": " $t || "}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "echo \\\"no $t"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\\\"; done"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_use"}
+{"event": "metadata", "metrics": {"latencyMs": 1200}, "usage": {"inputTokens": 903, "outputTokens": 88, "totalTokens": 991}}
+{"event": "messageStart", "role": "user"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_9tRaH9hhueYXLsHjKcaLt9"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolResult": [{"text": "{\"stdout\": \"uid=0(root) gid=0(root) groups=0(root)\\nNAME=\\\"Amazon Linux\\\"\\n/usr/bin/curl\\nno psql\\n/opt/amazon/bin/python3\\nno dig\\n\", \"stderr\": \"\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_result"}
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "Here is the ver"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "batim output of the command:"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n\n```\nuid=0("}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "root) gid=0(root"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": ")"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " groups=0(root)"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\nNAME=\"Amazon"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " Linux\"\n/usr"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "/bin/curl\nno"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " psql\n/opt/am"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "azon/bin/python3"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\nno dig\n```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n\nNot"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "es on the output:\n- `"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "id` reports u"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "id "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "0 (root)."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n- `head -1 /"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "etc/os-release` sh"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "ows `NAME=\"Am"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "azon Linux\"`."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n- `cur"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "l`"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " is at `/usr/b"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "in/curl`.\n-"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " `psql` is not installed"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " ("}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "`no psql`).\n-"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " `python3` is at"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " `/opt/amazon"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "/bin/python3`."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n- `dig` is not"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " installed (`no dig`"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": ")."}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "end_turn"}
+{"event": "metadata", "metrics": {"latencyMs": 1515}, "usage": {"inputTokens": 1096, "outputTokens": 219, "totalTokens": 1315}}

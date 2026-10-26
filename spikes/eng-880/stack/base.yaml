@@ -1,0 +1,626 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  ENG-880 spike, throwaway. A VPC whose agent subnets have no route out, VPC
+  endpoints that each toggle (cell c1), and a hoop sidecar on ECS Fargate
+  with a probe API and a Postgres behind it.
+
+Parameters:
+  AgentAzIds:
+    Type: CommaDelimitedList
+    # AgentCore accepts only use1-az1, use1-az2 and use1-az4 in us-east-1.
+    Default: use1-az1,use1-az2
+  SidecarImage:
+    Type: String
+    Default: hoophq/hoopsidecar:1.263.0@sha256:1cbddabd563ea67a885e4fa5767f97599f978e8edd2cb6ac3f1eba4e385f5992
+  ServicesUp:
+    Type: Number
+    # 0 until deploy.sh pushes the probe image and writes the SSM parameters.
+    Default: 0
+    AllowedValues: [0, 1]
+  AgentEgress:
+    Type: String
+    # strict: agent SG reaches only the sidecar lanes, the endpoints and S3.
+    # open: agent SG allows all egress, so only routes hold (c5).
+    Default: strict
+    AllowedValues: [strict, open]
+  S3EndpointPolicy:
+    Type: String
+    # scoped: only the ECR layer bucket (c5). open: any bucket.
+    Default: open
+    AllowedValues: [scoped, open]
+  EpEcrDkr: {Type: String, Default: 'true', AllowedValues: ['true', 'false']}
+  EpEcrApi: {Type: String, Default: 'true', AllowedValues: ['true', 'false']}
+  EpS3: {Type: String, Default: 'true', AllowedValues: ['true', 'false']}
+  EpBedrockRuntime: {Type: String, Default: 'true', AllowedValues: ['true', 'false']}
+  EpLogs: {Type: String, Default: 'true', AllowedValues: ['true', 'false']}
+  EpAgentCore: {Type: String, Default: 'false', AllowedValues: ['true', 'false']}
+  EpSts: {Type: String, Default: 'false', AllowedValues: ['true', 'false']}
+  EpXray: {Type: String, Default: 'false', AllowedValues: ['true', 'false']}
+  S3PrefixListId:
+    Type: String
+    Default: pl-63a5400a
+  ProbePublic:
+    Type: String
+    # true: the probe accepts :8088 from anywhere, to see where a harness
+    # model call with apiBase comes from (c5, c9).
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  DnsFirewall:
+    Type: String
+    # true: the VPC resolver answers only AWS, eng880.internal and the
+    # sidecar's upstreams (c5).
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  Strict: !Equals [!Ref AgentEgress, strict]
+  S3Scoped: !Equals [!Ref S3EndpointPolicy, scoped]
+  HasEcrDkr: !Equals [!Ref EpEcrDkr, 'true']
+  HasEcrApi: !Equals [!Ref EpEcrApi, 'true']
+  HasS3: !Equals [!Ref EpS3, 'true']
+  HasBedrockRuntime: !Equals [!Ref EpBedrockRuntime, 'true']
+  HasLogs: !Equals [!Ref EpLogs, 'true']
+  HasAgentCore: !Equals [!Ref EpAgentCore, 'true']
+  HasSts: !Equals [!Ref EpSts, 'true']
+  HasXray: !Equals [!Ref EpXray, 'true']
+  IsProbePublic: !Equals [!Ref ProbePublic, 'true']
+  HasDnsFirewall: !Equals [!Ref DnsFirewall, 'true']
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.88.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: eng880}]
+
+  # Agent tier: a route table with the local route only. No NAT, no IGW.
+  AgentRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{Key: Name, Value: eng880-agent}]
+  AgentSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.88.0.0/24
+      AvailabilityZoneId: !Select [0, !Ref AgentAzIds]
+      Tags: [{Key: Name, Value: eng880-agent-a}]
+  AgentSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.88.1.0/24
+      AvailabilityZoneId: !Select [1, !Ref AgentAzIds]
+      Tags: [{Key: Name, Value: eng880-agent-b}]
+  AgentSubnetARt:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref AgentSubnetA, RouteTableId: !Ref AgentRouteTable}
+  AgentSubnetBRt:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref AgentSubnetB, RouteTableId: !Ref AgentRouteTable}
+
+  # Service tier: the sidecar, the probe and Postgres, with an IGW route and
+  # public IPs so they pull images and reach upstreams without a NAT.
+  Igw:
+    Type: AWS::EC2::InternetGateway
+  IgwAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref Igw}
+  ServiceRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{Key: Name, Value: eng880-service}]
+  ServiceDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: IgwAttach
+    Properties:
+      RouteTableId: !Ref ServiceRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Igw
+  ServiceSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.88.10.0/24
+      AvailabilityZoneId: !Select [0, !Ref AgentAzIds]
+      Tags: [{Key: Name, Value: eng880-service}]
+  ServiceSubnetRt:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref ServiceSubnet, RouteTableId: !Ref ServiceRouteTable}
+
+  AgentSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: eng880 agents (harness and Runtime ENIs)
+      VpcId: !Ref Vpc
+      # A rule to the loopback blackhole replaces the default allow-all, so
+      # strict mode starts from nothing and the rules below add each path.
+      SecurityGroupEgress: !If
+        - Strict
+        - [{IpProtocol: '-1', CidrIp: 127.0.0.1/32, Description: none}]
+        - [{IpProtocol: '-1', CidrIp: 0.0.0.0/0}]
+      Tags: [{Key: Name, Value: eng880-agent}]
+  EndpointSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: eng880 interface endpoints
+      VpcId: !Ref Vpc
+      # Private DNS for an interface endpoint covers the whole VPC, so the
+      # Fargate tasks reach CloudWatch and ECR through it too. Admitting the
+      # agent SG alone stopped a new sidecar task: "cannot find the log group".
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 10.88.0.0/16}
+  SidecarSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: eng880 sidecar lanes
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 8443, ToPort: 8446, SourceSecurityGroupId: !Ref AgentSg}
+        - {IpProtocol: tcp, FromPort: 15432, ToPort: 15432, SourceSecurityGroupId: !Ref AgentSg}
+  ProbeSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: eng880 probe API, sidecar only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 8088, ToPort: 8088, SourceSecurityGroupId: !Ref SidecarSg}
+  DbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: eng880 Postgres, sidecar only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref SidecarSg}
+
+  AgentToLanes:
+    Type: AWS::EC2::SecurityGroupEgress
+    Condition: Strict
+    Properties:
+      GroupId: !Ref AgentSg
+      IpProtocol: tcp
+      FromPort: 8443
+      ToPort: 8446
+      DestinationSecurityGroupId: !Ref SidecarSg
+  AgentToPgLane:
+    Type: AWS::EC2::SecurityGroupEgress
+    Condition: Strict
+    Properties:
+      GroupId: !Ref AgentSg
+      IpProtocol: tcp
+      FromPort: 15432
+      ToPort: 15432
+      DestinationSecurityGroupId: !Ref SidecarSg
+  AgentToEndpoints:
+    Type: AWS::EC2::SecurityGroupEgress
+    Condition: Strict
+    Properties:
+      GroupId: !Ref AgentSg
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationSecurityGroupId: !Ref EndpointSg
+  AgentToS3:
+    Type: AWS::EC2::SecurityGroupEgress
+    Condition: Strict
+    Properties:
+      GroupId: !Ref AgentSg
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationPrefixListId: !Ref S3PrefixListId
+
+  EpEcrDkrRes:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasEcrDkr
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpEcrApiRes:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasEcrApi
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpBedrockRuntimeRes:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasBedrockRuntime
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.bedrock-runtime
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpLogsRes:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasLogs
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpAgentCoreRes:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasAgentCore
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.bedrock-agentcore
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpStsRes:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasSts
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.sts
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpXrayRes:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasXray
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.xray
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpS3Res:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasS3
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref AgentRouteTable]
+      PolicyDocument: !If
+        - S3Scoped
+        - Version: '2012-10-17'
+          Statement:
+            # ECR keeps image layers in this AWS-owned bucket.
+            - Effect: Allow
+              Principal: '*'
+              Action: s3:GetObject
+              Resource: !Sub arn:aws:s3:::prod-${AWS::Region}-starport-layer-bucket/*
+        - Version: '2012-10-17'
+          Statement:
+            - {Effect: Allow, Principal: '*', Action: '*', Resource: '*'}
+
+  # c5: a bucket the scoped endpoint must refuse. Its policy admits the agent
+  # role, as an attacker's bucket would admit anyone: IAM alone allows the
+  # write, so only the endpoint policy can stop it.
+  OtherBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+  OtherBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref OtherBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {AWS: !GetAtt AgentRole.Arn}
+            Action: s3:PutObject
+            Resource: !Sub ${OtherBucket.Arn}/*
+
+  ProbeFromAnywhere:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: IsProbePublic
+    Properties:
+      GroupId: !Ref ProbeSg
+      IpProtocol: tcp
+      FromPort: 8088
+      ToPort: 8088
+      CidrIp: 0.0.0.0/0
+
+  DnsAllowed:
+    Type: AWS::Route53Resolver::FirewallDomainList
+    Condition: HasDnsFirewall
+    Properties:
+      Domains:
+        - amazonaws.com.
+        - '*.amazonaws.com.'
+        - eng880.internal.
+        - '*.eng880.internal.'
+        # The sidecar shares the VPC resolver: its upstreams and image hosts.
+        - api.openai.com.
+        - '*.docker.io.'
+        - '*.docker.com.'
+  DnsAll:
+    Type: AWS::Route53Resolver::FirewallDomainList
+    Condition: HasDnsFirewall
+    Properties:
+      Domains: ['*.']
+  DnsRules:
+    Type: AWS::Route53Resolver::FirewallRuleGroup
+    Condition: HasDnsFirewall
+    Properties:
+      FirewallRules:
+        - {FirewallDomainListId: !Ref DnsAllowed, Priority: 100, Action: ALLOW}
+        - {FirewallDomainListId: !Ref DnsAll, Priority: 200, Action: BLOCK, BlockResponse: NXDOMAIN}
+  DnsRulesAssoc:
+    Type: AWS::Route53Resolver::FirewallRuleGroupAssociation
+    Condition: HasDnsFirewall
+    Properties:
+      FirewallRuleGroupId: !Ref DnsRules
+      VpcId: !Ref Vpc
+      Priority: 101
+
+  Repo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: eng880
+      EmptyOnDelete: true
+
+  Namespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: eng880.internal
+      Vpc: !Ref Vpc
+  SidecarDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: sidecar
+      NamespaceId: !Ref Namespace
+      DnsConfig: {DnsRecords: [{Type: A, TTL: 10}]}
+      HealthCheckCustomConfig: {FailureThreshold: 1}
+  ProbeDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: probe
+      NamespaceId: !Ref Namespace
+      DnsConfig: {DnsRecords: [{Type: A, TTL: 10}]}
+      HealthCheckCustomConfig: {FailureThreshold: 1}
+  DbDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: db
+      NamespaceId: !Ref Namespace
+      DnsConfig: {DnsRecords: [{Type: A, TTL: 10}]}
+      HealthCheckCustomConfig: {FailureThreshold: 1}
+
+  Logs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /eng880/services
+      RetentionInDays: 3
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: eng880
+  TaskExecRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - {Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: sts:AssumeRole}
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy]
+      Policies:
+        - PolicyName: ssm
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eng880/*
+
+  # The image reads its config from a file, and Fargate mounts none: the
+  # entry point writes each SSM value to a file, then starts the sidecar.
+  SidecarTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: eng880-sidecar
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: !GetAtt TaskExecRole.Arn
+      ContainerDefinitions:
+        - Name: sidecar
+          Image: !Ref SidecarImage
+          EntryPoint: [/usr/bin/tini, --, bash, -c]
+          Command:
+            - >-
+              umask 077 && mkdir -p /tmp/h &&
+              printf '%s' "$SIDECAR_YAML" > /tmp/h/sidecar.yaml &&
+              printf '%s' "$TLS_CRT" > /tmp/h/tls.crt &&
+              printf '%s' "$TLS_KEY" > /tmp/h/tls.key &&
+              printf '%s\n' "$CALLER_TOKEN" > /tmp/h/caller-token &&
+              unset SIDECAR_YAML TLS_KEY CALLER_TOKEN &&
+              exec hoop start sidecar --config /tmp/h/sidecar.yaml
+          Environment:
+            - {Name: HOOP_SIDECAR_INSTALL_SOURCE, Value: other}
+          Secrets:
+            - {Name: SIDECAR_YAML, ValueFrom: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eng880/sidecar-yaml'}
+            - {Name: TLS_CRT, ValueFrom: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eng880/tls-crt'}
+            - {Name: TLS_KEY, ValueFrom: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eng880/tls-key'}
+            - {Name: CALLER_TOKEN, ValueFrom: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eng880/caller-token'}
+            - {Name: HOOP_LICENSE, ValueFrom: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eng880/license'}
+          PortMappings:
+            - {ContainerPort: 8443}
+            - {ContainerPort: 8444}
+            - {ContainerPort: 8445}
+            - {ContainerPort: 8446}
+            - {ContainerPort: 15432}
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: {awslogs-group: !Ref Logs, awslogs-region: !Ref AWS::Region, awslogs-stream-prefix: sidecar}
+  ProbeTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: eng880-probe
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: !GetAtt TaskExecRole.Arn
+      ContainerDefinitions:
+        - Name: probe
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/eng880:probe
+          Secrets:
+            # probe_server.py prints a known secret as <REAL:name> (c7).
+            - {Name: PROBE_SECRET_api_token, ValueFrom: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eng880/api-token'}
+            - {Name: PROBE_SECRET_caller_token, ValueFrom: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eng880/caller-token'}
+          PortMappings: [{ContainerPort: 8088}]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: {awslogs-group: !Ref Logs, awslogs-region: !Ref AWS::Region, awslogs-stream-prefix: probe}
+  DbTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: eng880-db
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: !GetAtt TaskExecRole.Arn
+      ContainerDefinitions:
+        - Name: db
+          Image: postgres:17-alpine
+          EntryPoint: [sh, -c]
+          Command:
+            - >-
+              printf '%s' "$SEED_SQL" > /docker-entrypoint-initdb.d/seed.sql &&
+              exec docker-entrypoint.sh postgres
+          Environment:
+            - {Name: POSTGRES_DB, Value: appdb}
+            - {Name: POSTGRES_PASSWORD, Value: eng880-owner-not-secret}
+          Secrets:
+            - {Name: SEED_SQL, ValueFrom: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eng880/seed-sql'}
+          PortMappings: [{ContainerPort: 5432}]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: {awslogs-group: !Ref Logs, awslogs-region: !Ref AWS::Region, awslogs-stream-prefix: db}
+
+  SidecarService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref Cluster
+      ServiceName: sidecar
+      LaunchType: FARGATE
+      DesiredCount: !Ref ServicesUp
+      TaskDefinition: !Ref SidecarTask
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref ServiceSubnet]
+          SecurityGroups: [!Ref SidecarSg]
+      ServiceRegistries: [{RegistryArn: !GetAtt SidecarDiscovery.Arn}]
+  ProbeService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref Cluster
+      ServiceName: probe
+      LaunchType: FARGATE
+      DesiredCount: !Ref ServicesUp
+      TaskDefinition: !Ref ProbeTask
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref ServiceSubnet]
+          SecurityGroups: [!Ref ProbeSg]
+      ServiceRegistries: [{RegistryArn: !GetAtt ProbeDiscovery.Arn}]
+  DbService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref Cluster
+      ServiceName: db
+      LaunchType: FARGATE
+      DesiredCount: !Ref ServicesUp
+      TaskDefinition: !Ref DbTask
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref ServiceSubnet]
+          SecurityGroups: [!Ref DbSg]
+      ServiceRegistries: [{RegistryArn: !GetAtt DbDiscovery.Arn}]
+
+  # One role for the harness and the Runtime agent.
+  AgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: eng880-agent
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock-agentcore.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
+      Policies:
+        - PolicyName: agent
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource: '*'
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability]
+                Resource:
+                  - !GetAtt Repo.Arn
+                  # AWS's private harness base images.
+                  - !Sub arn:aws:ecr:${AWS::Region}:*:repository/harness-*
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:DescribeLogStreams, logs:DescribeLogGroups]
+                Resource: '*'
+              - Effect: Allow
+                Action: [xray:PutTraceSegments, xray:PutTelemetryRecords, cloudwatch:PutMetricData]
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                  - bedrock-agentcore:GetWorkloadAccessTokenForUserId
+                  - bedrock-agentcore:GetResourceApiKey
+                Resource: '*'
+              # The vault reads its secret with this role's credentials: without
+              # this grant GetResourceApiKey fails (c7). CalledVia keeps the
+              # agent's shell, which holds the same credentials, from reading
+              # it directly.
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:bedrock-agentcore-identity!default/apikey/*
+                Condition:
+                  ForAnyValue:StringEquals: {aws:CalledVia: bedrock-agentcore.amazonaws.com}
+              # Managed Memory is on by default for a harness.
+              - Effect: Allow
+                Action: bedrock-agentcore:*Memory*
+                Resource: '*'
+
+Outputs:
+  VpcId: {Value: !Ref Vpc}
+  AgentSubnets: {Value: !Join [',', [!Ref AgentSubnetA, !Ref AgentSubnetB]]}
+  AgentSg: {Value: !Ref AgentSg}
+  RepoUri: {Value: !GetAtt Repo.RepositoryUri}
+  AgentRoleArn: {Value: !GetAtt AgentRole.Arn}
+  OtherBucket: {Value: !Ref OtherBucket}
+  SidecarHost: {Value: sidecar.eng880.internal}

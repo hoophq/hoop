@@ -1,0 +1,84 @@
+# ENG-880 lanes. Throwaway. Rules sit on each lane: the openai lane (c9)
+# must pass POSTs. More than one rule per process needs HOOP_LICENSE.
+x-hoop-demo-api: 127.0.0.1:18081
+
+admin:
+  listen: '0.0.0.0:19000'
+audit:
+  file: '-'
+
+listeners:
+  # c3: the ENG-862 shape, hoop's demo API behind an HTTPS lane.
+  - name: demo-api
+    protocol: http
+    listen: 'https://0.0.0.0:8443'
+    upstream: 'http://127.0.0.1:18081'
+    downstream_tls: {cert_file: /tmp/h/tls.crt, key_file: /tmp/h/tls.key}
+    caller_token: {file: /tmp/h/caller-token, name: agentcore}
+    http:
+      headers: [X-Amzn-Bedrock-AgentCore-Runtime-Session-Id, X-Hoop-Session-Id]
+    guardrails:
+      rules:
+        - name: read-only
+          type: operation
+          operations: [post, put, patch, delete, connect, trace, other]
+          message: this agent may only read from the API
+    mask:
+      rules:
+        - {name: pii, entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD], strategy: redact}
+
+  # c3, c7: the probe echoes what it got; a known secret shows as <REAL:name>.
+  - name: probe
+    protocol: http
+    listen: 'https://0.0.0.0:8444'
+    upstream: 'http://probe.eng880.internal:8088'
+    downstream_tls: {cert_file: /tmp/h/tls.crt, key_file: /tmp/h/tls.key}
+    caller_token: {file: /tmp/h/caller-token, name: agentcore}
+    http:
+      headers: [X-Amzn-Bedrock-AgentCore-Runtime-Session-Id, X-Hoop-Session-Id]
+    guardrails:
+      rules:
+        - {name: no-delete, type: operation, operations: [delete], message: this agent may not delete}
+    mask:
+      rules:
+        - {name: pii, entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD], strategy: redact}
+
+  # c7: the probe again, plain HTTP. The harness loop runs outside the
+  # agent's container and does not trust the CA baked into it.
+  - name: probe-plain
+    protocol: http
+    listen: 'http://0.0.0.0:8446'
+    upstream: 'http://probe.eng880.internal:8088'
+    caller_token: {file: /tmp/h/caller-token, name: agentcore}
+    http:
+      headers: [X-Amzn-Bedrock-AgentCore-Runtime-Session-Id, X-Hoop-Session-Id]
+    guardrails:
+      rules:
+        - {name: no-delete, type: operation, operations: [delete], message: this agent may not delete}
+    mask:
+      rules: []
+
+  # c9: the model API of a non-Bedrock model. The OpenAI key is the caller's
+  # credential here, so no caller token, no rule and no mask. Plain HTTP:
+  # the harness loop makes the call and does not trust our CA (c7).
+  - name: openai
+    protocol: http
+    listen: 'http://0.0.0.0:8445'
+    upstream: 'https://api.openai.com'
+    mask:
+      rules: []
+
+  # c4: Postgres, read-only, emails masked.
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: db.eng880.internal:5432
+    guardrails:
+      rules:
+        - name: read-only
+          type: operation
+          operations: [insert, update, delete, truncate, create, drop, alter, grant, revoke, call, set]
+          message: this connection is read-only; writes are not permitted
+    mask:
+      rules:
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}

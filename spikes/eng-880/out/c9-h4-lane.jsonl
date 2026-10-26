@@ -1,0 +1,49 @@
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolUse": {"name": "shell", "toolUseId": "call_53q8HoGydT7KBNfpO6lxiTzs"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "{\""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "command"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\":\""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "echo"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": " shell"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "-ok"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_use"}
+{"event": "metadata", "metrics": {"latencyMs": 0}, "usage": {"cacheReadInputTokens": 0, "inputTokens": 378, "outputTokens": 18, "totalTokens": 396}}
+{"event": "messageStart", "role": "user"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolResult": {"status": "success", "toolUseId": "call_53q8HoGydT7KBNfpO6lxiTzs"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolResult": [{"text": "{\"stdout\": \"shell-ok\\n\", \"stderr\": \"\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_result"}
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "Command"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " run"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": ":\n"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "bash"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "echo"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " shell"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "-ok"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "``"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "`\n\n"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "Output"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": ":\n"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "text"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "shell"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "-ok"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "``"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "`\n\n"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "I"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\u2019m"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " Chat"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "GPT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "."}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "end_turn"}
+{"event": "metadata", "metrics": {"latencyMs": 0}, "usage": {"cacheReadInputTokens": 0, "inputTokens": 425, "outputTokens": 30, "totalTokens": 455}}

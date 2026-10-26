@@ -1,0 +1,33 @@
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolUse": {"name": "probe_whoami", "toolUseId": "tooluse_51GN73v1fftuoWXE9dH98P", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_use"}
+{"event": "metadata", "metrics": {"latencyMs": 1056}, "usage": {"inputTokens": 977, "outputTokens": 29, "totalTokens": 1006}}
+{"event": "messageStart", "role": "user"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_51GN73v1fftuoWXE9dH98P"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolResult": [{"text": "{\"mcp_call_src_ip\": \"10.88.10.86\", \"user_agent\": \"python-httpx/0.28.1\", \"authorization\": null}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_result"}
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "Here is the result"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " from"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " the probe `"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "whoami` tool, ver"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "batim:\n\n```json"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n{\"mcp_call_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "src_ip\": \"10."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "88.10.86\", \"user"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "_agent\": \"python-htt"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "px/0.28.1"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\", \"authorization\": null}"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n```\n\nThe server sa"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "w source"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " IP 10.88.10"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": ".86, user agent `python"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "-httpx/0.28"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": ".1`, and no"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " Authorization header."}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "end_turn"}
+{"event": "metadata", "metrics": {"latencyMs": 1169}, "usage": {"inputTokens": 1059, "outputTokens": 120, "totalTokens": 1179}}

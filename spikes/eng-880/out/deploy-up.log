@@ -1,0 +1,115 @@
+
+Waiting for changeset to be created..
+Waiting for stack create/update to complete
+Successfully created/updated stack - eng880-base
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.probe
+#1 transferring dockerfile: 263B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for public.ecr.aws/docker/library/python:3.13-slim-bookworm
+#2 DONE 1.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 37B done
+#4 DONE 0.0s
+
+#5 [1/2] FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm@sha256:e32be0e55814a08977501ca863271d9bd02443710db8f2afaf8372e2c4508530
+#5 resolve public.ecr.aws/docker/library/python:3.13-slim-bookworm@sha256:e32be0e55814a08977501ca863271d9bd02443710db8f2afaf8372e2c4508530 done
+#5 DONE 0.0s
+
+#6 [2/2] COPY probe_server.py /app/probe_server.py
+#6 CACHED
+
+#7 exporting to image
+#7 exporting layers done
+#7 exporting manifest sha256:1bd8b07c68ff37288a13e1f29e5095a694951829cadeb5827e4f6120c7ef9ce3 done
+#7 exporting config sha256:a76e5a965fdb54b53cbeeb849024a629acab25fa908f471f8cd54f43114561a0 done
+#7 naming to 259815801592.dkr.ecr.us-east-1.amazonaws.com/eng880:probe done
+#7 pushing layers
+#7 ...
+
+#8 [auth] sharing credentials for 259815801592.dkr.ecr.us-east-1.amazonaws.com
+#8 DONE 0.0s
+
+#7 exporting to image
+#7 pushing layers 21.4s done
+#7 pushing manifest for 259815801592.dkr.ecr.us-east-1.amazonaws.com/eng880:probe@sha256:1bd8b07c68ff37288a13e1f29e5095a694951829cadeb5827e4f6120c7ef9ce3
+#7 pushing manifest for 259815801592.dkr.ecr.us-east-1.amazonaws.com/eng880:probe@sha256:1bd8b07c68ff37288a13e1f29e5095a694951829cadeb5827e4f6120c7ef9ce3 0.5s done
+#7 DONE 21.9s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/vg6oww0k6ktg1580a8svlsapn
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 738B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for public.ecr.aws/docker/library/python:3.13-slim-bookworm
+#2 DONE 0.3s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 646B done
+#4 DONE 0.0s
+
+#5 [1/5] FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm@sha256:e32be0e55814a08977501ca863271d9bd02443710db8f2afaf8372e2c4508530
+#5 resolve public.ecr.aws/docker/library/python:3.13-slim-bookworm@sha256:e32be0e55814a08977501ca863271d9bd02443710db8f2afaf8372e2c4508530 done
+#5 DONE 0.0s
+
+#6 [2/5] RUN apt-get update  && apt-get install -y --no-install-recommends postgresql-client curl jq dnsutils netcat-openbsd ca-certificates procps  && rm -rf /var/lib/apt/lists/*  && pip install --no-cache-dir boto3==1.40.*
+#6 CACHED
+
+#7 [3/5] COPY ca.crt /usr/local/share/ca-certificates/eng880-ca.crt
+#7 CACHED
+
+#8 [4/5] RUN update-ca-certificates
+#8 CACHED
+
+#9 [5/5] COPY agent.py /app/agent.py
+#9 CACHED
+
+#10 exporting to image
+#10 exporting layers done
+#10 exporting manifest sha256:1140f96cdc9b6ec11b49fe7c3ce4e9a30b508bf59249c6c13031258e6bea989f done
+#10 exporting config sha256:87d65830293ffa762d45651735336e129f74a5915cd24c208f533a4329855299 done
+#10 naming to 259815801592.dkr.ecr.us-east-1.amazonaws.com/eng880:agent done
+#10 pushing layers
+#10 ...
+
+#11 [auth] sharing credentials for 259815801592.dkr.ecr.us-east-1.amazonaws.com
+#11 DONE 0.0s
+
+#10 exporting to image
+#10 pushing layers 24.9s done
+#10 pushing manifest for 259815801592.dkr.ecr.us-east-1.amazonaws.com/eng880:agent@sha256:1140f96cdc9b6ec11b49fe7c3ce4e9a30b508bf59249c6c13031258e6bea989f
+#10 pushing manifest for 259815801592.dkr.ecr.us-east-1.amazonaws.com/eng880:agent@sha256:1140f96cdc9b6ec11b49fe7c3ce4e9a30b508bf59249c6c13031258e6bea989f 0.6s done
+#10 DONE 25.5s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/01pp6z4bsgybx4thgzy0sbv8i
+
+Waiting for changeset to be created..
+Waiting for stack create/update to complete
+Successfully created/updated stack - eng880-base
+-------------------------------------------------------------------------
+|                            DescribeStacks                             |
++--------------+--------------------------------------------------------+
+|   OutputKey  |                      OutputValue                       |
++--------------+--------------------------------------------------------+
+|  AgentRoleArn|  arn:aws:iam::259815801592:role/eng880-agent           |
+|  AgentSg     |  sg-0cef094ab4297deb4                                  |
+|  VpcId       |  vpc-074af5822ba33d7f4                                 |
+|  OtherBucket |  eng880-base-otherbucket-znmkqe375ak5                  |
+|  SidecarHost |  sidecar.eng880.internal                               |
+|  AgentSubnets|  subnet-0e72fba3ad7e55b03,subnet-0d427ad6c96b917ea     |
+|  RepoUri     |  259815801592.dkr.ecr.us-east-1.amazonaws.com/eng880   |
++--------------+--------------------------------------------------------+
+exit 0

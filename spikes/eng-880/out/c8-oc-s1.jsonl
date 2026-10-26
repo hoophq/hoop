@@ -1,0 +1,211 @@
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolUse": {"name": "shell", "toolUseId": "tooluse_nspsY6v8f20Tm5fsklzrru", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "{\"command"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\": \"cu"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "rl -sS -"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "w '\\\\nHTTP_"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "STA"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "TU"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "S:%{"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "http_code"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "}\\"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\\n' -H \\\"X-H"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "oop-Toke"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "n: $HOOP_CAL"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "LER_T"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "OKEN\\"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\" -H \\\"X-Ho"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "op-"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "Session-"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "Id: eng88"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "0-605"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "6c975b1834"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "a6e7a"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "7cda0d07fec3"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "16\\\" \\"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\"$SIDE"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "CAR"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "_URL/"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "users"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "/1\\\"\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "contentBlockStart", "contentBlockIndex": 1, "start": {"toolUse": {"name": "shell", "toolUseId": "tooluse_RuJEYnnyz0jTqRgwBgfRJZ", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "{\"com"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "mand\": \"cur"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "l -sS -"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "X DELET"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "E "}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "-w '\\\\nHTT"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "P_S"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "TATUS:%"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "{http_code"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "}\\\\n"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "' -H"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": " \\\"X-Hoop-T"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "oken: $HOOP_"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "CA"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "LLER_T"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "OKEN\\"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "\" "}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "-H \\\""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "X-Hoop-S"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "ess"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "ion-Id"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": ": eng"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "880-6056c975"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "b18"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "34a6e7a7c"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "da0d0"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "7fec316\\"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "\" \\"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "\"$S"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "IDECA"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "R_URL/use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": "rs/1\\\"\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 1}
+{"event": "contentBlockStart", "contentBlockIndex": 2, "start": {"toolUse": {"name": "shell", "toolUseId": "tooluse_npFSC0Jrg4J42rSint6LIq", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "{\"comm"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "an"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "d\": \"curl -m"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": " 8 ht"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "tps://api.g"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "ithub.com"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "; echo \\\"exi"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "t_code=$?\\\""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 2}
+{"event": "messageStop", "stopReason": "tool_use"}
+{"event": "metadata", "metrics": {"latencyMs": 1816}, "usage": {"inputTokens": 1052, "outputTokens": 395, "totalTokens": 1447}}
+{"event": "messageStart", "role": "user"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_nspsY6v8f20Tm5fsklzrru"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolResult": [{"text": "{\"stdout\": \"{\\n  \\\"id\\\": 1,\\n  \\\"name\\\": \\\"Grace Hopper\\\",\\n  \\\"email\\\": \\\"[REDACTED:EMAIL_ADDRESS]\\\",\\n  \\\"phone\\\": \\\"[REDACTED:PHONE_NUMBER]\\\",\\n  \\\"card\\\": \\\"[REDACTED:CREDIT_CARD]\\\",\\n  \\\"plan\\\": \\\"enterprise\\\"\\n}\\n\\nHTTP_STATUS:200\\n\", \"stderr\": \"\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "contentBlockStart", "contentBlockIndex": 1, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_RuJEYnnyz0jTqRgwBgfRJZ"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolResult": [{"text": "{\"stdout\": \"this agent may only read from the API\\n\\nHTTP_STATUS:403\\n\", \"stderr\": \"\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 1}
+{"event": "contentBlockStart", "contentBlockIndex": 2, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_npFSC0Jrg4J42rSint6LIq"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolResult": [{"text": "{\"stdout\": \"exit_code=28\\n\", \"stderr\": \"  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\\n                                 Dload  Upload   Total   Spent    Left  Speed\\n\\n  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0\\n  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0\\n  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0\\n  0     0    0     0    0     0      0      0 --:--:--  0:00:03 --:--:--     0\\n  0     0    0     0    0     0      0      0 --:--:--  0:00:04 --:--:--     0\\n  0     0    0     0    0     0      0      0 --:--:--  0:00:05 --:--:--     0\\n  0     0    0     0    0     0      0      0 --:--:--  0:00:06 --:--:--     0\\n  0     0    0     0    0     0      0      0 --:--:--  0:00:07 --:--:--     0\\n  0     0    0     0    0     0      0      0 --:--:--  0:00:08 --:--:--     0\\ncurl: (28) Connection timed out after 8001 milliseconds\\n\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 2}
+{"event": "messageStop", "stopReason": "tool_result"}
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"reasoningContent": {"signature": "CAQS4AcKEggTEAEYAjgBQgh0aGlua2luZxIMw9U3N5vBNLdAyH0VGgwrpIFd6x7I0Kpn1rwiMJr5tC0NRRNlo7Uy0wnXZRCOY2Ofq7gbPqdE17R1rds5qbEIar7P4bFDzh4XQB9fPCr7Bgl5IHT3yFrvaR7i7OsekiTlKkSeKZfTc7lmyUk2+jiYkv0SfCNfK+g+oQEVGVDGsjCMsqweuwBjkfhfWSsT4JHrxGRPswKxpSZdUN1sy2DZS3o0GkhPPNs8A1TriWGtkS8qQFmM/elz1rwMsZzzyWY4/h2dYiMuXGa+xKZ6XeB9Z5pOR4XkyzISFCHZWS2QfAqEsEvnOtbWpt2lexB4elQzJ/EGP+SXXeMWKkK7kL5hdWYRN6SQnB4ojRJanbE6xTnw/kFaxg32HgG1ZmWI+0LmJ0JB/2T+vdh+f8S/CWQ3ZW5lfjFnsULXBuOvqjz/yh0iqWYg0gqk4+vc9vpnUASsFGjUslljVK2sIwG9F1gPn2Y0HNoJ6ri9yqYNY8271IsCyYJKKW6U/gQS9bMY6oqSeV0QuKE5OE/avztgta0t/IPNy4xN01RYzxdghZUi0sPQ633qtut0xLsAKBEndk4o7Vc9IgsbsNieDWJnnckWN3RDkmqnzJXvsTggdSlp+aDEduLYDLvq1HmXG3CRvf804Hz+5thtW98z5eO2kgJrpGPLoqE73v3Lghbu4yeOHRs6DW+nb8f4Es/ySb0KjTFSp173zxej8t+teKPEUgRsD6FcbvcmunUX/Nf08hziSkiGpzMa0GMXQjXtrI1LsxB+07dzFY6CjOpdYgMCuWAAnNoIwbY+nxtjpv99Gmkk5IbXFrNcPuACKpgKq5O6/YEYucwMZiP+YMYs6EqzRlXKImZ+dBVjOCe9dHSqLG48ustIgLaeZ6GyxdoDIAYaM0AhV9mN+d/3pgrzA0Vm1kmJeX2pPwuFtQlvtPM/AijhrPHn5ZfnGDxsmsi1lksUbyignro1bDO9q9+zOO1EWfSDHtpj6ae7CY3JtzuMlUaypNJjj8XT3/c3+FVZ3++gjJ2fnsBQ+47OVfZ64q4vDYAlcH6Ue72lqyk27FxHhiO/VHW/JLWQAlRWVyoqa3M1p5+ONu++LggW9dMZFlwctIWqboiv44Axr9Beamc1QWXl/cAlgPOTN4IkN4sM5GxAZKj3V6ZfILmkajh45pu02Tagl8168Y7cTXQlWEOnvlvWXvItbNYDTIk+HPt4lutGvsHz704DGDFzvgFrOl9dCUGWgqnHqPXD6xX7Xs7JIBB+zaWjhNN62GrNBdsu1b3HKckvb7litqOrXLF4yhgB"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "**1"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ". GET $"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "SIDECAR_UR"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "L/users/1**\n\n```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n{\n  \"id\": "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "1,\n  \"name\": \""}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Grace Hopper\","}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n  \"email\": \"[RE"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "DACTED:EMA"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "IL_ADDRES"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "S]\",\n  \"phone"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\": \"[REDACTED"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ":PHONE_NU"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "MBER]\",\n  \""}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "card\": \"[REDACT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ED:CREDIT_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "CARD]\",\n  \""}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "plan\": \"enterprise"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\"\n}\n\nHTTP"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_STATUS:200"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n```\n\n**2. DELET"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "E $SIDECAR"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_URL/users/1**"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n\n```\nthis agent may only"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " read from the API\n\nHTT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "P_STATUS:403"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n```\n\nThe"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " s"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "idecar rejected the del"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ete with "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "403."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " I did not try any"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " other way to send"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " it.\n\n**3. cur"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "l -m 8 https://"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "api.github.com**"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n\nStdout:"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n```\nexit_code="}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "28\n```\n\nStderr"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ":\n```\n  % Total"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "    "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "% Received % Xferd"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "  Average Speed   "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Time    Time     Time"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "  Current\n                                 "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Dload  Upload   "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Total   "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Spent    Left  "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Speed"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n\n  0     0    0     "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0    0     0      0      "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0 --:--:--"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " --:--:-"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "- --:--:--     0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n  0     0    0     "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0    0     0      0      "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0 --:--:--"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "  "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ":00:01 "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "--:--:--     0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n  0     0    0     0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "    0     0      0      0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " --:--:--  0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ":00:02 --:--"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ":--     "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0\n  0     0    0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "     0    0     0      0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "      0 --:--:--"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "  0:00:03 --"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ":--:--     0\n  "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0     0    0     "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0    0     0      0      "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0 --:--:--  "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0:00:04 --:"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "--:--"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "     0\n  0     0    "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0     0    0     0      "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0      0 --:--:"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "--  0:00:05 "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "--:--:--     0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n  0     0    0     0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "    0     0      0      0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " --:--:--  0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ":00:06 "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "--:--:--     0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n  0     0    0     "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0    0     0      0      "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0 --:--:--  "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0:00:07 "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "--:--:--     0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n  0     0    0     "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0    0     0      0      "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0 --:--:--  "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "0:00:08 "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "--:--:--     0"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\ncurl: (28) Conn"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ection timed out after 8001"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " milliseconds\n```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n\nThe exit code is 28"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ","}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " which is cur"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "l's timeout code"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ". The direct request"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " to GitHub did"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " not conn"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ect, which"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " is exp"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ected since"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " only"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " the s"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "idecar is reachable."}}
+{"event": "contentBlockStop", "contentBlockIndex": 1}
+{"event": "messageStop", "stopReason": "end_turn"}
+{"event": "metadata", "metrics": {"latencyMs": 4140}, "usage": {"inputTokens": 2219, "outputTokens": 921, "totalTokens": 3140}}

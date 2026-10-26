@@ -1,0 +1,5 @@
+{"t":"18:39:41","kind":"statement","connection":"demo-api","principal":"agentcore","statement":"GET /users/1","rule":null,"session":"eng880-243884b1199cd31884d519f1f419b875"}
+{"t":"18:39:41","kind":"violation","connection":"demo-api","principal":"agentcore","statement":"DELETE /users/1","rule":"read-only","session":"eng880-243884b1199cd31884d519f1f419b875"}
+{"t":"18:39:41","kind":"violation","connection":"demo-api","principal":"anonymous","statement":"GET /users/1","rule":"identity","session":null}
+{"t":"18:40:37","kind":"statement","connection":"appdb","principal":"agent","statement":"select id, email from customers order by id limit 2","rule":null,"session":null}
+{"t":"18:40:37","kind":"violation","connection":"appdb","principal":"agent","statement":"delete from customers","rule":"read-only","session":null}

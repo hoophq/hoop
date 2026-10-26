@@ -1,0 +1,13 @@
+{"event":"http","status":200,"content_type":"application/vnd.amazon.eventstream","seconds":1.589090}
+{"event": "chunk", "contentStart": {}}
+{"event": "chunk", "contentDelta": {"stdout": "1|Ada Lovelace|[REDACTED:EMAIL_ADDRESS]\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "2|Grace Hopper|[REDACTED:EMAIL_ADDRESS]\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "3|Alan Turing|[REDACTED:EMAIL_ADDRESS]\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "FATAL:  this connection is read-only; writes are not permitted\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "server closed the connection unexpectedly\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "\tThis probably means the server terminated abnormally\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "\tbefore or while processing the request.\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "connection to server was lost\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "sslmode=require through the lane:\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "psql: error: connection to server at \"sidecar.eng880.internal\" (10.88.10.217), port 15432 failed: server does not support SSL, but SSL was required\n"}}
+{"event": "chunk", "contentStop": {"exitCode": 0, "status": "COMPLETED"}}

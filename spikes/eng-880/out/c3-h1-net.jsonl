@@ -1,0 +1,42 @@
+{"event":"http","status":200,"content_type":"application/vnd.amazon.eventstream","seconds":65.103338}
+{"event": "chunk", "contentStart": {}}
+{"event": "chunk", "contentDelta": {"stdout": "== otel and runtime endpoints\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "OTEL_RESOURCE_ATTRIBUTES=service.name=harness_eng880_h1.DEFAULT,aws.log.group.names=/aws/bedrock-agentcore/runtimes/harness_eng880_h1-5d0y1i43qm-DEFAULT,aws.log.stream.names=otel-rt-logs,deployment.en\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://xray.us-east-1.amazonaws.com/v1/traces\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://logs.us-east-1.amazonaws.com/v1/logs\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "AGENTCORE_RUNTIME_URL=https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-east-1%3A259815801592%3Aruntime%2Fharness_eng880_h1-5d0y1i43qm/invocations\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== dns\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent sidecar.eng880.internal     exit=0   10.88.10.228    RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent db.eng880.internal          exit=0   10.88.10.175    RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent probe.eng880.internal       exit=0   10.88.10.191    RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent example.com                 exit=0   104.20.23.154   RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent api.openai.com              exit=0   162.159.140.245 RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent bedrock-runtime.us-east-1.amazonaws.com exit=0   10.88.1.149     RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent bedrock-agentcore.us-east-1.amazonaws.com exit=0   35.170.41.244   RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "getent sts.amazonaws.com           exit=0   67.220.251.181  RAW    \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "dig example.com @127.0.0.2         exit=0   104.20.23.154\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "dig TXT eng880.test (NX)           exit=0   ;; MSG SIZE  rcvd: 118\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== c3 lane (demo API)\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "HTTP/2 200 \r\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "  \"email\": \"[REDACTED:EMAIL_ADDRESS]\",\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "  \"phone\": \"[REDACTED:PHONE_NUMBER]\",\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "  \"card\": \"[REDACTED:CREDIT_CARD]\",\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "HTTP/2 403 \r\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "x-hoop-denied: policy\r\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "this agent may only read from the API\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "HTTP/2 403 \r\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "request refused: the request carried no credential\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== c3 outside the lane\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "https example.com                  exit=28  000  8.001941s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "https 1.1.1.1 (IP)                 exit=28  000  8.001520s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "https api.openai.com               exit=28  000  8.001373s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "probe direct :8088                 exit=28  000  8.000965s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "IPv6 [2606:4700:4700::1111]        exit=28  000  8.001526s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "IPv6 ipv6.google.com               exit=6   000  0.015750s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "bedrock-agentcore (no endpoint)    exit=28  000  7.999608s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "sts global                         exit=28  000  8.001267s\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "== c4 postgres\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "psql lane select                   exit=0   2|[REDACTED:EMAIL_ADDRESS]\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "psql lane delete                   exit=2   connection to server was lost\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "psql direct db:5432                exit=2   psql: error: connection to server at \"db.eng880.internal\" (10.88.10.175), port 5432 failed: timeout expired\n"}}
+{"event": "chunk", "contentStop": {"exitCode": 0, "status": "COMPLETED"}}

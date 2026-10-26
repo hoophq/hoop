@@ -1,0 +1,28 @@
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolUse": {"name": "shell", "toolUseId": "tooluse_rF4t5CJwjDuZPnVqzn48Wj", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "{\"com"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "mand\": \"echo"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": " s"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "he"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "ll-ok\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_use"}
+{"event": "metadata", "metrics": {"latencyMs": 1114}, "usage": {"inputTokens": 863, "outputTokens": 52, "totalTokens": 915}}
+{"event": "messageStart", "role": "user"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_rF4t5CJwjDuZPnVqzn48Wj"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolResult": [{"text": "{\"stdout\": \"shell-ok\\n\", \"stderr\": \"\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_result"}
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "I ran `"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "echo shell-ok`"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " Output:\n\n```\nshell-"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "ok\n```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n\nExit code:"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " 0, stderr empty"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "."}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "end_turn"}
+{"event": "metadata", "metrics": {"latencyMs": 834}, "usage": {"inputTokens": 951, "outputTokens": 43, "totalTokens": 994}}

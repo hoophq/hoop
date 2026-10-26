@@ -1,0 +1,322 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  ENG-880 c8, throwaway. One stack, no other step: a VPC whose agent subnets
+  have no route out, the VPC endpoints a harness needs, a hoop sidecar on ECS
+  Fargate in front of hoop's demo API, and an AgentCore harness in VPC mode.
+
+Parameters:
+  AgentImage:
+    Type: String
+    # Empty: the harness base environment (curl and python3, no psql).
+    Default: ''
+  SidecarImage:
+    Type: String
+    Default: hoophq/hoopsidecar:1.263.0@sha256:1cbddabd563ea67a885e4fa5767f97599f978e8edd2cb6ac3f1eba4e385f5992
+  ModelId:
+    Type: String
+    Default: us.anthropic.claude-haiku-5-5
+  AgentAzIds:
+    Type: CommaDelimitedList
+    # AgentCore accepts only use1-az1, use1-az2 and use1-az4 in us-east-1.
+    Default: use1-az1,use1-az2
+  S3PrefixListId:
+    Type: String
+    Default: pl-63a5400a
+
+Conditions:
+  HasImage: !Not [!Equals [!Ref AgentImage, '']]
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.89.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: !Ref AWS::StackName}]
+  AgentRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref Vpc}
+  AgentSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.89.0.0/24
+      AvailabilityZoneId: !Select [0, !Ref AgentAzIds]
+  AgentSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.89.1.0/24
+      AvailabilityZoneId: !Select [1, !Ref AgentAzIds]
+  AgentSubnetARt:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref AgentSubnetA, RouteTableId: !Ref AgentRouteTable}
+  AgentSubnetBRt:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref AgentSubnetB, RouteTableId: !Ref AgentRouteTable}
+  Igw:
+    Type: AWS::EC2::InternetGateway
+  IgwAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref Igw}
+  ServiceRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref Vpc}
+  ServiceDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: IgwAttach
+    Properties: {RouteTableId: !Ref ServiceRouteTable, DestinationCidrBlock: 0.0.0.0/0, GatewayId: !Ref Igw}
+  ServiceSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.89.10.0/24
+      AvailabilityZoneId: !Select [0, !Ref AgentAzIds]
+  ServiceSubnetRt:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref ServiceSubnet, RouteTableId: !Ref ServiceRouteTable}
+
+  AgentSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: harness ENIs
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, DestinationPrefixListId: !Ref S3PrefixListId}
+  EndpointSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: interface endpoints, whole VPC (private DNS covers it)
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 10.89.0.0/16}
+  SidecarSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: sidecar lane
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 8080, ToPort: 8080, SourceSecurityGroupId: !Ref AgentSg}
+  AgentToLane:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties: {GroupId: !Ref AgentSg, IpProtocol: tcp, FromPort: 8080, ToPort: 8080, DestinationSecurityGroupId: !Ref SidecarSg}
+  AgentToEndpoints:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties: {GroupId: !Ref AgentSg, IpProtocol: tcp, FromPort: 443, ToPort: 443, DestinationSecurityGroupId: !Ref EndpointSg}
+
+  EpEcrDkr:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpEcrApi:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpBedrockRuntime:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.bedrock-runtime
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpLogs:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSg]
+  EpS3:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref AgentRouteTable]
+
+  # A harness pulls its image from inside the VPC, which reaches no ECR
+  # Public. The cache serves a public image (hoop's, one day) from this
+  # account's ECR: <account>.dkr.ecr.<region>.amazonaws.com/ecr-public/<path>.
+  PublicCache:
+    Type: AWS::ECR::PullThroughCacheRule
+    Properties:
+      EcrRepositoryPrefix: ecr-public
+      UpstreamRegistryUrl: public.ecr.aws
+
+  CallerToken:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: the sidecar lane's caller token; the harness holds it until ENG-886
+      GenerateSecretString: {PasswordLength: 48, ExcludePunctuation: true}
+  SidecarConfig:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value: |
+        x-hoop-demo-api: 127.0.0.1:18081
+        admin: {listen: '0.0.0.0:19000'}
+        audit: {file: '-'}
+        listeners:
+          - name: demo-api
+            protocol: http
+            # Plain HTTP inside the VPC: a one-click stack has no CA the agent trusts.
+            listen: 'http://0.0.0.0:8080'
+            upstream: 'http://127.0.0.1:18081'
+            caller_token: {file: /tmp/h/caller-token, name: agentcore}
+            http: {headers: [X-Hoop-Session-Id]}
+        guardrails:
+          rules:
+            - name: read-only
+              type: operation
+              operations: [post, put, patch, delete, connect, trace, other]
+              message: this agent may only read from the API
+        mask:
+          rules:
+            - {name: pii, entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD], strategy: redact}
+
+  Namespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties: {Name: eng880oc.internal, Vpc: !Ref Vpc}
+  SidecarDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: sidecar
+      NamespaceId: !Ref Namespace
+      DnsConfig: {DnsRecords: [{Type: A, TTL: 10}]}
+      HealthCheckCustomConfig: {FailureThreshold: 1}
+  Logs:
+    Type: AWS::Logs::LogGroup
+    Properties: {RetentionInDays: 3}
+  Cluster:
+    Type: AWS::ECS::Cluster
+  TaskExecRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy]
+      Policies:
+        - PolicyName: config
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - {Effect: Allow, Action: ssm:GetParameters, Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${SidecarConfig}'}
+              - {Effect: Allow, Action: secretsmanager:GetSecretValue, Resource: !Ref CallerToken}
+  SidecarTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: !GetAtt TaskExecRole.Arn
+      ContainerDefinitions:
+        - Name: sidecar
+          Image: !Ref SidecarImage
+          EntryPoint: [/usr/bin/tini, --, bash, -c]
+          Command:
+            - >-
+              umask 077 && mkdir -p /tmp/h &&
+              printf '%s' "$SIDECAR_YAML" > /tmp/h/sidecar.yaml &&
+              printf '%s\n' "$CALLER_TOKEN" > /tmp/h/caller-token &&
+              unset SIDECAR_YAML CALLER_TOKEN &&
+              exec hoop start sidecar --config /tmp/h/sidecar.yaml
+          Environment: [{Name: HOOP_SIDECAR_INSTALL_SOURCE, Value: other}]
+          Secrets:
+            - {Name: SIDECAR_YAML, ValueFrom: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${SidecarConfig}'}
+            - {Name: CALLER_TOKEN, ValueFrom: !Ref CallerToken}
+          PortMappings: [{ContainerPort: 8080}]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: {awslogs-group: !Ref Logs, awslogs-region: !Ref AWS::Region, awslogs-stream-prefix: sidecar}
+  SidecarService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref SidecarTask
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref ServiceSubnet]
+          SecurityGroups: [!Ref SidecarSg]
+      ServiceRegistries: [{RegistryArn: !GetAtt SidecarDiscovery.Arn}]
+
+  AgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock-agentcore.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition: {StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}}
+      Policies:
+        - PolicyName: harness
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - {Effect: Allow, Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream], Resource: '*'}
+              - {Effect: Allow, Action: ecr:GetAuthorizationToken, Resource: '*'}
+              - Effect: Allow
+                Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability]
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:*:repository/*
+              # The first pull through the cache creates the repository and
+              # imports the image; ECR, not the microVM, reaches ECR Public.
+              - Effect: Allow
+                Action: [ecr:BatchImportUpstreamImage, ecr:CreateRepository]
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/ecr-public/*
+              - {Effect: Allow, Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, logs:DescribeLogStreams, logs:DescribeLogGroups], Resource: '*'}
+              - {Effect: Allow, Action: [xray:PutTraceSegments, xray:PutTelemetryRecords, cloudwatch:PutMetricData], Resource: '*'}
+
+  Harness:
+    Type: AWS::BedrockAgentCore::Harness
+    DependsOn: [EpEcrDkr, EpEcrApi, EpBedrockRuntime, EpLogs, EpS3, SidecarService]
+    Properties:
+      HarnessName: !Join ['_', [!Select [0, !Split ['-', !Ref AWS::StackName]], oneclick]]
+      ExecutionRoleArn: !GetAtt AgentRole.Arn
+      Model: {BedrockModelConfig: {ModelId: !Ref ModelId}}
+      SystemPrompt:
+        - Text: !Sub >-
+            You reach the customer API only through the hoop sidecar at
+            http://sidecar.eng880oc.internal:8080. Send the header
+            X-Hoop-Token with the value of $HOOP_CALLER_TOKEN and the header
+            X-Hoop-Session-Id with your session id. No other host is reachable.
+      Environment:
+        AgentCoreRuntimeEnvironment:
+          NetworkConfiguration:
+            NetworkMode: VPC
+            NetworkModeConfig:
+              SecurityGroups: [!Ref AgentSg]
+              Subnets: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      EnvironmentArtifact: !If
+        - HasImage
+        - {ContainerConfiguration: {ContainerUri: !Ref AgentImage}}
+        - !Ref AWS::NoValue
+      EnvironmentVariables:
+        SIDECAR_URL: http://sidecar.eng880oc.internal:8080
+        HOOP_CALLER_TOKEN: !Sub '{{resolve:secretsmanager:${CallerToken}}}'
+      Memory: {Disabled: {}}
+
+Outputs:
+  HarnessArn: {Value: !GetAtt Harness.Arn}
+  CallerTokenArn: {Value: !Ref CallerToken}

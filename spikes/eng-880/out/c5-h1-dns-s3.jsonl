@@ -1,0 +1,18 @@
+{"event":"http","status":200,"content_type":"application/vnd.amazon.eventstream","seconds":13.051662}
+{"event": "chunk", "contentStart": {}}
+{"event": "chunk", "contentDelta": {"stdout": "example.com                                  ;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 61097 \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "api.openai.com                               ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 34493 api.openai.com.\t\t12\tIN\tA\t172.66.0.243 \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "eng880-c5-29782.example.com                  ;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 24279 \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "bedrock-runtime.us-east-1.amazonaws.com      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 49541 bedrock-runtime.us-east-1.amazonaws.com. 57 IN A 10.88.1.153 \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "sidecar.eng880.internal                      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 14578 sidecar.eng880.internal. 10\tIN\tA\t10.88.10.86 \n"}}
+{"event": "chunk", "contentDelta": {"stdout": "lane after the firewall:\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "200\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "credentials: method=iam-role key=ASIA... token=yes\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "sts GetCallerIdentity (regional)             FAIL ConnectTimeoutError after 10.6s: Connect timeout on endpoint URL: \"https://sts.us-east-1.amazonaws.com/\"\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "bedrock-runtime Converse                     OK   ok\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "s3 PutObject eng880-base-otherbucket-znmkqe375ak5 DENY AccessDenied: User: arn:aws:sts::259815801592:assumed-role/eng880-agent/BedrockAgentCore-07515e1f-ce04-467f-a33d-2e1730c8baf\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "ecr GetAuthorizationToken                    OK   2026-10-27 08:25:48.654000+00:00\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "ecr DescribeRepositories                     DENY AccessDeniedException: User: arn:aws:sts::259815801592:assumed-role/eng880-agent/BedrockAgentCore-07515e1f-ce04-467f-a33d-2e1730c8baf\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "logs DescribeLogGroups                       OK   5\n"}}
+{"event": "chunk", "contentDelta": {"stdout": "bedrock-agentcore-control ListHarnesses      FAIL AttributeError after 0.0s: 'BedrockAgentCoreControl' object has no attribute 'list_harnesses'\n"}}
+{"event": "chunk", "contentStop": {"exitCode": 0, "status": "COMPLETED"}}

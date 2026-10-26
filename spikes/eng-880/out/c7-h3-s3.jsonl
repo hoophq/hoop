@@ -1,0 +1,182 @@
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"reasoningContent": {"signature": "CAQSywUKEggTEAEYAjgBQgh0aGlua2luZxIMErEqhivSF415K1ymGgwh9aEnwvDyk8kRQ2wiML5TylF86Vpq4/AQNdPe8aIdUbjHhv42fP2IZ+Med3YQski1m02VrbY8O9YW+zst6irmBCSx752lQFQmxK/UFFDJcwWiE/wOU8e0Q2COlYUeZUqdP4Nji7sPMFcPTCyl866k7jXCj6Wg/9lZ+N1yauK9XjZgbyr1XonmemIgcih0QdB89WDvDK9l7TH6L89gwjWxP2HQ5zpJ/kxlxlOArpa4UypyLNxLthmaZI0O75KZBzrt2vpvmPTKvGjfgHb3sJ7vDHzVfPdwG00j39H56MVZrQSqJjdtZ8katEkUGAU2UQaQiRm7roc4yPPRbc9E5uEi4E8lVxykVgUTRyvK4m8B30Ou2sY4ycmlM418/kLv24AaHjyI1PHvowB5EyHjNOPVb1ma16UYh0JNuUbakFemjEPm2LgV+0Yl5K51pVIhJk70STmVvJ8w/cC8lu/TSBTCpLM40bHd0dPlffVPtWiaeQ4vwbAJdFBe5P8DB2JA3xiMozzGwH87yTkTIRfAmCg4H7gJ8JRNgSOWYAfK1iZrYT5fg8srmoY6HIAWBZlIm7yVpHNbXHDdg7GwBS8UAdGQV01aZk2Gsyq0T2WE5IeG9vCKBvPBgwKXJX3lZrAr7OnvyxdslISszRooaYGKvcRjEUeXdw1ciKX5kgCA9LoN1xP5CdYY1BS/uWUGWbFJqTXiIuDo51rKUtB7+xGH/JIkS+78CgIy3KC4N/dCgWLCevaNltxqTVWTZHujWR+TM188Hd9ZhxFgUcIbJq5EdVUO7hj+vgt74DBMWwUuyQ9v474Inq/PtUGhTRTGBINLgcYYlL0BsUsrz3yQDkajhD9tnhkqhFpIB3vanfzi9Lox+cx2c+n/Wkb3j1y2KuwNbLjMmHT6KjX7GAE="}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "contentBlockStart", "contentBlockIndex": 1, "start": {"toolUse": {"name": "probe_whoami", "toolUseId": "tooluse_mAlV2hP9jV8fO6tyMUUCPw", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockStop", "contentBlockIndex": 1}
+{"event": "contentBlockStart", "contentBlockIndex": 2, "start": {"toolUse": {"name": "shell", "toolUseId": "tooluse_EwyCEU9sHHUjSc4tAH7msN", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "{\"c"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "ommand\": \"e"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "nv | gr"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "ep -ciE '"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "token|api"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "_key|secr"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "et'"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": " ; env |"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": " cut"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": " -d= -"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "f1 | sor"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "t | tr '"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 2, "delta": {"toolUse": {"input": "\\\\n' ' '\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 2}
+{"event": "messageStop", "stopReason": "tool_use"}
+{"event": "metadata", "metrics": {"latencyMs": 1431}, "usage": {"inputTokens": 1032, "outputTokens": 201, "totalTokens": 1233}}
+{"event": "messageStart", "role": "user"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_mAlV2hP9jV8fO6tyMUUCPw"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolResult": [{"text": "{\"mcp_call_src_ip\": \"10.88.10.86\", \"user_agent\": \"python-httpx/0.28.1\", \"authorization\": null}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "contentBlockStart", "contentBlockIndex": 1, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_EwyCEU9sHHUjSc4tAH7msN"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"toolResult": [{"text": "{\"stdout\": \"1\\nAGENTCORE_RUNTIME_URL AGENT_OBSERVABILITY_ENABLED AWS_CUSTOMER_CONTAINER_URI AWS_DEFAULT_REGION AWS_DNS_SUFFIX AWS_EXECUTION_ENV AWS_REGION AWS_STAGE AWS_TRUNCATION_MESSAGES_COUNT AWS_TRUNCATION_STRATEGY CREWAI_DISABLE_TELEMETRY GPG_KEY HOME HOSTNAME LC_CTYPE OTEL_AWS_APPLICATION_SIGNALS_ENABLED OTEL_EXPORTER_OTLP_LOGS_ENDPOINT OTEL_EXPORTER_OTLP_LOGS_HEADERS OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION OTEL_EXPORTER_OTLP_PROTOCOL OTEL_EXPORTER_OTLP_TIMEOUT OTEL_EXPORTER_OTLP_TRACES_ENDPOINT OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT OTEL_LOGS_EXPORTER OTEL_METRICS_ADD_APPLICATION_SIGNALS_DIMENSIONS OTEL_PROPAGATORS OTEL_PYTHON_CONFIGURATOR OTEL_PYTHON_DISTRO OTEL_PYTHON_ID_GENERATOR OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED OTEL_PYTHON_LOG_CORRELATION OTEL_RESOURCE_ATTRIBUTES OTEL_TRACES_EXPORTER PATH PWD PYTHON_SHA256 PYTHON_VERSION SHLVL SIDECAR_HOST SSL_CERT_FILE TIKTOKEN_CACHE_DIR _ \", \"stderr\": \"\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 1}
+{"event": "messageStop", "stopReason": "tool_result"}
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"reasoningContent": {"text": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"reasoningContent": {"signature": "CAQS8QYKEggTEAEYAjgBQgh0aGlua2luZxIMc31/0pWhTMB3Nvv1Ggxw7gDI8WWgNz8dnVMiMLw3NF3jmAepOgRecdOuOgKJZAA6rfkYJJdGGFLb9ScEiqLlHqFJlJI2idCUAGcTOyqMBryy5fHV+GEzlWl0XWCM0FM/C6KICF8+cJVEYukIXVLk5Za3geAVs0ht26PJlQnLeDK0HwSOb+XzqwzuKHV9zg7bJkqzjCOtOnK8JRvAnRQ6/Tj1oXJRNl6ozFf3lpopiy2G/4qZ9fXt7pMLbdF2oYrqElYOoSpybnTHGDi8w3or2UAT45wTZIikFKTMJFaYTHIve8gV/8kAx+sMFWXlrEsVU3k5GaYqCAYND13JCUHzgHpNhOy7am9VYKFrcMnk2I3wEN6iZqEJsSt88JLAtqCE135JFwfuB8kiXGxeQxej2hk+HVz/KVMwZV5KJNXMu/i4ZUGIECRajmfaCNGDzX9FlUJgcfCUtRVPX0kczC1AmDnCKFla7/UNvgFxKdwoEHp6aNSVGFeVJ8xeBhROdYUuR1gXw5dJVztid8V9KqRf91PaOPnMrM2UdzwWkPbpI5QdQsQEhHKI9raVu6Wqr1OiLYkplW7cSeNDcyt0Gw5x8AtpmLakiNXiWcK9XkZGGFBO8tAzmTvUjyuLas/U6PhTthjD/qd8h5xOJ4u/Lql+ZoDa+vVws7PqSuoq7+ApyZCOYfd7gtYJFOyU5bpIC++xAr4BWPCSmSF3IPavEoq64+mt2fHPLn7uRQW7jTqazJfFIX+Tr7HnaKExtIMYKfCdkKoTrsiN4WGrlVaeWXpF4Fn8vYNL2RsVblTWYlpXDpH6luSqOSqjf+4+lzzWHRAMS1iG53R2dX/AhXDvUpyPkDHv2gXkzEtCEx67kKhLvzboPjEiBt6ciJxSjhdQilNGv9NYnMc/Hpf4tDThJCuomGR0OvABYLkyEAiOujx/OAam6ckyAuZKvmze26xWVvKuSCYPYndinnncYMN/fSF/u9OZ2f4PvZHjYZxPXgmOKtYU870euo+O2GP5C8zcmLsHdTi6sifGdaRYJmX9RF+e0P5CtHUQK0+hn9HvGeRdLrV+pSYgebcivMQU+TvhIvPIHHjTIcB9mby8YlDgK927J0EObrDhc7FVDBghczYlQ8MT6Ts+0Ss63G2RjRgB"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "**"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "1"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ". `probe_whoami"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "`**\n\n```json\n{\""}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "mcp_call_src_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ip\": \"10.88."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "10.86\", \"user_ag"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ent\": \"python-httpx"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "/0.28.1\", \""}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "authorization\": null}\n```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n\n**2. Shell command"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ":"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "** `env | grep -"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ciE 'token|api_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "key|secret' ; env"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " | cut -d= -f"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "1 | sort | tr"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " '\\n' ' '`"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n\n```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\nstdout:"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\n1\nAGENTC"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ORE_RUNTI"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ME_URL AGENT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_OBSERVABIL"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ITY_ENABLED"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " AWS_CUST"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "OMER_CONTA"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "INER_URI AWS"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_DEFAULT_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "REGION AWS_D"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "NS_SUFFI"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "X AWS_EXEC"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "UTION_ENV A"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "WS_REGION AW"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "S_STAGE AW"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "S_TRUNCAT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ION_MESSAGES"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_COUNT AWS"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_TRUNCATION"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_STRATEGY C"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "REWAI_DISAB"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "LE_TELEMET"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "RY GPG_KE"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "Y HOME HOST"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "NAME L"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "C_CTYPE O"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "TEL_AWS_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "APPLICATION_S"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "IGNALS_EN"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ABLED OTEL_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "EXPORTER_O"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "TLP_LOGS"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_ENDPOINT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " OTEL_EXP"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ORTER_OTLP"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_LOGS_HE"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ADERS OTEL_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "EXPORTER_O"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "TLP_METRICS"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_DEFAULT_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "HISTOGRAM"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_AGGREGATION"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " OTEL_EXP"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ORTER_OTLP"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_PROTOCOL"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " OTEL_EXP"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ORTER_OTLP"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_TIMEOUT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " OTEL_EXP"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ORTER_OTLP"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_TRACES_EN"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "DPOINT OTE"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "L_INSTRUM"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ENTATION_GENA"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "I_CAPTURE"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_MESSAGE_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "CONTENT OTE"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "L_LOGS_E"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "XPORTER OTE"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "L_METRICS_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ADD_APPLICAT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ION_SIGNALS"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_D"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "IMENSIONS O"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "TEL_PRO"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "PAGATORS OT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "EL_PYTHON"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_CONFIGURAT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "OR OTEL_P"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "YTHON_DIST"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "RO OTEL_P"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "YTHON_ID_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "GENERATOR OT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "EL_PYTHON"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_LOGGING_A"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "UTO_INSTR"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "UMENTATION_"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ENABLED OTEL"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_PYTHON_L"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "OG_CORRELAT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ION OTEL_R"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ESOURCE_AT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "TRIBUTES O"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "TEL_TRACES"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_EXPORTER P"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ATH PWD PYT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "HON_SHA256 "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "PYTHON_VER"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "SION SHLVL S"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "IDECAR_HO"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ST SSL_CERT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "_FILE TIKT"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "OKEN_CACH"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "E_DIR _ "}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "\nstderr: ("}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "empty)\nexit_code"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ": 0\n```\n\nThe gr"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ep count"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " is 1, me"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "aning one environment vari"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "able line matches `token`"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ", `api_key`, or"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " `secret`"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": ". I did"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "n't print"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " that"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " line's"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " value, since the"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " command only"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " retur"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ned names"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " and a"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " count. If"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " you want to"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " check which vari"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "able mat"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ched, I can run"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " a command"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " that pr"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "ints only the variable name for"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": " that match"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 1, "delta": {"text": "."}}
+{"event": "contentBlockStop", "contentBlockIndex": 1}
+{"event": "messageStop", "stopReason": "end_turn"}
+{"event": "metadata", "metrics": {"latencyMs": 4483}, "usage": {"inputTokens": 2102, "outputTokens": 1108, "totalTokens": 3210}}

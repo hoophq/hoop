@@ -1,0 +1,30 @@
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolUse": {"name": "shell", "toolUseId": "tooluse_70jGoKz6o8yi5z4H51RoGJ", "type": "tool_use"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": ""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "{\"comm"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "and\": \""}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "echo shell-"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "ok"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolUse": {"input": "\"}"}}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_use"}
+{"event": "metadata", "metrics": {"latencyMs": 866}, "usage": {"inputTokens": 863, "outputTokens": 52, "totalTokens": 915}}
+{"event": "messageStart", "role": "user"}
+{"event": "contentBlockStart", "contentBlockIndex": 0, "start": {"toolResult": {"status": "success", "toolUseId": "tooluse_70jGoKz6o8yi5z4H51RoGJ"}}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"toolResult": [{"text": "{\"stdout\": \"shell-ok\\n\", \"stderr\": \"\", \"exit_code\": 0}"}]}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "tool_result"}
+{"event": "messageStart", "role": "assistant"}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "I ran `"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "echo shell-ok`"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " Output:\n\n```\nshell-"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "ok\n```"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "\n\nExit code:"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " 0."}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " st"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": "derr was"}}
+{"event": "contentBlockDelta", "contentBlockIndex": 0, "delta": {"text": " empty."}}
+{"event": "contentBlockStop", "contentBlockIndex": 0}
+{"event": "messageStop", "stopReason": "end_turn"}
+{"event": "metadata", "metrics": {"latencyMs": 1208}, "usage": {"inputTokens": 951, "outputTokens": 44, "totalTokens": 995}}
