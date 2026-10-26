@@ -26,19 +26,16 @@ ALL_FILES=docker-compose.yml:docker-compose.test.yml
 # one. chatgpt-agents.json is sandbox egress, where any customer's code runs.
 RANGE_LIST=https://openai.com/chatgpt-connectors.json
 
-# valid_prefix <prefix>: one Caddy can load, and no wider than /8 or an IPv6
-# /16. OpenAI's widest is a /16; a wider one would admit a large part of the
-# internet.
+# valid_prefix <prefix>: an IPv4 prefix Caddy can load, no wider than /8.
+# OpenAI's widest is a /16; a wider one would admit a large part of the
+# internet. IPv6 is refused: OpenAI lists none, and this check cannot prove
+# one valid, so Caddy could fail to start on it.
 valid_prefix() {
     local ip=${1%/*} len=${1##*/} o n='(0|[1-9][0-9]{0,2})'
     # No leading zeros: Go, and so Caddy, refuses them.
-    [[ "$1" == */* && "$len" =~ ^$n$ ]] || return 1
-    if [[ "$ip" =~ ^$n\.$n\.$n\.$n$ ]]; then
-        for o in ${ip//./ }; do (( o <= 255 )) || return 1; done
-        (( len >= 8 && len <= 32 ))
-    else
-        [[ "$ip" == *:* && "$ip" =~ ^[0-9a-fA-F:]+$ ]] && (( len >= 16 && len <= 128 ))
-    fi
+    [[ "$1" == */* && "$len" =~ ^$n$ && "$ip" =~ ^$n\.$n\.$n\.$n$ ]] || return 1
+    for o in ${ip//./ }; do (( o <= 255 )) || return 1; done
+    (( len >= 8 && len <= 32 ))
 }
 
 # write_ranges: ranges/openai.caddy, or fail and leave the old file. The old
@@ -52,7 +49,7 @@ write_ranges() {
     jq -e '.prefixes | length > 0' >/dev/null 2>&1 <<<"$body" || die "$RANGE_LIST holds no prefixes"
     list=$(jq -r '.prefixes[] | .ipv4Prefix // .ipv6Prefix // "missing"' <<<"$body" | sort -u)
     for p in $list; do
-        valid_prefix "$p" || die "$RANGE_LIST holds '$p': not a prefix, or wider than /8"
+        valid_prefix "$p" || die "$RANGE_LIST holds '$p': not an IPv4 prefix, or wider than /8"
     done
     mkdir -p ranges
     if [[ -f ranges/openai.caddy ]]; then cp -p ranges/openai.caddy ranges/.openai.caddy.prev; fi

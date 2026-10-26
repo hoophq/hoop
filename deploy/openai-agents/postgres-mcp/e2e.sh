@@ -37,7 +37,15 @@ SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 WORK=$(mktemp -d)
 export OPENAI_IDS="$WORK/ids" MCP_HOST
 cleanup() {
-    if [[ -n "$KEEP" ]]; then echo "kept: $(tr '\n' ' ' < "$OPENAI_IDS" 2>/dev/null)"; rm -rf "$WORK"; return; fi
+    if [[ -n "$KEEP" ]]; then
+        # The vault holds the live token: keep the ids that delete it.
+        if [[ -s "$OPENAI_IDS" ]]; then
+            cp "$OPENAI_IDS" "$OUT/openai-ids"
+            echo "kept: OPENAI_IDS=$OUT/openai-ids ./setup.sh delete removes them"
+        fi
+        rm -rf "$WORK"
+        return
+    fi
     # A vault left behind holds the live token, so a failed delete fails the run.
     ./setup.sh delete || { echo "cleanup failed: OPENAI_IDS=$OPENAI_IDS ./setup.sh delete" >&2; return 1; }
     rm -rf "$WORK"

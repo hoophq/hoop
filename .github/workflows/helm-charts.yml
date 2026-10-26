@@ -449,18 +449,22 @@ jobs:
           jq -e '[.. | strings | select(test("mcp\\.example\\.com"))] == []' <<<"$bodies" >/dev/null \
             || { echo "::error::a request body kept the example host"; exit 1; }
           # The production Caddy config admits only the list run.sh writes.
-          tmp=$(mktemp -d)
-          echo '@outside not client_ip 192.0.2.0/24' > "$tmp/openai.caddy"
-          prod=$(docker run --rm -e SITE_ADDRESS=mcp.ci.example -v "$PWD/$dir/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            -v "$tmp:/etc/caddy/ranges:ro" "$(yq '.services.caddy.image' "$dir/docker-compose.yml")" \
-            caddy adapt --config /etc/caddy/Caddyfile)
-          jq -e '[.. | .client_ip? // empty | .ranges[]] == ["192.0.2.0/24"]' <<<"$prod" >/dev/null \
-            || { echo "::error::the Caddyfile admits more than the imported list"; exit 1; }
-          # The 403 must run before the one proxy, or it guards nothing.
-          jq -e '[.. | objects | select(.handler? == "subroute") | .routes | select(any(.[]; .handle[0].handler == "reverse_proxy"))]
-              | length == 1 and (.[0][0] == {match: [{not: [{client_ip: {ranges: ["192.0.2.0/24"]}}]}],
-                  handle: [{handler: "static_response", status_code: 403, body: "forbidden"}]})' <<<"$prod" >/dev/null \
-            || { echo "::error::the Caddyfile does not refuse an unlisted caller before it proxies"; exit 1; }
+          # Two lists, so a prefix written into the Caddyfile cannot pass as
+          # the imported one.
+          img=$(yq '.services.caddy.image' "$dir/docker-compose.yml")
+          for range in 192.0.2.0/24 198.51.100.0/24; do
+            tmp=$(mktemp -d)
+            echo "@outside not client_ip $range" > "$tmp/openai.caddy"
+            prod=$(docker run --rm -e SITE_ADDRESS=mcp.ci.example -v "$PWD/$dir/Caddyfile:/etc/caddy/Caddyfile:ro" \
+              -v "$tmp:/etc/caddy/ranges:ro" "$img" caddy adapt --config /etc/caddy/Caddyfile)
+            jq -e --arg r "$range" '[.. | .client_ip? // empty | .ranges[]] == [$r]' <<<"$prod" >/dev/null \
+              || { echo "::error::the Caddyfile admits other than the imported list $range"; exit 1; }
+            # The 403 must run before the one proxy, or it guards nothing.
+            jq -e --arg r "$range" '[.. | objects | select(.handler? == "subroute") | .routes | select(any(.[]; .handle[0].handler == "reverse_proxy"))]
+                | length == 1 and (.[0][0] == {match: [{not: [{client_ip: {ranges: [$r]}}]}],
+                    handle: [{handler: "static_response", status_code: 403, body: "forbidden"}]})' <<<"$prod" >/dev/null \
+              || { echo "::error::the Caddyfile does not refuse a caller outside $range before it proxies"; exit 1; }
+          done
           # A file mount would keep serving the list that ./run.sh ranges replaced.
           yq -e '.services.caddy.volumes[] | select(. == "./ranges:/etc/caddy/ranges:ro")' "$dir/docker-compose.yml" >/dev/null \
             || { echo "::error::Caddy does not mount the ranges directory that run.sh writes"; exit 1; }

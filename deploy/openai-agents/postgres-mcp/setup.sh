@@ -107,11 +107,12 @@ session() {
     local after="" page
     while :; do
         page=$(api GET "/agents/sessions/$sid/items?order=asc&limit=100${after:+&after=$after}")
-        jq -r '.data[]
+        # output: a string, or the MCP result with its content blocks.
+        jq -r 'def text: if type == "string" then . else [.content[]?.text // empty] | join("") end;
+            .data[]
             | if .type == "mcp_call" then
                 "\n> \(.server_label).\(.name) \(.arguments.sql // (.arguments | tostring))\n"
-                + (if .error then "error: \(.error | tostring)"
-                   else [.output.content[]?.text // empty] | join("") end)
+                + (if .error then "error: \(.error | tostring)" else .output | text end)
               elif .type == "message" and .role == "assistant" then "\n[agent] \([.content[]?.text // empty] | join(" "))"
               else empty end' <<<"$page"
         [[ "$(jq -r .has_more <<<"$page")" == true ]] || break
