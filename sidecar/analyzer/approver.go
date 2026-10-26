@@ -3,6 +3,7 @@ package analyzer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -128,6 +129,38 @@ const undecidedReason = "the approval agent did not decide"
 // maxAgentReasonBytes bounds the reason kept on the record and filed.
 const maxAgentReasonBytes = 1 << 10
 
+// Fixed reasons for a statement the approval agent cannot read in full.
+const (
+	reasonOverInput = "the statement is longer than max_input_bytes, so the approval agent " +
+		"cannot read all of it"
+	reasonBodyCut = "the request body is larger than the capture limit, so the approval agent " +
+		"cannot read all of it"
+)
+
+// noCutLimit renders content with no practical bound, to compare with the
+// bounded rendering. A statement past it is refused too.
+const noCutLimit = 1 << 30
+
+// incompleteForAgent reports why the agent's content would not hold the
+// whole statement, or "". It rebuilds the content without the input bound
+// and compares, so it catches every builder that truncates by
+// max_input_bytes. Redaction runs after this and is not a cut.
+func (e *Evaluator) incompleteForAgent(stmt inspect.Statement) string {
+	if stmt.HTTP != nil && stmt.HTTP.BodyTruncated {
+		return reasonBodyCut
+	}
+	builder, ok := BuilderFor(stmt.Protocol)
+	if !ok {
+		return reasonOverInput
+	}
+	bounded, ok1 := builder.Build(stmt, e.cfg.MaxInputBytes)
+	full, ok2 := builder.Build(stmt, noCutLimit)
+	if !ok1 || !ok2 || bounded.Text != full.Text || len(full.Text) >= noCutLimit {
+		return reasonOverInput
+	}
+	return ""
+}
+
 // Decision is an approval agent's answer about one statement.
 type Decision struct {
 	RiskLevel RiskLevel
@@ -252,6 +285,11 @@ func agentMessage(operator, reviewID, reason string) string {
 func (e *Evaluator) agentDecide(ctx context.Context, stmt inspect.Statement, level RiskLevel,
 	res Result, text, user string) (Decision, error) {
 	undecided := Decision{RiskLevel: level, Reason: undecidedReason}
+	// The agent must read the whole statement: an approval of a prefix
+	// would release bytes nobody read. No model call is made.
+	if reason := e.incompleteForAgent(stmt); reason != "" {
+		return Decision{RiskLevel: level, Reason: reason}, errors.New(reason)
+	}
 	caller, ok := e.cfg.Provider.(ToolCaller)
 	if !ok {
 		// New refuses this; kept so a broken invariant still rejects.

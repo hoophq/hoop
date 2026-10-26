@@ -16,6 +16,7 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/gemini"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -366,5 +367,57 @@ func TestARefusalBesideAnApproveRejects(t *testing.T) {
 				t.Errorf("decision = %q", v.Annotations[analyzer.MetadataApprovalDecision])
 			}
 		})
+	}
+}
+
+// A statement past max_input_bytes is rejected without a model call: the
+// agent would approve the prefix it read, and the whole statement would run.
+func TestAStatementOverTheInputLimitIsRejectedUnread(t *testing.T) {
+	const reason = "the statement is longer than max_input_bytes, so the approval agent cannot read all of it"
+	long := sqlStmt("/* "+strings.Repeat("x", 300)+" */ DELETE FROM users WHERE id = 1", inspect.OpDelete, "users")
+
+	p := &agentProvider{calls: []analyzer.ToolCall{call("approve", `{"reason":"bounded"}`)}}
+	rev := &decisionReviewer{}
+	ev := agentEvaluator(t, p, func(c *analyzer.Config) { c.MaxInputBytes = 64; c.Review = rev })
+	v := ev.Evaluate(long)
+	if !v.Denied || !strings.Contains(v.Message, reason) {
+		t.Fatalf("denied=%t message=%q, want the fixed reason", v.Denied, v.Message)
+	}
+	if p.decides != 0 {
+		t.Errorf("the agent was asked %d time(s) about a statement it could not read", p.decides)
+	}
+	if v.Annotations[analyzer.MetadataApprovalDecision] != "rejected" || v.Annotations[analyzer.MetadataApprovalReason] != reason {
+		t.Errorf("annotations = %v", v.Annotations)
+	}
+	if len(rev.got) != 1 || rev.got[0].Approved || rev.got[0].Reason != reason {
+		t.Errorf("filed %+v, want the rejection with the fixed reason", rev.got)
+	}
+
+	// The same statement under the limit is read and decided.
+	p = &agentProvider{calls: []analyzer.ToolCall{call("approve", `{"reason":"bounded"}`)}}
+	ev = agentEvaluator(t, p, nil)
+	if v := ev.Evaluate(long); v.Denied || p.decides != 1 {
+		t.Fatalf("a statement within the limit: denied=%t (%s), decides=%d", v.Denied, v.Message, p.decides)
+	}
+
+	// Redaction rewrites values, not length bounds: not a cut.
+	p = &agentProvider{calls: []analyzer.ToolCall{call("approve", `{"reason":"bounded"}`)}}
+	ev = agentEvaluator(t, p, func(c *analyzer.Config) {
+		c.Redact = func(s string) string { return strings.ReplaceAll(s, "users", "<TABLE>") }
+	})
+	if v := ev.Evaluate(deleteStatement()); v.Denied || p.decides != 1 || !strings.Contains(p.content, "<TABLE>") {
+		t.Fatalf("a redacted statement: denied=%t (%s), decides=%d", v.Denied, v.Message, p.decides)
+	}
+}
+
+// A request body the codec cut is rejected unread too.
+func TestACutRequestBodyIsRejectedUnread(t *testing.T) {
+	p := &agentProvider{calls: []analyzer.ToolCall{call("approve", `{"reason":"ok"}`)}}
+	ev := agentEvaluator(t, p, func(c *analyzer.Config) { c.Trigger = analyzer.Trigger{All: true} })
+	v := ev.Evaluate(inspect.Statement{Protocol: inspect.HTTP, Direction: inspect.FromClient,
+		Text: "POST /pay", Operation: inspect.OpInsert,
+		HTTP: &inspect.HTTPDetail{Method: "POST", Target: "/pay", Body: `{"a":`, BodyTruncated: true}})
+	if !v.Denied || !strings.Contains(v.Message, "capture limit") || p.decides != 0 {
+		t.Fatalf("denied=%t message=%q decides=%d", v.Denied, v.Message, p.decides)
 	}
 }
