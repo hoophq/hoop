@@ -620,6 +620,8 @@ func TestSparkIsAnalyzedWithTheSparkDialect(t *testing.T) {
 		{"dynamic SQL only released Spark reads is refused as unreadable", "/* /*+ */ EXECUTE IMMEDIATE 'DROP TABLE t' -- */", unreadable, true},
 		{"GENERATE is refused as an alter", "GENERATE symlink_format_manifest FOR TABLE t", noWrites, true},
 		{"DESCRIBE TABLE EXTENDED is refused by a rule fencing reads of its table", "DESCRIBE TABLE EXTENDED t", fenceReadT, true},
+		{"table_changes is refused by a rule fencing reads of its table", "SELECT * FROM table_changes('t', 1)", fenceReadT, true},
+		{"table_changes over an expression is refused as unreadable", "SELECT * FROM table_changes(concat('t', ''), 1)", unreadable, true},
 		{"a column aliased overwrite is refused by a rule fencing reads of its table", "SELECT id overwrite FROM t", fenceReadT, true},
 		{"EXPLAIN INSERT OVERWRITE is refused by a rule fencing reads of its table", "EXPLAIN INSERT OVERWRITE t SELECT 1", fenceReadT, true},
 		{"a DROP in an IF inside a handler's block is refused", "BEGIN DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN IF true THEN DROP TABLE t; END IF; END; SELECT 1/0; END", noWrites, true},

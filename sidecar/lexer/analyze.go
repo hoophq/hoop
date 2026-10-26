@@ -116,6 +116,12 @@ type analyzer struct {
 	toks []Token
 	d    Dialect
 
+	// src and rules are what toks were scanned from. spans is filled from
+	// them on first use, by literalName; nothing else needs byte offsets.
+	src   string
+	rules lexRules
+	spans [][2]int
+
 	stack   []region
 	effects []Verb
 	rels    []Relation
@@ -287,6 +293,8 @@ func newAnalyzer(sql string, rules lexRules, d Dialect) *analyzer {
 	return &analyzer{
 		toks:       toks,
 		d:          d,
+		src:        sql,
+		rules:      rules,
 		stack:      []region{{kind: regTop, verb: Unknown}},
 		cteNames:   map[string]bool{},
 		incomplete: bad,
@@ -788,8 +796,9 @@ func (a *analyzer) statementVerb(word string) (Verb, bool) {
 // holds in memory, so t is read, where the TABLE introducer under an `other`
 // verb would have written it. DESCRIBE [TABLE] [EXTENDED] t, and Delta's
 // DESCRIBE HISTORY or DETAIL t, read t's definition, so t is read; without
-// this, DESCRIBE TABLE EXTENDED t read a relation called extended. Any other
-// keyword records nothing.
+// this, DESCRIBE TABLE EXTENDED t read a relation called extended. SHOW
+// TBLPROPERTIES t, SHOW PARTITIONS t and SHOW COLUMNS {IN | FROM} t read t's
+// metadata, so t is read too. Any other keyword records nothing.
 func (a *analyzer) sparkTarget(i int) int {
 	acc, j := Write, i
 	switch a.toks[i].Text {
@@ -806,10 +815,20 @@ func (a *analyzer) sparkTarget(i int) int {
 		}
 	case "describe", "desc":
 		acc = Read
-		for j+1 < len(a.toks) && a.toks[j+1].Kind == Word && sparkDescribeSkip[a.toks[j+1].Text] {
+		for j+1 < len(a.toks) && a.toks[j+1].Kind == Word && sparkDescribeSkip[a.toks[j+1].Text] && a.sparkNameAfter(j+1) {
 			j++
 		}
 		if j+1 < len(a.toks) && a.toks[j+1].Kind == Word && sparkDescribeObject[a.toks[j+1].Text] {
+			return i
+		}
+	case "show":
+		acc = Read
+		switch {
+		case i+1 < len(a.toks) && (a.toks[i+1].isWord("tblproperties") || a.toks[i+1].isWord("partitions")):
+			j = i + 1
+		case i+2 < len(a.toks) && a.toks[i+1].isWord("columns") && (a.toks[i+2].isWord("in") || a.toks[i+2].isWord("from")):
+			j = i + 2
+		default:
 			return i
 		}
 	default:
@@ -821,9 +840,32 @@ func (a *analyzer) sparkTarget(i int) int {
 		// the tokens stay for the walk.
 		return i
 	}
+	// SHOW COLUMNS IN t IN s names t's schema after it: the relation is s.t.
+	// A qualified s.t may repeat its schema there, and keeps its name.
+	if a.toks[i].Text == "show" && a.toks[i+1].isWord("columns") && next+1 < len(a.toks) &&
+		(a.toks[next+1].isWord("in") || a.toks[next+1].isWord("from")) {
+		if end, ns, ok := a.relationAt(next+1, next+1); ok {
+			if !a.puncts(next-1, ".") {
+				rel.Name = ns.Name + "." + rel.Name
+			}
+			next = end
+		}
+	}
 	rel.Access = acc
 	a.addRelation(rel)
 	return next
+}
+
+// sparkNameAfter reports whether a relation name follows the DESCRIBE
+// keyword at k. When none does, the keyword is the name: `DESC history`
+// describes a table called history, and `DESCRIBE extended PARTITION (p =
+// 1)` one called extended. Skipped, the keyword took the statement's table
+// with it, and a rule fencing reads of that table never saw the DESCRIBE.
+func (a *analyzer) sparkNameAfter(k int) bool {
+	if k+1 >= len(a.toks) || !a.toks[k+1].isName() {
+		return false
+	}
+	return !(a.toks[k+1].isWord("partition") && a.puncts(k+2, "("))
 }
 
 // opaque reports why a head keyword's effect cannot be read, under the
@@ -1008,6 +1050,9 @@ func (a *analyzer) relationAt(i, j int) (int, Relation, bool) {
 	switch a.toks[i].Text {
 	case "from", "join", "using":
 		if j+1 < len(a.toks) && a.toks[j+1].Kind == Punct && a.toks[j+1].Text == "(" {
+			if a.d == Spark && strings.EqualFold(name, "table_changes") {
+				return a.tableChanges(j)
+			}
 			return j, Relation{}, false
 		}
 	}
@@ -1024,6 +1069,71 @@ func (a *analyzer) relationAt(i, j int) (int, Relation, bool) {
 // puncts reports whether the token at k is the punctuation p.
 func (a *analyzer) puncts(k int, p string) bool {
 	return k < len(a.toks) && a.toks[k].Kind == Punct && a.toks[k].Text == p
+}
+
+// tableChanges resolves Databricks' table_changes(table_str, start [, end])
+// at j, the function name. It returns the change feed of the table its first
+// argument names, so it reads that table's rows: as a function it named no
+// relation, and a rule fencing reads of the table never saw the query. The
+// index returned is j, so the walk still reads the arguments.
+//
+// The name is a string, parsed as a multipart identifier, so it is read from
+// the literal's bytes. Any other first argument names a table this scanner
+// cannot see, and the statement is unreadable.
+func (a *analyzer) tableChanges(j int) (int, Relation, bool) {
+	k := j + 2
+	if k < len(a.toks) && a.toks[k].Kind == Literal && (a.puncts(k+1, ",") || a.puncts(k+1, ")")) {
+		if name, ok := a.literalName(k); ok {
+			return j, Relation{Name: name, Access: Read}, true
+		}
+	}
+	a.fail("table_changes names its table in a form this scanner cannot read")
+	return j, Relation{}, false
+}
+
+// literalName reads the Literal token at k as a relation name: a string
+// whose content is a dotted name, `'c.s.t'` or "`a b`.t". It reports false
+// for any other content and for a string with an escape or an embedded
+// quote, which the scanner does not decode.
+func (a *analyzer) literalName(k int) (string, bool) {
+	if a.spans == nil {
+		a.spans = tokenSpans(a.src, a.rules)
+	}
+	// Both come from the same scanner; a stream that differs fails closed.
+	if len(a.spans) != len(a.toks) {
+		return "", false
+	}
+	lit := a.src[a.spans[k][0]:a.spans[k][1]]
+	raw := false
+	if len(lit) > 0 && (lit[0] == 'r' || lit[0] == 'R') {
+		raw, lit = true, lit[1:]
+	}
+	if len(lit) < 2 || lit[0] != '\'' && lit[0] != '"' || lit[len(lit)-1] != lit[0] {
+		return "", false
+	}
+	body := lit[1 : len(lit)-1]
+	if strings.IndexByte(body, lit[0]) >= 0 || !raw && strings.IndexByte(body, '\\') >= 0 {
+		return "", false
+	}
+	toks, bad := scanWith(body, a.rules)
+	if bad != "" || len(toks)%2 == 0 {
+		return "", false
+	}
+	var name strings.Builder
+	for n, t := range toks {
+		if n%2 == 1 {
+			if t.Kind != Punct || t.Text != "." {
+				return "", false
+			}
+			name.WriteByte('.')
+			continue
+		}
+		if !t.isName() {
+			return "", false
+		}
+		name.WriteString(t.Text)
+	}
+	return name.String(), true
 }
 
 // oracleNoRelation reports whether an Oracle introducer names something

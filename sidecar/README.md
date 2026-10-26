@@ -3694,8 +3694,12 @@ maintenance commands, COPY INTO, INSERT OVERWRITE and the FROM-first
 multi-insert (`FROM s INSERT INTO t SELECT ...`) record their target as
 written. Their previews read the same: `VACUUM t DRY RUN` is a `delete` and
 `COPY INTO t ... VALIDATE` writes t, though neither changes the table, so a
-rule that refuses the write refuses its preview too. `Split` keeps the text whole, as for Oracle: Spark runs one
-statement or one script per call.
+rule that refuses the write refuses its preview too. DESCRIBE, SHOW
+TBLPROPERTIES, SHOW COLUMNS, SHOW PARTITIONS and SHOW CREATE TABLE record
+their table as read, and so does `table_changes('t', 1)`, whose string names
+the table it reads; any other first argument makes the statement `unknown`.
+`Split` keeps the text whole, as for Oracle: Spark runs one statement or one
+script per call.
 
 ### The ceiling
 

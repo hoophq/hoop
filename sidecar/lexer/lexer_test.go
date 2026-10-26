@@ -1790,6 +1790,12 @@ func TestSparkMaintenanceCommands(t *testing.T) {
 		{"DESCRIBE TABLE EXTENDED t", lexer.Show, nil, []string{"t"}},
 		{"DESC FORMATTED c.s.t", lexer.Show, nil, []string{"c.s.t"}},
 		{"DESCRIBE DETAIL t", lexer.Show, nil, []string{"t"}},
+		// A table named like a DESCRIBE keyword: no name follows it.
+		{"DESC history", lexer.Show, nil, []string{"history"}},
+		{"DESCRIBE extended", lexer.Show, nil, []string{"extended"}},
+		{"DESC history.x", lexer.Show, nil, []string{"history.x"}},
+		{"DESCRIBE TABLE EXTENDED history", lexer.Show, nil, []string{"history"}},
+		{"DESCRIBE extended PARTITION (p = 1)", lexer.Show, nil, []string{"extended"}},
 		{"DESCRIBE FUNCTION f", lexer.Show, nil, nil},
 		{"DESCRIBE SCHEMA s", lexer.Show, nil, nil},
 		{"DESCRIBE QUERY SELECT * FROM t", lexer.Show, nil, []string{"t"}},
@@ -1804,6 +1810,69 @@ func TestSparkMaintenanceCommands(t *testing.T) {
 			t.Errorf("verb = %q, writes = %v, reads = %v, complete = %v, want %q %v %v: %s",
 				a.Verb, writes(a), reads(a), a.Complete, tc.verb, tc.writes, tc.reads, tc.sql)
 		}
+	}
+}
+
+// SHOW TBLPROPERTIES, SHOW COLUMNS and SHOW PARTITIONS read a table's
+// metadata, and table_changes reads its rows. Each names its table read, so
+// a rule fencing reads of the table matches; before, none named a relation.
+func TestSparkMetadataAndChangeFeedReadTheirTable(t *testing.T) {
+	for _, tc := range []struct {
+		sql   string
+		reads []string
+	}{
+		{"SHOW TBLPROPERTIES salaries", []string{"salaries"}},
+		{"SHOW TBLPROPERTIES c.s.salaries ('delta.appendOnly')", []string{"c.s.salaries"}},
+		{"SHOW COLUMNS IN salaries", []string{"salaries"}},
+		{"SHOW COLUMNS FROM salaries", []string{"salaries"}},
+		// The schema after the table qualifies it; it is no relation.
+		{"SHOW COLUMNS IN salaries IN hr", []string{"hr.salaries"}},
+		{"SHOW COLUMNS FROM salaries FROM hr", []string{"hr.salaries"}},
+		{"SHOW COLUMNS IN hr.salaries IN hr", []string{"hr.salaries"}},
+		{"SHOW PARTITIONS salaries", []string{"salaries"}},
+		{"SHOW PARTITIONS salaries PARTITION (year = 2024)", []string{"salaries"}},
+		{"SHOW TABLES IN hr", nil},
+		{"SELECT * FROM table_changes('salaries', 1)", []string{"salaries"}},
+		{"SELECT * FROM table_changes('c.hr.Salaries', 1, 5)", []string{"c.hr.salaries"}},
+		{"SELECT * FROM table_changes(\"`Pay Roll`.salaries\", '2024-01-01')", []string{"Pay Roll.salaries"}},
+		{"SELECT * FROM table_changes(r'hr.salaries', 1)", []string{"hr.salaries"}},
+		{"SELECT * FROM TABLE_CHANGES ( /* feed */ 'salaries' , 1)", []string{"salaries"}},
+		{"SELECT * FROM a JOIN table_changes('salaries', 1) c ON a.id = c.id", []string{"a", "salaries"}},
+		{"SELECT * FROM table_changes('salaries', (SELECT max(v) FROM versions))", []string{"salaries", "versions"}},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Spark)
+		if !slices.Equal(reads(a), tc.reads) || len(writes(a)) != 0 || !a.Complete {
+			t.Errorf("reads = %v, writes = %v, complete = %v (%s), want reads %v: %s",
+				reads(a), writes(a), a.Complete, a.Reason, tc.reads, tc.sql)
+		}
+	}
+	// A MERGE reads the change feed it applies.
+	a := lexer.Analyze("MERGE INTO t USING table_changes('salaries', 1) c ON t.id = c.id WHEN MATCHED THEN DELETE", lexer.Spark)
+	if !slices.Equal(writes(a), []string{"t"}) || !slices.Equal(reads(a), []string{"salaries"}) {
+		t.Errorf("writes = %v, reads = %v, want [t] [salaries]", writes(a), reads(a))
+	}
+}
+
+// A table_changes whose first argument is not one plain string names a table
+// this scanner cannot see. Complete, it passed a rule fencing reads of that
+// table with no relation to match.
+func TestSparkTableChangesOverAnExpressionIsUnreadable(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT * FROM table_changes(concat('sal', 'aries'), 1)",
+		"SELECT * FROM table_changes(:tbl, 1)",
+		"SELECT * FROM table_changes(?, 1)",
+		"SELECT * FROM table_changes('sal' 'aries', 1)",
+		`SELECT * FROM table_changes('sal\aries', 1)`,
+		"SELECT * FROM table_changes('hr salaries', 1)",
+		"SELECT * FROM table_changes('', 1)",
+	} {
+		if a := lexer.Analyze(sql, lexer.Spark); a.Complete {
+			t.Errorf("complete, relations = %v: %s", a.Relations, sql)
+		}
+	}
+	// Elsewhere table_changes is any function, and names nothing.
+	if a := lexer.Analyze("SELECT * FROM table_changes(concat('a', 'b'), 1)", lexer.Postgres); !a.Complete || len(a.Relations) != 0 {
+		t.Errorf("postgres: complete = %v, relations = %v", a.Complete, a.Relations)
 	}
 }
 
