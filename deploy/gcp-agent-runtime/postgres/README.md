@@ -152,8 +152,10 @@ from `deploy/sidecar/sidecar.yaml`, when the image sets `APPDB_HOST`, or when
 its root agent is not the one in `agents-cli-manifest.yaml`, or when the agent
 does not start with no network (a PSC-I agent has no route to pypi.org). It
 needs Docker. The address is the upstream's `host:port`, and also its host
-when the host is an FQDN or an IP: a one-label host such as `postgres` is an
-ordinary word too, so for it only `host:port` counts.
+when the host is an FQDN or an IPv4 address: a one-label host such as
+`postgres` is an ordinary word too, so for it only `host:port` counts. An
+IPv6 host is searched only in the project's own files, since the base image's
+Python files hold addresses such as `::1`.
 
 ## Files
 

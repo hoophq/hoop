@@ -15,31 +15,6 @@ cfg="$dir/deploy/sidecar/sidecar.yaml"
 [[ -f $dir/Dockerfile ]] || { echo "FAIL: no Dockerfile in $dir; run this in a project made by agents-cli create" >&2; exit 1; }
 [[ -f $cfg ]] || { echo "FAIL: no $cfg" >&2; exit 1; }
 
-# The database addresses: every listener's upstream (host:port, or
-# [ipv6]:port) in sidecar.yaml, and its host when the host holds a dot (an
-# FQDN or an IPv4 address). A one-label host such as "postgres" is also an
-# ordinary word, so only its host:port counts. An IPv6 host such as "::1" is
-# in the base image's own files, so it counts only in the project's files.
-# Block, flow and JSON forms: `upstream: x`, `{..., upstream: x}`, `"upstream": "x"`,
-# with YAML comments left out.
-read -r -d '' extract <<'EOF' || true
-import re, sys
-text = re.sub(r"(^|\s)#.*", r"\1", open(sys.argv[1]).read(), flags=re.M)
-for m in re.finditer(r"""["']?\bupstream["']?\s*:\s*["']?([^\s"',}#]+)""", text):
-    print(m.group(1))
-EOF
-upstreams=$(python3 -I -c "$extract" "$cfg" | sort -u)
-[[ -n $upstreams ]] || { echo "FAIL: no upstream in $cfg" >&2; exit 1; }
-# An upstream this test cannot split into host and port would weaken the
-# search below without a sign, so it stops here instead.
-addr='^([^][:space:]:]+|\[[0-9A-Fa-f:.]+\]):[0-9]+$'
-for u in $upstreams; do
-  [[ $u =~ $addr ]] \
-    || { echo "FAIL: cannot read upstream '$u' in $cfg as host:port or [ipv6]:port" >&2; exit 1; }
-done
-hosts=$(echo "$upstreams" | grep -v '^\[' | sed 's/:[0-9]*$//' | grep -F . | sort -u || true)
-v6hosts=$(echo "$upstreams" | grep '^\[' | sed 's/:[0-9]*$//' | tr -d '[]' | sort -u || true)
-
 tag="agent-image-test:$$"
 cid=""
 work=$(mktemp -d)
@@ -52,6 +27,34 @@ trap cleanup EXIT
 
 echo "building $dir"
 docker build -q -t "$tag" "$dir" >/dev/null
+
+# The database addresses: every listener's upstream (host:port, or
+# [ipv6]:port), read from sidecar.yaml with the image's own YAML parser, and
+# its host when the host holds a dot (an FQDN or an IPv4 address). A one-label
+# host such as "postgres" is also an ordinary word, so only its host:port
+# counts. An IPv6 host such as "::1" is in the base image's own files, so it
+# counts only in the project's files.
+read -r -d '' extract <<'EOF' || true
+import yaml
+doc = yaml.safe_load(open("/c/sidecar.yaml")) or {}
+for listener in doc.get("listeners") or []:
+    if isinstance(listener, dict) and listener.get("upstream"):
+        print(listener["upstream"])
+EOF
+upstreams=$(docker run --rm --network none -v "$cfg:/c/sidecar.yaml:ro" "$tag" \
+  uv run --no-sync python -c "$extract" | sort -u) \
+  || { echo "FAIL: cannot read the listeners in $cfg as YAML (error above)" >&2; exit 1; }
+[[ -n $upstreams ]] || { echo "FAIL: no upstream in $cfg" >&2; exit 1; }
+# An upstream this test cannot split into host and port would weaken the
+# search below without a sign, so it stops here instead.
+addr='^([^][:space:]:]+|\[[0-9A-Fa-f:.]+\]):[0-9]+$'
+for u in $upstreams; do
+  [[ $u =~ $addr ]] \
+    || { echo "FAIL: cannot read upstream '$u' in $cfg as host:port or [ipv6]:port" >&2; exit 1; }
+done
+hosts=$(echo "$upstreams" | grep -v '^\[' | sed 's/:[0-9]*$//' | grep -F . | sort -u || true)
+v6hosts=$(echo "$upstreams" | grep '^\[' | sed 's/:[0-9]*$//' | tr -d '[]' | sort -u || true)
+
 cid=$(docker create "$tag")
 docker export "$cid" >"$work/fs.tar"
 tar -tf "$work/fs.tar" >"$work/files"
