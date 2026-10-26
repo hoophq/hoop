@@ -213,10 +213,19 @@ type handoffDecision struct {
 	cause error
 }
 
+// handoffKey keys a hand-off decision on a classification's cache entry: the
+// level's hand-off configuration and the exact content the agent reads. The
+// shape key drops literals and quoted identifiers, so a decision is reused
+// only for the same statement, principal, database and connection.
+func handoffKey(h *handoffLevel, content string) string {
+	return fingerprint(h.key + "\x00" + content)
+}
+
 // handoff runs the hand-off agent for one classified statement, or reuses
-// the decision the cache keeps for its shape. It never returns an action
-// the level does not allow. Anything but one valid call of an allowed tool
-// applies the most restrictive allowed action, and that is never cached.
+// the decision the cache keeps for its shape and handoffKey. It never
+// returns an action the level does not allow. Anything but one valid call
+// of an allowed tool applies the most restrictive allowed action, and that
+// is never cached.
 func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *policy.EvalContext,
 	level RiskLevel, c classified) handoffDecision {
 	h := e.handoffs[level]
@@ -233,8 +242,15 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 	if reason := e.incompleteFor(stmt, "hand-off agent"); reason != "" {
 		return failSafe(reason, errors.New(reason))
 	}
-	if c.memo.action != "" && c.memo.key == h.key {
-		return handoffDecision{action: c.memo.action, reason: c.memo.reason}
+	user := ""
+	if ec != nil {
+		user = ec.Context["principal"]
+	}
+	content := approvalContent(c.text, level, c.res.Title, e.cfg.Listener, stmt.Protocol, user) +
+		"\nAllowed actions: " + strings.Join(h.toolNames(), ", ")
+	memoKey := handoffKey(h, content)
+	if m, ok := e.cache.decision(c.key, memoKey); ok {
+		return handoffDecision{action: m.action, reason: m.reason}
 	}
 	caller, ok := e.cfg.Provider.(ToolCaller)
 	if !ok {
@@ -243,12 +259,6 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 	if err := e.takeCall(); err != nil {
 		return failSafe(handoffUndecided, err)
 	}
-	user := ""
-	if ec != nil {
-		user = ec.Context["principal"]
-	}
-	content := approvalContent(c.text, level, c.res.Title, e.cfg.Listener, stmt.Protocol, user) +
-		"\nAllowed actions: " + strings.Join(h.toolNames(), ", ")
 	var d handoffDecision
 	err := e.agentCall(ctx, caller, h.prompt, content, h.tools, func(calls []ToolCall) error {
 		action, reason, ok := parseHandoff(calls, h.tools)
@@ -262,7 +272,7 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 	if err != nil {
 		return failSafe(handoffUndecided, err)
 	}
-	e.cache.remember(c.key, handoffMemo{key: h.key, action: d.action, reason: d.reason})
+	e.cache.remember(c.key, memoKey, handoffMemo{action: d.action, reason: d.reason})
 	return d
 }
 

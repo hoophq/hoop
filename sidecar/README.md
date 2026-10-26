@@ -1574,10 +1574,13 @@ request body cut at capture, takes the same fail-safe with no model call.
 The call counts against `max_calls` and `rate_limit`, like the
 classification and the approval agent: a lane that hands off and approves with
 the agent can spend three calls on one statement. The decision is cached with
-the classification, on the statement shape, under a fingerprint of the
-level's hand-off configuration (prompt, allowed actions, approver and its
-prompt): a cache hit makes no call and keeps the cached reason, and a changed
-configuration misses. A fail-safe result is never cached. A cached
+the classification, under a fingerprint of the level's hand-off configuration
+(prompt, allowed actions, approver and its prompt) and of the exact content the
+agent reads (the statement, principal, database, connection, protocol, risk
+level and title). The classification is reused across literal variants of a
+statement; the decision is reused only for the same statement from the same
+user. A hit makes no call and keeps the cached reason. A fail-safe result is
+never cached. A cached
 `require_approval` still holds each statement for its own approval. The audit
 record keeps `risk_action: ai-handoff` and adds `handoff_decision` (`allow`,
 `warn`, `block` or `require_approval`) and `handoff_reason`.

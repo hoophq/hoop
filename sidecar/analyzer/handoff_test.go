@@ -470,13 +470,14 @@ func TestAStatementTheHandoffAgentCannotReadFailsSafe(t *testing.T) {
 	}
 }
 
-// A cached decision is reused with its reason and no call; a hold it
-// selects still runs for each statement.
+// A cached decision is reused with its reason and no call for the same
+// statement; a literal variant reuses only the classification. A hold the
+// decision selects still runs for each statement.
 func TestTheHandoffDecisionIsCached(t *testing.T) {
 	p := &handoffProvider{replies: []decideReply{pick("allow", "bounded by email")}}
 	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour}, withCache)
 	ev.Evaluate(deleteStatement())
-	v := ev.Evaluate(sqlStmt("DELETE FROM users WHERE email = 'z@y.x'", inspect.OpDelete, "users"))
+	v := ev.Evaluate(deleteStatement())
 	if v.Denied || v.Annotations[analyzer.MetadataAIStatus] != analyzer.StatusCached ||
 		v.Annotations[analyzer.MetadataHandoffDecision] != "allow" ||
 		v.Annotations[analyzer.MetadataHandoffReason] != "bounded by email" {
@@ -484,6 +485,11 @@ func TestTheHandoffDecisionIsCached(t *testing.T) {
 	}
 	if len(p.asks()) != 1 || p.calls.Load() != 1 {
 		t.Errorf("asked %d time(s), classified %d time(s), want one each", len(p.asks()), p.calls.Load())
+	}
+	ev.Evaluate(sqlStmt("DELETE FROM users WHERE email = 'z@y.x'", inspect.OpDelete, "users"))
+	if len(p.asks()) != 2 || p.calls.Load() != 1 {
+		t.Errorf("literal variant: asked %d time(s), classified %d time(s), want 2 and 1",
+			len(p.asks()), p.calls.Load())
 	}
 
 	rev := &handoffReviewer{}
@@ -590,5 +596,77 @@ func TestAHandoffThatCanHoldIgnoresFailOpen(t *testing.T) {
 		if v := ev.Evaluate(deleteStatement()); v.Denied != tc.denied {
 			t.Errorf("allowed %v: denied = %t (%s), want %t", tc.allowed, v.Denied, v.Message, tc.denied)
 		}
+	}
+}
+
+// The classification is cached on the shape, but a hand-off decision is
+// reused only for the inputs the agent read: another principal or another
+// database asks again, the same ones hit.
+func TestAHandoffDecisionIsKeyedOnWhatTheAgentRead(t *testing.T) {
+	stmt := func(db string) inspect.Statement {
+		s := deleteStatement()
+		s.Database = db
+		return s
+	}
+	p := &handoffProvider{replies: []decideReply{pick("allow", "own rows")}}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour}, withCache)
+
+	ev.EvaluateWith(stmt("payments"), withUser("ana@corp"))
+	steps := []struct {
+		name, user, db string
+		asks           int
+	}{
+		{"same principal and database", "ana@corp", "payments", 1},
+		{"another principal", "bob@corp", "payments", 2},
+		{"another database", "ana@corp", "ledger", 3},
+		{"the first again", "ana@corp", "payments", 3},
+		{"the second again", "bob@corp", "payments", 3},
+	}
+	asked := 1
+	for _, s := range steps {
+		v := ev.EvaluateWith(stmt(s.db), withUser(s.user))
+		if v.Annotations[analyzer.MetadataAIStatus] != analyzer.StatusCached ||
+			v.Annotations[analyzer.MetadataHandoffDecision] != "allow" {
+			t.Fatalf("%s: %v", s.name, v.Annotations)
+		}
+		asks := p.asks()
+		if len(asks) != s.asks {
+			t.Fatalf("%s: asked %d time(s), want %d", s.name, len(asks), s.asks)
+		}
+		// A new call reads this principal and database.
+		if last := asks[len(asks)-1].content; len(asks) > asked &&
+			(!strings.Contains(last, "User: "+s.user) || !strings.Contains(last, "Database: "+s.db)) {
+			t.Errorf("%s: the new call read %q", s.name, last)
+		}
+		asked = len(asks)
+	}
+	if p.calls.Load() != 1 {
+		t.Errorf("classified %d time(s), want one: the shape cache stays shape-only", p.calls.Load())
+	}
+}
+
+// The shape key turns a quoted identifier into "?", so two deletes that
+// filter on different columns share a classification. The hand-off decision
+// for one must not reach the other.
+func TestAHandoffDecisionIsNotReusedForAnotherIdentifier(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{pick("allow", "public column")}}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour}, withCache)
+
+	ev.EvaluateWith(sqlStmt(`DELETE FROM users WHERE "id" = 1`, inspect.OpDelete, "users"), withUser("ana@corp"))
+	v := ev.EvaluateWith(sqlStmt(`DELETE FROM users WHERE "ssn" = 1`, inspect.OpDelete, "users"), withUser("ana@corp"))
+	if v.Annotations[analyzer.MetadataAIStatus] != analyzer.StatusCached {
+		t.Fatalf("the second statement was not classified from the shape cache: %v", v.Annotations)
+	}
+	asks := p.asks()
+	if len(asks) != 2 {
+		t.Fatalf("asked the hand-off agent %d time(s), want 2", len(asks))
+	}
+	if !strings.Contains(asks[1].content, `"ssn"`) {
+		t.Errorf("the second call did not read the second statement: %q", asks[1].content)
+	}
+	// The same statement again is a hit.
+	ev.EvaluateWith(sqlStmt(`DELETE FROM users WHERE "ssn" = 1`, inspect.OpDelete, "users"), withUser("ana@corp"))
+	if n := len(p.asks()); n != 2 {
+		t.Errorf("the same statement asked again: %d call(s), want 2", n)
 	}
 }

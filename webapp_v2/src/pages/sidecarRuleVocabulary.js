@@ -250,24 +250,43 @@ function readApprover(cfg) {
   }
 }
 
+// An approver config that sets a field. It mirrors HandoffApproval.isZero in
+// sidecar/daemon/risklevel.go: `{}`, null and empty fields configure nothing.
+function configuresApprover(cfg) {
+  if (cfg == null || typeof cfg !== 'object' || Array.isArray(cfg)) return false
+  const groups = Array.isArray(cfg.approval_groups) ? cfg.approval_groups : []
+  return Boolean(cfg.approver) || groups.length > 0 || Boolean(cfg.prompt)
+}
+
 // readAllowedActions reads `allowed_actions` of a hand-off level: a list of
 // action names or an object keyed by action. Absent allows all four. The
 // sidecar ignores `ai-handoff` and unknown values, reads `require_review` as
 // `require_approval`, and blocks when nothing is left.
-// Returns {actions (in HANDOFF_CHOICES order), approval (of require_approval)}.
+// Of the two alias keys, the one that sets a config wins, as in the sidecar's
+// decoder. When both set one, the sidecar refuses the level: `conflict` is
+// true and the form must not edit it.
+// Returns {actions (in HANDOFF_CHOICES order), approval (of require_approval),
+// approvals (every configured one), conflict}.
 export function readAllowedActions(value) {
-  if (value == null) return { actions: [...HANDOFF_VALUES], approval: readApprover(null) }
+  if (value == null) {
+    return { actions: [...HANDOFF_VALUES], approval: readApprover(null), approvals: [], conflict: false }
+  }
   let names = []
-  let approvalCfg = null
+  let configs = []
   if (Array.isArray(value)) {
     names = value
   } else if (typeof value === 'object') {
     names = Object.keys(value)
-    approvalCfg = value[REVIEW_ACTION] ?? value.require_review ?? null
+    configs = [value[REVIEW_ACTION], value.require_review].filter(configuresApprover)
   }
   const set = new Set(names.map((n) => (isHoldAction(n) ? REVIEW_ACTION : n)))
   const actions = HANDOFF_VALUES.filter((v) => set.has(v))
-  return { actions: actions.length > 0 ? actions : ['block'], approval: readApprover(approvalCfg) }
+  return {
+    actions: actions.length > 0 ? actions : ['block'],
+    approval: readApprover(configs[0] ?? null),
+    approvals: configs.map(readApprover),
+    conflict: configs.length > 1,
+  }
 }
 
 // readRiskLevel reads one level of a stored analyzer spec. A level is a bare

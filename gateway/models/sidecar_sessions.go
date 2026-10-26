@@ -29,8 +29,10 @@ type SidecarSessionState struct {
 	// ReviewSessions are the sessions of the reviews this session links to.
 	ReviewSessions []string
 	// AIDecisions counts metadata.sidecar.ai_decisions entries;
-	// AIDecisionsDropped, those the cap left out.
+	// AIDecisionsBytes is the length of their stored text;
+	// AIDecisionsDropped, those the caps left out.
 	AIDecisions        int
+	AIDecisionsBytes   int
 	AIDecisionsDropped int64
 }
 
@@ -55,6 +57,7 @@ func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessi
 		Reaped             bool
 		ReviewSessions     []byte
 		AIDecisions        int    `gorm:"column:ai_decisions"`
+		AIDecisionsBytes   int    `gorm:"column:ai_decisions_bytes"`
 		AIDecisionsDropped *int64 `gorm:"column:ai_decisions_dropped"`
 	}
 	err := tx.Raw(`
@@ -68,6 +71,8 @@ func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessi
 		metadata->'sidecar'->'review_sessions' AS review_sessions,
 		CASE WHEN jsonb_typeof(metadata->'sidecar'->'ai_decisions') = 'array'
 			THEN jsonb_array_length(metadata->'sidecar'->'ai_decisions') ELSE 0 END AS ai_decisions,
+		CASE WHEN jsonb_typeof(metadata->'sidecar'->'ai_decisions') = 'array'
+			THEN octet_length((metadata->'sidecar'->'ai_decisions')::text) ELSE 0 END AS ai_decisions_bytes,
 		(metadata->'sidecar'->>'ai_decisions_dropped')::BIGINT AS ai_decisions_dropped
 	FROM private.sessions
 	WHERE org_id = ? AND id = ?`, orgID, sessionID).
@@ -76,7 +81,8 @@ func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessi
 		return nil, err
 	}
 	state := &SidecarSessionState{CreatedAt: row.CreatedAt, Principal: row.Principal,
-		GuardRails: row.GuardRails, Done: row.Done, Reaped: row.Reaped, AIDecisions: row.AIDecisions}
+		GuardRails: row.GuardRails, Done: row.Done, Reaped: row.Reaped,
+		AIDecisions: row.AIDecisions, AIDecisionsBytes: row.AIDecisionsBytes}
 	if row.AIDecisionsDropped != nil {
 		state.AIDecisionsDropped = *row.AIDecisionsDropped
 	}

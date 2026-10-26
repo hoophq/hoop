@@ -50,7 +50,8 @@ function approverDetail({ approver, groups }, sep) {
 function riskDetail(value) {
   const read = readRiskLevel(value)
   if (isHandoffAction(read.action)) {
-    const { actions, approval } = read.allowed
+    const { actions, approval, conflict } = read.allowed
+    if (conflict) return 'hand-off (approver set twice)'
     const parts = actions.map((a) => (isHoldAction(a) ? `hold: ${approverDetail(approval, ' ')}` : a))
     return `hand-off (${parts.join(', ')})`
   }

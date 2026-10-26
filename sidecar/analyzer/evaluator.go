@@ -781,10 +781,9 @@ type classified struct {
 	status string
 	err    error
 
-	// key is the cache key of an ok or cached classification, and memo the
-	// hand-off decision a cached one carries.
-	key  string
-	memo handoffMemo
+	// key is the cache key of an ok or cached classification. The
+	// hand-off decisions live on its entry.
+	key string
 }
 
 // classify runs the trigger, cache, budget and provider for one statement.
@@ -838,8 +837,8 @@ func (e *Evaluator) classify(
 	}
 
 	cacheKey := e.promptKey + ":" + content.CacheKey
-	if cached, memo, hit := e.cache.get(cacheKey); hit {
-		return classified{res: cached, text: text, status: StatusCached, key: cacheKey, memo: memo}
+	if cached, hit := e.cache.get(cacheKey); hit {
+		return classified{res: cached, text: text, status: StatusCached, key: cacheKey}
 	}
 	// Reserve a slot atomically, against max_calls and the rate together.
 	//

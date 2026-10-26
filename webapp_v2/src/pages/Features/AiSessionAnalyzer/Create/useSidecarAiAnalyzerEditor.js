@@ -28,7 +28,9 @@ const emptyApproval = () => ({ approver: APPROVER_AI, groups: [], prompt: '' })
 const emptyApprovals = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyApproval()]))
 
 // A hand-off level's own prompt and its allowed actions. A new one allows all.
-const emptyHandoff = () => ({ prompt: '', allowed: HANDOFF_CHOICES.map((c) => c.value) })
+// `stored` is a level the form cannot read (both alias keys configure
+// require_approval): it is shown read-only and saved as stored.
+const emptyHandoff = () => ({ prompt: '', allowed: HANDOFF_CHOICES.map((c) => c.value), stored: null, storedApprovers: [] })
 const emptyHandoffs = () => Object.fromEntries(LEVEL_KEYS.map((level) => [level, emptyHandoff()]))
 
 const EMPTY = {
@@ -74,8 +76,12 @@ function specToForm(spec, ruleName, reviewers) {
     const read = readRiskLevel(spec[level])
     if (isHandoffAction(read.action)) {
       form[level] = HANDOFF_ACTION
-      form.handoff[level] = { prompt: read.prompt, allowed: read.allowed.actions }
+      form.handoff[level] = { ...emptyHandoff(), prompt: read.prompt, allowed: read.allowed.actions }
       form.approval[level] = read.allowed.approval
+      if (read.allowed.conflict) {
+        form.handoff[level].stored = spec[level]
+        form.handoff[level].storedApprovers = read.allowed.approvals.map((a) => a.approver)
+      }
       continue
     }
     const hold = isHoldAction(read.action)
@@ -98,9 +104,16 @@ function canHold(f, level) {
   return isHandoffAction(f[level]) && f.handoff[level].allowed.includes(REVIEW_ACTION)
 }
 
-// The approvers of the levels that can hold.
+// The approvers of the levels that can hold. A stored level counts every
+// approver it names.
 function holdApprovers(f) {
-  return new Set(LEVEL_KEYS.filter((level) => canHold(f, level)).map((level) => f.approval[level].approver))
+  const out = new Set()
+  for (const level of LEVEL_KEYS) {
+    if (!canHold(f, level)) continue
+    const stored = isHandoffAction(f[level]) && f.handoff[level].stored
+    for (const a of stored ? f.handoff[level].storedApprovers : [f.approval[level].approver]) out.add(a)
+  }
+  return out
 }
 
 // The approver fields of a level object or of allowed_actions.require_approval.
@@ -118,6 +131,7 @@ function approverFields(approval) {
 // allowed_actions is a list, or an object when require_approval has a config
 // that is not the default (AI agent with the default prompt).
 function handoffToSpec(handoff, approval) {
+  if (handoff.stored) return handoff.stored
   const level = { action: HANDOFF_ACTION }
   if (handoff.prompt.trim() !== '') level.prompt = handoff.prompt.trim()
   const cfg = handoff.allowed.includes(REVIEW_ACTION) ? approverFields(approval) : null
@@ -198,13 +212,17 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
   )
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
   // A level that starts to hold or hand off gets the default approver, not a
-  // stale imported one: only a bare hold reads the imported rule.
+  // stale imported one: only a bare hold reads the imported rule. A level the
+  // form could not read starts again from the defaults once its action changes.
   const setLevelAction = (level, action) =>
     setForm((f) => {
+      if (action === f[level]) return f
       const imported = f.approval[level].approver === APPROVER_RULE
+      const unread = Boolean(f.handoff[level].stored)
       const fresh = isHandoffAction(action) || (isHoldAction(action) && !isHoldAction(f[level]))
-      const approval = fresh && imported ? { ...f.approval, [level]: emptyApproval() } : f.approval
-      return { ...f, [level]: action, approval }
+      const approval = (fresh && imported) || unread ? { ...f.approval, [level]: emptyApproval() } : f.approval
+      const handoff = unread ? { ...f.handoff, [level]: emptyHandoff() } : f.handoff
+      return { ...f, [level]: action, approval, handoff }
     })
   const setApproval = (level, patch) =>
     setForm((f) => ({ ...f, approval: { ...f.approval, [level]: { ...f.approval[level], ...patch } } }))

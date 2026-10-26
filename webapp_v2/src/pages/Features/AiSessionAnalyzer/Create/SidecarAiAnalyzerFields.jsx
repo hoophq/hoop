@@ -87,8 +87,16 @@ function LevelApprover({ approval, approvalRule, groupOptions, onChange }) {
 }
 
 // A hand-off level: the agent's prompt and the actions it may pick. A checked
-// "Hold for approval" shows who approves it.
+// "Hold for approval" shows who approves it. A stored level the form cannot
+// read is shown as text and saved unchanged.
 function LevelHandoff({ handoff, approval, groupOptions, onPrompt, onAllowed, onApproval }) {
+  if (handoff.stored) {
+    return (
+      <Text size="sm" c="dimmed">
+        This level sets the Hold for approval approver twice, under require_approval and require_review. The sidecar refuses it. Saving keeps it as stored; change the action to replace it.
+      </Text>
+    )
+  }
   const last = handoff.allowed.length === 1
   return (
     <Stack gap="sm">
