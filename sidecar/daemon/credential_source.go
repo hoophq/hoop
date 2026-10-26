@@ -20,11 +20,13 @@ const (
 	SourceSecretFiles      = "secret_files"
 	SourceGCPImpersonation = "gcp_impersonation"
 	SourceX509             = "x509"
+	SourceVault            = "vault"
+	SourceGCPSecretManager = "gcp_secret_manager"
 	SourceSPIFFE           = "spiffe"
 	SourceKerberos         = "kerberos"
 )
 
-var knownCredentialSources = []string{SourceSecretFiles, SourceGCPImpersonation, SourceX509, SourceSPIFFE, SourceKerberos}
+var knownCredentialSources = []string{SourceSecretFiles, SourceGCPImpersonation, SourceX509, SourceVault, SourceGCPSecretManager, SourceSPIFFE, SourceKerberos}
 
 // Credential is what a source materializes for one login: the relay's own
 // type, so a source fills what the driver presents upstream. A source fills
@@ -97,6 +99,10 @@ func (c *CredentialSourcesConfig) configured(name string) bool {
 		return c.GCPImpersonation != nil
 	case SourceX509:
 		return c.X509 != nil
+	case SourceVault:
+		return c.Vault != nil
+	case SourceGCPSecretManager:
+		return c.GCPSecretManager != nil
 	case SourceSPIFFE:
 		return c.SPIFFE != nil
 	case SourceKerberos:
@@ -116,6 +122,11 @@ func (c *CredentialSourcesConfig) validate() []string {
 	}
 	if k := c.Kerberos; k != nil && k.Cache != "" && k.Keytab != "" {
 		problems = append(problems, "credentials.kerberos names both a cache and a keytab; keep one")
+	}
+	if v := c.Vault; v != nil {
+		for _, p := range v.validate() {
+			problems = append(problems, "credentials.vault: "+p)
+		}
 	}
 	return problems
 }
@@ -192,4 +203,6 @@ func init() {
 	RegisterCredentialSource(SourceSecretFiles, buildSecretFilesSource)
 	RegisterCredentialSource(SourceGCPImpersonation, buildGCPImpersonationSource)
 	RegisterCredentialSource(SourceX509, buildX509Source)
+	RegisterCredentialSource(SourceVault, buildVaultSource)
+	RegisterCredentialSource(SourceGCPSecretManager, buildGCPSecretManagerSource)
 }

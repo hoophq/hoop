@@ -310,12 +310,55 @@ type CredentialSourcesConfig struct {
 	SecretFiles      *SecretFilesSourceConfig      `json:"secret_files,omitempty"`
 	GCPImpersonation *GCPImpersonationSourceConfig `json:"gcp_impersonation,omitempty"`
 	X509             *X509SourceConfig             `json:"x509,omitempty"`
+	// Vault and GCPSecretManager fetch the material from a secret store at
+	// login, over plain HTTPS, so they live in the root module. Each carries
+	// its own capability: the plane serves the block only to a build that
+	// has the source.
+	Vault            *VaultSourceConfig            `json:"vault,omitempty" cap:"credentials.vault"`
+	GCPSecretManager *GCPSecretManagerSourceConfig `json:"gcp_secret_manager,omitempty" cap:"credentials.gcp_secret_manager"`
 	// SPIFFE and Kerberos are built by the nested sidecar/identity/spiffe
 	// and sidecar/identity/krb5 modules, linked into hoop-inspect only.
 	// Each carries its own capability so the plane never serves the block
 	// to a build that did not link the module.
 	SPIFFE   *SPIFFESourceConfig   `json:"spiffe,omitempty" cap:"credentials.spiffe"`
 	Kerberos *KerberosSourceConfig `json:"kerberos,omitempty" cap:"credentials.kerberos"`
+}
+
+// VaultSourceConfig reads a pool entry's path from HashiCorp Vault at login:
+// a KV secret, or a database-engine role that mints a user for the session
+// and revokes it when the session ends. The sidecar authenticates to Vault
+// with the pod's service account token (the kubernetes method) or a token
+// file; a token written in the config is refused.
+type VaultSourceConfig struct {
+	// Addr is the Vault address, https.
+	Addr string          `json:"addr,omitempty"`
+	Auth VaultAuthConfig `json:"auth,omitzero"`
+	// CAFile adds the CA Vault's certificate chains to, beside the trust
+	// section's pool.
+	CAFile string `json:"ca_file,omitempty"`
+	// Namespace is the Vault Enterprise namespace, sent as X-Vault-Namespace.
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// VaultAuthConfig is how the sidecar logs in to Vault.
+type VaultAuthConfig struct {
+	// Type is kubernetes or token_file.
+	Type string `json:"type,omitempty"`
+	// Role is the Vault role the kubernetes method logs in as.
+	Role string `json:"role,omitempty"`
+	// Mount is the auth method's mount path; empty is kubernetes.
+	Mount string `json:"mount,omitempty"`
+	// TokenFile is the service account token the kubernetes method presents
+	// (empty is the pod's mounted token), or the Vault token for token_file.
+	TokenFile string `json:"token_file,omitempty"`
+}
+
+// GCPSecretManagerSourceConfig reads a pool entry's secret version from
+// Secret Manager with the pod's Workload Identity.
+type GCPSecretManagerSourceConfig struct {
+	// MetadataHost overrides the metadata server, as GCE_METADATA_HOST
+	// does. Empty is metadata.google.internal.
+	MetadataHost string `json:"metadata_host,omitempty"`
 }
 
 // SecretFilesSourceConfig reads a user and a password from files under Dir,
@@ -412,6 +455,18 @@ type CredentialEntry struct {
 	SPIFFEID string `json:"spiffe_id,omitempty"`
 	// kerberos
 	Principal string `json:"principal,omitempty"`
+	// vault: the API path read at login. A KV path (secret/data/<name> on
+	// v2, secret/<name> on v1) yields the keys user_key and password_key of
+	// the secret, default user and password; `user` may name the user
+	// instead. A database engine path (database/creds/<role>) yields a user
+	// Vault creates for this session and revokes when it ends.
+	Path        string `json:"path,omitempty"`
+	UserKey     string `json:"user_key,omitempty"`
+	PasswordKey string `json:"password_key,omitempty"`
+	// gcp_secret_manager: the secret version, as
+	// projects/<p>/secrets/<s>/versions/<v>. The payload is the password
+	// when `user` is set, else a JSON document holding user and password.
+	Secret string `json:"secret,omitempty"`
 }
 
 // SelectConfig picks a pool entry for a verified identity: an ordered rule
@@ -2207,6 +2262,17 @@ func validatePoolEntry(sources *CredentialSourcesConfig, l ListenerConfig, e Cre
 	case SourceKerberos:
 		if perRequest {
 			pf("kerberos initiates GSSAPI on a database login, not valid on %s", l.Protocol)
+		}
+	case SourceVault:
+		if err := (&vaultSource{}).validateEntry(e); err != nil {
+			pf("%v", err)
+		}
+		if perRequest && vaultIsDynamic(e.Path) {
+			pf("a database engine path mints a user per session, and a %s listener swaps the credential per request; use a KV path", l.Protocol)
+		}
+	case SourceGCPSecretManager:
+		if err := (&gcpSecretManagerSource{}).validateEntry(e); err != nil {
+			pf("%v", err)
 		}
 	}
 	return problems
