@@ -1,0 +1,17 @@
+# `agents-cli create <name> -a hoophq/hoop/deploy/gcp-agent-runtime/postgres`
+# scaffolds an ADK agent whose SQL tool reaches Postgres only through a hoop
+# sidecar in the customer VPC (PSC-I on Agent Runtime). deploy/sidecar/
+# installs that sidecar from the GCP Marketplace module (ENG-743).
+#
+# agents-cli copies this directory into the new project after its own base
+# template, and leaves this .template/ directory out.
+description: "ADK agent that reaches its Postgres database only through a hoop sidecar"
+# Rendered with agents-cli's cookiecutter context (agents-cli 1.11 or later):
+# the Dockerfile keeps the base template's fields.
+render_files: ["Dockerfile"]
+example_question: "Which customers are on the enterprise plan?"
+settings:
+  language: "python"
+  requires_session: true
+  deployment_targets: ["agent_runtime", "none"]
+  extra_dependencies: ["psycopg[binary]>=3.2"]  # agents-cli adds the base adk list

@@ -1,0 +1,27 @@
+# The database accepts connections from the sidecar's pods only. Without
+# it, anything that routes to the database and holds the login (the agent
+# does; the sidecar passes it through) connects around the sidecar, and the
+# control plane records nothing. Apply in the database's namespace; GKE
+# Dataplane V2 enforces it.
+#
+# EDIT before applying: the selector must match YOUR database's pods, and the
+# namespace must be the sidecar's. A selector that matches nothing locks
+# nothing, and kubectl reports no error.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-only-from-hoop-sidecar
+spec:
+  podSelector:
+    matchLabels: {app: appdb}          # EDIT: your database pods' labels
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        # Both selectors in one entry: pods with these labels, in that namespace.
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: hoop-sidecar}   # EDIT if not the default
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: hoopsidecar
+              app.kubernetes.io/instance: appdb-sidecar   # goog_cm_deployment_name in main.tf
+      ports: [{port: 5432, protocol: TCP}]
