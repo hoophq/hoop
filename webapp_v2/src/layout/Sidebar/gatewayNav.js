@@ -149,7 +149,6 @@ export const SUGGESTION_ITEMS = [
 ]
 
 export const QUICK_ACCESS_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', description: 'Overview dashboard', icon: LayoutDashboard, path: '/dashboard', adminOnly: true },
   { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks', featureFlag: AGENTS_FLAG },
   { id: 'sessions', label: 'Sessions', description: 'View session history', icon: GalleryVerticalEnd, path: '/sessions' },
   { id: 'reviews', label: 'Pending Approvals', description: 'Approve or reject requests', icon: View, path: '/approvals' },

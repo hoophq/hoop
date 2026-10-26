@@ -1,6 +1,4 @@
-import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
-import PageLoader from '@/components/PageLoader'
 import NotImplemented from '@/components/NotImplemented'
 import gateway from '@/modes/gateway'
 import ByRuleTraffic from '@/modes/ByRuleTraffic'
@@ -67,11 +65,6 @@ import SidecarSetup from '@/pages/Sidecars/Setup'
 import SidecarLogin from '@/pages/Sidecars/Login'
 import SidecarDetailsPage from '@/pages/Sidecars/Details'
 import SidecarListenerPage from '@/pages/Sidecars/Listener'
-
-// The only lazily-loaded page. Every other route is imported eagerly, but the
-// Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
-// only — no reason to put that in the bundle every user downloads.
-const Dashboard = lazy(() => import('@/pages/Dashboard'))
 
 // /reviews is the old path of /approvals. Keep the session id and the query.
 function ReviewsRedirect() {
@@ -175,18 +168,9 @@ function Router() {
       <Route path="/approvals/:sessionId" element={<Page><Reviews /></Page>} />
       <Route path="/reviews" element={<ReviewsRedirect />} />
       <Route path="/reviews/:sessionId" element={<ReviewsRedirect />} />
+      <Route path="/dashboard" element={<Navigate to="/" replace />} />
 
       {/* React pages — fully migrated */}
-      <Route
-        path="/dashboard"
-        element={
-          <Page adminOnly>
-            <Suspense fallback={<PageLoader h={400} />}>
-              <Dashboard />
-            </Suspense>
-          </Page>
-        }
-      />
       <Route
         path="/compliance-report"
         element={
