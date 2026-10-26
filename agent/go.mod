@@ -23,6 +23,7 @@ require (
 	github.com/aws/smithy-go v1.24.3
 	github.com/getsentry/sentry-go v0.45.1
 	github.com/go-sql-driver/mysql v1.10.0
+	github.com/hoophq/alcatraz/ner v0.23.0
 	github.com/hoophq/hoop/client v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/hoophq/libhoop v0.0.0-20261022191641-55dc7bef0843
@@ -106,7 +107,6 @@ require (
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0 // indirect
 	github.com/honeycombio/otel-config-go v1.17.0 // indirect
 	github.com/hoophq/alcatraz v0.23.0 // indirect
-	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
