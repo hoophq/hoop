@@ -1,0 +1,44 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "go-test-failed-test",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "(--- FAIL: \\S+ \\([0-9.]+s\\))",
+          "message": 1
+        }
+      ]
+    },
+    {
+      "owner": "go-test-failed-package",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "(?:^|\"Output\":\")FAIL(?:\\t|\\\\t)([^\\s\\\\\"]+)",
+          "message": 1
+        }
+      ]
+    },
+    {
+      "owner": "go-test-timeout",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "(panic: test timed out after [0-9hms.]+)",
+          "message": 1
+        }
+      ]
+    },
+    {
+      "owner": "go-test-timed-out-test",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "(?:^\\t\\t|\"Output\":\"\\\\t\\\\t)((?:Test|Example|Fuzz|Benchmark)\\S* \\([0-9hms.]+\\))",
+          "message": 1
+        }
+      ]
+    }
+  ]
+}
