@@ -6207,6 +6207,16 @@
         },
         "type": "object"
       },
+      "openapi.ReviewCount": {
+        "properties": {
+          "count": {
+            "example": 4,
+            "readOnly": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "openapi.ReviewGroup": {
         "properties": {
           "forced_review": {
@@ -11845,6 +11855,61 @@
           }
         },
         "summary": "Get Approval List",
+        "tags": [
+          "Approvals"
+        ]
+      }
+    },
+    "/approvals/count": {
+      "get": {
+        "description": "Count the approval requests with the given status that `GET /approvals` returns to the user. Only `PENDING` is supported.",
+        "parameters": [
+          {
+            "description": "The status to count",
+            "in": "query",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "enum": [
+                "PENDING"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.ReviewCount"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Count Approvals",
         "tags": [
           "Approvals"
         ]
