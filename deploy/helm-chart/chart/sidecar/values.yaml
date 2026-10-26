@@ -161,7 +161,17 @@ configRevision: ''
 # A value starting with '{' is read as the license itself, anything else as a
 # filename — so a mounted secret and this value are the same field. Passed as
 # HOOP_LICENSE, which outranks the config file's "license" key.
+#
+# Changing this value rolls the pods. To rotate without a restart, mount the
+# license from a Secret with extraVolumes/extraVolumeMounts and set this to
+# the mounted path: the relay re-reads the file when the kubelet updates it.
+# Or send it to PUT /license on the admin port; see `adminSecret`.
 license: ''
+
+# -- Secret that PUT /license on the admin port (19000) asks for, as
+# `Authorization: Bearer <secret>`. Empty turns the endpoint off, which keeps
+# the admin port read-only. → HOOP_SIDECAR_ADMIN_SECRET
+adminSecret: ''
 
 # -- Take the running configuration from a Control Plane instead of the file
 # above. The handshake supplies the whole config and `config` becomes optional;

@@ -196,6 +196,12 @@ type Config struct {
 	// The zero value is missing, so an embedder who skips it keeps the caps.
 	lic license.Status
 
+	// licPinned is the license flag or HOOP_LICENSE reference lic resolved
+	// from, empty when neither held one. Both outrank the config key and
+	// cannot change while the process runs; the file a path names can, and
+	// the reloader watches it. Setup fills it.
+	licPinned license.Ref
+
 	// cp is the resolved control plane connection, when one is configured.
 	// resolveConfigSource fills it; Run starts the heartbeat from it. Not a
 	// config key: the file names a URL and does not carry a token or a
@@ -251,6 +257,13 @@ func (c *Config) UseLicense(ref license.Ref) error {
 		return s.Err
 	}
 	c.lic = s
+	// The reference a running process watches follows the license in
+	// force: a path is re-read when its file is replaced, a document is
+	// not, and a flag or HOOP_LICENSE path Setup pinned no longer applies.
+	c.licPinned = license.Ref{}
+	if licenseIsPath(ref.Value) {
+		c.licPinned = ref
+	}
 	return nil
 }
 
