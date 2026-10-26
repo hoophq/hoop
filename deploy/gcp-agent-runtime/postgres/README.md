@@ -96,6 +96,36 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
 PSC-I does not stop the agent from calling Google front ends (`*.run.app`). A
 VPC Service Controls perimeter does.
 
+## Free tier
+
+The sidecar is free. Without a license it enforces one guardrail rule and one
+data masking rule per process. `deploy/sidecar/sidecar.yaml` uses the
+guardrail rule: `agents-read-only`, which names eleven operations. One rule
+can carry more than one check.
+
+A config over the cap does not start. After `terraform apply`, the new
+sidecar pod logs:
+
+```
+Error: invalid config:
+  - 2 guardrail rules are configured (guardrails: 2) and this process enforces at most 1; merge them into one rule. A license lifts this cap: add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file. Contact our support at https://help.hoop.dev. ai_analysis rules are counted separately and are not limited
+```
+
+The pod it replaces keeps serving with the old rules. Check a config before
+you apply it; the output names the limits:
+
+```bash
+docker run --rm -v "$PWD/deploy/sidecar:/c:ro" -e HOOP_SIDECAR_CONFIG=/c/sidecar.yaml \
+  hoophq/hoopsidecar:1.260.0-distroless hoop start sidecar --validate
+```
+
+Use the image tag of `sidecar_version` in `deploy/sidecar/main.tf`.
+
+A license lifts both caps: [talk to us](https://hoop.dev/meet). On a hoop
+control plane, the sidecar takes the organization's license from the plane:
+[`deploy/sidecar/README.md`](deploy/sidecar/README.md), "Later: connect it to
+a hoop control plane".
+
 ## The agent
 
 | Variable | Default | Holds |
