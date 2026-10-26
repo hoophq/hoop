@@ -16,13 +16,15 @@ cfg="$dir/deploy/sidecar/sidecar.yaml"
 [[ -f $cfg ]] || { echo "FAIL: no $cfg" >&2; exit 1; }
 
 # The database addresses: every listener's upstream (host:port, or
-# [ipv6]:port) in sidecar.yaml, and its host when the host holds a dot or a
-# colon (an FQDN or an IP). A one-label host such as "postgres" is also an
-# ordinary word, so only its host:port counts.
-# Block, flow and JSON forms: `upstream: x`, `{..., upstream: x}`, `"upstream": "x"`.
+# [ipv6]:port) in sidecar.yaml, and its host when the host holds a dot (an
+# FQDN or an IPv4 address). A one-label host such as "postgres" is also an
+# ordinary word, so only its host:port counts. An IPv6 host such as "::1" is
+# in the base image's own files, so it counts only in the project's files.
+# Block, flow and JSON forms: `upstream: x`, `{..., upstream: x}`, `"upstream": "x"`,
+# with YAML comments left out.
 read -r -d '' extract <<'EOF' || true
 import re, sys
-text = open(sys.argv[1]).read()
+text = re.sub(r"(^|\s)#.*", r"\1", open(sys.argv[1]).read(), flags=re.M)
 for m in re.finditer(r"""["']?\bupstream["']?\s*:\s*["']?([^\s"',}#]+)""", text):
     print(m.group(1))
 EOF
@@ -35,7 +37,8 @@ for u in $upstreams; do
   [[ $u =~ $addr ]] \
     || { echo "FAIL: cannot read upstream '$u' in $cfg as host:port or [ipv6]:port" >&2; exit 1; }
 done
-hosts=$(echo "$upstreams" | sed 's/:[0-9]*$//' | tr -d '[]' | grep -E '[.:]' | sort -u || true)
+hosts=$(echo "$upstreams" | grep -v '^\[' | sed 's/:[0-9]*$//' | grep -F . | sort -u || true)
+v6hosts=$(echo "$upstreams" | grep '^\[' | sed 's/:[0-9]*$//' | tr -d '[]' | sort -u || true)
 
 tag="agent-image-test:$$"
 cid=""
@@ -60,24 +63,31 @@ if grep -E '(^|/)(hoopsidecar|hoop|sidecar\.yaml)$|(^|/)deploy/sidecar(/|$)' "$w
   echo "FAIL: the image holds the sidecar or its config (paths above)"
   fail=1
 fi
-# 2. No database address, in the image config or in any file of the image.
-for a in $upstreams $hosts; do
+# 2. No database address, in the image config or in any file of the image; an
+# IPv6 host only in the project's files (the working directory, .venv aside).
+for a in $upstreams $hosts $v6hosts; do
   if grep -qF "$a" "$work/config.json"; then
     echo "FAIL: the image config holds the database address $a"
     fail=1
   fi
 done
+workdir=$(docker image inspect "$tag" --format '{{.Config.WorkingDir}}')
 # shellcheck disable=SC2086 # one argument per address
-python3 -I - "$work/fs.tar" $upstreams $hosts <<'EOF' || fail=1
+python3 -I - "$work/fs.tar" "$workdir" $upstreams $hosts -- $v6hosts <<'EOF' || fail=1
 import sys, tarfile
-path, needles = sys.argv[1], [n.encode() for n in sys.argv[2:]]
+path, workdir, args = sys.argv[1], sys.argv[2].strip("/"), sys.argv[3:]
+sep = args.index("--")
+everywhere = [n.encode() for n in args[:sep]]
+own_only = [n.encode() for n in args[sep + 1:]]
 bad = 0
 with tarfile.open(path) as tar:
     for m in tar:
         if not m.isfile():
             continue
+        own = bool(workdir) and m.name.startswith(workdir + "/") \
+            and not m.name.startswith(workdir + "/.venv/")
         data = tar.extractfile(m).read()
-        for n in needles:
+        for n in everywhere + (own_only if own else []):
             if n in data:
                 print(f"FAIL: /{m.name} holds the database address {n.decode()}")
                 bad = 1
