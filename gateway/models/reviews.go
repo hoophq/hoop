@@ -424,6 +424,20 @@ func CountPendingReviews(orgID string, staleBefore time.Time) (pending, stale in
 	return counts.Pending, counts.Stale, nil
 }
 
+// CountPendingReviewsForViewer counts the PENDING reviews ListReviews returns to viewer.
+func CountPendingReviewsForViewer(db *gorm.DB, orgID string, viewer ReviewViewer) (int64, error) {
+	visibility, visibilityArgs := viewer.condition()
+	var count int64
+	err := db.Raw(`
+	SELECT COUNT(*) FROM private.reviews rv
+	WHERE org_id = ? AND status = ?
+	AND NOT (COALESCE(rv.listener_name, '') <> '' AND rv.expires_at IS NOT NULL AND rv.expires_at <= ?)`+visibility,
+		append([]any{orgID, ReviewStatusPending, time.Now().UTC()}, visibilityArgs...)...).
+		Scan(&count).
+		Error
+	return count, err
+}
+
 // Create the review object, when input is not empty it generates a blob id
 // and save the input as well.
 func CreateReview(rev *Review, input string) error {

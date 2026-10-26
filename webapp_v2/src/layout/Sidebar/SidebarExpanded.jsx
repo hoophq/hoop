@@ -16,7 +16,7 @@ function SectionLabel({ label, id }) {
 }
 
 // `top` renders above the first section (the gateway's ConfigStatus).
-export function SidebarExpanded({ nav, navKey, top }) {
+export function SidebarExpanded({ nav, navKey, top, counts }) {
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
   const { sections, activePath } = useSidebarNav(nav)
 
@@ -64,7 +64,7 @@ export function SidebarExpanded({ nav, navKey, top }) {
                   <Stack gap="xsAlt" mb="sm">
                     {items.map((item) => (
                       <Box component="li" key={item.path || item.label} className={classes.listItem}>
-                        <NavItem item={item} activePath={activePath} />
+                        <NavItem item={item} activePath={activePath} counts={counts} />
                       </Box>
                     ))}
                   </Stack>

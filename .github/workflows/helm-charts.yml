@@ -405,66 +405,201 @@ jobs:
             [[ "$(yq -o=json "$block" "$values")" == "$(yq -o=json "$block" ./deploy/managed-agents/http/values.yaml)" ]] \
               || { echo "::error::$values and the Managed Agents http template differ in $block"; exit 1; }
           done
-          # setup.sh: the sandbox reaches only the sidecar host, and the vault
-          # fills both tokens toward that host only.
+          # setup.sh, for this agent and the quick start's: the sandbox reaches
+          # only the sidecar host, and the vault fills each token toward that
+          # host only.
+          host=sidecar.ci.example
+          full=$(SIDECAR_HOST=$host "$dir/setup.sh" create --dry-run)
+          demo=$(SIDECAR_HOST=$host AGENT_DIR=$dir/quickstart/openai "$dir/setup.sh" create --dry-run --no-api-token)
+          for bodies in "$full" "$demo"; do
+            jq -e --arg h "$host" '.environment_template.network == {access: "restricted", allowed_domains: [$h]}' <<<"$bodies" >/dev/null \
+              || { echo "::error::the environment template reaches more than the sidecar host"; exit 1; }
+            jq -e --arg h "$host" '[.credentials[].auth | .type == "environment_variable" and .networking == {type: "limited", allowed_hosts: [$h]}] | length > 0 and all' <<<"$bodies" >/dev/null \
+              || { echo "::error::a vault credential is not bound to the sidecar host alone"; exit 1; }
+            jq -e '([.. | strings | select(test("sidecar\\.example\\.com"))] == []) and all(.. | objects; has("secret_value") | not)' <<<"$bodies" >/dev/null \
+              || { echo "::error::a request body kept the example host or holds a secret"; exit 1; }
+          done
+          jq -e '[.credentials[].auth.secret_name] == ["HOOP_CALLER_TOKEN", "CUSTOMER_API_TOKEN"]' <<<"$full" >/dev/null \
+            || { echo "::error::the vault lost a credential"; exit 1; }
+          # The demo API takes no token; AGENT_DIR picks the demo agent.
+          jq -e '[.credentials[].auth.secret_name] == ["HOOP_CALLER_TOKEN"] and .agent.name == "hoop-demo-api"' <<<"$demo" >/dev/null \
+            || { echo "::error::the quick start's vault holds more than the caller token, or its agent is not the demo agent"; exit 1; }
+          # A short-form mount turns a missing token into a folder, which
+          # run.sh then takes for the token. ENG-878 brings this to the
+          # Claude quick start; then this moves to the quick start loop.
+          mount=$(yq -o=json -I=0 '[.services.sidecar.volumes[] | select(tag == "!!map" and .target == "/run/secrets/caller-token") | .bind.create_host_path]' "$dir/quickstart/docker-compose.yml")
+          [[ "$mount" == '[false]' ]] \
+            || { echo "::error::the quick start's token mount creates a folder when the token is missing: $mount"; exit 1; }
+          echo "the OpenAI Agents http template renders and its OpenAI side reaches only the sidecar"
+
+      # The OpenAI kubernetes template copies the Managed Agents one's policy
+      # and exposure, so a fix to either must reach both.
+      - name: Assert the OpenAI Agents kubernetes template renders
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/sidecar
+          dir=./deploy/openai-agents/kubernetes
+          values=$dir/values.yaml
+          helm lint "$chart" -f "$values"
+          out=$(helm template t "$chart" -f "$values")
+          echo "$out" | grep -q 'HOOP_SIDECAR_INSTALL_SOURCE: "openai-agents-kubernetes"' \
+            || { echo "::error::the template lost its analytics install source"; exit 1; }
+          echo "$out" | grep -q 'type: LoadBalancer' \
+            || { echo "::error::the template's public lane Service is not a LoadBalancer"; exit 1; }
+          echo "$out" | grep -qE 'port: 443$' \
+            || { echo "::error::the template's lane is not on port 443"; exit 1; }
+          echo "$out" | grep -q 'no-delete' \
+            || { echo "::error::the template lost its delete guardrail"; exit 1; }
+          # Each row names the session only while the lane records this header.
+          echo "$out" | grep -q 'Impersonate-Extra-Hoop-Session' \
+            || { echo "::error::the lane no longer records the session header"; exit 1; }
+          echo "$out" | grep -q 'automountServiceAccountToken: false' \
+            && { echo "::error::the pod no longer mounts the cluster CA the lane trusts"; exit 1; }
+          # Older releases report the install source as "other".
+          tag=$(yq '.image.tag' "$values")
+          [[ "$tag" =~ ^([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
+            && [[ "$(printf '1.263.0\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.263.0 ]] \
+            || { echo "::error::values.yaml must pin hoophq/hoopsidecar 1.263.0 or later by digest: $tag"; exit 1; }
+          # Assigned first, so a yq failure stops the step instead of comparing
+          # two empty strings.
+          for block in .config.guardrails .config.mask .extraVolumes .extraVolumeMounts .laneServices; do
+            ours=$(yq -o=json "$block" "$values")
+            twin=$(yq -o=json "$block" ./deploy/managed-agents/kubernetes/values.yaml)
+            [[ "$ours" == "$twin" ]] \
+              || { echo "::error::$values and the Managed Agents kubernetes template differ in $block"; exit 1; }
+          done
+          # setup.sh: the sandbox reaches only the sidecar host and gets kubectl
+          # as a file; the vault fills the token toward that host only.
           host=sidecar.ci.example
           bodies=$(SIDECAR_HOST=$host "$dir/setup.sh" create --dry-run)
           jq -e --arg h "$host" '.environment_template.network == {access: "restricted", allowed_domains: [$h]}' <<<"$bodies" >/dev/null \
             || { echo "::error::the environment template reaches more than the sidecar host"; exit 1; }
-          jq -e --arg h "$host" '[.credentials[].auth | .type == "environment_variable" and .networking == {type: "limited", allowed_hosts: [$h]}] == [true, true]' <<<"$bodies" >/dev/null \
-            || { echo "::error::a vault credential is not bound to the sidecar host alone"; exit 1; }
+          jq -e '.environment_template.files | map(.path) == ["/workspace/.hoop/kubernetes-client-linux-amd64.tar.gz", "/workspace/.hoop/kubeconfig.sh"]' <<<"$bodies" >/dev/null \
+            || { echo "::error::the environment template lost the kubectl tarball or kubeconfig.sh"; exit 1; }
+          jq -r '.environment_template.files[] | select(.type == "inline") | .data' <<<"$bodies" | base64 -d \
+            | grep -qx "SIDECAR_HOST=$host # setup.sh writes the real host" \
+            || { echo "::error::kubeconfig.sh in the template does not name the sidecar host"; exit 1; }
+          jq -e --arg h "$host" '[.credentials[].auth | .type == "environment_variable" and .networking == {type: "limited", allowed_hosts: [$h]}] == [true]' <<<"$bodies" >/dev/null \
+            || { echo "::error::the vault credential is not bound to the sidecar host alone"; exit 1; }
           jq -e '([.. | strings | select(test("sidecar\\.example\\.com"))] == []) and all(.. | objects; has("secret_value") | not)' <<<"$bodies" >/dev/null \
             || { echo "::error::a request body kept the example host or holds a secret"; exit 1; }
-          echo "the OpenAI Agents http template renders and its OpenAI side reaches only the sidecar"
+          echo "the OpenAI Agents kubernetes template renders and its OpenAI side reaches only the sidecar"
 
-      # The quick start runs on its pinned image: the demo API it relies on,
-      # and the free-tier message its README quotes. The helm values share
-      # that image and those rules, so they fit the free tier too.
-      - name: Assert the Managed Agents http quick start works on its pinned image
+      # The README promises the Claude twin's rules, login and topology.
+      - name: Assert the OpenAI Agents postgres-mcp template matches its Claude twin
         run: |
           set -euo pipefail
-          dir=./deploy/managed-agents/http
-          qs=$dir/quickstart
-          img=$(yq '.services.sidecar.image' "$qs/docker-compose.yml")
-          [[ "$img" == "hoophq/hoopsidecar:$(yq '.image.tag' "$dir/values.yaml")" ]] \
-            || { echo "::error::the quick start and values.yaml pin different images"; exit 1; }
-          for block in guardrails mask; do
-            [[ "$(yq -o=json ".$block" "$qs/config/sidecar.yaml")" == "$(yq -o=json ".config.$block" "$dir/values.yaml")" ]] \
-              || { echo "::error::the quick start and values.yaml differ in $block"; exit 1; }
+          dir=./deploy/openai-agents/postgres-mcp
+          twin=./deploy/managed-agents/postgres-mcp
+          for f in sidecar.yaml seed.sql docker-compose.test.yml; do
+            cmp -s "$dir/$f" "$twin/$f" || { echo "::error::$dir/$f differs from $twin/$f"; exit 1; }
           done
+          # Assigned first, so a yq failure stops the step instead of comparing
+          # two empty strings.
+          for block in .services.postgres .services.dbhub '.services.sidecar | del(.image)' .networks; do
+            a=$(yq -o=json "$block" "$dir/docker-compose.yml")
+            b=$(yq -o=json "$block" "$twin/docker-compose.yml")
+            [[ "$a" == "$b" ]] \
+              || { echo "::error::$dir/docker-compose.yml and its Claude twin differ in $block"; exit 1; }
+          done
+          # ENG-855: older sidecars miss a DELETE after `-- x<CR>`.
+          img=$(yq '.services.sidecar.image' "$dir/docker-compose.yml")
+          [[ "$img" =~ ^hoophq/hoopsidecar:([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
+            && [[ "$(printf '1.260.3\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.260.3 ]] \
+            || { echo "::error::docker-compose.yml must pin hoophq/hoopsidecar 1.260.3 or later by digest: $img"; exit 1; }
+          # setup.sh: OpenAI's servers make the MCP call with the vault token,
+          # and the sandbox has no network.
+          host=mcp.ci.example
+          bodies=$(MCP_HOST=$host "$dir/setup.sh" create --dry-run)
+          jq -e '.environment_template.network == {access: "disabled"}' <<<"$bodies" >/dev/null \
+            || { echo "::error::the environment template has a network"; exit 1; }
+          jq -e --arg u "https://$host/mcp" '[.agent.tools[] | {type, connection_origin, url: .transport.server_url, required}]
+              == [{type: "mcp", connection_origin: "service", url: $u, required: true}]' <<<"$bodies" >/dev/null \
+            || { echo "::error::the agent's tools are not one required service-origin MCP server"; exit 1; }
+          jq -e --arg u "https://$host/mcp" '.credential.auth == {type: "static_bearer", mcp_server_url: $u}' <<<"$bodies" >/dev/null \
+            || { echo "::error::the vault credential does not name the agent's MCP URL, or holds a secret"; exit 1; }
+          jq -e '[.. | strings | select(test("mcp\\.example\\.com"))] == []' <<<"$bodies" >/dev/null \
+            || { echo "::error::a request body kept the example host"; exit 1; }
+          # The production Caddy config admits only the list run.sh writes.
+          # Two lists, so a prefix written into the Caddyfile cannot pass as
+          # the imported one.
+          img=$(yq '.services.caddy.image' "$dir/docker-compose.yml")
+          for range in 192.0.2.0/24 198.51.100.0/24; do
+            tmp=$(mktemp -d)
+            echo "@outside not client_ip $range" > "$tmp/openai.caddy"
+            prod=$(docker run --rm -e SITE_ADDRESS=mcp.ci.example -v "$PWD/$dir/Caddyfile:/etc/caddy/Caddyfile:ro" \
+              -v "$tmp:/etc/caddy/ranges:ro" "$img" caddy adapt --config /etc/caddy/Caddyfile)
+            jq -e --arg r "$range" '[.. | .client_ip? // empty | .ranges[]] == [$r]' <<<"$prod" >/dev/null \
+              || { echo "::error::the Caddyfile admits other than the imported list $range"; exit 1; }
+            # The 403 must run before the one proxy, or it guards nothing.
+            jq -e --arg r "$range" '[.. | objects | select(.handler? == "subroute") | .routes | select(any(.[]; .handle[0].handler == "reverse_proxy"))]
+                | length == 1 and (.[0][0] == {match: [{not: [{client_ip: {ranges: [$r]}}]}],
+                    handle: [{handler: "static_response", status_code: 403, body: "forbidden"}]})' <<<"$prod" >/dev/null \
+              || { echo "::error::the Caddyfile does not refuse a caller outside $range before it proxies"; exit 1; }
+          done
+          # A file mount would keep serving the list that ./run.sh ranges replaced.
+          yq -e '.services.caddy.volumes[] | select(. == "./ranges:/etc/caddy/ranges:ro")' "$dir/docker-compose.yml" >/dev/null \
+            || { echo "::error::Caddy does not mount the ranges directory that run.sh writes"; exit 1; }
+          jq -e '[.apps.http.servers[].trusted_proxies.ranges] == [["127.0.0.1/32"]]' <<<"$prod" >/dev/null \
+            || { echo "::error::the production Caddyfile trusts a proxy other than loopback"; exit 1; }
+          echo "the OpenAI Agents postgres-mcp template matches its Claude twin and admits only OpenAI's list"
+
+      # Each quick start runs on its pinned image: the demo API it relies on,
+      # and the free-tier message its README quotes. The helm values share
+      # that image and those rules, so they fit the free tier too.
+      - name: Assert the http quick starts work on their pinned images
+        run: |
+          set -euo pipefail
           tmp=$(mktemp -d)
           echo ci-token > "$tmp/token"
           token=(-v "$tmp/token:/run/secrets/caller-token:ro")
-
-          docker run -d --name quickstart -p 127.0.0.1:8080:8080 -p 127.0.0.1:19000:19000 \
-            -v "$PWD/$qs/config/sidecar.yaml:/etc/hoop-inspect/config.yaml:ro" "${token[@]}" "$img" >/dev/null
-          trap 'docker rm -f quickstart >/dev/null' EXIT
-          for _ in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:19000/healthz && break; sleep 1; done
+          trap 'docker rm -f quickstart >/dev/null 2>&1 || true' EXIT
           call() { curl -sS -i -X "$1" "http://127.0.0.1:8080$2" ${3:+-H "X-Hoop-Token: $3"}; }
-          out=$(call GET /users/1 ci-token) \
-            || { echo "::error::no answer through the lane: does the image still serve x-hoop-demo-api?"; docker logs quickstart; exit 1; }
-          for want in ' 200 ' '[REDACTED:EMAIL_ADDRESS]' '[REDACTED:PHONE_NUMBER]' '[REDACTED:CREDIT_CARD]'; do
-            grep -qF -- "$want" <<<"$out" || { echo "::error::GET /users/1 lacks '$want': $out"; exit 1; }
-          done
-          call DELETE /users/1 ci-token | grep -qi '^x-hoop-denied: policy' \
-            || { echo "::error::DELETE /users/1 was not refused"; exit 1; }
-          call GET /users/1 | head -1 | grep -q ' 403 ' \
-            || { echo "::error::a request without the caller token was not refused"; exit 1; }
 
-          yq '.guardrails.rules += [{"name": "second", "type": "operation", "operations": ["delete"]}]' \
-            "$qs/config/sidecar.yaml" > "$tmp/over.yaml"
-          if out=$(docker run --rm -v "$tmp/over.yaml:/etc/hoop-inspect/config.yaml:ro" "${token[@]}" \
-              "$img" hoop start sidecar --validate 2>&1); then
-            echo "::error::the image accepted a second guardrail rule"; exit 1
-          fi
-          # Without this, an empty or header-only refusal passes the quote check.
-          grep -qF -- "2 guardrail rules are configured (guardrails: 2) and this process enforces at most 1" <<<"$out" \
-            || { echo "::error::the image refused the config, but not with the cap message: $out"; exit 1; }
-          while IFS= read -r line; do
-            grep -qxF -- "$line" "$dir/README.md" \
-              || { echo "::error::README.md does not quote this line of the message: $line"; exit 1; }
-          done <<<"$out"
-          echo "the quick start masks and refuses on its pinned image, and README.md quotes the cap message"
+          for dir in ./deploy/managed-agents/http ./deploy/openai-agents/http; do
+            qs=$dir/quickstart
+            img=$(yq '.services.sidecar.image' "$qs/docker-compose.yml")
+            [[ "$img" == "hoophq/hoopsidecar:$(yq '.image.tag' "$dir/values.yaml")" ]] \
+              || { echo "::error::$qs and values.yaml pin different images"; exit 1; }
+            [[ "$(yq '.services.sidecar.environment.HOOP_SIDECAR_INSTALL_SOURCE' "$qs/docker-compose.yml")" == "$(yq '.analytics.installSource' "$dir/values.yaml")" ]] \
+              || { echo "::error::$qs and values.yaml report different install sources"; exit 1; }
+            for block in guardrails mask 'listeners[0].caller_token.name' 'listeners[0].http'; do
+              [[ "$(yq -o=json ".$block" "$qs/config/sidecar.yaml")" == "$(yq -o=json ".config.$block" "$dir/values.yaml")" ]] \
+                || { echo "::error::$qs and values.yaml differ in $block"; exit 1; }
+            done
+
+            docker run -d --name quickstart -p 127.0.0.1:8080:8080 -p 127.0.0.1:19000:19000 \
+              -v "$PWD/$qs/config/sidecar.yaml:/etc/hoop-inspect/config.yaml:ro" "${token[@]}" "$img" >/dev/null
+            for _ in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:19000/healthz && break; sleep 1; done
+            out=$(call GET /users/1 ci-token) \
+              || { echo "::error::$qs: no answer through the lane: does the image still serve x-hoop-demo-api?"; docker logs quickstart; exit 1; }
+            for want in ' 200 ' '[REDACTED:EMAIL_ADDRESS]' '[REDACTED:PHONE_NUMBER]' '[REDACTED:CREDIT_CARD]'; do
+              grep -qF -- "$want" <<<"$out" || { echo "::error::$qs: GET /users/1 lacks '$want': $out"; exit 1; }
+            done
+            # Captured first: under pipefail, grep -q can end curl with SIGPIPE.
+            out=$(call DELETE /users/1 ci-token)
+            grep -qi '^x-hoop-denied: policy' <<<"$out" \
+              || { echo "::error::$qs: DELETE /users/1 was not refused"; exit 1; }
+            out=$(call GET /users/1)
+            [[ "$out" == HTTP/*" 403 "* ]] \
+              || { echo "::error::$qs: a request without the caller token was not refused"; exit 1; }
+            docker rm -f quickstart >/dev/null
+
+            yq '.guardrails.rules += [{"name": "second", "type": "operation", "operations": ["delete"]}]' \
+              "$qs/config/sidecar.yaml" > "$tmp/over.yaml"
+            if out=$(docker run --rm -v "$tmp/over.yaml:/etc/hoop-inspect/config.yaml:ro" "${token[@]}" \
+                "$img" hoop start sidecar --validate 2>&1); then
+              echo "::error::$qs: the image accepted a second guardrail rule"; exit 1
+            fi
+            # Without this, an empty or header-only refusal passes the quote check.
+            grep -qF -- "2 guardrail rules are configured (guardrails: 2) and this process enforces at most 1" <<<"$out" \
+              || { echo "::error::$qs: the image refused the config, but not with the cap message: $out"; exit 1; }
+            while IFS= read -r line; do
+              grep -qxF -- "$line" "$dir/README.md" \
+                || { echo "::error::$dir/README.md does not quote this line of the message: $line"; exit 1; }
+            done <<<"$out"
+            echo "$qs masks and refuses on its pinned image, and $dir/README.md quotes the cap message"
+          done
 
       - name: Assert image references live only in values.yaml
         run: |

@@ -1,0 +1,114 @@
+# An OpenAI Agents API agent queries Postgres through an MCP tool, and every
+# statement crosses the hoop sidecar.
+#
+#   caddy --/mcp--> dbhub --pgwire--> sidecar --> postgres
+#
+# Each service shares a network with its neighbours and with nothing else:
+#
+#   public  caddy                  ports 80 and 443, ACME
+#   edge    caddy, dbhub           internal
+#   pgwire  dbhub, sidecar         internal
+#   data    sidecar, postgres      internal
+#
+# Bring up: ./run.sh. Why each choice: ./README.md.
+
+name: hoop-openai-postgres-mcp
+
+services:
+  # A stand-in for your database. Only the sidecar joins `data`.
+  postgres:
+    image: postgres:17.6
+    restart: unless-stopped
+    networks: [data]
+    environment:
+      # A superuser, for the seed and for demo.sh's direct reads only.
+      POSTGRES_USER: owner
+      POSTGRES_PASSWORD: owner-demo-password
+      POSTGRES_DB: appdb
+    # Logs each statement that reaches Postgres. The tests use it to prove a
+    # refused statement never arrived.
+    command: ["-c", "log_statement=all"]
+    volumes:
+      - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    healthcheck:
+      # -h 127.0.0.1: during init the server listens on the socket only.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U owner -d appdb"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 20
+      start_period: "10s"
+
+  sidecar:
+    # 1.260.3 or later: older builds miss a DELETE after `-- x<CR>` (ENG-855).
+    image: hoophq/hoopsidecar:1.263.0@sha256:1cbddabd563ea67a885e4fa5767f97599f978e8edd2cb6ac3f1eba4e385f5992
+    restart: unless-stopped
+    networks: [data, pgwire]
+    volumes:
+      # The path the image's HOOP_SIDECAR_CONFIG names, so no flag.
+      - ./sidecar.yaml:/etc/hoop-inspect/config.yaml:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      # The image has bash and no curl.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/19000 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+
+  # Read-write on purpose: the sidecar is the control, not the MCP server.
+  dbhub:
+    image: bytebase/dbhub:1.5.0@sha256:aa04093100a15911c7ee326e870fa11480e1466342e8433fdd67b45c9af52ccf
+    # dbhub 1.5.0 with pg 8.16.0 exits when a refused statement in a
+    # multi-statement call ends its connection (bytebase/dbhub#479); this
+    # brings it back. demo.sh fails once dbhub survives it.
+    restart: unless-stopped
+    user: node
+    networks: [pgwire, edge]
+    command:
+      - --transport
+      - http
+      - --port
+      - "8080"
+      # Caddy sends this Host on every request, so the public name can change
+      # (a tunnel gets a new one each run) without touching dbhub.
+      - --allowed-hosts
+      - mcp.internal
+    environment:
+      # In the environment, not argv, so the password is not in `ps`.
+      # sslmode=disable: the lane does not terminate client TLS.
+      DSN: postgres://agent:agent-demo-password@sidecar:15432/appdb?sslmode=disable
+      # Checked as `Authorization: Bearer <token>`, the header a vault
+      # static_bearer credential sends.
+      DBHUB_AUTH_TOKEN: "${DBHUB_AUTH_TOKEN:?run ./run.sh}"
+    depends_on:
+      sidecar: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: "3s"
+      timeout: "5s"
+      retries: 15
+      start_period: "5s"
+
+  caddy:
+    image: caddy:2.11.7@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af
+    restart: unless-stopped
+    networks: [public, edge]
+    ports: ["80:80", "443:443"]
+    environment:
+      SITE_ADDRESS: "${MCP_HOST:?run ./run.sh}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./ranges:/etc/caddy/ranges:ro # ./run.sh writes OpenAI's IP list here
+      - caddy-data:/data # the certificate; ./run.sh down keeps it
+    depends_on:
+      dbhub: { condition: service_healthy }
+
+networks:
+  public: {}
+  edge: { internal: true }
+  pgwire: { internal: true }
+  data: { internal: true }
+
+volumes:
+  caddy-data:

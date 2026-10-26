@@ -858,6 +858,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.GetByIdOrSid,
 	}
+	// No TrackRequest: every page reads the count for the sidebar.
+	countReviews := []gin.HandlerFunc{
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		reviewHandler.Count,
+	}
 	updateReview := []gin.HandlerFunc{
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateReview),
@@ -865,6 +871,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	}
 	r.GET("/reviews", listReviews...)
 	r.GET("/approvals", listReviews...)
+	r.GET("/approvals/count", countReviews...)
 	r.GET("/reviews/:id", getReview...)
 	r.GET("/approvals/:id", getReview...)
 	r.PUT("/reviews/:id", updateReview...)
