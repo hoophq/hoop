@@ -32,10 +32,11 @@ runs:
         # cannot find a manifest on its own and silently caches nothing.
         cache-dependency-path: "**/go.sum"
 
-    # Names each failed test, failed package and timeout in a job annotation.
-    # The job log expires after one day; its annotations stay. The matcher
-    # only reads the log: no exit code changes. Fixtures:
-    # scripts/ci/go-test-matcher_test.sh.
+    # Names each failed test, failed package and timed-out test in a job
+    # annotation. The job log expires after one day; its annotations stay.
+    # The runner keeps the first 10 errors of a step, so a large failure is
+    # cut short. The matcher only reads the log: no exit code changes.
+    # Fixtures: scripts/ci/go-test-matcher_test.sh.
     - name: Annotate failed Go tests
       shell: bash
       run: echo "::add-matcher::${GITHUB_ACTION_PATH}/go-test-matcher.json"

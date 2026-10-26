@@ -51,6 +51,14 @@ run "json: package that does not build" \
 run "json: timeout" \
   "$J"',"Output":"panic: test timed out after 15m0s\n"}' \
   "panic: test timed out after 15m0s"
+run "json: the header of the tests a timeout stopped" "$J"',"Output":"\trunning tests:\n"}'
+run "json: a test a timeout stopped" \
+  "$J"',"Test":"TestHangsForever","Output":"\t\tTestHangsForever (2s)\n"}' \
+  "TestHangsForever (2s)"
+run "json: a subtest a timeout stopped" \
+  "$J"',"Test":"TestGroup/sub_case","Output":"\t\tTestGroup/sub_case (2s)\n"}' \
+  "TestGroup/sub_case (2s)"
+run "json: a stack frame" "$J"',"Output":"\t/usr/local/go/src/testing/testing.go:2802 +0x2c4\n"}'
 run "json: the line that ends a failed package" "$J"',"Output":"FAIL\n"}'
 run "json: fail event" \
   '{"Time":"2026-10-26T13:12:55.302079035Z","Action":"fail","Package":"github.com/hoophq/hoop/sidecar/mcp","Test":"TestShutdownStopsAWaitInFlight","Elapsed":3.03}'
@@ -76,6 +84,11 @@ run "text: package that does not build" \
 run "text: timeout" \
   "panic: test timed out after 10m0s" \
   "panic: test timed out after 10m0s"
+run "text: the header of the tests a timeout stopped" $'\trunning tests:'
+run "text: a test a timeout stopped" $'\t\tTestHangsForever (2s)' "TestHangsForever (2s)"
+run "text: a subtest a timeout stopped" $'\t\tTestGroup/sub_case (2s)' "TestGroup/sub_case (2s)"
+run "text: a stack frame" $'\t/usr/local/go/src/testing/testing.go:2802 +0x2c4'
+run "text: a goroutine" "testing.(*M).startAlarm.func1()"
 run "text: the line that ends a failed package" "FAIL"
 run "text: passed test" "--- PASS: TestServe (0.00s)"
 run "text: passed package" $'ok  \tgithub.com/hoophq/hoop/gateway/api\t3.100s'
