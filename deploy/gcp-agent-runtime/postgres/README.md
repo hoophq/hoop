@@ -111,8 +111,10 @@ Error: invalid config:
   - 2 guardrail rules are configured (guardrails: 2) and this process enforces at most 1; merge them into one rule. A license lifts this cap: add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file. Contact our support at https://help.hoop.dev. ai_analysis rules are counted separately and are not limited
 ```
 
-The pod it replaces keeps serving with the old rules. Check a config before
-you apply it; the output names the limits:
+The pod it replaces keeps serving with the old rules. `terraform apply` waits
+for the new pod up to the module's Helm timeout (10 minutes), then fails: fix
+`sidecar.yaml` and apply again. Check a config before you apply it; the output
+names the limits:
 
 ```bash
 docker run --rm -v "$PWD/deploy/sidecar:/c:ro" -e HOOP_SIDECAR_CONFIG=/c/sidecar.yaml \
