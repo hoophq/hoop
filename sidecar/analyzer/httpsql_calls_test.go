@@ -30,33 +30,53 @@ func (p *recordingProvider) Classify(_ context.Context, _, content string) (*ana
 }
 
 // A Statement Execution API request through an http.sql lane is one model
-// call, and that call carries the SQL, not the JSON around it.
+// call, and that call carries the SQL, not the JSON around it. A resource
+// trigger on the route selects that SQL, whatever spelling of the path the
+// client used; a trigger on another route selects nothing.
 func TestHTTPSQLRequestIsOneModelCall(t *testing.T) {
-	c := codechttp.New(codechttp.Options{SQL: &codechttp.SQLOptions{
-		Dialect: lexer.Spark, DialectName: "spark",
-		Fields:        map[string]string{"/api/2.0/sql/statements": "statement"},
-		MatchResource: policy.MatchResource,
-	}})
-	body := `{"statement":"DELETE FROM customers WHERE id = 7","warehouse_id":"w"}`
-	raw := fmt.Sprintf("POST /api/2.0/sql/statements HTTP/1.1\r\nHost: h\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
-	stmts, _, err := c.Decode(inspect.FromClient, []byte(raw))
-	if err != nil || len(stmts) != 2 {
-		t.Fatalf("Decode: %d statements, %v", len(stmts), err)
-	}
+	for _, tc := range []struct {
+		name    string
+		target  string
+		trigger analyzer.Trigger
+		calls   int
+	}{
+		{"every statement", "/api/2.0/sql/statements", analyzer.Trigger{All: true}, 1},
+		{"resource trigger on the route", "/api/2.0/sql/statements",
+			analyzer.Trigger{Resources: []string{"/api/2.0/sql/statements"}}, 1},
+		{"resource trigger, dot segment", "/api/2.0/./sql/statements",
+			analyzer.Trigger{Resources: []string{"/api/2.0/sql/**"}}, 1},
+		{"resource trigger on another route", "/api/2.0/sql/statements",
+			analyzer.Trigger{Resources: []string{"/api/2.0/jobs/**"}}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := codechttp.New(codechttp.Options{SQL: &codechttp.SQLOptions{
+				Dialect: lexer.Spark, DialectName: "spark",
+				Fields:        map[string]string{"/api/2.0/sql/statements": "statement"},
+				MatchResource: policy.MatchResource,
+			}})
+			body := `{"statement":"DELETE FROM customers WHERE id = 7","warehouse_id":"w"}`
+			raw := fmt.Sprintf("POST %s HTTP/1.1\r\nHost: h\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s",
+				tc.target, len(body), body)
+			stmts, _, err := c.Decode(inspect.FromClient, []byte(raw))
+			if err != nil || len(stmts) != 2 {
+				t.Fatalf("Decode: %d statements, %v", len(stmts), err)
+			}
 
-	p := &recordingProvider{}
-	ev := mustNew(t, analyzer.Config{
-		Provider: p,
-		Trigger:  analyzer.Trigger{All: true},
-		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionBlock},
-	})
-	for _, st := range stmts {
-		ev.Evaluate(st)
-	}
-	if len(p.prompts) != 1 {
-		t.Fatalf("the model was called %d times for one request: %q", len(p.prompts), p.prompts)
-	}
-	if !strings.Contains(p.prompts[0], "DELETE FROM customers") || strings.Contains(p.prompts[0], "warehouse_id") {
-		t.Errorf("the call does not carry the SQL alone: %q", p.prompts[0])
+			p := &recordingProvider{}
+			ev := mustNew(t, analyzer.Config{
+				Provider: p,
+				Trigger:  tc.trigger,
+				Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionBlock},
+			})
+			for _, st := range stmts {
+				ev.Evaluate(st)
+			}
+			if len(p.prompts) != tc.calls {
+				t.Fatalf("the model was called %d times, want %d: %q", len(p.prompts), tc.calls, p.prompts)
+			}
+			if tc.calls == 1 && (!strings.Contains(p.prompts[0], "DELETE FROM customers") || strings.Contains(p.prompts[0], "warehouse_id")) {
+				t.Errorf("the call does not carry the SQL alone: %q", p.prompts[0])
+			}
+		})
 	}
 }

@@ -252,14 +252,14 @@ func (c *Codec) withSQL(stmts []inspect.Statement) ([]inspect.Statement, error) 
 		if d == nil || d.Method == "" || d.StatusCode != 0 {
 			continue // not a request: a WebSocket message, a response
 		}
-		field, ok := c.sql.route(d)
+		rt, ok := c.sql.route(d)
 		if !ok {
 			if !c.keepBodies {
 				d.Body, d.BodyTruncated = "", false
 			}
 			continue
 		}
-		sql, err := c.sql.extract(d, field)
+		sql, err := c.sql.extract(d, rt)
 		if err != nil {
 			return out, err
 		}

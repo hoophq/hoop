@@ -158,7 +158,7 @@ func TestHTTPSQLRefusesAPaddedBody(t *testing.T) {
 // canonical one, so a DROP sent there is judged like one sent to the
 // canonical path, and never forwarded.
 func TestHTTPSQLNonCanonicalPathIsJudged(t *testing.T) {
-	for _, target := range []string{"/api/2.0/./sql/statements", "/api/2.0//sql/statements", "/api/2.0/sql/x/../statements"} {
+	for _, target := range []string{"/api/2.0/./sql/statements", "/api/2.0//sql/statements", "/api/2.0/sql/x/../statements", `/api/2.0\sql\statements`} {
 		t.Run(target, func(t *testing.T) {
 			up := newRouteUpstream(t, map[string][]byte{target: jsonResponse([]byte(`{}`), "")})
 			got := roundTrip(t, sqlLane(t, up.addr()).Addr().String(), sqlPost(target, `{"statement":"DROP TABLE customers"}`))

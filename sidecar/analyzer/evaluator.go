@@ -140,12 +140,23 @@ func matchTable(tables []string, stmt inspect.Statement) bool {
 // never matches, so an item pairing resources with operations stays on the
 // http lane.
 func matchResource(patterns []string, stmt inspect.Statement) bool {
-	if stmt.HTTP == nil {
-		return false
+	var target string
+	switch {
+	case stmt.HTTP != nil:
+		target = stmt.HTTP.Resource
+		if target == "" {
+			target = stmt.HTTP.Path
+		}
+	default:
+		// SQL an http lane read out of a request body has no HTTP detail;
+		// it names the route of the request that carried it (the key is a
+		// literal: analyzer does not import codec/http). That request is not
+		// sent to the model, so without this a resource trigger on the route
+		// would classify nothing there.
+		target = stmt.Metadata["http.sql_resource"]
 	}
-	target := stmt.HTTP.Resource
 	if target == "" {
-		target = stmt.HTTP.Path
+		return false
 	}
 	for _, pattern := range patterns {
 		if policy.MatchResource(pattern, target) {

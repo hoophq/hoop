@@ -4225,8 +4225,8 @@ the request that carried it, classified under the block's `dialect`.
 - **Fields.** `fields` maps a resource pattern, written as an `http_resource`
   rule writes it, to the dotted JSON path of the SQL. The longest matching
   pattern wins. A pattern matches the cleaned path, because Databricks routes
-  `/api/2.0/./sql/statements`, a doubled slash or `x/..` like the canonical
-  path. `dialect` is required: it decides what a comment or a string is, and
+  `/api/2.0/./sql/statements`, a doubled slash, a backslash or `x/..` like the
+  canonical path. `dialect` is required: it decides what a comment or a string is, and
   `spark` is Databricks SQL. A request with no body carries no SQL.
 - **MCP.** A body with a `jsonrpc` member carries SQL only as a `tools/call`
   naming one of `tools`; `initialize`, `tools/list` and other tools carry
@@ -4247,8 +4247,9 @@ the request that carried it, classified under the block's `dialect`.
   set, a body cut at the limit or not JSON is refused outright: its
   disposition cannot be checked either.
 - **What the statement carries.** Protocol `http`, no HTTP detail, the SQL as
-  its text, `http.sql_index`, `http.sql_field` and `http.sql_dialect` in its
-  metadata; the request records `http.sql_statements`. An `http_resource`
+  its text, `http.sql_index`, `http.sql_field`, `http.sql_dialect` and
+  `http.sql_resource` (the cleaned route) in its metadata; the request records
+  `http.sql_statements`. An `http_resource`
   rule never matches it. The request is judged as before, so `delete` names
   both an HTTP `DELETE` and a SQL `DELETE`.
 - **Bodies are captured on its routes.** The block captures the bodies of
@@ -4257,7 +4258,7 @@ the request that carried it, classified under the block's `dialect`.
   `capture_body`, or on a lane that holds.
 - **The analyzer** renders the SQL statement as SQL. The request that carried
   it is not sent, so a query is one model call. A trigger selects the SQL by
-  operation; a resource trigger never matches it.
+  operation, or by resource through `http.sql_resource`.
 - **Not with approvals yet.** A lane whose analyzer holds for approval cannot
   set the block: the gate spends an approval on the request, not on the SQL
   read from its body, so one approval would release that SQL again and again.

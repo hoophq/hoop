@@ -78,9 +78,10 @@ func TestSQLBodyStatementFollowsItsRequest(t *testing.T) {
 		t.Errorf("SQL statement text %q operation %s", sql.Text, sql.Operation)
 	}
 	for k, want := range map[string]string{
-		codechttp.MetadataSQLIndex:   "1",
-		codechttp.MetadataSQLField:   "statement",
-		codechttp.MetadataSQLDialect: "spark",
+		codechttp.MetadataSQLIndex:    "1",
+		codechttp.MetadataSQLField:    "statement",
+		codechttp.MetadataSQLDialect:  "spark",
+		codechttp.MetadataSQLResource: "/api/2.0/sql/statements",
 	} {
 		if got := sql.Metadata[k]; got != want {
 			t.Errorf("metadata %s = %q, want %q", k, got, want)
@@ -299,7 +300,12 @@ func TestSQLBodyReadsNonCanonicalPaths(t *testing.T) {
 		"/api/2.0/sql/statements/",
 		"//api/2.0/sql/statements",
 		"/api/2.0/%2e/sql/statements",
+		`/api/2.0\sql\statements`,
+		`/api/2.0/sql/statements\`,
+		`/api/2.0/sql/./statements\.`,
+		"/api/2.0%5csql%5cstatements",
 		"/ai-gateway/./mcp-services/system.ai.dbsql",
+		`/ai-gateway\mcp-services\system.ai.dbsql`,
 	} {
 		t.Run(target, func(t *testing.T) {
 			body := `{"statement":"DROP TABLE t"}`

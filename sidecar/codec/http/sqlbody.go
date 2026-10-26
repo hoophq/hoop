@@ -43,6 +43,10 @@ const (
 	// MetadataSQLStatements, on the request, counts the SQL statements its
 	// body produced, so the trail ties the request to them.
 	MetadataSQLStatements = "http.sql_statements"
+	// MetadataSQLResource is the cleaned resource of the request that
+	// carried the SQL. The SQL statement has no HTTP detail, so an analyzer
+	// resource trigger reads this key instead (analyzer/evaluator.go).
+	MetadataSQLResource = "http.sql_resource"
 )
 
 // SQLOptions makes an http lane read SQL out of JSON request bodies.
@@ -130,43 +134,53 @@ func (r *sqlReader) refuseResults(reason string) error {
 // for results that skip the lane. A lane that refuses those refuses it, or
 // padding a body past the limit would get it past Refuse; any other lane
 // gets an OpUnknown statement for its rules to judge.
-func (r *sqlReader) unparseable(body, field, reason string) ([]inspect.Statement, error) {
+func (r *sqlReader) unparseable(body string, rt sqlRoute, reason string) ([]inspect.Statement, error) {
 	if len(r.opts.Refuse) > 0 {
 		return nil, fmt.Errorf("this listener could not read this request's body to check it: %s: %w",
 			reason, inspect.ErrStreamUnsafe)
 	}
-	return []inspect.Statement{r.unreadable(body, field, 1, reason)}, nil
+	return []inspect.Statement{r.unreadable(body, rt, 1, reason)}, nil
 }
 
 // route returns the JSON path of the SQL in a request to one of the lane's
-// routes. The resource is cleaned first: Databricks resolves `.` and `..`
-// segments and doubled or trailing slashes before it routes, so
-// `/api/2.0/./sql/statements` runs a statement like the canonical path and
-// must be read like it, or an operation rule never sees its SQL.
-func (r *sqlReader) route(d *inspect.HTTPDetail) (string, bool) {
+// routes. The resource is cleaned first: Databricks reads a backslash as a
+// slash and resolves `.` and `..` segments and doubled or trailing slashes
+// before it routes, so `/api/2.0/./sql/statements` and
+// `/api/2.0\sql\statements` run a statement like the canonical path and must
+// be read like it, or an operation rule never sees their SQL.
+func (r *sqlReader) route(d *inspect.HTTPDetail) (sqlRoute, bool) {
 	resource := d.Resource
 	if resource == "" {
 		resource = d.Path
 	}
-	return r.fieldFor(path.Clean("/" + resource))
+	resource = path.Clean("/" + strings.ReplaceAll(resource, `\`, "/"))
+	field, ok := r.fieldFor(resource)
+	return sqlRoute{resource: resource, field: field}, ok
 }
 
-// extract returns the SQL statements a request to field's route carries, to
-// be placed after it. A refusal comes back as an error and no statements.
-func (r *sqlReader) extract(d *inspect.HTTPDetail, field string) ([]inspect.Statement, error) {
+// sqlRoute is where a request's SQL is read: the cleaned resource it went
+// to, and the JSON path of the SQL in its body.
+type sqlRoute struct {
+	resource string
+	field    string
+}
+
+// extract returns the SQL statements a request to rt carries, to be placed
+// after it. A refusal comes back as an error and no statements.
+func (r *sqlReader) extract(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.Statement, error) {
 	if d.Body == "" && !d.BodyTruncated {
 		// Nothing to run: an MCP client opens its event stream with a GET
 		// on the same route, and the server answers it without SQL.
 		return nil, nil
 	}
 	if d.BodyTruncated {
-		return r.unparseable(d.Body, field, "the body is larger than http.max_body_bytes; raise it")
+		return r.unparseable(d.Body, rt, "the body is larger than http.max_body_bytes; raise it")
 	}
 	dec := json.NewDecoder(strings.NewReader(d.Body))
 	dec.UseNumber()
 	var doc any
 	if err := dec.Decode(&doc); err != nil {
-		return r.unparseable(d.Body, field, "the body is not JSON")
+		return r.unparseable(d.Body, rt, "the body is not JSON")
 	}
 
 	messages := []any{doc}
@@ -177,7 +191,7 @@ func (r *sqlReader) extract(d *inspect.HTTPDetail, field string) ([]inspect.Stat
 	for _, m := range messages {
 		obj, isObject := m.(map[string]any)
 		if !isObject {
-			out = append(out, r.unreadable(d.Body, field, len(out)+1, "the body holds a JSON value that is not an object"))
+			out = append(out, r.unreadable(d.Body, rt, len(out)+1, "the body holds a JSON value that is not an object"))
 			continue
 		}
 		if _, rpc := obj["jsonrpc"]; rpc && !r.toolCall(obj) {
@@ -198,12 +212,12 @@ func (r *sqlReader) extract(d *inspect.HTTPDetail, field string) ([]inspect.Stat
 				return nil, r.refuseResults(fmt.Sprintf("%s is not a string", v.Field))
 			}
 		}
-		sql, isString := lookup(obj, field).(string)
+		sql, isString := lookup(obj, rt.field).(string)
 		if !isString || strings.TrimSpace(sql) == "" {
-			out = append(out, r.unreadable(d.Body, field, len(out)+1, fmt.Sprintf("no SQL string at %q", field)))
+			out = append(out, r.unreadable(d.Body, rt, len(out)+1, fmt.Sprintf("no SQL string at %q", rt.field)))
 			continue
 		}
-		out = append(out, r.statement(sql, field, len(out)+1))
+		out = append(out, r.statement(sql, rt, len(out)+1))
 	}
 	return out, nil
 }
@@ -229,7 +243,7 @@ func (r *sqlReader) toolCall(msg map[string]any) bool {
 
 // statement classifies one SQL string under the lane's dialect. It carries
 // fresh metadata, never the request's: that holds the credential handle.
-func (r *sqlReader) statement(sql, field string, index int) inspect.Statement {
+func (r *sqlReader) statement(sql string, rt sqlRoute, index int) inspect.Statement {
 	a := inspect.AnalyzeSQLIn(sql, r.opts.Dialect)
 	st := inspect.Statement{
 		Protocol:  inspect.HTTP,
@@ -239,7 +253,7 @@ func (r *sqlReader) statement(sql, field string, index int) inspect.Statement {
 		Effects:   a.Effects,
 		Relations: a.Relations,
 		Tables:    a.Tables,
-		Metadata:  r.metadata(field, index),
+		Metadata:  r.metadata(rt, index),
 	}
 	if !a.Complete {
 		// Same contract as every SQL codec: SQL the lexer cannot fully read
@@ -256,8 +270,8 @@ func (r *sqlReader) statement(sql, field string, index int) inspect.Statement {
 // daemon/spanner.go reports a gRPC message it cannot read, so a rule naming
 // `unknown` refuses it and forwarding it as a plain POST is the operator's
 // explicit choice. Its text is the body, the closest thing to the SQL.
-func (r *sqlReader) unreadable(body, field string, index int, reason string) inspect.Statement {
-	md := r.metadata(field, index)
+func (r *sqlReader) unreadable(body string, rt sqlRoute, index int, reason string) inspect.Statement {
+	md := r.metadata(rt, index)
 	md[inspect.MetadataSQLIncomplete] = reason
 	return inspect.Statement{
 		Protocol:  inspect.HTTP,
@@ -268,11 +282,12 @@ func (r *sqlReader) unreadable(body, field string, index int, reason string) ins
 	}
 }
 
-func (r *sqlReader) metadata(field string, index int) map[string]string {
+func (r *sqlReader) metadata(rt sqlRoute, index int) map[string]string {
 	return map[string]string{
-		MetadataSQLIndex:   strconv.Itoa(index),
-		MetadataSQLField:   field,
-		MetadataSQLDialect: r.opts.DialectName,
+		MetadataSQLIndex:    strconv.Itoa(index),
+		MetadataSQLField:    rt.field,
+		MetadataSQLDialect:  r.opts.DialectName,
+		MetadataSQLResource: rt.resource,
 	}
 }
 
