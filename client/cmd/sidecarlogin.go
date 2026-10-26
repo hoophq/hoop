@@ -366,7 +366,7 @@ func (l *sidecarLoginer) wait(ctx context.Context, t *loginTicket) (*savedSideca
 	if interval < l.minInterval {
 		interval = l.minInterval
 	}
-	deadline := time.Now().Add(time.Duration(t.start.ExpiresIn)*time.Second + interval)
+	deadline := time.Now().UTC().Add(time.Duration(t.start.ExpiresIn)*time.Second + interval)
 	for {
 		select {
 		case <-ctx.Done():
@@ -378,7 +378,7 @@ func (l *sidecarLoginer) wait(ctx context.Context, t *loginTicket) (*savedSideca
 		if err != nil {
 			// A dropped request is not an answer: keep waiting until the
 			// code itself expires.
-			if time.Now().After(deadline) {
+			if time.Now().UTC().After(deadline) {
 				return nil, err
 			}
 			continue
@@ -387,7 +387,7 @@ func (l *sidecarLoginer) wait(ctx context.Context, t *loginTicket) (*savedSideca
 		case http.StatusOK:
 			return &savedSidecarLogin{URL: t.planeURL, Token: t.token, Name: poll.Name, Page: poll.URL}, nil
 		case http.StatusPreconditionRequired:
-			if time.Now().After(deadline) {
+			if time.Now().UTC().After(deadline) {
 				return nil, errors.New("the sidecar login code expired; run the command again")
 			}
 		case http.StatusForbidden:
