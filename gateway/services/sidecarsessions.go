@@ -136,11 +136,9 @@ type sidecarIdentity struct {
 	OrgID string
 	// Mirrors maps a listener to its mirror connection's name.
 	Mirrors map[string]string
-	// ReviewOwner is SidecarReviewOwnerFlag for the org. OwnerEmail then
-	// files a session whose principal is unknown; empty files it under the
-	// principal alone.
-	ReviewOwner bool
-	OwnerEmail  string
+	// OwnerEmail files a session whose principal is unknown; empty files it
+	// under the principal alone.
+	OwnerEmail string
 }
 
 // credentialMetadataKeys are the per-session facts a credential swap writes
@@ -251,12 +249,10 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		plan.Create = sess
 		startedAt = sess.CreatedAt
 	}
-	if sc.ReviewOwner {
-		for _, e := range fresh {
-			for _, key := range credentialMetadataKeys {
-				if v, ok := e.Event.Metadata[key]; ok && v != "" {
-					plan.Sidecar[key] = pgText(v)
-				}
+	for _, e := range fresh {
+		for _, key := range credentialMetadataKeys {
+			if v, ok := e.Event.Metadata[key]; ok && v != "" {
+				plan.Sidecar[key] = pgText(v)
 			}
 		}
 	}
@@ -458,14 +454,9 @@ func knownPrincipal(p string) bool {
 	return p != "" && p != session.AnonymousPrincipal
 }
 
-// owner is the email an unknown principal is filed under; empty while the
-// flag is off or no owner is set.
-func (sc sidecarIdentity) owner() string {
-	if !sc.ReviewOwner {
-		return ""
-	}
-	return sc.OwnerEmail
-}
+// owner is the email an unknown principal is filed under; empty when no
+// owner is set.
+func (sc sidecarIdentity) owner() string { return sc.OwnerEmail }
 
 // ownerStandsIn reports a row filed under the owner for want of a principal.
 func (sc sidecarIdentity) ownerStandsIn(filed string) bool {
@@ -616,7 +607,6 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 		return result, fmt.Errorf("failed reading the sidecar's mirror connections: %w", err)
 	}
 	ident := sidecarIdentity{ID: sc.ID, Name: sc.Name, OrgID: sc.OrgID, Mirrors: mirrors}
-	ident.ReviewOwner = SidecarReviewOwnerEnabled(sc.OrgID)
 	if sc.OwnerEmail != nil {
 		ident.OwnerEmail = strings.TrimSpace(*sc.OwnerEmail)
 	}

@@ -110,13 +110,6 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
-	"experimental.sidecar_review_owner": {
-		Name:        "experimental.sidecar_review_owner",
-		Description: "File a sidecar approval request under a person: the principal the sidecar authenticated when it is an email, else the sidecar's owner_email. The approval request and its session carry that email, the Slack card shows it, and the person is sent a direct message when the request is filed, approved or denied if their hoop user has a linked Slack ID. Anonymous sidecar sessions are filed under the owner too, and sessions record the credential the sidecar used. When off, approval requests show the hoop@hoop.dev placeholder, as before, and nobody is messaged.",
-		Default:     true,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway},
-	},
 	"experimental.ssh_guardrails": {
 		Name:        "experimental.ssh_guardrails",
 		Description: "Enforce guardrails on native SSH connections: exec commands are validated against input rules before they run, and session-channel output (interactive shell/exec) is validated against output rules before it reaches the client. Port-forward (direct-tcpip) channels are not inspected. Interactive shell stdin is validated separately by experimental.ssh_input_guardrails. Requires a DLP provider (Presidio) to be configured.",

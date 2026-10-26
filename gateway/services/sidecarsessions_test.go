@@ -1052,7 +1052,7 @@ func TestPlanSidecarSessionOwnerStandsIn(t *testing.T) {
 		e.Metadata = map[string]string{"credential": "app-rw", "identity_type": "kubernetes", "verified": "true", "other": "x"}
 	}
 	owned := testSidecarIdent
-	owned.ReviewOwner, owned.OwnerEmail = true, "owner@acme.com"
+	owned.OwnerEmail = "owner@acme.com"
 
 	t.Run("an anonymous start is filed under the owner", func(t *testing.T) {
 		plan, err := planSidecarSession(owned, testSidecarSessionID, nil, []daemon.SessionEvent{
@@ -1085,17 +1085,6 @@ func TestPlanSidecarSessionOwnerStandsIn(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, plan.User)
 		assert.Equal(t, sidecarUser{Email: "alice@acme.com"}, *plan.User)
-	})
-
-	t.Run("flag off keeps the legacy row", func(t *testing.T) {
-		legacy := testSidecarIdent
-		legacy.OwnerEmail = "owner@acme.com"
-		plan, err := planSidecarSession(legacy, testSidecarSessionID, nil, []daemon.SessionEvent{
-			sidecarEvent(1, audit.KindSessionStart, 0, anonymous, swapped),
-		})
-		require.NoError(t, err)
-		assert.Empty(t, plan.Create.UserEmail)
-		assert.NotContains(t, plan.Sidecar, "credential")
 	})
 }
 

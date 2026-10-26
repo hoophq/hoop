@@ -32,8 +32,7 @@ import (
 
 const (
 	// reviewOwnerEmail stands in for the requester when nothing names a
-	// person: no principal that is an email, no sidecar owner, or the
-	// experimental.sidecar_review_owner flag off.
+	// person: no principal that is an email and no sidecar owner.
 	reviewOwnerEmail = "hoop@hoop.dev"
 
 	// maxStatementBytes caps the decoded statement. It is stored twice, as the
@@ -850,12 +849,9 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 }
 
 // reviewPerson is who a review is filed under: the principal when it is an
-// email, else the sidecar's owner; nobody while the flag is off. A failed
-// user lookup keeps the email and files under no user.
+// email, else the sidecar's owner. A failed user lookup keeps the email and
+// files under no user.
 func reviewPerson(sidecar *models.Sidecar, principal string) services.SidecarPerson {
-	if !services.SidecarReviewOwnerEnabled(sidecar.OrgID) {
-		return services.SidecarPerson{}
-	}
 	person, err := services.ResolveSidecarPerson(models.DB, sidecar.OrgID, principal, sidecar.OwnerEmail)
 	if err != nil {
 		log.With("sidecar", sidecar.Name).Warnf("failed resolving the user of %s, filing under the email alone, reason=%v", person.Email, err)

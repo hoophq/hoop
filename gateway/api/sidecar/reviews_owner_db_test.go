@@ -14,10 +14,8 @@ import (
 	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/services"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/slack-go/slack"
@@ -65,12 +63,6 @@ func installFakeSlack(t *testing.T) *fakeSlackDMs {
 		srv.Close()
 	})
 	return f
-}
-
-func setReviewOwnerFlag(t *testing.T, on bool) {
-	t.Helper()
-	featureflag.Set(statusTestOrgID, services.SidecarReviewOwnerFlag, on)
-	t.Cleanup(func() { featureflag.SetAll(statusTestOrgID, map[string]bool{}) })
 }
 
 // seedOwnedSidecar stores a reviewing sidecar whose owner is owner.
@@ -144,7 +136,6 @@ func filedReview(t *testing.T, rec *httptest.ResponseRecorder) (*models.Review, 
 // messaged when the review is filed and when it is decided.
 func TestSidecarReviewIsFiledUnderThePerson(t *testing.T) {
 	startStatusTestDB(t)
-	setReviewOwnerFlag(t, true)
 	fake := installFakeSlack(t)
 	aliceID := seedSlackUser(t, "alice@acme.com", "U-ALICE")
 	sc := seedOwnedSidecar(t, "owned", "owner@acme.com")
@@ -204,27 +195,4 @@ func TestSidecarReviewIsFiledUnderThePerson(t *testing.T) {
 		assert.Equal(t, unowned.ID, rev.OwnerID)
 		assert.Equal(t, reviewOwnerEmail, sess.UserEmail)
 	})
-}
-
-// With the flag off the review reads as before the feature, and nobody is
-// messaged even when the principal has a linked Slack ID.
-func TestSidecarReviewOwnerFlagOff(t *testing.T) {
-	startStatusTestDB(t)
-	setReviewOwnerFlag(t, false)
-	fake := installFakeSlack(t)
-	seedSlackUser(t, "alice@acme.com", "U-ALICE")
-	sc := seedOwnedSidecar(t, "legacy", "owner@acme.com")
-
-	rev, sess := filedReview(t, postReviewAs(sc, []byte("DELETE FROM users WHERE id = 1;"), "alice@acme.com"))
-	assert.Equal(t, reviewOwnerEmail, rev.OwnerEmail)
-	assert.Equal(t, sc.ID, rev.OwnerID)
-	assert.Equal(t, sc.Name, ptr.ToString(rev.OwnerName))
-	assert.Equal(t, reviewOwnerEmail, sess.UserEmail)
-	assert.Equal(t, sc.ID, sess.UserID)
-
-	approved := putReview(t, rev.ID, `{"status":"approved"}`, []string{"dba"})
-	require.Equal(t, http.StatusOK, approved.Code, approved.Body.String())
-	// The DMs are detached; give them the time they would need.
-	time.Sleep(300 * time.Millisecond)
-	assert.Empty(t, fake.to("U-ALICE"))
 }

@@ -3,19 +3,9 @@ package services
 import (
 	"strings"
 
-	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/gateway/models"
 	"gorm.io/gorm"
 )
-
-// SidecarReviewOwnerFlag files sidecar approval requests and anonymous
-// sidecar sessions under a person instead of the placeholder.
-const SidecarReviewOwnerFlag = "experimental.sidecar_review_owner"
-
-// SidecarReviewOwnerEnabled reports the flag for the org.
-func SidecarReviewOwnerEnabled(orgID string) bool {
-	return featureflag.IsEnabled(orgID, SidecarReviewOwnerFlag)
-}
 
 // SidecarPerson is who a sidecar approval request is filed under. Email is
 // empty when nothing named a person. The user fields are set when exactly

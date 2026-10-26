@@ -13,14 +13,10 @@ import (
 )
 
 // notifySidecarDecision sends the person a sidecar review is filed under a
-// direct message with the decision. Nothing is sent while the flag is off,
-// when the filing resolved no hoop user, or when that user has no linked
-// Slack ID. The Slack ID is read now, not at filing: a link made since then
-// counts.
+// direct message with the decision. Nothing is sent when the filing
+// resolved no hoop user, or when that user has no linked Slack ID. The
+// Slack ID is read now, not at filing: a link made since then counts.
 func notifySidecarDecision(rev *models.Review, reviewer string) {
-	if !services.SidecarReviewOwnerEnabled(rev.OrgID) {
-		return
-	}
 	slackSvc := slackservice.GetServiceInstance(rev.OrgID)
 	if slackSvc == nil {
 		return
