@@ -468,6 +468,51 @@ type SidecarCreateResponse struct {
 	Token string `json:"token" example:"hsc_Ab3fX9kL..."`
 }
 
+// SidecarLoginRequest starts a device-code login. The sidecar sends the token
+// it made for itself in the hoop-sidecar-token header; only its hash is kept.
+type SidecarLoginRequest struct {
+	// The name the sidecar asks for. The approving admin may change it.
+	Name string `json:"name" binding:"required" example:"payments-sidecar"`
+}
+
+// SidecarLoginResponse is what the sidecar shows the person who approves it.
+type SidecarLoginResponse struct {
+	// The code the person confirms in the web app
+	UserCode string `json:"user_code" example:"BCDF-GHJK"`
+	// The page that approves this code
+	VerificationURL string `json:"verification_url" example:"https://use.hoop.dev/sidecars/login?code=BCDF-GHJK"`
+	// Seconds until the code expires
+	ExpiresIn int `json:"expires_in" example:"600"`
+	// Seconds the sidecar waits between polls
+	Interval int `json:"interval" example:"5"`
+}
+
+// SidecarLoginStatus answers a poll.
+type SidecarLoginStatus struct {
+	// pending, approved, denied or expired
+	Status string `json:"status" example:"approved"`
+	// The sidecar name the admin approved. Set when approved.
+	Name string `json:"name,omitempty" example:"payments-sidecar"`
+	// The sidecar's page in the web app, where its listeners are added. Set
+	// when approved.
+	URL string `json:"url,omitempty" example:"https://use.hoop.dev/sidecars/5364ec99-653b-41ba-8165-67a7ba0c2d14"`
+}
+
+// SidecarLoginDetails is a pending login as the approving admin sees it.
+type SidecarLoginDetails struct {
+	UserCode  string    `json:"user_code" example:"BCDF-GHJK"`
+	Name      string    `json:"name" example:"payments-sidecar"`
+	Status    string    `json:"status" example:"pending"`
+	CreatedAt time.Time `json:"created_at" example:"2026-10-14T12:00:00Z"`
+	ExpiresAt time.Time `json:"expires_at" example:"2026-10-14T12:10:00Z"`
+}
+
+// SidecarLoginApproveRequest approves a login into the admin's organization.
+type SidecarLoginApproveRequest struct {
+	// The sidecar's name. Empty keeps the name the sidecar asked for.
+	Name string `json:"name,omitempty" example:"payments-sidecar"`
+}
+
 // SidecarSessionEventsRequest carries a sidecar's audit events.
 //
 // It documents daemon.SessionEventsRequest, which the handler decodes: that

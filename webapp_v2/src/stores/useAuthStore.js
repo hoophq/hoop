@@ -16,6 +16,8 @@ const clearCookie = (cookieName) => {
   document.cookie = `${cookieName}=; max-age=0; path=/`
 }
 
+const REDIRECT_KEY = 'redirect-after-auth'
+
 export const useAuthStore = create((set, get) => ({
   token: localStorage.getItem('jwt-token') || null,
   isAuthenticated: !!localStorage.getItem('jwt-token'),
@@ -49,15 +51,22 @@ export const useAuthStore = create((set, get) => ({
     useUserStore.getState().clear()
   },
 
-  // Save current URL for redirect after auth
+  // Save current URL for redirect after auth. Per tab: sessionStorage survives
+  // this tab's round trip to the IdP, and another tab's 401 cannot overwrite it
+  // (an old tab with a stale token sent a new sign-in to its own page).
   saveRedirectUrl: (url) => {
-    localStorage.setItem('redirect-after-auth', url)
+    sessionStorage.setItem(REDIRECT_KEY, url)
   },
 
-  // Get and clear redirect URL
+  // The saved URL, left in place: the login carries it to the IdP and back.
+  peekRedirectUrl: () => sessionStorage.getItem(REDIRECT_KEY) || localStorage.getItem(REDIRECT_KEY),
+
+  // Get and clear redirect URL. localStorage is where the legacy CLJS app saves
+  // it, so it is read when this tab saved none.
   getAndClearRedirectUrl: () => {
-    const url = localStorage.getItem('redirect-after-auth')
-    localStorage.removeItem('redirect-after-auth')
+    const url = sessionStorage.getItem(REDIRECT_KEY) || localStorage.getItem(REDIRECT_KEY)
+    sessionStorage.removeItem(REDIRECT_KEY)
+    localStorage.removeItem(REDIRECT_KEY)
     return url
   },
 }))

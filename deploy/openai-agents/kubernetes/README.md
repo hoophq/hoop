@@ -4,7 +4,8 @@ An agent in an OpenAI Agents API hosted sandbox runs kubectl against one
 Kubernetes cluster, and only through a hoop sidecar. The sidecar refuses
 deletes, masks Secret values in kubectl's JSON responses and records each
 request with the OpenAI session id. `deploy/managed-agents/kubernetes` is the
-Claude twin.
+Claude twin. The docs page:
+[Kubernetes through the Sidecar](https://hoop.dev/docs/integrations/openai-agents#kubernetes-through-the-sidecar).
 
 ```
 hosted sandbox, restricted network         your cluster

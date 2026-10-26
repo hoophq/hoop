@@ -310,12 +310,12 @@ func TestACallerTokenLaneRefusesAHeadBeforeItsBody(t *testing.T) {
 	}
 	var refused int
 	for _, ev := range sink.snapshot() {
-		if ev.Kind == audit.KindViolation && ev.Rule == "identity" && ev.Statement == "DELETE /v1/items/1" {
+		if ev.Kind == audit.KindViolation && ev.Rule == "identity" && ev.Statement == "DELETE /v1/items/*" {
 			refused++
 		}
 	}
 	if refused != 2 {
-		t.Errorf("%d identity violations name DELETE /v1/items/1, want 2", refused)
+		t.Errorf("%d identity violations name DELETE /v1/items/*, want 2", refused)
 	}
 }
 

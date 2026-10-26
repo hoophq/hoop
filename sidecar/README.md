@@ -286,6 +286,69 @@ means registering a new sidecar. The token flag and `HOOP_SIDECAR_TOKEN`
 hold the token itself, never a path, and no config key exists for it: a
 bearer secret does not belong in a file that gets committed.
 
+#### Logging in instead of a token
+
+The free plan always runs identified. `hoop start sidecar` logs in on its
+first run, with a config file or without one, unless the run already has a
+credential (the token flag, `HOOP_SIDECAR_TOKEN` or a platform identity) or a
+license, which is not the free plan. `--validate`, `--migrate` and
+`--codec-test` never log in.
+
+The login goes to `HOOP_CONTROL_PLANE_URL`, then the config file's
+`control_plane_url`, else `https://use.hoop.dev`. A plane other than hoop's is
+an Enterprise deployment, and its own web app approves the code. The login
+prints a URL and a code; an admin approves the code in the web app, and the
+sidecar joins that admin's organization.
+
+```bash
+hoop start sidecar --config sidecar.yaml
+#   To connect this sidecar, approve it in your browser:
+#     https://use.hoop.dev/sidecars/login?code=BCDF-GHJK
+#   The page shows the code BCDF-GHJK. Approve only if it matches this one.
+```
+
+The sidecar makes its own `hsc_` token and sends it once; the plane keeps
+only its hash, and approving creates the sidecar with it. The token is saved
+in `~/.hoop/sidecar/credentials.json` (mode 0600; `HOOP_SIDECAR_STATE_DIR`
+moves the folder), one login per control plane, and is only ever sent to the
+plane that issued it. The next run on that plane reuses it without asking.
+
+A run with a config file boots that file, connected: the file stays the
+source and the plane shows it (`load_from_disk`). A bare run at a terminal
+asks first: **Managed by hoop (free)** logs in on the first-run screen and
+then sets the config up there, and **Enterprise** opens the Connect page (your
+own Control Plane and token, or a license). The setup screen also asks the
+plane every few seconds, and boots on a configuration set in the web app as
+soon as there is one. The next bare run boots the file the last run booted.
+
+| Command | Does |
+|---|---|
+| `hoop sidecar status` | the planes this machine is logged in to, each with its sidecar and config file |
+| `hoop sidecar status --token` | the same, with each token, to set `HOOP_SIDECAR_TOKEN` elsewhere |
+| `hoop sidecar logout` | forgets this machine's token; `--control-plane <url>` or `--all` when it holds several |
+| `--login` | logs in again even when a login is saved |
+| `--no-login` | runs standalone; refused on the free plan, accepted with a license |
+
+Logout is local, like `docker logout`: the sidecar stays in its organization.
+Delete it in the web app to remove it there, which also stops its token.
+
+**Headless** (a container, a marketplace image, an agent): log in once and
+pass the token. Get it from the web app (Connect an existing Sidecar) or from
+a machine that logged in (`hoop sidecar status --token`), and set
+`HOOP_SIDECAR_TOKEN`. With no `HOOP_CONTROL_PLANE_URL` the token goes to the
+hosted plane. A headless run with no credential logs in by itself and writes
+the login as JSON lines on stdout, for a console or an agent to show a person:
+
+```json
+{"time":"2026-10-16T20:00:00Z","level":"INFO","msg":"sidecar login required: approve the code in the web app","event":"sidecar_login_required","control_plane_url":"https://use.hoop.dev","verification_url":"https://use.hoop.dev/sidecars/login?code=BCDF-GHJK","user_code":"BCDF-GHJK","expires_in":600}
+{"time":"2026-10-16T20:01:10Z","level":"INFO","msg":"sidecar login approved","event":"sidecar_login_approved","control_plane_url":"https://use.hoop.dev","sidecar":"edge-1"}
+```
+
+Keep `HOOP_SIDECAR_STATE_DIR` on a volume, or the next restart logs in again.
+
+An organization without an Enterprise license holds one sidecar, under the
+free rule caps below. This is the hoop CLI only: `hoop-inspect` takes a token.
+
 #### Service account identity instead of a token
 
 A fleet does not have to register each sidecar. The sidecar can present an
@@ -2394,7 +2457,7 @@ dashboard written against the old name goes dark.
 |---|---|---|
 | `hoop.sidecar.connections` | counter | `hoop.lane`, `hoop.protocol` |
 | `hoop.sidecar.connections.active` | gauge | `hoop.lane`, `hoop.protocol` |
-| `hoop.sidecar.statements` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.operation`, `hoop.verdict` (`allow`/`deny`), `hoop.deny.source` (denials: the rule type, `opa`, `analyzer`, `review`, `audit`, `stream`, `identity`) |
+| `hoop.sidecar.statements` | counter | `hoop.lane`, `hoop.protocol`, `hoop.direction`, `hoop.operation`, `hoop.verdict` (`allow`/`deny`), `hoop.deny.source` (denials: the rule type, `opa`, `analyzer`, `review`, `audit`, `stream`, `identity`, `placement`) |
 | `hoop.sidecar.statement.duration` | histogram, seconds | `hoop.lane`, `hoop.protocol`, `hoop.stage`, `hoop.engine`, `hoop.pairing`, `hoop.outcome` |
 | `hoop.sidecar.masked_values` | counter | `hoop.lane`, `hoop.protocol` |
 | `hoop.sidecar.audit.errors` | counter | `hoop.lane` |
@@ -3872,9 +3935,50 @@ pseudonym is random per process, so the upstream sees one extra header. RFC
 behind a transparent MITM proxy the sidecar's own upstream connection can be
 routed back into its listener, and every lap would look like a fresh client.
 A request that already carries this process's pseudonym is refused with a
-403 whose message starts `request loop:`. After a request with `Upgrade` or a
-`CONNECT`, the rest of that connection is another protocol and is no longer
-marked.
+403 whose message starts `request loop:`. Once the server accepts an
+`Upgrade` or a `CONNECT`, the rest of that connection is another protocol and
+is no longer marked; a declined one leaves it marked.
+
+**A known credential stays in its header.** A vault that fills a secret
+wherever its placeholder appears turns a token an agent writes into a URL
+into the real token in the URL. OpenAI's does toward the host it is bound
+to: in hosted sessions it filled the URL path, the query and a form body
+(see the OpenAI template's
+[Limits](../deploy/openai-agents/http/README.md#limits)). The real token
+then sits in the URL, where the audit row records it and an upstream that
+echoes the value hands it back. So every http lane refuses, with a 403 and before any byte reaches
+the upstream, a request that carries a credential it knows outside that
+credential's header. It knows, with no setting:
+
+- the caller token it admitted (see caller tokens below), at home in its
+  own header;
+- each `Authorization` credential of the request (the value after the
+  scheme), at home in `Authorization`;
+- the `Authorization` credentials of earlier requests on the connection
+  still awaiting an answer, and those the upstream answered with a 2xx in
+  the last hour, so a request that leaves `Authorization` off is checked
+  too. The lane remembers up to 64 values that hold a letter and a digit
+  and no whitespace, `;` or `,`; when full, it keeps the ones it has, so
+  junk the upstream accepts cannot push a real token out. A rule reload
+  empties the memory.
+
+It looks in the request line, raw and percent-decoded, every other header
+and header name, the body with chunk framing removed, chunk extensions and
+trailers. Values under 16 bytes are not looked for. The audit row is
+`METHOD path` with each credential replaced by `[redacted]` and no query,
+under rule `credential-placement` and `anonymous`. A lane that passes a head
+it cannot parse through as written refuses one with an `Authorization`
+line, and scans the rest of the connection for the credentials it knew.
+Every lane refuses a head over 1 MiB, bytes sent before the server answers
+an `Upgrade` or `CONNECT`, and a request that would be checked against more
+than 128 credentials.
+
+Not covered: a body that is compressed or encodes the token (base64, a JSON
+`\u` escape), Basic's password, bytes past a switch the server accepted, and
+a response that echoes the request's own `Authorization` header. A caller can
+send a value that other requests carry, such as a path segment with a digit,
+as a bearer to an endpoint that answers 2xx whatever the bearer: the lane
+then refuses those requests for an hour.
 
 ### A browser in front: upstream as a URL
 
@@ -3942,7 +4046,8 @@ listeners:
 
 - **What is refused.** No header, an empty or whitespace-only value, a value
   not in the file, or the header sent twice: each gets a 403 and reaches no
-  upstream. The refusal is audited under `anonymous`.
+  upstream. The refusal is audited under `anonymous`, with the method and
+  the normalized path, so a token-shaped segment is recorded as `*`.
 - **Checked on the head.** Policy judges a request once its body has
   arrived, and the sidecar holds the request until then. The token is
   checked earlier, on the head, so a stranger costs no held body and a
@@ -3955,10 +4060,9 @@ listeners:
   input or an analyzer prompt. Validate refuses an `http.headers` entry that
   names it, and a header that the upstream, HTTP framing or the sidecar
   already uses (`authorization`, `cookie`, `host`, `content-length`, `via`,
-  and the like). The strip stops a leak by accident, not by intent: it covers
-  the header in each request head. An admitted caller that copies the token
-  into another header, a chunked trailer or the body sends it on, and a
-  vault fills the secret into any header it finds the placeholder in.
+  and the like). A request that carries the token anywhere else, in the
+  URL, another header, the body or a trailer, is refused (see "A known
+  credential stays in its header" above).
 - **The reserved route is guarded too.** `/.well-known/hoop/` answers only a
   caller the token admits.
 - **Stricter framing.** As on a URL upstream, a request head the lane cannot
@@ -4017,6 +4121,16 @@ sidecar with the placeholder, for example from a host or header the
 credential does not cover, is refused like any other wrong token. A vault
 rotation reaches running sessions on its own schedule, so rotate with the
 two-line overlap above.
+
+#### Filling the token from an OpenAI vault
+
+An OpenAI vault `environment_variable` credential also puts a placeholder
+in the sandbox, and fills the real secret only toward the hosts in its
+`networking.allowed_hosts`. It has no `injection_location`: toward the
+sidecar's host it fills the placeholder anywhere in the request, the URL
+and the body included. Keep the token in `X-Hoop-Token` only. The setup is
+in `deploy/openai-agents/http/` and on the docs page,
+[OpenAI Agents API](https://hoop.dev/docs/integrations/openai-agents).
 
 ### kubectl through GKE Connect Gateway
 

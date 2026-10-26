@@ -209,7 +209,8 @@ done
   not thin: its `*Codec` embeds libhoop's Inspector and adds the relay
   concerns libhoop has no reason to know (Connect Gateway resource
   normalization, credential lifting for per-request identity, the Via loop
-  marker). Import `codec/all` for postgres, mysql, mssql and http, or one
+  marker, and the refusal of a known credential outside its header,
+  placement.go). Import `codec/all` for postgres, mysql, mssql and http, or one
   package for one protocol so a binary fronting Postgres never links the
   TDS, MySQL and HTTP machinery.
 
