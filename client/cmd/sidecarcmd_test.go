@@ -36,7 +36,7 @@ func TestSidecarCredentialsArePerPlane(t *testing.T) {
 
 func TestSidecarStatusShowsTheTokenOnlyWhenAsked(t *testing.T) {
 	dir := t.TempDir()
-	_, _ = saveSidecarLogin(dir, savedSidecarLogin{URL: DefaultSidecarControlPlaneURL, Token: "hsc_secret", Name: "edge",
+	mustSaveSidecarLogin(t, dir, savedSidecarLogin{URL: DefaultSidecarControlPlaneURL, Token: "hsc_secret", Name: "edge",
 		Config: "/etc/sidecar.yaml"})
 	env := func(string) string { return "" }
 
@@ -63,7 +63,7 @@ func TestSidecarLogout(t *testing.T) {
 	dir := t.TempDir()
 	var out bytes.Buffer
 	// One login: logout needs no flag.
-	_, _ = saveSidecarLogin(dir, savedSidecarLogin{URL: "https://use.hoop.dev", Token: "hsc_a"})
+	mustSaveSidecarLogin(t, dir, savedSidecarLogin{URL: "https://use.hoop.dev", Token: "hsc_a"})
 	if err := sidecarLogout(&out, dir, "", false); err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +72,8 @@ func TestSidecarLogout(t *testing.T) {
 	}
 
 	// Two: logout asks which, then forgets only that one.
-	_, _ = saveSidecarLogin(dir, savedSidecarLogin{URL: "https://use.hoop.dev", Token: "hsc_a"})
-	_, _ = saveSidecarLogin(dir, savedSidecarLogin{URL: "https://cp.example.com", Token: "hsc_b"})
+	mustSaveSidecarLogin(t, dir, savedSidecarLogin{URL: "https://use.hoop.dev", Token: "hsc_a"})
+	mustSaveSidecarLogin(t, dir, savedSidecarLogin{URL: "https://cp.example.com", Token: "hsc_b"})
 	if err := sidecarLogout(&out, dir, "", false); err == nil || !strings.Contains(err.Error(), "--control-plane") {
 		t.Fatalf("two logins and no flag: err = %v", err)
 	}
@@ -118,6 +118,14 @@ func TestATokenAloneGoesToTheHostedPlane(t *testing.T) {
 	}
 }
 
+// mustSaveSidecarLogin saves a login for a test, failing it on the real cause.
+func mustSaveSidecarLogin(t *testing.T, dir string, l savedSidecarLogin) {
+	t.Helper()
+	if _, err := saveSidecarLogin(dir, l); err != nil {
+		t.Fatalf("saving the login for %s: %v", l.URL, err)
+	}
+}
+
 // bareRunWith resolves a bare run against a state dir that holds logins.
 func bareRunWith(t *testing.T, logins ...savedSidecarLogin) (*savedSidecarLogin, error) {
 	t.Helper()
@@ -130,9 +138,7 @@ func bareRunWith(t *testing.T, logins ...savedSidecarLogin) (*savedSidecarLogin,
 	defer func(c, tok string) { sidecarConfigFlag, sidecarTokenFlag = c, tok }(sidecarConfigFlag, sidecarTokenFlag)
 	sidecarConfigFlag = ""
 	for _, l := range logins {
-		if _, err := saveSidecarLogin(dir, l); err != nil {
-			t.Fatal(err)
-		}
+		mustSaveSidecarLogin(t, dir, l)
 	}
 	login, _, choose, err := resolveSidecarLogin(startSidecarCmd, nil, true)
 	if choose {
