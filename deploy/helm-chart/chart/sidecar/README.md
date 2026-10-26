@@ -106,7 +106,8 @@ The admin Service is separate and unaffected — always ClusterIP, always 19000.
 > `loadBalancerSourceRanges` narrows who can reach it; it does not encrypt.
 > `deploy/managed-agents/http/` is a worked example: one public http lane with
 > `downstream_tls` and a caller token. `deploy/managed-agents/kubernetes/` is
-> another, for kubectl.
+> another, for kubectl, and `deploy/openai-agents/kubernetes/` is the same for
+> an OpenAI-hosted agent.
 
 **The review MCP server** (`mcp.listen` in the sidecar config) is published
 the same way, and only on ClusterIP: it has no authentication. Bind it to
