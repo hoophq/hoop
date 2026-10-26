@@ -103,7 +103,7 @@ VPC Service Controls perimeter does.
 | `APPDB_HOST` | required | The sidecar's internal IP or DNS name. Never the database |
 | `APPDB_PORT` | `15432` | The sidecar's listener port |
 | `APPDB_NAME` | `appdb` | The database |
-| `APPDB_USER` | `agent` | The database login. The sidecar passes it through |
+| `APPDB_USER` | `agent` | The database login, with read grants only. The sidecar passes it through |
 | `APPDB_PASSWORD` | empty | Its password. Give it with `--secrets` |
 | `AGENT_MODEL` | `gemini-3.8-flash` | The Gemini model |
 

@@ -17,6 +17,8 @@ from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
 MODEL = os.environ.get("AGENT_MODEL", "gemini-3.8-flash")
+# Rows run_sql returns at most: a larger result is cut and marked truncated.
+MAX_ROWS = 100
 
 
 def run_sql(sql: str, tool_context: ToolContext) -> dict:
@@ -47,7 +49,11 @@ def run_sql(sql: str, tool_context: ToolContext) -> dict:
             if cur.description is None:
                 return {"status": "ok", "rowcount": cur.rowcount}
             cols = [c.name for c in cur.description]
-            return {"status": "ok", "rows": [dict(zip(cols, r)) for r in cur.fetchall()]}
+            rows = cur.fetchmany(MAX_ROWS + 1)
+            result = {"status": "ok", "rows": [dict(zip(cols, r)) for r in rows[:MAX_ROWS]]}
+            if len(rows) > MAX_ROWS:
+                result["truncated"] = f"more than {MAX_ROWS} rows; ask a narrower query"
+            return result
     except psycopg.Error as e:
         return {"status": "error", "sqlstate": e.sqlstate, "error": str(e).strip()}
 

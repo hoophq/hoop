@@ -1,4 +1,4 @@
-# The database accepts connections from the sidecar's namespace only. Without
+# The database accepts connections from the sidecar's pods only. Without
 # it, anything that routes to the database and holds the login (the agent
 # does; the sidecar passes it through) connects around the sidecar, and the
 # control plane records nothing. Apply in the database's namespace; GKE
@@ -17,6 +17,11 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
+        # Both selectors in one entry: pods with these labels, in that namespace.
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: hoop-sidecar}   # EDIT if not the default
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: hoopsidecar
+              app.kubernetes.io/instance: appdb-sidecar   # goog_cm_deployment_name in main.tf
       ports: [{port: 5432, protocol: TCP}]

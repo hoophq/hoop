@@ -12,6 +12,12 @@ a release tag, and installs the sidecar chart and image of the same release
 1. **Set the rules** in `sidecar.yaml`: the database as `upstream`, and the
    guardrail. The free tier runs one guardrail rule and one masking rule; the
    audit goes to the sidecar's log (`kubectl logs`).
+
+   Give the agent's database login read grants only: `SELECT` on the tables it
+   needs, no `CREATE`, and no `EXECUTE` on a function that writes. The rule
+   refuses the writes it sees in a statement. A function called from a
+   `SELECT`, or `SELECT ... INTO`, writes while the statement reads as a
+   `select`, and only the login's grants stop it.
 2. **Install it** on a GKE cluster in the database's VPC:
 
    ```bash
@@ -33,7 +39,8 @@ a release tag, and installs the sidecar chart and image of the same release
 3. **Lock the database to the sidecar.** This is what makes the sidecar the
    only way in. Database on GKE: set the selector in `database-policy.yaml` to
    your database pods' labels (and the namespace, if the sidecar's is not
-   `hoop-sidecar`), then `kubectl -n <db namespace> apply -f
+   `hoop-sidecar`; the `app.kubernetes.io/instance` label, if you changed
+   `goog_cm_deployment_name`), then `kubectl -n <db namespace> apply -f
    deploy/sidecar/database-policy.yaml`. Check it: a connection straight to
    the database pod must time out. A selector that matches nothing locks
    nothing, with no error. Database on a VM: a firewall rule that admits its
