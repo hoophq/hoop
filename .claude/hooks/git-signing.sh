@@ -9,6 +9,13 @@
 # GIT_SIGNING_KEY: the armored secret key, base64 in one line.
 [[ -n ${GIT_SIGNING_KEY:-} ]] || exit 0
 
+# The agent's environment registers this hook in ~/.claude/settings.json too,
+# so a session that starts in the repo runs it twice at once. Two git config
+# writes at once fail on the ~/.gitconfig lock: run one at a time.
+if command -v flock >/dev/null; then
+  exec 9>"${TMPDIR:-/tmp}/git-signing.lock" && flock 9
+fi
+
 key=$(printf '%s' "$GIT_SIGNING_KEY" | base64 -d 2>/dev/null)
 fpr=$(gpg --batch --with-colons --import-options show-only --import <<<"$key" 2>/dev/null |
   awk -F: '$1 == "fpr" { print $10; exit }')
