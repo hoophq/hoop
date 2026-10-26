@@ -29,7 +29,7 @@
                       :uri "/userinfo"
                       :on-failure (fn [_]
                                     (rf/dispatch [::users->clear-loading])
-                                    (when (shell/react-shell?)
+                                    (when (shell/cljs-visible?)
                                       (set! js/window.location.href "/login")))
                       :on-success (fn [user]
                                     (rf/dispatch
@@ -38,7 +38,7 @@
                                        :uri "/serverinfo"
                                        :on-failure (fn [_]
                                                      (rf/dispatch [::users->clear-loading])
-                                                     (when (shell/react-shell?)
+                                                     (when (shell/cljs-visible?)
                                                        (set! js/window.location.href "/login")))
                                        :on-success #(rf/dispatch [::users->set-current-user user %])}]))}]]]}))
 
