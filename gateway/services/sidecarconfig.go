@@ -26,6 +26,9 @@ import (
 // sidecar is authored and stored in the sidecar's own vocabulary
 // (sidecar_spec, migration 000121), so there is no translation step to get
 // wrong and no rule that saves cleanly and arrives meaning something else.
+// The one exception is a GATEWAY rule reaching a listener through its mirror
+// connection: sidecargatewayrules.go translates it, and refuses what it
+// cannot translate.
 //
 // It only ever touches a listener's guardrails, mask and analyzer blocks.
 // Those are exactly the sections sidecar/daemon/reload.go strips into its
@@ -101,7 +104,21 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 	default:
 		return cfg, fmt.Errorf("cannot compose a candidate %s rule", skipKind)
 	}
-	return foldSidecarRules(cfg, guardrails, masking, analyzers)
+	composed, err := foldSidecarRules(cfg, guardrails, masking, analyzers)
+	if err != nil {
+		return cfg, err
+	}
+	// The gateway's own rules, reaching listeners through their mirrors.
+	// Placed last: a listener's native rules keep their position.
+	mirrorGuardrails, err := models.ListMirrorGuardrailRules(db, orgID, sc.ID)
+	if err != nil {
+		return cfg, fmt.Errorf("%w: failed loading the guardrail rules reaching this sidecar's mirrors: %v", ErrSidecarRulesUnavailable, err)
+	}
+	mirrorMasking, err := models.ListMirrorDataMaskingRules(db, orgID, sc.ID)
+	if err != nil {
+		return cfg, fmt.Errorf("%w: failed loading the data masking rules reaching this sidecar's mirrors: %v", ErrSidecarRulesUnavailable, err)
+	}
+	return foldGatewayRules(composed, sc.Name, mirrorGuardrails, mirrorMasking)
 }
 
 // withoutRule drops every binding of one rule, by the name the bindings are

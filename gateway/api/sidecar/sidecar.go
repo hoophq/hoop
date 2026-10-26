@@ -719,10 +719,13 @@ func Handshake(c *gin.Context) {
 		// Recorded even on refusal, with the reason: a later write knows
 		// this build is too old instead of reading it as never seen, and
 		// the page shows why the plane refused. Not last_seen_at: a sidecar
-		// that cannot run is not recently seen.
+		// that cannot run is not recently seen. A gateway rule the sidecar
+		// cannot run is recorded the same way: the sidecar keeps its last
+		// good rules, and the page names the rule.
 		var missing services.ErrSidecarCapabilityMissing
-		if errors.As(err, &missing) {
-			if rerr := models.RecordSidecarServeRefusal(models.DB, sidecar.ID, req.Version, capabilities, missing.Error()); rerr != nil {
+		var refused services.ErrSidecarGatewayRuleRefused
+		if errors.As(err, &missing) || errors.As(err, &refused) {
+			if rerr := models.RecordSidecarServeRefusal(models.DB, sidecar.ID, req.Version, capabilities, err.Error()); rerr != nil {
 				log.With("sidecar", sidecar.ID).Warnf("failed recording the refused handshake, reason=%v", rerr)
 			}
 		}
@@ -1038,12 +1041,14 @@ func Configuration(c *gin.Context) {
 }
 
 // answerServeError answers a document the plane will not serve. A missing
-// capability is 422, which a sidecar reports as a config it cannot build and
-// survives by keeping its current rules; the refusal names the upgrade.
+// capability and a gateway rule the sidecar cannot run are 422, which a
+// sidecar reports as a config it cannot build and survives by keeping its
+// current rules; the refusal names the upgrade or the rule.
 func answerServeError(c *gin.Context, err error) {
 	var missing services.ErrSidecarCapabilityMissing
-	if errors.As(err, &missing) {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": missing.Error()})
+	var refused services.ErrSidecarGatewayRuleRefused
+	if errors.As(err, &missing) || errors.As(err, &refused) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 	httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")

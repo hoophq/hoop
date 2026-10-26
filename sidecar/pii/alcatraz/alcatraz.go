@@ -332,6 +332,16 @@ func (d *Detector) Entities() []string {
 	return append([]string(nil), d.active...)
 }
 
+// Threshold is the score a detection needs to count, or zero when the
+// Detector keeps every detection. The control plane compares a gateway
+// rule's own threshold against it before serving the rule to a sidecar.
+func (d *Detector) Threshold() float64 {
+	if d.opts.Threshold == nil {
+		return 0
+	}
+	return *d.opts.Threshold
+}
+
 // Find returns the byte spans of one entity type in data.
 //
 // It restricts the engine to the single entity asked for rather than running
