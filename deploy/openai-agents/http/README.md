@@ -24,25 +24,124 @@ The agent cannot skip the sidecar:
 - The sidecar refuses a request without the caller token before any byte of
   it reaches the API.
 
+Start with the [quick start](#quick-start): your laptop, hoop's demo API, no
+cluster. Then [run it against your API](#run-it-against-your-api).
+
 ## Files
 
 | Path | Holds |
 |---|---|
+| `quickstart/` | The quick start: a Compose stack, its sidecar config, `run.sh` and `agent.sh`, the demo agent in `openai/` |
 | `values.yaml` | Sidecar chart values: one HTTPS lane on 443, the caller token, a read-only guardrail, a PII mask rule, `analytics.installSource` |
-| `setup.sh` | Creates and deletes the OpenAI side from `openai/`, and starts a session |
+| `setup.sh` | Creates and deletes the OpenAI side from `openai/`, and starts a session. `quickstart/agent.sh` runs it too |
 | `openai/` | The request bodies: the environment template, the vault, the two credentials without their secrets, the agent (`agent.json`, instructions in `agent.md`), the session |
+
+## Quick start
+
+The sidecar fronts hoop's demo API, a set of invented users with emails,
+phones and cards. A Cloudflare quick tunnel gives it a public HTTPS host.
+The tunnel is for a trial: it has no uptime promise and gets a new host on
+each start.
+
+You need Docker, `curl` 7.76 or later, `openssl`, `jq` 1.6 or later, and an
+OpenAI API key with Agents API access in `OPENAI_API_KEY`
+(`read -rs OPENAI_API_KEY && export OPENAI_API_KEY`).
+
+From a clean clone with no image cached, `run.sh` took 23 to 100 s over the
+cold runs of 2026-10-23. `agent.sh` took 35 to 69 s to the agent's answer
+over four runs on 2026-10-23 and 2026-10-26. `run.sh` waits up to 2 minutes
+for a new tunnel host to resolve.
+
+### 1. Start the sidecar
+
+```bash
+cd quickstart && ./run.sh
+```
+
+It prints the tunnel host and checks the lane through it:
+
+```
+  ok  GET /users/1 is masked:
+        {
+          "id": 1,
+          "name": "Grace Hopper",
+          "email": "[REDACTED:EMAIL_ADDRESS]",
+          "phone": "[REDACTED:PHONE_NUMBER]",
+          "card": "[REDACTED:CREDIT_CARD]",
+          "plan": "enterprise"
+        }
+  ok  DELETE /users/1 is refused: this agent may only read from the API
+  ok  a request without X-Hoop-Token is refused: request refused: the request carried no credential
+```
+
+### 2. Ask the agent
+
+```bash
+./agent.sh
+```
+
+It creates an environment template that can reach only the tunnel host, a
+vault with the caller token, and the demo agent. Then it starts a session,
+asks the agent to list the users and to try `DELETE /users/1`, and prints
+each command the agent ran, its output, and the answer.
+
+The answer lists the users with `[REDACTED:EMAIL_ADDRESS]`,
+`[REDACTED:PHONE_NUMBER]` and `[REDACTED:CREDIT_CARD]`, and reports `403`
+and `this agent may only read from the API` for the DELETE. The last line is
+`turn: completed`.
+
+### 3. Read the audit trail
+
+```bash
+docker compose logs --no-log-prefix sidecar | jq -cR 'fromjson? | select((.kind == "statement" or .kind == "violation") and .direction == "client") | {kind, principal, statement, rule, session: .http.headers["x-openai-session-id"]}'
+```
+
+An admitted caller's row names `openai-agents` and the session id it sent:
+the OpenAI session, or `run.sh` for step 1's checks. The DELETE rows name
+rule `read-only`. Step 1's request without a token is the `anonymous` row
+with rule `identity`: a refused caller's row carries no session id.
+
+### 4. Clean up
+
+```bash
+./agent.sh --delete && ./run.sh down
+```
 
 ## Free tier
 
 The sidecar is free. Without a license it enforces one guardrail rule and
-one data masking rule per process. `values.yaml` uses both: `read-only`
-names seven methods, `pii` names three entities.
+one data masking rule per process. The quick start and `values.yaml` use
+both: `read-only` and `pii`.
 
-These are the Claude template's rules; CI keeps the guardrail and mask
-rules of the two templates equal. A config over the cap does not start.
+One rule can carry more than one check. `read-only` names seven methods;
+`pii` names three entities. These are the Claude template's rules; CI keeps
+the guardrail and mask rules of the two templates equal.
 
-A license lifts both caps: set the chart's `license` value.
-[Talk to us](https://hoop.dev/meet).
+A config over the cap does not start. `./run.sh` stops and shows the
+sidecar's log, which ends:
+
+```
+Error: invalid config:
+  - 2 guardrail rules are configured (guardrails: 2) and this process enforces at most 1; merge them into one rule. A license lifts this cap: add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file. Contact our support at https://help.hoop.dev. ai_analysis rules are counted separately and are not limited
+```
+
+Check a config before the next start. The output names the limits. Run it
+in `quickstart/` after the first `./run.sh`: it creates the token file that
+this command mounts.
+
+```bash
+docker compose run --rm sidecar hoop start sidecar --validate
+```
+
+The running sidecar re-reads `config/sidecar.yaml`. An edit over the cap is
+refused with a warning in the log; the old rules stay in force, and the
+next start fails.
+
+A license lifts both caps: [talk to us](https://hoop.dev/meet). In the
+quick start, put the license document itself in `quickstart/.env`, in
+single quotes: `HOOP_LICENSE='{"payload": ...}'`. A path does not work
+there: the file is not in the container. On Kubernetes, set the chart's
+`license` value.
 
 ## Run it against your API
 
@@ -177,7 +276,8 @@ fails halfway, run it again: it retries only what is left. Then remove
 A network error during `create` or `session` can leave a resource that
 `.openai-ids` does not list. Find it with `GET /v1/vaults`, `/v1/agents`,
 `/v1/agents/environments/templates` or `/v1/agents/sessions`, by the name
-`hoop sidecar` or `customer-api`, and delete the ones you made.
+`hoop sidecar`, `customer-api` or the quick start's `hoop-demo-api`, and
+delete the ones you made.
 
 ## What to expect
 
@@ -200,6 +300,8 @@ OpenAI's:
   wildcard, scheme, port or path. A redirect to another host fails.
 - **An idle sandbox is deleted after one hour.** Its files go with it. The
   timeout is not configurable.
+- **No cost cap per session.** The API refuses `spend_control`, the session
+  field that the Python SDK 3.37.0 declares.
 - **Keep the lane on 443 only.** The egress proxy also lets port 80 through
   to the sidecar's host, unencrypted, and the vault fills nothing there.
 - **The vault fills a placeholder anywhere in the request.** Toward the
