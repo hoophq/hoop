@@ -3803,10 +3803,11 @@ is no longer marked; a declined one leaves it marked.
 **A known credential stays in its header.** A vault that fills a secret
 wherever its placeholder appears turns a token an agent writes into a URL
 into the real token in the URL. OpenAI's does toward the host it is bound
-to: hosted sessions showed the URL path, the query and a form body filled,
-although its vaults guide names headers only. The real token then sits in
-the URL, where the audit row records it and an upstream that echoes the
-value hands it back. So every http lane refuses, with a 403 and before any byte reaches
+to: in hosted sessions it filled the URL path, the query and a form body
+(see the OpenAI template's
+[Limits](../deploy/openai-agents/http/README.md#limits)). The real token
+then sits in the URL, where the audit row records it and an upstream that
+echoes the value hands it back. So every http lane refuses, with a 403 and before any byte reaches
 the upstream, a request that carries a credential it knows outside that
 credential's header. It knows, with no setting:
 
