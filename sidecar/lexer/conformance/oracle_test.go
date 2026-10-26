@@ -552,6 +552,12 @@ func TestSparkDialectCorpus(t *testing.T) {
 		{"DESCRIBE HISTORY reads its table", "DESCRIBE HISTORY salaries", []string{"salaries"}},
 		{"DESC of a table called history", "DESC history", []string{"history"}},
 		{"DESCRIBE of a table called extended", "DESCRIBE extended", []string{"extended"}},
+		{"DESCRIBE DETAIL of a path names no table", "DESCRIBE DETAIL '/data/events'", nil},
+		{"DESCRIBE HISTORY of a path names no table", "DESCRIBE HISTORY '/data/events'", nil},
+		{"SHOW TBLPROPERTIES of a table called only", "SHOW TBLPROPERTIES only", []string{"only"}},
+		{"SHOW COLUMNS in a schema called only", "SHOW COLUMNS IN t IN only", []string{"only.t"}},
+		{"builtin.table_changes reads its table", "SELECT * FROM builtin.table_changes('salaries', 1)", []string{"salaries"}},
+		{"system.builtin.table_changes reads its table", "SELECT * FROM system.builtin.table_changes('salaries', 1)", []string{"salaries"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := lexer.Analyze(tc.sql, lexer.Spark)
