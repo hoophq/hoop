@@ -223,11 +223,12 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 
         <SectionRow
           title="Resource Role configuration"
-          description="Select which resource roles to apply this configuration."
+          description="Select which resource roles or sidecar listeners to apply this configuration."
         >
           <ConnectionsMultiSelect
             value={form.connectionIds}
             onChange={(values) => setField({ connectionIds: values })}
+            includeSidecarMirrors
           />
         </SectionRow>
 

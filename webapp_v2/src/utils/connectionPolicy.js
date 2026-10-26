@@ -179,3 +179,13 @@ export function canHoopCli(connection) {
 export function isSidecarMirror(connection) {
   return connection?.managed_by === 'sidecar'
 }
+
+// How a picker or a chip names a mirror: `<sidecar> / <listener>`. The mirror
+// is named `<sidecar>-<listener>` by the gateway, so the sidecar name is the
+// part before the listener suffix.
+export function sidecarMirrorLabel(connection) {
+  const { name = '', sidecar_listener: listener = '' } = connection ?? {}
+  const suffix = `-${listener}`
+  const sidecar = listener && name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
+  return listener ? `${sidecar} / ${listener}` : name
+}

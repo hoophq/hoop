@@ -5,21 +5,37 @@ export const connectionsService = {
 
   // Non-paginated lookup by id. NOT the paginated endpoint: pagination adds an
   // access-group (RBAC) join that can exclude a connection the user can see,
-  // which would drop selected labels.
-  getConnectionsByIds: (ids = []) => {
+  // which would drop selected labels. `includeSidecarMirrors` adds the
+  // connections that mirror a sidecar listener, which every list leaves out
+  // by default.
+  getConnectionsByIds: (ids = [], { includeSidecarMirrors = false } = {}) => {
     if (!ids.length) return Promise.resolve([])
     const params = new URLSearchParams({ connection_ids: ids.join(',') })
+    if (includeSidecarMirrors) params.set('include_sidecar_mirrors', 'true')
     return api.get(`/connections?${params.toString()}`).then((res) => res.data)
   },
 
+  // Every connection that mirrors a sidecar listener, and nothing else.
+  getSidecarMirrors: () =>
+    api
+      .get('/connections?include_sidecar_mirrors=true&managed_by=sidecar')
+      .then((res) => res.data),
+
   // Returns the paginated envelope { pages, data }.
-  getConnectionsPaginated: ({ page = 1, pageSize = 50, search, connectionIds } = {}) => {
+  getConnectionsPaginated: ({
+    page = 1,
+    pageSize = 50,
+    search,
+    connectionIds,
+    includeSidecarMirrors = false,
+  } = {}) => {
     const params = new URLSearchParams({
       page: String(page),
       page_size: String(pageSize),
     })
     if (search) params.set('search', search)
     if (connectionIds?.length) params.set('connection_ids', connectionIds.join(','))
+    if (includeSidecarMirrors) params.set('include_sidecar_mirrors', 'true')
     return api.get(`/connections?${params.toString()}`).then((res) => res.data)
   },
   getConnection: (nameOrId) =>

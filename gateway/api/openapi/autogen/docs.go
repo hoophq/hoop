@@ -2187,6 +2187,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "format": "bool",
+                        "description": "Include the connections that mirror a sidecar listener (managed_by=sidecar), left out by default",
+                        "name": "include_sidecar_mirrors",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "format": "int",
                         "description": "Maximum number of items to return (1-100). When provided, enables pagination",
@@ -14953,6 +14960,19 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2025-01-15T10:30:00Z"
+                },
+                "sidecar_id": {
+                    "description": "The sidecar this connection mirrors a listener of; absent on an agent connection",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "sidecar_listener": {
+                    "description": "The mirrored listener name; absent on an agent connection",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "appdb"
                 },
                 "status": {
                     "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",

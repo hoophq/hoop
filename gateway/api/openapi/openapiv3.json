@@ -2218,6 +2218,19 @@
             "readOnly": true,
             "type": "string"
           },
+          "sidecar_id": {
+            "description": "The sidecar this connection mirrors a listener of; absent on an agent connection",
+            "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
+            "format": "uuid",
+            "readOnly": true,
+            "type": "string"
+          },
+          "sidecar_listener": {
+            "description": "The mirrored listener name; absent on an agent connection",
+            "example": "appdb",
+            "readOnly": true,
+            "type": "string"
+          },
           "status": {
             "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
             "enum": [
@@ -12726,6 +12739,15 @@
             "schema": {
               "format": "string",
               "type": "string"
+            }
+          },
+          {
+            "description": "Include the connections that mirror a sidecar listener (managed_by=sidecar), left out by default",
+            "in": "query",
+            "name": "include_sidecar_mirrors",
+            "schema": {
+              "format": "bool",
+              "type": "boolean"
             }
           },
           {

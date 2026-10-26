@@ -48,7 +48,8 @@ func names(t *testing.T, raw []byte, path ...string) []string {
 }
 
 // A sidecar mirror is the sidecar's, managed on the Sidecars page. No list
-// shows it, so no screen offers it as a connection. It still answers by name.
+// shows it unless a rule picker asks with include_sidecar_mirrors=true. It
+// still answers by name.
 func TestNoListShowsASidecarMirror(t *testing.T) {
 	startSwitchDB(t)
 	seedConnection(t, "plain")
@@ -73,6 +74,36 @@ func TestNoListShowsASidecarMirror(t *testing.T) {
 	w = callAsAdmin(t, apiconnections.List, "/api/connections?managed_by=sidecar", nil)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
 	assert.Empty(t, names(t, w.Body.Bytes()), "GET /connections?managed_by=sidecar")
+
+	w = callAsAdmin(t, apiconnections.List, "/api/connections?include_sidecar_mirrors=true", nil)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	assert.Equal(t, []string{"pay-api", "pay-api-ro", "pay-appdb", "plain"}, names(t, w.Body.Bytes()), "GET /connections?include_sidecar_mirrors=true")
+	var listed []struct {
+		Name            string `json:"name"`
+		ManagedBy       string `json:"managed_by"`
+		SidecarListener string `json:"sidecar_listener"`
+		SidecarID       string `json:"sidecar_id"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &listed))
+	for _, item := range listed {
+		if item.Name == "pay-appdb" {
+			assert.Equal(t, "sidecar", item.ManagedBy)
+			assert.Equal(t, "appdb", item.SidecarListener)
+			assert.NotEmpty(t, item.SidecarID)
+		}
+		if item.Name == "plain" {
+			assert.Empty(t, item.SidecarListener, "an agent connection carries no listener")
+		}
+	}
+
+	w = callAsAdmin(t, apiconnections.List, "/api/connections?include_sidecar_mirrors=true&page=1&page_size=10", nil)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	assert.Equal(t, []string{"pay-api", "pay-api-ro", "pay-appdb", "plain"}, names(t, w.Body.Bytes(), "data"), "GET /connections?include_sidecar_mirrors=true, paginated")
+	assert.Contains(t, w.Body.String(), `"total":4`)
+
+	w = callAsAdmin(t, apiconnections.List, "/api/connections?include_sidecar_mirrors=true&managed_by=sidecar", nil)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	assert.Equal(t, []string{"pay-api", "pay-appdb"}, names(t, w.Body.Bytes()), "GET /connections?include_sidecar_mirrors=true&managed_by=sidecar")
 
 	w = callAsAdmin(t, apiresources.ListResources, "/api/resources", nil)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)

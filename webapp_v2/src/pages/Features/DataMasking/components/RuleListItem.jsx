@@ -6,6 +6,8 @@ import Button from '@/components/Button'
 import RuleTrafficBadge from '@/components/RuleTrafficBadge'
 import { connectionsService } from '@/services/connections'
 import { getConnectionIcon } from '@/utils/connectionIcons'
+import { isSidecarMirror, sidecarMirrorLabel } from '@/utils/connectionPolicy'
+import { TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 import { ruleEntityBadges } from '../helpers'
 
 const BORDER = '1px solid var(--mantine-color-default-border)'
@@ -65,13 +67,14 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
                     alt=""
                   />
                   <Text size="sm" lineClamp={1}>
-                    {connection.name}
+                    {isSidecarMirror(connection) ? sidecarMirrorLabel(connection) : connection.name}
                   </Text>
+                  {isSidecarMirror(connection) && <RuleTrafficBadge traffic={TRAFFIC_SIDECAR} />}
                 </Group>
                 <Button
                   size="sm"
                   variant="default"
-                  onClick={() => onConfigureConnection(connection.name)}
+                  onClick={() => onConfigureConnection(connection)}
                 >
                   Configure
                 </Button>
@@ -102,7 +105,7 @@ export default function RuleListItem({
     if (!showConnections || connections !== null || fetchingRef.current) return
     fetchingRef.current = true
     connectionsService
-      .getConnectionsByIds(rule.connection_ids ?? [])
+      .getConnectionsByIds(rule.connection_ids ?? [], { includeSidecarMirrors: true })
       .then((rows) => setConnections(rows ?? []))
       .catch(() => setConnections([]))
       .finally(() => {

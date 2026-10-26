@@ -694,7 +694,7 @@ import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
   onChange={(ids) => setField({ connectionIds: ids })}
 />
 ```
-Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`.
+Props: `value` (ids[]), `onChange(ids)`, `label` (default "Resource Roles"), `placeholder`, `required`, `includeSidecarMirrors`. The last one adds the sidecar listener mirrors (`?include_sidecar_mirrors=true`), each shown as `<sidecar> / <listener>` with a Sidecar tag; the guardrail and masking forms use it so a gateway rule can reach a sidecar.
 
 ---
 
@@ -870,7 +870,7 @@ credential). Expiry side effects belong to the owning store, not to this hook â€
 const { label } = useCountdown(credential.expire_at)
 ```
 
-### `usePaginatedConnections({ pageSize = 50 })`
+### `usePaginatedConnections({ pageSize = 50, includeSidecarMirrors = false })`
 Page-local paginated connection (resource role) option source with server-side search and infinite scroll â€” the data layer behind `ConnectionsMultiSelect` and the paginated Resource Role filter. Each call site gets independent state.
 ```jsx
 const roles = usePaginatedConnections({ pageSize: 50 })

@@ -17,6 +17,7 @@ import AsyncValueFilter from '@/components/AsyncValueFilter'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import SidecarListenerFilter from '@/components/SidecarListenerFilter'
 import { boundRuleNames } from '@/pages/Sidecars/config'
+import { isSidecarMirror } from '@/utils/connectionPolicy'
 import {
   RULE_KIND_DATAMASKING,
   TRAFFIC_AGENT,
@@ -220,8 +221,12 @@ export default function DataMasking() {
               onConfigure={(id) =>
                 navigate(`/features/data-masking/edit/${id}`)
               }
-              onConfigureConnection={(name) =>
-                navigate(`/resources/configure/${encodeURIComponent(name)}`)
+              onConfigureConnection={(connection) =>
+                navigate(
+                  isSidecarMirror(connection)
+                    ? `/sidecars/${encodeURIComponent(connection.sidecar_id)}`
+                    : `/resources/configure/${encodeURIComponent(connection.name)}`,
+                )
               }
             />
           ))}

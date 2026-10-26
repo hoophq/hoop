@@ -1,13 +1,16 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { connectionsService } from '@/services/connections'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
+import { isSidecarMirror, sidecarMirrorLabel } from '@/utils/connectionPolicy'
 
 const SEARCH_DEBOUNCE_MS = 300
 const MIN_SEARCH_LENGTH = 2
 
 // Paginated connection option source with server-side search and infinite
-// scroll. Each call site gets its own independent state.
-export function usePaginatedConnections({ pageSize = 50 } = {}) {
+// scroll. Each call site gets its own independent state. With
+// `includeSidecarMirrors` the sidecar listener mirrors are options too,
+// labeled `<sidecar> / <listener>` and tagged.
+export function usePaginatedConnections({ pageSize = 50, includeSidecarMirrors = false } = {}) {
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0) // 0 = not loaded yet
@@ -30,6 +33,7 @@ export function usePaginatedConnections({ pageSize = 50 } = {}) {
           page: pageNum,
           pageSize,
           search: search || undefined,
+          includeSidecarMirrors,
         })
         if (reqId !== reqIdRef.current) return
         const rows = data ?? []
@@ -43,7 +47,7 @@ export function usePaginatedConnections({ pageSize = 50 } = {}) {
         if (reqId === reqIdRef.current) setLoading(false)
       }
     },
-    [pageSize],
+    [pageSize, includeSidecarMirrors],
   )
 
   const ensureLoaded = useCallback(() => {
@@ -89,7 +93,7 @@ export function usePaginatedConnections({ pageSize = 50 } = {}) {
   const getIconUrl = useConnectionIconGetter()
 
   const options = useMemo(
-    () => items.map((c) => ({ value: c.id, label: c.name, iconUrl: getIconUrl(c) })),
+    () => items.map((c) => ({ ...connectionOption(c), iconUrl: getIconUrl(c) })),
     [items, getIconUrl],
   )
 
@@ -107,4 +111,12 @@ export function usePaginatedConnections({ pageSize = 50 } = {}) {
     ensureLoaded,
     reset,
   }
+}
+
+// The option a connection makes in a picker: a mirror carries the sidecar tag.
+export function connectionOption(connection) {
+  if (isSidecarMirror(connection)) {
+    return { value: connection.id, label: sidecarMirrorLabel(connection), sidecar: true }
+  }
+  return { value: connection.id, label: connection.name }
 }
