@@ -155,7 +155,7 @@ needs Docker. The address is the upstream's `host:port`, and also its host
 when the host is an FQDN or an IPv4 address: a one-label host such as
 `postgres` is an ordinary word too, so for it only `host:port` counts. An
 IPv6 host is searched only in the project's own files, since the base image's
-Python files hold addresses such as `::1`.
+Python files hold the common IPv6 addresses.
 
 ## Files
 
