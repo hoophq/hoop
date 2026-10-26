@@ -123,16 +123,40 @@ func TestViaAcceptsOtherProxiesMarks(t *testing.T) {
 	}
 }
 
-// Once a request asks to leave HTTP/1 the rest of the connection is another
-// protocol, and a line inserted into it would corrupt it.
+// Once the server accepts a request to leave HTTP/1 the rest of the
+// connection is another protocol, and a line inserted into it would
+// corrupt it. A 101 to CONNECT counts, as libhoop counts it.
 func TestViaStopsAfterAProtocolSwitch(t *testing.T) {
 	const later = "GET /later HTTP/1.1\r\nHost: h\r\n\r\n"
-	for _, head := range []string{
-		"GET /ws HTTP/1.1\r\nHost: h\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n",
-		"CONNECT db:5432 HTTP/1.1\r\nHost: db:5432\r\n",
+	for _, tc := range []struct{ head, answer string }{
+		{"GET /ws HTTP/1.1\r\nHost: h\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n", "101 Switching Protocols"},
+		{"CONNECT db:5432 HTTP/1.1\r\nHost: db:5432\r\n", "200 OK"},
+		{"CONNECT db:5432 HTTP/1.1\r\nHost: db:5432\r\n", "101 Switching Protocols"},
 	} {
+		c := codechttp.New(codechttp.Options{})
+		if out, err := c.Filter(inspect.FromClient, []byte(tc.head+"\r\n")); err != nil || string(out) != tc.head+via()+"\r\n" {
+			t.Fatalf("switch request: %q, %v", out, err)
+		}
+		if _, _, err := c.Decode(inspect.FromServer, []byte("HTTP/1.1 "+tc.answer+"\r\n\r\n")); err != nil {
+			t.Fatal(err)
+		}
 		frames := "\x81\x05hello" + later
-		everySplit(t, head+"\r\n"+frames, head+via()+"\r\n"+frames)
+		if out, err := c.Filter(inspect.FromClient, []byte(frames)); err != nil || string(out) != frames {
+			t.Errorf("%s answered %s: tunnel bytes went out as %q, %v", tc.head[:7], tc.answer, out, err)
+		}
+	}
+}
+
+// Bytes a client sends before the server answers a switch are refused on
+// every lane: passed through, a request among them would skip the
+// credential check if the server declines.
+func TestViaRefusesBytesBeforeTheSwitchIsAnswered(t *testing.T) {
+	c := codechttp.New(codechttp.Options{})
+	if _, err := c.Filter(inspect.FromClient, []byte("GET / HTTP/1.1\r\nUpgrade: x\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := c.Filter(inspect.FromClient, []byte(get("h", "/next"))); err == nil {
+		t.Errorf("bytes before the answer went out as %q", out)
 	}
 }
 

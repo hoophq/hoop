@@ -137,7 +137,8 @@ export default function SidecarSetup({ mode = 'connect' }) {
     // Never actionable: while polling it spins, and once the sidecar is gone
     // there is nothing to continue to. Back and Cancel are the ways out.
     { label: 'Continue', loading: waiting, disabled: true },
-    { label: 'Finish', disabled: false, onClick: () => navigate(LIST_PATH) },
+    // To the sidecar just set up, where its configuration moves to Hoop.
+    { label: 'Finish', disabled: false, onClick: () => navigate(`${LIST_PATH}/${sidecar.id}`) },
   ][step]
 
   return (

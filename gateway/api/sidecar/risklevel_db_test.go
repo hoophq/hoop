@@ -28,6 +28,59 @@ const levelSpec = `{
 	"medium": {"action": "require_approval", "approver": "human"},
 	"low": {"action": "require_approval", "approver": "ai_agent"}}`
 
+// Migration 000147 rewrites no spec, so a hold stored before the object form
+// (bare, under the rule's own managed rule) must keep working as it is: served
+// unchanged to every build, filed under the managed rule, and released by its
+// groups.
+func TestAStoredBareHoldUnderTheManagedRuleKeepsWorking(t *testing.T) {
+	startStatusTestDB(t)
+	org := uuid.MustParse(statusTestOrgID)
+	const spec = `{"high":"require_review","medium":"require_approval","approval_rule":"stored-hold"}`
+	sc := seedLevelSidecar(t, "stored", "stored-hold", spec)
+	require.NoError(t, services.SyncAnalyzerApprovalRule(models.DB, org, "stored-hold", json.RawMessage(spec), &[]string{"dba"}))
+	groups, err := services.AnalyzerApprovalReviewers(models.DB, org, "stored-hold")
+	require.NoError(t, err)
+	require.Equal(t, []string{"dba"}, groups)
+
+	for _, caps := range []string{"", daemon.CapabilityRiskLevelObject} {
+		w := handshake(t, sc, caps)
+		require.Equal(t, http.StatusOK, w.Code, "caps %q: %s", caps, w.Body.String())
+		var served daemon.Config
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &served))
+		la := served.Listeners[0].Analyzer
+		require.NotNil(t, la, caps)
+		assert.Equal(t, "require_review", la.HighRisk.Action, caps)
+		assert.Equal(t, "require_review", la.MediumRisk.Action, caps)
+		assert.Equal(t, "stored-hold", la.ApprovalRule, caps)
+		assert.NotContains(t, w.Body.String(), `"approver"`, caps)
+
+		// The build that just handshaked files under the rule it was served.
+		row, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
+		require.NoError(t, err)
+		statement := "DELETE FROM payouts WHERE build = '" + caps + "'"
+		rec := postLevelBody(row, statement, map[string]any{"approval_rule": "stored-hold"})
+		require.Equal(t, http.StatusCreated, rec.Code, "caps %q: %s", caps, rec.Body.String())
+		filed := decodeReviewResponse(t, rec)
+		require.NotNil(t, filed.Review.AccessRequestRuleName)
+		assert.Equal(t, "stored-hold", *filed.Review.AccessRequestRuleName)
+		assert.Equal(t, []string{"dba"}, reviewGroupNames(filed.Review), "the managed rule's groups")
+		assert.Nil(t, filed.Review.RiskLevel)
+
+		rec = putReview(t, filed.Review.ID, `{"status":"approved"}`, []string{"sre"})
+		assert.Equal(t, http.StatusNotFound, rec.Code, "caps %q: outside the groups: %s", caps, rec.Body.String())
+		rec = putReview(t, filed.Review.ID, `{"status":"approved"}`, []string{"dba"})
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		claim := decodeReviewResponse(t, claimSidecarReview(sc, filed.Review.ID))
+		assert.True(t, claim.Forward, caps)
+	}
+
+	// The stored spec is still the bare form: nothing rewrote it.
+	var stored string
+	require.NoError(t, models.DB.Raw(`SELECT sidecar_spec::text FROM private.ai_session_analyzer_rules
+		WHERE org_id = ? AND name = 'stored-hold'`, org).Row().Scan(&stored))
+	assert.JSONEq(t, spec, stored)
+}
+
 // seedLevelSidecar stores a sidecar whose appdb listener runs the analyzer
 // rule ruleName, bound in the control plane, with its managed approval rule.
 func seedLevelSidecar(t *testing.T, name, ruleName, spec string) *models.Sidecar {

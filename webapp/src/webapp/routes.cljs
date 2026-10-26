@@ -3,6 +3,7 @@
    [bidi.bidi :as bidi]
    [pushy.core :as pushy]
    [re-frame.core :as rf]
+   [webapp.shell :as shell]
    [webapp.components.loaders :as loaders]
    [webapp.config :as config]
    [webapp.events :as events]))
@@ -146,7 +147,7 @@
       ;; which does not fire popstate, so React Router v7 would otherwise
       ;; miss the transition — the Layout/Sidebar wrapper wouldn't mount
       ;; until a full page refresh.
-      (when (.getItem js/localStorage "react-shell")
+      (when (shell/react-shell?)
         (.dispatchEvent js/window (js/PopStateEvent. "popstate"))))))
 
 (defn start!

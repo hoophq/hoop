@@ -48,7 +48,7 @@ Gateway backend (port 8009)
 
 | Mechanism | Description |
 |-----------|-------------|
-| `localStorage.react-shell = true` | Set by `ClojureApp.jsx`. Signals CLJS to skip rendering its own sidebar/header (guards the double-render) |
+| `window.__hoopReactShellPresent = true` | Set per window by `main.jsx` before the CLJS bundle loads. Signals CLJS to skip its own sidebar/header (guards the double-render). Read via `webapp.shell/react-shell?`. Never a shared `localStorage` key: another tab removed it and caused double navbars |
 | `window.hoopSetRoute(path)` | Called by `ClojureApp.jsx` on path change to sync React Router → Pushy (CLJS router) |
 | `window.hoopRemount()` | Called on remount to re-render Reagent without refetching user data |
 | `localStorage.jwt-token` | Shared auth token. Both apps read/write the same key |
@@ -78,7 +78,6 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/setup` | React | Done |
 | `/auth/callback` | React | Done |
 | `/signup/callback` | React | Done (IDP signup callback) |
-| `/dashboard` | React | Done (admin-only; lazily loaded — it owns the recharts chunk) |
 | `/agents` | React | Done |
 | `/agents/new` | React | Done |
 | `/settings/infrastructure` | React | Done |
@@ -271,10 +270,9 @@ blocks"); full props in `COMPONENTS.md`.
   duration → credentials → countdown → disconnect flow inline, and reads live sessions
   from `GET /connection-credentials` instead of localStorage
 - CommandPalette (cmd+k / Spotlight) — fully functional with search and connection actions
-- Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `react-shell` flag
+- Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `window.__hoopReactShellPresent`
 - Auth pages — Login, Register (local), Signup (IDP org setup), Setup, Callback, SignupCallback
 - Agents page (list + create wizard)
-- Dashboard (`/dashboard`, admin-only) — three charts + today's overview. First chart consumer: introduced `@mantine/charts`, the `BarChart`/`DonutChart`/`SegmentedControl` wrappers and `CHART_SERIES_COLORS` in `theme.js`
 - Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576) and the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`).
 - Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
@@ -302,7 +300,7 @@ this section — when scheduling migration work.
 ## Gotchas & Non-Obvious Details
 
 - **Token key is `jwt-token`** not `token`. Both apps must use the same key.
-- **CLJS sidebar hidden via `react-shell` flag** in localStorage. If the flag is missing, the user sees double navbars.
+- **CLJS sidebar hidden via `window.__hoopReactShellPresent`**, per window. Do not use `localStorage` for it: it is shared by all tabs.
 - **`window.hoopSetRoute`** must be called after every React Router navigation when ClojureApp is mounted — otherwise Pushy stays on the old route and content doesn't update.
 - **CLJS runs inside a `<div id="app">`** created by ClojureApp. React renders its own tree elsewhere. They don't share React context.
 - **Mantine is the only styling tool** — no Tailwind, no custom CSS files. The old app uses Tailwind; don't bleed it into `webapp_v2`.
