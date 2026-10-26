@@ -39,7 +39,7 @@ type HTTPSQLConfig struct {
 	Refuse []string `json:"refuse,omitempty" label:"Refuse" placeholder:"disposition=EXTERNAL_LINKS" help:"field=value pairs whose results would not pass through this listener. A request carrying one is refused before it is forwarded."`
 
 	// RefuseMessage is what a refused client is told.
-	RefuseMessage string `json:"refuse_message,omitempty" label:"Refuse message" help:"What a refused client is told."`
+	RefuseMessage string `json:"refuse_message,omitempty" label:"Refuse message" help:"What a refused client is told: the value to ask for instead. Required with Refuse."`
 }
 
 // httpSQLDialects maps a config's dialect name to the lexer's.
@@ -99,6 +99,12 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: http.sql.refuse entry %q is not field=value, such as disposition=EXTERNAL_LINKS", lane, r))
 		}
+	}
+	// The block is generic, so only the operator knows what a refused
+	// client should ask for instead (disposition INLINE, on Databricks).
+	if len(s.Refuse) > 0 && strings.TrimSpace(s.RefuseMessage) == "" {
+		problems = append(problems, fmt.Sprintf(
+			"listener %q: http.sql.refuse_message is empty; tell a refused client what to ask for instead", lane))
 	}
 	return problems
 }

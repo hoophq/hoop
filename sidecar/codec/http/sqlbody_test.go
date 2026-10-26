@@ -286,3 +286,90 @@ func TestSQLStatementCarriesNoCredential(t *testing.T) {
 		t.Errorf("the SQL statement carries a credential handle: %v", stmts[1].Metadata)
 	}
 }
+
+// Databricks resolves dot segments and doubled or trailing slashes before
+// it routes, so each of these runs a statement like the canonical path. The
+// lane reads the SQL out of all of them.
+func TestSQLBodyReadsNonCanonicalPaths(t *testing.T) {
+	for _, target := range []string{
+		"/api/2.0/./sql/statements",
+		"/api/2.0//sql/statements",
+		"/api/2.0/sql/x/../statements",
+		"/api/2.0/sql/statements/.",
+		"/api/2.0/sql/statements/",
+		"//api/2.0/sql/statements",
+		"/api/2.0/%2e/sql/statements",
+		"/ai-gateway/./mcp-services/system.ai.dbsql",
+	} {
+		t.Run(target, func(t *testing.T) {
+			body := `{"statement":"DROP TABLE t"}`
+			if strings.Contains(target, "mcp") {
+				body = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_sql","arguments":{"query":"DROP TABLE t"}}}`
+			}
+			c := codechttp.New(codechttp.Options{SQL: databricksSQL()})
+			stmts := mustDecode(t, c, post(target, body))
+			if len(stmts) != 2 || stmts[1].Operation != inspect.OpDrop {
+				t.Fatalf("statements = %+v, want the request and its DROP", stmts)
+			}
+		})
+	}
+}
+
+// Databricks takes an enum by its number too: "disposition": 2 is
+// EXTERNAL_LINKS. A refuse field holding anything but a string cannot be
+// compared, so the request is refused. Null is the server's default.
+func TestSQLBodyRefusesANonStringRefuseValue(t *testing.T) {
+	for _, v := range []string{`2`, `true`, `["EXTERNAL_LINKS"]`, `{"x":1}`} {
+		t.Run(v, func(t *testing.T) {
+			c := codechttp.New(codechttp.Options{SQL: databricksSQL()})
+			_, err := decodeClient(t, c, post("/api/2.0/sql/statements", `{"statement":"SELECT 1","disposition":`+v+`}`))
+			if !errors.Is(err, inspect.ErrStreamUnsafe) || !strings.Contains(err.Error(), "disposition is not a string") {
+				t.Fatalf("err = %v, want a refusal", err)
+			}
+		})
+	}
+	for _, v := range []string{`null`, `"INLINE"`} {
+		c := codechttp.New(codechttp.Options{SQL: databricksSQL()})
+		if stmts := mustDecode(t, c, post("/api/2.0/sql/statements", `{"statement":"SELECT 1","disposition":`+v+`}`)); len(stmts) != 2 {
+			t.Fatalf("disposition %s was not read: %+v", v, stmts)
+		}
+	}
+}
+
+// The lane captures request bodies to find SQL. A body sent to any other
+// route is dropped from its statement, so a secret posted to another API
+// reaches neither the audit trail nor an analyzer, unless the operator
+// asked for bodies. A SQL route keeps its body.
+func TestSQLBodyKeepsOnlyTheBodiesOfItsRoutes(t *testing.T) {
+	secret := `{"scope":"s","key":"k","string_value":"not-for-the-audit"}`
+	c := codechttp.New(codechttp.Options{SQL: databricksSQL()})
+	stmts := mustDecode(t, c, post("/api/2.0/secrets/put", secret))
+	if len(stmts) != 1 || stmts[0].HTTP.Body != "" {
+		t.Fatalf("a body to another route was kept: %+v", stmts[0].HTTP)
+	}
+	stmts = mustDecode(t, c, post("/api/2.0/sql/statements", `{"statement":"SELECT 1"}`))
+	if !strings.Contains(stmts[0].HTTP.Body, "SELECT 1") {
+		t.Errorf("the SQL route lost its body: %+v", stmts[0].HTTP)
+	}
+
+	for name, o := range map[string]codechttp.Options{
+		"capture_body":      {SQL: databricksSQL(), CaptureBody: true},
+		"a lane that holds": {SQL: databricksSQL(), CaptureRequestBody: true},
+	} {
+		c := codechttp.New(o)
+		if stmts := mustDecode(t, c, post("/api/2.0/secrets/put", secret)); !strings.Contains(stmts[0].HTTP.Body, "not-for-the-audit") {
+			t.Errorf("%s: the operator's capture was dropped", name)
+		}
+	}
+}
+
+// A request with no body runs no SQL: an MCP client opens its event stream
+// with a GET on the same route. It passes as a plain request, not refused
+// for a body that is not JSON.
+func TestSQLBodyRequestWithoutABodyCarriesNoSQL(t *testing.T) {
+	c := codechttp.New(codechttp.Options{SQL: databricksSQL()})
+	stmts, err := decodeClient(t, c, "GET /ai-gateway/mcp-services/system.ai.dbsql HTTP/1.1\r\nHost: h\r\nAccept: text/event-stream\r\n\r\n")
+	if err != nil || len(stmts) != 1 {
+		t.Fatalf("a bodyless GET: %d statements, %v", len(stmts), err)
+	}
+}

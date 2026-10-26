@@ -61,6 +61,7 @@ func TestHTTPSQLConfigValidation(t *testing.T) {
 		}, "http", `"params..query"`},
 		{"empty tool", func(s *HTTPSQLConfig) { s.Tools = []string{" "} }, "http", "http.sql.tools"},
 		{"refuse without a value", func(s *HTTPSQLConfig) { s.Refuse = []string{"disposition"} }, "http", `refuse entry "disposition"`},
+		{"refuse without a message", func(s *HTTPSQLConfig) { s.RefuseMessage = " " }, "http", "http.sql.refuse_message is empty"},
 		{"block on another protocol", func(*HTTPSQLConfig) {}, "postgres", `"http" block is only valid on an http listener`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

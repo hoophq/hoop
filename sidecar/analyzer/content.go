@@ -313,12 +313,19 @@ func (HTTPBuilder) Protocol() inspect.Protocol { return inspect.HTTP }
 //
 // A lane with an http.sql block also emits the SQL it read out of a request
 // body, as a statement with no HTTP detail and `http.sql_index` in its
-// metadata (a literal here: analyzer does not import codec/http). That one
-// renders as SQL, like a wire-database statement, so the model reads the
-// query and the classifier's reading of it rather than a JSON envelope.
+// metadata (the keys are literals here: analyzer does not import
+// codec/http). That one renders as SQL, like a wire-database statement, so
+// the model reads the query and the classifier's reading of it rather than
+// a JSON envelope. The request that carried it, marked
+// `http.sql_statements`, declines: its SQL is judged on its own, and
+// sending the JSON around it too would call the model twice per query. A
+// trigger selects that SQL by operation; a resource never matches it.
 func (HTTPBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 	if _, ok := stmt.Metadata["http.sql_index"]; ok && stmt.HTTP == nil {
 		return SQLBuilder{Protocol_: inspect.HTTP}.Build(stmt, maxBytes)
+	}
+	if stmt.Metadata["http.sql_statements"] != "" {
+		return Content{}, false
 	}
 	d := stmt.HTTP
 	if d == nil || d.Method == "" {

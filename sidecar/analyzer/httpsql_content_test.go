@@ -9,8 +9,9 @@ import (
 
 // An http lane with an http.sql block emits the request and, after it, the
 // SQL read out of its body. The model must read the SQL as SQL, with the
-// classifier's reading of it, not as a JSON envelope; the request keeps the
-// HTTP rendering, so a resource trigger still has something to judge.
+// classifier's reading of it, not as a JSON envelope, and only once: the
+// request that carried it declines. A request that carried no SQL keeps the
+// HTTP rendering.
 func TestHTTPBuilderRendersBodySQLAsSQL(t *testing.T) {
 	builder, ok := BuilderFor(inspect.HTTP)
 	if !ok {
@@ -52,8 +53,14 @@ func TestHTTPBuilderRendersBodySQLAsSQL(t *testing.T) {
 		},
 		Metadata: map[string]string{"http.sql_statements": "1"},
 	}
-	reqContent, ok := builder.Build(req, 1024)
-	if !ok || !strings.HasPrefix(reqContent.Text, "POST /api/2.0/sql/statements") {
-		t.Errorf("the request lost its HTTP rendering: %q, %v", reqContent.Text, ok)
+	if c, ok := builder.Build(req, 1024); ok {
+		t.Errorf("the request that carried SQL was sent to the model too: %q", c.Text)
+	}
+
+	other := req
+	other.Metadata = nil
+	other.HTTP = &inspect.HTTPDetail{Method: "POST", Path: "/api/2.0/jobs/run-now", Resource: "/api/2.0/jobs/run-now"}
+	if c, ok := builder.Build(other, 1024); !ok || !strings.HasPrefix(c.Text, "POST /api/2.0/jobs/run-now") {
+		t.Errorf("a request without SQL lost its HTTP rendering: %q, %v", c.Text, ok)
 	}
 }

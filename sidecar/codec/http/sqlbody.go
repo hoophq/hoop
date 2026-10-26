@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -137,16 +138,25 @@ func (r *sqlReader) unparseable(body, field, reason string) ([]inspect.Statement
 	return []inspect.Statement{r.unreadable(body, field, 1, reason)}, nil
 }
 
-// extract returns the SQL statements a client request carries, to be placed
-// after it. A refusal comes back as an error and no statements.
-func (r *sqlReader) extract(req *inspect.Statement) ([]inspect.Statement, error) {
-	d := req.HTTP
+// route returns the JSON path of the SQL in a request to one of the lane's
+// routes. The resource is cleaned first: Databricks resolves `.` and `..`
+// segments and doubled or trailing slashes before it routes, so
+// `/api/2.0/./sql/statements` runs a statement like the canonical path and
+// must be read like it, or an operation rule never sees its SQL.
+func (r *sqlReader) route(d *inspect.HTTPDetail) (string, bool) {
 	resource := d.Resource
 	if resource == "" {
 		resource = d.Path
 	}
-	field, ok := r.fieldFor(resource)
-	if !ok {
+	return r.fieldFor(path.Clean("/" + resource))
+}
+
+// extract returns the SQL statements a request to field's route carries, to
+// be placed after it. A refusal comes back as an error and no statements.
+func (r *sqlReader) extract(d *inspect.HTTPDetail, field string) ([]inspect.Statement, error) {
+	if d.Body == "" && !d.BodyTruncated {
+		// Nothing to run: an MCP client opens its event stream with a GET
+		// on the same route, and the server answers it without SQL.
 		return nil, nil
 	}
 	if d.BodyTruncated {
@@ -174,8 +184,18 @@ func (r *sqlReader) extract(req *inspect.Statement) ([]inspect.Statement, error)
 			continue // a JSON-RPC message that runs no SQL tool
 		}
 		for _, v := range r.opts.Refuse {
-			if s, found := lookup(obj, v.Field).(string); found && strings.EqualFold(s, v.Value) {
-				return nil, r.refuseResults(fmt.Sprintf("%s is %s", v.Field, s))
+			switch got := lookup(obj, v.Field).(type) {
+			case nil: // absent or null: the server's default
+			case string:
+				if strings.EqualFold(got, v.Value) {
+					return nil, r.refuseResults(fmt.Sprintf("%s is %s", v.Field, got))
+				}
+			default:
+				// Databricks also takes an enum by its number, and
+				// "disposition": 2 is EXTERNAL_LINKS. A value that is not a
+				// string cannot be compared with the operator's, so it is
+				// refused rather than guessed at.
+				return nil, r.refuseResults(fmt.Sprintf("%s is not a string", v.Field))
 			}
 		}
 		sql, isString := lookup(obj, field).(string)

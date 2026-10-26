@@ -4224,8 +4224,10 @@ the request that carried it, classified under the block's `dialect`.
 
 - **Fields.** `fields` maps a resource pattern, written as an `http_resource`
   rule writes it, to the dotted JSON path of the SQL. The longest matching
-  pattern wins. `dialect` is required: it decides what a comment or a string
-  is, and `spark` is Databricks SQL.
+  pattern wins. A pattern matches the cleaned path, because Databricks routes
+  `/api/2.0/./sql/statements`, a doubled slash or `x/..` like the canonical
+  path. `dialect` is required: it decides what a comment or a string is, and
+  `spark` is Databricks SQL. A request with no body carries no SQL.
 - **MCP.** A body with a `jsonrpc` member carries SQL only as a `tools/call`
   naming one of `tools`; `initialize`, `tools/list` and other tools carry
   none. A JSON-RPC batch yields one statement per call.
@@ -4233,7 +4235,10 @@ the request that carried it, classified under the block's `dialect`.
   through the lane. Databricks' `disposition: EXTERNAL_LINKS` answers with
   links to cloud storage, so the rows would skip the masking and the audit.
   Such a request is refused before it is forwarded, with `refuse_message`,
-  whatever the rules say.
+  whatever the rules say. A value at a `refuse` field that is not a string is
+  refused too: Databricks takes `"disposition": 2` for `EXTERNAL_LINKS`.
+  `refuse_message` is required with `refuse`, since only the operator knows
+  what the client should ask for instead.
 - **Unreadable is `unknown`.** A body that should carry SQL and does not
   yield it (cut at `max_body_bytes`, not JSON, no string at the path) becomes
   an `unknown` statement with the reason in `sql.incomplete`, as every codec
@@ -4246,19 +4251,23 @@ the request that carried it, classified under the block's `dialect`.
   metadata; the request records `http.sql_statements`. An `http_resource`
   rule never matches it. The request is judged as before, so `delete` names
   both an HTTP `DELETE` and a SQL `DELETE`.
-- **Bodies are captured.** The block captures request bodies, as a lane that
-  holds does, so they reach policy, the analyzer and the audit trail.
-- **The analyzer** renders the SQL statement as SQL. A trigger on operations
-  selects it; a resource trigger still selects the request.
+- **Bodies are captured on its routes.** The block captures the bodies of
+  requests to its routes, so they reach policy, the analyzer and the audit
+  trail. A request to any other route keeps its body only under
+  `capture_body`, or on a lane that holds.
+- **The analyzer** renders the SQL statement as SQL. The request that carried
+  it is not sent, so a query is one model call. A trigger selects the SQL by
+  operation; a resource trigger never matches it.
 - **Not with approvals yet.** A lane whose analyzer holds for approval cannot
   set the block: the gate spends an approval on the request, not on the SQL
   read from its body, so one approval would release that SQL again and again.
 
 A lane in front of a Databricks workspace, with a URL upstream so clients dial
 the sidecar by its own name. The one guardrail the free tier allows denies
-every write and every statement the classifier cannot read. A rule naming
-`unknown` judges client statements only; responses carry no verb and never
-match it.
+the writes it names and every statement the classifier cannot read. A rule
+naming `unknown` judges client statements only; responses carry no verb and
+never match it. `other` is left out: it holds `COMMENT ON`, `ANALYZE TABLE`
+and `REFRESH`, but also `USE CATALOG`, which clients send.
 
 ```yaml
 listeners:

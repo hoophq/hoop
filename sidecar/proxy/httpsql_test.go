@@ -1,7 +1,10 @@
 package proxy_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -148,6 +151,88 @@ func TestHTTPSQLRefusesAPaddedBody(t *testing.T) {
 				t.Fatalf("a refused request reached the upstream")
 			}
 		})
+	}
+}
+
+// Databricks routes a path with dot segments or doubled slashes like the
+// canonical one, so a DROP sent there is judged like one sent to the
+// canonical path, and never forwarded.
+func TestHTTPSQLNonCanonicalPathIsJudged(t *testing.T) {
+	for _, target := range []string{"/api/2.0/./sql/statements", "/api/2.0//sql/statements", "/api/2.0/sql/x/../statements"} {
+		t.Run(target, func(t *testing.T) {
+			up := newRouteUpstream(t, map[string][]byte{target: jsonResponse([]byte(`{}`), "")})
+			got := roundTrip(t, sqlLane(t, up.addr()).Addr().String(), sqlPost(target, `{"statement":"DROP TABLE customers"}`))
+			if !strings.HasPrefix(got, "403") || !strings.Contains(got, "destructive statements are not permitted") {
+				t.Fatalf("DROP through %s was not denied: %q", target, got)
+			}
+			if r := up.received(); len(r) != 0 {
+				t.Fatalf("a denied request reached the upstream: %q", r)
+			}
+		})
+	}
+}
+
+// Masking on an http.sql lane, pinned in the shapes ENG-777 tested against a
+// real workspace: a Statement Execution API result and its next chunk (T2),
+// gzip on the chunk as Databricks sends it, and an MCP tool result as JSON
+// and as an event stream, in both content and structuredContent (T3).
+func TestHTTPSQLLaneMasksDatabricksResults(t *testing.T) {
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	zw.Write([]byte(`{"chunk_index":1,"row_offset":2,"data_array":[["ada@example.com","Ada"]]}`))
+	zw.Close()
+	toolResult := `{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"[[\"ada@example.com\",\"Ada\"]]"}],` +
+		`"structuredContent":{"result":{"data_array":[["ada@example.com","Ada"]]}}}}`
+	sse := "event: message\ndata: " + toolResult + "\n\n"
+	up := newRouteUpstream(t, map[string][]byte{
+		"/api/2.0/sql/statements": jsonResponse([]byte(`{"statement_id":"s","status":{"state":"SUCCEEDED"},`+
+			`"result":{"chunk_index":0,"data_array":[["ada@example.com","Ada"],["ada@example.com","Ada"]],`+
+			`"next_chunk_internal_link":"/api/2.0/sql/statements/s/result/chunks/1"}}`), ""),
+		"/api/2.0/sql/statements/s/result/chunks/1": append([]byte(fmt.Sprintf(
+			"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\nContent-Length: %d\r\n\r\n", gz.Len())), gz.Bytes()...),
+		"/ai-gateway/mcp-services/system.ai.dbsql": jsonResponse([]byte(toolResult), ""),
+		"/api/2.0/mcp/sql": append([]byte(fmt.Sprintf(
+			"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: %d\r\n\r\n", len(sse))), sse...),
+	})
+	opts := httpcodec.Options{SQL: &httpcodec.SQLOptions{
+		Dialect: lexer.Spark, DialectName: "spark",
+		Fields: map[string]string{
+			"/api/2.0/sql/statements":     "statement",
+			"/ai-gateway/mcp-services/**": "params.arguments.query",
+			"/api/2.0/mcp/sql":            "params.arguments.query",
+		},
+		Tools:         []string{"execute_sql"},
+		MatchResource: policy.MatchResource,
+	}}
+	srv := startServer(t, proxy.Config{
+		Upstream:     up.addr(),
+		Protocol:     inspect.HTTP,
+		Policy:       denyWritesAndUnknown(t),
+		Masker:       emailMasker{},
+		DenyWriter:   proxy.ProtocolDenyWriter{},
+		CodecFactory: func() inspect.Codec { return httpcodec.New(opts) },
+	})
+
+	call := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"execute_sql","arguments":{"query":"SELECT * FROM customers"}}}`
+	for name, raw := range map[string]string{
+		"SEA first chunk":   sqlPost("/api/2.0/sql/statements", `{"statement":"SELECT * FROM customers","disposition":"INLINE"}`),
+		"SEA gzip chunk":    "GET /api/2.0/sql/statements/s/result/chunks/1 HTTP/1.1\r\nHost: h\r\n\r\n",
+		"MCP JSON result":   sqlPost("/ai-gateway/mcp-services/system.ai.dbsql", call),
+		"MCP stream result": sqlPost("/api/2.0/mcp/sql", call),
+	} {
+		got := roundTrip(t, srv.Addr().String(), raw)
+		if status, body, ok := strings.Cut(got, "\n"); ok && strings.HasPrefix(body, "\x1f\x8b") {
+			// The lane masks a gzip body inflated and sends it compressed again.
+			zr, err := gzip.NewReader(strings.NewReader(body))
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			plain, _ := io.ReadAll(zr)
+			got = status + "\n" + string(plain)
+		}
+		if !strings.HasPrefix(got, "200") || strings.Contains(got, "ada@example.com") || !strings.Contains(got, "[REDACTED]") {
+			t.Errorf("%s: not masked: %.300q", name, got)
+		}
 	}
 }
 

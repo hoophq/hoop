@@ -88,8 +88,9 @@ type Options struct {
 	Seen *SeenCredentials
 
 	// SQL, when set, reads the SQL out of JSON request bodies into
-	// statements of their own. It captures request bodies, as
-	// CaptureRequestBody does. See sqlbody.go.
+	// statements of their own. It captures the bodies of requests to its
+	// routes; other requests keep theirs only under CaptureBody or
+	// CaptureRequestBody. See sqlbody.go.
 	SQL *SQLOptions
 }
 
@@ -107,6 +108,10 @@ type Codec struct {
 	creds credentials
 	via   viaFilter
 	sql   *sqlReader
+	// keepBodies is whether the operator asked for request bodies. The
+	// Inspector captures every request body on a lane that reads SQL, and
+	// withSQL drops those that reach no SQL route unless this is set.
+	keepBodies bool
 }
 
 // New builds an HTTP codec.
@@ -156,6 +161,8 @@ func New(o Options) *Codec {
 		creds: credentials{header: header, keep: keep, authenticates: o.AuthenticatesCaller},
 		via:   viaFilter{origin: o.Origin},
 		sql:   newSQLReader(o.SQL),
+
+		keepBodies: o.CaptureBody || o.CaptureRequestBody,
 	}
 	c.via.guard.seen = o.Seen
 	if c.via.guard.seen == nil {
@@ -233,6 +240,10 @@ func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement,
 // withSQL places each request's SQL statements right after it. The order is
 // load-bearing: the gate resolves the caller and rotates the session on the
 // request statement, so the SQL that follows is judged under that caller.
+//
+// A request to no SQL route drops the body the lane captured only to look
+// for SQL, so a secret posted to another API reaches neither the audit trail
+// nor an analyzer unless the operator asked for bodies.
 func (c *Codec) withSQL(stmts []inspect.Statement) ([]inspect.Statement, error) {
 	var out []inspect.Statement
 	for i := range stmts {
@@ -241,7 +252,14 @@ func (c *Codec) withSQL(stmts []inspect.Statement) ([]inspect.Statement, error) 
 		if d == nil || d.Method == "" || d.StatusCode != 0 {
 			continue // not a request: a WebSocket message, a response
 		}
-		sql, err := c.sql.extract(&stmts[i])
+		field, ok := c.sql.route(d)
+		if !ok {
+			if !c.keepBodies {
+				d.Body, d.BodyTruncated = "", false
+			}
+			continue
+		}
+		sql, err := c.sql.extract(d, field)
 		if err != nil {
 			return out, err
 		}
