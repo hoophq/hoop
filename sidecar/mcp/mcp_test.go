@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -367,9 +368,13 @@ func TestShutdownStopsAWaitInFlight(t *testing.T) {
 			slog.New(slog.NewTextHandler(io.Discard, nil)))
 	}()
 
+	// One connection. On a slow runner the client can dial a spare one it
+	// never sends on, and Shutdown waits 5s before it closes a connection
+	// with no request (golang/go#22682): longer than the 3s below.
 	client := sdk.NewClient(&sdk.Implementation{Name: "test"}, nil)
 	cs, err := client.Connect(context.Background(), &sdk.StreamableClientTransport{
-		Endpoint: "http://" + ln.Addr().String() + Path, DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+		Endpoint: "http://" + ln.Addr().String() + Path, DisableStandaloneSSE: true, MaxRetries: -1,
+		HTTPClient: &http.Client{Transport: &http.Transport{MaxConnsPerHost: 1}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,15 +1,16 @@
 # Set up Go for a job that builds against the private libhoop module.
 #
-# One definition of the three steps every Go job repeated: setup-go,
-# private module auth, and (on PRs) the libhoop PR branch switch.
+# One definition of the steps every Go job repeated: setup-go, private
+# module auth, (on PRs) the libhoop PR branch switch, and the annotation of
+# failed tests.
 #
 # Prerequisite: actions/checkout (go.work and the go.sum files are read).
 
 name: Setup Go with private modules
 description: >-
   Install Go from go.work with the module cache, authenticate the private
-  github.com/hoophq/libhoop module, and optionally build against a matching
-  libhoop PR branch.
+  github.com/hoophq/libhoop module, optionally build against a matching
+  libhoop PR branch, and annotate each failed Go test on the job.
 
 inputs:
   token:
@@ -30,6 +31,14 @@ runs:
         # This is a go.work workspace with no root go.mod, so setup-go
         # cannot find a manifest on its own and silently caches nothing.
         cache-dependency-path: "**/go.sum"
+
+    # Names each failed test, failed package and timeout in a job annotation.
+    # The job log expires after one day; its annotations stay. The matcher
+    # only reads the log: no exit code changes. Fixtures:
+    # scripts/ci/go-test-matcher_test.sh.
+    - name: Annotate failed Go tests
+      shell: bash
+      run: echo "::add-matcher::${GITHUB_ACTION_PATH}/go-test-matcher.json"
 
     # GOPRIVATE keeps the private modules off proxy.golang.org and
     # sum.golang.org; the credential rewrite lets the direct fetch
