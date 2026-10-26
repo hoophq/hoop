@@ -81,6 +81,42 @@ type Reframer interface {
 	Flush(mask func(column string, value []byte) []byte) []byte
 }
 
+// checkedFlusher is a Reframer that reports a response it refused at
+// connection end (libhoop codec/http FlushChecked): a close-delimited body
+// too large to mask ends only there, with its head still held. Optional; a
+// Reframer without it drops such a response silently through Flush.
+type checkedFlusher interface {
+	FlushChecked(mask func(column string, value []byte) []byte) ([]byte, error)
+}
+
+// responseStarter is a Reframer that knows whether the response in progress
+// already went out in part (libhoop codec/http ResponseStarted).
+type responseStarter interface {
+	ResponseStarted() bool
+}
+
+// responseStarted reports whether a response refused with err already
+// reached the client in part, so a deny frame would land inside it and the
+// relay must cut the response instead (Decision.NoFrame).
+//
+// Only HTTP answers yes from the codec's state. A lane that masks rewrites
+// the response, and the codec knows whether its head went out. One that
+// does not forwards response bytes as they arrive, so a response the
+// decoder refused for outgrowing its buffer has started.
+func (g *Gate) responseStarted(err error) bool {
+	if errors.Is(err, inspect.ErrResponseStarted) {
+		return true
+	}
+	if g.cfg.Protocol != inspect.HTTP {
+		return false
+	}
+	if g.masker == nil || g.reframer == nil {
+		return errors.Is(err, inspect.ErrBufferOverflow)
+	}
+	rs, ok := g.reframer.(responseStarter)
+	return ok && rs.ResponseStarted()
+}
+
 // rewriteActivator lets a stateful codec retain request correlation before
 // any server bytes arrive. Stateless reframers do not need it.
 type rewriteActivator interface {
@@ -392,6 +428,12 @@ type Decision struct {
 	// overtake the earlier response. The client resends on a fresh
 	// connection, where the request comes first.
 	Hangup bool
+
+	// NoFrame marks a denial that must not write a deny frame: the denied
+	// response already reached the client in part (inspect.ErrResponseStarted).
+	// The caller sends Payload, what the codec masked before it refused,
+	// then closes; Allowed is false alongside it.
+	NoFrame bool
 
 	// Payload is the bytes to forward. It differs from the input only when
 	// masking rewrote something; otherwise it aliases the input.
@@ -745,16 +787,31 @@ func (g *Gate) Response(ctx context.Context, data []byte) Decision {
 //
 // Returns nil when nothing is held or the codec does not re-frame.
 func (g *Gate) FlushResponse() []byte {
+	out, _ := g.FlushResponseChecked()
+	return out
+}
+
+// FlushResponseChecked is FlushResponse, and it reports a held response the
+// codec refused (inspect.ErrStreamUnsafe) with no bytes. The codec still
+// held its head, so nothing of it reached the client: the relay answers
+// with its deny frame. The refusal is audited and counted here.
+func (g *Gate) FlushResponseChecked() ([]byte, error) {
 	if g.reframer == nil {
-		return nil
+		return nil, nil
+	}
+	flush := func(mask func(column string, value []byte) []byte) ([]byte, error) {
+		if cf, ok := g.reframer.(checkedFlusher); ok {
+			return cf.FlushChecked(mask)
+		}
+		return g.reframer.Flush(mask), nil
 	}
 	if g.masker == nil {
-		return g.reframer.Flush(nil)
+		return flush(nil)
 	}
 	// Rows masked here were held back by the codec and never passed through
 	// maskByReframing, so this is their only chance to be counted.
 	masked := 0
-	out := g.reframer.Flush(func(column string, value []byte) []byte {
+	out, err := flush(func(column string, value []byte) []byte {
 		res, _, n := g.masker.MaskCell(column, value)
 		if n == 0 {
 			return value
@@ -763,7 +820,15 @@ func (g *Gate) FlushResponse() []byte {
 		return res
 	})
 	g.countMasked(masked)
-	return out
+	if err != nil {
+		g.writeAudit(context.Background(), audit.ErrorEvent(g.session(), err))
+		g.mu.Lock()
+		g.denied++
+		g.mu.Unlock()
+		g.countStatement(true, SourceStream)
+		return nil, err
+	}
+	return out, nil
 }
 
 // DiscardResponse clears response bytes held by a re-framing codec without
@@ -906,6 +971,11 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			d.Allowed = false
 			d.Rule = "stream-unsafe"
 			d.Message = err.Error()
+			if dir == inspect.FromServer && g.responseStarted(err) {
+				// These bytes were never masked: nothing more goes out.
+				d.Payload = nil
+				d.NoFrame = true
+			}
 			g.mu.Lock()
 			g.denied++
 			g.mu.Unlock()
@@ -1279,6 +1349,14 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 			d.Rule = "stream-unsafe"
 			d.Message = err.Error()
 			d.Payload = nil
+			if g.responseStarted(err) {
+				// The head and earlier masked units already left the codec,
+				// on this call or a former one. A deny frame now would be a
+				// second status line inside the first response: send what
+				// the codec masked and cut the response instead.
+				d.Payload = out
+				d.NoFrame = true
+			}
 			g.mu.Lock()
 			g.denied++
 			g.mu.Unlock()

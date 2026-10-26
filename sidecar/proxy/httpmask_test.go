@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/proxy"
 )
@@ -156,5 +157,114 @@ func TestGzipJSONInflatingPastTheMaskLimitIsRefused(t *testing.T) {
 	got := roundTrip(t, srv.Addr().String(), "GET /rows HTTP/1.1\r\nHost: h\r\nAccept-Encoding: gzip\r\n\r\n")
 	if !strings.HasPrefix(got, "403") {
 		t.Fatalf("a body too large to mask was not refused: %.120q", got)
+	}
+}
+
+// rawExchange sends one request on a fresh connection and returns every
+// byte that came back until the relay closed it.
+func rawExchange(t *testing.T, addr, raw string) []byte {
+	t.Helper()
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	if _, err := c.Write([]byte(raw)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
+	got, _ := io.ReadAll(c)
+	return got
+}
+
+// A chunked JSON stream goes out a value at a time. When a later value is
+// too large to hold, the head and the first value already reached the
+// client: the relay cuts the response there. It used to write a 403 status
+// line inside the 200 response, which no client can parse. A lane without
+// a mask rule forwards the stream as it arrives, so the same holds there.
+func TestChunkedStreamRefusedMidResponseIsCut(t *testing.T) {
+	for name, masker := range map[string]gate.Masker{"masked": emailMasker{}, "no mask rule": nil} {
+		t.Run(name, func(t *testing.T) { chunkedStreamRefusedMidResponse(t, masker) })
+	}
+}
+
+func chunkedStreamRefusedMidResponse(t *testing.T, masker gate.Masker) {
+	var b strings.Builder
+	b.WriteString("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n")
+	first := `{"e":"ada@example.com"}`
+	fmt.Fprintf(&b, "%x\r\n%s\r\n", len(first), first)
+	big := emailRows(9 << 20)
+	for i := 0; i < len(big); i += 1 << 16 {
+		part := big[i:min(i+1<<16, len(big))]
+		fmt.Fprintf(&b, "%x\r\n%s\r\n", len(part), part)
+	}
+	b.WriteString("0\r\n\r\n")
+	up := newRouteUpstream(t, map[string][]byte{
+		"/watch": []byte(b.String()),
+		"/small": jsonResponse([]byte(`{"e":"ada@example.com"}`), ""),
+	})
+	cfg := proxy.Config{
+		Upstream:   up.addr(),
+		Protocol:   inspect.HTTP,
+		DenyWriter: proxy.ProtocolDenyWriter{},
+	}
+	if masker != nil {
+		cfg.Masker = masker
+	}
+	srv := startServer(t, cfg)
+
+	got := rawExchange(t, srv.Addr().String(), "GET /watch HTTP/1.1\r\nHost: h\r\n\r\n")
+	if n := bytes.Count(got, []byte("HTTP/1.1 ")); n != 1 || !bytes.HasPrefix(got, []byte("HTTP/1.1 200 OK")) {
+		t.Fatalf("want the 200 alone, cut short; got %d status lines: %.300q", n, got)
+	}
+	if masker != nil && (bytes.Contains(got, []byte("ada@example.com")) || !bytes.Contains(got, []byte("[REDACTED]"))) {
+		t.Fatalf("the first value was not masked, or the refused one leaked: %.300q", got)
+	}
+	if r := roundTrip(t, srv.Addr().String(), "GET /small HTTP/1.1\r\nHost: h\r\n\r\n"); !strings.HasPrefix(r, "200") {
+		t.Fatalf("the lane stopped serving after the cut: %q", r)
+	}
+}
+
+// oneShotUpstream answers one request with resp and closes the connection,
+// so a body without Content-Length or chunking ends at the close.
+func oneShotUpstream(t *testing.T, resp []byte) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("upstream listen: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		if _, err := http.ReadRequest(bufio.NewReader(c)); err != nil {
+			return
+		}
+		_, _ = c.Write(resp)
+	}()
+	return ln.Addr().String()
+}
+
+// A close-delimited gzip body ends only when the upstream closes, with its
+// head still held, so a body too large to mask gets the lane's 403. It used
+// to vanish: the client read nothing at all.
+func TestCloseDelimitedGzipTooLargeToMaskGets403(t *testing.T) {
+	var zb bytes.Buffer
+	zw := gzip.NewWriter(&zb)
+	zw.Write(emailRows(17 << 20))
+	zw.Close()
+	resp := append([]byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\n"), zb.Bytes()...)
+	srv := startServer(t, proxy.Config{
+		Upstream:   oneShotUpstream(t, resp),
+		Protocol:   inspect.HTTP,
+		Masker:     emailMasker{},
+		DenyWriter: proxy.ProtocolDenyWriter{},
+	})
+	got := rawExchange(t, srv.Addr().String(), "GET /rows HTTP/1.1\r\nHost: h\r\nAccept-Encoding: gzip\r\n\r\n")
+	if !bytes.HasPrefix(got, []byte("HTTP/1.1 403 Forbidden")) || !bytes.Contains(got, []byte("MaxMessageBytes")) {
+		t.Fatalf("want the lane's 403 naming the limit; got %.200q", got)
 	}
 }
