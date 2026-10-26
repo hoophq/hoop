@@ -46,7 +46,7 @@ test('the seed holds every kind the harness needs', () => {
   }
 })
 
-// The kinds the harness ticket lists, one session each, but the batch: its 25
+// The kinds ENG-900 lists, one session each, but the batch: its 25
 // rows are a day older (/sessions/filtered?batch_id=seed-batch-1 shows them).
 const TICKET_KINDS = [
   'exec-bash-ok', 'exec-bash-exit-1', 'exec-bash-stderr', 'exec-pg-table', 'exec-pg-error', 'connect-pty',

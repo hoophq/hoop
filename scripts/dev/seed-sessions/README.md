@@ -33,8 +33,9 @@ What it does:
    and masking metrics, by SQL.
 3. Turns `experimental.sidecar_session_events` on, posts the events of two
    sidecar sessions to `POST /api/sidecars/events`, then sets the times the
-   gateway stamps with `now()` (`metadata.sidecar.last_event_at`, blob
-   `created_at`) to the session's own.
+   gateway stamps with `now()` (`metadata.sidecar.last_event_at`, blob and
+   stream chunk `created_at`) to the session's own, and the random id of its
+   masking metrics to one derived from the row.
 
 Times are fixed (2026-10-01 to 2026-10-03, UTC). Freeze the browser clock and
 time zone when you compare recordings: "x ago" and local times depend on them.
@@ -62,11 +63,12 @@ SEED_DB_URI=... node scripts/dev/seed-sessions/seed.mjs dump > a.dump
 ```
 
 `dump` prints `private.sessions`, `private.blobs` (content as md5),
-`private.reviews` and `private.review_groups`, one row per line, without
-`org_id`. Seed two new databases, dump both, and `diff` them: it is empty.
+`private.reviews`, `private.review_groups`, `private.session_metrics` and
+`private.session_stream_chunks` (without its sequence id), one row per line,
+without `org_id`. Seed two new databases, dump both, and `diff` them: it is empty.
 
 `make test-seed-sessions` checks that the ids match the gateway's, that the SQL
-does not read the clock, that the first page holds every kind the ticket lists
+does not read the clock, that the first page holds every kind ENG-900 lists
 but the batch, and that this README matches the catalog; CI runs it in the
 "Webapp v2 Lint and Build" job. With `SEED_DB_URI` and `API_URL` set, it also
 seeds that stack twice and compares the dumps. With `SEED_DB_URI_2` and
@@ -74,7 +76,7 @@ seeds that stack twice and compares the dumps. With `SEED_DB_URI_2` and
 
 ## Sessions
 
-The first page of `/sessions` (20 rows) holds the kinds the harness ticket
+The first page of `/sessions` (20 rows) holds the kinds ENG-900
 lists, newest first, with `seed-sc-full`. The batch is the one exception: it is
 dated a day earlier, and `/sessions/filtered?batch_id=seed-batch-1` shows it.
 Ids come from `catalog.mjs`; `seed.test.mjs` checks this table against it.

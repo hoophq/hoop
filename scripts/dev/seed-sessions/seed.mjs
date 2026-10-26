@@ -216,8 +216,9 @@ export function seedSql(org) {
     'COMMIT;'].join('\n')
 }
 
-// The gateway stamps now() on a sidecar session's last_event_at and on its
-// two blobs. Fix them to the session's own times.
+// The gateway stamps now() on a sidecar session's last_event_at, on its two
+// blobs and on its stream chunks, and a random id on its masking metrics. Fix
+// them to the session's own times and to ids derived from the row.
 function sidecarFixSql() {
   const ids = inList(SIDECAR_SESSIONS.map((s) => s.id))
   return `
@@ -225,7 +226,11 @@ function sidecarFixSql() {
       to_jsonb(to_char(ended_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')))
       WHERE id IN (${ids});
     UPDATE private.blobs b SET created_at = s.created_at FROM private.sessions s
-      WHERE s.id IN (${ids}) AND b.org_id = s.org_id AND b.id IN (s.blob_input_id, s.blob_stream_id);`
+      WHERE s.id IN (${ids}) AND b.org_id = s.org_id AND b.id IN (s.blob_input_id, s.blob_stream_id);
+    UPDATE private.session_stream_chunks c SET created_at = s.created_at FROM private.sessions s
+      WHERE s.id IN (${ids}) AND c.org_id = s.org_id AND c.blob_id = s.blob_stream_id;
+    UPDATE private.session_metrics SET id = md5('sessionmetric:' || session_id || ':' || info_type)::uuid
+      WHERE session_id IN (${ids});`
 }
 
 // ─── Commands ──────────────────────────────────────────────────────────────
@@ -322,7 +327,7 @@ async function seed() {
 }
 
 // One JSON object per row, ordered by id, without org_id: it is random per
-// database. Blob content is replaced by its md5 to keep the dump small.
+// database. A stream chunk also drops its id, a sequence. Blob content is replaced by its md5 to keep the dump small.
 function dump() {
   process.stdout.write(psql(`
     SELECT '-- private.sessions';
@@ -333,7 +338,11 @@ function dump() {
     SELECT '-- private.reviews';
     SELECT to_jsonb(r) - 'org_id' FROM private.reviews r ORDER BY r.id;
     SELECT '-- private.review_groups';
-    SELECT to_jsonb(g) - 'org_id' FROM private.review_groups g ORDER BY g.id;`))
+    SELECT to_jsonb(g) - 'org_id' FROM private.review_groups g ORDER BY g.id;
+    SELECT '-- private.session_metrics';
+    SELECT to_jsonb(m) - 'org_id' FROM private.session_metrics m ORDER BY m.id;
+    SELECT '-- private.session_stream_chunks';
+    SELECT to_jsonb(c) - 'org_id' - 'id' FROM private.session_stream_chunks c ORDER BY c.blob_id, c.id;`))
 }
 
 // Run as a command; seed.test.mjs imports the SQL builders.

@@ -13,8 +13,9 @@
 // See examples/access-control.flow.mjs.
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const [base, tokenFile, flowFile, side, outDir, portArg] = process.argv.slice(2)
@@ -28,13 +29,26 @@ const token = readFileSync(tokenFile, 'utf8').trim()
 const framesDir = join(outDir, `${side}-frames`)
 mkdirSync(framesDir, { recursive: true })
 
+// Where Playwright installs browsers. "0" means inside playwright-core itself
+// (Playwright's registry: <playwright-core>/.local-browsers), found from the cwd.
+function playwrightBrowsers() {
+  const env = process.env.PLAYWRIGHT_BROWSERS_PATH
+  if (env !== '0') return env || join(homedir(), '.cache', 'ms-playwright')
+  try {
+    const pkg = createRequire(join(process.cwd(), 'noop.js')).resolve('playwright-core/package.json')
+    return join(dirname(pkg), '.local-browsers')
+  } catch {
+    return 'playwright-core/.local-browsers (no playwright-core under the cwd)'
+  }
+}
+
 function findChrome() {
   const env = process.env.CHROME_PATH || process.env.CHROME
   if (env) return env
   const fixed = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/opt/pw-browsers/chromium']
     .find(existsSync)
   if (fixed) return fixed
-  const root = process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), '.cache', 'ms-playwright')
+  const root = playwrightBrowsers()
   const builds = existsSync(root) ? readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)) : []
   builds.sort((a, b) => Number(b.slice('chromium-'.length)) - Number(a.slice('chromium-'.length)))
   // chrome-linux, chrome-linux64 or chrome-linux-arm64, by version and arch.

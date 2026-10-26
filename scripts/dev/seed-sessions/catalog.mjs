@@ -182,7 +182,7 @@ function review(key, at, fields) {
 
 // Kinds are written newest first, five minutes apart: LEADING in its order,
 // then the others in the order they are defined. LEADING starts with the kinds
-// the harness ticket lists, so the first page of /sessions (20 rows, with
+// ENG-900 lists, so the first page of /sessions (20 rows, with
 // seed-sc-full) holds one of each but the batch, dated a day earlier;
 // seed.test.mjs checks it. The steps of
 // seed-wf-short are listed last to first, so they run in order.
