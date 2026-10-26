@@ -150,6 +150,33 @@ func TestHTTPResourceMethodNarrowing(t *testing.T) {
 	}
 }
 
+func TestHTTPRulesMatchTheUnresolvedResource(t *testing.T) {
+	rules, _ := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-admin", Type: policy.MatchHTTPResource}.WithResources("/admin/**"),
+		policy.Rule{Name: "no-json-secrets", Type: policy.MatchHTTPHeader}.
+			WithResources("/secrets/**").
+			WithHeaders(map[string][]string{"Accept": {"application/json"}}),
+	})
+	stmt := func(resource, unresolved string) inspect.Statement {
+		s := httpStmt(&inspect.HTTPDetail{
+			Method: "GET", Resource: resource, Headers: map[string]string{"accept": "application/json"},
+		})
+		if unresolved != "" {
+			s.Metadata = map[string]string{inspect.MetadataHTTPResourceUnresolved: unresolved}
+		}
+		return s
+	}
+	if !rules.Evaluate(stmt("/public", "/admin/../public")).Denied {
+		t.Error("http_resource ignored the unresolved resource")
+	}
+	if !rules.Evaluate(stmt("/public", "/secrets/../public")).Denied {
+		t.Error("an http_header scope ignored the unresolved resource")
+	}
+	if rules.Evaluate(stmt("/public", "")).Denied {
+		t.Error("a clean resource outside every scope was denied")
+	}
+}
+
 // A request whose intent is in its headers: kubectl fetches a Secret's
 // table view with `Accept: application/json;as=Table;...` and its contents
 // with `Accept: application/json`, on the same GET. The fail-closed rule

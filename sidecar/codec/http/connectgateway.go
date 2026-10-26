@@ -57,6 +57,11 @@ func stripConnectGatewayPrefix(stmt *inspect.Statement) {
 		stmt.Metadata = map[string]string{}
 	}
 	stmt.Metadata[metadataResourcePrefix] = prefix
+	if u, ok := stmt.Metadata[inspect.MetadataHTTPResourceUnresolved]; ok {
+		if _, urest, ok := splitConnectGatewayPath(u); ok {
+			stmt.Metadata[inspect.MetadataHTTPResourceUnresolved] = urest
+		}
+	}
 }
 
 // isConnectGatewayHost reports whether host is the global Connect Gateway

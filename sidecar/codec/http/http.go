@@ -192,6 +192,7 @@ func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement,
 		if dir == inspect.FromServer && stmts[i].HTTP != nil && stmts[i].HTTP.StatusCode != 0 {
 			c.via.answer(stmts[i].HTTP.StatusCode)
 		}
+		cleanResource(&stmts[i])
 		stripConnectGatewayPrefix(&stmts[i])
 		if e := c.creds.lift(&stmts[i]); e != nil && liftErr == nil {
 			liftErr = e
@@ -213,6 +214,7 @@ func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement,
 // allowlist, so it cannot reach policy input this way either.
 func (c *Codec) InspectRequest(r *http.Request, body []byte) inspect.Statement {
 	stmt := c.Inspector.InspectRequest(r, body)
+	cleanResource(&stmt)
 	stripConnectGatewayPrefix(&stmt)
 	c.creds.scrub(&stmt)
 	return stmt
@@ -222,6 +224,7 @@ func (c *Codec) InspectRequest(r *http.Request, body []byte) inspect.Statement {
 // InspectRequest.
 func (c *Codec) InspectResponse(resp *http.Response, req *http.Request, body []byte) inspect.Statement {
 	stmt := c.Inspector.InspectResponse(resp, req, body)
+	cleanResource(&stmt)
 	stripConnectGatewayPrefix(&stmt)
 	c.creds.scrub(&stmt)
 	return stmt
