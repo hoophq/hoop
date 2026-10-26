@@ -22,13 +22,13 @@ MAX_ROWS = 100
 
 
 def run_sql(sql: str, tool_context: ToolContext) -> dict:
-    """Runs one SQL statement on the customers database (id, name, email, plan).
+    """Runs one SQL query on the customers database (id, name, email, plan).
 
     Args:
-        sql: One PostgreSQL statement.
+        sql: One PostgreSQL query that returns rows.
 
     Returns:
-        The rows, the affected row count, or the database error.
+        The rows (at most 100, marked truncated beyond that), or the error.
     """
     # psycopg 3 on purpose. A hoop denial is FATAL 42501 and closes the
     # connection; psycopg 3 reports the message and the SQLSTATE, while
@@ -45,12 +45,19 @@ def run_sql(sql: str, tool_context: ToolContext) -> dict:
             # Recorded by the sidecar as postgres.option.adk.session.id.
             options=f"-c adk.session.id={tool_context.session.id}",
         ) as conn:
-            cur = conn.execute(sql)
-            if cur.description is None:
-                return {"status": "ok", "rowcount": cur.rowcount}
-            cols = [c.name for c in cur.description]
-            rows = cur.fetchmany(MAX_ROWS + 1)
-            result = {"status": "ok", "rows": [dict(zip(cols, r)) for r in rows[:MAX_ROWS]]}
+            # stream() receives one row at a time, so a large result is never
+            # held whole. execute() would receive it all before the first row.
+            # A server-side cursor would be refused: the read-only rule reads
+            # DECLARE as "other". stream() raises for a statement that returns
+            # no rows, so a normal end with no rows is an empty result.
+            cur = conn.cursor()
+            cols, rows = None, []
+            for row in cur.stream(sql):
+                cols = cols or [c.name for c in cur.description]
+                rows.append(dict(zip(cols, row)))
+                if len(rows) > MAX_ROWS:
+                    break
+            result = {"status": "ok", "rows": rows[:MAX_ROWS]}
             if len(rows) > MAX_ROWS:
                 result["truncated"] = f"more than {MAX_ROWS} rows; ask a narrower query"
             return result
