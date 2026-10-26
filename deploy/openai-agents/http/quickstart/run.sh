@@ -37,6 +37,9 @@ c_step "Starting the sidecar and the tunnel"
 # The old host dies with its tunnel: a failed start must leave none behind
 # for agent.sh.
 rm -f .work/host
+# From here a failure stops the stack: a public tunnel to a lane that failed
+# a check serves no one. The failing step prints its reason first.
+trap '[[ $? -eq 0 ]] || docker compose down --remove-orphans >/dev/null 2>&1' EXIT
 # A new cloudflared container, so its log holds only the new host.
 docker compose up -d --wait --force-recreate --remove-orphans || {
     # Compose names only the exit code. The reason, such as a config over
@@ -64,9 +67,10 @@ c_ok "https://$host"
 
 c_step "Checking the lane through https://$host"
 # call <method> <path> [token]: prints the status line, then the body. Any
-# third argument sends the caller token.
+# third argument sends the caller token. Behind an HTTPS proxy, -i alone
+# would print the proxy's CONNECT answer before the lane's.
 call() {
-    curl -sS -i --max-time 10 -X "$1" "https://$host$2" \
+    curl -sS -i --suppress-connect-headers --max-time 10 -X "$1" "https://$host$2" \
         ${3:+-H @.secrets/token-header} -H "X-OpenAI-Session-Id: run.sh"
 }
 # A new quick tunnel takes some seconds to resolve and connect. A resolver
