@@ -310,7 +310,16 @@ func (HTTPBuilder) Protocol() inspect.Protocol { return inspect.HTTP }
 //
 // A response with no body, or a WebSocket message without one (a close
 // frame), returns ok=false: there is nothing to judge but a status line.
+//
+// A lane with an http.sql block also emits the SQL it read out of a request
+// body, as a statement with no HTTP detail and `http.sql_index` in its
+// metadata (a literal here: analyzer does not import codec/http). That one
+// renders as SQL, like a wire-database statement, so the model reads the
+// query and the classifier's reading of it rather than a JSON envelope.
 func (HTTPBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
+	if _, ok := stmt.Metadata["http.sql_index"]; ok && stmt.HTTP == nil {
+		return SQLBuilder{Protocol_: inspect.HTTP}.Build(stmt, maxBytes)
+	}
 	d := stmt.HTTP
 	if d == nil || d.Method == "" {
 		return Content{}, false

@@ -1533,6 +1533,16 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.HTTP.validate(name)...)
+		// The gate queues and spends an approval on an HTTP request
+		// statement only. An approval the analyzer asked for on SQL read
+		// out of a body would never be spent, so one approval would
+		// release that SQL again and again. Refuse the pair until the gate
+		// settles those statements too.
+		if lc.HTTP.SQL != nil && analyzerHolds(lc.Analyzer) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: http.sql cannot be combined with an analyzer that holds for approval yet: "+
+					"an approval on SQL read from a request body would never be spent", name))
+		}
 	}
 
 	if lc.ClickHouse != nil {

@@ -34,6 +34,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -85,6 +86,11 @@ type Options struct {
 	// one lane must share one, or a credential learned on one connection
 	// is not watched on the next. Nil gives the codec a memory of its own.
 	Seen *SeenCredentials
+
+	// SQL, when set, reads the SQL out of JSON request bodies into
+	// statements of their own. It captures request bodies, as
+	// CaptureRequestBody does. See sqlbody.go.
+	SQL *SQLOptions
 }
 
 // Codec is libhoop's HTTP Inspector with the relay's additions.
@@ -100,6 +106,7 @@ type Codec struct {
 
 	creds credentials
 	via   viaFilter
+	sql   *sqlReader
 }
 
 // New builds an HTTP codec.
@@ -134,14 +141,21 @@ func New(o Options) *Codec {
 	c := &Codec{
 		Inspector: codechttp.New(codechttp.Options{
 			CaptureBody:          o.CaptureBody,
-			CaptureRequestBody:   o.CaptureRequestBody,
+			CaptureRequestBody:   o.CaptureRequestBody || o.SQL != nil,
 			MaxBodyBytes:         o.MaxBodyBytes,
 			Headers:              headers,
 			SensitiveQueryParams: o.SensitiveQueryParams,
 			MaxMessageBytes:      o.MaxMessageBytes,
+			// A lane with a mask rule promises the operator masked
+			// responses. A body too large to mask, held or inflated, is
+			// refused rather than forwarded as it came: a gzip body is small
+			// on the wire, so the server, not the limit, decides whether it
+			// reaches the client unmasked.
+			RefuseUnmaskable: true,
 		}),
 		creds: credentials{header: header, keep: keep, authenticates: o.AuthenticatesCaller},
 		via:   viaFilter{origin: o.Origin},
+		sql:   newSQLReader(o.SQL),
 	}
 	c.via.guard.seen = o.Seen
 	if c.via.guard.seen == nil {
@@ -185,6 +199,11 @@ func (c *Codec) CredentialHeader() string { return c.creds.header }
 // origin lane passes a connection through only once the server grants the
 // switch a request asked for. The gate decodes a response before it
 // forwards it, so the filter knows before the client can act on it.
+//
+// On a lane that reads SQL bodies, each client request is followed by the
+// SQL statements its body carries (sqlbody.go). A request the lane refuses
+// for its body is reported as an error wrapping inspect.ErrStreamUnsafe, the
+// same way a lifting failure is.
 func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
 	stmts, n, err := c.Inspector.Decode(dir, data)
 	var liftErr error
@@ -201,7 +220,42 @@ func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement,
 	if liftErr != nil {
 		err = errors.Join(liftErr, err)
 	}
+	if c.sql != nil && dir == inspect.FromClient {
+		var sqlErr error
+		stmts, sqlErr = c.withSQL(stmts)
+		if sqlErr != nil {
+			err = errors.Join(sqlErr, err)
+		}
+	}
 	return stmts, n, err
+}
+
+// withSQL places each request's SQL statements right after it. The order is
+// load-bearing: the gate resolves the caller and rotates the session on the
+// request statement, so the SQL that follows is judged under that caller.
+func (c *Codec) withSQL(stmts []inspect.Statement) ([]inspect.Statement, error) {
+	var out []inspect.Statement
+	for i := range stmts {
+		out = append(out, stmts[i])
+		d := stmts[i].HTTP
+		if d == nil || d.Method == "" || d.StatusCode != 0 {
+			continue // not a request: a WebSocket message, a response
+		}
+		sql, err := c.sql.extract(&stmts[i])
+		if err != nil {
+			return out, err
+		}
+		if len(sql) == 0 {
+			continue
+		}
+		req := &out[len(out)-1]
+		if req.Metadata == nil {
+			req.Metadata = map[string]string{}
+		}
+		req.Metadata[MetadataSQLStatements] = strconv.Itoa(len(sql))
+		out = append(out, sql...)
+	}
+	return out, nil
 }
 
 // InspectRequest is libhoop's InspectRequest with the Connect Gateway

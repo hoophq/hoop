@@ -55,6 +55,11 @@ type HTTPCodecConfig struct {
 	// (access_token, api_key, sig, X-Amz-Signature, ...); this list widens
 	// that for a deployment's own spelling. There is no way to narrow it.
 	SensitiveQueryParams []string `json:"sensitive_query_params,omitempty" cap:"sensitive_query_params" since:"1.184.2" label:"Sensitive query parameters" help:"Extra parameter names whose value is redacted before anything sees the request."`
+
+	// SQL reads the SQL out of JSON request bodies into statements of their
+	// own, so operation and table rules judge it. It captures request
+	// bodies. See httpsql.go.
+	SQL *HTTPSQLConfig `json:"sql,omitempty" cap:"http_sql" label:"SQL in request bodies" help:"Reads the SQL a JSON API carries in its request body, so operation and table rules judge it. Request bodies are captured."`
 }
 
 // headerNames is the allowlist as the codec receives it: trimmed and
@@ -130,6 +135,7 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 	if h.MaxBodyBytes < 0 {
 		problems = append(problems, fmt.Sprintf("listener %q: http.max_body_bytes is negative", lane))
 	}
+	problems = append(problems, h.SQL.validate(lane)...)
 	return problems
 }
 

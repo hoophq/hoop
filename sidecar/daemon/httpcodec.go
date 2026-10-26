@@ -44,6 +44,10 @@ import (
 // upstream accepted (codechttp.Options.Seen), so a token learned on one
 // connection is kept out of the next one's URL. A reload builds a new
 // factory, and with it an empty memory.
+//
+// A lane with an http.sql block captures request bodies too, because the
+// SQL it reads is in them; the body then reaches policy, the analyzer and
+// the audit trail, as with a lane that holds.
 func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, holds bool, origin *codechttp.Origin) func() inspect.Codec {
 	opts := codechttp.Options{
 		// headerNames is normalized once, the same list validate checked,
@@ -59,6 +63,7 @@ func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, 
 		opts.CaptureBody = cfg.CaptureBody
 		opts.MaxBodyBytes = cfg.MaxBodyBytes
 		opts.SensitiveQueryParams = cfg.SensitiveQueryParams
+		opts.SQL = cfg.SQL.codecOptions()
 	}
 	return func() inspect.Codec { return codechttp.New(opts) }
 }
