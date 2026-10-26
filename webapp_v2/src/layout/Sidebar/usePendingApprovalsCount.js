@@ -20,16 +20,33 @@ export function usePendingApprovalsCount() {
     fetchCount()
   }, [pathname, search, collapsed, fetchCount])
 
+  // One read each time the user comes back. A tab switch fires both focus and
+  // visibilitychange; a window uncovered without focus fires only the latter.
   useEffect(() => {
-    const onFocus = () => fetchCount()
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
+    let away = document.hidden || !document.hasFocus()
+    const leave = () => {
+      away = true
+    }
+    const back = () => {
+      if (!away) return
+      away = false
+      fetchCount()
+    }
+    const onVisibility = () => (document.hidden ? leave() : back())
+    window.addEventListener('blur', leave)
+    window.addEventListener('focus', back)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('blur', leave)
+      window.removeEventListener('focus', back)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [fetchCount])
 
   useLiveEvent(
     LIVE_EVENTS.REVIEW_CREATED,
     () => {
-      // A hidden tab skips it: the focus read above catches up on return.
+      // A hidden tab skips it: the read on return catches up.
       if (!document.hidden) fetchCount()
     },
     live,
