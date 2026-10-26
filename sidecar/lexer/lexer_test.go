@@ -597,12 +597,14 @@ func TestKeywordColumnIntroducesNoRelation(t *testing.T) {
 		tc{`SELECT 1 AS from FROM salaries`, salaries},
 		tc{`SELECT * FROM salaries update JOIN secrets ON true`, []string{"salaries", "secrets"}},
 		tc{`SELECT * FROM salaries AS join JOIN secrets ON true`, []string{"salaries", "secrets"}},
-		// A keyword alias on a VALUES list and in a CTE. The ticket's comma
-		// forms of these (`x(update), salaries`) lose salaries to a FROM
-		// list that ends after an aliased item: a separate defect.
+		// A keyword alias on a VALUES list and in a CTE, joined and in a
+		// comma list. The comma forms also need the FROM list to continue
+		// past an aliased item; see TestFromListContinuesPastAnyItem.
 		tc{`SELECT x.update FROM (VALUES (1)) x(update) JOIN salaries ON true`, salaries},
+		tc{`SELECT x.update FROM (VALUES (1)) x(update), salaries`, salaries},
 		tc{`WITH s AS (SELECT amount AS update FROM salaries) SELECT s.update FROM s`, salaries},
 		tc{`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s JOIN salaries ON true`, salaries},
+		tc{`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s, salaries`, salaries},
 	)
 	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
 		lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
@@ -617,6 +619,137 @@ func TestKeywordColumnIntroducesNoRelation(t *testing.T) {
 			if missing || len(writes(a)) != 0 || !permissive && !slices.Equal(got, c.reads) {
 				t.Errorf("%s: reads = %v, writes = %v, want reads %v: %s", d, got, writes(a), c.reads, c.sql)
 			}
+		}
+	}
+}
+
+// A FROM list continues past an item with an alias, a subquery, a CTE name or
+// a function call. The scanner followed a list only across bare names, so
+// `SELECT * FROM a x, salaries` read a, and a rule fencing reads of salaries
+// let it through (ENG-859). The same list after DELETE's USING, UPDATE's FROM
+// and MySQL's multi-table UPDATE names relations too.
+func TestFromListContinuesPastAnyItem(t *testing.T) {
+	all := []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+		lexer.GoogleSQL, lexer.Oracle, lexer.Spark}
+	for _, tc := range []struct {
+		ds            []lexer.Dialect
+		sql           string
+		reads, writes []string
+	}{
+		{all, `SELECT * FROM a x, salaries`, []string{"a", "salaries"}, nil},
+		{all, `SELECT * FROM a AS x, b y, salaries`, []string{"a", "b", "salaries"}, nil},
+		{all, `SELECT * FROM (SELECT 1) x, salaries`, []string{"salaries"}, nil},
+		{all, `SELECT * FROM a x, (SELECT * FROM salaries) y`, []string{"a", "salaries"}, nil},
+		{all, `WITH s AS (SELECT 1) SELECT * FROM s, salaries`, []string{"salaries"}, nil},
+		{all, `SELECT * FROM generate_series(1, 2) g, salaries`, []string{"salaries"}, nil},
+		{all, `SELECT * FROM a JOIN b ON a.id = b.id, salaries`, []string{"a", "b", "salaries"}, nil},
+		{all, `SELECT * FROM a JOIN b USING (id), salaries`, []string{"a", "b", "salaries"}, nil},
+		{all, `SELECT * FROM a x LEFT OUTER JOIN b y ON true, salaries`, []string{"a", "b", "salaries"}, nil},
+		// A clause word as a member or an alias ends nothing.
+		{all, `SELECT * FROM a JOIN b ON a.limit = b.limit, salaries`, []string{"a", "b", "salaries"}, nil},
+		{all, `SELECT * FROM a AS limit, salaries`, []string{"a", "salaries"}, nil},
+		{all, `SELECT 1 AS limit FROM a x, salaries`, []string{"a", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Oracle}, `SELECT * FROM a limit, salaries`, []string{"a", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Oracle}, `SELECT * FROM a limit JOIN salaries ON true`, []string{"a", "salaries"}, nil},
+		// DISTINCT as a member is not IS DISTINCT FROM; Spark allows a
+		// table called as.
+		{all, `SELECT s.distinct FROM a s, salaries`, []string{"a", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Spark}, `SELECT * FROM as x, salaries`, []string{"as", "salaries"}, nil},
+		{all, `SELECT * FROM t1 UNION SELECT * FROM t2 x, salaries`, []string{"t1", "t2", "salaries"}, nil},
+		{all, `CREATE VIEW v AS SELECT * FROM a x, salaries`, []string{"a", "salaries"}, []string{"v"}},
+		{[]lexer.Dialect{lexer.Postgres}, `DELETE FROM t x USING s y, salaries WHERE x.id = y.id`,
+			[]string{"s", "salaries"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.Postgres, lexer.MSSQL}, `UPDATE t SET a = 1 FROM s x, salaries WHERE t.id = x.id`,
+			[]string{"s", "salaries"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.MySQL}, `UPDATE t1 a, salaries b SET a.x = b.y`, []string{"salaries"}, []string{"t1"}},
+		{[]lexer.Dialect{lexer.MSSQL}, `SELECT * FROM a x WITH (NOLOCK), salaries`, []string{"a", "salaries"}, nil},
+		// T-SQL's OUTPUT comes before UPDATE's FROM.
+		{[]lexer.Dialect{lexer.MSSQL}, `UPDATE t SET x = s.amount OUTPUT inserted.x FROM a q, salaries s WHERE t.id = s.id`,
+			[]string{"a", "salaries"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.MSSQL}, `SELECT * FROM a FOR SYSTEM_TIME AS OF '2020-01-01' x, salaries`,
+			[]string{"a", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Oracle}, `SELECT * FROM a x, b@link y, salaries`, []string{"a", "b", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.GoogleSQL}, `SELECT * FROM t x, UNNEST(x.arr) AS e WITH OFFSET AS o, salaries`,
+			[]string{"t", "salaries"}, nil},
+		{[]lexer.Dialect{lexer.Spark}, `FROM a x, salaries INSERT INTO t SELECT c, d`,
+			[]string{"a", "salaries"}, []string{"t"}},
+		// Spark does not reserve TABLE: here it aliases a.
+		{[]lexer.Dialect{lexer.Spark}, `SELECT * FROM a table JOIN salaries ON true`,
+			[]string{"a", "join", "salaries"}, nil},
+	} {
+		for _, d := range tc.ds {
+			a := lexer.Analyze(tc.sql, d)
+			if !slices.Equal(reads(a), tc.reads) || !slices.Equal(writes(a), tc.writes) {
+				t.Errorf("%s: reads = %v, writes = %v, want %v and %v: %s", d, reads(a), writes(a), tc.reads, tc.writes, tc.sql)
+			}
+		}
+	}
+}
+
+// The clause after a FROM list ends it. Its commas separate columns, sort
+// keys or settings, and read as list items they would name relations that a
+// rule acts on.
+func TestFromListEndsAtTheNextClause(t *testing.T) {
+	all := []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+		lexer.GoogleSQL, lexer.Oracle, lexer.Spark}
+	for _, tc := range []struct {
+		ds            []lexer.Dialect
+		sql           string
+		reads, writes []string
+	}{
+		{all, `SELECT a, b FROM t x GROUP BY a, b ORDER BY a, b`, []string{"t"}, nil},
+		{all, `SELECT * FROM t x WHERE a IN (1, 2) AND b = 1`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.Postgres}, `SELECT * FROM t x WINDOW w AS (ORDER BY a), v AS (ORDER BY b)`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.Postgres}, `DELETE FROM t USING s x WHERE t.id = x.id RETURNING t.a, t.b`,
+			[]string{"s"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.Postgres}, `UPDATE t SET a = 1, b = 2 FROM s x WHERE t.id = x.id`,
+			[]string{"s"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.Postgres}, `INSERT INTO t SELECT * FROM s x ON CONFLICT (k) DO UPDATE SET c = 1, d = 2`,
+			[]string{"s"}, []string{"t"}},
+		{[]lexer.Dialect{lexer.MySQL}, `SELECT * FROM t x LIMIT 1, 2`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.MSSQL}, `DELETE FROM t OUTPUT deleted.a, deleted.b WHERE id = 1`, nil, []string{"t"}},
+		{[]lexer.Dialect{lexer.MSSQL}, `SELECT * FROM t x OPTION (MAXDOP 1), a`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.ClickHouse}, `SELECT * FROM t x SETTINGS max_threads = 1, max_memory_usage = 2`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.ClickHouse}, `SELECT * FROM t x LIMIT 1 BY a, b`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.Spark}, `SELECT * FROM t x DISTRIBUTE BY a, b SORT BY a, b`, []string{"t"}, nil},
+		{[]lexer.Dialect{lexer.Spark, lexer.GoogleSQL}, `SELECT * FROM t x QUALIFY row_number() OVER (PARTITION BY a) = 1, b`,
+			[]string{"t"}, nil},
+	} {
+		for _, d := range tc.ds {
+			a := lexer.Analyze(tc.sql, d)
+			if !slices.Equal(reads(a), tc.reads) || !slices.Equal(writes(a), tc.writes) {
+				t.Errorf("%s: reads = %v, writes = %v, want %v and %v: %s", d, reads(a), writes(a), tc.reads, tc.writes, tc.sql)
+			}
+		}
+	}
+}
+
+// IS [NOT] DISTINCT FROM compares; its FROM begins no list.
+func TestIsDistinctFromBeginsNoList(t *testing.T) {
+	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse,
+		lexer.GoogleSQL, lexer.Oracle, lexer.Spark} {
+		for _, sql := range []string{
+			`SELECT a IS DISTINCT FROM 1, salaries FROM t`,
+			`SELECT a IS NOT DISTINCT FROM 1, salaries FROM t`,
+		} {
+			if got := reads(lexer.Analyze(sql, d)); !slices.Equal(got, []string{"t"}) {
+				t.Errorf("%s: reads = %v, want [t]: %s", d, got, sql)
+			}
+		}
+	}
+}
+
+// ClickHouse's ARRAY JOIN lists arrays, after a plain or an aliased item. Its
+// commas name no relation.
+func TestClickHouseArrayJoinEndsTheList(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT * FROM salaries ARRAY JOIN tags AS tag, names AS name`,
+		`SELECT * FROM salaries s ARRAY JOIN tags AS tag, names AS name`,
+		`SELECT * FROM salaries s LEFT ARRAY JOIN tags AS tag, names AS name`,
+	} {
+		got := reads(lexer.Analyze(sql, lexer.ClickHouse))
+		if !slices.Contains(got, "salaries") || slices.Contains(got, "names") {
+			t.Errorf("reads = %v, want salaries and not names: %s", got, sql)
 		}
 	}
 }

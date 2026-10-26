@@ -110,6 +110,12 @@ type region struct {
 	// yet. `DELETE FROM a USING b` writes a and reads b, and only position
 	// distinguishes them.
 	firstTarget bool
+
+	// listOpen is true while the comma-separated relation list that the
+	// introducer at listIntro began is still open in this region; see
+	// openList and listEnds.
+	listOpen  bool
+	listIntro int
 }
 
 type analyzer struct {
@@ -387,6 +393,14 @@ func (a *analyzer) walk() {
 				if a.inCTEList && len(a.stack) == 1 {
 					a.expectCTEName = true
 				}
+				// The next item of an open FROM list, after an item
+				// relationsAfter stopped at; see openList.
+				if r := a.top(); r.listOpen {
+					if j, rel, ok := a.relationAt(r.listIntro, i); ok {
+						a.addRelation(rel)
+						i = j
+					}
+				}
 				atHead = a.wrapper
 				continue
 			case "@":
@@ -424,6 +438,10 @@ func (a *analyzer) walk() {
 		if t.Kind != Word {
 			atHead = a.wrapper
 			continue
+		}
+
+		if r := a.top(); r.listOpen && a.listEnds(i) {
+			r.listOpen = false
 		}
 
 		// A CTE name is bound, never classified. Without this the name
@@ -500,12 +518,7 @@ func (a *analyzer) walk() {
 			// RENAME t TO u. Consuming the head must not skip the
 			// target they name.
 			if relIntro[t.Text] || a.d == Oracle && t.Text == "rename" {
-				if j, rels, ok := a.relationsAfter(i); ok {
-					for _, rel := range rels {
-						a.addRelation(rel)
-					}
-					i = j
-				}
+				i = a.claimRelations(i)
 			} else if a.d == Spark {
 				i = a.sparkTarget(i)
 			}
@@ -526,13 +539,8 @@ func (a *analyzer) walk() {
 			!(a.d == Oracle && a.forUpdate(i)) {
 			column := a.namesAColumn(i)
 			if !column || a.mayBeAClause(i) {
-				if j, rels, ok := a.relationsAfter(i); ok {
-					for _, rel := range rels {
-						a.addRelation(rel)
-					}
-					if !column {
-						i = j
-					}
+				if j := a.claimRelations(i); !column {
+					i = j
 				}
 			}
 			if !column {
@@ -762,6 +770,7 @@ func (a *analyzer) head(t Token, i int) bool {
 	r := a.top()
 	r.verb = verb
 	r.firstTarget = true
+	r.listOpen = false
 	a.effects = append(a.effects, verb)
 	return true
 }
@@ -941,8 +950,9 @@ func (a *analyzer) relationsAfter(i int) (int, []Relation, bool) {
 		}
 		out = append(out, rel)
 		j = next
-		// Continue only across a comma at this nesting level. Anything
-		// else ends the list.
+		// Continue across a comma straight after the name. A list whose
+		// item carries an alias or is a subquery continues in walk; see
+		// openList.
 		if j+1 < len(a.toks) && a.toks[j+1].Kind == Punct && a.toks[j+1].Text == "," {
 			j++
 			continue
@@ -950,6 +960,127 @@ func (a *analyzer) relationsAfter(i int) (int, []Relation, bool) {
 		break
 	}
 	return j, out, len(out) > 0
+}
+
+// claimRelations records the relations the introducer at i names, opens the
+// list it begins, and returns the index it consumed through.
+func (a *analyzer) claimRelations(i int) int {
+	a.openList(i)
+	j, rels, ok := a.relationsAfter(i)
+	if !ok {
+		return i
+	}
+	for _, rel := range rels {
+		a.addRelation(rel)
+	}
+	return j
+}
+
+// openList opens the relation list that the introducer at i begins, so walk
+// reads the item after each comma at this level until listEnds closes it.
+//
+// relationsAfter follows a list only across bare names. An alias, a subquery,
+// a CTE name or a function call ended it, and every relation after one was
+// lost: `SELECT * FROM a x, salaries` read a, and a rule fencing reads of
+// salaries let it through (ENG-859). Three introducers begin such a list:
+// FROM, DELETE's USING, and UPDATE as a statement head (MySQL's `UPDATE a x,
+// b SET`). A list is per region, so a subquery's list closes with it.
+//
+// The FROM of IS [NOT] DISTINCT FROM compares and opens nothing. Every other
+// FROM opens a list: the dialects that reserve FROM have no other, and on
+// ClickHouse and Spark, which do not, a column called from in a later clause
+// (`ORDER BY from, x`) cannot be told from the clause, so the list reading is
+// kept as mayBeAClause keeps it. A missed relation is a bypass; an extra one
+// is a name no rule was written against.
+func (a *analyzer) openList(i int) {
+	r := a.top()
+	switch intro := a.toks[i].Text; {
+	case !introduces(intro, r.verb):
+		return
+	case intro == "from":
+		if a.isDistinctFrom(i) {
+			return
+		}
+		r.listOpen, r.listIntro = true, i
+	case intro == "using" && r.verb == Delete,
+		intro == "update" && r.verb == Update:
+		r.listOpen, r.listIntro = true, i
+	}
+}
+
+// isDistinctFrom reports whether the FROM at i ends IS [NOT] DISTINCT FROM.
+func (a *analyzer) isDistinctFrom(i int) bool {
+	if i < 2 || !a.toks[i-1].isWord("distinct") {
+		return false
+	}
+	return a.toks[i-2].isWord("is") || i >= 3 && a.toks[i-2].isWord("not") && a.toks[i-3].isWord("is")
+}
+
+// listEnds reports whether the word at i begins the clause after a FROM,
+// USING or UPDATE list, whose commas separate columns or settings instead of
+// relations. A JOIN, its ON condition and USING (cols) stay inside the list:
+// `FROM a JOIN b ON a.id = b.id, c` reads c.
+//
+// A clause word may also be a member or an alias, where it ends nothing:
+// after a dot (`ON a.limit = b.limit, c`), and before a comma or a join
+// (`FROM a limit, c` aliases a on Oracle, which does not reserve LIMIT).
+// Words that are an alias more often than not end the list only with the
+// word that follows them in the clause, so `FROM a start, b` still reads b.
+func (a *analyzer) listEnds(i int) bool {
+	next := func(w string) bool { return i+1 < len(a.toks) && a.toks[i+1].isWord(w) }
+	if a.toks[i].Text == "array" && a.d == ClickHouse && next("join") && !a.puncts(i-1, ".") {
+		// `ARRAY JOIN arr AS a, arr2 AS b` lists arrays, not relations.
+		// JOIN follows it, so it is tested before the alias rule below.
+		return true
+	}
+	if a.puncts(i-1, ".") || a.puncts(i+1, ",") || a.joinsAt(i+1) {
+		return false
+	}
+	switch a.toks[i].Text {
+	case "where", "having", "limit", "fetch", "window", "returning", "set",
+		"union", "intersect", "except", "select", "values", "insert", "into", "do":
+		return true
+	case "offset":
+		// GoogleSQL numbers an UNNEST item: `UNNEST(a) AS e WITH OFFSET AS o, t`.
+		return !(i > 0 && a.toks[i-1].isWord("with"))
+	case "group", "order", "sort", "cluster", "distribute", "connect":
+		return next("by")
+	case "start":
+		return next("with")
+	case "for":
+		// T-SQL and MariaDB name a temporal table's version inside the
+		// item: `FROM t FOR SYSTEM_TIME AS OF x, u`.
+		return !next("system_time")
+	case "duplicate":
+		return a.d == MySQL && next("key")
+	case "qualify":
+		return a.d == Spark || a.d == GoogleSQL
+	case "minus":
+		return a.d == Oracle || a.d == Spark
+	case "prewhere", "settings", "format":
+		return a.d == ClickHouse
+	case "lateral":
+		// `LATERAL VIEW explode(m) e AS k, v` names columns.
+		return a.d == Spark && next("view")
+	case "option", "output":
+		return a.d == MSSQL
+	}
+	return false
+}
+
+// joinsAt reports whether a join or its condition begins at k: JOIN, ON,
+// USING, or a join type before JOIN (`LEFT OUTER JOIN`).
+func (a *analyzer) joinsAt(k int) bool {
+	for ; k < len(a.toks) && a.toks[k].Kind == Word; k++ {
+		switch a.toks[k].Text {
+		case "join", "on", "using":
+			return true
+		case "inner", "left", "right", "full", "cross", "natural", "outer":
+			continue
+		}
+		return false
+	}
+	return false
 }
 
 // relationAt resolves one name starting after position j, under the
@@ -1252,9 +1383,10 @@ func (a *analyzer) forUpdate(i int) bool {
 //     UPDATE, TRUNCATE or COPY names outside head position. VIEW can under
 //     DDL (`DROP VIEW join` on Oracle, which does not reserve JOIN), so it
 //     counts only under other verbs.
-//   - on ClickHouse and Spark, which reserve none of the introducers, at the
-//     start of a select-list item, where no introducer can stand:
-//     `SELECT database, table FROM system.parts` is ClickHouse's catalog.
+//   - anywhere on ClickHouse and Spark, which reserve none of the
+//     introducers: `SELECT database, table FROM system.parts` is ClickHouse's
+//     catalog, and `FROM a table JOIN b` aliases a. There mayBeAClause keeps
+//     the introducer reading too.
 //
 // FROM and JOIN are not banned as names: Oracle allows a table called join,
 // and ClickHouse and Spark one called from.
@@ -1268,7 +1400,7 @@ func (a *analyzer) namesAColumn(i int) bool {
 	switch {
 	case a.toks[i-1].isWord("as"):
 		return !ddlVerb(a.top().verb)
-	case (a.d == ClickHouse || a.d == Spark) && a.selectItemStart(i):
+	case a.d == ClickHouse || a.d == Spark:
 		return true
 	}
 	switch a.toks[i].Text {
@@ -1290,10 +1422,4 @@ func (a *analyzer) namesAColumn(i int) bool {
 // written against. After a dot the word is a member in every reading.
 func (a *analyzer) mayBeAClause(i int) bool {
 	return (a.d == ClickHouse || a.d == Spark) && !a.puncts(i-1, ".")
-}
-
-// selectItemStart reports whether the token at i starts a select-list item:
-// SELECT, DISTINCT or a comma is before it.
-func (a *analyzer) selectItemStart(i int) bool {
-	return i > 0 && (a.puncts(i-1, ",") || a.toks[i-1].isWord("select") || a.toks[i-1].isWord("distinct"))
 }

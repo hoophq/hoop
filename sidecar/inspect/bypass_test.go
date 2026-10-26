@@ -345,9 +345,10 @@ select t.* from table_privileges t`
 }
 
 // A rule that fences reads of salaries refuses every select of it, whatever
-// its columns are called. A column or alias spelling update, into or another
-// relation introducer took the FROM after it for the relation, so the select
-// passed while `SELECT s.amount FROM salaries s` was refused (ENG-859).
+// its columns are called and wherever it stands in a FROM list. A column or
+// alias spelling update, into or another relation introducer took the FROM
+// after it for the relation, and an aliased item ended the FROM list, so the
+// select passed while `SELECT s.amount FROM salaries s` was refused (ENG-859).
 func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
 	fence, err := policy.NewRules([]policy.Rule{{
 		Name: "salaries-is-hidden", Type: policy.MatchTable, Tables: []string{"salaries"},
@@ -366,8 +367,15 @@ func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
 		`SELECT update FROM salaries`,
 		`SELECT * FROM t update JOIN salaries ON true`,
 		`SELECT x.update FROM (VALUES (1)) x(update) JOIN salaries ON true`,
+		`SELECT x.update FROM (VALUES (1)) x(update), salaries`,
 		`WITH s AS (SELECT amount AS update FROM salaries) SELECT s.update FROM s`,
 		`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s JOIN salaries ON true`,
+		`WITH s AS (SELECT 1 AS update) SELECT s.update, salaries.* FROM s, salaries`,
+		// A FROM list continues past an aliased item, a subquery and a
+		// function call.
+		`SELECT * FROM t x, salaries`,
+		`SELECT * FROM (SELECT 1) x, salaries`,
+		`SELECT * FROM generate_series(1, 2) g, salaries`,
 		// Spark does not reserve AS: here it is a column, and FROM is real.
 		`SELECT as FROM salaries`,
 	} {
