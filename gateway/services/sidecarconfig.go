@@ -53,16 +53,18 @@ func ComposeSidecarConfigurationWithOwners(db *gorm.DB, sc *models.Sidecar) (Com
 
 // ServedSidecarConfiguration is the document the plane serves this sidecar's
 // build, as its last handshake reported it: composed, then downgraded for a
-// build without the object form of a risk level. A filing is authorized
-// against it, so a sidecar files under what it was served. A build the plane
-// refuses to serve gets ErrSidecarCapabilityMissing.
-func ServedSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (daemon.Config, error) {
+// build without the object form of a risk level, with the analyzer rule bound
+// to each listener. A filing is authorized against it, so a sidecar files
+// under what it was served. A build the plane refuses to serve gets
+// ErrSidecarCapabilityMissing.
+func ServedSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (ComposedSidecar, error) {
 	composed, err := composeSidecar(db, sc, "", "")
 	if err != nil {
-		return composed.Config, err
+		return composed, err
 	}
 	hs := daemon.Handshake{Version: reportedVersion(sc), Capabilities: sc.Capabilities}
-	return DowngradeForBuild(db, sc, composed, hs, "")
+	composed.Config, err = DowngradeForBuild(db, sc, composed, hs, "")
+	return composed, err
 }
 
 // ErrSidecarRulesUnavailable marks a composition that could not be ATTEMPTED,

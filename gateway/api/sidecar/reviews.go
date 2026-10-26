@@ -964,7 +964,7 @@ func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, 
 		case err != nil:
 			return nil, fmt.Errorf("failed composing the sidecar configuration: %w", err)
 		}
-		listeners = served.Listeners
+		listeners = served.Config.Listeners
 	}
 	if !listenerNamesApprovalRule(listeners, listenerName, ruleName) {
 		return nil, refuse
@@ -993,22 +993,28 @@ func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, 
 }
 
 // authorizedRiskLevel reads the level a filing names in the analyzer block
-// SERVED to this listener, the composed one, as authorizedApprovalRule does.
-// The level must hold for the approver the body names, or, with handoff,
-// hand off to an agent that can select a hold for that approver. It returns
-// the held level (for a hand-off, the hold it selects) and the analyzer rule
-// bound to the listener ("" for the listener's own block).
+// SERVED to this build, as authorizedApprovalRule does. A build without the
+// object form is served a bare hold, or nothing, so it never holds a level
+// object and its level filing is refused. The level must hold for the
+// approver the body names, or, with handoff, hand off to an agent that can
+// select a hold for that approver. It returns the held level (for a hand-off,
+// the hold it selects) and the analyzer rule bound to the listener ("" for
+// the listener's own block).
 func authorizedRiskLevel(db *gorm.DB, sidecar *models.Sidecar, listenerName string, level analyzer.RiskLevel,
 	approver analyzer.Approver, handoff bool) (daemon.RiskLevel, string, error) {
 	refuse := levelNotAuthorized{listenerName: listenerName, level: string(level), approver: string(approver)}
 	listeners := sidecar.Configuration.Listeners
 	var owners map[string]string
 	if db != nil {
-		composed, err := services.ComposeSidecarConfigurationWithOwners(db, sidecar)
-		if err != nil {
+		served, err := services.ServedSidecarConfiguration(db, sidecar)
+		var missing services.ErrSidecarCapabilityMissing
+		switch {
+		case errors.As(err, &missing):
+			return daemon.RiskLevel{}, "", refuse
+		case err != nil:
 			return daemon.RiskLevel{}, "", fmt.Errorf("failed composing the sidecar configuration: %w", err)
 		}
-		listeners, owners = composed.Config.Listeners, composed.Analyzers
+		listeners, owners = served.Config.Listeners, served.Analyzers
 	}
 	held, ok := listenerHoldsLevel(listeners, listenerName, level, approver, handoff)
 	if !ok {
