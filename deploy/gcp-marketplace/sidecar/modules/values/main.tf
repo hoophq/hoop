@@ -28,7 +28,26 @@ locals {
   # config that puts admin anywhere else.
   admin_listen = "0.0.0.0:19000"
 
-  simple_config = {
+  # The free tier enforces one guardrail rule, so a preset is one rule.
+  # read-only is the agents-read-only rule of
+  # deploy/gcp-agent-runtime/postgres/deploy/sidecar/sidecar.yaml, measured
+  # on postgres. It never names unknown: on a wire lane that refuses every
+  # result set, SELECT 1 included (ENG-545). call covers DO, CALL and EXECUTE.
+  guardrail_presets = {
+    none = {}
+    read-only = {
+      guardrails = {
+        rules = [{
+          name       = "read-only"
+          type       = "operation"
+          operations = ["insert", "update", "delete", "create", "drop", "alter", "truncate", "grant", "revoke", "call", "other"]
+          message    = "hoop: this connection may read the database, not change it"
+        }]
+      }
+    }
+  }
+
+  simple_config = merge({
     admin = { listen = local.admin_listen }
     audit = { file = "-" }
     listeners = [{
@@ -37,7 +56,7 @@ locals {
       listen   = "0.0.0.0:${local.simple_ports.listen}"
       upstream = var.upstream
     }]
-  }
+  }, local.guardrail_presets[var.guardrail_preset])
 
   # yamldecode reads JSON as well: JSON is YAML.
   document = var.config_source == "document" && trimspace(var.config_document) != "" ? yamldecode(var.config_document) : null

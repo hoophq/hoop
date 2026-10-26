@@ -1,0 +1,34 @@
+# Checks the GCP Marketplace sidecar module in deploy/gcp-marketplace/sidecar/
+# on every PR that touches it. The deploy form runs the module as is, so a
+# simple config the sidecar refuses must fail here, not in a customer's first
+# deploy.
+name: gcp-marketplace
+
+on:
+  pull_request:
+    paths:
+      - deploy/gcp-marketplace/sidecar/**
+      # The read-only preset is this template's rule; the test compares them.
+      - deploy/gcp-agent-runtime/postgres/deploy/sidecar/sidecar.yaml
+      - scripts/gcp-marketplace/**
+      - .github/workflows/gcp-marketplace.yml
+
+# A newer run for the same PR makes this one stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sidecar:
+    runs-on: ubuntu-latest
+    name: sidecar module
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+      - name: Assert the simple config, with and without the read-only preset, is one the sidecar accepts
+        run: scripts/gcp-marketplace/sidecar_simple_test.sh

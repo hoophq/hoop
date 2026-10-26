@@ -6,6 +6,12 @@ output "values_yaml" {
     condition     = var.config_source != "simple" || can(regex("^(\\[[0-9A-Fa-f:.]+\\]|[^\\s:\\[\\]]+):[0-9]+$", var.upstream))
     error_message = "upstream must be host:port, for example appdb.default.svc.cluster.local:5432."
   }
+  # On the other protocols the same rule denies reads (USE, sp_executesql,
+  # getMore) and lets writes pass (REPLACE INTO, OPTIMIZE): ENG-905.
+  precondition {
+    condition     = var.config_source != "simple" || var.guardrail_preset == "none" || var.protocol == "postgres"
+    error_message = "guardrail_preset = read-only is for postgres only. For ${var.protocol}, write the rule in a config document (config_source = document)."
+  }
   precondition {
     condition     = var.config_source != "document" || length(try(local.document.listeners, [])) > 0
     error_message = "config_document is empty or names no listeners: the sidecar does not start without one."

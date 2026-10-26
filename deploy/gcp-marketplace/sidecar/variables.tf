@@ -106,6 +106,12 @@ variable "service_port" {
   default     = 0
 }
 
+variable "guardrail_preset" {
+  description = "simple: none (audit only), or read-only to deny every statement that writes or changes the database. read-only is for postgres only."
+  type        = string
+  default     = "none"
+}
+
 variable "config_document" {
   description = "document: the whole sidecar config as JSON or YAML. admin.listen must be 0.0.0.0:19000."
   type        = string

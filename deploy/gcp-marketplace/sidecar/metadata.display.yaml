@@ -122,6 +122,16 @@ spec:
           section: sidecar
           level: 1
           toggleUsingVariable: *simple
+        # One rule: the free tier enforces one guardrail rule.
+        guardrail_preset:
+          name: guardrail_preset
+          title: Guardrail
+          tooltip: Read-only denies every statement that writes or changes the database. PostgreSQL only; for another protocol or rule, use a whole config document.
+          section: sidecar
+          enumValueLabels:
+            - {label: None (audit only), value: none}
+            - {label: Read-only (deny writes), value: read-only}
+          toggleUsingVariable: *simple
         config_document:
           name: config_document
           title: Config document
