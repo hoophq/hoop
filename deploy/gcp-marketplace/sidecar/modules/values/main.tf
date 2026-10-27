@@ -33,6 +33,9 @@ locals {
   # deploy/gcp-agent-runtime/postgres/deploy/sidecar/sidecar.yaml, measured
   # on postgres. It never names unknown: on a wire lane that refuses every
   # result set, SELECT 1 included (ENG-545). call covers DO, CALL and EXECUTE.
+  # Known gaps, in the README: EXPLAIN ANALYSE, EXPLAIN ("analyze") and
+  # SELECT ... INTO pass as select (ENG-803); SAVEPOINT, LISTEN and
+  # DISCARD ALL are denied as other (ENG-905).
   guardrail_presets = {
     none = {}
     read-only = {

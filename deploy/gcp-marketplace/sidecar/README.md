@@ -58,7 +58,7 @@ The chart and image locations are the ones the Marketplace listing shows.
 | `protocol` | `simple`: `postgres`, `mysql`, `mssql`, `mongodb`, `oracle`, `clickhouse` or `http` |
 | `upstream` | `simple`: the resource, `host:port` |
 | `service_port` | `simple`: the port clients connect to. Default: the protocol's usual port (5432 for postgres) |
-| `guardrail_preset` | `simple`: `none` (default, audit only) or `read-only`, which denies every write. `postgres` only |
+| `guardrail_preset` | `simple`: `none` (default, audit only) or `read-only`, one rule that denies the write operations. `postgres` only |
 | `config_document` | `document`: the whole config, JSON or YAML. `admin.listen` must be `0.0.0.0:19000` |
 | `existing_config_map` | `configmap`: a ConfigMap in `namespace` whose `config.yaml` is the config |
 | `control_plane_url`, `control_plane_token` | `control_plane`: take the config from a hoop control plane. The plane must already hold this sidecar's configuration: this mode ships no local document to seed it |
@@ -70,13 +70,23 @@ The chart and image locations are the ones the Marketplace listing shows.
 | `replicas`, `cpu`, `memory` | Size of the Deployment. Default 1 pod, 500m, 512Mi |
 
 `guardrail_preset = read-only` gives a `simple` install the free tier's one
-guardrail rule. It denies the operations `insert`, `update`, `delete`,
-`create`, `drop`, `alter`, `truncate`, `grant`, `revoke`, `call` (`DO`,
-`CALL`, `EXECUTE`) and `other`, and the client gets the message
-`hoop: this connection may read the database, not change it`. It is for
-`postgres` only. On the other protocols the same rule denies some reads and
-lets some writes pass, so the module refuses it there. For another rule or
-another protocol, use `document`.
+guardrail rule. It denies the statements the sidecar classifies as `insert`,
+`update`, `delete`, `create`, `drop`, `alter`, `truncate`, `grant`, `revoke`,
+`call` (`DO`, `CALL`, `EXECUTE`) or `other`. The client gets the message
+`hoop: this connection may read the database, not change it`, and the
+connection closes. It is for `postgres` only. On the other protocols the same
+rule denies some reads and lets some writes pass, so the module refuses it
+there. For another rule or another protocol, use `document`.
+
+The rule is as exact as the sidecar's classifier, which today:
+
+- reads some writes as `select`, so they pass: `EXPLAIN ANALYSE` and
+  `EXPLAIN ("analyze")` run the statement they explain, `SELECT ... INTO`
+  creates a table, and `SELECT f()` runs whatever `f` writes. Give the
+  database login only the privileges the client needs.
+- reads `SAVEPOINT`, `LISTEN` and `DISCARD ALL` as `other`, so they are
+  denied. A client that opens a nested transaction (a savepoint) on a read
+  path loses its connection.
 
 The config schema is in `sidecar/README.md`; worked configs are under
 `deploy/docker-compose/*/sidecar/config.yaml`. In `document` mode the lane

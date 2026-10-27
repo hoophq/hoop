@@ -107,7 +107,7 @@ variable "service_port" {
 }
 
 variable "guardrail_preset" {
-  description = "simple: none (audit only), or read-only to deny every statement that writes or changes the database. read-only is for postgres only."
+  description = "simple: none (audit only), or read-only, one rule that denies the write operations (README). read-only is for postgres only."
   type        = string
   default     = "none"
 }

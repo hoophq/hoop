@@ -86,7 +86,7 @@ spec:
         varType: number
         defaultValue: 0
       - name: guardrail_preset
-        description: "simple: none (audit only), or read-only to deny every statement that writes or changes the database. read-only is for postgres only."
+        description: "simple: none (audit only), or read-only, one rule that denies the write operations (README). read-only is for postgres only."
         varType: string
         defaultValue: none
       - name: config_document
