@@ -131,8 +131,9 @@ jobs:
           ingress=$(yq -o=json -I0 '.Resources.DatabaseSecurityGroup.Properties.SecurityGroupIngress' "$TEMPLATE")
           [[ "$ingress" == '[{"IpProtocol":"tcp","FromPort":'"$db"',"ToPort":'"$db"',"SourceSecurityGroupId":"SidecarSecurityGroup"}]' ]] \
             || { echo "::error::the database must admit the sidecar's group only: $ingress"; exit 1; }
+          # By !Ref, !GetAtt or ${...} in an !Sub; the egress check refuses an expression.
           others=$(yq '[.Resources[] | select(.Type == "AWS::EC2::SecurityGroupIngress") | .Properties.GroupId
-            | select(. == "DatabaseSecurityGroup")] | length' "$TEMPLATE")
+            | tostring | select(test("DatabaseSecurityGroup"))] | length' "$TEMPLATE")
           [[ "$others" == 0 ]] || { echo "::error::an ingress resource opens the database"; exit 1; }
       - name: The script parses
         run: bash -n deploy/agentcore/postgres/setup.sh

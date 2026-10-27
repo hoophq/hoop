@@ -1,8 +1,10 @@
 # Amazon Bedrock AgentCore: Postgres through the sidecar
 
 An AgentCore agent queries one Postgres database with `psql`, and only
-through a hoop sidecar's postgres lane. The lane refuses writes, masks
-emails in results and records each statement with the agent's session id.
+through a hoop sidecar's postgres lane. The lane refuses the writes its
+SQL classifier finds, masks emails in results and records each statement
+with the agent's session id. The login's grants stop the writes the lane
+misses: see [Limits](#limits).
 The agent is a managed harness, or your own Runtime agent.
 `deploy/agentcore/http` is the REST API twin.
 
@@ -28,7 +30,7 @@ goes away:
   on 443 and the sidecar's lane on 15432. Nothing else. The endpoints serve
   ECR, Bedrock Runtime and CloudWatch Logs only.
 - The S3 gateway endpoint allows only `s3:GetObject` on the bucket where ECR
-  keeps image layers. The default policy lets the agent write to any
+  keeps image layers. AWS's default policy would let the agent write to any
   bucket, an outside one included.
 - A Route 53 Resolver DNS Firewall answers AWS names, `hoop.internal` and
   the sidecar's own hosts, and `NXDOMAIN` for the rest. Without it a DNS

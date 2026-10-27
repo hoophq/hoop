@@ -28,7 +28,7 @@ goes away:
   on 443 and the sidecar's lane on 8080. Nothing else. The endpoints serve
   ECR, Bedrock Runtime and CloudWatch Logs only.
 - The S3 gateway endpoint allows only `s3:GetObject` on the bucket where ECR
-  keeps image layers. The default policy lets the agent write to any
+  keeps image layers. AWS's default policy would let the agent write to any
   bucket, an outside one included.
 - A Route 53 Resolver DNS Firewall answers AWS names, `hoop.internal` and
   the sidecar's own hosts, and `NXDOMAIN` for the rest. Without it a DNS
