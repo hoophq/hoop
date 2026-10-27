@@ -36,7 +36,7 @@ func (c *ClickHouseCodecConfig) validate(lane string) []string {
 // more than the registry default: configured limits, or a login the lane
 // terminates in the codec itself (the native Hello carries user and
 // password in one frame).
-func clickhouseCodecFactory(proto inspect.Protocol, cfg *ClickHouseCodecConfig, auth *laneAuth, passthroughUsers []string) func() inspect.Codec {
+func clickhouseCodecFactory(proto inspect.Protocol, cfg *ClickHouseCodecConfig, auth LaneAuth, passthroughUsers []string) func() inspect.Codec {
 	if proto != inspect.ClickHouse || (cfg == nil && auth == nil) {
 		return nil
 	}
@@ -45,7 +45,7 @@ func clickhouseCodecFactory(proto inspect.Protocol, cfg *ClickHouseCodecConfig, 
 		opts.MaxFrameBytes, opts.MaxBlockBytes = cfg.MaxFrameBytes, cfg.MaxBlockBytes
 	}
 	if auth != nil {
-		opts.Authenticate = auth.authenticator()
+		opts.Authenticate = auth.Authenticator()
 		opts.Passthrough = passthrough(passthroughUsers)
 	}
 	return func() inspect.Codec {
@@ -69,7 +69,7 @@ func laneCodecFactory(lc ListenerConfig, plugins map[inspect.Protocol]CodecPlugi
 // authCodecFactory is laneCodecFactory for a lane that may terminate its
 // login: auth reaches the http and clickhouse codecs, which swap the
 // credential themselves; the relay's drivers take it from proxy.Config.
-func authCodecFactory(lc ListenerConfig, plugins map[inspect.Protocol]CodecPlugin, auth *laneAuth) func() inspect.Codec {
+func authCodecFactory(lc ListenerConfig, plugins map[inspect.Protocol]CodecPlugin, auth LaneAuth) func() inspect.Codec {
 	proto := inspect.Protocol(lc.Protocol)
 	if plugin, ok := plugins[proto]; ok && isPluginLane(lc) {
 		return codecPluginFactory(plugin, lc.Plugin)

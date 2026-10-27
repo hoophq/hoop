@@ -1,8 +1,15 @@
-package daemon
+package auth
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,8 +19,43 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/session"
 )
+
+// tlsKeypairFiles writes a self-signed certificate and its key.
+func tlsKeypairFiles(t *testing.T) (cert, key string) {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "sidecar"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	cert, key = filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
+	for _, f := range []struct {
+		path, kind string
+		der        []byte
+	}{{cert, "CERTIFICATE", der}, {key, "PRIVATE KEY", keyDER}} {
+		if err := os.WriteFile(f.path, pem.EncodeToMemory(&pem.Block{Type: f.kind, Bytes: f.der}), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return cert, key
+}
 
 func writeMode(t *testing.T, path, content string, mode os.FileMode) {
 	t.Helper()
@@ -38,12 +80,12 @@ func TestSecretFilesSource(t *testing.T) {
 	writeMode(t, filepath.Join(dir, "rw", "user"), "app_rw\n", 0o644)
 	writeMode(t, filepath.Join(dir, "rw", "password"), " pw-1 \n", 0o400)
 	writeMode(t, filepath.Join(dir, "open", "password"), "pw", 0o644)
-	src, err := buildSecretFilesSource(&CredentialSourcesConfig{SecretFiles: &SecretFilesSourceConfig{Dir: dir}})
+	src, err := buildSecretFilesSource(&daemon.CredentialSourcesConfig{SecretFiles: &daemon.SecretFilesSourceConfig{Dir: dir}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	cred, err := src.Credential(ctx, CredentialEntry{Name: "rw", Source: SourceSecretFiles, UserFile: "rw/user", PasswordFile: "rw/password"}, session.Identity{})
+	cred, err := src.Credential(ctx, daemon.CredentialEntry{Name: "rw", Source: daemon.SourceSecretFiles, UserFile: "rw/user", PasswordFile: "rw/password"}, session.Identity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,31 +93,31 @@ func TestSecretFilesSource(t *testing.T) {
 		t.Fatalf("credential = %+v", cred)
 	}
 	// A literal user, and an absolute path inside the directory.
-	cred, err = src.Credential(ctx, CredentialEntry{Name: "rw", User: "literal", PasswordFile: filepath.Join(dir, "rw", "password")}, session.Identity{})
+	cred, err = src.Credential(ctx, daemon.CredentialEntry{Name: "rw", User: "literal", PasswordFile: filepath.Join(dir, "rw", "password")}, session.Identity{})
 	if err != nil || cred.User != "literal" {
 		t.Fatalf("literal user: %+v %v", cred, err)
 	}
 	// Re-read per call: a rotation lands at the next login.
 	writeMode(t, filepath.Join(dir, "rw", "password"), "pw-2", 0o400)
-	if cred, _ = src.Credential(ctx, CredentialEntry{Name: "rw", User: "u", PasswordFile: "rw/password"}, session.Identity{}); cred.Password != "pw-2" {
+	if cred, _ = src.Credential(ctx, daemon.CredentialEntry{Name: "rw", User: "u", PasswordFile: "rw/password"}, session.Identity{}); cred.Password != "pw-2" {
 		t.Fatalf("after a rotation: %q", cred.Password)
 	}
 	// An http lane may hold a bearer with no user.
-	if cred, err = src.Credential(ctx, CredentialEntry{Name: "tok", PasswordFile: "rw/password"}, session.Identity{}); err != nil || cred.User != "" || cred.Password != "pw-2" {
+	if cred, err = src.Credential(ctx, daemon.CredentialEntry{Name: "tok", PasswordFile: "rw/password"}, session.Identity{}); err != nil || cred.User != "" || cred.Password != "pw-2" {
 		t.Fatalf("bearer: %+v %v", cred, err)
 	}
 
 	for name, tc := range map[string]struct {
-		entry CredentialEntry
+		entry daemon.CredentialEntry
 		want  string
 	}{
-		"world readable":   {CredentialEntry{Name: "o", User: "u", PasswordFile: "open/password"}, "readable by group or other (mode 0644)"},
-		"outside the dir":  {CredentialEntry{Name: "o", User: "u", PasswordFile: "../etc/passwd"}, "is outside credentials.secret_files.dir"},
-		"absolute outside": {CredentialEntry{Name: "o", User: "u", PasswordFile: "/etc/passwd"}, "is outside credentials.secret_files.dir"},
-		"missing":          {CredentialEntry{Name: "o", User: "u", PasswordFile: "rw/none"}, "no such file"},
-		"no password file": {CredentialEntry{Name: "o", User: "u"}, "password_file is required"},
-		"two users":        {CredentialEntry{Name: "o", User: "u", UserFile: "rw/user", PasswordFile: "rw/password"}, "user and user_file both"},
-		"a directory":      {CredentialEntry{Name: "o", User: "u", PasswordFile: "rw"}, "is a directory"},
+		"world readable":   {daemon.CredentialEntry{Name: "o", User: "u", PasswordFile: "open/password"}, "readable by group or other (mode 0644)"},
+		"outside the dir":  {daemon.CredentialEntry{Name: "o", User: "u", PasswordFile: "../etc/passwd"}, "is outside credentials.secret_files.dir"},
+		"absolute outside": {daemon.CredentialEntry{Name: "o", User: "u", PasswordFile: "/etc/passwd"}, "is outside credentials.secret_files.dir"},
+		"missing":          {daemon.CredentialEntry{Name: "o", User: "u", PasswordFile: "rw/none"}, "no such file"},
+		"no password file": {daemon.CredentialEntry{Name: "o", User: "u"}, "password_file is required"},
+		"two users":        {daemon.CredentialEntry{Name: "o", User: "u", UserFile: "rw/user", PasswordFile: "rw/password"}, "user and user_file both"},
+		"a directory":      {daemon.CredentialEntry{Name: "o", User: "u", PasswordFile: "rw"}, "is a directory"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := src.Credential(ctx, tc.entry, session.Identity{})
@@ -89,10 +131,10 @@ func TestSecretFilesSource(t *testing.T) {
 	}
 	big := strings.Repeat("a", maxSecretFileBytes+1)
 	writeMode(t, filepath.Join(dir, "big"), big, 0o400)
-	if _, err := src.Credential(ctx, CredentialEntry{Name: "o", User: "u", PasswordFile: "big"}, session.Identity{}); err == nil || !strings.Contains(err.Error(), "more than") {
+	if _, err := src.Credential(ctx, daemon.CredentialEntry{Name: "o", User: "u", PasswordFile: "big"}, session.Identity{}); err == nil || !strings.Contains(err.Error(), "more than") {
 		t.Fatalf("an oversized file: %v", err)
 	}
-	if _, err := buildSecretFilesSource(&CredentialSourcesConfig{SecretFiles: &SecretFilesSourceConfig{}}); err == nil {
+	if _, err := buildSecretFilesSource(&daemon.CredentialSourcesConfig{SecretFiles: &daemon.SecretFilesSourceConfig{}}); err == nil {
 		t.Fatal("a block with no dir built")
 	}
 }
@@ -141,13 +183,11 @@ func TestGCPImpersonationSource(t *testing.T) {
 	prev := iamCredentialsEndpoint
 	iamCredentialsEndpoint = iam.URL
 	t.Cleanup(func() { iamCredentialsEndpoint = prev })
-	roots, _ := loadTrustRoots(nil)
-	_ = roots
 
-	src := newGCPImpersonationSource(&GCPImpersonationSourceConfig{MetadataHost: strings.TrimPrefix(meta.URL, "http://")}, nil)
+	src := newGCPImpersonationSource(&daemon.GCPImpersonationSourceConfig{MetadataHost: strings.TrimPrefix(meta.URL, "http://")}, nil)
 	src.iam = iam.Client()
 	ctx := context.Background()
-	entry := CredentialEntry{Name: "gw", Source: SourceGCPImpersonation, ServiceAccount: "gw@p.iam.gserviceaccount.com"}
+	entry := daemon.CredentialEntry{Name: "gw", Source: daemon.SourceGCPImpersonation, ServiceAccount: "gw@p.iam.gserviceaccount.com"}
 	cred, err := src.Credential(ctx, entry, session.Identity{})
 	if err != nil {
 		t.Fatal(err)
@@ -166,15 +206,15 @@ func TestGCPImpersonationSource(t *testing.T) {
 		t.Fatalf("near expiry: %+v %v mints %d", fresh, err, mintCalls.Load())
 	}
 	// A denied account names the binding to add.
-	_, err = src.Credential(ctx, CredentialEntry{Name: "other", ServiceAccount: "other@p.iam.gserviceaccount.com"}, session.Identity{})
+	_, err = src.Credential(ctx, daemon.CredentialEntry{Name: "other", ServiceAccount: "other@p.iam.gserviceaccount.com"}, session.Identity{})
 	if err == nil || !strings.Contains(err.Error(), "403") || !strings.Contains(err.Error(), "serviceAccountTokenCreator") {
 		t.Fatalf("a denied mint: %v", err)
 	}
-	if _, err := src.Credential(ctx, CredentialEntry{Name: "x", ServiceAccount: "not-an-email"}, session.Identity{}); err == nil || !strings.Contains(err.Error(), "is not an email") {
+	if _, err := src.Credential(ctx, daemon.CredentialEntry{Name: "x", ServiceAccount: "not-an-email"}, session.Identity{}); err == nil || !strings.Contains(err.Error(), "is not an email") {
 		t.Fatalf("a bad account: %v", err)
 	}
 	// An unreachable metadata server names itself.
-	down := newGCPImpersonationSource(&GCPImpersonationSourceConfig{MetadataHost: "127.0.0.1:1"}, nil)
+	down := newGCPImpersonationSource(&daemon.GCPImpersonationSourceConfig{MetadataHost: "127.0.0.1:1"}, nil)
 	if _, err := down.Credential(ctx, entry, session.Identity{}); err == nil || !strings.Contains(err.Error(), "metadata server at 127.0.0.1:1") {
 		t.Fatalf("metadata down: %v", err)
 	}
@@ -187,31 +227,31 @@ func TestX509Source(t *testing.T) {
 	if err := os.Chmod(key, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	src, err := buildX509Source(&CredentialSourcesConfig{X509: &X509SourceConfig{}})
+	src, err := buildX509Source(&daemon.CredentialSourcesConfig{X509: &daemon.X509SourceConfig{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	cred, err := src.Credential(ctx, CredentialEntry{Name: "svc", CertFile: cert, KeyFile: key}, session.Identity{})
+	cred, err := src.Credential(ctx, daemon.CredentialEntry{Name: "svc", CertFile: cert, KeyFile: key}, session.Identity{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cred.Cert == nil || cred.Cert.Leaf == nil || cred.User != cred.Cert.Leaf.Subject.CommonName || cred.Password != "" {
 		t.Fatalf("credential = %+v", cred)
 	}
-	if cred, _ = src.Credential(ctx, CredentialEntry{Name: "svc", User: "named", CertFile: cert, KeyFile: key}, session.Identity{}); cred.User != "named" {
+	if cred, _ = src.Credential(ctx, daemon.CredentialEntry{Name: "svc", User: "named", CertFile: cert, KeyFile: key}, session.Identity{}); cred.User != "named" {
 		t.Fatalf("user = %q", cred.User)
 	}
 	if err := os.Chmod(key, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := src.Credential(ctx, CredentialEntry{Name: "svc", CertFile: cert, KeyFile: key}, session.Identity{}); err == nil || !strings.Contains(err.Error(), "readable by group or other") {
+	if _, err := src.Credential(ctx, daemon.CredentialEntry{Name: "svc", CertFile: cert, KeyFile: key}, session.Identity{}); err == nil || !strings.Contains(err.Error(), "readable by group or other") {
 		t.Fatalf("an open key: %v", err)
 	}
-	if _, err := src.Credential(ctx, CredentialEntry{Name: "svc", CertFile: cert}, session.Identity{}); err == nil || !strings.Contains(err.Error(), "cert_file and key_file are required") {
+	if _, err := src.Credential(ctx, daemon.CredentialEntry{Name: "svc", CertFile: cert}, session.Identity{}); err == nil || !strings.Contains(err.Error(), "cert_file and key_file are required") {
 		t.Fatalf("no key: %v", err)
 	}
-	if _, err := buildX509Source(&CredentialSourcesConfig{}); err == nil {
+	if _, err := buildX509Source(&daemon.CredentialSourcesConfig{}); err == nil {
 		t.Fatal("built with no block")
 	}
 }
@@ -219,22 +259,22 @@ func TestX509Source(t *testing.T) {
 // The registry builds a source once per configured block that a pool
 // names, and refuses a pool naming an unconfigured one.
 func TestBuildCredentialSources(t *testing.T) {
-	cfg := &Config{
-		Credentials: &CredentialSourcesConfig{SecretFiles: &SecretFilesSourceConfig{Dir: t.TempDir()}, X509: &X509SourceConfig{}},
-		Listeners: []ListenerConfig{
-			{Credentials: &CredentialsConfig{Pool: []CredentialEntry{{Name: "a", Source: SourceSecretFiles}}}},
-			{Credentials: &CredentialsConfig{Pool: []CredentialEntry{{Name: "b", Source: SourceSecretFiles}, {Name: "c", Source: SourceX509}}}},
+	cfg := &daemon.Config{
+		Credentials: &daemon.CredentialSourcesConfig{SecretFiles: &daemon.SecretFilesSourceConfig{Dir: t.TempDir()}, X509: &daemon.X509SourceConfig{}},
+		Listeners: []daemon.ListenerConfig{
+			{Credentials: &daemon.CredentialsConfig{Pool: []daemon.CredentialEntry{{Name: "a", Source: daemon.SourceSecretFiles}}}},
+			{Credentials: &daemon.CredentialsConfig{Pool: []daemon.CredentialEntry{{Name: "b", Source: daemon.SourceSecretFiles}, {Name: "c", Source: daemon.SourceX509}}}},
 		},
 	}
-	sources, err := buildCredentialSources(cfg, nil)
+	sources, err := daemon.BuildCredentialSources(cfg, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sources) != 2 || sources[SourceSecretFiles] == nil || sources[SourceX509] == nil {
+	if len(sources) != 2 || sources[daemon.SourceSecretFiles] == nil || sources[daemon.SourceX509] == nil {
 		t.Fatalf("sources = %v", sources)
 	}
-	cfg.Listeners[0].Credentials.Pool[0].Source = SourceGCPImpersonation
-	if _, err := buildCredentialSources(cfg, nil); err == nil || !strings.Contains(err.Error(), "no credentials.gcp_impersonation block") {
+	cfg.Listeners[0].Credentials.Pool[0].Source = daemon.SourceGCPImpersonation
+	if _, err := daemon.BuildCredentialSources(cfg, nil); err == nil || !strings.Contains(err.Error(), "no credentials.gcp_impersonation block") {
 		t.Fatalf("an unconfigured source: %v", err)
 	}
 }

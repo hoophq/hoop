@@ -7,7 +7,7 @@ injects identity, statement, policy, audit, and masking behavior. Policy
 turns either form into allow/deny verdicts, masked responses and an audit trail.
 
 The root `CLAUDE.md` does not cover this directory. It describes the product
-modules under `go.work`; `sidecar/` contributes nine more entries and follows
+modules under `go.work`; `sidecar/` contributes fifteen more entries and follows
 different rules. This file governs everything under `sidecar/`.
 
 The directory was called `hoopinspect/` until the CLI command became
@@ -73,6 +73,7 @@ it is removing a directory.
 | `telemetry/otlp/` | the OpenTelemetry SDK and its OTLP exporters, behind the `telemetry` block; `daemon` sees only `telemetry.Builder`, injected by `cmd` like `LoadCodecPlugin`. The contract is the root package `telemetry/` |
 | `identity/spiffe/` | `github.com/spiffe/go-spiffe/v2`: the `spiffe` identity type (JWT-SVID through the Workload API) and the `spiffe` credential source (X509-SVID by `spiffe_id`); registers through `daemon.RegisterIdentitySource`/`RegisterCredentialSource`, linked into `hoop-inspect` only |
 | `identity/krb5/` | `github.com/jcmturner/gokrb5/v8`: the `kerberos` credential source, a ccache or keytab turned into a GSSAPI/SPNEGO initiator for the upstream login; same registration, linked into `hoop-inspect` only |
+| `auth/` | no dependency of its own: the credential-swap runtime an `identity` or `credentials` block turns on. The built-in verifiers (`none`, `kubernetes`, `hoop_credential`, `jwt`), the built-in sources (`secret_files`, `gcp_impersonation`, `x509`, `vault`, `gcp_secret_manager`), the credential set, the lane's login termination and the login drivers under `auth/login`; registers through `daemon.RegisterAuthEngine`, linked into `hoop-inspect` and `hoop start sidecar`. The config, its validation and the registries stay in `daemon`, so the control plane checks a pooled lane without linking it; a build without it refuses such a lane at Validate |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
 Adding a dependency to the root still needs a reason. Add a nested module, or
@@ -131,7 +132,7 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica identity/spiffe identity/krb5 lexer/conformance codec/wasm telemetry/otlp; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica auth identity/spiffe identity/krb5 lexer/conformance codec/wasm telemetry/otlp; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
 

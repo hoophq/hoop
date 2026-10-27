@@ -165,6 +165,7 @@ require (
 require (
 	github.com/hoophq/alcatraz v0.23.0 // indirect
 	github.com/hoophq/hoop/sidecar/analyzer/vertex v0.0.0
+	github.com/hoophq/hoop/sidecar/auth v0.0.0
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0
 	github.com/hoophq/hoop/sidecar/ica v0.0.0
 	github.com/hoophq/hoop/sidecar/identity/krb5 v0.0.0
@@ -174,6 +175,8 @@ require (
 )
 
 replace github.com/hoophq/hoop/sidecar => ..
+
+replace github.com/hoophq/hoop/sidecar/auth => ../auth
 
 replace github.com/hoophq/hoop/sidecar/config/yaml => ../config/yaml
 

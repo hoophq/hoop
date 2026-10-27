@@ -166,7 +166,7 @@ type reloader struct {
 	// credentials is the live credential set the running verifiers read,
 	// swapped from every document the owner sends; credentialSources are
 	// the built sources, carried onto every document like the plug-ins.
-	credentials       *credentialSet
+	credentials       CredentialSet
 	credentialSources map[string]CredentialSource
 
 	// lastHandled is the last document that reached a terminal outcome.
@@ -878,15 +878,15 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 }
 
 // swapCredentials puts a document's credential set in force. A reloader
-// built by a test or a process with no pooled lane has no set and swaps
-// nothing.
+// built by a test, a process with no pooled lane or a build with no auth
+// engine has no set and swaps nothing.
 func (r *reloader) swapCredentials(log *slog.Logger, entries []CredentialSetEntry) {
 	if r.credentials == nil {
 		return
 	}
-	before := r.credentials.size()
-	r.credentials.swap(entries)
-	if after := r.credentials.size(); after != before {
+	before := r.credentials.Size()
+	r.credentials.Swap(entries)
+	if after := r.credentials.Size(); after != before {
 		log.Info("credential set swapped", "credentials", after)
 	}
 }

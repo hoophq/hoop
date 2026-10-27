@@ -1,4 +1,4 @@
-package proxy
+package login
 
 import (
 	"context"
@@ -14,10 +14,11 @@ import (
 	"github.com/hoophq/libhoop/v2/codec/oracle/oranet"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
-func init() { RegisterLogin(inspect.Oracle, loginOracle) }
+func init() { proxy.RegisterLogin(inspect.Oracle, loginOracle) }
 
 // oraLogonDenied is ORA-01017, what Oracle says for a wrong password. The
 // relay says the same for every refusal, so a client cannot tell a missing
@@ -67,14 +68,14 @@ var errOracleNoVerifier = errors.New("oracle O5LOGON needs a server-side verifie
 // verified yet. In fast authentication (Oracle 23ai) the user arrives
 // before the server settles that format, so the bundle is relayed and the
 // refusal answers the client's credential call instead.
-func loginOracle(ctx context.Context, c *LoginConn) (LoginResult, error) {
+func loginOracle(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, error) {
 	log := c.Log
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
 	up, err := c.Dial(ctx, nil)
 	if err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	c.Upstream = up
 
@@ -104,22 +105,22 @@ func loginOracle(ctx context.Context, c *LoginConn) (LoginResult, error) {
 
 	big, err := oracleConnect(c.Client, up, relay)
 	if err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 
 	deferred := false
 	for {
 		pkt, err := oranet.Decode(c.Client, big)
 		if err != nil {
-			return LoginResult{}, fmt.Errorf("oracle login: client: %w", err)
+			return proxy.LoginResult{}, fmt.Errorf("oracle login: client: %w", err)
 		}
 		if err := observe(inspect.FromClient, pkt.Encoded()); err != nil {
-			return LoginResult{}, err
+			return proxy.LoginResult{}, err
 		}
 		user := track.LoginUser()
 		if user == "" {
 			if err := oracleRoundTrip(pkt.Encoded(), up, c.Client, big, relay); err != nil {
-				return LoginResult{}, err
+				return proxy.LoginResult{}, err
 			}
 			continue
 		}
@@ -128,26 +129,26 @@ func loginOracle(ctx context.Context, c *LoginConn) (LoginResult, error) {
 		// have listed either form.
 		if c.Passthrough != nil && (c.Passthrough(user) || c.Passthrough(strings.ToUpper(user))) {
 			if _, err := up.Write(pkt.Encoded()); err != nil {
-				return LoginResult{}, err
+				return proxy.LoginResult{}, err
 			}
-			return LoginResult{Identity: claimed, Passthrough: true}, nil
+			return proxy.LoginResult{Identity: claimed, Passthrough: true}, nil
 		}
 		frame := track.ErrorFrame(oraLogonDenied, oraLogonDeniedText)
 		if frame == nil {
 			if deferred {
-				return LoginResult{}, errors.New("oracle login: session format unknown after the server's reply")
+				return proxy.LoginResult{}, errors.New("oracle login: session format unknown after the server's reply")
 			}
 			// Fast authentication: the server's reply settles the format
 			// the refusal must take.
 			deferred = true
 			if err := oracleRoundTrip(pkt.Encoded(), up, c.Client, big, relay); err != nil {
-				return LoginResult{}, err
+				return proxy.LoginResult{}, err
 			}
 			continue
 		}
 		log.Warn("oracle login refused", "user", user, "reason", errOracleNoVerifier.Error())
 		_, _ = c.Client.Write(frame)
-		return LoginResult{Identity: claimed}, fmt.Errorf("%w: %v", ErrLoginRefused, errOracleNoVerifier)
+		return proxy.LoginResult{Identity: claimed}, fmt.Errorf("%w: %v", proxy.ErrLoginRefused, errOracleNoVerifier)
 	}
 }
 

@@ -1,4 +1,4 @@
-package proxy
+package login
 
 import (
 	"context"
@@ -13,10 +13,11 @@ import (
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
-func init() { RegisterLogin(inspect.MSSQL, loginMSSQL) }
+func init() { proxy.RegisterLogin(inspect.MSSQL, loginMSSQL) }
 
 // mssqlIntegratedUser is the passthrough_users entry that lets an
 // integrated (Windows, SSPI) login through unchanged. The principal is
@@ -39,7 +40,7 @@ const mssqlIntegratedUser = "integrated"
 // session is TLS end to end, then LOGIN7 with the credential: SQL
 // authentication, or SSPI driven by cred.GSS when the credential is a
 // Kerberos one. The login response goes to the client as the server sent it.
-func loginMSSQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
+func loginMSSQL(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, error) {
 	log := c.Log
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -54,53 +55,53 @@ func loginMSSQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
 	// PRELOGIN, or a TDS 8 ClientHello where one should be.
 	var head [mssqlauth.HeaderLen]byte
 	if _, err := io.ReadFull(c.Client, head[:]); err != nil {
-		return LoginResult{}, fmt.Errorf("mssql login: prelogin: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: prelogin: %w", err)
 	}
 	if mssqlauth.IsTLSRecord(head[:]) {
-		return LoginResult{}, fmt.Errorf("%w: TDS 8 strict encryption (Encrypt=strict) is not supported on this lane; use Encrypt=true or Encrypt=false", ErrLoginRefused)
+		return proxy.LoginResult{}, fmt.Errorf("%w: TDS 8 strict encryption (Encrypt=strict) is not supported on this lane; use Encrypt=true or Encrypt=false", proxy.ErrLoginRefused)
 	}
 	prelogin, err := mssqlReadPacketAfter(head, c.Client)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mssql login: prelogin: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: prelogin: %w", err)
 	}
 	if prelogin.Type != mssqlauth.PacketPrelogin {
-		return LoginResult{}, fmt.Errorf("mssql login: first packet is %#x, not PRELOGIN", prelogin.Type)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: first packet is %#x, not PRELOGIN", prelogin.Type)
 	}
 	clientPre, err := mssqlauth.ParsePrelogin(prelogin.Payload)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mssql login: prelogin: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: prelogin: %w", err)
 	}
 	clientEnc, ok := clientPre.Encryption()
 	if !ok {
-		return LoginResult{}, errors.New("mssql login: PRELOGIN without an ENCRYPTION option")
+		return proxy.LoginResult{}, errors.New("mssql login: PRELOGIN without an ENCRYPTION option")
 	}
 
 	// The upstream answers the PRELOGIN so the client sees the server's
 	// version and options; only ENCRYPTION is the relay's to decide.
 	up, err := c.Dial(ctx, nil)
 	if err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	c.Upstream = up
 	upPre := append(mssqlauth.Prelogin(nil), clientPre...)
 	upPre.SetEncryption(mssqlauth.EncryptOn)
 	upPrelogin := mssqlauth.Packet{Type: mssqlauth.PacketPrelogin, Status: mssqlauth.StatusEOM, ID: 1, Payload: upPre.Encode()}.Encode()
 	if err := inspectPkt(inspect.FromClient, upPrelogin); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	if _, err := up.Write(upPrelogin); err != nil {
-		return LoginResult{}, fmt.Errorf("mssql login: upstream prelogin: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: upstream prelogin: %w", err)
 	}
 	reply, err := mssqlauth.ReadPacket(up)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mssql login: upstream prelogin reply: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: upstream prelogin reply: %w", err)
 	}
 	srvPre, err := mssqlauth.ParsePrelogin(reply.Payload)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mssql login: upstream prelogin reply: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: upstream prelogin reply: %w", err)
 	}
 	if srvEnc, _ := srvPre.Encryption(); srvEnc == mssqlauth.EncryptNotSup {
-		return LoginResult{}, errors.New("mssql login: the upstream does not support encryption; the credential would travel in clear")
+		return proxy.LoginResult{}, errors.New("mssql login: the upstream does not support encryption; the credential would travel in clear")
 	}
 
 	// What the client leg gets: its own choice, with REQ answered as ON
@@ -111,16 +112,16 @@ func loginMSSQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
 	case mssqlauth.EncryptReq:
 		answer = mssqlauth.EncryptOn
 	case mssqlauth.EncryptStrict:
-		return LoginResult{}, fmt.Errorf("%w: TDS 8 strict encryption (Encrypt=strict) is not supported on this lane; use Encrypt=true or Encrypt=false", ErrLoginRefused)
+		return proxy.LoginResult{}, fmt.Errorf("%w: TDS 8 strict encryption (Encrypt=strict) is not supported on this lane; use Encrypt=true or Encrypt=false", proxy.ErrLoginRefused)
 	}
 	srvPre.SetEncryption(answer)
 	reply.Payload = srvPre.Encode()
 	clientReply := reply.Encode()
 	if err := inspectPkt(inspect.FromServer, clientReply); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	if _, err := c.Client.Write(clientReply); err != nil {
-		return LoginResult{}, fmt.Errorf("mssql login: prelogin reply: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: prelogin reply: %w", err)
 	}
 
 	// Login TLS on the client leg. clientIn is where LOGIN7 continuation
@@ -135,12 +136,12 @@ func loginMSSQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
 	if answer == mssqlauth.EncryptOff || answer == mssqlauth.EncryptOn {
 		cfg, err := mssqlauth.LoginTLSConfig()
 		if err != nil {
-			return LoginResult{}, err
+			return proxy.LoginResult{}, err
 		}
 		framed := mssqlauth.NewFramedConn(c.Client)
 		srv := tls.Server(framed, cfg)
 		if err := srv.HandshakeContext(ctx); err != nil {
-			return LoginResult{}, fmt.Errorf("mssql login: client TLS handshake: %w", err)
+			return proxy.LoginResult{}, fmt.Errorf("mssql login: client TLS handshake: %w", err)
 		}
 		first = srv
 		if answer == mssqlauth.EncryptOn {
@@ -154,11 +155,11 @@ func loginMSSQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
 
 	loginBody, err := mssqlReadLogin7(first, clientIn)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mssql login: login7: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: login7: %w", err)
 	}
 	login, err := mssqlauth.DecodeLogin(loginBody)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mssql login: login7: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: login7: %w", err)
 	}
 
 	clientUser := login.UserName
@@ -168,22 +169,22 @@ func loginMSSQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
 	}
 	claimed := session.Identity{Subject: clientUser}
 	// refuse answers the client with 18456 and returns a refusal. An
-	// authenticator's error already wraps ErrLoginRefused and is kept
+	// authenticator's error already wraps proxy.ErrLoginRefused and is kept
 	// whole; anything else becomes one.
-	refuse := func(reason error) (LoginResult, error) {
+	refuse := func(reason error) (proxy.LoginResult, error) {
 		log.Debug("mssql login refused", "user", clientUser, "integrated", login.Integrated(), "reason", reason)
 		_, _ = clientOut.Write(mssqlauth.LoginFailedReply(clientUser))
-		if !errors.Is(reason, ErrLoginRefused) {
-			reason = fmt.Errorf("%w: %v", ErrLoginRefused, reason)
+		if !errors.Is(reason, proxy.ErrLoginRefused) {
+			reason = fmt.Errorf("%w: %v", proxy.ErrLoginRefused, reason)
 		}
-		return LoginResult{Identity: claimed}, reason
+		return proxy.LoginResult{Identity: claimed}, reason
 	}
 
 	// Verify first: a refused client costs the upstream nothing.
 	passthrough := c.Passthrough != nil && c.Passthrough(user)
 	var (
 		identity session.Identity
-		cred     Credential
+		cred     proxy.Credential
 	)
 	switch {
 	case passthrough:
@@ -202,22 +203,22 @@ func loginMSSQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
 	// is a TLS record.
 	upTLS, err := mssqlUpstreamTLS(ctx, up, c.UpstreamTLS, c.Lane.UpstreamAddr)
 	if err != nil {
-		return LoginResult{Identity: identity}, err
+		return proxy.LoginResult{Identity: identity}, err
 	}
 	c.Upstream = upTLS
 
 	if passthrough {
 		pkt := mssqlauth.Frame(mssqlauth.PacketLogin7, loginBody, mssqlauth.DefaultPacketSize)
 		if err := inspectPkt(inspect.FromClient, pkt); err != nil {
-			return LoginResult{Identity: claimed}, err
+			return proxy.LoginResult{Identity: claimed}, err
 		}
 		if _, err := upTLS.Write(pkt); err != nil {
-			return LoginResult{Identity: claimed}, fmt.Errorf("mssql login: upstream login7: %w", err)
+			return proxy.LoginResult{Identity: claimed}, fmt.Errorf("mssql login: upstream login7: %w", err)
 		}
 		if err := mssqlRelayLoginResponse(upTLS, clientIn, clientOut, nil, inspectPkt); err != nil {
-			return LoginResult{Identity: claimed}, err
+			return proxy.LoginResult{Identity: claimed}, err
 		}
-		return LoginResult{Identity: claimed, Passthrough: true}, nil
+		return proxy.LoginResult{Identity: claimed, Passthrough: true}, nil
 	}
 
 	host, port, err := net.SplitHostPort(c.Lane.UpstreamAddr)
@@ -228,11 +229,11 @@ func loginMSSQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
 	if cred.GSS != nil {
 		gss, err = cred.GSS.Initiate(ctx, "MSSQLSvc/"+host+":"+port)
 		if err != nil {
-			return LoginResult{Identity: identity}, fmt.Errorf("mssql login: gss: %w", err)
+			return proxy.LoginResult{Identity: identity}, fmt.Errorf("mssql login: gss: %w", err)
 		}
 		token, _, err := gss.Step(nil)
 		if err != nil {
-			return LoginResult{Identity: identity}, fmt.Errorf("mssql login: gss: %w", err)
+			return proxy.LoginResult{Identity: identity}, fmt.Errorf("mssql login: gss: %w", err)
 		}
 		login.SetIntegrated(token)
 	} else {
@@ -243,16 +244,16 @@ func loginMSSQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
 
 	pkt := mssqlauth.Frame(mssqlauth.PacketLogin7, mssqlauth.EncodeLogin(login), mssqlauth.DefaultPacketSize)
 	if err := inspectPkt(inspect.FromClient, pkt); err != nil {
-		return LoginResult{Identity: identity}, err
+		return proxy.LoginResult{Identity: identity}, err
 	}
 	if _, err := upTLS.Write(pkt); err != nil {
-		return LoginResult{Identity: identity}, fmt.Errorf("mssql login: upstream login7: %w", err)
+		return proxy.LoginResult{Identity: identity}, fmt.Errorf("mssql login: upstream login7: %w", err)
 	}
 	if err := mssqlRelayLoginResponse(upTLS, nil, clientOut, gss, inspectPkt); err != nil {
-		return LoginResult{Identity: identity, Credential: cred}, err
+		return proxy.LoginResult{Identity: identity, Credential: cred}, err
 	}
 	log.Debug("mssql login swapped", "user", clientUser, "credential", cred.Name)
-	return LoginResult{Identity: identity, Credential: cred}, nil
+	return proxy.LoginResult{Identity: identity, Credential: cred}, nil
 }
 
 // mssqlReadPacketAfter finishes reading a packet whose header is in head.

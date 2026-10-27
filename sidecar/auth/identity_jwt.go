@@ -1,4 +1,4 @@
-package daemon
+package auth
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -34,7 +35,7 @@ type jwtIdentity struct {
 	groupsClaim  string
 }
 
-func buildJWTIdentity(cfg IdentityConfig, deps IdentityDeps) (IdentitySource, error) {
+func buildJWTIdentity(cfg daemon.IdentityConfig, deps daemon.IdentityDeps) (daemon.IdentitySource, error) {
 	issuer := strings.TrimRight(cfg.Issuer, "/")
 	if issuer == "" {
 		return nil, fmt.Errorf("identity type jwt needs identity.issuer")
@@ -55,9 +56,9 @@ func buildJWTIdentity(cfg IdentityConfig, deps IdentityDeps) (IdentitySource, er
 	}
 	v := &jwtIdentity{
 		kubernetesIdentity: &kubernetesIdentity{
-			kind:     IdentityJWT,
+			kind:     daemon.IdentityJWT,
 			issuer:   issuer,
-			audience: cfg.audience(),
+			audience: audience(cfg),
 			roots:    deps.Roots,
 			log:      log,
 			now:      time.Now,
@@ -81,9 +82,9 @@ func buildJWTIdentity(cfg IdentityConfig, deps IdentityDeps) (IdentitySource, er
 	return v, nil
 }
 
-func (j *jwtIdentity) Verify(ctx context.Context, user string, secret string, _ PeerInfo) (session.Identity, error) {
+func (j *jwtIdentity) Verify(ctx context.Context, user string, secret string, _ daemon.PeerInfo) (session.Identity, error) {
 	if secret == "" {
-		return session.Identity{}, refused("no token presented")
+		return session.Identity{}, daemon.Refused("no token presented")
 	}
 	var claims map[string]json.RawMessage
 	if err := j.verifyToken(ctx, secret, &claims); err != nil {
@@ -91,29 +92,29 @@ func (j *jwtIdentity) Verify(ctx context.Context, user string, secret string, _ 
 	}
 	subject, err := claimString(claims, j.subjectClaim)
 	if err != nil {
-		return session.Identity{}, refused("JWT claim %q: %v", j.subjectClaim, err)
+		return session.Identity{}, daemon.Refused("JWT claim %q: %v", j.subjectClaim, err)
 	}
 	if subject == "" {
-		return session.Identity{}, refused("JWT has no %q claim", j.subjectClaim)
+		return session.Identity{}, daemon.Refused("JWT has no %q claim", j.subjectClaim)
 	}
 	email, err := claimString(claims, j.emailClaim)
 	if err != nil {
-		return session.Identity{}, refused("JWT claim %q: %v", j.emailClaim, err)
+		return session.Identity{}, daemon.Refused("JWT claim %q: %v", j.emailClaim, err)
 	}
 	groups, err := claimStrings(claims, j.groupsClaim)
 	if err != nil {
-		return session.Identity{}, refused("JWT claim %q: %v", j.groupsClaim, err)
+		return session.Identity{}, daemon.Refused("JWT claim %q: %v", j.groupsClaim, err)
 	}
 	// A protocol that carries a login user must agree with the token, so a
 	// session is never recorded under one name and opened under another.
 	if user != "" && user != subject && (email == "" || user != email) {
-		return session.Identity{}, refused("the token names %q, and the login user is %q", subject, user)
+		return session.Identity{}, daemon.Refused("the token names %q, and the login user is %q", subject, user)
 	}
 	return session.Identity{
 		Subject:    subject,
 		Email:      email,
 		Groups:     groups,
-		Attributes: map[string]string{identityTypeAttribute: IdentityJWT, "issuer": j.issuer},
+		Attributes: map[string]string{daemon.IdentityTypeAttribute: daemon.IdentityJWT, "issuer": j.issuer},
 	}, nil
 }
 

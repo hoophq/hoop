@@ -596,6 +596,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkTelemetry(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkAuthEngine(cfg); err != nil {
+		return nil, err
+	}
 	if err := checkIdentitySources(cfg); err != nil {
 		return nil, err
 	}
@@ -880,6 +883,9 @@ func Run(cfg *Config, det Plugin) error {
 		return err
 	}
 	if err := checkTelemetry(cfg); err != nil {
+		return err
+	}
+	if err := checkAuthEngine(cfg); err != nil {
 		return err
 	}
 	if err := checkIdentitySources(cfg); err != nil {
@@ -1418,7 +1424,7 @@ type lane struct {
 	// Nil on a pass-through lane. Built by buildLanes, so a reload carries
 	// it too, and composed into the relay's hooks by buildServer and the
 	// endpoint builders.
-	auth *laneAuth
+	auth LaneAuth
 }
 
 // capturesRequestBodies reports whether the lane's codec exposes request
@@ -1455,12 +1461,14 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 	// The credential set and the sources are process-wide: built once, on
 	// the startup config, and handed to every later document by the
 	// reloader, the way codec plug-ins are. A source holds a connection or
-	// a token cache a reload must not rebuild.
-	if cfg.credentials == nil {
-		cfg.credentials = newCredentialSet(cfg.CredentialSet)
+	// a token cache a reload must not rebuild. A build with no engine has
+	// no set: checkAuthEngine refused every lane that would read one.
+	engine := registeredAuthEngine()
+	if cfg.credentials == nil && engine != nil {
+		cfg.credentials = engine.NewCredentialSet(cfg.CredentialSet)
 	}
 	if cfg.credentialSources == nil {
-		sources, serr := buildCredentialSources(cfg, roots)
+		sources, serr := BuildCredentialSources(cfg, roots)
 		if serr != nil {
 			problems = append(problems, serr.Error())
 		}
@@ -1493,16 +1501,26 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			problems = append(problems, name+": "+err.Error())
 			continue
 		}
-		auth, err := buildLaneAuth(cfg, lc, name, roots, cfg.credentials, cfg.credentialSources)
-		if err != nil {
-			problems = append(problems, name+": "+err.Error())
-			continue
-		}
-		if auth != nil {
+		var auth LaneAuth
+		if lc.HasPool() {
+			if engine == nil {
+				problems = append(problems, authModuleError(name, "credentials").Error())
+				continue
+			}
+			deps := AuthDeps{Roots: roots, Peer: PeerInfo{Network: lc.network(), TLS: lc.DownstreamTLS != nil},
+				Log: slog.Default().With("listener", name)}
+			if opa.enabled() {
+				deps.OPA = opa.client("")
+			}
+			auth, err = engine.BuildLaneAuth(lc, name, deps, cfg.credentials, cfg.credentialSources)
+			if err != nil {
+				problems = append(problems, name+": "+err.Error())
+				continue
+			}
 			// A pooled lane holds the database identity the credential
 			// gave it: a statement that would switch it is refused ahead
 			// of every rule, enforcing or not.
-			pol = credentialBoundary(pol, inspect.Protocol(lc.Protocol))
+			pol = engine.CredentialBoundary(pol, inspect.Protocol(lc.Protocol))
 		}
 		factory := authCodecFactory(lc, cfg.codecPlugins, auth)
 		var pluginFactory func() inspect.Codec
@@ -1724,7 +1742,7 @@ func buildServer(
 	if ln.auth != nil && lc.credentialHeader() != "" {
 		// A pooled http lane names its caller per request through its
 		// own verifier; the swap then runs for the callers it admitted.
-		requestIdentity = ln.auth.requestIdentity()
+		requestIdentity = ln.auth.RequestIdentity()
 	} else {
 		requestIdentity, err = buildRequestIdentity(lc, ln.trustRoots, ln.callerTokens)
 		if err != nil {
@@ -1768,16 +1786,16 @@ func buildServer(
 	// client through auth, dials upstream with the credential it picked,
 	// and lets the listed users through unchanged.
 	if ln.auth != nil {
-		cfg.Authenticate = ln.auth.authenticate
-		cfg.SCRAMVerifier = ln.auth.scram
+		cfg.Authenticate = ln.auth.Authenticate
+		cfg.SCRAMVerifier = ln.auth.SCRAM()
 		cfg.PassthroughUsers = lc.PassthroughUsers
 		if lc.Propagate != nil {
 			cfg.Propagate = proxy.PropagateInfo{ApplicationName: lc.Propagate.ApplicationName}
 		}
 		log.Info("terminating the client's login on this lane",
 			"listener", ln.name,
-			"identity", ln.auth.identityType,
-			"credentials", len(ln.auth.pool))
+			"identity", ln.auth.IdentityType(),
+			"credentials", ln.auth.PoolSize())
 	}
 	return proxy.NewServer(cfg)
 }

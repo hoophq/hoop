@@ -1,4 +1,4 @@
-package proxy
+package login
 
 import (
 	"bytes"
@@ -13,11 +13,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	mssqlauth "github.com/hoophq/libhoop/v2/codec/mssql/auth"
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -128,6 +130,16 @@ func (s *mssqlFakeServer) serve(conn net.Conn) error {
 	}
 	_, err = tc.Write(mssqlauth.Packet{Type: mssqlauth.PacketReply, Status: mssqlauth.StatusEOM, ID: 1, Payload: mssqlLoginAck()}.Encode())
 	return err
+}
+
+// ucs2 encodes s as little-endian UCS-2, the string encoding TDS uses.
+func ucs2(s string) []byte {
+	runes := utf16.Encode([]rune(s))
+	out := make([]byte, 0, len(runes)*2)
+	for _, r := range runes {
+		out = binary.LittleEndian.AppendUint16(out, r)
+	}
+	return out
 }
 
 // mssqlLoginAck is ENVCHANGE(database) + LOGINACK + DONE.
@@ -254,11 +266,11 @@ func mssqlTestLogin(user, password string) *mssqlauth.Login {
 	}
 }
 
-// mssqlHarness wires a LoginConn to a fake client and a fake server over
+// mssqlHarness wires a proxy.LoginConn to a fake client and a fake server over
 // pipes and runs the driver in the background.
 type mssqlHarness struct {
 	t        *testing.T
-	lc       *LoginConn
+	lc       *proxy.LoginConn
 	client   net.Conn
 	server   *mssqlFakeServer
 	serveErr chan error
@@ -275,15 +287,15 @@ func newMSSQLHarness(t *testing.T, server *mssqlFakeServer) *mssqlHarness {
 	t.Helper()
 	clientSide, relaySide := net.Pipe()
 	h := &mssqlHarness{t: t, client: clientSide, server: server, serveErr: make(chan error, 1)}
-	h.lc = &LoginConn{
+	h.lc = &proxy.LoginConn{
 		Client: relaySide,
-		Dial: func(ctx context.Context, cred *Credential) (net.Conn, error) {
+		Dial: func(ctx context.Context, cred *proxy.Credential) (net.Conn, error) {
 			up, srv := net.Pipe()
 			t.Cleanup(func() { up.Close(); srv.Close() })
 			go func() { h.serveErr <- server.serve(srv) }()
 			return up, nil
 		},
-		Lane: LaneInfo{Protocol: inspect.MSSQL, Name: "mssql", Network: "tcp", UpstreamAddr: "db.internal:1433"},
+		Lane: proxy.LaneInfo{Protocol: inspect.MSSQL, Name: "mssql", Network: "tcp", UpstreamAddr: "db.internal:1433"},
 		Inspect: func(dir inspect.Direction, pkt []byte) error {
 			h.mu.Lock()
 			h.fed = append(h.fed, inspectRecord{dir, append([]byte(nil), pkt...)})
@@ -296,11 +308,11 @@ func newMSSQLHarness(t *testing.T, server *mssqlFakeServer) *mssqlHarness {
 }
 
 func (h *mssqlHarness) run() <-chan struct {
-	res LoginResult
+	res proxy.LoginResult
 	err error
 } {
 	done := make(chan struct {
-		res LoginResult
+		res proxy.LoginResult
 		err error
 	}, 1)
 	go func() {
@@ -308,7 +320,7 @@ func (h *mssqlHarness) run() <-chan struct {
 		defer cancel()
 		res, err := loginMSSQL(ctx, h.lc)
 		done <- struct {
-			res LoginResult
+			res proxy.LoginResult
 			err error
 		}{res, err}
 	}()
@@ -316,16 +328,16 @@ func (h *mssqlHarness) run() <-chan struct {
 }
 
 func (h *mssqlHarness) wait(done <-chan struct {
-	res LoginResult
+	res proxy.LoginResult
 	err error
-}) (LoginResult, error) {
+}) (proxy.LoginResult, error) {
 	h.t.Helper()
 	select {
 	case r := <-done:
 		return r.res, r.err
 	case <-time.After(10 * time.Second):
 		h.t.Fatal("login did not finish")
-		return LoginResult{}, nil
+		return proxy.LoginResult{}, nil
 	}
 }
 
@@ -341,10 +353,10 @@ func (h *mssqlHarness) fedPackets(dir inspect.Direction, typ byte) [][]byte {
 	return out
 }
 
-func mssqlAuthenticator(t *testing.T, wantUser, wantSecret string, cred Credential) func(context.Context, string, string) (session.Identity, Credential, error) {
-	return func(_ context.Context, user, secret string) (session.Identity, Credential, error) {
+func mssqlAuthenticator(t *testing.T, wantUser, wantSecret string, cred proxy.Credential) func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
+	return func(_ context.Context, user, secret string) (session.Identity, proxy.Credential, error) {
 		if user != wantUser || secret != wantSecret {
-			return session.Identity{}, Credential{}, fmt.Errorf("%w: bad secret for %q", ErrLoginRefused, user)
+			return session.Identity{}, proxy.Credential{}, fmt.Errorf("%w: bad secret for %q", proxy.ErrLoginRefused, user)
 		}
 		return session.Identity{Subject: "alice@example.com", Email: "alice@example.com"}, cred, nil
 	}
@@ -353,7 +365,7 @@ func mssqlAuthenticator(t *testing.T, wantUser, wantSecret string, cred Credenti
 func TestMSSQLLoginSwapsTheCredentialUnderEncryptOff(t *testing.T) {
 	server := &mssqlFakeServer{accept: func(u, p string) bool { return u == "svc_app" && p == "hunter2" }}
 	h := newMSSQLHarness(t, server)
-	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", Credential{Name: "app", User: "svc_app", Password: "hunter2"})
+	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{Name: "app", User: "svc_app", Password: "hunter2"})
 	done := h.run()
 
 	fc := mssqlConnect(t, h.client, mssqlauth.EncryptOff)
@@ -426,7 +438,7 @@ func TestMSSQLLoginKeepsTheClientLegEncryptedUnderEncryptOn(t *testing.T) {
 		t.Run(mssqlauth.EncryptionName(enc), func(t *testing.T) {
 			server := &mssqlFakeServer{accept: func(u, p string) bool { return u == "svc_app" }}
 			h := newMSSQLHarness(t, server)
-			h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", Credential{Name: "app", User: "svc_app", Password: "x"})
+			h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{Name: "app", User: "svc_app", Password: "x"})
 			done := h.run()
 
 			fc := mssqlConnect(t, h.client, enc)
@@ -453,7 +465,7 @@ func TestMSSQLLoginKeepsTheClientLegEncryptedUnderEncryptOn(t *testing.T) {
 func TestMSSQLLoginRefusesABadSecretWith18456(t *testing.T) {
 	server := &mssqlFakeServer{accept: func(string, string) bool { t.Error("upstream login attempted"); return false }}
 	h := newMSSQLHarness(t, server)
-	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", Credential{})
+	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{})
 	done := h.run()
 
 	fc := mssqlConnect(t, h.client, mssqlauth.EncryptOff)
@@ -467,8 +479,8 @@ func TestMSSQLLoginRefusesABadSecretWith18456(t *testing.T) {
 	}
 
 	res, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) {
-		t.Fatalf("err = %v, want ErrLoginRefused", err)
+	if !errors.Is(err, proxy.ErrLoginRefused) {
+		t.Fatalf("err = %v, want proxy.ErrLoginRefused", err)
 	}
 	if res.Identity.Subject != "alice" {
 		t.Fatalf("refusal audited under %q", res.Identity.Subject)
@@ -480,14 +492,14 @@ func TestMSSQLLoginRefusesABadSecretWith18456(t *testing.T) {
 
 func TestMSSQLLoginRefusesStrictClientsByName(t *testing.T) {
 	h := newMSSQLHarness(t, &mssqlFakeServer{})
-	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", Credential{})
+	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{})
 	done := h.run()
 
 	// A TDS 8 client opens with a TLS ClientHello record.
 	hello := []byte{0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x03}
 	go h.client.Write(hello)
 	_, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) || !strings.Contains(err.Error(), "Encrypt=strict") {
+	if !errors.Is(err, proxy.ErrLoginRefused) || !strings.Contains(err.Error(), "Encrypt=strict") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -495,9 +507,9 @@ func TestMSSQLLoginRefusesStrictClientsByName(t *testing.T) {
 func TestMSSQLLoginPassesAListedUserThroughUnchanged(t *testing.T) {
 	server := &mssqlFakeServer{accept: func(u, p string) bool { return u == "alice" && p == "s3cret" }}
 	h := newMSSQLHarness(t, server)
-	h.lc.Authenticate = func(context.Context, string, string) (session.Identity, Credential, error) {
+	h.lc.Authenticate = func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
 		t.Error("Authenticate called for a pass-through user")
-		return session.Identity{}, Credential{}, ErrLoginRefused
+		return session.Identity{}, proxy.Credential{}, proxy.ErrLoginRefused
 	}
 	h.lc.Passthrough = func(user string) bool { return user == "alice" }
 	done := h.run()
@@ -530,14 +542,14 @@ func TestMSSQLLoginIntegratedNeedsThePassthroughEntry(t *testing.T) {
 
 	t.Run("refused by default", func(t *testing.T) {
 		h := newMSSQLHarness(t, &mssqlFakeServer{})
-		h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", Credential{})
+		h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{})
 		done := h.run()
 		fc := mssqlConnect(t, h.client, mssqlauth.EncryptOff)
 		fc.login(t, integrated())
 		if resp := fc.response(t); resp.Err == nil || resp.Err.Number != mssqlauth.LoginFailedNumber {
 			t.Fatalf("client saw %+v", resp)
 		}
-		if _, err := h.wait(done); !errors.Is(err, ErrLoginRefused) || !strings.Contains(err.Error(), mssqlIntegratedUser) {
+		if _, err := h.wait(done); !errors.Is(err, proxy.ErrLoginRefused) || !strings.Contains(err.Error(), mssqlIntegratedUser) {
 			t.Fatalf("err = %v", err)
 		}
 	})
@@ -553,7 +565,7 @@ func TestMSSQLLoginIntegratedNeedsThePassthroughEntry(t *testing.T) {
 			return nil, false
 		}}
 		h := newMSSQLHarness(t, server)
-		h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", Credential{})
+		h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{})
 		h.lc.Passthrough = func(user string) bool { return user == mssqlIntegratedUser }
 		done := h.run()
 
@@ -621,7 +633,7 @@ func TestMSSQLLoginDrivesSSPIUpstreamForAKerberosCredential(t *testing.T) {
 	}}
 	h := newMSSQLHarness(t, server)
 	gss := &fakeGSS{}
-	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", Credential{Name: "krb", User: "svc@EXAMPLE", GSS: gss})
+	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{Name: "krb", User: "svc@EXAMPLE", GSS: gss})
 	done := h.run()
 
 	fc := mssqlConnect(t, h.client, mssqlauth.EncryptOff)
@@ -653,7 +665,7 @@ func TestMSSQLLoginDrivesSSPIUpstreamForAKerberosCredential(t *testing.T) {
 func TestMSSQLLoginForwardsAnUpstreamRefusal(t *testing.T) {
 	server := &mssqlFakeServer{accept: func(string, string) bool { return false }}
 	h := newMSSQLHarness(t, server)
-	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", Credential{Name: "app", User: "svc_app", Password: "stale"})
+	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{Name: "app", User: "svc_app", Password: "stale"})
 	done := h.run()
 
 	fc := mssqlConnect(t, h.client, mssqlauth.EncryptOff)
@@ -663,14 +675,14 @@ func TestMSSQLLoginForwardsAnUpstreamRefusal(t *testing.T) {
 		t.Fatalf("client saw %+v", resp)
 	}
 	_, err := h.wait(done)
-	if err == nil || errors.Is(err, ErrLoginRefused) {
+	if err == nil || errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err = %v, want an upstream failure that is not a client refusal", err)
 	}
 }
 
 func TestMSSQLLoginRefusesAnUpstreamWithoutEncryption(t *testing.T) {
 	h := newMSSQLHarness(t, &mssqlFakeServer{})
-	h.lc.Dial = func(context.Context, *Credential) (net.Conn, error) {
+	h.lc.Dial = func(context.Context, *proxy.Credential) (net.Conn, error) {
 		up, srv := net.Pipe()
 		go func() {
 			defer srv.Close()
@@ -682,7 +694,7 @@ func TestMSSQLLoginRefusesAnUpstreamWithoutEncryption(t *testing.T) {
 		}()
 		return up, nil
 	}
-	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", Credential{})
+	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{})
 	done := h.run()
 	go mssqlauth.WritePacket(h.client, mssqlauth.Packet{Type: mssqlauth.PacketPrelogin, Status: mssqlauth.StatusEOM,
 		Payload: mssqlauth.ServerPrelogin(mssqlauth.EncryptOff).Encode()})

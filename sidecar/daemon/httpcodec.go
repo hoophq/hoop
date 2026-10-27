@@ -44,7 +44,7 @@ import (
 // upstream credential it resolves and, when the lane propagates, names the
 // caller in Impersonate-User; nil forwards Authorization as written.
 func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, holds bool,
-	origin *codechttp.Origin, auth *laneAuth, impersonate bool) func() inspect.Codec {
+	origin *codechttp.Origin, auth LaneAuth, impersonate bool) func() inspect.Codec {
 	opts := codechttp.Options{
 		// headerNames is normalized once, the same list validate checked,
 		// nil-safe, and a fresh slice, so the append leaves cfg alone.
@@ -60,7 +60,7 @@ func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, authenticates, 
 		opts.SensitiveQueryParams = cfg.SensitiveQueryParams
 	}
 	if auth != nil {
-		opts.Swap = auth.swap
+		opts.Swap = auth.Swap
 		opts.Impersonate = impersonate
 	}
 	return func() inspect.Codec { return codechttp.New(opts) }

@@ -1,4 +1,4 @@
-package daemon
+package auth
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 )
 
@@ -120,13 +121,13 @@ func (f *fakeIssuer) token(t *testing.T, kid string, overrides map[string]any) s
 	return signing + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
-func kubernetesVerifier(t *testing.T, f *fakeIssuer, cfg IdentityConfig) *kubernetesIdentity {
+func kubernetesVerifier(t *testing.T, f *fakeIssuer, cfg daemon.IdentityConfig) *kubernetesIdentity {
 	t.Helper()
-	cfg.Type = IdentityKubernetes
+	cfg.Type = daemon.IdentityKubernetes
 	if cfg.Issuer == "" {
 		cfg.Issuer = f.srv.URL
 	}
-	v, err := buildKubernetesIdentity(cfg, IdentityDeps{Roots: f.roots()})
+	v, err := buildKubernetesIdentity(cfg, daemon.IdentityDeps{Roots: f.roots()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,15 +145,15 @@ func assertRefused(t *testing.T, err error, want string) {
 // algorithm, and the identity carries the pod facts.
 func TestKubernetesVerifierAcceptsATokenFromTheIssuer(t *testing.T) {
 	f := startIssuer(t)
-	v := kubernetesVerifier(t, f, IdentityConfig{})
+	v := kubernetesVerifier(t, f, daemon.IdentityConfig{})
 	for _, kid := range []string{"rsa-1", "ec-1"} {
-		id, err := v.Verify(context.Background(), "ignored", f.token(t, kid, nil), PeerInfo{})
+		id, err := v.Verify(context.Background(), "ignored", f.token(t, kid, nil), daemon.PeerInfo{})
 		if err != nil {
 			t.Fatalf("%s: %v", kid, err)
 		}
 		if id.Subject != "system:serviceaccount:payments:api" || id.Attributes["namespace"] != "payments" ||
 			id.Attributes["pod"] != "api-7d9f" || id.Attributes["service_account"] != "api" ||
-			id.Attributes[identityTypeAttribute] != IdentityKubernetes {
+			id.Attributes[daemon.IdentityTypeAttribute] != daemon.IdentityKubernetes {
 			t.Fatalf("%s: identity = %+v", kid, id)
 		}
 	}
@@ -164,7 +165,7 @@ func TestKubernetesVerifierAcceptsATokenFromTheIssuer(t *testing.T) {
 func TestKubernetesVerifierRefusals(t *testing.T) {
 	f := startIssuer(t)
 	other := startIssuer(t)
-	v := kubernetesVerifier(t, f, IdentityConfig{})
+	v := kubernetesVerifier(t, f, daemon.IdentityConfig{})
 	bad := f.token(t, "rsa-1", nil)
 	bad = bad[:len(bad)-4] + "AAAA"
 	for name, tc := range map[string]struct{ token, want string }{
@@ -182,7 +183,7 @@ func TestKubernetesVerifierRefusals(t *testing.T) {
 		"unsigned alg":   {strings.Replace(f.token(t, "rsa-1", nil), base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","kid":"rsa-1","typ":"JWT"}`)), base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","kid":"rsa-1","typ":"JWT"}`)), 1), "alg"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := v.Verify(context.Background(), "", tc.token, PeerInfo{})
+			_, err := v.Verify(context.Background(), "", tc.token, daemon.PeerInfo{})
 			assertRefused(t, err, tc.want)
 		})
 	}
@@ -192,28 +193,28 @@ func TestKubernetesVerifierRefusals(t *testing.T) {
 // of unknown kids costs one fetch a minute.
 func TestKubernetesVerifierRefreshesTheJWKSOnAnUnknownKidOnce(t *testing.T) {
 	f := startIssuer(t)
-	v := kubernetesVerifier(t, f, IdentityConfig{})
+	v := kubernetesVerifier(t, f, daemon.IdentityConfig{})
 	now := time.Now()
 	v.now = func() time.Time { return now }
-	if _, err := v.Verify(context.Background(), "", f.token(t, "rsa-1", nil), PeerInfo{}); err != nil {
+	if _, err := v.Verify(context.Background(), "", f.token(t, "rsa-1", nil), daemon.PeerInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	// The issuer rotates: the verifier has not seen rsa-2 and asks again.
 	f.kids.Store([]string{"rsa-2"})
-	_, err := v.Verify(context.Background(), "", f.token(t, "rsa-2", nil), PeerInfo{})
+	_, err := v.Verify(context.Background(), "", f.token(t, "rsa-2", nil), daemon.PeerInfo{})
 	assertRefused(t, err, `key "rsa-2"`) // within the minute: no fetch
 	if n := f.fetches.Load(); n != 1 {
 		t.Fatalf("fetches = %d after a refused refresh, want 1", n)
 	}
 	now = now.Add(2 * jwksRefreshMin)
-	if _, err := v.Verify(context.Background(), "", f.token(t, "rsa-2", nil), PeerInfo{}); err != nil {
+	if _, err := v.Verify(context.Background(), "", f.token(t, "rsa-2", nil), daemon.PeerInfo{}); err != nil {
 		t.Fatalf("after the rotation: %v", err)
 	}
 	if n := f.fetches.Load(); n != 2 {
 		t.Fatalf("fetches = %d, want 2", n)
 	}
 	// And the old key is gone.
-	_, err = v.Verify(context.Background(), "", f.token(t, "rsa-1", nil), PeerInfo{})
+	_, err = v.Verify(context.Background(), "", f.token(t, "rsa-1", nil), daemon.PeerInfo{})
 	assertRefused(t, err, `key "rsa-1"`)
 }
 
@@ -222,37 +223,37 @@ func TestKubernetesVerifierRefreshesTheJWKSOnAnUnknownKidOnce(t *testing.T) {
 func TestKubernetesVerifierPinsThePod(t *testing.T) {
 	f := startIssuer(t)
 	t.Setenv(podUIDEnv, "pod-uid-1")
-	v := kubernetesVerifier(t, f, IdentityConfig{Audience: "pg-prod"})
-	if _, err := v.Verify(context.Background(), "", f.token(t, "ec-1", map[string]any{"aud": "pg-prod"}), PeerInfo{}); err != nil {
+	v := kubernetesVerifier(t, f, daemon.IdentityConfig{Audience: "pg-prod"})
+	if _, err := v.Verify(context.Background(), "", f.token(t, "ec-1", map[string]any{"aud": "pg-prod"}), daemon.PeerInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	stolen := f.token(t, "ec-1", map[string]any{"aud": "pg-prod", "kubernetes.io": map[string]any{
 		"namespace": "payments", "pod": map[string]string{"name": "api-other", "uid": "pod-uid-2"}}})
-	_, err := v.Verify(context.Background(), "", stolen, PeerInfo{})
+	_, err := v.Verify(context.Background(), "", stolen, daemon.PeerInfo{})
 	assertRefused(t, err, `issued to pod "api-other"`)
 }
 
 // An unreachable issuer is a failure, not a refusal by rule, and the
 // builder refuses an issuer that is not https.
 func TestKubernetesVerifierIssuerErrors(t *testing.T) {
-	v, err := buildKubernetesIdentity(IdentityConfig{Type: IdentityKubernetes, Issuer: "https://127.0.0.1:1"}, IdentityDeps{})
+	v, err := buildKubernetesIdentity(daemon.IdentityConfig{Type: daemon.IdentityKubernetes, Issuer: "https://127.0.0.1:1"}, daemon.IdentityDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	f := startIssuer(t)
-	_, err = v.Verify(ctx, "", f.token(t, "rsa-1", map[string]any{"iss": "https://127.0.0.1:1"}), PeerInfo{})
+	_, err = v.Verify(ctx, "", f.token(t, "rsa-1", map[string]any{"iss": "https://127.0.0.1:1"}), daemon.PeerInfo{})
 	if err == nil || errors.Is(err, codectypes.ErrLoginRefused) {
 		t.Fatalf("want a transport error, not a refusal: %v", err)
 	}
 	for _, issuer := range []string{"http://plain", "kubernetes.default.svc", "https://"} {
-		if _, err := buildKubernetesIdentity(IdentityConfig{Issuer: issuer}, IdentityDeps{}); err == nil {
+		if _, err := buildKubernetesIdentity(daemon.IdentityConfig{Issuer: issuer}, daemon.IdentityDeps{}); err == nil {
 			t.Errorf("issuer %q was accepted", issuer)
 		}
 	}
 	// The in-cluster default needs the mounted CA; off a cluster it says so.
-	v, err = buildKubernetesIdentity(IdentityConfig{}, IdentityDeps{})
+	v, err = buildKubernetesIdentity(daemon.IdentityConfig{}, daemon.IdentityDeps{})
 	if err != nil {
 		t.Fatal(err)
 	}

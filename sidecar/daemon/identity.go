@@ -65,7 +65,7 @@ func (l ListenerConfig) credentialHeader() string {
 		return l.CallerToken.header()
 	case l.IdentityHeader != "":
 		return strings.ToLower(strings.TrimSpace(l.IdentityHeader))
-	case l.hasPool() && l.identityType() != IdentityNone:
+	case l.HasPool() && l.IdentityType() != IdentityNone:
 		// The client's hoop key or platform token rides as the bearer;
 		// a none lane verifies nothing and lifts nothing.
 		return "authorization"
@@ -79,7 +79,7 @@ func (l ListenerConfig) credentialHeader() string {
 // this one predicate, so the codec's check and the gate's cannot be
 // configured apart; see gate.Config.AuthenticatesCaller.
 func (l ListenerConfig) authenticatesCaller() bool {
-	return l.CallerToken != nil || (l.hasPool() && l.credentialHeader() != "")
+	return l.CallerToken != nil || (l.HasPool() && l.credentialHeader() != "")
 }
 
 // buildRequestIdentity returns the resolver for credentialHeader's value,

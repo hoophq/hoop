@@ -251,8 +251,9 @@ type Config struct {
 	// credentials is the live credential set and credentialSources the
 	// built sources, both process-wide: buildLanes creates them on the
 	// startup config and the reloader hands them to every later document,
-	// swapping the set's entries in place.
-	credentials       *credentialSet
+	// swapping the set's entries in place. credentials is nil in a build
+	// that links no auth engine.
+	credentials       CredentialSet
 	credentialSources map[string]CredentialSource
 }
 
@@ -2050,7 +2051,7 @@ func (c *Config) validateLaneAuth(l ListenerConfig, name string) []string {
 		problems = append(problems, name+": "+fmt.Sprintf(format, args...))
 	}
 	const oracleMsg = "oracle: credential swap is not supported in this release; use passthrough_users"
-	pool := l.hasPool()
+	pool := l.HasPool()
 
 	if l.Identity != nil {
 		switch {
@@ -2067,7 +2068,7 @@ func (c *Config) validateLaneAuth(l ListenerConfig, name string) []string {
 				pf("identity and %s both name the caller; keep one", other.name)
 			}
 		}
-		if _, ok := registeredIdentitySource(l.Identity.Type); !ok && !slices.Contains(knownIdentityTypes, l.Identity.Type) {
+		if _, ok := RegisteredIdentitySource(l.Identity.Type); !ok && !slices.Contains(knownIdentityTypes, l.Identity.Type) {
 			pf("identity.type %q is not %s", l.Identity.Type, orList(knownIdentityTypes))
 		}
 		if l.Identity.Type == IdentityNone && l.network() != "unix" {
@@ -2171,7 +2172,7 @@ func (c *Config) validateLaneAuth(l ListenerConfig, name string) []string {
 		switch {
 		case !slices.Contains([]inspect.Protocol{inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB, inspect.Oracle, inspect.ClickHouse}, p):
 			pf("passthrough_users is only supported on a database listener with a login user, not %q", l.Protocol)
-		case l.identityType() == "":
+		case l.IdentityType() == "":
 			pf("passthrough_users needs an identity block: without one every user passes through already")
 		}
 		if slices.Contains(l.PassthroughUsers, "") {
@@ -2231,22 +2232,22 @@ func validatePoolEntry(sources *CredentialSourcesConfig, l ListenerConfig, e Cre
 			pf("user or user_file is required on a %s listener", l.Protocol)
 		}
 		if sources != nil && sources.SecretFiles != nil && sources.SecretFiles.Dir != "" {
-			s := &secretFilesSource{dir: filepath.Clean(sources.SecretFiles.Dir)}
+			dir := filepath.Clean(sources.SecretFiles.Dir)
 			for _, f := range []string{e.PasswordFile, e.UserFile} {
 				if f == "" {
 					continue
 				}
-				if _, err := s.resolve(f); err != nil {
+				if _, err := ResolveSecretFile(dir, f); err != nil {
 					pf("%v", err)
 				}
 			}
 		}
 	case SourceGCPImpersonation:
-		if err := (&gcpImpersonationSource{}).validateEntry(e); err != nil {
+		if err := ValidateGCPImpersonationEntry(e); err != nil {
 			pf("%v", err)
 		}
 	case SourceX509:
-		if err := (x509Source{}).validateEntry(e); err != nil {
+		if err := ValidateX509Entry(e); err != nil {
 			pf("%v", err)
 		}
 		if perRequest {
@@ -2264,14 +2265,14 @@ func validatePoolEntry(sources *CredentialSourcesConfig, l ListenerConfig, e Cre
 			pf("kerberos initiates GSSAPI on a database login, not valid on %s", l.Protocol)
 		}
 	case SourceVault:
-		if err := (&vaultSource{}).validateEntry(e); err != nil {
+		if err := ValidateVaultEntry(e); err != nil {
 			pf("%v", err)
 		}
-		if perRequest && vaultIsDynamic(e.Path) {
+		if perRequest && VaultIsDynamic(e.Path) {
 			pf("a database engine path mints a user per session, and a %s listener swaps the credential per request; use a KV path", l.Protocol)
 		}
 	case SourceGCPSecretManager:
-		if err := (&gcpSecretManagerSource{}).validateEntry(e); err != nil {
+		if err := ValidateGCPSecretManagerEntry(e); err != nil {
 			pf("%v", err)
 		}
 	}

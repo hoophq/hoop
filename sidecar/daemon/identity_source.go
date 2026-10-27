@@ -13,9 +13,10 @@ import (
 )
 
 // The identity vocabulary a config may name. The built-in types register
-// from init below; spiffe registers from the nested sidecar/identity/spiffe
-// module, so a build without it knows the name and refuses the lane on the
-// host (checkIdentitySources), while the control plane accepts it.
+// from sidecar/auth's init and spiffe from sidecar/identity/spiffe, so a
+// build without a module knows the name and refuses the lane on the host
+// (checkAuthEngine, checkIdentitySources), while the control plane accepts
+// it.
 const (
 	IdentityNone           = "none"
 	IdentityKubernetes     = "kubernetes"
@@ -27,9 +28,13 @@ const (
 	// token must carry when the lane names none.
 	DefaultIdentityAudience = "hoop-sidecar"
 
-	// identityTypeAttribute is the Identity attribute every verifier sets
+	// IdentityTypeAttribute is the Identity attribute every verifier sets
 	// to its type; the relay copies it to session metadata identity_type.
-	identityTypeAttribute = "identity_type"
+	IdentityTypeAttribute = "identity_type"
+
+	// KubernetesTokenFile is the pod's projected service account token,
+	// what a verifier or source presents when it logs in as the pod.
+	KubernetesTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 )
 
 // knownIdentityTypes is the vocabulary Config.validate accepts, built-in or
@@ -56,15 +61,14 @@ type IdentitySource interface {
 }
 
 // IdentityDeps is what a verifier builder may draw on. Roots is the process
-// trust pool (nil is the host store); Log is the lane's logger.
+// trust pool (nil is the host store); Log is the lane's logger. Lane and
+// CredentialSet back the hoop_credential verifier: the set the plane
+// serves, read on every login, scoped to this listener.
 type IdentityDeps struct {
-	Roots *x509.CertPool
-	Log   *slog.Logger
-
-	// lane and credentials back the hoop_credential verifier: the set the
-	// plane serves, read on every login, scoped to this listener.
-	lane        string
-	credentials *credentialSet
+	Roots         *x509.CertPool
+	Log           *slog.Logger
+	Lane          string
+	CredentialSet CredentialSet
 }
 
 // IdentityBuilder builds one lane's verifier. It must not dial or read a
@@ -91,7 +95,8 @@ func RegisterIdentitySource(typ string, build IdentityBuilder) {
 	identityBuilders[typ] = build
 }
 
-func registeredIdentitySource(typ string) (IdentityBuilder, bool) {
+// RegisteredIdentitySource is the builder linked for a type, if any.
+func RegisteredIdentitySource(typ string) (IdentityBuilder, bool) {
 	identityMu.Lock()
 	defer identityMu.Unlock()
 	b, ok := identityBuilders[typ]
@@ -111,18 +116,10 @@ func identityTypes() []string {
 	return out
 }
 
-// audience is the token audience a lane requires.
-func (c IdentityConfig) audience() string {
-	if c.Audience != "" {
-		return c.Audience
-	}
-	return DefaultIdentityAudience
-}
-
-// refused builds a login refusal. The text reaches the log and, through the
+// Refused builds a login refusal. The text reaches the log and, through the
 // driver's error frame, the client; it names what was wrong and never the
 // secret.
-func refused(format string, args ...any) error {
+func Refused(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", codectypes.ErrLoginRefused, fmt.Sprintf(format, args...))
 }
 
@@ -134,18 +131,19 @@ func checkIdentitySources(cfg *Config) error {
 		if l.Identity == nil {
 			continue
 		}
-		if _, ok := registeredIdentitySource(l.Identity.Type); !ok {
+		if _, ok := RegisteredIdentitySource(l.Identity.Type); !ok {
 			return fmt.Errorf("%s: identity type %q is not linked into this build; "+
-				"use the hoop-inspect binary, which imports sidecar/identity/%s",
-				l.displayName(i), l.Identity.Type, l.Identity.Type)
+				"use the hoop-inspect binary, which imports %s",
+				l.displayName(i), l.Identity.Type, identityModuleFor(l.Identity.Type))
 		}
 	}
 	return nil
 }
 
-func init() {
-	RegisterIdentitySource(IdentityNone, buildNoneIdentity)
-	RegisterIdentitySource(IdentityKubernetes, buildKubernetesIdentity)
-	RegisterIdentitySource(IdentityHoopCredential, buildHoopCredentialIdentity)
-	RegisterIdentitySource(IdentityJWT, buildJWTIdentity)
+// identityModuleFor names the nested module that registers a verifier type.
+func identityModuleFor(typ string) string {
+	if typ == IdentitySPIFFE {
+		return "sidecar/identity/spiffe"
+	}
+	return "sidecar/auth"
 }

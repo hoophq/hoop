@@ -4022,9 +4022,14 @@ observing or not: the identity the credential gave the session is the
 sidecar's choice. The trail records `credential`, `upstream_user`,
 `identity_type` and `verified` on the session.
 
-The capabilities header lists `identity:<type>` and `credentials.<source>`
-for what the build links, so the plane serves such a lane only to a build
-that can run it; `-validate` refuses one this build cannot.
+`identity`, `credentials`, `passthrough_users` and `propagate` need the
+`sidecar/auth` module, the credential-swap runtime linked into `hoop-inspect`
+and `hoop start sidecar`; a build without it refuses such a lane at
+`-validate`, naming the module, while the control plane validates the
+document without linking it. The capabilities header lists `identity:<type>`
+and `credentials.<source>` for what the build links, so the plane serves such
+a lane only to a build that can run it; `-validate` refuses one this build
+cannot.
 
 ### Credential set
 

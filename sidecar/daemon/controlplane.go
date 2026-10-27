@@ -514,13 +514,13 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 		// The plane authenticated the token and holds nothing to serve.
 		// resolveConfigSource turns this into an import when the local
 		// file can supply the document; the heartbeat only logs it.
-		return handshakeAnswer{}, fmt.Errorf("%w (at %s): %s", ErrPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
+		return handshakeAnswer{}, fmt.Errorf("%w (at %s): %s", ErrPlaneHasNoConfig, baseURL, ErrorMessage(raw))
 	case http.StatusUnprocessableEntity:
 		// An operator misconfiguration on the plane side (say, a connection
 		// type no codec speaks). Retrying never fixes it; the message names
 		// what to change.
 		return handshakeAnswer{}, fmt.Errorf("the control plane at %s cannot build this sidecar's config: %s",
-			baseURL, controlPlaneMessage(raw))
+			baseURL, ErrorMessage(raw))
 	}
 
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
@@ -529,7 +529,7 @@ func fetchControlPlaneConfig(baseURL string, cred credential, hs handshakeReques
 			baseURL, resp.Header.Get("Location"))
 	}
 	return handshakeAnswer{}, fmt.Errorf("the control plane at %s answered %s: %s",
-		baseURL, resp.Status, controlPlaneMessage(raw))
+		baseURL, resp.Status, ErrorMessage(raw))
 }
 
 // controlPlaneHTTPClient never follows a redirect: the token rides a custom
@@ -710,7 +710,7 @@ func pushControlPlaneConfig(baseURL string, cred credential, body []byte) error 
 		return fmt.Errorf("the control plane at %s rejected the token; "+
 			"check it against the one shown when this sidecar was created", baseURL)
 	case http.StatusConflict:
-		return fmt.Errorf("%w: %s", errPlaneAlreadyConfigured, controlPlaneMessage(raw))
+		return fmt.Errorf("%w: %s", errPlaneAlreadyConfigured, ErrorMessage(raw))
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
 		// A gateway that predates the import route. The operator can still
 		// author the configuration on the plane; the message says so
@@ -720,7 +720,7 @@ func pushControlPlaneConfig(baseURL string, cred credential, body []byte) error 
 			"control plane instead", baseURL, controlPlaneConfigurationPath)
 	case http.StatusUnprocessableEntity:
 		return fmt.Errorf("the control plane at %s refused the imported config: %s",
-			baseURL, controlPlaneMessage(raw))
+			baseURL, ErrorMessage(raw))
 	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		return fmt.Errorf("the control plane at %s redirected to %q; the import "+
@@ -728,12 +728,12 @@ func pushControlPlaneConfig(baseURL string, cred credential, body []byte) error 
 			baseURL, resp.Header.Get("Location"))
 	}
 	return fmt.Errorf("the control plane at %s answered %s: %s",
-		baseURL, resp.Status, controlPlaneMessage(raw))
+		baseURL, resp.Status, ErrorMessage(raw))
 }
 
-// controlPlaneMessage extracts the gateway's {"message": ...} error shape,
+// ErrorMessage extracts the gateway's {"message": ...} error shape,
 // falling back to the raw body so an unexpected proxy page is still visible.
-func controlPlaneMessage(raw []byte) string {
+func ErrorMessage(raw []byte) string {
 	var m struct {
 		Message string `json:"message"`
 	}

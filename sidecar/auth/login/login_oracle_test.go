@@ -1,4 +1,4 @@
-package proxy
+package login
 
 import (
 	"bufio"
@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/libhoop/v2/codec/oracle/oranet"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -121,7 +122,7 @@ type oracleHarness struct {
 	t        *testing.T
 	client   net.Conn
 	script   *oracleScript
-	conn     *LoginConn
+	conn     *proxy.LoginConn
 	mu       sync.Mutex
 	dialed   int
 	inspects []inspect.Direction
@@ -131,10 +132,10 @@ func newOracleHarness(t *testing.T, script *oracleScript, passthrough ...string)
 	t.Helper()
 	clientEnd, relayEnd := net.Pipe()
 	h := &oracleHarness{t: t, client: clientEnd, script: script}
-	h.conn = &LoginConn{
+	h.conn = &proxy.LoginConn{
 		Client: relayEnd,
-		Lane:   LaneInfo{Protocol: inspect.Oracle, Name: "ora", Network: "tcp", UpstreamAddr: "db.internal:1521"},
-		Dial: func(_ context.Context, cred *Credential) (net.Conn, error) {
+		Lane:   proxy.LaneInfo{Protocol: inspect.Oracle, Name: "ora", Network: "tcp", UpstreamAddr: "db.internal:1521"},
+		Dial: func(_ context.Context, cred *proxy.Credential) (net.Conn, error) {
 			if cred != nil {
 				t.Errorf("oracle dialed with a credential before any identity was verified")
 			}
@@ -145,9 +146,9 @@ func newOracleHarness(t *testing.T, script *oracleScript, passthrough ...string)
 			go script.serve(down)
 			return up, nil
 		},
-		Authenticate: func(context.Context, string, string) (session.Identity, Credential, error) {
+		Authenticate: func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
 			t.Errorf("Authenticate called: no Oracle secret is ever recoverable")
-			return session.Identity{}, Credential{}, ErrLoginRefused
+			return session.Identity{}, proxy.Credential{}, proxy.ErrLoginRefused
 		},
 		Passthrough: func(user string) bool {
 			for _, p := range passthrough {
@@ -169,7 +170,7 @@ func newOracleHarness(t *testing.T, script *oracleScript, passthrough ...string)
 }
 
 type oracleOutcome struct {
-	res LoginResult
+	res proxy.LoginResult
 	err error
 }
 
@@ -184,14 +185,14 @@ func (h *oracleHarness) run() <-chan oracleOutcome {
 	return out
 }
 
-func (h *oracleHarness) wait(done <-chan oracleOutcome) (LoginResult, error) {
+func (h *oracleHarness) wait(done <-chan oracleOutcome) (proxy.LoginResult, error) {
 	h.t.Helper()
 	select {
 	case r := <-done:
 		return r.res, r.err
 	case <-time.After(5 * time.Second):
 		h.t.Fatal("login did not finish")
-		return LoginResult{}, nil
+		return proxy.LoginResult{}, nil
 	}
 }
 
@@ -316,8 +317,8 @@ func TestOracleLoginRefusesClassicLoginWithORA01017(t *testing.T) {
 	h.play(reads, phase1)
 	h.expectRefusal(true)
 	res, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) {
-		t.Fatalf("err %v, want ErrLoginRefused", err)
+	if !errors.Is(err, proxy.ErrLoginRefused) {
+		t.Fatalf("err %v, want proxy.ErrLoginRefused", err)
 	}
 	if res.Identity.Subject != "app" || res.Passthrough {
 		t.Fatalf("result %+v", res)
@@ -345,7 +346,7 @@ func TestOracleLoginRefusesThinClientAtPhaseOne(t *testing.T) {
 	}
 	h.expectRefusal(true)
 	res, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) || res.Identity.Subject != "SCOTT" {
+	if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "SCOTT" {
 		t.Fatalf("err %v result %+v", err, res)
 	}
 }
@@ -366,7 +367,7 @@ func TestOracleLoginRefusesFastAuthAfterServerReply(t *testing.T) {
 	h.play(reads, phase2)
 	h.expectRefusal(true)
 	res, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) || res.Identity.Subject != "app" {
+	if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "app" {
 		t.Fatalf("err %v result %+v", err, res)
 	}
 	got, serr := script.received()
@@ -406,7 +407,7 @@ func TestOracleLoginRelaysResend(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.expectRefusal(true)
-	if _, err := h.wait(done); !errors.Is(err, ErrLoginRefused) {
+	if _, err := h.wait(done); !errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -419,7 +420,7 @@ func TestOracleLoginForwardsRefuseAndCloses(t *testing.T) {
 	done := h.run()
 	h.play(script.reads, 1)
 	_, err := h.wait(done)
-	if err == nil || errors.Is(err, ErrLoginRefused) {
+	if err == nil || errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err %v, want an upstream error that is not a login refusal", err)
 	}
 }
@@ -434,7 +435,7 @@ func TestOracleLoginDoesNotRelayRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := h.wait(done)
-	if err == nil || errors.Is(err, ErrLoginRefused) {
+	if err == nil || errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err %v", err)
 	}
 	h.client.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
@@ -450,14 +451,8 @@ func TestOracleLoginRefusesNonConnectFirstPacket(t *testing.T) {
 	if _, err := h.client.Write(oraauth.WrapDataPacket([]byte{0x03, 0x76}, false)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.wait(done); err == nil || errors.Is(err, ErrLoginRefused) {
+	if _, err := h.wait(done); err == nil || errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err %v", err)
-	}
-}
-
-func TestOracleLoginRegistered(t *testing.T) {
-	if _, ok := loginFor(inspect.Oracle); !ok {
-		t.Fatal("no oracle login driver registered")
 	}
 }
 

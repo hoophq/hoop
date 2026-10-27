@@ -709,7 +709,7 @@ func (s *sessionEventSink) post(ctx context.Context, body []byte) (status int, m
 		return resp.StatusCode, fmt.Sprintf("redirected to %q; configure the final URL",
 			resp.Header.Get("Location")), nil
 	}
-	return resp.StatusCode, controlPlaneMessage(raw), nil
+	return resp.StatusCode, ErrorMessage(raw), nil
 }
 
 // finalFlush tries each remaining batch once; ctx ends at the close

@@ -1,8 +1,9 @@
-package daemon
+package auth
 
 import (
 	"context"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -13,10 +14,10 @@ import (
 // any, and nothing a client typed.
 type noneIdentity struct{}
 
-func buildNoneIdentity(IdentityConfig, IdentityDeps) (IdentitySource, error) {
+func buildNoneIdentity(daemon.IdentityConfig, daemon.IdentityDeps) (daemon.IdentitySource, error) {
 	return noneIdentity{}, nil
 }
 
-func (noneIdentity) Verify(context.Context, string, string, PeerInfo) (session.Identity, error) {
-	return session.Identity{Attributes: map[string]string{identityTypeAttribute: IdentityNone}}, nil
+func (noneIdentity) Verify(context.Context, string, string, daemon.PeerInfo) (session.Identity, error) {
+	return session.Identity{Attributes: map[string]string{daemon.IdentityTypeAttribute: daemon.IdentityNone}}, nil
 }

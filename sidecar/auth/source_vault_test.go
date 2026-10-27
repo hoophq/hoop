@@ -1,4 +1,4 @@
-package daemon
+package auth
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -78,16 +79,16 @@ func startVault(t *testing.T) *fakeVault {
 	return f
 }
 
-func vaultSourceFor(t *testing.T, f *fakeVault, auth VaultAuthConfig) *vaultSource {
+func vaultSourceFor(t *testing.T, f *fakeVault, auth daemon.VaultAuthConfig) *vaultSource {
 	t.Helper()
-	src, err := buildVaultSource(&CredentialSourcesConfig{Vault: &VaultSourceConfig{Addr: f.srv.URL, Auth: auth}})
+	src, err := buildVaultSource(&daemon.CredentialSourcesConfig{Vault: &daemon.VaultSourceConfig{Addr: f.srv.URL, Auth: auth}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	v := src.(*vaultSource)
 	pool := x509.NewCertPool()
 	pool.AddCert(f.srv.Certificate())
-	v.useRoots(pool)
+	v.UseRoots(pool)
 	return v
 }
 
@@ -104,10 +105,10 @@ func writeToken(t *testing.T, content string) string {
 // reuses the Vault token until 80% of its lifetime, then logs in again.
 func TestVaultSourceKubernetesLoginIsCachedThenRenewed(t *testing.T) {
 	f := startVault(t)
-	v := vaultSourceFor(t, f, VaultAuthConfig{Type: VaultAuthKubernetes, Role: "hoop-sidecar", TokenFile: writeToken(t, "sa-token")})
+	v := vaultSourceFor(t, f, daemon.VaultAuthConfig{Type: daemon.VaultAuthKubernetes, Role: "hoop-sidecar", TokenFile: writeToken(t, "sa-token")})
 	now := time.Now()
 	v.now = func() time.Time { return now }
-	entry := CredentialEntry{Name: "rw", Source: SourceVault, Path: "secret/data/appdb"}
+	entry := daemon.CredentialEntry{Name: "rw", Source: daemon.SourceVault, Path: "secret/data/appdb"}
 	for i := 0; i < 3; i++ {
 		c, err := v.Credential(context.Background(), entry, session.Identity{})
 		if err != nil {
@@ -132,22 +133,22 @@ func TestVaultSourceKubernetesLoginIsCachedThenRenewed(t *testing.T) {
 // A KV v1 path, custom keys, and a literal user that overrides the key.
 func TestVaultSourceReadsKVv1WithCustomKeys(t *testing.T) {
 	f := startVault(t)
-	v := vaultSourceFor(t, f, VaultAuthConfig{Type: VaultAuthTokenFile, TokenFile: writeToken(t, "hvs.file")})
-	c, err := v.Credential(context.Background(), CredentialEntry{Name: "ro", Source: SourceVault, Path: "kv1/appdb", UserKey: "username", PasswordKey: "pw"}, session.Identity{})
+	v := vaultSourceFor(t, f, daemon.VaultAuthConfig{Type: daemon.VaultAuthTokenFile, TokenFile: writeToken(t, "hvs.file")})
+	c, err := v.Credential(context.Background(), daemon.CredentialEntry{Name: "ro", Source: daemon.SourceVault, Path: "kv1/appdb", UserKey: "username", PasswordKey: "pw"}, session.Identity{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.User != "app_ro" || c.Password != "pw-v1" {
 		t.Errorf("credential %+v", c)
 	}
-	c, err = v.Credential(context.Background(), CredentialEntry{Name: "ro", Source: SourceVault, Path: "kv1/appdb", User: "literal", PasswordKey: "pw"}, session.Identity{})
+	c, err = v.Credential(context.Background(), daemon.CredentialEntry{Name: "ro", Source: daemon.SourceVault, Path: "kv1/appdb", User: "literal", PasswordKey: "pw"}, session.Identity{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.User != "literal" {
 		t.Errorf("user %q, want the literal", c.User)
 	}
-	_, err = v.Credential(context.Background(), CredentialEntry{Name: "ro", Source: SourceVault, Path: "kv1/appdb"}, session.Identity{})
+	_, err = v.Credential(context.Background(), daemon.CredentialEntry{Name: "ro", Source: daemon.SourceVault, Path: "kv1/appdb"}, session.Identity{})
 	if err == nil || !strings.Contains(err.Error(), `no "password" key`) {
 		t.Errorf("default password key missing, got %v", err)
 	}
@@ -156,8 +157,8 @@ func TestVaultSourceReadsKVv1WithCustomKeys(t *testing.T) {
 // A database engine path yields a leased user, and Release revokes the lease.
 func TestVaultSourceDynamicCredentialIsRevokedOnRelease(t *testing.T) {
 	f := startVault(t)
-	v := vaultSourceFor(t, f, VaultAuthConfig{Type: VaultAuthTokenFile, TokenFile: writeToken(t, "hvs.file")})
-	c, err := v.Credential(context.Background(), CredentialEntry{Name: "tmp", Source: SourceVault, Path: "database/creds/appdb-rw"}, session.Identity{})
+	v := vaultSourceFor(t, f, daemon.VaultAuthConfig{Type: daemon.VaultAuthTokenFile, TokenFile: writeToken(t, "hvs.file")})
+	c, err := v.Credential(context.Background(), daemon.CredentialEntry{Name: "tmp", Source: daemon.SourceVault, Path: "database/creds/appdb-rw"}, session.Identity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,35 +176,22 @@ func TestVaultSourceDynamicCredentialIsRevokedOnRelease(t *testing.T) {
 // Vault's refusals and config mistakes name the problem, never the token.
 func TestVaultSourceErrors(t *testing.T) {
 	f := startVault(t)
-	v := vaultSourceFor(t, f, VaultAuthConfig{Type: VaultAuthKubernetes, Role: "wrong", TokenFile: writeToken(t, "sa-token")})
-	_, err := v.Credential(context.Background(), CredentialEntry{Name: "rw", Source: SourceVault, Path: "secret/data/appdb"}, session.Identity{})
+	v := vaultSourceFor(t, f, daemon.VaultAuthConfig{Type: daemon.VaultAuthKubernetes, Role: "wrong", TokenFile: writeToken(t, "sa-token")})
+	_, err := v.Credential(context.Background(), daemon.CredentialEntry{Name: "rw", Source: daemon.SourceVault, Path: "secret/data/appdb"}, session.Identity{})
 	if err == nil || !strings.Contains(err.Error(), "permission denied") || strings.Contains(err.Error(), "sa-token") {
 		t.Errorf("got %v", err)
 	}
-	v = vaultSourceFor(t, f, VaultAuthConfig{Type: VaultAuthTokenFile, TokenFile: writeToken(t, "hvs.file")})
-	_, err = v.Credential(context.Background(), CredentialEntry{Name: "rw", Source: SourceVault, Path: "secret/data/missing"}, session.Identity{})
+	v = vaultSourceFor(t, f, daemon.VaultAuthConfig{Type: daemon.VaultAuthTokenFile, TokenFile: writeToken(t, "hvs.file")})
+	_, err = v.Credential(context.Background(), daemon.CredentialEntry{Name: "rw", Source: daemon.SourceVault, Path: "secret/data/missing"}, session.Identity{})
 	if err == nil || !strings.Contains(err.Error(), "404") {
 		t.Errorf("missing path: %v", err)
 	}
-	for _, bad := range []CredentialEntry{
-		{Name: "x", Source: SourceVault},
-		{Name: "x", Source: SourceVault, Path: "/v1/secret/data/appdb"},
-		{Name: "x", Source: SourceVault, Path: "database/creds/r", User: "u"},
-	} {
-		if err := v.validateEntry(bad); err == nil {
-			t.Errorf("entry %+v was accepted", bad)
-		}
+	// A bad entry is refused before any call, with the plane's wording.
+	if _, err := v.Credential(context.Background(), daemon.CredentialEntry{Name: "x", Source: daemon.SourceVault, Path: "/v1/secret/data/appdb"}, session.Identity{}); err == nil || !strings.Contains(err.Error(), `credential "x"`) {
+		t.Errorf("an absolute path: %v", err)
 	}
-	for _, cfg := range []VaultSourceConfig{
-		{},
-		{Addr: "http://vault"},
-		{Addr: "https://vault", Auth: VaultAuthConfig{Type: "token"}},
-		{Addr: "https://vault", Auth: VaultAuthConfig{Type: VaultAuthKubernetes}},
-		{Addr: "https://vault", Auth: VaultAuthConfig{Type: VaultAuthTokenFile}},
-	} {
-		if p := cfg.validate(); len(p) == 0 {
-			t.Errorf("config %+v was accepted", cfg)
-		}
+	if _, err := buildVaultSource(&daemon.CredentialSourcesConfig{Vault: &daemon.VaultSourceConfig{Addr: "http://vault"}}); err == nil {
+		t.Error("a plain-http block built")
 	}
 }
 
@@ -240,35 +228,35 @@ func TestGCPSecretManagerSource(t *testing.T) {
 	secretManagerEndpoint = sm.URL
 	t.Cleanup(func() { secretManagerEndpoint = old })
 
-	src, err := buildGCPSecretManagerSource(&CredentialSourcesConfig{GCPSecretManager: &GCPSecretManagerSourceConfig{MetadataHost: strings.TrimPrefix(meta.URL, "http://")}})
+	src, err := buildGCPSecretManagerSource(&daemon.CredentialSourcesConfig{GCPSecretManager: &daemon.GCPSecretManagerSourceConfig{MetadataHost: strings.TrimPrefix(meta.URL, "http://")}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	g := src.(*gcpSecretManagerSource)
 	pool := x509.NewCertPool()
 	pool.AddCert(sm.Certificate())
-	g.useRoots(pool)
+	g.UseRoots(pool)
 
-	c, err := g.Credential(context.Background(), CredentialEntry{Name: "ro", Source: SourceGCPSecretManager, Secret: "projects/acme/secrets/appdb-ro/versions/latest", User: "app_ro"}, session.Identity{})
+	c, err := g.Credential(context.Background(), daemon.CredentialEntry{Name: "ro", Source: daemon.SourceGCPSecretManager, Secret: "projects/acme/secrets/appdb-ro/versions/latest", User: "app_ro"}, session.Identity{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.User != "app_ro" || c.Password != "ro-pw" {
 		t.Errorf("credential %+v", c)
 	}
-	c, err = g.Credential(context.Background(), CredentialEntry{Name: "rw", Source: SourceGCPSecretManager, Secret: "projects/acme/secrets/appdb-rw/versions/7"}, session.Identity{})
+	c, err = g.Credential(context.Background(), daemon.CredentialEntry{Name: "rw", Source: daemon.SourceGCPSecretManager, Secret: "projects/acme/secrets/appdb-rw/versions/7"}, session.Identity{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.User != "app_rw" || c.Password != "rw-pw" {
 		t.Errorf("credential %+v", c)
 	}
-	_, err = g.Credential(context.Background(), CredentialEntry{Name: "ro", Source: SourceGCPSecretManager, Secret: "projects/acme/secrets/appdb-ro/versions/latest"}, session.Identity{})
+	_, err = g.Credential(context.Background(), daemon.CredentialEntry{Name: "ro", Source: daemon.SourceGCPSecretManager, Secret: "projects/acme/secrets/appdb-ro/versions/latest"}, session.Identity{})
 	if err == nil || !strings.Contains(err.Error(), "set user on the entry") {
 		t.Errorf("plain payload without a user: %v", err)
 	}
 	for _, bad := range []string{"", "appdb-ro", "projects/acme/secrets/appdb-ro", "projects//secrets/x/versions/1"} {
-		if err := g.validateEntry(CredentialEntry{Secret: bad}); err == nil {
+		if _, err := g.Credential(context.Background(), daemon.CredentialEntry{Name: "x", Secret: bad}, session.Identity{}); err == nil || !strings.Contains(err.Error(), `credential "x"`) {
 			t.Errorf("secret %q was accepted", bad)
 		}
 	}

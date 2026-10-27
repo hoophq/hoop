@@ -12,10 +12,10 @@ import (
 )
 
 // The source vocabulary a pool entry may name. The built-in sources register
-// from init below; spiffe and kerberos register from the nested
-// sidecar/identity modules, so a build without them knows the name and
-// refuses the lane on the host (checkCredentialSources), while the control
-// plane accepts it.
+// from sidecar/auth's init; spiffe and kerberos from the nested
+// sidecar/identity modules, so a build without a module knows the name and
+// refuses the lane on the host (checkAuthEngine, checkCredentialSources),
+// while the control plane accepts it.
 const (
 	SourceSecretFiles      = "secret_files"
 	SourceGCPImpersonation = "gcp_impersonation"
@@ -43,7 +43,9 @@ type CredentialSource interface {
 // CredentialSourceBuilder builds one source for the process from the
 // top-level credentials block. It is called once, for a source whose block
 // is present, and must not dial: Validate builds it on the control plane
-// too.
+// too. A source that dials through the process trust pool implements
+// UseRoots(*x509.CertPool); BuildCredentialSources calls it once the bundle
+// is loaded.
 type CredentialSourceBuilder func(cfg *CredentialSourcesConfig) (CredentialSource, error)
 
 var (
@@ -124,7 +126,7 @@ func (c *CredentialSourcesConfig) validate() []string {
 		problems = append(problems, "credentials.kerberos names both a cache and a keytab; keep one")
 	}
 	if v := c.Vault; v != nil {
-		for _, p := range v.validate() {
+		for _, p := range v.Validate() {
 			problems = append(problems, "credentials.vault: "+p)
 		}
 	}
@@ -159,25 +161,28 @@ func checkCredentialSources(cfg *Config) error {
 		}
 		if cfg.Credentials.configured(name) || slices.Contains(cfg.sourcesInUse(), name) {
 			return fmt.Errorf("credential source %q is not linked into this build; "+
-				"use the hoop-inspect binary, which imports sidecar/identity/%s", name, moduleFor(name))
+				"use the hoop-inspect binary, which imports %s", name, sourceModuleFor(name))
 		}
 	}
 	return nil
 }
 
-// moduleFor names the nested module that registers a source.
-func moduleFor(source string) string {
-	if source == SourceKerberos {
-		return "krb5"
+// sourceModuleFor names the nested module that registers a source.
+func sourceModuleFor(source string) string {
+	switch source {
+	case SourceKerberos:
+		return "sidecar/identity/krb5"
+	case SourceSPIFFE:
+		return "sidecar/identity/spiffe"
 	}
-	return source
+	return "sidecar/auth"
 }
 
-// buildCredentialSources builds every source the config's pools name, once
+// BuildCredentialSources builds every source the config's pools name, once
 // per process. The builders are registered; a pool entry naming an
 // unregistered or unconfigured source was refused before this runs. roots
 // is the process trust pool, handed to a source that dials through it.
-func buildCredentialSources(cfg *Config, roots *x509.CertPool) (map[string]CredentialSource, error) {
+func BuildCredentialSources(cfg *Config, roots *x509.CertPool) (map[string]CredentialSource, error) {
 	out := map[string]CredentialSource{}
 	for _, name := range cfg.sourcesInUse() {
 		build, ok := registeredCredentialSource(name)
@@ -191,18 +196,10 @@ func buildCredentialSources(cfg *Config, roots *x509.CertPool) (map[string]Crede
 		if err != nil {
 			return nil, fmt.Errorf("credentials.%s: %w", name, err)
 		}
-		if r, ok := src.(interface{ useRoots(*x509.CertPool) }); ok {
-			r.useRoots(roots)
+		if r, ok := src.(interface{ UseRoots(*x509.CertPool) }); ok {
+			r.UseRoots(roots)
 		}
 		out[name] = src
 	}
 	return out, nil
-}
-
-func init() {
-	RegisterCredentialSource(SourceSecretFiles, buildSecretFilesSource)
-	RegisterCredentialSource(SourceGCPImpersonation, buildGCPImpersonationSource)
-	RegisterCredentialSource(SourceX509, buildX509Source)
-	RegisterCredentialSource(SourceVault, buildVaultSource)
-	RegisterCredentialSource(SourceGCPSecretManager, buildGCPSecretManagerSource)
 }

@@ -9,6 +9,7 @@ use (
 	./gateway
 	./sidecar
 	./sidecar/analyzer/vertex
+	./sidecar/auth
 	./sidecar/cmd
 	./sidecar/codec/wasm
 	./sidecar/config/yaml

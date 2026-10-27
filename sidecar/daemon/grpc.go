@@ -495,9 +495,9 @@ func buildGRPCServer(
 			var cred Credential
 			var loginErr error
 			if ln.auth != nil {
-				user, secret := splitAuthorization(info.Request.Header.Get("Authorization"))
+				user, secret := SplitAuthorization(info.Request.Header.Get("Authorization"))
 				var verified session.Identity
-				verified, cred, loginErr = ln.auth.authenticate(ctx, user, secret)
+				verified, cred, loginErr = ln.auth.Authenticate(ctx, user, secret)
 				if loginErr == nil {
 					verified.PeerAddr = identity.PeerAddr
 					identity = verified
@@ -513,7 +513,7 @@ func buildGRPCServer(
 				sess.Metadata = map[string]string{
 					"credential":    cred.Name,
 					"upstream_user": cred.User,
-					"identity_type": ln.auth.identityType,
+					"identity_type": ln.auth.IdentityType(),
 					"verified":      "true",
 				}
 			}
@@ -574,8 +574,7 @@ func buildGRPCServer(
 			}
 			handler := state.callbacks()
 			if ln.auth != nil && loginErr == nil {
-				bearer := cred.User == "" || ln.auth.entrySource(cred.Name) == SourceGCPImpersonation
-				value := upstreamAuthorization(cred, bearer)
+				value := ln.auth.UpstreamAuthorization(cred)
 				handler.UpstreamAuthorization = func(*http.Request) (string, bool) { return value, true }
 			}
 			if err := g.Start(ctx); err != nil {

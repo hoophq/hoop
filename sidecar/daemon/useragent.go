@@ -13,7 +13,7 @@ import (
 // requestMetadata.callerSuppliedUserAgent.
 const userAgentProduct = "hoop-sidecar"
 
-// userAgent builds the User-Agent for one outbound client, in the shape
+// UserAgent builds the User-Agent for one outbound client, in the shape
 // RFC 9110 §10.1.5 gives it: a product token with the release, then a
 // comment naming the component that made the call, the platform and the Go
 // runtime.
@@ -25,7 +25,7 @@ const userAgentProduct = "hoop-sidecar"
 // caller. Go's own token is left out rather than appended: it reads
 // Go-http-client/1.1 or /2.0 by the protocol negotiated per request, and a
 // fixed copy of it would lie under one of the two.
-func userAgent(component string) string {
+func UserAgent(component string) string {
 	return fmt.Sprintf("%s/%s (%s; %s/%s; %s)",
 		userAgentProduct, Version, component, runtime.GOOS, runtime.GOARCH, runtime.Version())
 }
@@ -60,5 +60,5 @@ func withUserAgent(next http.RoundTripper, component string) http.RoundTripper {
 	if next == nil {
 		next = http.DefaultTransport
 	}
-	return userAgentTransport{next: tracePropagationTransport{next: next}, ua: userAgent(component)}
+	return userAgentTransport{next: tracePropagationTransport{next: next}, ua: UserAgent(component)}
 }

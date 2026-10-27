@@ -1,4 +1,4 @@
-package daemon
+package auth
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/session"
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 )
@@ -27,15 +28,16 @@ type hoopCredentialIdentity struct {
 	set  *credentialSet
 }
 
-func buildHoopCredentialIdentity(_ IdentityConfig, deps IdentityDeps) (IdentitySource, error) {
-	if deps.credentials == nil {
+func buildHoopCredentialIdentity(_ daemon.IdentityConfig, deps daemon.IdentityDeps) (daemon.IdentitySource, error) {
+	set, ok := deps.CredentialSet.(*credentialSet)
+	if !ok || set == nil {
 		return nil, errors.New("hoop_credential needs the credential set the plane serves")
 	}
-	return &hoopCredentialIdentity{lane: deps.lane, set: deps.credentials}, nil
+	return &hoopCredentialIdentity{lane: deps.Lane, set: set}, nil
 }
 
-func (h *hoopCredentialIdentity) Verify(_ context.Context, user, secret string, _ PeerInfo) (session.Identity, error) {
-	var entry CredentialSetEntry
+func (h *hoopCredentialIdentity) Verify(_ context.Context, user, secret string, _ daemon.PeerInfo) (session.Identity, error) {
+	var entry daemon.CredentialSetEntry
 	var ok bool
 	if hash, proven := strings.CutPrefix(secret, scramSecretPrefix); proven {
 		entry, ok = h.set.byHash(h.lane, hash)
@@ -43,19 +45,19 @@ func (h *hoopCredentialIdentity) Verify(_ context.Context, user, secret string, 
 		entry, ok = h.set.match(h.lane, secret)
 	}
 	if !ok {
-		return session.Identity{}, refused("no hoop credential for this listener matches the one presented")
+		return session.Identity{}, daemon.Refused("no hoop credential for this listener matches the one presented")
 	}
-	if entry.expired(time.Now()) {
-		return session.Identity{}, refused("the hoop credential of %s expired at %s", entry.Subject, entry.ExpiresAt.UTC().Format(time.RFC3339))
+	if expired(entry, time.Now()) {
+		return session.Identity{}, daemon.Refused("the hoop credential of %s expired at %s", entry.Subject, entry.ExpiresAt.UTC().Format(time.RFC3339))
 	}
 	if user != "" && user != entry.Subject && user != entry.Email {
-		return session.Identity{}, refused("the hoop credential belongs to %s, not to the login user %q", entry.Subject, user)
+		return session.Identity{}, daemon.Refused("the hoop credential belongs to %s, not to the login user %q", entry.Subject, user)
 	}
 	return session.Identity{
 		Subject:    entry.Subject,
 		Email:      entry.Email,
 		Groups:     slices.Clone(entry.Groups),
-		Attributes: map[string]string{identityTypeAttribute: IdentityHoopCredential},
+		Attributes: map[string]string{daemon.IdentityTypeAttribute: daemon.IdentityHoopCredential},
 	}, nil
 }
 

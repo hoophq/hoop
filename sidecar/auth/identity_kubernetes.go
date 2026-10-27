@@ -1,4 +1,4 @@
-package daemon
+package auth
 
 import (
 	"bytes"
@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -36,7 +37,6 @@ import (
 const (
 	kubernetesInClusterIssuer = "https://kubernetes.default.svc"
 	kubernetesCAFile          = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	kubernetesTokenFile       = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
 	// podUIDEnv is the downward-API variable the chart sets. When present
 	// a token has to be this pod's: a token stolen from another pod of the
@@ -53,6 +53,14 @@ const (
 	// jwtClockSkew is the leeway on exp and nbf.
 	jwtClockSkew = time.Minute
 )
+
+// audience is the token audience a lane requires.
+func audience(cfg daemon.IdentityConfig) string {
+	if cfg.Audience != "" {
+		return cfg.Audience
+	}
+	return daemon.DefaultIdentityAudience
+}
 
 type kubernetesIdentity struct {
 	kind      string // the identity type, for log and error text
@@ -71,7 +79,7 @@ type kubernetesIdentity struct {
 	lastFetch time.Time
 }
 
-func buildKubernetesIdentity(cfg IdentityConfig, deps IdentityDeps) (IdentitySource, error) {
+func buildKubernetesIdentity(cfg daemon.IdentityConfig, deps daemon.IdentityDeps) (daemon.IdentitySource, error) {
 	issuer := strings.TrimRight(cfg.Issuer, "/")
 	if issuer == "" {
 		issuer = kubernetesInClusterIssuer
@@ -85,9 +93,9 @@ func buildKubernetesIdentity(cfg IdentityConfig, deps IdentityDeps) (IdentitySou
 		log = slog.Default()
 	}
 	return &kubernetesIdentity{
-		kind:      IdentityKubernetes,
+		kind:      daemon.IdentityKubernetes,
 		issuer:    issuer,
-		audience:  cfg.audience(),
+		audience:  audience(cfg),
 		inCluster: cfg.Issuer == "",
 		roots:     deps.Roots,
 		log:       log,
@@ -139,19 +147,19 @@ func (a *jwtAudience) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-func (k *kubernetesIdentity) Verify(ctx context.Context, _ string, secret string, _ PeerInfo) (session.Identity, error) {
+func (k *kubernetesIdentity) Verify(ctx context.Context, _ string, secret string, _ daemon.PeerInfo) (session.Identity, error) {
 	if secret == "" {
-		return session.Identity{}, refused("no service account token presented")
+		return session.Identity{}, daemon.Refused("no service account token presented")
 	}
 	var claims k8sClaims
 	if err := k.verifyToken(ctx, secret, &claims); err != nil {
 		return session.Identity{}, err
 	}
 	if k.podUID != "" && claims.K8s.Pod.UID != k.podUID {
-		return session.Identity{}, refused("the token was issued to pod %q, and this sidecar serves pod %q", claims.K8s.Pod.Name, k.podUID)
+		return session.Identity{}, daemon.Refused("the token was issued to pod %q, and this sidecar serves pod %q", claims.K8s.Pod.Name, k.podUID)
 	}
 
-	attrs := map[string]string{identityTypeAttribute: IdentityKubernetes}
+	attrs := map[string]string{daemon.IdentityTypeAttribute: daemon.IdentityKubernetes}
 	if claims.K8s.Namespace != "" {
 		attrs["namespace"] = claims.K8s.Namespace
 	}
@@ -180,37 +188,37 @@ type stdClaims struct {
 func (k *kubernetesIdentity) verifyToken(ctx context.Context, secret string, into any) error {
 	parts := strings.Split(secret, ".")
 	if len(parts) != 3 {
-		return refused("the secret is not a JWT")
+		return daemon.Refused("the secret is not a JWT")
 	}
 	var hdr jwtHeader
 	if err := decodeJWTPart(parts[0], &hdr); err != nil {
-		return refused("JWT header: %v", err)
+		return daemon.Refused("JWT header: %v", err)
 	}
 	var std stdClaims
 	if err := decodeJWTPart(parts[1], &std); err != nil {
-		return refused("JWT claims: %v", err)
+		return daemon.Refused("JWT claims: %v", err)
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return refused("JWT signature is not base64url")
+		return daemon.Refused("JWT signature is not base64url")
 	}
 
 	now := k.now()
 	switch {
 	case hdr.Alg != "RS256" && hdr.Alg != "ES256":
-		return refused("JWT alg %q is not RS256 or ES256", hdr.Alg)
+		return daemon.Refused("JWT alg %q is not RS256 or ES256", hdr.Alg)
 	case std.Iss != k.issuer:
-		return refused("JWT issuer %q is not %s", std.Iss, k.issuer)
+		return daemon.Refused("JWT issuer %q is not %s", std.Iss, k.issuer)
 	case !containsString(std.Aud, k.audience):
-		return refused("JWT audience %v does not include %q", []string(std.Aud), k.audience)
+		return daemon.Refused("JWT audience %v does not include %q", []string(std.Aud), k.audience)
 	case std.Exp == 0:
-		return refused("JWT has no exp")
+		return daemon.Refused("JWT has no exp")
 	case now.After(time.Unix(std.Exp, 0).Add(jwtClockSkew)):
-		return refused("JWT expired at %s", time.Unix(std.Exp, 0).UTC().Format(time.RFC3339))
+		return daemon.Refused("JWT expired at %s", time.Unix(std.Exp, 0).UTC().Format(time.RFC3339))
 	case std.Nbf != 0 && now.Before(time.Unix(std.Nbf, 0).Add(-jwtClockSkew)):
-		return refused("JWT is not valid before %s", time.Unix(std.Nbf, 0).UTC().Format(time.RFC3339))
+		return daemon.Refused("JWT is not valid before %s", time.Unix(std.Nbf, 0).UTC().Format(time.RFC3339))
 	case std.Sub == "":
-		return refused("JWT has no sub")
+		return daemon.Refused("JWT has no sub")
 	}
 
 	key, err := k.keyFor(ctx, hdr.Kid)
@@ -219,10 +227,10 @@ func (k *kubernetesIdentity) verifyToken(ctx context.Context, secret string, int
 	}
 	signed := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
 	if !verifyJWS(hdr.Alg, key, signed[:], sig) {
-		return refused("JWT signature does not verify against key %q of %s", hdr.Kid, k.issuer)
+		return daemon.Refused("JWT signature does not verify against key %q of %s", hdr.Kid, k.issuer)
 	}
 	if err := decodeJWTPart(parts[1], into); err != nil {
-		return refused("JWT claims: %v", err)
+		return daemon.Refused("JWT claims: %v", err)
 	}
 	return nil
 }
@@ -273,7 +281,7 @@ func (k *kubernetesIdentity) keyFor(ctx context.Context, kid string) (crypto.Pub
 		return key, nil
 	}
 	if k.keys != nil && k.now().Sub(k.lastFetch) < jwksRefreshMin {
-		return nil, refused("JWT key %q is not one %s publishes", kid, k.issuer)
+		return nil, daemon.Refused("JWT key %q is not one %s publishes", kid, k.issuer)
 	}
 	if err := k.fetchKeysLocked(ctx); err != nil {
 		return nil, fmt.Errorf("identity %s: %w", k.kind, err)
@@ -281,7 +289,7 @@ func (k *kubernetesIdentity) keyFor(ctx context.Context, kid string) (crypto.Pub
 	if key, ok := k.keys[kid]; ok {
 		return key, nil
 	}
-	return nil, refused("JWT key %q is not one %s publishes", kid, k.issuer)
+	return nil, daemon.Refused("JWT key %q is not one %s publishes", kid, k.issuer)
 }
 
 // fetchKeysLocked runs discovery once, then reads the JWKS. Called with mu
@@ -363,9 +371,9 @@ func (k *kubernetesIdentity) getJSON(ctx context.Context, rawURL string, into an
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", userAgent("identity/kubernetes"))
+	req.Header.Set("User-Agent", daemon.UserAgent("identity/kubernetes"))
 	if k.inCluster {
-		tok, err := os.ReadFile(kubernetesTokenFile)
+		tok, err := os.ReadFile(daemon.KubernetesTokenFile)
 		if err != nil {
 			return fmt.Errorf("reading the pod's own token: %w", err)
 		}

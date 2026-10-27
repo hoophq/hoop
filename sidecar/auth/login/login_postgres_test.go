@@ -1,4 +1,4 @@
-package proxy
+package login
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -130,13 +131,13 @@ func (s *pgFakeServer) seen() (map[string]string, error) {
 	return s.startup, s.err
 }
 
-// pgLoginHarness wires a LoginConn to a fake client and a fake upstream.
+// pgLoginHarness wires a proxy.LoginConn to a fake client and a fake upstream.
 type pgLoginHarness struct {
 	t        *testing.T
 	client   net.Conn // the test's end of the client leg
 	server   *pgFakeServer
-	conn     *LoginConn
-	dialed   []*Credential
+	conn     *proxy.LoginConn
+	dialed   []*proxy.Credential
 	inspects []struct {
 		dir inspect.Direction
 		pkt []byte
@@ -144,14 +145,14 @@ type pgLoginHarness struct {
 	mu sync.Mutex
 }
 
-func newPGLoginHarness(t *testing.T, server *pgFakeServer, lane LaneInfo) *pgLoginHarness {
+func newPGLoginHarness(t *testing.T, server *pgFakeServer, lane proxy.LaneInfo) *pgLoginHarness {
 	t.Helper()
 	clientEnd, relayEnd := net.Pipe()
 	h := &pgLoginHarness{t: t, client: clientEnd, server: server}
-	h.conn = &LoginConn{
+	h.conn = &proxy.LoginConn{
 		Client: relayEnd,
 		Lane:   lane,
-		Dial: func(_ context.Context, cred *Credential) (net.Conn, error) {
+		Dial: func(_ context.Context, cred *proxy.Credential) (net.Conn, error) {
 			h.mu.Lock()
 			h.dialed = append(h.dialed, cred)
 			h.mu.Unlock()
@@ -175,11 +176,11 @@ func newPGLoginHarness(t *testing.T, server *pgFakeServer, lane LaneInfo) *pgLog
 
 // run drives the login in the background while the test plays the client.
 func (h *pgLoginHarness) run() <-chan struct {
-	res LoginResult
+	res proxy.LoginResult
 	err error
 } {
 	out := make(chan struct {
-		res LoginResult
+		res proxy.LoginResult
 		err error
 	}, 1)
 	go func() {
@@ -187,7 +188,7 @@ func (h *pgLoginHarness) run() <-chan struct {
 		defer cancel()
 		res, err := loginPostgres(ctx, h.conn)
 		out <- struct {
-			res LoginResult
+			res proxy.LoginResult
 			err error
 		}{res, err}
 	}()
@@ -195,16 +196,16 @@ func (h *pgLoginHarness) run() <-chan struct {
 }
 
 func (h *pgLoginHarness) wait(done <-chan struct {
-	res LoginResult
+	res proxy.LoginResult
 	err error
-}) (LoginResult, error) {
+}) (proxy.LoginResult, error) {
 	h.t.Helper()
 	select {
 	case r := <-done:
 		return r.res, r.err
 	case <-time.After(5 * time.Second):
 		h.t.Fatal("login did not finish")
-		return LoginResult{}, nil
+		return proxy.LoginResult{}, nil
 	}
 }
 
@@ -269,26 +270,26 @@ func (h *pgLoginHarness) expectRefusal() {
 	}
 }
 
-func pgAuthenticator(t *testing.T, wantUser, wantSecret string, cred Credential) func(context.Context, string, string) (session.Identity, Credential, error) {
-	return func(_ context.Context, user, secret string) (session.Identity, Credential, error) {
+func pgAuthenticator(t *testing.T, wantUser, wantSecret string, cred proxy.Credential) func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
+	return func(_ context.Context, user, secret string) (session.Identity, proxy.Credential, error) {
 		if user != wantUser || secret != wantSecret {
-			return session.Identity{}, Credential{}, fmt.Errorf("%w: bad secret", ErrLoginRefused)
+			return session.Identity{}, proxy.Credential{}, fmt.Errorf("%w: bad secret", proxy.ErrLoginRefused)
 		}
 		return session.Identity{Subject: "alice@example.com", Email: "alice@example.com", Groups: []string{"dba"}}, cred, nil
 	}
 }
 
-func pgTCPLane(tls bool) LaneInfo {
-	return LaneInfo{Protocol: inspect.Postgres, Name: "pg", Network: "tcp", ClientTLS: tls, UpstreamAddr: "db.internal:5432"}
+func pgTCPLane(tls bool) proxy.LaneInfo {
+	return proxy.LaneInfo{Protocol: inspect.Postgres, Name: "pg", Network: "tcp", ClientTLS: tls, UpstreamAddr: "db.internal:5432"}
 }
 
 func TestPostgresLoginPassthroughForwardsStartupUnchanged(t *testing.T) {
 	server := &pgFakeServer{method: "trust", user: "svc"}
 	h := newPGLoginHarness(t, server, pgTCPLane(false))
 	h.conn.Passthrough = func(user string) bool { return user == "svc" }
-	h.conn.Authenticate = func(context.Context, string, string) (session.Identity, Credential, error) {
+	h.conn.Authenticate = func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
 		t.Fatal("Authenticate called for a pass-through user")
-		return session.Identity{}, Credential{}, nil
+		return session.Identity{}, proxy.Credential{}, nil
 	}
 	done := h.run()
 	startup := pgauth.Startup(map[string]string{"user": "svc", "database": "app", "options": "-c search_path=x"})
@@ -338,9 +339,9 @@ func TestPostgresLoginCleartextClientSwapsUpstreamSCRAM(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			server := &pgFakeServer{method: method, user: "app_rw", password: "pool-secret"}
 			h := newPGLoginHarness(t, server, pgTCPLane(true))
-			cred := Credential{Name: "rw", User: "app_rw", Password: "pool-secret"}
+			cred := proxy.Credential{Name: "rw", User: "app_rw", Password: "pool-secret"}
 			h.conn.Authenticate = pgAuthenticator(t, "alice", "hoop-key-123", cred)
-			h.conn.Propagate = PropagateInfo{ApplicationName: "{{.Principal}} via {{.Context.pod}}"}
+			h.conn.Propagate = proxy.PropagateInfo{ApplicationName: "{{.Principal}} via {{.Context.pod}}"}
 			h.conn.Context = map[string]string{"pod": "web-1"}
 			done := h.run()
 
@@ -403,8 +404,8 @@ func TestPostgresLoginCleartextClientSwapsUpstreamSCRAM(t *testing.T) {
 
 func TestPostgresLoginKeepsClientApplicationNameWithoutPropagate(t *testing.T) {
 	server := &pgFakeServer{method: "trust", user: "app_rw"}
-	h := newPGLoginHarness(t, server, LaneInfo{Protocol: inspect.Postgres, Network: "unix", UpstreamAddr: "/run/pg.sock"})
-	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", Credential{Name: "rw", User: "app_rw"})
+	h := newPGLoginHarness(t, server, proxy.LaneInfo{Protocol: inspect.Postgres, Network: "unix", UpstreamAddr: "/run/pg.sock"})
+	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", proxy.Credential{Name: "rw", User: "app_rw"})
 	done := h.run()
 	h.client.Write(pgauth.Startup(map[string]string{"user": "alice", "database": "app", "application_name": "psql"}))
 	h.expectAuth(pgauth.AuthCleartextCode)
@@ -422,14 +423,14 @@ func TestPostgresLoginKeepsClientApplicationNameWithoutPropagate(t *testing.T) {
 func TestPostgresLoginRefusesWrongSecret(t *testing.T) {
 	server := &pgFakeServer{method: "scram", user: "app_rw", password: "pool-secret"}
 	h := newPGLoginHarness(t, server, pgTCPLane(true))
-	h.conn.Authenticate = pgAuthenticator(t, "alice", "right", Credential{User: "app_rw", Password: "pool-secret"})
+	h.conn.Authenticate = pgAuthenticator(t, "alice", "right", proxy.Credential{User: "app_rw", Password: "pool-secret"})
 	done := h.run()
 	h.client.Write(pgauth.Startup(map[string]string{"user": "alice"}))
 	h.expectAuth(pgauth.AuthCleartextCode)
 	h.client.Write(pgauth.PasswordMessage("wrong"))
 	h.expectRefusal()
 	res, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) {
+	if !errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err=%v", err)
 	}
 	if res.Identity.Subject != "alice" || len(h.dialed) != 0 {
@@ -439,12 +440,12 @@ func TestPostgresLoginRefusesWrongSecret(t *testing.T) {
 
 func TestPostgresLoginRefusesPlainTCPWithoutSCRAM(t *testing.T) {
 	h := newPGLoginHarness(t, &pgFakeServer{method: "trust", user: "x"}, pgTCPLane(false))
-	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", Credential{User: "x"})
+	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", proxy.Credential{User: "x"})
 	done := h.run()
 	h.client.Write(pgauth.Startup(map[string]string{"user": "alice"}))
 	h.expectRefusal()
 	res, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) || res.Identity.Subject != "alice" {
+	if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "alice" {
 		t.Fatalf("err=%v res=%+v", err, res)
 	}
 }
@@ -469,7 +470,7 @@ func TestPostgresLoginSCRAMClientLeg(t *testing.T) {
 			h.conn.SCRAM = func(user string) (codectypes.SCRAMMaterial, bool) {
 				return material, user == "alice"
 			}
-			h.conn.Authenticate = pgAuthenticator(t, "alice", "scram:deadbeef", Credential{Name: "rw", User: "app_rw", Password: "pool-secret"})
+			h.conn.Authenticate = pgAuthenticator(t, "alice", "scram:deadbeef", proxy.Credential{Name: "rw", User: "app_rw", Password: "pool-secret"})
 			done := h.run()
 
 			h.client.Write(pgauth.Startup(map[string]string{"user": "alice", "database": "app"}))
@@ -489,7 +490,7 @@ func TestPostgresLoginSCRAMClientLeg(t *testing.T) {
 			if !tc.ok {
 				h.expectRefusal()
 				res, err := h.wait(done)
-				if !errors.Is(err, ErrLoginRefused) || res.Identity.Subject != "alice" || len(h.dialed) != 0 {
+				if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "alice" || len(h.dialed) != 0 {
 					t.Fatalf("err=%v res=%+v dialed=%v", err, res, h.dialed)
 				}
 				return
@@ -516,11 +517,11 @@ func TestPostgresLoginSCRAMClientLeg(t *testing.T) {
 func TestPostgresLoginSCRAMUnknownUserIsRefusedLikeAWrongPassword(t *testing.T) {
 	h := newPGLoginHarness(t, &pgFakeServer{method: "trust", user: "x"}, pgTCPLane(false))
 	h.conn.SCRAM = func(string) (codectypes.SCRAMMaterial, bool) { return codectypes.SCRAMMaterial{}, false }
-	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", Credential{User: "x"})
+	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", proxy.Credential{User: "x"})
 	done := h.run()
 	h.client.Write(pgauth.Startup(map[string]string{"user": "mallory"}))
 	h.expectRefusal()
-	if _, err := h.wait(done); !errors.Is(err, ErrLoginRefused) {
+	if _, err := h.wait(done); !errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err=%v", err)
 	}
 }
@@ -528,7 +529,7 @@ func TestPostgresLoginSCRAMUnknownUserIsRefusedLikeAWrongPassword(t *testing.T) 
 func TestPostgresLoginUpstreamRefusalIsNotAClientRefusal(t *testing.T) {
 	server := &pgFakeServer{method: "scram", user: "app_rw", password: "rotated"}
 	h := newPGLoginHarness(t, server, pgTCPLane(true))
-	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", Credential{Name: "rw", User: "app_rw", Password: "stale"})
+	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", proxy.Credential{Name: "rw", User: "app_rw", Password: "stale"})
 	done := h.run()
 	h.client.Write(pgauth.Startup(map[string]string{"user": "alice"}))
 	h.expectAuth(pgauth.AuthCleartextCode)
@@ -539,18 +540,12 @@ func TestPostgresLoginUpstreamRefusalIsNotAClientRefusal(t *testing.T) {
 		t.Fatalf("client got %q %v", typ, f)
 	}
 	_, err := h.wait(done)
-	if err == nil || errors.Is(err, ErrLoginRefused) {
+	if err == nil || errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err=%v, want a non-refusal error", err)
 	}
 	var se *pgauth.ServerError
 	if !errors.As(err, &se) || se.Code != "28P01" {
 		t.Fatalf("err=%v, want the upstream 28P01", err)
-	}
-}
-
-func TestPostgresLoginRegistered(t *testing.T) {
-	if _, ok := loginFor(inspect.Postgres); !ok {
-		t.Fatal("no postgres login driver registered")
 	}
 }
 

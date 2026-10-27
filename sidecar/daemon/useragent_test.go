@@ -84,7 +84,7 @@ func TestControlPlaneHandshakeCarriesTheUserAgent(t *testing.T) {
 	if _, err := fetchControlPlaneConfig(srv.URL, tokenCredential("hsc_token"), handshakeRequest{Version: Version}); err != nil {
 		t.Fatalf("handshake: %v", err)
 	}
-	if want := userAgent("controlplane"); ua != want {
+	if want := UserAgent("controlplane"); ua != want {
 		t.Errorf("User-Agent = %q, want %q", ua, want)
 	}
 }

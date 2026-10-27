@@ -1,4 +1,4 @@
-package proxy
+package login
 
 import (
 	"context"
@@ -14,10 +14,11 @@ import (
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
-func init() { RegisterLogin(inspect.Postgres, loginPostgres) }
+func init() { proxy.RegisterLogin(inspect.Postgres, loginPostgres) }
 
 // pgInvalidPassword is the SQLSTATE and text psql shows for a wrong
 // password. The relay says the same for every refusal, whatever the reason:
@@ -38,14 +39,14 @@ const pgInvalidPassword = "28P01"
 // asks for: cleartext, MD5, SCRAM, GSSAPI or nothing at all (trust,
 // certificate). BackendKeyData is replaced with a pair of the relay's own so
 // a CancelRequest, which arrives on a fresh connection, can be mapped back.
-func loginPostgres(ctx context.Context, c *LoginConn) (LoginResult, error) {
+func loginPostgres(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, error) {
 	log := c.Log
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
 	params, raw, err := pgauth.ReadStartup(c.Client)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("postgres login: startup: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("postgres login: startup: %w", err)
 	}
 	user := params["user"]
 	claimed := session.Identity{Subject: user}
@@ -53,41 +54,41 @@ func loginPostgres(ctx context.Context, c *LoginConn) (LoginResult, error) {
 	if c.Passthrough != nil && c.Passthrough(user) {
 		up, err := c.Dial(ctx, nil)
 		if err != nil {
-			return LoginResult{}, err
+			return proxy.LoginResult{}, err
 		}
 		c.Upstream = up
 		if err := c.Inspect(inspect.FromClient, raw); err != nil {
-			return LoginResult{}, err
+			return proxy.LoginResult{}, err
 		}
 		if _, err := up.Write(raw); err != nil {
-			return LoginResult{}, err
+			return proxy.LoginResult{}, err
 		}
-		return LoginResult{Identity: claimed, Passthrough: true}, nil
+		return proxy.LoginResult{Identity: claimed, Passthrough: true}, nil
 	}
 
-	refuse := func(reason string) (LoginResult, error) {
+	refuse := func(reason string) (proxy.LoginResult, error) {
 		log.Debug("postgres login refused", "user", user, "reason", reason)
 		msg := fmt.Sprintf("password authentication failed for user %q", user)
 		_, _ = c.Client.Write(pgauth.ErrorResponse(pgInvalidPassword, msg))
-		return LoginResult{Identity: claimed}, fmt.Errorf("%w: %s", ErrLoginRefused, msg)
+		return proxy.LoginResult{Identity: claimed}, fmt.Errorf("%w: %s", proxy.ErrLoginRefused, msg)
 	}
 
 	secret, err := pgClientSecret(c, user)
 	if err != nil {
-		if errors.Is(err, ErrLoginRefused) {
+		if errors.Is(err, proxy.ErrLoginRefused) {
 			return refuse(err.Error())
 		}
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	if c.Authenticate == nil {
 		return refuse("lane has no authenticator")
 	}
 	identity, cred, err := c.Authenticate(ctx, user, secret)
 	if err != nil {
-		if errors.Is(err, ErrLoginRefused) {
+		if errors.Is(err, proxy.ErrLoginRefused) {
 			return refuse(err.Error())
 		}
-		return LoginResult{}, fmt.Errorf("postgres login: authenticate: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("postgres login: authenticate: %w", err)
 	}
 	if identity.Subject == "" {
 		identity.Subject = user
@@ -95,7 +96,7 @@ func loginPostgres(ctx context.Context, c *LoginConn) (LoginResult, error) {
 
 	up, err := c.Dial(ctx, &cred)
 	if err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	c.Upstream = up
 
@@ -114,10 +115,10 @@ func loginPostgres(ctx context.Context, c *LoginConn) (LoginResult, error) {
 	}
 	startup := pgauth.Startup(upParams)
 	if err := c.Inspect(inspect.FromClient, startup); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	if _, err := up.Write(startup); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 
 	ucred := codectypes.UpstreamCredential{User: cred.User, Password: cred.Password, Cert: cred.Cert, GSS: cred.GSS}
@@ -129,7 +130,7 @@ func loginPostgres(ctx context.Context, c *LoginConn) (LoginResult, error) {
 			log.Warn("postgres upstream login failed", "credential", cred.Name, "upstream_user", cred.User, "err", err)
 		}
 		_, _ = c.Client.Write(pgauth.ErrorResponse("08006", "upstream authentication failed"))
-		return LoginResult{}, fmt.Errorf("postgres login: upstream: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("postgres login: upstream: %w", err)
 	}
 
 	forward := func(pkt []byte) error {
@@ -140,46 +141,46 @@ func loginPostgres(ctx context.Context, c *LoginConn) (LoginResult, error) {
 		return err
 	}
 	if err := forward(pgauth.AuthOk()); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
-	var cancel *CancelMapping
+	var cancel *proxy.CancelMapping
 	for {
 		typ, body, err := pgauth.ReadBackend(up)
 		if err != nil {
-			return LoginResult{}, fmt.Errorf("postgres login: after ok: %w", err)
+			return proxy.LoginResult{}, fmt.Errorf("postgres login: after ok: %w", err)
 		}
 		pkt := pgauth.Message(typ, body)
 		switch typ {
 		case pgauth.TagBackendKeyData:
 			upPID, upKey, err := pgauth.ParseBackendKeyData(body)
 			if err != nil {
-				return LoginResult{}, err
+				return proxy.LoginResult{}, err
 			}
 			pid, key, err := randomKeyData()
 			if err != nil {
-				return LoginResult{}, err
+				return proxy.LoginResult{}, err
 			}
-			cancel = &CancelMapping{ClientPID: pid, ClientKey: key, UpstreamPID: upPID, UpstreamKey: upKey}
+			cancel = &proxy.CancelMapping{ClientPID: pid, ClientKey: key, UpstreamPID: upPID, UpstreamKey: upKey}
 			pkt = pgauth.BackendKeyData(pid, key)
 		case pgauth.TagErrorResponse:
 			_ = forward(pkt)
 			f := pgauth.ErrorFields(body)
-			return LoginResult{}, fmt.Errorf("postgres login: server error %s: %s", f['C'], f['M'])
+			return proxy.LoginResult{}, fmt.Errorf("postgres login: server error %s: %s", f['C'], f['M'])
 		}
 		if err := forward(pkt); err != nil {
-			return LoginResult{}, err
+			return proxy.LoginResult{}, err
 		}
 		if typ == pgauth.TagReadyForQuery {
 			break
 		}
 	}
-	return LoginResult{Identity: identity, Credential: cred, Cancel: cancel}, nil
+	return proxy.LoginResult{Identity: identity, Credential: cred, Cancel: cancel}, nil
 }
 
 // pgClientSecret runs the client leg of the login and returns the secret to
 // verify: the password in clear, or "scram:<hash>" after a SCRAM proof. A
-// refusal wraps ErrLoginRefused.
-func pgClientSecret(c *LoginConn, user string) (string, error) {
+// refusal wraps proxy.ErrLoginRefused.
+func pgClientSecret(c *proxy.LoginConn, user string) (string, error) {
 	switch {
 	case c.Lane.Network == "unix" || c.Lane.ClientTLS:
 		if _, err := c.Client.Write(pgauth.AuthCleartext()); err != nil {
@@ -193,7 +194,7 @@ func pgClientSecret(c *LoginConn, user string) (string, error) {
 	case c.SCRAM != nil:
 		material, ok := c.SCRAM(user)
 		if !ok {
-			return "", fmt.Errorf("%w: no scram material for user", ErrLoginRefused)
+			return "", fmt.Errorf("%w: no scram material for user", proxy.ErrLoginRefused)
 		}
 		if _, err := c.Client.Write(pgauth.AuthSASL([]string{pgauth.ScramSHA256})); err != nil {
 			return "", err
@@ -207,7 +208,7 @@ func pgClientSecret(c *LoginConn, user string) (string, error) {
 			return "", err
 		}
 		if mech != pgauth.ScramSHA256 {
-			return "", fmt.Errorf("%w: sasl mechanism %q", ErrLoginRefused, mech)
+			return "", fmt.Errorf("%w: sasl mechanism %q", proxy.ErrLoginRefused, mech)
 		}
 		srv := pgauth.NewScramServer(material)
 		serverFirst, err := srv.ServerFirst(first)
@@ -230,7 +231,7 @@ func pgClientSecret(c *LoginConn, user string) (string, error) {
 		}
 		return "scram:" + material.Hash, nil
 	default:
-		return "", fmt.Errorf("%w: no password method is safe on a plain tcp lane without scram", ErrLoginRefused)
+		return "", fmt.Errorf("%w: no password method is safe on a plain tcp lane without scram", proxy.ErrLoginRefused)
 	}
 }
 
@@ -241,7 +242,7 @@ func pgReadPassword(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	if typ != pgauth.TagPassword {
-		return nil, fmt.Errorf("%w: expected a password message, got %q", ErrLoginRefused, typ)
+		return nil, fmt.Errorf("%w: expected a password message, got %q", proxy.ErrLoginRefused, typ)
 	}
 	return body, nil
 }

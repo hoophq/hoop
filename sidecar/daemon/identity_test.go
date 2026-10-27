@@ -1,25 +1,13 @@
 package daemon
 
 import (
-	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"net/http"
-	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/hoophq/hoop/sidecar/inspect"
-	"github.com/hoophq/hoop/sidecar/policy"
-	"github.com/hoophq/hoop/sidecar/session"
-	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 )
 
 // A pooled lane is a login the sidecar terminates. Each refusal below is a
@@ -149,38 +137,71 @@ func TestLaneAuthLoads(t *testing.T) {
 }
 
 // The plane validates with the same decoder and links no nested module, so
-// Config.Validate accepts spiffe; the host refuses it when the build did not
-// link sidecar/identity/spiffe.
-func TestAnUnlinkedVerifierOrSourceIsRefusedOnTheHostOnly(t *testing.T) {
+// Config.Validate accepts a pooled lane; the host refuses it when the build
+// did not link sidecar/auth, naming the module, and still accepts a
+// document with none of the keys.
+func TestLaneAuthIsRefusedWithoutTheAuthModule(t *testing.T) {
+	if registeredAuthEngine() != nil {
+		t.Skip("this test binary links the auth engine")
+	}
 	sock := filepath.Join(t.TempDir(), "l.sock")
-	p := writeConfig(t, `{"credentials":{"spiffe":{}},"listeners":[{"protocol":"postgres","network":"unix","listen":"`+sock+`","upstream":"h:1",
-	  "identity":{"type":"spiffe"},"credentials":{"pool":[{"name":"svc","source":"spiffe","spiffe_id":"spiffe://example.org/sa/x"}],"select":{"rules":[{"credential":"svc"}]}}}]}`)
-	cfg, err := LoadConfig(p)
-	if err != nil {
-		t.Fatalf("the config decoder refused a spiffe lane: %v", err)
+	const pool = `"credentials":{"pool":[{"name":"ro","source":"secret_files","user":"app","password_file":"ro/password"}],"select":{"rules":[{"credential":"ro"}]}}`
+	for _, tc := range []struct{ name, top, listener, key string }{
+		{"identity and pool", `"credentials":{"secret_files":{"dir":"/run/creds"}},`,
+			`"protocol":"postgres","network":"unix","listen":"` + sock + `","upstream":"h:1","identity":{"type":"none"},` + pool, "identity"},
+		{"pool alone", `"credentials":{"secret_files":{"dir":"/run/creds"}},`,
+			`"protocol":"postgres","network":"unix","listen":"` + sock + `","upstream":"h:1",` + pool, "credentials"},
+		{"passthrough", ``,
+			`"protocol":"oracle","network":"unix","listen":"` + sock + `","upstream":"h:1","identity":{"type":"none"},"passthrough_users":["system"]`, "identity"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := LoadConfig(writeConfig(t, `{`+tc.top+`"listeners":[{`+tc.listener+`}]}`))
+			if err != nil {
+				t.Fatalf("the config decoder refused a pooled lane: %v", err)
+			}
+			_, err = Validate(cfg, nil)
+			if err == nil || !strings.Contains(err.Error(), tc.key+" needs the credential-swap runtime") || !strings.Contains(err.Error(), authModule) {
+				t.Fatalf("Validate = %v, want the auth module named", err)
+			}
+			if err := checkAuthEngine(cfg); err == nil {
+				t.Fatal("checkAuthEngine accepted a pooled lane with no engine")
+			}
+		})
 	}
-	if _, ok := registeredIdentitySource(IdentitySPIFFE); ok {
-		t.Skip("this test binary links the spiffe module")
+	// Every key the check reads, on a listener the decoder otherwise refuses.
+	for _, l := range []ListenerConfig{
+		{PassthroughUsers: []string{"admin"}}, {Propagate: &PropagateConfig{ApplicationName: "x"}},
+	} {
+		if err := checkAuthEngine(&Config{Listeners: []ListenerConfig{l}}); err == nil {
+			t.Errorf("checkAuthEngine accepted %+v", l)
+		}
 	}
-	_, err = Validate(cfg, nil)
-	if err == nil || !strings.Contains(err.Error(), `identity type "spiffe" is not linked`) {
-		t.Fatalf("Validate = %v, want the unlinked verifier named", err)
+	plain := Config{Listeners: []ListenerConfig{{Name: "l", Protocol: "postgres", Listen: ":1", Upstream: "h:1", Context: map[string]string{"env": "demo"}}}}
+	if err := checkAuthEngine(&plain); err != nil {
+		t.Fatalf("a lane with no pool was refused: %v", err)
 	}
-	// With the verifier linked the source would be next.
-	if err := checkCredentialSources(cfg); err == nil || !strings.Contains(err.Error(), `credential source "spiffe" is not linked`) {
-		t.Fatalf("checkCredentialSources = %v", err)
+	if _, err := Validate(&plain, nil); err != nil {
+		t.Fatalf("Validate refused a plain lane: %v", err)
 	}
 }
 
 // The header lists every verifier and source this build links, so the plane
 // serves a lane only to a build that can run it, and CheckServable asks for
-// the entry a lane needs.
+// the entry a lane needs. The built-in entries come and go with the auth
+// engine; the field caps are in every build.
 func TestTheHeaderListsVerifiersAndSources(t *testing.T) {
 	caps := SidecarCapabilities()
-	for _, want := range []string{"identity:none", "identity:kubernetes", "identity:hoop_credential",
-		"credentials.secret_files", "credentials.gcp_impersonation", "credentials.x509", "identity", "credentials", "credential_set"} {
+	for _, want := range []string{"identity", "credentials", "credential_set"} {
 		if !slices.Contains(caps, want) {
 			t.Errorf("the header lacks %q: %v", want, caps)
+		}
+	}
+	builtins := []string{"identity:none", "identity:kubernetes", "identity:hoop_credential", "identity:jwt",
+		"credentials.secret_files", "credentials.gcp_impersonation", "credentials.x509", "credentials.vault", "credentials.gcp_secret_manager"}
+	_, linked := RegisteredIdentitySource(IdentityNone)
+	for _, entry := range builtins {
+		if slices.Contains(caps, entry) != linked {
+			t.Errorf("the header lists %q = %v, want %v (auth engine linked: %v)", entry, !linked, linked, linked)
 		}
 	}
 	if _, ok := registeredCredentialSource(SourceKerberos); !ok && slices.Contains(caps, "credentials.kerberos") {
@@ -200,133 +221,34 @@ func TestTheHeaderListsVerifiersAndSources(t *testing.T) {
 	cfg.Listeners[0].Identity = &IdentityConfig{Type: IdentitySPIFFE}
 	cfg.Listeners[0].Credentials.Pool[0].Source = SourceSecretFiles
 	err = CheckServable(cfg, Handshake{Capabilities: caps})
-	if _, linked := registeredIdentitySource(IdentitySPIFFE); !linked {
+	if _, linked := RegisteredIdentitySource(IdentitySPIFFE); !linked {
 		if err == nil || !strings.Contains(err.Error(), `"identity:spiffe"`) {
 			t.Fatalf("CheckServable = %v, want the spiffe verifier required", err)
 		}
 	}
-}
-
-func hashOf(secret string) string {
-	sum := sha256.Sum256([]byte(secret))
-	return hex.EncodeToString(sum[:])
-}
-
-// The set is matched by digest, per lane, with expiry and the login user
-// checked; and the scram form names an entry by hash without the key.
-func TestHoopCredentialVerifier(t *testing.T) {
-	future := time.Now().Add(time.Hour)
-	set := newCredentialSet([]CredentialSetEntry{
-		{Hash: hashOf("hlc_alice"), Subject: "alice", Email: "alice@example.com", Groups: []string{"dba"}, Lane: "appdb", ExpiresAt: future},
-		{Hash: hashOf("hlc_bob"), Subject: "bob", Lane: "appdb", ExpiresAt: time.Now().Add(-time.Minute)},
-		{Hash: hashOf("hlc_carol"), Subject: "carol", Lane: "other", ExpiresAt: future},
-		{Hash: "not-hex", Subject: "mallory", Lane: "appdb", ExpiresAt: future},
-	})
-	v, err := buildHoopCredentialIdentity(IdentityConfig{}, IdentityDeps{lane: "appdb", credentials: set})
-	if err != nil {
-		t.Fatal(err)
-	}
-	verify := func(user, secret string) (session.Identity, error) {
-		return v.Verify(context.Background(), user, secret, PeerInfo{})
-	}
-
-	id, err := verify("alice", "hlc_alice")
-	if err != nil {
-		t.Fatalf("alice: %v", err)
-	}
-	if id.Subject != "alice" || id.Email != "alice@example.com" || !slices.Equal(id.Groups, []string{"dba"}) ||
-		id.Attributes[identityTypeAttribute] != IdentityHoopCredential {
-		t.Fatalf("identity = %+v", id)
-	}
-	if _, err := verify("alice@example.com", "hlc_alice"); err != nil {
-		t.Fatalf("the email as login user: %v", err)
-	}
-	if _, err := verify("", "hlc_alice"); err != nil {
-		t.Fatalf("no login user (http): %v", err)
-	}
-	if _, err := verify("alice", scramSecretPrefix+hashOf("hlc_alice")); err != nil {
-		t.Fatalf("the scram form: %v", err)
-	}
-
-	for name, tc := range map[string]struct{ user, secret, want string }{
-		"wrong key":       {"alice", "hlc_wrong", "no hoop credential"},
-		"empty":           {"alice", "", "no hoop credential"},
-		"other lane":      {"carol", "hlc_carol", "no hoop credential"},
-		"expired":         {"bob", "hlc_bob", "expired at"},
-		"another's key":   {"bob", "hlc_alice", "belongs to alice, not to the login user \"bob\""},
-		"raw hash as key": {"alice", hashOf("hlc_alice"), "no hoop credential"},
-		"unknown scram":   {"alice", scramSecretPrefix + hashOf("x"), "no hoop credential"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := verify(tc.user, tc.secret)
-			if !errors.Is(err, codectypes.ErrLoginRefused) || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want a refusal saying %q", err, tc.want)
-			}
-		})
+	// A build with no engine has none of the built-ins, so the plane holds
+	// a pooled lane back from it.
+	cfg.Listeners[0].Identity = &IdentityConfig{Type: IdentityHoopCredential}
+	err = CheckServable(cfg, Handshake{Capabilities: caps})
+	if (err == nil) != linked {
+		t.Fatalf("CheckServable = %v with the engine linked = %v", err, linked)
 	}
 }
 
-// The SCRAM lookup returns the material of the live entry for a login user,
-// decoded, with the hash the driver passes back.
-func TestSCRAMVerifierFindsTheLiveEntryForAUser(t *testing.T) {
-	material := &SCRAMMaterial{
-		Salt: base64.StdEncoding.EncodeToString([]byte("salt")), Iterations: 4096,
-		StoredKey: base64.StdEncoding.EncodeToString([]byte("stored")), ServerKey: base64.StdEncoding.EncodeToString([]byte("server")),
-	}
-	old := time.Now().Add(time.Hour)
-	set := newCredentialSet([]CredentialSetEntry{
-		{Hash: hashOf("k1"), Subject: "alice", Email: "alice@example.com", Lane: "appdb", ExpiresAt: old, SCRAM: material},
-		{Hash: hashOf("k2"), Subject: "alice", Lane: "appdb", ExpiresAt: old.Add(time.Hour), SCRAM: material},
-		{Hash: hashOf("k3"), Subject: "bob", Lane: "appdb", ExpiresAt: time.Now().Add(-time.Hour), SCRAM: material},
-		{Hash: hashOf("k4"), Subject: "dan", Lane: "appdb", ExpiresAt: old},
-		{Hash: hashOf("k5"), Subject: "eve", Lane: "appdb", ExpiresAt: old, SCRAM: &SCRAMMaterial{Salt: "%%", Iterations: 1, StoredKey: "a", ServerKey: "b"}},
-	})
-	m, ok := set.scram("appdb", "alice")
-	if !ok || string(m.Salt) != "salt" || m.Iterations != 4096 || string(m.StoredKey) != "stored" || string(m.ServerKey) != "server" {
-		t.Fatalf("material = %+v, %v", m, ok)
-	}
-	if m.Hash != hashOf("k2") {
-		t.Errorf("hash = %s, want the newest key's", m.Hash)
-	}
-	if m2, ok := set.scram("appdb", "alice@example.com"); !ok || m2.Hash != hashOf("k1") {
-		t.Errorf("by email: %+v %v", m2, ok)
-	}
-	for _, user := range []string{"bob", "dan", "eve", "nobody"} {
-		if _, ok := set.scram("appdb", user); ok {
-			t.Errorf("%s has SCRAM material; want none (expired, no material, or undecodable)", user)
+// recordingSet is the engine's set as the reloader sees it: what was last
+// swapped in.
+type recordingSet struct{ entries []CredentialSetEntry }
+
+func (s *recordingSet) Swap(entries []CredentialSetEntry) { s.entries = entries }
+func (s *recordingSet) Size() int                         { return len(s.entries) }
+
+func (s *recordingSet) has(lane, hash string) bool {
+	for _, e := range s.entries {
+		if e.Lane == lane && e.Hash == hash {
+			return true
 		}
 	}
-	// The verifier accepts what the driver proves.
-	v, _ := buildHoopCredentialIdentity(IdentityConfig{}, IdentityDeps{lane: "appdb", credentials: set})
-	if _, err := v.Verify(context.Background(), "alice", scramSecretPrefix+m.Hash, PeerInfo{}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// swap replaces the whole set: a revoked key is refused at the next login
-// and a minted one accepted, with no restart.
-func TestCredentialSetSwaps(t *testing.T) {
-	set := newCredentialSet(nil)
-	if set.size() != 0 {
-		t.Fatal("an empty set has entries")
-	}
-	if _, ok := set.match("l", "k"); ok {
-		t.Fatal("an empty set matched")
-	}
-	set.swap([]CredentialSetEntry{{Hash: hashOf("k"), Subject: "a", Lane: "l"}})
-	if e, ok := set.match("l", "k"); !ok || e.Subject != "a" {
-		t.Fatalf("after the swap: %+v %v", e, ok)
-	}
-	set.swap([]CredentialSetEntry{{Hash: hashOf("k2"), Subject: "b", Lane: "l"}})
-	if _, ok := set.match("l", "k"); ok {
-		t.Fatal("a revoked key still matches")
-	}
-	if e, ok := set.byHash("l", hashOf("k2")); !ok || e.Subject != "b" {
-		t.Fatalf("byHash: %+v %v", e, ok)
-	}
-	if _, ok := set.byHash("l", "zz"); ok {
-		t.Fatal("a malformed hash matched")
-	}
+	return false
 }
 
 // The reloader swaps the set from every document the plane sends, whatever
@@ -335,16 +257,18 @@ func TestCredentialSetSwaps(t *testing.T) {
 func TestAReloadSwapsTheCredentialSet(t *testing.T) {
 	const base = `{"listeners":[{"name":"l","protocol":"postgres","listen":"127.0.0.1:0","upstream":"h:1"}]}`
 	rl, buf := testReloader(t, base)
-	if rl.credentials == nil {
-		t.Fatal("the reloader holds no credential set")
-	}
-	entry, _ := json.Marshal([]CredentialSetEntry{{Hash: hashOf("k"), Subject: "a", Lane: "l", ExpiresAt: time.Now().Add(time.Hour)}})
+	set := &recordingSet{}
+	rl.credentials = set
+	entry, _ := json.Marshal([]CredentialSetEntry{{Hash: strings.Repeat("ab", 32), Subject: "a", Lane: "l", ExpiresAt: time.Now().Add(time.Hour)}})
 	withKey := strings.TrimSuffix(base, "}") + `,"credential_set":` + string(entry) + `}`
 	if out := applyWith(rl, buf, withKey); out == reloadRestart || out == reloadRefused {
 		t.Fatalf("outcome = %v: %s", out, buf.String())
 	}
-	if _, ok := rl.credentials.match("l", "k"); !ok {
+	if !set.has("l", strings.Repeat("ab", 32)) {
 		t.Fatal("the reload did not put the served key in force")
+	}
+	if !strings.Contains(buf.String(), "credential set swapped") {
+		t.Fatalf("the swap was not logged: %s", buf.String())
 	}
 	// A document that needs a restart still carries the keys in force:
 	// here one that revokes the key and moves the listen address.
@@ -352,198 +276,15 @@ func TestAReloadSwapsTheCredentialSet(t *testing.T) {
 	if out := applyWith(rl, buf, moved); out != reloadRestart {
 		t.Fatalf("outcome = %v, want a restart", out)
 	}
-	if _, ok := rl.credentials.match("l", "k"); ok {
+	if set.Size() != 0 {
 		t.Fatal("a revoked key survived the reload")
 	}
 	cfg := Config{Listeners: []ListenerConfig{{Name: "l", Protocol: "postgres", Listen: ":1", Upstream: "h:1"}}}
 	before, _ := BaselineDoc(&cfg)
-	cfg.CredentialSet = []CredentialSetEntry{{Hash: hashOf("k"), Lane: "l"}}
+	cfg.CredentialSet = []CredentialSetEntry{{Hash: strings.Repeat("ab", 32), Lane: "l"}}
 	after, _ := BaselineDoc(&cfg)
 	if string(before) != string(after) {
 		t.Fatalf("the credential set reached the baseline:\n%s\n%s", before, after)
-	}
-}
-
-// Rules are first match wins over the identity and the lane context; no
-// match is a refusal, and an OPA lane reads the credential the policy named.
-func TestCredentialSelection(t *testing.T) {
-	a := &laneAuth{
-		lane: "appdb",
-		pool: []CredentialEntry{{Name: "rw"}, {Name: "ro"}, {Name: "svc"}},
-		rules: []CredentialRule{
-			{When: map[string]string{"identity.groups": "dba", "context.env": "prod"}, Credential: "rw"},
-			{When: map[string]string{"identity.attributes.namespace": "payments"}, Credential: "svc"},
-			{When: map[string]string{"identity.email": "carol@example.com"}, Credential: "ro"},
-			{When: map[string]string{"identity.subject": "dan"}, Credential: "missing"},
-		},
-		context: map[string]string{"env": "prod"},
-	}
-	ctx := context.Background()
-	for name, tc := range map[string]struct {
-		id   session.Identity
-		want string
-		err  string
-	}{
-		"dba in prod":        {session.Identity{Subject: "alice", Groups: []string{"dev", "dba"}}, "rw", ""},
-		"namespace":          {session.Identity{Subject: "sa", Attributes: map[string]string{"namespace": "payments"}}, "svc", ""},
-		"email":              {session.Identity{Subject: "carol", Email: "carol@example.com"}, "ro", ""},
-		"nobody":             {session.Identity{Subject: "zed"}, "", "no credential rule matches zed"},
-		"rule names a ghost": {session.Identity{Subject: "dan"}, "", `credential "missing" is not in the pool`},
-	} {
-		t.Run(name, func(t *testing.T) {
-			e, err := a.selectEntry(ctx, tc.id)
-			if tc.err != "" {
-				if !errors.Is(err, codectypes.ErrLoginRefused) || !strings.Contains(err.Error(), tc.err) {
-					t.Fatalf("err = %v, want refusal %q", err, tc.err)
-				}
-				return
-			}
-			if err != nil || e.Name != tc.want {
-				t.Fatalf("picked %q, %v; want %q", e.Name, err, tc.want)
-			}
-		})
-	}
-
-	// Context-only rules serve a none lane, where the identity is empty.
-	b := &laneAuth{pool: []CredentialEntry{{Name: "pod"}}, rules: []CredentialRule{{Credential: "pod"}}}
-	if e, err := b.selectEntry(ctx, session.Identity{}); err != nil || e.Name != "pod" {
-		t.Fatalf("an unconditional rule: %q %v", e.Name, err)
-	}
-
-	// OPA: the login document carries the identity, and the answer names
-	// the credential.
-	var seen map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var in struct {
-			Input map[string]any `json:"input"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&in)
-		seen = in.Input
-		ctxMap, _ := in.Input["context"].(map[string]any)
-		switch ctxMap["principal"] {
-		case "alice":
-			_, _ = w.Write([]byte(`{"result":{"allow":true,"credential":"rw"}}`))
-		case "bob":
-			_, _ = w.Write([]byte(`{"result":{"allow":true}}`))
-		default:
-			_, _ = w.Write([]byte(`{"result":{"allow":false,"message":"not today"}}`))
-		}
-	}))
-	defer srv.Close()
-	c := &laneAuth{lane: "appdb", proto: inspect.Postgres, pool: []CredentialEntry{{Name: "rw"}},
-		opa: &policy.OPAClient{URL: srv.URL}, context: map[string]string{"env": "prod"}}
-	e, err := c.selectEntry(ctx, session.Identity{Subject: "alice", Groups: []string{"dba"}})
-	if err != nil || e.Name != "rw" {
-		t.Fatalf("opa picked %q, %v", e.Name, err)
-	}
-	if seen["statement"] != "login" || seen["protocol"] != "postgres" {
-		t.Errorf("login document = %v", seen)
-	}
-	if ctxMap, _ := seen["context"].(map[string]any); ctxMap["groups"] != "dba" || ctxMap["env"] != "prod" || ctxMap["connection"] != "appdb" {
-		t.Errorf("login context = %v", seen["context"])
-	}
-	if md, _ := seen["metadata"].(map[string]any); md["pool"] != "rw" {
-		t.Errorf("login metadata = %v", seen["metadata"])
-	}
-	if _, err := c.selectEntry(ctx, session.Identity{Subject: "bob"}); err == nil || !strings.Contains(err.Error(), "named no credential") {
-		t.Fatalf("an allow naming nothing: %v", err)
-	}
-	if _, err := c.selectEntry(ctx, session.Identity{Subject: "eve"}); !errors.Is(err, codectypes.ErrLoginRefused) || !strings.Contains(err.Error(), "not today") {
-		t.Fatalf("a denial: %v", err)
-	}
-}
-
-// authenticate composes verify, select and the source, names the credential
-// after the pool entry and stamps the identity type; a source failure
-// refuses without leaking its cause to the client.
-func TestAuthenticateComposesTheThreeSteps(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "password"), []byte("s3cret\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	set := newCredentialSet([]CredentialSetEntry{{Hash: hashOf("hlc_a"), Subject: "alice", Lane: "l", ExpiresAt: time.Now().Add(time.Hour)}})
-	cfg := &Config{
-		Credentials: &CredentialSourcesConfig{SecretFiles: &SecretFilesSourceConfig{Dir: dir}},
-		Listeners: []ListenerConfig{{Name: "l", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
-			Identity: &IdentityConfig{Type: IdentityHoopCredential},
-			Credentials: &CredentialsConfig{
-				Pool:   []CredentialEntry{{Name: "rw", Source: SourceSecretFiles, User: "app", PasswordFile: "password"}, {Name: "broken", Source: SourceSecretFiles, User: "x", PasswordFile: "absent"}},
-				Select: SelectConfig{Rules: []CredentialRule{{When: map[string]string{"identity.subject": "alice"}, Credential: "rw"}}},
-			}}},
-	}
-	sources, err := buildCredentialSources(cfg, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a, err := buildLaneAuth(cfg, cfg.Listeners[0], "l", nil, set, sources)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a.scram == nil {
-		t.Fatal("a hoop_credential lane offers no SCRAM lookup")
-	}
-	id, cred, err := a.authenticate(context.Background(), "alice", "hlc_a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id.Subject != "alice" || id.Attributes[identityTypeAttribute] != IdentityHoopCredential {
-		t.Errorf("identity = %+v", id)
-	}
-	if cred.Name != "rw" || cred.User != "app" || cred.Password != "s3cret" {
-		t.Errorf("credential = %+v", cred)
-	}
-	_, _, err = a.authenticate(context.Background(), "alice", "nope")
-	if !errors.Is(err, codectypes.ErrLoginRefused) {
-		t.Fatalf("a wrong key: %v", err)
-	}
-
-	a.rules = []CredentialRule{{Credential: "broken"}}
-	_, _, err = a.authenticate(context.Background(), "alice", "hlc_a")
-	if !errors.Is(err, codectypes.ErrLoginRefused) || strings.Contains(err.Error(), "absent") {
-		t.Fatalf("a source failure = %v; want a refusal that names no file", err)
-	}
-
-	// The libhoop form carries the same facts.
-	a.rules = []CredentialRule{{Credential: "rw"}}
-	cid, ucred, err := a.authenticator()(context.Background(), "alice", "hlc_a")
-	if err != nil || cid.Subject != "alice" || ucred.User != "app" || ucred.Password != "s3cret" {
-		t.Fatalf("authenticator: %+v %+v %v", cid, ucred, err)
-	}
-	// And the http form: a bearer in, basic out for a user and password.
-	res, err := a.swap(context.Background(), "Bearer hlc_a")
-	if err != nil || res.User != "app" || res.Password != "s3cret" || res.Bearer || res.Identity.Subject != "alice" {
-		t.Fatalf("swap: %+v %v", res, err)
-	}
-}
-
-// The boundary rule refuses the statements that change the session's
-// identity under a swapped credential, and nothing else.
-func TestCredentialBoundaryRule(t *testing.T) {
-	rules, err := policy.NewRules([]policy.Rule{credentialBoundaryRule})
-	if err != nil {
-		t.Fatal(err)
-	}
-	denied := []string{"SET ROLE admin", "  set role admin;", "SET LOCAL ROLE x", "SET SESSION ROLE x", "RESET ROLE", "SET SESSION AUTHORIZATION bob",
-		"EXECUTE AS USER = 'dbo'", "EXECUTE AS LOGIN = 'sa'", "REVERT", "/* hi */ SET ROLE x", "-- c\nSET ROLE x"}
-	allowed := []string{"SELECT revert FROM t", "SET search_path TO x", "SET statement_timeout = 1", "EXECUTE as_proc", "SELECT * FROM roles WHERE name = 'SET ROLE'", "RESET search_path"}
-	for _, text := range denied {
-		if v := rules.Evaluate(inspect.Statement{Text: text, Protocol: inspect.Postgres}); !v.Denied {
-			t.Errorf("%q was allowed", text)
-		}
-	}
-	for _, text := range allowed {
-		if v := rules.Evaluate(inspect.Statement{Text: text, Protocol: inspect.Postgres}); v.Denied {
-			t.Errorf("%q was denied: %s", text, v.Message)
-		}
-	}
-	// Prepended outside observe, so a dry-run lane still enforces it.
-	obs := policy.Observe{Evaluator: policy.Chain{}}
-	ev := credentialBoundary(obs, inspect.Postgres)
-	if v := ev.Evaluate(inspect.Statement{Text: "SET ROLE x", Protocol: inspect.Postgres}); !v.Denied {
-		t.Error("the boundary did not enforce on an observing lane")
-	}
-	if ev := credentialBoundary(nil, inspect.HTTP); ev != nil {
-		t.Error("an http lane got a boundary rule")
 	}
 }
 
@@ -558,7 +299,7 @@ func TestSplitAuthorization(t *testing.T) {
 		"":              {"", ""},
 		"Basic !!":      {"", ""},
 	} {
-		u, s := splitAuthorization(in)
+		u, s := SplitAuthorization(in)
 		if u != want[0] || s != want[1] {
 			t.Errorf("%q = (%q, %q), want %v", in, u, s, want)
 		}

@@ -26,6 +26,7 @@ require (
 	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar v0.0.0
 	github.com/hoophq/hoop/sidecar/analyzer/vertex v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/sidecar/auth v0.0.0
 	github.com/hoophq/hoop/sidecar/codec/wasm v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
@@ -329,6 +330,8 @@ replace github.com/hoophq/hoop/agent => ../agent
 replace github.com/tetratelabs/wazero => github.com/racerxdl/wazero v1.12.1-0.20260610204201-d1e18e798de6
 
 replace github.com/hoophq/hoop/sidecar => ../sidecar
+
+replace github.com/hoophq/hoop/sidecar/auth => ../sidecar/auth
 
 replace github.com/hoophq/hoop/sidecar/config/yaml => ../sidecar/config/yaml
 

@@ -82,7 +82,10 @@ const (
 	// token is replaced. Wide enough that a token never expires between
 	// the check and the plane's verification, clock skew included.
 	gcpTokenRefreshBefore = 5 * time.Minute
-	gcpMetadataTimeout    = 10 * time.Second
+
+	// GCPMetadataTimeout bounds one call to the metadata server, and to the
+	// Google APIs a credential source reaches with its token.
+	GCPMetadataTimeout = 10 * time.Second
 )
 
 // gcpMetadataHost is where the metadata server answers on GCE and GKE. A
@@ -100,6 +103,22 @@ var gcpMetadataClient = &http.Client{
 		return http.ErrUseLastResponse
 	},
 }
+
+// GCPMetadataHost is where a caller reaches the metadata server: the host
+// it configured, else GCE_METADATA_HOST, else the GCE default.
+func GCPMetadataHost(configured string) string {
+	if configured != "" {
+		return configured
+	}
+	if host := os.Getenv(gcpMetadataHostEnv); host != "" {
+		return host
+	}
+	return gcpMetadataHost
+}
+
+// GCPMetadataClient is the client every call to the metadata server goes
+// through: no proxy, no redirects.
+func GCPMetadataClient() *http.Client { return gcpMetadataClient }
 
 // credential is what one control plane request presents. present is called
 // per request, never once at startup, because two of the three sources
@@ -179,17 +198,14 @@ func (g *gcpCredential) present(ctx context.Context) (string, string, error) {
 // but Workload Identity tokens carry anyway; it keeps the two token shapes
 // one.
 func fetchGCPIdentityToken(ctx context.Context, audience string) (string, time.Time, error) {
-	host := os.Getenv(gcpMetadataHostEnv)
-	if host == "" {
-		host = gcpMetadataHost
-	}
+	host := GCPMetadataHost("")
 	u := url.URL{
 		Scheme:   "http",
 		Host:     host,
 		Path:     "/computeMetadata/v1/instance/service-accounts/default/identity",
 		RawQuery: url.Values{"audience": {audience}, "format": {"full"}}.Encode(),
 	}
-	ctx, cancel := context.WithTimeout(ctx, gcpMetadataTimeout)
+	ctx, cancel := context.WithTimeout(ctx, GCPMetadataTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -200,7 +216,7 @@ func fetchGCPIdentityToken(ctx context.Context, audience string) (string, time.T
 	req.Header.Set("Metadata-Flavor", "Google")
 	// Set per request rather than on gcpMetadataClient: that client is a
 	// package variable, built before Main stamps Version.
-	req.Header.Set("User-Agent", userAgent("credential/gcp"))
+	req.Header.Set("User-Agent", UserAgent("credential/gcp"))
 	resp, err := gcpMetadataClient.Do(req)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("%s=%s is set but the GCP metadata server at %s is unreachable "+
@@ -213,7 +229,7 @@ func fetchGCPIdentityToken(ctx context.Context, audience string) (string, time.T
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", time.Time{}, fmt.Errorf("the GCP metadata server at %s answered %s for an ID token: %s",
-			host, resp.Status, controlPlaneMessage(raw))
+			host, resp.Status, ErrorMessage(raw))
 	}
 	if len(raw) > maxIdentityToken {
 		return "", time.Time{}, fmt.Errorf("the GCP metadata server at %s answered more than %d bytes "+
@@ -352,7 +368,7 @@ func identityRejected(planeURL, jwt string, raw []byte) error {
 	if c, err := jwtClaimsUnverified(jwt); err == nil {
 		who = fmt.Sprintf("issuer %q, subject %q", c.Iss, c.subject())
 	}
-	reason := controlPlaneMessage(raw)
+	reason := ErrorMessage(raw)
 	if reason == "" || reason == "access denied" {
 		reason = fmt.Sprintf("%q; check the sidecar service account allowlist entry's issuer, audience "+
 			"and subject pattern. A control plane without service account support also answers this way",

@@ -1,4 +1,4 @@
-package proxy
+package login
 
 import (
 	"context"
@@ -11,10 +11,11 @@ import (
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
-func init() { RegisterLogin(inspect.MongoDB, loginMongoDB) }
+func init() { proxy.RegisterLogin(inspect.MongoDB, loginMongoDB) }
 
 // mongoConversationID is the id the relay gives the one SASL conversation
 // a login runs. mongod numbers them from 1 too.
@@ -36,7 +37,7 @@ const mongoConversationID = 1
 // SCRAM-SHA-256 with the credential's user and password on admin, or
 // authenticate with MONGODB-X509 on a connection dialed again with the
 // credential's certificate.
-func loginMongoDB(ctx context.Context, c *LoginConn) (LoginResult, error) {
+func loginMongoDB(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, error) {
 	l := &mongoLogin{ctx: ctx, c: c, log: c.Log}
 	if l.log == nil {
 		l.log = slog.New(slog.DiscardHandler)
@@ -46,7 +47,7 @@ func loginMongoDB(ctx context.Context, c *LoginConn) (LoginResult, error) {
 
 type mongoLogin struct {
 	ctx context.Context
-	c   *LoginConn
+	c   *proxy.LoginConn
 	log *slog.Logger
 
 	up *mongoauth.Conn
@@ -58,34 +59,34 @@ type mongoLogin struct {
 	replyIDs int32
 }
 
-func (l *mongoLogin) run() (LoginResult, error) {
+func (l *mongoLogin) run() (proxy.LoginResult, error) {
 	first, err := l.readLogin()
 	if err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	if first.Command() == "saslStart" {
 		if err := l.connect(mongoauth.OpMsg, "", mongoauth.DefaultHello()); err != nil {
-			return LoginResult{}, err
+			return proxy.LoginResult{}, err
 		}
 		return l.saslStart(first)
 	}
 	hello, err := mongoauth.DecodeHello(first.Body)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mongodb login: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mongodb login: %w", err)
 	}
 	if hello.Speculative != nil {
 		return l.speculative(first, hello)
 	}
 	keep := l.mechsPassThrough(hello)
 	if err := l.connect(first.OpCode, first.Namespace, mongoauth.UpstreamHello(hello, keep)); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	if err := l.reply(first, mongoauth.HelloReply(l.upReply, l.mechs(hello, keep), nil)); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	next, err := l.readLogin()
 	if err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	if next.Command() == "saslStart" {
 		return l.saslStart(next)
@@ -94,7 +95,7 @@ func (l *mongoLogin) run() (LoginResult, error) {
 }
 
 // speculative handles a hello that carries the client's saslStart.
-func (l *mongoLogin) speculative(first mongoauth.Message, hello mongoauth.Hello) (LoginResult, error) {
+func (l *mongoLogin) speculative(first mongoauth.Message, hello mongoauth.Hello) (proxy.LoginResult, error) {
 	start := *hello.Speculative
 	user, uerr := mongoauth.ClientFirstUser(start.Payload)
 	if isScram(start.Mechanism) && uerr == nil && l.passthrough(user) {
@@ -111,7 +112,7 @@ func (l *mongoLogin) speculative(first mongoauth.Message, hello mongoauth.Hello)
 		return l.refuse(first, user, "no scram material for user")
 	}
 	if err := l.connect(first.OpCode, first.Namespace, mongoauth.UpstreamHello(hello, false)); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	conv, serverFirst, err := l.serverFirst(user, material, start.Payload)
 	if err != nil {
@@ -119,16 +120,16 @@ func (l *mongoLogin) speculative(first mongoauth.Message, hello mongoauth.Hello)
 	}
 	spec := mongoauth.SpeculativeReply(mongoConversationID, false, serverFirst)
 	if err := l.reply(first, mongoauth.HelloReply(l.upReply, l.mechs(hello, false), spec)); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	return l.finish(conv, user, material, start)
 }
 
 // saslStart handles a standalone saslStart after the hello was answered.
-func (l *mongoLogin) saslStart(msg mongoauth.Message) (LoginResult, error) {
+func (l *mongoLogin) saslStart(msg mongoauth.Message) (proxy.LoginResult, error) {
 	start, err := mongoauth.DecodeSASLStart(msg.Body)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mongodb login: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mongodb login: %w", err)
 	}
 	user, uerr := mongoauth.ClientFirstUser(start.Payload)
 	if isScram(start.Mechanism) && uerr == nil && l.passthrough(user) {
@@ -149,21 +150,21 @@ func (l *mongoLogin) saslStart(msg mongoauth.Message) (LoginResult, error) {
 		return l.refuse(msg, user, err.Error())
 	}
 	if err := l.reply(msg, mongoauth.SASLReply(mongoConversationID, false, serverFirst)); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	return l.finish(conv, user, material, start)
 }
 
 // finish reads the client's proof, verifies the identity, logs in upstream
 // with the credential and completes the client's conversation.
-func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, material codectypes.SCRAMMaterial, start mongoauth.SASLStart) (LoginResult, error) {
+func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, material codectypes.SCRAMMaterial, start mongoauth.SASLStart) (proxy.LoginResult, error) {
 	cont, err := l.readSASLContinue()
 	if err != nil {
-		return LoginResult{Identity: session.Identity{Subject: user}}, err
+		return proxy.LoginResult{Identity: session.Identity{Subject: user}}, err
 	}
 	_, clientFinal, err := mongoauth.DecodeSASLContinue(cont.Body)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mongodb login: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mongodb login: %w", err)
 	}
 	serverFinal, err := conv.Step(clientFinal)
 	if err != nil || !conv.Valid() {
@@ -174,11 +175,11 @@ func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, mat
 	}
 	identity, cred, err := l.c.Authenticate(l.ctx, user, "scram:"+material.Hash)
 	if err != nil {
-		if errors.Is(err, ErrLoginRefused) {
+		if errors.Is(err, proxy.ErrLoginRefused) {
 			return l.refuse(cont, user, err.Error())
 		}
 		_ = l.reply(cont, mongoauth.AuthenticationFailed())
-		return LoginResult{}, fmt.Errorf("mongodb login: authenticate: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mongodb login: authenticate: %w", err)
 	}
 	if identity.Subject == "" {
 		identity.Subject = user
@@ -187,10 +188,10 @@ func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, mat
 		l.log.Warn("mongodb upstream login failed", "credential", cred.Name, "upstream_user", cred.User, "error", err)
 		_ = l.reply(cont, mongoauth.CommandError(mongoauth.CodeAuthenticationFailed,
 			"AuthenticationFailed", "upstream authentication failed"))
-		return LoginResult{}, fmt.Errorf("mongodb login: upstream: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mongodb login: upstream: %w", err)
 	}
 	if err := l.reply(cont, mongoauth.SASLReply(mongoConversationID, start.SkipEmptyExchange, serverFinal)); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	if !start.SkipEmptyExchange {
 		// The client confirms with an empty saslContinue and the server
@@ -198,13 +199,13 @@ func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, mat
 		// previous reply.
 		last, err := l.readSASLContinue()
 		if err != nil {
-			return LoginResult{}, err
+			return proxy.LoginResult{}, err
 		}
 		if err := l.reply(last, mongoauth.SASLReply(mongoConversationID, true, nil)); err != nil {
-			return LoginResult{}, err
+			return proxy.LoginResult{}, err
 		}
 	}
-	return LoginResult{Identity: identity, Credential: cred}, nil
+	return proxy.LoginResult{Identity: identity, Credential: cred}, nil
 }
 
 // upstreamLogin authenticates the upstream leg with cred. A password
@@ -212,7 +213,7 @@ func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, mat
 // the client's user lived, which says nothing about the credential's. A
 // certificate needs a new TLS handshake, so the connection is dialed again
 // with it.
-func (l *mongoLogin) upstreamLogin(cred Credential) error {
+func (l *mongoLogin) upstreamLogin(cred proxy.Credential) error {
 	if cred.Cert == nil {
 		return mongoauth.ScramLogin(l.up, mongoauth.ScramSHA256, "admin", cred.User, cred.Password)
 	}
@@ -234,9 +235,9 @@ func (l *mongoLogin) upstreamLogin(cred Credential) error {
 // client's saslStart runs upstream as a command and its reply rides in the
 // hello reply, where the client expects it. The rest of the conversation
 // flows through the pumps.
-func (l *mongoLogin) passthroughHello(first mongoauth.Message, hello mongoauth.Hello, start mongoauth.SASLStart, user string) (LoginResult, error) {
+func (l *mongoLogin) passthroughHello(first mongoauth.Message, hello mongoauth.Hello, start mongoauth.SASLStart, user string) (proxy.LoginResult, error) {
 	if err := l.connect(first.OpCode, first.Namespace, mongoauth.UpstreamHello(hello, true)); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	mechs := l.mechs(hello, true)
 	if start.DB == "" {
@@ -244,7 +245,7 @@ func (l *mongoLogin) passthroughHello(first mongoauth.Message, hello mongoauth.H
 	}
 	reply, err := l.up.Command(mongoauth.SASLStartCommand(start))
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mongodb login: upstream saslStart: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mongodb login: upstream saslStart: %w", err)
 	}
 	// A server never reports a failed speculative attempt: it omits the
 	// field and the driver starts a plain conversation, which fails on
@@ -254,38 +255,38 @@ func (l *mongoLogin) passthroughHello(first mongoauth.Message, hello mongoauth.H
 		spec = mongoauth.SpeculativeReply(resp.ConversationID, resp.Done, resp.Payload)
 	}
 	if err := l.reply(first, mongoauth.HelloReply(l.upReply, mechs, spec)); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	l.log.Debug("mongodb login passed through", "user", user)
-	return LoginResult{Identity: session.Identity{Subject: user}, Passthrough: true}, nil
+	return proxy.LoginResult{Identity: session.Identity{Subject: user}, Passthrough: true}, nil
 }
 
 // passthroughCommand relays a pass-through user's saslStart unchanged and
 // leaves the rest of the conversation to the pumps.
-func (l *mongoLogin) passthroughCommand(msg mongoauth.Message, user string) (LoginResult, error) {
+func (l *mongoLogin) passthroughCommand(msg mongoauth.Message, user string) (proxy.LoginResult, error) {
 	if _, err := l.c.Upstream.Write(msg.Raw); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	reply, err := mongoauth.ReadMessage(l.c.Upstream)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("mongodb login: upstream saslStart: %w", err)
+		return proxy.LoginResult{}, fmt.Errorf("mongodb login: upstream saslStart: %w", err)
 	}
 	if err := l.send(reply.Raw); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	l.log.Debug("mongodb login passed through", "user", user)
-	return LoginResult{Identity: session.Identity{Subject: user}, Passthrough: true}, nil
+	return proxy.LoginResult{Identity: session.Identity{Subject: user}, Passthrough: true}, nil
 }
 
 // monitor hands a connection that only sends hellos to the pumps. The
 // hello already went through Inspect; its reply, possibly a stream of
 // them, correlates in the gate like any other.
-func (l *mongoLogin) monitor(hello mongoauth.Message) (LoginResult, error) {
+func (l *mongoLogin) monitor(hello mongoauth.Message) (proxy.LoginResult, error) {
 	if _, err := l.c.Upstream.Write(hello.Raw); err != nil {
-		return LoginResult{}, err
+		return proxy.LoginResult{}, err
 	}
 	l.log.Debug("mongodb connection carries no login; monitoring only")
-	return LoginResult{Passthrough: true}, nil
+	return proxy.LoginResult{Passthrough: true}, nil
 }
 
 // connect dials the upstream and runs the hello on it, keeping the reply
@@ -390,7 +391,7 @@ func (l *mongoLogin) readLogin() (mongoauth.Message, error) {
 	if !mongoauth.IsHello(cmd) && cmd != "saslStart" {
 		l.log.Debug("mongodb login refused", "reason", "command before login", "command", cmd)
 		l.answer(msg, mongoauth.Unauthorized(cmd))
-		return msg, fmt.Errorf("%w: command %q before login", ErrLoginRefused, cmd)
+		return msg, fmt.Errorf("%w: command %q before login", proxy.ErrLoginRefused, cmd)
 	}
 	if err := l.inspect(msg); err != nil {
 		return msg, err
@@ -444,21 +445,21 @@ func (l *mongoLogin) send(raw []byte) error {
 // refuse answers req with the server's own AuthenticationFailed, the same
 // for every reason so a client cannot tell an unknown user from a wrong
 // key, and reports the refusal under the claimed user.
-func (l *mongoLogin) refuse(req mongoauth.Message, user, reason string) (LoginResult, error) {
+func (l *mongoLogin) refuse(req mongoauth.Message, user, reason string) (proxy.LoginResult, error) {
 	l.log.Debug("mongodb login refused", "user", user, "reason", reason)
 	_ = l.reply(req, mongoauth.AuthenticationFailed())
-	return LoginResult{Identity: session.Identity{Subject: user}},
-		fmt.Errorf("%w: %s", ErrLoginRefused, reason)
+	return proxy.LoginResult{Identity: session.Identity{Subject: user}},
+		fmt.Errorf("%w: %s", proxy.ErrLoginRefused, reason)
 }
 
 // refuseMechanism names the mechanism, which the client chose and can
 // change; nothing about the user leaks.
-func (l *mongoLogin) refuseMechanism(req mongoauth.Message, user, mechanism string) (LoginResult, error) {
+func (l *mongoLogin) refuseMechanism(req mongoauth.Message, user, mechanism string) (proxy.LoginResult, error) {
 	msg := fmt.Sprintf("mechanism %s is not supported on this lane; use %s", mechanism, mongoauth.ScramSHA256)
 	l.log.Debug("mongodb login refused", "user", user, "reason", msg)
 	_ = l.reply(req, mongoauth.CommandError(mongoauth.CodeAuthenticationFailed, "AuthenticationFailed", msg))
-	return LoginResult{Identity: session.Identity{Subject: user}},
-		fmt.Errorf("%w: %s", ErrLoginRefused, msg)
+	return proxy.LoginResult{Identity: session.Identity{Subject: user}},
+		fmt.Errorf("%w: %s", proxy.ErrLoginRefused, msg)
 }
 
 func isScram(mechanism string) bool {

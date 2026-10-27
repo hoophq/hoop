@@ -1,4 +1,4 @@
-package daemon
+package auth
 
 import (
 	"bytes"
@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -27,11 +27,8 @@ import (
 // in the config: a Vault token in a committed file would be the secret the
 // source exists to keep out of it.
 //
-// Plain HTTPS and JSON, so it stays in the root module.
+// Plain HTTPS and JSON.
 const (
-	VaultAuthKubernetes = "kubernetes"
-	VaultAuthTokenFile  = "token_file"
-
 	vaultTimeout      = 10 * time.Second
 	maxVaultAnswer    = 1 << 20
 	maxVaultTokenFile = 64 << 10
@@ -44,7 +41,7 @@ const (
 
 type vaultSource struct {
 	addr      string
-	auth      VaultAuthConfig
+	auth      daemon.VaultAuthConfig
 	namespace string
 	client    *http.Client
 	caFile    string
@@ -55,38 +52,11 @@ type vaultSource struct {
 	tokenExp time.Time // zero for a token file, re-read per call
 }
 
-func (v *VaultSourceConfig) validate() []string {
-	var problems []string
-	if v.Addr == "" {
-		problems = append(problems, "addr is required")
-	} else if u, err := url.Parse(v.Addr); err != nil || u.Scheme != "https" || u.Host == "" {
-		problems = append(problems, fmt.Sprintf("addr %q is not an https URL", v.Addr))
-	}
-	switch v.Auth.Type {
-	case VaultAuthKubernetes:
-		if v.Auth.Role == "" {
-			problems = append(problems, "auth.role is required with the kubernetes method")
-		}
-	case VaultAuthTokenFile:
-		if v.Auth.TokenFile == "" {
-			problems = append(problems, "auth.token_file is required with the token_file method")
-		}
-		if v.Auth.Role != "" || v.Auth.Mount != "" {
-			problems = append(problems, "auth.role and auth.mount are kubernetes settings, not token_file ones")
-		}
-	case "":
-		problems = append(problems, "auth.type is required: kubernetes or token_file")
-	default:
-		problems = append(problems, fmt.Sprintf("auth.type %q is not kubernetes or token_file", v.Auth.Type))
-	}
-	return problems
-}
-
-func buildVaultSource(cfg *CredentialSourcesConfig) (CredentialSource, error) {
+func buildVaultSource(cfg *daemon.CredentialSourcesConfig) (daemon.CredentialSource, error) {
 	if cfg == nil || cfg.Vault == nil {
 		return nil, errors.New("credentials.vault is not configured")
 	}
-	if p := cfg.Vault.validate(); len(p) > 0 {
+	if p := cfg.Vault.Validate(); len(p) > 0 {
 		return nil, errors.New(strings.Join(p, "; "))
 	}
 	return &vaultSource{
@@ -105,10 +75,10 @@ func buildVaultSource(cfg *CredentialSourcesConfig) (CredentialSource, error) {
 	}, nil
 }
 
-// useRoots installs the process trust pool, plus ca_file when set. Called
-// by buildLanes once the bundle is loaded; the file is read then, not at
-// Validate, which runs on the control plane too.
-func (v *vaultSource) useRoots(roots *x509.CertPool) {
+// UseRoots installs the process trust pool, plus ca_file when set. Called
+// by BuildCredentialSources once the bundle is loaded; the file is read
+// then, not at Validate, which runs on the control plane too.
+func (v *vaultSource) UseRoots(roots *x509.CertPool) {
 	pool := roots
 	if v.caFile != "" {
 		if pem, err := os.ReadFile(v.caFile); err == nil {
@@ -123,32 +93,13 @@ func (v *vaultSource) useRoots(roots *x509.CertPool) {
 	v.client.Transport.(*http.Transport).TLSClientConfig.RootCAs = pool
 }
 
-func (v *vaultSource) validateEntry(e CredentialEntry) error {
-	if e.Path == "" {
-		return errors.New("path is required: the Vault API path to read")
-	}
-	if strings.HasPrefix(e.Path, "/") || strings.HasPrefix(e.Path, "v1/") {
-		return fmt.Errorf("path %q is relative to the API root; write secret/data/<name>, not /v1/...", e.Path)
-	}
-	if vaultIsDynamic(e.Path) && (e.User != "" || e.UserKey != "" || e.PasswordKey != "") {
-		return errors.New("a database engine path names its own user and password; user, user_key and password_key are KV settings")
-	}
-	return nil
-}
-
-// vaultIsDynamic reports a database secrets engine path, whose answer is a
-// leased user rather than a stored secret.
-func vaultIsDynamic(path string) bool {
-	return strings.Contains("/"+path, "/creds/")
-}
-
-func (v *vaultSource) Credential(ctx context.Context, e CredentialEntry, _ session.Identity) (Credential, error) {
-	if err := v.validateEntry(e); err != nil {
-		return Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
+func (v *vaultSource) Credential(ctx context.Context, e daemon.CredentialEntry, _ session.Identity) (daemon.Credential, error) {
+	if err := daemon.ValidateVaultEntry(e); err != nil {
+		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
 	}
 	token, err := v.vaultToken(ctx)
 	if err != nil {
-		return Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
+		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
 	}
 	var ans struct {
 		LeaseID       string          `json:"lease_id"`
@@ -156,18 +107,18 @@ func (v *vaultSource) Credential(ctx context.Context, e CredentialEntry, _ sessi
 		Data          json.RawMessage `json:"data"`
 	}
 	if err := v.call(ctx, token, http.MethodGet, "v1/"+e.Path, nil, &ans); err != nil {
-		return Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
+		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
 	}
-	if vaultIsDynamic(e.Path) {
+	if daemon.VaultIsDynamic(e.Path) {
 		var d struct {
 			Username string `json:"username"`
 			Password string `json:"password"`
 		}
 		if err := json.Unmarshal(ans.Data, &d); err != nil || d.Username == "" || d.Password == "" {
-			return Credential{}, fmt.Errorf("credential %q: %s answered with no username and password", e.Name, e.Path)
+			return daemon.Credential{}, fmt.Errorf("credential %q: %s answered with no username and password", e.Name, e.Path)
 		}
 		lease := ans.LeaseID
-		return Credential{User: d.Username, Password: d.Password, Release: func(ctx context.Context) error {
+		return daemon.Credential{User: d.Username, Password: d.Password, Release: func(ctx context.Context) error {
 			if lease == "" {
 				return nil
 			}
@@ -176,7 +127,7 @@ func (v *vaultSource) Credential(ctx context.Context, e CredentialEntry, _ sessi
 	}
 	data, err := vaultKVData(ans.Data)
 	if err != nil {
-		return Credential{}, fmt.Errorf("credential %q: %s: %w", e.Name, e.Path, err)
+		return daemon.Credential{}, fmt.Errorf("credential %q: %s: %w", e.Name, e.Path, err)
 	}
 	userKey, passwordKey := e.UserKey, e.PasswordKey
 	if userKey == "" {
@@ -187,13 +138,13 @@ func (v *vaultSource) Credential(ctx context.Context, e CredentialEntry, _ sessi
 	}
 	password, ok := data[passwordKey]
 	if !ok || password == "" {
-		return Credential{}, fmt.Errorf("credential %q: %s has no %q key", e.Name, e.Path, passwordKey)
+		return daemon.Credential{}, fmt.Errorf("credential %q: %s has no %q key", e.Name, e.Path, passwordKey)
 	}
 	user := e.User
 	if user == "" {
 		user = data[userKey]
 	}
-	return Credential{User: user, Password: password}, nil
+	return daemon.Credential{User: user, Password: password}, nil
 }
 
 // vaultKVData unwraps a KV answer: v2 nests the secret under data.data
@@ -230,7 +181,7 @@ func stringValues(m map[string]json.RawMessage) (map[string]string, error) {
 // re-read per call, so a platform that rotates the file is followed. The
 // kubernetes method logs in once and again at 80% of the token's lifetime.
 func (v *vaultSource) vaultToken(ctx context.Context) (string, error) {
-	if v.auth.Type == VaultAuthTokenFile {
+	if v.auth.Type == daemon.VaultAuthTokenFile {
 		raw, err := readSmallFile(v.auth.TokenFile, maxVaultTokenFile)
 		if err != nil {
 			return "", fmt.Errorf("vault token file: %w", err)
@@ -244,7 +195,7 @@ func (v *vaultSource) vaultToken(ctx context.Context) (string, error) {
 	}
 	jwtFile := v.auth.TokenFile
 	if jwtFile == "" {
-		jwtFile = kubernetesTokenFile
+		jwtFile = daemon.KubernetesTokenFile
 	}
 	jwt, err := readSmallFile(jwtFile, maxVaultTokenFile)
 	if err != nil {
@@ -304,7 +255,7 @@ func (v *vaultSource) call(ctx context.Context, token, method, path string, body
 	if v.namespace != "" {
 		req.Header.Set("X-Vault-Namespace", v.namespace)
 	}
-	req.Header.Set("User-Agent", userAgent("credential/vault"))
+	req.Header.Set("User-Agent", daemon.UserAgent("credential/vault"))
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

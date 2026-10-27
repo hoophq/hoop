@@ -1,4 +1,4 @@
-package proxy
+package login
 
 import (
 	"bytes"
@@ -19,6 +19,7 @@ import (
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -281,13 +282,13 @@ func (s *mongoFakeServer) serve(conn net.Conn) {
 	}
 }
 
-// mongoLoginHarness wires a LoginConn to a fake client and a fake upstream.
+// mongoLoginHarness wires a proxy.LoginConn to a fake client and a fake upstream.
 type mongoLoginHarness struct {
 	t        *testing.T
 	client   net.Conn
 	server   *mongoFakeServer
-	conn     *LoginConn
-	dialed   []*Credential
+	conn     *proxy.LoginConn
+	dialed   []*proxy.Credential
 	inspects []struct {
 		dir inspect.Direction
 		pkt []byte
@@ -311,11 +312,11 @@ func newMongoLoginHarness(t *testing.T, server *mongoFakeServer) *mongoLoginHarn
 	t.Helper()
 	clientEnd, relayEnd := net.Pipe()
 	h := &mongoLoginHarness{t: t, client: clientEnd, server: server}
-	cred := Credential{Name: "svc-rw", User: "svc", Password: "svc-pw"}
-	h.conn = &LoginConn{
+	cred := proxy.Credential{Name: "svc-rw", User: "svc", Password: "svc-pw"}
+	h.conn = &proxy.LoginConn{
 		Client: relayEnd,
-		Lane:   LaneInfo{Protocol: inspect.MongoDB, Name: "mongo", Network: "tcp", UpstreamAddr: "db.internal:27017"},
-		Dial: func(_ context.Context, cred *Credential) (net.Conn, error) {
+		Lane:   proxy.LaneInfo{Protocol: inspect.MongoDB, Name: "mongo", Network: "tcp", UpstreamAddr: "db.internal:27017"},
+		Dial: func(_ context.Context, cred *proxy.Credential) (net.Conn, error) {
 			h.mu.Lock()
 			h.dialed = append(h.dialed, cred)
 			h.mu.Unlock()
@@ -330,12 +331,12 @@ func newMongoLoginHarness(t *testing.T, server *mongoFakeServer) *mongoLoginHarn
 			return mongoAliceMaterial, true
 		},
 		Passthrough: func(user string) bool { return user == "legacy" },
-		Authenticate: func(_ context.Context, user, secret string) (session.Identity, Credential, error) {
+		Authenticate: func(_ context.Context, user, secret string) (session.Identity, proxy.Credential, error) {
 			h.mu.Lock()
 			h.authCalls = append(h.authCalls, user+"/"+secret)
 			h.mu.Unlock()
 			if user != "alice" || secret != "scram:"+mongoHash {
-				return session.Identity{}, Credential{}, fmt.Errorf("%w: bad secret", ErrLoginRefused)
+				return session.Identity{}, proxy.Credential{}, fmt.Errorf("%w: bad secret", proxy.ErrLoginRefused)
 			}
 			return session.Identity{Subject: "alice@example.com", Email: "alice@example.com"}, cred, nil
 		},
@@ -360,7 +361,7 @@ func newMongoLoginHarness(t *testing.T, server *mongoFakeServer) *mongoLoginHarn
 }
 
 type mongoLoginOutcome struct {
-	res LoginResult
+	res proxy.LoginResult
 	err error
 }
 
@@ -375,14 +376,14 @@ func (h *mongoLoginHarness) run() <-chan mongoLoginOutcome {
 	return out
 }
 
-func (h *mongoLoginHarness) wait(done <-chan mongoLoginOutcome) (LoginResult, error) {
+func (h *mongoLoginHarness) wait(done <-chan mongoLoginOutcome) (proxy.LoginResult, error) {
 	h.t.Helper()
 	select {
 	case r := <-done:
 		return r.res, r.err
 	case <-time.After(5 * time.Second):
 		h.t.Fatal("login did not finish")
-		return LoginResult{}, nil
+		return proxy.LoginResult{}, nil
 	}
 }
 
@@ -625,7 +626,7 @@ func TestMongoLoginWrongProofIsRefused(t *testing.T) {
 	}
 
 	res, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) || res.Identity.Subject != "alice" {
+	if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "alice" {
 		t.Fatalf("result %+v, %v", res, err)
 	}
 	if len(h.authCalls) != 0 {
@@ -646,7 +647,7 @@ func TestMongoLoginUnknownUserIsRefusedWithoutDialing(t *testing.T) {
 	h.expectError(31, mongoauth.CodeAuthenticationFailed)
 
 	res, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) || res.Identity.Subject != "mallory" {
+	if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "mallory" {
 		t.Fatalf("result %+v, %v", res, err)
 	}
 	if len(h.dialed) != 0 {
@@ -838,7 +839,7 @@ func TestMongoLoginCommandBeforeLoginIsUnauthorized(t *testing.T) {
 	if msg := h.expectError(82, mongoauth.CodeUnauthorized); !strings.Contains(msg, "find") {
 		t.Fatalf("errmsg %q", msg)
 	}
-	if _, err := h.wait(done); !errors.Is(err, ErrLoginRefused) {
+	if _, err := h.wait(done); !errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err = %v", err)
 	}
 	// The gate never saw the command: judged as a statement, it would fix
@@ -866,7 +867,7 @@ func TestMongoLoginOtherMechanismIsRefusedByName(t *testing.T) {
 		t.Fatalf("errmsg %q does not name the mechanisms", msg)
 	}
 	res, err := h.wait(done)
-	if !errors.Is(err, ErrLoginRefused) || res.Identity.Subject != "alice" {
+	if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "alice" {
 		t.Fatalf("result %+v, %v", res, err)
 	}
 }
@@ -875,8 +876,8 @@ func TestMongoLoginCertificateCredentialRedialsWithIt(t *testing.T) {
 	server := &mongoFakeServer{x509User: "CN=svc"}
 	h := newMongoLoginHarness(t, server)
 	cert := &tls.Certificate{Certificate: [][]byte{{1, 2, 3}}}
-	h.conn.Authenticate = func(context.Context, string, string) (session.Identity, Credential, error) {
-		return session.Identity{Subject: "alice@example.com"}, Credential{Name: "svc-cert", User: "CN=svc", Cert: cert}, nil
+	h.conn.Authenticate = func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
+		return session.Identity{Subject: "alice@example.com"}, proxy.Credential{Name: "svc-cert", User: "CN=svc", Cert: cert}, nil
 	}
 	done := h.run()
 
@@ -917,7 +918,7 @@ func TestMongoLoginUpstreamRefusalIsNotALoginRefusal(t *testing.T) {
 		t.Fatalf("errmsg %q", msg)
 	}
 	_, err := h.wait(done)
-	if err == nil || errors.Is(err, ErrLoginRefused) {
+	if err == nil || errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err = %v, want an upstream error", err)
 	}
 }
@@ -931,7 +932,7 @@ func TestMongoLoginRefusesSaslContinueOutOfOrder(t *testing.T) {
 	h.read()
 	h.write(mongoauth.EncodeOpMsg(122, 0, bdoc(bint32("ping", 1), bstr("$db", "admin"))))
 	h.expectError(122, mongoauth.CodeProtocolError)
-	if _, err := h.wait(done); err == nil || errors.Is(err, ErrLoginRefused) {
+	if _, err := h.wait(done); err == nil || errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -954,10 +955,10 @@ func FuzzMongoLogin(f *testing.F) {
 		clientEnd, relayEnd := net.Pipe()
 		var upstreams []net.Conn
 		var mu sync.Mutex
-		conn := &LoginConn{
+		conn := &proxy.LoginConn{
 			Client: relayEnd,
-			Lane:   LaneInfo{Protocol: inspect.MongoDB, Name: "mongo", Network: "tcp"},
-			Dial: func(context.Context, *Credential) (net.Conn, error) {
+			Lane:   proxy.LaneInfo{Protocol: inspect.MongoDB, Name: "mongo", Network: "tcp"},
+			Dial: func(context.Context, *proxy.Credential) (net.Conn, error) {
 				up, down := net.Pipe()
 				go server.serve(down)
 				mu.Lock()
@@ -969,8 +970,8 @@ func FuzzMongoLogin(f *testing.F) {
 				return mongoAliceMaterial, user == "alice"
 			},
 			Passthrough: func(user string) bool { return user == "legacy" },
-			Authenticate: func(context.Context, string, string) (session.Identity, Credential, error) {
-				return session.Identity{Subject: "alice@example.com"}, Credential{User: "svc", Password: "svc-pw"}, nil
+			Authenticate: func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
+				return session.Identity{Subject: "alice@example.com"}, proxy.Credential{User: "svc", Password: "svc-pw"}, nil
 			},
 			Inspect: func(inspect.Direction, []byte) error { return nil },
 		}

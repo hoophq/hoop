@@ -1,4 +1,4 @@
-package daemon
+package auth
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -17,33 +18,26 @@ import (
 // group and other, as ssh(1) demands of a key.
 type x509Source struct{}
 
-func buildX509Source(cfg *CredentialSourcesConfig) (CredentialSource, error) {
+func buildX509Source(cfg *daemon.CredentialSourcesConfig) (daemon.CredentialSource, error) {
 	if cfg == nil || cfg.X509 == nil {
 		return nil, errors.New("credentials.x509 is not configured")
 	}
 	return x509Source{}, nil
 }
 
-func (x509Source) validateEntry(e CredentialEntry) error {
-	if e.CertFile == "" || e.KeyFile == "" {
-		return errors.New("cert_file and key_file are required")
-	}
-	return nil
-}
-
-func (s x509Source) Credential(_ context.Context, e CredentialEntry, _ session.Identity) (Credential, error) {
-	if err := s.validateEntry(e); err != nil {
-		return Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
+func (x509Source) Credential(_ context.Context, e daemon.CredentialEntry, _ session.Identity) (daemon.Credential, error) {
+	if err := daemon.ValidateX509Entry(e); err != nil {
+		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
 	}
 	cert, err := loadClientCertificate(e.CertFile, e.KeyFile)
 	if err != nil {
-		return Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
+		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
 	}
 	user := e.User
 	if user == "" && cert.Leaf != nil {
 		user = cert.Leaf.Subject.CommonName
 	}
-	return Credential{User: user, Cert: cert}, nil
+	return daemon.Credential{User: user, Cert: cert}, nil
 }
 
 // loadClientCertificate reads a keypair with the key mode-checked, and keeps

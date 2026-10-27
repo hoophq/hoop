@@ -296,7 +296,7 @@ func CheckServable(cfg Config, hs Handshake) error {
 		// A verifier type and a pool entry's source are linked per build,
 		// like a protocol: the field cap says the build decodes the key,
 		// these say it can serve what the key names.
-		if t := l.identityType(); t != "" {
+		if t := l.IdentityType(); t != "" {
 			need(where, "verifies identity type "+t, capabilityIdentityPrefix+t)
 		}
 		if l.Credentials != nil {

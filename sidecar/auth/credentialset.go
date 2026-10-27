@@ -1,4 +1,4 @@
-package daemon
+package auth
 
 import (
 	"crypto/sha256"
@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/daemon"
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 )
 
@@ -27,20 +28,20 @@ type credentialIndex struct {
 }
 
 type indexedCredential struct {
-	CredentialSetEntry
+	daemon.CredentialSetEntry
 	hash [sha256.Size]byte
 }
 
-func newCredentialSet(entries []CredentialSetEntry) *credentialSet {
+func newCredentialSet(entries []daemon.CredentialSetEntry) *credentialSet {
 	s := &credentialSet{}
-	s.swap(entries)
+	s.Swap(entries)
 	return s
 }
 
-// swap replaces the set. An entry whose hash is not 32 hex bytes is dropped:
+// Swap replaces the set. An entry whose hash is not 32 hex bytes is dropped:
 // it can match nothing, and keeping it would let a malformed row shadow
 // nothing but confuse the constant-time walk.
-func (s *credentialSet) swap(entries []CredentialSetEntry) {
+func (s *credentialSet) Swap(entries []daemon.CredentialSetEntry) {
 	idx := &credentialIndex{byLane: map[string][]indexedCredential{}}
 	for _, e := range entries {
 		raw, err := hex.DecodeString(e.Hash)
@@ -54,8 +55,8 @@ func (s *credentialSet) swap(entries []CredentialSetEntry) {
 	s.cur.Store(idx)
 }
 
-// size is the number of entries in force, for a log line.
-func (s *credentialSet) size() int {
+// Size is the number of entries in force, for a log line.
+func (s *credentialSet) Size() int {
 	n := 0
 	for _, l := range s.cur.Load().byLane {
 		n += len(l)
@@ -68,7 +69,7 @@ func (s *credentialSet) size() int {
 // timing of a refusal nor the entry's position tells a caller how close a
 // guess came. Expiry is the caller's check: a match on an expired key is a
 // different refusal from an unknown one.
-func (s *credentialSet) match(lane, secret string) (CredentialSetEntry, bool) {
+func (s *credentialSet) match(lane, secret string) (daemon.CredentialSetEntry, bool) {
 	sum := sha256.Sum256([]byte(secret))
 	return s.byDigest(lane, sum[:])
 }
@@ -76,16 +77,16 @@ func (s *credentialSet) match(lane, secret string) (CredentialSetEntry, bool) {
 // byHash finds the lane's entry with this hex hash: the form a driver passes
 // as "scram:<hash>" after a SCRAM proof against the entry's material, where
 // the raw key is never seen.
-func (s *credentialSet) byHash(lane, hexHash string) (CredentialSetEntry, bool) {
+func (s *credentialSet) byHash(lane, hexHash string) (daemon.CredentialSetEntry, bool) {
 	raw, err := hex.DecodeString(hexHash)
 	if err != nil || len(raw) != sha256.Size {
-		return CredentialSetEntry{}, false
+		return daemon.CredentialSetEntry{}, false
 	}
 	return s.byDigest(lane, raw)
 }
 
-func (s *credentialSet) byDigest(lane string, digest []byte) (CredentialSetEntry, bool) {
-	var found CredentialSetEntry
+func (s *credentialSet) byDigest(lane string, digest []byte) (daemon.CredentialSetEntry, bool) {
+	var found daemon.CredentialSetEntry
 	hit := 0
 	for _, e := range s.cur.Load().byLane[lane] {
 		if subtle.ConstantTimeCompare(e.hash[:], digest) == 1 {
@@ -104,7 +105,7 @@ func (s *credentialSet) scram(lane, user string) (codectypes.SCRAMMaterial, bool
 	var pick *indexedCredential
 	for i := range s.cur.Load().byLane[lane] {
 		e := &s.cur.Load().byLane[lane][i]
-		if e.SCRAM == nil || e.expired(time.Now()) || (e.Subject != user && e.Email != user) {
+		if e.SCRAM == nil || expired(e.CredentialSetEntry, time.Now()) || (e.Subject != user && e.Email != user) {
 			continue
 		}
 		if pick == nil || e.ExpiresAt.After(pick.ExpiresAt) {
@@ -114,7 +115,7 @@ func (s *credentialSet) scram(lane, user string) (codectypes.SCRAMMaterial, bool
 	if pick == nil {
 		return codectypes.SCRAMMaterial{}, false
 	}
-	m, ok := pick.SCRAM.material()
+	m, ok := material(pick.SCRAM)
 	if !ok {
 		return codectypes.SCRAMMaterial{}, false
 	}
@@ -124,14 +125,14 @@ func (s *credentialSet) scram(lane, user string) (codectypes.SCRAMMaterial, bool
 
 // expired reports whether the entry is past its term at now. An entry the
 // plane served with no term never expires here; the plane decides its life.
-func (e CredentialSetEntry) expired(now time.Time) bool {
+func expired(e daemon.CredentialSetEntry, now time.Time) bool {
 	return !e.ExpiresAt.IsZero() && !now.Before(e.ExpiresAt)
 }
 
 // material decodes the served base64 fields into the codec's form. A field
 // that does not decode makes the whole material unusable, so a driver
 // refuses rather than proving against garbage.
-func (m *SCRAMMaterial) material() (codectypes.SCRAMMaterial, bool) {
+func material(m *daemon.SCRAMMaterial) (codectypes.SCRAMMaterial, bool) {
 	salt, err1 := base64.StdEncoding.DecodeString(m.Salt)
 	stored, err2 := base64.StdEncoding.DecodeString(m.StoredKey)
 	server, err3 := base64.StdEncoding.DecodeString(m.ServerKey)

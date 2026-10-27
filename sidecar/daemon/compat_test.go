@@ -90,6 +90,12 @@ func TestTheFullCompatDocumentSetsEveryField(t *testing.T) {
 			if c := f.tag.Get("cap"); c != "" && !slices.Contains(caps, c) {
 				return
 			}
+			// A verifier type and a source come from the header too; a
+			// build that links no auth engine has none to write there.
+			if (path == "identity.type" && firstWithPrefix(caps, capabilityIdentityPrefix) == "") ||
+				(strings.HasSuffix(path, "].source") && firstWithPrefix(caps, capabilityCredentialsPrefix) == "") {
+				return
+			}
 			if v.IsZero() {
 				t.Errorf("%s: %s is unset", where, path)
 			}

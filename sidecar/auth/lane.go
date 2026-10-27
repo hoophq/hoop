@@ -1,8 +1,7 @@
-package daemon
+package auth
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"strings"
 
 	codechttp "github.com/hoophq/hoop/sidecar/codec/http"
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -26,58 +26,44 @@ type laneAuth struct {
 	lane         string
 	proto        inspect.Protocol
 	identityType string
-	verifier     IdentitySource
+	verifier     daemon.IdentitySource
 	// scram is the SCRAM material lookup a hoop_credential lane offers a
 	// driver; nil on every other verifier.
 	scram   func(user string) (codectypes.SCRAMMaterial, bool)
-	pool    []CredentialEntry
-	sources map[string]CredentialSource
-	rules   []CredentialRule
+	pool    []daemon.CredentialEntry
+	sources map[string]daemon.CredentialSource
+	rules   []daemon.CredentialRule
 	// opa is the lane's decision endpoint when select.opa names the
 	// credential; nil under rules.
 	opa     *policy.OPAClient
 	context map[string]string
-	peer    PeerInfo
+	peer    daemon.PeerInfo
 	log     *slog.Logger
 }
 
-// hasPool reports whether a lane terminates its login.
-func (l ListenerConfig) hasPool() bool {
-	return l.Credentials != nil && len(l.Credentials.Pool) > 0
-}
-
-// identityType is the verifier a lane runs: the configured one, or none on
-// a unix socket with a pool and no identity block.
-func (l ListenerConfig) identityType() string {
-	if l.Identity != nil {
-		return l.Identity.Type
+// buildLaneAuth builds a lane's login termination. Every error is a config
+// fact: an unlinked type, a source the pool names and the block does not
+// configure, a selector with no endpoint. It logs through deps.Log, the
+// lane's logger under the process logger Run installed.
+func buildLaneAuth(lc daemon.ListenerConfig, name string, deps daemon.AuthDeps,
+	set daemon.CredentialSet, sources map[string]daemon.CredentialSource) (daemon.LaneAuth, error) {
+	if !lc.HasPool() {
+		return nil, errors.New("the lane has no credentials pool")
 	}
-	if l.hasPool() && l.Network == "unix" {
-		return IdentityNone
-	}
-	return ""
-}
-
-// buildLaneAuth builds a lane's login termination, or nil for a pass-through
-// lane. Every error is a config fact: an unlinked type, a source the pool
-// names and the block does not configure, a bad template. It logs through
-// the process logger, which Run installs as the default before this runs.
-func buildLaneAuth(cfg *Config, lc ListenerConfig, name string, roots *x509.CertPool,
-	creds *credentialSet, sources map[string]CredentialSource) (*laneAuth, error) {
-	if !lc.hasPool() {
-		return nil, nil
-	}
-	typ := lc.identityType()
-	build, ok := registeredIdentitySource(typ)
+	typ := lc.IdentityType()
+	build, ok := daemon.RegisteredIdentitySource(typ)
 	if !ok {
 		return nil, fmt.Errorf("identity type %q is not linked into this build", typ)
 	}
-	var idCfg IdentityConfig
+	var idCfg daemon.IdentityConfig
 	if lc.Identity != nil {
 		idCfg = *lc.Identity
 	}
-	laneLog := slog.Default().With("listener", name)
-	verifier, err := build(idCfg, IdentityDeps{Roots: roots, Log: laneLog, lane: name, credentials: creds})
+	laneLog := deps.Log
+	if laneLog == nil {
+		laneLog = slog.Default().With("listener", name)
+	}
+	verifier, err := build(idCfg, daemon.IdentityDeps{Roots: deps.Roots, Log: laneLog, Lane: name, CredentialSet: set})
 	if err != nil {
 		return nil, fmt.Errorf("identity %s: %w", typ, err)
 	}
@@ -87,10 +73,10 @@ func buildLaneAuth(cfg *Config, lc ListenerConfig, name string, roots *x509.Cert
 		identityType: typ,
 		verifier:     verifier,
 		pool:         lc.Credentials.Pool,
-		sources:      map[string]CredentialSource{},
+		sources:      map[string]daemon.CredentialSource{},
 		rules:        lc.Credentials.Select.Rules,
 		context:      lc.Context,
-		peer:         PeerInfo{Network: lc.network(), TLS: lc.DownstreamTLS != nil},
+		peer:         deps.Peer,
 		log:          laneLog,
 	}
 	if h, ok := verifier.(*hoopCredentialIdentity); ok {
@@ -104,28 +90,19 @@ func buildLaneAuth(cfg *Config, lc ListenerConfig, name string, roots *x509.Cert
 		a.sources[e.Source] = src
 	}
 	if lc.Credentials.Select.OPA {
-		_, opa, _ := cfg.resolve(lc)
-		if !opa.enabled() {
+		if deps.OPA == nil {
 			return nil, errors.New("credentials.select.opa needs an opa.url on this lane")
 		}
-		a.opa = opa.client("")
+		a.opa = deps.OPA
 	}
 	return a, nil
 }
 
-// network is the lane's transport, tcp when unset.
-func (l ListenerConfig) network() string {
-	if l.Network == "" {
-		return "tcp"
-	}
-	return l.Network
-}
-
-// authenticate is the relay's Authenticate: verify, select, materialize.
+// Authenticate is the relay's Authenticate: verify, select, materialize.
 // A refusal wraps codectypes.ErrLoginRefused; a verifier or source failure
 // is wrapped too, since the client is refused either way, and logged with
 // its cause, which never reaches the client.
-func (a *laneAuth) authenticate(ctx context.Context, user, secret string) (session.Identity, Credential, error) {
+func (a *laneAuth) Authenticate(ctx context.Context, user, secret string) (session.Identity, daemon.Credential, error) {
 	id, err := a.verifier.Verify(ctx, user, secret, a.peer)
 	if err != nil {
 		return a.refuse(session.Identity{Subject: user}, "verify", err)
@@ -133,7 +110,7 @@ func (a *laneAuth) authenticate(ctx context.Context, user, secret string) (sessi
 	if id.Attributes == nil {
 		id.Attributes = map[string]string{}
 	}
-	id.Attributes[identityTypeAttribute] = a.identityType
+	id.Attributes[daemon.IdentityTypeAttribute] = a.identityType
 	entry, err := a.selectEntry(ctx, id)
 	if err != nil {
 		return a.refuse(id, "select", err)
@@ -146,21 +123,21 @@ func (a *laneAuth) authenticate(ctx context.Context, user, secret string) (sessi
 	return id, cred, nil
 }
 
-func (a *laneAuth) refuse(id session.Identity, stage string, err error) (session.Identity, Credential, error) {
+func (a *laneAuth) refuse(id session.Identity, stage string, err error) (session.Identity, daemon.Credential, error) {
 	if !errors.Is(err, codectypes.ErrLoginRefused) {
 		// Not a refusal by rule: something this process owns failed. Say
 		// why here, and give the client only that the login was refused.
 		a.log.Warn("login refused by a failure, not a rule", "stage", stage, "principal", id.Principal(), "error", err)
-		return id, Credential{}, fmt.Errorf("%w: %s failed", codectypes.ErrLoginRefused, stage)
+		return id, daemon.Credential{}, fmt.Errorf("%w: %s failed", codectypes.ErrLoginRefused, stage)
 	}
-	return id, Credential{}, err
+	return id, daemon.Credential{}, err
 }
 
-// authenticator is the libhoop form of authenticate, for a codec that
+// Authenticator is the libhoop form of Authenticate, for a codec that
 // terminates the login itself (ClickHouse).
-func (a *laneAuth) authenticator() codectypes.Authenticator {
+func (a *laneAuth) Authenticator() codectypes.Authenticator {
 	return func(ctx context.Context, user, secret string) (codectypes.ClientIdentity, codectypes.UpstreamCredential, error) {
-		id, cred, err := a.authenticate(ctx, user, secret)
+		id, cred, err := a.Authenticate(ctx, user, secret)
 		if err != nil {
 			return codectypes.ClientIdentity{Subject: id.Subject}, codectypes.UpstreamCredential{}, err
 		}
@@ -169,26 +146,24 @@ func (a *laneAuth) authenticator() codectypes.Authenticator {
 	}
 }
 
-// passthrough is the relay's Passthrough: a startup user the lane relays
-// unchanged.
-func passthrough(users []string) func(user string) bool {
-	if len(users) == 0 {
-		return nil
-	}
-	return func(user string) bool { return slices.Contains(users, user) }
-}
+// SCRAM is the material lookup of a hoop_credential lane; nil elsewhere.
+func (a *laneAuth) SCRAM() func(user string) (codectypes.SCRAMMaterial, bool) { return a.scram }
+
+func (a *laneAuth) IdentityType() string { return a.identityType }
+
+func (a *laneAuth) PoolSize() int { return len(a.pool) }
 
 // selectEntry picks the pool entry for an identity: the first rule whose
 // every condition holds, or the credential the lane's OPA names. No match
 // is a refusal, not a default: a lane that fell back to its first entry
 // would hand a credential to an identity nobody mapped.
-func (a *laneAuth) selectEntry(ctx context.Context, id session.Identity) (CredentialEntry, error) {
+func (a *laneAuth) selectEntry(ctx context.Context, id session.Identity) (daemon.CredentialEntry, error) {
 	var name string
 	switch {
 	case a.opa != nil:
 		picked, err := a.selectWithOPA(ctx, id)
 		if err != nil {
-			return CredentialEntry{}, err
+			return daemon.CredentialEntry{}, err
 		}
 		name = picked
 	default:
@@ -199,7 +174,7 @@ func (a *laneAuth) selectEntry(ctx context.Context, id session.Identity) (Creden
 			}
 		}
 		if name == "" {
-			return CredentialEntry{}, refused("no credential rule matches %s", id.Principal())
+			return daemon.CredentialEntry{}, daemon.Refused("no credential rule matches %s", id.Principal())
 		}
 	}
 	for _, e := range a.pool {
@@ -207,12 +182,12 @@ func (a *laneAuth) selectEntry(ctx context.Context, id session.Identity) (Creden
 			return e, nil
 		}
 	}
-	return CredentialEntry{}, refused("credential %q is not in the pool", name)
+	return daemon.CredentialEntry{}, daemon.Refused("credential %q is not in the pool", name)
 }
 
 // ruleMatches reports whether every condition of a rule holds for id. An
 // empty When matches everyone.
-func ruleMatches(r CredentialRule, id session.Identity, laneCtx map[string]string) bool {
+func ruleMatches(r daemon.CredentialRule, id session.Identity, laneCtx map[string]string) bool {
 	for key, want := range r.When {
 		var got string
 		switch {
@@ -237,19 +212,6 @@ func ruleMatches(r CredentialRule, id session.Identity, laneCtx map[string]strin
 		}
 	}
 	return true
-}
-
-// validateRuleKey refuses a When key the selector would never read.
-func validateRuleKey(key string) bool {
-	switch {
-	case key == "identity.subject", key == "identity.email", key == "identity.groups":
-		return true
-	case strings.HasPrefix(key, "identity.attributes."):
-		return len(key) > len("identity.attributes.")
-	case strings.HasPrefix(key, "context."):
-		return len(key) > len("context.")
-	}
-	return false
 }
 
 // selectWithOPA asks the lane's endpoint for the credential: a login
@@ -292,9 +254,9 @@ func (a *laneAuth) selectWithOPA(ctx context.Context, id session.Identity) (stri
 	case v.Err != nil && v.Denied:
 		return "", fmt.Errorf("credential selection: %w", v.Err)
 	case v.Denied:
-		return "", refused("%s", messageOr(v.Message, "denied by policy"))
+		return "", daemon.Refused("%s", messageOr(v.Message, "denied by policy"))
 	case v.Credential == "":
-		return "", refused("the policy allowed the login and named no credential")
+		return "", daemon.Refused("the policy allowed the login and named no credential")
 	}
 	return v.Credential, nil
 }
@@ -331,7 +293,7 @@ func credentialBoundary(pol policy.Evaluator, proto inspect.Protocol) policy.Eva
 	if err != nil {
 		// The pattern is a constant; a compile failure is a programmer
 		// error, not a config one.
-		panic("sidecar/daemon: credential boundary rule: " + err.Error())
+		panic("sidecar/auth: credential boundary rule: " + err.Error())
 	}
 	if pol == nil {
 		return rules
@@ -339,27 +301,33 @@ func credentialBoundary(pol policy.Evaluator, proto inspect.Protocol) policy.Eva
 	return policy.Chain{rules, pol}
 }
 
-// swap is the http codec's Swap: the request's Authorization, verified and
+// Swap is the http codec's Swap: the request's Authorization, verified and
 // exchanged for the upstream's. A minted token travels as a bearer, a
 // user and password as basic.
-func (a *laneAuth) swap(ctx context.Context, credential string) (codechttp.SwapResult, error) {
-	user, secret := splitAuthorization(credential)
-	id, cred, err := a.authenticate(ctx, user, secret)
+func (a *laneAuth) Swap(ctx context.Context, credential string) (codechttp.SwapResult, error) {
+	user, secret := daemon.SplitAuthorization(credential)
+	id, cred, err := a.Authenticate(ctx, user, secret)
 	if err != nil {
 		return codechttp.SwapResult{}, err
 	}
 	return codechttp.SwapResult{
 		User:     cred.User,
 		Password: cred.Password,
-		Bearer:   cred.User == "" || a.entrySource(cred.Name) == SourceGCPImpersonation,
+		Bearer:   a.bearer(cred),
 		Identity: id,
 	}, nil
 }
 
-// upstreamAuthorization is the gRPC server's per-RPC hook: the header value
+// bearer reports whether a credential travels as a bearer token: one with
+// no user, or a token minted for a service account.
+func (a *laneAuth) bearer(cred daemon.Credential) bool {
+	return cred.User == "" || a.entrySource(cred.Name) == daemon.SourceGCPImpersonation
+}
+
+// UpstreamAuthorization is the gRPC server's per-RPC hook: the header value
 // the upstream sees for a credential swap already resolved.
-func upstreamAuthorization(cred Credential, bearer bool) string {
-	if bearer {
+func (a *laneAuth) UpstreamAuthorization(cred daemon.Credential) string {
+	if a.bearer(cred) {
 		return "Bearer " + cred.Password
 	}
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(cred.User+":"+cred.Password))
@@ -375,13 +343,13 @@ func (a *laneAuth) entrySource(name string) string {
 	return ""
 }
 
-// requestIdentity is the gate's per-request resolver on a pooled http lane:
+// RequestIdentity is the gate's per-request resolver on a pooled http lane:
 // the verifier alone, so a pooled connection rotates sessions when another
 // caller's request arrives on it, and a refused caller is refused before
 // anything is resolved for them.
-func (a *laneAuth) requestIdentity() gate.RequestIdentity {
+func (a *laneAuth) RequestIdentity() gate.RequestIdentity {
 	return gate.RequestIdentityFunc(func(ctx context.Context, credential string) (session.Identity, error) {
-		user, secret := splitAuthorization(credential)
+		user, secret := daemon.SplitAuthorization(credential)
 		id, err := a.verifier.Verify(ctx, user, secret, a.peer)
 		if err != nil {
 			if !errors.Is(err, codectypes.ErrLoginRefused) {
@@ -393,28 +361,7 @@ func (a *laneAuth) requestIdentity() gate.RequestIdentity {
 		if id.Attributes == nil {
 			id.Attributes = map[string]string{}
 		}
-		id.Attributes[identityTypeAttribute] = a.identityType
+		id.Attributes[daemon.IdentityTypeAttribute] = a.identityType
 		return id, nil
 	})
-}
-
-// splitAuthorization reads a credential lifted from Authorization: a bearer
-// is the secret alone, basic is user and password, anything else is taken
-// as the secret, so a verifier sees the key whichever way a client sent it.
-func splitAuthorization(value string) (user, secret string) {
-	value = strings.TrimSpace(value)
-	scheme, rest, _ := strings.Cut(value, " ")
-	rest = strings.TrimSpace(rest)
-	switch {
-	case strings.EqualFold(scheme, "Bearer"):
-		return "", rest
-	case strings.EqualFold(scheme, "Basic"):
-		raw, err := base64.StdEncoding.DecodeString(rest)
-		if err != nil {
-			return "", ""
-		}
-		u, p, _ := strings.Cut(string(raw), ":")
-		return u, p
-	}
-	return "", value
 }
