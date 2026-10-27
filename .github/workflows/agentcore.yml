@@ -128,9 +128,17 @@ jobs:
           set -euo pipefail
           export SIDECAR_URL=https://sidecar.hoop.internal:8443 SIDECAR_CA=Y2E= KUBE_TOKEN=t \
             KUBE_USER=system:serviceaccount:hoop:agentcore-agent KUBE_NAMESPACE=demo KUBECONFIG="$RUNNER_TEMP/kubeconfig"
-          if sh deploy/agentcore/kubernetes/image/hoop-kubeconfig "hoop-0123456789abcdef0123456789abcdef'x" 2>/dev/null; then
-            echo "::error::hoop-kubeconfig took a session id with a quote"; exit 1
-          fi
+          # AgentCore's form: 33 to 100 of [A-Za-z0-9_-]. The id goes into YAML.
+          ids() { printf "%${1}s" | tr ' ' "$2"; }
+          for bad in "$(ids 32 a)" "$(ids 101 a)" "$(ids 40 a)'x" "$(ids 40 a)$(printf '\nx')" "$(ids 40 a) x" ''; do
+            if sh deploy/agentcore/kubernetes/image/hoop-kubeconfig "$bad" 2>/dev/null; then
+              echo "::error::hoop-kubeconfig took the session id '$bad'"; exit 1
+            fi
+          done
+          for good in "$(ids 33 a)" "$(ids 100 a)" "hoop_$(ids 30 0)-x"; do
+            sh deploy/agentcore/kubernetes/image/hoop-kubeconfig "$good" >/dev/null \
+              || { echo "::error::hoop-kubeconfig refused the session id '$good'"; exit 1; }
+          done
           sid=hoop-0123456789abcdef0123456789abcdef
           sh deploy/agentcore/kubernetes/image/hoop-kubeconfig "$sid"
           [[ "$(yq '.users[0].user["as-user-extra"]["hoop-session"][0]' "$KUBECONFIG")" == "$sid" ]] \

@@ -188,6 +188,12 @@ create() {
     # A harness name is unique per Region, so each stack names its own.
     harness_name=${HARNESS_NAME:-$(printf %s "$stack" | tr -c 'A-Za-z0-9' _ | cut -c1-40)}
     read_cluster
+    # Another VPC replaces the peering, and delete then cannot find the
+    # routes left in the old one.
+    local old_vpc
+    old_vpc=$(parameter ClusterVpcId 2>/dev/null || true)
+    [[ -z "$old_vpc" || "$old_vpc" == None || "$old_vpc" == "$(jq -r .VpcId "$tmp/vpc.json")" ]] \
+        || die "stack $stack fronts a cluster in $old_vpc: run ./setup.sh delete first, or set another STACK"
 
     # The lane's certificate, for sidecar.hoop.internal. Made once; an update
     # keeps it unless NEW_LANE_CERT is set.
@@ -225,18 +231,20 @@ create() {
 }
 
 delete() {
-    local peering vpc t c
+    local peering cidr vpc t
     peering=$(output PeeringConnectionId 2>/dev/null || true)
     if [[ -n "$peering" && "$peering" != None ]]; then
+        cidr=$(output SidecarSubnetCidr)
         vpc=$(parameter ClusterVpcId)
         aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$vpc" \
             "Name=route.vpc-peering-connection-id,Values=$peering" --output json > "$tmp/tables.json"
-        while read -r t c; do
-            [[ -n "$t" ]] || continue
-            aws ec2 delete-route --route-table-id "$t" --destination-cidr-block "$c"
-            echo "route table $t: removed $c through $peering"
-        done < <(jq -r --arg p "$peering" '.RouteTables[] | .RouteTableId as $t | .Routes[]
-            | select(.VpcPeeringConnectionId == $p) | "\($t) \(.DestinationCidrBlock)"' "$tmp/tables.json")
+        # Only the route create added: an operator's own routes stay theirs.
+        for t in $(jq -r --arg p "$peering" --arg c "$cidr" '.RouteTables[]
+            | select(any(.Routes[]; .VpcPeeringConnectionId == $p and .DestinationCidrBlock == $c))
+            | .RouteTableId' "$tmp/tables.json"); do
+            aws ec2 delete-route --route-table-id "$t" --destination-cidr-block "$cidr"
+            echo "route table $t: removed $cidr through $peering"
+        done
     fi
     aws cloudformation delete-stack --stack-name "$stack"
     echo "deleting stack $stack..."
