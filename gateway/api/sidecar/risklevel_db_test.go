@@ -216,6 +216,24 @@ func TestALevelReviewIsAuthorizedByTheLevelGroups(t *testing.T) {
 	assert.WithinDuration(t, time.Now().Add(15*time.Minute), *timed.Review.ExpiresAt, time.Minute)
 }
 
+// A filing carries the row the token lookup loads, which has no handshake
+// columns. The plane must still judge it by the build the sidecar reported,
+// or every current build reads as one without the object form.
+func TestALevelFilingWithTheTokenAuthRowIsAuthorized(t *testing.T) {
+	startStatusTestDB(t)
+	seedLevelSidecar(t, "token-row", "token-row-rule", levelSpec)
+	authRow, err := models.GetSidecarByKeyHash(models.DB, models.HashAPIKey("hsc_token-row"))
+	require.NoError(t, err)
+	require.Nil(t, authRow.Capabilities, "the token lookup loads no handshake columns")
+
+	rec := fileLevel(authRow, "DELETE FROM payments WHERE id = 41", "high")
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Equal(t, []string{"dba"}, reviewGroupNames(decodeReviewResponse(t, rec).Review))
+
+	rec = postAgentDecision(authRow, "DELETE FROM payments WHERE id = 42", "low", "approved", "bounded by id")
+	assert.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+}
+
 func TestALevelThatDoesNotHoldForTheApproverIsRefused(t *testing.T) {
 	startStatusTestDB(t)
 	sc := seedLevelSidecar(t, "mismatch", "mismatch-rule",
