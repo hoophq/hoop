@@ -99,19 +99,13 @@ type responseStarter interface {
 // reached the client in part, so a deny frame would land inside it and the
 // relay must cut the response instead (Decision.NoFrame).
 //
-// Only HTTP answers yes from the codec's state. A lane that masks rewrites
-// the response, and the codec knows whether its head went out. One that
-// does not forwards response bytes as they arrive, so a response the
-// decoder refused for outgrowing its buffer has started.
+// The codec decides, not the gate: only it knows where its protocol's
+// responses begin and end. A codec that does not implement responseStarter
+// keeps the deny frame, which a protocol with an in-band error (a Postgres
+// ErrorResponse mid-result) can read.
 func (g *Gate) responseStarted(err error) bool {
 	if errors.Is(err, inspect.ErrResponseStarted) {
 		return true
-	}
-	if g.cfg.Protocol != inspect.HTTP {
-		return false
-	}
-	if g.masker == nil || g.reframer == nil {
-		return errors.Is(err, inspect.ErrBufferOverflow)
 	}
 	rs, ok := g.reframer.(responseStarter)
 	return ok && rs.ResponseStarted()
