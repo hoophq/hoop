@@ -54,6 +54,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/store"
 	telem "github.com/hoophq/hoop/sidecar/telemetry"
+	"github.com/hoophq/hoop/sidecar/upstreamcred"
 )
 
 // Version is the release this process reports: the admin /stats endpoint,
@@ -642,6 +643,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if _, err := openCallerTokens(lanes, nil); err != nil {
 		return nil, err
 	}
+	if _, err := openUpstreamCredentials(lanes, nil); err != nil {
+		return nil, err
+	}
 	out := make([]LaneInfo, 0, len(lanes))
 	validationLog := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, ln := range lanes {
@@ -1002,11 +1006,22 @@ func Run(cfg *Config, det Plugin) error {
 		lanes[i].telemetry = otel.lane(lanes[i].name, lanes[i].cfg.Protocol)
 	}
 
-	// Before any listener binds: a lane that cannot read its tokens stops
-	// startup with an error naming the file.
+	// Before any listener binds: a lane that cannot read its tokens or its
+	// upstream credential stops startup with an error naming the file.
 	tokenFiles, err := openCallerTokens(lanes, log)
 	if err != nil {
 		return err
+	}
+	upstreamCreds, err := openUpstreamCredentials(lanes, log)
+	if err != nil {
+		return err
+	}
+	watched := make([]watchedFile, 0, len(tokenFiles)+len(upstreamCreds))
+	for _, f := range tokenFiles {
+		watched = append(watched, f)
+	}
+	for _, c := range upstreamCreds {
+		watched = append(watched, c)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(),
@@ -1197,8 +1212,8 @@ func Run(cfg *Config, det Plugin) error {
 			"hint", "send SIGHUP to re-read it now")
 	}
 	go rl.watchFile(ctx, log)
-	if len(tokenFiles) > 0 {
-		go watchCallerTokens(ctx, log, tokenFiles, fileWatchEvery)
+	if len(watched) > 0 {
+		go watchFiles(ctx, log, watched, fileWatchEvery)
 	}
 
 	adminSecret := os.Getenv(AdminSecretEnv)
@@ -1421,6 +1436,13 @@ type lane struct {
 	// none: it feeds the rule swap and the /config report, never
 	// buildServer, and the running lane keeps its file.
 	callerTokens *token.File
+
+	// upstreamCred is the upstream_credential the lane sends, set by
+	// openUpstreamCredentials in Run and Validate. Like callerTokens, a
+	// lane a reload builds has none, and the running lane keeps its own:
+	// it reaches each connection's codec through the gate, not through the
+	// codec factory a reload swaps.
+	upstreamCred *upstreamcred.Credential
 }
 
 // capturesRequestBodies reports whether the lane's codec exposes request
@@ -1697,6 +1719,11 @@ func buildServer(
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
+	if lc.UpstreamCredential != nil && ln.upstreamCred == nil {
+		// A lane built without openUpstreamCredentials. Serving it would
+		// forward the client's copy of the header instead of the lane's.
+		return nil, fmt.Errorf("%s: upstream_credential: the token file was not opened", ln.name)
+	}
 
 	return proxy.NewServer(proxy.Config{
 		Listen:              lc.listenAddress(),
@@ -1717,6 +1744,7 @@ func buildServer(
 		CredentialHeader:    lc.credentialHeader(),
 		RequestIdentity:     requestIdentity,
 		AuthenticatesCaller: lc.authenticatesCaller(),
+		UpstreamCredential:  ln.upstreamCred,
 		CodecFactory:        ln.codecFactory,
 		StartupMetadata:     lc.Postgres.startupMetadata(),
 		// The product default: a postgres lane with no startup_metadata list

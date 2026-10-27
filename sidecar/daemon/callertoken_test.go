@@ -466,37 +466,54 @@ func TestACallerTokenLaneChecksHTTP2(t *testing.T) {
 	}
 }
 
-// The watcher polls on its own ticker, whoever owns the config, and stops
-// with the process.
-func TestWatchCallerTokensPollsUntilStopped(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "tokens")
-	if err := os.WriteFile(path, []byte(goodToken+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+// The watcher polls on its own ticker, whoever owns the config, re-reads
+// caller token and upstream credential files alike, and stops with the
+// process.
+func TestWatchFilesPollsUntilStopped(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tokens")
+	credPath := filepath.Join(dir, "api-token")
 	old := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(path, old, old); err != nil {
-		t.Fatal(err)
+	for p, content := range map[string]string{path: goodToken + "\n", credPath: upstreamToken} {
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
 	}
 	lanes := []lane{{name: "api", cfg: ListenerConfig{Protocol: "http",
-		CallerToken: &CallerTokenConfig{File: path, Name: "agents"}}}}
+		CallerToken:        &CallerTokenConfig{File: path, Name: "agents"},
+		UpstreamCredential: &UpstreamCredentialConfig{Header: "Authorization", Scheme: "Bearer", File: credPath}}}}
 	files, err := openCallerTokens(lanes, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	creds, err := openUpstreamCredentials(lanes, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		watchCallerTokens(ctx, slog.New(slog.DiscardHandler), files, 5*time.Millisecond)
+		watchFiles(ctx, slog.New(slog.DiscardHandler), []watchedFile{files[0], creds[0]}, 5*time.Millisecond)
 		close(done)
 	}()
 
 	if err := os.WriteFile(path, []byte(newToken+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(credPath, []byte(rotatedUpstreamToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	deadline := time.Now().Add(2 * time.Second)
-	for !lanes[0].callerTokens.Match(newToken) {
+	for {
+		_, tok := lanes[0].upstreamCred.Current()
+		if lanes[0].callerTokens.Match(newToken) && tok == rotatedUpstreamToken {
+			break
+		}
 		if time.Now().After(deadline) {
-			t.Fatal("the watcher never re-read the rotated file")
+			t.Fatal("the watcher never re-read the rotated files")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

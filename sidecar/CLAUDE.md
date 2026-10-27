@@ -209,8 +209,9 @@ done
   not thin: its `*Codec` embeds libhoop's Inspector and adds the relay
   concerns libhoop has no reason to know (path cleaning, Connect Gateway
   resource normalization, credential lifting for per-request identity, the Via loop
-  marker, and the refusal of a known credential outside its header,
-  placement.go). Import `codec/all` for postgres, mysql, mssql and http, or one
+  marker, the refusal of a known credential outside its header,
+  placement.go, and the lane's own upstream credential in place of the
+  client's, HoldUpstreamCredential). Import `codec/all` for postgres, mysql, mssql and http, or one
   package for one protocol so a binary fronting Postgres never links the
   TDS, MySQL and HTTP machinery.
 
@@ -328,6 +329,8 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `daemon/` | assembles the relay from config — sinks, evaluators, listeners — and is the CLI entry point |
 | `session/` | one inspected connection and the identity behind it |
 | `identity/` | resolves a request credential to the identity behind it; `google/` verifies a Google OAuth2 bearer with tokeninfo; `token/` matches a caller token against a file it re-reads |
+| `upstreamcred/` | the credential an http lane sets toward its upstream in place of the client's, from a file it re-reads |
+| `internal/filewatch/` | a value read from a file on the sidecar host and re-read when it changes; `identity/token` and `upstreamcred` share it |
 | `audit/` | the write side of the trail |
 | `store/` | the read side |
 | `pii/` | detectors and maskers |

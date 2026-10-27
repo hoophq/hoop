@@ -39,6 +39,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
 	"github.com/hoophq/hoop/sidecar/telemetry"
+	"github.com/hoophq/hoop/sidecar/upstreamcred"
 )
 
 // Masker rewrites sensitive values out of a payload.
@@ -272,6 +273,18 @@ type Config struct {
 	// cannot take the check.
 	AuthenticatesCaller bool
 
+	// UpstreamCredential is the credential the lane sends its upstream on
+	// every request in place of the client's (an http lane's
+	// upstream_credential). New hands it to the client codec
+	// (UpstreamCredentialHolder) and refuses a codec that cannot take it,
+	// because forwarding without it would send the client's copy instead.
+	//
+	// It is here, beside RequestIdentity, and not in the codec factory,
+	// because a rule reload swaps the factory for one built from config
+	// alone, which holds no file: every codec of the lane, before a reload
+	// and after, is built by New with this value.
+	UpstreamCredential *upstreamcred.Credential
+
 	// Settle reports the upstream's answer to every statement a reserved
 	// approval released (policy.Review.Reserved). Nil settles nothing, and
 	// no backend reserves without one. See SettleFunc.
@@ -285,6 +298,15 @@ type Config struct {
 // built to run it.
 type CallerAuthenticator interface {
 	AuthenticateCallers(check func(credential string) error) error
+}
+
+// UpstreamCredentialHolder is implemented by a codec that can send the
+// lane's own credential upstream in place of the client's: the HTTP codec.
+// New installs Config.UpstreamCredential; an error means the codec reads
+// its caller from that header, so it would hand the lane's token to the
+// identity resolver.
+type UpstreamCredentialHolder interface {
+	HoldUpstreamCredential(cred *upstreamcred.Credential) error
 }
 
 // CredentialSource is implemented by a codec that lifts a caller credential
@@ -626,6 +648,16 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 			return err
 		}
 		if err := ca.AuthenticateCallers(check); err != nil {
+			return nil, fmt.Errorf("sidecar/gate: %w", err)
+		}
+	}
+	if cfg.UpstreamCredential != nil {
+		h, ok := clientCodec.(UpstreamCredentialHolder)
+		if !ok {
+			return nil, fmt.Errorf("sidecar/gate: UpstreamCredential is set but the %s codec (%T) cannot send it, so requests would leave without it",
+				cfg.Protocol, clientCodec)
+		}
+		if err := h.HoldUpstreamCredential(cfg.UpstreamCredential); err != nil {
 			return nil, fmt.Errorf("sidecar/gate: %w", err)
 		}
 	}

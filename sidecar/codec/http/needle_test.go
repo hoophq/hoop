@@ -3,6 +3,8 @@ package http
 import (
 	"strings"
 	"testing"
+
+	"github.com/hoophq/hoop/sidecar/upstreamcred"
 )
 
 // A needle is found wherever the writes split it, and only once it is
@@ -57,5 +59,14 @@ func TestNeedleScanKeepsOnlyATail(t *testing.T) {
 	var none *needleScan
 	if none.write([]byte("tok-0123456789abcdef")) {
 		t.Fatal("a nil scan found something")
+	}
+}
+
+// upstreamcred refuses a token shorter than the guard looks for, so the
+// lane's own token is never one the placement guard ignores.
+func TestTheUpstreamTokenMinimumIsWhatTheGuardLooksFor(t *testing.T) {
+	if upstreamcred.MinTokenBytes < minSecretBytes {
+		t.Fatalf("upstreamcred.MinTokenBytes = %d, under minSecretBytes = %d: a short lane token would go unwatched",
+			upstreamcred.MinTokenBytes, minSecretBytes)
 	}
 }

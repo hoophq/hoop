@@ -80,6 +80,11 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 		"caller_token": func(l map[string]any) {
 			l["caller_token"] = map[string]any{"file": "/nonexistent/tokens", "name": "ci"}
 		},
+		// The same for its file; the block needs upstream as a URL.
+		"upstream_credential": func(l map[string]any) {
+			l["upstream"] = "https://api.example.com"
+			l["upstream_credential"] = map[string]any{"header": "Authorization", "file": "/nonexistent/api-token"}
+		},
 		"idle_timeout_sec": func(l map[string]any) {
 			l["idle_timeout_sec"] = 30
 		},

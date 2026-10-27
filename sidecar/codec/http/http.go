@@ -28,6 +28,9 @@
 //   - Credential placement (placement.go): the same filter refuses a
 //     request that carries a credential the lane knows outside its header,
 //     because a vault fills a token into a URL or a body too.
+//   - The upstream credential (HoldUpstreamCredential): the same head
+//     rewrite replaces the client's copy of one header with the lane's own
+//     credential, so the agent never holds the upstream's token.
 package http
 
 import (
@@ -37,6 +40,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/upstreamcred"
 	codechttp "github.com/hoophq/libhoop/v2/codec/http"
 )
 
@@ -168,6 +172,33 @@ func (c *Codec) AuthenticateCallers(check func(credential string) error) error {
 	return nil
 }
 
+// HoldUpstreamCredential makes the request filter send cred to the upstream
+// on every request: each client copy of its header is removed and the
+// lane's value added, after the head has been checked as the client sent it.
+// The lane becomes strict (viaFilter.strict), so a head the filter cannot
+// parse is refused rather than forwarded without the credential or with the
+// client's copy, and the token joins the credentials the placement guard
+// keeps out of the rest of the request. gate.New calls it once, before the
+// first byte, so a codec a reloaded factory builds gets it too.
+//
+// The header never reaches a statement: libhoop captures only the headers
+// Options.Headers lists, and daemon refuses an http.headers that names it.
+func (c *Codec) HoldUpstreamCredential(cred *upstreamcred.Credential) error {
+	if cred == nil {
+		return errors.New("sidecar/codec/http: no upstream credential to hold")
+	}
+	if strings.EqualFold(cred.Header(), c.creds.header) {
+		// The codec lifts that header from what the filter forwards, so it
+		// would hand the lane's secret to the identity resolver as the
+		// caller's credential. daemon refuses this configuration first.
+		return errors.New("sidecar/codec/http: the upstream credential's header is the caller credential header")
+	}
+	c.via.mu.Lock()
+	defer c.via.mu.Unlock()
+	c.via.upstream = cred
+	return nil
+}
+
 // CredentialHeader is the lowercased header this codec lifts from every
 // request, "" when it lifts none. The relay compares it with its own
 // configuration at startup, so the two cannot disagree about which header
@@ -271,6 +302,7 @@ var _ interface {
 	Filter(inspect.Direction, []byte) ([]byte, error)
 	TakeCredential(*inspect.Statement) (string, bool)
 	AuthenticateCallers(func(string) error) error
+	HoldUpstreamCredential(*upstreamcred.Credential) error
 } = (*Codec)(nil)
 
 func init() {

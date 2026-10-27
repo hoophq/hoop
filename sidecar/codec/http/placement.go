@@ -51,6 +51,7 @@ var errTooManyCredentials = errors.New("the request carries more credentials tha
 // The ones the lane can know without configuration:
 //
 //   - the caller token the filter admitted, at home in its own header;
+//   - the upstream credential the lane holds, at home in its header;
 //   - each Authorization credential of the request, at home in
 //     Authorization;
 //   - the Authorization credentials of earlier requests on the connection
@@ -99,10 +100,20 @@ type secret struct {
 // the scan of its body. fields is the head as the client sent it, request
 // line first, without the closing empty line. caller is the caller token
 // the filter admitted under callerHeader, "" on a lane that admits none.
-func (g *placementGuard) begin(req *http.Request, fields []byte, callerHeader, caller string) error {
+// held is the token of the upstream credential the lane holds, zero on a
+// lane that holds none.
+func (g *placementGuard) begin(req *http.Request, fields []byte, callerHeader, caller string, held secret) error {
 	own := authorizationCredentials(req.Header.Values("Authorization"))
+	if held.home == "authorization" {
+		// The lane replaces the client's Authorization, so the upstream
+		// never reads it: a 2xx would teach SeenCredentials a value no
+		// upstream accepted. The credential that request carries is the
+		// lane's.
+		own = []string{string(held.value)}
+	}
 	g.secrets, g.overflow = g.secrets[:0], false
 	g.add(caller, callerHeader)
+	g.add(string(held.value), held.home)
 	for _, v := range own {
 		g.add(v, "authorization")
 	}

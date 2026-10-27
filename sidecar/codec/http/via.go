@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/hoophq/hoop/sidecar/upstreamcred"
 )
 
 // pseudonym is this process's received-by in the Via field it adds.
@@ -97,18 +99,20 @@ const (
 // With an Origin set, the same head rewrite also points the request at the
 // origin; see origin.go. With auth set, it checks each request's caller
 // token before forwarding any of the request, then removes the header, so
-// the token never reaches the upstream (credentials.admit). On every lane
-// it refuses a request that carries a credential it knows outside that
-// credential's header (placementGuard). All of them share this framing
-// because they read the same heads and bodies and must agree on where each
-// one starts.
+// the token never reaches the upstream (credentials.admit). With upstream
+// set, it replaces the client's copies of one header with the lane's own
+// credential (Codec.HoldUpstreamCredential). On every lane it refuses a
+// request that carries a credential it knows outside that credential's
+// header (placementGuard). All of them share this framing because they read
+// the same heads and bodies and must agree on where each one starts.
 type viaFilter struct {
-	mu     sync.Mutex // one client pump calls this, but nothing enforces that
-	state  viaState
-	err    error        // a refused request; the connection is over
-	origin *Origin      // nil forwards Host as the client wrote it
-	auth   *credentials // non-nil on a lane that authenticates its caller
-	guard  placementGuard
+	mu       sync.Mutex // one client pump calls this, but nothing enforces that
+	state    viaState
+	err      error                    // a refused request; the connection is over
+	origin   *Origin                  // nil forwards Host as the client wrote it
+	auth     *credentials             // non-nil on a lane that authenticates its caller
+	upstream *upstreamcred.Credential // non-nil on a lane that holds the upstream's credential
+	guard    placementGuard
 
 	held    []byte      // viaHead: the head so far; viaChunkLine: the line so far
 	blankAt int         // viaHead: offset in held of the head's closing empty line
@@ -249,10 +253,21 @@ func (f *viaFilter) filter(src []byte) ([]byte, error) {
 			if err := f.guard.scan(src[pos:pos+n], "trailer"); err != nil {
 				return f.fail(err)
 			}
-			out.copy(pos, pos+n)
+			if f.upstream != nil {
+				// Held until whole, like a head: a client's copy of the
+				// lane's header sent as a trailer reaches an upstream that
+				// merges trailers into the header section, so it is dropped
+				// here too.
+				f.held = append(f.held, src[pos:pos+n]...)
+			} else {
+				out.copy(pos, pos+n)
+			}
 			pos += n
 			f.trailer += n
 			if done {
+				if f.upstream != nil {
+					out.add(dropMatching(f.held, 0, f.upstreamField))
+				}
 				f.endMessage()
 			} else if f.trailer > maxHeadBytes {
 				if err := f.giveUpBody(&out, "the trailer section exceeds 1 MiB"); err != nil {
@@ -327,18 +342,38 @@ func (f *viaFilter) finishHead(out *splice) error {
 		}
 		callerHeader, caller = f.auth.header, f.auth.presented(req)
 	}
+	// One read per head: the value sent and the token the guard looks for
+	// come from the same rotation.
+	var held secret
+	var heldValue string
+	if f.upstream != nil {
+		var tok string
+		heldValue, tok = f.upstream.Current()
+		held = secret{value: []byte(tok), home: strings.ToLower(f.upstream.Header())}
+	}
 	// After admit, so a stranger gets the identity refusal; on the head as
 	// the client sent it, before any rewrite.
-	if err := f.guard.begin(req, fields, callerHeader, caller); err != nil {
+	if err := f.guard.begin(req, fields, callerHeader, caller, held); err != nil {
 		return err
 	}
 	if f.auth != nil {
 		fields = dropField(fields, f.auth.header)
 	}
+	if f.upstream != nil {
+		// Every copy the client sent, so the upstream reads one value and
+		// it is the lane's: an upstream that takes the first Authorization
+		// and one that takes the last agree.
+		line, _ := cutLine(fields)
+		fields = dropMatching(fields, len(line), f.upstreamField)
+	}
 	if f.origin != nil {
 		f.origin.writeHead(out, fields, req, eol)
 	} else {
 		out.add(fields)
+	}
+	if f.upstream != nil {
+		out.addf("%s: %s", f.upstream.Header(), heldValue)
+		out.add(eol)
 	}
 	out.addf("Via: %d.%d %s", req.ProtoMajor, req.ProtoMinor, pseudonym)
 	out.add(eol)
@@ -365,24 +400,29 @@ func (f *viaFilter) finishHead(out *splice) error {
 }
 
 // strict reports a lane whose rewrite the upstream relies on: the origin
-// reads the Host it was promised, and a dropped header must never arrive.
-// Such a lane refuses a head it cannot parse, where a Via-only lane lets it
-// go as written, scanned for the credentials it knows.
-func (f *viaFilter) strict() bool { return f.origin != nil || f.auth != nil }
+// reads the Host it was promised, a dropped header must never arrive, and
+// a held credential must replace the client's copy on every request. Such
+// a lane refuses a head it cannot parse, where a Via-only lane lets it go
+// as written, scanned for the credentials it knows.
+func (f *viaFilter) strict() bool { return f.origin != nil || f.auth != nil || f.upstream != nil }
 
 // promise names what the lane does to every request, for the error that
-// refuses a stream it cannot do it to.
+// refuses a stream it cannot do it to. It names headers, never a value.
 func (f *viaFilter) promise() string {
-	switch {
-	case f.origin != nil && f.auth != nil:
-		return "this listener points every request at its upstream and removes its " + f.auth.header + " header"
-	case f.origin != nil:
-		return "this listener points every request at its upstream"
-	case f.auth != nil:
-		return "this listener removes the " + f.auth.header + " header from every request"
-	default:
+	var does []string
+	if f.origin != nil {
+		does = append(does, "points every request at its upstream")
+	}
+	if f.auth != nil {
+		does = append(does, "removes the "+f.auth.header+" header from every request")
+	}
+	if f.upstream != nil {
+		does = append(does, "sets its own "+f.upstream.Header()+" header on every request")
+	}
+	if len(does) == 0 {
 		return "this listener checks the credentials in every request"
 	}
+	return "this listener " + strings.Join(does, " and ")
 }
 
 // endMessage moves past a finished request: to the next head, or, when the
@@ -457,20 +497,35 @@ func (f *viaFilter) giveUpBody(out *splice, why string) error {
 	return f.err
 }
 
+// upstreamField reports whether a client field is a copy of the lane's
+// upstream credential header as an upstream may read it: case aside, with
+// space before the colon, and with _ for -, which CGI-style servers (PHP,
+// WSGI) fold into one name. Called with f.mu held.
+func (f *viaFilter) upstreamField(name string) bool {
+	norm := func(s string) string { return strings.ReplaceAll(strings.TrimSpace(s), "_", "-") }
+	return strings.EqualFold(norm(name), norm(f.upstream.Header()))
+}
+
 // dropField returns fields, a request head without its closing empty line,
 // with every field of the header name removed: a repeated header is the same
 // credential twice. fields comes back as is when nothing matches, so a
 // request without the header costs no copy.
 func dropField(fields []byte, name string) []byte {
-	line, rest := cutLine(fields) // the request line, never a field
-	var out []byte                // nil while every field is kept
-	at := len(line)               // fields[:at] is decided
-	eachField(rest, func(field string, _, whole []byte) {
-		drop := strings.EqualFold(field, name)
+	line, _ := cutLine(fields) // the request line, never a field
+	return dropMatching(fields, len(line), func(field string) bool { return strings.EqualFold(field, name) })
+}
+
+// dropMatching returns fields with every field from offset at on whose name
+// drop reports removed, a folded continuation line with its field. fields
+// comes back as is when nothing matches.
+func dropMatching(fields []byte, at int, drop func(name string) bool) []byte {
+	var out []byte // nil while every field is kept; fields[:at] is decided
+	eachField(fields[at:], func(field string, _, whole []byte) {
+		gone := drop(field)
 		switch {
-		case drop && out == nil:
+		case gone && out == nil:
 			out = append(make([]byte, 0, len(fields)), fields[:at]...)
-		case !drop && out != nil:
+		case !gone && out != nil:
 			out = append(out, whole...)
 		}
 		at += len(whole)

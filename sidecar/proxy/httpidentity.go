@@ -218,6 +218,30 @@ func checkCredentialConfig(cfg Config) error {
 	return nil
 }
 
+// checkUpstreamCredential refuses an upstream credential the lane's codec
+// cannot send. gate.New installs it on every connection's codec and refuses
+// one that cannot take it; asking a throwaway codec here stops the lane at
+// startup instead of failing every client.
+func checkUpstreamCredential(cfg Config) error {
+	if cfg.UpstreamCredential == nil {
+		return nil
+	}
+	if cfg.Protocol != inspect.HTTP {
+		return fmt.Errorf("sidecar/proxy: an upstream credential is only sent on an http lane, not %s", cfg.Protocol)
+	}
+	if cfg.CodecFactory == nil {
+		return errors.New("sidecar/proxy: an upstream credential needs a CodecFactory whose codec sends it")
+	}
+	h, ok := cfg.CodecFactory().(gate.UpstreamCredentialHolder)
+	if !ok {
+		return errors.New("sidecar/proxy: the lane holds an upstream credential but its codec cannot send one")
+	}
+	if err := h.HoldUpstreamCredential(cfg.UpstreamCredential); err != nil {
+		return fmt.Errorf("sidecar/proxy: %w", err)
+	}
+	return nil
+}
+
 // requestIdentity wraps the configured resolver so every identity it
 // returns keeps the connection's facts: the peer address always, and the
 // whole connection identity (an IdentityFn's mTLS subject) when the request

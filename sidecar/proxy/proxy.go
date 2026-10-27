@@ -42,6 +42,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
 	"github.com/hoophq/hoop/sidecar/telemetry"
+	"github.com/hoophq/hoop/sidecar/upstreamcred"
 )
 
 // DenyWriter renders a policy denial in the wire protocol's own error frame.
@@ -161,6 +162,12 @@ type Config struct {
 	// gate.Config.AuthenticatesCaller. It needs CredentialHeader and a
 	// codec that implements gate.CallerAuthenticator.
 	AuthenticatesCaller bool
+
+	// UpstreamCredential is sent to the upstream on every request in place
+	// of the client's copy; see gate.Config.UpstreamCredential. http lanes
+	// only, with a CodecFactory whose codec implements
+	// gate.UpstreamCredentialHolder. SwapLane does not replace it.
+	UpstreamCredential *upstreamcred.Credential
 
 	// CodecFactory overrides how each connection's Gate builds its codecs.
 	// Nil uses the registry. See gate.Config.CodecFactory: it exists so a
@@ -299,6 +306,9 @@ func NewServer(cfg Config) (*Server, error) {
 		)
 	}
 	if err := checkCredentialConfig(cfg); err != nil {
+		return nil, err
+	}
+	if err := checkUpstreamCredential(cfg); err != nil {
 		return nil, err
 	}
 	if cfg.DownstreamTLS != nil && cfg.Protocol != inspect.Postgres &&
@@ -661,6 +671,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		Settle:           s.cfg.Settle,
 
 		AuthenticatesCaller: s.cfg.AuthenticatesCaller,
+		UpstreamCredential:  s.cfg.UpstreamCredential,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)

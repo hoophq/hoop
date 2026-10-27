@@ -228,6 +228,41 @@
       ]
     },
     {
+      "key": "upstream_credential",
+      "type": "object",
+      "label": "Upstream credential",
+      "help": "Sets the upstream's credential on every request from a file on the sidecar host, so the client never holds it.",
+      "presence": true,
+      "protocols": [
+        "http"
+      ],
+      "fields": [
+        {
+          "key": "header",
+          "type": "string",
+          "label": "Header",
+          "help": "The header the upstream reads its credential from. The sidecar removes the client's copy and sets its own.",
+          "placeholder": "Authorization",
+          "required": true
+        },
+        {
+          "key": "scheme",
+          "type": "string",
+          "label": "Scheme",
+          "help": "Written before the token. Empty sends the token alone.",
+          "placeholder": "Bearer"
+        },
+        {
+          "key": "file",
+          "type": "string",
+          "label": "Token file",
+          "help": "A path on the sidecar host, mode 0600, holding the token. Re-read when it changes.",
+          "placeholder": "/etc/hoop-inspect/upstream-token",
+          "required": true
+        }
+      ]
+    },
+    {
       "key": "idle_timeout_sec",
       "type": "integer",
       "label": "Idle timeout (seconds)",

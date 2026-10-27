@@ -13,6 +13,7 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/identity/token"
+	"github.com/hoophq/hoop/sidecar/upstreamcred"
 )
 
 // CallerTokenConfig is the caller_token block on an http listener: a request
@@ -95,21 +96,7 @@ func (c *CallerTokenConfig) validate(lane string, captured *HTTPCodecConfig) []s
 
 // isHeaderName reports whether s is an RFC 9110 field name: one or more
 // tchar.
-func isHeaderName(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
-		case strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0:
-		default:
-			return false
-		}
-	}
-	return true
-}
+func isHeaderName(s string) bool { return upstreamcred.IsToken(s) }
 
 // openCallerTokens reads the token file of every caller_token lane and hands
 // it to the lane. An error names the lane and the file, and stops startup
@@ -136,14 +123,22 @@ func openCallerTokens(lanes []lane, log *slog.Logger) ([]*token.File, error) {
 	return files, nil
 }
 
-// watchCallerTokens re-reads the token files on the config file's schedule:
-// a stat every interval, and a forced read on SIGHUP.
+// watchedFile is a file on the sidecar host that a lane reads again when it
+// changes: a caller token file or an upstream credential file.
+type watchedFile interface {
+	Poll()
+	Reload()
+}
+
+// watchFiles re-reads the caller token and upstream credential files on the
+// config file's schedule: a stat every interval, and a forced read on
+// SIGHUP.
 //
 // It is its own goroutine rather than part of the reloader, because the
-// reloader stops polling under a control plane, and a token file lives on
-// the sidecar host whoever serves the config. signal.Notify delivers SIGHUP
-// to every registered channel, so the reloader still gets its copy.
-func watchCallerTokens(ctx context.Context, log *slog.Logger, files []*token.File, every time.Duration) {
+// reloader stops polling under a control plane, and these files live on the
+// sidecar host whoever serves the config. signal.Notify delivers SIGHUP to
+// every registered channel, so the reloader still gets its copy.
+func watchFiles(ctx context.Context, log *slog.Logger, files []watchedFile, every time.Duration) {
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -158,7 +153,7 @@ func watchCallerTokens(ctx context.Context, log *slog.Logger, files []*token.Fil
 				f.Poll()
 			}
 		case <-hup:
-			log.Info("SIGHUP received; re-reading the caller token files")
+			log.Info("SIGHUP received; re-reading the caller token and upstream credential files")
 			for _, f := range files {
 				f.Reload()
 			}

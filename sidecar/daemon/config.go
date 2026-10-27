@@ -366,6 +366,12 @@ type ListenerConfig struct {
 	// let any caller claim any name. See CallerTokenConfig.
 	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http" ui:"presence"`
 
+	// UpstreamCredential sets one header on every request the lane
+	// forwards, with a token read from a file on the sidecar host, in place
+	// of the client's copy. http lanes with upstream written as a URL only.
+	// See UpstreamCredentialConfig.
+	UpstreamCredential *UpstreamCredentialConfig `json:"upstream_credential,omitempty" cap:"upstream_credential" label:"Upstream credential" help:"Sets the upstream's credential on every request from a file on the sidecar host, so the client never holds it." protocols:"http" ui:"presence"`
+
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
 	// psql; leaving it unset is the safe default.
@@ -1462,6 +1468,14 @@ func (c *Config) validate(onHost bool) error {
 					"%s: caller_token and google_identity both name the caller; keep one", name))
 			}
 			problems = append(problems, l.CallerToken.validate(name, l.HTTP)...)
+		}
+		if l.UpstreamCredential != nil {
+			if inspect.Protocol(l.Protocol) != inspect.HTTP || isGRPCTransport(l) || isSSH(l) {
+				problems = append(problems, fmt.Sprintf(
+					"%s: upstream_credential is only supported on http, not %q", name, l.Protocol))
+			} else {
+				problems = append(problems, l.UpstreamCredential.validate(name, l)...)
+			}
 		}
 		if l.MySQLAuthKeyFile != "" {
 			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {

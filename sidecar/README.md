@@ -1074,6 +1074,13 @@ token reaches no audit row, no policy input and no analyzer prompt. `http`
 lanes only, and exclusive with `identity_header` and `google_identity`. See
 [A public URL: caller tokens](#a-public-url-caller-tokens).
 
+**`upstream_credential` holds the upstream's token in the sidecar**, so the
+client never holds it. The lane removes every copy of `header` the client
+sent and sets its own: `scheme` (if set), a space, and the token in `file`.
+The token reaches no audit row, no policy input and no analyzer prompt.
+`http` lanes with `upstream` written as a URL only. See [The upstream's
+credential](#the-upstreams-credential).
+
 ### 2. Know how a listener inherits
 
 | Field | Merge | Why |
@@ -3952,8 +3959,12 @@ credential's header. It knows, with no setting:
 
 - the caller token it admitted (see caller tokens below), at home in its
   own header;
+- the token of its `upstream_credential` (see the upstream's credential
+  below), at home in that block's header;
 - each `Authorization` credential of the request (the value after the
-  scheme), at home in `Authorization`;
+  scheme), at home in `Authorization`. On a lane whose `upstream_credential`
+  is `Authorization`, the client's copy never reaches the upstream, so the
+  lane's own token takes its place here;
 - the `Authorization` credentials of earlier requests on the connection
   still awaiting an answer, and those the upstream answered with a 2xx in
   the last hour, so a request that leaves `Authorization` off is checked
@@ -4131,6 +4142,71 @@ sidecar's host it fills the placeholder anywhere in the request, the URL
 and the body included. Keep the token in `X-Hoop-Token` only. The setup is
 in `deploy/openai-agents/http/` and on the docs page,
 [OpenAI Agents API](https://hoop.dev/docs/integrations/openai-agents).
+
+### The upstream's credential
+
+A caller token opens the lane. The upstream still needs its own
+credential, and an agent that sends it holds it: in an environment
+variable a prompt can print. With `upstream_credential`, the sidecar holds
+that token and sets it on every request, so the agent holds only the caller
+token:
+
+```yaml
+listeners:
+  - name: customer-api
+    protocol: http
+    listen: http://0.0.0.0:8080
+    upstream: https://api.example.com
+    caller_token: {file: /etc/hoop-inspect/caller-tokens, name: agents}
+    upstream_credential:
+      header: Authorization                      # the header the upstream reads
+      scheme: Bearer                             # optional: Authorization: Bearer <token>
+      file: /etc/hoop-inspect/upstream-token     # the token alone, mode 0600
+```
+
+- **The client's copy is replaced.** Every copy of `header` the client
+  sent is removed: in any case, spelled with `_` for `-` (a CGI-style server
+  reads both as one name), and as a chunked trailer, which some upstreams
+  merge into the header section. The lane's value is added. The upstream
+  reads one value, the lane's. An agent that still sends a placeholder keeps
+  working. Without `scheme` the token goes alone, as an `X-API-Key` header
+  wants it.
+- **The token stays in the sidecar.** It never reaches an audit row, policy
+  input, an analyzer prompt, a log line or an error. Validate refuses an
+  `http.headers` entry that names `header`. A request that carries the token
+  anywhere else, in the URL, another header or the body, is refused (see "A
+  known credential stays in its header" above).
+- **Where it may go.** `upstream` must be a URL: a `host:port` lane forwards
+  the `Host` the client wrote, so the token would go wherever that `Host`
+  routes. `header` cannot be the header the lane reads its caller from
+  (`caller_token.header`, `identity_header`, or `Authorization` under
+  `google_identity`), one that frames or routes the request (`host`,
+  `content-length`, `transfer-encoding`, `connection`, `via`, `forwarded`,
+  `proxy-*`, `x-forwarded-*`, and the like), or a header the sidecar reads
+  from the client.
+- **Stricter framing.** A request head the lane cannot frame closes the
+  connection instead of passing through without the lane's credential.
+  WebSocket and `CONNECT` handshakes carry the credential; the tunnel after
+  the switch is not touched.
+- **Plaintext.** Toward an `http://` upstream the token crosses the network
+  as written. Use `https://` unless the upstream is on the same host or
+  behind a mesh that encrypts.
+- **Not covered.** An upstream that echoes the token in a response hands it
+  to the client. No response is scanned for it.
+
+**The file.** It holds one token, read by its owner alone (0600 or
+stricter). A Kubernetes Secret volume needs `defaultMode: 0400` and a pod
+without `fsGroup`, which adds group read to every file. Surrounding
+whitespace and a trailing newline are dropped. The token is printable ASCII
+of 16 bytes to 8 KiB: a CR or LF would end the header line and begin
+another. Errors name the file and never its content.
+
+**Rotation.** As for a caller token file: a stat every ten seconds, a
+re-read at once on `SIGHUP`, and a file that is missing or unusable on a
+re-read keeps the token in force and warns once. A missing or unusable
+file at startup, or under `-validate`, stops the process with an error
+naming the file. The control plane never reads it. Changing the
+`upstream_credential` block itself needs a restart.
 
 ### kubectl through GKE Connect Gateway
 
