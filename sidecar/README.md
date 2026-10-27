@@ -3858,11 +3858,12 @@ statement text stay as sent.
 `metadata["http.resource_unresolved"]` keeps the resource before resolution.
 `http_resource` rules and the `resources` scope of `http_header` rules match
 the resolved resource, the unresolved form, and the unresolved form resolved
-on its own. An upstream that routes the raw path runs `/admin/../x` under
-`/admin`; through Connect Gateway, the gateway can route the raw membership
-and leave the rest to a cluster that resolves it. Analyzer triggers and
-`match_ignore` read the resolved form only; OPA reads both, from
-`input.metadata`.
+on its own. The sidecar cannot see how an upstream routes: Express 4 runs
+`/admin/../x` under `/admin`, and Connect Gateway may route the raw
+membership and leave the rest to a cluster that resolves it. Analyzer
+triggers and `match_ignore` read the resolved form only. OPA gets the
+resolved form in `input.http.resource` and the unresolved form in
+`input.metadata`, and does its own matching.
 
 **Data exposure is opt-in.** Bodies and headers are NOT captured by default.
 A policy engine's decision log is a copy of everything you send it, and
