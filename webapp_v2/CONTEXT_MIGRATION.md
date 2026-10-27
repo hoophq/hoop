@@ -169,8 +169,10 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 (hangs on an infinite spinner today), `/plugins/reviews/:review-id`,
 `/features/runbooks/edit/:connection-id`.
 
-No shadowed bidi entries remain (route + panel both alive but React matching
-first). Every migrated family has had its CLJS pages deleted.
+Shadowed bidi entries (route + panel both alive but React matching first):
+none. ENG-910 deleted the last shadowed panel, `:configure-role`, with
+`resources/configure_role/`. Its bidi entry stays because `/resources` and the
+configure-resource roles tab navigate to it.
 
 `/guardrails/*` lost its CLJS pages in EVL-147; `/features/access-control/*`
 and `/features/access-request/*` lost theirs in EVL-184;
@@ -207,7 +209,7 @@ them: `/guardrails` (`:guardrails`), `/guardrails/new` (`:create-guardrail`),
 `/features/ai-session-analyzer` (`:ai-session-analyzer`) and
 `/features/ai-session-analyzer/rules/new`
 (`:create-ai-session-analyzer-rule`). React renders all four, but
-`shared_ui/sidebar/constants.cljs`, the configure-role terminal tab,
+`shared_ui/sidebar/constants.cljs`,
 `features/promotion.cljs` and the activation-journey feature cards (via the
 `:route-create`/`:route-list` keys in `activation_journey/templates.cljs`)
 still `url-for`/`:navigate` them. `events/guardrails.cljs` also stays, trimmed
@@ -273,7 +275,7 @@ blocks"); full props in `COMPONENTS.md`.
 - Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `window.__hoopReactShellPresent`
 - Auth pages — Login, Register (local), Signup (IDP org setup), Setup, Callback, SignupCallback
 - Agents page (list + create wizard)
-- Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576) and the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`).
+- Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576), the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`) and IAM federation for `custom/bigquery` (ENG-910).
 - Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
 - Onboarding Protection Rules (`/onboarding/protection-rules` — the rest of `/onboarding/*` is still CLJS)

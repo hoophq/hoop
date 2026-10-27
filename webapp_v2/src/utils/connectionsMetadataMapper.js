@@ -14,5 +14,7 @@ export function jsonCredentialToField(entry) {
     placeholder: placeholder || description || undefined,
     description: description || undefined,
     type: type === 'filesystem' ? 'textarea' : 'password',
+    // The gateway stores a filesystem credential as `filesystem:<NAME>`, not `envvar:`.
+    envKey: type === 'filesystem' ? `filesystem:${name}` : undefined,
   }
 }
