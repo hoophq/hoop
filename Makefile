@@ -74,6 +74,18 @@ seed-dev-sessions:
 test-seed-sessions:
 	node --test scripts/dev/seed-sessions/seed.test.mjs
 
+# Every resource family of the Resources behavior matrix and the AWS Connect
+# jobs, on a running dev stack. See scripts/dev/seed-resources/README.md.
+seed-dev-resources:
+	node scripts/dev/seed-resources/seed.mjs
+
+# The org with no connection, no resource and no protection profile.
+seed-dev-resources-empty:
+	node scripts/dev/seed-resources/seed.mjs empty
+
+test-seed-resources:
+	node --test scripts/dev/seed-resources/seed.test.mjs
+
 run-dev-presidio:
 	./scripts/dev/run-presidio.sh
 
@@ -549,4 +561,4 @@ gcp-marketplace-sidecar-publish:
 gcp-marketplace-sidecar-test:
 	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh test
 
-.PHONY: test-parity test-twins test-twins-scenario test-twins-browser twins-up twins-down run-dev run-dev-control-plane run-dev-postgres seed-dev-sessions test-seed-sessions build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: test-parity test-twins test-twins-scenario test-twins-browser twins-up twins-down run-dev run-dev-control-plane run-dev-postgres seed-dev-sessions test-seed-sessions seed-dev-resources seed-dev-resources-empty test-seed-resources build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

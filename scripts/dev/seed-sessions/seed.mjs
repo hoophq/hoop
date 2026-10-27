@@ -16,33 +16,35 @@ import {
 } from './catalog.mjs'
 
 const DB_URI = process.env.SEED_DB_URI || 'postgres://hoopdevuser:1a2b3c4d@127.0.0.1:5449/hoopdevdb?sslmode=disable'
-const API_URL = (process.env.API_URL || 'http://127.0.0.1:8009').replace(/\/+$/, '')
+export const API_URL = (process.env.API_URL || 'http://127.0.0.1:8009').replace(/\/+$/, '')
 const PSQL = (process.env.PSQL || 'psql').split(/\s+/)
-const ORG_NAME = process.env.SEED_ORG || 'default'
-const ADMIN_GROUP = process.env.ADMIN_USERNAME || 'admin'
+export const ORG_NAME = process.env.SEED_ORG || 'default'
+export const ADMIN_GROUP = process.env.ADMIN_USERNAME || 'admin'
 const AUDITOR_GROUP = process.env.AUDITOR_USERNAME || 'auditor'
 // A license JSON (the license_data of a licensed organization) to upload
 // before the sidecar events, for a database that has none yet.
 const LICENSE_FILE = process.env.SEED_LICENSE_FILE
 const SIDECAR_EVENTS_FLAG = 'experimental.sidecar_session_events'
 
-function fail(message) {
+export function fail(message) {
   console.error(`seed: ${message}`)
   process.exit(1)
 }
 
-function psql(sql) {
+export function psql(sql) {
   const [cmd, ...args] = PSQL
   const r = spawnSync(cmd, [...args, DB_URI, '-X', '-q', '-At', '-v', 'ON_ERROR_STOP=1', '-f', '-'], {
     input: sql, encoding: 'utf8', maxBuffer: 1 << 30,
   })
-  if (r.error) fail(`cannot run ${PSQL.join(' ')}: ${r.error.message}`)
+  // EPIPE: psql stopped on an error before it read all of its input; its
+  // status and stderr tell why.
+  if (r.error && r.error.code !== 'EPIPE') fail(`cannot run ${PSQL.join(' ')}: ${r.error.message}`)
   if (r.status !== 0) fail(`psql exited ${r.status}:\n${r.stderr}`)
   return r.stdout
 }
 
 // api fails on a status outside 2xx, unless allow lists it.
-async function api(method, path, { token, sidecarToken, body, allow = [] } = {}) {
+export async function api(method, path, { token, sidecarToken, body, allow = [] } = {}) {
   const headers = { 'content-type': 'application/json' }
   if (token) headers.authorization = `Bearer ${token}`
   if (sidecarToken) headers['hoop-sidecar-token'] = sidecarToken
@@ -59,12 +61,12 @@ async function api(method, path, { token, sidecarToken, body, allow = [] } = {})
 
 // ─── SQL literals ──────────────────────────────────────────────────────────
 
-const str = (v) => (v === null || v === undefined ? 'NULL' : `'${String(v).replaceAll("'", "''")}'`)
-const num = (v) => (v === null || v === undefined ? 'NULL' : String(Number(v)))
-const json = (v) => (v === null || v === undefined ? 'NULL' : `${str(JSON.stringify(v))}::jsonb`)
-const ts = (v) => (v === null || v === undefined ? 'NULL' : `${str(v)}::timestamptz AT TIME ZONE 'UTC'`)
-const textArray = (v) => (v === null || v === undefined ? 'NULL' : `ARRAY[${v.map(str).join(', ')}]::text[]`)
-const inList = (values) => values.map(str).join(', ')
+export const str = (v) => (v === null || v === undefined ? 'NULL' : `'${String(v).replaceAll("'", "''")}'`)
+export const num = (v) => (v === null || v === undefined ? 'NULL' : String(Number(v)))
+export const json = (v) => (v === null || v === undefined ? 'NULL' : `${str(JSON.stringify(v))}::jsonb`)
+export const ts = (v) => (v === null || v === undefined ? 'NULL' : `${str(v)}::timestamptz AT TIME ZONE 'UTC'`)
+export const textArray = (v) => (v === null || v === undefined ? 'NULL' : `ARRAY[${v.map(str).join(', ')}]::text[]`)
+export const inList = (values) => values.map(str).join(', ')
 
 const blobInputId = (sid) => uuidv5(`blobinput:${sid}`)
 const blobStreamId = (sid) => uuidv5(`blobstream:${sid}`)
@@ -105,7 +107,7 @@ function connectionsSql(org) {
       resource_name = EXCLUDED.resource_name, force_approve_groups = EXCLUDED.force_approve_groups;`).join('\n')
 }
 
-function sidecarSql(org) {
+export function sidecarSql(org) {
   const keyHash = createHash('sha256').update(SIDECAR.token).digest('hex')
   return `INSERT INTO private.sidecars (id, org_id, name, key_hash, created_by, created_at)
     VALUES (${str(SIDECAR.id)}, ${str(org)}, ${str(SIDECAR.name)}, ${str(keyHash)}, 'admin@seed.example.com',
@@ -235,7 +237,7 @@ function sidecarFixSql() {
 
 // ─── Commands ──────────────────────────────────────────────────────────────
 
-function orgId() {
+export function orgId() {
   const id = psql(`SELECT id FROM private.orgs WHERE name = ${str(ORG_NAME)};`).trim()
   if (!id) fail(`no organization named "${ORG_NAME}" in ${DB_URI}. Start the gateway once on this database; it creates it.`)
   return id
@@ -244,7 +246,7 @@ function orgId() {
 // The seed admin's token, when API_URL serves the organization of
 // SEED_DB_URI; otherwise it stops. The users are the only rows written before
 // that check, and only when neither side has them yet.
-async function sameStackLogin(org, seedUsers) {
+export async function sameStackLogin(org, seedUsers) {
   const admin = seedUsers.admin.email
   // 401: the gateway has the user with another password; 404: it has none.
   const login = async () => {
