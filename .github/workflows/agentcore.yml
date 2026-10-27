@@ -9,8 +9,10 @@ on:
       - deploy/agentcore/**
       - deploy/openai-agents/http/values.yaml
       - deploy/openai-agents/kubernetes/values.yaml
+      - deploy/openai-agents/postgres-mcp/sidecar.yaml
       - scripts/ci/check-agentcore-egress*
       - .github/workflows/agentcore.yml
+      - Makefile
 
 # A newer run for the same PR makes this one stale.
 concurrency:
@@ -21,7 +23,6 @@ permissions:
   contents: read
 
 env:
-  TEMPLATE: deploy/agentcore/http/template.yaml
   # 1.46.0 does not know AWS::BedrockAgentCore::Harness (E3006).
   CFN_LINT_VERSION: 1.58.0
 
@@ -30,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     name: http template
     timeout-minutes: 10
+    env:
+      TEMPLATE: deploy/agentcore/http/template.yaml
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -40,7 +43,8 @@ jobs:
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - name: cfn-lint
         run: cfn-lint "$TEMPLATE"
-      # A check that cannot fail passes forever: its fixtures run first.
+      # A check that cannot fail passes forever: its fixtures run first, on
+      # every template.
       - name: Test the egress check
         run: python3 scripts/ci/check-agentcore-egress_test.py
       - name: The agent network leaves only through the endpoints and the sidecar
@@ -48,8 +52,18 @@ jobs:
       - name: The sidecar config matches the OpenAI http template
         run: |
           set -euo pipefail
-          config=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
-            | select(.Name == "SIDECAR_YAML") | .Value' "$TEMPLATE")
+          # SIDECAR_YAML as CloudFormation renders it: each variable is an
+          # Fn::If on IsDemo. The next step reads the demo rendering.
+          env='.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[] | select(.Name == "SIDECAR_YAML")'
+          config=$(yq "$env | .Value[0]" "$TEMPLATE")
+          demo=$config
+          for var in $(yq "$env | .Value[1] | keys | .[]" "$TEMPLATE"); do
+            [[ "$(yq "$env | .Value[1].$var | tag + \" \" + .[0]" "$TEMPLATE")" == '!If IsDemo' ]] \
+              || { echo "::error::SIDECAR_YAML variable $var is not an Fn::If on IsDemo"; exit 1; }
+            demo=${demo//"\${$var}"/"$(yq "$env | .Value[1].$var[1]" "$TEMPLATE")"}
+            config=${config//"\${$var}"/"$(yq "$env | .Value[1].$var[2]" "$TEMPLATE")"}
+          done
+          printf '%s\n' "$demo" > "$RUNNER_TEMP/sidecar-demo.yaml"
           # The README promises the same free-tier rules as the twins.
           for block in guardrails mask; do
             [[ "$(yq -o=json ".$block" <<<"$config")" == "$(yq -o=json ".config.$block" deploy/openai-agents/http/values.yaml)" ]] \
@@ -68,12 +82,118 @@ jobs:
           [[ "$image" =~ ^hoophq/hoopsidecar:([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
             && [[ "$(printf '1.272.0\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.272.0 ]] \
             || { echo "::error::SidecarImage must pin hoophq/hoopsidecar 1.272.0 or later by digest: $image"; exit 1; }
+      # The quick start: the Launch Stack link opens what the release
+      # publishes, in demo mode; the pinned image takes the demo config and
+      # stops a config over the free tier with the message the README quotes.
+      - name: The quick start works on the pinned image
+        run: |
+          set -euo pipefail
+          dir=deploy/agentcore/http
+          key=agentcore-http.template.yaml
+          grep -qE "^CF_TEMPLATES :=.* $key( |\$)" Makefile \
+            && grep -qF "cp $TEMPLATE \${DIST_FOLDER}/$key" Makefile \
+            || { echo "::error::the release no longer publishes $TEMPLATE as $key"; exit 1; }
+          link=$(grep -oE 'https://us-east-1\.console\.aws\.amazon\.com/cloudformation/[^)]+' "$dir/README.md" | head -1)
+          for want in "templateURL=https%3A%2F%2Fhoopdev-platform-cf-us-east-1.s3.us-east-1.amazonaws.com%2Flatest%2F$key" \
+              '&param_UpstreamUrl=demo'; do
+            [[ "$link" == *"$want"* ]] || { echo "::error::the README's Launch Stack link lacks $want: $link"; exit 1; }
+          done
+
+          tmp=$(mktemp -d)
+          echo ci-token > "$tmp/caller-token"
+          cp "$RUNNER_TEMP/sidecar-demo.yaml" "$tmp/demo.yaml"
+          image=$(yq '.Parameters.SidecarImage.Default' "$TEMPLATE")
+          validate() {
+            docker run --rm -v "$1:/tmp/hoop/sidecar.yaml:ro" -v "$tmp/caller-token:/tmp/hoop/caller-token:ro" \
+              "$image" hoop start sidecar --validate --config /tmp/hoop/sidecar.yaml 2>&1
+          }
+          out=$(validate "$tmp/demo.yaml") || { echo "::error::the image refused the demo config: $out"; exit 1; }
+          # --validate skips x- keys: the sidecar binds the demo API only on
+          # loopback, and the lane must forward to it.
+          yq -e '."x-hoop-demo-api" | test("^127\.0\.0\.1:[0-9]+$")' "$tmp/demo.yaml" >/dev/null \
+            && yq -e '.listeners[0].upstream == "http://" + ."x-hoop-demo-api"' "$tmp/demo.yaml" >/dev/null \
+            || { echo "::error::the demo config does not forward the lane to a loopback demo API"; exit 1; }
+
+          yq '.guardrails.rules += [{"name": "second", "type": "operation", "operations": ["delete"]}]' \
+            "$tmp/demo.yaml" > "$tmp/over.yaml"
+          if out=$(validate "$tmp/over.yaml"); then
+            echo "::error::the image accepted a second guardrail rule"; exit 1
+          fi
+          # Without this, an empty or header-only refusal passes the quote check.
+          grep -qF -- "2 guardrail rules are configured (guardrails: 2) and this process enforces at most 1" <<<"$out" \
+            || { echo "::error::the image refused the config, but not with the cap message: $out"; exit 1; }
+          while IFS= read -r line; do
+            grep -qxF -- "$line" "$dir/README.md" \
+              || { echo "::error::$dir/README.md does not quote this line of the message: $line"; exit 1; }
+          done <<<"$out"
+          echo "the Launch Stack link opens the published template in demo mode, and $dir/README.md quotes the cap message"
       - name: The scripts parse
         run: |
           bash -n deploy/agentcore/http/setup.sh
           python3 -m py_compile deploy/agentcore/http/evstream.py deploy/agentcore/http/runtime-example/agent.py
       - name: The event stream decoder reads real frames
         run: python3 deploy/agentcore/http/evstream_test.py
+
+  postgres:
+    runs-on: ubuntu-latest
+    name: postgres template
+    timeout-minutes: 10
+    env:
+      TEMPLATE: deploy/agentcore/postgres/template.yaml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install cfn-lint
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "cfn-lint==$CFN_LINT_VERSION"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: cfn-lint
+        run: cfn-lint "$TEMPLATE"
+      - name: The agent network leaves only through the endpoints and the sidecar
+        run: python3 scripts/ci/check-agentcore-egress.py "$TEMPLATE"
+      - name: The sidecar config matches the OpenAI postgres-mcp template
+        run: |
+          set -euo pipefail
+          config=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "SIDECAR_YAML") | .Value' "$TEMPLATE")
+          # The README promises the same free-tier rules as the twins.
+          for block in guardrails mask; do
+            [[ "$(yq -o=json ".listeners[0].$block" <<<"$config")" == "$(yq -o=json ".listeners[0].$block" deploy/openai-agents/postgres-mcp/sidecar.yaml)" ]] \
+              || { echo "::error::$TEMPLATE and the OpenAI Agents postgres-mcp template differ in $block"; exit 1; }
+          done
+          source=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "HOOP_SIDECAR_INSTALL_SOURCE") | .Value' "$TEMPLATE")
+          [[ "$source" == agentcore-postgres ]] \
+            || { echo "::error::the sidecar reports install source '$source', not agentcore-postgres"; exit 1; }
+          # Older releases report the install source as "other".
+          image=$(yq '.Parameters.SidecarImage.Default' "$TEMPLATE")
+          [[ "$image" =~ ^hoophq/hoopsidecar:([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
+            && [[ "$(printf '1.272.0\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.272.0 ]] \
+            || { echo "::error::SidecarImage must pin hoophq/hoopsidecar 1.272.0 or later by digest: $image"; exit 1; }
+      # The lane, the security groups and the harness name the same ports.
+      - name: The ports agree, and only the sidecar reaches the database
+        run: |
+          set -euo pipefail
+          config=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "SIDECAR_YAML") | .Value' "$TEMPLATE")
+          lane=$(yq '.listeners[0].listen | split(":") | .[1]' <<<"$config")
+          db=$(yq '.listeners[0].upstream | split(":") | .[1]' <<<"$config")
+          want="$lane $lane $lane $lane $db"
+          got=$(yq '[.Resources.AgentToSidecar.Properties.FromPort, .Resources.AgentToSidecar.Properties.ToPort,
+                     .Resources.SidecarSecurityGroup.Properties.SecurityGroupIngress[0].FromPort,
+                     .Resources.Harness.Properties.EnvironmentVariables.PGPORT,
+                     .Resources.DatabaseTask.Properties.ContainerDefinitions[0].PortMappings[0].ContainerPort] | join(" ")' "$TEMPLATE")
+          [[ "$got" == "$want" ]] || { echo "::error::ports differ: $got, want $want"; exit 1; }
+          ingress=$(yq -o=json -I0 '.Resources.DatabaseSecurityGroup.Properties.SecurityGroupIngress' "$TEMPLATE")
+          [[ "$ingress" == '[{"IpProtocol":"tcp","FromPort":'"$db"',"ToPort":'"$db"',"SourceSecurityGroupId":"SidecarSecurityGroup"}]' ]] \
+            || { echo "::error::the database must admit the sidecar's group only: $ingress"; exit 1; }
+          # By !Ref, !GetAtt or ${...} in an !Sub; the egress check refuses an expression.
+          others=$(yq '[.Resources[] | select(.Type == "AWS::EC2::SecurityGroupIngress") | .Properties.GroupId
+            | tostring | select(test("DatabaseSecurityGroup"))] | length' "$TEMPLATE")
+          [[ "$others" == 0 ]] || { echo "::error::an ingress resource opens the database"; exit 1; }
+      - name: The script parses
+        run: bash -n deploy/agentcore/postgres/setup.sh
 
   kubernetes:
     runs-on: ubuntu-latest
