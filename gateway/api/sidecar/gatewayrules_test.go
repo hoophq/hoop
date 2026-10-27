@@ -1,15 +1,16 @@
-// Package gatewayrulestest drives the rule APIs and the sidecar handshake
-// together: a rule the agent runs, bound to a sidecar listener through
-// sidecar_targets, is served translated, refused at the save with 422, or
-// refused at the handshake as not_served when the sidecar changed under it.
-package gatewayrulestest
+// These tests drive the rule APIs and the sidecar handshake together: a rule
+// the agent runs, bound to a sidecar listener through sidecar_targets, is
+// served translated, refused at the save with 422, or refused at the
+// handshake as not_served when the sidecar changed under it. An external test
+// package: its helpers (sidecarWithListener, call) have namesakes in the
+// package's own tests with other signatures.
+package apisidecar_test
 
 import (
 	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -19,7 +20,6 @@ import (
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apisidecar "github.com/hoophq/hoop/gateway/api/sidecar"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/hoophq/hoop/gateway/services"
@@ -31,16 +31,6 @@ import (
 )
 
 const orgID = "00000000-0000-0000-0000-0000000000d4"
-
-func TestMain(m *testing.M) {
-	// The data masking API needs a DLP provider for a rule the agent runs;
-	// alcatraz needs no credentials.
-	os.Setenv("DLP_PROVIDER", "alcatraz")
-	if err := appconfig.Load(); err != nil {
-		panic(err)
-	}
-	os.Exit(pglitetest.Main(m))
-}
 
 func startDB(t *testing.T) {
 	t.Helper()

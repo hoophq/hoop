@@ -29,6 +29,9 @@ func TestMain(m *testing.M) {
 	// WebappURL assertion below would hold whichever one the code calls. The
 	// path prefix is what makes it mean something.
 	os.Setenv("API_URL", "http://localhost:8009/hoop")
+	// The data masking API in gatewayrules_test.go needs a DLP provider for a
+	// rule the agent runs; alcatraz needs no credentials.
+	os.Setenv("DLP_PROVIDER", "alcatraz")
 	if err := appconfig.Load(); err != nil {
 		panic(err)
 	}
