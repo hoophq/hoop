@@ -71,3 +71,5 @@ jobs:
         run: |
           bash -n deploy/agentcore/http/setup.sh
           python3 -m py_compile deploy/agentcore/http/evstream.py deploy/agentcore/http/runtime-example/agent.py
+      - name: The event stream decoder reads real frames
+        run: python3 deploy/agentcore/http/evstream_test.py

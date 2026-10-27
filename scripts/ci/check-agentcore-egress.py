@@ -92,6 +92,25 @@ def dig(props, *path):
     return props
 
 
+def strings_in(value):
+    """Every literal string anywhere in value."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [x for v in value.values() for x in strings_in(v)]
+    if isinstance(value, list):
+        return [x for v in value for x in strings_in(v)]
+    return []
+
+
+def has_key(value, key):
+    if isinstance(value, dict):
+        return key in value or any(has_key(v, key) for v in value.values())
+    if isinstance(value, list):
+        return any(has_key(v, key) for v in value)
+    return False
+
+
 def mentions(value, name):
     """Whether a Ref or a GetAtt anywhere in value names name."""
     if isinstance(value, dict):
@@ -143,6 +162,19 @@ def check(template):
         if None in names:
             errors.append(f"an agent {what} is named by a literal id or an expression: "
                           "only a resource in this template can be checked")
+    if errors:
+        return errors
+
+    # An Fn::If (or any expression) in these ids can pick an agent subnet,
+    # an agent group or another route table without the check seeing it.
+    for kind, fields in (("AWS::EC2::SubnetRouteTableAssociation", ("SubnetId", "RouteTableId")),
+                         ("AWS::EC2::SecurityGroupEgress", ("GroupId",)),
+                         ("AWS::EC2::SecurityGroupIngress", ("GroupId",))):
+        for name, r in of_type(kind).items():
+            for field in fields:
+                if name_of(r["Properties"].get(field)) is None:
+                    errors.append(f"{name} names its {field} by an expression or a literal id: "
+                                  "only a resource in this template can be checked")
     if errors:
         return errors
 
@@ -231,7 +263,8 @@ def check(template):
                 if ports != (443, 443):
                     errors.append(f"{where}: ports {ports} to the endpoints, not 443")
             elif target in sidecar_groups:
-                if ports[0] != ports[1]:
+                # A TCP rule with no ports opens every port.
+                if not isinstance(ports[0], int) or ports[0] != ports[1]:
                     errors.append(f"{where}: ports {ports} to the sidecar, not one port")
             else:
                 errors.append(f"{where}: egress to {target}, which is neither the endpoints, the sidecar "
@@ -245,12 +278,22 @@ def check(template):
             if kind not in GROUP_RULE_TYPES | {owner} and mentions(r.get("Properties", {}), group):
                 errors.append(f"{name} ({kind}) carries {group}, which the agent reaches")
     for name, svc in services.items():
-        task = props(name_of(svc["Properties"].get("TaskDefinition")))
+        task_name = name_of(svc["Properties"].get("TaskDefinition"))
+        if names_of(dig(svc["Properties"], "NetworkConfiguration", "AwsvpcConfiguration", "SecurityGroups") or []) \
+                & sidecar_groups:
+            unconditional(name, "the sidecar service")
+            unconditional(task_name, "the sidecar task")
+        task = props(task_name)
         for c in task.get("ContainerDefinitions", []):
             image = c.get("Image")
-            default = params.get(name_of(image) or "", {}).get("Default", "")
-            if not str(default).startswith("hoophq/hoopsidecar:"):
+            param = params.get(name_of(image) or "", {})
+            default, pattern = str(param.get("Default", "")), param.get("AllowedPattern", "")
+            if not default.startswith("hoophq/hoopsidecar:"):
                 errors.append(f"{name} runs {image} behind the sidecar's group: only the hoop sidecar image")
+            # A deployment can override the default: the pattern holds the image.
+            elif "hoophq/hoopsidecar:" not in pattern or not re.fullmatch(pattern, default):
+                errors.append(f"{name}'s image parameter needs an AllowedPattern for hoophq/hoopsidecar "
+                              "that its default matches")
     for group in sorted(sidecar_groups):
         _, rules = rules_of(group, "SecurityGroupIngress", "AWS::EC2::SecurityGroupIngress")
         for where, rule in rules:
@@ -294,7 +337,8 @@ def check(template):
             for rule in props(group).get("FirewallRules", []):
                 domains = name_of(rule.get("FirewallDomainListId"))
                 unconditional(domains, "a DNS Firewall domain list")
-                names = [d for d in props(domains).get("Domains", []) if isinstance(d, str)]
+                entries = props(domains).get("Domains", [])
+                names = [d for d in entries if isinstance(d, str)]
                 if rule.get("Action") == "ALLOW":
                     allow.append(rule.get("Priority"))
                     if res.get(domains, {}).get("Type") != "AWS::Route53Resolver::FirewallDomainList":
@@ -303,6 +347,11 @@ def check(template):
                     for d in names:
                         if TOO_WIDE.match(d):
                             errors.append(f"{domains} allows '{d}': wider than one domain")
+                    # An expression may resolve to '*.': only a wildcard-free,
+                    # unconditional one passes, such as the upstream host.
+                    for d in (e for e in entries if not isinstance(e, str)):
+                        if has_key(d, "Fn::If") or any("*" in x for x in strings_in(d)):
+                            errors.append(f"{domains} allows {d}: a condition or a wildcard in an expression")
                 # A rule with a Qtype blocks that query type only.
                 elif rule.get("Action") == "BLOCK" and "Qtype" not in rule and {"*.", "*"} & set(names):
                     block.append(rule.get("Priority"))

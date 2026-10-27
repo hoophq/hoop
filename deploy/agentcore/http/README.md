@@ -42,7 +42,7 @@ goes away:
 |---|---|
 | `template.yaml` | The CloudFormation stack: VPC, endpoints, DNS Firewall, the sidecar on ECS Fargate, the agent role, and the harness when `AgentKind` is `harness` |
 | `setup.sh` | Creates and deletes the stack, asks the harness a question, and runs `runtime-example/` |
-| `evstream.py` | Decodes the harness's binary event stream into JSON lines; `setup.sh` uses it |
+| `evstream.py` | Decodes the harness's binary event stream into JSON lines; `setup.sh` uses it. `evstream_test.py` checks it on real frames |
 | `runtime-example/` | A minimal Runtime agent (linux/arm64) that calls the API through the sidecar. It proves the Runtime path; it is not a product |
 
 ## Before you start

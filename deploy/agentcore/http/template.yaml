@@ -79,7 +79,12 @@ Parameters:
     AllowedPattern: '^pl-[0-9a-f]+$'
   SidecarImage:
     Type: String
-    Description: 1.272.0 is the first release that reports this template's install source.
+    Description: >-
+      hoophq/hoopsidecar, from Docker Hub or your mirror, by digest. 1.272.0 is
+      the first release that reports this template's install source. Not the
+      -distroless tag: the entry point needs bash.
+    AllowedPattern: '^([a-z0-9.-]+(:[0-9]+)?/)*hoophq/hoopsidecar:[0-9]+\.[0-9]+\.[0-9]+(@sha256:[0-9a-f]{64})?$'
+    ConstraintDescription: hoophq/hoopsidecar:X.Y.Z, optionally after a registry host and by digest.
     Default: hoophq/hoopsidecar:1.272.0@sha256:5fbf5967bb084e064be377a4968ad1a8b2058d620255e64fa4020a8954cd589c
 
 Rules:
@@ -268,7 +273,7 @@ Resources:
           - Effect: Allow
             Principal: '*'
             Action: s3:GetObject
-            Resource: !Sub arn:aws:s3:::prod-${AWS::Region}-starport-layer-bucket/*
+            Resource: !Sub arn:${AWS::Partition}:s3:::prod-${AWS::Region}-starport-layer-bucket/*
 
   # The VPC resolver answers any public name, so a query can carry data out.
   # The rule group covers the whole VPC, the sidecar too: the list names its
