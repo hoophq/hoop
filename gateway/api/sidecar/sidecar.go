@@ -279,10 +279,7 @@ func Post(c *gin.Context) {
 	}
 
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
-		if err := models.CreateSidecar(tx, sidecar); err != nil {
-			return err
-		}
-		return services.SyncSidecarListenerConnectionsTx(tx, sidecar)
+		return services.CreateSidecarWithinSeats(tx, sidecar)
 	})
 	switch {
 	case err == nil:
@@ -290,6 +287,8 @@ func Post(c *gin.Context) {
 			SidecarResponse: toResponse(*sidecar),
 			Token:           rawKey,
 		})
+	case errors.Is(err, services.ErrSidecarSeatLimit):
+		c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
 	case errors.Is(err, models.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"message": "a sidecar with this name already exists"})
 	default:

@@ -239,6 +239,12 @@ type ICAConfig struct {
 	// lane runs in single mode and `upstream` names the VDA.
 	Transparent *ICATransparentConfig `json:"transparent,omitempty" label:"Transparent (CIDR) mode" help:"Selects the VDA for each connection from its intercepted destination. Requires Linux, CAP_NET_ADMIN and a TPROXY rule." ui:"presence"`
 
+	// SourceCIDRs, in single mode, are the networks allowed to connect: the
+	// Citrix Gateway SNIP when the Gateway dials this lane as the VDA. Empty
+	// admits any source, as the other sidecar lanes do. CIDR mode takes its
+	// list from transparent.source_cidrs instead and refuses this one.
+	SourceCIDRs []string `json:"source_cidrs,omitempty" cap:"ica_source_cidrs" label:"Source CIDRs" placeholder:"10.20.1.10/32" help:"Single mode: networks allowed to connect, such as the Citrix Gateway SNIP. Empty admits any source."`
+
 	// Display pins the framebuffer geometry and ThinWire channel for every
 	// session. With no block, the engine's defaults apply (1264x1040,
 	// channel 9).
@@ -331,7 +337,12 @@ func (c *ICAConfig) validate(lc ListenerConfig, name string) []string {
 		if lc.Network == "unix" {
 			problems = append(problems, name+": ica.transparent intercepts TCP; network: unix cannot carry it")
 		}
+		if len(c.SourceCIDRs) != 0 {
+			problems = append(problems, name+": ica.source_cidrs is single mode's; CIDR mode names its sources in ica.transparent.source_cidrs")
+		}
 		problems = append(problems, c.Transparent.validate(name)...)
+	} else if _, err := parsePrefixes(c.SourceCIDRs); err != nil {
+		problems = append(problems, fmt.Sprintf("%s: ica.source_cidrs: %v", name, err))
 	}
 	if c.EDT && lc.Network == "unix" {
 		problems = append(problems, name+": ica.edt listens on UDP; network: unix cannot carry it")
@@ -409,8 +420,8 @@ type ICALane struct {
 	// Transparent selects CIDR mode, where SourcePrefixes, UpstreamPrefixes
 	// and UpstreamPorts hold the policy and Upstream is empty. In single
 	// mode, Upstream is the configured VDA (host:port; the engine resolves a
-	// hostname once, at start) and SourcePrefixes is empty, which admits any
-	// source.
+	// hostname once, at start) and SourcePrefixes is ica.source_cidrs, which
+	// when empty admits any source.
 	Transparent      bool
 	Upstream         string
 	SourcePrefixes   []netip.Prefix
@@ -573,6 +584,10 @@ func resolveICALane(lc ListenerConfig, name string, events func(ICAEvent) error,
 	}
 	if ic.Transparent == nil {
 		lane.Upstream = lc.Upstream
+		var err error
+		if lane.SourcePrefixes, err = parsePrefixes(ic.SourceCIDRs); err != nil {
+			return ICALane{}, fmt.Errorf("%s: ica.source_cidrs: %w", name, err)
+		}
 		return lane, nil
 	}
 	lane.Transparent = true

@@ -558,6 +558,7 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 	)
 	if s.lane.Transparent {
 		policy = cidrPolicy(s.lane)
+		tc.Mode = ica.ModeTPROXY
 		tc.SourcePrefixes = s.lane.SourcePrefixes
 		tc.ResolveDestination = ica.OriginalDestination
 		summary = fmt.Sprintf("%v ports %v", s.lane.UpstreamPrefixes, s.lane.UpstreamPorts)
@@ -568,6 +569,7 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 		}
 		var fixed string
 		policy, fixed = singlePolicy(addr, port)
+		tc.Mode = ica.ModeFixedUpstream
 		tc.SourcePrefixes = s.lane.SourcePrefixes
 		if len(tc.SourcePrefixes) == 0 {
 			tc.SourcePrefixes = anySource

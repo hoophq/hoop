@@ -8891,6 +8891,99 @@
         },
         "type": "object"
       },
+      "openapi.SidecarLoginApproveRequest": {
+        "properties": {
+          "name": {
+            "description": "The sidecar's name. Empty keeps the name the sidecar asked for.",
+            "example": "payments-sidecar",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarLoginDetails": {
+        "properties": {
+          "created_at": {
+            "example": "2026-10-14T12:00:00Z",
+            "type": "string"
+          },
+          "expires_at": {
+            "example": "2026-10-14T12:10:00Z",
+            "type": "string"
+          },
+          "name": {
+            "example": "payments-sidecar",
+            "type": "string"
+          },
+          "status": {
+            "example": "pending",
+            "type": "string"
+          },
+          "user_code": {
+            "example": "BCDF-GHJK",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarLoginRequest": {
+        "properties": {
+          "name": {
+            "description": "The name the sidecar asks for. The approving admin may change it.",
+            "example": "payments-sidecar",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "openapi.SidecarLoginResponse": {
+        "properties": {
+          "expires_in": {
+            "description": "Seconds until the code expires",
+            "example": 600,
+            "type": "integer"
+          },
+          "interval": {
+            "description": "Seconds the sidecar waits between polls",
+            "example": 5,
+            "type": "integer"
+          },
+          "user_code": {
+            "description": "The code the person confirms in the web app",
+            "example": "BCDF-GHJK",
+            "type": "string"
+          },
+          "verification_url": {
+            "description": "The page that approves this code",
+            "example": "https://use.hoop.dev/sidecars/login?code=BCDF-GHJK",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarLoginStatus": {
+        "properties": {
+          "name": {
+            "description": "The sidecar name the admin approved. Set when approved.",
+            "example": "payments-sidecar",
+            "type": "string"
+          },
+          "status": {
+            "description": "pending, approved, denied or expired",
+            "example": "approved",
+            "type": "string"
+          },
+          "url": {
+            "description": "The sidecar's page in the web app, where its listeners are added. Set\nwhen approved.",
+            "example": "https://use.hoop.dev/sidecars/5364ec99-653b-41ba-8165-67a7ba0c2d14",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "openapi.SidecarPatchRequest": {
         "properties": {
           "configuration": {
@@ -24203,6 +24296,442 @@
           }
         },
         "summary": "Sidecar Handshake",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/login": {
+      "post": {
+        "description": "Starts a device-code login. Send the token the sidecar made for itself in the hoop-sidecar-token header; only its hash is stored. Show the user code and the verification URL, then poll /sidecars/login/poll.",
+        "parameters": [
+          {
+            "description": "A token the sidecar made for itself: hsc_ and at least 32 random bytes",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarLoginRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Start a sidecar login",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/login/poll": {
+      "post": {
+        "description": "Answers 200 once an admin approved the login, 428 while it waits, 403 when denied and 410 when it expired or is unknown. Send the same hoop-sidecar-token header as the start.",
+        "parameters": [
+          {
+            "description": "The token sent to the start",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginStatus"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginStatus"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginStatus"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Poll a sidecar login",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/login/{code}": {
+      "get": {
+        "description": "The pending login an admin is about to approve. A code that expired or was decided answers 410 and says nothing about it.",
+        "parameters": [
+          {
+            "description": "The user code",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarLoginDetails"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get a sidecar login",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/login/{code}/approve": {
+      "post": {
+        "description": "Creates a sidecar in the caller's organization that the waiting sidecar's token reaches. A free organization holds 1 sidecar.",
+        "parameters": [
+          {
+            "description": "The user code",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarLoginApproveRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Approve a sidecar login",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/login/{code}/deny": {
+      "post": {
+        "description": "Refuses the login; the waiting sidecar stops.",
+        "parameters": [
+          {
+            "description": "The user code",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Deny a sidecar login",
         "tags": [
           "Sidecars"
         ]

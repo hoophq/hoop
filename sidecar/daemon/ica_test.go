@@ -92,6 +92,9 @@ func TestICAListenerValidation(t *testing.T) {
 		"cidr blank source":    {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","ica":{"tenant_id":"t","transparent":{"source_cidrs":[" "],"upstream_cidrs":["10.0.0.0/8"],"upstream_ports":[2598]}}}]}`, "source_cidrs: an entry is blank"},
 		"cidr blank vda":       {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","ica":{"tenant_id":"t","transparent":{"source_cidrs":["10.0.0.0/8"],"upstream_cidrs":["10.0.0.0/8",""],"upstream_ports":[2598]}}}]}`, "upstream_cidrs: an entry is blank"},
 		"display range":        {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","display":{"width":100}}}]}`, "width must be 320..4096"},
+		"single source cidrs":  {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","source_cidrs":["10.20.1.10/32"]}}]}`, ""},
+		"single bad source":    {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","source_cidrs":["gateway"]}}]}`, "ica.source_cidrs: \"gateway\" is not a CIDR"},
+		"source cidrs on cidr": {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","ica":{"tenant_id":"t","source_cidrs":["10.0.0.0/8"],"transparent":{"source_cidrs":["10.0.0.0/8"],"upstream_cidrs":["10.0.0.0/8"],"upstream_ports":[2598]}}}]}`, "ica.source_cidrs is single mode's"},
 		"upstream tls":         {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","upstream_tls":{},"ica":{"tenant_id":"t"}}]}`, "upstream_tls is not valid on an ica listener"},
 		"identity header":      {`{"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","identity_header":"x","ica":{"tenant_id":"t"}}]}`, "identity_header is only supported"},
 		"block elsewhere":      {`{"listeners":[{"name":"db","protocol":"postgres","listen":":1","upstream":"h:1","ica":{"tenant_id":"t"}}]}`, `an "ica" block is only valid on an ica listener`},
@@ -204,6 +207,24 @@ func TestICAResolvesSingleModeAndRuntimeOverrides(t *testing.T) {
 		s.rt.Options.VideoBatch == nil || *s.rt.Options.VideoBatch || s.rt.Options.OCRTiles != nil ||
 		len(s.rt.Options.PIIEntities) != 1 || s.rt.EDTRetentionSec != 0 || s.rt.EDTReplayBudgetBytes != 0 {
 		t.Fatalf("runtime overrides: %+v", s.rt)
+	}
+}
+
+// A Gateway that dials the lane as the VDA is pinned by ica.source_cidrs;
+// the engine then refuses every other source before a session exists.
+func TestICASingleModeCarriesSourceCIDRs(t *testing.T) {
+	cfg, err := LoadConfigBytes([]byte(`{"listeners":[{"name":"vdi","protocol":"ica","listen":"0.0.0.0:2598","upstream":"10.77.0.30:2598","ica":{"tenant_id":"lab","source_cidrs":["10.20.1.10/32"]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	build, built := fakeICAEngine(true)
+	withICAEngine(t, build)
+	if _, err := Validate(cfg, nil); err != nil {
+		t.Fatal(err)
+	}
+	lane := (*built)[0].lane
+	if lane.Transparent || lane.Upstream != "10.77.0.30:2598" || len(lane.SourcePrefixes) != 1 || lane.SourcePrefixes[0] != netip.MustParsePrefix("10.20.1.10/32") {
+		t.Fatalf("single-mode lane: %+v", lane)
 	}
 }
 
