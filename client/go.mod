@@ -33,7 +33,7 @@ require (
 	github.com/hoophq/hoop/sidecar/ica v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/telemetry/otlp v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20261027095424-5cf9a96182a6
+	github.com/hoophq/libhoop v0.0.0-20261027122311-e7e24b74f87e
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.56.0

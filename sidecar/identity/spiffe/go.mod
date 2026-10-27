@@ -10,7 +10,7 @@ go 1.26.10
 require (
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/hoophq/hoop/sidecar v0.0.0
-	github.com/hoophq/libhoop v0.0.0-20261027095424-5cf9a96182a6
+	github.com/hoophq/libhoop v0.0.0-20261027122311-e7e24b74f87e
 	github.com/spiffe/go-spiffe/v2 v2.8.1
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.11
