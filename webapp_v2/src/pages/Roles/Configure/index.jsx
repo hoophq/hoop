@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Stack, Text, Group } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { ArrowLeft } from 'lucide-react'
@@ -18,6 +18,7 @@ import TerminalAccessTab from '@/pages/Roles/Configure/TerminalAccessTab'
 import NativeAccessTab from '@/pages/Roles/Configure/NativeAccessTab'
 import TestConnectionModal from '@/pages/Roles/Configure/sections/TestConnectionModal'
 import SidecarMirrorView from '@/pages/Roles/Configure/sections/SidecarMirrorView'
+import { federationOutcomeSnackbar } from '@/pages/Roles/Configure/utils/federation'
 
 function DeleteConfirmationModal({ opened, onClose, onConfirm, connectionName, deleting }) {
   return (
@@ -79,6 +80,20 @@ export default function ConfigureRolePage() {
     loadAuxiliaryData()
     return () => reset()
   }, [connectionName, loadConnection, loadAuxiliaryData, reset])
+
+  // The Google consent callback returns here with ?federation_oauth=success|error.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const oauthOutcomeShown = useRef(false)
+  useEffect(() => {
+    const outcome = searchParams.get('federation_oauth')
+    if (!outcome || oauthOutcomeShown.current) return
+    oauthOutcomeShown.current = true
+    showSnackbar(federationOutcomeSnackbar(outcome, searchParams.get('reason')))
+    const next = new URLSearchParams(searchParams)
+    next.delete('federation_oauth')
+    next.delete('reason')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const handleSave = async () => {
     if (formRef.current && !formRef.current.checkValidity()) {
