@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Box, Group, Paper, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { CircleHelp, Info } from 'lucide-react'
+import ActionIcon from '@/components/ActionIcon'
 import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import Select from '@/components/Select'
@@ -14,9 +15,9 @@ import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/A
 import FederationTestModal from '@/pages/Roles/Configure/sections/FederationTestModal'
 import {
   adminCredentialsForTest,
+  FEDERATED_ENV_VARS,
   FEDERATION_PROVIDERS,
   hasUsableStoredCredentials,
-  OUTPUT_ENV_VARS,
 } from '@/pages/Roles/Configure/utils/federation'
 
 const PROVIDER_OPTIONS = [
@@ -34,10 +35,10 @@ function Section({ title, help, children }) {
     <Stack gap="md">
       <Group gap={6}>
         <Title order={5} fw={600}>{title}</Title>
-        <Tooltip label={help} multiline w={320}>
-          <Box component="span" display="inline-flex" c="dimmed">
+        <Tooltip label={help} multiline w={320} events={{ hover: true, focus: true, touch: true }}>
+          <ActionIcon variant="subtle" color="gray" size="sm" aria-label={'About ' + title}>
             <CircleHelp size={14} />
-          </Box>
+          </ActionIcon>
         </Tooltip>
       </Group>
       {children}
@@ -126,6 +127,10 @@ function OAuthConsent() {
     (s) => s.federation.config?.builtin_provider === FEDERATION_PROVIDERS.GCP_OAUTH,
   )
   const status = useConfigureRoleStore((s) => s.federation.oauthStatus)
+  const statusError = useConfigureRoleStore((s) => s.federation.oauthStatusError)
+  const loadFederationOAuthStatus = useConfigureRoleStore((s) => s.loadFederationOAuthStatus)
+  // Connecting leaves the page for Google, which drops unsaved edits.
+  const dirty = useConfigureRoleStore((s) => s.hasPendingChanges())
   const startFederationOAuth = useConfigureRoleStore((s) => s.startFederationOAuth)
   const disconnectFederationOAuth = useConfigureRoleStore((s) => s.disconnectFederationOAuth)
   const [connecting, setConnecting] = useState(false)
@@ -181,15 +186,30 @@ function OAuthConsent() {
 
   return (
     <Stack gap="sm">
-      <Text size="sm">
-        {status?.connected
-          ? 'Connected as ' + (status.google_email || 'a Google account')
-          : 'Your Google account is not connected to this role.'}
-      </Text>
+      {statusError ? (
+        <Alert color="red" variant="light" title="Could not load your Google account status.">
+          <Stack gap="xs" align="flex-start">
+            <Text size="sm">{statusError}</Text>
+            <Button variant="default" size="compact-sm" onClick={loadFederationOAuthStatus}>
+              Retry
+            </Button>
+          </Stack>
+        </Alert>
+      ) : (
+        <Text size="sm">
+          {status?.connected
+            ? 'Connected as ' + (status.google_email || 'a Google account')
+            : 'Your Google account is not connected to this role.'}
+        </Text>
+      )}
       <Group gap="sm">
-        <Button onClick={connect} loading={connecting}>
-          Connect Google account
-        </Button>
+        <Tooltip label="Save your changes first: connecting leaves this page." disabled={!dirty}>
+          <Box component="span" display="inline-block">
+            <Button onClick={connect} loading={connecting} disabled={dirty}>
+              Connect Google account
+            </Button>
+          </Box>
+        </Tooltip>
         <Button
           variant="default"
           onClick={disconnect}
@@ -206,12 +226,12 @@ function OAuthConsent() {
   )
 }
 
-function OutputPreview({ provider }) {
+function OutputPreview() {
   return (
     <Stack gap="xs">
       <Paper withBorder p="md" bg="gray.0">
         <Stack gap={4}>
-          {OUTPUT_ENV_VARS[provider].map((name) => (
+          {FEDERATED_ENV_VARS.map((name) => (
             <Text key={name} size="sm" ff="monospace">
               <Text span inherit c="indigo.7">{name}</Text>
               <Text span inherit c="dimmed">{'=<issued at session start>'}</Text>
@@ -324,7 +344,7 @@ export default function FederationSection() {
         title="Output preview"
         help="Environment variables the hook writes into the command runtime. They exist only for the duration of the session."
       >
-        <OutputPreview provider={form.builtin_provider} />
+        <OutputPreview />
       </Section>
 
       <AgentSelector />

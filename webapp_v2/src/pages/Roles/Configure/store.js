@@ -206,7 +206,11 @@ const initialFederation = {
   credentialsEditing: false,
   error: null,
   oauthStatus: null,
+  oauthStatusError: null,
 }
+
+// Module-level so it stays monotonic across reset().
+let oauthStatusGeneration = 0
 
 function persistedFederation(config, oauthStatus = null) {
   const form = formFromConfig(config)
@@ -346,13 +350,16 @@ export const useConfigureRoleStore = create((set, get) => ({
       federation: { ...state.federation, form: { ...state.federation.form, ...patch } },
     })),
 
+  // A credential typed for one provider is the wrong kind for the other.
   // gcp_oauth has no static service account to fall back on.
-  setFederationProvider: (provider) =>
+  setFederationProvider: (provider) => {
+    get().setFederationCredentialsEditing(false)
     get().setFederationForm(
       provider === FEDERATION_PROVIDERS.GCP_OAUTH
-        ? { builtin_provider: provider, fallback_policy: 'deny' }
-        : { builtin_provider: provider },
-    ),
+        ? { builtin_provider: provider, admin_credentials_json: '', fallback_policy: 'deny' }
+        : { builtin_provider: provider, admin_credentials_json: '' },
+    )
+  },
 
   setFederationProjectId: (projectId) =>
     set((state) => {
@@ -393,11 +400,23 @@ export const useConfigureRoleStore = create((set, get) => ({
   loadFederationOAuthStatus: async () => {
     const name = get().connection?.name
     if (!name) return
+    const generation = ++oauthStatusGeneration
+    const current = () => generation === oauthStatusGeneration && get().connection?.name === name
     try {
       const { data } = await federationService.oauthStatus(name)
-      set((state) => ({ federation: { ...state.federation, oauthStatus: data } }))
-    } catch {
-      set((state) => ({ federation: { ...state.federation, oauthStatus: null } }))
+      if (!current()) return
+      set((state) => ({
+        federation: { ...state.federation, oauthStatus: data, oauthStatusError: null },
+      }))
+    } catch (err) {
+      if (!current()) return
+      set((state) => ({
+        federation: {
+          ...state.federation,
+          oauthStatus: null,
+          oauthStatusError: err?.response?.data?.message || 'Failed to load the Google account status.',
+        },
+      }))
     }
   },
 
@@ -411,25 +430,6 @@ export const useConfigureRoleStore = create((set, get) => ({
   disconnectFederationOAuth: async () => {
     await federationService.oauthDisconnect(get().connection?.name)
     await get().loadFederationOAuthStatus()
-  },
-
-  // PUT or DELETE the federation, as the method selection asks. Returns the
-  // static secrets to stage, computed before the form drops the typed key.
-  persistFederation: async () => {
-    const { connection, federation } = get()
-    if (!supportsIamFederation(connection.subtype) || !federationDirty(federation)) return {}
-    if (federation.selected) {
-      const mirror = staticSecretsMirror(federation.form, connection.secret)
-      const { data } = await federationService.save(
-        connection.name,
-        buildFederationConfig(federation.form),
-      )
-      set({ federation: persistedFederation(data, federation.oauthStatus) })
-      return mirror
-    }
-    await federationService.remove(connection.name)
-    set({ federation: persistedFederation(null) })
-    return {}
   },
 
   // Records the MCP OAuth login the user just completed, so save() can hand
@@ -755,9 +755,25 @@ export const useConfigureRoleStore = create((set, get) => ({
       throw err
     }
     set({ saving: true, error: null })
+    // The federation PUT goes first: it validates the identity template, and
+    // the static key it mirrors rides in the PATCH. Its DELETE goes last, so a
+    // failed PATCH leaves the federation as it was.
+    const { federation } = get()
+    const federationChanged =
+      supportsIamFederation(connection.subtype) && federationDirty(federation)
+    let savedFederation = federation.config
+    let partial = ''
     try {
-      const mirror = await get().persistFederation()
-      for (const [key, value] of Object.entries(mirror)) get().replaceSecret(key, value)
+      if (federationChanged && federation.selected) {
+        const mirror = staticSecretsMirror(federation.form, connection.secret)
+        const { data } = await federationService.save(
+          connection.name,
+          buildFederationConfig(federation.form),
+        )
+        savedFederation = data
+        partial = 'The IAM federation was saved, the other changes were not: '
+        for (const [key, value] of Object.entries(mirror)) get().replaceSecret(key, value)
+      }
       const payload = buildDraftsPatch(drafts, baseline)
       // A key rename with an untouched value stages nothing in
       // stagedSecrets — it lives in `renames` only — so both maps gate
@@ -772,6 +788,13 @@ export const useConfigureRoleStore = create((set, get) => ({
         payload.mcp_oauth_flow_id = mcpOAuthFlowId
       }
       const updated = await connectionsService.patchConnection(connection.name, payload)
+      if (federationChanged && !federation.selected) {
+        partial = 'The role was saved, but its IAM federation was not removed: '
+        await federationService.remove(connection.name).catch((err) => {
+          if (err?.response?.status !== 404) throw err
+        })
+        savedFederation = null
+      }
       const newDrafts = draftsFromConnection(updated)
       // Re-seed per-field sources from the saved connection (same as
       // loadConnection) so renamed keys don't leave stale entries around.
@@ -788,12 +811,16 @@ export const useConfigureRoleStore = create((set, get) => ({
         baseline: newDrafts,
         saving: false,
         mcpOAuthFlowId: null,
+        federation: federationChanged
+          ? persistedFederation(savedFederation, federation.oauthStatus)
+          : get().federation,
       })
       return updated
     } catch (err) {
-      const message = err?.response?.data?.message || err?.message || 'Failed to save connection.'
+      const detail = err?.response?.data?.message || err?.message || 'Failed to save connection.'
+      const message = partial + detail
       set({ error: message, saving: false })
-      throw err
+      throw partial ? new Error(message) : err
     }
   },
 
