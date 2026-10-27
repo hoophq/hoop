@@ -3848,9 +3848,9 @@ like `/users/alice` survives intact: merging it with `/users/settings` would
 silently widen every rule written against either. The normalizer errs toward
 keeping segments, so a policy comes out too narrow rather than too broad.
 
-**Dot and empty segments resolve.** The resource is the path as an upstream
-that cleans paths routes it: `\` becomes `/`, `.`, `..` and empty segments
-resolve, and a trailing slash stays. `/x/../admin/users` and
+**Dot and empty segments resolve.** The resource is the resolved path: `\`
+becomes `/`, `.`, `..` and empty segments resolve, and a trailing slash
+stays. `/x/../admin/users` and
 `//admin//users` both become `/admin/users`. The path, the target and the
 statement text stay as sent.
 
