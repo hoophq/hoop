@@ -126,7 +126,7 @@ spec:
         guardrail_preset:
           name: guardrail_preset
           title: Guardrail
-          tooltip: Read-only denies the statements the sidecar classifies as insert, update, delete, create, drop, alter, truncate, grant, revoke, call or other; the README lists what it misses. PostgreSQL only; for another protocol or rule, use a whole config document.
+          tooltip: Read-only denies the statements the sidecar classifies as insert, update, delete, create, drop, alter, truncate, grant, revoke, call or other; the user guide lists what it misses. PostgreSQL only; for another protocol or rule, use a whole config document.
           section: sidecar
           enumValueLabels:
             - {label: None (audit only), value: none}
