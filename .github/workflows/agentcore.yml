@@ -8,6 +8,7 @@ on:
     paths:
       - deploy/agentcore/**
       - deploy/openai-agents/http/values.yaml
+      - deploy/openai-agents/kubernetes/values.yaml
       - deploy/openai-agents/postgres-mcp/sidecar.yaml
       - scripts/ci/check-agentcore-egress*
       - .github/workflows/agentcore.yml
@@ -43,7 +44,7 @@ jobs:
       - name: cfn-lint
         run: cfn-lint "$TEMPLATE"
       # A check that cannot fail passes forever: its fixtures run first, on
-      # both templates.
+      # every template.
       - name: Test the egress check
         run: python3 scripts/ci/check-agentcore-egress_test.py
       - name: The agent network leaves only through the endpoints and the sidecar
@@ -193,3 +194,74 @@ jobs:
           [[ "$others" == 0 ]] || { echo "::error::an ingress resource opens the database"; exit 1; }
       - name: The script parses
         run: bash -n deploy/agentcore/postgres/setup.sh
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    name: kubernetes template
+    timeout-minutes: 10
+    env:
+      TEMPLATE: deploy/agentcore/kubernetes/template.yaml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install cfn-lint
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "cfn-lint==$CFN_LINT_VERSION"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: cfn-lint
+        run: cfn-lint "$TEMPLATE"
+      # The http job tests the check itself.
+      - name: The agent network leaves only through the endpoints and the sidecar
+        run: python3 scripts/ci/check-agentcore-egress.py "$TEMPLATE"
+      - name: The sidecar config matches the OpenAI kubernetes template
+        run: |
+          set -euo pipefail
+          config=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "SIDECAR_YAML") | .Value' "$TEMPLATE")
+          # The README promises the same free-tier rules as the twins.
+          for block in guardrails mask; do
+            [[ "$(yq -o=json ".$block" <<<"$config")" == "$(yq -o=json ".config.$block" deploy/openai-agents/kubernetes/values.yaml)" ]] \
+              || { echo "::error::$TEMPLATE and the OpenAI Agents kubernetes template differ in $block"; exit 1; }
+          done
+          [[ "$(yq -o=json -I0 '.listeners[0].http.headers' <<<"$config")" == '["Accept","Kubectl-Command","Impersonate-Extra-Hoop-Session"]' ]] \
+            || { echo "::error::the lane no longer records the kubectl command or the session header"; exit 1; }
+          # kubectl sends its token over HTTPS only.
+          [[ "$(yq '.listeners[0].listen' <<<"$config")" == https://* ]] \
+            || { echo "::error::the lane is not HTTPS: kubectl would send no token"; exit 1; }
+          source=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "HOOP_SIDECAR_INSTALL_SOURCE") | .Value' "$TEMPLATE")
+          [[ "$source" == agentcore-kubernetes ]] \
+            || { echo "::error::the sidecar reports install source '$source', not agentcore-kubernetes"; exit 1; }
+          # Older releases report the install source as "other".
+          image=$(yq '.Parameters.SidecarImage.Default' "$TEMPLATE")
+          [[ "$image" =~ ^hoophq/hoopsidecar:([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
+            && [[ "$(printf '1.272.0\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.272.0 ]] \
+            || { echo "::error::SidecarImage must pin hoophq/hoopsidecar 1.272.0 or later by digest: $image"; exit 1; }
+      - name: The scripts parse
+        run: |
+          bash -n deploy/agentcore/kubernetes/setup.sh
+          sh -n deploy/agentcore/kubernetes/image/hoop-kubeconfig
+      # The harness writes its kubeconfig with this script: check what it writes.
+      - name: hoop-kubeconfig writes a kubeconfig that names the session
+        run: |
+          set -euo pipefail
+          export SIDECAR_URL=https://sidecar.hoop.internal:8443 SIDECAR_CA=Y2E= KUBE_TOKEN=t \
+            KUBE_USER=system:serviceaccount:hoop:agentcore-agent KUBE_NAMESPACE=demo KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          # AgentCore's form: 33 to 100 of [A-Za-z0-9_-]. The id goes into YAML.
+          ids() { printf "%${1}s" | tr ' ' "$2"; }
+          for bad in "$(ids 32 a)" "$(ids 101 a)" "$(ids 40 a)'x" "$(ids 40 a)$(printf '\nx')" "$(ids 40 a) x" ''; do
+            if sh deploy/agentcore/kubernetes/image/hoop-kubeconfig "$bad" 2>/dev/null; then
+              echo "::error::hoop-kubeconfig took the session id '$bad'"; exit 1
+            fi
+          done
+          for good in "$(ids 33 a)" "$(ids 100 a)" "hoop_$(ids 30 0)-x"; do
+            sh deploy/agentcore/kubernetes/image/hoop-kubeconfig "$good" >/dev/null \
+              || { echo "::error::hoop-kubeconfig refused the session id '$good'"; exit 1; }
+          done
+          sid=hoop-0123456789abcdef0123456789abcdef
+          sh deploy/agentcore/kubernetes/image/hoop-kubeconfig "$sid"
+          [[ "$(yq '.users[0].user["as-user-extra"]["hoop-session"][0]' "$KUBECONFIG")" == "$sid" ]] \
+            || { echo "::error::the kubeconfig does not name the session"; exit 1; }
+          [[ "$(yq '.clusters[0].cluster["certificate-authority-data"]' "$KUBECONFIG")" == Y2E= ]] \
+            || { echo "::error::the kubeconfig does not pin the lane's certificate"; exit 1; }

@@ -303,7 +303,22 @@ POSTGRES_CASES = [
      1, "DatabaseService names its security groups by an expression"),
 ]
 
-TEMPLATES = [("http", CASES), ("postgres", CASES + POSTGRES_CASES)]
+# The cluster sits behind the peering: the route and the cluster's group
+# are the sidecar's, never the agent's.
+KUBERNETES_CASES = [
+    ("a peering route from the agent subnets",
+     lambda t: add(t, "AgentToCluster", "AWS::EC2::Route", {"RouteTableId": {"Ref": "AgentRouteTable"},
+                                                            "DestinationCidrBlock": {"Ref": "ClusterVpcCidr"},
+                                                            "VpcPeeringConnectionId": {"Ref": "ClusterPeering"}}),
+     1, "route AgentToCluster sends"),
+    ("the agent reaches the cluster's group",
+     lambda t: add(t, "Direct", "AWS::EC2::SecurityGroupEgress", {"GroupId": {"Ref": "AgentSecurityGroup"},
+                                                                 "IpProtocol": "tcp", "FromPort": 443, "ToPort": 443,
+                                                                 "DestinationSecurityGroupId": {"Ref": "ClusterSecurityGroupId"}}),
+     1, "egress to ClusterSecurityGroupId, which is neither"),
+]
+
+TEMPLATES = [("http", CASES), ("postgres", CASES + POSTGRES_CASES), ("kubernetes", CASES + KUBERNETES_CASES)]
 
 
 def main():
