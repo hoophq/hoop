@@ -4132,6 +4132,15 @@ and the body included. Keep the token in `X-Hoop-Token` only. The setup is
 in `deploy/openai-agents/http/` and on the docs page,
 [OpenAI Agents API](https://hoop.dev/docs/integrations/openai-agents).
 
+#### A private lane in an AgentCore VPC
+
+An Amazon Bedrock AgentCore agent calls a lane inside the customer's VPC,
+not on a public URL. The lane is plain HTTP: the harness loop runs outside
+the agent's container and trusts no private CA. The security groups admit
+only the agents, and the caller token still names the caller in the audit
+trail. The setup is in `deploy/agentcore/http/` and on the docs page,
+[Amazon Bedrock AgentCore](https://hoop.dev/docs/integrations/aws-agentcore).
+
 ### kubectl through GKE Connect Gateway
 
 **The cluster prefix is removed before policy sees the resource.** Connect
