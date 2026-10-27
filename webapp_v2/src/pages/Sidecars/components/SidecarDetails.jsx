@@ -201,7 +201,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
               {(onDelete || canUseFile) && (
                 <ActionMenu width={260}>
                   {canUseFile && (
-                    <ActionMenu.Item danger disabled={saving || asking} onClick={() => ask(true)}>
+                    <ActionMenu.Item disabled={saving || asking} onClick={() => ask(true)}>
                       Use the sidecar configuration file
                     </ActionMenu.Item>
                   )}
