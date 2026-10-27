@@ -267,7 +267,7 @@ func TestAnAIMaskNeedsADetector(t *testing.T) {
 // Each protocol's scope, and the warning where it is none.
 func TestEachProtocolHasItsAIMaskScope(t *testing.T) {
 	for proto, want := range map[string]gate.MaskScope{
-		"postgres": gate.MaskScopeSerial, "mysql": gate.MaskScopeSerial, "mssql": gate.MaskScopeSerial,
+		"postgres": gate.MaskScopeSerial, "mysql": gate.MaskScopeSerial, "mssql": gate.MaskScopeNone,
 		"oracle": gate.MaskScopeSerial, "clickhouse": gate.MaskScopeSerial, "http": gate.MaskScopeHTTP,
 		"mongodb": gate.MaskScopeNone, "ssh": gate.MaskScopeNone, "grpc": gate.MaskScopeNone,
 	} {

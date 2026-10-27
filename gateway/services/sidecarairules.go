@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -118,29 +119,58 @@ func selectAIRules(cfg daemon.Config) [len(aiRuleKinds)]aiRuleSelection {
 	return out
 }
 
-// libraryEntryNames are the rule_library names of one library row's rules.
-// A row with one rule serves it under the row's name, which is the name a
-// level writes. A row with several serves each as row/rule, or as row/N when
-// the rule names are not unique, and the levels name all of them.
-func libraryEntryNames(row string, ruleNames []string) []string {
-	if len(ruleNames) == 1 {
-		return []string{row}
+// libraryEntryNames are the rule_library names of one library row's n
+// rules. Row names are free text (no API refuses a character in them), so the
+// scheme is injective by construction rather than by a reserved character:
+// every '#' of the row name is doubled, a row with one rule serves it under
+// that escaped name, and a row with several serves rule i as escaped#i. In
+// an escaped name every '#' comes in a pair, so a single '#' followed only by
+// digits can come from a multi-rule row and nothing else: "a#1" is rule 1 of
+// row "a", and row "a#1" serves "a##1".
+func libraryEntryNames(row string, n int) []string {
+	esc := strings.ReplaceAll(row, "#", "##")
+	if n == 1 {
+		return []string{esc}
 	}
-	unique := true
-	seen := map[string]bool{}
-	for _, n := range ruleNames {
-		if strings.TrimSpace(n) == "" || seen[n] {
-			unique = false
-			break
-		}
-		seen[n] = true
+	out := make([]string, n)
+	for i := range out {
+		out[i] = esc + "#" + strconv.Itoa(i+1)
 	}
-	out := make([]string, len(ruleNames))
-	for i, n := range ruleNames {
-		if !unique {
-			n = strconv.Itoa(i + 1)
+	return out
+}
+
+// libraryEntry is one rule of a selected library row, before it is named.
+type libraryEntry struct {
+	row  string
+	base string
+}
+
+// nameLibraryEntries gives each entry its served name: its base name, unless
+// a rule_library rule of the stored configuration (held) already has it.
+// Such an entry gets base#dupN, the first N no stored name and no base name
+// uses. Every base is reserved before any entry is named, so a renamed entry
+// never takes a later entry's name. Nothing here can fail: a name clash must
+// not stop the configuration from reaching the sidecar.
+func nameLibraryEntries(entries []libraryEntry, held map[string]bool) []string {
+	reserved := maps.Clone(held)
+	for _, e := range entries {
+		reserved[e.base] = true
+	}
+	assigned := map[string]bool{}
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		name := e.base
+		if held[name] || assigned[name] {
+			for n := 1; ; n++ {
+				c := e.base + "#dup" + strconv.Itoa(n)
+				if !reserved[c] && !assigned[c] {
+					name = c
+					break
+				}
+			}
 		}
-		out[i] = row + "/" + n
+		assigned[name] = true
+		out[i] = name
 	}
 	return out
 }
@@ -157,29 +187,23 @@ func libraryGuardrails(row models.LibraryRule) []policy.Rule {
 }
 
 // libraryMasks decodes a data masking library row into its rules, each an
-// object whose shape the detector plugin owns, and their names.
-func libraryMasks(row models.LibraryRule) ([]map[string]json.RawMessage, []string) {
+// object whose shape the detector plugin owns.
+func libraryMasks(row models.LibraryRule) []map[string]json.RawMessage {
 	var block struct {
 		Rules []json.RawMessage `json:"rules"`
 	}
 	if decodeSpec(row.Spec, &block) != nil {
-		return nil, nil
+		return nil
 	}
 	rules := make([]map[string]json.RawMessage, 0, len(block.Rules))
-	names := make([]string, 0, len(block.Rules))
 	for _, raw := range block.Rules {
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(raw, &fields) != nil || fields == nil {
-			return nil, nil
-		}
-		var name string
-		if n, ok := fields["name"]; ok && json.Unmarshal(n, &name) != nil {
-			return nil, nil
+			return nil
 		}
 		rules = append(rules, fields)
-		names = append(names, name)
 	}
-	return rules, names
+	return rules
 }
 
 // composeRuleLibrary serves in rule_library the library rules the document's
@@ -206,9 +230,10 @@ func composeRuleLibrary(db *gorm.DB, orgID uuid.UUID, cfg daemon.Config) (daemon
 // foldRuleLibrary puts in rule_library the rows the levels select: every
 // row of a kind a level selects with no rules list, else the named ones, and
 // nothing of a kind no level uses. A row with no sidecar rule is left out.
-// The levels' lists are rewritten to the served names (libraryEntryNames).
-// A rule_library the stored configuration writes itself is kept, and a name
-// in both is refused: the sidecar refuses a library with a name twice.
+// The levels' lists are rewritten to the served names (libraryEntryNames,
+// nameLibraryEntries). A rule_library the stored configuration writes itself
+// is kept with its names; a library rule that would take one of them is
+// served under another name, so the result never names a rule twice.
 func foldRuleLibrary(cfg daemon.Config, rows [len(aiRuleKinds)][]models.LibraryRule) (daemon.Config, error) {
 	sel := selectAIRules(cfg)
 	if !sel[aiKindGuardrails].used && !sel[aiKindMask].used {
@@ -236,73 +261,62 @@ func foldRuleLibrary(cfg daemon.Config, rows [len(aiRuleKinds)][]models.LibraryR
 			}
 		}
 	}
-	claim := func(k int, name string) error {
-		if held[k][name] {
-			return fmt.Errorf("the %s rule library serves %q twice: the sidecar's configuration holds a "+
-				"rule_library rule by that name; rename one of them", aiRuleKinds[k].label, name)
-		}
-		held[k][name] = true
-		return nil
-	}
 	expand := [len(aiRuleKinds)]map[string][]string{{}, {}}
 
-	guardrails := slices.Clone(lib.Guardrails)
+	// Guardrails: the selected rules, then their names.
+	var guardEntries []libraryEntry
+	var guardRules []policy.Rule
 	for _, row := range rows[aiKindGuardrails] {
 		if !sel[aiKindGuardrails].selects(row.Name) {
 			continue
 		}
 		rules := libraryGuardrails(row)
-		if len(rules) == 0 {
-			continue
+		for _, base := range libraryEntryNames(row.Name, len(rules)) {
+			guardEntries = append(guardEntries, libraryEntry{row: row.Name, base: base})
 		}
-		ruleNames := make([]string, len(rules))
-		for i, r := range rules {
-			ruleNames[i] = r.Name
-		}
-		names := libraryEntryNames(row.Name, ruleNames)
-		for i, r := range rules {
-			if err := claim(aiKindGuardrails, names[i]); err != nil {
-				return cfg, err
-			}
-			r.Name = names[i]
-			guardrails = append(guardrails, r)
-		}
-		expand[aiKindGuardrails][row.Name] = names
+		guardRules = append(guardRules, rules...)
+	}
+	guardrails := slices.Clone(lib.Guardrails)
+	for i, name := range nameLibraryEntries(guardEntries, held[aiKindGuardrails]) {
+		r := guardRules[i]
+		r.Name = name
+		guardrails = append(guardrails, r)
+		expand[aiKindGuardrails][guardEntries[i].row] = append(expand[aiKindGuardrails][guardEntries[i].row], name)
 	}
 
-	added := false
+	// Masks, the same way.
+	var maskEntries []libraryEntry
+	var maskRules []map[string]json.RawMessage
 	for _, row := range rows[aiKindMask] {
 		if !sel[aiKindMask].selects(row.Name) {
 			continue
 		}
-		rules, ruleNames := libraryMasks(row)
-		if len(rules) == 0 {
-			continue
+		rules := libraryMasks(row)
+		for _, base := range libraryEntryNames(row.Name, len(rules)) {
+			maskEntries = append(maskEntries, libraryEntry{row: row.Name, base: base})
 		}
-		if storedMasksErr != nil {
-			// Appending would replace a list nothing here can read.
-			return cfg, fmt.Errorf("the sidecar's configuration rule_library.mask is not a JSON list "+
-				"of rules: %v", storedMasksErr)
+		maskRules = append(maskRules, rules...)
+	}
+	if len(maskEntries) > 0 && storedMasksErr != nil {
+		// Appending would replace a list nothing here can read; the sidecar
+		// refuses that list anyway.
+		return cfg, fmt.Errorf("the sidecar's configuration rule_library.mask is not a JSON list "+
+			"of rules: %v", storedMasksErr)
+	}
+	for i, name := range nameLibraryEntries(maskEntries, held[aiKindMask]) {
+		fields := maskRules[i]
+		fields["name"], _ = json.Marshal(name)
+		raw, err := json.Marshal(fields)
+		if err != nil {
+			return cfg, fmt.Errorf("failed rendering data masking rule %q for the rule library: %w", maskEntries[i].row, err)
 		}
-		names := libraryEntryNames(row.Name, ruleNames)
-		for i, fields := range rules {
-			if err := claim(aiKindMask, names[i]); err != nil {
-				return cfg, err
-			}
-			fields["name"], _ = json.Marshal(names[i])
-			raw, err := json.Marshal(fields)
-			if err != nil {
-				return cfg, fmt.Errorf("failed rendering data masking rule %q for the rule library: %w", row.Name, err)
-			}
-			masks = append(masks, raw)
-			added = true
-		}
-		expand[aiKindMask][row.Name] = names
+		masks = append(masks, raw)
+		expand[aiKindMask][maskEntries[i].row] = append(expand[aiKindMask][maskEntries[i].row], name)
 	}
 
-	if len(guardrails) > len(lib.Guardrails) || added {
+	if len(guardEntries) > 0 || len(maskEntries) > 0 {
 		lib.Guardrails = guardrails
-		if added {
+		if len(maskEntries) > 0 {
 			raw, err := json.Marshal(masks)
 			if err != nil {
 				return cfg, fmt.Errorf("failed rendering the data masking rule library: %w", err)
@@ -452,8 +466,7 @@ func ValidateAnalyzerAIRules(db *gorm.DB, orgID, ruleName string, spec json.RawM
 			case aiKindGuardrails:
 				known[row.Name] = len(libraryGuardrails(row)) > 0
 			case aiKindMask:
-				rules, _ := libraryMasks(row)
-				known[row.Name] = len(rules) > 0
+				known[row.Name] = len(libraryMasks(row)) > 0
 			}
 		}
 		for _, n := range named[k] {

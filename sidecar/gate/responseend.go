@@ -6,70 +6,80 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
-// ResponseEnd finds the protocol's end-of-response marker in the server
-// stream of one connection. A serial mask scope ends a response there and not
-// at the next client statement, so a statement pipelined into a masked
-// response is refused rather than let the rest of that response out unmasked.
+// ResponseEnd counts the protocol's end-of-response markers in the server
+// stream of one connection. A serial mask scope ends a masked response at its
+// own marker, never at the next client statement.
 //
 // It reads every server byte from the first one, because it must stay on the
 // protocol's framing. A scanner that loses the framing reports no end again:
-// the plan then lasts for the connection, which fails closed.
+// the count then never returns to zero, which fails closed.
 type ResponseEnd interface {
-	// Ended reports whether data completes an end-of-response message.
-	Ended(data []byte) bool
+	// Ended reports how many end-of-response messages data completes.
+	Ended(data []byte) int
 }
 
-// responseEndFor is the marker scanner of a protocol, or nil when the gate
-// reads none. Only framings a few lines can follow are here: a scanner that
-// misreads a frame would end a response early, which fails open.
+// requestCounter counts the responses the client's bytes ask for, one per
+// marker the server will send, from the first client byte.
+type requestCounter interface {
+	// Requests reports how many responses data asks for. ok is false when
+	// the count can no longer be known: lost framing, or a message whose
+	// answer does not pair with one marker.
+	Requests(data []byte) (n int, ok bool)
+}
+
+// responseEndFor is the marker scanner and request counter of a protocol, or
+// nils when the gate follows none. Only framings a few lines can follow are
+// here: a scanner that misreads a frame would end a response early, which
+// fails open.
 //
-//   - postgres: ReadyForQuery ('Z'), which follows every simple query and
-//     every Sync.
-//   - mssql: the TDS packet whose status carries End Of Message, the last
-//     packet of every server message.
+//   - postgres: the server's ReadyForQuery ('Z'), one for the startup
+//     message and for every Query, Sync and FunctionCall.
 //
-// mysql (the end of a result set depends on negotiated capabilities and
+// mssql is not here: its lane has no AI mask scope, because the pinned
+// rewriter forwards some result data unmasked without reporting it. mysql (the end of a result set depends on negotiated capabilities and
 // on a 0xFE first byte a row may also carry), oracle (TNS markers and
 // continuations) and clickhouse (block payloads with no length) have none.
-func responseEndFor(p inspect.Protocol) ResponseEnd {
+func responseEndFor(p inspect.Protocol) (ResponseEnd, requestCounter) {
 	switch p {
 	case inspect.Postgres:
-		return &pgEnd{}
-	case inspect.MSSQL:
-		return &tdsEnd{}
+		return &pgEnd{}, &pgRequests{}
 	}
-	return nil
+	return nil, nil
 }
 
 // ResponseEndKnown reports a protocol whose end-of-response marker a serial
 // mask scope reads. On any other serial lane a masked statement's plan lasts
 // for the connection, which then takes no further statement.
-func ResponseEndKnown(p inspect.Protocol) bool { return responseEndFor(p) != nil }
+func ResponseEndKnown(p inspect.Protocol) bool {
+	end, _ := responseEndFor(p)
+	return end != nil
+}
 
 // framed follows a stream of messages that each start with a fixed header
 // carrying the message length.
 type framed struct {
 	hdr  []byte
 	skip int
-	// endPending marks the message being skipped as an end marker. The end
-	// counts once its last byte arrived, so nothing of that message is
-	// still in flight.
-	endPending bool
-	lost       bool
+	// pending marks the message being skipped as counted. It counts once
+	// its last byte arrived, so nothing of that message is still in
+	// flight.
+	pending bool
+	lost    bool
 }
 
-// scan walks data. size is the header size; parse reads one header into the
-// body length that follows it and whether the message ends a response, or
-// ok false for a header the framing cannot hold.
-func (f *framed) scan(data []byte, size int, parse func(hdr []byte) (body int, end, ok bool)) bool {
-	ended := false
+// scan walks data and counts the messages parse marks. size is the header
+// size; parse reads one header into the body length that follows it and
+// whether the message counts, or ok false for a header the framing cannot
+// hold.
+func (f *framed) scan(data []byte, size int, parse func(hdr []byte) (body int, count, ok bool)) int {
+	n := 0
 	for i := 0; i < len(data) && !f.lost; {
 		if f.skip > 0 {
-			n := min(f.skip, len(data)-i)
-			f.skip -= n
-			i += n
-			if f.skip == 0 && f.endPending {
-				ended, f.endPending = true, false
+			k := min(f.skip, len(data)-i)
+			f.skip -= k
+			i += k
+			if f.skip == 0 && f.pending {
+				n, f.pending = n+1, false
 			}
 			continue
 		}
@@ -79,38 +89,42 @@ func (f *framed) scan(data []byte, size int, parse func(hdr []byte) (body int, e
 		if len(f.hdr) < size {
 			break
 		}
-		body, end, ok := parse(f.hdr)
+		body, count, ok := parse(f.hdr)
 		f.hdr = f.hdr[:0]
 		if !ok {
 			f.lost = true
 			break
 		}
 		f.skip = body
-		if end {
+		if count {
 			if body == 0 {
-				ended = true
+				n++
 			} else {
-				f.endPending = true
+				f.pending = true
 			}
 		}
 	}
-	return ended
+	return n
 }
 
-// pgEnd follows pgwire messages: a tag byte and an int32 length that counts
-// itself.
+// pgEnd follows pgwire server messages: a tag byte and an int32 length that
+// counts itself.
 type pgEnd struct {
 	f       framed
 	started bool
 }
 
-func (s *pgEnd) Ended(data []byte) bool {
-	if !s.started && len(data) > 0 {
-		s.started = true
-		// The answer to SSLRequest or GSSENCRequest is one untagged byte.
-		if data[0] == 'N' || data[0] == 'S' {
+func (s *pgEnd) Ended(data []byte) int {
+	if !s.started {
+		// The answers to SSLRequest and GSSENCRequest are one untagged
+		// byte each, before the first tagged message.
+		for len(data) > 0 && (data[0] == 'N' || data[0] == 'S' || data[0] == 'G') {
 			data = data[1:]
 		}
+		if len(data) == 0 {
+			return 0
+		}
+		s.started = true
 	}
 	return s.f.scan(data, 5, func(hdr []byte) (int, bool, bool) {
 		n := binary.BigEndian.Uint32(hdr[1:5])
@@ -121,16 +135,72 @@ func (s *pgEnd) Ended(data []byte) bool {
 	})
 }
 
-// tdsEnd follows TDS packets: an 8-byte header whose uint16 length counts the
-// header, and a status byte whose low bit ends the message.
-type tdsEnd struct{ f framed }
+// pgRequests follows pgwire client messages: untagged ones (int32 length,
+// int32 code) until the startup message, then tagged ones.
+type pgRequests struct {
+	f      framed
+	tagged bool
+	untag  []byte
+	skip   int
+}
 
-func (s *tdsEnd) Ended(data []byte) bool {
-	return s.f.scan(data, 8, func(hdr []byte) (int, bool, bool) {
-		n := int(binary.BigEndian.Uint16(hdr[2:4]))
-		if n < 8 {
+// Untagged request codes that the server answers with one byte, or not at
+// all.
+const (
+	pgSSLRequest    = 80877103
+	pgGSSENCRequest = 80877104
+	pgCancelRequest = 80877102
+	pgProtocol3     = 196608
+)
+
+func (s *pgRequests) Requests(data []byte) (int, bool) {
+	n := 0
+	for !s.tagged && len(data) > 0 {
+		if s.skip > 0 {
+			k := min(s.skip, len(data))
+			s.skip -= k
+			data = data[k:]
+			continue
+		}
+		take := min(8-len(s.untag), len(data))
+		s.untag = append(s.untag, data[:take]...)
+		data = data[take:]
+		if len(s.untag) < 8 {
+			return n, true
+		}
+		size := int(binary.BigEndian.Uint32(s.untag[0:4]))
+		code := binary.BigEndian.Uint32(s.untag[4:8])
+		s.untag = s.untag[:0]
+		if size < 8 || size > 1<<20 {
+			return n, false
+		}
+		s.skip = size - 8
+		switch code {
+		case pgSSLRequest, pgGSSENCRequest, pgCancelRequest:
+		case pgProtocol3:
+			// The startup message: the server ends authentication with
+			// a ReadyForQuery.
+			n++
+			s.tagged = true
+		default:
+			return n, false
+		}
+	}
+	if s.tagged && s.skip > 0 {
+		k := min(s.skip, len(data))
+		s.skip -= k
+		data = data[k:]
+	}
+	n += s.f.scan(data, 5, func(hdr []byte) (int, bool, bool) {
+		size := binary.BigEndian.Uint32(hdr[1:5])
+		if size < 4 || size > 1<<30 {
 			return 0, false, false
 		}
-		return n - 8, hdr[1]&0x01 != 0, true
+		switch hdr[0] {
+		case 'Q', 'S', 'F':
+			return int(size) - 4, true, true
+		}
+		return int(size) - 4, false, true
 	})
+	return n, !s.f.lost
 }

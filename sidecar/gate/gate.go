@@ -510,12 +510,24 @@ type Gate struct {
 	maskScope  MaskScope
 	plan       []policy.ResponseMask
 	planActive bool
-	// inFlight says a response the plan covers has not ended: client
-	// bytes went out since the protocol's last end-of-response marker.
-	inFlight bool
-	// endScan finds the end-of-response marker on a serial lane; nil for
-	// a protocol whose marker the gate does not read.
-	endScan ResponseEnd
+	// planAnswered: on an HTTP lane, the plan's final response arrived.
+	planAnswered bool
+	// planSticky: on a serial lane, the plan's end cannot be known; it
+	// lasts for the connection. planDue counts the markers until it ends.
+	planSticky bool
+	planDue    int
+	// endScan and reqScan follow a serial lane's framing; nil for a
+	// protocol the gate does not follow. maskOutstanding counts responses the
+	// client asked for and the server has not ended; countLost says that
+	// count is no longer known.
+	endScan         ResponseEnd
+	reqScan         requestCounter
+	maskOutstanding int
+	countLost       bool
+	// respChecked and respBytes check a masked HTTP response before it is
+	// forwarded; see responseRefusal.
+	respChecked bool
+	respBytes   int
 	// httpOpen counts forwarded http requests with no final response.
 	httpOpen int
 }
@@ -619,7 +631,7 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 	}
 	g.maskScope = cfg.MaskScope
 	if cfg.MaskScope == MaskScopeSerial {
-		g.endScan = responseEndFor(cfg.Protocol)
+		g.endScan, g.reqScan = responseEndFor(cfg.Protocol)
 	}
 	if rf, ok := server.Codec().(Reframer); ok {
 		g.reframer = rf
@@ -774,17 +786,45 @@ func (g *Gate) Response(ctx context.Context, data []byte) Decision {
 //
 // Returns nil when nothing is held or the codec does not re-frame.
 func (g *Gate) FlushResponse() []byte {
+	out, _ := g.FlushResponseChecked()
+	return out
+}
+
+// ErrMaskedTailDropped is FlushResponseChecked's error when the connection
+// ended while an AI mask owned the response in flight.
+var ErrMaskedTailDropped = errors.New("sidecar/gate: the connection ended inside a response an AI data masking " +
+	"rule applies to; the bytes the codec still held were dropped, not forwarded")
+
+// FlushResponseChecked is FlushResponse, and says when it dropped bytes.
+//
+// While an AI mask (a plan) owns the response in flight, nothing held is
+// released: a codec's flush forwards a partial frame as it came, unmasked,
+// whatever the masker. The held bytes are dropped, the refusal is recorded
+// on the trail, and the error says so. The client gets a truncated
+// response, which an upstream that closed mid-response sends it anyway.
+func (g *Gate) FlushResponseChecked() ([]byte, error) {
 	if g.reframer == nil {
-		return nil
+		return nil, nil
 	}
 	if !g.masksResponses() {
-		return g.reframer.Flush(nil)
+		return g.reframer.Flush(nil), nil
+	}
+	if plan := g.flushPlan(); len(plan) > 0 {
+		held := g.reframer.Flush(nil)
+		if len(held) == 0 {
+			return nil, nil
+		}
+		g.writeAudit(context.Background(), audit.ErrorEvent(g.session(), ErrMaskedTailDropped))
+		g.mu.Lock()
+		g.denied++
+		g.mu.Unlock()
+		g.countStatement(true, SourceMaskScope)
+		return nil, ErrMaskedTailDropped
 	}
 	// Rows masked here were held back by the codec and never passed through
-	// maskByReframing, so this is their only chance to be counted. The
-	// plan of the exchange they belong to is still active: only a later
-	// client statement or final response ends it.
-	mask := g.cellMasker(g.activePlan())
+	// maskByReframing, so this is their only chance to be counted. No plan
+	// owns them: only the lane's masker applies.
+	mask := g.cellMasker(nil)
 	masked := 0
 	out := g.reframer.Flush(func(column string, value []byte) []byte {
 		res, _, n := mask(column, value)
@@ -795,7 +835,7 @@ func (g *Gate) FlushResponse() []byte {
 		return res
 	})
 	g.countMasked(masked)
-	return out
+	return out, nil
 }
 
 // DiscardResponse clears response bytes held by a re-framing codec without
@@ -879,10 +919,21 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 
 	insp := g.client
 	var plan []policy.ResponseMask
-	var ended bool
+	var ended int
 	if dir == inspect.FromServer {
 		insp = g.server
 		plan, ended = g.serverRead(data)
+		if why := g.responseRefusal(data); why != "" {
+			// A masked response the codec could forward unmasked: refuse
+			// it before any of its bytes leave.
+			d = Decision{Allowed: false, Rule: maskScopeRule, Message: why}
+			g.writeAudit(ctx, audit.ErrorEvent(g.session(), errors.New(why)))
+			g.mu.Lock()
+			g.denied++
+			g.mu.Unlock()
+			g.countStatement(true, SourceMaskScope)
+			return d
+		}
 	}
 
 	stmts, ready, err := insp.InspectReady(dir, data)
@@ -1067,8 +1118,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	if dir == inspect.FromServer {
 		g.answered(stmts, ended)
 	} else {
-		g.sent(stmts)
-		g.installPlan(install)
+		g.installPlan(install, g.sent(stmts, d.Payload))
 	}
 
 	return d
@@ -1257,7 +1307,7 @@ func (g *Gate) EvaluateStatement(ctx context.Context, stmt inspect.Statement) De
 		return r
 	}
 	g.openReservation(reservedReview(j))
-	g.installPlan(j.masks)
+	g.installPlan(j.masks, 1)
 	d := Decision{Allowed: !j.denied, Statements: stmts, Err: j.err}
 	if j.denied {
 		d.Message = j.message

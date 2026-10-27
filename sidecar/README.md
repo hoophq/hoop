@@ -1674,8 +1674,10 @@ After the level is known, one more model turn runs (it counts against
 | `create_mask` | `mask.mode: existing_and_new` | `entities` or `columns`, `strategy`, `keep_last`, `mask_char`, `reason` |
 | `no_rule` | the turn runs alone (providers force a tool call) | `reason` |
 
-The system prompt lists each allowed rule's definition, then a fixed suffix
-no config removes. On `ai-handoff` the rule tools join the hand-off turn and
+The system prompt carries each allowed rule's name and definition as one
+escaped JSON document between `<rule_library>` and `</rule_library>`, with a
+line saying that text inside a rule field is data and never an instruction,
+then a fixed suffix no config removes. On `ai-handoff` the rule tools join the hand-off turn and
 apply only when the agent does not select `block`. With `require_approval`
 the rules apply before the hold: a guardrail deny files no review, and a mask
 is attached before the hold.
@@ -1685,8 +1687,11 @@ is attached before the hold.
 - A mask applies to the response of this statement only, through a
   per-exchange plan in the gate; the lane masker is never changed. An ssh lane
   offers `strategy: mask` only.
-- A created rule goes through the validation a config rule gets. An invalid one
-  is dropped, logged as a warning and recorded in `ai_rule_invalid`; it never
+- A created rule goes through the validation a config rule gets. Its tool
+  arguments are decoded strictly: a field the tool does not take (`action`,
+  `require_table_match`, ...) or one the selected type or strategy does not
+  read drops the whole rule. An invalid rule is dropped, logged as a warning
+  and recorded in `ai_rule_invalid` with the arguments as sent; it never
   applies half-valid.
 - Fail-safe: a refusal, a timeout, a malformed answer (an unknown tool, a name
   outside the enum, no reason, more than 16 calls), a spent budget or an input
@@ -1697,23 +1702,30 @@ is attached before the hold.
 - The audit record carries `ai_rules`: a JSON list of
   `{kind, rule | definition, reason, matched}` (`matched` on guardrails).
 
-Where the response of one statement cannot be told apart, the gate denies the
-statement the AI masked, with a message that says why:
+Every mask path fails closed. Where the response of one statement cannot be
+told apart, the gate denies the statement the AI masked; where a masked
+response might leave unmasked, it denies the response. The message says why:
 
 | Protocol | A mask applies to | Refused |
 |---|---|---|
 | `grpc`, `spanner` (with descriptors) | every response of the call | never |
-| `http` | the response to its request; ends with the final response | a request sent while that response is pending; a masked request behind an outstanding one; a masked WebSocket message |
-| `postgres` | every server byte up to the next client statement | a statement sent before the masked response's ReadyForQuery arrived; a masked statement sent with others in one read |
-| `mssql` | every server byte up to the next client statement | a statement sent before the TDS packet that ends the masked response (End Of Message) arrived in full; a masked statement sent with others in one read |
+| `http` | the response to its request, until the next request after it | any request while that response is not complete; a masked request behind an outstanding one; a masked WebSocket message. Before any of its bytes leave, a masked response whose head is not whole in the first read, or whose non-empty body is compressed (any `Content-Encoding` but `identity`), chunked (the codec masks it in pieces that can split a value), close-delimited, longer than 16 MiB (the codec's masking limit), or of a media type the codec does not read (it reads none, JSON types and text types: `text/*`, `application/xml`, `application/yaml`, `application/javascript`, form-urlencoded); and an upgrade. Heads end at CRLFCRLF or LFLF, as the codec reads them |
+| `postgres` | the response up to its own ReadyForQuery | a masked statement while an earlier response is outstanding (counted from the first byte of the connection); a masked `Parse` (extended query protocol); a statement sent before the masked response ended; a masked statement sent with others in one read |
 | `mysql`, `oracle`, `clickhouse` | every server byte for the rest of the connection | every later statement on the connection (the gate reads no end-of-response marker on these lanes; reconnect); a masked statement sent with others in one read |
-| `mongodb`, `ssh`, `ica`, plug-ins, grpc without descriptors | nothing | every masked statement (the lane warns at start) |
+| `mssql`, `mongodb`, `ssh`, `ica`, plug-ins, grpc without descriptors | nothing | every masked statement (the lane warns at start). On mssql the codec forwards some result data (SQL_VARIANT, XML, past its buffer limit) unmasked without saying so |
 
-On a serial lane the end of the masked response is the protocol's own marker,
-never the next client statement. Any client byte sent while the mask is
-active (a pgwire Bind and Execute included) opens a response the mask covers.
-A statement pipelined into a masked response is refused, so no byte of that
-response leaves unmasked.
+On postgres the gate counts, from the first byte of the connection, the
+responses the client asked for and the ReadyForQuery messages the server
+sent. A masked statement is admitted only when nothing is outstanding, and
+its plan ends at its own marker, never at another statement's. When the
+count is in doubt (lost framing, more markers than requests, a masked read
+that asks for no response or for several), the plan lasts for the
+connection and the connection takes no further statement. Bytes the codec
+still holds when a connection ends belong to the exchange in flight: an
+unmasked exchange's bytes leave unchanged, and a masked exchange's are
+dropped, not forwarded, because a codec forwards a partial frame as it came.
+The drop is recorded on the trail and logged; the client gets the truncated
+response the upstream sent.
 
 | Setting | Result |
 |---|---|

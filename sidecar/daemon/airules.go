@@ -181,7 +181,10 @@ func (la *LaneAnalyzerConfig) usesAIMask() bool {
 //   - grpc and spanner: one gate per call, so a mask covers the call's
 //     responses. It needs a descriptor set, as a mask block does.
 //   - http: HTTP/1 answers in request order.
-//   - postgres, mysql, mssql, oracle, clickhouse: one statement in flight.
+//   - postgres, mysql, oracle, clickhouse: one statement in flight.
+//   - mssql: the pinned rewriter forwards SQL_VARIANT, XML and over-limit
+//     result data unmasked, and stops rewriting for the connection,
+//     without reporting either; until it reports them, no AI mask.
 //   - mongodb: replies pair with requests by id, and an unacknowledged
 //     write or an exhaust cursor has no one-to-one answer.
 //   - ssh: a session's output is not tied to one command.
@@ -200,7 +203,7 @@ func aiMaskScope(lc ListenerConfig) gate.MaskScope {
 	switch p := inspect.Protocol(lc.Protocol); p {
 	case inspect.HTTP:
 		return gate.MaskScopeHTTP
-	case inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.Oracle, inspect.ClickHouse:
+	case inspect.Postgres, inspect.MySQL, inspect.Oracle, inspect.ClickHouse:
 		if gate.MaskSupported(p) {
 			return gate.MaskScopeSerial
 		}

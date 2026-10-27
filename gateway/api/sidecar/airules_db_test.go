@@ -17,6 +17,8 @@ import (
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -189,9 +191,9 @@ func TestTheLibraryRulesTheLevelsSelectAreServed(t *testing.T) {
 	for _, r := range served.RuleLibrary.Guardrails {
 		names = append(names, r.Name)
 	}
-	assert.Equal(t, []string{"no-drop", "writes/no-delete", "writes/no-update"}, names, "the selected rules only")
+	assert.Equal(t, []string{"no-drop", "writes#1", "writes#2"}, names, "the selected rules only")
 	assert.Empty(t, served.RuleLibrary.Mask, "no level uses mask")
-	assert.Equal(t, []string{"writes/no-delete", "writes/no-update", "no-drop"},
+	assert.Equal(t, []string{"writes#1", "writes#2", "no-drop"},
 		served.Listeners[0].Analyzer.MediumRisk.Guardrails.Rules)
 
 	// rules absent: every library rule of that kind.
@@ -220,6 +222,26 @@ func TestTheLibraryRulesTheLevelsSelectAreServed(t *testing.T) {
 	served, err = services.ComposeSidecarConfiguration(models.DB, sc)
 	require.NoError(t, err)
 	assert.Nil(t, served.RuleLibrary)
+
+	// Names never collide: a row named like another row's rule, and a
+	// stored rule_library rule named like a library rule. Delivery goes on.
+	seedGuardrailLibraryRule(t, "writes#1", `{"rules":[{"name":"w","type":"operation","operations":["insert"]}]}`)
+	setLevelSpec(t, "ai-rules-compose", `{"medium":{"action":"warn","guardrails":{}}}`)
+	row, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
+	require.NoError(t, err)
+	row.Configuration.RuleLibrary = &daemon.RuleLibrary{Guardrails: []policy.Rule{
+		{Name: "no-drop", Type: "operation", Operations: []inspect.Operation{"drop"}}}}
+	_, err = models.UpdateSidecarConfiguration(models.DB, statusTestOrgID, sc.ID, row.Configuration)
+	require.NoError(t, err)
+	row, err = models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
+	require.NoError(t, err)
+	served, err = services.ComposeSidecarConfiguration(models.DB, row)
+	require.NoError(t, err)
+	names = nil
+	for _, r := range served.RuleLibrary.Guardrails {
+		names = append(names, r.Name)
+	}
+	assert.ElementsMatch(t, []string{"no-drop", "no-drop#dup1", "unselected", "writes#1", "writes#2", "writes##1"}, names)
 }
 
 // No build before ENG-662 can apply an AI rule, so the plane refuses to serve

@@ -897,7 +897,11 @@ func (s *Server) pump(
 				g.DiscardResponse()
 				return
 			}
-			if tail := g.FlushResponse(); len(tail) > 0 {
+			tail, err := g.FlushResponseChecked()
+			if err != nil {
+				log.Warn("response tail dropped at connection end", "error", err)
+			}
+			if len(tail) > 0 {
 				_, _ = dst.Write(tail)
 			}
 		}()

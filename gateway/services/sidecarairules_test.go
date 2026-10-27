@@ -10,6 +10,8 @@ import (
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,9 +52,9 @@ func TestFoldRuleLibraryServesTheSelectedRules(t *testing.T) {
 	for _, r := range got.RuleLibrary.Guardrails {
 		names = append(names, r.Name)
 	}
-	assert.Equal(t, []string{"multi/no-drop", "multi/no-truncate"}, names, "only the named row, one entry per rule")
+	assert.Equal(t, []string{"multi#1", "multi#2"}, names, "only the named row, one entry per rule")
 	assert.Empty(t, got.RuleLibrary.Mask, "no level uses mask, so no mask rule is served")
-	assert.Equal(t, []string{"multi/no-drop", "multi/no-truncate", "gone"},
+	assert.Equal(t, []string{"multi#1", "multi#2", "gone"},
 		got.Listeners[0].Analyzer.MediumRisk.Guardrails.Rules,
 		"the level names the served rules, and an unknown name stays for the sidecar to warn about")
 
@@ -93,7 +95,7 @@ func TestFoldRuleLibraryServesEveryRuleWhenRulesIsAbsent(t *testing.T) {
 	for _, r := range got.RuleLibrary.Guardrails {
 		names = append(names, r.Name)
 	}
-	assert.Equal(t, []string{"multi/no-drop", "multi/no-truncate", "no-delete"}, names)
+	assert.Equal(t, []string{"multi#1", "multi#2", "no-delete"}, names)
 }
 
 func TestFoldRuleLibraryLeavesADocumentWithoutAIRulesAlone(t *testing.T) {
@@ -106,7 +108,7 @@ func TestFoldRuleLibraryLeavesADocumentWithoutAIRulesAlone(t *testing.T) {
 	assert.Nil(t, got.RuleLibrary)
 }
 
-func TestFoldRuleLibraryRefusesANameTheStoredLibraryHolds(t *testing.T) {
+func TestFoldRuleLibraryKeepsTheStoredLibraryNames(t *testing.T) {
 	stored := daemon.Config{
 		RuleLibrary: &daemon.RuleLibrary{Mask: json.RawMessage(`[{"name":"ssn","columns":["ssn"]}]`)},
 		Listeners: []daemon.ListenerConfig{
@@ -118,17 +120,98 @@ func TestFoldRuleLibraryRefusesANameTheStoredLibraryHolds(t *testing.T) {
 	assert.JSONEq(t, `[{"name":"ssn","columns":["ssn"]},{"name":"emails","entities":["EMAIL_ADDRESS"],"strategy":"mask"}]`,
 		string(got.RuleLibrary.Mask), "the stored library is kept, the selected row added")
 
-	stored.Listeners = []daemon.ListenerConfig{aiRulesLane(t, "appdb", `{"medium":{"action":"warn","mask":{}}}`)}
-	_, err = foldRuleLibrary(stored, aiRulesLibrary)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `"ssn" twice`)
+	// The org row "ssn" meets the stored "ssn": the stored rule keeps its
+	// name, the row is served under another, and the level names that one.
+	stored.Listeners = []daemon.ListenerConfig{aiRulesLane(t, "appdb",
+		`{"medium":{"action":"warn","mask":{"rules":["ssn","emails"]}}}`)}
+	got, err = foldRuleLibrary(stored, aiRulesLibrary)
+	require.NoError(t, err, "a name clash must not stop the configuration from reaching the sidecar")
+	assert.JSONEq(t, `[{"name":"ssn","columns":["ssn"]},`+
+		`{"name":"emails","entities":["EMAIL_ADDRESS"],"strategy":"mask"},`+
+		`{"name":"ssn#dup1","columns":["ssn"],"strategy":"hash"}]`, string(got.RuleLibrary.Mask))
+	assert.Equal(t, []string{"ssn#dup1", "emails"}, got.Listeners[0].Analyzer.MediumRisk.Mask.Rules)
+	assertServedNamesUnique(t, got)
+}
+
+// The reviewer's case and its relatives: row names are free text, so a
+// multi-rule row's names must not meet any other row's name, nor a stored
+// rule_library name, whatever the rows are called.
+func TestFoldRuleLibraryNamesNeverCollide(t *testing.T) {
+	two := `{"rules":[{"name":"email","type":"operation","operations":["drop"]},` +
+		`{"name":"phone","type":"operation","operations":["delete"]}]}`
+	one := `{"rules":[{"name":"x","type":"operation","operations":["update"]}]}`
+	rows := [len(aiRuleKinds)][]models.LibraryRule{aiKindGuardrails: {
+		{Name: "payments", Spec: json.RawMessage(two)},
+		{Name: "payments/email", Spec: json.RawMessage(one)},
+		{Name: "payments#1", Spec: json.RawMessage(one)},
+		{Name: "payments#", Spec: json.RawMessage(two)},
+		{Name: "payments##1", Spec: json.RawMessage(one)},
+		{Name: "payments#dup1", Spec: json.RawMessage(one)},
+	}}
+	stored := daemon.Config{
+		RuleLibrary: &daemon.RuleLibrary{Guardrails: []policy.Rule{
+			{Name: "payments#1", Type: "operation", Operations: []inspect.Operation{"insert"}},
+			{Name: "payments#1#dup1", Type: "operation", Operations: []inspect.Operation{"insert"}},
+		}},
+		Listeners: []daemon.ListenerConfig{aiRulesLane(t, "appdb", `{"medium":{"action":"warn","guardrails":{}}}`)},
+	}
+	got, err := foldRuleLibrary(stored, rows)
+	require.NoError(t, err)
+	var names []string
+	for _, r := range got.RuleLibrary.Guardrails {
+		names = append(names, r.Name)
+	}
+	assert.Equal(t, []string{
+		"payments#1", "payments#1#dup1", // stored, unchanged
+		"payments#1#dup2", "payments#2", // row "payments": "payments#1" and its first fallback are stored names
+		"payments/email",               // row "payments/email"
+		"payments##1",                  // row "payments#1"
+		"payments###1", "payments###2", // row "payments#"
+		"payments####1",  // row "payments##1"
+		"payments##dup1", // row "payments#dup1"
+	}, names)
+	assertServedNamesUnique(t, got)
+
+	// Each row is reachable by its own name.
+	stored.Listeners = []daemon.ListenerConfig{aiRulesLane(t, "appdb",
+		`{"medium":{"action":"warn","guardrails":{"rules":["payments","payments#1","payments/email"]}}}`)}
+	got, err = foldRuleLibrary(stored, rows)
+	require.NoError(t, err)
+	assertServedNamesUnique(t, got)
+	assert.Equal(t, []string{"payments#1#dup2", "payments#2", "payments##1", "payments/email"},
+		got.Listeners[0].Analyzer.MediumRisk.Guardrails.Rules)
+}
+
+// assertServedNamesUnique checks the library as the sidecar does: no name
+// twice, and the document still decodes strictly.
+func assertServedNamesUnique(t *testing.T, cfg daemon.Config) {
+	t.Helper()
+	seen := map[string]bool{}
+	for _, r := range cfg.RuleLibrary.Guardrails {
+		assert.False(t, seen[r.Name], "guardrail %q is served twice", r.Name)
+		seen[r.Name] = true
+	}
+	masks := map[string]bool{}
+	if len(cfg.RuleLibrary.Mask) > 0 {
+		var list []struct{ Name string }
+		require.NoError(t, json.Unmarshal(cfg.RuleLibrary.Mask, &list))
+		for _, m := range list {
+			assert.False(t, masks[m.Name], "mask %q is served twice", m.Name)
+			masks[m.Name] = true
+		}
+	}
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	var served daemon.Config
+	require.NoError(t, decodeSpec(raw, &served))
 }
 
 func TestLibraryEntryNames(t *testing.T) {
-	assert.Equal(t, []string{"row"}, libraryEntryNames("row", []string{"anything"}))
-	assert.Equal(t, []string{"row/a", "row/b"}, libraryEntryNames("row", []string{"a", "b"}))
-	assert.Equal(t, []string{"row/1", "row/2"}, libraryEntryNames("row", []string{"a", "a"}))
-	assert.Equal(t, []string{"row/1", "row/2"}, libraryEntryNames("row", []string{"", "b"}))
+	assert.Equal(t, []string{"row"}, libraryEntryNames("row", 1))
+	assert.Equal(t, []string{"row#1", "row#2"}, libraryEntryNames("row", 2))
+	assert.Equal(t, []string{"a##1"}, libraryEntryNames("a#1", 1))
+	assert.Equal(t, []string{"a###1", "a###2"}, libraryEntryNames("a#", 2))
+	assert.Empty(t, libraryEntryNames("row", 0))
 }
 
 func TestPlanSidecarSessionAIRules(t *testing.T) {

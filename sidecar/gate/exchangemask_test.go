@@ -2,7 +2,11 @@ package gate_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/binary"
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -10,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
+	libhttp "github.com/hoophq/libhoop/v2/codec/http"
 )
 
 // maskingPolicy applies a response mask to every request whose text or path
@@ -48,7 +53,26 @@ func scopedGate(t *testing.T, proto inspect.Protocol, scope gate.MaskScope) *gat
 	if err != nil {
 		t.Fatal(err)
 	}
+	if proto == inspect.Postgres {
+		// The gate counts responses from the first byte, so the session
+		// starts as a real one does.
+		ctx := context.Background()
+		if d := g.Request(ctx, pgStartup()); !d.Allowed {
+			t.Fatalf("startup denied: %s", d.Message)
+		}
+		g.Response(ctx, append([]byte("R\x00\x00\x00\x08\x00\x00\x00\x00"), pgReady...))
+	}
 	return g
+}
+
+var pgReady = []byte("Z\x00\x00\x00\x05I")
+
+// pgStartup is a protocol 3.0 StartupMessage.
+func pgStartup() []byte {
+	params := "user\x00alice\x00\x00"
+	b := binary.BigEndian.AppendUint32(nil, uint32(8+len(params)))
+	b = binary.BigEndian.AppendUint32(b, 196608)
+	return append(b, params...)
 }
 
 func respond(g *gate.Gate, data []byte) []byte {
@@ -264,47 +288,6 @@ func wholeReadGate(t *testing.T, proto inspect.Protocol) *gate.Gate {
 	return g
 }
 
-// tdsPacket is one tabular-result packet; eom ends the server message.
-func tdsPacket(body string, eom bool) []byte {
-	status := byte(0)
-	if eom {
-		status = 1
-	}
-	n := 8 + len(body)
-	return append([]byte{0x04, status, byte(n >> 8), byte(n), 0, 0, 1, 0}, body...)
-}
-
-// An mssql plan lasts until the packet that ends the server message: a
-// statement pipelined before it is refused, and every packet of the masked
-// response is masked.
-func TestAnMSSQLPlanLastsUntilEndOfMessage(t *testing.T) {
-	g := wholeReadGate(t, inspect.MSSQL)
-	ctx := context.Background()
-	g.Request(ctx, []byte("SELECT mail FROM users -- masked"))
-	if out := g.Response(ctx, tdsPacket("ada@example.com", false)).Payload; bytes.Contains(out, []byte("ada")) {
-		t.Fatalf("first packet = %q", out)
-	}
-	if d := g.Request(ctx, []byte("SELECT 1")); d.Allowed || !strings.Contains(d.Message, "has not ended yet") {
-		t.Fatalf("a statement pipelined into the masked response = %+v", d)
-	}
-	// The EOM packet split over two reads, its header first: the end counts
-	// at its last byte.
-	last := tdsPacket("ada@example.com", true)
-	g.Response(ctx, last[:8])
-	if d := g.Request(ctx, []byte("SELECT 1")); d.Allowed {
-		t.Fatal("a statement was allowed before the end-of-message packet completed")
-	}
-	if out := g.Response(ctx, last[8:]).Payload; bytes.Contains(out, []byte("ada@")) {
-		t.Fatalf("rest of the last packet = %q", out)
-	}
-	if d := g.Request(ctx, []byte("SELECT 1")); !d.Allowed {
-		t.Fatalf("statement after the end of message denied: %s", d.Message)
-	}
-	if out := g.Response(ctx, tdsPacket("ada@example.com", true)).Payload; !bytes.Contains(out, []byte("ada@example.com")) {
-		t.Errorf("the next statement's response was masked: %q", out)
-	}
-}
-
 // mysql, oracle and clickhouse have no end marker the gate reads: the plan
 // masks every later server byte, and the connection takes no further
 // statement.
@@ -324,5 +307,375 @@ func TestAPlanWithNoEndMarkerHoldsForTheConnection(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The response limit an AI mask covers is the HTTP codec's masking limit.
+func TestTheAIMaskLimitIsTheCodecLimit(t *testing.T) {
+	if gate.AIMaskMaxResponseBytes != libhttp.DefaultMaxMessageBytes {
+		t.Fatalf("AIMaskMaxResponseBytes = %d, codec limit %d", gate.AIMaskMaxResponseBytes, libhttp.DefaultMaxMessageBytes)
+	}
+}
+
+// Review sequence: A unmasked, then B masked before A's response ended, then
+// C. B is refused: A's end marker would otherwise end B's plan.
+func TestAMaskedStatementBehindAnOutstandingOneIsRefused(t *testing.T) {
+	t.Run("postgres", func(t *testing.T) {
+		g := scopedGate(t, inspect.Postgres, gate.MaskScopeSerial)
+		ctx := context.Background()
+		if d := g.Request(ctx, pgQuery("SELECT 1")); !d.Allowed {
+			t.Fatalf("A denied: %s", d.Message)
+		}
+		d := g.Request(ctx, pgQuery("SELECT mail FROM users -- masked"))
+		if d.Allowed || !strings.Contains(d.Message, "still waiting for its response") {
+			t.Fatalf("B = %+v", d)
+		}
+		respond(g, pgResult()) // A's response
+		if d := g.Request(ctx, pgQuery("SELECT 2")); !d.Allowed {
+			t.Fatalf("C denied: %s", d.Message)
+		}
+		if out := respond(g, pgResult()); !bytes.Contains(out, []byte("ada@example.com")) {
+			t.Errorf("C's response was masked: %q", out)
+		}
+	})
+	t.Run("more ends than requests", func(t *testing.T) {
+		g := scopedGate(t, inspect.Postgres, gate.MaskScopeSerial)
+		ctx := context.Background()
+		g.Response(ctx, pgReady)
+		d := g.Request(ctx, pgQuery("SELECT mail FROM users -- masked"))
+		if d.Allowed || !strings.Contains(d.Message, "can no longer tell its responses apart") {
+			t.Fatalf("decision = %+v", d)
+		}
+	})
+}
+
+// pgParse is a named Parse message.
+func pgParse(name, sql string) []byte {
+	body := name + "\x00" + sql + "\x00\x00\x00"
+	b := append([]byte{'P'}, binary.BigEndian.AppendUint32(nil, uint32(4+len(body)))...)
+	return append(b, body...)
+}
+
+var pgSync = []byte("S\x00\x00\x00\x04")
+
+// Review sequence: Parse+Sync masked, then a plain query, then Execute. The
+// masked Parse is refused: its later execution carries no statement a plan
+// could follow.
+func TestAMaskedPostgresParseIsRefused(t *testing.T) {
+	g := scopedGate(t, inspect.Postgres, gate.MaskScopeSerial)
+	ctx := context.Background()
+	d := g.Request(ctx, append(pgParse("s1", "SELECT mail FROM users -- masked"), pgSync...))
+	if d.Allowed || !strings.Contains(d.Message, "extended query protocol") {
+		t.Fatalf("masked Parse = %+v", d)
+	}
+	if d := g.Request(ctx, pgQuery("SELECT 1")); !d.Allowed {
+		t.Fatalf("plain query denied: %s", d.Message)
+	}
+}
+
+// A masked read that asks for more than one response (a Query and a Sync)
+// cannot say which marker is the plan's: the plan holds for the connection.
+func TestASerialPlanWhoseReadAsksForSeveralResponsesHoldsForTheConnection(t *testing.T) {
+	g := scopedGate(t, inspect.Postgres, gate.MaskScopeSerial)
+	ctx := context.Background()
+	// One statement and a Sync: two ReadyForQuery, one masked statement.
+	if d := g.Request(ctx, append(pgQuery("SELECT mail FROM users -- masked"), pgSync...)); !d.Allowed {
+		t.Fatalf("denied: %s", d.Message)
+	}
+	for i := range 3 {
+		if out := respond(g, pgResult()); bytes.Contains(out, []byte("ada@example.com")) {
+			t.Fatalf("response %d = %q", i, out)
+		}
+	}
+	if d := g.Request(ctx, pgQuery("SELECT 1")); d.Allowed || !strings.Contains(d.Message, "reconnect") {
+		t.Errorf("statement after a sticky plan = %+v", d)
+	}
+}
+
+// Review sequence: masked A with a close-delimited body, then masked B. The
+// codec reads the end of its buffer as the end of such a body, so A's
+// response is refused before any byte leaves, and B is refused while A's
+// exchange is not complete.
+func TestACloseDelimitedMaskedResponseIsRefused(t *testing.T) {
+	g := scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+	ctx := context.Background()
+	g.Request(ctx, httpRequest("/masked-a"))
+	d := g.Response(ctx, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nada@example.com"))
+	if d.Allowed || len(d.Payload) != 0 || !strings.Contains(d.Message, "ends when the connection closes") {
+		t.Fatalf("A's response = allowed %t, %q, %q", d.Allowed, d.Payload, d.Message)
+	}
+	if d := g.Request(ctx, httpRequest("/masked-b")); d.Allowed {
+		t.Fatalf("B was admitted while A's exchange is not complete")
+	}
+}
+
+// A masked response whose head does not arrive whole in one read is refused;
+// an LF-only head is read as the codec reads it.
+func TestAMaskedHTTPHeadIsReadWholeOrRefused(t *testing.T) {
+	g := scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+	g.Request(context.Background(), httpRequest("/masked"))
+	if d := g.Response(context.Background(), []byte("HTTP/1.1 200 OK\r\nContent-Type: text/pl")); d.Allowed {
+		t.Fatal("a partial head was forwarded")
+	}
+	g = scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+	g.Request(context.Background(), httpRequest("/masked"))
+	d := g.Response(context.Background(), []byte("HTTP/1.1 200 OK\nContent-Type: text/plain\nContent-Length: 15\n\nada@example.com"))
+	out := append(d.Payload, g.FlushResponse()...)
+	if !d.Allowed || bytes.Contains(out, []byte("ada@example.com")) || !bytes.Contains(out, []byte("[AI:EMAIL_ADDRESS]")) {
+		t.Errorf("LF-only response: allowed %t (%s), %q", d.Allowed, d.Message, out)
+	}
+}
+
+// Review sequence: masked A completes, then unmasked B sends a RowDescription
+// and a DataRow, and the connection closes mid-response. B's held row is
+// flushed with B's plan, which is none: it comes out unchanged.
+func TestAnUnmaskedHeldRowIsFlushedUnchanged(t *testing.T) {
+	g := scopedGate(t, inspect.Postgres, gate.MaskScopeSerial)
+	ctx := context.Background()
+	g.Request(ctx, pgQuery("SELECT mail FROM users -- masked"))
+	if out := respond(g, pgResult()); bytes.Contains(out, []byte("ada@example.com")) {
+		t.Fatalf("A = %q", out)
+	}
+	g.Request(ctx, pgQuery("SELECT mail FROM users"))
+	res := pgResult()
+	partial := res[:56] // RowDescription and one DataRow, no CommandComplete
+	out := append(g.Response(ctx, partial).Payload, g.FlushResponse()...)
+	if !bytes.Equal(out, partial) {
+		t.Errorf("B's held row changed at the flush: %q", out)
+	}
+}
+
+// Review sequence: a gzip body the codec could not unpack within its limit
+// would go out as it came. A masked response that is compressed, or longer
+// than the limit, is refused before any byte leaves.
+func TestAMaskedHTTPResponseTheCodecMightNotMaskIsRefused(t *testing.T) {
+	var gz bytes.Buffer
+	w := gzip.NewWriter(&gz)
+	w.Write([]byte(`{"email":"ada@example.com"}`))
+	w.Close()
+	compressed := append([]byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\n"+
+		"Content-Length: "+strconv.Itoa(gz.Len())+"\r\n\r\n"), gz.Bytes()...)
+	var big bytes.Buffer
+	bw := gzip.NewWriter(&big)
+	bw.Write([]byte(`{"email":"ada@example.com","pad":"`))
+	bw.Write(bytes.Repeat([]byte("a"), gate.AIMaskMaxResponseBytes+1))
+	bw.Write([]byte(`"}`))
+	bw.Close()
+	lfGzip := append([]byte("HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Encoding: gzip\n"+
+		"Content-Length: "+strconv.Itoa(big.Len())+"\n\n"), big.Bytes()...)
+	long := append([]byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "+
+		strconv.Itoa(gate.AIMaskMaxResponseBytes+1)+"\r\n\r\n"), bytes.Repeat([]byte("a"), gate.AIMaskMaxResponseBytes+1)...)
+	for name, tc := range map[string]struct {
+		resp []byte
+		want string
+	}{
+		"gzip":                                  {compressed, "compressed (gzip)"},
+		"over limit":                            {long, "longer than"},
+		"LF-only gzip inflating over the limit": {lfGzip, "compressed (gzip)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+			ctx := context.Background()
+			g.Request(ctx, httpRequest("/masked"))
+			d := g.Response(ctx, tc.resp)
+			if d.Allowed || len(d.Payload) != 0 || !strings.Contains(d.Message, tc.want) {
+				t.Fatalf("decision = allowed %t, %d bytes, %q", d.Allowed, len(d.Payload), d.Message)
+			}
+		})
+	}
+	// Unmasked, the same compressed response passes as before.
+	g := scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+	g.Request(context.Background(), httpRequest("/plain"))
+	if d := g.Response(context.Background(), compressed); !d.Allowed {
+		t.Errorf("an unmasked compressed response was refused: %s", d.Message)
+	}
+}
+
+// An AI mask on an mssql lane is denied: the daemon gives the lane no mask
+// scope, because the pinned rewriter forwards some result data unmasked.
+func TestAnAIMaskOnMSSQLIsDenied(t *testing.T) {
+	g, err := gate.New(session.New(inspect.MSSQL, session.Identity{Subject: "alice"}), gate.Config{
+		Protocol: inspect.MSSQL, Policy: maskingPolicy{aiMask}, MaskScope: gate.MaskScopeNone,
+		CodecFactory: func() inspect.Codec { return &wholeReadCodec{proto: inspect.MSSQL} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := g.Request(context.Background(), []byte("SELECT mail FROM users -- masked"))
+	if d.Allowed || d.Rule != "ai-mask" || !strings.Contains(d.Message, "cannot tie a response to one statement") {
+		t.Fatalf("decision = %+v", d)
+	}
+}
+
+// MaskedMediaType is the codec's classifier: for each type, the lane masker
+// rewrites a length-delimited body exactly when MaskedMediaType says so.
+func TestMaskedMediaTypeIsTheCodecsClassifier(t *testing.T) {
+	for _, ct := range []string{"", "application/json", "application/problem+json", "text/json",
+		"application/x-ndjson", "text/plain; charset=utf-8", "text/csv", "text/html", "application/xml",
+		"application/yaml", "application/x-yaml", "application/javascript", "application/x-www-form-urlencoded",
+		"application/octet-stream", "image/png", "application/pdf", "application/grpc", "multipart/form-data",
+		"application/x-protobuf", "text/", "not a type", "application/json; =broken"} {
+		g, err := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}),
+			gate.Config{Protocol: inspect.HTTP, Masker: aiMask})
+		if err != nil {
+			t.Fatal(err)
+		}
+		head := "HTTP/1.1 200 OK\r\nContent-Length: 15\r\n"
+		if ct != "" {
+			head += "Content-Type: " + ct + "\r\n"
+		}
+		out := respond(g, []byte(head+"\r\nada@example.com"))
+		masked := !bytes.Contains(out, []byte("ada@example.com"))
+		if masked != gate.MaskedMediaType(ct) {
+			t.Errorf("%q: codec masked %t, MaskedMediaType %t", ct, masked, gate.MaskedMediaType(ct))
+		}
+	}
+}
+
+// Review cases: an opaque body, and an email across the 64 KiB text unit of
+// a chunked body. Both go out unmasked through the codec, so a masked
+// response of either kind is refused before any byte leaves.
+func TestAMaskedResponseTheCodecPassesThroughIsRefused(t *testing.T) {
+	chunked := splitTextResponse()
+	for name, tc := range map[string]struct {
+		resp []byte
+		want string
+	}{
+		"octet-stream": {[]byte("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 15\r\n\r\nada@example.com"),
+			`media type "application/octet-stream"`},
+		"invalid media type": {[]byte("HTTP/1.1 200 OK\r\nContent-Type: text/\r\nContent-Length: 15\r\n\r\nada@example.com"),
+			"media type"},
+		"chunked text across the unit": {chunked, `transfer encoding "chunked"`},
+		"chunked json": {[]byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n" +
+			"1b\r\n{\"email\":\"ada@example.com\"}\r\n0\r\n\r\n"), `transfer encoding "chunked"`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+			g.Request(context.Background(), httpRequest("/masked"))
+			d := g.Response(context.Background(), tc.resp)
+			out := append(d.Payload, g.FlushResponse()...)
+			if d.Allowed || len(out) != 0 || !strings.Contains(d.Message, tc.want) {
+				t.Fatalf("allowed %t, %d bytes out, %q", d.Allowed, len(out), d.Message)
+			}
+		})
+	}
+	// An empty body of any type, and a 204, carry nothing to mask.
+	for _, resp := range []string{
+		"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 0\r\n\r\n",
+		"HTTP/1.1 204 No Content\r\n\r\n",
+	} {
+		g := scopedGate(t, inspect.HTTP, gate.MaskScopeHTTP)
+		g.Request(context.Background(), httpRequest("/masked"))
+		if d := g.Response(context.Background(), []byte(resp)); !d.Allowed {
+			t.Errorf("%q refused: %s", resp, d.Message)
+		}
+	}
+}
+
+// mysqlServerCodec is the real mysql codec on the server side, behind a
+// client side that reports each read as one statement, so a test needs no
+// handshake to reach the server stream.
+type mysqlServerCodec struct {
+	inspect.Codec
+	rf gate.Reframer
+}
+
+func newMySQLServerCodec() inspect.Codec {
+	insp, err := inspect.New(inspect.MySQL)
+	if err != nil {
+		panic(err)
+	}
+	c := insp.Codec()
+	return &mysqlServerCodec{Codec: c, rf: c.(gate.Reframer)}
+}
+
+func (c *mysqlServerCodec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	if dir == inspect.FromClient {
+		return []inspect.Statement{{Protocol: inspect.MySQL, Direction: dir, Text: string(data)}}, len(data), nil
+	}
+	return c.Codec.Decode(dir, data)
+}
+func (c *mysqlServerCodec) Rewrite(data []byte, mask func(string, []byte) []byte) ([]byte, inspect.ReframeResult, error) {
+	return c.rf.Rewrite(data, mask)
+}
+func (c *mysqlServerCodec) Flush(mask func(string, []byte) []byte) []byte { return c.rf.Flush(mask) }
+
+// Review case: the connection ends inside a masked response, and the codec
+// holds a truncated frame whose complete first cell is sensitive. The
+// codec's flush forwards that frame as it came, so the gate drops it.
+func TestATruncatedMaskedFrameIsDroppedAtTheEnd(t *testing.T) {
+	t.Run("postgres", func(t *testing.T) {
+		g := scopedGate(t, inspect.Postgres, gate.MaskScopeSerial)
+		ctx := context.Background()
+		g.Request(ctx, pgQuery("SELECT mail, name FROM users -- masked"))
+		desc := pgResult()[:30]
+		// A two-cell DataRow cut inside its second cell.
+		row := []byte("D\x00\x00\x00\x24\x00\x02\x00\x00\x00\x0fada@example.com\x00\x00\x00\x05Ad")
+		out := g.Response(ctx, append(desc, row...)).Payload
+		tail, err := g.FlushResponseChecked()
+		if bytes.Contains(append(out, tail...), []byte("ada@example.com")) || !errors.Is(err, gate.ErrMaskedTailDropped) {
+			t.Fatalf("out %q, tail %q, err %v", out, tail, err)
+		}
+	})
+	t.Run("mysql", func(t *testing.T) {
+		g, err := gate.New(session.New(inspect.MySQL, session.Identity{Subject: "alice"}), gate.Config{
+			Protocol: inspect.MySQL, Policy: maskingPolicy{aiMask}, MaskScope: gate.MaskScopeSerial,
+			CodecFactory: newMySQLServerCodec,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := context.Background()
+		if d := g.Request(ctx, []byte("SELECT mail, name FROM users -- masked")); !d.Allowed {
+			t.Fatalf("denied: %s", d.Message)
+		}
+		// A row packet of two length-encoded cells, cut inside the second.
+		row := []byte("\x16\x00\x00\x05\x0fada@example.com\x05Ad")
+		out := g.Response(ctx, row).Payload
+		tail, ferr := g.FlushResponseChecked()
+		if bytes.Contains(append(out, tail...), []byte("ada@example.com")) || !errors.Is(ferr, gate.ErrMaskedTailDropped) {
+			t.Fatalf("out %q, tail %q, err %v", out, tail, ferr)
+		}
+	})
+	t.Run("an unmasked exchange still flushes", func(t *testing.T) {
+		g := scopedGate(t, inspect.Postgres, gate.MaskScopeSerial)
+		ctx := context.Background()
+		g.Request(ctx, pgQuery("SELECT mail FROM users"))
+		row := []byte("D\x00\x00\x00\x24\x00\x02\x00\x00\x00\x0fada@example.com\x00\x00\x00\x05Ad")
+		out := g.Response(ctx, append(pgResult()[:30], row...)).Payload
+		tail, err := g.FlushResponseChecked()
+		if err != nil || !bytes.Contains(append(out, tail...), []byte("ada@example.com")) {
+			t.Errorf("out %q, tail %q, err %v", out, tail, err)
+		}
+	})
+}
+
+// splitTextResponse is a chunked text/plain body whose first chunk fills the
+// codec's 64 KiB streaming unit with no newline, ending inside an email that
+// the second chunk completes.
+func splitTextResponse() []byte {
+	unit := 64 << 10
+	first := append(bytes.Repeat([]byte("a"), unit-5), "ada@e"...)
+	second := []byte("xample.com\n")
+	chunk := func(b []byte) string { return strconv.FormatInt(int64(len(b)), 16) + "\r\n" + string(b) + "\r\n" }
+	return []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n" +
+		chunk(first) + chunk(second) + "0\r\n\r\n")
+}
+
+// Pre-existing codec limit, the reason chunked masked responses are refused:
+// the lane masker itself lets an email split at the 64 KiB unit through.
+func TestTheCodecSplitsAChunkedTextValueAtItsUnit(t *testing.T) {
+	g, err := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}),
+		gate.Config{Protocol: inspect.HTTP, Masker: aiMask})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := respond(g, splitTextResponse())
+	if bytes.Contains(out, []byte("[AI:EMAIL_ADDRESS]")) {
+		t.Fatal("the codec now masks a value across its 64 KiB unit: admit chunked AI-masked " +
+			"responses in maskableHead and delete this test")
+	}
+	if !bytes.Contains(out, []byte("ada@e")) || !bytes.Contains(out, []byte("xample.com")) {
+		t.Fatalf("unexpected output shape")
 	}
 }

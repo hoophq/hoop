@@ -287,24 +287,52 @@ export function readAllowedActions(value) {
   }
 }
 
+// The AI rule options of a risk level (ENG-662): the guardrail and data
+// masking rules the AI may apply to a statement, and whether it may create a
+// one-time rule. `key` is the level field; `license` the license feature the
+// plane checks at the save.
+export const AI_RULE_EXISTING = 'existing_only'
+export const AI_RULE_EXISTING_AND_NEW = 'existing_and_new'
+export const AI_RULE_FEATURES = [
+  { key: 'guardrails', label: 'Guardrails', description: 'Block or limit risky statements', license: 'guardrails' },
+  { key: 'mask', label: 'Data Masking', description: 'Hide sensitive data in results', license: 'data-masking' },
+]
+
+// The actions that apply AI rules. Block refuses the statement first, and the
+// plane refuses the options on block and defer. An unset level allows.
+const AI_RULE_ACTIONS = new Set(['', 'allow', 'warn', REVIEW_ACTION, 'require_review', HANDOFF_ACTION])
+export const appliesAIRules = (action) => AI_RULE_ACTIONS.has(action ?? '')
+
+// One feature's options: null when the level does not set it. `rules` null
+// allows every library rule of that kind.
+function readAIRuleOptions(value) {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
+  return {
+    mode: value.mode === AI_RULE_EXISTING_AND_NEW ? AI_RULE_EXISTING_AND_NEW : AI_RULE_EXISTING,
+    rules: Array.isArray(value.rules) ? value.rules : null,
+  }
+}
+
 // readRiskLevel reads one level of a stored analyzer spec. A level is a bare
 // action string or an object {action, approver, approval_groups, prompt,
-// allowed_actions}. `approver` is null for a bare hold: the listener's
-// approval_rule decides it. `prompt` is the approval prompt of a hold or the
-// hand-off prompt of a hand-off. `allowed` is set only for a hand-off.
+// allowed_actions, guardrails, mask}. `approver` is null for a bare hold: the
+// listener's approval_rule decides it. `prompt` is the approval prompt of a
+// hold or the hand-off prompt of a hand-off. `allowed` is set only for a
+// hand-off. `ai` holds the AI rule options, each null when unset.
 export function readRiskLevel(level) {
-  const none = { approver: null, groups: [], prompt: '', allowed: null }
+  const none = { approver: null, groups: [], prompt: '', allowed: null, ai: { guardrails: null, mask: null } }
   if (level == null || level === '') return { action: '', ...none }
   if (typeof level === 'string') {
     const allowed = isHandoffAction(level) ? readAllowedActions(null) : null
     return { action: level, ...none, allowed }
   }
   const action = level.action ?? ''
+  const ai = { guardrails: readAIRuleOptions(level.guardrails), mask: readAIRuleOptions(level.mask) }
   if (isHandoffAction(action)) {
-    return { action, ...none, prompt: level.prompt ?? '', allowed: readAllowedActions(level.allowed_actions) }
+    return { action, ...none, prompt: level.prompt ?? '', allowed: readAllowedActions(level.allowed_actions), ai }
   }
-  if (!isHoldAction(action)) return { action, ...none }
-  return { action, ...readApprover(level), allowed: null }
+  if (!isHoldAction(action)) return { action, ...none, ai }
+  return { action, ...readApprover(level), allowed: null, ai }
 }
 
 // How a held statement answers its client. Hold is the sidecar's default, so

@@ -1,4 +1,11 @@
-import { APPROVER_HUMAN, isHandoffAction, isHoldAction, readRiskLevel } from '@/pages/sidecarRuleVocabulary'
+import {
+  AI_RULE_FEATURES,
+  APPROVER_HUMAN,
+  appliesAIRules,
+  isHandoffAction,
+  isHoldAction,
+  readRiskLevel,
+} from '@/pages/sidecarRuleVocabulary'
 import { FEATURES, FEATURE_ORDER } from './config'
 import {
   SOURCE_DISTRIBUTED,
@@ -47,17 +54,30 @@ function approverDetail({ approver, groups }, sep) {
 // A level is a bare action or an object; a hold names its approver (ENG-680).
 // A bare hold is decided through the listener's approval rule. A hand-off
 // lists the actions its agent may pick (ENG-661).
-function riskDetail(value) {
-  const read = readRiskLevel(value)
+function riskAction(read) {
   if (isHandoffAction(read.action)) {
     const { actions, approval, conflict } = read.allowed
     if (conflict) return 'hand-off (approver set twice)'
     const parts = actions.map((a) => (isHoldAction(a) ? `hold: ${approverDetail(approval, ' ')}` : a))
     return `hand-off (${parts.join(', ')})`
   }
-  if (!isHoldAction(read.action)) return RISK_ACTIONS[read.action] ?? read.action
+  if (!isHoldAction(read.action)) return RISK_ACTIONS[read.action || 'allow'] ?? read.action
   if (!read.approver) return 'hold (approval rule)'
   return `hold (${approverDetail(read, ': ')})`
+}
+
+// The AI rule features a level sets (ENG-662), named as the level keys. A
+// block or defer level ignores them, so they are not shown there.
+function aiRuleKeys(read) {
+  if (!appliesAIRules(read.action)) return []
+  return AI_RULE_FEATURES.map(({ key }) => key).filter((key) => read.ai[key])
+}
+
+function riskDetail(value) {
+  const read = readRiskLevel(value)
+  const ai = aiRuleKeys(read)
+  const action = riskAction(read)
+  return ai.length > 0 ? `${action} + AI rules (${ai.join(', ')})` : action
 }
 
 const MASK_STRATEGY_LABELS = {
@@ -126,7 +146,10 @@ function analyzerDetail(spec) {
     .join(', ')
   const excluded = exclude ? `${exclude} exclusion${exclude > 1 ? 's' : ''}` : null
   const risks = ['high', 'medium', 'low']
-    .filter((level) => readRiskLevel(spec[level]).action)
+    .filter((level) => {
+      const read = readRiskLevel(spec[level])
+      return read.action || aiRuleKeys(read).length > 0
+    })
     .map((level) => `${level}: ${riskDetail(spec[level])}`)
   const prompt = spec.prompt ? 'custom prompt' : null
   // An omitted trigger is not "nothing": declaring the analyzer is the opt-in.

@@ -12,8 +12,10 @@ import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
 import { analyzerBlocked } from '@/pages/Sidecars/config'
-import { REVIEW_MODE_HOLD, REVIEW_MODES, isHandoffAction, isHoldAction } from '@/pages/sidecarRuleVocabulary'
+import { REVIEW_MODE_HOLD, REVIEW_MODES, appliesAIRules, isHandoffAction, isHoldAction } from '@/pages/sidecarRuleVocabulary'
+import AIPolicyCard from '../components/AIPolicyCard'
 import OptionalLabel from '../components/OptionalLabel'
+import { APPROVER_RULE } from './useSidecarAiAnalyzerEditor'
 import LevelApprover from './sections/LevelApprover'
 import LevelHandoff from './sections/LevelHandoff'
 import TriggerItemsInput from './sections/TriggerItemsInput'
@@ -69,6 +71,10 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     setAllowed,
     setApprover,
     groupOptionsFor,
+    ruleLibraryStatus,
+    aiRuleOptionsFor,
+    setAIFeature,
+    toggleAIRule,
     pendingMinutes,
     editPendingMinutes,
     approvalMinutes,
@@ -80,6 +86,35 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     actions,
     noTrigger,
   } = editor
+
+  // The AI policy settings card of a level whose action applies AI rules:
+  // Allow, Warn, Hold for approval and Hand off (not Block, not Defer, and
+  // not an unset level, which shows no card).
+  const policyCard = (level) => {
+    const action = form[level]
+    if (action === '' || !appliesAIRules(action)) return null
+    let helper
+    if (isHoldAction(action)) helper = 'Rules apply before the approval.'
+    else if (isHandoffAction(action)) helper = 'Rules apply when the agent does not block.'
+    // A bare hold files under an imported approval rule; an object would name
+    // the AI agent instead, so this level cannot carry AI rules.
+    const imported = isHoldAction(action) && form.approval[level].approver === APPROVER_RULE
+    return (
+      <AIPolicyCard
+        ai={form.ai[level]}
+        status={ruleLibraryStatus}
+        optionsFor={(key) => aiRuleOptionsFor(level, key)}
+        onFeature={(key, patch) => setAIFeature(level, key, patch)}
+        onToggleRule={(key, name) => toggleAIRule(level, key, name)}
+        helper={helper}
+        unavailable={
+          imported
+            ? `The approval rule ${form.approval_rule} decides this level. To let the AI apply rules, change the action, then select Hold for approval again.`
+            : undefined
+        }
+      />
+    )
+  }
 
   return (
     <Stack gap="xxlAlt">
@@ -202,6 +237,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
               />
               {isHoldAction(form[level]) && (
                 <LevelApprover
+                  policy={policyCard(level)}
                   approval={form.approval[level]}
                   approvalRule={form.approval_rule}
                   groupOptions={groupOptionsFor(level)}
@@ -214,12 +250,14 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   handoff={form.handoff[level]}
                   approval={form.approval[level]}
                   groupOptions={groupOptionsFor(level)}
+                  policy={policyCard(level)}
                   onPrompt={(prompt) => setHandoffPrompt(level, prompt)}
                   onAllowed={(value, checked) => setAllowed(level, value, checked)}
                   onApprover={(approver) => setApprover(level, approver)}
                   onApproval={(patch) => setApproval(level, patch)}
                 />
               )}
+              {!isHoldAction(form[level]) && !isHandoffAction(form[level]) && policyCard(level)}
             </Stack>
           </SectionRow>
         ))}

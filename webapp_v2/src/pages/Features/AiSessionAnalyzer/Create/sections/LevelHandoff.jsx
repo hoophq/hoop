@@ -1,7 +1,8 @@
-import { Box, Paper, Stack, Text } from '@mantine/core'
+import { Paper, Stack, Text } from '@mantine/core'
 import { Sparkles } from 'lucide-react'
 import Checkbox from '@/components/Checkbox'
 import { HANDOFF_CHOICES, REVIEW_ACTION } from '@/pages/sidecarRuleVocabulary'
+import CardConnector from '../../components/CardConnector'
 import PromptField from '../../components/PromptField'
 import SettingsCard from '../../components/SettingsCard'
 import { ApproverCard } from './LevelApprover'
@@ -42,10 +43,10 @@ function AllowedActions({ allowed, onAllowed }) {
 }
 
 // The card stack under a hand-off level: the Hand-off card (the agent's
-// prompt and allowed actions) and, when "Hold for approval" is allowed, the
-// Approver card. A stored level the form cannot read is shown as text and
-// saved unchanged.
-export default function LevelHandoff({ handoff, approval, groupOptions, onPrompt, onAllowed, onApprover, onApproval }) {
+// prompt and allowed actions), the AI policy settings card (`policy`) and,
+// when "Hold for approval" is allowed, the Approver card. A stored level the
+// form cannot read is shown as text and saved unchanged, with no other card.
+export default function LevelHandoff({ handoff, approval, groupOptions, policy, onPrompt, onAllowed, onApprover, onApproval }) {
   const holds = !handoff.stored && handoff.allowed.includes(REVIEW_ACTION)
   return (
     <Paper withBorder radius="lg" p="md">
@@ -70,9 +71,15 @@ export default function LevelHandoff({ handoff, approval, groupOptions, onPrompt
           </Stack>
         )}
       </SettingsCard>
+      {!handoff.stored && (
+        <>
+          <CardConnector />
+          {policy}
+        </>
+      )}
       {holds && (
         <>
-          <Box ml={36} w={1} h={24} bg="gray.2" />
+          <CardConnector />
           <ApproverCard approval={approval} groupOptions={groupOptions} onApprover={onApprover} onChange={onApproval} />
         </>
       )}

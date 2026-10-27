@@ -1,6 +1,19 @@
 import { create } from 'zustand'
 import { accessRequestsService } from '@/services/accessRequests'
 import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
+import { dataMaskingService } from '@/services/dataMasking'
+import { guardrailsService } from '@/services/guardrails'
+import { useAuthStore } from '@/stores/useAuthStore'
+
+const EMPTY_LIBRARY = { guardrails: [], mask: [] }
+
+// A library row the AI may apply: one with a sidecar block, which is what the
+// plane serves into rule_library (rulepack rows are not listed at all).
+const libraryEntries = (rows) =>
+  (Array.isArray(rows) ? rows : [])
+    .filter((r) => r.sidecar_spec != null && typeof r.sidecar_spec === 'object')
+    .map((r) => ({ name: r.name, description: r.description ?? '' }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
 export const useAiSessionAnalyzerStore = create((set, get) => ({
   list: [],
@@ -18,6 +31,13 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
 
   accessRequestRules: [],
   accessRequestRulesStatus: 'idle',
+
+  // The guardrail and data masking rules a risk level may let the AI apply.
+  // Session-scoped: cleared on logout. `ruleLibraryRequestId` is the
+  // generation counter: only the newest fetch, of this session, commits.
+  ruleLibrary: EMPTY_LIBRARY,
+  ruleLibraryStatus: 'idle',
+  ruleLibraryRequestId: 0,
 
   submitting: false,
 
@@ -105,6 +125,35 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
     }
   },
 
+  // Both lists or neither: a level shows its two features side by side, and
+  // "all rules" is only written back when the list is known. The list is
+  // emptied while a fetch runs and on a failure, so no earlier list (another
+  // session's, or a stale one) is shown in its place.
+  fetchRuleLibrary: async () => {
+    const requestId = get().ruleLibraryRequestId + 1
+    set({ ruleLibrary: EMPTY_LIBRARY, ruleLibraryStatus: 'loading', ruleLibraryRequestId: requestId })
+    const current = () => get().ruleLibraryRequestId === requestId
+    try {
+      const [guardrails, mask] = await Promise.all([guardrailsService.list(), dataMaskingService.list()])
+      if (!current()) return
+      set({
+        ruleLibrary: { guardrails: libraryEntries(guardrails.data), mask: libraryEntries(mask.data) },
+        ruleLibraryStatus: 'success',
+      })
+    } catch {
+      if (!current()) return
+      set({ ruleLibrary: EMPTY_LIBRARY, ruleLibraryStatus: 'error' })
+    }
+  },
+
+  // Bumps the generation, so a fetch still in flight cannot fill the list.
+  resetRuleLibrary: () =>
+    set((state) => ({
+      ruleLibrary: EMPTY_LIBRARY,
+      ruleLibraryStatus: 'idle',
+      ruleLibraryRequestId: state.ruleLibraryRequestId + 1,
+    })),
+
   createRule: async (payload) => {
     set({ submitting: true })
     try {
@@ -144,3 +193,11 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
     }
   },
 }))
+
+// The rule library names another org's rules: drop it when the session ends,
+// as useSidecarStore does. Module state outlives a logout.
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) {
+    useAiSessionAnalyzerStore.getState().resetRuleLibrary()
+  }
+})
