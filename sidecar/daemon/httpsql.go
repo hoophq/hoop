@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	codechttp "github.com/hoophq/hoop/sidecar/codec/http"
+	"github.com/hoophq/hoop/sidecar/jsonsql"
 	"github.com/hoophq/hoop/sidecar/lexer"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
@@ -83,7 +84,7 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: http.sql.fields key %q is not a resource pattern; it starts with /", lane, p))
 		}
-		if !validJSONPath(s.Fields[p]) {
+		if !jsonsql.ValidPath(s.Fields[p]) {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: http.sql.fields[%q] = %q is not a dotted JSON path such as statement or params.arguments.query",
 				lane, p, s.Fields[p]))
@@ -109,24 +110,11 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 	return problems
 }
 
-// validJSONPath accepts dot-separated member names with no empty segment.
-func validJSONPath(p string) bool {
-	if p == "" {
-		return false
-	}
-	for _, seg := range strings.Split(p, ".") {
-		if strings.TrimSpace(seg) == "" {
-			return false
-		}
-	}
-	return true
-}
-
 // parseRefuse splits one refuse entry at its first "=".
 func parseRefuse(entry string) (field, value string, ok bool) {
 	field, value, ok = strings.Cut(entry, "=")
 	field, value = strings.TrimSpace(field), strings.TrimSpace(value)
-	return field, value, ok && validJSONPath(field) && value != ""
+	return field, value, ok && jsonsql.ValidPath(field) && value != ""
 }
 
 // codecOptions is the codec's form of a validated block.

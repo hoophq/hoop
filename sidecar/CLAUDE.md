@@ -319,6 +319,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 |---|---|
 | `inspect/` | bytes to statements, plus the codec registry; the wire vocabulary every other package names |
 | `lexer/` | SQL text to an effect and a relation list, without a grammar |
+| `jsonsql/` | the SQL a JSON document carries (a field, a JSON-RPC tools/call), for any protocol; `codec/http`'s `http.sql` is its first seam |
 | `codec/` | registration seam: wires libhoop's decoders to the classifier; `codec/http` also wraps the Inspector with the relay's HTTP additions |
 | `policy/` | statement to verdict; local rules, then OPA |
 | `license/` | verifies the signed license that lifts the rule caps; a stdlib twin of `common/license`. `internal/trust` owns the key, `licensetest` signs for tests |

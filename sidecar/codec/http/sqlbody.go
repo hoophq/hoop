@@ -1,14 +1,13 @@
 package http
 
 import (
-	"encoding/json"
-	"fmt"
 	"path"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/jsonsql"
 	"github.com/hoophq/hoop/sidecar/lexer"
 )
 
@@ -17,8 +16,12 @@ import (
 // arguments of a JSON-RPC tools/call. An http lane stops at the request line,
 // so its statement is `POST /api/2.0/sql/statements`, and an operation or
 // table rule matches nothing there: a DROP passes a lane configured to
-// refuse it (ENG-777). This file reads through the body to the SQL, the way
-// daemon/spanner.go reads through a gRPC message.
+// refuse it (ENG-777).
+//
+// This file is the HTTP seam only: which requests carry SQL (their route),
+// whose bodies are kept, and how the SQL becomes statements of this lane.
+// Reading the SQL out of the JSON is the jsonsql package, which knows no
+// protocol, so another protocol that carries JSON can reuse it.
 //
 // Each SQL string becomes its own statement, placed right after the request
 // it came from. It keeps Protocol HTTP, so a denial is answered with this
@@ -62,17 +65,9 @@ type SQLOptions struct {
 	// matches them.
 	Fields map[string]string
 
-	// Tools names the JSON-RPC tools whose tools/call carries SQL. A body
-	// with a "jsonrpc" member is JSON-RPC: it carries SQL only as a
-	// tools/call naming one of these, and any other message (initialize,
-	// tools/list, another tool) carries none.
-	Tools []string
-
-	// Refuse lists body values that send a request's results around the
-	// lane: Databricks' disposition EXTERNAL_LINKS answers with links to
-	// cloud storage, so the rows never cross the lane that masks them. A
-	// SQL-bearing request carrying one is refused before it is forwarded,
-	// with RefuseMessage, whatever the lane's rules say.
+	// Tools, Refuse and RefuseMessage configure the JSON reading; see
+	// jsonsql.Options.
+	Tools         []string
 	Refuse        []RefuseValue
 	RefuseMessage string
 
@@ -82,25 +77,27 @@ type SQLOptions struct {
 	MatchResource func(pattern, resource string) bool
 }
 
-// RefuseValue is one Refuse entry: the JSON path and the value at it,
-// compared case-insensitively.
-type RefuseValue struct {
-	Field string
-	Value string
-}
+// RefuseValue is one Refuse entry; see jsonsql.RefuseValue.
+type RefuseValue = jsonsql.RefuseValue
 
 // sqlReader is the per-codec form of SQLOptions: the patterns in a fixed
 // order, so the field a request resolves to does not depend on map order.
 type sqlReader struct {
 	opts     SQLOptions
 	patterns []string
+	json     *jsonsql.Reader
 }
 
 func newSQLReader(o *SQLOptions) *sqlReader {
 	if o == nil {
 		return nil
 	}
-	r := &sqlReader{opts: *o}
+	r := &sqlReader{opts: *o, json: jsonsql.New(jsonsql.Options{
+		Dialect:       o.Dialect,
+		Tools:         o.Tools,
+		Refuse:        o.Refuse,
+		RefuseMessage: o.RefuseMessage,
+	})}
 	for p := range o.Fields {
 		r.patterns = append(r.patterns, p)
 	}
@@ -113,33 +110,6 @@ func newSQLReader(o *SQLOptions) *sqlReader {
 		return strings.Compare(a, b)
 	})
 	return r
-}
-
-// Both refusals wrap ErrStreamUnsafe, which the gate denies regardless of
-// policy and answers with the error text: no rule configured them, and none
-// can switch them off. The text leads with what the client should do; the
-// sentinel's own text follows it.
-
-// refuseResults refuses a request whose results would not cross the lane.
-func (r *sqlReader) refuseResults(reason string) error {
-	msg := r.opts.RefuseMessage
-	if msg == "" {
-		msg = "this listener refuses requests whose results would not pass through it"
-	}
-	return fmt.Errorf("%s (%s): %w", msg, reason, inspect.ErrStreamUnsafe)
-}
-
-// unparseable answers a body that cannot be read at all: cut at
-// max_body_bytes, or not JSON. Its SQL is unknown, and so is whether it asks
-// for results that skip the lane. A lane that refuses those refuses it, or
-// padding a body past the limit would get it past Refuse; any other lane
-// gets an OpUnknown statement for its rules to judge.
-func (r *sqlReader) unparseable(body string, rt sqlRoute, reason string) ([]inspect.Statement, error) {
-	if len(r.opts.Refuse) > 0 {
-		return nil, fmt.Errorf("this listener could not read this request's body to check it: %s: %w",
-			reason, inspect.ErrStreamUnsafe)
-	}
-	return []inspect.Statement{r.unreadable(body, rt, 1, reason)}, nil
 }
 
 // route returns the JSON path of the SQL in a request to one of the lane's
@@ -173,51 +143,21 @@ func (r *sqlReader) extract(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.State
 		// on the same route, and the server answers it without SQL.
 		return nil, nil
 	}
+	var (
+		found []jsonsql.SQL
+		err   error
+	)
 	if d.BodyTruncated {
-		return r.unparseable(d.Body, rt, "the body is larger than http.max_body_bytes; raise it")
+		found, err = r.json.Unparseable(d.Body, "the body is larger than http.max_body_bytes; raise it")
+	} else {
+		found, err = r.json.Read(d.Body, rt.field)
 	}
-	dec := json.NewDecoder(strings.NewReader(d.Body))
-	dec.UseNumber()
-	var doc any
-	if err := dec.Decode(&doc); err != nil {
-		return r.unparseable(d.Body, rt, "the body is not JSON")
+	if err != nil {
+		return nil, err
 	}
-
-	messages := []any{doc}
-	if batch, isBatch := doc.([]any); isBatch {
-		messages = batch
-	}
-	var out []inspect.Statement
-	for _, m := range messages {
-		obj, isObject := m.(map[string]any)
-		if !isObject {
-			out = append(out, r.unreadable(d.Body, rt, len(out)+1, "the body holds a JSON value that is not an object"))
-			continue
-		}
-		if _, rpc := obj["jsonrpc"]; rpc && !r.toolCall(obj) {
-			continue // a JSON-RPC message that runs no SQL tool
-		}
-		for _, v := range r.opts.Refuse {
-			switch got := lookup(obj, v.Field).(type) {
-			case nil: // absent or null: the server's default
-			case string:
-				if strings.EqualFold(got, v.Value) {
-					return nil, r.refuseResults(fmt.Sprintf("%s is %s", v.Field, got))
-				}
-			default:
-				// Databricks also takes an enum by its number, and
-				// "disposition": 2 is EXTERNAL_LINKS. A value that is not a
-				// string cannot be compared with the operator's, so it is
-				// refused rather than guessed at.
-				return nil, r.refuseResults(fmt.Sprintf("%s is not a string", v.Field))
-			}
-		}
-		sql, isString := lookup(obj, rt.field).(string)
-		if !isString || strings.TrimSpace(sql) == "" {
-			out = append(out, r.unreadable(d.Body, rt, len(out)+1, fmt.Sprintf("no SQL string at %q", rt.field)))
-			continue
-		}
-		out = append(out, r.statement(sql, rt, len(out)+1))
+	out := make([]inspect.Statement, len(found))
+	for i, s := range found {
+		out[i] = r.statement(s, rt, i+1)
 	}
 	return out, nil
 }
@@ -232,76 +172,36 @@ func (r *sqlReader) fieldFor(resource string) (string, bool) {
 	return "", false
 }
 
-// toolCall reports whether a JSON-RPC message calls one of the SQL tools.
-func (r *sqlReader) toolCall(msg map[string]any) bool {
-	if method, _ := msg["method"].(string); method != "tools/call" {
-		return false
-	}
-	name, _ := lookup(msg, "params.name").(string)
-	return slices.Contains(r.opts.Tools, name)
-}
-
-// statement classifies one SQL string under the lane's dialect. It carries
-// fresh metadata, never the request's: that holds the credential handle.
-func (r *sqlReader) statement(sql string, rt sqlRoute, index int) inspect.Statement {
-	a := inspect.AnalyzeSQLIn(sql, r.opts.Dialect)
+// statement is one SQL string as a statement of this lane. It carries fresh
+// metadata, never the request's: that holds the credential handle.
+//
+// SQL the lexer cannot fully read is OpUnknown with the reason on the
+// record, the same contract as every SQL codec, and the writes it did
+// recognize stay in Effects, which an operation rule still matches (a Spark
+// script that drops a table is a drop). SQL the lane could not read at all
+// is OpUnknown with jsonsql's reason, as daemon/spanner.go reports a gRPC
+// message it cannot read, so a rule naming `unknown` refuses it.
+func (r *sqlReader) statement(s jsonsql.SQL, rt sqlRoute, index int) inspect.Statement {
 	st := inspect.Statement{
 		Protocol:  inspect.HTTP,
 		Direction: inspect.FromClient,
-		Text:      sql,
-		Operation: a.Operation,
-		Effects:   a.Effects,
-		Relations: a.Relations,
-		Tables:    a.Tables,
-		Metadata:  r.metadata(rt, index),
+		Text:      s.Text,
+		Operation: inspect.OpUnknown,
+		Metadata: map[string]string{
+			MetadataSQLIndex:    strconv.Itoa(index),
+			MetadataSQLField:    rt.field,
+			MetadataSQLDialect:  r.opts.DialectName,
+			MetadataSQLResource: rt.resource,
+		},
 	}
+	if s.Unreadable != "" {
+		st.Metadata[inspect.MetadataSQLIncomplete] = s.Unreadable
+		return st
+	}
+	a := s.Analysis
+	st.Operation, st.Effects, st.Relations, st.Tables = a.Operation, a.Effects, a.Relations, a.Tables
 	if !a.Complete {
-		// Same contract as every SQL codec: SQL the lexer cannot fully read
-		// is OpUnknown with the reason on the record, and the writes it did
-		// recognize stay in Effects, which an operation rule still matches
-		// (a Spark script that drops a table is a drop).
 		st.Metadata[inspect.MetadataSQLIncomplete] = a.Reason
 	}
 	return st
-}
-
-// unreadable is the statement for SQL the lane was told to read and could
-// not. It is OpUnknown with the reason in MetadataSQLIncomplete, as
-// daemon/spanner.go reports a gRPC message it cannot read, so a rule naming
-// `unknown` refuses it and forwarding it as a plain POST is the operator's
-// explicit choice. Its text is the body, the closest thing to the SQL.
-func (r *sqlReader) unreadable(body string, rt sqlRoute, index int, reason string) inspect.Statement {
-	md := r.metadata(rt, index)
-	md[inspect.MetadataSQLIncomplete] = reason
-	return inspect.Statement{
-		Protocol:  inspect.HTTP,
-		Direction: inspect.FromClient,
-		Text:      body,
-		Operation: inspect.OpUnknown,
-		Metadata:  md,
-	}
-}
-
-func (r *sqlReader) metadata(rt sqlRoute, index int) map[string]string {
-	return map[string]string{
-		MetadataSQLIndex:    strconv.Itoa(index),
-		MetadataSQLField:    rt.field,
-		MetadataSQLDialect:  r.opts.DialectName,
-		MetadataSQLResource: rt.resource,
-	}
-}
-
-// lookup follows a dotted path through JSON objects. An absent member, or a
-// step into something that is not an object, yields nil.
-func lookup(v any, path string) any {
-	for _, key := range strings.Split(path, ".") {
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return nil
-		}
-		if v, ok = obj[key]; !ok {
-			return nil
-		}
-	}
-	return v
 }

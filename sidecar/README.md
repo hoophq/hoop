@@ -4220,7 +4220,10 @@ workspace SQL MCP server in the arguments of a `tools/call`. Without the block
 the lane's statement is `POST /api/2.0/sql/statements`, and an `operation` or
 table rule matches nothing there: a `DROP` passes a lane written to refuse it.
 With the block, each SQL string becomes a statement of its own, right after
-the request that carried it, classified under the block's `dialect`.
+the request that carried it, classified under the block's `dialect`. The
+JSON reading is the `jsonsql` package, which knows no protocol; `codec/http`
+only routes requests to it, so another protocol that carries JSON can reuse
+it.
 
 - **Fields.** `fields` maps a resource pattern, written as an `http_resource`
   rule writes it, to the dotted JSON path of the SQL. The longest matching
