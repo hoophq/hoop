@@ -324,8 +324,9 @@ func decodeResponse(provider string, resp *http.Response) (response, error) {
 
 // ParseToolCalls returns every tool call of a reply, in order. Arguments
 // arrive as a JSON string; one that is not JSON comes back with nil Args.
-// A refusal or a content filter is an error, with or without calls; a reply
-// with no call is not. Exported so analyzer/vertex reuses it.
+// A refusal, a content filter or a reply cut off at the token limit is an
+// error, with or without calls; a reply with no call is not. Exported so
+// analyzer/vertex reuses it.
 func ParseToolCalls(provider string, resp *http.Response) ([]analyzer.ToolCall, error) {
 	out, err := decodeResponse(provider, resp)
 	if err != nil {
@@ -336,6 +337,10 @@ func ParseToolCalls(provider string, resp *http.Response) ([]analyzer.ToolCall, 
 	for _, choice := range out.Choices {
 		if choice.Message.Refusal != "" || choice.FinishReason == "content_filter" {
 			return nil, fmt.Errorf("%s: model refused to answer", provider)
+		}
+		// A choice cut off at the limit may end inside a call: no decision.
+		if choice.FinishReason == "length" {
+			return nil, fmt.Errorf("%s: model reply was cut off (finish_reason %q)", provider, choice.FinishReason)
 		}
 	}
 	var calls []analyzer.ToolCall

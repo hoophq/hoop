@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usersService } from '@/services/users'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
@@ -164,16 +164,25 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       const approval = fresh && !keep ? { ...f.approval, [level]: emptyApproval() } : f.approval
       return { ...f, [level]: action, approval }
     })
-  const setApproval = (level, patch) =>
+  // Levels turned to a person before the groups loaded: they get every group
+  // once the list arrives, unless the editor picks groups first.
+  const groupsLoaded = useRef(false)
+  const awaitingGroups = useRef(new Set())
+  const setApproval = (level, patch) => {
+    if ('groups' in patch) awaitingGroups.current.delete(level)
     setForm((f) => ({ ...f, approval: { ...f.approval, [level]: { ...f.approval[level], ...patch } } }))
+  }
   // A level that turns to a person starts with every group selected; an
   // emptied list leaves the decision to the administrators.
-  const setApprover = (level, approver) =>
+  const setApprover = (level, approver) => {
+    if (approver === APPROVER_HUMAN && !groupsLoaded.current) awaitingGroups.current.add(level)
+    else awaitingGroups.current.delete(level)
     setForm((f) => {
       const current = f.approval[level]
       const groups = approver === APPROVER_HUMAN && current.groups.length === 0 ? [...groupOptions].sort() : current.groups
       return { ...f, approval: { ...f.approval, [level]: { ...current, approver, groups } } }
     })
+  }
   // A limit is sent only after an edit, so a save that does not touch it keeps
   // the stored value.
   const [pendingMinutes, setPendingMinutes] = useState(secToMinutes(stored?.pending_ttl_sec))
@@ -192,12 +201,34 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
 
   useEffect(() => {
     let cancelled = false
+    // A level still waiting gets every group; one the editor changed since does not.
+    const settle = (options) => {
+      groupsLoaded.current = true
+      const waiting = [...awaitingGroups.current]
+      awaitingGroups.current = new Set()
+      if (waiting.length === 0 || options.length === 0) return
+      setForm((f) => {
+        const approval = { ...f.approval }
+        for (const level of waiting) {
+          const current = approval[level]
+          if (current.approver === APPROVER_HUMAN && current.groups.length === 0) {
+            approval[level] = { ...current, groups: [...options].sort() }
+          }
+        }
+        return { ...f, approval }
+      })
+    }
     usersService
       .listGroups()
       .then(({ data }) => {
-        if (!cancelled) setGroupOptions(Array.isArray(data) ? data : [])
+        if (cancelled) return
+        const options = Array.isArray(data) ? data : []
+        setGroupOptions(options)
+        settle(options)
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) settle([])
+      })
     return () => {
       cancelled = true
     }

@@ -48,9 +48,10 @@ type RiskLevel struct {
 	object bool
 }
 
-// IsZero reports an unset level, for omitzero.
+// IsZero reports an unset level, for omitzero. An object is never unset, an
+// empty one included, so validation sees it and refuses its missing action.
 func (r RiskLevel) IsZero() bool {
-	return r.Action == "" && r.Approver == "" && len(r.ApprovalGroups) == 0 && r.Prompt == ""
+	return !r.object && r.Action == "" && r.Approver == "" && len(r.ApprovalGroups) == 0 && r.Prompt == ""
 }
 
 // UnmarshalJSON reads the bare action or the object, strictly like the rest
@@ -82,9 +83,10 @@ func (r *RiskLevel) UnmarshalJSON(b []byte) error {
 }
 
 // MarshalJSON writes the bare action when that says everything, so a block
-// in the old form serves the bytes it always did.
+// in the old form serves the bytes it always did. An object with no action
+// stays an object, so the refusal of it survives a round trip.
 func (r RiskLevel) MarshalJSON() ([]byte, error) {
-	if !r.objectForm() {
+	if !r.objectForm() && !(r.object && r.Action == "") {
 		return json.Marshal(r.Action)
 	}
 	type plain RiskLevel
@@ -191,7 +193,7 @@ func validateLevelObjects(la *LaneAnalyzerConfig, where string) []string {
 	var problems []string
 	for _, l := range la.levels() {
 		r := l.level
-		if r.objectForm() && r.Action == "" {
+		if (r.object || r.objectForm()) && r.Action == "" {
 			problems = append(problems, fmt.Sprintf(
 				"%s: %s risk is an object with no action; set action", where, l.name))
 		}

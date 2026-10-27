@@ -54,6 +54,28 @@ func TestARiskLevelDecodesAndEncodesBothForms(t *testing.T) {
 	}
 }
 
+// An object with no action is refused, the empty object included, and stays
+// an object when encoded, so the refusal survives a round trip.
+func TestAnObjectWithNoActionIsRefused(t *testing.T) {
+	for _, level := range []string{`{}`, `{"action":""}`} {
+		var la LaneAnalyzerConfig
+		if err := json.Unmarshal([]byte(`{"high":"block","medium":`+level+`}`), &la); err != nil {
+			t.Fatalf("%s: %v", level, err)
+		}
+		problems := strings.Join(ValidateLaneAnalyzerBlock(&la, "appdb"), "\n")
+		if !strings.Contains(problems, "medium risk is an object with no action") {
+			t.Errorf("%s: problems %q, want the missing action refused", level, problems)
+		}
+		raw, err := json.Marshal(la)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(raw) != `{"high":"block","medium":{}}` {
+			t.Errorf("%s: encoded %s, want the object kept", level, raw)
+		}
+	}
+}
+
 // An object that holds and names no approver gets ai_agent, the ticket's
 // default; a bare hold keeps the lane-wide human approver.
 func TestAnObjectHoldDefaultsToTheApprovalAgent(t *testing.T) {
@@ -229,18 +251,25 @@ func TestAHumanLevelFilesItsLevel(t *testing.T) {
 }
 
 // The agent's decision is filed already decided. An approval forwards only
-// on a 2xx; a rejection denies either way.
+// on a 2xx that names the review and the approval it recorded; a rejection
+// denies either way.
 func TestTheAgentDecisionIsFiled(t *testing.T) {
+	const recorded = `{"forward":false,"review":{"id":"a1","status":"APPROVED"}}`
 	for name, tc := range map[string]struct {
 		status int
+		answer string
 		denied bool
 	}{
-		"plane takes it":    {http.StatusCreated, false},
-		"plane refuses it":  {http.StatusUnprocessableEntity, true},
-		"plane is down 503": {http.StatusServiceUnavailable, true},
+		"plane takes it":         {http.StatusCreated, recorded, false},
+		"plane refuses it":       {http.StatusUnprocessableEntity, recorded, true},
+		"plane is down 503":      {http.StatusServiceUnavailable, recorded, true},
+		"2xx that is not JSON":   {http.StatusCreated, `<html>ok</html>`, true},
+		"2xx with no review":     {http.StatusCreated, `{"forward":false}`, true},
+		"2xx with no review id":  {http.StatusCreated, `{"forward":false,"review":{"status":"APPROVED"}}`, true},
+		"2xx with another state": {http.StatusCreated, `{"forward":false,"review":{"id":"a1","status":"PENDING"}}`, true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			cp, bodies := filingPlane(t, tc.status, `{"forward":false,"review":{"id":"a1","status":"APPROVED"}}`)
+			cp, bodies := filingPlane(t, tc.status, tc.answer)
 			deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: agentStub{}, cp: cp}
 			la := laneBlock()
 			la.HighRisk = agentLevel()

@@ -8,6 +8,7 @@ import { APPROVER_AI, APPROVER_HUMAN, APPROVERS } from '@/pages/sidecarRuleVocab
 import OptionalLabel from '../../components/OptionalLabel'
 import { APPROVER_RULE } from '../useSidecarAiAnalyzerEditor'
 import ApprovalGroups from './ApprovalGroups'
+import classes from '../Create.module.css'
 
 const APPROVER_ICONS = { [APPROVER_AI]: Bot, [APPROVER_HUMAN]: User }
 
@@ -126,7 +127,7 @@ export default function LevelApprover(props) {
   const [open, setOpen] = useState(true)
   return (
     <Paper withBorder radius="lg" p="md">
-      <Paper withBorder radius="lg" style={{ overflow: 'hidden' }}>
+      <Paper withBorder radius="lg" className={classes.clipped}>
         <UnstyledButton
           w="100%"
           p="md"

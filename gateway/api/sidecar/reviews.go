@@ -375,6 +375,7 @@ func fileAgentDecision(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 	rev.DecisionReason = &reason
 	sess := newSidecarSession(sidecar, sessionID, display, now)
 	// Closed at once: an approved statement runs now, a rejected one never.
+	// ended_at only when it ran, as a person's rejection and an expiry leave it.
 	sess.Status = string(openapi.SessionStatusDone)
 	if req.Decision == decisionApproved {
 		rev.Status = models.ReviewStatusApproved

@@ -66,8 +66,8 @@ func TestDecideSendsCallerToolsAndReturnsEveryCall(t *testing.T) {
 	}
 }
 
-// A blocked prompt or a safety stop on any candidate is an error, even beside
-// a call; a reply with no call is not.
+// A blocked prompt, a safety stop or a reply cut off at the token limit on
+// any candidate is an error, even beside a call; a reply with no call is not.
 func TestDecideReportsARefusal(t *testing.T) {
 	for reply, wantErr := range map[string]bool{
 		`{"promptFeedback":{"blockReason":"SAFETY"}}`:                                                                                                                                               true,
@@ -75,6 +75,7 @@ func TestDecideReportsARefusal(t *testing.T) {
 		`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"decide","args":{"verdict":"allow"}}}]},"finishReason":"SAFETY"}]}`:                                                            true,
 		`{"promptFeedback":{"blockReason":"OTHER"},"candidates":[{"content":{"parts":[{"functionCall":{"name":"decide","args":{"verdict":"allow"}}}]},"finishReason":"STOP"}]}`:                     true,
 		`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"decide","args":{"verdict":"allow"}}}]},"finishReason":"STOP"},{"content":{"parts":[]},"finishReason":"PROHIBITED_CONTENT"}]}`: true,
+		`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"decide","args":{"verdict":"allow"}}}]},"finishReason":"MAX_TOKENS"}]}`:                                                        true,
 		`{"candidates":[{"content":{"parts":[{"text":"x"}]},"finishReason":"STOP"}]}`:                                                                                                               false,
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

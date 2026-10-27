@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -187,6 +188,10 @@ func holdsAction(action string) bool {
 // only touches the prompt, from a script or another page, does not reset the
 // reviewers someone chose.
 //
+// A bare hold under this rule beside a human level shares the one rule, so
+// both must name the same reviewers. One that does not is refused: writing
+// the level's groups would silently change who releases the bare hold.
+//
 // Called inside the caller's transaction, so the two rules commit together. A
 // rule that held statements and lost its approval rule halfway would deny
 // every matching statement with no way to release one.
@@ -195,20 +200,58 @@ func SyncAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spe
 	if err := decodeSpec(spec, &block); err != nil {
 		return DeleteAnalyzerApprovalRule(tx, orgID, ruleName)
 	}
-	ownBare := false
+	var human []string
+	humanFound, ownBare := false, false
 	for _, l := range AnalyzerLevels(&block) {
-		if LevelApprover(l.Level) == analyzer.ApproverHuman {
-			groups := NormalizeReviewerGroups(l.Level.ApprovalGroups)
-			return upsertAnalyzerApprovalRule(tx, orgID, ruleName, &groups)
+		if !humanFound && LevelApprover(l.Level) == analyzer.ApproverHuman {
+			humanFound, human = true, NormalizeReviewerGroups(l.Level.ApprovalGroups)
 		}
 		// Only a bare hold that names this rule's own approval rule is ours
 		// to keep. One naming another rule leaves that rule alone.
 		ownBare = ownBare || (bareHold(l.Level) && block.ApprovalRule == ruleName)
 	}
+	if humanFound {
+		if ownBare {
+			if err := checkBareHoldReviewers(tx, orgID, ruleName, human, reviewers); err != nil {
+				return err
+			}
+		}
+		return upsertAnalyzerApprovalRule(tx, orgID, ruleName, &human)
+	}
 	if ownBare {
 		return upsertAnalyzerApprovalRule(tx, orgID, ruleName, reviewers)
 	}
 	return DeleteAnalyzerApprovalRule(tx, orgID, ruleName)
+}
+
+// checkBareHoldReviewers refuses a human level whose groups differ from the
+// reviewers of a bare hold under the same rule: the ones the request names,
+// else the ones the rule already has. A new rule with none named has no
+// reviewers yet to keep.
+func checkBareHoldReviewers(tx *gorm.DB, orgID uuid.UUID, ruleName string, human []string, reviewers *[]string) error {
+	var bare []string
+	switch {
+	case reviewers != nil:
+		bare = NormalizeReviewerGroups(*reviewers)
+	default:
+		rule, err := AnalyzerApprovalRule(tx, orgID, ruleName)
+		if err != nil {
+			return fmt.Errorf("failed reading the approval rule for analyzer rule %q: %w", ruleName, err)
+		}
+		if rule == nil {
+			return nil
+		}
+		bare = NormalizeReviewerGroups(rule.ReviewersGroups)
+	}
+	want, got := reviewersOrDefault(human), reviewersOrDefault(bare)
+	slices.Sort(want)
+	slices.Sort(got)
+	if slices.Equal(want, got) {
+		return nil
+	}
+	return fmt.Errorf("analyzer rule %q holds a level in the bare form under approval_rule %q, whose "+
+		"reviewers are %v, and a human level whose approval_groups are %v; one approval rule cannot "+
+		"carry both: give them the same groups, or write the bare level as an object", ruleName, ruleName, got, want)
 }
 
 // AnalyzerApprovalRule returns the approval rule an analyzer rule manages, or

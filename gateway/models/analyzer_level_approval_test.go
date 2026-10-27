@@ -79,6 +79,26 @@ func TestTheManagedRuleFollowsTheHumanLevels(t *testing.T) {
 	sync(`{"high":"require_approval","approval_rule":"levels"}`, nil)
 	assert.Equal(t, []string{"dba"}, groups(), "absent reviewers_groups keeps the bare hold's groups")
 
+	// A bare hold under the rule beside a human level: one rule serves both,
+	// so they must name the same reviewers. Writing the level's groups would
+	// hand the bare hold to other people.
+	mixed := `{"high":{"action":"require_approval","approver":"human","approval_groups":["sre"]},` +
+		`"medium":"require_approval","approval_rule":"levels"}`
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "levels", json.RawMessage(mixed), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "one approval rule cannot carry both")
+	assert.Equal(t, []string{"dba"}, groups(), "the refusal keeps the bare hold's reviewers")
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "levels", json.RawMessage(mixed), &[]string{"dba"})
+	require.Error(t, err, "reviewers named for the bare hold that differ from the level's")
+	assert.Equal(t, []string{"dba"}, groups())
+	// The same groups on both: accepted.
+	sync(`{"high":{"action":"require_approval","approver":"human","approval_groups":["dba"]},`+
+		`"medium":"require_approval","approval_rule":"levels"}`, nil)
+	assert.Equal(t, []string{"dba"}, groups())
+	// The request moves the bare hold to the level's groups.
+	sync(mixed, &[]string{"sre"})
+	assert.Equal(t, []string{"sre"}, groups())
+
 	sync(`{"high":"block"}`, nil)
 	assert.Nil(t, groups())
 }

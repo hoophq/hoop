@@ -10,3 +10,9 @@
 .stickyHeader[data-scrolled] {
   border-bottom-color: var(--mantine-color-default-border);
 }
+
+/* A bordered card whose header background follows its rounded corners.
+   Mantine has no style prop for overflow. */
+.clipped {
+  overflow: hidden;
+}
