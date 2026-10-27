@@ -259,19 +259,14 @@ export default function FederationSection() {
         )}
       </Group>
 
-      <Section
-        title="Federation provider"
-        help="Which GCP federation strategy this role uses to obtain per-session credentials."
-      >
-        <Select
-          label="Federation provider"
-          description="GCP IAM impersonates a service account at session time. GCP OAuth mints session tokens from each user's own Google account — no service accounts, but every user must connect their account once."
-          data={PROVIDER_OPTIONS}
-          value={form.builtin_provider}
-          onChange={(v) => v && setFederationProvider(v)}
-          allowDeselect={false}
-        />
-      </Section>
+      <Select
+        label="Federation provider"
+        description="GCP IAM impersonates a service account at session time. GCP OAuth mints session tokens from each user's own Google account — no service accounts, but every user must connect their account once."
+        data={PROVIDER_OPTIONS}
+        value={form.builtin_provider}
+        onChange={(v) => v && setFederationProvider(v)}
+        allowDeselect={false}
+      />
 
       <Section
         title={oauth ? 'OAuth application credentials' : 'Admin role credentials'}
