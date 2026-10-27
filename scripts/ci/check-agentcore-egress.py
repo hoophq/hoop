@@ -283,6 +283,11 @@ def check(template):
                 & sidecar_groups:
             unconditional(name, "the sidecar service")
             unconditional(task_name, "the sidecar task")
+            # An expression can pick any task: the image check below sees none.
+            if res.get(task_name, {}).get("Type") != "AWS::ECS::TaskDefinition" or \
+                    not props(task_name).get("ContainerDefinitions"):
+                errors.append(f"{name} runs {svc['Properties'].get('TaskDefinition')} behind the sidecar's group: "
+                              "only a task definition in this template can be checked")
         task = props(task_name)
         for c in task.get("ContainerDefinitions", []):
             image = c.get("Image")

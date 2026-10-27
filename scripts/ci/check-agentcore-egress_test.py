@@ -219,6 +219,13 @@ CASES = [
          "GroupId": {"Fn::If": ["IsHarness", {"Ref": "AgentSecurityGroup"}, {"Ref": "SidecarSecurityGroup"}]},
          "IpProtocol": "-1", "CidrIp": "0.0.0.0/0"}),
      1, "Sneaky names its GroupId by an expression"),
+    ("a sidecar task picked by a condition",
+     lambda t: res(t, "SidecarService")["Properties"].update(
+         TaskDefinition={"Fn::If": ["IsHarness", {"Ref": "SidecarTask"}, "arn:aws:ecs:us-east-1:111122223333:task-definition/relay:1"]}),
+     1, "only a task definition in this template can be checked"),
+    ("a sidecar task from outside the template",
+     lambda t: res(t, "SidecarService")["Properties"].update(TaskDefinition="relay:1"),
+     1, "only a task definition in this template can be checked"),
     ("a sidecar only for the harness",
      lambda t: res(t, "SidecarService").update(Condition="IsHarness"),
      1, "SidecarService carries Condition"),
