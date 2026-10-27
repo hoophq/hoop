@@ -166,6 +166,14 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     })
   const setApproval = (level, patch) =>
     setForm((f) => ({ ...f, approval: { ...f.approval, [level]: { ...f.approval[level], ...patch } } }))
+  // A level that turns to a person starts with every group selected; an
+  // emptied list leaves the decision to the administrators.
+  const setApprover = (level, approver) =>
+    setForm((f) => {
+      const current = f.approval[level]
+      const groups = approver === APPROVER_HUMAN && current.groups.length === 0 ? [...groupOptions].sort() : current.groups
+      return { ...f, approval: { ...f.approval, [level]: { ...current, approver, groups } } }
+    })
   // A limit is sent only after an edit, so a save that does not touch it keeps
   // the stored value.
   const [pendingMinutes, setPendingMinutes] = useState(secToMinutes(stored?.pending_ttl_sec))
@@ -279,6 +287,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     set,
     setLevelAction,
     setApproval,
+    setApprover,
     groupOptionsFor,
     pendingMinutes,
     editPendingMinutes,

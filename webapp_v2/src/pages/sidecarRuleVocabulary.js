@@ -190,16 +190,14 @@ export const SSH_ONLY_STRATEGY = 'mask'
 // AI analyzer
 // ---------------------------------------------------------------------------
 
-// An unset level and an explicit `allow` do the same thing, and the list has
-// both because omitting the key keeps it out of the served document. They need
-// different LABELS: two entries reading "Allow" in one dropdown give the
-// operator no way to tell which one they picked.
+// An unset level and an explicit `allow` do the same thing; an unset one
+// stays out of the served document. The form shows an unset level as the
+// select's placeholder, so the list carries one "Allow" only.
 export const ANALYZER_ACTIONS = [
-  { value: '', label: 'Not set (allows)' },
-  { value: 'allow', label: 'Allow' },
-  { value: 'warn', label: 'Warn' },
-  { value: 'block', label: 'Block' },
-  { value: 'defer', label: 'Defer to Rego' },
+  { value: 'allow', label: 'Allow', description: 'Run with no check' },
+  { value: 'warn', label: 'Warn', description: 'Run and show a warning' },
+  { value: 'block', label: 'Block', description: 'Stop the statement' },
+  { value: 'defer', label: 'Defer to Rego', description: 'Let a Rego policy decide' },
 ]
 
 // The action that holds a statement for approval. `require_review` is the
@@ -210,7 +208,10 @@ export const isHoldAction = (action) => HOLD_ACTIONS.has(action)
 
 // analyzerActionsFor lists the level actions, the hold included.
 export function analyzerActionsFor() {
-  return [...ANALYZER_ACTIONS, { value: REVIEW_ACTION, label: 'Hold for approval' }]
+  return [
+    ...ANALYZER_ACTIONS,
+    { value: REVIEW_ACTION, label: 'Hold for approval', description: 'Wait for an AI agent or human to approve' },
+  ]
 }
 
 // Who decides a held statement of one risk level (ENG-680). A level object
@@ -218,8 +219,8 @@ export function analyzerActionsFor() {
 export const APPROVER_AI = 'ai_agent'
 export const APPROVER_HUMAN = 'human'
 export const APPROVERS = [
-  { value: APPROVER_AI, label: 'AI agent' },
-  { value: APPROVER_HUMAN, label: 'Human' },
+  { value: APPROVER_AI, label: 'AI agent', description: 'AI approves or rejects the request. No person is necessary.' },
+  { value: APPROVER_HUMAN, label: 'Human', description: 'A person approves or rejects the request. AI can select groups.' },
 ]
 
 // readRiskLevel reads one level of a stored analyzer spec. A level is a bare
