@@ -7,11 +7,15 @@
 // whose URL contains `match`, so the video shows numbers the page hides.
 // <side> is a free label (main, branch) passed to the flow; the output is
 // <outDir>/<side>.mp4. Needs Node >= 22 (global WebSocket), Chrome and ffmpeg.
-// CHROME=<binary> picks another browser. See examples/access-control.flow.mjs.
+// Chrome is CHROME_PATH (or CHROME), else Google Chrome on macOS, else the
+// Chromium of a cloud sandbox, else the newest Chromium Playwright installed
+// (`npx playwright install chromium`; Linux CI and containers).
+// See examples/access-control.flow.mjs.
 import { spawn, execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { homedir, tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const [base, tokenFile, flowFile, side, outDir, portArg] = process.argv.slice(2)
@@ -25,16 +29,46 @@ const token = readFileSync(tokenFile, 'utf8').trim()
 const framesDir = join(outDir, `${side}-frames`)
 mkdirSync(framesDir, { recursive: true })
 
-// CHROME overrides; otherwise macOS Chrome, then the Chromium of a cloud sandbox.
-const chrome = process.env.CHROME ||
-  ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/opt/pw-browsers/chromium'].find(existsSync)
-if (!chrome) throw new Error('no Chrome found: set CHROME to the browser binary')
-const proc = spawn(chrome, [
+// Where Playwright installs browsers. "0" means inside playwright-core itself
+// (Playwright's registry: <playwright-core>/.local-browsers), found from the cwd.
+function playwrightBrowsers() {
+  const env = process.env.PLAYWRIGHT_BROWSERS_PATH
+  if (env !== '0') return env || join(homedir(), '.cache', 'ms-playwright')
+  try {
+    const pkg = createRequire(join(process.cwd(), 'noop.js')).resolve('playwright-core/package.json')
+    return join(dirname(pkg), '.local-browsers')
+  } catch {
+    return 'playwright-core/.local-browsers (no playwright-core under the cwd)'
+  }
+}
+
+function findChrome() {
+  const env = process.env.CHROME_PATH || process.env.CHROME
+  if (env) return env
+  const fixed = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/opt/pw-browsers/chromium']
+    .find(existsSync)
+  if (fixed) return fixed
+  const root = playwrightBrowsers()
+  const builds = existsSync(root) ? readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)) : []
+  builds.sort((a, b) => Number(b.slice('chromium-'.length)) - Number(a.slice('chromium-'.length)))
+  // chrome-linux, chrome-linux64 or chrome-linux-arm64, by version and arch.
+  const found = builds
+    .flatMap((d) => readdirSync(join(root, d)).filter((sub) => sub.startsWith('chrome-linux'))
+      .map((sub) => join(root, d, sub, 'chrome')))
+    .find((path) => existsSync(path))
+  if (found) return found
+  throw new Error(`no Chrome: set CHROME_PATH, or run "npx playwright install chromium" (looked in ${root})`)
+}
+
+const chromeArgs = [
   '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'rec-'))}`,
   '--window-size=1440,900', '--no-first-run', '--no-default-browser-check', '--hide-scrollbars',
-  // Chromium refuses to start as root without it; cloud sandboxes run as root.
-  ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []), 'about:blank',
-], { stdio: 'ignore' })
+]
+// Linux, as Playwright launches it: a container has a small /dev/shm, and
+// Chrome finds no usable sandbox as root, in docker, or under AppArmor's
+// user-namespace limits (Ubuntu 23.10+).
+if (process.platform === 'linux') chromeArgs.push('--disable-dev-shm-usage', '--no-sandbox')
+const proc = spawn(findChrome(), [...chromeArgs, 'about:blank'], { stdio: 'ignore' })
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function target() {

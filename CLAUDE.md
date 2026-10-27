@@ -406,6 +406,6 @@ tooling enforces:
 - Branch names come from Linear's `branchName`; commits start with the ticket ID
 - Go changes: `go test` on the changed packages before the first push; the
   full suite (`make test-oss` and the integration tests) runs in the PR's CI;
-  `webapp_v2/`: `npm run lint`
-  and `npm run build`
+  `webapp_v2/`: `npm run lint`,
+  `npm test` and `npm run build`
 - Every PR is born draft

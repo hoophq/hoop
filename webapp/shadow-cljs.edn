@@ -58,4 +58,11 @@
                  :test-dir "target/browser-test"}
   :karma-test {:target :karma
                :ns-regexp "-test$"
-               :output-to "target/karma-test.js"}}}
+               :output-to "target/karma-test.js"}
+  ;; Writes the session test vectors as JSON fixtures for webapp_v2. The
+  ;; live tail namespace loads webapp.config, which reads js/location at load
+  ;; time; no view runs in Node, so a fixed URL is enough.
+  :session-fixtures {:target :node-script
+                     :main webapp.audit.views.session-fixtures/main
+                     :output-to "target/session-fixtures.js"
+                     :prepend "globalThis.location = new URL('http://localhost/');\n"}}}
