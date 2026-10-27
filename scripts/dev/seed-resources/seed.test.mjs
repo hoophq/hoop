@@ -91,3 +91,43 @@ test('two runs write the same rows', { skip: !stack && 'set SEED_DB_URI and API_
   const first = seedAndDump(process.env)
   assert.equal(seedAndDump(process.env), first)
 })
+
+async function call(method, path, token, body) {
+  const res = await fetch(`${process.env.API_URL.replace(/\/+$/, '')}/api${path}`, {
+    method,
+    headers: { 'content-type': 'application/json', ...(token && { authorization: `Bearer ${token}` }) },
+    body: body && JSON.stringify(body),
+  })
+  if (!res.ok) assert.fail(`${method} ${path} answered ${res.status}: ${await res.text()}`)
+  return res
+}
+
+// The flows the matrix records delete, rename and add rows; the next run
+// writes the same rows again.
+test('a run after the matrix flows writes the same rows', { skip: !stack && 'set SEED_DB_URI and API_URL' }, async () => {
+  const first = seedAndDump(process.env)
+  const login = await call('POST', '/localauth/login', null, { email: 'admin@seed.example.com', password: 'hoop-seed-1234' })
+  const token = login.headers.get('token')
+  const agents = await (await call('GET', '/agents', token)).json()
+  const agentId = agents.find((a) => a.name === (process.env.SEED_AGENT || 'default')).id
+
+  await call('DELETE', '/connections/seed-res-many-55', token) // RL20
+  await call('DELETE', '/resources/seed-res-no-roles', token) // RC06
+  await call('PUT', '/resources/seed-res-python', token, { // RC05
+    name: 'seed-res-python-renamed', type: 'custom', subtype: 'python', agent_id: agentId, env_vars: {},
+  })
+  await call('POST', '/connections', token, { // RA03
+    name: 'seed-res-postgres-added', type: 'database', subtype: 'postgres', resource_name: 'seed-res-postgres',
+    agent_id: agentId, secret: { 'envvar:HOST': 'eA==' }, access_mode_runbooks: 'enabled', access_mode_exec: 'enabled',
+    access_mode_connect: 'enabled', access_schema: 'enabled',
+  })
+
+  assert.equal(seedAndDump(process.env), first)
+})
+
+// Run it on two new databases: the org ids differ, the dumps do not.
+const second = stack && process.env.SEED_DB_URI_2 && process.env.API_URL_2
+test('two stacks get the same rows', { skip: !second && 'set SEED_DB_URI_2 and API_URL_2 too' }, () => {
+  const env2 = { ...process.env, SEED_DB_URI: process.env.SEED_DB_URI_2, API_URL: process.env.API_URL_2 }
+  assert.equal(seedAndDump(env2), seedAndDump(process.env))
+})

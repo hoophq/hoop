@@ -36,7 +36,9 @@ export function psql(sql) {
   const r = spawnSync(cmd, [...args, DB_URI, '-X', '-q', '-At', '-v', 'ON_ERROR_STOP=1', '-f', '-'], {
     input: sql, encoding: 'utf8', maxBuffer: 1 << 30,
   })
-  if (r.error) fail(`cannot run ${PSQL.join(' ')}: ${r.error.message}`)
+  // EPIPE: psql stopped on an error before it read all of its input; its
+  // status and stderr tell why.
+  if (r.error && r.error.code !== 'EPIPE') fail(`cannot run ${PSQL.join(' ')}: ${r.error.message}`)
   if (r.status !== 0) fail(`psql exited ${r.status}:\n${r.stderr}`)
   return r.stdout
 }

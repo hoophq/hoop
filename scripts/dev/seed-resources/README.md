@@ -102,8 +102,10 @@ two new databases, dump both, and `diff` them: it is empty.
 `make test-seed-resources` checks that the SQL does not read the clock, that
 the catalog holds what ENG-909 lists, and that this README maps every SEED row
 of the matrix to names the catalog has; CI runs it in the "Webapp v2 Lint and
-Build" job. With `SEED_DB_URI` and `API_URL` set, it also seeds that stack
-twice and compares the dumps.
+Build" job, which has no stack. With `SEED_DB_URI` and `API_URL` set, it also
+seeds that stack twice and compares the dumps, and again after the RL20, RC06,
+RC05 and RA03 flows. With `SEED_DB_URI_2` and `API_URL_2` set to a second new
+stack, it seeds both and compares them.
 
 ## Matrix rows marked SEED
 

@@ -23,18 +23,25 @@ const envsOf = (envs) => Object.fromEntries(Object.entries(envs ?? {}).map(([k, 
 
 // ─── Rows ──────────────────────────────────────────────────────────────────
 
-// The seeded rows, and the roles a flow added to a seeded resource: they hold
-// it (connection_resource_fk).
+// The seeded rows by name or by id, since a flow can rename them, and the
+// roles a flow added to a seeded resource: they hold it
+// (connection_resource_fk). The DELETE routes leave env_vars rows behind,
+// so those go by their seeded ids too.
 function deleteSql(org) {
+  const roleIds = roles().map((r) => seedId('connection', r.name))
+  const resourceIds = RESOURCES.map((r) => seedId('resource', r.name))
+  const resources = `org_id = ${str(org)} AND (name IN (${inList(RESOURCES.map((r) => r.name))})
+    OR id IN (${inList(resourceIds)}))`
   const conns = `org_id = ${str(org)} AND (name IN (${inList(roles().map((r) => r.name))})
-    OR resource_name IN (${inList(RESOURCES.map((r) => r.name))}))`
-  const resources = `org_id = ${str(org)} AND name IN (${inList(RESOURCES.map((r) => r.name))})`
+    OR id IN (${inList(roleIds)}) OR resource_name IN (SELECT name FROM private.resources WHERE ${resources}))`
   return `
-    DELETE FROM private.env_vars WHERE org_id = ${str(org)} AND id IN (
-      SELECT id FROM private.connections WHERE ${conns} UNION ALL SELECT id FROM private.resources WHERE ${resources});
+    DELETE FROM private.env_vars WHERE org_id = ${str(org)} AND (id IN (${inList([...roleIds, ...resourceIds])})
+      OR id IN (SELECT id FROM private.connections WHERE ${conns})
+      OR id IN (SELECT id FROM private.resources WHERE ${resources}));
     DELETE FROM private.connections WHERE ${conns};
     DELETE FROM private.resources WHERE ${resources};
-    DELETE FROM private.attributes WHERE org_id = ${str(org)} AND name IN (${inList(ATTRIBUTES.map((a) => a.name))});
+    DELETE FROM private.attributes WHERE org_id = ${str(org)} AND (name IN (${inList(ATTRIBUTES.map((a) => a.name))})
+      OR id IN (${inList(ATTRIBUTES.map((a) => seedId('attribute', a.name)))}));
     DELETE FROM private.dbrole_jobs WHERE org_id = ${str(org)} AND id IN (${inList(JOBS.map((j) => j.id))});`
 }
 
@@ -69,7 +76,7 @@ function roleSql(org, agentId, r) {
   for (const [key, value] of Object.entries(r.tags ?? {})) {
     out.push(`INSERT INTO private.connection_tags (id, org_id, key, value, created_at, updated_at)
       VALUES (${str(seedId('tag', `${key}=${value}`))}, ${str(org)}, ${str(key)}, ${str(value)}, ${ts(AT)}, ${ts(AT)})
-      ON CONFLICT (org_id, key, value) DO NOTHING;
+      ON CONFLICT DO NOTHING;
     INSERT INTO private.connection_tags_association (id, org_id, tag_id, connection_id, created_at)
       SELECT ${str(seedId('tagassoc', `${r.name}:${key}`))}, ${str(org)}, t.id, ${str(id)}, ${ts(AT)}
       FROM private.connection_tags t WHERE t.org_id = ${str(org)} AND t.key = ${str(key)} AND t.value = ${str(value)};`)
