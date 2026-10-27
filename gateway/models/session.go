@@ -818,9 +818,11 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			LIMIT @page_limit
 			OFFSET @offset
 		)
+		-- metadata.sidecar.ai_decisions holds up to 256 KiB per session and only
+		-- the details page shows it, so the list leaves it out.
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.recording_format, s.labels, s.exit_code,
-			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
+			s.user_id, s.user_name, s.user_email, s.status, s.metadata #- '{sidecar,ai_decisions}' AS metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
 			s.machine_identity_id, s.identity_type, s.correlation_id,
 			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id, s.guardrails_info,
 			octet_length(b.blob_stream::text) - 4 AS blob_input_size,

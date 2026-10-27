@@ -602,6 +602,13 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// risk_action stays ai-handoff; the decision and its reason ride
 		// beside it. A cached decision is reused, but a hold it selects
 		// still runs for this statement.
+		//
+		// The agent runs here, not deferred through ec.RequestReview like
+		// the approval agent, so a statement a later rule denies still
+		// spends its call. Its decision selects whether a hold exists at
+		// all: the decide phase must see that hold as input.review, and a
+		// hold asked for from inside a Resolve is never run, which would
+		// forward a statement the agent held.
 		return e.applyHandoff(stmt, ec, notes, level, c, e.handoff(ctx, stmt, ec, level, c))
 	}
 

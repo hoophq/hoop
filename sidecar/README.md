@@ -1574,7 +1574,10 @@ request body cut at capture, takes the same fail-safe with no model call.
 
 The call counts against `max_calls` and `rate_limit`, like the
 classification and the approval agent: a lane that hands off and approves with
-the agent can spend three calls on one statement. The decision is cached with
+the agent can spend three calls on one statement. Unlike the approval agent,
+the hand-off agent runs before the later rules, because its decision selects
+the hold they see: a statement that a later rule denies still spends the call.
+The decision is cached with
 the classification, under a fingerprint of the level's hand-off configuration
 (prompt, allowed actions, approver and its prompt) and of the exact content the
 agent reads (the statement, principal, database, connection, protocol, risk
