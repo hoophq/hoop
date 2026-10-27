@@ -1,0 +1,73 @@
+# Checks the AgentCore CloudFormation templates in deploy/agentcore/ on every
+# PR that touches them. Customers deploy a template as is, so a stack that
+# lets an agent skip the sidecar must fail here.
+name: agentcore
+
+on:
+  pull_request:
+    paths:
+      - deploy/agentcore/**
+      - deploy/openai-agents/http/values.yaml
+      - scripts/ci/check-agentcore-egress*
+      - .github/workflows/agentcore.yml
+
+# A newer run for the same PR makes this one stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TEMPLATE: deploy/agentcore/http/template.yaml
+  # 1.46.0 does not know AWS::BedrockAgentCore::Harness (E3006).
+  CFN_LINT_VERSION: 1.58.0
+
+jobs:
+  http:
+    runs-on: ubuntu-latest
+    name: http template
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install cfn-lint
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "cfn-lint==$CFN_LINT_VERSION"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: cfn-lint
+        run: cfn-lint "$TEMPLATE"
+      # A check that cannot fail passes forever: its fixtures run first.
+      - name: Test the egress check
+        run: python3 scripts/ci/check-agentcore-egress_test.py
+      - name: The agent network leaves only through the endpoints and the sidecar
+        run: python3 scripts/ci/check-agentcore-egress.py "$TEMPLATE"
+      - name: The sidecar config matches the OpenAI http template
+        run: |
+          set -euo pipefail
+          config=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "SIDECAR_YAML") | .Value' "$TEMPLATE")
+          # The README promises the same free-tier rules as the twins.
+          for block in guardrails mask; do
+            [[ "$(yq -o=json ".$block" <<<"$config")" == "$(yq -o=json ".config.$block" deploy/openai-agents/http/values.yaml)" ]] \
+              || { echo "::error::$TEMPLATE and the OpenAI Agents http template differ in $block"; exit 1; }
+          done
+          [[ "$(yq '.listeners[0].caller_token.name' <<<"$config")" == agentcore ]] \
+            || { echo "::error::the lane lost its caller token"; exit 1; }
+          [[ "$(yq -o=json -I0 '.listeners[0].http.headers' <<<"$config")" == '["X-AgentCore-Session-Id"]' ]] \
+            || { echo "::error::the lane no longer records the session header"; exit 1; }
+          source=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "HOOP_SIDECAR_INSTALL_SOURCE") | .Value' "$TEMPLATE")
+          [[ "$source" == agentcore-http ]] \
+            || { echo "::error::the sidecar reports install source '$source', not agentcore-http"; exit 1; }
+          # Older releases report the install source as "other".
+          image=$(yq '.Parameters.SidecarImage.Default' "$TEMPLATE")
+          [[ "$image" =~ ^hoophq/hoopsidecar:([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
+            && [[ "$(printf '1.272.0\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.272.0 ]] \
+            || { echo "::error::SidecarImage must pin hoophq/hoopsidecar 1.272.0 or later by digest: $image"; exit 1; }
+      - name: The scripts parse
+        run: |
+          bash -n deploy/agentcore/http/setup.sh
+          python3 -m py_compile deploy/agentcore/http/evstream.py deploy/agentcore/http/runtime-example/agent.py
