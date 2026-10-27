@@ -53,6 +53,8 @@ LAYER_BUCKET = re.compile(
 GROUP_RULE_TYPES = {"AWS::EC2::SecurityGroup", "AWS::EC2::SecurityGroupIngress", "AWS::EC2::SecurityGroupEgress"}
 # '*.', or '*.' and one label: every name, or every name under a TLD.
 TOO_WIDE = re.compile(r"^\*(\.[^.]*)?\.?$")
+# Values a parameter in an allow entry must refuse: a deployer sets them.
+WILDCARD_PROBES = ["*", "*.", "*.com", "http://*", "https://*", "https://*.example.com", "https://*:443"]
 
 
 def name_of(value):
@@ -114,6 +116,16 @@ def kept_branch(value):
     if isinstance(args, list) and len(args) == 3 and args[1:].count(NO_VALUE) == 1:
         return args[2] if args[1] == NO_VALUE else args[1]
     return value
+
+
+def names_used(value):
+    """Every name a Ref, or a ${Name} in a string, names anywhere in value."""
+    if isinstance(value, dict):
+        own = [value["Ref"]] if isinstance(value.get("Ref"), str) else []
+        return own + [x for v in value.values() for x in names_used(v)]
+    if isinstance(value, list):
+        return [x for v in value for x in names_used(v)]
+    return re.findall(r"\$\{([^}!]+)\}", value) if isinstance(value, str) else []
 
 
 def has_key(value, key):
@@ -383,6 +395,11 @@ def check(template):
                     for d in (kept_branch(e) for e in entries if not isinstance(e, str)):
                         if has_key(d, "Fn::If") or any("*" in x for x in strings_in(d)):
                             errors.append(f"{domains} allows {d}: a condition or a wildcard in an expression")
+                        for p in sorted(set(names_used(d)) & params.keys()):
+                            pattern = params[p].get("AllowedPattern")
+                            if not pattern or any(re.fullmatch(pattern, w) for w in WILDCARD_PROBES):
+                                errors.append(f"{domains} allows parameter {p}, whose AllowedPattern "
+                                              "does not refuse a wildcard")
                 # A rule with a Qtype blocks that query type only.
                 elif rule.get("Action") == "BLOCK" and "Qtype" not in rule and {"*.", "*"} & set(names):
                     block.append(rule.get("Priority"))
