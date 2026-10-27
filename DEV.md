@@ -82,6 +82,15 @@ make seed-dev-sessions
 
 Writes every session kind of the Sessions behavior matrix into the running stack: a user per role, 283 sessions (exec, pty, SSH, wire-proto postgres, httpproxy, RDP, reviews, payloads above 4 MB, a batch, a workflow of 210), and two sidecar sessions sent to `POST /api/sidecars/events`. Two runs write the same rows. It needs `psql`, `AUTH_METHOD=local` and an Enterprise license; no Go. Users, variables and the map from matrix rows to sessions: `scripts/dev/seed-sessions/README.md`.
 
+### Seed resources
+
+```sh
+make seed-dev-resources
+make seed-dev-resources-empty
+```
+
+The first writes the rows of the Resources behavior matrix: a resource per type family of the setup wizard, a resource with 55 roles, a sidecar mirror, an agent-managed role, tags, attributes, a BigQuery federation config, three AWS Connect jobs, an admin and a standard user. Two runs write the same rows. The second deletes every connection and resource of the organization and its protection profile, for the onboarding. Both need `psql`, `AUTH_METHOD=local` and the stack's agent; no Go. Users and the map from matrix rows to rows: `scripts/dev/seed-resources/README.md`.
+
 ### Compare two UIs on one stack
 
 To record one flow on the origin/main UI and on a branch UI, run one gateway and one database, and serve each UI from its own origin. Both read the same rows; only the UI differs.
