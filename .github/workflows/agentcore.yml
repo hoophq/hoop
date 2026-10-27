@@ -104,8 +104,11 @@ jobs:
               "$image" hoop start sidecar --validate --config /tmp/hoop/sidecar.yaml 2>&1
           }
           out=$(validate "$tmp/demo.yaml") || { echo "::error::the image refused the demo config: $out"; exit 1; }
-          yq -e '."x-hoop-demo-api"' "$tmp/demo.yaml" >/dev/null \
-            || { echo "::error::the demo config does not serve the demo API"; exit 1; }
+          # --validate skips x- keys: the sidecar binds the demo API only on
+          # loopback, and the lane must forward to it.
+          yq -e '."x-hoop-demo-api" | test("^127\.0\.0\.1:[0-9]+$")' "$tmp/demo.yaml" >/dev/null \
+            && yq -e '.listeners[0].upstream == "http://" + ."x-hoop-demo-api"' "$tmp/demo.yaml" >/dev/null \
+            || { echo "::error::the demo config does not forward the lane to a loopback demo API"; exit 1; }
 
           yq '.guardrails.rules += [{"name": "second", "type": "operation", "operations": ["delete"]}]' \
             "$tmp/demo.yaml" > "$tmp/over.yaml"

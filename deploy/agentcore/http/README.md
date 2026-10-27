@@ -65,9 +65,8 @@ You need:
 - For steps 2 to 5: `git`, the AWS CLI v2 signed in to that account, `jq`,
   `python3`, and `curl` 7.75 or later.
 
-From **Create stack** to the agent's answer took 9 min 27 s on 2026-10-27:
-the stack 8 min 54 s (`setup.sh create`, the same template and parameters),
-the answer 33 s. While the stack exists it costs about
+From **Create stack** to the agent's answer took 8 min 53 s on 2026-10-27:
+the stack 8 min 20 s, the answer 33 s. While the stack exists it costs about
 $0.095 per hour, plus each session's model charges: see [Limits](#limits).
 Your use.hoop.dev organization's license sets the sidecar's rule limits:
 see [Free tier](#free-tier).
@@ -285,9 +284,10 @@ Enterprise license holds one sidecar. `template.yaml` uses both rules:
 `read-only` names seven methods, and `pii` names three entities. They are
 the twins' rules; CI keeps them equal.
 
-The license comes from where the sidecar logs in. With `SIDECAR_TOKEN_FILE`
-it is your use.hoop.dev organization's, on each heartbeat, and a license
-file is ignored. A use.hoop.dev organization can hold an Enterprise
+The license comes from where the sidecar logs in. With a token
+(`HoopSidecarToken`, which `SIDECAR_TOKEN_FILE` fills) it is your
+use.hoop.dev organization's, on each heartbeat, and `HoopLicense` is
+ignored. A use.hoop.dev organization can hold an Enterprise
 license, which lifts both caps: the one this stack was tested with does
 (ENG-923). The sidecar logs its limits when it starts (`G` is from step 4):
 
@@ -310,7 +310,8 @@ The config is `SIDECAR_YAML` in `template.yaml`'s task definition. Change
 it there and run `create` again: the stack registers a new task revision,
 and ECS replaces the running sidecar.
 
-A license lifts both caps: [talk to us](https://hoop.dev/meet). Pass it with
+A license lifts both caps: [talk to us](https://hoop.dev/meet). Pass it in
+`HoopLicense` instead of `HoopSidecarToken`: with `setup.sh`, set
 `LICENSE_FILE` instead of `SIDECAR_TOKEN_FILE`.
 
 ## Limits
