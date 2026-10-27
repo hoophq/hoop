@@ -216,7 +216,7 @@ func TestAnEmptyPlaneLeadsToSetUpAndBootsWithIt(t *testing.T) {
 		}
 		tm, cmd = tm.Update(msg)
 	}
-	if out := ansi.Strip(tm.(firstRunModel).render()); !strings.Contains(strings.Join(strings.Fields(out), " "), "sends it to your Control Plane at cp.example.com") {
+	if out := ansi.Strip(tm.(firstRunModel).render()); !strings.Contains(strings.Join(strings.Fields(out), " "), "connected to cp.example.com: the file stays on this machine") {
 		t.Errorf("the overview does not say where the config goes:\n%s", out)
 	}
 	cmd = tm.(firstRunModel).wiz.save(true, false)

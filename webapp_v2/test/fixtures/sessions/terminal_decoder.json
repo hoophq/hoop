@@ -1,0 +1,157 @@
+{
+  "source": "webapp/test/webapp/audit/views/session_vectors.cljs",
+  "generator": "npm --prefix webapp run fixtures:sessions",
+  "function": "webapp.audit.views.terminal-decoder/decode-events",
+  "cases": [
+    {
+      "name": "an output character split across events",
+      "events": [
+        [
+          0,
+          "o",
+          "4g=="
+        ],
+        [
+          1,
+          "o",
+          "gqw="
+        ]
+      ],
+      "finalize": true,
+      "expected": [
+        [
+          0,
+          "o",
+          ""
+        ],
+        [
+          1,
+          "o",
+          "€"
+        ]
+      ]
+    },
+    {
+      "name": "input does not complete an output character",
+      "events": [
+        [
+          0,
+          "i",
+          "4g=="
+        ],
+        [
+          1,
+          "o",
+          "QQ=="
+        ],
+        [
+          2,
+          "i",
+          "gqw="
+        ],
+        [
+          3,
+          "o",
+          "4g=="
+        ],
+        [
+          4,
+          "e",
+          "gqw="
+        ]
+      ],
+      "finalize": true,
+      "expected": [
+        [
+          0,
+          "i",
+          ""
+        ],
+        [
+          1,
+          "o",
+          "A"
+        ],
+        [
+          2,
+          "i",
+          "€"
+        ],
+        [
+          3,
+          "o",
+          ""
+        ],
+        [
+          4,
+          "e",
+          "€"
+        ]
+      ]
+    },
+    {
+      "name": "an incomplete final character shows as U+FFFD",
+      "events": [
+        [
+          0,
+          "o",
+          "4g=="
+        ]
+      ],
+      "finalize": true,
+      "expected": [
+        [
+          0,
+          "o",
+          "�"
+        ]
+      ]
+    },
+    {
+      "name": "live output holds the first byte of a character",
+      "events": [
+        [
+          0,
+          "o",
+          "4g=="
+        ]
+      ],
+      "finalize": false,
+      "expected": [
+        [
+          0,
+          "o",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "live output completes the character with the next event",
+      "events": [
+        [
+          0,
+          "o",
+          "4g=="
+        ],
+        [
+          1,
+          "o",
+          "gqw="
+        ]
+      ],
+      "finalize": false,
+      "expected": [
+        [
+          0,
+          "o",
+          ""
+        ],
+        [
+          1,
+          "o",
+          "€"
+        ]
+      ]
+    }
+  ]
+}

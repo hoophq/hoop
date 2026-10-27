@@ -571,6 +571,13 @@
           ]
         },
         {
+          "key": "source_cidrs",
+          "type": "list",
+          "label": "Source CIDRs",
+          "help": "Single mode: networks allowed to connect, such as the Citrix Gateway SNIP. Empty admits any source.",
+          "placeholder": "10.20.1.10/32"
+        },
+        {
           "key": "display",
           "type": "object",
           "label": "Display",

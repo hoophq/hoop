@@ -57,7 +57,7 @@ let cljsHost = null
 let cljsParking = null
 let cljsInitialized = false
 // Last pathname synced into the CLJS active-panel. When ClojureApp re-mounts
-// on the same path (e.g. /dashboard → /agents → /dashboard), we can skip the
+// on the same path (e.g. /sessions → /agents → /sessions), we can skip the
 // re-sync and reveal the host immediately — the tree already shows the right
 // panel. When the path is stale, we hide the host for a frame while re-frame
 // propagates the new active-panel to Reagent, so the user never sees the old
