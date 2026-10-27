@@ -476,6 +476,51 @@ type SidecarCreateResponse struct {
 	Token string `json:"token" example:"hsc_Ab3fX9kL..."`
 }
 
+// SidecarLoginRequest starts a device-code login. The sidecar sends the token
+// it made for itself in the hoop-sidecar-token header; only its hash is kept.
+type SidecarLoginRequest struct {
+	// The name the sidecar asks for. The approving admin may change it.
+	Name string `json:"name" binding:"required" example:"payments-sidecar"`
+}
+
+// SidecarLoginResponse is what the sidecar shows the person who approves it.
+type SidecarLoginResponse struct {
+	// The code the person confirms in the web app
+	UserCode string `json:"user_code" example:"BCDF-GHJK"`
+	// The page that approves this code
+	VerificationURL string `json:"verification_url" example:"https://use.hoop.dev/sidecars/login?code=BCDF-GHJK"`
+	// Seconds until the code expires
+	ExpiresIn int `json:"expires_in" example:"600"`
+	// Seconds the sidecar waits between polls
+	Interval int `json:"interval" example:"5"`
+}
+
+// SidecarLoginStatus answers a poll.
+type SidecarLoginStatus struct {
+	// pending, approved, denied or expired
+	Status string `json:"status" example:"approved"`
+	// The sidecar name the admin approved. Set when approved.
+	Name string `json:"name,omitempty" example:"payments-sidecar"`
+	// The sidecar's page in the web app, where its listeners are added. Set
+	// when approved.
+	URL string `json:"url,omitempty" example:"https://use.hoop.dev/sidecars/5364ec99-653b-41ba-8165-67a7ba0c2d14"`
+}
+
+// SidecarLoginDetails is a pending login as the approving admin sees it.
+type SidecarLoginDetails struct {
+	UserCode  string    `json:"user_code" example:"BCDF-GHJK"`
+	Name      string    `json:"name" example:"payments-sidecar"`
+	Status    string    `json:"status" example:"pending"`
+	CreatedAt time.Time `json:"created_at" example:"2026-10-14T12:00:00Z"`
+	ExpiresAt time.Time `json:"expires_at" example:"2026-10-14T12:10:00Z"`
+}
+
+// SidecarLoginApproveRequest approves a login into the admin's organization.
+type SidecarLoginApproveRequest struct {
+	// The sidecar's name. Empty keeps the name the sidecar asked for.
+	Name string `json:"name,omitempty" example:"payments-sidecar"`
+}
+
 // SidecarSessionEventsRequest carries a sidecar's audit events.
 //
 // It documents daemon.SessionEventsRequest, which the handler decodes: that
@@ -1686,6 +1731,10 @@ type SessionReview struct {
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
 }
 
+type ReviewCount struct {
+	Count int64 `json:"count" readonly:"true" example:"4"`
+}
+
 type ReviewSessionTimeWindow struct {
 	Type          ReviewTimeWindowType `json:"type" binding:"required" enums:"time_range"`
 	Configuration map[string]string    `json:"configuration" binding:"required" example:"start_time:09:00,end_time:18:00"`
@@ -1734,6 +1783,8 @@ type Review struct {
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
 	// The connection the approval request was filed against. On a sidecar approval request, the resource that mirrors the listener; absent while the organization has no mirror for it
 	Connection *ReviewConnection `json:"connection,omitempty" readonly:"true"`
+	// Who filed the approval request. On a sidecar approval request, the sidecar
+	Requester *ReviewOwner `json:"requester,omitempty" readonly:"true"`
 	// The deadline of a sidecar approval request: to decide while PENDING, to use the
 	// approval once APPROVED. Absent with no limit or on an approval request from a connection
 	ExpiresAt *time.Time `json:"expires_at,omitempty" readonly:"true" example:"2024-07-25T16:11:35.000Z"`
@@ -2879,7 +2930,7 @@ type DataMaskingRule struct {
 }
 
 type DataMaskingRuleRequest struct {
-	// The unique name of the data masking rule, it's immutable after creation
+	// The unique name of the data masking rule. An update with a new name renames it
 	Name string `json:"name" binding:"required" example:"mask-email"`
 	// The description of the data masking rule
 	Description string `json:"description" example:"Mask email addresses in the data"`

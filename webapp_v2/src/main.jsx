@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import ModeThemeProvider from '@/modes/ModeThemeProvider';
-import { useUserStore } from '@/stores/useUserStore';
+import { MantineProvider } from '@mantine/core';
+import { theme, cssVariablesResolver } from '@/theme';
 import App from './App';
 
 // layers.css MUST come first. A cascade layer takes its position from where the
@@ -15,7 +15,6 @@ import './layers.css';
 import '@mantine/core/styles.layer.css';
 import '@mantine/spotlight/styles.layer.css';
 import '@mantine/dates/styles.layer.css';
-import '@mantine/charts/styles.layer.css';
 import '@mantine/carousel/styles.layer.css';
 
 // Signal to the parked ClojureScript bundle (which keeps a document-level
@@ -25,16 +24,12 @@ import '@mantine/carousel/styles.layer.css';
 // instead of opening a second Radix dialog underneath the Mantine Spotlight.
 window.__hoopReactShellPresent = true;
 
-// The product mode comes from the backend. Kicked off before the first render;
-// the shell re-renders when it lands.
-useUserStore.getState().loadAppMode();
-
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ModeThemeProvider>
+    <MantineProvider theme={theme} defaultColorScheme="light" cssVariablesResolver={cssVariablesResolver}>
       <BrowserRouter>
         <App />
       </BrowserRouter>
-    </ModeThemeProvider>
+    </MantineProvider>
   </StrictMode>
 );

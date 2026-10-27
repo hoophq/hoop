@@ -40,7 +40,8 @@ $(cat $NOTE_FILE)
 EOF
 
 ghRelease(){
-  gh release create $GIT_TAG -F $NOTE_FILE --title $GIT_TAG
+  # A prerelease until release.yml publishes the charts; see auto-release.yml.
+  gh release create $GIT_TAG -F $NOTE_FILE --title $GIT_TAG --prerelease
 }
 
 read -rep $'=> Do you with to create this release?\n(y/n) => ' choice

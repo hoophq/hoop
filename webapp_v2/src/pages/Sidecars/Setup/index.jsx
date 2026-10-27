@@ -92,11 +92,16 @@ export default function SidecarSetup({ mode = 'connect' }) {
     LIVE_EVENTS.SIDECAR_CHECKED_IN,
     async (event) => {
       if (event.id !== sidecar?.id) return
-      try {
-        const { data: fresh } = await sidecarsService.get(sidecar.id)
-        if (fresh.last_seen_at) handleConnected(fresh)
-      } catch {
-        // The waiting step's poll, or the next check-in, tries again.
+      // Only the first check-in sends the event, so a failed read retries here.
+      for (const wait of [0, 1000, 3000]) {
+        if (wait) await new Promise((resolve) => setTimeout(resolve, wait))
+        try {
+          const { data: fresh } = await sidecarsService.get(sidecar.id)
+          if (fresh.last_seen_at) handleConnected(fresh)
+          return
+        } catch {
+          // After the last try, the waiting step's poll moves it on.
+        }
       }
     },
     !!sidecar && step < 2,
@@ -132,7 +137,8 @@ export default function SidecarSetup({ mode = 'connect' }) {
     // Never actionable: while polling it spins, and once the sidecar is gone
     // there is nothing to continue to. Back and Cancel are the ways out.
     { label: 'Continue', loading: waiting, disabled: true },
-    { label: 'Finish', disabled: false, onClick: () => navigate(LIST_PATH) },
+    // To the sidecar just set up, where its configuration moves to Hoop.
+    { label: 'Finish', disabled: false, onClick: () => navigate(`${LIST_PATH}/${sidecar.id}`) },
   ][step]
 
   return (

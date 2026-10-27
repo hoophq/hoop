@@ -187,45 +187,6 @@ import RingProgress from '@/components/RingProgress'
 <RingProgress value={80} size={48} label={<Text fz="xs">4/5</Text>} />
 ```
 
-### `BarChart`
-Bar chart, wrapping `@mantine/charts` (recharts). Carries app-wide defaults only — `gridAxis="none"`, `withLegend={false}`, `tickLine="none"`, and a `valueFormatter` that adds thousands separators. Everything chart-specific stays at the call site, because two charts on the same page can need opposite configurations.
-```jsx
-import BarChart from '@/components/BarChart'
-
-// Grouped bars, no axes (identification via tooltip):
-<BarChart
-  h={300}
-  data={buckets}
-  dataKey="label"
-  withXAxis={false}
-  withYAxis={false}
-  barProps={{ radius: 4 }}
-  series={[
-    { name: 'approved', label: 'Approved', color: 'green.5' },
-    { name: 'rejected', label: 'Rejected', color: 'red.5' },
-  ]}
-/>
-```
-Note Mantine colors **per series**, not per data point. `getBarColor` only receives the numeric value, so it cannot map a category to a color — if you need one color per bar, either show the category on the x-axis with a single series, or reach for `barProps.shape` and accept that the tooltip swatch will still use the series color.
-
-### `DonutChart`
-Donut/pie chart, wrapping `@mantine/charts`. `data` is `[{ name, value, color }]`, so colors are per slice — pull them from `CHART_SERIES_COLORS` and cycle with `i % length`. Defaults to `withLabels={false}` and `tooltipDataSource="segment"` (Mantine's default lists every slice at once).
-```jsx
-import DonutChart from '@/components/DonutChart'
-
-<DonutChart data={slices} size={240} thickness={60} strokeWidth={5} />
-```
-Radii are derived: `outerRadius = size / 2`, `innerRadius = size / 2 - thickness`.
-
-### `CHART_SERIES_COLORS` (theme export, not a component)
-The categorical palette for chart series and slices, exported from `src/theme.js`. Entries are theme color references (`'indigo.6'`, `'green.5'`, …) so the theme stays the single source of truth.
-```jsx
-import { CHART_SERIES_COLORS } from '@/theme'
-
-const color = CHART_SERIES_COLORS[index % CHART_SERIES_COLORS.length]
-```
-**Always cycle with `%`** — a category list longer than the palette would otherwise resolve to `undefined` and render black. Shades 0–1 are deliberately absent: they are invisible against `--mantine-color-body`.
-
 ### `SegmentedControl`
 Segmented control with a **locked item** concept for gated options: visible and hoverable, but not selectable.
 ```jsx
@@ -317,7 +278,7 @@ root and its own `AppShell.Header` uses under `layout="alt"`; that is why the ba
 the sidebar collapsing instead of recomputing its width from a store.
 
 ### `ClojureApp`
-Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere, never from a `ControlPlane*` file.
+Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere.
 
 ### `NotImplemented`
 A route that exists in the information architecture but has no backend yet. Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
@@ -325,20 +286,20 @@ A route that exists in the information architecture but has no backend yet. Name
 <NotImplemented title="Reviews" project="Reviews (Human in the Loop)" missing={['Approve and reject']} />
 ```
 
-### `useModeConfig` / `getModeConfig` / `postAuthPath` (`src/modes/`)
-The product manifest (`modes/gateway.jsx`): `id`, `theme`, `postLoginPath`, `postSetupPath`, `Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx`, `ModeThemeProvider` and the auth pages only. Pages and layout never use them — see `CLAUDE.md`, "Application modes".
+### Route wrappers (`src/modes/gateway.jsx`)
+`Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx` only — see `CLAUDE.md`, "Routing, gates and roles".
+
+### `POST_LOGIN_PATH` / `POST_SETUP_PATH` (`src/modes/`)
+Where an auth page sends the user next: `/client` after login, `/onboarding/setup` after a local org's first sign-up.
 
 ### `useRuleTraffics` (`src/modes/`)
 Answers which traffic a guardrail, masking or analyzer rule can protect: always `['agent', 'sidecar']`.
 
 ### `ByRuleTraffic` (`src/modes/`)
-`<ByRuleTraffic kind={RULE_KIND_GUARDRAIL} fetchRule={guardrailsService.get} listPath="/guardrails" agent={<GatewayGuardrailForm />} sidecar={<ControlPlaneGuardrailForm />} />` — picks a rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Used in `Router.jsx` only.
+`<ByRuleTraffic kind={RULE_KIND_GUARDRAIL} fetchRule={guardrailsService.get} listPath="/guardrails" agent={<GatewayGuardrailForm />} sidecar={<SidecarGuardrailForm />} />` — picks a rule form. With both traffics, an edit reads the rule and a new rule takes `?traffic=sidecar`. A rule with both vocabularies gets an empty state that links back to `listPath`. Used in `Router.jsx` only.
 
 ### `RuleTrafficBadge` / `NewRuleButton`
 `<RuleTrafficBadge traffic="sidecar" />` marks a rule as agent, sidecar or both. `<NewRuleButton traffics={traffics} onCreate={(traffic) => …} blocked={{ agent: 'Needs a DLP provider' }}>Create</NewRuleButton>` is a button with one traffic and a menu with two.
-
-### `ModeThemeProvider` (`src/modes/`)
-The app's `MantineProvider`, fed by the product's `theme` slot. Mounted once in `main.jsx`.
 
 ### `Input` (theme-level, no wrapper)
 Global resting border color **and height scale** for every Input-based component (`TextInput`, `Select`, `Textarea`, `MultiSelect`, `DatePickerInput`, …) via `Input.extend()` in `src/components/Input/theme.js` (registered in `src/theme.js`). Fields default to `size="md"` = 40px with xs=24 / sm=32 / lg=48 variants — see "Control size scale" above. The border is `--input-bd`, which Mantine declares per variant directly on the input wrapper element — a `:root` override from `cssVariablesResolver` never reaches it, so the extension applies a co-located CSS Module rule on the wrapper instead. Scoped to `[data-variant='default']:not([data-error])` so filled/unstyled variants, the error state, and the focus swap keep Mantine's behavior. To change the app-wide input border, edit `src/components/Input/Input.module.css` — do not add border variables to `cssVariablesResolver`.
@@ -724,7 +685,7 @@ import SidecarTargetPicker from '@/components/SidecarTargetPicker'
   onChange={(targets) => setField({ sidecarTargets: targets })}
 />
 ```
-Props: `value` (targets[]), `onChange(targets)`, `label`, `description`. A listener with no name is left out of the list: the name is the only handle the control plane has on a lane, and a binding to a nameless one is refused on save.
+Props: `value` (targets[]), `onChange(targets)`, `label`, `description`, `listenerBlocked(sidecar, listener)` (returns a reason to disable that listener, or null; keep it a stable reference). A listener with no name is left out of the list: the name is the only handle the control plane has on a lane, and a binding to a nameless one is refused on save.
 
 **The payload distinction that matters:** an *absent* `sidecar_targets` leaves a rule's bindings alone; `[]` unbinds it from every sidecar. The three `formToPayload` helpers omit the key entirely where the picker did not render, so a gateway save cannot silently unbind a fleet.
 
@@ -855,7 +816,7 @@ Reference: `pages/Settings/Infrastructure/index.jsx`.
 The Traffic filter of the guardrail, masking and analyzer lists: `filterProps` for a `ValueFilter`, `matches(rule)`, `trafficOf(rule)` for the badge, and `showAgentFilters` / `showSidecarFilter`. `classifiable` is false where the list response carries no `sidecar_spec` (guardrails today).
 
 ### `useLiveEvent(type, handler, enabled = true)`
-Calls `handler({ type, id })` for each live event of `type` from the gateway (`GET /events/stream`) while mounted. One connection per tab, shared by every subscriber, closed when the last one unmounts. Types are in `LIVE_EVENTS` (`services/liveEvents.js`). The event carries no data: read the resource again. Rules in `CLAUDE.md` (Real-time updates).
+Calls `handler({ type, id })` for each live event of `type` from the gateway (`GET /events/stream`) while mounted. One connection per browser: the tab holding the `hoop-live-events` Web Lock streams and passes events to the other tabs. It closes when the last subscriber of the tab unmounts. Types are in `LIVE_EVENTS` (`services/liveEvents.js`). The event carries no data: read the resource again. Rules in `CLAUDE.md` (Real-time updates).
 ```jsx
 useLiveEvent(LIVE_EVENTS.SIDECAR_CHECKED_IN, (e) => e.id === id && refresh(id))
 ```
@@ -894,7 +855,7 @@ useAuthStore.getState().token
 
 Non-obvious notes only:
 
-- `useUserStore` — the signed-in user, the org's plan and the product mode.
+- `useUserStore` — the signed-in user and the org's plan.
   `installLicense(payload)` is one operation on purpose: the moment the `PUT`
   lands the plan has changed server-side, and every gate reading `isFreeLicense`
   or `licenseFeatures` is stale until `/serverinfo` is re-read. Doing the two
@@ -923,6 +884,12 @@ Non-obvious notes only:
   on navigation, on window focus and on the `hoop:session-executed` DOM event
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
+- `usePendingApprovalsStore` — the sidebar's pending approvals count. One call
+  to `GET /approvals/count?status=PENDING`; never count the list. Read on
+  navigation, window focus and `review.created` (with
+  `experimental.review_notifications` on) (`layout/Sidebar/usePendingApprovalsCount`,
+  called once in `GatewayLayout` for both sidebars) and after every `decide`;
+  never while the sidebar is collapsed. Resets on logout.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
   `updateSidecar`, `patchSidecar`, `setOwner`, `deleteSidecar`) and the one record `/sidecars/:id` reads
   (`selected`, `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
@@ -1115,6 +1082,15 @@ gateway decides expiry against its own clock, which is the clock that actually
 blocks sessions. `daysUntilExpiration` is only for the "expires in N days"
 countdown while the status is still `valid`.
 
+### `csv.js`
+CSV export for tables. Used by Users → Export CSV.
+```js
+import { toCSV, downloadCSV } from '@/utils/csv'
+
+downloadCSV('hoop-users-2026-10-23.csv', toCSV(['Name', 'Email'], [['Doe, John', 'j@x.com']]))
+```
+`toCSV` writes RFC 4180 (quotes for comma, double quote, line break; CRLF), a UTF-8 BOM for Excel, and a leading `'` on cells that start with `=`, `+`, `-`, `@` (ASCII or full-width), tab, CR or LF (CSV injection). `null`/`undefined` become empty cells.
+
 ### `support.js`
 Opens the same destination as "Contact support" in the header user menu.
 ```js
@@ -1148,6 +1124,14 @@ showSnackbar({
   level: 'error',
   text: 'Validation failed.',
   details: { field: 'name', reason: 'required' },
+})
+
+// Buttons under the text; a click dismisses the toast. The first is the primary one.
+showSnackbar({
+  text: 'Approval request',
+  description: 'maria · pg-prod · One-time access',
+  actions: [{ label: 'Open', onClick: open }],
+  duration: 20000,
 })
 ```
 

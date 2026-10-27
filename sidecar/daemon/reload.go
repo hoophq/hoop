@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -41,11 +42,12 @@ import (
 // unchanged URL is never refetched by a reload — a restart reads it, the
 // same way a restart reads a replaced file.
 //
-// Everything here runs on one goroutine: the heartbeat under a plane,
-// watchFile otherwise. Run hands the reloader over before starting that
-// goroutine and never touches it again, which is why no field needs a lock;
-// the one cross-goroutine surface is laneState, published through an atomic
-// pointer the admin endpoints load.
+// Three goroutines drive it: the heartbeat under a plane, watchFile (the
+// config file, the license file and SIGHUP), and the admin endpoint that
+// installs a license. mu serializes them, held for one whole event, so the
+// reload logic itself reads like one goroutine. What other goroutines read
+// is published apart from it: laneState through an atomic pointer the admin
+// endpoints load, the license through licenseState.
 
 // fileWatchEvery is how often a standalone process stats its config file.
 // Ten seconds keeps a Kubernetes ConfigMap edit (which the kubelet itself
@@ -147,12 +149,49 @@ type reloader struct {
 	// tells a rotation from a rule edit. Empty when the owner names none.
 	licRaw string
 	// licSource labels a license the owner rotates in: PlaneLicenseSource
-	// or fileLicenseSource. It is also the precedence rule for a file
-	// process: the `license` key is the lowest of the local sources, so a
-	// file edit rotates nothing while the flag or HOOP_LICENSE holds the
-	// document in force -- exactly what a restart would conclude.
+	// or fileLicenseSource.
 	licSource string
-	det       Plugin
+	// licOver names the startup source that outranks the config file's
+	// `license` key: the license flag, HOOP_LICENSE, or an embedder's
+	// UseLicense. Empty when none does. Fixed for the process, because a
+	// restart reads the same precedence: while one is set, editing the key
+	// changes nothing. A license installed through the admin API does not
+	// set it, so a later change to the source in force still replaces that
+	// license, exactly as a restart would.
+	licOver string
+	// licManaged reports a control plane that owns the license. No local
+	// file is watched then, and the admin API refuses an install.
+	licManaged bool
+	// licClaimed reports a plane that just claimed the license (see
+	// claimLicense): the next document's license key is re-resolved even
+	// when it reads the same as before. Cleared when a document commits it.
+	licClaimed bool
+	// licPinned is the source in force when the running process cannot
+	// change its value, only the file it names: the license flag,
+	// HOOP_LICENSE, or the config key under a plane that does not manage
+	// the license.
+	licPinned license.Ref
+	// licFile is the license file pollLicense watches: the path the source
+	// in force names, empty when it names a document or nothing. licFileSize
+	// and licFileMod are its stat at the last read, licFileDoc the document
+	// that read found. licFilePending forces the next tick to read anyway
+	// (the last read failed, and may clear without another change), and
+	// licFileBroken keeps that failure to one warning.
+	licFile        string
+	licFileSize    int64
+	licFileMod     time.Time
+	licFileDoc     license.Status
+	licFilePending bool
+	licFileBroken  bool
+	// running is the config of the generation in force. A license that
+	// arrives without a config document, from its own file or the admin
+	// API, is checked against the rules it holds.
+	running *Config
+	// mu serializes the goroutines that drive this struct; see the file
+	// comment.
+	mu sync.Mutex
+
+	det Plugin
 	// ac is the startup analyzer state, retained whole: the provider and
 	// its credential are restart-guarded, so a reload never rebuilds them.
 	// Only the redactor is replaced, and only when the detector changed.
@@ -266,6 +305,26 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 		load:              cfg.load,
 		credentials:       cfg.credentials,
 		credentialSources: cfg.credentialSources,
+		running:           cfg,
+		licManaged:        cfg.cp != nil && cfg.cp.licenseManaged,
+	}
+	if !r.licManaged {
+		switch src := cfg.lic.Source; {
+		case src != "" && src != fileLicenseSource:
+			r.licOver = src
+			// Only the reference that produced the license in force: an
+			// embedder's UseLicense after Setup leaves no stale flag or
+			// HOOP_LICENSE path to poll.
+			if cfg.licPinned.Source == src {
+				r.licPinned = cfg.licPinned
+			}
+		case src == fileLicenseSource && cfg.cp != nil:
+			// A plane that does not manage the license (a gateway older
+			// than the feature) leaves the file's key in force, but the
+			// file is no longer reloaded: the key is as fixed as the flag,
+			// and the file it names is what can change.
+			r.licPinned = license.Ref{Value: cfg.License, Source: fileLicenseSource}
+		}
 	}
 	if cfg.cp != nil {
 		r.planeOwned = true
@@ -274,11 +333,11 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 		r.lastHandled = cfg.cp.lastRaw
 		r.diskMode = cfg.cp.diskMode
 		r.runningFile = cfg.cp.fileReport
-		return r, nil
+	} else {
+		r.licRaw = cfg.License
+		r.licSource = fileLicenseSource
 	}
-	r.licRaw = cfg.License
-	r.licSource = fileLicenseSource
-	if r.configPath != "" {
+	if !r.planeOwned && r.configPath != "" {
 		// Seed the compare from the file itself, through the same read the
 		// watcher runs, so the first tick that finds the file untouched is
 		// reloadUnchanged rather than a generation that swapped nothing. A
@@ -294,6 +353,7 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 			r.fileSize, r.fileMod = st.Size(), st.ModTime()
 		}
 	}
+	r.seedLicenseFile()
 	return r, nil
 }
 
@@ -301,6 +361,18 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 // remembers terminal outcomes, so one edit logs once while a retryable
 // failure runs again next tick.
 func (r *reloader) handle(log *slog.Logger, raw []byte) reloadOutcome {
+	return r.handleAnswer(log, raw, false)
+}
+
+// handleAnswer is handle with the plane's license header. A plane that starts
+// managing the license mid-run claims it here, in the same critical section
+// as the document it answered with.
+func (r *reloader) handleAnswer(log *slog.Logger, raw []byte, managed bool) reloadOutcome {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if managed && !r.licManaged {
+		r.claimLicense(log)
+	}
 	return r.once(log, raw, r.apply)
 }
 
@@ -343,17 +415,29 @@ func (r *reloader) keep(out reloadOutcome, reason string) reloadOutcome {
 // pipeline the heartbeat feeds. It is started in every mode so SIGHUP has a
 // reader -- unhandled, the signal's default action kills the process, and
 // "SIGHUP reloads the config" must not be true of one deployment shape and
-// fatal in the other. Under a plane it owns nothing: the heartbeat does, and
-// this goroutine only says so.
+// fatal in the other. Under a plane the config is the heartbeat's, and this
+// goroutine only says so.
+//
+// It also watches the license file of the source in force (pollLicense), in
+// every mode where the license is local: a renewal dropped onto a mounted
+// path is picked up on the same schedule, or at once on SIGHUP.
 func (r *reloader) watchFile(ctx context.Context, log *slog.Logger) {
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
 
-	// A nil channel never fires, which is how a plane-owned process or one
-	// with no file keeps the loop and drops the ticker.
+	// planeOwned and configPath never change after newReloader. The
+	// license file can: a config edit may point the key at one, but only
+	// in a process that owns its config file, which ticks anyway.
+	r.mu.Lock()
+	fileOwned := !r.planeOwned && r.configPath != ""
+	licWatched := r.licFile != ""
+	r.mu.Unlock()
+
+	// A nil channel never fires, which is how a process with nothing to
+	// watch keeps the loop for SIGHUP and drops the ticker.
 	var tick <-chan time.Time
-	if !r.planeOwned && r.configPath != "" {
+	if fileOwned || licWatched {
 		every := r.fileEvery
 		if every == 0 {
 			every = fileWatchEvery
@@ -367,24 +451,40 @@ func (r *reloader) watchFile(ctx context.Context, log *slog.Logger) {
 		case <-ctx.Done():
 			return
 		case <-tick:
-			r.pollFile(log)
-		case <-hup:
-			switch {
-			case r.planeOwned:
-				log.Info("SIGHUP ignored: the control plane owns the configuration",
-					"hint", "edit the configuration in the control plane; the heartbeat applies it")
-			case r.configPath == "":
-				log.Info("SIGHUP ignored: this process was started without a config file")
-			default:
-				log.Info("SIGHUP received; re-reading the config file", "path", r.configPath)
-				// Forced: the dedupe is dropped so the document runs even
-				// when its bytes did not move. That is what makes SIGHUP
-				// the way to pick up a license file replaced behind an
-				// unchanged path, which no stat of the config file sees.
-				r.lastHandled = nil
-				r.filePending = r.reloadFile(log) == reloadRetry
+			r.mu.Lock()
+			if fileOwned {
+				r.pollFile(log)
 			}
+			r.pollLicense(log, false)
+			r.mu.Unlock()
+		case <-hup:
+			r.mu.Lock()
+			r.hangup(log)
+			r.mu.Unlock()
 		}
+	}
+}
+
+// hangup is one SIGHUP: a forced re-read of the config file the process
+// owns, then of the license file in force. The config goes first because an
+// edit there can name another license file.
+func (r *reloader) hangup(log *slog.Logger) {
+	switch {
+	case r.planeOwned:
+		log.Info("SIGHUP ignored: the control plane owns the configuration",
+			"hint", "edit the configuration in the control plane; the heartbeat applies it")
+	case r.configPath == "":
+		log.Info("SIGHUP ignored: this process was started without a config file")
+	default:
+		log.Info("SIGHUP received; re-reading the config file", "path", r.configPath)
+		// Forced: the dedupe is dropped so the document runs even when
+		// its bytes did not move.
+		r.lastHandled = nil
+		r.filePending = r.reloadFile(log) == reloadRetry
+	}
+	if path := strings.TrimSpace(r.licenseFile().Value); path != "" {
+		log.Info("SIGHUP received; re-reading the license file", "path", path)
+		r.pollLicense(log, true)
 	}
 }
 
@@ -459,9 +559,27 @@ func (r *reloader) applyFile(log *slog.Logger, raw []byte) reloadOutcome {
 // restartForControlPlane answers a standalone file that started naming a
 // control plane: restart-bound drift, logged once through the same dedupe
 // as every other outcome.
+//
+// It also says what the restart does to the license, while the operator can
+// still act on it: a plane that manages licenses (every current gateway) is
+// the only source, so the license this process runs under is ignored from
+// then on. When the rules in force need a license, that plane refuses them at
+// startup unless the organization holds a current one that covers them.
 func (r *reloader) restartForControlPlane(log *slog.Logger, _ []byte) reloadOutcome {
 	log.Warn("the config file now names a control plane; restart to connect to it",
 		"path", r.configPath)
+	lic := r.lic.get()
+	if lic.State() == license.StateMissing {
+		return reloadRestart
+	}
+	msg := "if the control plane manages licenses, after that restart it is the only license source: " +
+		"the license from " + lic.Source + " will be ignored"
+	if r.running.dependsOnLicense() {
+		msg += ", and the running rules need more than the free tier; " +
+			"without a current organization license that covers them, the sidecar will not start with them"
+	}
+	log.Warn(msg, "in_force", lic.Line(),
+		"hint", "if it manages licenses, set the organization's license in the control plane before restarting")
 	return reloadRestart
 }
 
@@ -485,16 +603,11 @@ func licenseIsPath(v string) bool {
 
 // ownerLicenseApplies reports whether a license the owner supplies is the
 // one this process runs under. A plane's always is. A file's `license` key
-// is the lowest local source: while the flag or HOOP_LICENSE holds the
-// document in force, editing the key changes nothing, on a reload exactly
-// as on a restart. An empty Source is a process running with no license at
-// all, which the key may license.
+// is the lowest local source: while the flag, HOOP_LICENSE or an embedder's
+// license holds the document in force, editing the key changes nothing, on
+// a reload exactly as on a restart.
 func (r *reloader) ownerLicenseApplies() bool {
-	if r.planeOwned {
-		return true
-	}
-	src := r.lic.get().Source
-	return src == "" || src == fileLicenseSource
+	return r.planeOwned || r.licOver == ""
 }
 
 // apply decides what a drifted document means for the running process and
@@ -659,31 +772,29 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	}
 
 	// The license the lanes are built against: the one in use, unless the
-	// owner supplied a different document. The reference is re-read and
-	// verified here the same way startup does it, so a plane cannot hand
-	// this process a verdict, only a document.
+	// owner supplied a different reference -- the plane sent other bytes,
+	// the file's key was edited. The reference is re-read and verified here
+	// the same way startup does it, so a plane cannot hand this process a
+	// verdict, only a document.
 	//
-	// Two things count as a new document. The reference moved -- the
-	// plane sent other bytes, the file's key was edited -- which is the
-	// string compare. Or, for a file owner whose key is a PATH, the file
-	// behind an unchanged path was replaced: a renewal dropped onto the
-	// same mount. That one is invisible to the string compare, so the
-	// path is resolved on every file reload and the DOCUMENTS compared.
-	// The plane never names a path, and a legacy plane that manages no
-	// license sends an empty reference that must not read as "removed",
-	// so under a plane only the string compare decides.
+	// Only the string compare decides. A file replaced behind an unchanged
+	// path is pollLicense's: re-resolving the path on every rule edit would
+	// also undo a license installed through the admin API whenever someone
+	// touched a rule. The plane never names a path, and a legacy plane that
+	// manages no license sends an empty reference that must not read as
+	// "removed".
 	newCfg.lic = r.lic.get()
-	refChanged := newCfg.License != r.licRaw
+	refChanged := newCfg.License != r.licRaw || r.licClaimed
 	licRotated := false
 	switch {
 	case refChanged && !r.ownerLicenseApplies():
 		// Said once: the compare moves on so a later rule edit does not
 		// repeat it, and nothing else about the running license changes.
 		r.licRaw = newCfg.License
-		log.Warn("the "+from+"'s license key changed, but "+newCfg.lic.Source+
+		log.Warn("the "+from+"'s license key changed, but "+r.licOver+
 			" outranks it; keeping the license in use",
 			"hint", "a restart would read the same precedence")
-	case refChanged || (!r.planeOwned && r.ownerLicenseApplies() && licenseIsPath(newCfg.License)):
+	case refChanged:
 		next := license.Load(license.Ref{Value: newCfg.License, Source: r.licSource})
 		switch {
 		case next.State() == license.StateInvalid:
@@ -696,6 +807,12 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			// verdict was earned by the verifier, not assembled here.
 			newCfg.lic = next
 			licRotated = true
+		case r.licClaimed:
+			// The plane claimed the document already in force. Nothing
+			// rotates, but its source is now the plane: a report naming a
+			// local source would send the operator somewhere that no
+			// longer changes it.
+			newCfg.lic = next
 		}
 	}
 	// The hosted-model default depends on the license, and a running
@@ -707,9 +824,12 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		// statements to Hoop. Stop through the same drain as a license
 		// that no longer covers the rules: the restart then refuses the
 		// config until it names a provider or opts in.
-		r.licRaw = newCfg.License
+		r.licRaw, r.licClaimed = newCfg.License, false
 		r.lic.set(newCfg.lic)
 		r.lic.overCap.Store(true)
+		if licRotated {
+			r.planeLicenseAdopted()
+		}
 		log.Warn("an Enterprise license is now installed and the analyzer uses the model Hoop hosts "+
 			"by default; stopping the relay so it restarts under the new license",
 			"hint", "set use_hoop_llm_provider: true, or a provider and model")
@@ -739,9 +859,10 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			// config by name until somebody renews it or removes rules.
 			// Rules are never dropped from a live proxy to fit a smaller
 			// license; that widens what the proxy allows.
-			r.licRaw = newCfg.License
+			r.licRaw, r.licClaimed = newCfg.License, false
 			r.lic.set(newCfg.lic)
 			r.lic.overCap.Store(true)
+			r.planeLicenseAdopted()
 			log.Warn("the "+from+"'s license no longer covers the running rules; "+
 				"stopping the relay so it restarts under the new one",
 				"license", newCfg.lic.Line(), "error", err)
@@ -820,15 +941,19 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	}
 	r.det = det
 	r.piiRaw = newCfg.PII
-	if licRotated {
+	r.running = newCfg
+	if licRotated || r.licClaimed {
 		r.lic.set(newCfg.lic)
 		log.Info(newCfg.lic.Line())
+		if licRotated {
+			r.planeLicenseAdopted()
+		}
 	}
 	// The reference that produced this generation is the one later
 	// documents compare against, rotated or not: a reference that loaded
 	// the same document, or one this build refused and said so, is
 	// handled, and only another edit should raise it again.
-	r.licRaw = newCfg.License
+	r.licRaw, r.licClaimed = newCfg.License, false
 	// Published on every applied generation, not only on a rotation: rules
 	// added by this reload can push a config past the free tier, and the
 	// watchdog only stops a process that would lose something.

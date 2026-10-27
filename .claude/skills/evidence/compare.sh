@@ -4,8 +4,7 @@
 #   compare.sh <out.png> <h|v> "LABEL=path.png" "LABEL=path.png" [...]
 #
 # h: panels side by side (states, screens). v: panels stacked (logs, wide output).
-# Needs ffmpeg, ffprobe and freeze. Labels are rendered with freeze because
-# Homebrew ffmpeg has no drawtext filter.
+# Needs ffmpeg and ffprobe, and freeze when ffmpeg has no drawtext (label.sh).
 set -euo pipefail
 
 if [[ $# -lt 4 ]]; then
@@ -14,9 +13,11 @@ if [[ $# -lt 4 ]]; then
 fi
 out=$1; dir=$2; shift 2
 [[ $dir == h || $dir == v ]] || { echo "direction must be h or v, got '$dir'" >&2; exit 1; }
-for t in ffmpeg ffprobe freeze; do
+for t in ffmpeg ffprobe; do
   command -v "$t" >/dev/null || { echo "missing tool: $t" >&2; exit 1; }
 done
+
+source "$(dirname "$0")/label.sh"
 
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 bg=0x2a2c37
@@ -40,11 +41,7 @@ done
 
 args=(); filter=""; joined=""
 for i in $(seq 0 $((n-1))); do
-  printf '%s' "${labels[i]}" > "$tmp/l$i.txt"
-  # freeze waits on stdin when it is an open pipe, even with a file argument.
-  freeze "$tmp/l$i.txt" --language text --window=false --border.radius 0 \
-    --background "#1f2937" --padding 22,30 --margin 0 --font.size 28 \
-    --theme dracula -o "$tmp/l$i.png" </dev/null >/dev/null 2>&1
+  label_png "${labels[i]}" "$tmp/l$i.png"
   args+=(-i "${inputs[i]}")
 done
 for i in $(seq 0 $((n-1))); do args+=(-i "$tmp/l$i.png"); done
@@ -64,5 +61,5 @@ done
 if [[ $dir == h ]]; then filter+="${joined}hstack=${n}"; else filter+="${joined}vstack=${n}"; fi
 filter+=",scale='min(3000,iw)':-2"
 
-ffmpeg -loglevel error -y "${args[@]}" -filter_complex "$filter" "$out"
+ffmpeg -loglevel error -y "${args[@]}" -filter_complex "$filter" "$out" </dev/null
 echo "$out"

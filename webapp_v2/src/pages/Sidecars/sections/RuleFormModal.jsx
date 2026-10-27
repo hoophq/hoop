@@ -103,7 +103,10 @@ function Form({ feature, sidecar, listener, ruleName, onClose, onSaved }) {
     }
   }, [api, ruleName])
 
-  const targets = useMemo(() => lanesAsTargets(sidecar, targetLanes(sidecar, listener)), [sidecar, listener])
+  const targets = useMemo(
+    () => lanesAsTargets(sidecar, targetLanes(sidecar, listener, feature.key)),
+    [sidecar, listener, feature.key],
+  )
   const Body = BODIES[feature.key]
 
   if (status === 'loading') return <PageLoader h={300} />

@@ -206,6 +206,15 @@ Refuse to render a Deployment that cannot start, with the message the relay
 itself would print on the restart nobody is watching.
 */}}
 {{- define "hoopsidecar.validate" -}}
+{{- /*
+The image reference lives only in values.yaml (AWS Marketplace rewrites it
+there). A release made when the templates held the defaults has no image
+values, and `helm upgrade --reuse-values` keeps exactly those: without this
+guard it would render ":" as the image.
+*/ -}}
+{{- if not (and .Values.image .Values.image.repository .Values.image.tag) -}}
+{{- fail "image.repository and image.tag must both be set. An upgrade with --reuse-values from a release whose chart kept the image defaults in its templates carries no image values: upgrade with --reset-then-reuse-values, or set image.repository and image.tag" -}}
+{{- end -}}
 {{- if and .Values.config .Values.existingConfigMap -}}
 {{- fail "set either config or existingConfigMap, not both: the chart would render a ConfigMap it then does not mount" -}}
 {{- end -}}
@@ -229,8 +238,9 @@ changed a selector label would detach the pods from their Deployment.
 {{- if and $cp.token $cp.identity -}}
 {{- fail "set controlPlane.token or controlPlane.identity, not both: the relay refuses two credentials" -}}
 {{- end -}}
-{{- if and $cp.url (not (or $cp.token $cp.identity)) -}}
-{{- fail "controlPlane.url is set but neither controlPlane.token nor controlPlane.identity is: the handshake is refused without a credential" -}}
+{{- /* existingSecret may carry HOOP_SIDECAR_TOKEN; the chart cannot read it. */ -}}
+{{- if and $cp.url (not (or $cp.token $cp.identity .Values.existingSecret)) -}}
+{{- fail "controlPlane.url is set but no credential is: set controlPlane.token, controlPlane.identity, or existingSecret with HOOP_SIDECAR_TOKEN" -}}
 {{- end -}}
 {{- if and (or $cp.token $cp.identity) (not $cp.url) -}}
 {{- fail "a control plane credential is set but no control plane is configured: set controlPlane.url or drop the credential" -}}

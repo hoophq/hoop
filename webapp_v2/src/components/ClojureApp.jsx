@@ -57,7 +57,7 @@ let cljsHost = null
 let cljsParking = null
 let cljsInitialized = false
 // Last pathname synced into the CLJS active-panel. When ClojureApp re-mounts
-// on the same path (e.g. /dashboard → /agents → /dashboard), we can skip the
+// on the same path (e.g. /sessions → /agents → /sessions), we can skip the
 // re-sync and reveal the host immediately — the tree already shows the right
 // panel. When the path is stale, we hide the host for a frame while re-frame
 // propagates the new active-panel to Reagent, so the user never sees the old
@@ -155,11 +155,10 @@ function ClojureApp() {
   // useLayoutEffect so the parking↔container swap happens before the browser
   // paints the empty <div ref={containerRef} /> React just rendered.
   useLayoutEffect(() => {
-    localStorage.setItem('react-shell', 'true')
-    // Companion signal to localStorage.react-shell, read synchronously by the
-    // CLJS keydown handler. Window globals avoid a localStorage read on every
-    // keystroke and let the parked Reagent listener distinguish "CLJS visible"
-    // from "React route active" without changing the bridge contract.
+    // Read synchronously by the CLJS keydown handler. Window globals avoid a
+    // storage read on every keystroke and let the parked Reagent listener
+    // distinguish "CLJS visible" from "React route active" without changing
+    // the bridge contract.
     window.__hoopReactShellCljsVisible = true
     enableCLJSCSS('/css/site.css')
 
@@ -219,7 +218,6 @@ function ClojureApp() {
     }
 
     return () => {
-      localStorage.removeItem('react-shell')
       window.__hoopReactShellCljsVisible = false
       cljsReadyRef.current = false
       disableCLJSCSS()

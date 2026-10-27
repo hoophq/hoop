@@ -339,7 +339,7 @@ func Post(c *gin.Context) {
 //	@Produce		json
 //	@Param			request			body		openapi.DataMaskingRuleRequest	true	"The request body resource"
 //	@Success		200				{object}	openapi.DataMaskingRule
-//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Failure		400,404,409,422,500	{object}	openapi.HTTPError
 //	@Router			/datamasking-rules/{id} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -440,6 +440,8 @@ func Put(c *gin.Context) {
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+	case models.ErrAlreadyExists:
+		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case nil:
 		rule.Attributes = req.Attributes
 		out := toOpenApi(rule)

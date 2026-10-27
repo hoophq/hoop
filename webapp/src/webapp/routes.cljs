@@ -3,6 +3,7 @@
    [bidi.bidi :as bidi]
    [pushy.core :as pushy]
    [re-frame.core :as rf]
+   [webapp.shell :as shell]
    [webapp.components.loaders :as loaders]
    [webapp.config :as config]
    [webapp.events :as events]))
@@ -51,9 +52,9 @@
                   ["/ai-session-analyzer" :ai-session-analyzer]
                   ["/ai-session-analyzer/rules/new" :create-ai-session-analyzer-rule]]
      ;; Rendered by the React shell (webapp_v2) — these two bidi entries exist
-     ;; only so CLJS code can navigate to them: the sidebar constants and the
-     ;; configure-role terminal tab url-for :guardrails, and the
-     ;; activation-journey feature cards navigate to both. The /edit/:id entry
+     ;; only so CLJS code can navigate to them: the sidebar constants url-for
+     ;; :guardrails, and the activation-journey feature cards navigate to
+     ;; both. The /edit/:id entry
      ;; had no caller outside the deleted CLJS panels and is gone.
      "/guardrails" [["" :guardrails]
                     ["/new" :create-guardrail]]
@@ -146,7 +147,7 @@
       ;; which does not fire popstate, so React Router v7 would otherwise
       ;; miss the transition — the Layout/Sidebar wrapper wouldn't mount
       ;; until a full page refresh.
-      (when (.getItem js/localStorage "react-shell")
+      (when (shell/react-shell?)
         (.dispatchEvent js/window (js/PopStateEvent. "popstate"))))))
 
 (defn start!

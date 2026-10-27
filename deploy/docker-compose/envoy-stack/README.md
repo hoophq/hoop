@@ -38,8 +38,9 @@ Two lanes, decreasing Envoy visibility:
 ```
 
 Needs `docker`, `curl`, `openssl`, `python3`. No local Go: the sidecar image
-compiles in `golang:1.26.5-alpine`, matching the `go 1.26.5` every module in
-`sidecar/` declares.
+compiles in `golang:1.26-alpine`, which must be at least the `go 1.26.10`
+every module in `sidecar/` declares; `docker pull golang:1.26-alpine` if
+the build stops at `requires go >= 1.26.10`.
 
 Ports: `8443` HTTPS, `5433` postgres, `19000` sidecar admin, `9901` Envoy
 admin, `3000` Grafana, `9090` Prometheus. Inside the compose network the
@@ -184,8 +185,8 @@ cd ../../../sidecar/cmd && go run . -validate \
   -config ../../deploy/docker-compose/envoy-stack/sidecar/config.yaml
 ```
 
-That one runs on the host, so it needs Go 1.26.5 or newer. An older toolchain
-stops at `requires go >= 1.26.5`; `GOTOOLCHAIN=auto`, the default, fetches the
+That one runs on the host, so it needs Go 1.26.10 or newer. An older toolchain
+stops at `requires go >= 1.26.10`; `GOTOOLCHAIN=auto`, the default, fetches the
 right one instead.
 
 ## The tiers

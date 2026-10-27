@@ -59,10 +59,25 @@ schedule and no person reads the session. Then:
   wrote it.
 - The sandbox is discarded after the run: push the branch after each commit.
   The evidence is how a person knows the work is right: a PR without its
-  comparison images in "Testing" is not done. `evidence` step 6 publishes them.
+  comparison images in "Testing" is not done. Run the `evidence` skill (Skill
+  tool): a flow, in the UI or in a terminal, is a video with its steps
+  explained on screen. QA's captures are raw material:
+  compose them (`evidence` step 4), then publish them with
+  `.claude/skills/evidence/publish.sh` (`evidence` step 6). That is the upload
+  route of a cloud session; a capture left in the sandbox is lost with it.
 - `gh` can be missing: use the GitHub MCP tools.
 - The PR description starts with `Opened by the support agent (AI) from <ID>.`
-  The PR stays a draft. A person marks it ready and merges it.
+  It opens as a draft, so nobody reviews it before QA. When QA passed, its
+  evidence is in "Testing" and CI is green, mark it ready for review
+  (`update_pull_request`, `draft: false`): Qodo reviews it while this session
+  listens. A person merges it.
+- Once the draft PR exists, `subscribe_pr_activity` on it. Its CI results and
+  review comments (Qodo once it is ready, reviewers) wake this session after
+  the run ends. On each wake: fix a red check this PR caused and push; verify
+  each review finding, then fix and push it or reply why not; reply on each
+  thread you addressed and resolve it. Each reply starts with
+  `Support agent (AI):`. Never merge it. Unsubscribe when it is merged or
+  closed.
 
 ## 1. Context
 
@@ -148,8 +163,8 @@ After 3 `FAIL` rounds: stop. Leave the PR as a draft. Report the open findings
 and what you think the real blocker is.
 
 On `PASS`: run the `evidence` skill from QA's last-round captures (steps 4 and 5:
-compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI ticket, record the flow on the final commit,
-against QA's stacks (evidence skill, step 3).
+compose, write `EVIDENCE.md`), and show it to the user. Capture what is missing. For a UI or terminal flow, record it on the final
+commit, against QA's stacks (evidence skill, step 3).
 Continue only after the user has seen it. Step 7 publishes it.
 
 For a `spike`, there is no PR. Deliver the evidence and a proposed cut into

@@ -33,6 +33,11 @@ config:
 
 Clients then reach the lane at `hoopsidecar.<namespace>.svc.cluster.local:15432`.
 
+The image reference lives only in `values.yaml` (`image.repository`,
+`image.tag`). A release installed when the defaults sat in the templates has no
+image values, so `helm upgrade --reuse-values` refuses to render. Upgrade it
+with `--reset-then-reuse-values`, or set `image.repository` and `image.tag`.
+
 ## Ports
 
 The chart declares exactly one port, literally: **19000**, the admin server.
@@ -101,7 +106,8 @@ The admin Service is separate and unaffected — always ClusterIP, always 19000.
 > `loadBalancerSourceRanges` narrows who can reach it; it does not encrypt.
 > `deploy/managed-agents/http/` is a worked example: one public http lane with
 > `downstream_tls` and a caller token. `deploy/managed-agents/kubernetes/` is
-> another, for kubectl.
+> another, for kubectl, and `deploy/openai-agents/kubernetes/` is the same for
+> an OpenAI-hosted agent.
 
 **The review MCP server** (`mcp.listen` in the sidecar config) is published
 the same way, and only on ClusterIP: it has no authentication. Bind it to
@@ -148,7 +154,8 @@ under `deploy/docker-compose/` binds:
 | `config` | The sidecar config document, rendered into a ConfigMap and mounted at `/etc/hoop-inspect/config.yaml` |
 | `existingConfigMap` | Mount a ConfigMap you manage instead, key `config.yaml`. Mutually exclusive with `config` |
 | `configRevision` | Rollout trigger for `existingConfigMap`. Change it whenever that ConfigMap's content changes, or the pods never pick it up |
-| `license` | License document or a path to one → `HOOP_LICENSE` |
+| `license` | License document or a path to one → `HOOP_LICENSE`. Changing it rolls the pods; see "Rotating the license without a restart" |
+| `adminSecret` | Secret that `PUT /license` on the admin port asks for → `HOOP_SIDECAR_ADMIN_SECRET`. Empty turns the endpoint off |
 | `controlPlane.url` | Control Plane to take the running config from → `HOOP_CONTROL_PLANE_URL` |
 | `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN`. Exclusive with `controlPlane.identity` |
 | `controlPlane.identity` | Authenticate with the pod's own identity instead of a token → `HOOP_SIDECAR_IDENTITY_TYPE`. `kubernetes` mounts a projected token with audience `controlPlane.identityAudience` and sets `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` to it; `gcp` reads a Google ID token from the metadata server; `spiffe` reads a JWT-SVID from the Workload API socket the chart mounts (see `spiffe.*`). The control plane creates the sidecar on first contact; see "Service account identity" below |
@@ -163,8 +170,9 @@ under `deploy/docker-compose/` binds:
 | `analytics.enabled` | Usage analytics to Segment. `false` → `HOOP_SIDECAR_ANALYTICS=off`. Default `true` |
 | `analytics.sidecarId` | Stable install identity → `HOOP_SIDECAR_ID`. Default: the release's full name. Hashed before it is sent |
 | `analytics.hostId` | Machine identity → `HOOP_HOST_ID`. Default: the node name via the downward API. Hashed before it is sent |
-| `analytics.installSource` | The hoop template that installed the sidecar → `HOOP_SIDECAR_INSTALL_SOURCE`. Default empty: no property. Values: `managed-agents-http`, `managed-agents-kubernetes`; anything else is sent as `other` |
+| `analytics.installSource` | The hoop template that installed the sidecar → `HOOP_SIDECAR_INSTALL_SOURCE`. Default empty: no property. Values: `managed-agents-http`, `managed-agents-kubernetes`, `openai-agents-http`, `openai-agents-kubernetes`, `agentcore-http`, `agentcore-kubernetes`, `agentcore-postgres`; anything else is sent as `other` |
 | `extraSecret` | Extra environment variables, as a Secret |
+| `existingSecret` | A Secret in the namespace the chart references but does not manage. Loaded last: `HOOP_LICENSE` and `HOOP_SIDECAR_TOKEN` there override `license` and `controlPlane.token`, so neither has to sit in the release values |
 | `service.enabled` | A Service for the admin port, 19000 only. Default `true` |
 | `laneServices` | Map of Services publishing lane ports. One Service per entry; empty by default |
 | `service.type` | Default `ClusterIP` |
@@ -265,9 +273,58 @@ GitOps tool that annotates the pods for you (Reloader, Argo CD) makes it
 unnecessary. Without any of these,
 `kubectl rollout restart deploy/<release>-hoopsidecar` is the manual equivalent.
 
+`existingSecret` has the same gap, with no in-place path: its variables are
+read when the pod starts, and the chart cannot see the Secret change. After
+rotating `HOOP_SIDECAR_TOKEN` or `HOOP_LICENSE` there, change `configRevision`
+(or run the restart above) so the pods pick the new values up.
+
+## Rotating the license without a restart
+
+`license` is an environment variable, so changing it rolls the pods. Two ways
+keep them up.
+
+**Mount it from a Secret.** Point `license` at the mounted path. The relay
+stats the file every ten seconds and puts a replaced document in force; the
+kubelet updates the mounted Secret on its sync period. Mount the directory,
+not a `subPath`, which is never updated.
+
+```yaml
+license: /run/secrets/hoop-license/license.json
+extraVolumes:
+  - name: hoop-license
+    secret:
+      secretName: hoop-sidecar-license
+extraVolumeMounts:
+  - name: hoop-license
+    mountPath: /run/secrets/hoop-license
+    readOnly: true
+```
+
+```bash
+kubectl create secret generic hoop-sidecar-license \
+  --from-file=license.json=./license.json --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**Send it to the admin port.** Set `adminSecret` (or `HOOP_SIDECAR_ADMIN_SECRET`
+in `existingSecret`), then `PUT` the document to each pod. It lasts until the
+license source changes or the pod restarts, so also update the source.
+
+The admin port speaks plain HTTP, so the bearer secret must not cross a
+network someone else can read. Reach each pod through `kubectl port-forward`,
+which carries the request over the API server's TLS connection:
+
+```bash
+kubectl port-forward pod/<pod> 19000:19000 &
+curl -X PUT --data-binary @license.json \
+  -H "Authorization: Bearer $ADMIN_SECRET" http://127.0.0.1:19000/license
+```
+
+Under a control plane that owns the license, set it in the control plane;
+both ways are refused.
+
 ## Environment variables
 
-Ten come from the Secret `sidecar-config`, plus `SPIFFE_ENDPOINT_SOCKET`
+Eleven come from the Secret `sidecar-config`, plus `SPIFFE_ENDPOINT_SOCKET`
 when the socket is mounted. Four are set directly on the container because
 they default to downward-API fields, which a Secret cannot express:
 
@@ -275,6 +332,7 @@ they default to downward-API fields, which a Secret cannot express:
 |---|---|
 | `HOOP_SIDECAR_CONFIG` | Set to the mount path when `config` or `existingConfigMap` is used |
 | `HOOP_LICENSE` | `license` |
+| `HOOP_SIDECAR_ADMIN_SECRET` | `adminSecret` |
 | `HOOP_CONTROL_PLANE_URL` | `controlPlane.url` |
 | `HOOP_SIDECAR_TOKEN` | `controlPlane.token` |
 | `HOOP_SIDECAR_IDENTITY_TYPE` | `controlPlane.identity`: empty, `kubernetes`, `gcp` or `spiffe` |

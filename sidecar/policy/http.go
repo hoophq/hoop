@@ -2,6 +2,7 @@ package policy
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -164,12 +165,7 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 		if !r.methodAllowed(d.Method) {
 			return false, true
 		}
-		for _, pattern := range r.Resources {
-			if matchResource(pattern, d.Resource) {
-				return true, true
-			}
-		}
-		return false, true
+		return r.matchesResource(stmt), true
 
 	case MatchHTTPStatus:
 		if stmt.Protocol == inspect.GRPC {
@@ -198,7 +194,7 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 		if d.StatusCode != 0 || stmt.Direction == inspect.FromServer {
 			return false, true // a response; this rule reads the request
 		}
-		if !r.methodAllowed(d.Method) || !r.resourceAllowed(d.Resource) {
+		if !r.methodAllowed(d.Method) || !r.resourceAllowed(stmt) {
 			return false, true
 		}
 		for name, patterns := range r.Headers {
@@ -219,13 +215,23 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 }
 
 // resourceAllowed applies Resources as a scope: empty means every resource.
-func (r Rule) resourceAllowed(resource string) bool {
-	if len(r.Resources) == 0 {
-		return true
+func (r Rule) resourceAllowed(stmt inspect.Statement) bool {
+	return len(r.Resources) == 0 || r.matchesResource(stmt)
+}
+
+// matchesResource also tries the resource with its dot segments unresolved,
+// raw and resolved on its own: a gateway can route the raw prefix and leave
+// the rest to a cluster that resolves it.
+func (r Rule) matchesResource(stmt inspect.Statement) bool {
+	forms := []string{stmt.HTTP.Resource}
+	if u, ok := stmt.Metadata[inspect.MetadataHTTPResourceUnresolved]; ok {
+		forms = append(forms, u, path.Clean(u))
 	}
 	for _, pattern := range r.Resources {
-		if matchResource(pattern, resource) {
-			return true
+		for _, resource := range forms {
+			if matchResource(pattern, resource) {
+				return true
+			}
 		}
 	}
 	return false

@@ -16,15 +16,15 @@ import (
 
 const upstreamToken = "ya29.upstream-token"
 
-// bearer is the caller's Authorization value as the check and the resolver
+// callerBearer is the caller's Authorization value as the check and the resolver
 // see it.
-const bearer = "Bearer " + secret
+const callerBearer = "Bearer " + secret
 
-// swapSecret is the resolver a daemon would compose: the caller's bearer
+// swapSecret is the resolver a daemon would compose: the caller's callerBearer
 // resolves to the upstream's bearer token for alice, anything else is
 // refused.
 func swapSecret(_ context.Context, credential string) (codechttp.SwapResult, error) {
-	if credential != bearer {
+	if credential != callerBearer {
 		return codechttp.SwapResult{}, fmt.Errorf("%w: the caller token is not accepted", codectypes.ErrLoginRefused)
 	}
 	return codechttp.SwapResult{
@@ -39,13 +39,13 @@ func swapSecret(_ context.Context, credential string) (codechttp.SwapResult, err
 var authSwap = codechttp.Options{CredentialHeader: "Authorization", AuthenticatesCaller: true, Swap: swapSecret}
 
 // swapCodec builds a swapping codec; on an authenticating lane the check
-// accepts bearer only, as the gate would install its own.
+// accepts callerBearer only, as the gate would install its own.
 func swapCodec(t *testing.T, o codechttp.Options) *codechttp.Codec {
 	t.Helper()
 	c := codechttp.New(o)
 	if o.AuthenticatesCaller {
 		err := c.AuthenticateCallers(func(credential string) error {
-			if credential != bearer {
+			if credential != callerBearer {
 				return errNotListed
 			}
 			return nil

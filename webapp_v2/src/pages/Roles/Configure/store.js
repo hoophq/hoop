@@ -6,6 +6,7 @@ import { attributesService } from '@/services/attributes'
 import { connectionTagsService } from '@/services/connectionTags'
 import { userGroupsService } from '@/services/userGroups'
 import infrastructure from '@/services/infrastructure'
+import { federationService } from '@/services/federation'
 import {
   decodeForDisplay,
   decodeSecretValue,
@@ -15,7 +16,17 @@ import {
   PLACEHOLDER_KEY_RE,
   sourceFromEncodedValue,
 } from '@/pages/Roles/Configure/utils/secretsCodec'
-import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
+import { CONNECTION_METHODS, supportsIamFederation } from '@/utils/connectionPolicy'
+import {
+  adminCredentialsForTest,
+  buildFederationConfig,
+  buildFederationTestPayload,
+  DEFAULT_FEDERATION_FORM,
+  FEDERATION_PROVIDERS,
+  federationFormsEqual,
+  formFromConfig,
+  staticSecretsMirror,
+} from '@/pages/Roles/Configure/utils/federation'
 
 // Page-local store for Configure Role. The staged-secrets contract is
 // the only non-obvious bit:
@@ -185,6 +196,40 @@ function buildDraftsPatch(drafts, baseline) {
   return patch
 }
 
+// `selected` is the IAM Federation card; `config` is what the gateway stores.
+const initialFederation = {
+  status: 'idle',
+  config: null,
+  form: DEFAULT_FEDERATION_FORM,
+  baselineForm: DEFAULT_FEDERATION_FORM,
+  selected: false,
+  credentialsEditing: false,
+  error: null,
+  oauthStatus: null,
+  oauthStatusError: null,
+}
+
+// Module-level so it stays monotonic across reset().
+let oauthStatusGeneration = 0
+
+function persistedFederation(config, oauthStatus = null) {
+  const form = formFromConfig(config)
+  return {
+    ...initialFederation,
+    status: 'ready',
+    config,
+    form,
+    baselineForm: form,
+    selected: Boolean(config),
+    oauthStatus,
+  }
+}
+
+function federationDirty(federation) {
+  if (federation.selected !== Boolean(federation.config)) return true
+  return federation.selected && !federationFormsEqual(federation.form, federation.baselineForm)
+}
+
 const initialState = {
   connection: null,
   loading: false,
@@ -230,6 +275,8 @@ const initialState = {
   // id would re-adopt a login the admin did not perform on this save.
   mcpOAuthFlowId: null,
   auxLoading: false,
+  federation: initialFederation,
+  federationTest: { status: 'idle', result: null },
 }
 
 export const useConfigureRoleStore = create((set, get) => ({
@@ -244,6 +291,8 @@ export const useConfigureRoleStore = create((set, get) => ({
       fieldSources: {},
       renames: {},
       mcpOAuthFlowId: null,
+      federation: initialFederation,
+      federationTest: { status: 'idle', result: null },
     })
     try {
       const data = await connectionsService.getConnection(nameOrId)
@@ -259,10 +308,128 @@ export const useConfigureRoleStore = create((set, get) => ({
         fieldSources,
         loading: false,
       })
+      if (supportsIamFederation(data.subtype)) get().loadFederation()
     } catch (err) {
       const message = err?.response?.data?.message || 'Failed to load connection.'
       set({ error: message, loading: false })
     }
+  },
+
+  loadFederation: async () => {
+    const name = get().connection?.name
+    if (!name) return
+    set({ federation: { ...initialFederation, status: 'loading' } })
+    try {
+      const { data } = await federationService.get(name)
+      if (get().connection?.name !== name) return
+      set({ federation: persistedFederation(data) })
+      if (data?.builtin_provider === FEDERATION_PROVIDERS.GCP_OAUTH) {
+        get().loadFederationOAuthStatus()
+      }
+    } catch (err) {
+      if (get().connection?.name !== name) return
+      if (err?.response?.status === 404) {
+        set({ federation: persistedFederation(null) })
+        return
+      }
+      set({
+        federation: {
+          ...initialFederation,
+          status: 'error',
+          error: err?.response?.data?.message || 'Failed to load the IAM federation.',
+        },
+      })
+    }
+  },
+
+  selectFederation: (selected) =>
+    set((state) => ({ federation: { ...state.federation, selected } })),
+
+  setFederationForm: (patch) =>
+    set((state) => ({
+      federation: { ...state.federation, form: { ...state.federation.form, ...patch } },
+    })),
+
+  // A credential typed for one provider is the wrong kind for the other.
+  // gcp_oauth has no static service account to fall back on.
+  setFederationProvider: (provider) => {
+    get().setFederationCredentialsEditing(false)
+    get().setFederationForm(
+      provider === FEDERATION_PROVIDERS.GCP_OAUTH
+        ? { builtin_provider: provider, admin_credentials_json: '', fallback_policy: 'deny' }
+        : { builtin_provider: provider, admin_credentials_json: '' },
+    )
+  },
+
+  setFederationProjectId: (projectId) =>
+    set((state) => {
+      const form = state.federation.form
+      return {
+        federation: {
+          ...state.federation,
+          form: { ...form, extra_config: { ...form.extra_config, project_id: projectId } },
+        },
+      }
+    }),
+
+  setFederationCredentialsEditing: (credentialsEditing) =>
+    set((state) => ({ federation: { ...state.federation, credentialsEditing } })),
+
+  runFederationTest: async (email) => {
+    const { connection, drafts, federation, hideRoleInfo } = get()
+    set({ federationTest: { status: 'loading', result: null } })
+    try {
+      const { data } = await federationService.test(
+        buildFederationTestPayload({
+          email,
+          form: federation.form,
+          agentId: drafts.agent_id || connection.agent_id,
+          connection,
+          adminCredentials: adminCredentialsForTest(federation.form, connection.secret, hideRoleInfo),
+        }),
+      )
+      set({ federationTest: { status: data?.success ? 'success' : 'error', result: data } })
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Federation test failed.'
+      set({ federationTest: { status: 'error', result: { error: message } } })
+    }
+  },
+
+  resetFederationTest: () => set({ federationTest: { status: 'idle', result: null } }),
+
+  loadFederationOAuthStatus: async () => {
+    const name = get().connection?.name
+    if (!name) return
+    const generation = ++oauthStatusGeneration
+    const current = () => generation === oauthStatusGeneration && get().connection?.name === name
+    try {
+      const { data } = await federationService.oauthStatus(name)
+      if (!current()) return
+      set((state) => ({
+        federation: { ...state.federation, oauthStatus: data, oauthStatusError: null },
+      }))
+    } catch (err) {
+      if (!current()) return
+      set((state) => ({
+        federation: {
+          ...state.federation,
+          oauthStatus: null,
+          oauthStatusError: err?.response?.data?.message || 'Failed to load the Google account status.',
+        },
+      }))
+    }
+  },
+
+  // Returns the Google consent URL; the caller sends the browser there.
+  startFederationOAuth: async () => {
+    const name = get().connection?.name
+    const { data } = await federationService.oauthAuthorize(name, window.location.href)
+    return data?.url
+  },
+
+  disconnectFederationOAuth: async () => {
+    await federationService.oauthDisconnect(get().connection?.name)
+    await get().loadFederationOAuthStatus()
   },
 
   // Records the MCP OAuth login the user just completed, so save() can hand
@@ -430,6 +597,7 @@ export const useConfigureRoleStore = create((set, get) => ({
   //   MANUAL          → wipe every reference prefix
   //   SECRETS_MANAGER → wipe `_aws_iam_rds:` only
   //   AWS_IAM         → wipe `_aws:` / `_vaultkv*:`; keep `_aws_iam_rds:`
+  //   IAM_FEDERATION  → keep all: they are the federation's static fallback
   switchConnectionMethod: (newMethod) => {
     set((state) => {
       const stagedSecrets = {}
@@ -505,6 +673,7 @@ export const useConfigureRoleStore = create((set, get) => ({
     // matches the stored one byte for byte: the flow id is what the gateway
     // needs to start renewing it, and only a save hands that over.
     if (state.mcpOAuthFlowId) return true
+    if (federationDirty(state.federation)) return true
     return Object.keys(buildDraftsPatch(state.drafts, state.baseline)).length > 0
   },
 
@@ -586,12 +755,30 @@ export const useConfigureRoleStore = create((set, get) => ({
       throw err
     }
     set({ saving: true, error: null })
+    // The federation PUT goes first: it validates the identity template, and
+    // the static key it mirrors rides in the PATCH. Its DELETE goes last, so a
+    // failed PATCH leaves the federation as it was.
+    const { federation } = get()
+    const federationChanged =
+      supportsIamFederation(connection.subtype) && federationDirty(federation)
+    let savedFederation = federation.config
+    let partial = ''
     try {
+      if (federationChanged && federation.selected) {
+        const mirror = staticSecretsMirror(federation.form, connection.secret)
+        const { data } = await federationService.save(
+          connection.name,
+          buildFederationConfig(federation.form),
+        )
+        savedFederation = data
+        partial = 'The IAM federation was saved, the other changes were not: '
+        for (const [key, value] of Object.entries(mirror)) get().replaceSecret(key, value)
+      }
       const payload = buildDraftsPatch(drafts, baseline)
       // A key rename with an untouched value stages nothing in
       // stagedSecrets — it lives in `renames` only — so both maps gate
       // whether the secret patch is sent.
-      if (Object.keys(stagedSecrets).length > 0 || Object.keys(renames).length > 0) {
+      if (Object.keys(get().stagedSecrets).length > 0 || Object.keys(renames).length > 0) {
         payload.secret = get().buildSecretsPatch()
       }
       // An MCP Gateway connection re-authorized on this screen hands over the
@@ -601,6 +788,13 @@ export const useConfigureRoleStore = create((set, get) => ({
         payload.mcp_oauth_flow_id = mcpOAuthFlowId
       }
       const updated = await connectionsService.patchConnection(connection.name, payload)
+      if (federationChanged && !federation.selected) {
+        partial = 'The role was saved, but its IAM federation was not removed: '
+        await federationService.remove(connection.name).catch((err) => {
+          if (err?.response?.status !== 404) throw err
+        })
+        savedFederation = null
+      }
       const newDrafts = draftsFromConnection(updated)
       // Re-seed per-field sources from the saved connection (same as
       // loadConnection) so renamed keys don't leave stale entries around.
@@ -617,12 +811,16 @@ export const useConfigureRoleStore = create((set, get) => ({
         baseline: newDrafts,
         saving: false,
         mcpOAuthFlowId: null,
+        federation: federationChanged
+          ? persistedFederation(savedFederation, federation.oauthStatus)
+          : get().federation,
       })
       return updated
     } catch (err) {
-      const message = err?.response?.data?.message || err?.message || 'Failed to save connection.'
+      const detail = err?.response?.data?.message || err?.message || 'Failed to save connection.'
+      const message = partial + detail
       set({ error: message, saving: false })
-      throw err
+      throw partial ? new Error(message) : err
     }
   },
 

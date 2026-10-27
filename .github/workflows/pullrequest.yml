@@ -514,6 +514,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: scripts/ci/check-libhoop-pins.sh
 
+  # setup-go-private names each failed Go test in a job annotation (ENG-879),
+  # which outlives the one-day job log. A matcher that stops matching fails
+  # nothing, so its fixtures run here.
+  go-test-matcher:
+    name: Go Test Matcher
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Test the failed-test matcher
+        run: scripts/ci/go-test-matcher_test.sh
+
   # Development Release builds webapp_v2 only after the CLJS bundle; fail fast here.
   webapp-v2:
     name: Webapp v2 Lint and Build
@@ -538,5 +552,11 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Sessions seed tests
+        run: node --test ../scripts/dev/seed-sessions/seed.test.mjs
+      - name: Resources seed tests
+        run: node --test ../scripts/dev/seed-resources/seed.test.mjs
       - name: Build
         run: npm run build

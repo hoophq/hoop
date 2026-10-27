@@ -6,8 +6,12 @@ import { SOURCES } from '@/pages/Roles/Configure/utils/secretsCodec'
 // Manager) from the envvar values' prefixes. Mirrors CLJS
 // connection_method.cljs::infer-connection-method. Tie-break order
 // (Vault > AWS Secrets Manager) follows CLJS — in practice a connection
-// only carries one provider's references.
-export function deriveConnectionInfo(secrets = {}) {
+// only carries one provider's references. Federation is not visible in the
+// secrets: the caller passes whether GET /connections/:name/federation found it.
+export function deriveConnectionInfo(secrets = {}, { federated = false } = {}) {
+  if (federated) {
+    return { method: CONNECTION_METHODS.IAM_FEDERATION, provider: null }
+  }
   let sawVaultKv1 = false
   let sawVaultKv2 = false
   let sawAwsSecretsManager = false

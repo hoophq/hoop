@@ -20,11 +20,6 @@ import (
 
 var sidecarCredentialExpires time.Duration
 
-var sidecarCmd = &cobra.Command{
-	Use:   "sidecar",
-	Short: "Work with sidecar lanes",
-}
-
 var sidecarCredentialCmd = &cobra.Command{
 	Use:   "credential SIDECAR/LANE",
 	Short: "Mint a credential for a sidecar lane",
@@ -42,7 +37,6 @@ func init() {
 	sidecarCredentialCmd.Flags().DurationVar(&sidecarCredentialExpires, "expires", 24*time.Hour, "How long the credential lives, at most 720h")
 	sidecarCredentialCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One of: (json)")
 	sidecarCmd.AddCommand(sidecarCredentialCmd)
-	rootCmd.AddCommand(sidecarCmd)
 }
 
 // sidecarCredentialResponse mirrors openapi.SidecarCredential.

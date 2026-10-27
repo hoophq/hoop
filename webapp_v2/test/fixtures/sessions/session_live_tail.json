@@ -1,0 +1,76 @@
+{
+  "source": "webapp/test/webapp/audit/views/session_vectors.cljs",
+  "generator": "npm --prefix webapp run fixtures:sessions",
+  "function": "webapp.audit.views.session-live-tail/live-terminal-events",
+  "cases": [
+    {
+      "name": "an ssh session with no events waits as a terminal",
+      "recording_format": "ssh",
+      "events": [],
+      "finalize": false,
+      "expected": []
+    },
+    {
+      "name": "an ssh session waits as a terminal before its pty-req",
+      "recording_format": "ssh",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ]
+      ],
+      "finalize": false,
+      "expected": []
+    },
+    {
+      "name": "a gateway error shows while waiting",
+      "recording_format": "ssh",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAc2Vzc2lvbgA="
+        ],
+        [
+          2,
+          "e",
+          "YWdlbnQgaXMgb2ZmbGluZQ=="
+        ]
+      ],
+      "finalize": true,
+      "expected": [
+        [
+          2,
+          "e",
+          "agent is offline"
+        ]
+      ]
+    },
+    {
+      "name": "an ssh channel without a pty renders rows",
+      "recording_format": "ssh",
+      "events": [
+        [
+          0,
+          "i",
+          "AQEAZGlyZWN0LXRjcGlwAA=="
+        ],
+        [
+          1,
+          "i",
+          "AwEAR0VUIC8="
+        ]
+      ],
+      "finalize": false,
+      "expected": null
+    },
+    {
+      "name": "a raw session renders rows",
+      "recording_format": "raw",
+      "events": [],
+      "finalize": false,
+      "expected": null
+    }
+  ]
+}

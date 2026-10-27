@@ -1,15 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
 import AuthPageLoader from '@/components/AuthPageLoader'
-import { postAuthPath } from '@/modes'
+import { POST_LOGIN_PATH } from '@/modes'
+import { samePagePath } from '@/utils/redirect'
 
 function AuthCallback() {
   const navigate = useNavigate()
   const { initializeToken, getAndClearRedirectUrl } = useAuthStore()
   const [error, setError] = useState(null)
+  // The callback runs once. A second run (StrictMode's double effect) finds
+  // the saved URL already taken and would send the app to the default page,
+  // racing the first run's redirect.
+  const handled = useRef(false)
 
   useEffect(() => {
+    if (handled.current) return
+    handled.current = true
     const handleCallback = async () => {
       try {
         const searchParams = new URLSearchParams(window.location.search)
@@ -31,12 +38,18 @@ function AuthCallback() {
           return
         }
 
-        const redirectUrl = getAndClearRedirectUrl()
-        const target = redirectUrl ? null : await postAuthPath()
-        if (redirectUrl) {
-          window.location.href = redirectUrl
+        // ?next= is the page the login started from, carried through the IdP
+        // in this URL (Login's redirectToIdp). It wins over storage, which a
+        // browser or another tab can lose or replace on the way.
+        const saved = getAndClearRedirectUrl()
+        const target = samePagePath(searchParams.get('next')) || samePagePath(saved)
+        if (target) {
+          // A page of this app goes back in place: no reload to race.
+          navigate(target, { replace: true })
+        } else if (saved) {
+          window.location.href = saved
         } else {
-          navigate(target)
+          navigate(POST_LOGIN_PATH)
         }
       } catch (err) {
         console.error('Auth callback error:', err)

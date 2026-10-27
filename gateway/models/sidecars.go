@@ -674,11 +674,14 @@ func SidecarNameIsDeleted(db *gorm.DB, orgID, name string) (bool, error) {
 // A SidecarOutcomeNotServed is the plane's own verdict, so this handshake,
 // which the plane did serve, ends it whatever the sidecar reports: the
 // sidecar never received the document it names and holds nothing about it.
-func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string) error {
+//
+// firstCheckIn reports a sidecar that had never handshaken before.
+func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string) (firstCheckIn bool, err error) {
 	if capabilities == nil {
 		capabilities = []string{}
 	}
-	return db.Exec(`
+	err = db.Raw(`
+	WITH before AS (SELECT last_seen_at FROM private.sidecars WHERE id = @id)
 	UPDATE private.sidecars SET
 		last_seen_at = NOW(),
 		reported_version = NULLIF(@version, ''),
@@ -694,11 +697,13 @@ func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, la
 			THEN NOW() ELSE served_revision_at END,
 		served_revision = NULLIF(@served, ''),
 		capabilities = @capabilities
-	WHERE id = @id`, map[string]any{
+	WHERE id = @id
+	RETURNING (SELECT b.last_seen_at IS NULL FROM before b)`, map[string]any{
 		"version": version, "applied": appliedRevision, "outcome": lastOutcome, "error": lastError,
 		"served": servedRevision, "capabilities": pq.StringArray(capabilities), "id": sidecarID,
 		"not_served": SidecarOutcomeNotServed,
-	}).Error
+	}).Scan(&firstCheckIn).Error
+	return firstCheckIn, err
 }
 
 // SidecarOutcomeNotServed is the last_outcome RecordSidecarServeRefusal

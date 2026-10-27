@@ -48,7 +48,7 @@ spec:
       serviceAccountName: {{ . }}
       {{- end }}
       containers:
-      - image: '{{ .Values.image.repository |default "hoophq/hoopsidecar" }}:{{ .Values.image.tag |default "latest" }}'
+      - image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
         name: sidecar
         imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
         {{- if .Values.resources }}
@@ -62,6 +62,10 @@ spec:
         - secretRef:
             name: {{ include "hoopsidecar.extraEnvSecretName" $ }}
         {{- end}}
+        {{- with .Values.existingSecret }}
+        - secretRef:
+            name: {{ . }}
+        {{- end }}
         # HOOP_HOST_ID cannot ride in the Secret above: it defaults to the
         # node name, which only the downward API knows, and a Secret has no
         # valueFrom. A literal in values replaces the fieldRef.

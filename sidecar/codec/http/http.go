@@ -29,6 +29,9 @@
 //     when a transparent MITM routes it back in. The same head rewrite
 //     removes a credential meant for the sidecar alone (a caller token)
 //     and swaps the upstream one in.
+//   - Credential placement (placement.go): the same filter refuses a
+//     request that carries a credential the lane knows outside its header,
+//     because a vault fills a token into a URL or a body too.
 package http
 
 import (
@@ -44,9 +47,9 @@ import (
 
 // Options configures one lane's HTTP codec.
 //
-// Every field but CredentialHeader, AuthenticatesCaller, Origin, Swap and
-// Impersonate is forwarded to libhoop's codechttp.Options unchanged; see
-// there for their defaults.
+// Every field but CredentialHeader, AuthenticatesCaller, Origin, Swap,
+// Impersonate and Seen is forwarded to libhoop's codechttp.Options
+// unchanged; see there for their defaults.
 type Options struct {
 	CaptureBody bool
 
@@ -97,6 +100,12 @@ type Options struct {
 	// subject) and one Impersonate-Group per group from SwapResult.Identity
 	// to every swapped request. It needs Swap.
 	Impersonate bool
+	// Seen is the lane's memory of the Authorization credentials its
+	// upstream accepted, which the request filter keeps out of every
+	// request's URL, body and other headers (placement.go). Every codec of
+	// one lane must share one, or a credential learned on one connection
+	// is not watched on the next. Nil gives the codec a memory of its own.
+	Seen *SeenCredentials
 }
 
 // Codec is libhoop's HTTP Inspector with the relay's additions.
@@ -154,6 +163,10 @@ func New(o Options) *Codec {
 		}),
 		creds: credentials{header: header, keep: keep, authenticates: o.AuthenticatesCaller},
 		via:   viaFilter{origin: o.Origin},
+	}
+	c.via.guard.seen = o.Seen
+	if c.via.guard.seen == nil {
+		c.via.guard.seen = NewSeenCredentials()
 	}
 	if o.AuthenticatesCaller {
 		c.via.auth = &c.creds

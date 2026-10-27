@@ -16,7 +16,8 @@ import {
 import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
 import AuthPageLoader from '@/components/AuthPageLoader'
-import { postAuthPath } from '@/modes'
+import { POST_LOGIN_PATH } from '@/modes'
+import { samePagePath } from '@/utils/redirect'
 
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
@@ -28,6 +29,9 @@ const LOGIN_ERROR_MESSAGES = {
   unregistered:
     'Your user is not registered. Try to signup or talk to the account administrator',
 }
+
+// The size of private.login.redirect, where the gateway keeps the callback.
+const LOGIN_REDIRECT_MAX = 255
 
 function getLoginErrorMessage(error) {
   return LOGIN_ERROR_MESSAGES[error] || error
@@ -70,7 +74,7 @@ function Login() {
       if (redirectUrl) {
         window.location.href = redirectUrl
       } else {
-        postAuthPath().then(navigate)
+        navigate(POST_LOGIN_PATH)
       }
     }
   }, [isAuthenticated, navigate, getAndClearRedirectUrl])
@@ -115,7 +119,16 @@ function Login() {
   const redirectToIdp = async (method, options = {}) => {
     setLoading(true)
     try {
-      const callbackUrl = `${window.location.origin}/auth/callback`
+      // The page to return to rides the login itself, as ?next=: the IdP
+      // sends the browser back to this exact URL, so no storage, tab or
+      // other page can lose or replace it on the way.
+      // The gateway stores the callback in a 255-character column
+      // (private.login.redirect): a longer one fails the login, so a long
+      // page returns through the saved URL alone.
+      const next = samePagePath(useAuthStore.getState().peekRedirectUrl())
+      const base = `${window.location.origin}/auth/callback`
+      const withNext = next ? `${base}?next=${encodeURIComponent(next)}` : base
+      const callbackUrl = withNext.length <= LOGIN_REDIRECT_MAX ? withNext : base
       const loginUrl =
         method === 'saml'
           ? await authService.getSamlLoginUrl(callbackUrl, options)
@@ -142,7 +155,7 @@ function Login() {
         return
       }
 
-      navigate(await postAuthPath())
+      navigate(POST_LOGIN_PATH)
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid email or password')
     } finally {

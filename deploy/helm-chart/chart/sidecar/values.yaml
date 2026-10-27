@@ -16,11 +16,13 @@
 nameOverride: ''
 fullnameOverride: ''
 
-# -- Define a custom image configuration
-image: {}
-  # repository: hoophq/hoopsidecar
+# -- Container image. The reference lives here and nowhere else: the
+# Deployment reads image.repository and image.tag verbatim, so a registry
+# mirror (AWS Marketplace ECR, for one) only rewrites this block.
+image:
+  repository: hoophq/hoopsidecar
+  tag: latest
   # pullPolicy: Always
-  # tag: latest
   #
   # Tags: the Ubuntu flavour carries NO SUFFIX — `<version>`, with `latest`
   # pointing at it. It keeps a shell, so the default is the one you can debug.
@@ -159,7 +161,17 @@ configRevision: ''
 # A value starting with '{' is read as the license itself, anything else as a
 # filename — so a mounted secret and this value are the same field. Passed as
 # HOOP_LICENSE, which outranks the config file's "license" key.
+#
+# Changing this value rolls the pods. To rotate without a restart, mount the
+# license from a Secret with extraVolumes/extraVolumeMounts and set this to
+# the mounted path: the relay re-reads the file when the kubelet updates it.
+# Or send it to PUT /license on the admin port; see `adminSecret`.
 license: ''
+
+# -- Secret that PUT /license on the admin port (19000) asks for, as
+# `Authorization: Bearer <secret>`. Empty turns the endpoint off, which keeps
+# the admin port read-only. → HOOP_SIDECAR_ADMIN_SECRET
+adminSecret: ''
 
 # -- Take the running configuration from a Control Plane instead of the file
 # above. The handshake supplies the whole config and `config` becomes optional;
@@ -281,13 +293,29 @@ analytics:
   # → HOOP_HOST_ID. Empty uses spec.nodeName; a literal replaces it.
   hostId: ''
   # → HOOP_SIDECAR_INSTALL_SOURCE. Set by hoop's templates
-  # (managed-agents-http, managed-agents-kubernetes). Empty sends nothing.
+  # (managed-agents-http, managed-agents-kubernetes, openai-agents-http,
+  # openai-agents-kubernetes). Empty sends nothing.
   installSource: ''
 
 # -- Define extra secret as environment variables
 extraSecret: {}
 # ENVSECRET1: RAWVALUE1
 # ENVSECRET2: RAWVALUE2
+
+# -- Load environment variables from a Secret that already exists in the
+# namespace. The chart references it and never creates or manages it, so a
+# license or a control plane token stays out of the release values. It is
+# loaded last, so it overrides `license` and `controlPlane.token` above:
+#   HOOP_LICENSE        the license document, or a path to one
+#   HOOP_SIDECAR_TOKEN  the control plane token; with it, controlPlane.url
+#                       needs no token in values. Do not combine it with
+#                       controlPlane.identity: the relay refuses two credentials
+existingSecret: ''
+# existingSecret: hoop-sidecar-credentials
+#
+# Variables are read when the pod starts, and the chart cannot see this
+# Secret change: after rotating a key in it, change `configRevision` (above)
+# to roll the pods.
 
 # -- Readiness and liveness probes against the admin server's /healthz on
 # 19000. The port is not configurable: it is written into the Deployment, the

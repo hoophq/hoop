@@ -353,6 +353,9 @@ const (
 	// SourceIdentity is a request refused because its credential did not
 	// resolve, or because its caller changed with a response outstanding.
 	SourceIdentity = "identity"
+	// SourcePlacement is a request refused because it carried a credential
+	// outside the header that credential belongs in.
+	SourcePlacement = "placement"
 )
 
 // Decision is the answer for one chunk of bytes.
@@ -858,6 +861,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			// stands in for the statement.
 			stmt := inspect.Statement{Protocol: g.cfg.Protocol, Direction: dir, Text: refusal.Request}
 			r := g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr}, refusal.Error())
+			return *r
+		}
+		var placed *inspect.PlacementRefusal
+		if errors.As(err, &placed) {
+			// Recorded as a caller refusal is, with its redacted request
+			// line. Filed under the peer alone: the filter has checked the
+			// caller's token but not resolved whom it names. Its own rule,
+			// not "identity": the caller may well be one the lane admits.
+			stmt := inspect.Statement{Protocol: g.cfg.Protocol, Direction: dir, Text: placed.Request}
+			r := g.refuse(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr},
+				"credential-placement", SourcePlacement, placed.Error())
 			return *r
 		}
 		if err != nil {
@@ -1726,7 +1740,12 @@ func (g *Gate) sibling(id session.Identity) *session.Session {
 // session of its own (start, the denied statement, end) and the running
 // session's totals do not count it.
 func (g *Gate) refuseAs(ctx context.Context, stmt inspect.Statement, id session.Identity, message string) *Decision {
-	const rule = "identity"
+	return g.refuse(ctx, stmt, id, "identity", SourceIdentity, message)
+}
+
+// refuse is refuseAs under a rule and a metrics source of the caller's
+// choosing, for a refusal the gate decides on other grounds than identity.
+func (g *Gate) refuse(ctx context.Context, stmt inspect.Statement, id session.Identity, rule, source, message string) *Decision {
 	g.mu.Lock()
 	sess := g.sess
 	own := sameIdentity(sess.Identity, id)
@@ -1738,7 +1757,7 @@ func (g *Gate) refuseAs(ctx context.Context, stmt inspect.Statement, id session.
 	g.statements++
 	g.denied++
 	g.mu.Unlock()
-	g.countStatement(true, SourceIdentity)
+	g.countStatement(true, source)
 
 	var err error
 	if !own {

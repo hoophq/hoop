@@ -5,9 +5,9 @@
 // for callers who did not ask for it. Depending on this module is opting in.
 module github.com/hoophq/hoop/sidecar/config/yaml
 
-go 1.26.9
+go 1.26.10
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
@@ -21,4 +21,3 @@ require (
 )
 
 replace github.com/hoophq/hoop/sidecar => ../..
-

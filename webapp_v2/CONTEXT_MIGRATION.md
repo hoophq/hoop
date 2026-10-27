@@ -48,7 +48,7 @@ Gateway backend (port 8009)
 
 | Mechanism | Description |
 |-----------|-------------|
-| `localStorage.react-shell = true` | Set by `ClojureApp.jsx`. Signals CLJS to skip rendering its own sidebar/header (guards the double-render) |
+| `window.__hoopReactShellPresent = true` | Set per window by `main.jsx` before the CLJS bundle loads. Signals CLJS to skip its own sidebar/header (guards the double-render). Read via `webapp.shell/react-shell?`. Never a shared `localStorage` key: another tab removed it and caused double navbars |
 | `window.hoopSetRoute(path)` | Called by `ClojureApp.jsx` on path change to sync React Router → Pushy (CLJS router) |
 | `window.hoopRemount()` | Called on remount to re-render Reagent without refetching user data |
 | `localStorage.jwt-token` | Shared auth token. Both apps read/write the same key |
@@ -56,13 +56,12 @@ Gateway backend (port 8009)
 | `hoop:native-access-open` (DOM CustomEvent on `window`) | Emitted by `native_client_access/events.cljs` when `window.__hoopReactShellPresent` is set, so CLJS entry points (`/resources`, session details, the CLJS palette) open the React Native Connections drawer. Detail: `{connectionName, reopen?}`. Outlives the CLJS native-access code — those pages stay CLJS past B4.0 |
 | `hoop:native-access-resume` (DOM CustomEvent on `window`) | Same bridge for the post-review resume. Detail: `{connectionName, sessionId, accessDurationSec}` — the duration travels in the event because it comes from the CLJS session-details payload |
 
-### Application modes
+### Routes and gates
 
-One product: the gateway. `application_mode` is always `"gateway"`, and `src/modes/gateway.jsx`
-is the only manifest (the shell a page renders in and the three CLJS leaves `/`,
-`/onboarding/*`, `/*`). The per-org `experimental.agents` flag gates the agent pages. Rule
-forms come in an agent and a sidecar variant, chosen in `Router.jsx` with `<ByRuleTraffic>`.
-See `CLAUDE.md`, "Application modes".
+One product: the gateway. `src/modes/gateway.jsx` holds the shell a page renders in and the
+three CLJS leaves `/`, `/onboarding/*`, `/*`. The per-org `experimental.agents` flag gates
+the agent pages. Rule forms come in an agent and a sidecar variant, chosen in `Router.jsx`
+with `<ByRuleTraffic>`. See `CLAUDE.md`, "Routing, gates and roles".
 
 ### Routing Split (Router.jsx)
 
@@ -71,7 +70,6 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | Route | Handler | Status |
 |-------|---------|--------|
 | `/sidecars`, `/sidecars/connect`, `/sidecars/new`, `/sidecars/:id` | React | Done — control plane fleet on `/api/sidecars` (list, connect/create wizard with the one-time token, details) |
-| `/onboarding/license` | React | Done — control plane first-access license screen; reached by URL only |
 | `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane page; `NotImplemented`) |
 | `/organization/users` | React | Done — with free-form groups |
 | `/login` | React | Done |
@@ -80,7 +78,6 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/setup` | React | Done |
 | `/auth/callback` | React | Done |
 | `/signup/callback` | React | Done (IDP signup callback) |
-| `/dashboard` | React | Done (admin-only; lazily loaded — it owns the recharts chunk) |
 | `/agents` | React | Done |
 | `/agents/new` | React | Done |
 | `/settings/infrastructure` | React | Done |
@@ -172,8 +169,10 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 (hangs on an infinite spinner today), `/plugins/reviews/:review-id`,
 `/features/runbooks/edit/:connection-id`.
 
-No shadowed bidi entries remain (route + panel both alive but React matching
-first). Every migrated family has had its CLJS pages deleted.
+Shadowed bidi entries (route + panel both alive but React matching first):
+none. ENG-910 deleted the last shadowed panel, `:configure-role`, with
+`resources/configure_role/`. Its bidi entry stays because `/resources` and the
+configure-resource roles tab navigate to it.
 
 `/guardrails/*` lost its CLJS pages in EVL-147; `/features/access-control/*`
 and `/features/access-request/*` lost theirs in EVL-184;
@@ -210,7 +209,7 @@ them: `/guardrails` (`:guardrails`), `/guardrails/new` (`:create-guardrail`),
 `/features/ai-session-analyzer` (`:ai-session-analyzer`) and
 `/features/ai-session-analyzer/rules/new`
 (`:create-ai-session-analyzer-rule`). React renders all four, but
-`shared_ui/sidebar/constants.cljs`, the configure-role terminal tab,
+`shared_ui/sidebar/constants.cljs`,
 `features/promotion.cljs` and the activation-journey feature cards (via the
 `:route-create`/`:route-list` keys in `activation_journey/templates.cljs`)
 still `url-for`/`:navigate` them. `events/guardrails.cljs` also stays, trimmed
@@ -273,11 +272,10 @@ blocks"); full props in `COMPONENTS.md`.
   duration → credentials → countdown → disconnect flow inline, and reads live sessions
   from `GET /connection-credentials` instead of localStorage
 - CommandPalette (cmd+k / Spotlight) — fully functional with search and connection actions
-- Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `react-shell` flag
+- Sidebar — collapsible, persists state, synced with CLJS sidebar hiding via `window.__hoopReactShellPresent`
 - Auth pages — Login, Register (local), Signup (IDP org setup), Setup, Callback, SignupCallback
 - Agents page (list + create wizard)
-- Dashboard (`/dashboard`, admin-only) — three charts + today's overview. First chart consumer: introduced `@mantine/charts`, the `BarChart`/`DonutChart`/`SegmentedControl` wrappers and `CHART_SERIES_COLORS` in `theme.js`
-- Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted; legacy editor still handles review-configured connections. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576) and the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`).
+- Configure Role page (`/roles/:connectionName/configure`) — write-only credentials, four tabs (Details, Credentials, Terminal Access, Native Access). Backward-compat Review section deliberately omitted. Carries the CLJS features added after the migration started: `application/ssh-local` (proxy/local Connection Type radio in the SSH renderer, PR #1576), the Google Vertex AI provider for `httpproxy/claude-code` (PR #1560, gated by `experimental.claude_code_vertex`) and IAM federation for `custom/bigquery` (ENG-910).
 - Settings pages — Infrastructure, License, API Keys, Attributes, Protection Rules, Audit Logs, Experimental
 - Organization Users, Rulepacks (flag-gated), Event Routing, Data Masking, AI Agents Identities, Jira Templates (incl. the Jira integration Configuration tab)
 - Onboarding Protection Rules (`/onboarding/protection-rules` — the rest of `/onboarding/*` is still CLJS)
@@ -304,7 +302,7 @@ this section — when scheduling migration work.
 ## Gotchas & Non-Obvious Details
 
 - **Token key is `jwt-token`** not `token`. Both apps must use the same key.
-- **CLJS sidebar hidden via `react-shell` flag** in localStorage. If the flag is missing, the user sees double navbars.
+- **CLJS sidebar hidden via `window.__hoopReactShellPresent`**, per window. Do not use `localStorage` for it: it is shared by all tabs.
 - **`window.hoopSetRoute`** must be called after every React Router navigation when ClojureApp is mounted — otherwise Pushy stays on the old route and content doesn't update.
 - **CLJS runs inside a `<div id="app">`** created by ClojureApp. React renders its own tree elsewhere. They don't share React context.
 - **Mantine is the only styling tool** — no Tailwind, no custom CSS files. The old app uses Tailwind; don't bleed it into `webapp_v2`.

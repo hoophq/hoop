@@ -193,6 +193,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
 	}
+	cfg.licPinned = pinnedLicenseRef(cfg.lic, o.licenseFlag)
 	// On the resolved config: under a plane the plugins list is the
 	// plane's. SetupWith loads the modules because they are code this
 	// process runs, which belongs to the host; Validate is a check the
@@ -220,6 +221,8 @@ const (
 	PlaneLicenseSource = "the control plane"
 	flagLicenseSource  = "the license flag"
 	fileLicenseSource  = `the "license" config key`
+	// adminLicenseSource names a license installed through PUT /license.
+	adminLicenseSource = "the admin API"
 )
 
 // setConfigFormat records the format of the document that is AUTHORITATIVE
@@ -249,6 +252,19 @@ func ResolveLicense(flagValue, fileValue string) license.Status {
 		license.Ref{Value: os.Getenv(license.EnvVar), Source: license.EnvVar},
 		license.Ref{Value: fileValue, Source: fileLicenseSource},
 	)
+}
+
+// pinnedLicenseRef is the reference lic resolved from when that is the
+// license flag or HOOP_LICENSE: the sources a running process cannot change,
+// though the file a path names can be replaced. Empty for any other source.
+func pinnedLicenseRef(lic license.Status, flagValue string) license.Ref {
+	switch lic.Source {
+	case flagLicenseSource:
+		return license.Ref{Value: flagValue, Source: flagLicenseSource}
+	case license.EnvVar:
+		return license.Ref{Value: os.Getenv(license.EnvVar), Source: license.EnvVar}
+	}
+	return license.Ref{}
 }
 
 // resolveLicenseFor picks the license this process runs under.
@@ -1203,13 +1219,17 @@ func Run(cfg *Config, det Plugin) error {
 		go watchCallerTokens(ctx, log, tokenFiles, fileWatchEvery)
 	}
 
+	adminSecret := os.Getenv(AdminSecretEnv)
 	if cfg.Admin.Listen != "" {
 		var am *analyzerMetrics
 		if analyzerDeps != nil {
 			am = analyzerDeps.metrics
 		}
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
-			view, ac, analyzerCfg, am, licState, otel, log)
+			view, ac, analyzerCfg, am, licState, otel, licenseHandler(adminSecret, rl, log), log)
+	} else if strings.TrimSpace(adminSecret) != "" {
+		log.Warn(AdminSecretEnv+" is set but the admin listener is off, so nothing serves PUT /license",
+			"hint", "set admin.listen to install a license through the admin API")
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
@@ -1977,6 +1997,7 @@ func serveAdmin(
 	analyzerMetrics *analyzerMetrics,
 	licState *licenseState,
 	otel *otelExporter,
+	licenseAPI http.Handler,
 	log *slog.Logger,
 ) {
 	mux := http.NewServeMux()
@@ -1985,6 +2006,11 @@ func serveAdmin(
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
+
+	// The one write on this listener. licenseHandler refuses it unless the
+	// operator set AdminSecretEnv, and then asks for that secret: every
+	// read here is unauthenticated, and a write must not be.
+	mux.Handle("PUT /license", licenseAPI)
 
 	// An ica lane's engine loads a model and starts OCR workers after the
 	// socket binds, which can take minutes, and the engine refuses

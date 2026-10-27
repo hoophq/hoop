@@ -62,7 +62,8 @@ func seedSidecar(t *testing.T, name string, capabilities []string) *models.Sidec
 	}
 	require.NoError(t, models.CreateSidecar(models.DB, sc))
 	if capabilities != nil {
-		require.NoError(t, models.RecordSidecarHandshake(models.DB, sc.ID, "1.0.0", "", "", "", "rev", capabilities))
+		_, err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.0.0", "", "", "", "rev", capabilities)
+		require.NoError(t, err)
 	}
 	return sc
 }
