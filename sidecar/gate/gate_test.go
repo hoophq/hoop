@@ -702,6 +702,10 @@ func (c *filteringCodec) Filter(_ inspect.Direction, data []byte) ([]byte, error
 		return nil, nil
 	case "broken":
 		return nil, errors.New("negotiation is malformed")
+	case "hello mallory":
+		return nil, &inspect.CredentialRefusal{Request: "Hello mallory", User: "mallory", Reason: errors.New("unknown user")}
+	case "token":
+		return nil, &inspect.CredentialRefusal{Request: "GET /v1/*", Reason: errors.New("unknown token")}
 	default:
 		return bytes.ToUpper(data), nil
 	}
@@ -784,6 +788,47 @@ func TestGateFailsClosedWhenStreamFilterFails(t *testing.T) {
 	}
 	if len(codec.decoded) != 0 {
 		t.Fatalf("decoder saw bytes after filter failure: %q", codec.decoded)
+	}
+}
+
+// A filter that terminated a login and refused it names the user the
+// client claimed: the refusal is filed under that user with login.user,
+// as RefuseLogin files a driver's; a per-request credential refusal stays
+// under the peer alone.
+func TestGateFilesALoginRefusalUnderTheClaimedUser(t *testing.T) {
+	for _, tc := range []struct {
+		in        string
+		principal string
+		user      string
+	}{
+		{"hello mallory", "mallory", "mallory"},
+		{"token", "anonymous", ""},
+	} {
+		t.Run(tc.in, func(t *testing.T) {
+			sink := &recordingSink{}
+			g, err := gate.New(newSession(), gate.Config{
+				Protocol:     inspect.Postgres,
+				Audit:        sink,
+				CodecFactory: func() inspect.Codec { return &filteringCodec{} },
+			})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			d := g.Request(context.Background(), []byte(tc.in))
+			if d.Allowed || d.Rule != "identity" {
+				t.Fatalf("decision = %+v", d)
+			}
+			ev := sink.find(audit.KindViolation)
+			if ev == nil {
+				t.Fatal("no violation recorded")
+			}
+			if ev.Principal != tc.principal || ev.Allowed {
+				t.Fatalf("principal = %q allowed = %v, want %q", ev.Principal, ev.Allowed, tc.principal)
+			}
+			if got := ev.Metadata["login.user"]; got != tc.user {
+				t.Fatalf("login.user = %q, want %q", got, tc.user)
+			}
+		})
 	}
 }
 

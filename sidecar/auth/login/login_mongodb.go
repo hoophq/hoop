@@ -27,8 +27,8 @@ const mongoConversationID = 1
 // with SCRAM-SHA-256 as the one mechanism. The saslStart, folded into the
 // hello or sent after it, names the user. A pass-through user's exchange
 // goes upstream unchanged. Any other user proves its key against the
-// material the lane serves, so the key never crosses the wire; a matching
-// proof is what Authenticate verifies, as "scram:<hash>". A connection
+// material the lane serves, so the key never crosses the wire; the hash
+// of the material proved is what AuthenticateProven verifies. A connection
 // that sends a second hello instead of a login is a driver's monitor: it
 // carries no identity and stays unauthenticated upstream, where the server
 // refuses every command that needs a user.
@@ -170,10 +170,10 @@ func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, mat
 	if err != nil || !conv.Valid() {
 		return l.refuse(cont, user, "proof did not match")
 	}
-	if l.c.Authenticate == nil {
+	if l.c.AuthenticateProven == nil {
 		return l.refuse(cont, user, "lane has no authenticator")
 	}
-	identity, cred, err := l.c.Authenticate(l.ctx, user, "scram:"+material.Hash)
+	identity, cred, err := l.c.AuthenticateProven(l.ctx, user, material.Hash)
 	if err != nil {
 		if errors.Is(err, proxy.ErrLoginRefused) {
 			return l.refuse(cont, user, err.Error())
@@ -184,14 +184,18 @@ func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, mat
 	if identity.Subject == "" {
 		identity.Subject = user
 	}
+	// From here the credential is the relay's to release on failure.
+	fail := func(err error) (proxy.LoginResult, error) {
+		return proxy.LoginResult{Identity: identity, Credential: cred}, err
+	}
 	if err := l.upstreamLogin(cred); err != nil {
 		l.log.Warn("mongodb upstream login failed", "credential", cred.Name, "upstream_user", cred.User, "error", err)
 		_ = l.reply(cont, mongoauth.CommandError(mongoauth.CodeAuthenticationFailed,
 			"AuthenticationFailed", "upstream authentication failed"))
-		return proxy.LoginResult{}, fmt.Errorf("mongodb login: upstream: %w", err)
+		return fail(fmt.Errorf("mongodb login: upstream: %w", err))
 	}
 	if err := l.reply(cont, mongoauth.SASLReply(mongoConversationID, start.SkipEmptyExchange, serverFinal)); err != nil {
-		return proxy.LoginResult{}, err
+		return fail(err)
 	}
 	if !start.SkipEmptyExchange {
 		// The client confirms with an empty saslContinue and the server
@@ -199,10 +203,10 @@ func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, mat
 		// previous reply.
 		last, err := l.readSASLContinue()
 		if err != nil {
-			return proxy.LoginResult{}, err
+			return fail(err)
 		}
 		if err := l.reply(last, mongoauth.SASLReply(mongoConversationID, true, nil)); err != nil {
-			return proxy.LoginResult{}, err
+			return fail(err)
 		}
 	}
 	return proxy.LoginResult{Identity: identity, Credential: cred}, nil

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/session"
@@ -58,13 +59,28 @@ func (s *secretFilesSource) Credential(_ context.Context, e daemon.CredentialEnt
 
 // read returns a file's content with surrounding whitespace removed, the
 // newline an editor or `echo` leaves above all. secret refuses a mode that
-// lets group or other read it.
+// lets group or other read it. Symlinks are followed on both the directory
+// and the file, and the file has to land inside the directory: a Kubernetes
+// mount links through ..data inside the directory, which passes; a link
+// that leaves it reads a file the block never put in reach, and is refused.
 func (s *secretFilesSource) read(file string, secret bool) (string, error) {
 	full, err := daemon.ResolveSecretFile(s.dir, file)
 	if err != nil {
 		return "", err
 	}
-	return readSecretFile(full, secret)
+	dir, err := filepath.EvalSymlinks(s.dir)
+	if err != nil {
+		return "", fmt.Errorf("credentials.secret_files.dir %s: %w", s.dir, err)
+	}
+	real, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(dir, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s resolves to %s, outside credentials.secret_files.dir %s", file, real, s.dir)
+	}
+	return readSecretFile(real, secret)
 }
 
 // readSecretFile is the bounded, mode-checked read every file-backed source

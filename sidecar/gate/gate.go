@@ -858,9 +858,15 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			// with the gate's own check: record it as the identity
 			// refusal identify would have made, under the caller it
 			// claimed. The request was never decoded, so its request line
-			// stands in for the statement.
+			// stands in for the statement. A terminated login names its
+			// user: the refusal is filed under it, as RefuseLogin does.
 			stmt := inspect.Statement{Protocol: g.cfg.Protocol, Direction: dir, Text: refusal.Request}
-			r := g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr}, refusal.Error())
+			id := session.Identity{PeerAddr: g.session().Identity.PeerAddr}
+			if refusal.User != "" {
+				id.Subject = refusal.User
+				stmt.Metadata = map[string]string{"login.user": refusal.User}
+			}
+			r := g.refuseAs(ctx, stmt, id, refusal.Error())
 			return *r
 		}
 		var placed *inspect.PlacementRefusal

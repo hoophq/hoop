@@ -1807,6 +1807,7 @@ func buildServer(
 	// and lets the listed users through unchanged.
 	if ln.auth != nil {
 		cfg.Authenticate = ln.auth.Authenticate
+		cfg.AuthenticateProven = ln.auth.AuthenticateProven
 		cfg.SCRAMVerifier = ln.auth.SCRAM()
 		cfg.PassthroughUsers = lc.PassthroughUsers
 		if lc.Propagate != nil {

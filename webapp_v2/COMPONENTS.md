@@ -899,8 +899,8 @@ Non-obvious notes only:
   so a listener form can put the gateway's message next to the field.
   `patchSidecar(nameOrId, configuration)` is a shallow top-level merge: only the
   keys sent change, so a nested block such as `audit` travels whole.
-  `setOwner(nameOrId, configuration, ownerEmail)` writes `owner_email` beside the
-  stored document (PUT is the only write that takes it); "" clears it. All commit
+  `setOwner(nameOrId, ownerEmail)` PATCHes `owner_email` alone, leaving the
+  stored document as it is; "" clears it. All commit
   through `written()`, which writes the document into the list and moves the
   list and refresh counters; `selected` and `selectedRequestId` move only when
   the written sidecar is the one on screen. Three generation counters (list,

@@ -128,6 +128,10 @@ type LoginConn struct {
 
 	Lane         LaneInfo
 	Authenticate func(ctx context.Context, user, secret string) (session.Identity, Credential, error)
+	// AuthenticateProven is Authenticate for a login the driver proved by
+	// SCRAM against the material SCRAM returned: hash is the material's
+	// Hash. Set with SCRAM.
+	AuthenticateProven func(ctx context.Context, user, hash string) (session.Identity, Credential, error)
 	// SCRAM returns the client's SCRAM-SHA-256 verifier; nil when the lane
 	// offers no SCRAM on the client leg.
 	SCRAM func(user string) (codectypes.SCRAMMaterial, bool)
@@ -150,6 +154,8 @@ type LoginResult struct {
 	// audited under it.
 	Identity session.Identity
 	// Credential names what went upstream; Release runs at session end.
+	// A driver that fails after selecting one returns it here too, and
+	// the relay releases it at once.
 	Credential Credential
 	// Passthrough marks an identity that is claimed, not verified.
 	Passthrough bool
@@ -161,17 +167,19 @@ type LoginResult struct {
 // pre-login negotiation and the pumps.
 //
 // It reads the login from c.Client, verifies it through c.Authenticate (or
-// c.SCRAM, or lets it through when c.Passthrough says so), calls c.Dial
-// with the credential it was given, logs in upstream with it, and leaves
-// both legs positioned at the first post-login message. It stores the
-// upstream it dialed in c.Upstream. Every login packet it forwards or
-// synthesizes goes through c.Inspect first so the codec keeps its phase.
+// c.SCRAM then c.AuthenticateProven, or lets it through when c.Passthrough
+// says so), calls c.Dial with the credential it was given, logs in
+// upstream with it, and leaves both legs positioned at the first
+// post-login message. It stores the upstream it dialed in c.Upstream.
+// Every login packet it forwards or synthesizes goes through c.Inspect
+// first so the codec keeps its phase.
 //
 // On success the relay adopts the identity, writes session_start and pumps.
 // On a refusal it returns an error wrapping ErrLoginRefused with
 // LoginResult.Identity set to the claimed user, AFTER writing the
 // protocol's own login-failure frame to c.Client: the relay writes none,
-// it only audits the refusal and closes. Any other error closes quietly.
+// it only audits the refusal and closes. Any other error closes quietly,
+// after releasing the credential the result carries.
 //
 // One driver per protocol, registered from init() with RegisterLogin.
 type LoginFunc func(ctx context.Context, c *LoginConn) (LoginResult, error)
@@ -211,10 +219,13 @@ func loginFor(p inspect.Protocol) (LoginFunc, bool) {
 // http and grpc swap per request inside their codecs instead.
 func checkLoginConfig(cfg *Config) error {
 	if cfg.Authenticate == nil {
-		if cfg.SCRAMVerifier != nil || len(cfg.PassthroughUsers) > 0 {
-			return errors.New("sidecar/proxy: SCRAMVerifier and PassthroughUsers need Authenticate")
+		if cfg.SCRAMVerifier != nil || cfg.AuthenticateProven != nil || len(cfg.PassthroughUsers) > 0 {
+			return errors.New("sidecar/proxy: SCRAMVerifier, AuthenticateProven and PassthroughUsers need Authenticate")
 		}
 		return nil
+	}
+	if cfg.SCRAMVerifier != nil && cfg.AuthenticateProven == nil {
+		return errors.New("sidecar/proxy: SCRAMVerifier needs AuthenticateProven")
 	}
 	switch cfg.Protocol {
 	case inspect.HTTP, inspect.GRPC, inspect.ClickHouse:
@@ -280,9 +291,11 @@ func relayCancel(ctx context.Context, pid, key int32) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-	defer conn.Close()
-	_, err = conn.Write(pgCancelRequest(t.pid, t.key))
-	return true, err
+	if _, err := conn.Write(pgCancelRequest(t.pid, t.key)); err != nil {
+		_ = conn.Close()
+		return true, err
+	}
+	return true, conn.Close()
 }
 
 // newLoginConn builds the LoginConn for one connection. client is the leg
@@ -306,7 +319,7 @@ func (s *Server) newLoginConn(ctx context.Context, client net.Conn, g *gate.Gate
 			// The login runs under the dial timeout on both legs; runLogin
 			// clears it once the driver is done.
 			if s.cfg.DialTimeout > 0 {
-				if err := up.SetDeadline(time.Now().Add(s.cfg.DialTimeout)); err != nil {
+				if err := up.SetDeadline(time.Now().UTC().Add(s.cfg.DialTimeout)); err != nil {
 					up.Close()
 					return nil, err
 				}
@@ -323,8 +336,9 @@ func (s *Server) newLoginConn(ctx context.Context, client net.Conn, g *gate.Gate
 			ClientTLS:    isTLS(client),
 			UpstreamAddr: s.cfg.Upstream,
 		},
-		Authenticate: s.cfg.Authenticate,
-		SCRAM:        s.cfg.SCRAMVerifier,
+		Authenticate:       s.cfg.Authenticate,
+		AuthenticateProven: s.cfg.AuthenticateProven,
+		SCRAM:              s.cfg.SCRAMVerifier,
 		Passthrough: func(user string) bool {
 			return slices.Contains(s.cfg.PassthroughUsers, user)
 		},
@@ -356,7 +370,7 @@ func (s *Server) newLoginConn(ctx context.Context, client net.Conn, g *gate.Gate
 // the legs the driver left, which are what the pumps read.
 func (s *Server) runLogin(ctx context.Context, fn LoginFunc, lc *LoginConn) (LoginResult, error) {
 	if s.cfg.DialTimeout > 0 {
-		if err := lc.Client.SetDeadline(time.Now().Add(s.cfg.DialTimeout)); err != nil {
+		if err := lc.Client.SetDeadline(time.Now().UTC().Add(s.cfg.DialTimeout)); err != nil {
 			return LoginResult{}, err
 		}
 	}

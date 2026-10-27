@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,8 +52,11 @@ type gcpImpersonationSource struct {
 	metadataHost string
 	iam          *http.Client
 
-	mu    sync.Mutex
-	cache map[string]gcpMinted // by entry name
+	mu sync.Mutex
+	// cache is keyed by what the mint depends on, the service account and
+	// its scopes, never by the entry name: two lanes may name different
+	// accounts "rw", and one must not get the other's token.
+	cache map[string]gcpMinted
 }
 
 type gcpMinted struct {
@@ -99,21 +104,39 @@ func (g *gcpImpersonationSource) Credential(ctx context.Context, e daemon.Creden
 	if err := daemon.ValidateGCPImpersonationEntry(e); err != nil {
 		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
 	}
+	scopes := gcpScopes(e)
+	key := gcpCacheKey(e.ServiceAccount, scopes)
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if m, ok := g.cache[e.Name]; ok && time.Now().Before(m.exp.Add(-gcpAccessTokenRefreshBefore)) {
+	if m, ok := g.cache[key]; ok && time.Now().UTC().Before(m.exp.Add(-gcpAccessTokenRefreshBefore)) {
 		return daemon.Credential{User: e.ServiceAccount, Password: m.token}, nil
 	}
 	own, err := g.ownAccessToken(ctx)
 	if err != nil {
 		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
 	}
-	tok, exp, err := g.mint(ctx, own, e)
+	tok, exp, err := g.mint(ctx, own, e.ServiceAccount, scopes)
 	if err != nil {
 		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
 	}
-	g.cache[e.Name] = gcpMinted{token: tok, exp: exp}
+	g.cache[key] = gcpMinted{token: tok, exp: exp}
 	return daemon.Credential{User: e.ServiceAccount, Password: tok}, nil
+}
+
+// gcpScopes is the entry's scope list, sorted and deduplicated, or the
+// default.
+func gcpScopes(e daemon.CredentialEntry) []string {
+	if len(e.Scopes) == 0 {
+		return []string{gcpDefaultScope}
+	}
+	scopes := slices.Clone(e.Scopes)
+	slices.Sort(scopes)
+	return slices.Compact(scopes)
+}
+
+// gcpCacheKey joins what a minted token is a function of.
+func gcpCacheKey(account string, scopes []string) string {
+	return account + "\x00" + strings.Join(scopes, "\x00")
 }
 
 // ownAccessToken is the pod's Workload Identity access token from the
@@ -151,17 +174,13 @@ func (g *gcpImpersonationSource) ownAccessToken(ctx context.Context) (string, er
 	return body.AccessToken, nil
 }
 
-// mint calls generateAccessToken for the entry's service account.
-func (g *gcpImpersonationSource) mint(ctx context.Context, own string, e daemon.CredentialEntry) (string, time.Time, error) {
-	scopes := e.Scopes
-	if len(scopes) == 0 {
-		scopes = []string{gcpDefaultScope}
-	}
+// mint calls generateAccessToken for account with scopes.
+func (g *gcpImpersonationSource) mint(ctx context.Context, own, account string, scopes []string) (string, time.Time, error) {
 	body, err := json.Marshal(map[string]any{"scope": scopes, "lifetime": gcpImpersonationLifetime})
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	endpoint := iamCredentialsEndpoint + "/v1/projects/-/serviceAccounts/" + url.PathEscape(e.ServiceAccount) + ":generateAccessToken"
+	endpoint := iamCredentialsEndpoint + "/v1/projects/-/serviceAccounts/" + url.PathEscape(account) + ":generateAccessToken"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", time.Time{}, err
@@ -171,27 +190,27 @@ func (g *gcpImpersonationSource) mint(ctx context.Context, own string, e daemon.
 	req.Header.Set("User-Agent", daemon.UserAgent("credential/gcp_impersonation"))
 	resp, err := g.iam.Do(req)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s: %w", e.ServiceAccount, err)
+		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s: %w", account, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxIAMAnswer))
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s: reading the answer: %w", e.ServiceAccount, err)
+		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s: reading the answer: %w", account, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s answered %s: %s; the pod's identity needs "+
-			"roles/iam.serviceAccountTokenCreator on that account", e.ServiceAccount, resp.Status, daemon.ErrorMessage(raw))
+			"roles/iam.serviceAccountTokenCreator on that account", account, resp.Status, daemon.ErrorMessage(raw))
 	}
 	var out struct {
 		AccessToken string `json:"accessToken"`
 		ExpireTime  string `json:"expireTime"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil || out.AccessToken == "" {
-		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s answered with no accessToken", e.ServiceAccount)
+		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s answered with no accessToken", account)
 	}
 	exp, err := time.Parse(time.RFC3339, out.ExpireTime)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s answered expireTime %q: %w", e.ServiceAccount, out.ExpireTime, err)
+		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s answered expireTime %q: %w", account, out.ExpireTime, err)
 	}
 	return out.AccessToken, exp, nil
 }

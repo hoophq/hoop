@@ -193,6 +193,11 @@ type Config struct {
 	// themselves.
 	Authenticate func(ctx context.Context, user, secret string) (session.Identity, Credential, error)
 
+	// AuthenticateProven is Authenticate for a login the driver proved
+	// by SCRAM against the material SCRAMVerifier served; hash is that
+	// material's Hash. Required with SCRAMVerifier.
+	AuthenticateProven func(ctx context.Context, user, hash string) (session.Identity, Credential, error)
+
 	// SCRAMVerifier returns the SCRAM-SHA-256 material of a login user so
 	// a driver can act as the SCRAM server on the client leg. Nil offers
 	// no SCRAM. Needs Authenticate.
@@ -828,6 +833,14 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		if lerr != nil {
 			if lc.Upstream != nil {
 				lc.Upstream.Close()
+			}
+			// The driver selected a credential and then failed: it goes
+			// back to its source now, not at the end of a session that
+			// never starts.
+			if result.Credential.Release != nil {
+				if err := result.Credential.Release(ctx); err != nil {
+					log.Warn("credential not released", "credential", result.Credential.Name, "error", err)
+				}
 			}
 			if !errors.Is(lerr, ErrLoginRefused) {
 				log.Debug("login failed", "error", lerr)

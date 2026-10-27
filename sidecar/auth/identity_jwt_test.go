@@ -77,12 +77,14 @@ func TestJWTVerifierMapsClaims(t *testing.T) {
 		t.Errorf("identity %+v", id)
 	}
 
-	tok = f.token(t, "rsa-1", map[string]any{"preferred_username": "jane"})
+	// sub is the kubernetes type's requirement: a token that carries only
+	// the mapped claim logs in here.
+	tok = f.token(t, "rsa-1", map[string]any{"preferred_username": "jane", "sub": nil})
 	id, err = v.Verify(context.Background(), "", tok, daemon.PeerInfo{})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("without sub: %v", err)
 	}
-	if id.Email != "" || len(id.Groups) != 0 {
+	if id.Subject != "jane" || id.Email != "" || len(id.Groups) != 0 {
 		t.Errorf("optional claims absent, got %+v", id)
 	}
 
@@ -106,7 +108,7 @@ func TestJWTVerifierRefusals(t *testing.T) {
 		{"wrong audience", map[string]any{"aud": "hoop-sidecar"}, "audience"},
 		{"expired", map[string]any{"aud": "appdb", "exp": time.Now().Add(-time.Hour).Unix()}, "expired"},
 		{"not yet valid", map[string]any{"aud": "appdb", "nbf": time.Now().Add(time.Hour).Unix()}, "not valid before"},
-		{"no sub", map[string]any{"aud": "appdb", "sub": nil}, "no sub"},
+		{"no sub", map[string]any{"aud": "appdb", "sub": nil}, `no "sub" claim`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

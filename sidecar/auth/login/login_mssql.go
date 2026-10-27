@@ -85,7 +85,11 @@ func loginMSSQL(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, err
 	c.Upstream = up
 	upPre := append(mssqlauth.Prelogin(nil), clientPre...)
 	upPre.SetEncryption(mssqlauth.EncryptOn)
-	upPrelogin := mssqlauth.Packet{Type: mssqlauth.PacketPrelogin, Status: mssqlauth.StatusEOM, ID: 1, Payload: upPre.Encode()}.Encode()
+	upPreBody, err := upPre.Encode()
+	if err != nil {
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: upstream prelogin: %w", err)
+	}
+	upPrelogin := mssqlauth.Packet{Type: mssqlauth.PacketPrelogin, Status: mssqlauth.StatusEOM, ID: 1, Payload: upPreBody}.Encode()
 	if err := inspectPkt(inspect.FromClient, upPrelogin); err != nil {
 		return proxy.LoginResult{}, err
 	}
@@ -115,7 +119,9 @@ func loginMSSQL(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, err
 		return proxy.LoginResult{}, fmt.Errorf("%w: TDS 8 strict encryption (Encrypt=strict) is not supported on this lane; use Encrypt=true or Encrypt=false", proxy.ErrLoginRefused)
 	}
 	srvPre.SetEncryption(answer)
-	reply.Payload = srvPre.Encode()
+	if reply.Payload, err = srvPre.Encode(); err != nil {
+		return proxy.LoginResult{}, fmt.Errorf("mssql login: prelogin reply: %w", err)
+	}
 	clientReply := reply.Encode()
 	if err := inspectPkt(inspect.FromServer, clientReply); err != nil {
 		return proxy.LoginResult{}, err
@@ -200,10 +206,14 @@ func loginMSSQL(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, err
 
 	// Upstream login TLS: the upstream answered ON (or OFF/REQ, which with
 	// the relay's ON means the whole session), so every byte from here on
-	// is a TLS record.
+	// is a TLS record. A failure from here returns the credential so the
+	// relay releases it.
+	fail := func(err error) (proxy.LoginResult, error) {
+		return proxy.LoginResult{Identity: identity, Credential: cred}, err
+	}
 	upTLS, err := mssqlUpstreamTLS(ctx, up, c.UpstreamTLS, c.Lane.UpstreamAddr)
 	if err != nil {
-		return proxy.LoginResult{Identity: identity}, err
+		return fail(err)
 	}
 	c.Upstream = upTLS
 
@@ -229,11 +239,11 @@ func loginMSSQL(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, err
 	if cred.GSS != nil {
 		gss, err = cred.GSS.Initiate(ctx, "MSSQLSvc/"+host+":"+port)
 		if err != nil {
-			return proxy.LoginResult{Identity: identity}, fmt.Errorf("mssql login: gss: %w", err)
+			return fail(fmt.Errorf("mssql login: gss: %w", err))
 		}
 		token, _, err := gss.Step(nil)
 		if err != nil {
-			return proxy.LoginResult{Identity: identity}, fmt.Errorf("mssql login: gss: %w", err)
+			return fail(fmt.Errorf("mssql login: gss: %w", err))
 		}
 		login.SetIntegrated(token)
 	} else {
@@ -242,15 +252,19 @@ func loginMSSQL(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, err
 	login.ServerName = host
 	login.DisablePasswordChange()
 
-	pkt := mssqlauth.Frame(mssqlauth.PacketLogin7, mssqlauth.EncodeLogin(login), mssqlauth.DefaultPacketSize)
+	loginBody, err = mssqlauth.EncodeLogin(login)
+	if err != nil {
+		return fail(fmt.Errorf("mssql login: login7: %w", err))
+	}
+	pkt := mssqlauth.Frame(mssqlauth.PacketLogin7, loginBody, mssqlauth.DefaultPacketSize)
 	if err := inspectPkt(inspect.FromClient, pkt); err != nil {
-		return proxy.LoginResult{Identity: identity}, err
+		return fail(err)
 	}
 	if _, err := upTLS.Write(pkt); err != nil {
-		return proxy.LoginResult{Identity: identity}, fmt.Errorf("mssql login: upstream login7: %w", err)
+		return fail(fmt.Errorf("mssql login: upstream login7: %w", err))
 	}
 	if err := mssqlRelayLoginResponse(upTLS, nil, clientOut, gss, inspectPkt); err != nil {
-		return proxy.LoginResult{Identity: identity, Credential: cred}, err
+		return fail(err)
 	}
 	log.Debug("mssql login swapped", "user", clientUser, "credential", cred.Name)
 	return proxy.LoginResult{Identity: identity, Credential: cred}, nil

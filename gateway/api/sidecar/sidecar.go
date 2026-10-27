@@ -530,7 +530,7 @@ func Put(c *gin.Context) {
 // Patch Sidecar Configuration
 //
 //	@Summary		Patch Sidecar Configuration
-//	@Description	Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the rules imported from this sidecar that nothing else uses and unbinds the rest; detached_rules lists them. load_from_disk false must be sent alone. It clears the stored document, so the sidecar imports its config file again.
+//	@Description	Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the rules imported from this sidecar that nothing else uses and unbinds the rest; detached_rules lists them. load_from_disk false must be sent alone. It clears the stored document, so the sidecar imports its config file again. owner_email omitted keeps the stored owner; empty clears it.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -551,6 +551,16 @@ func Patch(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
+	}
+	var ownerEmail *string
+	if req.OwnerEmail != nil {
+		owner, err := normalizeOwnerEmail(*req.OwnerEmail)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+		// Empty, not nil: the caller asked to clear it.
+		ownerEmail = ptrOrEmpty(owner)
 	}
 	// The switch back can replace the stored document, so keys merged into
 	// it in the same call could be lost without notice.
@@ -576,7 +586,7 @@ func Patch(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		sc, err := models.PatchSidecarConfiguration(tx, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
+		sc, err := models.PatchSidecarConfiguration(tx, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk, ownerEmail)
 		if err != nil {
 			return nil, err
 		}

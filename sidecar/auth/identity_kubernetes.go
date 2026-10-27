@@ -71,6 +71,10 @@ type kubernetesIdentity struct {
 	log       *slog.Logger
 	podUID    string
 	now       func() time.Time
+	// caFile and tokenFile are the in-cluster mounts; fields so a test
+	// can stand in for the kubelet.
+	caFile    string
+	tokenFile string
 
 	mu        sync.Mutex
 	client    *http.Client
@@ -101,6 +105,8 @@ func buildKubernetesIdentity(cfg daemon.IdentityConfig, deps daemon.IdentityDeps
 		log:       log,
 		podUID:    strings.TrimSpace(os.Getenv(podUIDEnv)),
 		now:       time.Now,
+		caFile:    kubernetesCAFile,
+		tokenFile: daemon.KubernetesTokenFile,
 	}, nil
 }
 
@@ -155,6 +161,9 @@ func (k *kubernetesIdentity) Verify(ctx context.Context, _ string, secret string
 	if err := k.verifyToken(ctx, secret, &claims); err != nil {
 		return session.Identity{}, err
 	}
+	if claims.Sub == "" {
+		return session.Identity{}, daemon.Refused("JWT has no sub")
+	}
 	if k.podUID != "" && claims.K8s.Pod.UID != k.podUID {
 		return session.Identity{}, daemon.Refused("the token was issued to pod %q, and this sidecar serves pod %q", claims.K8s.Pod.Name, k.podUID)
 	}
@@ -172,7 +181,9 @@ func (k *kubernetesIdentity) Verify(ctx context.Context, _ string, secret string
 	return session.Identity{Subject: claims.Sub, Attributes: attrs}, nil
 }
 
-// stdClaims are the registered claims every token is checked on.
+// stdClaims are the registered claims every token is checked on. sub is
+// read here and required by the verifier that maps it: the jwt type may
+// name another claim as the subject.
 type stdClaims struct {
 	Iss string      `json:"iss"`
 	Sub string      `json:"sub"`
@@ -217,8 +228,6 @@ func (k *kubernetesIdentity) verifyToken(ctx context.Context, secret string, int
 		return daemon.Refused("JWT expired at %s", time.Unix(std.Exp, 0).UTC().Format(time.RFC3339))
 	case std.Nbf != 0 && now.Before(time.Unix(std.Nbf, 0).Add(-jwtClockSkew)):
 		return daemon.Refused("JWT is not valid before %s", time.Unix(std.Nbf, 0).UTC().Format(time.RFC3339))
-	case std.Sub == "":
-		return daemon.Refused("JWT has no sub")
 	}
 
 	key, err := k.keyFor(ctx, hdr.Kid)
@@ -273,14 +282,18 @@ func verifyJWS(alg string, key crypto.PublicKey, digest, sig []byte) bool {
 
 // keyFor returns the issuer's key named kid, fetching the JWKS on the first
 // call and again on an unknown kid, at most once a minute: a rotation lands
-// at the next login, a flood of bad kids costs one request.
+// at the next login, a flood of bad kids costs one request, and an issuer
+// that is down is asked again in a minute, not on every login.
 func (k *kubernetesIdentity) keyFor(ctx context.Context, kid string) (crypto.PublicKey, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if key, ok := k.keys[kid]; ok {
 		return key, nil
 	}
-	if k.keys != nil && k.now().Sub(k.lastFetch) < jwksRefreshMin {
+	if !k.lastFetch.IsZero() && k.now().Sub(k.lastFetch) < jwksRefreshMin {
+		if k.keys == nil {
+			return nil, fmt.Errorf("identity %s: %s is unavailable; its keys are asked again within %s", k.kind, k.issuer, jwksRefreshMin)
+		}
 		return nil, daemon.Refused("JWT key %q is not one %s publishes", kid, k.issuer)
 	}
 	if err := k.fetchKeysLocked(ctx); err != nil {
@@ -293,7 +306,11 @@ func (k *kubernetesIdentity) keyFor(ctx context.Context, kid string) (crypto.Pub
 }
 
 // fetchKeysLocked runs discovery once, then reads the JWKS. Called with mu
-// held.
+// held. The pod's token goes to the issuer alone: discovery is at the
+// issuer, and the JWKS gets it only when it is served by the same host
+// over https, as the in-cluster API server does. A JWKS elsewhere is read
+// anonymously, so a discovery document cannot send the token to a host
+// of its choosing.
 func (k *kubernetesIdentity) fetchKeysLocked(ctx context.Context) error {
 	if k.client == nil {
 		c, err := k.buildClient()
@@ -302,15 +319,14 @@ func (k *kubernetesIdentity) fetchKeysLocked(ctx context.Context) error {
 		}
 		k.client = c
 	}
-	// The fetch time is recorded whatever the outcome, so an issuer that
-	// is down is asked again in a minute, not on every login.
+	// The fetch time is recorded whatever the outcome.
 	k.lastFetch = k.now()
 	if k.jwksURI == "" {
 		var disc struct {
 			Issuer  string `json:"issuer"`
 			JWKSURI string `json:"jwks_uri"`
 		}
-		if err := k.getJSON(ctx, k.issuer+"/.well-known/openid-configuration", &disc); err != nil {
+		if err := k.getJSON(ctx, k.issuer+"/.well-known/openid-configuration", &disc, k.inCluster); err != nil {
 			return fmt.Errorf("OIDC discovery at %s: %w", k.issuer, err)
 		}
 		if strings.TrimRight(disc.Issuer, "/") != k.issuer {
@@ -319,12 +335,15 @@ func (k *kubernetesIdentity) fetchKeysLocked(ctx context.Context) error {
 		if disc.JWKSURI == "" {
 			return fmt.Errorf("OIDC discovery at %s names no jwks_uri", k.issuer)
 		}
+		if u, err := url.Parse(disc.JWKSURI); err != nil || u.Scheme != "https" || u.Host == "" {
+			return fmt.Errorf("OIDC discovery at %s names jwks_uri %q, not an https URL", k.issuer, disc.JWKSURI)
+		}
 		k.jwksURI = disc.JWKSURI
 	}
 	var set struct {
 		Keys []json.RawMessage `json:"keys"`
 	}
-	if err := k.getJSON(ctx, k.jwksURI, &set); err != nil {
+	if err := k.getJSON(ctx, k.jwksURI, &set, k.inCluster && sameHost(k.jwksURI, k.issuer)); err != nil {
 		return fmt.Errorf("JWKS at %s: %w", k.jwksURI, err)
 	}
 	keys := make(map[string]crypto.PublicKey, len(set.Keys))
@@ -343,19 +362,32 @@ func (k *kubernetesIdentity) fetchKeysLocked(ctx context.Context) error {
 	return nil
 }
 
+// sameHost reports whether two URLs name one host, port included.
+func sameHost(a, b string) bool {
+	ua, err := url.Parse(a)
+	if err != nil {
+		return false
+	}
+	ub, err := url.Parse(b)
+	if err != nil {
+		return false
+	}
+	return ua.Host != "" && strings.EqualFold(ua.Host, ub.Host)
+}
+
 // buildClient is the HTTP client for discovery and the JWKS. In-cluster it
 // trusts the mounted CA and authenticates with the pod's own token, re-read
 // per request because the kubelet rotates it.
 func (k *kubernetesIdentity) buildClient() (*http.Client, error) {
 	tlsConf := &tls.Config{RootCAs: k.roots, MinVersion: tls.VersionTLS12}
 	if k.inCluster {
-		pem, err := os.ReadFile(kubernetesCAFile)
+		pem, err := os.ReadFile(k.caFile)
 		if err != nil {
 			return nil, fmt.Errorf("this process is not in a cluster (%v); set identity.issuer to the cluster's OIDC issuer URL", err)
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("%s holds no certificate", kubernetesCAFile)
+			return nil, fmt.Errorf("%s holds no certificate", k.caFile)
 		}
 		tlsConf.RootCAs = pool
 	}
@@ -365,15 +397,17 @@ func (k *kubernetesIdentity) buildClient() (*http.Client, error) {
 	}, nil
 }
 
-func (k *kubernetesIdentity) getJSON(ctx context.Context, rawURL string, into any) error {
+// getJSON reads a JSON document. withToken sends the pod's own token,
+// re-read per request because the kubelet rotates it.
+func (k *kubernetesIdentity) getJSON(ctx context.Context, rawURL string, into any, withToken bool) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", daemon.UserAgent("identity/kubernetes"))
-	if k.inCluster {
-		tok, err := os.ReadFile(daemon.KubernetesTokenFile)
+	if withToken {
+		tok, err := os.ReadFile(k.tokenFile)
 		if err != nil {
 			return fmt.Errorf("reading the pod's own token: %w", err)
 		}

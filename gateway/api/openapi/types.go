@@ -339,7 +339,10 @@ type SidecarPatchRequest struct {
 	// A partial daemon configuration. Only the keys present are updated; the
 	// rest of the stored document is left unchanged. load_from_disk false
 	// clears the key and hands the document back to the control plane.
-	Configuration json.RawMessage `json:"configuration" binding:"required" swaggertype:"object"`
+	// Omitted leaves the document as stored.
+	Configuration json.RawMessage `json:"configuration,omitempty" swaggertype:"object"`
+	// The owner. Omitted keeps the stored owner; an empty string clears it.
+	OwnerEmail *string `json:"owner_email,omitempty" example:"dba@acme.com"`
 }
 
 // SidecarDetachedRules lists what an owner switch did to the rules of one

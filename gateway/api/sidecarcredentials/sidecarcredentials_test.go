@@ -148,6 +148,9 @@ func TestMintNeedsAGrant(t *testing.T) {
 	t.Run("bounds", func(t *testing.T) {
 		rec := call(jane, http.MethodPost, `{"expires_in_hours":721}`, laneParams("pay", "appdb"), Mint)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		// Would wrap negative once multiplied into a Duration.
+		rec = call(jane, http.MethodPost, `{"expires_in_hours":9223372036854775807}`, laneParams("pay", "appdb"), Mint)
+		assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 		rec = call(jane, http.MethodPost, `{"expires_in_hours":-1}`, laneParams("pay", "appdb"), Mint)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
 		rec = call(jane, http.MethodPost, "", laneParams("pay", "nope"), Mint)
@@ -163,12 +166,13 @@ func TestMintNeedsAGrant(t *testing.T) {
 		rec = call(jane, http.MethodPost, "", laneParams(old.Name, "appdb"), Mint)
 		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
 
-		// Never handshaked: support unknown, the handshake decides.
+		// Never handshaked: the build is unknown, so the mint waits for it.
 		fresh := seedSidecar(t, "fresh", nil)
 		rec = call(admin, http.MethodPost, `{"group_name":"dba"}`, laneParams(fresh.Name, "appdb"), CreateGrant)
 		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 		rec = call(jane, http.MethodPost, "", laneParams(fresh.Name, "appdb"), Mint)
-		assert.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+		assert.Contains(t, rec.Body.String(), "upgrade it first")
 	})
 
 	t.Run("grants list and delete", func(t *testing.T) {

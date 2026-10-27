@@ -64,9 +64,8 @@ func runSidecarCredential(target string, expires time.Duration, jsonMode bool) {
 		fatalErr(jsonMode, "%s", err.Error())
 	}
 	if jsonMode {
-		os.Stdout.Write(rawBody)
-		if len(rawBody) > 0 && rawBody[len(rawBody)-1] != '\n' {
-			fmt.Println()
+		if err := writeSidecarCredentialJSON(os.Stdout, rawBody); err != nil {
+			fatalErr(true, "failed writing response: %v", err)
 		}
 		return
 	}
@@ -84,24 +83,40 @@ func runSidecarCredential(target string, expires time.Duration, jsonMode bool) {
 	}
 }
 
+// writeSidecarCredentialJSON writes the raw body and a trailing newline.
+func writeSidecarCredentialJSON(w io.Writer, rawBody []byte) error {
+	n, err := w.Write(rawBody)
+	if err != nil {
+		return err
+	}
+	if n != len(rawBody) {
+		return io.ErrShortWrite
+	}
+	if len(rawBody) > 0 && rawBody[len(rawBody)-1] != '\n' {
+		_, err = io.WriteString(w, "\n")
+	}
+	return err
+}
+
 // sidecarCredentialHint is one line on how a native client presents the key
-// to the lane's protocol.
+// to the lane's protocol. The key itself stays out of the command: it is
+// printed once above, and the user pastes it where <key> is or at a prompt.
 func sidecarCredentialHint(resp sidecarCredentialResponse) string {
 	switch resp.Protocol {
 	case "postgres":
-		return fmt.Sprintf("  psql \"host=<sidecar> user=%s password=%s sslmode=require\"", resp.User, resp.Key)
+		return fmt.Sprintf("  PGPASSWORD=<key> psql \"host=<sidecar> user=%s sslmode=require\"", resp.User)
 	case "mysql":
-		return fmt.Sprintf("  mysql -h <sidecar> -u %s -p%s", resp.User, resp.Key)
+		return fmt.Sprintf("  mysql -h <sidecar> -u %s -p", resp.User)
 	case "mongodb":
-		return fmt.Sprintf("  mongosh \"mongodb://%s:%s@<sidecar>/?authMechanism=SCRAM-SHA-256\"", url.QueryEscape(resp.User), resp.Key)
+		return fmt.Sprintf("  mongosh \"mongodb://%s:<key>@<sidecar>/?authMechanism=SCRAM-SHA-256\"", url.QueryEscape(resp.User))
 	case "mssql":
-		return fmt.Sprintf("  sqlcmd -S <sidecar> -U %s -P %s", resp.User, resp.Key)
+		return fmt.Sprintf("  sqlcmd -S <sidecar> -U %s -P \"$KEY\"", resp.User)
 	case "clickhouse":
-		return fmt.Sprintf("  clickhouse-client --host <sidecar> --user %s --password %s", resp.User, resp.Key)
+		return fmt.Sprintf("  clickhouse-client --host <sidecar> --user %s --ask-password", resp.User)
 	case "oracle":
-		return fmt.Sprintf("  sqlplus %s/%s@<sidecar>", resp.User, resp.Key)
+		return fmt.Sprintf("  sqlplus %s@<sidecar>", resp.User)
 	case "http":
-		return fmt.Sprintf("  curl -H 'Authorization: Bearer %s' https://<sidecar>/", resp.Key)
+		return "  curl -H 'Authorization: Bearer <key>' https://<sidecar>/"
 	}
 	return ""
 }
@@ -127,8 +142,13 @@ func requestSidecarCredential(config *clientconfig.Config, sidecar, lane string,
 	if err != nil {
 		return nil, fmt.Errorf("failed performing request: %w", err)
 	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response: %w", err)
+	}
 	if resp.StatusCode == http.StatusCreated {
 		return respBody, nil
 	}

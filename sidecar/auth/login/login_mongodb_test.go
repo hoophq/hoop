@@ -332,10 +332,14 @@ func newMongoLoginHarness(t *testing.T, server *mongoFakeServer) *mongoLoginHarn
 		},
 		Passthrough: func(user string) bool { return user == "legacy" },
 		Authenticate: func(_ context.Context, user, secret string) (session.Identity, proxy.Credential, error) {
+			h.t.Errorf("Authenticate called with %s; a SCRAM login takes the proven route", user)
+			return session.Identity{}, proxy.Credential{}, fmt.Errorf("%w: wrong route", proxy.ErrLoginRefused)
+		},
+		AuthenticateProven: func(_ context.Context, user, hash string) (session.Identity, proxy.Credential, error) {
 			h.mu.Lock()
-			h.authCalls = append(h.authCalls, user+"/"+secret)
+			h.authCalls = append(h.authCalls, user+"/"+hash)
 			h.mu.Unlock()
-			if user != "alice" || secret != "scram:"+mongoHash {
+			if user != "alice" || hash != mongoHash {
 				return session.Identity{}, proxy.Credential{}, fmt.Errorf("%w: bad secret", proxy.ErrLoginRefused)
 			}
 			return session.Identity{Subject: "alice@example.com", Email: "alice@example.com"}, cred, nil
@@ -555,7 +559,7 @@ func TestMongoLoginSpeculativeSwapsCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no speculativeAuthenticate in %v", reply.Body)
 	}
-	resp, err := mongoauth.DecodeSASLResponse(spec.Document())
+	resp, err := mongoauth.DecodeSpeculativeResponse(spec.Document())
 	if err != nil || resp.ConversationID != 1 || resp.Done {
 		t.Fatalf("speculative reply %+v, %v", resp, err)
 	}
@@ -581,7 +585,7 @@ func TestMongoLoginSpeculativeSwapsCredential(t *testing.T) {
 	if res.Passthrough || res.Identity.Subject != "alice@example.com" || res.Credential.Name != "svc-rw" {
 		t.Fatalf("result %+v", res)
 	}
-	if h.authCalls[0] != "alice/scram:"+mongoHash {
+	if h.authCalls[0] != "alice/"+mongoHash {
 		t.Fatalf("authenticate called with %v", h.authCalls)
 	}
 	hellos, authenticated, serr := server.state()
@@ -618,7 +622,7 @@ func TestMongoLoginWrongProofIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no speculativeAuthenticate in %v", reply.Body)
 	}
-	resp, _ := mongoauth.DecodeSASLResponse(spec.Document())
+	resp, _ := mongoauth.DecodeSpeculativeResponse(spec.Document())
 	h.write(mongoauth.EncodeOpMsg(22, 0, saslContinueDoc(1, sc.step(t, resp.Payload))))
 	msg := h.expectError(22, mongoauth.CodeAuthenticationFailed)
 	if strings.Contains(msg, "proof") || strings.Contains(msg, "material") {
@@ -716,7 +720,7 @@ func TestMongoLoginPassthroughSpeculativeRelaysUpstreamConversation(t *testing.T
 	if err != nil {
 		t.Fatalf("no speculativeAuthenticate in %v", reply.Body)
 	}
-	resp, _ := mongoauth.DecodeSASLResponse(spec.Document())
+	resp, _ := mongoauth.DecodeSpeculativeResponse(spec.Document())
 
 	res, err := h.wait(done)
 	if err != nil || !res.Passthrough || res.Identity.Subject != "legacy" {
@@ -876,7 +880,7 @@ func TestMongoLoginCertificateCredentialRedialsWithIt(t *testing.T) {
 	server := &mongoFakeServer{x509User: "CN=svc"}
 	h := newMongoLoginHarness(t, server)
 	cert := &tls.Certificate{Certificate: [][]byte{{1, 2, 3}}}
-	h.conn.Authenticate = func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
+	h.conn.AuthenticateProven = func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
 		return session.Identity{Subject: "alice@example.com"}, proxy.Credential{Name: "svc-cert", User: "CN=svc", Cert: cert}, nil
 	}
 	done := h.run()
@@ -884,7 +888,7 @@ func TestMongoLoginCertificateCredentialRedialsWithIt(t *testing.T) {
 	sc := newScramClient(t, "alice", "hoop-key")
 	h.write(mongoauth.EncodeOpMsg(101, 0, speculativeHello(sc.first(), true, bstr("$db", "admin"))))
 	spec, _ := h.read().Body.LookupErr("speculativeAuthenticate")
-	resp, _ := mongoauth.DecodeSASLResponse(spec.Document())
+	resp, _ := mongoauth.DecodeSpeculativeResponse(spec.Document())
 	h.write(mongoauth.EncodeOpMsg(102, 0, saslContinueDoc(1, sc.step(t, resp.Payload))))
 	resp, err := mongoauth.DecodeSASLResponse(h.read().Body)
 	if err != nil || !resp.OK || !resp.Done {
@@ -907,19 +911,28 @@ func TestMongoLoginCertificateCredentialRedialsWithIt(t *testing.T) {
 func TestMongoLoginUpstreamRefusalIsNotALoginRefusal(t *testing.T) {
 	server := &mongoFakeServer{users: map[string]string{"svc": "other-pw"}}
 	h := newMongoLoginHarness(t, server)
+	released := 0
+	h.conn.AuthenticateProven = func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
+		return session.Identity{Subject: "alice@example.com"}, proxy.Credential{Name: "svc-rw", User: "svc", Password: "stale",
+			Release: func(context.Context) error { released++; return nil }}, nil
+	}
 	done := h.run()
 
 	sc := newScramClient(t, "alice", "hoop-key")
 	h.write(mongoauth.EncodeOpMsg(111, 0, speculativeHello(sc.first(), true, bstr("$db", "admin"))))
 	spec, _ := h.read().Body.LookupErr("speculativeAuthenticate")
-	resp, _ := mongoauth.DecodeSASLResponse(spec.Document())
+	resp, _ := mongoauth.DecodeSpeculativeResponse(spec.Document())
 	h.write(mongoauth.EncodeOpMsg(112, 0, saslContinueDoc(1, sc.step(t, resp.Payload))))
 	if msg := h.expectError(112, mongoauth.CodeAuthenticationFailed); !strings.Contains(msg, "upstream") {
 		t.Fatalf("errmsg %q", msg)
 	}
-	_, err := h.wait(done)
+	res, err := h.wait(done)
 	if err == nil || errors.Is(err, proxy.ErrLoginRefused) {
 		t.Fatalf("err = %v, want an upstream error", err)
+	}
+	// The selected credential rides the result so the relay releases it.
+	if res.Credential.Name != "svc-rw" || res.Credential.Release == nil || released != 0 {
+		t.Fatalf("result %+v released %d", res, released)
 	}
 }
 

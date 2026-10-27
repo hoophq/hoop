@@ -17,6 +17,11 @@ type CredentialRefusal struct {
 	// string: it is not redacted here as the codec would redact it.
 	Request string
 
+	// User is the login user the client claimed, when the filter
+	// terminates a login (ClickHouse's Hello); empty for a per-request
+	// credential. The gate records the refusal under it.
+	User string
+
 	// Reason says why the credential names nobody. It never carries the
 	// credential.
 	Reason error

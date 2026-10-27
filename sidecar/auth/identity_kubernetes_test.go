@@ -11,10 +11,13 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -32,6 +35,13 @@ type fakeIssuer struct {
 	ecKey   *ecdsa.PrivateKey
 	kids    atomic.Value // []string served now
 	fetches atomic.Int64
+	// jwksURI is what discovery names; empty is the issuer's own.
+	jwksURI atomic.Value
+	// down makes discovery answer 503.
+	down        atomic.Bool
+	discoveries atomic.Int64
+	// discoveryAuth is the Authorization header the last discovery saw.
+	discoveryAuth atomic.Value
 }
 
 func startIssuer(t *testing.T) *fakeIssuer {
@@ -45,30 +55,44 @@ func startIssuer(t *testing.T) *fakeIssuer {
 		t.Fatal(err)
 	}
 	f.kids.Store([]string{"rsa-1", "ec-1"})
+	f.jwksURI.Store("")
+	f.discoveryAuth.Store("")
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]string{"issuer": f.srv.URL, "jwks_uri": f.srv.URL + "/openid/v1/jwks"})
-	})
-	mux.HandleFunc("GET /openid/v1/jwks", func(w http.ResponseWriter, r *http.Request) {
-		f.fetches.Add(1)
-		var keys []map[string]string
-		for _, kid := range f.kids.Load().([]string) {
-			switch {
-			case strings.HasPrefix(kid, "rsa"):
-				keys = append(keys, map[string]string{"kty": "RSA", "kid": kid, "use": "sig",
-					"n": base64.RawURLEncoding.EncodeToString(f.rsaKey.N.Bytes()),
-					"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(f.rsaKey.E)).Bytes())})
-			default:
-				keys = append(keys, map[string]string{"kty": "EC", "kid": kid, "crv": "P-256",
-					"x": base64.RawURLEncoding.EncodeToString(f.ecKey.X.FillBytes(make([]byte, 32))),
-					"y": base64.RawURLEncoding.EncodeToString(f.ecKey.Y.FillBytes(make([]byte, 32)))})
-			}
+		f.discoveries.Add(1)
+		f.discoveryAuth.Store(r.Header.Get("Authorization"))
+		if f.down.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
+		jwks := f.jwksURI.Load().(string)
+		if jwks == "" {
+			jwks = f.srv.URL + "/openid/v1/jwks"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"issuer": f.srv.URL, "jwks_uri": jwks})
 	})
+	mux.HandleFunc("GET /openid/v1/jwks", f.jwks)
 	f.srv = httptest.NewTLSServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+func (f *fakeIssuer) jwks(w http.ResponseWriter, r *http.Request) {
+	f.fetches.Add(1)
+	var keys []map[string]string
+	for _, kid := range f.kids.Load().([]string) {
+		switch {
+		case strings.HasPrefix(kid, "rsa"):
+			keys = append(keys, map[string]string{"kty": "RSA", "kid": kid, "use": "sig",
+				"n": base64.RawURLEncoding.EncodeToString(f.rsaKey.N.Bytes()),
+				"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(f.rsaKey.E)).Bytes())})
+		default:
+			keys = append(keys, map[string]string{"kty": "EC", "kid": kid, "crv": "P-256",
+				"x": base64.RawURLEncoding.EncodeToString(f.ecKey.X.FillBytes(make([]byte, 32))),
+				"y": base64.RawURLEncoding.EncodeToString(f.ecKey.Y.FillBytes(make([]byte, 32)))})
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
 }
 
 func (f *fakeIssuer) roots() *x509.CertPool {
@@ -216,6 +240,101 @@ func TestKubernetesVerifierRefreshesTheJWKSOnAnUnknownKidOnce(t *testing.T) {
 	// And the old key is gone.
 	_, err = v.Verify(context.Background(), "", f.token(t, "rsa-1", nil), daemon.PeerInfo{})
 	assertRefused(t, err, `key "rsa-1"`)
+}
+
+// The pod's token goes to the issuer and to a JWKS the issuer itself
+// serves; a discovery document naming another host gets the keys read
+// anonymously, and one naming a plain-http URL is refused.
+func TestKubernetesVerifierSendsThePodTokenToTheIssuerAlone(t *testing.T) {
+	f := startIssuer(t)
+	var otherAuth atomic.Value
+	otherAuth.Store("unset")
+	other := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherAuth.Store(r.Header.Get("Authorization"))
+		f.jwks(w, r)
+	}))
+	t.Cleanup(other.Close)
+	f.jwksURI.Store(other.URL + "/keys")
+
+	dir := t.TempDir()
+	ca := filepath.Join(dir, "ca.crt")
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.srv.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	token := filepath.Join(dir, "token")
+	if err := os.WriteFile(token, []byte("pod-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v := kubernetesVerifier(t, f, daemon.IdentityConfig{})
+	v.inCluster, v.caFile, v.tokenFile = true, ca, token
+	if _, err := v.Verify(context.Background(), "", f.token(t, "rsa-1", nil), daemon.PeerInfo{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.discoveryAuth.Load(); got != "Bearer pod-token" {
+		t.Errorf("discovery saw Authorization %q, want the pod token", got)
+	}
+	if got := otherAuth.Load(); got != "" {
+		t.Errorf("the JWKS on another host saw Authorization %q, want none", got)
+	}
+
+	// The issuer's own JWKS, same host, gets the token.
+	f.jwksURI.Store("")
+	var sameAuth atomic.Value
+	sameAuth.Store("unset")
+	v = kubernetesVerifier(t, f, daemon.IdentityConfig{})
+	v.inCluster, v.caFile, v.tokenFile = true, ca, token
+	v.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, "/jwks") {
+			sameAuth.Store(r.Header.Get("Authorization"))
+		}
+		return f.srv.Client().Transport.RoundTrip(r)
+	})}
+	if _, err := v.Verify(context.Background(), "", f.token(t, "rsa-1", nil), daemon.PeerInfo{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := sameAuth.Load(); got != "Bearer pod-token" {
+		t.Errorf("the issuer's JWKS saw Authorization %q, want the pod token", got)
+	}
+
+	// A plain-http JWKS is refused before any request to it.
+	f.jwksURI.Store("http://" + other.Listener.Addr().String() + "/keys")
+	v = kubernetesVerifier(t, f, daemon.IdentityConfig{})
+	_, err := v.Verify(context.Background(), "", f.token(t, "rsa-1", nil), daemon.PeerInfo{})
+	if err == nil || errors.Is(err, codectypes.ErrLoginRefused) || !strings.Contains(err.Error(), "not an https URL") {
+		t.Fatalf("plain-http jwks_uri: %v", err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// An issuer that is down is asked once a minute, not on every login: the
+// logins in between fail without a request.
+func TestKubernetesVerifierAsksADownIssuerOnceAMinute(t *testing.T) {
+	f := startIssuer(t)
+	f.down.Store(true)
+	v := kubernetesVerifier(t, f, daemon.IdentityConfig{})
+	now := time.Now()
+	v.now = func() time.Time { return now }
+	tok := f.token(t, "rsa-1", nil)
+	for i := range 2 {
+		_, err := v.Verify(context.Background(), "", tok, daemon.PeerInfo{})
+		if err == nil || errors.Is(err, codectypes.ErrLoginRefused) {
+			t.Fatalf("login %d: %v, want a failure", i, err)
+		}
+	}
+	if n := f.discoveries.Load(); n != 1 {
+		t.Fatalf("discovery asked %d times while down, want 1", n)
+	}
+	f.down.Store(false)
+	now = now.Add(2 * jwksRefreshMin)
+	if _, err := v.Verify(context.Background(), "", tok, daemon.PeerInfo{}); err != nil {
+		t.Fatalf("after the issuer came back: %v", err)
+	}
+	if n := f.discoveries.Load(); n != 2 {
+		t.Fatalf("discovery asked %d times, want 2", n)
+	}
 }
 
 // POD_UID binds the lane to its own pod: a token minted for another pod of

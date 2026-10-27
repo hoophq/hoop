@@ -278,10 +278,11 @@ type ReviewViewer struct {
 }
 
 // reviewVisibilityCondition: the requester, a reviewer group member, or a force approver as
-// doForcedReview resolves one. A sidecar review has no requester and reads no connection.
+// doForcedReview resolves one. A sidecar review reads no connection, and one filed under
+// nobody is owned by the sidecar itself, never by a human.
 const reviewVisibilityCondition = `
 	AND (
-		(COALESCE(rv.listener_name, '') = '' AND rv.owner_id = ?)
+		(rv.owner_id = ? AND rv.owner_id IS DISTINCT FROM rv.sidecar_id::text)
 		OR EXISTS (
 			SELECT 1 FROM private.review_groups AS vg
 			WHERE vg.review_id = rv.id AND NOT vg.added_on_denial

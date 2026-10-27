@@ -78,7 +78,7 @@ func (c *terminating) Filter(dir inspect.Direction, data []byte) ([]byte, error)
 	out, err := c.Codec.Filter(dir, data)
 	var login *codecclickhouse.LoginError
 	if errors.As(err, &login) && errors.Is(err, codectypes.ErrLoginRefused) {
-		return nil, &inspect.CredentialRefusal{Request: "Hello " + login.User, Reason: err}
+		return nil, &inspect.CredentialRefusal{Request: "Hello " + login.User, User: login.User, Reason: err}
 	}
 	return out, err
 }

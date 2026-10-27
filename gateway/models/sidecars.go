@@ -411,9 +411,9 @@ func nullIfEmpty(s *string) *string {
 // replacement, so a configuration a sidecar imported concurrently keeps its
 // listeners instead of being overwritten by a stale copy. removeLoadFromDisk
 // drops the key after the merge — false is the same fact as absent, and an
-// older sidecar rejects an unknown key. Returns ErrNotFound when no row
-// matched.
-func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.RawMessage, removeLoadFromDisk bool) (*Sidecar, error) {
+// older sidecar rejects an unknown key. A nil ownerEmail keeps the stored
+// owner; an empty one clears it. Returns ErrNotFound when no row matched.
+func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.RawMessage, removeLoadFromDisk bool, ownerEmail *string) (*Sidecar, error) {
 	identifierClause := "name = ?"
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		identifierClause = "id = ?"
@@ -427,10 +427,11 @@ func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.R
 	var item Sidecar
 	err := db.Raw(`
 	UPDATE private.sidecars
-	SET configuration = `+expr+`
+	SET configuration = `+expr+`,
+		owner_email = CASE WHEN ?::text IS NULL THEN owner_email ELSE NULLIF(?::text, '') END
 	WHERE org_id = ? AND `+identifierClause+`
-	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities, reported_version`,
-		string(merge), orgID, nameOrID).
+	RETURNING id, org_id, name, created_by, created_at, configuration, owner_email, capabilities, reported_version`,
+		string(merge), ownerEmail, ownerEmail, orgID, nameOrID).
 		Scan(&item).
 		Error
 	if err != nil {

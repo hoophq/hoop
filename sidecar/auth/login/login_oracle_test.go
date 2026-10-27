@@ -494,9 +494,9 @@ func FuzzOracleLogin(f *testing.F) {
 			oraauth.RekeyCredentials(ch, "real", "placeholder", ch.EServerSessKey)
 		}
 		oraauth.AuthUser(payload)
-		oraauth.Phase2Value(payload, "AUTH_SESSKEY")
+		oraauth.Phase2Value(payload, "AUTH_SESSKEY", thick)
 		oraauth.SplicePhase1Username(payload, "x")
-		oraauth.SplicePhase2(payload, "x", map[string]string{"AUTH_SESSKEY": "AB"})
+		oraauth.SplicePhase2(payload, "x", map[string]string{"AUTH_SESSKEY": "AB"}, thick)
 		c := codecoracle.New(codecoracle.Options{})
 		c.Decode(inspect.FromClient, oraauth.WrapDataPacket(payload, true))
 		c.LoginUser()

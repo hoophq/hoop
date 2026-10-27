@@ -12,17 +12,18 @@ import (
 	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 )
 
-// scramSecretPrefix marks a secret a driver passes after a SCRAM proof
-// against the served material: "scram:<hex hash>" names the credential it
-// proved, since the raw key never crossed the wire.
+// scramSecretPrefix is the marker the drivers once passed through
+// Authenticate after a SCRAM proof. Verify refuses it now: a proof travels
+// through verifyProven, and a client that types the marker as its
+// password is not one.
 const scramSecretPrefix = "scram:"
 
 // hoopCredentialIdentity verifies a login against the credentials the plane
-// minted for this lane. The secret is the raw key, matched by digest, or the
-// scram form above, matched by hash. The login user, when the protocol
-// carries one, has to be the credential's subject or email: a key is one
-// person's, and alice's key presented as bob is refused, not recorded as
-// alice.
+// minted for this lane. The secret is the raw key, matched by digest; a
+// SCRAM proof against served material reaches verifyProven with the hash
+// instead. The login user, when the protocol carries one, has to be the
+// credential's subject or email: a key is one person's, and alice's key
+// presented as bob is refused, not recorded as alice.
 type hoopCredentialIdentity struct {
 	lane string
 	set  *credentialSet
@@ -37,17 +38,29 @@ func buildHoopCredentialIdentity(_ daemon.IdentityConfig, deps daemon.IdentityDe
 }
 
 func (h *hoopCredentialIdentity) Verify(_ context.Context, user, secret string, _ daemon.PeerInfo) (session.Identity, error) {
+	if strings.HasPrefix(secret, scramSecretPrefix) {
+		return session.Identity{}, daemon.Refused("a scram proof marker is not a hoop credential")
+	}
 	var entry daemon.CredentialSetEntry
 	var ok bool
-	if hash, proven := strings.CutPrefix(secret, scramSecretPrefix); proven {
-		entry, ok = h.set.byHash(h.lane, hash)
-	} else if secret != "" {
+	if secret != "" {
 		entry, ok = h.set.match(h.lane, secret)
 	}
+	return h.identity(user, entry, ok)
+}
+
+// verifyProven is the proven route: the driver ran SCRAM against the
+// material scramVerifier served and hash names the entry it proved.
+func (h *hoopCredentialIdentity) verifyProven(user, hash string) (session.Identity, error) {
+	entry, ok := h.set.byHash(h.lane, hash)
+	return h.identity(user, entry, ok)
+}
+
+func (h *hoopCredentialIdentity) identity(user string, entry daemon.CredentialSetEntry, ok bool) (session.Identity, error) {
 	if !ok {
 		return session.Identity{}, daemon.Refused("no hoop credential for this listener matches the one presented")
 	}
-	if expired(entry, time.Now()) {
+	if expired(entry, time.Now().UTC()) {
 		return session.Identity{}, daemon.Refused("the hoop credential of %s expired at %s", entry.Subject, entry.ExpiresAt.UTC().Format(time.RFC3339))
 	}
 	if user != "" && user != entry.Subject && user != entry.Email {

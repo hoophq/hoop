@@ -605,9 +605,61 @@ func TestMySQLLoginReportsUpstreamRefusal(t *testing.T) {
 		}),
 	)
 
-	_, err := loginMySQL(context.Background(), h.lc)
+	result, err := loginMySQL(context.Background(), h.lc)
 	if err == nil || errors.Is(err, ErrLoginRefused) || !strings.Contains(err.Error(), `credential "svc-pool" as "svc"`) {
 		t.Fatalf("error = %v, want an upstream refusal naming the credential", err)
+	}
+	// The selected credential rides the result so the relay releases it.
+	if result.Credential.Name != "svc-pool" {
+		t.Fatalf("result carries no credential: %+v", result)
+	}
+	h.wait(t)
+}
+
+// A NUL-terminated cleartext password is taken only on a leg a third party
+// cannot read; on plain tcp the client is told to use the RSA exchange.
+func TestMySQLLoginRefusesCleartextPasswordOnPlainTCP(t *testing.T) {
+	cred := Credential{Name: "svc-pool", User: "svc", Password: "svcpw"}
+	h := newMySQLLoginHarness(t, mysqlLoginOptions{
+		authenticate: func(context.Context, string, string) (session.Identity, Credential, error) {
+			t.Error("Authenticate called with a password that crossed the wire in clear")
+			return session.Identity{}, cred, nil
+		},
+	},
+		func(conn net.Conn) error {
+			mustWriteMySQLPacket(t, conn, 0, mysqlTestGreeting(mysqlCachingSHA2, []byte(mysqlTestUpstreamScramble), false))
+			return nil
+		},
+		func(conn net.Conn) error {
+			greeting := mustReadMySQLPacket(t, conn)
+			hs, err := mysqlauth.ParseHandshake(greeting.payload)
+			if err != nil {
+				return err
+			}
+			resp := mysqlauth.HandshakeResponse41{
+				Capabilities: mysqlTestClientCaps, MaxPacket: 1 << 24, Charset: 45,
+				User: "alice", AuthResponse: mysqlauth.ScrambleSHA256(hs.Scramble, "alicepw"),
+				Database: "appdb", Plugin: mysqlCachingSHA2,
+			}
+			mustWriteMySQLPacket(t, conn, 1, mysqlauth.EncodeHandshakeResponse41(resp))
+			fullAuth := mustReadMySQLPacket(t, conn)
+			if !bytes.Equal(fullAuth.payload, []byte{mysqlAuthMoreData, mysqlauth.CachingSHA2PerformFullAuth}) {
+				return fmt.Errorf("full-auth request = %x", fullAuth.payload)
+			}
+			// The clear password, as a client on TLS would send it.
+			mustWriteMySQLPacket(t, conn, 3, append([]byte("alicepw"), 0))
+			result := mustReadMySQLPacket(t, conn)
+			e, ok := mysqlauth.ParseERR(result.payload)
+			if !ok || e.Code != mysqlauth.ErrAccessDenied || !strings.Contains(e.Message, "RSA") {
+				return fmt.Errorf("client was told %x", result.payload)
+			}
+			return nil
+		},
+	)
+
+	_, err := loginMySQL(context.Background(), h.lc)
+	if err == nil || !strings.Contains(err.Error(), "cleartext password") {
+		t.Fatalf("error = %v, want the cleartext refusal", err)
 	}
 	h.wait(t)
 }

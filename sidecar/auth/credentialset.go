@@ -74,9 +74,9 @@ func (s *credentialSet) match(lane, secret string) (daemon.CredentialSetEntry, b
 	return s.byDigest(lane, sum[:])
 }
 
-// byHash finds the lane's entry with this hex hash: the form a driver passes
-// as "scram:<hash>" after a SCRAM proof against the entry's material, where
-// the raw key is never seen.
+// byHash finds the lane's entry with this hex hash: what a driver names
+// after a SCRAM proof against the entry's material, where the raw key is
+// never seen.
 func (s *credentialSet) byHash(lane, hexHash string) (daemon.CredentialSetEntry, bool) {
 	raw, err := hex.DecodeString(hexHash)
 	if err != nil || len(raw) != sha256.Size {
@@ -88,9 +88,10 @@ func (s *credentialSet) byHash(lane, hexHash string) (daemon.CredentialSetEntry,
 func (s *credentialSet) byDigest(lane string, digest []byte) (daemon.CredentialSetEntry, bool) {
 	var found daemon.CredentialSetEntry
 	hit := 0
-	for _, e := range s.cur.Load().byLane[lane] {
-		if subtle.ConstantTimeCompare(e.hash[:], digest) == 1 {
-			found, hit = e.CredentialSetEntry, 1
+	entries := s.cur.Load().byLane[lane]
+	for i := range entries {
+		if subtle.ConstantTimeCompare(entries[i].hash[:], digest) == 1 {
+			found, hit = entries[i].CredentialSetEntry, 1
 		}
 	}
 	return found, hit == 1
@@ -103,9 +104,12 @@ func (s *credentialSet) byDigest(lane string, digest []byte) (daemon.CredentialS
 // the one just minted during a rotation.
 func (s *credentialSet) scram(lane, user string) (codectypes.SCRAMMaterial, bool) {
 	var pick *indexedCredential
-	for i := range s.cur.Load().byLane[lane] {
-		e := &s.cur.Load().byLane[lane][i]
-		if e.SCRAM == nil || expired(e.CredentialSetEntry, time.Now()) || (e.Subject != user && e.Email != user) {
+	// One load: a swap mid-walk must not mix two sets' entries.
+	entries := s.cur.Load().byLane[lane]
+	now := time.Now().UTC()
+	for i := range entries {
+		e := &entries[i]
+		if e.SCRAM == nil || expired(e.CredentialSetEntry, now) || (e.Subject != user && e.Email != user) {
 			continue
 		}
 		if pick == nil || e.ExpiresAt.After(pick.ExpiresAt) {

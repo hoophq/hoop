@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ClickHouse/ch-go/proto"
+	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/codec/clickhouse"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -123,16 +124,18 @@ func TestTerminatingLaneRefusalReachesTheGate(t *testing.T) {
 	if !errors.As(err, &refusal) || len(out) != 0 {
 		t.Fatalf("Filter = %x, %v; want a CredentialRefusal", out, err)
 	}
-	if refusal.Request != "Hello mallory" || !errors.Is(err, codectypes.ErrLoginRefused) {
+	if refusal.Request != "Hello mallory" || refusal.User != "mallory" || !errors.Is(err, codectypes.ErrLoginRefused) {
 		t.Fatalf("refusal = %+v", refusal)
 	}
 	if bytes.Contains([]byte(err.Error()), []byte("guess")) {
 		t.Fatalf("password in the refusal: %v", err)
 	}
 
+	sink := audit.NewMemorySink(8)
 	sess := session.New(inspect.ClickHouse, session.Identity{PeerAddr: "10.0.0.1:1"})
 	g, err := gate.New(sess, gate.Config{
 		Protocol: inspect.ClickHouse,
+		Audit:    sink,
 		CodecFactory: func() inspect.Codec {
 			return clickhouse.NewWithOptions(clickhouse.Options{Authenticate: authenticator(t)})
 		},
@@ -143,6 +146,17 @@ func TestTerminatingLaneRefusalReachesTheGate(t *testing.T) {
 	d := g.Request(context.Background(), hello("mallory", "guess"))
 	if d.Allowed || d.Rule != "identity" || len(d.Payload) != 0 {
 		t.Fatalf("decision = %+v", d)
+	}
+	// Audited under the user the Hello claimed, not the bare peer.
+	var violation *audit.Event
+	for _, ev := range sink.Events() {
+		if ev.Kind == audit.KindViolation {
+			violation = &ev
+			break
+		}
+	}
+	if violation == nil || violation.Principal != "mallory" || violation.Metadata["login.user"] != "mallory" {
+		t.Fatalf("violation = %+v, want principal mallory with login.user", violation)
 	}
 	// The happy path through the gate: the Hello is swapped and the session
 	// now names the verified principal.

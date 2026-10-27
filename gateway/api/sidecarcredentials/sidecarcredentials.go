@@ -24,6 +24,9 @@ import (
 // credential_set sends, generated from the field's cap tag.
 const sidecarCredentialCapability = "credential_set"
 
+// sidecarCredentialMaxHours is services.SidecarCredentialMaxTTL in hours.
+const sidecarCredentialMaxHours = int(services.SidecarCredentialMaxTTL / time.Hour)
+
 // lane is the sidecar and the listener a path names. laneFromPath answers
 // the request and returns nil when either is unknown.
 type lane struct {
@@ -203,12 +206,13 @@ func Mint(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "expires_in_hours must be positive"})
 		return
 	}
-	if req.ExpiresInHours > 0 {
-		ttl = time.Duration(req.ExpiresInHours) * time.Hour
-	}
-	if ttl > services.SidecarCredentialMaxTTL {
+	// Bound the hours before the Duration multiply, which can overflow.
+	if req.ExpiresInHours > sidecarCredentialMaxHours {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "expires_in_hours cannot exceed 720"})
 		return
+	}
+	if req.ExpiresInHours > 0 {
+		ttl = time.Duration(req.ExpiresInHours) * time.Hour
 	}
 
 	allowed, err := models.HasSidecarLaneGrant(models.DB, ctx.OrgID, ln.sidecar.ID, ln.listener.Name,
@@ -223,8 +227,9 @@ func Mint(c *gin.Context) {
 	}
 	// A build without the entry refuses the whole document that carries the
 	// set, and with it every rule of every lane. Refusing the mint instead
-	// keeps the sidecar served.
-	if ln.sidecar.Capabilities != nil && !slices.Contains(ln.sidecar.Capabilities, sidecarCredentialCapability) {
+	// keeps the sidecar served. Before the first handshake the build is
+	// unknown, so the mint waits for it.
+	if !slices.Contains(ln.sidecar.Capabilities, sidecarCredentialCapability) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "sidecar " + ln.sidecar.Name + " runs a build that does not decode credentials; upgrade it first"})
 		return
 	}

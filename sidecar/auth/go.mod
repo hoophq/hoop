@@ -4,7 +4,7 @@ go 1.26.10
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
-	github.com/hoophq/libhoop v0.0.0-20261024144850-a59ec27aeeda
+	github.com/hoophq/libhoop v0.0.0-20261027095424-5cf9a96182a6
 )
 
 require (

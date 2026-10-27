@@ -39,8 +39,8 @@ func sidecarBody(t *testing.T, w *httptest.ResponseRecorder) openapi.SidecarResp
 }
 
 // The owner is a column beside the document: POST sets it, GET returns it,
-// a PUT without it keeps it, an empty one clears it, and a value that is not
-// an address is refused.
+// a PUT or PATCH without it keeps it, an empty one clears it, and a value
+// that is not an address is refused.
 func TestSidecarOwnerEmail(t *testing.T) {
 	startSwitchDB(t)
 
@@ -65,6 +65,22 @@ func TestSidecarOwnerEmail(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "owner_email")
 
 	w = adminJSON(t, Put, http.MethodPut, "owned", `{"configuration":{},"owner_email":""}`)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	assert.Empty(t, sidecarBody(t, w).OwnerEmail, "empty clears it")
+
+	w = adminJSON(t, Patch, http.MethodPatch, "owned", `{"owner_email":" ops@acme.com "}`)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	assert.Equal(t, "ops@acme.com", sidecarBody(t, w).OwnerEmail, "a PATCH of the owner alone")
+
+	w = adminJSON(t, Patch, http.MethodPatch, "owned", `{"configuration":{"log_level":"debug"}}`)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	assert.Equal(t, "ops@acme.com", sidecarBody(t, w).OwnerEmail, "a PATCH without it keeps the owner")
+
+	w = adminJSON(t, Patch, http.MethodPatch, "owned", `{"owner_email":"Not An Email"}`)
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
+	assert.Contains(t, w.Body.String(), "owner_email")
+
+	w = adminJSON(t, Patch, http.MethodPatch, "owned", `{"owner_email":""}`)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
 	assert.Empty(t, sidecarBody(t, w).OwnerEmail, "empty clears it")
 

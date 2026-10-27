@@ -165,6 +165,19 @@ func TestListValidSidecarCredentials(t *testing.T) {
 		assert.Empty(t, rows)
 	})
 
+	t.Run("an inactive user's key drops out", func(t *testing.T) {
+		execSQL(t, `UPDATE private.sidecars SET created_at = NOW() - INTERVAL '30 minutes' WHERE id = ?`, sc.ID)
+		execSQL(t, `UPDATE private.users SET status = 'inactive' WHERE id = ?`, bob)
+		rows, err := models.ListValidSidecarCredentials(models.DB, testOrgID, mustGetSidecar(t, sc.ID))
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		assert.Equal(t, live.ID, rows[0].ID)
+		mine, err := models.ListSidecarCredentialsByUser(models.DB, testOrgID, bob)
+		require.NoError(t, err)
+		assert.Empty(t, mine)
+		execSQL(t, `UPDATE private.users SET status = 'active' WHERE id = ?`, bob)
+	})
+
 	t.Run("by user", func(t *testing.T) {
 		rows, err := models.ListSidecarCredentialsByUser(models.DB, testOrgID, jane)
 		require.NoError(t, err)

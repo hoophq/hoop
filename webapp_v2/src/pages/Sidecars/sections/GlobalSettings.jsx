@@ -102,10 +102,10 @@ export default function GlobalSettings({ sidecar, editable }) {
   }
 
   // The owner is a column of the row, not a key of the document, so it has
-  // its own write; the stored configuration rides along unchanged.
+  // its own write; the stored configuration is not sent.
   const saveOwner = async () => {
     setSaving(true)
-    const { ok, error: refusal } = await setOwner(sidecar.id, sidecar.configuration, draft.trim())
+    const { ok, error: refusal } = await setOwner(sidecar.id, draft.trim())
     setSaving(false)
     if (!ok) {
       setError(saveErrorMessage(refusal))

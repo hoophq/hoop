@@ -12043,7 +12043,7 @@ const docTemplate = `{
                 }
             },
             "patch": {
-                "description": "Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the rules imported from this sidecar that nothing else uses and unbinds the rest; detached_rules lists them. load_from_disk false must be sent alone. It clears the stored document, so the sidecar imports its config file again.",
+                "description": "Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the rules imported from this sidecar that nothing else uses and unbinds the rest; detached_rules lists them. load_from_disk false must be sent alone. It clears the stored document, so the sidecar imports its config file again. owner_email omitted keeps the stored owner; empty clears it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -22441,13 +22441,15 @@ const docTemplate = `{
         },
         "openapi.SidecarPatchRequest": {
             "type": "object",
-            "required": [
-                "configuration"
-            ],
             "properties": {
                 "configuration": {
-                    "description": "A partial daemon configuration. Only the keys present are updated; the\nrest of the stored document is left unchanged. load_from_disk false\nclears the key and hands the document back to the control plane.",
+                    "description": "A partial daemon configuration. Only the keys present are updated; the\nrest of the stored document is left unchanged. load_from_disk false\nclears the key and hands the document back to the control plane.\nOmitted leaves the document as stored.",
                     "type": "object"
+                },
+                "owner_email": {
+                    "description": "The owner. Omitted keeps the stored owner; an empty string clears it.",
+                    "type": "string",
+                    "example": "dba@acme.com"
                 }
             }
         },

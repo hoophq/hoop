@@ -75,7 +75,7 @@ func lineLogin(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, erro
 	}
 	up, err := c.Dial(ctx, &cred)
 	if err != nil {
-		return proxy.LoginResult{}, err
+		return proxy.LoginResult{Identity: id, Credential: cred}, err
 	}
 	c.Upstream = up
 	_, _ = c.Client.Write([]byte("ok as " + c.Propagate.Render(id, c.Context) + "\n"))
@@ -205,6 +205,37 @@ func TestLoginAdoptsVerifiedIdentity(t *testing.T) {
 	}
 	if released.Load() != 1 {
 		t.Errorf("credential released %d times, want 1", released.Load())
+	}
+}
+
+// A credential selected by a login that then fails goes back to its source
+// at once: the relay releases it, with no session to end.
+func TestLoginFailureAfterSelectionReleasesCredential(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dead := ln.Addr().String()
+	ln.Close()
+	var released atomic.Int32
+	srv := startServer(t, proxy.Config{
+		Upstream:     dead,
+		Protocol:     lineProto,
+		Connection:   "appdb",
+		Audit:        audit.NewMemorySink(64),
+		CodecFactory: func() inspect.Codec { return lineCodec{} },
+		Authenticate: lineAuthenticate(&released),
+	})
+	br := dialLine(t, srv, "login alice s3cret\n")
+	if _, err := br.ReadString('\n'); err == nil {
+		t.Fatal("a login with no upstream answered")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for released.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if released.Load() != 1 {
+		t.Fatalf("credential released %d times, want 1", released.Load())
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -139,6 +140,38 @@ func TestSecretFilesSource(t *testing.T) {
 	}
 }
 
+// A symlink inside the directory may point at a file inside it, the way a
+// Kubernetes mount links through ..data; one that leaves it is refused.
+func TestSecretFilesSourceFollowsSymlinksInsideTheDirOnly(t *testing.T) {
+	outside := t.TempDir()
+	writeMode(t, filepath.Join(outside, "secret"), "leaked", 0o400)
+	dir := t.TempDir()
+	// The kubelet layout: password -> ..data/password, ..data -> ..2026_01.
+	writeMode(t, filepath.Join(dir, "..2026_01", "password"), "pw-k8s", 0o400)
+	if err := os.Symlink("..2026_01", filepath.Join(dir, "..data")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..data", "password"), filepath.Join(dir, "password")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret"), filepath.Join(dir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	src, err := buildSecretFilesSource(&daemon.CredentialSourcesConfig{SecretFiles: &daemon.SecretFilesSourceConfig{Dir: dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	cred, err := src.Credential(ctx, daemon.CredentialEntry{Name: "k", User: "u", PasswordFile: "password"}, session.Identity{})
+	if err != nil || cred.Password != "pw-k8s" {
+		t.Fatalf("through ..data: %+v %v", cred, err)
+	}
+	_, err = src.Credential(ctx, daemon.CredentialEntry{Name: "o", User: "u", PasswordFile: "escape"}, session.Identity{})
+	if err == nil || !strings.Contains(err.Error(), "outside credentials.secret_files.dir") || strings.Contains(err.Error(), "leaked") {
+		t.Fatalf("a link out of the dir: %v", err)
+	}
+}
+
 // gcp_impersonation asks the metadata server for the pod's token, mints one
 // for the entry's account through iamcredentials, and caches it per entry
 // until five minutes before it expires.
@@ -200,7 +233,7 @@ func TestGCPImpersonationSource(t *testing.T) {
 		t.Fatalf("the second login minted again: mints %d meta %d", mintCalls.Load(), metaCalls.Load())
 	}
 	// Near expiry the token is replaced.
-	src.cache["gw"] = gcpMinted{token: cred.Password, exp: time.Now().Add(gcpAccessTokenRefreshBefore - time.Second)}
+	src.cache[gcpCacheKey(entry.ServiceAccount, gcpScopes(entry))] = gcpMinted{token: cred.Password, exp: time.Now().Add(gcpAccessTokenRefreshBefore - time.Second)}
 	fresh, err := src.Credential(ctx, entry, session.Identity{})
 	if err != nil || fresh.Password == cred.Password || mintCalls.Load() != 2 {
 		t.Fatalf("near expiry: %+v %v mints %d", fresh, err, mintCalls.Load())
@@ -217,6 +250,58 @@ func TestGCPImpersonationSource(t *testing.T) {
 	down := newGCPImpersonationSource(&daemon.GCPImpersonationSourceConfig{MetadataHost: "127.0.0.1:1"}, nil)
 	if _, err := down.Credential(ctx, entry, session.Identity{}); err == nil || !strings.Contains(err.Error(), "metadata server at 127.0.0.1:1") {
 		t.Fatalf("metadata down: %v", err)
+	}
+}
+
+// Two lanes naming different accounts "rw" are two mints: the cache is
+// keyed by the account and scopes, never by the entry name.
+func TestGCPImpersonationCacheIsKeyedByAccountAndScopes(t *testing.T) {
+	meta := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "own-token", "expires_in": 3600, "token_type": "Bearer"})
+	}))
+	defer meta.Close()
+	var mints atomic.Int64
+	iam := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := mints.Add(1)
+		sa, _ := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/v1/projects/-/serviceAccounts/"), ":generateAccessToken")
+		var body struct {
+			Scope []string `json:"scope"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"accessToken": fmt.Sprintf("%s|%s|%d", sa, strings.Join(body.Scope, ","), n),
+			"expireTime":  time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		})
+	}))
+	defer iam.Close()
+	prev := iamCredentialsEndpoint
+	iamCredentialsEndpoint = iam.URL
+	t.Cleanup(func() { iamCredentialsEndpoint = prev })
+	src := newGCPImpersonationSource(&daemon.GCPImpersonationSourceConfig{MetadataHost: strings.TrimPrefix(meta.URL, "http://")}, nil)
+	src.iam = iam.Client()
+	ctx := context.Background()
+
+	a := daemon.CredentialEntry{Name: "rw", ServiceAccount: "a@p.iam.gserviceaccount.com"}
+	b := daemon.CredentialEntry{Name: "rw", ServiceAccount: "b@p.iam.gserviceaccount.com"}
+	ca, err := src.Credential(ctx, a, session.Identity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cb, err := src.Credential(ctx, b, session.Identity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ca.Password == cb.Password || !strings.HasPrefix(ca.Password, "a@") || !strings.HasPrefix(cb.Password, "b@") {
+		t.Fatalf("lane b got lane a's token: %q vs %q", ca.Password, cb.Password)
+	}
+	// Scopes are part of the key, in any order; the same account and
+	// scopes hit the cache.
+	s1 := daemon.CredentialEntry{Name: "rw", ServiceAccount: a.ServiceAccount, Scopes: []string{"s2", "s1"}}
+	s2 := daemon.CredentialEntry{Name: "ro", ServiceAccount: a.ServiceAccount, Scopes: []string{"s1", "s2"}}
+	c1, _ := src.Credential(ctx, s1, session.Identity{})
+	c2, _ := src.Credential(ctx, s2, session.Identity{})
+	if c1.Password == ca.Password || c1.Password != c2.Password || mints.Load() != 3 {
+		t.Fatalf("scoped tokens %q %q, mints %d", c1.Password, c2.Password, mints.Load())
 	}
 }
 

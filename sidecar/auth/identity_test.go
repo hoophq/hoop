@@ -29,7 +29,8 @@ func hashOf(secret string) string {
 }
 
 // The set is matched by digest, per lane, with expiry and the login user
-// checked; and the scram form names an entry by hash without the key.
+// checked; the proven route names an entry by hash without the key, and
+// the marker the drivers once passed is refused as a password.
 func TestHoopCredentialVerifier(t *testing.T) {
 	future := time.Now().Add(time.Hour)
 	set := newCredentialSet([]daemon.CredentialSetEntry{
@@ -60,8 +61,8 @@ func TestHoopCredentialVerifier(t *testing.T) {
 	if _, err := verify("", "hlc_alice"); err != nil {
 		t.Fatalf("no login user (http): %v", err)
 	}
-	if _, err := verify("alice", scramSecretPrefix+hashOf("hlc_alice")); err != nil {
-		t.Fatalf("the scram form: %v", err)
+	if _, err := v.(*hoopCredentialIdentity).verifyProven("alice", hashOf("hlc_alice")); err != nil {
+		t.Fatalf("the proven route: %v", err)
 	}
 
 	for name, tc := range map[string]struct{ user, secret, want string }{
@@ -71,7 +72,8 @@ func TestHoopCredentialVerifier(t *testing.T) {
 		"expired":         {"bob", "hlc_bob", "expired at"},
 		"another's key":   {"bob", "hlc_alice", "belongs to alice, not to the login user \"bob\""},
 		"raw hash as key": {"alice", hashOf("hlc_alice"), "no hoop credential"},
-		"unknown scram":   {"alice", scramSecretPrefix + hashOf("x"), "no hoop credential"},
+		"scram marker":    {"alice", scramSecretPrefix + hashOf("hlc_alice"), "not a hoop credential"},
+		"unknown scram":   {"alice", scramSecretPrefix + hashOf("x"), "not a hoop credential"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := verify(tc.user, tc.secret)
@@ -112,10 +114,13 @@ func TestSCRAMVerifierFindsTheLiveEntryForAUser(t *testing.T) {
 			t.Errorf("%s has SCRAM material; want none (expired, no material, or undecodable)", user)
 		}
 	}
-	// The verifier accepts what the driver proves.
+	// The verifier accepts what the driver proves, by hash alone.
 	v, _ := buildHoopCredentialIdentity(daemon.IdentityConfig{}, daemon.IdentityDeps{Lane: "appdb", CredentialSet: set})
-	if _, err := v.Verify(context.Background(), "alice", scramSecretPrefix+m.Hash, daemon.PeerInfo{}); err != nil {
+	if _, err := v.(*hoopCredentialIdentity).verifyProven("alice", m.Hash); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := v.(*hoopCredentialIdentity).verifyProven("bob", m.Hash); !errors.Is(err, codectypes.ErrLoginRefused) {
+		t.Fatalf("another's proof: %v", err)
 	}
 }
 
@@ -331,6 +336,30 @@ func TestAuthenticateComposesTheThreeSteps(t *testing.T) {
 	res, err := a.Swap(context.Background(), "Bearer hlc_a")
 	if err != nil || res.User != "app" || res.Password != "s3cret" || res.Bearer || res.Identity.Subject != "alice" {
 		t.Fatalf("swap: %+v %v", res, err)
+	}
+	// The proven route takes the hash a driver proved by SCRAM and nothing
+	// else does: the marker as a password, a bearer or a basic password
+	// is refused, so a client holding only the hash cannot log in.
+	id, cred, err = a.AuthenticateProven(context.Background(), "alice", hashOf("hlc_a"))
+	if err != nil || id.Subject != "alice" || cred.Name != "rw" {
+		t.Fatalf("proven: %+v %+v %v", id, cred, err)
+	}
+	for _, in := range []string{
+		"Bearer " + scramSecretPrefix + hashOf("hlc_a"),
+		"Basic " + base64.StdEncoding.EncodeToString([]byte("alice:"+scramSecretPrefix+hashOf("hlc_a"))),
+		"Bearer " + hashOf("hlc_a"),
+	} {
+		if _, err := a.Swap(context.Background(), in); !errors.Is(err, codectypes.ErrLoginRefused) {
+			t.Fatalf("swap %q: %v, want a refusal", in, err)
+		}
+	}
+	if _, _, err := a.Authenticate(context.Background(), "alice", scramSecretPrefix+hashOf("hlc_a")); !errors.Is(err, codectypes.ErrLoginRefused) {
+		t.Fatalf("the marker as a password: %v", err)
+	}
+	// A lane whose verifier serves no SCRAM material has nothing to prove.
+	a.proven = nil
+	if _, _, err := a.AuthenticateProven(context.Background(), "alice", hashOf("hlc_a")); !errors.Is(err, codectypes.ErrLoginRefused) {
+		t.Fatalf("proven without material: %v", err)
 	}
 }
 

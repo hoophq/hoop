@@ -45,7 +45,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
-	github.com/hoophq/libhoop v0.0.0-20261024144850-a59ec27aeeda // indirect
+	github.com/hoophq/libhoop v0.0.0-20261027095424-5cf9a96182a6 // indirect
 	github.com/hoophq/libhoop-ica v0.7.0 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect

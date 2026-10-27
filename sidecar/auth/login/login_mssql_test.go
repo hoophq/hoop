@@ -55,7 +55,7 @@ func (s *mssqlFakeServer) serve(conn net.Conn) error {
 	s.prelogin = pre
 	s.mu.Unlock()
 	reply := mssqlauth.ServerPrelogin(mssqlauth.EncryptOn)
-	if err := mssqlauth.WritePacket(conn, mssqlauth.Packet{Type: mssqlauth.PacketReply, Status: mssqlauth.StatusEOM, ID: 1, Payload: reply.Encode()}); err != nil {
+	if err := mssqlauth.WritePacket(conn, mssqlauth.Packet{Type: mssqlauth.PacketReply, Status: mssqlauth.StatusEOM, ID: 1, Payload: mustEncode(reply.Encode())}); err != nil {
 		return err
 	}
 
@@ -195,7 +195,7 @@ func mssqlConnect(t *testing.T, conn net.Conn, enc byte) *mssqlFakeClient {
 		{Token: mssqlauth.PreloginThreadID, Data: []byte{0, 0, 0, 0}},
 		{Token: mssqlauth.PreloginMARS, Data: []byte{0}},
 	}
-	if err := mssqlauth.WritePacket(conn, mssqlauth.Packet{Type: mssqlauth.PacketPrelogin, Status: mssqlauth.StatusEOM, ID: 1, Payload: pre.Encode()}); err != nil {
+	if err := mssqlauth.WritePacket(conn, mssqlauth.Packet{Type: mssqlauth.PacketPrelogin, Status: mssqlauth.StatusEOM, ID: 1, Payload: mustEncode(pre.Encode())}); err != nil {
 		t.Fatal(err)
 	}
 	reply, err := mssqlauth.ReadPacket(conn)
@@ -237,7 +237,7 @@ func (fc *mssqlFakeClient) login(t *testing.T, l *mssqlauth.Login) {
 	if fc.tls != nil {
 		w = fc.tls
 	}
-	if _, err := w.Write(mssqlauth.Frame(mssqlauth.PacketLogin7, mssqlauth.EncodeLogin(l), mssqlauth.DefaultPacketSize)); err != nil {
+	if _, err := w.Write(mssqlauth.Frame(mssqlauth.PacketLogin7, mustEncode(mssqlauth.EncodeLogin(l)), mssqlauth.DefaultPacketSize)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -690,14 +690,14 @@ func TestMSSQLLoginRefusesAnUpstreamWithoutEncryption(t *testing.T) {
 				return
 			}
 			_ = mssqlauth.WritePacket(srv, mssqlauth.Packet{Type: mssqlauth.PacketReply, Status: mssqlauth.StatusEOM,
-				Payload: mssqlauth.ServerPrelogin(mssqlauth.EncryptNotSup).Encode()})
+				Payload: mustEncode(mssqlauth.ServerPrelogin(mssqlauth.EncryptNotSup).Encode())})
 		}()
 		return up, nil
 	}
 	h.lc.Authenticate = mssqlAuthenticator(t, "alice", "s3cret", proxy.Credential{})
 	done := h.run()
 	go mssqlauth.WritePacket(h.client, mssqlauth.Packet{Type: mssqlauth.PacketPrelogin, Status: mssqlauth.StatusEOM,
-		Payload: mssqlauth.ServerPrelogin(mssqlauth.EncryptOff).Encode()})
+		Payload: mustEncode(mssqlauth.ServerPrelogin(mssqlauth.EncryptOff).Encode())})
 	_, err := h.wait(done)
 	if err == nil || !strings.Contains(err.Error(), "does not support encryption") {
 		t.Fatalf("err = %v", err)
@@ -707,25 +707,31 @@ func TestMSSQLLoginRefusesAnUpstreamWithoutEncryption(t *testing.T) {
 // FuzzMSSQLLogin feeds the PRELOGIN and LOGIN7 decoders the client-controlled
 // bytes the driver reads before anything is verified.
 func FuzzMSSQLLogin(f *testing.F) {
-	f.Add(mssqlauth.EncodeLogin(mssqlTestLogin("alice", "s3cret")))
+	f.Add(mustEncode(mssqlauth.EncodeLogin(mssqlTestLogin("alice", "s3cret"))))
 	l := mssqlTestLogin("", "")
 	l.SetIntegrated([]byte("NTLMSSP"))
 	l.FeatureExt = []byte{0x04, 0x01, 0, 0, 0, 0x01, 0xff}
-	f.Add(mssqlauth.EncodeLogin(l))
-	f.Add(mssqlauth.ServerPrelogin(mssqlauth.EncryptOff).Encode())
+	f.Add(mustEncode(mssqlauth.EncodeLogin(l)))
+	f.Add(mustEncode(mssqlauth.ServerPrelogin(mssqlauth.EncryptOff).Encode()))
 	f.Add([]byte{0xff})
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if p, err := mssqlauth.ParsePrelogin(data); err == nil {
 			p.SetEncryption(mssqlauth.EncryptOn)
-			if _, err := mssqlauth.ParsePrelogin(p.Encode()); err != nil {
-				t.Fatalf("rewritten PRELOGIN does not parse: %v", err)
+			if raw, err := p.Encode(); err == nil {
+				if _, err := mssqlauth.ParsePrelogin(raw); err != nil {
+					t.Fatalf("rewritten PRELOGIN does not parse: %v", err)
+				}
 			}
 		}
 		if l, err := mssqlauth.DecodeLogin(data); err == nil {
 			l.SetSQLAuth("svc", "pw")
 			l.DisablePasswordChange()
-			back, err := mssqlauth.DecodeLogin(mssqlauth.EncodeLogin(l))
+			raw, err := mssqlauth.EncodeLogin(l)
+			if err != nil {
+				return
+			}
+			back, err := mssqlauth.DecodeLogin(raw)
 			if err != nil {
 				t.Fatalf("swapped LOGIN7 does not decode: %v", err)
 			}
@@ -734,4 +740,12 @@ func FuzzMSSQLLogin(f *testing.F) {
 			}
 		}
 	})
+}
+
+// mustEncode unwraps an encoder result for a fixture the test built.
+func mustEncode(b []byte, err error) []byte {
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

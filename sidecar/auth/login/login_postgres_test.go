@@ -470,7 +470,13 @@ func TestPostgresLoginSCRAMClientLeg(t *testing.T) {
 			h.conn.SCRAM = func(user string) (codectypes.SCRAMMaterial, bool) {
 				return material, user == "alice"
 			}
-			h.conn.Authenticate = pgAuthenticator(t, "alice", "scram:deadbeef", proxy.Credential{Name: "rw", User: "app_rw", Password: "pool-secret"})
+			// The proof reaches the proven route with the hash; the
+			// password route sees nothing.
+			h.conn.Authenticate = func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
+				t.Error("Authenticate called on a SCRAM login")
+				return session.Identity{}, proxy.Credential{}, proxy.ErrLoginRefused
+			}
+			h.conn.AuthenticateProven = pgAuthenticator(t, "alice", "deadbeef", proxy.Credential{Name: "rw", User: "app_rw", Password: "pool-secret"})
 			done := h.run()
 
 			h.client.Write(pgauth.Startup(map[string]string{"user": "alice", "database": "app"}))
@@ -511,6 +517,96 @@ func TestPostgresLoginSCRAMClientLeg(t *testing.T) {
 				t.Fatalf("upstream startup %v err=%v", seen, serr)
 			}
 		})
+	}
+}
+
+// A client-final that is not a SCRAM message at all ends like a wrong
+// proof: the 28P01 frame and a refusal under the claimed user, so the
+// audit records it and the client is told.
+func TestPostgresLoginMalformedSCRAMIsRefused(t *testing.T) {
+	material, _ := pgauth.Material("hoop-key-123", []byte("laneSaltlaneSalt"), 4096)
+	h := newPGLoginHarness(t, &pgFakeServer{method: "trust", user: "x"}, pgTCPLane(false))
+	h.conn.SCRAM = func(string) (codectypes.SCRAMMaterial, bool) { return material, true }
+	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", proxy.Credential{User: "x"})
+	h.conn.AuthenticateProven = pgAuthenticator(t, "alice", material.Hash, proxy.Credential{User: "x"})
+	done := h.run()
+	h.client.Write(pgauth.Startup(map[string]string{"user": "alice"}))
+	h.expectAuth(pgauth.AuthSASLCode)
+	sc := pgauth.NewScramClient("alice", "hoop-key-123")
+	first, _ := sc.First()
+	h.client.Write(pgauth.SASLInitialResponse(pgauth.ScramSHA256, first))
+	h.expectAuth(pgauth.AuthSASLContinueCode)
+	h.client.Write(pgauth.SASLResponse([]byte("this is not client-final")))
+	h.expectRefusal()
+	res, err := h.wait(done)
+	if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "alice" || len(h.dialed) != 0 {
+		t.Fatalf("err=%v res=%+v dialed=%v", err, res, h.dialed)
+	}
+}
+
+// A swapped login forwards an allowlist of the client's startup
+// parameters: options, which can set a role or any GUC, and unknown keys
+// stop at the relay; replication goes through only as false.
+func TestPostgresLoginForwardsOnlyAllowlistedStartupParams(t *testing.T) {
+	server := &pgFakeServer{method: "trust", user: "app_rw"}
+	h := newPGLoginHarness(t, server, pgTCPLane(true))
+	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", proxy.Credential{Name: "rw", User: "app_rw"})
+	done := h.run()
+	h.client.Write(pgauth.Startup(map[string]string{
+		"user": "alice", "database": "app", "application_name": "psql", "client_encoding": "UTF8",
+		"DateStyle": "ISO", "TimeZone": "UTC", "replication": "false",
+		"options": "-c role=admin", "search_path": "evil", "x_custom": "1",
+	}))
+	h.expectAuth(pgauth.AuthCleartextCode)
+	h.client.Write(pgauth.PasswordMessage("k"))
+	h.expectLoggedIn()
+	if _, err := h.wait(done); err != nil {
+		t.Fatal(err)
+	}
+	seen, serr := server.seen()
+	if serr != nil {
+		t.Fatal(serr)
+	}
+	want := map[string]string{"user": "app_rw", "database": "app", "application_name": "psql", "client_encoding": "UTF8",
+		"DateStyle": "ISO", "TimeZone": "UTC", "replication": "false"}
+	if len(seen) != len(want) {
+		t.Fatalf("upstream startup %v, want %v", seen, want)
+	}
+	for k, v := range want {
+		if seen[k] != v {
+			t.Fatalf("upstream startup %v, want %v", seen, want)
+		}
+	}
+	if _, ok := seen["options"]; ok {
+		t.Fatalf("options forwarded: %v", seen)
+	}
+	if got := pgUpstreamParams(map[string]string{"user": "alice", "replication": "database"}, "app_rw"); got["replication"] != "" || got["database"] != "alice" {
+		t.Fatalf("replication=database forwarded or database not defaulted: %v", got)
+	}
+}
+
+// A login that fails after the credential was selected still reports it,
+// so the relay returns it to its source.
+func TestPostgresLoginReportsCredentialOnUpstreamFailure(t *testing.T) {
+	server := &pgFakeServer{method: "scram", user: "app_rw", password: "rotated"}
+	h := newPGLoginHarness(t, server, pgTCPLane(true))
+	released := 0
+	cred := proxy.Credential{Name: "rw", User: "app_rw", Password: "stale", Release: func(context.Context) error { released++; return nil }}
+	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", cred)
+	done := h.run()
+	h.client.Write(pgauth.Startup(map[string]string{"user": "alice"}))
+	h.expectAuth(pgauth.AuthCleartextCode)
+	h.client.Write(pgauth.PasswordMessage("k"))
+	h.readBackend()
+	res, err := h.wait(done)
+	if err == nil || errors.Is(err, proxy.ErrLoginRefused) {
+		t.Fatalf("err=%v, want an upstream failure", err)
+	}
+	if res.Credential.Name != "rw" || res.Credential.Release == nil {
+		t.Fatalf("result carries no credential to release: %+v", res)
+	}
+	if released != 0 {
+		t.Fatal("the driver released; that is the relay's job")
 	}
 }
 

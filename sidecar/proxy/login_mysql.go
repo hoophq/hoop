@@ -101,12 +101,7 @@ func loginMySQL(ctx context.Context, c *LoginConn) (LoginResult, error) {
 		return LoginResult{}, err
 	}
 	if err := m.upstreamLogin(cred); err != nil {
-		if cred.Release != nil {
-			if rerr := cred.Release(ctx); rerr != nil {
-				m.log.Warn("credential not released", "credential", cred.Name, "error", rerr)
-			}
-		}
-		return LoginResult{}, err
+		return LoginResult{Identity: identity, Credential: cred}, err
 	}
 	return LoginResult{Identity: identity, Credential: cred}, nil
 }
@@ -288,10 +283,21 @@ func (m *mysqlLogin) clientPassword() ([]byte, error) {
 
 	case len(payload) > 0 && payload[len(payload)-1] == 0:
 		// The clear, NUL-terminated: what a client sends over a transport
-		// it holds secure.
+		// it holds secure. Taken only where the relay holds it secure too;
+		// on plain tcp the password would cross the wire readable.
+		if !m.secureClientLeg() {
+			return nil, writeMySQLAuthError(client, m.downNext, "a cleartext password is not accepted on a plain connection; use the RSA public key exchange or TLS", m.inspectPacket)
+		}
 		return append([]byte(nil), payload[:len(payload)-1]...), nil
 	}
 	return nil, writeMySQLAuthError(client, m.downNext, "full authentication response is not a password", m.inspectPacket)
+}
+
+// secureClientLeg reports a client leg a third party cannot read: a unix
+// socket, TLS the relay terminated before the login, or TLS the client
+// asked for in the handshake.
+func (m *mysqlLogin) secureClientLeg() bool {
+	return m.c.Lane.Network == "unix" || m.c.Lane.ClientTLS || isTLS(m.c.Client)
 }
 
 // refuse tells the client what mysqld tells a wrong password.

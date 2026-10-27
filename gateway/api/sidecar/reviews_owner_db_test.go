@@ -15,8 +15,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/models"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
+	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/slack-go/slack"
 	"github.com/stretchr/testify/assert"
@@ -195,4 +197,38 @@ func TestSidecarReviewIsFiledUnderThePerson(t *testing.T) {
 		assert.Equal(t, unowned.ID, rev.OwnerID)
 		assert.Equal(t, reviewOwnerEmail, sess.UserEmail)
 	})
+}
+
+// getReviewAs runs GET /reviews/:id as the user, in the given groups.
+func getReviewAs(t *testing.T, reviewID, userID string, groups []string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	ctx := storagev2.NewContext(userID, statusTestOrgID).
+		WithUserInfo("Viewer", "viewer@hoop.dev", "active", "", groups)
+	c.Set(storagev2.ContextKey, ctx)
+	c.Params = gin.Params{{Key: "id", Value: reviewID}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/reviews/"+reviewID, nil)
+	reviewapi.NewHandler(func(orgID, sid, owner, status, reason, rejectedBy string) {}).GetByIdOrSid(c)
+	return rec
+}
+
+// The person a sidecar review is filed under reads it like any requester,
+// with no reviewer group. The sidecar's own id never does.
+func TestSidecarReviewIsVisibleToThePerson(t *testing.T) {
+	startStatusTestDB(t)
+	aliceID := seedSlackUser(t, "alice@acme.com", "U-ALICE")
+	sc := seedOwnedSidecar(t, "owned", "")
+
+	rev, _ := filedReview(t, postReviewAs(sc, []byte("DELETE FROM users WHERE id = 1;"), "alice@acme.com"))
+	require.Equal(t, aliceID, rev.OwnerID)
+	assert.Equal(t, http.StatusOK, getReviewAs(t, rev.ID, aliceID, nil).Code, "the principal")
+	assert.Equal(t, http.StatusNotFound, getReviewAs(t, rev.ID, uuid.NewString(), nil).Code, "a stranger")
+	assert.Equal(t, http.StatusOK, getReviewAs(t, rev.ID, uuid.NewString(), []string{"dba"}).Code, "a reviewer")
+
+	unowned, _ := filedReview(t, postReviewAs(sc, []byte("DELETE FROM users WHERE id = 2;"), "postgres"))
+	require.Equal(t, sc.ID, unowned.OwnerID)
+	assert.Equal(t, http.StatusNotFound, getReviewAs(t, unowned.ID, sc.ID, nil).Code, "the sidecar is no person")
+	assert.Equal(t, http.StatusOK, getReviewAs(t, unowned.ID, uuid.NewString(), []string{"dba"}).Code, "a reviewer")
 }

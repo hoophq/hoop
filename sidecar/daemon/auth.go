@@ -34,6 +34,12 @@ type LaneAuth interface {
 	// failure is wrapped too, and logged with its cause, which never
 	// reaches the client.
 	Authenticate(ctx context.Context, user, secret string) (session.Identity, Credential, error)
+	// AuthenticateProven is Authenticate for a login a driver already
+	// proved by SCRAM against the material SCRAM served: hash names the
+	// credential proved, the key never crossed the wire. Only a driver
+	// that ran the proof calls it; a secret shaped like a hash through
+	// Authenticate is refused.
+	AuthenticateProven(ctx context.Context, user, hash string) (session.Identity, Credential, error)
 	// Authenticator is the libhoop form of Authenticate, for a codec that
 	// terminates the login itself (ClickHouse).
 	Authenticator() codectypes.Authenticator

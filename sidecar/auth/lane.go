@@ -28,8 +28,10 @@ type laneAuth struct {
 	identityType string
 	verifier     daemon.IdentitySource
 	// scram is the SCRAM material lookup a hoop_credential lane offers a
-	// driver; nil on every other verifier.
+	// driver, and proven the verification of the hash it proves; nil on
+	// every other verifier.
 	scram   func(user string) (codectypes.SCRAMMaterial, bool)
+	proven  func(user, hash string) (session.Identity, error)
 	pool    []daemon.CredentialEntry
 	sources map[string]daemon.CredentialSource
 	rules   []daemon.CredentialRule
@@ -81,6 +83,7 @@ func buildLaneAuth(lc daemon.ListenerConfig, name string, deps daemon.AuthDeps,
 	}
 	if h, ok := verifier.(*hoopCredentialIdentity); ok {
 		a.scram = h.scramVerifier()
+		a.proven = h.verifyProven
 	}
 	for _, e := range lc.Credentials.Pool {
 		src, ok := sources[e.Source]
@@ -103,7 +106,25 @@ func buildLaneAuth(lc daemon.ListenerConfig, name string, deps daemon.AuthDeps,
 // is wrapped too, since the client is refused either way, and logged with
 // its cause, which never reaches the client.
 func (a *laneAuth) Authenticate(ctx context.Context, user, secret string) (session.Identity, daemon.Credential, error) {
-	id, err := a.verifier.Verify(ctx, user, secret, a.peer)
+	return a.authenticate(ctx, user, func() (session.Identity, error) {
+		return a.verifier.Verify(ctx, user, secret, a.peer)
+	})
+}
+
+// AuthenticateProven is Authenticate for a SCRAM proof a driver ran
+// against the material SCRAM served. A lane whose verifier serves no
+// material has nothing to prove against and refuses.
+func (a *laneAuth) AuthenticateProven(ctx context.Context, user, hash string) (session.Identity, daemon.Credential, error) {
+	return a.authenticate(ctx, user, func() (session.Identity, error) {
+		if a.proven == nil {
+			return session.Identity{}, daemon.Refused("identity %s offers no scram proof", a.identityType)
+		}
+		return a.proven(user, hash)
+	})
+}
+
+func (a *laneAuth) authenticate(ctx context.Context, user string, verify func() (session.Identity, error)) (session.Identity, daemon.Credential, error) {
+	id, err := verify()
 	if err != nil {
 		return a.refuse(session.Identity{Subject: user}, "verify", err)
 	}
