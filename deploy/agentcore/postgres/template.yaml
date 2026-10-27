@@ -1,0 +1,741 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  hoop sidecar in front of one Postgres database for Amazon Bedrock AgentCore
+  agents. A new VPC whose agent subnets have no route out, the sidecar and a
+  demo database on ECS Fargate, and an AgentCore harness that runs psql, or
+  only the network for your own Runtime agent.
+  deploy/agentcore/postgres/README.md has the steps.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: {default: Agent}
+        Parameters: [AgentKind, HarnessName, ModelId]
+      - Label: {default: Sidecar}
+        Parameters: [HoopSidecarToken, HoopLicense, SidecarImage]
+      - Label: {default: Images and network}
+        Parameters: [PostgresImageTag, ImageCachePrefix, AgentAzIds, S3PrefixListId]
+
+Parameters:
+  AgentKind:
+    Type: String
+    Description: >-
+      harness creates an AgentCore harness that uses the sidecar. none creates
+      the network, the sidecar and the database only, for your own Runtime
+      agent: put the outputs in its network configuration.
+    Default: harness
+    AllowedValues: [harness, none]
+  HoopSidecarToken:
+    Type: String
+    Description: >-
+      The free plan runs logged in. Sign in to https://use.hoop.dev, then
+      Sidecars, Connect an existing Sidecar, and paste its token. Set this or
+      HoopLicense.
+    NoEcho: true
+    Default: ''
+  HoopLicense:
+    Type: String
+    Description: >-
+      A hoop license document, for a sidecar without HoopSidecarToken. It
+      lifts the free tier's one guardrail rule and one mask rule. With a
+      token, the control plane's organization license decides and this one
+      is ignored.
+    NoEcho: true
+    Default: ''
+  ModelId:
+    Type: String
+    Description: The harness's Bedrock model or inference profile.
+    Default: us.anthropic.claude-haiku-5-5
+  HarnessName:
+    Type: String
+    Description: Unique in the account and Region.
+    Default: hoop_agentcore_postgres
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9_]{0,39}$'
+  AgentAzIds:
+    Type: CommaDelimitedList
+    Description: >-
+      Two Availability Zone ids that AgentCore supports in this Region. In
+      us-east-1 it accepts use1-az1, use1-az2 and use1-az4.
+    Default: use1-az1,use1-az2
+  S3PrefixListId:
+    Type: String
+    Description: >-
+      The AWS prefix list com.amazonaws.<region>.s3. The default is
+      us-east-1's. Find it with: aws ec2 describe-managed-prefix-lists
+      --filters Name=prefix-list-name,Values=com.amazonaws.<region>.s3
+    Default: pl-63a5400a
+    AllowedPattern: '^pl-[0-9a-f]+$'
+  SidecarImage:
+    Type: String
+    Description: >-
+      hoophq/hoopsidecar, from Docker Hub or your mirror, by digest. 1.272.0 is
+      the first release that reports this template's install source. Not the
+      -distroless tag: the entry point needs bash.
+    AllowedPattern: '^([a-z0-9.-]+(:[0-9]+)?/)*hoophq/hoopsidecar:[0-9]+\.[0-9]+\.[0-9]+(@sha256:[0-9a-f]{64})?$'
+    ConstraintDescription: hoophq/hoopsidecar:X.Y.Z, optionally after a registry host and by digest.
+    Default: hoophq/hoopsidecar:1.272.0@sha256:5fbf5967bb084e064be377a4968ad1a8b2058d620255e64fa4020a8954cd589c
+  PostgresImageTag:
+    Type: String
+    Description: >-
+      A tag of the official postgres image on ECR Public, optionally by
+      digest. The harness runs psql from it, and the database runs from it.
+      A bookworm tag: the harness needs bash.
+    AllowedPattern: '^[0-9][0-9.]*-bookworm(@sha256:[0-9a-f]{64})?$'
+    Default: 17.11-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27
+  ImageCachePrefix:
+    Type: String
+    Description: >-
+      The repository prefix of the ECR cache rule that serves the postgres
+      image. An account holds one rule per prefix and Region, so each stack
+      needs its own.
+    Default: hoop-agentcore-postgres
+    AllowedPattern: '^[a-z0-9]+([._-][a-z0-9]+)*$'
+    MinLength: 2
+    MaxLength: 30
+
+Rules:
+  SidecarCredential:
+    Assertions:
+      - Assert: !Not [!And [!Equals [!Ref HoopSidecarToken, ''], !Equals [!Ref HoopLicense, '']]]
+        AssertDescription: >-
+          Set HoopSidecarToken or HoopLicense. Without one the sidecar waits
+          for a person to approve a login code and serves nothing.
+
+Conditions:
+  IsHarness: !Equals [!Ref AgentKind, harness]
+  HasSidecarToken: !Not [!Equals [!Ref HoopSidecarToken, '']]
+  HasLicense: !Not [!Equals [!Ref HoopLicense, '']]
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.90.0.0/16
+      # Private DNS for the endpoints, the sidecar's name and the database's.
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: !Ref AWS::StackName}]
+
+  # Agent tier. The route table holds the local route and the S3 gateway
+  # endpoint, nothing else: no NAT, no internet gateway.
+  AgentRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-agent'}]
+  AgentSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.90.0.0/24
+      AvailabilityZoneId: !Select [0, !Ref AgentAzIds]
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-agent-a'}]
+  AgentSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.90.1.0/24
+      AvailabilityZoneId: !Select [1, !Ref AgentAzIds]
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-agent-b'}]
+  AgentSubnetARoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref AgentSubnetA, RouteTableId: !Ref AgentRouteTable}
+  AgentSubnetBRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref AgentSubnetB, RouteTableId: !Ref AgentRouteTable}
+
+  # Service tier: the sidecar and the database. A public IP and an internet
+  # gateway let them pull images and read their secrets without a NAT.
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref InternetGateway}
+  ServiceRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-service'}]
+  ServiceDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref ServiceRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  ServiceSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.90.10.0/24
+      AvailabilityZoneId: !Select [0, !Ref AgentAzIds]
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-service'}]
+  ServiceSubnetRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref ServiceSubnet, RouteTableId: !Ref ServiceRouteTable}
+
+  # The inline egress replaces the default allow-all. Each rule is one path
+  # the agent may take; scripts/ci/check-agentcore-egress.py fails on others.
+  AgentSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AgentCore agents, harness or Runtime
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, DestinationSecurityGroupId: !Ref EndpointSecurityGroup, Description: VPC endpoints}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, DestinationPrefixListId: !Ref S3PrefixListId, Description: 'S3 gateway endpoint, ECR image layers'}
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-agent'}]
+  # A separate resource: the sidecar's group names the agent's, so an inline
+  # rule would make a cycle.
+  AgentToSidecar:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref AgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 15432
+      ToPort: 15432
+      DestinationSecurityGroupId: !Ref SidecarSecurityGroup
+      Description: sidecar postgres lane
+  # Private DNS for an endpoint covers the whole VPC, so the sidecar and the
+  # database write their logs and pull images through the endpoints too. A
+  # group that admits only the agents stops a new task (ENG-880).
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VPC interface endpoints, whole VPC
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: !GetAtt Vpc.CidrBlock}
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-endpoints'}]
+  SidecarSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: hoop sidecar postgres lane, agents only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 15432, ToPort: 15432, SourceSecurityGroupId: !Ref AgentSecurityGroup}
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-sidecar'}]
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Postgres, the sidecar only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref SidecarSecurityGroup}
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-database'}]
+
+  # A harness pulls its image from private ECR at each session start, and
+  # its model calls leave from the VPC. Without one of these a session hangs
+  # for minutes with no error (ENG-880).
+  # The default endpoint policy admits any account's keys: an agent that
+  # holds an outside account's keys could write its logs or push to its ECR.
+  # Each policy admits this account's principals only.
+  EndpointEcrDkr:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+      PolicyDocument: {Version: '2012-10-17', Statement: [{Effect: Allow, Principal: '*', Action: '*', Resource: '*', Condition: {StringEquals: {'aws:PrincipalAccount': !Ref AWS::AccountId}}}]}
+  EndpointEcrApi:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+      PolicyDocument: {Version: '2012-10-17', Statement: [{Effect: Allow, Principal: '*', Action: '*', Resource: '*', Condition: {StringEquals: {'aws:PrincipalAccount': !Ref AWS::AccountId}}}]}
+  EndpointBedrockRuntime:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.bedrock-runtime
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+      PolicyDocument: {Version: '2012-10-17', Statement: [{Effect: Allow, Principal: '*', Action: '*', Resource: '*', Condition: {StringEquals: {'aws:PrincipalAccount': !Ref AWS::AccountId}}}]}
+  EndpointLogs:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+      PolicyDocument: {Version: '2012-10-17', Statement: [{Effect: Allow, Principal: '*', Action: '*', Resource: '*', Condition: {StringEquals: {'aws:PrincipalAccount': !Ref AWS::AccountId}}}]}
+  # The default policy lets the agent write to any bucket, an outside one
+  # included. ECR keeps image layers in this AWS bucket; nothing else is
+  # needed (ENG-880).
+  EndpointS3:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref AgentRouteTable]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub arn:${AWS::Partition}:s3:::prod-${AWS::Region}-starport-layer-bucket/*
+
+  # The VPC resolver answers any public name, so a query can carry data out.
+  # The rule group covers the whole VPC, the sidecar too: the list names its
+  # hosts as well. The agent can resolve them, and still has no route.
+  DnsAllowed:
+    Type: AWS::Route53Resolver::FirewallDomainList
+    Properties:
+      Domains:
+        - amazonaws.com.
+        - '*.amazonaws.com.'
+        - hoop.internal.
+        - '*.hoop.internal.'
+        # The sidecar's image, its control plane and its analytics.
+        - docker.io.
+        - '*.docker.io.'
+        - '*.docker.com.'
+        - use.hoop.dev.
+        - api.segment.io.
+  DnsEverything:
+    Type: AWS::Route53Resolver::FirewallDomainList
+    Properties:
+      Domains: ['*.']
+  DnsFirewall:
+    Type: AWS::Route53Resolver::FirewallRuleGroup
+    Properties:
+      FirewallRules:
+        # An allowed name's CNAME targets are allowed too. By default the
+        # firewall checks each name in the chain, and blocks
+        # auth.docker.io -> auth.docker.io.cdn.cloudflare.net: the sidecar
+        # cannot pull its image.
+        - FirewallDomainListId: !Ref DnsAllowed
+          Priority: 100
+          Action: ALLOW
+          FirewallDomainRedirectionAction: TRUST_REDIRECTION_DOMAIN
+        - {FirewallDomainListId: !Ref DnsEverything, Priority: 200, Action: BLOCK, BlockResponse: NXDOMAIN}
+  DnsFirewallAssociation:
+    Type: AWS::Route53Resolver::FirewallRuleGroupAssociation
+    Properties:
+      FirewallRuleGroupId: !Ref DnsFirewall
+      VpcId: !Ref Vpc
+      Priority: 101
+      Name: !Sub '${AWS::StackName}-dns'
+
+  SidecarToken:
+    Type: AWS::SecretsManager::Secret
+    Condition: HasSidecarToken
+    Properties:
+      Description: the sidecar's use.hoop.dev token
+      SecretString: !Ref HoopSidecarToken
+  SidecarLicense:
+    Type: AWS::SecretsManager::Secret
+    Condition: HasLicense
+    Properties:
+      Description: the sidecar's hoop license
+      SecretString: !Ref HoopLicense
+  AgentDatabasePassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: >-
+        The password of the database login agent. The lane passes the
+        client's login through, so the harness holds it in an environment
+        variable, and GetHarness returns it.
+      GenerateSecretString: {PasswordLength: 32, ExcludePunctuation: true}
+  DatabaseOwnerPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: the demo database's owner login; nothing outside the database uses it
+      GenerateSecretString: {PasswordLength: 32, ExcludePunctuation: true}
+
+  SidecarDnsNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: hoop.internal
+      Vpc: !Ref Vpc
+  SidecarDnsName:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: sidecar
+      NamespaceId: !Ref SidecarDnsNamespace
+      DnsConfig: {DnsRecords: [{Type: A, TTL: 10}]}
+      HealthCheckCustomConfig: {FailureThreshold: 1}
+  DatabaseDnsName:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: db
+      NamespaceId: !Ref SidecarDnsNamespace
+      DnsConfig: {DnsRecords: [{Type: A, TTL: 10}]}
+      HealthCheckCustomConfig: {FailureThreshold: 1}
+
+  # A harness pulls its image inside the VPC, which reaches no ECR Public.
+  # This rule serves the official postgres image from this account's ECR
+  # (ENG-880). ECR, not the VPC, fetches it from ECR Public.
+  ImageCache:
+    Type: AWS::ECR::PullThroughCacheRule
+    Properties:
+      EcrRepositoryPrefix: !Ref ImageCachePrefix
+      UpstreamRegistryUrl: public.ecr.aws
+  # The cache's repository, made ahead so that no role needs
+  # ecr:CreateRepository, and emptied with the stack.
+  PostgresRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ImageCachePrefix}/docker/library/postgres'
+      EmptyOnDelete: true
+
+  # Each statement's audit row is a line here.
+  SidecarLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 90
+  DatabaseLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+  Cluster:
+    Type: AWS::ECS::Cluster
+  SidecarExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - {Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: sts:AssumeRole}
+      ManagedPolicyArns: [!Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy']
+      Policies:
+        - PolicyName: sidecar-secrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !If [HasSidecarToken, !Ref SidecarToken, !Ref AWS::NoValue]
+                  - !If [HasLicense, !Ref SidecarLicense, !Ref AWS::NoValue]
+  # The image reads its config from a file, and Fargate mounts none: the
+  # entry point writes it, then starts the sidecar. HOOP_SIDECAR_TOKEN and
+  # HOOP_LICENSE stay in the environment, where the sidecar reads them. The
+  # config holds no secret and lives in the task, so a change to it
+  # registers a new revision and ECS replaces the task.
+  SidecarTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: !GetAtt SidecarExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: sidecar
+          Image: !Ref SidecarImage
+          EntryPoint: [/usr/bin/tini, --, bash, -c]
+          Command:
+            - >-
+              umask 077 && mkdir -p /tmp/hoop &&
+              printf '%s' "$SIDECAR_YAML" > /tmp/hoop/sidecar.yaml &&
+              unset SIDECAR_YAML &&
+              exec hoop start sidecar --config /tmp/hoop/sidecar.yaml
+          Environment:
+            - {Name: HOOP_SIDECAR_INSTALL_SOURCE, Value: agentcore-postgres}
+            # The free tier enforces one guardrail rule and one mask rule per
+            # process. CI keeps both equal to
+            # deploy/openai-agents/postgres-mcp/sidecar.yaml.
+            - Name: SIDECAR_YAML
+              Value: |
+                audit:
+                  file: '-'
+                listeners:
+                  - name: appdb
+                    protocol: postgres
+                    # Plain TCP inside the VPC: without downstream_tls the lane
+                    # answers an SSL request with "no". The security groups admit
+                    # only the agents.
+                    listen: '0.0.0.0:15432'
+                    upstream: 'db.hoop.internal:5432'
+                    guardrails:
+                      mode: enforce
+                      rules:
+                        # The rule keys on what a statement does, not on its first
+                        # word. `set` keeps the agent from lifting the login's
+                        # timeouts. No rule for `unknown`: the server's replies are
+                        # judged as `unknown` statements too.
+                        - name: read-only
+                          type: operation
+                          operations: [insert, update, delete, truncate,
+                                       create, drop, alter, grant, revoke, call, set]
+                          message: this connection is read-only; writes are not permitted
+                    mask:
+                      rules:
+                        # Keys on the value, so it holds under any column alias.
+                        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+          Secrets:
+            - !If [HasSidecarToken, {Name: HOOP_SIDECAR_TOKEN, ValueFrom: !Ref SidecarToken}, !Ref AWS::NoValue]
+            - !If [HasLicense, {Name: HOOP_LICENSE, ValueFrom: !Ref SidecarLicense}, !Ref AWS::NoValue]
+          PortMappings: [{ContainerPort: 15432}]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: {awslogs-group: !Ref SidecarLogs, awslogs-region: !Ref AWS::Region, awslogs-stream-prefix: sidecar}
+  SidecarService:
+    Type: AWS::ECS::Service
+    # The task writes its logs through the logs endpoint (private DNS).
+    DependsOn: [EndpointLogs, ServiceDefaultRoute, DnsFirewallAssociation]
+    Properties:
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref SidecarTask
+      # A task that cannot start fails the stack after a few tries, instead
+      # of holding it in CREATE_IN_PROGRESS for hours.
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref ServiceSubnet]
+          SecurityGroups: [!Ref SidecarSecurityGroup]
+      ServiceRegistries: [{RegistryArn: !GetAtt SidecarDnsName.Arn}]
+
+  DatabaseExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - {Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: sts:AssumeRole}
+      ManagedPolicyArns: [!Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy']
+      Policies:
+        - PolicyName: database
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref AgentDatabasePassword, !Ref DatabaseOwnerPassword]
+              # The first pull of a tag imports it from ECR Public.
+              - Effect: Allow
+                Action: ecr:BatchImportUpstreamImage
+                Resource: !GetAtt PostgresRepository.Arn
+  # The demo database: the customers table and the login agent, made at
+  # first start. The data lives in the task and starts over with a new one. The
+  # role's password comes from the environment through psql's \getenv.
+  DatabaseTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: !GetAtt DatabaseExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: postgres
+          Image: !Sub '${PostgresRepository.RepositoryUri}:${PostgresImageTag}'
+          EntryPoint: [bash, -c]
+          Command:
+            - >-
+              printf '%s' "$SEED_SQL" > /docker-entrypoint-initdb.d/seed.sql &&
+              unset SEED_SQL &&
+              exec docker-entrypoint.sh postgres
+          Environment:
+            - {Name: POSTGRES_DB, Value: appdb}
+            - Name: SEED_SQL
+              Value: |
+                \getenv agent_password AGENT_PASSWORD
+                CREATE TABLE customers (id int PRIMARY KEY, name text, email text, plan text);
+                INSERT INTO customers VALUES
+                  (1, 'Ada Lovelace', 'ada@example.com',   'pro'),
+                  (2, 'Grace Hopper', 'grace@example.org', 'team'),
+                  (3, 'Alan Turing',  'alan@example.net',  'free');
+
+                -- The agent's login. The sidecar refuses writes first; this
+                -- login refuses what the sidecar's classifier misses (ENG-803).
+                CREATE ROLE agent LOGIN PASSWORD :'agent_password';
+                GRANT SELECT ON customers TO agent;
+                -- PUBLIC may create temporary tables and large objects by
+                -- default, and a SELECT can do both.
+                REVOKE TEMPORARY ON DATABASE appdb FROM PUBLIC;
+                REVOKE EXECUTE ON FUNCTION lo_creat(integer), lo_create(oid), lo_from_bytea(oid, bytea) FROM PUBLIC;
+                -- Read-only by default, for writing functions nobody listed
+                -- here. These settings are defaults: a client can change them
+                -- (ENG-926). The grants are the control.
+                ALTER ROLE agent SET default_transaction_read_only = on;
+                ALTER ROLE agent SET statement_timeout = '30s';
+                ALTER ROLE agent SET idle_in_transaction_session_timeout = '30s';
+          Secrets:
+            - {Name: POSTGRES_PASSWORD, ValueFrom: !Ref DatabaseOwnerPassword}
+            - {Name: AGENT_PASSWORD, ValueFrom: !Ref AgentDatabasePassword}
+          PortMappings: [{ContainerPort: 5432}]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options: {awslogs-group: !Ref DatabaseLogs, awslogs-region: !Ref AWS::Region, awslogs-stream-prefix: postgres}
+  DatabaseService:
+    Type: AWS::ECS::Service
+    # The task pulls its image through the endpoints and the cache, and
+    # writes its logs through the logs endpoint (private DNS).
+    DependsOn: [EndpointEcrDkr, EndpointEcrApi, EndpointLogs, ImageCache, ServiceDefaultRoute, DnsFirewallAssociation]
+    Properties:
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref DatabaseTask
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          # For S3 image layers and Secrets Manager, which have no endpoint
+          # here. Only the sidecar's group may connect to it.
+          AssignPublicIp: ENABLED
+          Subnets: [!Ref ServiceSubnet]
+          SecurityGroups: [!Ref DatabaseSecurityGroup]
+      ServiceRegistries: [{RegistryArn: !GetAtt DatabaseDnsName.Arn}]
+
+  # For your own Runtime agent's image. AgentCore Runtime pulls it when the
+  # agent is created, not from the VPC.
+  AgentRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: true
+  # The harness or your Runtime agent assumes this role. Every VPC endpoint
+  # is an AWS API the agent's shell can call with it, so it holds no more
+  # than a session needs (ENG-880).
+  AgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock-agentcore.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition: {StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}}
+      Policies:
+        - PolicyName: agent
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:*::foundation-model/*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModelId}'
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability]
+                Resource:
+                  # AWS's managed harness image, in an AWS account.
+                  - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:*:repository/harness-*'
+                  - !GetAtt AgentRepository.Arn
+                  - !GetAtt PostgresRepository.Arn
+              # ECR checks a cached tag against ECR Public at most once a day,
+              # on a pull.
+              - Effect: Allow
+                Action: ecr:BatchImportUpstreamImage
+                Resource: !GetAtt PostgresRepository.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:DescribeLogStreams]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*'
+              - Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*'
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition: {StringEquals: {cloudwatch:namespace: bedrock-agentcore}}
+
+  Harness:
+    Type: AWS::BedrockAgentCore::Harness
+    Condition: IsHarness
+    # A session with a missing endpoint hangs instead of failing (ENG-880).
+    # The database's first start puts the image in the cache.
+    DependsOn: [EndpointEcrDkr, EndpointEcrApi, EndpointBedrockRuntime, EndpointLogs, EndpointS3, DnsFirewallAssociation, SidecarService, DatabaseService]
+    Properties:
+      HarnessName: !Ref HarnessName
+      ExecutionRoleArn: !GetAtt AgentRole.Arn
+      Model: {BedrockModelConfig: {ModelId: !Ref ModelId}}
+      SystemPrompt:
+        - Text: |
+            You answer questions about our customers from the customer database, with psql.
+
+            Reach the database only at $PGHOST:$PGPORT. That host is a hoop sidecar: it
+            checks policy, masks personal data and records every statement. No other
+            host is reachable from this environment. The PG variables hold the
+            connection settings and the login; never print them.
+
+            Name your session on every connection. Run each command as:
+
+            PGOPTIONS='-c agentcore.session.id=<your session id>' psql -c '<SQL>'
+
+            The first message gives your session id.
+
+            "FATAL: this connection is read-only" is the sidecar's policy, and it closes
+            the connection. Report it; do not retry it in another form. Masked values
+            such as [REDACTED:EMAIL_ADDRESS] are intended.
+      # The harness runs psql from the official postgres image; it overrides
+      # the image's entry point, so no server starts (ENG-880).
+      EnvironmentArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Sub '${PostgresRepository.RepositoryUri}:${PostgresImageTag}'
+      Environment:
+        AgentCoreRuntimeEnvironment:
+          NetworkConfiguration:
+            NetworkMode: VPC
+            NetworkModeConfig:
+              SecurityGroups: [!Ref AgentSecurityGroup]
+              Subnets: [!Ref AgentSubnetA, !Ref AgentSubnetB]
+      # The harness keeps these in its definition: GetHarness returns them,
+      # and a value the agent prints lands in CloudWatch (ENG-880).
+      EnvironmentVariables:
+        PGHOST: sidecar.hoop.internal
+        PGPORT: '15432'
+        PGDATABASE: appdb
+        PGUSER: agent
+        PGPASSWORD: !Sub '{{resolve:secretsmanager:${AgentDatabasePassword}}}'
+        PGCONNECT_TIMEOUT: '10'
+      # Managed memory was not tested in VPC mode.
+      Memory: {Disabled: {}}
+      MaxIterations: 20
+      TimeoutSeconds: 600
+
+Outputs:
+  SidecarAddress:
+    Description: The sidecar's postgres lane, reachable from the agent subnets only.
+    Value: sidecar.hoop.internal:15432
+  AgentSubnetIds:
+    Description: The agent's networkModeConfig.subnets.
+    Value: !Join [',', [!Ref AgentSubnetA, !Ref AgentSubnetB]]
+  AgentSecurityGroupId:
+    Description: The agent's networkModeConfig.securityGroups.
+    Value: !Ref AgentSecurityGroup
+  AgentRoleArn:
+    Description: An execution role for the harness or your Runtime agent.
+    Value: !GetAtt AgentRole.Arn
+  AgentRepositoryUri:
+    Description: An ECR repository for your Runtime agent's image.
+    Value: !GetAtt AgentRepository.RepositoryUri
+  AgentDatabasePasswordArn:
+    Description: The password of the database login agent, which the agent sends through the lane.
+    Value: !Ref AgentDatabasePassword
+  SidecarSecurityGroupId:
+    Description: The sidecar's group. Admit it on your own database's group.
+    Value: !Ref SidecarSecurityGroup
+  SidecarLogGroup:
+    Description: The sidecar's log and audit trail.
+    Value: !Ref SidecarLogs
+  HarnessArn:
+    Condition: IsHarness
+    Value: !GetAtt Harness.Arn

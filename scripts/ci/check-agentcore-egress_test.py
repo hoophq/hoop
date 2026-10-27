@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Tests for check-agentcore-egress.py. A check that cannot fail passes
-forever, so each case breaks one guarantee of the real template and expects
-the check to name it.
+forever, so each case breaks one guarantee of a real template and expects
+the check to name it. CASES run on every template; the templates share
+their logical ids.
 
 Usage: scripts/ci/check-agentcore-egress_test.py   (from the repo root)
 """
@@ -19,7 +20,7 @@ from cfnlint.schema import PROVIDER_SCHEMA_MANAGER
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHECK = os.path.join(HERE, "check-agentcore-egress.py")
-TEMPLATE = os.path.join(HERE, "..", "..", "deploy", "agentcore", "http", "template.yaml")
+DEPLOY = os.path.join(HERE, "..", "..", "deploy", "agentcore")
 
 
 def res(t, name):
@@ -181,6 +182,14 @@ CASES = [
     ("an instance in the endpoints' group",
      lambda t: add(t, "Box", "AWS::EC2::Instance", {"SecurityGroupIds": [{"Ref": "EndpointSecurityGroup"}]}),
      1, "Box (AWS::EC2::Instance) carries EndpointSecurityGroup"),
+    ("an instance in the sidecar's group, named in an Fn::Sub",
+     lambda t: add(t, "Relay", "AWS::EC2::Instance", {"SubnetId": {"Ref": "ServiceSubnet"},
+                                                     "SecurityGroupIds": [{"Fn::Sub": "${SidecarSecurityGroup}"}]}),
+     1, "Relay (AWS::EC2::Instance) carries SidecarSecurityGroup"),
+    ("an instance in the sidecar's group, by an Fn::Sub attribute",
+     lambda t: add(t, "Relay", "AWS::EC2::Instance", {"SecurityGroupIds": [
+         {"Fn::Sub": ["${SidecarSecurityGroup.GroupId}", {}]}]}),
+     1, "Relay (AWS::EC2::Instance) carries SidecarSecurityGroup"),
     ("every name allowed",
      lambda t: allowed_domains(t).append("*."),
      1, "DnsAllowed allows '*.'"),
@@ -273,6 +282,29 @@ CASES = [
      1, "Forward attaches a Resolver rule"),
 ]
 
+# The database sits behind the sidecar: the agent must not reach it, and it
+# must not hide in the sidecar's group.
+POSTGRES_CASES = [
+    # A group the agent reaches must hold the sidecar only, so reaching the
+    # database's group fails on the database's image.
+    ("the agent reaches the database",
+     lambda t: add(t, "Direct", "AWS::EC2::SecurityGroupEgress", {"GroupId": {"Ref": "AgentSecurityGroup"},
+                                                                 "IpProtocol": "tcp", "FromPort": 5432,
+                                                                 "ToPort": 5432,
+                                                                 "DestinationSecurityGroupId": {"Ref": "DatabaseSecurityGroup"}}),
+     1, "in a group the agent reaches: only the hoop sidecar image"),
+    ("the database in the sidecar's group",
+     lambda t: res(t, "DatabaseService")["Properties"]["NetworkConfiguration"]["AwsvpcConfiguration"].update(
+         SecurityGroups=[{"Ref": "SidecarSecurityGroup"}]),
+     1, "in a group the agent reaches: only the hoop sidecar image"),
+    ("a service whose group a condition picks",
+     lambda t: res(t, "DatabaseService")["Properties"]["NetworkConfiguration"]["AwsvpcConfiguration"].update(
+         SecurityGroups=[{"Fn::If": ["IsHarness", {"Ref": "SidecarSecurityGroup"}, {"Ref": "DatabaseSecurityGroup"}]}]),
+     1, "DatabaseService names its security groups by an expression"),
+]
+
+TEMPLATES = [("http", CASES), ("postgres", CASES + POSTGRES_CASES)]
+
 
 def main():
     # A misspelled type matches no resource, and its rule passes forever.
@@ -282,25 +314,27 @@ def main():
     if unknown:
         print(f"FAIL check-agentcore-egress.py names types CloudFormation does not have: {unknown}")
         return 1
-    base, matches = decode(TEMPLATE)
-    if base is None:
-        print(f"FAIL cannot read {TEMPLATE}: {matches}")
-        return 1
     passed = failed = 0
     with tempfile.TemporaryDirectory() as tmp:
-        for i, (name, mutate, want_code, want_text) in enumerate(CASES):
-            t = copy.deepcopy(base)
-            mutate(t)
-            path = os.path.join(tmp, f"case{i}.json")
-            with open(path, "w") as fp:
-                json.dump(t, fp)
-            run = subprocess.run([sys.executable, CHECK, path], capture_output=True, text=True)
-            if run.returncode == want_code and want_text in run.stdout:
-                passed += 1
-            else:
-                failed += 1
-                print(f"FAIL {name}: exit {run.returncode}, want {want_code} and {want_text!r}\n"
-                      f"{run.stdout}{run.stderr}")
+        for kind, cases in TEMPLATES:
+            template = os.path.join(DEPLOY, kind, "template.yaml")
+            base, matches = decode(template)
+            if base is None:
+                print(f"FAIL cannot read {template}: {matches}")
+                return 1
+            for i, (name, mutate, want_code, want_text) in enumerate(cases):
+                t = copy.deepcopy(base)
+                mutate(t)
+                path = os.path.join(tmp, f"{kind}{i}.json")
+                with open(path, "w") as fp:
+                    json.dump(t, fp)
+                run = subprocess.run([sys.executable, CHECK, path], capture_output=True, text=True)
+                if run.returncode == want_code and want_text in run.stdout:
+                    passed += 1
+                else:
+                    failed += 1
+                    print(f"FAIL {kind}: {name}: exit {run.returncode}, want {want_code} and {want_text!r}\n"
+                          f"{run.stdout}{run.stderr}")
     print(f"{passed} passed, {failed} failed")
     return 1 if failed else 0
 
