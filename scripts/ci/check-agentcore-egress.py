@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fail when an AgentCore template opens a way out of the agent subnets
-that skips the sidecar (ENG-882, from the ENG-880 spike).
+that skips the sidecar (ENG-882 and ENG-885, from the ENG-880 spike).
 
 The agent network is what the template's harness or Runtime agent names in
 its NetworkModeConfig, and what its AgentSubnetIds and AgentSecurityGroupId
@@ -14,9 +14,11 @@ For that network:
    principals: the default policy takes any account's keys. The agent group
    lists its egress inline, or AWS adds allow-all; each rule is TCP to the
    endpoints' group on 443, to the sidecar's group on one port, or to the
-   S3PrefixListId parameter on 443. Those groups are on no other resource,
-   the sidecar's group runs only the hoop sidecar image, and only the agent
-   group may reach it.
+   S3PrefixListId parameter on 443. The sidecar's group is one an ECS
+   service carries and the agent reaches; a service behind the sidecar,
+   such as a database, has its own. The endpoints' group and the sidecar's
+   group are on no other resource, the sidecar's group runs only the hoop
+   sidecar image, and only the agent group may reach it.
 3. S3. The gateway endpoint allows only s3:GetObject on
    prod-<region>-starport-layer-bucket, where ECR keeps image layers.
 4. DNS. The VPC has a Resolver DNS Firewall association that blocks '*.'
@@ -112,8 +114,13 @@ def has_key(value, key):
 
 
 def mentions(value, name):
-    """Whether a Ref or a GetAtt anywhere in value names name."""
+    """Whether a Ref, a GetAtt or an Fn::Sub variable anywhere in value names name."""
     if isinstance(value, dict):
+        sub = value.get("Fn::Sub")
+        text = sub[0] if isinstance(sub, list) and sub else sub
+        # ${name} or ${name.Attribute}; ${!name} is literal text.
+        if isinstance(text, str) and re.search(rf"\$\{{{re.escape(name)}(\.[^}}]*)?\}}", text):
+            return True
         return name_of(value) == name or any(mentions(v, name) for v in value.values())
     if isinstance(value, list):
         return any(mentions(v, name) for v in value)
@@ -233,10 +240,19 @@ def check(template):
             errors.append(f"endpoint {name} has type {kind}: only Interface and Gateway endpoints are known")
     endpoint_groups.discard(None)
     services = of_type("AWS::ECS::Service")
-    sidecar_groups = set().union(*(names_of(dig(r["Properties"], "NetworkConfiguration", "AwsvpcConfiguration",
-                                                "SecurityGroups") or []) for r in services.values()))
-    sidecar_groups.discard(None)
 
+    def service_groups(svc):
+        return names_of(dig(svc["Properties"], "NetworkConfiguration", "AwsvpcConfiguration", "SecurityGroups") or [])
+
+    # An expression can put the sidecar's group on any service.
+    for name, svc in services.items():
+        if None in service_groups(svc):
+            errors.append(f"{name} names its security groups by an expression or a literal id: "
+                          "only a resource in this template can be checked")
+    if errors:
+        return errors
+
+    agent_rules = []
     for group in sorted(groups):
         if res.get(group, {}).get("Type") != "AWS::EC2::SecurityGroup":
             errors.append(f"agent security group {group} is not an AWS::EC2::SecurityGroup in this template")
@@ -245,30 +261,35 @@ def check(template):
         inline, rules = rules_of(group, "SecurityGroupEgress", "AWS::EC2::SecurityGroupEgress")
         if not inline:
             errors.append(f"{group} lists no egress inline: AWS then allows all egress to 0.0.0.0/0")
-        for where, rule in rules:
-            target = name_of(rule.get("DestinationSecurityGroupId")) or rule.get("DestinationSecurityGroupId")
-            ports = (rule.get("FromPort"), rule.get("ToPort"))
-            prefix = rule.get("DestinationPrefixListId")
-            if str(rule.get("IpProtocol")) not in ("tcp", "6"):
-                errors.append(f"{where}: protocol {rule.get('IpProtocol')}, not tcp")
-            elif rule.get("CidrIp") or rule.get("CidrIpv6"):
-                errors.append(f"{where}: egress to {rule.get('CidrIp') or rule.get('CidrIpv6')}; "
-                              "only the endpoints, the sidecar and the S3 prefix list")
-            elif prefix is not None:
-                if name_of(prefix) != "S3PrefixListId" or "S3PrefixListId" not in params:
-                    errors.append(f"{where}: egress to prefix list {prefix}, not the S3PrefixListId parameter")
-                elif ports != (443, 443):
-                    errors.append(f"{where}: ports {ports} to S3, not 443")
-            elif target in endpoint_groups:
-                if ports != (443, 443):
-                    errors.append(f"{where}: ports {ports} to the endpoints, not 443")
-            elif target in sidecar_groups:
-                # A TCP rule with no ports opens every port.
-                if not isinstance(ports[0], int) or ports[0] != ports[1]:
-                    errors.append(f"{where}: ports {ports} to the sidecar, not one port")
-            else:
-                errors.append(f"{where}: egress to {target}, which is neither the endpoints, the sidecar "
-                              "nor the S3 prefix list")
+        agent_rules += rules
+    # Only a group the agent reaches counts, so a database's group is not one.
+    reached = {name_of(r.get("DestinationSecurityGroupId")) for _, r in agent_rules}
+    sidecar_groups = (set().union(*map(service_groups, services.values())) & reached) - endpoint_groups
+
+    for where, rule in agent_rules:
+        target = name_of(rule.get("DestinationSecurityGroupId")) or rule.get("DestinationSecurityGroupId")
+        ports = (rule.get("FromPort"), rule.get("ToPort"))
+        prefix = rule.get("DestinationPrefixListId")
+        if str(rule.get("IpProtocol")) not in ("tcp", "6"):
+            errors.append(f"{where}: protocol {rule.get('IpProtocol')}, not tcp")
+        elif rule.get("CidrIp") or rule.get("CidrIpv6"):
+            errors.append(f"{where}: egress to {rule.get('CidrIp') or rule.get('CidrIpv6')}; "
+                          "only the endpoints, the sidecar and the S3 prefix list")
+        elif prefix is not None:
+            if name_of(prefix) != "S3PrefixListId" or "S3PrefixListId" not in params:
+                errors.append(f"{where}: egress to prefix list {prefix}, not the S3PrefixListId parameter")
+            elif ports != (443, 443):
+                errors.append(f"{where}: ports {ports} to S3, not 443")
+        elif target in endpoint_groups:
+            if ports != (443, 443):
+                errors.append(f"{where}: ports {ports} to the endpoints, not 443")
+        elif target in sidecar_groups:
+            # A TCP rule with no ports opens every port.
+            if not isinstance(ports[0], int) or ports[0] != ports[1]:
+                errors.append(f"{where}: ports {ports} to the sidecar, not one port")
+        else:
+            errors.append(f"{where}: egress to {target}, which is neither the endpoints, the sidecar "
+                          "nor the S3 prefix list")
 
     # A group the agent reaches is a destination for whatever carries it.
     for group, owner in [(g, "AWS::EC2::VPCEndpoint") for g in endpoint_groups] + \
@@ -278,23 +299,22 @@ def check(template):
             if kind not in GROUP_RULE_TYPES | {owner} and mentions(r.get("Properties", {}), group):
                 errors.append(f"{name} ({kind}) carries {group}, which the agent reaches")
     for name, svc in services.items():
+        if not service_groups(svc) & sidecar_groups:
+            continue
         task_name = name_of(svc["Properties"].get("TaskDefinition"))
-        if names_of(dig(svc["Properties"], "NetworkConfiguration", "AwsvpcConfiguration", "SecurityGroups") or []) \
-                & sidecar_groups:
-            unconditional(name, "the sidecar service")
-            unconditional(task_name, "the sidecar task")
-            # An expression can pick any task: the image check below sees none.
-            if res.get(task_name, {}).get("Type") != "AWS::ECS::TaskDefinition" or \
-                    not props(task_name).get("ContainerDefinitions"):
-                errors.append(f"{name} runs {svc['Properties'].get('TaskDefinition')} behind the sidecar's group: "
-                              "only a task definition in this template can be checked")
-        task = props(task_name)
-        for c in task.get("ContainerDefinitions", []):
+        unconditional(name, "the sidecar service")
+        unconditional(task_name, "the sidecar task")
+        # An expression can pick any task: the image check below sees none.
+        if res.get(task_name, {}).get("Type") != "AWS::ECS::TaskDefinition" or \
+                not props(task_name).get("ContainerDefinitions"):
+            errors.append(f"{name} runs {svc['Properties'].get('TaskDefinition')} in a group the agent reaches: "
+                          "only a task definition in this template can be checked")
+        for c in props(task_name).get("ContainerDefinitions", []):
             image = c.get("Image")
             param = params.get(name_of(image) or "", {})
             default, pattern = str(param.get("Default", "")), param.get("AllowedPattern", "")
             if not default.startswith("hoophq/hoopsidecar:"):
-                errors.append(f"{name} runs {image} behind the sidecar's group: only the hoop sidecar image")
+                errors.append(f"{name} runs {image} in a group the agent reaches: only the hoop sidecar image")
             # A deployment can override the default: the pattern holds the image.
             elif "hoophq/hoopsidecar:" not in pattern or not re.fullmatch(pattern, default):
                 errors.append(f"{name}'s image parameter needs an AllowedPattern for hoophq/hoopsidecar "

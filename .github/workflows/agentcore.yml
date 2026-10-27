@@ -8,6 +8,7 @@ on:
     paths:
       - deploy/agentcore/**
       - deploy/openai-agents/http/values.yaml
+      - deploy/openai-agents/postgres-mcp/sidecar.yaml
       - scripts/ci/check-agentcore-egress*
       - .github/workflows/agentcore.yml
 
@@ -20,7 +21,6 @@ permissions:
   contents: read
 
 env:
-  TEMPLATE: deploy/agentcore/http/template.yaml
   # 1.46.0 does not know AWS::BedrockAgentCore::Harness (E3006).
   CFN_LINT_VERSION: 1.58.0
 
@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     name: http template
     timeout-minutes: 10
+    env:
+      TEMPLATE: deploy/agentcore/http/template.yaml
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -39,7 +41,8 @@ jobs:
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - name: cfn-lint
         run: cfn-lint "$TEMPLATE"
-      # A check that cannot fail passes forever: its fixtures run first.
+      # A check that cannot fail passes forever: its fixtures run first, on
+      # both templates.
       - name: Test the egress check
         run: python3 scripts/ci/check-agentcore-egress_test.py
       - name: The agent network leaves only through the endpoints and the sidecar
@@ -73,3 +76,63 @@ jobs:
           python3 -m py_compile deploy/agentcore/http/evstream.py deploy/agentcore/http/runtime-example/agent.py
       - name: The event stream decoder reads real frames
         run: python3 deploy/agentcore/http/evstream_test.py
+
+  postgres:
+    runs-on: ubuntu-latest
+    name: postgres template
+    timeout-minutes: 10
+    env:
+      TEMPLATE: deploy/agentcore/postgres/template.yaml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Install cfn-lint
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "cfn-lint==$CFN_LINT_VERSION"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: cfn-lint
+        run: cfn-lint "$TEMPLATE"
+      - name: The agent network leaves only through the endpoints and the sidecar
+        run: python3 scripts/ci/check-agentcore-egress.py "$TEMPLATE"
+      - name: The sidecar config matches the OpenAI postgres-mcp template
+        run: |
+          set -euo pipefail
+          config=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "SIDECAR_YAML") | .Value' "$TEMPLATE")
+          # The README promises the same free-tier rules as the twins.
+          for block in guardrails mask; do
+            [[ "$(yq -o=json ".listeners[0].$block" <<<"$config")" == "$(yq -o=json ".listeners[0].$block" deploy/openai-agents/postgres-mcp/sidecar.yaml)" ]] \
+              || { echo "::error::$TEMPLATE and the OpenAI Agents postgres-mcp template differ in $block"; exit 1; }
+          done
+          source=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "HOOP_SIDECAR_INSTALL_SOURCE") | .Value' "$TEMPLATE")
+          [[ "$source" == agentcore-postgres ]] \
+            || { echo "::error::the sidecar reports install source '$source', not agentcore-postgres"; exit 1; }
+          # Older releases report the install source as "other".
+          image=$(yq '.Parameters.SidecarImage.Default' "$TEMPLATE")
+          [[ "$image" =~ ^hoophq/hoopsidecar:([0-9.]+)@sha256:[0-9a-f]{64}$ ]] \
+            && [[ "$(printf '1.272.0\n%s\n' "${BASH_REMATCH[1]}" | sort -V | head -1)" == 1.272.0 ]] \
+            || { echo "::error::SidecarImage must pin hoophq/hoopsidecar 1.272.0 or later by digest: $image"; exit 1; }
+      # The lane, the security groups and the harness name the same ports.
+      - name: The ports agree, and only the sidecar reaches the database
+        run: |
+          set -euo pipefail
+          config=$(yq '.Resources.SidecarTask.Properties.ContainerDefinitions[0].Environment[]
+            | select(.Name == "SIDECAR_YAML") | .Value' "$TEMPLATE")
+          lane=$(yq '.listeners[0].listen | split(":") | .[1]' <<<"$config")
+          db=$(yq '.listeners[0].upstream | split(":") | .[1]' <<<"$config")
+          want="$lane $lane $lane $lane $db"
+          got=$(yq '[.Resources.AgentToSidecar.Properties.FromPort, .Resources.AgentToSidecar.Properties.ToPort,
+                     .Resources.SidecarSecurityGroup.Properties.SecurityGroupIngress[0].FromPort,
+                     .Resources.Harness.Properties.EnvironmentVariables.PGPORT,
+                     .Resources.DatabaseTask.Properties.ContainerDefinitions[0].PortMappings[0].ContainerPort] | join(" ")' "$TEMPLATE")
+          [[ "$got" == "$want" ]] || { echo "::error::ports differ: $got, want $want"; exit 1; }
+          ingress=$(yq -o=json -I0 '.Resources.DatabaseSecurityGroup.Properties.SecurityGroupIngress' "$TEMPLATE")
+          [[ "$ingress" == '[{"IpProtocol":"tcp","FromPort":'"$db"',"ToPort":'"$db"',"SourceSecurityGroupId":"SidecarSecurityGroup"}]' ]] \
+            || { echo "::error::the database must admit the sidecar's group only: $ingress"; exit 1; }
+          others=$(yq '[.Resources[] | select(.Type == "AWS::EC2::SecurityGroupIngress") | .Properties.GroupId
+            | select(. == "DatabaseSecurityGroup")] | length' "$TEMPLATE")
+          [[ "$others" == 0 ]] || { echo "::error::an ingress resource opens the database"; exit 1; }
+      - name: The script parses
+        run: bash -n deploy/agentcore/postgres/setup.sh
