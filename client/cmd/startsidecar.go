@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -67,7 +68,14 @@ var (
 	sidecarCodecTestFlag  string
 	sidecarLoginFlag      bool
 	sidecarNoLoginFlag    bool
+	// sidecarFreeStandaloneFlag is hidden and internal (ENG-906): a headless
+	// install (Marketplace, a template) has nobody to approve a login code.
+	sidecarFreeStandaloneFlag bool
 )
+
+// sidecarFreeStandaloneEnv is --free-standalone for installs that only set
+// the environment, such as the Helm chart's extraSecret.
+const sidecarFreeStandaloneEnv = "HOOP_SIDECAR_FREE_STANDALONE"
 
 var startSidecarCmd = &cobra.Command{
 	Use:     "sidecar",
@@ -622,9 +630,11 @@ func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
 	// --log-format picks how output reaches the terminal, not what runs:
 	// `--log-format text` or `json` with nothing else is the first run
 	// without the screen, the banner a pipe gets.
-	// --no-login asks for exactly this path, so it is not "anything else".
+	// --no-login and --free-standalone ask for exactly this path, so they
+	// are not "anything else".
 	seen := func(f *pflag.Flag) {
-		changed = changed || (f.Changed && f.Name != "log-format" && f.Name != "no-login")
+		changed = changed || (f.Changed && f.Name != "log-format" && f.Name != "no-login" &&
+			f.Name != "free-standalone")
 	}
 	cmd.Flags().VisitAll(seen)
 	cmd.InheritedFlags().VisitAll(seen)
@@ -641,6 +651,9 @@ type sidecarLoginRun struct {
 	licensed bool
 	// oneShot: --validate, --migrate or --codec-test, which never serve.
 	oneShot bool
+	// freeStandalone: --free-standalone or HOOP_SIDECAR_FREE_STANDALONE. The
+	// free plan runs on its own, as it did before 1.268.0.
+	freeStandalone bool
 }
 
 // errFreePlanLogsIn refuses --no-login on the free plan, which always runs
@@ -653,6 +666,7 @@ var errFreePlanLogsIn = errors.New("the free plan runs logged in, so it knows wh
 // serves logs in, a config file or not, unless it already has a credential
 // (a token or a platform identity) or a license, which is not the free plan.
 // --validate, --migrate and --codec-test never serve and never log in.
+// --free-standalone skips the login on the free plan (ENG-906).
 func wantsSidecarLogin(r sidecarLoginRun) (bool, error) {
 	switch {
 	case r.login && r.noLogin:
@@ -665,7 +679,7 @@ func wantsSidecarLogin(r sidecarLoginRun) (bool, error) {
 			"--validate, --migrate or --codec-test")
 	case r.login:
 		return true, nil
-	case r.credential || r.licensed || r.oneShot:
+	case r.credential || r.licensed || r.oneShot || r.freeStandalone:
 		return false, nil
 	case r.noLogin:
 		return false, errFreePlanLogsIn
@@ -679,6 +693,23 @@ func wantsSidecarLogin(r sidecarLoginRun) (bool, error) {
 type sidecarFileFacts struct {
 	planeURL string
 	licensed bool
+}
+
+// sidecarFreeStandalone reads --free-standalone, then its env var. A value
+// that is not a boolean is an error, not "off".
+func sidecarFreeStandalone() (bool, error) {
+	if sidecarFreeStandaloneFlag {
+		return true, nil
+	}
+	v := strings.TrimSpace(os.Getenv(sidecarFreeStandaloneEnv))
+	if v == "" {
+		return false, nil
+	}
+	on, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s=%q is not a boolean; use true or false", sidecarFreeStandaloneEnv, v)
+	}
+	return on, nil
 }
 
 func readSidecarFileFacts(path string) sidecarFileFacts {
@@ -704,12 +735,17 @@ func readSidecarFileFacts(path string) sidecarFileFacts {
 // config file logs in directly and boots that file, connected.
 func resolveSidecarLogin(cmd *cobra.Command, args []string, canChoose bool) (login *savedSidecarLogin, savedPath string, choose bool, err error) {
 	file := readSidecarFileFacts(sidecarConfigFlag)
+	freeStandalone, err := sidecarFreeStandalone()
+	if err != nil {
+		return nil, "", false, err
+	}
 	wanted, err := wantsSidecarLogin(sidecarLoginRun{
-		login:      sidecarLoginFlag,
-		noLogin:    sidecarNoLoginFlag,
-		credential: sidecarCredentialGiven(),
-		licensed:   sidecarLicenseFlag != "" || os.Getenv(license.EnvVar) != "" || file.licensed,
-		oneShot:    sidecarValidateFlag || sidecarMigrateFlag || sidecarCodecTestFlag != "",
+		login:          sidecarLoginFlag,
+		noLogin:        sidecarNoLoginFlag,
+		credential:     sidecarCredentialGiven(),
+		licensed:       sidecarLicenseFlag != "" || os.Getenv(license.EnvVar) != "" || file.licensed,
+		oneShot:        sidecarValidateFlag || sidecarMigrateFlag || sidecarCodecTestFlag != "",
+		freeStandalone: freeStandalone,
 	})
 	if err != nil {
 		return nil, "", false, err
@@ -1009,6 +1045,11 @@ func init() {
 			DefaultSidecarControlPlaneURL+") with a code approved in the web app, even when a login is saved")
 	startSidecarCmd.Flags().BoolVar(&sidecarNoLoginFlag, "no-login", false,
 		"Run standalone, without logging in. Needs a license: the free plan always runs logged in")
+	// Hidden on purpose: an internal stopgap (ENG-906) for headless free
+	// installs, which cannot approve a login code. Keep it out of the docs.
+	startSidecarCmd.Flags().BoolVar(&sidecarFreeStandaloneFlag, "free-standalone", false,
+		"Run the free plan standalone, without logging in. Also "+sidecarFreeStandaloneEnv)
+	_ = startSidecarCmd.Flags().MarkHidden("free-standalone")
 	startSidecarCmd.Flags().BoolVar(&sidecarValidateFlag, "validate", false,
 		"Validate the config, report what each listener resolved to, and exit")
 	startSidecarCmd.Flags().BoolVar(&sidecarStrictFlag, "strict", false,

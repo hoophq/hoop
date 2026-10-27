@@ -118,6 +118,53 @@ func TestATokenAloneGoesToTheHostedPlane(t *testing.T) {
 	}
 }
 
+// A headless free install (ENG-906) sets HOOP_SIDECAR_FREE_STANDALONE: its
+// file runs with no login and no token, as before 1.268.0.
+func TestFreeStandaloneRunsTheFileWithoutALogin(t *testing.T) {
+	plane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("free standalone called the plane: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer plane.Close()
+	// A login, if one ran, reads the command's context.
+	defer startSidecarCmd.SetContext(startSidecarCmd.Context())
+	startSidecarCmd.SetContext(context.Background())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(SidecarStateDirEnv, t.TempDir())
+	t.Setenv("HOOP_CONTROL_PLANE_URL", plane.URL)
+	t.Setenv("HOOP_SIDECAR_TOKEN", "")
+	t.Setenv("HOOP_SIDECAR_IDENTITY_TYPE", "")
+	t.Setenv("HOOP_LICENSE", "")
+	t.Setenv(sidecarFreeStandaloneEnv, "true")
+	defer func(c string) { sidecarConfigFlag = c }(sidecarConfigFlag)
+	sidecarConfigFlag = filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(sidecarConfigFlag, []byte("listeners: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	login, _, choose, err := resolveSidecarLogin(startSidecarCmd, nil, false)
+	if err != nil || login != nil || choose {
+		t.Fatalf("free standalone logged in: login=%+v choose=%v err=%v", login, choose, err)
+	}
+
+	t.Setenv(sidecarFreeStandaloneEnv, "yes please")
+	if _, _, _, err := resolveSidecarLogin(startSidecarCmd, nil, false); err == nil ||
+		!strings.Contains(err.Error(), sidecarFreeStandaloneEnv) {
+		t.Fatalf("a value that is not a boolean was accepted: err=%v", err)
+	}
+}
+
+// --free-standalone is internal: --help does not list it.
+func TestFreeStandaloneIsHidden(t *testing.T) {
+	f := startSidecarCmd.Flags().Lookup("free-standalone")
+	if f == nil || !f.Hidden {
+		t.Fatalf("--free-standalone is %+v, want a hidden flag", f)
+	}
+	if strings.Contains(startSidecarCmd.Flags().FlagUsages(), "free-standalone") {
+		t.Fatal("--help lists --free-standalone")
+	}
+}
+
 // mustSaveSidecarLogin saves a login for a test, failing it on the real cause.
 func mustSaveSidecarLogin(t *testing.T, dir string, l savedSidecarLogin) {
 	t.Helper()

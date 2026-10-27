@@ -13,6 +13,10 @@ image:
 analytics:
   installSource: openai-agents-http
 
+# The free tier runs with no login code: nobody can approve one here (ENG-906).
+extraSecret:
+  HOOP_SIDECAR_FREE_STANDALONE: 'true'
+
 config:
   admin:
     listen: '0.0.0.0:19000'

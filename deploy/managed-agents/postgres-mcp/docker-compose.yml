@@ -40,6 +40,9 @@ services:
 
   sidecar:
     image: hoophq/hoopsidecar:1.255.0@sha256:3c94e670bc9f48296dfca1bcc81978e55db16253aed60aa93fbdb92fc3b0e384
+    environment:
+      # The free tier runs with no login code: nobody can approve one here (ENG-906).
+      HOOP_SIDECAR_FREE_STANDALONE: "true"
     restart: unless-stopped
     networks: [data, pgwire]
     volumes:

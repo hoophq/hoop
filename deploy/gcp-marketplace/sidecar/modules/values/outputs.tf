@@ -1,6 +1,6 @@
 output "values_yaml" {
   description = "Helm values documents for the sidecar chart, in order."
-  value       = compact([local.base_values, local.config_values, local.lane_values])
+  value       = compact([local.base_values, local.config_values, local.standalone_values, local.lane_values])
 
   precondition {
     condition     = var.config_source != "simple" || can(regex("^(\\[[0-9A-Fa-f:.]+\\]|[^\\s:\\[\\]]+):[0-9]+$", var.upstream))

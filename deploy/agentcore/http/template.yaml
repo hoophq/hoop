@@ -414,6 +414,8 @@ Resources:
               exec hoop start sidecar --config /tmp/hoop/sidecar.yaml
           Environment:
             - {Name: HOOP_SIDECAR_INSTALL_SOURCE, Value: agentcore-http}
+            # The free tier runs with no login code: nobody can approve one here (ENG-906).
+            - {Name: HOOP_SIDECAR_FREE_STANDALONE, Value: 'true'}
             # The free tier enforces one guardrail rule and one mask rule per
             # process. CI keeps both equal to deploy/openai-agents/http/values.yaml.
             - Name: SIDECAR_YAML

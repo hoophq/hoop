@@ -499,6 +499,8 @@ Resources:
               exec hoop start sidecar --config /tmp/hoop/sidecar.yaml
           Environment:
             - {Name: HOOP_SIDECAR_INSTALL_SOURCE, Value: agentcore-kubernetes}
+            # The free tier runs with no login code: nobody can approve one here (ENG-906).
+            - {Name: HOOP_SIDECAR_FREE_STANDALONE, Value: 'true'}
             - {Name: CLUSTER_CA, Value: !Ref ClusterCaData}
             - {Name: LANE_CERT, Value: !Ref LaneCertificate}
             # The free tier enforces one guardrail rule and one mask rule per
