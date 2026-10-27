@@ -21,8 +21,9 @@ For that network:
    prod-<region>-starport-layer-bucket, where ECR keeps image layers.
 4. DNS. The VPC has a Resolver DNS Firewall association that blocks '*.'
    for every query type after its allow rules; no allow list holds a
-   wildcard wider than one domain, and no Resolver rule forwards the VPC's
-   names elsewhere.
+   wildcard wider than one domain, a condition can only drop an allow
+   entry, never pick a rule or a list, and no Resolver rule forwards the
+   VPC's names elsewhere.
 
 A resource that holds one of these up must not carry a Condition: no
 parameter may turn a guarantee off.
@@ -351,10 +352,22 @@ def check(template):
             group = name_of(props(assoc).get("FirewallRuleGroupId"))
             unconditional(group, "the DNS Firewall rule group")
             allow, block = [], []
-            for rule in props(group).get("FirewallRules", []):
+            rules = props(group).get("FirewallRules", [])
+            if not isinstance(rules, list):
+                errors.append(f"{group}'s FirewallRules is an expression: only a literal list can be checked")
+                rules = []
+            for rule in rules:
+                # A condition could hide an ALLOW rule from this check, or
+                # turn a BLOCK into one.
+                if not isinstance(rule, dict) or has_key(rule, "Fn::If") or not isinstance(rule.get("Action"), str):
+                    errors.append(f"{group} has a rule a condition can change, or with no literal Action: {rule}")
+                    continue
                 domains = name_of(rule.get("FirewallDomainListId"))
                 unconditional(domains, "a DNS Firewall domain list")
                 entries = props(domains).get("Domains", [])
+                if not isinstance(entries, list):
+                    errors.append(f"{domains}'s Domains is an expression: only a literal list can be checked")
+                    continue
                 names = [d for d in entries if isinstance(d, str)]
                 if rule.get("Action") == "ALLOW":
                     allow.append(rule.get("Priority"))

@@ -214,6 +214,23 @@ CASES = [
      lambda t: allowed_domains(t).append({"Fn::If": ["IsDemo", {"Ref": "AWS::NoValue"},
                                                      {"Fn::If": ["IsHarness", "*.", "api.example.com."]}]}),
      1, "a condition or a wildcard in an expression"),
+    ("an allow list that a condition picks whole",
+     lambda t: res(t, "DnsAllowed")["Properties"].update(
+         Domains={"Fn::If": ["IsDemo", ["hoop.internal."], ["*."]]}),
+     1, "DnsAllowed's Domains is an expression"),
+    ("an allow rule that a condition adds",
+     lambda t: res(t, "DnsFirewall")["Properties"]["FirewallRules"].append(
+         {"Fn::If": ["IsDemo", {"Ref": "AWS::NoValue"},
+                     {"FirewallDomainListId": {"Ref": "DnsEverything"}, "Priority": 50, "Action": "ALLOW"}]}),
+     1, "has a rule a condition can change"),
+    ("a block rule that a condition turns into an allow",
+     lambda t: res(t, "DnsFirewall")["Properties"]["FirewallRules"][1].update(
+         Action={"Fn::If": ["IsDemo", "ALLOW", "BLOCK"]}),
+     1, "has a rule a condition can change"),
+    ("firewall rules that a condition picks whole",
+     lambda t: res(t, "DnsFirewall")["Properties"].update(
+         FirewallRules={"Fn::If": ["IsDemo", [], []]}),
+     1, "FirewallRules is an expression"),
     ("a wildcard inside an expression",
      lambda t: allowed_domains(t).append({"Fn::Sub": "*.${AWS::Region}."}),
      1, "a condition or a wildcard in an expression"),
