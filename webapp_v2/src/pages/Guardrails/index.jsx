@@ -14,6 +14,7 @@ import { useNewRuleTraffics } from '@/hooks/useNewRuleTraffics'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
+import { useAgentsEnabled } from '@/modes/agents'
 import { boundRuleNames } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
@@ -59,7 +60,8 @@ export default function Guardrails() {
   const { traffics, mixed, showAgentFilters, showSidecarFilter, matches } = traffic
   const agentRules = traffics.includes(TRAFFIC_AGENT)
   const sidecarRules = traffics.includes(TRAFFIC_SIDECAR)
-  const agentBlocked = agentRules && !hasRedactCredentials
+  const agentsEnabled = useAgentsEnabled()
+  const agentBlocked = agentsEnabled && agentRules && !hasRedactCredentials
   const newTraffics = useNewRuleTraffics()
 
   const [selectedRole, setSelectedRole] = useState(null)
