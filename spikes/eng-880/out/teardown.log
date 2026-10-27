@@ -1,0 +1,51 @@
+20:46:29 delete harness eng880_h1-vSbD3CbyxA
+20:46:30 delete harness eng880_h2-imt27l8jJF
+20:46:31 delete harness eng880_h3-y6GWXTC3iB
+20:46:31 delete harness eng880_h4-HgObxv6UO8
+20:46:32 delete harness eng880_h5-86S8qYJvG7
+20:46:33 delete harness eng880_pub-IxzWCPAk15
+20:46:35 delete runtime eng880_rt1-ls8wdD5WcL
+20:46:36 delete vault key eng880-openai
+20:46:37 delete vault key eng880-api
+20:46:38 delete vault key eng880-caller
+20:46:39 delete vault key eng880-fake
+20:46:40 delete ecr-public cache repo
+20:46:42 emptied eng880-base-otherbucket-znmkqe375ak5
+20:54:39 delete stack eng880-oneclick
+
+aws: [ERROR]: Waiter StackDeleteComplete failed: Waiter encountered a terminal failure state: For expression "Stacks[].StackStatus" we matched expected path: "DELETE_FAILED" at least once
+21:18:35 eng880-oneclick not gone yet:
+eng880-oneclick	The following resource(s) failed to delete: [AgentSg, AgentSubnetA, AgentSubnetB]. 
+AgentSg	resource sg-0806d776953b74ce6 has a dependent object (Service: Ec2, Status Code: 400, Request ID: 827a3bc1-15d2-4de6-8ac2-00789ac7798d) (SDK Attempt Count: 1)
+AgentSubnetB	Resource handler returned message: "The subnet 'subnet-0e51977ed0ca054db' has dependencies and cannot be deleted. (Service: Ec2, Status Code: 400, Request ID: 85158f15-c68d-4a6b-a1d6-48b16a4be6e3) (SDK Attempt Count: 1)" (RequestToken: 05030175-c082-296a-2922-625fe1ae79e2, HandlerErrorCode: InvalidRequest)
+AgentSubnetA	Resource handler returned message: "The subnet 'subnet-0122609ca13a013ed' has dependencies and cannot be deleted. (Service: Ec2, Status Code: 400, Request ID: f84c7f91-3f47-4ad5-a3ea-160481826bd4) (SDK Attempt Count: 1)" (RequestToken: c0b10420-26c0-5de3-3ded-542fcfb9b3b5, HandlerErrorCode: InvalidRequest)
+None
+21:18:37 delete stack eng880-base
+
+aws: [ERROR]: Waiter StackDeleteComplete failed: Waiter encountered a terminal failure state: For expression "Stacks[].StackStatus" we matched expected path: "DELETE_FAILED" at least once
+21:38:59 eng880-base not gone yet:
+eng880-base	The following resource(s) failed to delete: [AgentSg, AgentSubnetA, AgentSubnetB]. 
+AgentSg	resource sg-0cef094ab4297deb4 has a dependent object (Service: Ec2, Status Code: 400, Request ID: 908b96e6-5c17-4809-8a5e-cc7d5cd1681c) (SDK Attempt Count: 1)
+AgentSubnetB	Resource handler returned message: "The subnet 'subnet-0d427ad6c96b917ea' has dependencies and cannot be deleted. (Service: Ec2, Status Code: 400, Request ID: 05c51d3d-8205-4566-9283-ca677ffdab00) (SDK Attempt Count: 1)" (RequestToken: 83a78feb-bd55-c180-c391-d1c03f9d19f5, HandlerErrorCode: InvalidRequest)
+AgentSubnetA	Resource handler returned message: "The subnet 'subnet-0e72fba3ad7e55b03' has dependencies and cannot be deleted. (Service: Ec2, Status Code: 400, Request ID: c31d133e-7d68-4c6d-bc2c-8fddc7b340e9) (SDK Attempt Count: 1)" (RequestToken: 18cff516-0366-78f8-ab51-dd434a441d54, HandlerErrorCode: InvalidRequest)
+None
+21:39:01 delete ssm params
+21:39:02 delete log group /aws/bedrock-agentcore/runtimes/eng880_rt1-ls8wdD5WcL-DEFAULT
+21:39:03 delete log group /aws/bedrock-agentcore/runtimes/harness_eng880_h1-5d0y1i43qm-DEFAULT
+21:39:04 delete log group /aws/bedrock-agentcore/runtimes/harness_eng880_h2-Ibi7AdCcYq-DEFAULT
+21:39:04 delete log group /aws/bedrock-agentcore/runtimes/harness_eng880_h3-8ZTA565M1R-DEFAULT
+21:39:05 delete log group /aws/bedrock-agentcore/runtimes/harness_eng880_h4-QRKrtfBMZZ-DEFAULT
+21:39:06 delete log group /aws/bedrock-agentcore/runtimes/harness_eng880_h5-ty6JV3Fptj-DEFAULT
+21:39:07 delete log group /aws/bedrock-agentcore/runtimes/harness_eng880_oneclick-RIsEReFGpw-DEFAULT
+21:39:07 delete log group /aws/bedrock-agentcore/runtimes/harness_eng880_pub-K1o70a9V2R-DEFAULT
+21:39:08 left: eng880-oneclick	eng880-base
+exit 0
+05:06:38 delete vault key eng880-openai
+05:06:38 delete vault key eng880-api
+05:06:39 delete vault key eng880-caller
+05:06:40 delete vault key eng880-fake
+fatal error: An error occurred (NoSuchBucket) when calling the ListObjectsV2 operation: The specified bucket does not exist
+05:06:44 delete stack eng880-oneclick
+05:07:17 delete stack eng880-base
+05:07:50 delete ssm params
+05:07:51 left: 

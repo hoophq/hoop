@@ -286,6 +286,7 @@ The OpenAI key was found in no log group. The lane was plain HTTP: it was switch
 | K6 | The microVM has a public IPv6 address (`2600:1f18:...`) in a VPC with no IPv6. It reached nothing in these tests | AgentCore |
 | K7 | A failed UpdateHarness leaves the harness in `UPDATE_FAILED`; it keeps serving | AgentCore |
 | K8 | macOS curl 8.7.1 signs an encoded ARN in a path wrong; the AWS CLI 2.36.15 has no `invoke-harness` | Tooling |
+| K9 | Deleting the agents left 4 `agentic_ai` ENIs in the agent subnets for 8 h 20 min (20:46 to 05:06 UTC), longer than the documented 8 hours. Until then the stack delete fails on the agent SG and subnets (`DELETE_FAILED`); a rerun after that works | AgentCore |
 
 ## Reproduce
 
