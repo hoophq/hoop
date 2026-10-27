@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/license/licensetest"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -172,6 +173,50 @@ func TestAnAnalyzerRuleSavesAIRulesOnlyWhenTheSidecarCanRunThem(t *testing.T) {
 			`"risk_evaluation":{"low_risk_action":"allow_execution","medium_risk_action":"allow_execution",`+
 			`"high_risk_action":"allow_execution"}}`)
 	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+}
+
+// A configuration write checks its listener analyzer blocks as an analyzer
+// rule save does: no AI rule options on a level that applies none, and no
+// name that neither the library nor the stored rule_library holds.
+func TestAConfigurationWriteChecksItsListenerAIRules(t *testing.T) {
+	startStatusTestDB(t)
+	// Signed, so the write's license cap lets AI rules through.
+	setOrgLicense(t, licensetest.Document(t, licensetest.Enterprise()))
+	seedGuardrailLibraryRule(t, "no-drop", `{"rules":[{"name":"no-drop","type":"operation","operations":["drop"]}]}`)
+	sc := aiRulesSidecar(t, "ai-rules-write")
+	doc := func(level, library string) string {
+		return `{"analyzer":{"provider":"anthropic","model":"m"},` + library + `"listeners":[{"name":"appdb",` +
+			`"protocol":"postgres","listen":":5432","upstream":"db:5432","analyzer":{"medium":` + level + `}}]}`
+	}
+	writes := []struct {
+		method  string
+		handler gin.HandlerFunc
+	}{{http.MethodPut, Put}, {http.MethodPatch, Patch}}
+
+	for name, c := range map[string]struct{ level, want string }{
+		"an unknown name": {`{"action":"warn","guardrails":{"rules":["no-such-rule"]}}`, `names \"no-such-rule\"`},
+		"a mask name of the guardrail library": {`{"action":"warn","mask":{"rules":["no-drop"]}}`,
+			`names \"no-drop\"`},
+		"a block level": {`{"action":"block","guardrails":{}}`, "applies no AI rule"},
+	} {
+		for _, wr := range writes {
+			w, _ := callAdminIn(t, statusTestOrgID, wr.handler, wr.method, sc.ID, doc(c.level, ""))
+			assert.Equal(t, http.StatusUnprocessableEntity, w.Code, "%s %s: %s", wr.method, name, w.Body)
+			assert.Contains(t, w.Body.String(), `listener \"appdb\" analyzer block`, "%s %s", wr.method, name)
+			assert.Contains(t, w.Body.String(), c.want, "%s %s", wr.method, name)
+		}
+	}
+
+	for name, c := range map[string]struct{ level, library string }{
+		"a library rule": {`{"action":"warn","guardrails":{"rules":["no-drop"]}}`, ""},
+		"a rule of the stored rule_library": {`{"action":"warn","guardrails":{"rules":["own"]}}`,
+			`"rule_library":{"guardrails":[{"name":"own","type":"deny_words_list","words":["x"]}]},`},
+	} {
+		for _, wr := range writes {
+			w, _ := callAdminIn(t, statusTestOrgID, wr.handler, wr.method, sc.ID, doc(c.level, c.library))
+			assert.Equal(t, http.StatusOK, w.Code, "%s %s: %s", wr.method, name, w.Body)
+		}
+	}
 }
 
 func TestTheLibraryRulesTheLevelsSelectAreServed(t *testing.T) {

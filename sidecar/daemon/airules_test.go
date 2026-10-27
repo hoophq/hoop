@@ -288,6 +288,38 @@ func TestEachProtocolHasItsAIMaskScope(t *testing.T) {
 	}
 }
 
+// A grpc lane takes an AI mask only where it decodes every response field:
+// not raw (declared fields only) and not discover.fail_open (forwards what
+// it cannot decode). The warning names the reason.
+func TestAGRPCLaneTakesAnAIMaskOnlyWhereItDecodesEveryField(t *testing.T) {
+	for name, tc := range map[string]struct {
+		grpc *GRPCCodecConfig
+		want gate.MaskScope
+		warn string
+	}{
+		"descriptors": {grpc: &GRPCCodecConfig{Descriptors: DescriptorPaths{"a.pb"}}, want: gate.MaskScopeExchange},
+		"discover":    {grpc: &GRPCCodecConfig{Discover: &GRPCDiscoverConfig{From: "reflection"}}, want: gate.MaskScopeExchange},
+		"discover, fail open": {grpc: &GRPCCodecConfig{Discover: &GRPCDiscoverConfig{From: "reflection", FailOpen: true}},
+			want: gate.MaskScopeNone, warn: "grpc.discover.fail_open"},
+		"raw": {grpc: &GRPCCodecConfig{Raw: &GRPCRawConfig{StringFields: []GRPCRawStringFields{
+			{Method: "/a.B/C", Response: []string{"1"}}}}}, want: gate.MaskScopeNone, warn: "grpc.raw.string_fields declares"},
+		"no schema": {want: gate.MaskScopeNone, warn: "cannot tie a response"},
+	} {
+		la := laneBlock()
+		la.HighRisk = RiskLevel{Action: "warn", Mask: &AIRuleOptions{}}
+		lc := ListenerConfig{Name: "l", Protocol: "grpc", GRPC: tc.grpc, Analyzer: la}
+		if got := laneMaskScope(lc); got != tc.want {
+			t.Errorf("%s: scope %v, want %v", name, got, tc.want)
+		}
+		w := LaneAIRuleWarnings(nil, la, lc)
+		if tc.warn == "" && len(w) != 0 || tc.warn != "" && !slices.ContainsFunc(w, func(s string) bool {
+			return strings.Contains(s, tc.warn) && strings.Contains(s, "is denied")
+		}) {
+			t.Errorf("%s: warnings %v, want %q", name, w, tc.warn)
+		}
+	}
+}
+
 // rule_library and the level options are rule content: a change swaps, and
 // never reaches the restart baseline.
 func TestTheRuleLibraryIsRuleContent(t *testing.T) {

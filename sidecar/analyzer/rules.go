@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -528,10 +529,14 @@ var errRulesMalformed = errors.New("the rule agent sent a call that is not a val
 
 // parse reads the rule calls of one answer. It fails (applies nothing) on a
 // call to a tool the level does not offer, arguments that are not an
-// object, a missing reason, an apply naming a rule outside the enum, or
-// more than maxRuleCalls calls. A created rule that fails validation does
-// not fail the answer: it is dropped and recorded.
+// object, a missing reason, an apply naming a rule outside the enum,
+// no_rule beside another call, or more than maxRuleCalls calls. A created
+// rule that fails validation does not fail the answer: it is dropped and
+// recorded.
 func (rl *ruleLevel) parse(e *Evaluator, level RiskLevel, calls []ToolCall, solo bool) (*ruleDecision, error) {
+	if solo && len(calls) > 1 && slices.ContainsFunc(calls, func(c ToolCall) bool { return c.Name == toolNoRule }) {
+		return nil, fmt.Errorf("%w: %s beside another call", errRulesMalformed, toolNoRule)
+	}
 	d := &ruleDecision{}
 	n := 0
 	for _, c := range calls {
@@ -615,14 +620,15 @@ func (d *ruleDecision) add(e *Evaluator, level RiskLevel, kind, reason string, a
 }
 
 // decodeStrict decodes one JSON object into v and refuses an unknown field or
-// trailing data.
+// trailing data. Decoder.More does not see a trailing ']' or '}', so the
+// next token must be the end of the input.
 func decodeStrict(raw json.RawMessage, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return err
 	}
-	if dec.More() {
+	if _, err := dec.Token(); err != io.EOF {
 		return errors.New("trailing data after the arguments")
 	}
 	return nil

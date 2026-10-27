@@ -1698,7 +1698,8 @@ is attached before the hold.
   and recorded in `ai_rule_invalid` with the arguments as sent; it never
   applies half-valid.
 - Fail-safe: a refusal, a timeout, a malformed answer (an unknown tool, a name
-  outside the enum, no reason, more than 16 calls), a spent budget or an input
+  outside the enum, no reason, `no_rule` beside another call, more than 16
+  calls), a spent budget or an input
   longer than `max_input_bytes` applies no AI rule and keeps the level action.
   `ai_rules_error` says why.
 - The decision is cached with the classification on the exact content the
@@ -1712,11 +1713,11 @@ response might leave unmasked, it denies the response. The message says why:
 
 | Protocol | A mask applies to | Refused |
 |---|---|---|
-| `grpc`, `spanner` (with descriptors) | every response of the call | never |
+| `grpc`, `spanner` (with `descriptors`, or `discover` without `fail_open`) | every response of the call | never |
 | `http` | the response to its request, until the next request after it | any request while that response is not complete; a masked request behind an outstanding one; a masked WebSocket message. Before any of its bytes leave, a masked response whose head is not whole in the first read, or whose non-empty body is compressed (any `Content-Encoding` but `identity`), chunked (the codec masks it in pieces that can split a value), close-delimited, longer than 16 MiB (the codec's masking limit), or of a media type the codec does not read (it reads none, JSON types and text types: `text/*`, `application/xml`, `application/yaml`, `application/javascript`, form-urlencoded); and an upgrade. Heads end at CRLFCRLF or LFLF, as the codec reads them |
 | `postgres` | the response up to its own ReadyForQuery | a masked statement while an earlier response is outstanding (counted from the first byte of the connection); a masked `Parse` (extended query protocol); a statement sent before the masked response ended; a masked statement sent with others in one read |
 | `mysql`, `oracle`, `clickhouse` | every server byte for the rest of the connection | every later statement on the connection (the gate reads no end-of-response marker on these lanes; reconnect); a masked statement sent with others in one read |
-| `mssql`, `mongodb`, `ssh`, `ica`, plug-ins, grpc without descriptors | nothing | every masked statement (the lane warns at start). On mssql the codec forwards some result data (SQL_VARIANT, XML, past its buffer limit) unmasked without saying so |
+| `mssql`, `mongodb`, `ssh`, `ica`, plug-ins, grpc without descriptors, `grpc.raw`, `grpc.discover.fail_open` | nothing | every masked statement (the lane warns at start). On mssql the codec forwards some result data (SQL_VARIANT, XML, past its buffer limit) unmasked without saying so. `grpc.raw` rewrites only the declared `string_fields` and forwards the rest; `fail_open` forwards what it cannot decode while discovery fails |
 
 On postgres the gate counts, from the first byte of the connection, the
 responses the client asked for and the ReadyForQuery messages the server

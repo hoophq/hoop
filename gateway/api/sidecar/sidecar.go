@@ -127,6 +127,9 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 		if err := services.CheckSidecarConfiguration(daemon.Config(sc.Configuration)); err != nil {
 			return err
 		}
+		if err := services.ValidateListenerAIRules(tx, sc); err != nil {
+			return err
+		}
 		if err := services.CheckSidecarConfigurationLimits(daemon.Config(sc.Configuration), licenseData); err != nil {
 			return err
 		}

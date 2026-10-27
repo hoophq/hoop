@@ -388,7 +388,9 @@ func rewriteLevelRuleNames(listeners []daemon.ListenerConfig, expand [len(aiRule
 
 // ValidateAnalyzerAIRules refuses an analyzer rule whose levels let the AI
 // apply guardrails or data masking rules when the sidecar could not run them
-// as the admin wrote them. It runs on every save, bound or not:
+// as the admin wrote them. It runs on every analyzer rule save, bound or not;
+// a listener's own analyzer block gets the same checks from
+// ValidateListenerAIRules:
 //
 //   - the sidecar's own check of the block (an unknown mode);
 //   - options on a level whose action applies no rule (block, defer), which
@@ -402,30 +404,8 @@ func ValidateAnalyzerAIRules(db *gorm.DB, orgID, ruleName string, spec json.RawM
 	if decodeSpec(spec, &block) != nil {
 		return nil
 	}
-	var used [len(aiRuleKinds)]bool
-	var named [len(aiRuleKinds)][]string
-	var problems []string
-	for _, lv := range analyzerLevels(&block) {
-		levelUses := false
-		for k, kind := range aiRuleKinds {
-			o := *kind.options(lv.level)
-			if o == nil {
-				continue
-			}
-			levelUses = true
-			used[k] = true
-			for _, n := range o.Rules {
-				if !slices.Contains(named[k], n) {
-					named[k] = append(named[k], n)
-				}
-			}
-		}
-		if levelUses && !appliesAIRules(*lv.level) {
-			problems = append(problems, fmt.Sprintf("analyzer rule %q: %s risk sets guardrails or mask, and "+
-				"its action %q applies no AI rule; set them on an allow, warn, require_approval or "+
-				"ai-handoff level", ruleName, lv.name, lv.level.Action))
-		}
-	}
+	subject := fmt.Sprintf("analyzer rule %q", ruleName)
+	used, named, problems := aiRuleOptionUse(subject, &block)
 	if !used[aiKindGuardrails] && !used[aiKindMask] {
 		return nil
 	}
@@ -452,32 +432,155 @@ func ValidateAnalyzerAIRules(db *gorm.DB, orgID, ruleName string, spec json.RawM
 	if err != nil {
 		return fmt.Errorf("%w: parsing the organization id: %v", ErrSidecarRulesUnavailable, err)
 	}
+	u, err := newAIRuleNames(db, org, nil).unknown(subject, named)
+	if err != nil {
+		return err
+	}
+	if u != "" {
+		return errors.New(u)
+	}
+	return nil
+}
+
+// ValidateListenerAIRules refuses a configuration write whose listener
+// analyzer blocks set AI rule options the sidecar would ignore: options on a
+// level whose action applies no rule, or a name that neither a library rule
+// with a sidecar block nor the document's own rule_library holds. The mode
+// and the license are checked by CheckComposedSidecarConfiguration and
+// CheckSidecarConfigurationLimits. A load_from_disk document is not served,
+// so it is not checked.
+func ValidateListenerAIRules(db *gorm.DB, sc *models.Sidecar) error {
+	cfg := daemon.Config(sc.Configuration)
+	if cfg.LoadFromDisk != nil && *cfg.LoadFromDisk {
+		return nil
+	}
+	var problems []string
+	var names *aiRuleNames
+	for _, l := range cfg.Listeners {
+		if l.Analyzer == nil {
+			continue
+		}
+		subject := fmt.Sprintf("listener %q analyzer block", l.Name)
+		_, named, p := aiRuleOptionUse(subject, l.Analyzer)
+		problems = append(problems, p...)
+		if len(named[aiKindGuardrails]) == 0 && len(named[aiKindMask]) == 0 {
+			continue
+		}
+		if names == nil {
+			org, err := uuid.Parse(sc.OrgID)
+			if err != nil {
+				return fmt.Errorf("%w: parsing the organization id: %v", ErrSidecarRulesUnavailable, err)
+			}
+			names = newAIRuleNames(db, org, cfg.RuleLibrary)
+		}
+		u, err := names.unknown(subject, named)
+		if err != nil {
+			return err
+		}
+		if u != "" {
+			problems = append(problems, u)
+		}
+	}
+	if len(problems) > 0 {
+		return ErrSidecarAnalyzerInvalid{Reason: strings.Join(problems, "; ")}
+	}
+	return nil
+}
+
+// aiRuleOptionUse reads which kinds an analyzer block's levels use and the
+// names they list, and refuses options on a level that applies no rule.
+func aiRuleOptionUse(subject string, block *daemon.LaneAnalyzerConfig) (used [len(aiRuleKinds)]bool,
+	named [len(aiRuleKinds)][]string, problems []string) {
+	for _, lv := range analyzerLevels(block) {
+		levelUses := false
+		for k, kind := range aiRuleKinds {
+			o := *kind.options(lv.level)
+			if o == nil {
+				continue
+			}
+			levelUses = true
+			used[k] = true
+			for _, n := range o.Rules {
+				if !slices.Contains(named[k], n) {
+					named[k] = append(named[k], n)
+				}
+			}
+		}
+		if levelUses && !appliesAIRules(*lv.level) {
+			problems = append(problems, fmt.Sprintf("%s: %s risk sets guardrails or mask, and "+
+				"its action %q applies no AI rule; set them on an allow, warn, require_approval or "+
+				"ai-handoff level", subject, lv.name, lv.level.Action))
+		}
+	}
+	return used, named, problems
+}
+
+// aiRuleNames resolves the names a level may list: the organization's library
+// rows with a sidecar rule, read once per kind, and the names of a stored
+// rule_library (held), which composition serves as they are.
+type aiRuleNames struct {
+	db     *gorm.DB
+	org    uuid.UUID
+	held   [len(aiRuleKinds)]map[string]bool
+	known  [len(aiRuleKinds)]map[string]bool
+	stored bool
+}
+
+func newAIRuleNames(db *gorm.DB, org uuid.UUID, lib *daemon.RuleLibrary) *aiRuleNames {
+	n := &aiRuleNames{db: db, org: org, held: [len(aiRuleKinds)]map[string]bool{{}, {}}, stored: lib != nil}
+	if lib == nil {
+		return n
+	}
+	for _, r := range lib.Guardrails {
+		n.held[aiKindGuardrails][r.Name] = true
+	}
+	var masks []struct {
+		Name string `json:"name"`
+	}
+	// A list that does not decode holds no name; the sidecar refuses it.
+	if json.Unmarshal(lib.Mask, &masks) == nil {
+		for _, m := range masks {
+			n.held[aiKindMask][m.Name] = true
+		}
+	}
+	return n
+}
+
+// unknown is the refusal of the first name nothing resolves, or "".
+func (n *aiRuleNames) unknown(subject string, named [len(aiRuleKinds)][]string) (string, error) {
 	for k, kind := range aiRuleKinds {
 		if len(named[k]) == 0 {
 			continue
 		}
-		rows, err := kind.library(db, org)
-		if err != nil {
-			return fmt.Errorf("%w: reading the %s rule library: %v", ErrSidecarRulesUnavailable, kind.label, err)
-		}
-		known := map[string]bool{}
-		for _, row := range rows {
-			switch k {
-			case aiKindGuardrails:
-				known[row.Name] = len(libraryGuardrails(row)) > 0
-			case aiKindMask:
-				known[row.Name] = len(libraryMasks(row)) > 0
+		if n.known[k] == nil {
+			rows, err := kind.library(n.db, n.org)
+			if err != nil {
+				return "", fmt.Errorf("%w: reading the %s rule library: %v", ErrSidecarRulesUnavailable, kind.label, err)
+			}
+			n.known[k] = map[string]bool{}
+			for _, row := range rows {
+				switch k {
+				case aiKindGuardrails:
+					n.known[k][row.Name] = len(libraryGuardrails(row)) > 0
+				case aiKindMask:
+					n.known[k][row.Name] = len(libraryMasks(row)) > 0
+				}
 			}
 		}
-		for _, n := range named[k] {
-			if !known[n] {
-				return fmt.Errorf("analyzer rule %q: %s.rules names %q, which is not a %s rule of this "+
-					"organization with sidecar rules; create it first or remove the name",
-					ruleName, kind.key, n, kind.label)
+		for _, name := range named[k] {
+			if n.known[k][name] || n.held[k][name] {
+				continue
 			}
+			where := ""
+			if n.stored {
+				where = ", nor a rule of this configuration's rule_library"
+			}
+			return fmt.Sprintf("%s: %s.rules names %q, which is not a %s rule of this "+
+				"organization with sidecar rules%s; create it first or remove the name",
+				subject, kind.key, name, kind.label, where), nil
 		}
 	}
-	return nil
+	return "", nil
 }
 
 // licenseGrants is the predicate the guardrail and data masking APIs gate

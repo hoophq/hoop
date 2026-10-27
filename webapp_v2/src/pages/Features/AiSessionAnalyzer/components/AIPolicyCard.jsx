@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Group, Paper, ScrollArea, Stack, Text } from '@mantine/core'
 import { PackagePlus, Search } from 'lucide-react'
 import Badge from '@/components/Badge'
@@ -98,20 +98,23 @@ function RuleList({ featureKey, options, rules, create, status, onToggle, onSele
 // can still be turned off.
 function FeatureRow({ feature, value, options, status, locked, onChange, onToggleRule }) {
   const { key, label, description } = feature
+  const switchId = useId()
+  const descriptionId = `${switchId}-description`
   return (
     <Paper withBorder radius="md" p="md">
       <Stack gap="md">
         <Group justify="space-between" wrap="nowrap" align="flex-start">
           <Stack gap={4}>
-            <Text size="sm" fw={600}>
+            <Text size="sm" fw={600} component="label" htmlFor={switchId}>
               {label}
             </Text>
-            <Text size="xs" c="dimmed">
+            <Text size="xs" c="dimmed" id={descriptionId}>
               {description}
             </Text>
           </Stack>
           <Switch
-            aria-label={label}
+            id={switchId}
+            aria-describedby={descriptionId}
             checked={value.on}
             disabled={locked && !value.on}
             onChange={(e) => onChange({ on: e.currentTarget.checked })}

@@ -179,7 +179,11 @@ func (la *LaneAnalyzerConfig) usesAIMask() bool {
 // the gate denies a statement the AI masks there.
 //
 //   - grpc and spanner: one gate per call, so a mask covers the call's
-//     responses. It needs a descriptor set, as a mask block does.
+//     responses. It needs a descriptor set, as a mask block does. An AI
+//     mask names entities, not fields, so the lane must decode every
+//     response field: not grpc.raw, which rewrites only the declared
+//     string fields and forwards the rest, and not grpc.discover.fail_open,
+//     which forwards what it cannot decode while discovery fails.
 //   - http: HTTP/1 answers in request order.
 //   - postgres, mysql, oracle, clickhouse: one statement in flight.
 //   - mssql: the pinned rewriter forwards SQL_VARIANT, XML and over-limit
@@ -193,7 +197,7 @@ func (la *LaneAnalyzerConfig) usesAIMask() bool {
 func aiMaskScope(lc ListenerConfig) gate.MaskScope {
 	switch {
 	case isGRPCTransport(lc):
-		if lc.GRPC.hasSchema() {
+		if grpcAIMaskGap(lc.GRPC) == "" {
 			return gate.MaskScopeExchange
 		}
 		return gate.MaskScopeNone
@@ -209,6 +213,28 @@ func aiMaskScope(lc ListenerConfig) gate.MaskScope {
 		}
 	}
 	return gate.MaskScopeNone
+}
+
+// grpcAIMaskGap says why a grpc lane cannot apply an AI mask to every field
+// of a response, or "".
+func grpcAIMaskGap(g *GRPCCodecConfig) string {
+	switch {
+	case !g.hasSchema():
+		return "cannot tie a response to one statement"
+	case g.Raw != nil:
+		return "masks only the response fields grpc.raw.string_fields declares"
+	case g.Discover != nil && g.Discover.FailOpen:
+		return "forwards what it cannot decode while discovery fails (grpc.discover.fail_open)"
+	}
+	return ""
+}
+
+// noAIMaskReason says why a lane is MaskScopeNone, for LaneAIRuleWarnings.
+func noAIMaskReason(lc ListenerConfig) string {
+	if isGRPCTransport(lc) {
+		return grpcAIMaskGap(lc.GRPC)
+	}
+	return "cannot tie a response to one statement"
 }
 
 // laneMaskScope is the scope a lane's gates run under: aiMaskScope when the
@@ -263,8 +289,8 @@ func LaneAIRuleWarnings(lib *RuleLibrary, la *LaneAnalyzerConfig, lc ListenerCon
 			}
 		}
 		if r.Mask != nil && scope == gate.MaskScopeNone {
-			out = append(out, fmt.Sprintf("analyzer block: %s risk mask: a %s lane cannot tie a response "+
-				"to one statement, so a statement the AI masks is denied", l.name, lc.Protocol))
+			out = append(out, fmt.Sprintf("analyzer block: %s risk mask: a %s lane %s, so a statement "+
+				"the AI masks is denied", l.name, lc.Protocol, noAIMaskReason(lc)))
 		}
 		if r.Mask != nil && scope == gate.MaskScopeSerial && !gate.ResponseEndKnown(inspect.Protocol(lc.Protocol)) {
 			out = append(out, fmt.Sprintf("analyzer block: %s risk mask: a %s lane cannot see where a "+

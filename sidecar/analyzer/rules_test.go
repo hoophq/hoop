@@ -413,6 +413,9 @@ func TestAFailedRuleTurnKeepsTheLevelAction(t *testing.T) {
 		"not in enum":    {reply: reply(call("apply_mask", `{"rule":"ssn","reason":"x"}`))},
 		"not json":       {reply: reply(call("apply_mask", `nope`))},
 		"too many calls": {reply: reply(slices.Repeat([]analyzer.ToolCall{call("apply_mask", `{"rule":"emails","reason":"x"}`)}, 17)...)},
+		// no_rule says "apply nothing", so a rule beside it contradicts it.
+		"no_rule beside a rule": {reply: reply(call("no_rule", `{"reason":"nothing to protect"}`),
+			call("apply_guardrail", `{"rule":"no-deletes","reason":"destructive"}`))},
 		"budget spent": {
 			reply: reply(call("apply_guardrail", `{"rule":"no-deletes","reason":"x"}`)),
 			edit:  func(c *analyzer.Config) { c.MaxCalls = 1 }, noCall: true,
@@ -440,6 +443,30 @@ func TestAFailedRuleTurnKeepsTheLevelAction(t *testing.T) {
 				t.Errorf("asked %d time(s)", len(p.asks()))
 			}
 		})
+	}
+}
+
+// A rule call's arguments are one object: trailing data refuses them,
+// including a ']' or '}' that Decoder.More does not see.
+func TestRuleArgumentsRefuseTrailingData(t *testing.T) {
+	for name, tc := range map[string]struct {
+		raw string
+		ok  bool
+	}{
+		"one object":        {`{"reason":"r"}`, true},
+		"trailing space":    {"{\"reason\":\"r\"} \n", true},
+		"a second object":   {`{"reason":"r"}{"reason":"s"}`, false},
+		"a trailing ']'":    {`{"reason":"r"}]`, false},
+		"a trailing '}'":    {`{"reason":"r"}}`, false},
+		"a trailing scalar": {`{"reason":"r"} 1`, false},
+		"an unknown field":  {`{"reason":"r","x":1}`, false},
+	} {
+		var v struct {
+			Reason string `json:"reason"`
+		}
+		if err := analyzer.DecodeStrict(json.RawMessage(tc.raw), &v); (err == nil) != tc.ok {
+			t.Errorf("%s: err = %v, want ok = %v", name, err, tc.ok)
+		}
 	}
 }
 
