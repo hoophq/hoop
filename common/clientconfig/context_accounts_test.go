@@ -178,6 +178,74 @@ func TestMarshalFlatRoundTrip(t *testing.T) {
 	}
 }
 
+func TestHeaderCommentUnknownKeyAndDuplicate(t *testing.T) {
+	const raw = `
+current = "profile1"
+[profile.profile1] # primary
+token = "profile1-token"
+api_url = "https://profile1.example:8009"
+grpc_url = "grpcs://profile1.example:8010"
+extra = "ignored"
+skip_tls_verify = false
+`
+	doc, err := ParseProfileFile([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !HasProfileHeader([]byte(raw)) {
+		t.Fatal("header not detected")
+	}
+	active, err := doc.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.Name != "profile1" || active.Token != "profile1-token" {
+		t.Fatalf("active = %+v", active)
+	}
+	dup := raw + "token = \"again\"\n"
+	if _, err := ParseProfileFile([]byte(dup)); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestUseProfileRepairsAMissingCurrent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := "" +
+		"current = \"missing\"\n" +
+		"[profile profile1]\n" +
+		"token = \"profile1-token\"\n" +
+		"api_url = \"https://profile1.example:8009\"\n" +
+		"grpc_url = \"grpcs://profile1.example:8010\"\n" +
+		"skip_tls_verify = false\n" +
+		"\n" +
+		"[profile profile2]\n" +
+		"token = \"profile2-token\"\n" +
+		"api_url = \"https://profile2.example:8009\"\n" +
+		"grpc_url = \"grpcs://profile2.example:8010\"\n" +
+		"skip_tls_verify = false\n"
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseProfileFile([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CurrentProfile(path); err == nil {
+		t.Fatal("missing current was accepted")
+	}
+	list, err := ListProfiles(path)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list err=%v len=%d", err, len(list))
+	}
+	selected, err := UseProfile(path, "profile2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.Name != "profile2" {
+		t.Fatalf("selected = %s", selected.Name)
+	}
+}
+
 func TestHomeProfileFileParsesWhenPresent(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {

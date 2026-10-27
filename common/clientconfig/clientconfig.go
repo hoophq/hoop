@@ -84,19 +84,23 @@ func configFileOverride() (string, error) {
 }
 
 func NewPath(configFile string) (filePath, hoopHomeDir string, err error) {
-	hoopHomeDir, err = newHomeDir()
-	if err != nil {
-		return "", "", err
-	}
 	if configFile == ClientFile {
 		filePath, err = configFileOverride()
 		if err != nil {
-			return "", hoopHomeDir, err
+			return "", "", err
 		}
 		// Do not create an override file. A missing path must fail at load.
+		// Do not create $HOME/.hoop when the override is a complete path.
 		if filePath != "" {
+			if home, homeErr := os.UserHomeDir(); homeErr == nil {
+				hoopHomeDir = filepath.Join(home, clientConfigFolder)
+			}
 			return filePath, hoopHomeDir, nil
 		}
+	}
+	hoopHomeDir, err = newHomeDir()
+	if err != nil {
+		return "", "", err
 	}
 	filePath = filepath.Join(hoopHomeDir, configFile)
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {

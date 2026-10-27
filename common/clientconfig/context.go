@@ -2,6 +2,7 @@ package clientconfig
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,6 +35,7 @@ type ProfileFile struct {
 func ParseProfileFile(data []byte) (ProfileFile, error) {
 	var doc ProfileFile
 	var current *Profile
+	seen := map[string]struct{}{}
 	lineNo := 0
 	for _, line := range bytes.Split(data, []byte("\n")) {
 		lineNo++
@@ -56,6 +58,7 @@ func ParseProfileFile(data []byte) (ProfileFile, error) {
 			}
 			doc.Profiles = append(doc.Profiles, Profile{Name: name})
 			current = &doc.Profiles[len(doc.Profiles)-1]
+			seen = map[string]struct{}{}
 			continue
 		}
 		key, raw, ok := strings.Cut(text, "=")
@@ -64,6 +67,10 @@ func ParseProfileFile(data []byte) (ProfileFile, error) {
 		}
 		key = strings.TrimSpace(key)
 		raw = strings.TrimSpace(raw)
+		if _, ok := seen[key]; ok {
+			return ProfileFile{}, fmt.Errorf("line %d: duplicate key %q", lineNo, key)
+		}
+		seen[key] = struct{}{}
 		if current == nil && key == "current" {
 			name, err := parseString(raw)
 			if err != nil {
@@ -81,16 +88,22 @@ func ParseProfileFile(data []byte) (ProfileFile, error) {
 			}
 			continue
 		}
-		if err := setProfileField(current, key, raw); err != nil {
+		if err := setProfileField(current, key, raw); err != nil && !errors.Is(err, errUnknownKey) {
 			return ProfileFile{}, fmt.Errorf("line %d: profile %q: %w", lineNo, current.Name, err)
 		}
 	}
-	if doc.Current != "" && doc.HasProfiles() {
-		if _, err := doc.Active(); err != nil {
-			return ProfileFile{}, err
+	return doc, nil
+}
+
+// HasProfileHeader reports a [profile <name>] or [profile.<name>] line.
+func HasProfileHeader(data []byte) bool {
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		text := strings.TrimSpace(strings.TrimSuffix(string(line), "\r"))
+		if strings.HasPrefix(text, "[profile.") || strings.HasPrefix(text, "[profile ") {
+			return true
 		}
 	}
-	return doc, nil
+	return false
 }
 
 // HasProfiles reports whether the file selects among named profiles.
@@ -168,10 +181,7 @@ func (f *ProfileFile) Delete(name string) error {
 		return fmt.Errorf("profile %q not found. Run `hoop config get-contexts`", name)
 	}
 	active, err := f.Active()
-	if err != nil {
-		return err
-	}
-	if active.Name == name {
+	if err == nil && active.Name == name {
 		return fmt.Errorf("profile %q is active. Switch to another profile first", name)
 	}
 	next := f.Profiles[:0]
@@ -380,9 +390,18 @@ func (f *ProfileFile) setFlat(key, raw string) error {
 	if len(f.Profiles) > 0 {
 		return fmt.Errorf("top-level %q is mixed with profiles", key)
 	}
+	if err := setProfileField(&f.flat, key, raw); err != nil {
+		if errors.Is(err, errUnknownKey) {
+			return nil
+		}
+		return err
+	}
 	f.hasFlat = true
-	return setProfileField(&f.flat, key, raw)
+	return nil
 }
+
+// errUnknownKey is an extra key. A flat file may carry keys this parser does not read.
+var errUnknownKey = errors.New("unknown key")
 
 func setProfileField(p *Profile, key, raw string) error {
 	switch key {
@@ -417,16 +436,21 @@ func setProfileField(p *Profile, key, raw string) error {
 		}
 		p.SkipTLSVerify = value
 	default:
-		return fmt.Errorf("unknown key %q", key)
+		return errUnknownKey
 	}
 	return nil
 }
 
 func profileHeader(text string) (string, error) {
-	if !strings.HasPrefix(text, "[") || !strings.HasSuffix(text, "]") {
+	end := strings.IndexByte(text, ']')
+	if !strings.HasPrefix(text, "[") || end < 0 {
 		return "", fmt.Errorf("invalid profile header %q", text)
 	}
-	body := strings.TrimSpace(text[1 : len(text)-1])
+	rest := strings.TrimSpace(text[end+1:])
+	if rest != "" && !strings.HasPrefix(rest, "#") {
+		return "", fmt.Errorf("invalid profile header %q", text)
+	}
+	body := strings.TrimSpace(text[1:end])
 	const dotted = "profile."
 	const spaced = "profile "
 	var name string

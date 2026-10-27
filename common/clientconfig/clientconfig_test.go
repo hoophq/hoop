@@ -53,6 +53,23 @@ func TestNewPathHOOPConfigTilde(t *testing.T) {
 	}
 }
 
+func TestNewPathOverrideSkipsMissingHome(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "client.toml")
+	t.Setenv(ConfigFileEnv, target)
+	t.Setenv("HOME", filepath.Join(t.TempDir(), "missing-home"))
+
+	got, _, err := NewPath(ClientFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != target {
+		t.Fatalf("got %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".hoop")); !os.IsNotExist(err) {
+		t.Fatal("override created a home directory")
+	}
+}
+
 func TestNewPathHOOPConfigRejectsBareTilde(t *testing.T) {
 	t.Setenv(ConfigFileEnv, "~")
 	_, _, err := NewPath(ClientFile)

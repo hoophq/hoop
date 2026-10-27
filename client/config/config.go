@@ -99,11 +99,14 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	data, err := os.ReadFile(filepath)
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("failed reading configuration file=%v, err=%v", filepath, err)
 	}
-	profiles, err := clientconfig.ParseProfileFile(data)
 	if err != nil {
+		data = nil
+	}
+	profiles, err := clientconfig.ParseProfileFile(data)
+	if err != nil && clientconfig.HasProfileHeader(data) {
 		return nil, fmt.Errorf("failed decoding configuration file=%v, err=%v", filepath, err)
 	}
 	if profiles.HasProfiles() {
