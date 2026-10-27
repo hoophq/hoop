@@ -21,8 +21,9 @@ For that network:
    prod-<region>-starport-layer-bucket, where ECR keeps image layers.
 4. DNS. The VPC has a Resolver DNS Firewall association that blocks '*.'
    for every query type after its allow rules; no allow list holds a
-   wildcard wider than one domain, and no Resolver rule forwards the VPC's
-   names elsewhere.
+   wildcard wider than one domain, a condition can only drop an allow
+   entry, never pick a rule or a list, and no Resolver rule forwards the
+   VPC's names elsewhere.
 
 A resource that holds one of these up must not carry a Condition: no
 parameter may turn a guarantee off.
@@ -52,6 +53,8 @@ LAYER_BUCKET = re.compile(
 GROUP_RULE_TYPES = {"AWS::EC2::SecurityGroup", "AWS::EC2::SecurityGroupIngress", "AWS::EC2::SecurityGroupEgress"}
 # '*.', or '*.' and one label: every name, or every name under a TLD.
 TOO_WIDE = re.compile(r"^\*(\.[^.]*)?\.?$")
+# Values a parameter in an allow entry must refuse: a deployer sets them.
+WILDCARD_PROBES = ["*", "*.", "*.com", "http://*", "https://*", "https://*.example.com", "https://*:443"]
 
 
 def name_of(value):
@@ -101,6 +104,28 @@ def strings_in(value):
     if isinstance(value, list):
         return [x for v in value for x in strings_in(v)]
     return []
+
+
+NO_VALUE = {"Ref": "AWS::NoValue"}
+
+
+def kept_branch(value):
+    """For an Fn::If with one AWS::NoValue branch, the other branch: the
+    condition only drops the value. Else value itself."""
+    args = value.get("Fn::If") if isinstance(value, dict) and len(value) == 1 else None
+    if isinstance(args, list) and len(args) == 3 and args[1:].count(NO_VALUE) == 1:
+        return args[2] if args[1] == NO_VALUE else args[1]
+    return value
+
+
+def names_used(value):
+    """Every name a Ref, or a ${Name} in a string, names anywhere in value."""
+    if isinstance(value, dict):
+        own = [value["Ref"]] if isinstance(value.get("Ref"), str) else []
+        return own + [x for v in value.values() for x in names_used(v)]
+    if isinstance(value, list):
+        return [x for v in value for x in names_used(v)]
+    return re.findall(r"\$\{([^}!]+)\}", value) if isinstance(value, str) else []
 
 
 def has_key(value, key):
@@ -339,10 +364,22 @@ def check(template):
             group = name_of(props(assoc).get("FirewallRuleGroupId"))
             unconditional(group, "the DNS Firewall rule group")
             allow, block = [], []
-            for rule in props(group).get("FirewallRules", []):
+            rules = props(group).get("FirewallRules", [])
+            if not isinstance(rules, list):
+                errors.append(f"{group}'s FirewallRules is an expression: only a literal list can be checked")
+                rules = []
+            for rule in rules:
+                # A condition could hide an ALLOW rule from this check, or
+                # turn a BLOCK into one.
+                if not isinstance(rule, dict) or has_key(rule, "Fn::If") or not isinstance(rule.get("Action"), str):
+                    errors.append(f"{group} has a rule a condition can change, or with no literal Action: {rule}")
+                    continue
                 domains = name_of(rule.get("FirewallDomainListId"))
                 unconditional(domains, "a DNS Firewall domain list")
                 entries = props(domains).get("Domains", [])
+                if not isinstance(entries, list):
+                    errors.append(f"{domains}'s Domains is an expression: only a literal list can be checked")
+                    continue
                 names = [d for d in entries if isinstance(d, str)]
                 if rule.get("Action") == "ALLOW":
                     allow.append(rule.get("Priority"))
@@ -352,11 +389,17 @@ def check(template):
                     for d in names:
                         if TOO_WIDE.match(d):
                             errors.append(f"{domains} allows '{d}': wider than one domain")
-                    # An expression may resolve to '*.': only a wildcard-free,
-                    # unconditional one passes, such as the upstream host.
-                    for d in (e for e in entries if not isinstance(e, str)):
+                    # An expression may resolve to '*.': only a wildcard-free
+                    # one passes, such as the upstream host. A condition may
+                    # drop it, never pick another value.
+                    for d in (kept_branch(e) for e in entries if not isinstance(e, str)):
                         if has_key(d, "Fn::If") or any("*" in x for x in strings_in(d)):
                             errors.append(f"{domains} allows {d}: a condition or a wildcard in an expression")
+                        for p in sorted(set(names_used(d)) & params.keys()):
+                            pattern = params[p].get("AllowedPattern")
+                            if not pattern or any(re.fullmatch(pattern, w) for w in WILDCARD_PROBES):
+                                errors.append(f"{domains} allows parameter {p}, whose AllowedPattern "
+                                              "does not refuse a wildcard")
                 # A rule with a Qtype blocks that query type only.
                 elif rule.get("Action") == "BLOCK" and "Qtype" not in rule and {"*.", "*"} & set(names):
                     block.append(rule.get("Priority"))

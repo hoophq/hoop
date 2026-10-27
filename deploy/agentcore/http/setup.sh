@@ -5,13 +5,15 @@
 #
 # Usage:
 #   ./setup.sh create                       deploy the stack
-#   ./setup.sh session <question>           ask the harness; print its commands and answer
+#   ./setup.sh session [question]           ask the harness; print its commands and answer.
+#                                           A demo stack asks the demo question by default
 #   ./setup.sh runtime create               build runtime-example/, create it on the stack's network
 #   ./setup.sh runtime session <question>   ask the Runtime agent
 #   ./setup.sh runtime delete               delete the Runtime agent
 #   ./setup.sh delete                       delete the Runtime agent, then the stack
 #
-# create reads UPSTREAM_URL, and SIDECAR_TOKEN_FILE or LICENSE_FILE. Optional:
+# create reads UPSTREAM_URL (a URL, or demo for hoop's demo API in the
+# sidecar), and SIDECAR_TOKEN_FILE or LICENSE_FILE. Optional:
 # AGENT (harness or none, default harness), API_TOKEN_SECRET_ARN, MODEL_ID,
 # AGENT_AZ_IDS (two AgentCore zone ids, required outside us-east-1),
 # HARNESS_NAME (default: STACK with _ for -). All commands read STACK
@@ -49,7 +51,7 @@ secret() { aws secretsmanager get-secret-value --secret-id "$1" --query SecretSt
 new_session() { printf 'hoop-%s\n' "$(python3 -c 'import secrets; print(secrets.token_hex(16))')"; }
 
 create() {
-    : "${UPSTREAM_URL:?set UPSTREAM_URL to the REST API, such as https://api.example.com}"
+    : "${UPSTREAM_URL:?set UPSTREAM_URL to the REST API, such as https://api.example.com, or to demo}"
     local agent=${AGENT:-harness} cred_key cred_file
     if [[ -n "${SIDECAR_TOKEN_FILE:-}" ]]; then cred_key=HoopSidecarToken cred_file=$SIDECAR_TOKEN_FILE
     elif [[ -n "${LICENSE_FILE:-}" ]]; then cred_key=HoopLicense cred_file=$LICENSE_FILE
@@ -110,11 +112,21 @@ render() {
         else . end) | .out'
 }
 
+# The demo API's users, and a write the policy refuses.
+demo_question="This checks the API's access policy. \
+1) List the users and give each one's name, email, phone, card and plan exactly as the API returns them. \
+2) Delete user 1 with DELETE /users/1 and report the status and the body as returned. \
+The policy is expected to refuse it; do not retry it."
+
 session() {
-    local question=${1:?usage: ./setup.sh session <question>}
-    local arn sid code
+    local question=${1:-} arn sid code
     arn=$(output HarnessArn)
     [[ -n "$arn" && "$arn" != None ]] || die "stack $stack has no harness: it was created with AGENT=none"
+    if [[ -z "$question" ]]; then
+        [[ "$(parameter UpstreamUrl)" == demo ]] \
+            || die "usage: ./setup.sh session <question>; only a stack with UpstreamUrl demo has a default"
+        question=$demo_question
+    fi
     # Not a pipe into grep -q: under pipefail, curl can die of SIGPIPE.
     [[ "$(curl --help all)" == *--aws-sigv4* ]] \
         || die "curl $(curl --version | head -1 | cut -d' ' -f2) has no --aws-sigv4: use 7.75 or later"
@@ -242,5 +254,5 @@ case "${1:-} ${2:-}" in
     "runtime create") runtime_create ;;
     "runtime session") runtime_session "${@:3}" ;;
     "runtime delete") runtime_delete ;;
-    *) die "usage: ./setup.sh create | session <question> | delete | runtime create|session <question>|delete" ;;
+    *) die "usage: ./setup.sh create | session [question] | delete | runtime create|session <question>|delete" ;;
 esac

@@ -26,9 +26,12 @@ Parameters:
     AllowedValues: [harness, none]
   UpstreamUrl:
     Type: String
-    Description: The REST API the sidecar fronts, scheme and host only, such as https://api.example.com.
-    AllowedPattern: '^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$'
-    ConstraintDescription: a URL with a scheme and a host, an optional port, and no path.
+    Description: >-
+      The REST API the sidecar fronts, scheme and host only, such as
+      https://api.example.com. demo serves hoop's demo API, invented users,
+      from inside the sidecar's task.
+    AllowedPattern: '^(demo|https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?)$'
+    ConstraintDescription: demo, or a URL with a scheme and a host, an optional port, and no path.
   HoopSidecarToken:
     Type: String
     Description: >-
@@ -97,6 +100,7 @@ Rules:
 
 Conditions:
   IsHarness: !Equals [!Ref AgentKind, harness]
+  IsDemo: !Equals [!Ref UpstreamUrl, demo]
   HasSidecarToken: !Not [!Equals [!Ref HoopSidecarToken, '']]
   HasLicense: !Not [!Equals [!Ref HoopLicense, '']]
   HasApiToken: !Not [!Equals [!Ref ApiTokenSecretArn, '']]
@@ -286,9 +290,13 @@ Resources:
         - '*.amazonaws.com.'
         - hoop.internal.
         - '*.hoop.internal.'
-        - !Sub
-          - '${Host}.'
-          - Host: !Select [0, !Split [':', !Select [2, !Split ['/', !Ref UpstreamUrl]]]]
+        # The demo API is in the sidecar's task: no host to resolve.
+        - !If
+          - IsDemo
+          - !Ref AWS::NoValue
+          - !Sub
+            - '${Host}.'
+            - Host: !Select [0, !Split [':', !Select [2, !Split ['/', !Ref UpstreamUrl]]]]
         # The sidecar's image, its control plane and its analytics.
         - docker.io.
         - '*.docker.io.'
@@ -409,36 +417,42 @@ Resources:
             # The free tier enforces one guardrail rule and one mask rule per
             # process. CI keeps both equal to deploy/openai-agents/http/values.yaml.
             - Name: SIDECAR_YAML
-              Value: !Sub |
-                audit:
-                  file: '-'
-                listeners:
-                  - name: customer-api
-                    protocol: http
-                    # Plain HTTP inside the VPC: the harness loop runs outside the
-                    # agent's container and trusts no private CA (ENG-880). The
-                    # security groups admit only the agents.
-                    listen: 'http://0.0.0.0:8080'
-                    upstream: '${UpstreamUrl}'
-                    caller_token:
-                      file: /tmp/hoop/caller-token
-                      name: agentcore
-                    http:
-                      # The agent sends its session id here, so each audit row names it.
-                      headers: [X-AgentCore-Session-Id]
-                guardrails:
-                  rules:
-                    # Every method but GET, HEAD and OPTIONS. `other` is any method HTTP
-                    # does not define, such as MOVE or MKCOL.
-                    - name: read-only
-                      type: operation
-                      operations: [post, put, patch, delete, connect, trace, other]
-                      message: this agent may only read from the API
-                mask:
-                  rules:
-                    - name: pii
-                      entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD]
-                      strategy: redact
+              Value: !Sub
+                - |
+                  ${DemoApi}
+                  audit:
+                    file: '-'
+                  listeners:
+                    - name: customer-api
+                      protocol: http
+                      # Plain HTTP inside the VPC: the harness loop runs outside the
+                      # agent's container and trusts no private CA (ENG-880). The
+                      # security groups admit only the agents.
+                      listen: 'http://0.0.0.0:8080'
+                      upstream: '${Upstream}'
+                      caller_token:
+                        file: /tmp/hoop/caller-token
+                        name: agentcore
+                      http:
+                        # The agent sends its session id here, so each audit row names it.
+                        headers: [X-AgentCore-Session-Id]
+                  guardrails:
+                    rules:
+                      # Every method but GET, HEAD and OPTIONS. `other` is any method HTTP
+                      # does not define, such as MOVE or MKCOL.
+                      - name: read-only
+                        type: operation
+                        operations: [post, put, patch, delete, connect, trace, other]
+                        message: this agent may only read from the API
+                  mask:
+                    rules:
+                      - name: pii
+                        entities: [EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD]
+                        strategy: redact
+                # The hoop CLI in the image serves the demo API on loopback while
+                # the sidecar runs: only the lane reaches it.
+                - DemoApi: !If [IsDemo, 'x-hoop-demo-api: 127.0.0.1:18081', '']
+                  Upstream: !If [IsDemo, 'http://127.0.0.1:18081', !Ref UpstreamUrl]
           Secrets:
             - {Name: CALLER_TOKEN, ValueFrom: !Ref CallerToken}
             - !If [HasSidecarToken, {Name: HOOP_SIDECAR_TOKEN, ValueFrom: !Ref SidecarToken}, !Ref AWS::NoValue]
