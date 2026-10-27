@@ -22,8 +22,8 @@ export default function FeatureRules({ sidecar, listener = null, editable = fals
       showSnackbar({ level: 'error', text: 'Saved, but the sidecar could not be re-read. Reload the page.' })
     })
 
-  // A gateway rule reaching a listener through its mirror keeps its gateway
-  // form: the sidecar form saves empty agent fields and would erase it.
+  // A gateway rule bound to a listener keeps its gateway form: the sidecar
+  // form saves empty agent fields and would erase it.
   const editOnGateway = (key, rule) => {
     const api = RULE_APIS[key]
     findRule(api, rule.name)

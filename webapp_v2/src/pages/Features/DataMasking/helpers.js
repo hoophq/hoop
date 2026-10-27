@@ -242,8 +242,9 @@ function prepareCustomEntityTypes(rows) {
 }
 
 // Build the API payload from form state.
-// form = { name, description, connectionIds, attributes, scoreThreshold, rules }
-// scoreThreshold is a percentage (1-100) or '' / null.
+// form = { name, description, connectionIds, attributes, sidecarTargets, scoreThreshold, rules }
+// scoreThreshold is a percentage (1-100) or '' / null. The sidecar targets are
+// the listeners that run the rule translated; omitted, the API keeps them.
 export function formToPayload(form) {
   const payload = {
     name: form.name,
@@ -253,6 +254,7 @@ export function formToPayload(form) {
     supported_entity_types: prepareSupportedEntityTypes(form.rules),
     custom_entity_types: prepareCustomEntityTypes(form.rules),
   }
+  if (form.sidecarTargets) payload.sidecar_targets = form.sidecarTargets
 
   const score = form.scoreThreshold
   if (score !== '' && score !== null && score !== undefined) {

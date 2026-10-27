@@ -129,7 +129,8 @@ function rowsToSection(rows) {
   }
 }
 
-// Build the API payload from form state.
+// Build the API payload from form state. The sidecar targets are the
+// listeners that run the rule translated; omitted, the API keeps them.
 export function formToPayload(form) {
   return {
     id: form.id ?? '',
@@ -139,5 +140,6 @@ export function formToPayload(form) {
     attributes: form.attributes,
     input: rowsToSection(form.inputRules),
     output: rowsToSection(form.outputRules),
+    ...(form.sidecarTargets ? { sidecar_targets: form.sidecarTargets } : {}),
   }
 }

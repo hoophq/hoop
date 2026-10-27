@@ -10,6 +10,7 @@ import EnterpriseBanner from '@/components/EnterpriseBanner'
 import Modal from '@/components/Modal'
 import MultiSelect from '@/components/MultiSelect'
 import PageLoader from '@/components/PageLoader'
+import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import TextInput from '@/components/TextInput'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
@@ -61,6 +62,7 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
     description: guardrail?.description ?? '',
     connectionIds: guardrail?.connection_ids ?? [],
     attributes: guardrail?.attributes ?? [],
+    sidecarTargets: guardrail?.sidecar_targets ?? [],
   }))
   const [inputRules, setInputRules] = useState(() => apiRulesToRows(guardrail?.input))
   const [outputRules, setOutputRules] = useState(() => apiRulesToRows(guardrail?.output))
@@ -88,6 +90,7 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
       description: form.description,
       connectionIds: form.connectionIds,
       attributes: form.attributes,
+      sidecarTargets: form.sidecarTargets,
       inputRules,
       outputRules,
     })
@@ -228,6 +231,16 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
           <ConnectionsMultiSelect
             value={form.connectionIds}
             onChange={(values) => setField({ connectionIds: values })}
+          />
+        </SectionRow>
+
+        <SectionRow
+          title="Sidecar listeners"
+          description="Optional. The listeners that run this guardrail too, translated: input rules only."
+        >
+          <SidecarTargetPicker
+            value={form.sidecarTargets}
+            onChange={(values) => setField({ sidecarTargets: values })}
           />
         </SectionRow>
 

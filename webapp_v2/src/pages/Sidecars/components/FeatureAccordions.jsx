@@ -15,7 +15,7 @@ const SOURCE_LABELS = {
 }
 
 // The rules a form on Hoop owns: a sidecar rule bound here, or a gateway rule
-// reaching here through a mirror. Rules embedded in the document have none.
+// bound here and served translated. Rules embedded in the document have none.
 const EDITABLE_SOURCES = new Set([SOURCE_DISTRIBUTED, SOURCE_GATEWAY])
 
 // Every rule says where it came from, because the merge is not a union:

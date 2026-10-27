@@ -6,7 +6,7 @@ import {
   TRAFFIC_AGENT,
   TRAFFIC_BOTH,
   TRAFFIC_SIDECAR,
-  resolveRuleTraffic,
+  resolveRuleForm,
 } from '@/utils/ruleTraffic'
 import { useAgentsEnabled } from '@/modes/agents'
 import { useRuleTraffics } from './index'
@@ -36,7 +36,7 @@ export default function ByRuleTraffic({ kind, fetchRule, listPath, param = 'id',
     if (!probeNeeded) return undefined
     let current = true
     fetchRule(key).then(
-      ({ data }) => current && setProbe({ key, traffic: resolveRuleTraffic(traffics, kind, data) }),
+      ({ data }) => current && setProbe({ key, traffic: resolveRuleForm(traffics, kind, data) }),
       () => current && setProbe({ key, failed: true }),
     )
     return () => {

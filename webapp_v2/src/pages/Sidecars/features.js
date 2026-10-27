@@ -117,8 +117,8 @@ const scopeOf = (listener) => (listener == null ? null : listener.name || '')
 
 // Seen from the sidecar itself, its top-level rules are its own, not inherited.
 export const SOURCE_SIDECAR = 'sidecar'
-// A gateway rule reaching the listener through its mirror connection
-// (SidecarRuleBinding.Source). It is the gateway's record, not a sidecar one.
+// A rule the agent runs (no sidecar_spec), bound to the listener and served
+// translated (SidecarRuleBinding.Source). It is edited on its gateway form.
 export const SOURCE_GATEWAY = 'gateway'
 const sourceOf = (listener, source) => (listener == null && source === SOURCE_INHERITED ? SOURCE_SIDECAR : source)
 const boundSource = (b) => (b.source === SOURCE_GATEWAY ? SOURCE_GATEWAY : SOURCE_DISTRIBUTED)

@@ -10,6 +10,7 @@ import MultiSelect from '@/components/MultiSelect'
 import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
+import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { showSnackbar } from '@/utils/snackbar'
@@ -64,6 +65,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
     scoreThreshold: !isEdit && !rule ? 85 : scoreToPercent(rule?.score_threshold),
     connectionIds: rule?.connection_ids ?? [],
     attributes: rule?.attributes ?? [],
+    sidecarTargets: rule?.sidecar_targets ?? [],
   }))
   const [rules, setRules] = useState(() =>
     rule ? apiRuleToFormRows(rule) : [createEmptyRow()],
@@ -228,6 +230,16 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
           <ConnectionsMultiSelect
             value={form.connectionIds}
             onChange={(values) => setField({ connectionIds: values })}
+          />
+        </SectionRow>
+
+        <SectionRow
+          title="Sidecar listeners"
+          description="Optional. The listeners that mask with this rule too, with the sidecar's own detector: supported entity types only."
+        >
+          <SidecarTargetPicker
+            value={form.sidecarTargets}
+            onChange={(values) => setField({ sidecarTargets: values })}
           />
         </SectionRow>
 

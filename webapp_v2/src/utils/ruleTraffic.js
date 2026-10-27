@@ -30,14 +30,35 @@ const AGENT_FIELDS = {
     RISK_ACTIONS.some((key) => (r.risk_evaluation?.[key] ?? DEFAULT_RISK_ACTION) !== DEFAULT_RISK_ACTION),
 }
 
+// What binds a rule to agent resources, as opposed to what it says.
+const AGENT_BINDINGS = {
+  [RULE_KIND_GUARDRAIL]: (r) => nonEmpty(r.connection_ids) || nonEmpty(r.attributes),
+  [RULE_KIND_DATAMASKING]: (r) => nonEmpty(r.connection_ids) || nonEmpty(r.attributes),
+  [RULE_KIND_ANALYZER]: (r) => nonEmpty(r.connection_names),
+}
+
+// A rule the agent runs (no sidecar_spec) also reaches the sidecar listeners
+// it is bound to, served translated; bound to agent resources too, it reads
+// as both. A sidecar rule reaches the agent when it carries agent fields.
 export function ruleTraffic(kind, rule) {
+  if (rule?.sidecar_spec == null) {
+    if (!nonEmpty(rule?.sidecar_targets)) return TRAFFIC_AGENT
+    return AGENT_BINDINGS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
+  }
+  return AGENT_FIELDS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
+}
+
+// Which form edits a stored rule. A rule the agent runs opens the gateway
+// form whatever its targets: that form binds them too. A sidecar rule that
+// also carries agent fields has no form that keeps both halves.
+export function ruleForm(kind, rule) {
   if (rule?.sidecar_spec == null) return TRAFFIC_AGENT
   return AGENT_FIELDS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
 }
 
 // `traffics` is what useRuleTraffics() answers. With one, the page needs no data to pick.
-export function resolveRuleTraffic(traffics, kind, rule) {
-  return traffics.length === 1 ? traffics[0] : ruleTraffic(kind, rule)
+export function resolveRuleForm(traffics, kind, rule) {
+  return traffics.length === 1 ? traffics[0] : ruleForm(kind, rule)
 }
 
 export function newRulePath(basePath, traffic) {
