@@ -239,6 +239,14 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       const allowed = HANDOFF_CHOICES.map((c) => c.value).filter((v) => next.has(v))
       return { ...f, handoff: { ...f.handoff, [level]: { ...f.handoff[level], allowed } } }
     })
+  // A level that turns to a person starts with every group selected; an
+  // emptied list leaves the decision to the administrators.
+  const setApprover = (level, approver) =>
+    setForm((f) => {
+      const current = f.approval[level]
+      const groups = approver === APPROVER_HUMAN && current.groups.length === 0 ? [...groupOptions].sort() : current.groups
+      return { ...f, approval: { ...f.approval, [level]: { ...current, approver, groups } } }
+    })
   // A limit is sent only after an edit, so a save that does not touch it keeps
   // the stored value.
   const [pendingMinutes, setPendingMinutes] = useState(secToMinutes(stored?.pending_ttl_sec))
@@ -354,6 +362,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     setApproval,
     setHandoffPrompt,
     setAllowed,
+    setApprover,
     groupOptionsFor,
     pendingMinutes,
     editPendingMinutes,

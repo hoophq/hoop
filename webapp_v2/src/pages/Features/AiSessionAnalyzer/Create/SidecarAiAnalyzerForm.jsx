@@ -63,9 +63,14 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
         className={classes.stickyHeader}
         data-scrolled={!headerInView || undefined}
       >
-        <Title order={2} lts="-0.00625em">
-          {isEdit ? 'Edit AI Analyzer rule' : 'Create new AI Analyzer rule'}
-        </Title>
+        <Stack gap={4}>
+          <Title order={2} lts="-0.00625em">
+            {isEdit ? 'Edit AI Analyzer rule' : 'Create new AI Analyzer rule'}
+          </Title>
+          <Text size="sm" c="dimmed">
+            Classify statements by risk and select what happens.
+          </Text>
+        </Stack>
         <Group gap="sm">
           {isEdit && (
             <Button variant="subtle" color="red" onClick={deleteModal.open} disabled={editor.submitting}>

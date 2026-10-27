@@ -19,7 +19,7 @@
    "defer"            "Defer to Rego"
    "require_approval" "Hold for approval"
    "require_review"   "Hold for approval"
-   "ai-handoff"       "Hand off to AI Agent"})
+   "ai-handoff"       "Hand off to AI agent"})
 
 (def ^:private approver-label
   {"ai_agent" "AI agent"
