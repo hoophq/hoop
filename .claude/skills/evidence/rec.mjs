@@ -10,6 +10,7 @@
 // Chrome is CHROME_PATH (or CHROME), else Google Chrome on macOS, else the
 // Chromium of a cloud sandbox, else the newest Chromium Playwright installed
 // (`npx playwright install chromium`; Linux CI and containers).
+// A DevTools call with no answer in 30 s stops the run with an error.
 // See examples/access-control.flow.mjs.
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -89,9 +90,19 @@ ws.addEventListener('message', (ev) => {
   const msg = JSON.parse(ev.data)
   if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
 })
+// A stalled page never answers a call: fail the flow instead of waiting forever.
+const CALL_TIMEOUT_MS = 30000
 const send = (method, params = {}) => new Promise((ok, fail) => {
   const n = ++id
-  pending.set(n, (m) => (m.error ? fail(new Error(`${method}: ${m.error.message}`)) : ok(m.result)))
+  const timer = setTimeout(() => {
+    pending.delete(n)
+    fail(new Error(`${method}: no answer in ${CALL_TIMEOUT_MS / 1000} s, the page does not respond`))
+  }, CALL_TIMEOUT_MS)
+  pending.set(n, (m) => {
+    clearTimeout(timer)
+    if (m.error) fail(new Error(`${method}: ${m.error.message}`))
+    else ok(m.result)
+  })
   ws.send(JSON.stringify({ id: n, method, params }))
 })
 const js = async (expression) => {
