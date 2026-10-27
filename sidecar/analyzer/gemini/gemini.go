@@ -510,8 +510,9 @@ func decodeResponse(provider string, resp *http.Response) (response, error) {
 }
 
 // ParseToolCalls returns every functionCall part of a reply, in order. A
-// blocked prompt or a safety stop is an error, with or without calls; a reply
-// with no call is not. Exported so analyzer/vertex reuses it.
+// blocked prompt, a safety stop or a reply cut off at the token limit is an
+// error, with or without calls; a reply with no call is not. Exported so
+// analyzer/vertex reuses it.
 func ParseToolCalls(provider string, resp *http.Response) ([]analyzer.ToolCall, error) {
 	out, err := decodeResponse(provider, resp)
 	if err != nil {
@@ -526,6 +527,11 @@ func ParseToolCalls(provider string, resp *http.Response) ([]analyzer.ToolCall, 
 	for _, cand := range out.Candidates {
 		if refusalFinish(cand.FinishReason) {
 			return nil, fmt.Errorf("%s: model refused to answer (finish_reason %q)",
+				provider, cand.FinishReason)
+		}
+		// A candidate cut off at the limit may end inside a call: no decision.
+		if cand.FinishReason == "MAX_TOKENS" {
+			return nil, fmt.Errorf("%s: model reply was cut off (finish_reason %q)",
 				provider, cand.FinishReason)
 		}
 	}

@@ -72,13 +72,15 @@ func TestDecideSendsCallerToolsAndReturnsEveryCall(t *testing.T) {
 	}
 }
 
-// A refusal is an error, even beside a call; a reply with no call is not, the
-// caller judges it.
+// A refusal or a reply cut off at a limit is an error, even beside a call; a
+// reply with no call is not, the caller judges it.
 func TestDecideReportsARefusal(t *testing.T) {
 	for reply, wantErr := range map[string]bool{
 		`{"stop_reason":"refusal","content":[]}`: true,
-		`{"stop_reason":"refusal","content":[{"type":"tool_use","name":"decide","input":{"verdict":"allow"}}]}`: true,
-		`{"stop_reason":"end_turn","content":[{"type":"text","text":"x"}]}`:                                     false,
+		`{"stop_reason":"refusal","content":[{"type":"tool_use","name":"decide","input":{"verdict":"allow"}}]}`:                       true,
+		`{"stop_reason":"max_tokens","content":[{"type":"tool_use","name":"decide","input":{"verdict":"allow"}}]}`:                    true,
+		`{"stop_reason":"model_context_window_exceeded","content":[{"type":"tool_use","name":"decide","input":{"verdict":"allow"}}]}`: true,
+		`{"stop_reason":"end_turn","content":[{"type":"text","text":"x"}]}`:                                                           false,
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.WriteString(w, reply)

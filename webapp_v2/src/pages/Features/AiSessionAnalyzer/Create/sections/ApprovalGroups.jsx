@@ -5,6 +5,7 @@ import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Checkbox from '@/components/Checkbox'
 import TextInput from '@/components/TextInput'
+import classes from '../Create.module.css'
 
 // The groups whose members approve a level's hold. `options` holds every
 // group of the org plus the level's stored ones; an empty `value` means the
@@ -26,7 +27,7 @@ export default function ApprovalGroups({ options, value, onChange }) {
 
   return (
     <Stack gap={6}>
-      <Paper withBorder radius="lg" style={{ overflow: 'hidden' }}>
+      <Paper withBorder radius="lg" className={classes.clipped}>
         <UnstyledButton w="100%" px="md" py="sm" bg="gray.0" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
           <Group justify="space-between" wrap="nowrap" gap="md">
             <Stack gap={2}>

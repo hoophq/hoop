@@ -272,6 +272,7 @@ func TestAnAgentDecisionIsFiledDecidedAndFinal(t *testing.T) {
 	sess, err := models.GetSessionByID(statusTestOrgID, stored.SessionID)
 	require.NoError(t, err)
 	assert.Equal(t, string(openapi.SessionStatusDone), sess.Status)
+	assert.NotNil(t, sess.EndSession, "the approved statement ran")
 	require.NotNil(t, sess.Review)
 	assert.Equal(t, models.ApproverTypeAIAgent, sess.Review.ApproverType)
 
@@ -300,6 +301,14 @@ func TestAnAgentDecisionIsFiledDecidedAndFinal(t *testing.T) {
 	assert.Equal(t, openapi.ReviewStatusType(models.ReviewStatusRejected), rejected.Review.Status)
 	require.NotNil(t, rejected.Review.RejectionReason)
 	assert.Equal(t, "The update has no WHERE clause.", *rejected.Review.RejectionReason)
+	// Closed as a person's rejection closes it: done, with no end, since
+	// nothing ran.
+	storedRejected, err := models.GetSidecarReview(models.DB, statusTestOrgID, sc.ID, rejected.Review.ID)
+	require.NoError(t, err)
+	rejectedSess, err := models.GetSessionByID(statusTestOrgID, storedRejected.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, string(openapi.SessionStatusDone), rejectedSess.Status)
+	assert.Nil(t, rejectedSess.EndSession, "the rejected statement never ran")
 
 	// And a person's level files its own review for those bytes.
 	human := decodeReviewResponse(t, fileLevel(sc, statement, "high"))

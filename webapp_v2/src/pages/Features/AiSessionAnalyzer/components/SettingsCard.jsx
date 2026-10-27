@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Box, Collapse, Divider, Group, Paper, Stack, Text, ThemeIcon, UnstyledButton } from '@mantine/core'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
+import classes from '../Create/Create.module.css'
 
 // A collapsible card under a risk level (Approver, Hand-off): icon, title,
 // subtitle and chevron in a header that is green while open, and a body in an
@@ -8,7 +9,7 @@ import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 export default function SettingsCard({ icon: Icon, title, subtitle, children }) {
   const [open, setOpen] = useState(true)
   return (
-    <Paper withBorder radius="lg" style={{ overflow: 'hidden' }}>
+    <Paper withBorder radius="lg" className={classes.clipped}>
       <UnstyledButton w="100%" p="md" bg={open ? 'green.0' : 'gray.0'} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <Group wrap="nowrap" gap="md">
           <ThemeIcon size={40} radius="md" variant="light" color={open ? 'green' : 'gray'}>

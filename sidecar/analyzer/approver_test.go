@@ -327,8 +327,9 @@ func (r *realDecider) Decide(ctx context.Context, system, content string, tools 
 	return r.decider.Decide(ctx, system, content, tools)
 }
 
-// A provider reply that refuses beside a valid approve is no decision: the
-// agent rejects with the fixed reason. Each provider's own refusal signal.
+// A provider reply that refuses, or is cut off at the token limit, beside a
+// valid approve is no decision: the agent rejects with the fixed reason. Each
+// provider's own signal.
 func TestARefusalBesideAnApproveRejects(t *testing.T) {
 	approve := `{"reason":"bounded"}`
 	for name, tc := range map[string]struct{ provider, reply string }{
@@ -341,6 +342,11 @@ func TestARefusalBesideAnApproveRejects(t *testing.T) {
 			approve + `}}]},"finishReason":"SAFETY"}]}`},
 		"gemini blocked prompt": {"gemini", `{"promptFeedback":{"blockReason":"OTHER"},"candidates":[{"content":{"parts":` +
 			`[{"functionCall":{"name":"approve","args":` + approve + `}}]},"finishReason":"STOP"}]}`},
+		"anthropic cut off": {"anthropic", `{"stop_reason":"max_tokens","content":[{"type":"tool_use","name":"approve","input":` + approve + `}]}`},
+		"openai cut off": {"openai", `{"choices":[{"message":{"tool_calls":[{"function":{"name":"approve",` +
+			`"arguments":"{\"reason\":\"bounded\"}"}}]},"finish_reason":"length"}]}`},
+		"gemini cut off": {"gemini", `{"candidates":[{"content":{"parts":[{"functionCall":{"name":"approve","args":` +
+			approve + `}}]},"finishReason":"MAX_TOKENS"}]}`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

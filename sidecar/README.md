@@ -1479,12 +1479,13 @@ listener, the protocol and the user, and it must call exactly one of two
 tools, `approve` or `reject`, each with a required `reason`. A reject denies,
 and the user reads the reason in the error. Anything else rejects with "the
 approval agent did not decide": no call, two calls, an unknown tool, a blank
-reason, a refusal, a timeout, a provider error, a spent budget or a reached
-rate limit. A statement longer than `max_input_bytes`, or a request body cut at capture, rejects with no model call: the agent must read all of it.
+reason, a refusal, a reply cut off at the token limit, a timeout, a provider
+error, a spent budget or a reached rate limit. A statement longer than `max_input_bytes`, or a request body cut at capture, rejects with no model call: the agent must read all of it.
 The audit record carries `approver`, `approval_decision` and
 `approval_reason`. With a control plane, the decision is filed as an approval
-request already decided; an approval runs only after the plane took it, and
-a rejection denies either way. Without one, the audit record alone keeps it.
+request already decided; an approval runs only after the plane answers with
+the review it recorded as `APPROVED`, and a rejection denies either way.
+Without one, the audit record alone keeps it.
 
 The default instruction, which `prompt` replaces:
 
