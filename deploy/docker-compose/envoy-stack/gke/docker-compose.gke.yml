@@ -15,9 +15,11 @@
 #
 #   gke-pki      mints the "customer CA" and two certificates it signs: Envoy's
 #                MITM certificate for connectgateway.googleapis.com, and
-#                fake-google's for connectgateway + oauth2.googleapis.com
+#                fake-google's for connectgateway + oauth2 + iamcredentials
 #   fake-google  tokeninfo + a Connect Gateway stand-in in front of k3s
-#                (gke/fakegoogle); answers as oauth2.googleapis.com
+#                (gke/fakegoogle); answers as oauth2.googleapis.com and
+#                iamcredentials.googleapis.com (the ../credentials overlay
+#                uses the latter)
 #   k3s, k3s-ca  the cluster from ../kubernetes, unchanged
 #   client       the base sandbox plus kubectl, a Connect Gateway kubeconfig
 #                and the customer CA
@@ -59,7 +61,7 @@ services:
           chown "$$3:$$3" "$$1.key" && chmod 0600 "$$1.key" && chmod 0644 "$$1.crt"
         }
         leaf envoy-mitm DNS:connectgateway.googleapis.com 101
-        leaf fake-google DNS:connectgateway.googleapis.com,DNS:oauth2.googleapis.com,DNS:fake-google 10001
+        leaf fake-google DNS:connectgateway.googleapis.com,DNS:oauth2.googleapis.com,DNS:iamcredentials.googleapis.com,DNS:fake-google 10001
         cp ca.crt /ca/ca.crt && chmod 0644 /ca/ca.crt
         rm -f ca.key ca.srl ca.crt
 
@@ -68,7 +70,7 @@ services:
     image: hoop-fake-google:local
     networks:
       inspect:
-        aliases: [oauth2.googleapis.com]
+        aliases: [oauth2.googleapis.com, iamcredentials.googleapis.com]
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 0
     volumes:

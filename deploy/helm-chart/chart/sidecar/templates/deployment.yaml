@@ -69,6 +69,11 @@ spec:
         # HOOP_HOST_ID cannot ride in the Secret above: it defaults to the
         # node name, which only the downward API knows, and a Secret has no
         # valueFrom. A literal in values replaces the fieldRef.
+        #
+        # POD_UID, POD_NAME and POD_NAMESPACE are always set. A lane with
+        # `identity: {type: kubernetes}` binds a client's projected token to
+        # this pod through POD_UID, and `propagate.application_name` can name
+        # the pod. The three cost nothing when unused.
         env:
         - name: HOOP_HOST_ID
           {{- with .Values.analytics.hostId }}
@@ -78,6 +83,18 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
           {{- end }}
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         # The admin server, and nothing else. Every lane port comes from the
         # config document and differs per deployment, so none is declared
         # here; a containerPort is informational either way, and a lane is
@@ -101,7 +118,9 @@ spec:
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
         {{- $k8sIdentity := eq .Values.controlPlane.identity "kubernetes" }}
-        {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumeMounts $k8sIdentity }}
+        {{- $spiffe := include "hoopsidecar.mountsSpiffe" . }}
+        {{- $krb5 := include "hoopsidecar.mountsKrb5" . }}
+        {{- if include "hoopsidecar.hasVolumes" . }}
         volumeMounts:
         {{- if include "hoopsidecar.hasConfigFile" . }}
         - name: sidecar-config-volume
@@ -113,11 +132,26 @@ spec:
           mountPath: {{ include "hoopsidecar.identityTokenDir" . }}
           readOnly: true
         {{- end }}
+        {{- if $spiffe }}
+        - name: sidecar-spiffe
+          mountPath: {{ include "hoopsidecar.spiffeSocketDir" . }}
+          readOnly: true
+        {{- end }}
+        {{- if $krb5 }}
+        - name: sidecar-krb5-ccache
+          mountPath: {{ .Values.kerberos.ccache.mountPath }}
+          readOnly: true
+        {{- end }}
+        {{- range .Values.credentials.secretMounts }}
+        - name: {{ .name }}
+          mountPath: {{ .mountPath }}
+          readOnly: true
+        {{- end }}
         {{- with .Values.extraVolumeMounts }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- end }}
-      {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumes $k8sIdentity }}
+      {{- if include "hoopsidecar.hasVolumes" . }}
       volumes:
       {{- if include "hoopsidecar.hasConfigFile" . }}
       - name: sidecar-config-volume
@@ -135,6 +169,38 @@ spec:
               audience: {{ include "hoopsidecar.identityAudience" . | quote }}
               expirationSeconds: {{ include "hoopsidecar.identityTokenExpiration" . }}
               path: token
+      {{- end }}
+      {{- if $spiffe }}
+      # The Workload API socket. The CSI driver projects the agent's socket
+      # directory per pod; a hostPath reaches the DaemonSet agent's directory
+      # on the node when no driver is installed.
+      - name: sidecar-spiffe
+        {{- with .Values.spiffe.socketHostPath }}
+        hostPath:
+          path: {{ . }}
+          type: Directory
+        {{- else }}
+        csi:
+          driver: csi.spiffe.io
+          readOnly: true
+        {{- end }}
+      {{- end }}
+      {{- if $krb5 }}
+      - name: sidecar-krb5-ccache
+        {{- with .Values.kerberos.ccache.hostPath }}
+        hostPath:
+          path: {{ . }}
+        {{- else }}
+        secret:
+          secretName: {{ .Values.kerberos.ccache.secretName }}
+          defaultMode: 0400
+        {{- end }}
+      {{- end }}
+      {{- range .Values.credentials.secretMounts }}
+      - name: {{ .name }}
+        secret:
+          secretName: {{ .secretName }}
+          defaultMode: {{ .defaultMode | default 0400 }}
       {{- end }}
       {{- with .Values.extraVolumes }}
       {{- toYaml . | nindent 6 }}

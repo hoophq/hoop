@@ -146,7 +146,7 @@
       "key": "mysql_auth_key_file",
       "type": "string",
       "label": "MySQL auth key file",
-      "help": "RSA private key clients can pin, so the relay can read RSA password exchanges. Needs upstream TLS. A path on the sidecar host.",
+      "help": "RSA private key clients can pin, so the relay can read RSA password exchanges. Needs upstream TLS or an identity block. A path on the sidecar host.",
       "protocols": [
         "mysql"
       ]
@@ -226,6 +226,12 @@
           "required": true
         }
       ]
+    },
+    {
+      "key": "context",
+      "type": "map",
+      "label": "Lane context",
+      "help": "Facts about this listener, such as env: prod. A credential rule matches them as context.<key>."
     },
     {
       "key": "idle_timeout_sec",

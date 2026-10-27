@@ -612,6 +612,15 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkTelemetry(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkAuthEngine(cfg); err != nil {
+		return nil, err
+	}
+	if err := checkIdentitySources(cfg); err != nil {
+		return nil, err
+	}
+	if err := checkCredentialSources(cfg); err != nil {
+		return nil, err
+	}
 	// A config assembled in Go reaches here without SetupWith; a config
 	// SetupWith loaded holds its plug-ins already and this is a no-op.
 	// Validate releases the ones it loads with the report: nothing runs
@@ -890,6 +899,15 @@ func Run(cfg *Config, det Plugin) error {
 		return err
 	}
 	if err := checkTelemetry(cfg); err != nil {
+		return err
+	}
+	if err := checkAuthEngine(cfg); err != nil {
+		return err
+	}
+	if err := checkIdentitySources(cfg); err != nil {
+		return err
+	}
+	if err := checkCredentialSources(cfg); err != nil {
 		return err
 	}
 	if cfg.MCP != nil && cfg.cp == nil {
@@ -1421,6 +1439,12 @@ type lane struct {
 	// none: it feeds the rule swap and the /config report, never
 	// buildServer, and the running lane keeps its file.
 	callerTokens *token.File
+
+	// auth is the lane's login termination: verifier, pool and selector.
+	// Nil on a pass-through lane. Built by buildLanes, so a reload carries
+	// it too, and composed into the relay's hooks by buildServer and the
+	// endpoint builders.
+	auth LaneAuth
 }
 
 // capturesRequestBodies reports whether the lane's codec exposes request
@@ -1454,6 +1478,23 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		problems = append(problems, err.Error())
 	}
 
+	// The credential set and the sources are process-wide: built once, on
+	// the startup config, and handed to every later document by the
+	// reloader, the way codec plug-ins are. A source holds a connection or
+	// a token cache a reload must not rebuild. A build with no engine has
+	// no set: checkAuthEngine refused every lane that would read one.
+	engine := registeredAuthEngine()
+	if cfg.credentials == nil && engine != nil {
+		cfg.credentials = engine.NewCredentialSet(cfg.CredentialSet)
+	}
+	if cfg.credentialSources == nil {
+		sources, serr := BuildCredentialSources(cfg, roots)
+		if serr != nil {
+			problems = append(problems, serr.Error())
+		}
+		cfg.credentialSources = sources
+	}
+
 	for i, lc := range cfg.Listeners {
 		name := lc.displayName(i)
 		gc, opa, mc := cfg.resolve(lc)
@@ -1480,7 +1521,28 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			problems = append(problems, name+": "+err.Error())
 			continue
 		}
-		factory := laneCodecFactory(lc, cfg.codecPlugins)
+		var auth LaneAuth
+		if lc.HasPool() {
+			if engine == nil {
+				problems = append(problems, authModuleError(name, "credentials").Error())
+				continue
+			}
+			deps := AuthDeps{Roots: roots, Peer: PeerInfo{Network: lc.network(), TLS: lc.DownstreamTLS != nil},
+				Log: slog.Default().With("listener", name)}
+			if opa.enabled() {
+				deps.OPA = opa.client("")
+			}
+			auth, err = engine.BuildLaneAuth(lc, name, deps, cfg.credentials, cfg.credentialSources)
+			if err != nil {
+				problems = append(problems, name+": "+err.Error())
+				continue
+			}
+			// A pooled lane holds the database identity the credential
+			// gave it: a statement that would switch it is refused ahead
+			// of every rule, enforcing or not.
+			pol = engine.CredentialBoundary(pol, inspect.Protocol(lc.Protocol))
+		}
+		factory := authCodecFactory(lc, cfg.codecPlugins, auth)
 		var pluginFactory func() inspect.Codec
 		if plugin != nil {
 			pluginFactory = factory
@@ -1501,6 +1563,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
 			trustRoots:   roots,
+			auth:         auth,
 		}
 		// Reported whether or not the lane enforces. An observing lane runs
 		// every one of these, and a reader of the startup log needs to see
@@ -1675,16 +1738,18 @@ func buildServer(
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	if downstreamTLS != nil {
-		// Validate admits downstream_tls on this path for these three
-		// protocols only; grpc and spanner lanes build their own server.
+		// Validate admits downstream_tls on this path for these protocols
+		// only; grpc and spanner lanes build their own server.
 		var reason string
-		switch inspect.Protocol(lc.Protocol) {
-		case inspect.Postgres:
+		switch p := inspect.Protocol(lc.Protocol); {
+		case p == inspect.Postgres:
 			reason = "pgwire negotiates TLS in-band, so nothing in front can"
-		case inspect.ClickHouse:
+		case p == inspect.ClickHouse:
 			reason = "serves ClickHouse TLS on connect"
-		case inspect.HTTP:
+		case p == inspect.HTTP:
 			reason = "serves h2 and http/1.1 via ALPN"
+		case p == inspect.MySQL && ln.auth != nil:
+			reason = "the login driver answers the client's SSLRequest after its greeting"
 		default:
 			return nil, fmt.Errorf("%s: downstream_tls is not terminated on a %s lane", ln.name, lc.Protocol)
 		}
@@ -1693,12 +1758,19 @@ func buildServer(
 			"reason", reason)
 	}
 
-	requestIdentity, err := buildRequestIdentity(lc, ln.trustRoots, ln.callerTokens)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
+	var requestIdentity gate.RequestIdentity
+	if ln.auth != nil && lc.credentialHeader() != "" {
+		// A pooled http lane names its caller per request through its
+		// own verifier; the swap then runs for the callers it admitted.
+		requestIdentity = ln.auth.RequestIdentity()
+	} else {
+		requestIdentity, err = buildRequestIdentity(lc, ln.trustRoots, ln.callerTokens)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", ln.name, err)
+		}
 	}
 
-	return proxy.NewServer(proxy.Config{
+	cfg := proxy.Config{
 		Listen:              lc.listenAddress(),
 		Network:             lc.Network,
 		Upstream:            lc.upstreamAddress(),
@@ -1727,8 +1799,26 @@ func buildServer(
 		Telemetry:   ln.telemetry,
 		IdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
 		MaxConns:    lc.MaxConns,
+		LaneContext: lc.Context,
 		Logger:      log.With("listener", ln.name),
-	})
+	}
+	// A pooled lane terminates its login: the relay's driver verifies the
+	// client through auth, dials upstream with the credential it picked,
+	// and lets the listed users through unchanged.
+	if ln.auth != nil {
+		cfg.Authenticate = ln.auth.Authenticate
+		cfg.AuthenticateProven = ln.auth.AuthenticateProven
+		cfg.SCRAMVerifier = ln.auth.SCRAM()
+		cfg.PassthroughUsers = lc.PassthroughUsers
+		if lc.Propagate != nil {
+			cfg.Propagate = proxy.PropagateInfo{ApplicationName: lc.Propagate.ApplicationName}
+		}
+		log.Info("terminating the client's login on this lane",
+			"listener", ln.name,
+			"identity", ln.auth.IdentityType(),
+			"credentials", ln.auth.PoolSize())
+	}
+	return proxy.NewServer(cfg)
 }
 
 // buildMasker asks the plugin to compile one lane's "mask" section.

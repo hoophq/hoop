@@ -65,15 +65,22 @@ func (l ListenerConfig) credentialHeader() string {
 		return l.CallerToken.header()
 	case l.IdentityHeader != "":
 		return strings.ToLower(strings.TrimSpace(l.IdentityHeader))
+	case l.HasPool() && l.IdentityType() != IdentityNone:
+		// The client's hoop key or platform token rides as the bearer;
+		// a none lane verifies nothing and lifts nothing.
+		return "authorization"
 	}
 	return ""
 }
 
 // authenticatesCaller reports a lane that is itself the authentication: a
-// caller_token lane, reachable from anywhere. The codec factory and
-// buildServer both read this one predicate, so the codec's check and the
-// gate's cannot be configured apart; see gate.Config.AuthenticatesCaller.
-func (l ListenerConfig) authenticatesCaller() bool { return l.CallerToken != nil }
+// caller_token lane, reachable from anywhere, or a pooled lane whose
+// verifier reads the bearer. The codec factory and buildServer both read
+// this one predicate, so the codec's check and the gate's cannot be
+// configured apart; see gate.Config.AuthenticatesCaller.
+func (l ListenerConfig) authenticatesCaller() bool {
+	return l.CallerToken != nil || (l.HasPool() && l.credentialHeader() != "")
+}
 
 // buildRequestIdentity returns the resolver for credentialHeader's value,
 // nil when the lane has none. roots is the process trust pool, so a Google

@@ -81,6 +81,11 @@ const (
 
 	capabilityRulePrefix     = "rule:"
 	capabilityProtocolPrefix = "protocol:"
+	// capabilityIdentityPrefix marks a verifier type a lane's identity may
+	// name; capabilityCredentialsPrefix a credential source a pool entry
+	// may name, and the top-level block that configures it.
+	capabilityIdentityPrefix    = "identity:"
+	capabilityCredentialsPrefix = "credentials."
 )
 
 // baselineCapabilities is the rule and protocol vocabulary of the builds
@@ -174,9 +179,18 @@ var valueCapabilities = []string{CapabilityAddressURL}
 // cap-tagged field of the config, every rule type and every protocol it
 // links, every behaviour it has and every value form it reads. Sorted, so
 // two builds that decode the same document send the same header.
+//
+// A credential source's block (credentials.spiffe, credentials.kerberos)
+// and a verifier type are the exception: the header lists them from the
+// registries, not from the tag, so a build that decodes the key but did
+// not link the module never claims it, as protocol:ica is listed only with
+// an engine.
 func SidecarCapabilities() []string {
 	var out []string
 	for _, f := range capFields() {
+		if strings.HasPrefix(f.name, capabilityCredentialsPrefix) {
+			continue
+		}
 		out = append(out, f.name)
 	}
 	out = append(out, behaviourCapabilities...)
@@ -188,6 +202,12 @@ func SidecarCapabilities() []string {
 	// not list a lane that checkICA would refuse at startup (ica.go).
 	for _, p := range ServableProtocols() {
 		out = append(out, capabilityProtocolPrefix+p)
+	}
+	for _, t := range identityTypes() {
+		out = append(out, capabilityIdentityPrefix+t)
+	}
+	for _, s := range credentialSourceNames() {
+		out = append(out, capabilityCredentialsPrefix+s)
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
@@ -272,6 +292,19 @@ func CheckServable(cfg Config, hs Handshake) error {
 		where := fmt.Sprintf("listener %q", l.Name)
 		if l.usesAddressURL() {
 			need(where, "writes listen or upstream as a URL", CapabilityAddressURL)
+		}
+		// A verifier type and a pool entry's source are linked per build,
+		// like a protocol: the field cap says the build decodes the key,
+		// these say it can serve what the key names.
+		if t := l.IdentityType(); t != "" {
+			need(where, "verifies identity type "+t, capabilityIdentityPrefix+t)
+		}
+		if l.Credentials != nil {
+			for _, e := range l.Credentials.Pool {
+				if e.Source != "" {
+					need(where, fmt.Sprintf("draws credential %q from %s", e.Name, e.Source), capabilityCredentialsPrefix+e.Source)
+				}
+			}
 		}
 		// A plug-in protocol is no build's: the header never lists it, and
 		// the build that decodes a plugins list decodes any lane on one.

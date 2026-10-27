@@ -78,7 +78,7 @@ func TestNewSidecarReviewCarriesTheWholePolicy(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), services.SidecarPerson{}, time.Now().UTC())
 
 	assert.NotNil(t, rev.MinApprovals, "no minimum means every group must approve")
 	assert.Equal(t, 1, *rev.MinApprovals, "the rule's minimum, not a fixed one")
@@ -106,7 +106,7 @@ func TestNewSidecarReviewNamesTheRuleSoTheMinimumIsRead(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), services.SidecarPerson{}, time.Now().UTC())
 
 	assert.NotNil(t, rev.AccessRequestRuleName,
 		"without the rule name the review needs every group and ignores its force approval list")
@@ -118,7 +118,7 @@ func TestNewSidecarReviewCarriesTheStatementHash(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), services.SidecarPerson{}, time.Now().UTC())
 
 	assert.True(t, rev.StatementHash.Valid, "a NULL hash is excluded from the unique index")
 	assert.Equal(t, testStatementHash, rev.StatementHash.String)
@@ -330,7 +330,7 @@ func TestNewSidecarReviewSnapshotsTheTTLs(t *testing.T) {
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 
 	rule := ruleWithTTLs(ptr.Int(900), ptr.Int(600))
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), services.SidecarPerson{}, now)
 	require.NotNil(t, rev.ExpiresAt)
 	assert.Equal(t, now.Add(15*time.Minute), *rev.ExpiresAt, "the decision deadline counts from filing")
 	require.NotNil(t, rev.ApprovalTTLSec, "the approval clock starts at the approval, so the limit is kept")
@@ -340,12 +340,12 @@ func TestNewSidecarReviewSnapshotsTheTTLs(t *testing.T) {
 	assert.Equal(t, 600, *rev.ApprovalTTLSec, "a copy, not the rule's pointer")
 
 	rule = ruleWithTTLs(nil, ptr.Int(600))
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), services.SidecarPerson{}, now)
 	assert.Nil(t, rev.ExpiresAt, "no pending limit is no decision deadline")
 	require.NotNil(t, rev.ApprovalTTLSec)
 
 	rule = approvalRule()
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), services.SidecarPerson{}, now)
 	assert.Nil(t, rev.ExpiresAt)
 	assert.Nil(t, rev.ApprovalTTLSec)
 }
@@ -671,7 +671,7 @@ func TestReviewDecidedAt(t *testing.T) {
 func TestNewSlackReviewRequest(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), services.SidecarPerson{}, time.Now().UTC())
 	statement := "DELETE FROM users WHERE id = 42;"
 
 	req := newSlackReviewRequest(sc, rev, "appdb", statement)
@@ -704,7 +704,7 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	assert.Nil(t, req.ExpiresAt, "a rule with no limit shows no deadline")
 
 	rule = ruleWithTTLs(ptr.Int(900), nil)
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), services.SidecarPerson{}, time.Now().UTC())
 	req = newSlackReviewRequest(sc, rev, "appdb", statement)
 	require.NotNil(t, req.ExpiresAt, "the approvers see when the review expires")
 	assert.Equal(t, *rev.ExpiresAt, *req.ExpiresAt)

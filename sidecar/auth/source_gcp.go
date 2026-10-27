@@ -1,0 +1,216 @@
+package auth
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/hoophq/hoop/sidecar/session"
+)
+
+// The gcp_impersonation source presents, as the upstream password, an access
+// token of the pool entry's service account, minted through
+// iamcredentials.googleapis.com with the pod's own Workload Identity from
+// the metadata server. The database or API then sees that account, and the
+// pod needs roles/iam.serviceAccountTokenCreator on it and nothing else.
+const (
+	// iamCredentialsEndpoint is Google's token minting API. A var so a
+	// test points it at a fake; production reaches the real host through
+	// the trust section when a proxy re-signs it.
+	iamCredentialsHost = "https://iamcredentials.googleapis.com"
+
+	// gcpAccessTokenRefreshBefore is how long before expireTime a cached
+	// access token is replaced, wide enough that a login never presents one
+	// the upstream sees expired.
+	gcpAccessTokenRefreshBefore = 5 * time.Minute
+
+	// gcpImpersonationLifetime is what the mint asks for; the maximum IAM
+	// grants without an org policy change.
+	gcpImpersonationLifetime = "3600s"
+
+	gcpDefaultScope = "https://www.googleapis.com/auth/cloud-platform"
+	maxIAMAnswer    = 64 << 10
+)
+
+// iamCredentialsEndpoint is where the mint is posted. A var so a test and
+// the compose stack can point it at a fake.
+var iamCredentialsEndpoint = iamCredentialsHost
+
+type gcpImpersonationSource struct {
+	metadataHost string
+	iam          *http.Client
+
+	mu sync.Mutex
+	// cache is keyed by what the mint depends on, the service account and
+	// its scopes, never by the entry name: two lanes may name different
+	// accounts "rw", and one must not get the other's token.
+	cache map[string]gcpMinted
+}
+
+type gcpMinted struct {
+	token string
+	exp   time.Time
+}
+
+// newGCPImpersonationSource builds the source over the process trust pool,
+// so a proxy that re-signs iamcredentials.googleapis.com verifies through
+// the trust section like every other outbound client here.
+func newGCPImpersonationSource(cfg *daemon.GCPImpersonationSourceConfig, roots *x509.CertPool) *gcpImpersonationSource {
+	host := ""
+	if cfg != nil {
+		host = cfg.MetadataHost
+	}
+	return &gcpImpersonationSource{
+		metadataHost: host,
+		iam: &http.Client{
+			Timeout: daemon.GCPMetadataTimeout,
+			Transport: &http.Transport{
+				Proxy:           http.ProxyFromEnvironment,
+				TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
+			},
+		},
+		cache: map[string]gcpMinted{},
+	}
+}
+
+func buildGCPImpersonationSource(cfg *daemon.CredentialSourcesConfig) (daemon.CredentialSource, error) {
+	if cfg == nil || cfg.GCPImpersonation == nil {
+		return nil, errors.New("credentials.gcp_impersonation is not configured")
+	}
+	// The trust pool reaches the source through UseRoots, after the lanes
+	// load it: the registry builder signature carries the config alone.
+	return newGCPImpersonationSource(cfg.GCPImpersonation, nil), nil
+}
+
+// UseRoots installs the process trust pool; BuildCredentialSources calls it
+// once the bundle is loaded.
+func (g *gcpImpersonationSource) UseRoots(roots *x509.CertPool) {
+	g.iam.Transport.(*http.Transport).TLSClientConfig.RootCAs = roots
+}
+
+func (g *gcpImpersonationSource) Credential(ctx context.Context, e daemon.CredentialEntry, _ session.Identity) (daemon.Credential, error) {
+	if err := daemon.ValidateGCPImpersonationEntry(e); err != nil {
+		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
+	}
+	scopes := gcpScopes(e)
+	key := gcpCacheKey(e.ServiceAccount, scopes)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if m, ok := g.cache[key]; ok && time.Now().UTC().Before(m.exp.Add(-gcpAccessTokenRefreshBefore)) {
+		return daemon.Credential{User: e.ServiceAccount, Password: m.token}, nil
+	}
+	own, err := g.ownAccessToken(ctx)
+	if err != nil {
+		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
+	}
+	tok, exp, err := g.mint(ctx, own, e.ServiceAccount, scopes)
+	if err != nil {
+		return daemon.Credential{}, fmt.Errorf("credential %q: %w", e.Name, err)
+	}
+	g.cache[key] = gcpMinted{token: tok, exp: exp}
+	return daemon.Credential{User: e.ServiceAccount, Password: tok}, nil
+}
+
+// gcpScopes is the entry's scope list, sorted and deduplicated, or the
+// default.
+func gcpScopes(e daemon.CredentialEntry) []string {
+	if len(e.Scopes) == 0 {
+		return []string{gcpDefaultScope}
+	}
+	scopes := slices.Clone(e.Scopes)
+	slices.Sort(scopes)
+	return slices.Compact(scopes)
+}
+
+// gcpCacheKey joins what a minted token is a function of.
+func gcpCacheKey(account string, scopes []string) string {
+	return account + "\x00" + strings.Join(scopes, "\x00")
+}
+
+// ownAccessToken is the pod's Workload Identity access token from the
+// metadata server, the caller of the mint. Short-lived and cheap, so it is
+// fetched per mint rather than cached.
+func (g *gcpImpersonationSource) ownAccessToken(ctx context.Context) (string, error) {
+	host := daemon.GCPMetadataHost(g.metadataHost)
+	u := url.URL{Scheme: "http", Host: host, Path: "/computeMetadata/v1/instance/service-accounts/default/token"}
+	ctx, cancel := context.WithTimeout(ctx, daemon.GCPMetadataTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Metadata-Flavor", "Google")
+	req.Header.Set("User-Agent", daemon.UserAgent("credential/gcp_impersonation"))
+	resp, err := daemon.GCPMetadataClient().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("the GCP metadata server at %s is unreachable: %w", host, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxIAMAnswer))
+	if err != nil {
+		return "", fmt.Errorf("reading the GCP metadata server's answer: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("the GCP metadata server at %s answered %s for an access token: %s", host, resp.Status, daemon.ErrorMessage(raw))
+	}
+	var body struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil || body.AccessToken == "" {
+		return "", fmt.Errorf("the GCP metadata server at %s answered with no access token", host)
+	}
+	return body.AccessToken, nil
+}
+
+// mint calls generateAccessToken for account with scopes.
+func (g *gcpImpersonationSource) mint(ctx context.Context, own, account string, scopes []string) (string, time.Time, error) {
+	body, err := json.Marshal(map[string]any{"scope": scopes, "lifetime": gcpImpersonationLifetime})
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	endpoint := iamCredentialsEndpoint + "/v1/projects/-/serviceAccounts/" + url.PathEscape(account) + ":generateAccessToken"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+own)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", daemon.UserAgent("credential/gcp_impersonation"))
+	resp, err := g.iam.Do(req)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s: %w", account, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxIAMAnswer))
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s: reading the answer: %w", account, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s answered %s: %s; the pod's identity needs "+
+			"roles/iam.serviceAccountTokenCreator on that account", account, resp.Status, daemon.ErrorMessage(raw))
+	}
+	var out struct {
+		AccessToken string `json:"accessToken"`
+		ExpireTime  string `json:"expireTime"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil || out.AccessToken == "" {
+		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s answered with no accessToken", account)
+	}
+	exp, err := time.Parse(time.RFC3339, out.ExpireTime)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("generateAccessToken for %s answered expireTime %q: %w", account, out.ExpireTime, err)
+	}
+	return out.AccessToken, exp, nil
+}

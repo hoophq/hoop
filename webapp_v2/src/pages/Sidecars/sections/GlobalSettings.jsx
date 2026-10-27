@@ -63,6 +63,7 @@ function Editing({ children, onSave, onCancel, saving, error }) {
 /** Global settings rows. Each save is a PATCH of that one key; the rest stays as stored. */
 export default function GlobalSettings({ sidecar, editable }) {
   const patchSidecar = useSidecarStore((s) => s.patchSidecar)
+  const setOwner = useSidecarStore((s) => s.setOwner)
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
   const opa = configured ? resolveOPA(null, config) : null
@@ -100,11 +101,26 @@ export default function GlobalSettings({ sidecar, editable }) {
     showSnackbar({ level: 'success', text: done })
   }
 
+  // The owner is a column of the row, not a key of the document, so it has
+  // its own write; the stored configuration is not sent.
+  const saveOwner = async () => {
+    setSaving(true)
+    const { ok, error: refusal } = await setOwner(sidecar.id, draft.trim())
+    setSaving(false)
+    if (!ok) {
+      setError(saveErrorMessage(refusal))
+      return
+    }
+    setEditing(null)
+    showSnackbar({ level: 'success', text: 'Owner updated.' })
+  }
+
   // One write at a time: a later response could land first and install the older snapshot.
   const canEdit = editable && !saving
 
   const listen = config?.admin?.listen ?? ''
   const logLevel = config?.log_level || 'info'
+  const owner = sidecar.owner_email ?? ''
 
   return (
     <>
@@ -117,6 +133,30 @@ export default function GlobalSettings({ sidecar, editable }) {
         </Row>
         <Row label="Created">
           <Text size="sm">{`${new Date(sidecar.created_at).toLocaleString()} by ${sidecar.created_by}`}</Text>
+        </Row>
+        <Row label="Owner">
+          {editing === 'owner' ? (
+            // Empty clears it: approval requests then show the placeholder again.
+            <Editing onSave={saveOwner} onCancel={cancel} saving={saving} error={error}>
+              <TextInput
+                aria-label="Owner email"
+                placeholder="dba@acme.com"
+                type="email"
+                size="xs"
+                w={280}
+                value={draft}
+                onChange={(e) => change(e.currentTarget.value)}
+                autoFocus
+              />
+            </Editing>
+          ) : (
+            <>
+              <Text size="sm" c={owner ? undefined : 'dimmed'}>
+                {owner || 'None'}
+              </Text>
+              {canEdit && <EditButton onClick={() => edit('owner', owner)} />}
+            </>
+          )}
         </Row>
         <Row label="Last seen">
           <Text size="sm">{sidecar.last_seen_at ? formatRelativeTime(sidecar.last_seen_at) : 'Never'}</Text>

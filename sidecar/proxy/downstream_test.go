@@ -93,7 +93,7 @@ func negotiate(t *testing.T, send []byte, tlsCfg *tls.Config) (reply []byte, gat
 	var gateErr error
 	go func() {
 		defer close(done)
-		conn, _, err := negotiateDownstream(srv, inspect.Postgres, tlsCfg, 2*time.Second)
+		conn, _, err := negotiateDownstream(srv, inspect.Postgres, tlsCfg, 2*time.Second, false)
 		if err != nil {
 			return
 		}
@@ -226,7 +226,7 @@ func TestSSLRequestIsTerminatedWhenConfigured(t *testing.T) {
 	}
 	res := make(chan result, 1)
 	go func() {
-		c, _, err := negotiateDownstream(srv, inspect.Postgres, cfg, 5*time.Second)
+		c, _, err := negotiateDownstream(srv, inspect.Postgres, cfg, 5*time.Second, false)
 		res <- result{c, err}
 	}()
 
@@ -289,7 +289,7 @@ func TestClickHouseTLSIsTerminatedOnConnect(t *testing.T) {
 	}
 	res := make(chan result, 1)
 	go func() {
-		c, _, err := negotiateDownstream(srv, inspect.ClickHouse, cfg, 5*time.Second)
+		c, _, err := negotiateDownstream(srv, inspect.ClickHouse, cfg, 5*time.Second, false)
 		res <- result{c, err}
 	}()
 
@@ -324,7 +324,7 @@ func TestOtherProtocolsAreNotIntercepted(t *testing.T) {
 	cli, srv := net.Pipe()
 	t.Cleanup(func() { cli.Close(); srv.Close() })
 
-	got, _, err := negotiateDownstream(srv, inspect.MSSQL, nil, time.Second)
+	got, _, err := negotiateDownstream(srv, inspect.MSSQL, nil, time.Second, false)
 	if err != nil {
 		t.Fatalf("mssql negotiation errored: %v", err)
 	}
@@ -399,7 +399,7 @@ func negotiateTwo(t *testing.T, send []byte) (gateSaw []byte, user string, reply
 	var gateErr error
 	go func() {
 		defer close(done)
-		conn, u, err := negotiateDownstream(srv, inspect.Postgres, nil, 2*time.Second)
+		conn, u, err := negotiateDownstream(srv, inspect.Postgres, nil, 2*time.Second, false)
 		got, _ = u.get("user")
 		if err != nil {
 			return

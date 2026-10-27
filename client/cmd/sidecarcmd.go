@@ -23,7 +23,7 @@ var (
 
 var sidecarCmd = &cobra.Command{
 	Use:   "sidecar",
-	Short: "Show or change the sidecar's login on this machine",
+	Short: "Work with sidecars: this machine's login, and credentials for lanes",
 	Long: `The sidecar logs in to a control plane the first time it runs and keeps its
 token here, one per control plane, in ` + "`" + SidecarStateDirEnv + "`" + ` or ~/.hoop/sidecar.
 

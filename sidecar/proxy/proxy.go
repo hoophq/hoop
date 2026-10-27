@@ -35,6 +35,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	codectypes "github.com/hoophq/libhoop/v2/codec/types"
+
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -84,7 +86,7 @@ type Config struct {
 	UpstreamTLS *tls.Config
 	// MySQLAuthPrivateKey is the stable relay key that MySQL clients pin when
 	// they send an RSA-encrypted password without first requesting a key.
-	// It is used only on a MySQL lane with UpstreamTLS.
+	// It is used only on a MySQL lane with UpstreamTLS or Authenticate.
 	MySQLAuthPrivateKey *rsa.PrivateKey
 
 	// DownstreamTLS, when non-nil, lets the relay terminate the CLIENT's TLS.
@@ -182,6 +184,36 @@ type Config struct {
 	// for a postgres lane that configures no startup_metadata list, because
 	// that default is the product's decision, not this package's.
 	AllStartupOptions bool
+
+	// Authenticate terminates the client login on this lane and selects
+	// the credential the relay logs in upstream with. Nil keeps the login
+	// pass-through, byte for byte. A refusal wraps ErrLoginRefused. It
+	// needs a login driver for the protocol (see LoginFunc), except on
+	// http, grpc and clickhouse, whose codecs swap the credential
+	// themselves.
+	Authenticate func(ctx context.Context, user, secret string) (session.Identity, Credential, error)
+
+	// AuthenticateProven is Authenticate for a login the driver proved
+	// by SCRAM against the material SCRAMVerifier served; hash is that
+	// material's Hash. Required with SCRAMVerifier.
+	AuthenticateProven func(ctx context.Context, user, hash string) (session.Identity, Credential, error)
+
+	// SCRAMVerifier returns the SCRAM-SHA-256 material of a login user so
+	// a driver can act as the SCRAM server on the client leg. Nil offers
+	// no SCRAM. Needs Authenticate.
+	SCRAMVerifier func(user string) (codectypes.SCRAMMaterial, bool)
+
+	// Propagate says what of the verified identity the upstream login
+	// carries.
+	Propagate PropagateInfo
+
+	// PassthroughUsers are the login users a lane with Authenticate still
+	// relays unchanged, claimed and unverified. Empty means none.
+	PassthroughUsers []string
+
+	// LaneContext is the operator's context map, available to Propagate
+	// templates and to the login driver.
+	LaneContext map[string]string
 
 	// Metrics is handed to every connection's Gate. Optional. See
 	// gate.Config.Metrics for the contract it must meet.
@@ -292,19 +324,26 @@ func NewServer(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	if cfg.MySQLAuthPrivateKey != nil &&
-		(cfg.Protocol != inspect.MySQL || cfg.UpstreamTLS == nil) {
+	if err := checkLoginConfig(&cfg); err != nil {
+		return nil, err
+	}
+	// The MySQL client leg is the relay's own whenever it terminates the
+	// upstream TLS or the login; both need the RSA key pair.
+	mysqlBridged := cfg.Protocol == inspect.MySQL &&
+		(cfg.UpstreamTLS != nil || cfg.Authenticate != nil)
+	if cfg.MySQLAuthPrivateKey != nil && !mysqlBridged {
 		return nil, errors.New(
-			"sidecar/proxy: MySQL authentication key requires a MySQL lane with upstream TLS",
+			"sidecar/proxy: MySQL authentication key requires a MySQL lane with upstream TLS or Authenticate",
 		)
 	}
 	if err := checkCredentialConfig(cfg); err != nil {
 		return nil, err
 	}
 	if cfg.DownstreamTLS != nil && cfg.Protocol != inspect.Postgres &&
-		cfg.Protocol != inspect.ClickHouse && cfg.Protocol != inspect.HTTP {
+		cfg.Protocol != inspect.ClickHouse && cfg.Protocol != inspect.HTTP &&
+		!(cfg.Protocol == inspect.MySQL && cfg.Authenticate != nil) {
 		return nil, fmt.Errorf(
-			"sidecar/proxy: downstream TLS is terminated on postgres, clickhouse and http lanes, not %s",
+			"sidecar/proxy: downstream TLS is terminated on postgres, clickhouse, http and authenticating mysql lanes, not %s",
 			cfg.Protocol,
 		)
 	}
@@ -328,7 +367,7 @@ func NewServer(cfg Config) (*Server, error) {
 		mysqlAuth           *mysqlAuthBridge
 		mysqlHandshakeSlots chan struct{}
 	)
-	if cfg.Protocol == inspect.MySQL && cfg.UpstreamTLS != nil {
+	if mysqlBridged {
 		var err error
 		mysqlAuth, err = newMySQLAuthBridge(cfg.MySQLAuthPrivateKey)
 		if err != nil {
@@ -666,10 +705,15 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		log.Error("gate setup failed", "error", err)
 		return
 	}
-	if err := g.Start(ctx); err != nil {
-		log.Warn("session start not recorded", "error", err)
-	}
+	// session_start is written once the lane knows who the session is for
+	// (after the pgwire startup, after a terminated login), so the row
+	// names the principal. The teardown starts it too, idempotently: a
+	// connection that never got that far still leaves a start before its
+	// end.
 	defer func() {
+		if err := g.Start(ctx); err != nil {
+			log.Warn("session start not recorded", "error", err)
+		}
 		if err := g.Close(ctx); err != nil {
 			log.Warn("session close reported an error", "error", err)
 		}
@@ -679,58 +723,55 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 			"duration", time.Since(sess.StartedAt).String())
 	}()
 
-	upstream, err := s.dialUpstream(ctx)
-	if err != nil {
-		log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
-		span.fail(err)
-		if s.cfg.Audit != nil {
-			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil {
-				// The one audit write that happens outside a Gate, so it
-				// reports its own failure into the same counters.
-				if s.cfg.Metrics != nil {
-					s.cfg.Metrics.AuditError()
-				}
-				if s.cfg.Telemetry != nil {
-					s.cfg.Telemetry.AuditError()
-				}
-			}
-		}
-		return
-	}
-	defer upstream.Close()
-	if s.cfg.Protocol == inspect.MySQL && s.cfg.UpstreamTLS != nil {
-		inspectPacket := func(dir inspect.Direction, data []byte) ([]byte, error) {
-			var d gate.Decision
-			if dir == inspect.FromClient {
-				d = g.Request(ctx, data)
-			} else {
-				d = g.Response(ctx, data)
-			}
-			if d.Err != nil {
-				log.Warn("inspection reported an error during MySQL authentication",
-					"direction", string(dir), "error", d.Err)
-			}
-			if !d.Allowed {
-				s.denied.Add(1)
-				return nil, fmt.Errorf("MySQL authentication denied: %s", d.Message)
-			}
-			return d.Payload, nil
-		}
-		client, upstream, err = negotiateMySQLUpstreamTLS(
-			client,
-			upstream,
-			s.cfg.Upstream,
-			s.cfg.UpstreamTLS,
-			s.cfg.DialTimeout,
-			s.mysqlAuth,
-			inspectPacket,
-		)
+	// A lane with Authenticate and a driver for its protocol terminates
+	// the login here, and the driver dials the upstream itself, so the
+	// credential it selects can shape the dial (a client certificate).
+	login, terminates := loginFor(s.cfg.Protocol)
+	terminates = terminates && s.cfg.Authenticate != nil
+
+	var upstream net.Conn
+	if !terminates {
+		upstream, err = s.dialUpstream(ctx)
 		if err != nil {
-			log.Debug("MySQL upstream TLS negotiation failed", "error", err)
+			log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
+			s.failSession(ctx, g, sess, span, log, err)
 			return
 		}
-		s.releaseMySQLHandshake()
-		releaseMySQLHandshake = false
+		defer upstream.Close()
+		if s.cfg.Protocol == inspect.MySQL && s.cfg.UpstreamTLS != nil {
+			inspectPacket := func(dir inspect.Direction, data []byte) ([]byte, error) {
+				var d gate.Decision
+				if dir == inspect.FromClient {
+					d = g.Request(ctx, data)
+				} else {
+					d = g.Response(ctx, data)
+				}
+				if d.Err != nil {
+					log.Warn("inspection reported an error during MySQL authentication",
+						"direction", string(dir), "error", d.Err)
+				}
+				if !d.Allowed {
+					s.denied.Add(1)
+					return nil, fmt.Errorf("MySQL authentication denied: %s", d.Message)
+				}
+				return d.Payload, nil
+			}
+			client, upstream, err = negotiateMySQLUpstreamTLS(
+				client,
+				upstream,
+				s.cfg.Upstream,
+				s.cfg.UpstreamTLS,
+				s.cfg.DialTimeout,
+				s.mysqlAuth,
+				inspectPacket,
+			)
+			if err != nil {
+				log.Debug("MySQL upstream TLS negotiation failed", "error", err)
+				return
+			}
+			s.releaseMySQLHandshake()
+			releaseMySQLHandshake = false
+		}
 	}
 
 	// Answer the pgwire pre-startup exchange before the gate sees a byte. It
@@ -746,9 +787,11 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// worth an audit event: it is a connection that never became a session.
 	// It closes quietly, the same as a client hanging up mid-handshake.
 	client, startup, negErr := negotiateDownstream(
-		client, s.cfg.Protocol, s.cfg.DownstreamTLS, s.cfg.DialTimeout)
+		client, s.cfg.Protocol, s.cfg.DownstreamTLS, s.cfg.DialTimeout, terminates)
 	if negErr != nil {
-		log.Debug("downstream negotiation failed", "error", negErr)
+		if !errors.Is(negErr, errCancelHandled) {
+			log.Debug("downstream negotiation failed", "error", negErr)
+		}
 		return
 	}
 
@@ -761,14 +804,96 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// a policy context that lacks it. An IdentityFn the operator supplied
 	// wins, because it saw a verified subject from the fronting proxy and
 	// this is a client claim.
-	claimedUser, _ := startup.get("user")
 	md := startupMetadata(startup, s.cfg.StartupMetadata, s.cfg.AllStartupOptions)
-	if claimedUser != "" || len(md) > 0 {
-		if err := g.Adopt(claimedUser, md); err != nil {
-			log.Error("startup facts not adopted", "error", err)
+	if md == nil {
+		md = map[string]string{}
+	}
+	if terminates {
+		lc := s.newLoginConn(ctx, client, g, log)
+		result, lerr := s.runLogin(ctx, login, lc)
+		if releaseMySQLHandshake {
+			s.releaseMySQLHandshake()
+			releaseMySQLHandshake = false
+		}
+		if lerr != nil {
+			if lc.Upstream != nil {
+				lc.Upstream.Close()
+			}
+			// The driver selected a credential and then failed: it goes
+			// back to its source now, not at the end of a session that
+			// never starts.
+			if result.Credential.Release != nil {
+				if err := result.Credential.Release(ctx); err != nil {
+					log.Warn("credential not released", "credential", result.Credential.Name, "error", err)
+				}
+			}
+			if !errors.Is(lerr, ErrLoginRefused) {
+				log.Debug("login failed", "error", lerr)
+				if result.Identity.Subject == "" {
+					// Never became a session: the client hung up, or
+					// spoke no login. Closes quietly.
+					return
+				}
+				// The driver verified the client and then failed on the
+				// relay's side (dial, upstream login). The trail names
+				// the verified principal, and the failure.
+				if err := g.AdoptIdentity(result.Identity, loginMetadata(result, true)); err != nil {
+					log.Error("login identity not adopted", "error", err)
+					return
+				}
+				log = sessionLog()
+				s.failSession(ctx, g, sess, span, log, lerr)
+				return
+			}
+			// The refusal is the whole session: start, one violation
+			// under the claimed identity, end. The driver has already
+			// told the client in its protocol's own frame.
+			if err := g.AdoptIdentity(result.Identity, loginMetadata(result, false)); err != nil {
+				log.Error("claimed identity not adopted", "error", err)
+				return
+			}
+			log = sessionLog()
+			if err := g.Start(ctx); err != nil {
+				log.Warn("session start not recorded", "error", err)
+			}
+			s.denied.Add(1)
+			d := g.RefuseLogin(ctx, result.Identity.Subject, lerr.Error())
+			if d.Err != nil {
+				log.Warn("login refusal not recorded", "error", d.Err)
+			}
+			log.Info("login refused", "message", lerr.Error())
+			return
+		}
+		client, upstream = lc.Client, lc.Upstream
+		defer upstream.Close()
+		if result.Credential.Release != nil {
+			defer func() {
+				if err := result.Credential.Release(ctx); err != nil {
+					log.Warn("credential not released", "credential", result.Credential.Name, "error", err)
+				}
+			}()
+		}
+		if result.Cancel != nil {
+			defer registerCancel(result.Cancel, s.dialUpstream)()
+		}
+		maps.Copy(md, loginMetadata(result, true))
+		if err := g.AdoptIdentity(result.Identity, md); err != nil {
+			log.Error("login identity not adopted", "error", err)
 			return
 		}
 		log = sessionLog()
+	} else {
+		claimedUser, _ := startup.get("user")
+		if claimedUser != "" || len(md) > 0 {
+			if err := g.Adopt(claimedUser, md); err != nil {
+				log.Error("startup facts not adopted", "error", err)
+				return
+			}
+			log = sessionLog()
+		}
+	}
+	if err := g.Start(ctx); err != nil {
+		log.Warn("session start not recorded", "error", err)
 	}
 
 	log.Info("session opened", "upstream", s.cfg.Upstream)
@@ -820,15 +945,44 @@ func (s *Server) connIdentity(c net.Conn) session.Identity {
 	return id
 }
 
+// failSession records a session that ended before its pumps started: a
+// start under whatever identity the gate holds, then the failure. The
+// teardown closes it.
+func (s *Server) failSession(ctx context.Context, g *gate.Gate, sess *session.Session, span *sessionSpan, log *slog.Logger, err error) {
+	span.fail(err)
+	if serr := g.Start(ctx); serr != nil {
+		log.Warn("session start not recorded", "error", serr)
+	}
+	if s.cfg.Audit == nil {
+		return
+	}
+	if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil {
+		// The one audit write that happens outside a Gate, so it
+		// reports its own failure into the same counters.
+		if s.cfg.Metrics != nil {
+			s.cfg.Metrics.AuditError()
+		}
+		if s.cfg.Telemetry != nil {
+			s.cfg.Telemetry.AuditError()
+		}
+	}
+}
+
 // dialUpstream connects to the backend, negotiating TLS when configured.
 //
 // The TLS handshake is protocol-aware: see startTLS. On any TLS failure the
 // raw connection is closed before returning, so a refused handshake does not
 // leak a socket per attempt.
 func (s *Server) dialUpstream(ctx context.Context) (net.Conn, error) {
+	return s.dialUpstreamTLS(ctx, s.cfg.UpstreamTLS)
+}
+
+// dialUpstreamTLS is dialUpstream under tlsCfg, which a login driver may
+// have given a client certificate; nil dials plain.
+func (s *Server) dialUpstreamTLS(ctx context.Context, tlsCfg *tls.Config) (net.Conn, error) {
 	d := &net.Dialer{Timeout: s.cfg.DialTimeout}
 	conn, err := d.DialContext(ctx, "tcp", s.cfg.Upstream)
-	if err != nil || s.cfg.UpstreamTLS == nil || s.cfg.Protocol == inspect.MySQL {
+	if err != nil || tlsCfg == nil || s.cfg.Protocol == inspect.MySQL {
 		return conn, err
 	}
 
@@ -842,7 +996,7 @@ func (s *Server) dialUpstream(ctx context.Context) (net.Conn, error) {
 		}
 	}
 
-	tc, err := startTLS(conn, s.cfg.Upstream, s.cfg.Protocol, s.cfg.UpstreamTLS)
+	tc, err := startTLS(conn, s.cfg.Upstream, s.cfg.Protocol, tlsCfg)
 	if err != nil {
 		conn.Close()
 		return nil, err

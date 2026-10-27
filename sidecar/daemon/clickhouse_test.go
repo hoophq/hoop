@@ -11,7 +11,7 @@ func TestClickHouseCodecFactoryIsConnectionScoped(t *testing.T) {
 	f := clickhouseCodecFactory(inspect.ClickHouse, &ClickHouseCodecConfig{
 		MaxFrameBytes: 1 << 20,
 		MaxBlockBytes: 4 << 20,
-	})
+	}, nil, nil)
 	if f == nil {
 		t.Fatal("configured ClickHouse lane got no codec factory")
 	}

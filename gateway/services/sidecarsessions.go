@@ -136,7 +136,14 @@ type sidecarIdentity struct {
 	OrgID string
 	// Mirrors maps a listener to its mirror connection's name.
 	Mirrors map[string]string
+	// OwnerEmail files a session whose principal is unknown; empty files it
+	// under the principal alone.
+	OwnerEmail string
 }
+
+// credentialMetadataKeys are the per-session facts a credential swap writes
+// on every event; the last value seen lands in metadata.sidecar.
+var credentialMetadataKeys = []string{"credential", "identity_type", "verified"}
 
 // sidecarSessionPlan is the writes one session's events turn into, applied in
 // field order by applySidecarSessionPlan.
@@ -223,7 +230,8 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		if prior.Metrics != nil {
 			metrics = maps.Clone(prior.Metrics)
 		}
-		if principal != "" && !knownPrincipal(prior.Principal) {
+		// The owner stands in until the principal is known.
+		if principal != "" && (!knownPrincipal(prior.Principal) || sc.ownerStandsIn(prior.Principal)) {
 			user := sidecarUserFor(principal)
 			plan.User = &user
 			if user.Full != "" {
@@ -240,6 +248,13 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		}
 		plan.Create = sess
 		startedAt = sess.CreatedAt
+	}
+	for _, e := range fresh {
+		for _, key := range credentialMetadataKeys {
+			if v, ok := e.Event.Metadata[key]; ok && v != "" {
+				plan.Sidecar[key] = pgText(v)
+			}
+		}
 	}
 
 	stream := sidecarStream{
@@ -398,6 +413,9 @@ func newSidecarSession(sc sidecarIdentity, id, sidecarSessionID string, ev audit
 		},
 	}
 	user := sidecarUserFor(principal)
+	if owner := sc.owner(); owner != "" && !knownPrincipal(principal) {
+		user.Email = owner
+	}
 	sess.UserName, sess.UserEmail = user.Name, user.Email
 	if user.Full != "" {
 		sess.Metadata["sidecar"].(map[string]any)["principal"] = user.Full
@@ -434,6 +452,16 @@ func sidecarUserFor(principal string) sidecarUser {
 func knownPrincipal(p string) bool {
 	p = pgText(p)
 	return p != "" && p != session.AnonymousPrincipal
+}
+
+// owner is the email an unknown principal is filed under; empty when no
+// owner is set.
+func (sc sidecarIdentity) owner() string { return sc.OwnerEmail }
+
+// ownerStandsIn reports a row filed under the owner for want of a principal.
+func (sc sidecarIdentity) ownerStandsIn(filed string) bool {
+	owner := sc.owner()
+	return owner != "" && strings.EqualFold(filed, owner)
 }
 
 // pgText drops NUL, which Postgres refuses in text and jsonb on every resend.
@@ -579,6 +607,9 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 		return result, fmt.Errorf("failed reading the sidecar's mirror connections: %w", err)
 	}
 	ident := sidecarIdentity{ID: sc.ID, Name: sc.Name, OrgID: sc.OrgID, Mirrors: mirrors}
+	if sc.OwnerEmail != nil {
+		ident.OwnerEmail = strings.TrimSpace(*sc.OwnerEmail)
+	}
 	receivedAt := time.Now().UTC()
 
 	// Grouped by session; the sidecar's order holds within a group.

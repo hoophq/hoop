@@ -30,6 +30,10 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/hoop"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
+	// The credential-swap runtime an identity or credentials block turns
+	// on, same rule: the built-in verifiers, sources and login drivers stay
+	// in sidecar/auth's own module.
+	_ "github.com/hoophq/hoop/sidecar/auth"
 	// The codec plug-in host, same rule: a `plugins` block must not need
 	// the standalone binary. wazero stays in codec/wasm's own module.
 	"github.com/hoophq/hoop/sidecar/codec/wasm"

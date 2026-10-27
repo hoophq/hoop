@@ -12,8 +12,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -21,6 +23,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/policy"
+	"github.com/hoophq/hoop/sidecar/session"
 	// Aliased: this package's own `telemetry` type is the usage analytics
 	// holder (analytics.go), and a file-scope import may not repeat a
 	// package-scope name.
@@ -137,6 +140,19 @@ type Config struct {
 	// build that did not link it. See telemetry.Config.
 	Telemetry *telem.Config `json:"telemetry,omitempty" cap:"telemetry"`
 
+	// Credentials configures the sources a listener's credential pool draws
+	// from: process-wide, restart-bound. A pool entry names one by its key
+	// here, and a source is built only when its block is present. See
+	// CredentialSourcesConfig.
+	Credentials *CredentialSourcesConfig `json:"credentials,omitempty" cap:"credentials"`
+
+	// CredentialSet is the set of hoop credentials the plane minted for this
+	// sidecar's lanes, hashed. Served by the plane, never authored: a lane
+	// with identity type hoop_credential verifies a client login against it.
+	// Live data, not configuration: the reloader swaps it on every
+	// heartbeat and nonRuleDoc leaves it out of the baseline.
+	CredentialSet []CredentialSetEntry `json:"credential_set,omitempty" cap:"credential_set"`
+
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level,omitempty"`
 
@@ -237,6 +253,14 @@ type Config struct {
 	// them onto each new document, since the list is baseline.
 	codecPlugins    map[inspect.Protocol]CodecPlugin
 	codecPluginInfo []CodecPluginInfo
+
+	// credentials is the live credential set and credentialSources the
+	// built sources, both process-wide: buildLanes creates them on the
+	// startup config and the reloader hands them to every later document,
+	// swapping the set's entries in place. credentials is nil in a build
+	// that links no auth engine.
+	credentials       CredentialSet
+	credentialSources map[string]CredentialSource
 }
 
 // Licensing reports the license this config runs under. The zero value is a
@@ -265,6 +289,225 @@ func (c *Config) UseLicense(ref license.Ref) error {
 		c.licPinned = ref
 	}
 	return nil
+}
+
+// CredentialSetEntry is one minted hoop credential, as the plane serves it.
+// The raw key never travels: Hash is what a client login is checked against.
+type CredentialSetEntry struct {
+	// Hash is the hex sha256 of the raw key.
+	Hash    string   `json:"hash,omitempty"`
+	Subject string   `json:"subject,omitempty"`
+	Email   string   `json:"email,omitempty"`
+	Groups  []string `json:"groups,omitempty"`
+	// Lane is the listener name the credential was minted for.
+	Lane      string    `json:"lane,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitzero"`
+	// SCRAM is the SCRAM-SHA-256 server-side verifier, for lanes whose
+	// client login is SCRAM (mongodb, postgres).
+	SCRAM *SCRAMMaterial `json:"scram,omitempty"`
+}
+
+// SCRAMMaterial is the RFC 7677 server-side verifier of one credential. All
+// byte fields are base64.
+type SCRAMMaterial struct {
+	Salt       string `json:"salt,omitempty"`
+	Iterations int    `json:"iterations,omitempty"`
+	StoredKey  string `json:"stored_key,omitempty"`
+	ServerKey  string `json:"server_key,omitempty"`
+}
+
+// CredentialSourcesConfig is the top-level credentials block: one entry per
+// source this process may draw a pool credential from. Presence is what
+// configures a source; an empty block is a valid one for a source whose
+// settings are all per pool entry.
+type CredentialSourcesConfig struct {
+	SecretFiles      *SecretFilesSourceConfig      `json:"secret_files,omitempty"`
+	GCPImpersonation *GCPImpersonationSourceConfig `json:"gcp_impersonation,omitempty"`
+	X509             *X509SourceConfig             `json:"x509,omitempty"`
+	// Vault and GCPSecretManager fetch the material from a secret store at
+	// login, over plain HTTPS, so they live in the root module. Each carries
+	// its own capability: the plane serves the block only to a build that
+	// has the source.
+	Vault            *VaultSourceConfig            `json:"vault,omitempty" cap:"credentials.vault"`
+	GCPSecretManager *GCPSecretManagerSourceConfig `json:"gcp_secret_manager,omitempty" cap:"credentials.gcp_secret_manager"`
+	// SPIFFE and Kerberos are built by the nested sidecar/identity/spiffe
+	// and sidecar/identity/krb5 modules, linked into hoop-inspect only.
+	// Each carries its own capability so the plane never serves the block
+	// to a build that did not link the module.
+	SPIFFE   *SPIFFESourceConfig   `json:"spiffe,omitempty" cap:"credentials.spiffe"`
+	Kerberos *KerberosSourceConfig `json:"kerberos,omitempty" cap:"credentials.kerberos"`
+}
+
+// VaultSourceConfig reads a pool entry's path from HashiCorp Vault at login:
+// a KV secret, or a database-engine role that mints a user for the session
+// and revokes it when the session ends. The sidecar authenticates to Vault
+// with the pod's service account token (the kubernetes method) or a token
+// file; a token written in the config is refused.
+type VaultSourceConfig struct {
+	// Addr is the Vault address, https.
+	Addr string          `json:"addr,omitempty"`
+	Auth VaultAuthConfig `json:"auth,omitzero"`
+	// CAFile adds the CA Vault's certificate chains to, beside the trust
+	// section's pool.
+	CAFile string `json:"ca_file,omitempty"`
+	// Namespace is the Vault Enterprise namespace, sent as X-Vault-Namespace.
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// VaultAuthConfig is how the sidecar logs in to Vault.
+type VaultAuthConfig struct {
+	// Type is kubernetes or token_file.
+	Type string `json:"type,omitempty"`
+	// Role is the Vault role the kubernetes method logs in as.
+	Role string `json:"role,omitempty"`
+	// Mount is the auth method's mount path; empty is kubernetes.
+	Mount string `json:"mount,omitempty"`
+	// TokenFile is the service account token the kubernetes method presents
+	// (empty is the pod's mounted token), or the Vault token for token_file.
+	TokenFile string `json:"token_file,omitempty"`
+}
+
+// GCPSecretManagerSourceConfig reads a pool entry's secret version from
+// Secret Manager with the pod's Workload Identity.
+type GCPSecretManagerSourceConfig struct {
+	// MetadataHost overrides the metadata server, as GCE_METADATA_HOST
+	// does. Empty is metadata.google.internal.
+	MetadataHost string `json:"metadata_host,omitempty"`
+}
+
+// SecretFilesSourceConfig reads a user and a password from files under Dir,
+// re-read on every login so a rotated secret is picked up without a
+// restart. A password file readable by group or other is refused.
+type SecretFilesSourceConfig struct {
+	Dir string `json:"dir,omitempty"`
+}
+
+// GCPImpersonationSourceConfig mints an access token for a pool entry's
+// service account through iamcredentials.googleapis.com, with the pod's own
+// identity from the metadata server.
+type GCPImpersonationSourceConfig struct {
+	// MetadataHost overrides the metadata server, as GCE_METADATA_HOST
+	// does. Empty is metadata.google.internal.
+	MetadataHost string `json:"metadata_host,omitempty"`
+}
+
+// X509SourceConfig presents a client certificate named per pool entry. The
+// block carries nothing; its presence configures the source.
+type X509SourceConfig struct{}
+
+// SPIFFESourceConfig picks an X509-SVID from the Workload API.
+type SPIFFESourceConfig struct {
+	// Socket is the Workload API address. Empty is
+	// unix:///run/spire/sockets/agent.sock.
+	Socket string `json:"socket,omitempty"`
+}
+
+// KerberosSourceConfig initiates GSSAPI from a credential cache or a keytab.
+type KerberosSourceConfig struct {
+	Cache  string `json:"cache,omitempty"`
+	Keytab string `json:"keytab,omitempty"`
+	Config string `json:"config,omitempty"`
+}
+
+// IdentityConfig is a listener's client-leg verifier: who a client has to
+// prove to be before the sidecar presents a credential of its own upstream.
+type IdentityConfig struct {
+	// Type is none, kubernetes, hoop_credential, jwt or spiffe.
+	Type string `json:"type,omitempty"`
+	// Audience a kubernetes, jwt or spiffe token must carry. Empty is
+	// hoop-sidecar.
+	Audience string `json:"audience,omitempty"`
+	// Issuer is the token's iss. For kubernetes, the API server URL; empty
+	// is the in-cluster https://kubernetes.default.svc, reached with the
+	// mounted CA and service account token. For jwt it is required.
+	Issuer string `json:"issuer,omitempty"`
+	// JWKSURL is where a jwt lane reads the issuer's keys. Empty runs OIDC
+	// discovery at <issuer>/.well-known/openid-configuration.
+	JWKSURL string `json:"jwks_url,omitempty"`
+	// Claims names the token claims a jwt lane reads into the identity.
+	Claims *IdentityClaimsConfig `json:"claims,omitempty"`
+	// TrustDomain refuses a SPIFFE ID outside it.
+	TrustDomain string `json:"trust_domain,omitempty"`
+	// Prefix refuses a SPIFFE ID whose path is not under it.
+	Prefix string `json:"prefix,omitempty"`
+}
+
+// IdentityClaimsConfig maps a jwt lane's token claims onto the identity.
+// Each names a claim; empty takes the default (sub, email, groups). The
+// subject claim must be present in the token; the others are optional.
+type IdentityClaimsConfig struct {
+	Subject string `json:"subject,omitempty"`
+	Email   string `json:"email,omitempty"`
+	Groups  string `json:"groups,omitempty"`
+}
+
+// CredentialsConfig is a listener's upstream credential pool and how a
+// verified identity picks one entry of it.
+type CredentialsConfig struct {
+	Pool   []CredentialEntry `json:"pool,omitempty"`
+	Select SelectConfig      `json:"select,omitzero"`
+}
+
+// CredentialEntry is one credential of a pool: a name the selector picks and
+// the audit trail records, the source that materializes it, and the fields
+// that source reads.
+type CredentialEntry struct {
+	Name   string `json:"name,omitempty"`
+	Source string `json:"source,omitempty"`
+	// secret_files: a literal user or a file holding it, and the password
+	// file. Paths are under credentials.secret_files.dir.
+	User         string `json:"user,omitempty"`
+	PasswordFile string `json:"password_file,omitempty"`
+	UserFile     string `json:"user_file,omitempty"`
+	// gcp_impersonation
+	ServiceAccount string   `json:"service_account,omitempty"`
+	Scopes         []string `json:"scopes,omitempty"`
+	// x509
+	CertFile string `json:"cert_file,omitempty"`
+	KeyFile  string `json:"key_file,omitempty"`
+	// spiffe
+	SPIFFEID string `json:"spiffe_id,omitempty"`
+	// kerberos
+	Principal string `json:"principal,omitempty"`
+	// vault: the API path read at login. A KV path (secret/data/<name> on
+	// v2, secret/<name> on v1) yields the keys user_key and password_key of
+	// the secret, default user and password; `user` may name the user
+	// instead. A database engine path (database/creds/<role>) yields a user
+	// Vault creates for this session and revokes when it ends.
+	Path        string `json:"path,omitempty"`
+	UserKey     string `json:"user_key,omitempty"`
+	PasswordKey string `json:"password_key,omitempty"`
+	// gcp_secret_manager: the secret version, as
+	// projects/<p>/secrets/<s>/versions/<v>. The payload is the password
+	// when `user` is set, else a JSON document holding user and password.
+	Secret string `json:"secret,omitempty"`
+}
+
+// SelectConfig picks a pool entry for a verified identity: an ordered rule
+// list, first match wins, or the lane's OPA endpoint naming it as
+// `credential` beside `allow`. One or the other.
+type SelectConfig struct {
+	Rules []CredentialRule `json:"rules,omitempty"`
+	OPA   bool             `json:"opa,omitempty"`
+}
+
+// CredentialRule maps an identity to a credential. When is a conjunction over
+// identity.subject, identity.email, identity.groups (contains),
+// identity.attributes.<k> and context.<k>; an empty When matches everyone.
+type CredentialRule struct {
+	When       map[string]string `json:"when,omitempty"`
+	Credential string            `json:"credential,omitempty"`
+}
+
+// PropagateConfig carries the verified identity to the upstream beside the
+// swapped credential, so the database or API still sees who is behind it.
+type PropagateConfig struct {
+	// ApplicationName is a postgres startup parameter template over
+	// .Principal, .Email and .Context.<k>.
+	ApplicationName string `json:"application_name,omitempty"`
+	// ImpersonateUser adds Impersonate-User and Impersonate-Group from the
+	// identity on an http lane.
+	ImpersonateUser bool `json:"impersonate_user,omitempty"`
 }
 
 // ListenerConfig is one protocol endpoint: one Envoy cluster's worth of
@@ -302,8 +545,9 @@ type ListenerConfig struct {
 	UpstreamTLS *TLSConfig `json:"upstream_tls,omitempty" label:"Upstream TLS" help:"Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic." protocols:"!ssh,ica" ui:"presence"`
 	// MySQLAuthKeyFile is an RSA private key whose public half MySQL clients
 	// can pin. It lets the relay decrypt direct RSA password responses before
-	// forwarding the NUL-terminated password inside UpstreamTLS.
-	MySQLAuthKeyFile string `json:"mysql_auth_key_file,omitempty" label:"MySQL auth key file" help:"RSA private key clients can pin, so the relay can read RSA password exchanges. Needs upstream TLS. A path on the sidecar host." protocols:"mysql"`
+	// forwarding the NUL-terminated password inside UpstreamTLS, or
+	// verifying it on a lane with an identity block.
+	MySQLAuthKeyFile string `json:"mysql_auth_key_file,omitempty" label:"MySQL auth key file" help:"RSA private key clients can pin, so the relay can read RSA password exchanges. Needs upstream TLS or an identity block. A path on the sidecar host." protocols:"mysql"`
 
 	// DownstreamTLS lets the relay terminate the CLIENT's TLS on this lane.
 	// Requires cert_file and key_file; the other TLSConfig fields describe an
@@ -320,12 +564,12 @@ type ListenerConfig struct {
 	// asks for GSS encryption, which is what psql does by default whenever a
 	// Kerberos ticket is present.
 	//
-	// MySQL negotiates in-band too and is still refused, because the relay
-	// does not speak that exchange: the server greets first there, and the
-	// client's SSLRequest is a truncated HandshakeResponse41 rather than a
-	// self-describing 8-byte packet, so none of negotiateDownstream applies.
-	// Accepting the field would bind a certificate nothing ever offers and
-	// report the lane healthy.
+	// MySQL negotiates in-band too, the server greeting first, and the
+	// relay terminates it only when its login driver runs: a mysql lane
+	// with an identity block takes the field, one without is refused,
+	// because the certificate would bind to nothing and the lane report
+	// healthy. The form keeps mysql off the tag while identity is a
+	// config-file key.
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.
@@ -365,6 +609,34 @@ type ListenerConfig struct {
 	// It is for a lane reachable from anywhere, where identity_header would
 	// let any caller claim any name. See CallerTokenConfig.
 	CallerToken *CallerTokenConfig `json:"caller_token,omitempty" cap:"caller_token" label:"Caller token" help:"Refuses requests that do not carry a token listed in a file, and records them under one caller name. For a listener reachable from anywhere." protocols:"http" ui:"presence"`
+
+	// Identity terminates the client's login on this lane: the client
+	// proves who it is to the sidecar (a hoop credential, a Kubernetes or
+	// SPIFFE token, or nothing on a unix socket), and the sidecar logs in
+	// upstream with a credential from Credentials. Exclusive with
+	// identity_header, google_identity and caller_token: one lane, one
+	// authority for who the caller is. Out of the form: it needs the pool
+	// and a top-level source beside it. See IdentityConfig.
+	Identity *IdentityConfig `json:"identity,omitempty" cap:"identity" ui:"-"`
+
+	// Credentials is the pool of upstream credentials this lane presents
+	// and the rule that picks one per identity. Requires Identity, or a
+	// unix transport, which implies identity type none. See
+	// CredentialsConfig.
+	Credentials *CredentialsConfig `json:"credentials,omitempty" cap:"credentials" ui:"-"`
+
+	// Context is lane-wide facts the credential selector matches as
+	// context.<k> and a propagate template reads as .Context.<k>.
+	Context map[string]string `json:"context,omitempty" cap:"context" label:"Lane context" help:"Facts about this listener, such as env: prod. A credential rule matches them as context.<key>."`
+
+	// PassthroughUsers are startup users a lane with Identity lets through
+	// unchanged, as a lane without one would: the database authenticates
+	// them itself and the trail records them as claimed, not verified.
+	PassthroughUsers []string `json:"passthrough_users,omitempty" cap:"passthrough_users" ui:"-"`
+
+	// Propagate carries the verified identity upstream beside the swapped
+	// credential. See PropagateConfig.
+	Propagate *PropagateConfig `json:"propagate,omitempty" cap:"propagate" ui:"-"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
@@ -1291,6 +1563,7 @@ func (c *Config) validate(onHost bool) error {
 	problems = append(problems, c.MCP.validate()...)
 	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
 	problems = append(problems, c.Telemetry.Validate()...)
+	problems = append(problems, c.Credentials.validate()...)
 
 	problems = append(problems, c.validatePlugins()...)
 
@@ -1404,12 +1677,15 @@ func (c *Config) validate(onHost bool) error {
 		// downstream_tls is refused at startup rather than accepted and
 		// ignored, except on lanes that actually terminate it. Postgres
 		// negotiates in-band; grpc/spanner, ClickHouse and http use
-		// TLS-on-connect, http with ALPN.
+		// TLS-on-connect, http with ALPN. A mysql lane terminates it only
+		// when its login driver runs, which identity switches on.
 		if l.DownstreamTLS != nil && !isSSH(l) {
 			p := inspect.Protocol(l.Protocol)
-			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) {
+			mysqlLogin := p == inspect.MySQL && l.Identity != nil
+			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) && !mysqlLogin {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc and spanner, not %q",
+					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc and spanner, "+
+						"and on mysql with an identity block, not %q",
 					name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
@@ -1464,9 +1740,9 @@ func (c *Config) validate(onHost bool) error {
 			problems = append(problems, l.CallerToken.validate(name, l.HTTP)...)
 		}
 		if l.MySQLAuthKeyFile != "" {
-			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {
+			if l.Protocol != string(inspect.MySQL) || (l.UpstreamTLS == nil && l.Identity == nil) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: mysql_auth_key_file requires a mysql listener with upstream_tls",
+					"%s: mysql_auth_key_file requires a mysql listener with upstream_tls or an identity block",
 					name,
 				))
 			}
@@ -1476,6 +1752,7 @@ func (c *Config) validate(onHost bool) error {
 				}
 			}
 		}
+		problems = append(problems, c.validateLaneAuth(l, name)...)
 
 		problems = append(problems, c.validateLane(l, name, onHost)...)
 	}
@@ -1774,6 +2051,258 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 		}
 	}
 	return problems
+}
+
+// validateLaneAuth checks a lane's login termination: identity, credentials,
+// passthrough_users, propagate and context. Every rule here refuses a
+// combination that would load and do nothing, or that would put a key on
+// the wire in the clear.
+func (c *Config) validateLaneAuth(l ListenerConfig, name string) []string {
+	var problems []string
+	p := inspect.Protocol(l.Protocol)
+	pf := func(format string, args ...any) {
+		problems = append(problems, name+": "+fmt.Sprintf(format, args...))
+	}
+	const oracleMsg = "oracle: credential swap is not supported in this release; use passthrough_users"
+	pool := l.HasPool()
+
+	if l.Identity != nil {
+		switch {
+		case isSSH(l) || isICA(l):
+			pf("identity is not valid on an %s listener; the %s endpoint names its own caller", l.Protocol, l.Protocol)
+		case p == inspect.Oracle && l.Identity.Type != IdentityNone:
+			pf("%s", oracleMsg)
+		}
+		for _, other := range []struct {
+			set  bool
+			name string
+		}{{l.IdentityHeader != "", "identity_header"}, {l.GoogleIdentity != nil, "google_identity"}, {l.CallerToken != nil, "caller_token"}} {
+			if other.set {
+				pf("identity and %s both name the caller; keep one", other.name)
+			}
+		}
+		if _, ok := RegisteredIdentitySource(l.Identity.Type); !ok && !slices.Contains(knownIdentityTypes, l.Identity.Type) {
+			pf("identity.type %q is not %s", l.Identity.Type, orList(knownIdentityTypes))
+		}
+		if l.Identity.Type == IdentityNone && l.network() != "unix" {
+			pf("identity type none needs network: unix; on tcp anyone who reaches the port would be the caller")
+		}
+		if !pool && p != inspect.Oracle {
+			pf("identity needs a credentials pool: the login is terminated only to present a credential of the sidecar's own upstream")
+		}
+		if (l.Identity.Type == IdentityHoopCredential || l.Identity.Type == IdentityJWT) && l.network() != "unix" && l.DownstreamTLS == nil &&
+			(p == inspect.Postgres || p == inspect.MySQL || p == inspect.ClickHouse) {
+			pf("identity type %s sends the secret as the login password; a tcp %s listener needs downstream_tls, or a unix socket", l.Identity.Type, l.Protocol)
+		}
+		if l.Identity.Type != IdentityJWT && (l.Identity.JWKSURL != "" || l.Identity.Claims != nil) {
+			pf("identity.jwks_url and identity.claims are jwt settings, not %s ones", l.Identity.Type)
+		}
+		switch l.Identity.Type {
+		case IdentityKubernetes:
+			if l.Identity.TrustDomain != "" || l.Identity.Prefix != "" {
+				pf("identity.trust_domain and identity.prefix are spiffe settings, not kubernetes ones")
+			}
+		case IdentityJWT:
+			if l.Identity.Issuer == "" {
+				pf("identity type jwt needs identity.issuer: the sidecar trusts only the issuer the lane names")
+			}
+			if l.Identity.TrustDomain != "" || l.Identity.Prefix != "" {
+				pf("identity.trust_domain and identity.prefix are spiffe settings, not jwt ones")
+			}
+		case IdentitySPIFFE:
+			if l.Identity.Issuer != "" {
+				pf("identity.issuer is a kubernetes or jwt setting, not a spiffe one")
+			}
+		case IdentityNone, IdentityHoopCredential:
+			if l.Identity.Audience != "" || l.Identity.Issuer != "" || l.Identity.TrustDomain != "" || l.Identity.Prefix != "" {
+				pf("identity type %s reads no audience, issuer, trust_domain or prefix", l.Identity.Type)
+			}
+		}
+	}
+
+	if l.Credentials != nil {
+		switch {
+		case isSSH(l) || isICA(l):
+			pf("credentials is not valid on an %s listener; the %s endpoint presents no upstream credential", l.Protocol, l.Protocol)
+		case p == inspect.Oracle:
+			pf("%s", oracleMsg)
+		}
+		if !pool {
+			pf("credentials.pool is empty; name at least one credential")
+		}
+		if l.Identity == nil && l.network() != "unix" {
+			pf("credentials without identity needs network: unix, which implies identity type none; on tcp write an identity block")
+		}
+		names := map[string]bool{}
+		for i, e := range l.Credentials.Pool {
+			where := fmt.Sprintf("credentials.pool[%d]", i)
+			if e.Name == "" {
+				pf("%s: name is required", where)
+			} else if names[e.Name] {
+				pf("%s: name %q is used twice", where, e.Name)
+			}
+			names[e.Name] = true
+			if e.Source == "" {
+				pf("%s: source is required", where)
+				continue
+			}
+			if _, ok := registeredCredentialSource(e.Source); !ok && !slices.Contains(knownCredentialSources, e.Source) {
+				pf("%s: source %q is not %s", where, e.Source, orList(knownCredentialSources))
+				continue
+			}
+			if !c.Credentials.configured(e.Source) {
+				pf("%s names source %s, and the configuration has no credentials.%s block", where, e.Source, e.Source)
+			}
+			problems = append(problems, validatePoolEntry(c.Credentials, l, e, name+": "+where)...)
+		}
+		sel := l.Credentials.Select
+		switch {
+		case len(sel.Rules) > 0 && sel.OPA:
+			pf("credentials.select names rules and opa; keep one")
+		case len(sel.Rules) == 0 && !sel.OPA:
+			pf("credentials.select needs rules, or opa: true")
+		case sel.OPA:
+			if _, opa, _ := c.resolve(l); !opa.enabled() {
+				pf("credentials.select.opa needs an opa.url on this lane")
+			}
+		}
+		for i, r := range sel.Rules {
+			where := fmt.Sprintf("credentials.select.rules[%d]", i)
+			if r.Credential == "" {
+				pf("%s: credential is required", where)
+			} else if !names[r.Credential] {
+				pf("%s names credential %q, which is not in the pool", where, r.Credential)
+			}
+			for k := range r.When {
+				if !validateRuleKey(k) {
+					pf("%s: when key %q is not identity.subject, identity.email, identity.groups, identity.attributes.<k> or context.<k>", where, k)
+				}
+			}
+		}
+	}
+
+	if len(l.PassthroughUsers) > 0 {
+		switch {
+		case !slices.Contains([]inspect.Protocol{inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB, inspect.Oracle, inspect.ClickHouse}, p):
+			pf("passthrough_users is only supported on a database listener with a login user, not %q", l.Protocol)
+		case l.IdentityType() == "":
+			pf("passthrough_users needs an identity block: without one every user passes through already")
+		}
+		if slices.Contains(l.PassthroughUsers, "") {
+			pf("passthrough_users holds an empty name")
+		}
+	}
+
+	if l.Propagate != nil {
+		switch {
+		case l.Propagate.ApplicationName == "" && !l.Propagate.ImpersonateUser:
+			pf("propagate sets nothing; write application_name or impersonate_user")
+		case !pool:
+			pf("propagate needs a credentials pool: only a terminated login carries the identity upstream")
+		}
+		if l.Propagate.ApplicationName != "" {
+			if p != inspect.Postgres {
+				pf("propagate.application_name is a postgres startup parameter, not valid on %s", l.Protocol)
+			}
+			if _, err := template.New("application_name").Option("missingkey=zero").Parse(l.Propagate.ApplicationName); err != nil {
+				pf("propagate.application_name: %v", err)
+			}
+		}
+		if l.Propagate.ImpersonateUser && (p != inspect.HTTP || isGRPCTransport(l)) {
+			pf("propagate.impersonate_user adds Impersonate-User to requests, only valid on http, not %s", l.Protocol)
+		}
+	}
+
+	for k := range l.Context {
+		switch {
+		case strings.TrimSpace(k) == "":
+			pf("context holds an empty key")
+		case session.ReservedContextKey(k):
+			pf("context key %q is one the policy context reserves for the session; pick another", k)
+		}
+	}
+	return problems
+}
+
+// validatePoolEntry checks the fields a source reads from an entry. where
+// names the entry.
+func validatePoolEntry(sources *CredentialSourcesConfig, l ListenerConfig, e CredentialEntry, where string) []string {
+	var problems []string
+	pf := func(format string, args ...any) {
+		problems = append(problems, where+": "+fmt.Sprintf(format, args...))
+	}
+	p := inspect.Protocol(l.Protocol)
+	perRequest := p == inspect.HTTP || isGRPCTransport(l)
+	switch e.Source {
+	case SourceSecretFiles:
+		if e.PasswordFile == "" {
+			pf("password_file is required")
+		}
+		switch {
+		case e.User != "" && e.UserFile != "":
+			pf("user and user_file both name the user; keep one")
+		case e.User == "" && e.UserFile == "" && !perRequest:
+			pf("user or user_file is required on a %s listener", l.Protocol)
+		}
+		if sources != nil && sources.SecretFiles != nil && sources.SecretFiles.Dir != "" {
+			dir := filepath.Clean(sources.SecretFiles.Dir)
+			for _, f := range []string{e.PasswordFile, e.UserFile} {
+				if f == "" {
+					continue
+				}
+				if _, err := ResolveSecretFile(dir, f); err != nil {
+					pf("%v", err)
+				}
+			}
+		}
+	case SourceGCPImpersonation:
+		if err := ValidateGCPImpersonationEntry(e); err != nil {
+			pf("%v", err)
+		}
+	case SourceX509:
+		if err := ValidateX509Entry(e); err != nil {
+			pf("%v", err)
+		}
+		if perRequest {
+			pf("a certificate is offered per connection, and a %s listener swaps the credential per request; use secret_files or gcp_impersonation", l.Protocol)
+		}
+	case SourceSPIFFE:
+		if e.SPIFFEID == "" {
+			pf("spiffe_id is required")
+		}
+		if perRequest {
+			pf("an X509-SVID is offered per connection, and a %s listener swaps the credential per request", l.Protocol)
+		}
+	case SourceKerberos:
+		if perRequest {
+			pf("kerberos initiates GSSAPI on a database login, not valid on %s", l.Protocol)
+		}
+	case SourceVault:
+		if err := ValidateVaultEntry(e); err != nil {
+			pf("%v", err)
+		}
+		if VaultIsDynamic(e.Path) {
+			switch {
+			case perRequest:
+				pf("a database engine path mints a user per session, and a %s listener swaps the credential per request; use a KV path", l.Protocol)
+			case p == inspect.ClickHouse:
+				pf("a database engine path mints a user per session, and a clickhouse listener terminates the login in its codec, which cannot revoke the lease; use a KV path")
+			}
+		}
+	case SourceGCPSecretManager:
+		if err := ValidateGCPSecretManagerEntry(e); err != nil {
+			pf("%v", err)
+		}
+	}
+	return problems
+}
+
+// orList renders choices for a refusal: "a, b or c".
+func orList(items []string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " or " + items[len(items)-1]
 }
 
 // anyPII reports whether a rule set needs a scanner to compile.

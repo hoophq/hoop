@@ -84,6 +84,12 @@ type Verdict struct {
 	// it is set only when Review.Reserved: the gate settles that approval
 	// once the upstream answers. Nil on every other verdict.
 	Review *Review
+
+	// Credential is the pool entry an OPA decision named beside allow, for
+	// a lane that asks its policy which upstream credential a login gets.
+	// Set only on an allow from OPA; every other evaluator leaves it empty
+	// and only a caller that asked reads it.
+	Credential string
 }
 
 // Review is the review a denied statement waits on, or the one that ended

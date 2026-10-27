@@ -262,13 +262,13 @@ func (cp *controlPlane) fileReview(ctx context.Context, listener, rule, statemen
 	switch resp.StatusCode {
 	case http.StatusRequestEntityTooLarge:
 		return out, fmt.Errorf("the control plane at %s refused the statement as too "+
-			"large for an approval request: %s", cp.url, controlPlaneMessage(raw))
+			"large for an approval request: %s", cp.url, ErrorMessage(raw))
 	case http.StatusUnprocessableEntity:
 		// The plane authorizes each review against the configuration it
 		// stored for this sidecar, so a listener whose approval_rule was
 		// edited locally, or a rule with no reviewers, lands here.
 		return out, fmt.Errorf("the control plane at %s refused an approval request for listener %q "+
-			"under rule %q: %s", cp.url, listener, rule, controlPlaneMessage(raw))
+			"under rule %q: %s", cp.url, listener, rule, ErrorMessage(raw))
 	}
 	return cp.reviewAnswer(resp, raw)
 }
@@ -299,7 +299,7 @@ func (cp *controlPlane) claimReview(ctx context.Context, reviewID string, reserv
 		// path still works against it.
 		return out, fmt.Errorf("the control plane at %s has no approval request %s to claim; "+
 			"a control plane older than this sidecar cannot answer a waiting hold: %s",
-			cp.url, reviewID, controlPlaneMessage(raw))
+			cp.url, reviewID, ErrorMessage(raw))
 	}
 	out, err = cp.reviewAnswer(resp, raw)
 	if err != nil {
@@ -328,7 +328,7 @@ func (cp *controlPlane) settleReview(ctx context.Context, reviewID string, accep
 	}
 	if resp.StatusCode == http.StatusNotFound {
 		return "", fmt.Errorf("the control plane at %s has no approval request %s to settle: %s",
-			cp.url, reviewID, controlPlaneMessage(raw))
+			cp.url, reviewID, ErrorMessage(raw))
 	}
 	out, err := cp.reviewAnswer(resp, raw)
 	if err != nil {
@@ -471,7 +471,7 @@ func (cp *controlPlane) ListReviews(ctx context.Context, status string, limit in
 		// which refuses a sidecar token. A wrong token reads the same.
 		return nil, fmt.Errorf("%w, or it rejected the token", ErrPlaneTooOld)
 	case http.StatusBadRequest:
-		return nil, fmt.Errorf("the control plane refused the list: %s", controlPlaneMessage(raw))
+		return nil, fmt.Errorf("the control plane refused the list: %s", ErrorMessage(raw))
 	}
 	return nil, cp.reviewError(resp, raw)
 }
@@ -527,7 +527,7 @@ func (cp *controlPlane) reviewError(resp *http.Response, raw []byte) error {
 		// reviews: it is running as a gateway, not as a control plane.
 		// Startup cannot catch this, because the handshake works.
 		return fmt.Errorf("the gateway at %s does not serve sidecar approvals; "+
-			"require_approval needs a control plane: %s", cp.url, controlPlaneMessage(raw))
+			"require_approval needs a control plane: %s", cp.url, ErrorMessage(raw))
 	}
 
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
@@ -538,7 +538,7 @@ func (cp *controlPlane) reviewError(resp *http.Response, raw []byte) error {
 			cp.url, resp.Header.Get("Location"))
 	}
 	return fmt.Errorf("the control plane at %s answered %s: %s",
-		cp.url, resp.Status, controlPlaneMessage(raw))
+		cp.url, resp.Status, ErrorMessage(raw))
 }
 
 // decodeReview reads the answer.

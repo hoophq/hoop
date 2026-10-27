@@ -158,9 +158,15 @@ under `deploy/docker-compose/` binds:
 | `adminSecret` | Secret that `PUT /license` on the admin port asks for → `HOOP_SIDECAR_ADMIN_SECRET`. Empty turns the endpoint off |
 | `controlPlane.url` | Control Plane to take the running config from → `HOOP_CONTROL_PLANE_URL` |
 | `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN`. Exclusive with `controlPlane.identity` |
-| `controlPlane.identity` | Authenticate with the pod's service account instead of a token → `HOOP_SIDECAR_IDENTITY_TYPE`. `kubernetes` mounts a projected token with audience `controlPlane.identityAudience` and sets `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` to it; `gcp` reads a Google ID token from the metadata server. The control plane creates the sidecar on first contact; see "Service account identity" below |
-| `controlPlane.identityAudience` | Audience of the identity token. Default: `controlPlane.url`. Set it when one control plane serves several organizations; see "Several organizations on one control plane" below. Under `gcp` → `HOOP_SIDECAR_IDENTITY_AUDIENCE`. Refused without `controlPlane.identity` |
+| `controlPlane.identity` | Authenticate with the pod's own identity instead of a token → `HOOP_SIDECAR_IDENTITY_TYPE`. `kubernetes` mounts a projected token with audience `controlPlane.identityAudience` and sets `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` to it; `gcp` reads a Google ID token from the metadata server; `spiffe` reads a JWT-SVID from the Workload API socket the chart mounts (see `spiffe.*`). The control plane creates the sidecar on first contact; see "Service account identity" below |
+| `controlPlane.identityAudience` | Audience of the identity token. Default: `controlPlane.url`. Set it when one control plane serves several organizations; see "Several organizations on one control plane" below. Under `gcp` and `spiffe` → `HOOP_SIDECAR_IDENTITY_AUDIENCE`. Refused without `controlPlane.identity` |
 | `controlPlane.tokenExpirationSeconds` | Lifetime of the projected token under `identity: kubernetes`. Default `3600`. An integer, minimum `600`: the chart refuses to render otherwise. The kubelet rotates it |
+| `spiffe.enabled` | Mount the SPIFFE Workload API socket at `/run/spire/sockets` without `identity: spiffe`, for the `spiffe` credential source alone. Default `false`; `identity: spiffe` mounts it regardless |
+| `spiffe.socketHostPath` | Reach the socket through a `hostPath` to this directory instead of the `csi.spiffe.io` CSI volume. Empty uses the driver. Refused when nothing mounts the socket |
+| `spiffe.tokenFile` | Under `identity: spiffe`, read the JWT-SVID from this file (written by spiffe-helper) → `HOOP_SIDECAR_IDENTITY_TOKEN_FILE`, instead of the socket. Mount the file with `extraVolumes` |
+| `credentials.secretMounts` | List of `{name, secretName, mountPath, defaultMode}`: one Secret volume and read-only mount each, for the files a lane's credential pool names. `defaultMode` default `0400`. All three names required; a `name` used twice, by another mount or an `extraVolumes` entry, is refused |
+| `kerberos.ccache.hostPath`, `kerberos.ccache.secretName` | The Kerberos credential cache the `kerberos` credential source reads: a node path or a Secret (mounted `0400`). One of the two, or neither |
+| `kerberos.ccache.mountPath` | Where the cache lands, read-only. Default `/run/krb5` |
 | `analytics.enabled` | Usage analytics to Segment. `false` → `HOOP_SIDECAR_ANALYTICS=off`. Default `true` |
 | `analytics.sidecarId` | Stable install identity → `HOOP_SIDECAR_ID`. Default: the release's full name. Hashed before it is sent |
 | `analytics.hostId` | Machine identity → `HOOP_HOST_ID`. Default: the node name via the downward API. Hashed before it is sent |
@@ -318,9 +324,9 @@ both ways are refused.
 
 ## Environment variables
 
-The relay reads twelve. Eleven come from the Secret `sidecar-config`; the
-twelfth is set directly on the container because it defaults to a
-downward-API field, which a Secret cannot express:
+Eleven come from the Secret `sidecar-config`, plus `SPIFFE_ENDPOINT_SOCKET`
+when the socket is mounted. Four are set directly on the container because
+they default to downward-API fields, which a Secret cannot express:
 
 | Variable | From |
 |---|---|
@@ -329,13 +335,15 @@ downward-API field, which a Secret cannot express:
 | `HOOP_SIDECAR_ADMIN_SECRET` | `adminSecret` |
 | `HOOP_CONTROL_PLANE_URL` | `controlPlane.url` |
 | `HOOP_SIDECAR_TOKEN` | `controlPlane.token` |
-| `HOOP_SIDECAR_IDENTITY_TYPE` | `controlPlane.identity`: empty, `kubernetes` or `gcp` |
-| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `/var/run/hoop-sidecar/token` when `controlPlane.identity: kubernetes`, else empty |
-| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `controlPlane.identityAudience` when `controlPlane.identity: gcp`, else empty. Empty means the control plane URL |
+| `HOOP_SIDECAR_IDENTITY_TYPE` | `controlPlane.identity`: empty, `kubernetes`, `gcp` or `spiffe` |
+| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `/var/run/hoop-sidecar/token` under `identity: kubernetes`; `spiffe.tokenFile` under `identity: spiffe`; else empty |
+| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `controlPlane.identityAudience` under `identity: gcp` or `spiffe`, else empty. Empty means the control plane URL |
+| `SPIFFE_ENDPOINT_SOCKET` | `unix:///run/spire/sockets/agent.sock`, only when the socket is mounted (`identity: spiffe` or `spiffe.enabled`) |
 | `HOOP_SIDECAR_ANALYTICS` | `off` when `analytics.enabled: false`, else empty |
 | `HOOP_SIDECAR_ID` | `analytics.sidecarId`, defaulting to the release's full name |
 | `HOOP_SIDECAR_INSTALL_SOURCE` | `analytics.installSource`, else empty |
 | `HOOP_HOST_ID` | `analytics.hostId`, defaulting to `fieldRef: spec.nodeName` on the container |
+| `POD_UID`, `POD_NAME`, `POD_NAMESPACE` | Always set from `metadata.uid`, `metadata.name`, `metadata.namespace`. A lane with `identity: {type: kubernetes}` binds a client's projected token to this pod through `POD_UID` |
 
 Add anything else through `extraSecret`, which becomes a second `envFrom`
 Secret — an analyzer provider's API key, for instance.
@@ -427,10 +435,63 @@ Two, both deliberate:
   references CA files and credentials by path, so the chart has to be able to
   put them there.
 
-There is no `spiffe` block. SPIFFE authenticates an agent to the gateway; this
-process does not dial the gateway. It authenticates to a control plane with
-`controlPlane.token` or `controlPlane.identity`, or to nothing at all when it
-runs standalone.
+The `spiffe` block is not the agent chart's. SPIFFE there authenticates an
+agent to the gateway; here it is the Workload API socket, read to prove the
+pod to a control plane (`controlPlane.identity: spiffe`) or to present an
+X509-SVID to a database (the `spiffe` credential source).
+
+## Credential swap on a lane
+
+A lane that terminates the client's login and authenticates upstream with a
+credential of its own (`identity` and `credentials` on a listener; see
+"Identity" and "Credentials" in `sidecar/README.md`) reads that credential
+from files. The chart puts them there:
+
+```yaml
+credentials:
+  secretMounts:
+    - {name: appdb-ro, secretName: appdb-ro, mountPath: /run/secrets/appdb-ro}
+    - {name: appdb-rw, secretName: appdb-rw, mountPath: /run/secrets/appdb-rw}
+config:
+  credentials:
+    secret_files: {dir: /run/secrets}
+  listeners:
+    - name: appdb
+      protocol: postgres
+      listen: '0.0.0.0:15432'
+      upstream: appdb.default.svc.cluster.local:5432
+      downstream_tls: {cert_file: /etc/hoop-inspect/tls/tls.crt, key_file: /etc/hoop-inspect/tls/tls.key}
+      identity: {type: hoop_credential}
+      credentials:
+        pool:
+          - {name: ro, source: secret_files, user_file: /run/secrets/appdb-ro/user, password_file: /run/secrets/appdb-ro/password}
+          - {name: rw, source: secret_files, user_file: /run/secrets/appdb-rw/user, password_file: /run/secrets/appdb-rw/password}
+        select:
+          rules:
+            - {when: {identity.groups: dba}, credential: rw}
+            - {credential: ro}
+```
+
+Every entry is mounted read-only at `defaultMode: 0400`; the relay refuses a
+credential file anyone else can read. `extraVolumes` can do the same, but it
+cannot forget the mode this way.
+
+A `kerberos` pool entry reads a credential cache: `kerberos.ccache.hostPath`
+for one a node-level sssd or kinit keeps fresh, `kerberos.ccache.secretName`
+for a long-lived one, either at `kerberos.ccache.mountPath`
+(`/run/krb5`). A keytab is a file: mount it with `credentials.secretMounts`
+and name it in `config.credentials.kerberos.keytab`.
+
+A `spiffe` pool entry needs the Workload API socket. `identity: spiffe`
+mounts it; a sidecar that authenticates to the control plane another way sets
+`spiffe.enabled: true`.
+
+A lane with `identity: {type: kubernetes}` accepts a client's projected
+service account token and binds it to this pod through `POD_UID`, which the
+chart always sets.
+
+What a GitOps reconciler sends the control plane for such a sidecar — owner,
+lanes, grants, Slack channels — is in `RECONCILER.md` beside this file.
 
 ## Service account identity
 
@@ -458,6 +519,34 @@ When the control plane cannot verify the token (not a JWT, an issuer no
 entry names, a bad signature, an expired token, or keys it could not fetch),
 the pod logs a 401 that says only `the service account token failed
 verification`. The reason is in the control plane log, with the issuer.
+
+### SPIFFE
+
+`identity: spiffe` proves the pod with a JWT-SVID from the SPIRE agent on the
+node. The entry's pattern then matches the SPIFFE ID
+(`spiffe://<trust-domain>/ns/<namespace>/sa/<service-account>` under the
+SPIRE Kubernetes workload registrar) and its issuer is the trust domain:
+
+```yaml
+controlPlane:
+  url: https://hoop.example.com
+  identity: spiffe
+  identityAudience: hoop-org-acme   # the audience the SVID is minted for
+spiffe:
+  socketHostPath: ''                # csi.spiffe.io; or the agent's directory
+```
+
+The relay reads the socket at `SPIFFE_ENDPOINT_SOCKET`, which the chart
+sets. A SPIRE agent reaches the pod either through the CSI driver
+(`csi.spiffe.io`, the default) or through a `hostPath` to the directory the
+DaemonSet agent binds; the first needs no privilege on the pod.
+
+With spiffe-helper beside the relay writing the JWT-SVID to a file, set
+`spiffe.tokenFile` to that path and mount it with `extraVolumes`.
+
+Moving a sidecar from `identity: kubernetes` to `spiffe` changes its issuer.
+The binding below is per issuer: clear it with
+`DELETE /api/sidecars/<name>/identity` and the next handshake rebinds.
 
 ### Several organizations on one control plane
 

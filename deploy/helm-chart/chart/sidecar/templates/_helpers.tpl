@@ -124,6 +124,59 @@ control plane must refuse it.
 {{- define "hoopsidecar.identityTokenPath" -}}{{ include "hoopsidecar.identityTokenDir" . }}/token{{- end -}}
 
 {{/*
+The SPIFFE Workload API socket. /run/spire/sockets/agent.sock is where the
+SPIRE agent binds by default and what its CSI driver projects, so the chart
+names it once for the mount, the env and the README.
+*/}}
+{{- define "hoopsidecar.spiffeSocketDir" -}}/run/spire/sockets{{- end -}}
+{{- define "hoopsidecar.spiffeSocket" -}}unix://{{ include "hoopsidecar.spiffeSocketDir" . }}/agent.sock{{- end -}}
+
+{{/*
+Whether the socket is mounted: under identity spiffe, or on request for the
+spiffe credential source alone.
+*/}}
+{{- define "hoopsidecar.mountsSpiffe" -}}
+{{- if or (eq .Values.controlPlane.identity "spiffe") (eq (toString .Values.spiffe.enabled) "true") -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Whether the Kerberos credential cache is mounted.
+*/}}
+{{- define "hoopsidecar.mountsKrb5" -}}
+{{- with .Values.kerberos.ccache -}}
+{{- if or .hostPath .secretName -}}true{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Whether the pod has any volume at all, so an install that needs none keeps
+the pod template it had.
+*/}}
+{{- define "hoopsidecar.hasVolumes" -}}
+{{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumes .Values.extraVolumeMounts (eq .Values.controlPlane.identity "kubernetes") (include "hoopsidecar.mountsSpiffe" .) (include "hoopsidecar.mountsKrb5" .) .Values.credentials.secretMounts -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The audience env is read by the types that mint their own token: gcp and
+spiffe. A projected token's audience is set on the volume instead.
+*/}}
+{{- define "hoopsidecar.audienceEnv" -}}
+{{- if has .Values.controlPlane.identity (list "gcp" "spiffe") -}}{{ .Values.controlPlane.identityAudience }}{{- end -}}
+{{- end -}}
+
+{{/*
+The token file env: the projected token under kubernetes, or the JWT-SVID
+spiffe-helper writes under spiffe.
+*/}}
+{{- define "hoopsidecar.tokenFileEnv" -}}
+{{- if eq .Values.controlPlane.identity "kubernetes" -}}
+{{- include "hoopsidecar.identityTokenPath" . -}}
+{{- else if eq .Values.controlPlane.identity "spiffe" -}}
+{{- .Values.spiffe.tokenFile -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The identity token's audience. A control plane serving several
 organizations maps each (issuer, audience) pair to one organization, so each
 one sets its own; a single organization leaves it empty and gets the URL.
@@ -179,8 +232,8 @@ changed a selector label would detach the pods from their Deployment.
 {{- end -}}
 {{- end -}}
 {{- $cp := .Values.controlPlane -}}
-{{- if and $cp.identity (not (has $cp.identity (list "kubernetes" "gcp"))) -}}
-{{- fail (printf "controlPlane.identity is %q: use kubernetes or gcp, or leave it empty" $cp.identity) -}}
+{{- if and $cp.identity (not (has $cp.identity (list "kubernetes" "gcp" "spiffe"))) -}}
+{{- fail (printf "controlPlane.identity is %q: use kubernetes, gcp or spiffe, or leave it empty" $cp.identity) -}}
 {{- end -}}
 {{- if and $cp.token $cp.identity -}}
 {{- fail "set controlPlane.token or controlPlane.identity, not both: the relay refuses two credentials" -}}
@@ -202,6 +255,50 @@ changed a selector label would detach the pods from their Deployment.
 {{- end -}}
 {{- if lt (atoi $exp) 600 -}}
 {{- fail (printf "controlPlane.tokenExpirationSeconds is %s: Kubernetes refuses a projected token that expires in less than 600 seconds; set 600 or more" $exp) -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.spiffe.tokenFile (ne $cp.identity "spiffe") -}}
+{{- fail "spiffe.tokenFile is set but controlPlane.identity is not spiffe: only the spiffe identity reads a JWT-SVID file" -}}
+{{- end -}}
+{{- if and .Values.spiffe.socketHostPath (not (include "hoopsidecar.mountsSpiffe" .)) -}}
+{{- fail "spiffe.socketHostPath is set but nothing mounts the socket: set controlPlane.identity: spiffe or spiffe.enabled: true" -}}
+{{- end -}}
+{{- if and .Values.spiffe.socketHostPath (not (hasPrefix "/" .Values.spiffe.socketHostPath)) -}}
+{{- fail (printf "spiffe.socketHostPath is %q: a hostPath is absolute" .Values.spiffe.socketHostPath) -}}
+{{- end -}}
+{{/*
+Every credential mount needs all three names, and a volume name used twice,
+by another mount, by a chart-owned volume or by an extraVolumes entry, is an
+apply-time error the chart can refuse now.
+*/}}
+{{- $seen := dict -}}
+{{- range $i, $v := .Values.extraVolumes -}}
+{{- with $v.name -}}{{- $_ := set $seen . (printf "extraVolumes[%d]" $i) -}}{{- end -}}
+{{- end -}}
+{{- range $i, $m := .Values.credentials.secretMounts -}}
+{{- if not (and $m.name $m.secretName $m.mountPath) -}}
+{{- fail (printf "credentials.secretMounts[%d]: name, secretName and mountPath are all required" $i) -}}
+{{- end -}}
+{{- if not (hasPrefix "/" $m.mountPath) -}}
+{{- fail (printf "credentials.secretMounts[%d].mountPath is %q: a mount path is absolute" $i $m.mountPath) -}}
+{{- end -}}
+{{- if has $m.name (list "sidecar-config-volume" "sidecar-identity" "sidecar-spiffe" "sidecar-krb5-ccache") -}}
+{{- fail (printf "credentials.secretMounts[%d].name %q is a volume the chart mounts itself: pick another name" $i $m.name) -}}
+{{- end -}}
+{{- if hasKey $seen $m.name -}}
+{{- fail (printf "credentials.secretMounts[%d].name %q is also the name of %s: a pod refuses two volumes with one name" $i $m.name (get $seen $m.name)) -}}
+{{- end -}}
+{{- $_ := set $seen $m.name (printf "credentials.secretMounts[%d]" $i) -}}
+{{- end -}}
+{{- with .Values.kerberos.ccache -}}
+{{- if and .hostPath .secretName -}}
+{{- fail "set kerberos.ccache.hostPath or kerberos.ccache.secretName, not both: one cache is mounted" -}}
+{{- end -}}
+{{- if and (or .hostPath .secretName) (not (hasPrefix "/" (.mountPath | default ""))) -}}
+{{- fail (printf "kerberos.ccache.mountPath is %q: a mount path is absolute" .mountPath) -}}
+{{- end -}}
+{{- if and .hostPath (not (hasPrefix "/" .hostPath)) -}}
+{{- fail (printf "kerberos.ccache.hostPath is %q: a hostPath is absolute" .hostPath) -}}
 {{- end -}}
 {{- end -}}
 {{/*

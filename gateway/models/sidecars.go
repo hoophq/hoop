@@ -62,6 +62,11 @@ type Sidecar struct {
 	CreatedBy     string               `gorm:"column:created_by"`
 	CreatedAt     time.Time            `gorm:"column:created_at"`
 
+	// OwnerEmail is the person sidecar reviews and anonymous sidecar
+	// sessions are filed under when the statement names nobody. Nil when
+	// no admin set one.
+	OwnerEmail *string `gorm:"column:owner_email"`
+
 	// The service account identity this sidecar is bound to: the first that
 	// reached it. Another identity is refused until an admin clears them
 	// (ClearSidecarIdentity). Nil on a sidecar no identity reached, or whose
@@ -97,7 +102,7 @@ type Sidecar struct {
 }
 
 const sidecarColumns = `
-	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
+	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration, s.owner_email,
 	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome,
 	s.last_error, s.served_revision_at, s.capabilities, s.identity_issuer, s.identity_subject,
 	s.reported_configuration::text AS reported_configuration, s.reported_configuration_at`
@@ -126,7 +131,7 @@ func CreateSidecar(db *gorm.DB, s *Sidecar) error {
 		s.ID = uuid.NewString()
 	}
 	s.CreatedAt = time.Now().UTC()
-	err := db.Table("private.sidecars").Create(map[string]any{
+	row := map[string]any{
 		"id":            s.ID,
 		"org_id":        s.OrgID,
 		"name":          s.Name,
@@ -134,7 +139,13 @@ func CreateSidecar(db *gorm.DB, s *Sidecar) error {
 		"configuration": s.Configuration,
 		"created_by":    s.CreatedBy,
 		"created_at":    s.CreatedAt,
-	}).Error
+	}
+	// Only when set: an absent owner is the column's NULL default, and the
+	// migration tests create rows on schemas older than the column.
+	if owner := nullIfEmpty(s.OwnerEmail); owner != nil {
+		row["owner_email"] = *owner
+	}
+	err := db.Table("private.sidecars").Create(row).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return ErrAlreadyExists
@@ -343,7 +354,7 @@ func GetSidecarByNameOrIDForUpdate(tx *gorm.DB, orgID, nameOrID string) (*Sideca
 func GetSidecarByKeyHash(db *gorm.DB, keyHash string) (*Sidecar, error) {
 	var item Sidecar
 	err := db.Raw(`
-	SELECT s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration
+	SELECT s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration, s.owner_email
 	FROM private.sidecars s
 	WHERE s.key_hash = ?`, keyHash).
 		Scan(&item).
@@ -358,8 +369,9 @@ func GetSidecarByKeyHash(db *gorm.DB, keyHash string) (*Sidecar, error) {
 }
 
 // UpdateSidecarConfiguration replaces the stored config document and returns
-// the updated row. Returns ErrNotFound when no row matched.
-func UpdateSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, configuration SidecarConfiguration) (*Sidecar, error) {
+// the updated row. A nil ownerEmail keeps the stored owner; an empty one
+// clears it. Returns ErrNotFound when no row matched.
+func UpdateSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, configuration SidecarConfiguration, ownerEmail *string) (*Sidecar, error) {
 	identifierClause := "name = ?"
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		identifierClause = "id = ?"
@@ -368,10 +380,11 @@ func UpdateSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, configurati
 	var item Sidecar
 	err := db.Raw(`
 	UPDATE private.sidecars
-	SET configuration = ?
+	SET configuration = ?,
+		owner_email = CASE WHEN ?::text IS NULL THEN owner_email ELSE NULLIF(?::text, '') END
 	WHERE org_id = ? AND `+identifierClause+`
-	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities, reported_version`,
-		configuration, orgID, nameOrID).
+	RETURNING id, org_id, name, created_by, created_at, configuration, owner_email, capabilities, reported_version`,
+		configuration, ownerEmail, ownerEmail, orgID, nameOrID).
 		Scan(&item).
 		Error
 	if err != nil {
@@ -383,15 +396,24 @@ func UpdateSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, configurati
 	return &item, nil
 }
 
+// nullIfEmpty stores an empty owner as NULL, so one absent value reads back
+// one way.
+func nullIfEmpty(s *string) *string {
+	if s == nil || *s == "" {
+		return nil
+	}
+	return s
+}
+
 // PatchSidecarConfiguration merges a partial document into the stored
 // configuration: the keys in merge overwrite, the rest of the document is left
 // as it was. It is a jsonb concatenation on the column rather than a document
 // replacement, so a configuration a sidecar imported concurrently keeps its
 // listeners instead of being overwritten by a stale copy. removeLoadFromDisk
 // drops the key after the merge — false is the same fact as absent, and an
-// older sidecar rejects an unknown key. Returns ErrNotFound when no row
-// matched.
-func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.RawMessage, removeLoadFromDisk bool) (*Sidecar, error) {
+// older sidecar rejects an unknown key. A nil ownerEmail keeps the stored
+// owner; an empty one clears it. Returns ErrNotFound when no row matched.
+func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.RawMessage, removeLoadFromDisk bool, ownerEmail *string) (*Sidecar, error) {
 	identifierClause := "name = ?"
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		identifierClause = "id = ?"
@@ -405,10 +427,11 @@ func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.R
 	var item Sidecar
 	err := db.Raw(`
 	UPDATE private.sidecars
-	SET configuration = `+expr+`
+	SET configuration = `+expr+`,
+		owner_email = CASE WHEN ?::text IS NULL THEN owner_email ELSE NULLIF(?::text, '') END
 	WHERE org_id = ? AND `+identifierClause+`
-	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities, reported_version`,
-		string(merge), orgID, nameOrID).
+	RETURNING id, org_id, name, created_by, created_at, configuration, owner_email, capabilities, reported_version`,
+		string(merge), ownerEmail, ownerEmail, orgID, nameOrID).
 		Scan(&item).
 		Error
 	if err != nil {

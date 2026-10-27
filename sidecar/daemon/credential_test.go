@@ -133,6 +133,53 @@ func TestATokenFileIsReReadOnEveryHandshake(t *testing.T) {
 	}
 }
 
+// The spiffe type is the kubernetes one over a JWT-SVID the spiffe-helper
+// writes: the same file, re-read per handshake, with the audience the chart
+// told the helper to mint accepted beside it.
+func TestASPIFFETokenFileIsReReadOnEveryHandshake(t *testing.T) {
+	clearCredentialEnv(t)
+	srv, calls := identityPlane(t, http.StatusOK, planeConfig)
+	path := filepath.Join(t.TempDir(), "jwt_svid.token")
+	first := k8sJWT(t, "spiffe://example.org/ns/ws-1/sa/hoop-sidecar", time.Now().Add(time.Hour))
+	writeTokenFile(t, path, first)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarIdentityTypeEnv, IdentityTypeSPIFFE)
+	t.Setenv(SidecarIdentityTokenFileEnv, path)
+	t.Setenv(SidecarIdentityAudienceEnv, "https://cp.example.com")
+
+	cfg, _, err := SetupWith("", nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	second := k8sJWT(t, "spiffe://example.org/ns/ws-1/sa/hoop-sidecar", time.Now().Add(2*time.Hour))
+	writeTokenFile(t, path, second+"\n")
+	if _, err := fetchControlPlaneConfig(cfg.cp.url, cfg.cp.cred, handshakeRequest{Version: Version}); err != nil {
+		t.Fatalf("second handshake: %v", err)
+	}
+
+	got := calls()
+	if len(got) != 2 {
+		t.Fatalf("handshakes = %d, want 2", len(got))
+	}
+	for i, want := range []string{first, second} {
+		if got[i].identity != want {
+			t.Errorf("handshake %d presented identity %q, want %q", i, got[i].identity, want)
+		}
+	}
+
+	// Without a path it reads the chart's file, like kubernetes.
+	clearCredentialEnv(t)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarIdentityTypeEnv, IdentityTypeSPIFFE)
+	_, _, err = SetupWith("", nil, nil)
+	if _, statErr := os.Stat(DefaultIdentityTokenFile); statErr == nil {
+		t.Skip("this host has " + DefaultIdentityTokenFile)
+	}
+	if err == nil || !strings.Contains(err.Error(), DefaultIdentityTokenFile) {
+		t.Errorf("the error does not name %s: %v", DefaultIdentityTokenFile, err)
+	}
+}
+
 func TestAnUnusableTokenFileStopsStartup(t *testing.T) {
 	for _, tc := range []struct {
 		name, content, want string

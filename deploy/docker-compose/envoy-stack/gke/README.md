@@ -72,7 +72,7 @@ Connect Gateway itself supports `exec`/`port-forward`.
 | `envoy-gke.yaml` | parent listeners plus the `:443` MITM (h2c and HTTP/1.1 upgrade clusters) and the `:8449` loop |
 | `config-gke.yaml` | sidecar config: `trust`, the `gke` lane (`google_identity`, one guardrail, one mask rule) and the `gke-loop` lane |
 | `kubeconfig.yaml` | the Connect Gateway URL, the customer CA, alice's and bob's Google tokens |
-| `fakegoogle/` | tokeninfo + Connect Gateway stand-in, stdlib only |
+| `fakegoogle/` | tokeninfo, `iamcredentials` `generateAccessToken` and the metadata token endpoint (`-metadata-addr`, used by `../credentials`), plus the Connect Gateway stand-in; stdlib only |
 | `demo-gke.sh` | the walk above |
 
 The cluster manifests and static tokens are `../kubernetes/manifests/demo.yaml`

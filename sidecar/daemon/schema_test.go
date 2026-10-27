@@ -80,6 +80,7 @@ func TestProtocolsTagsMatchValidate(t *testing.T) {
 		"caller_token": func(l map[string]any) {
 			l["caller_token"] = map[string]any{"file": "/nonexistent/tokens", "name": "ci"}
 		},
+		"context": func(l map[string]any) { l["context"] = map[string]any{"env": "demo"} },
 		"idle_timeout_sec": func(l map[string]any) {
 			l["idle_timeout_sec"] = 30
 		},

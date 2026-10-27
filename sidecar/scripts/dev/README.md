@@ -249,3 +249,34 @@ sqlcmd -Nm -C   Encrypt=Mandatory -> ENCRYPT_ON  -> refused, rule stream-unsafe
 
 See `deploy/docker-compose/envoy-stack/mssql2019/README.md` for a capture of
 the handshake and the reasoning behind each check.
+
+---
+
+# Testing the credential swap
+
+One check over the `credentials/` overlay of the envoy-stack: the sidecar
+terminates the login with a hoop key and authenticates upstream as a role
+of its own, on the postgres lane and the GKE lane.
+
+```bash
+cd deploy/docker-compose/envoy-stack
+./run.sh --rebuild
+docker compose -f docker-compose.yml -f gke/docker-compose.gke.yml \
+  -f credentials/docker-compose.credentials.yml up -d --build --wait
+
+cd ../../../sidecar/scripts/dev
+./credentials-check.sh         # verify: swap, refusal, impersonation, audit
+```
+
+No cloud account: the metadata server and `iamcredentials` are the gke
+overlay's `fake-google`. The checks, in order: alice's key logs in and
+`pg_stat_activity` shows `appuser` with her name in `application_name`;
+bob's key gets `app_ro` and the database refuses his `INSERT`; a wrong key,
+`SET ROLE` and the lane's guardrail are refused; kubectl with a hoop key
+reaches k3s as `alice@example.com` through the impersonated service
+account, bob is refused by RBAC, a forged key by the sidecar; the
+`session_start` rows carry `credential`, `upstream_user`, `identity_type`
+and `verified`, and no key or password is in the trail.
+
+See `deploy/docker-compose/envoy-stack/credentials/README.md` for the
+topology and what is faked.

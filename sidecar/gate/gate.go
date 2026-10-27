@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"slices"
 	"sort"
 	"sync"
 
@@ -160,6 +161,15 @@ type reassemblySizer interface {
 // message is never empty: the gate substitutes the generic text first.
 type DenyFramer interface {
 	DenyFrame(dir inspect.Direction, message string) []byte
+}
+
+// LoginTerminator is a client codec whose Filter terminated the login
+// itself (ClickHouse: the single cleartext Hello). Once the first client
+// Filter call returns bytes, the gate reads it one time and adopts the
+// identity and metadata before any statement is judged. ok is false while
+// the login is still pending or when the lane passes it through.
+type LoginTerminator interface {
+	LoginIdentity() (id session.Identity, metadata map[string]string, ok bool)
 }
 
 // Labeled names the protocol for a human. The control-plane listener form
@@ -437,6 +447,10 @@ type Gate struct {
 	// holdRequests is set when the client codec is a RequestHolder.
 	holdRequests bool
 
+	// login is the client codec when it terminates the login in its
+	// Filter; cleared once its identity has been adopted.
+	login LoginTerminator
+
 	// mu guards the counters, which Close reads while a data-path goroutine
 	// may still be incrementing them, and the exchange state below, which
 	// the two pump goroutines of a byte-path gate write from opposite
@@ -587,6 +601,9 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		g.serverFilter = filter
 	}
 	_, g.holdRequests = clientCodec.(RequestHolder)
+	if lt, ok := clientCodec.(LoginTerminator); ok {
+		g.login = lt
+	}
 	// Discover the re-framing capability once, so the data path does not
 	// type-assert per packet. MaskSupported asks the registry's codec for
 	// it at load; this asks the codec actually built, because a
@@ -665,13 +682,39 @@ var ErrSessionStarted = errors.New("sidecar/gate: session facts are fixed once a
 // mid-session would evaluate two statements of one session against two
 // different actors, and the first one's verdict could not be explained.
 func (g *Gate) Adopt(subject string, metadata map[string]string) error {
+	return g.AdoptIdentity(session.Identity{Subject: subject}, metadata)
+}
+
+// AdoptIdentity is Adopt for an identity a login verified: Subject, Email
+// and Groups fill only what is empty, Attributes merge key by key without
+// replacing one already set. Same metadata and same refusal as Adopt.
+func (g *Gate) AdoptIdentity(id session.Identity, metadata map[string]string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.statements > 0 {
 		return ErrSessionStarted
 	}
-	if subject != "" && g.sess.Identity.Subject == "" {
-		g.sess.Identity.Subject = subject
+	cur := &g.sess.Identity
+	if id.Subject != "" && cur.Subject == "" {
+		cur.Subject = id.Subject
+	}
+	if id.Email != "" && cur.Email == "" {
+		cur.Email = id.Email
+	}
+	if len(id.Groups) > 0 && len(cur.Groups) == 0 {
+		cur.Groups = slices.Clone(id.Groups)
+	}
+	if len(id.Attributes) > 0 {
+		attrs := maps.Clone(cur.Attributes)
+		if attrs == nil {
+			attrs = make(map[string]string, len(id.Attributes))
+		}
+		for k, v := range id.Attributes {
+			if _, set := attrs[k]; !set {
+				attrs[k] = v
+			}
+		}
+		cur.Attributes = attrs
 	}
 	if len(metadata) > 0 {
 		md := maps.Clone(g.sess.Metadata)
@@ -683,6 +726,24 @@ func (g *Gate) Adopt(subject string, metadata map[string]string) error {
 	}
 	g.polCtx = g.sess.PolicyContext()
 	return nil
+}
+
+// RefuseLogin records a login the lane refused before any statement: one
+// violation under rule "identity" for the running session, which the
+// caller has started under the claimed identity and closes afterwards.
+// user is the login user the client claimed; it rides as statement
+// metadata so the trail keeps it apart from the session's principal.
+func (g *Gate) RefuseLogin(ctx context.Context, user, message string) Decision {
+	stmt := inspect.Statement{
+		Protocol:  g.cfg.Protocol,
+		Direction: inspect.FromClient,
+		Operation: inspect.OpOther,
+		Text:      "login",
+	}
+	if user != "" {
+		stmt.Metadata = map[string]string{"login.user": user}
+	}
+	return *g.refuseAs(ctx, stmt, g.session().Identity, message)
 }
 
 // Start records the session-start event. Calling it is optional but makes an
@@ -797,9 +858,15 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			// with the gate's own check: record it as the identity
 			// refusal identify would have made, under the caller it
 			// claimed. The request was never decoded, so its request line
-			// stands in for the statement.
+			// stands in for the statement. A terminated login names its
+			// user: the refusal is filed under it, as RefuseLogin does.
 			stmt := inspect.Statement{Protocol: g.cfg.Protocol, Direction: dir, Text: refusal.Request}
-			r := g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr}, refusal.Error())
+			id := session.Identity{PeerAddr: g.session().Identity.PeerAddr}
+			if refusal.User != "" {
+				id.Subject = refusal.User
+				stmt.Metadata = map[string]string{"login.user": refusal.User}
+			}
+			r := g.refuseAs(ctx, stmt, id, refusal.Error())
 			return *r
 		}
 		var placed *inspect.PlacementRefusal
@@ -826,6 +893,18 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			return d
 		}
 		data = filtered
+		if g.login != nil && dir == inspect.FromClient && len(data) > 0 {
+			if id, md, ok := g.login.LoginIdentity(); ok {
+				g.login = nil
+				if err := g.AdoptIdentity(id, md); err != nil {
+					d.Allowed = false
+					d.Rule = "identity"
+					d.Message = err.Error()
+					d.Err = err
+					return d
+				}
+			}
+		}
 	}
 	d.Payload = data
 

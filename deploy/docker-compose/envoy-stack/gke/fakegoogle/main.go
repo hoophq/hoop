@@ -1,15 +1,23 @@
-// fakegoogle stands in for the two Google endpoints a GKE Connect Gateway
-// lane touches, on one TLS port, so the stack runs with no Google account:
+// fakegoogle stands in for the Google endpoints a GKE Connect Gateway lane
+// touches, on one TLS port, so the stack runs with no Google account:
 //
-//	POST /tokeninfo                              oauth2.googleapis.com
-//	/v1/projects/*/locations/*/gkeMemberships/*  connectgateway.googleapis.com
+//	POST /tokeninfo                                        oauth2.googleapis.com
+//	POST /v1/projects/-/serviceAccounts/*:generateAccessToken  iamcredentials.googleapis.com
+//	/v1/projects/*/locations/*/gkeMemberships/*            connectgateway.googleapis.com
+//
+// and, with -metadata-addr, for the GCE metadata server on plain HTTP:
+//
+//	GET /computeMetadata/v1/instance/service-accounts/default/token
 //
 // tokeninfo answers the way Google does for an opaque access token: 200 with
 // sub/email/email_verified/exp for a token it knows, 400 invalid_token for
-// any other. The gateway half does what Connect Gateway does for kubectl:
-// checks the Google bearer, strips the membership prefix, and forwards to the
-// cluster as that user (here a k3s static token instead of impersonation),
-// so the cluster's own RBAC still decides.
+// any other. generateAccessToken answers the way IAM does for the one
+// service account the metadata identity may impersonate: an access token the
+// gateway half then knows as that service account. The gateway half does
+// what Connect Gateway does for kubectl: checks the Google bearer, strips the
+// membership prefix, and forwards to the cluster as that user (here a k3s
+// static token instead of impersonation), so the cluster's own RBAC still
+// decides. Impersonate-* headers pass through to the cluster.
 //
 // Its certificate is signed by the stack's "customer CA", the one the
 // intercepting Envoy also uses, so the sidecar reaches it only through
@@ -32,14 +40,26 @@ import (
 )
 
 // users maps the Google access tokens the demo hands out to the identity
-// Google would report and the k3s token Connect Gateway would act as.
+// Google would report and the k3s token Connect Gateway would act as. The
+// last one is the token generateAccessToken mints for the sidecar's service
+// account; the cluster knows it as a user that may only impersonate.
 var users = map[string]struct{ sub, email, k3sToken string }{
-	"tok-alice": {"104771111111111111111", "alice@example.com", "alice-token"},
-	"tok-bob":   {"104772222222222222222", "bob@example.com", "bob-token"},
+	"tok-alice":      {"104771111111111111111", "alice@example.com", "alice-token"},
+	"tok-bob":        {"104772222222222222222", "bob@example.com", "bob-token"},
+	"tok-sa-gateway": {"105550000000000000001", impersonatedSA, "gateway-token"},
 }
+
+// The metadata server's identity and the one service account it may
+// impersonate: what GKE Workload Identity gives a pod, and the IAM binding
+// roles/iam.serviceAccountTokenCreator on the target account.
+const (
+	metadataToken  = "tok-sidecar-wi"
+	impersonatedSA = "hoop-sidecar@demo-project.iam.gserviceaccount.com"
+)
 
 func main() {
 	addr := flag.String("addr", ":443", "listen address")
+	metadataAddr := flag.String("metadata-addr", "", "plain-HTTP listen address for the metadata server; empty disables it")
 	pki := flag.String("pki", "/pki", "directory holding fake-google.crt and fake-google.key")
 	k3s := flag.String("k3s", "https://k3s:6443", "the cluster behind the gateway")
 	k3sCA := flag.String("k3s-ca", "/k3s/server-ca.crt", "CA that verifies the cluster")
@@ -57,11 +77,74 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /tokeninfo", tokeninfo)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
+	mux.HandleFunc("POST /v1/projects/-/serviceAccounts/{sa}", generateAccessToken)
 	mux.Handle("/v1/", gateway)
 
+	if *metadataAddr != "" {
+		md := &http.Server{Addr: *metadataAddr, Handler: http.HandlerFunc(metadata), ReadHeaderTimeout: 10 * time.Second}
+		log.Printf("fake-google metadata server on %s", *metadataAddr)
+		go func() { log.Fatal(md.ListenAndServe()) }()
+	}
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	log.Printf("fake-google on %s (tokeninfo + connect gateway -> %s)", *addr, *k3s)
+	log.Printf("fake-google on %s (tokeninfo + iamcredentials + connect gateway -> %s)", *addr, *k3s)
 	log.Fatal(srv.ListenAndServeTLS(*pki+"/fake-google.crt", *pki+"/fake-google.key"))
+}
+
+// metadata is the GCE metadata server's token endpoint: the pod's own
+// Workload Identity, which generateAccessToken below accepts. Google requires
+// the Metadata-Flavor header and answers with it; both are kept.
+func metadata(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Metadata-Flavor", "Google")
+	if r.Header.Get("Metadata-Flavor") != "Google" {
+		http.Error(w, "Missing Metadata-Flavor:Google header.", http.StatusForbidden)
+		return
+	}
+	log.Printf("metadata %s %s", r.Method, r.URL.Path)
+	switch r.URL.Path {
+	case "/computeMetadata/v1/instance/service-accounts/default/token":
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"access_token": metadataToken,
+			"expires_in":   3599,
+			"token_type":   "Bearer",
+		})
+	case "/computeMetadata/v1/instance/service-accounts/default/email":
+		fmt.Fprint(w, "sidecar-pod@demo-project.iam.gserviceaccount.com")
+	case "/", "/computeMetadata/v1/":
+		fmt.Fprintln(w, "computeMetadata/")
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// generateAccessToken is iamcredentials.googleapis.com's
+// projects/-/serviceAccounts/{sa}:generateAccessToken: the metadata identity
+// may impersonate impersonatedSA and nothing else, as an IAM binding of
+// roles/iam.serviceAccountTokenCreator on that one account would allow.
+func generateAccessToken(w http.ResponseWriter, r *http.Request) {
+	sa, ok := strings.CutSuffix(r.PathValue("sa"), ":generateAccessToken")
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	w.Header().Set("Content-Type", "application/json")
+	switch {
+	case tok != metadataToken:
+		log.Printf("generateAccessToken sa=%s: unauthenticated", sa)
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":{"code":401,"message":"Request had invalid authentication credentials.","status":"UNAUTHENTICATED"}}`)
+	case sa != impersonatedSA:
+		log.Printf("generateAccessToken sa=%s: denied", sa)
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintf(w, `{"error":{"code":403,"message":"Permission 'iam.serviceAccounts.getAccessToken' denied on resource (or it may not exist).","status":"PERMISSION_DENIED"}}`)
+	default:
+		log.Printf("generateAccessToken sa=%s: ok", sa)
+		json.NewEncoder(w).Encode(map[string]string{
+			"accessToken": "tok-sa-gateway",
+			"expireTime":  time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		})
+	}
 }
 
 func tokeninfo(w http.ResponseWriter, r *http.Request) {

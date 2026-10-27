@@ -261,7 +261,7 @@ of carrying its own listeners. Two facts connect it, highest precedence first:
 | Fact | Sources |
 |---|---|
 | URL | `HOOP_CONTROL_PLANE_URL`, then the `control_plane_url` config key |
-| Credential | exactly one of: the token flag (`--token` / `-token`), then `HOOP_SIDECAR_TOKEN`; or `HOOP_SIDECAR_IDENTITY_TYPE` (`kubernetes` or `gcp`) |
+| Credential | exactly one of: the token flag (`--token` / `-token`), then `HOOP_SIDECAR_TOKEN`; or `HOOP_SIDECAR_IDENTITY_TYPE` (`kubernetes`, `spiffe` or `gcp`) |
 
 First wins, not first valid, same as the license sources: an env var holding
 garbage is an error, never a reason to fall through to the file. A token and
@@ -359,9 +359,9 @@ one, and a sidecar an admin deleted stays deleted.
 
 | Variable | Holds |
 |---|---|
-| `HOOP_SIDECAR_IDENTITY_TYPE` | `kubernetes`: read a Kubernetes projected service account token from a file. `gcp`: fetch a Google ID token from the GCE/GKE metadata server. Empty: the token. Any other value stops startup |
-| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `kubernetes` only. The token's path; default `/var/run/hoop-sidecar/token`, where the helm chart mounts it. Re-read on every request, because the kubelet rotates it in place. Whitespace is trimmed; an empty file or one over 16 KiB is refused. Set with another type, it stops startup |
-| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `gcp` only. The Google ID token's audience; default the control plane URL. The token is cached until 5 minutes before it expires, and `GCE_METADATA_HOST` overrides the metadata server, as in the Google client libraries. Set with another type, it stops startup, because a projected token's audience is set where the token is minted |
+| `HOOP_SIDECAR_IDENTITY_TYPE` | `kubernetes`: read a Kubernetes projected service account token from a file. `spiffe`: read a JWT-SVID the spiffe-helper writes to a file. `gcp`: fetch a Google ID token from the GCE/GKE metadata server. Empty: the token. Any other value stops startup |
+| `HOOP_SIDECAR_IDENTITY_TOKEN_FILE` | `kubernetes` and `spiffe`. The token's path; default `/var/run/hoop-sidecar/token`, where the helm chart mounts it. Re-read on every request, because the kubelet and the helper rotate it in place. Whitespace is trimmed; an empty file or one over 16 KiB is refused. Set with another type, it stops startup |
+| `HOOP_SIDECAR_IDENTITY_AUDIENCE` | `gcp`: the Google ID token's audience; default the control plane URL. The token is cached until 5 minutes before it expires, and `GCE_METADATA_HOST` overrides the metadata server, as in the Google client libraries. `spiffe`: accepted as the audience the helper mints, not read. Set with another type, it stops startup, because a projected token's audience is set where the token is minted |
 
 Kubernetes projected token, audience set to the control plane URL exactly as
 `HOOP_CONTROL_PLANE_URL` holds it (or to the organization's own audience, see
@@ -4191,6 +4191,149 @@ listeners:
           message: listing secrets is fine; reading one is not
 ```
 
+## Client identity and upstream credentials
+
+A lane can terminate the client's login: the client proves who it is to
+the sidecar, and the sidecar logs in upstream with a credential of its own.
+The client never holds the database password or the API token. Three blocks
+on the listener do it; `identity` and `credentials` are config-file keys,
+not yet in the control plane's form.
+
+### Client identity
+
+`identity.type` names the verifier of the client leg.
+
+| Type | The client presents | Needs |
+|---|---|---|
+| `none` | nothing; whoever opened the socket is the caller | `network: unix` |
+| `hoop_credential` | a key the control plane minted for this lane, as the password (databases) or bearer (http, grpc) | `downstream_tls` on a tcp postgres, mysql or clickhouse lane, or a unix socket |
+| `kubernetes` | a projected service account token as the password or bearer. Verified against the issuer's JWKS through OIDC discovery: `aud` (`audience`, default `hoop-sidecar`), `exp`, `iss`; with `POD_UID` set, the token must be this pod's | `issuer` off-cluster; in-cluster the API server, reached with the mounted CA and token |
+| `spiffe` | a JWT-SVID; `trust_domain` and `prefix` narrow it | the Workload API; linked by `hoop-inspect` only |
+| `jwt` | a token from any issuer the lane names (an identity provider, a CI provider, a gateway's authorization service), as the password or bearer. Verified against the issuer's JWKS: `iss`, `aud` (`audience`, default `hoop-sidecar`), `exp`, `nbf`, signature; `claims` maps which claims become the subject, email and groups (default `sub`, `email`, `groups`); on a protocol with a login user, the user must be the subject or the email | `issuer` (https); `jwks_url` to skip discovery; `downstream_tls` on a tcp postgres, mysql or clickhouse lane |
+
+`identity` is exclusive with `identity_header`, `google_identity` and
+`caller_token`, and needs a `credentials` pool: a verified login with
+nothing to present upstream does nothing. A lane with a pool and no
+`identity` is accepted on a unix socket alone, where it means `none`.
+`passthrough_users` lists startup users the lane relays unchanged, claimed
+and unverified (`integrated` on mssql relays a Windows login). An oracle lane
+takes `none` and `passthrough_users` only: O5LOGON never carries the secret.
+
+### Upstream credentials
+
+The pool is per lane; the sources it draws from are process-wide:
+
+```yaml
+credentials:                       # top level: which sources this process has
+  secret_files: {dir: /run/hoop-creds}
+  gcp_impersonation: {}            # metadata_host overrides GCE_METADATA_HOST
+  x509: {}
+listeners:
+  - name: appdb
+    protocol: postgres
+    identity: {type: hoop_credential}
+    downstream_tls: {cert_file: ..., key_file: ...}
+    credentials:
+      pool:
+        - {name: rw, source: secret_files, user_file: appdb-rw/user, password_file: appdb-rw/password}
+        - {name: ro, source: secret_files, user: app_ro, password_file: appdb-ro/password}
+      select:
+        rules:                     # first match wins; no match refuses the login
+          - {when: {identity.groups: dba, context.env: prod}, credential: rw}
+          - {credential: ro}
+    context: {env: prod}
+    propagate: {application_name: "{{.Principal}} via {{.Context.env}}"}
+```
+
+| Source | Entry fields | Presents |
+|---|---|---|
+| `secret_files` | `user` or `user_file`, `password_file`, under `dir`; re-read per login; a password file readable by group or other is refused | user and password |
+| `gcp_impersonation` | `service_account`, `scopes`; the pod's own token from the metadata server mints one through `iamcredentials.googleapis.com`, cached until 5 minutes before it expires | the account as user, the access token as password (a bearer on http) |
+| `x509` | `cert_file`, `key_file`, loaded per login; `user` defaults to the common name | a client certificate |
+| `spiffe` | `spiffe_id`; an X509-SVID from the Workload API | a client certificate |
+| `kerberos` | `principal`; `credentials.kerberos.cache` or `keytab` | a GSSAPI initiator |
+| `vault` | `path`: a KV path (`secret/data/<name>` on v2, `secret/<name>` on v1) read at every login, with `user_key`/`password_key` (default `user`/`password`) or a literal `user`; or a database engine path (`database/creds/<role>`) that mints a user for the session and revokes its lease when the session ends; not valid on http, grpc, spanner or clickhouse, which cannot revoke it. `credentials.vault` names `addr` (https), `auth` (`kubernetes` with `role`, the pod's service account token; or `token_file`), `ca_file`, `namespace`. A token in the config is refused | user and password |
+| `gcp_secret_manager` | `secret`: `projects/<p>/secrets/<s>/versions/<v>`, read at every login with the pod's Workload Identity; the payload is the password when `user` is set, else a JSON document with `user` and `password` | user and password |
+
+A `when` key is `identity.subject`, `identity.email`, `identity.groups`
+(contains), `identity.attributes.<k>` (`namespace`, `pod`,
+`service_account` from a Kubernetes token) or `context.<k>`. `select.opa:
+true` asks the lane's OPA endpoint instead: a `login` statement whose
+`input.context` carries the identity, answered with `credential` beside
+`allow`. One or the other.
+
+On an http lane the request's `Authorization` is swapped per request, so a
+pooled connection in front swaps per caller; `propagate.impersonate_user`
+adds `Impersonate-User` and `Impersonate-Group`. A grpc lane does the same
+per RPC. Every pooled SQL lane refuses `SET ROLE`, `RESET ROLE`, `SET
+SESSION AUTHORIZATION`, `EXECUTE AS` and `REVERT` ahead of its own rules,
+observing or not: the identity the credential gave the session is the
+sidecar's choice. The trail records `credential`, `upstream_user`,
+`identity_type` and `verified` on the session.
+
+`identity`, `credentials`, `passthrough_users` and `propagate` need the
+`sidecar/auth` module, the credential-swap runtime linked into `hoop-inspect`
+and `hoop start sidecar`; a build without it refuses such a lane at
+`-validate`, naming the module, while the control plane validates the
+document without linking it. The capabilities header lists `identity:<type>`
+and `credentials.<source>` for what the build links, so the plane serves such
+a lane only to a build that can run it; `-validate` refuses one this build
+cannot.
+
+### Credential set
+
+`credential_set` is what `hoop_credential` verifies against: one entry per
+key a user minted on the control plane for a lane of this sidecar, as
+`{hash, subject, email, groups, lane, expires_at, scram}`. The plane
+composes it into the served document and the heartbeat swaps it in place:
+a minted or revoked key is in force at the next login, with no restart, and
+the set never reaches the restart compare. The raw key never travels; the
+sidecar compares `sha256(secret)` against every entry of the lane in
+constant time, refuses an expired one, and refuses a key presented under
+another login user. `scram` is the SCRAM-SHA-256 server verifier the
+mongodb and postgres drivers use when the client leg cannot carry the key
+in clear; the driver then names the entry it proved. A config file may
+carry a static set, as the compose demo does.
+
+### Operating a shared sidecar
+
+A lane with `identity: {type: hoop_credential}` admits only keys the control
+plane minted for it. The order of operations, all on the plane:
+
+1. An admin grants a user or a group the lane: `POST
+   /sidecars/<name>/lanes/<lane>/grants` with `{subject}` or `{group_name}`.
+   The grant is the entitlement; without one a mint is refused with 403.
+2. The user mints a key after SSO: `hoop sidecar credential <name>/<lane>
+   --expires 24h`, or `POST /sidecars/<name>/lanes/<lane>/credentials`. The
+   key is shown once and goes where the client keeps a password
+   (`PGPASSWORD`, `.pgpass`, the Mongo URI, a bearer header).
+3. The sidecar receives the entry on its next heartbeat and the key logs in.
+   A key sent to a lane or a sidecar it was not minted for matches nothing.
+4. Revocation is `DELETE /sidecar-credentials/<id>` by the user or an admin;
+   the next heartbeat drops it and the next login is refused at the door.
+
+Refusals are audited as a one-event session under the claimed user, rule
+`identity`, so an attempt is in the trail without an upstream byte.
+`passthrough_users` is the escape hatch for a user who holds the upstream
+password: the login is relayed, the principal is recorded as claimed
+(`verified: false`), and anyone not on the list is refused even with the
+right upstream password. Leave the list empty on a lane that must verify
+everyone.
+
+### Moving to SPIRE
+
+SPIRE replaces the proof, never the row. Per cluster: run the SPIRE agent
+with the Workload API socket mounted into the hoop container (the Helm chart
+does it under `controlPlane.identity: spiffe`), register one entry per pod
+sidecar and one per database identity a sidecar may become, and add a
+sidecar service account mapping for SPIRE's issuer on the plane. Per pod, in
+one pass: switch the chart value, clear the row's identity binding
+(`DELETE /sidecars/<name>/identity`), let the next handshake rebind. Done
+out of order a pod comes up and its row refuses it, because a row is bound
+to the first identity that reached it. Lanes move to certificates by
+changing a pool entry's `source` to `spiffe`; the owner, the rules, the
+Slack channels and the audit trail do not move.
+
 ## Guardrails and OPA
 
 Two evaluators under two config sections, layered via `policy.Chain{local,
@@ -4949,9 +5092,16 @@ Compare MSSQL. TDS 8.0 is TLS-on-connect, so an ordinary
 needs none of this.
 
 MySQL negotiates in-band too, but with the opposite ordering: the server
-greets first, then the client sends a 32-byte `SSLRequest`. `downstream_tls`
-is still refused because the relay does not terminate the client's MySQL TLS;
-the codec also fails closed if an SSLRequest reaches it.
+greets first, then the client sends a 32-byte `SSLRequest`. On a lane
+without `identity`, `downstream_tls` is refused because the relay does not
+terminate the client's MySQL TLS, and the codec fails closed if an
+SSLRequest reaches it. With `identity` the login driver greets the client
+itself under `caching_sha2_password`, terminates the client's TLS after its
+SSLRequest when `downstream_tls` is set, reads the password in full
+authentication (in clear under TLS or on a unix socket, RSA to the relay's
+key — `mysql_auth_key_file` or a generated one — on plain tcp), verifies it,
+and logs in upstream with the pool credential under the upstream's own
+plugin; `passthrough_users` are bridged to the upstream's plugin as before.
 
 `upstream_tls` is supported. The relay removes `CLIENT_SSL` from the greeting
 it gives the plaintext client, sends its own SSLRequest upstream, verifies the
@@ -4997,10 +5147,10 @@ openssl pkey -in mysql-auth.key -pubout -out mysql-auth.pub
 
 
 The sidecar accepts `downstream_tls` on Postgres, ClickHouse, HTTP, gRPC and
-Spanner lanes and refuses it on every other protocol at startup. ClickHouse
-and HTTP start TLS on the first byte; Postgres uses the in-band exchange
-above. The sidecar loads the keypair at startup, so a bad path fails before
-the first client connection.
+Spanner lanes, and on MySQL with `identity`, and refuses it on every other
+protocol at startup. ClickHouse and HTTP start TLS on the first byte;
+Postgres and MySQL use their in-band exchanges above. The sidecar loads the
+keypair at startup, so a bad path fails before the first client connection.
 
 ### GSS encryption draws a refusal
 

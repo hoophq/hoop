@@ -26,13 +26,14 @@ require (
 	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar v0.0.0
 	github.com/hoophq/hoop/sidecar/analyzer/vertex v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/sidecar/auth v0.0.0
 	github.com/hoophq/hoop/sidecar/codec/wasm v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/ica v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/telemetry/otlp v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20261022191641-55dc7bef0843
+	github.com/hoophq/libhoop v0.0.0-20261027205623-14b215ebae10
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.56.0
@@ -329,6 +330,8 @@ replace github.com/hoophq/hoop/agent => ../agent
 replace github.com/tetratelabs/wazero => github.com/racerxdl/wazero v1.12.1-0.20260610204201-d1e18e798de6
 
 replace github.com/hoophq/hoop/sidecar => ../sidecar
+
+replace github.com/hoophq/hoop/sidecar/auth => ../sidecar/auth
 
 replace github.com/hoophq/hoop/sidecar/config/yaml => ../sidecar/config/yaml
 

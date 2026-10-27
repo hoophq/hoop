@@ -204,6 +204,10 @@ type opaResultObject struct {
 	// changes nothing. Read on every phase, because whichever call the
 	// author keyed the rule on is the one that knows.
 	Responses *bool `json:"responses"`
+
+	// Credential names the upstream credential a login gets. Read by the
+	// sidecar's credential selector alone, on an allow.
+	Credential string `json:"credential"`
 }
 
 // AnnotationOPASkipped marks an audit record whose statement OPA never saw.
@@ -429,9 +433,9 @@ func (c *OPAClient) evaluate(ctx context.Context, stmt inspect.Statement, ec *Ev
 	case obj.Denied != nil && *obj.Denied:
 		return c.deny(messageOr(obj.Message, "denied by policy"), obj.Rule)
 	case obj.Denied != nil && !*obj.Denied:
-		return Allow()
+		return Verdict{Credential: obj.Credential}
 	case obj.Allow != nil && *obj.Allow:
-		return Allow()
+		return Verdict{Credential: obj.Credential}
 	case obj.Allow != nil && !*obj.Allow:
 		return c.deny(messageOr(obj.Message, "denied by policy"), obj.Rule)
 	}
