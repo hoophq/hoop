@@ -6,7 +6,8 @@ SQL classifier finds, masks emails in results and records each statement
 with the agent's session id. The login's grants stop the writes the lane
 misses: see [Limits](#limits).
 The agent is a managed harness, or your own Runtime agent.
-`deploy/agentcore/http` is the REST API twin.
+`deploy/agentcore/http` is the REST API twin. The docs page:
+[Postgres through the Sidecar](https://hoop.dev/docs/integrations/aws-agentcore#postgres-through-the-sidecar).
 
 ```
 new VPC

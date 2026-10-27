@@ -4,7 +4,8 @@ An AgentCore agent reaches one REST API, and only through a hoop sidecar.
 The sidecar admits a caller by token, denies writes, masks personal data in
 responses and records each request with the agent's session id. The agent
 is a managed harness, or your own Runtime agent. `deploy/openai-agents/http`
-and `deploy/managed-agents/http` are the OpenAI and Claude twins.
+and `deploy/managed-agents/http` are the OpenAI and Claude twins. The docs
+page: [Amazon Bedrock AgentCore](https://hoop.dev/docs/integrations/aws-agentcore).
 
 ```
 new VPC

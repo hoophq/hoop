@@ -5,7 +5,8 @@ a hoop sidecar in front of the cluster's private API endpoint. The sidecar
 refuses deletes, masks Secret values in kubectl's JSON and records each
 request with the agent's session id. `deploy/agentcore/http` is the REST API
 template this one extends. `deploy/openai-agents/kubernetes` and
-`deploy/managed-agents/kubernetes` are the OpenAI and Claude twins.
+`deploy/managed-agents/kubernetes` are the OpenAI and Claude twins. The docs
+page: [Kubernetes through the Sidecar](https://hoop.dev/docs/integrations/aws-agentcore#kubernetes-through-the-sidecar).
 
 ```
 new VPC, 10.90.0.0/16                                                       cluster VPC
