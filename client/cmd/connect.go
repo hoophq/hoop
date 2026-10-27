@@ -424,14 +424,10 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				if config.HoopHomeDir != "" {
 					kubeconfigContent := fmt.Sprintf(defaultKubeConfigTempl, fmt.Sprintf("http://%s:%s", srv.Host().Host, srv.Host().Port))
 					kubeconfigFilePath := filepath.Join(config.HoopHomeDir, "kubeconfig")
-					if err := os.MkdirAll(config.HoopHomeDir, 0700); err != nil {
-						fmt.Fprintf(os.Stderr, "failed creating %s: %v\n", config.HoopHomeDir, err)
-					} else if err := os.WriteFile(kubeconfigFilePath, []byte(kubeconfigContent), 0600); err != nil {
-						fmt.Fprintf(os.Stderr, "failed writing %s: %v\n", kubeconfigFilePath, err)
-					} else {
-						fmt.Println("\nissue the command below to interact with the cluster via kubectl")
-						fmt.Printf("export KUBECONFIG=%s\n", kubeconfigFilePath)
-					}
+					_ = os.WriteFile(kubeconfigFilePath, []byte(kubeconfigContent), 0600)
+
+					fmt.Println("\nissue the command below to interact with the cluster via kubectl")
+					fmt.Printf("export KUBECONFIG=%s\n", kubeconfigFilePath)
 				}
 				if jsonMode {
 					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port})
