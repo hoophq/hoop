@@ -13645,7 +13645,7 @@ const docTemplate = `{
                     ]
                 },
                 "sidecar_spec": {
-                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /\ndefer, and the per-lane cost overrides. It IS the analyzer block the\nlistener receives.\n\nOmitted on a rule no sidecar runs.",
+                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /\ndefer, and the per-lane cost overrides. It IS the analyzer block the\nlistener receives.\n\nA risk level in object form may set guardrails and mask, {mode, rules}: the guardrail\nand data masking rules of this organization the AI may apply to a statement. mode is\nexisting_only (default) or existing_and_new; rules names library rules, and absent allows\nall. Refused on a block or defer level, for a name the library does not hold, and without\nan Enterprise license.\n\nOmitted on a rule no sidecar runs.",
                     "type": "object"
                 },
                 "sidecar_targets": {

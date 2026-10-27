@@ -1,12 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -68,13 +70,22 @@ const maxSidecarAIDecisionReasonChars = 4096
 
 // maxSidecarAIDecisionsBytes caps the stored text of
 // metadata.sidecar.ai_decisions; an entry past it is counted in
-// ai_decisions_dropped. The reasons are the only free text an entry holds.
+// ai_decisions_dropped. The reasons and the AI rules are the free text an
+// entry holds.
 const maxSidecarAIDecisionsBytes = 256 << 10
 
-// sidecarAIDecisionTextOverhead is what the stored jsonb text adds to an
-// entry's compact JSON at most: a space after each colon and comma of its
-// ten keys (19), and the ", " that separates it from the previous entry.
-const sidecarAIDecisionTextOverhead = 22
+// Bounds of the AI rules an entry stores (ENG-662). The sidecar sends at most
+// 16 rules, reasons under 1 KiB, errors under 512 bytes and definitions under
+// 4 KiB; a value past these is cut or dropped.
+const (
+	maxSidecarAIRules              = 20
+	maxSidecarAIRuleNameChars      = 256
+	maxSidecarAIRuleReasonChars    = 1024
+	maxSidecarAIRuleErrorChars     = 512
+	maxSidecarAIRulesErrorChars    = 1024
+	maxSidecarAIRuleDefinitionSize = 4 << 10
+	maxSidecarAIRuleDefinitionNest = 8
+)
 
 // maxSidecarSessionStreamBytes caps the stream as the audit plugin caps its WAL
 // read; metrics.truncated marks it.
@@ -386,6 +397,32 @@ type sidecarAIDecision struct {
 	ApprovalDecision string `json:"approval_decision,omitempty"`
 	ApprovalReason   string `json:"approval_reason,omitempty"`
 	ReviewID         string `json:"review_id,omitempty"`
+	// AIRules are the rules the AI applied to the statement (ENG-662). An
+	// empty list is a rule turn that applied none; nil is no rule turn.
+	AIRules []sidecarAIRule `json:"ai_rules,omitzero"`
+	// AIRuleInvalid are the rules the AI created that failed validation.
+	AIRuleInvalid []sidecarAIRuleInvalid `json:"ai_rule_invalid,omitempty"`
+	// AIRulesError is why the rule turn applied no rule.
+	AIRulesError string `json:"ai_rules_error,omitempty"`
+}
+
+// sidecarAIRule is one rule the AI applied: an existing rule by name, or the
+// definition of one it created. Matched is set on a guardrail only.
+type sidecarAIRule struct {
+	Kind       string          `json:"kind"`
+	Rule       string          `json:"rule,omitempty"`
+	Definition json.RawMessage `json:"definition,omitempty"`
+	Reason     string          `json:"reason,omitempty"`
+	Matched    *bool           `json:"matched,omitempty"`
+}
+
+// sidecarAIRuleInvalid is one rule the AI created that failed validation and
+// was dropped.
+type sidecarAIRuleInvalid struct {
+	Kind       string          `json:"kind"`
+	Definition json.RawMessage `json:"definition,omitempty"`
+	Reason     string          `json:"reason,omitempty"`
+	Error      string          `json:"error,omitempty"`
 }
 
 // sidecarAIDecisionFor reads the analyzer's decision off an event. ok is
@@ -415,7 +452,153 @@ func sidecarAIDecisionFor(e daemon.SessionEvent) (sidecarAIDecision, bool) {
 	if id, err := uuid.Parse(md[analyzer.MetadataReviewID]); err == nil {
 		d.ReviewID = id.String()
 	}
+	d.AIRules = sidecarAIRulesFor(md[analyzer.MetadataAIRules])
+	d.AIRuleInvalid = sidecarAIRuleInvalidFor(md[analyzer.MetadataAIRuleInvalid])
+	d.AIRulesError = truncateChars(pgText(md[analyzer.MetadataAIRulesError]), maxSidecarAIRulesErrorChars)
 	return d, true
+}
+
+// sidecarAIRulesFor reads the ai_rules metadata: at most maxSidecarAIRules
+// entries of a known kind, each field cut to its bound. A value that is not a
+// JSON list stores nothing.
+func sidecarAIRulesFor(raw string) []sidecarAIRule {
+	if raw == "" {
+		return nil
+	}
+	var in []struct {
+		Kind       string          `json:"kind"`
+		Rule       string          `json:"rule"`
+		Definition json.RawMessage `json:"definition"`
+		Reason     string          `json:"reason"`
+		Matched    *bool           `json:"matched"`
+	}
+	if json.Unmarshal([]byte(raw), &in) != nil || in == nil {
+		return nil
+	}
+	out := make([]sidecarAIRule, 0, min(len(in), maxSidecarAIRules))
+	for _, r := range in {
+		if len(out) == maxSidecarAIRules {
+			break
+		}
+		if !knownAIRuleKind(r.Kind) {
+			continue
+		}
+		rule := sidecarAIRule{
+			Kind:       r.Kind,
+			Rule:       truncateChars(pgText(r.Rule), maxSidecarAIRuleNameChars),
+			Definition: sidecarAIRuleDefinition(r.Definition),
+			Reason:     truncateChars(pgText(r.Reason), maxSidecarAIRuleReasonChars),
+		}
+		if r.Kind == analyzer.RuleKindGuardrail {
+			rule.Matched = r.Matched
+		}
+		out = append(out, rule)
+	}
+	return out
+}
+
+// sidecarAIRuleInvalidFor reads the ai_rule_invalid metadata, bounded as
+// sidecarAIRulesFor.
+func sidecarAIRuleInvalidFor(raw string) []sidecarAIRuleInvalid {
+	if raw == "" {
+		return nil
+	}
+	var in []struct {
+		Kind       string          `json:"kind"`
+		Definition json.RawMessage `json:"definition"`
+		Reason     string          `json:"reason"`
+		Error      string          `json:"error"`
+	}
+	if json.Unmarshal([]byte(raw), &in) != nil {
+		return nil
+	}
+	var out []sidecarAIRuleInvalid
+	for _, r := range in {
+		if len(out) == maxSidecarAIRules {
+			break
+		}
+		if !knownAIRuleKind(r.Kind) {
+			continue
+		}
+		out = append(out, sidecarAIRuleInvalid{
+			Kind:       r.Kind,
+			Definition: sidecarAIRuleDefinition(r.Definition),
+			Reason:     truncateChars(pgText(r.Reason), maxSidecarAIRuleReasonChars),
+			Error:      truncateChars(pgText(r.Error), maxSidecarAIRuleErrorChars),
+		})
+	}
+	return out
+}
+
+func knownAIRuleKind(v string) bool {
+	return v == analyzer.RuleKindGuardrail || v == analyzer.RuleKindMask
+}
+
+// sidecarAIRuleDefinition is a created rule's definition as the entry stores
+// it: a JSON object of strings, booleans, integers, lists and objects, NUL
+// stripped, re-encoded and at most maxSidecarAIRuleDefinitionSize bytes.
+// Anything else is dropped. Integers only, because jsonb writes a number in
+// full: 1e400 is 401 bytes of stored text.
+func sidecarAIRuleDefinition(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || len(raw) > 4*maxSidecarAIRuleDefinitionSize {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if dec.Decode(&v) != nil {
+		return nil
+	}
+	if _, ok := v.(map[string]any); !ok {
+		return nil
+	}
+	clean, ok := cleanAIRuleValue(v, 0)
+	if !ok {
+		return nil
+	}
+	out, err := json.Marshal(clean)
+	if err != nil || len(out) > maxSidecarAIRuleDefinitionSize {
+		return nil
+	}
+	return out
+}
+
+func cleanAIRuleValue(v any, depth int) (any, bool) {
+	if depth > maxSidecarAIRuleDefinitionNest {
+		return nil, false
+	}
+	switch t := v.(type) {
+	case nil, bool:
+		return t, true
+	case string:
+		return pgText(t), true
+	case json.Number:
+		if _, err := strconv.ParseInt(t.String(), 10, 64); err != nil {
+			return nil, false
+		}
+		return t, true
+	case []any:
+		out := make([]any, len(t))
+		for i, x := range t {
+			c, ok := cleanAIRuleValue(x, depth+1)
+			if !ok {
+				return nil, false
+			}
+			out[i] = c
+		}
+		return out, true
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			c, ok := cleanAIRuleValue(x, depth+1)
+			if !ok {
+				return nil, false
+			}
+			out[pgText(k)] = c
+		}
+		return out, true
+	}
+	return nil, false
 }
 
 // knownValue is v when it is of the vocabulary, else "".
@@ -446,13 +629,34 @@ func approvalDecision(v string) bool {
 
 // sidecarAIDecisionSize is at least the bytes an entry adds to the stored
 // jsonb text: its compact JSON, which escapes no less than jsonb does, plus
-// the spaces jsonb writes.
+// the space jsonb writes after each colon and comma, plus the ", " that
+// separates it from the previous entry.
 func sidecarAIDecisionSize(d sidecarAIDecision) int {
 	raw, err := json.Marshal(d)
 	if err != nil {
 		return maxSidecarAIDecisionsBytes + 1
 	}
-	return len(raw) + sidecarAIDecisionTextOverhead
+	return len(raw) + jsonSeparators(raw) + 2
+}
+
+// jsonSeparators counts the colons and commas of compact JSON outside its
+// strings.
+func jsonSeparators(raw []byte) int {
+	n := 0
+	inString, escaped := false, false
+	for _, b := range raw {
+		switch {
+		case escaped:
+			escaped = false
+		case inString && b == '\\':
+			escaped = true
+		case b == '"':
+			inString = !inString
+		case !inString && (b == ':' || b == ','):
+			n++
+		}
+	}
+	return n
 }
 
 // mergeReviewSessions adds linked to prior, in order, up to the cap.

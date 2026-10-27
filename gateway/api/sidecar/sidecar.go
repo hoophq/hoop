@@ -782,6 +782,19 @@ func withOrgLicense(sc *models.Sidecar, hs daemon.Handshake) (daemon.Config, err
 	if err != nil {
 		return daemon.Config(sc.Configuration), err
 	}
+	// A build that predates the object form of a risk level gets the bare
+	// form under the managed approval rule, or a refusal that names the
+	// capability (ErrSidecarCapabilityMissing). It runs before the license
+	// caps: a build that cannot decode the document is refused for that, so
+	// the refusal names the upgrade (analyzer_ai_rules, for example) rather
+	// than a license the build could not use anyway.
+	served, err := services.DowngradeForBuild(models.DB, sc, composed, hs, "")
+	if err != nil {
+		return daemon.Config(sc.Configuration), err
+	}
+	if err := daemon.CheckServable(served, hs); err != nil {
+		return daemon.Config(sc.Configuration), services.ErrSidecarCapabilityMissing{Reason: err.Error()}
+	}
 	// The free tier caps rules PER PROCESS, and it counts what the served
 	// document authors -- so bound rules push the count up even though the
 	// stored configuration passed the same check when it was written.
@@ -797,16 +810,6 @@ func withOrgLicense(sc *models.Sidecar, hs daemon.Handshake) (daemon.Config, err
 	// sidecar survives: fetchControlPlaneConfig logs it and keeps running.
 	if err := services.CheckSidecarConfigurationLimits(composed.Config, licenseData); err != nil {
 		return daemon.Config(sc.Configuration), err
-	}
-	// A build that predates the object form of a risk level gets the bare
-	// form under the managed approval rule, or a refusal that names the
-	// capability (ErrSidecarCapabilityMissing).
-	served, err := services.DowngradeForBuild(models.DB, sc, composed, hs, "")
-	if err != nil {
-		return daemon.Config(sc.Configuration), err
-	}
-	if err := daemon.CheckServable(served, hs); err != nil {
-		return daemon.Config(sc.Configuration), services.ErrSidecarCapabilityMissing{Reason: err.Error()}
 	}
 	return servedConfig(models.SidecarConfiguration(served), licenseData), nil
 }

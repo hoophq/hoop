@@ -3,6 +3,7 @@ package proxy
 import (
 	"testing"
 
+	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
@@ -35,7 +36,7 @@ func TestSwapLaneReplacesWhatTheNextConnectionCaptures(t *testing.T) {
 
 	after := stubEval{name: "after"}
 	built := false
-	s.SwapLane(after, nil, func() inspect.Codec { built = true; return nil })
+	s.SwapLane(after, nil, func() inspect.Codec { built = true; return nil }, gate.MaskScopeSerial)
 
 	got = s.rules.Load()
 	if got.policy != policy.Evaluator(after) {
@@ -43,6 +44,9 @@ func TestSwapLaneReplacesWhatTheNextConnectionCaptures(t *testing.T) {
 	}
 	if got.masker != nil {
 		t.Fatalf("SwapLane kept a masker the new generation does not carry")
+	}
+	if got.maskScope != gate.MaskScopeSerial {
+		t.Fatal("SwapLane dropped the mask scope")
 	}
 	if got.codecFactory == nil {
 		t.Fatal("SwapLane dropped the codec factory")

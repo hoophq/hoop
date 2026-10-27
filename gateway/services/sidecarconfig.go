@@ -29,7 +29,8 @@ import (
 // (sidecar_spec, migration 000121), so there is no translation step to get
 // wrong and no rule that saves cleanly and arrives meaning something else.
 //
-// It only ever touches a listener's guardrails, mask and analyzer blocks.
+// It only ever touches a listener's guardrails, mask and analyzer blocks, and
+// the top-level rule_library the analyzer levels select from (ENG-662).
 // Those are exactly the sections sidecar/daemon/reload.go strips into its
 // per-lane rule document, so a rule edit hot-swaps into a running sidecar
 // instead of asking it to restart (ADR-0014).
@@ -135,6 +136,12 @@ func composeSidecar(db *gorm.DB, sc *models.Sidecar, skipKind SidecarRuleKind, s
 		return out, fmt.Errorf("cannot compose a candidate %s rule", skipKind)
 	}
 	out.Config, err = foldSidecarRules(cfg, guardrails, masking, analyzers)
+	if err != nil {
+		return out, err
+	}
+	// After the fold: a level's AI rule options come from the bound
+	// analyzer rule as well as from the stored listener block.
+	out.Config, err = composeRuleLibrary(db, orgID, out.Config)
 	if err != nil {
 		return out, err
 	}

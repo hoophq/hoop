@@ -53,6 +53,13 @@ type RiskLevel struct {
 	// level may select. Nil allows all four.
 	AllowedActions *AllowedActions `json:"allowed_actions,omitempty" cap:"analyzer_ai_handoff"`
 
+	// Guardrails and Mask are the AI rule options of this level (ENG-662):
+	// the existing rules of rule_library the AI may apply to a statement
+	// this level rates, and whether it may create one. They are not the
+	// listener's guardrails and mask blocks, which apply as before.
+	Guardrails *AIRuleOptions `json:"guardrails,omitempty" cap:"analyzer_ai_rules"`
+	Mask       *AIRuleOptions `json:"mask,omitempty" cap:"analyzer_ai_rules"`
+
 	// object records that the level was decoded from an object, so an
 	// object that holds and names no approver keeps the ai_agent default
 	// until foldApprovalSpellings writes it down.
@@ -62,7 +69,7 @@ type RiskLevel struct {
 // IsZero reports an unset level, for omitzero.
 func (r RiskLevel) IsZero() bool {
 	return r.Action == "" && r.Approver == "" && len(r.ApprovalGroups) == 0 && r.Prompt == "" &&
-		r.AllowedActions == nil
+		r.AllowedActions == nil && r.Guardrails == nil && r.Mask == nil
 }
 
 // UnmarshalJSON reads the bare action or the object, strictly like the rest
@@ -86,7 +93,7 @@ func (r *RiskLevel) UnmarshalJSON(b []byte) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&out); err != nil {
 		return fmt.Errorf("a risk level is an action or an object of action, approver, "+
-			"approval_groups, prompt and allowed_actions: %w", err)
+			"approval_groups, prompt, allowed_actions, guardrails and mask: %w", err)
 	}
 	*r = RiskLevel(out)
 	r.object = true
@@ -112,7 +119,7 @@ func (r RiskLevel) holds() bool {
 // beside action, or a hold decoded from an object (its approver default).
 func (r RiskLevel) objectForm() bool {
 	return r.Approver != "" || len(r.ApprovalGroups) > 0 || r.Prompt != "" || r.AllowedActions != nil ||
-		(r.object && r.holds())
+		r.Guardrails != nil || r.Mask != nil || (r.object && r.holds())
 }
 
 // IsHandoff reports a level whose action is ai-handoff.
@@ -251,6 +258,7 @@ func validateLevelObjects(la *LaneAnalyzerConfig, where string) []string {
 	var problems []string
 	for _, l := range la.levels() {
 		r := l.level
+		problems = append(problems, aiRuleModeProblems(where, l.name, *r)...)
 		if r.objectForm() && r.Action == "" {
 			problems = append(problems, fmt.Sprintf(
 				"%s: %s risk is an object with no action; set action", where, l.name))
@@ -285,6 +293,7 @@ func LaneAnalyzerWarnings(la *LaneAnalyzerConfig) []string {
 	var out []string
 	for _, l := range la.levels() {
 		r := *l.level
+		out = append(out, aiRuleLevelWarnings(l.name, r)...)
 		if r.IsHandoff() {
 			out = append(out, handoffWarnings(l.name, r)...)
 			continue
@@ -392,9 +401,13 @@ func handoffWarnings(name string, r RiskLevel) []string {
 //
 // An ai-handoff level, or allowed_actions on any level, has no downgrade:
 // for a build without CapabilityAIHandoff it refuses, naming that
-// capability.
+// capability. AI rule options and rule_library have no downgrade either:
+// for a build without CapabilityAIRules it refuses, naming that capability.
 func DowngradeRiskLevels(cfg Config, hs Handshake, approvalRule func(listener string) string) (Config, error) {
 	since := capabilitySince()
+	if err := refuseAIRules(cfg, hs, since); err != nil {
+		return Config{}, err
+	}
 	if !hs.grants(CapabilityAIHandoff, since) {
 		var problems []string
 		for _, l := range cfg.Listeners {

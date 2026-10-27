@@ -370,6 +370,9 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 	if cfg.Guardrails != nil {
 		visit("the configuration", cfg.Guardrails.Rules)
 	}
+	if cfg.RuleLibrary != nil {
+		visit("the configuration's rule_library", cfg.RuleLibrary.Guardrails)
+	}
 	if cfg.Policy != nil {
 		visit("the configuration", cfg.Policy.Rules)
 	}

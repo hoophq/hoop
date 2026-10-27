@@ -1466,6 +1466,8 @@ A level is a bare action (`low: allow`) or an object with these keys:
 | `approval_groups` | who may approve a `human` level. Empty: the administrators |
 | `prompt` | replaces the approval agent's instruction on an `ai_agent` level, or the hand-off agent's on an `ai-handoff` level |
 | `allowed_actions` | what the hand-off agent of an `ai-handoff` level may select (below) |
+| `guardrails` | `{mode, rules}`: the `rule_library` guardrails the AI may apply to the statement (below) |
+| `mask` | `{mode, rules}`: the `rule_library` masking rules the AI may apply to its response (below) |
 
 An object level needs no approval rule. A `human` level files its approval
 request with the risk level, and the control plane authorizes it against the
@@ -1626,6 +1628,104 @@ start log warn that they do nothing:
 `ai-handoff` and `allowed_actions` need capability `analyzer_ai_handoff`. The
 plane serves no downgrade: an older sidecar has no action that lets the agent
 choose, so the plane refuses to serve it the block and names the capability.
+
+**AI-applied Guardrails and Data Masking (`guardrails`, `mask`).** On an
+`allow`, `warn`, `require_approval` or `ai-handoff` level, the AI may apply
+existing rules to the statement it rated, and may create new ones. Every rule
+applies to this statement only. These keys are not the listener's
+`guardrails` and `mask` blocks, which run as before.
+
+```yaml
+rule_library:                 # the existing rules a level may let the AI apply
+  guardrails:
+    - {name: no-destructive-sql, type: operation, operations: [delete, drop], message: destructive SQL is refused}
+  mask:
+    - {name: emails, entities: [EMAIL_ADDRESS]}
+listeners:
+  - name: payments
+    protocol: postgres
+    analyzer:
+      high: block                       # guardrails or mask here: warned, ignored
+      medium:
+        action: warn
+        guardrails: {mode: existing_only, rules: [no-destructive-sql]}
+        mask: {mode: existing_and_new}  # rules absent: every rule_library mask rule
+```
+
+| Key | Meaning |
+|---|---|
+| `mode` | `existing_only` (default) or `existing_and_new`. Any other value refuses the config |
+| `rules` | the `rule_library` names the AI may apply. Absent: all of that kind. `[]`: none |
+
+`rule_library` rules never run unless the AI applies one. Each needs a unique
+`name`. A config file writes them; a control plane serves the ones its levels
+select. They count against no free-tier cap, but the feature needs an
+Enterprise license: without one granting guardrails (or data masking) the
+sidecar refuses a config that sets the level key or the library kind.
+
+After the level is known, one more model turn runs (it counts against
+`max_calls` and `rate_limit`). The agent gets only the tools the level allows:
+
+| Tool | Sent when | Input |
+|---|---|---|
+| `apply_guardrail` | `guardrails` set, at least one rule allowed | `rule` (enum of the allowed names), `reason` |
+| `create_guardrail` | `guardrails.mode: existing_and_new` | `type`, the fields of that type, `message`, `reason` |
+| `apply_mask` | `mask` set, at least one rule allowed | `rule` (enum of the allowed names), `reason` |
+| `create_mask` | `mask.mode: existing_and_new` | `entities` or `columns`, `strategy`, `keep_last`, `mask_char`, `reason` |
+| `no_rule` | the turn runs alone (providers force a tool call) | `reason` |
+
+The system prompt lists each allowed rule's definition, then a fixed suffix
+no config removes. On `ai-handoff` the rule tools join the hand-off turn and
+apply only when the agent does not select `block`. With `require_approval`
+the rules apply before the hold: a guardrail deny files no review, and a mask
+is attached before the hold.
+
+- A guardrail denies only. A match denies with the rule's message.
+  `action: defer` and `ai_analysis` are never offered.
+- A mask applies to the response of this statement only, through a
+  per-exchange plan in the gate; the lane masker is never changed. An ssh lane
+  offers `strategy: mask` only.
+- A created rule goes through the validation a config rule gets. An invalid one
+  is dropped, logged as a warning and recorded in `ai_rule_invalid`; it never
+  applies half-valid.
+- Fail-safe: a refusal, a timeout, a malformed answer (an unknown tool, a name
+  outside the enum, no reason, more than 16 calls), a spent budget or an input
+  longer than `max_input_bytes` applies no AI rule and keeps the level action.
+  `ai_rules_error` says why.
+- The decision is cached with the classification on the exact content the
+  agent read (statement, user, connection), like the hand-off decision.
+- The audit record carries `ai_rules`: a JSON list of
+  `{kind, rule | definition, reason, matched}` (`matched` on guardrails).
+
+Where the response of one statement cannot be told apart, the gate denies the
+statement the AI masked, with a message that says why:
+
+| Protocol | A mask applies to | Refused |
+|---|---|---|
+| `grpc`, `spanner` (with descriptors) | every response of the call | never |
+| `http` | the response to its request; ends with the final response | a request sent while that response is pending; a masked request behind an outstanding one; a masked WebSocket message |
+| `postgres` | every server byte up to the next client statement | a statement sent before the masked response's ReadyForQuery arrived; a masked statement sent with others in one read |
+| `mssql` | every server byte up to the next client statement | a statement sent before the TDS packet that ends the masked response (End Of Message) arrived in full; a masked statement sent with others in one read |
+| `mysql`, `oracle`, `clickhouse` | every server byte for the rest of the connection | every later statement on the connection (the gate reads no end-of-response marker on these lanes; reconnect); a masked statement sent with others in one read |
+| `mongodb`, `ssh`, `ica`, plug-ins, grpc without descriptors | nothing | every masked statement (the lane warns at start) |
+
+On a serial lane the end of the masked response is the protocol's own marker,
+never the next client statement. Any client byte sent while the mask is
+active (a pgwire Bind and Execute included) opens a response the mask covers.
+A statement pipelined into a masked response is refused, so no byte of that
+response leaves unmasked.
+
+| Setting | Result |
+|---|---|
+| `guardrails` or `mask` on a `block` or `defer` level | warned; the fields are ignored |
+| `mode` other than `existing_only` or `existing_and_new` | refused |
+| a name in `rules` that `rule_library` does not hold | warned; the name is ignored |
+| a `rule_library` rule that is invalid, or does not deny | warned; the rule is ignored |
+| a level left with no rule to apply and none to create | warned |
+| `mask` on a protocol without a scope, or on `mysql`, `oracle` or `clickhouse` (table above) | warned |
+
+The level keys and `rule_library` need capability `analyzer_ai_rules`; the
+plane serves no downgrade.
 
 **The bare form (deprecated).** `high: require_approval` with a listener
 `approval_rule` holds for a person under that control plane access request

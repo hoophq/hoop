@@ -28,7 +28,7 @@ type ruleSwapper interface {
 type relayRules struct{ srv *proxy.Server }
 
 func (r relayRules) swapLane(ln lane, drained func()) {
-	r.srv.SwapLane(ln.policy, ln.masker, ln.codecFactory)
+	r.srv.SwapLane(ln.policy, ln.masker, ln.codecFactory, ln.maskScope)
 	drained()
 }
 
@@ -57,6 +57,9 @@ type liveRules struct {
 type ruleSet struct {
 	policy policy.Evaluator
 	masker gate.Masker
+	// maskScope ties a mask the analyzer applies to one statement to its
+	// response. It swaps with the policy that applies such masks.
+	maskScope gate.MaskScope
 	// holds reports that the lane's analyzer block holds for review. A grpc
 	// lane then exposes analyzer.ClientModeHeaders to policy; it rides here
 	// because the analyzer block swaps with the rules.
@@ -76,9 +79,10 @@ func newLiveRules(ln lane) *liveRules {
 
 func newRuleSet(ln lane) *ruleSet {
 	return &ruleSet{
-		policy: ln.policy,
-		masker: ln.masker,
-		holds:  analyzerHolds(ln.cfg.Analyzer),
+		policy:    ln.policy,
+		masker:    ln.masker,
+		maskScope: ln.maskScope,
+		holds:     analyzerHolds(ln.cfg.Analyzer),
 	}
 }
 

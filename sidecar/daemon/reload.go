@@ -751,8 +751,8 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		docs[ln.name] = doc
 		// The running lane's masker presence is the build-time one: this
 		// check refuses every document that would change it, so no swap
-		// ever moves it.
-		if isEndpointLane(ln.cfg) && (ln.masker != nil) != (r.prevLanes[ln.name].masker != nil) {
+		// ever moves it. An AI mask on a grpc lane sets the same option.
+		if isEndpointLane(ln.cfg) && ln.masksAtBuild() != r.prevLanes[ln.name].masksAtBuild() {
 			log.Warn("masking was turned on or off on an endpoint lane on the "+from+"; restart to apply it",
 				"listener", ln.name, "protocol", ln.cfg.Protocol)
 			return r.keep(reloadRestart, fmt.Sprintf("the rules of endpoint lane %q changed; restart to apply them", ln.name))
@@ -877,6 +877,8 @@ func BaselineDoc(c *Config) ([]byte, error) { return nonRuleDoc(c) }
 func nonRuleDoc(c *Config) ([]byte, error) {
 	cp := *c
 	cp.Guardrails, cp.OPA, cp.Mask, cp.Policy = nil, nil, nil, nil
+	// rule_library is rule content: a lane whose analyzer reads it swaps.
+	cp.RuleLibrary = nil
 	cp.PII = nil
 	// The running config carries the resolved URL and the file's license
 	// reference; the fetched one carries neither. Neither is a lane fact.
@@ -904,7 +906,8 @@ func laneRuleDoc(c *Config, lc ListenerConfig) ([]byte, error) {
 		O *OPAConfig          `json:"o"`
 		M MaskConfig          `json:"m"`
 		A *LaneAnalyzerConfig `json:"a"`
-	}{gc, opa, mc, lc.Analyzer})
+		L *RuleLibrary        `json:"l,omitempty"`
+	}{gc, opa, mc, lc.Analyzer, laneLibrary(c, lc)})
 }
 
 // laneSectionDocs renders the same resolved stack as laneRuleDoc, one
@@ -913,8 +916,16 @@ func laneRuleDoc(c *Config, lc ListenerConfig) ([]byte, error) {
 func laneSectionDocs(c *Config, lc ListenerConfig) (map[string][]byte, error) {
 	gc, opa, mc := c.resolve(lc)
 	out := make(map[string][]byte, 4)
+	var analyzerSection any = lc.Analyzer
+	if lib := laneLibrary(c, lc); lib != nil {
+		// The library rules a block lets the AI apply swap with the block.
+		analyzerSection = struct {
+			A *LaneAnalyzerConfig `json:"a"`
+			L *RuleLibrary        `json:"l"`
+		}{lc.Analyzer, lib}
+	}
 	for name, v := range map[string]any{
-		"guardrails": gc, "opa": opa, "mask": mc, "analyzer": lc.Analyzer,
+		"guardrails": gc, "opa": opa, "mask": mc, "analyzer": analyzerSection,
 	} {
 		doc, err := json.Marshal(v)
 		if err != nil {
@@ -923,4 +934,16 @@ func laneSectionDocs(c *Config, lc ListenerConfig) (map[string][]byte, error) {
 		out[name] = doc
 	}
 	return out, nil
+}
+
+// laneLibrary is the rule_library a lane's analyzer block reads: nil when
+// no level of the block lets the AI apply a rule.
+func laneLibrary(c *Config, lc ListenerConfig) *RuleLibrary {
+	if len(lc.Analyzer.aiRuleLevels()) == 0 {
+		return nil
+	}
+	if c.RuleLibrary == nil {
+		return &RuleLibrary{}
+	}
+	return c.RuleLibrary
 }
