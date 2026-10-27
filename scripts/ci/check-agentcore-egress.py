@@ -103,6 +103,18 @@ def strings_in(value):
     return []
 
 
+NO_VALUE = {"Ref": "AWS::NoValue"}
+
+
+def kept_branch(value):
+    """For an Fn::If with one AWS::NoValue branch, the other branch: the
+    condition only drops the value. Else value itself."""
+    args = value.get("Fn::If") if isinstance(value, dict) and len(value) == 1 else None
+    if isinstance(args, list) and len(args) == 3 and args[1:].count(NO_VALUE) == 1:
+        return args[2] if args[1] == NO_VALUE else args[1]
+    return value
+
+
 def has_key(value, key):
     if isinstance(value, dict):
         return key in value or any(has_key(v, key) for v in value.values())
@@ -352,9 +364,10 @@ def check(template):
                     for d in names:
                         if TOO_WIDE.match(d):
                             errors.append(f"{domains} allows '{d}': wider than one domain")
-                    # An expression may resolve to '*.': only a wildcard-free,
-                    # unconditional one passes, such as the upstream host.
-                    for d in (e for e in entries if not isinstance(e, str)):
+                    # An expression may resolve to '*.': only a wildcard-free
+                    # one passes, such as the upstream host. A condition may
+                    # drop it, never pick another value.
+                    for d in (kept_branch(e) for e in entries if not isinstance(e, str)):
                         if has_key(d, "Fn::If") or any("*" in x for x in strings_in(d)):
                             errors.append(f"{domains} allows {d}: a condition or a wildcard in an expression")
                 # A rule with a Qtype blocks that query type only.

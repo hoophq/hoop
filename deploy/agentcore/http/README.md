@@ -36,6 +36,10 @@ goes away:
 - The sidecar refuses a request without the caller token before any byte of
   it reaches the API.
 
+Start with the [quick start](#quick-start): one Launch Stack link, hoop's
+demo API, no API of your own. Then [run it against your
+API](#before-you-start).
+
 ## Files
 
 | Path | Holds |
@@ -44,6 +48,83 @@ goes away:
 | `setup.sh` | Creates and deletes the stack, asks the harness a question, and runs `runtime-example/` |
 | `evstream.py` | Decodes the harness's binary event stream into JSON lines; `setup.sh` uses it. `evstream_test.py` checks it on real frames |
 | `runtime-example/` | A minimal Runtime agent (linux/arm64) that calls the API through the sidecar. It proves the Runtime path; it is not a product |
+
+## Quick start
+
+One link creates the stack in us-east-1 with `UpstreamUrl` set to `demo`.
+The sidecar serves hoop's demo API, a set of invented users with emails,
+phones and cards, from inside its task.
+
+You need:
+
+- An AWS account where you can create IAM roles, and access to the Bedrock
+  model `us.anthropic.claude-haiku-5-5` in us-east-1.
+- A hoop sidecar token. The sidecar runs logged in, the demo too: sign in
+  to [use.hoop.dev](https://use.hoop.dev), open **Sidecars**, choose
+  **Connect an existing Sidecar**, and copy the token.
+- For steps 2 to 5: `git`, the AWS CLI v2 signed in to that account, `jq`,
+  `python3`, and `curl` 7.75 or later.
+
+From **Create stack** to the agent's answer took 9 min 27 s on 2026-10-27:
+the stack 8 min 54 s (`setup.sh create`, the same template and parameters),
+the answer 33 s. While the stack exists it costs about
+$0.095 per hour, plus each session's model charges: see [Limits](#limits).
+Your use.hoop.dev organization's license sets the sidecar's rule limits:
+see [Free tier](#free-tier).
+
+### 1. Launch the stack
+
+[Launch Stack](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?templateURL=https%3A%2F%2Fhoopdev-platform-cf-us-east-1.s3.us-east-1.amazonaws.com%2Flatest%2Fagentcore-http.template.yaml&stackName=hoop-agentcore-quickstart&param_UpstreamUrl=demo&param_HarnessName=hoop_agentcore_quickstart)
+
+The console opens **Quick create stack** with the stack
+`hoop-agentcore-quickstart`, `UpstreamUrl` `demo` and the harness
+`hoop_agentcore_quickstart`. Paste the token into `HoopSidecarToken`, accept
+that the stack creates IAM resources, and choose **Create stack**. Wait for
+`CREATE_COMPLETE`, about 8 minutes.
+
+### 2. Get the scripts
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/hoophq/hoop hoop-agentcore
+cd hoop-agentcore && git sparse-checkout set deploy/agentcore && cd deploy/agentcore/http
+export STACK=hoop-agentcore-quickstart AWS_REGION=us-east-1
+```
+
+### 3. Ask the agent
+
+```bash
+./setup.sh session
+```
+
+With no question, `session` asks the demo one: list the users, then delete
+user 1. It prints each command the agent ran, its output, and the answer.
+The users come back with `[REDACTED:EMAIL_ADDRESS]`,
+`[REDACTED:PHONE_NUMBER]` and `[REDACTED:CREDIT_CARD]`, and the DELETE gets
+`403` and `this agent may only read from the API`.
+
+### 4. Read the audit trail
+
+```bash
+G=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Outputs[?OutputKey=='SidecarLogGroup'].OutputValue" --output text)
+aws logs filter-log-events --log-group-name "$G" --start-time $(( ($(date +%s) - 3600) * 1000 )) \
+  --query 'events[].message' --output json | jq -r '.[]' \
+  | jq -cR 'fromjson? | select((.kind == "statement" or .kind == "violation") and .direction == "client")
+    | {kind, principal, statement, rule, session: .http.headers["x-agentcore-session-id"]}'
+```
+
+Each row names `agentcore` and the session id that `session` printed. The
+DELETE row names rule `read-only`.
+
+### 5. Clean up
+
+```bash
+./setup.sh delete
+```
+
+Then delete the sidecar at use.hoop.dev (**Sidecars**) and the
+`hoop-agentcore` clone. AgentCore can hold the stack's subnets for hours:
+see [Clean up](#6-clean-up) if the delete fails.
 
 ## Before you start
 
@@ -93,6 +174,9 @@ export SIDECAR_TOKEN_FILE=$PWD/sidecar-token    # or LICENSE_FILE=<your license 
 the stack `hoop-agentcore-http` (`STACK` changes it), and prints its
 outputs. It takes about 8 minutes. Each stack names its harness after
 `STACK`, so two stacks can share a Region.
+
+`UPSTREAM_URL=demo` creates the [quick start](#quick-start)'s stack from
+the CLI.
 
 `AGENT=none` creates the network and the sidecar without a harness, for
 your own Runtime agent: see [Bring your own Runtime
@@ -196,14 +280,26 @@ the model's context.
 ## Free tier
 
 The sidecar is free. Without a license it enforces one guardrail rule and
-one data masking rule per process, and an organization holds one sidecar.
-With `SIDECAR_TOKEN_FILE` the license comes from your use.hoop.dev
-organization, on each heartbeat; a license file is then ignored.
-`template.yaml` uses both rules: `read-only` names seven methods, and `pii`
-names three entities. They are the twins' rules; CI keeps them equal.
+one data masking rule per process, and an organization without an
+Enterprise license holds one sidecar. `template.yaml` uses both rules:
+`read-only` names seven methods, and `pii` names three entities. They are
+the twins' rules; CI keeps them equal.
 
-A config over the cap does not start. The sidecar's log in `SidecarLogGroup`
-ends:
+The license comes from where the sidecar logs in. With `SIDECAR_TOKEN_FILE`
+it is your use.hoop.dev organization's, on each heartbeat, and a license
+file is ignored. A use.hoop.dev organization can hold an Enterprise
+license, which lifts both caps: the one this stack was tested with does
+(ENG-923). The sidecar logs its limits when it starts (`G` is from step 4):
+
+```bash
+aws logs filter-log-events --log-group-name "$G" --filter-pattern '"rule limits"' \
+  --query 'events[].message' --output json | jq -r 'last'
+```
+
+An Enterprise license prints `"guardrail_rules":"unlimited","mask_rules":"unlimited"`.
+
+On a control plane whose organization holds no license, a config over the
+cap does not start. The sidecar's log in `SidecarLogGroup` ends:
 
 ```
 Error: invalid config:
