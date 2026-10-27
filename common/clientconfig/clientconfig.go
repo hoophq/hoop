@@ -4,12 +4,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
 	AgentFile          string = "agent.toml"
 	ClientFile         string = "config.toml"
 	clientConfigFolder string = ".hoop"
+
+	// ConfigFileEnv selects the client config file for this process.
+	// When it is unset, the file is $HOME/.hoop/config.toml.
+	ConfigFileEnv = "HOOP_CONFIG"
 
 	SaaSWebURL  string = "https://use.hoop.dev"
 	SaaSGrpcURL string = "use.hoop.dev:8443"
@@ -54,12 +59,46 @@ func newHomeDir(folderPaths ...string) (string, error) {
 	return hoopHomeDir, nil
 }
 
+// configFileOverride returns the HOOP_CONFIG path.
+// An empty path means the variable is unset.
+func configFileOverride() (string, error) {
+	raw := strings.TrimSpace(os.Getenv(ConfigFileEnv))
+	if raw == "" {
+		return "", nil
+	}
+	if raw == "~" {
+		return "", fmt.Errorf("HOOP_CONFIG must be a file path")
+	}
+	if len(raw) > 1 && raw[0] == '~' && (raw[1] == '/' || raw[1] == '\\') {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed expanding HOOP_CONFIG, err=%w", err)
+		}
+		raw = filepath.Join(home, raw[2:])
+	}
+	abs, err := filepath.Abs(raw)
+	if err != nil {
+		return "", fmt.Errorf("failed resolving HOOP_CONFIG, err=%w", err)
+	}
+	return abs, nil
+}
+
 func NewPath(configFile string) (filePath, hoopHomeDir string, err error) {
 	hoopHomeDir, err = newHomeDir()
 	if err != nil {
-		return
+		return "", "", err
 	}
-	filePath = fmt.Sprintf("%s/%s", hoopHomeDir, configFile)
+	if configFile == ClientFile {
+		filePath, err = configFileOverride()
+		if err != nil {
+			return "", hoopHomeDir, err
+		}
+		// Do not create an override file. A missing path must fail at load.
+		if filePath != "" {
+			return filePath, hoopHomeDir, nil
+		}
+	}
+	filePath = filepath.Join(hoopHomeDir, configFile)
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		f, err := os.Create(filePath)
 		if err != nil {
