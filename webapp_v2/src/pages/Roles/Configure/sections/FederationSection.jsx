@@ -13,7 +13,9 @@ import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
 import FederationTestModal from '@/pages/Roles/Configure/sections/FederationTestModal'
 import {
+  adminCredentialsForTest,
   FEDERATION_PROVIDERS,
+  hasUsableStoredCredentials,
   OUTPUT_ENV_VARS,
 } from '@/pages/Roles/Configure/utils/federation'
 
@@ -45,7 +47,9 @@ function Section({ title, help, children }) {
 
 function AdminCredentialsField({ oauth }) {
   const form = useConfigureRoleStore((s) => s.federation.form)
-  const stored = useConfigureRoleStore((s) => Boolean(s.federation.config?.has_admin_credentials))
+  const stored = useConfigureRoleStore((s) =>
+    hasUsableStoredCredentials(s.federation.config, s.federation.form),
+  )
   const editing = useConfigureRoleStore((s) => s.federation.credentialsEditing)
   const setFederationForm = useConfigureRoleStore((s) => s.setFederationForm)
   const setEditing = useConfigureRoleStore((s) => s.setFederationCredentialsEditing)
@@ -223,8 +227,12 @@ function OutputPreview({ provider }) {
   )
 }
 
-function testBlocker(form, hasCredentials, agentId) {
-  if (!hasCredentials) return 'Add service account credentials to enable testing.'
+function testBlocker(form, { stored, testCredentials }, agentId) {
+  if (!testCredentials) {
+    return stored
+      ? 'Paste the service account JSON to test: the stored key cannot be read here.'
+      : 'Add service account credentials to enable testing.'
+  }
   if (!form.extra_config.project_id.trim()) return 'Set the GCP Project ID to enable testing.'
   if (!form.identity_source_attribute.trim() || !form.identity_target_template.trim()) {
     return 'Set the identity mapping to enable testing.'
@@ -235,14 +243,19 @@ function testBlocker(form, hasCredentials, agentId) {
 
 export default function FederationSection() {
   const form = useConfigureRoleStore((s) => s.federation.form)
-  const stored = useConfigureRoleStore((s) => Boolean(s.federation.config?.has_admin_credentials))
+  const stored = useConfigureRoleStore((s) =>
+    hasUsableStoredCredentials(s.federation.config, s.federation.form),
+  )
+  const secrets = useConfigureRoleStore((s) => s.connection?.secret)
+  const hideRoleInfo = useConfigureRoleStore((s) => s.hideRoleInfo)
   const agentId = useConfigureRoleStore((s) => s.drafts.agent_id)
   const setFederationProvider = useConfigureRoleStore((s) => s.setFederationProvider)
   const setFederationProjectId = useConfigureRoleStore((s) => s.setFederationProjectId)
   const [testOpened, { open: openTest, close: closeTest }] = useDisclosure(false)
 
   const oauth = form.builtin_provider === FEDERATION_PROVIDERS.GCP_OAUTH
-  const blocker = testBlocker(form, stored || Boolean(form.admin_credentials_json.trim()), agentId)
+  const testCredentials = adminCredentialsForTest(form, secrets, hideRoleInfo)
+  const blocker = testBlocker(form, { stored, testCredentials }, agentId)
 
   return (
     <Stack gap="xl">

@@ -9,6 +9,7 @@ import {
   DEFAULT_FEDERATION_FORM,
   federationOutcomeSnackbar,
   formFromConfig,
+  hasUsableStoredCredentials,
   PROJECT_KEY,
   SA_JSON_KEY,
   staticSecretsMirror,
@@ -46,6 +47,15 @@ describe('federation form', () => {
     expect(buildFederationConfig(DEFAULT_FEDERATION_FORM)).not.toHaveProperty('admin_credentials_json')
     const typed = { ...DEFAULT_FEDERATION_FORM, admin_credentials_json: SA_JSON }
     expect(buildFederationConfig(typed).admin_credentials_json).toBe(SA_JSON)
+  })
+})
+
+describe('hasUsableStoredCredentials', () => {
+  it('drops the stored credential when the provider changes', () => {
+    const form = formFromConfig(STORED)
+    expect(hasUsableStoredCredentials(STORED, form)).toBe(true)
+    expect(hasUsableStoredCredentials(STORED, { ...form, builtin_provider: 'gcp_iam' })).toBe(false)
+    expect(hasUsableStoredCredentials(null, form)).toBe(false)
   })
 })
 

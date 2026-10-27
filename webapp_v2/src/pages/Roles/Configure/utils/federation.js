@@ -66,6 +66,12 @@ export function buildFederationConfig(form) {
   return config
 }
 
+// A stored gcp_iam key is no OAuth client, and the reverse: a provider switch
+// needs new credentials.
+export function hasUsableStoredCredentials(config, form) {
+  return Boolean(config?.has_admin_credentials) && config.builtin_provider === form.builtin_provider
+}
+
 export function federationFormsEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b)
 }
