@@ -3894,8 +3894,8 @@ stmts, _ := i.Inspect(inspect.FromClient, packetBytes)
 ```
 
 **Build it through the seam.** `codec/http.New` returns `*Codec`, libhoop's
-Inspector with the relay's additions around it: Connect Gateway
-normalization on every entry point, and on the byte path the Via marker and
+Inspector with the relay's additions around it: path cleaning and Connect
+Gateway normalization on every entry point, and on the byte path the Via marker and
 the lifting of `Options.CredentialHeader`. `InspectRequest` does not lift the
 credential, since a caller holding the `*http.Request` already has the
 header; it still keeps it out of `HTTP.Headers` unless `Options.Headers`
@@ -3906,6 +3906,23 @@ names it.
 like `/users/alice` survives intact: merging it with `/users/settings` would
 silently widen every rule written against either. The normalizer errs toward
 keeping segments, so a policy comes out too narrow rather than too broad.
+
+**Dot and empty segments resolve.** The resource is the path as an upstream
+that cleans paths routes it: `\` becomes `/`, `.`, `..` and empty segments
+resolve, and a trailing slash stays. `/x/../admin/users` and
+`//admin//users` both become `/admin/users`. The path, the target and the
+statement text stay as sent.
+
+**A dot segment is matched three ways.** When the path held `.` or `..`,
+`metadata["http.resource_unresolved"]` keeps the resource before resolution.
+`http_resource` rules and the `resources` scope of `http_header` rules match
+the resolved resource, the unresolved form, and the unresolved form resolved
+on its own. The sidecar cannot see how an upstream routes: Express 4 runs
+`/admin/../x` under `/admin`, and Connect Gateway may route the raw
+membership and leave the rest to a cluster that resolves it. Analyzer
+triggers and `match_ignore` read the resolved form only. OPA gets the
+resolved form in `input.http.resource` and the unresolved form in
+`input.metadata`, and does its own matching.
 
 **Data exposure is opt-in.** Bodies and headers are NOT captured by default.
 A policy engine's decision log is a copy of everything you send it, and
@@ -4129,7 +4146,8 @@ through the gateway as it does against the API server. Without it such a rule
 matches nothing and kubectl through the gateway passes it untouched. The path,
 the target and the statement text stay as sent, and
 `metadata["http.resource_prefix"]` records what was removed. Any other host
-or shape is left alone.
+or shape is left alone. `metadata["http.resource_unresolved"]` loses its
+prefix the same way, split on its own.
 
 The lane below names each caller from kubectl's own Google bearer with
 [`google_identity`](#1-write-the-file), and serves kubectl's h2 over ALPN (see
