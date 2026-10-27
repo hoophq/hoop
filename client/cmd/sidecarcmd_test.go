@@ -154,6 +154,22 @@ func TestFreeStandaloneRunsTheFileWithoutALogin(t *testing.T) {
 	}
 }
 
+// A flag a person passes outranks the env var an install set.
+func TestFreeStandaloneFlagOutranksItsEnvVar(t *testing.T) {
+	f := startSidecarCmd.Flags().Lookup("free-standalone")
+	t.Cleanup(func() { f.Changed = false; sidecarFreeStandaloneFlag = false })
+	t.Setenv(sidecarFreeStandaloneEnv, "true")
+	if on, err := sidecarFreeStandalone(startSidecarCmd); err != nil || !on {
+		t.Fatalf("the env var alone: on=%v err=%v", on, err)
+	}
+	if err := startSidecarCmd.Flags().Set("free-standalone", "false"); err != nil {
+		t.Fatal(err)
+	}
+	if on, err := sidecarFreeStandalone(startSidecarCmd); err != nil || on {
+		t.Fatalf("--free-standalone=false lost to the env var: on=%v err=%v", on, err)
+	}
+}
+
 // --free-standalone is internal: --help does not list it.
 func TestFreeStandaloneIsHidden(t *testing.T) {
 	f := startSidecarCmd.Flags().Lookup("free-standalone")

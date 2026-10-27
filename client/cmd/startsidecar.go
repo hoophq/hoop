@@ -695,11 +695,11 @@ type sidecarFileFacts struct {
 	licensed bool
 }
 
-// sidecarFreeStandalone reads --free-standalone, then its env var. A value
-// that is not a boolean is an error, not "off".
-func sidecarFreeStandalone() (bool, error) {
-	if sidecarFreeStandaloneFlag {
-		return true, nil
+// sidecarFreeStandalone reads --free-standalone when it is passed, else its
+// env var. A value that is not a boolean is an error, not "off".
+func sidecarFreeStandalone(cmd *cobra.Command) (bool, error) {
+	if cmd.Flags().Changed("free-standalone") {
+		return sidecarFreeStandaloneFlag, nil
 	}
 	v := strings.TrimSpace(os.Getenv(sidecarFreeStandaloneEnv))
 	if v == "" {
@@ -735,7 +735,7 @@ func readSidecarFileFacts(path string) sidecarFileFacts {
 // config file logs in directly and boots that file, connected.
 func resolveSidecarLogin(cmd *cobra.Command, args []string, canChoose bool) (login *savedSidecarLogin, savedPath string, choose bool, err error) {
 	file := readSidecarFileFacts(sidecarConfigFlag)
-	freeStandalone, err := sidecarFreeStandalone()
+	freeStandalone, err := sidecarFreeStandalone(cmd)
 	if err != nil {
 		return nil, "", false, err
 	}
