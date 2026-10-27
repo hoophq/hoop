@@ -92,10 +92,11 @@ func NewPath(configFile string) (filePath, hoopHomeDir string, err error) {
 		// Do not create an override file. A missing path must fail at load.
 		// Do not create $HOME/.hoop when the override is a complete path.
 		if filePath != "" {
-			if home, homeErr := os.UserHomeDir(); homeErr == nil {
-				hoopHomeDir = filepath.Join(home, clientConfigFolder)
+			home, homeErr := os.UserHomeDir()
+			if homeErr != nil {
+				return "", "", fmt.Errorf("failed obtaining home dir, err=%w", homeErr)
 			}
-			return filePath, hoopHomeDir, nil
+			return filePath, filepath.Join(home, clientConfigFolder), nil
 		}
 	}
 	hoopHomeDir, err = newHomeDir()

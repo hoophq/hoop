@@ -19,6 +19,14 @@ type Profile struct {
 	TLSCA         string
 	SkipTLSVerify bool
 	Current       bool
+	// Extra holds keys this file does not interpret. A switch rewrites the file.
+	Extra []extraField
+}
+
+// extraField is one unrecognized key, kept so a rewrite does not drop it.
+type extraField struct {
+	Key string
+	Raw string
 }
 
 // ProfileFile is config.toml when it holds [profile <name>] sections.
@@ -88,8 +96,11 @@ func ParseProfileFile(data []byte) (ProfileFile, error) {
 			}
 			continue
 		}
-		if err := setProfileField(current, key, raw); err != nil && !errors.Is(err, errUnknownKey) {
-			return ProfileFile{}, fmt.Errorf("line %d: profile %q: %w", lineNo, current.Name, err)
+		if err := setProfileField(current, key, raw); err != nil {
+			if !errors.Is(err, errUnknownKey) {
+				return ProfileFile{}, fmt.Errorf("line %d: profile %q: %w", lineNo, current.Name, err)
+			}
+			current.Extra = append(current.Extra, extraField{Key: key, Raw: raw})
 		}
 	}
 	return doc, nil
@@ -218,6 +229,9 @@ func (f ProfileFile) Marshal() []byte {
 			fmt.Fprintf(&buf, "tls_ca = %s\n", strconv.Quote(p.TLSCA))
 		}
 		fmt.Fprintf(&buf, "skip_tls_verify = %t\n", p.SkipTLSVerify)
+		for _, extra := range p.Extra {
+			fmt.Fprintf(&buf, "%s = %s\n", extra.Key, extra.Raw)
+		}
 	}
 	return buf.Bytes()
 }
