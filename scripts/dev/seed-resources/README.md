@@ -96,7 +96,8 @@ SEED_DB_URI=... node scripts/dev/seed-resources/seed.mjs dump > a.dump
 
 `dump` prints the tables the seed writes, one row per line, without `org_id`.
 An agent shows as its name, a federation's admin credentials as
-`has_admin_credentials`, a user without `last_login_at`. Tags and attributes
+`has_admin_credentials`, a user without `last_login_at`, a role without its
+status (the gateway sets it each time the agent connects). Tags and attributes
 are the seed's only: the gateway writes its own at boot, with random ids. Seed
 two new databases, dump both, and `diff` them: it is empty.
 

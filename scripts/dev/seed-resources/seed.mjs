@@ -219,9 +219,9 @@ function dump() {
     SELECT '-- private.resources';
     SELECT (to_jsonb(r) - 'org_id' - 'agent_id') || ${agent('r')} FROM private.resources r WHERE r.org_id = ${org}
       ORDER BY r.name;
-    SELECT '-- private.connections';
-    SELECT (to_jsonb(c) - 'org_id' - 'agent_id') || ${agent('c')} FROM private.connections c WHERE c.org_id = ${org}
-      ORDER BY c.name;
+    SELECT '-- private.connections (without status: the gateway sets it from the agent at each connect)';
+    SELECT (to_jsonb(c) - 'org_id' - 'agent_id' - 'status') || ${agent('c')} FROM private.connections c
+      WHERE c.org_id = ${org} ORDER BY c.name;
     SELECT '-- private.env_vars';
     SELECT to_jsonb(e) - 'org_id' FROM private.env_vars e WHERE e.org_id = ${org} ORDER BY e.id;
     SELECT '-- private.connection_tags (the seed''s: the gateway writes its defaults at boot)';

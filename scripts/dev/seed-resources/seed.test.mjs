@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { ATTRIBUTES, JOBS, RESOURCES, roles, users } from './catalog.mjs'
 import { emptySql, seedSql } from './seed.mjs'
-import { psql, str } from '../seed-sessions/seed.mjs'
+import { orgId, psql, str } from '../seed-sessions/seed.mjs'
 
 const ORG = '00000000-0000-4000-8000-000000000000'
 const AGENT = '75122bce-f957-49eb-a812-2ab60977cd9f'
@@ -132,12 +132,15 @@ test('a run after the matrix flows writes the same rows', { skip: !stack && 'set
 })
 
 const OUTSIDER = 'seed-test-outsider'
-const dropOutsider = () => psql(`BEGIN;
-  DELETE FROM private.env_vars WHERE id IN (SELECT id FROM private.connections WHERE name = ${str(OUTSIDER)}
-    UNION ALL SELECT id FROM private.resources WHERE name = ${str(OUTSIDER)});
-  DELETE FROM private.connections WHERE name = ${str(OUTSIDER)};
-  DELETE FROM private.resources WHERE name = ${str(OUTSIDER)};
-  COMMIT;`)
+const dropOutsider = () => {
+  const own = `org_id = ${str(orgId())} AND name = ${str(OUTSIDER)}`
+  psql(`BEGIN;
+    DELETE FROM private.env_vars WHERE id IN (SELECT id FROM private.connections WHERE ${own}
+      UNION ALL SELECT id FROM private.resources WHERE ${own});
+    DELETE FROM private.connections WHERE ${own};
+    DELETE FROM private.resources WHERE ${own};
+    COMMIT;`)
+}
 
 // A flow can give a seeded attribute to a role the seed does not own.
 test('a run keeps a seeded attribute on a role outside the seed', { skip: !stack && 'set SEED_DB_URI and API_URL' }, async (t) => {
