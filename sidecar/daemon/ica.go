@@ -243,7 +243,7 @@ type ICAConfig struct {
 	// Citrix Gateway SNIP when the Gateway dials this lane as the VDA. Empty
 	// admits any source, as the other sidecar lanes do. CIDR mode takes its
 	// list from transparent.source_cidrs instead and refuses this one.
-	SourceCIDRs []string `json:"source_cidrs,omitempty" label:"Source CIDRs" placeholder:"10.20.1.10/32" help:"Single mode: networks allowed to connect, such as the Citrix Gateway SNIP. Empty admits any source."`
+	SourceCIDRs []string `json:"source_cidrs,omitempty" cap:"ica_source_cidrs" label:"Source CIDRs" placeholder:"10.20.1.10/32" help:"Single mode: networks allowed to connect, such as the Citrix Gateway SNIP. Empty admits any source."`
 
 	// Display pins the framebuffer geometry and ThinWire channel for every
 	// session. With no block, the engine's defaults apply (1264x1040,
