@@ -40,8 +40,6 @@ function deleteSql(org) {
       OR id IN (SELECT id FROM private.resources WHERE ${resources}));
     DELETE FROM private.connections WHERE ${conns};
     DELETE FROM private.resources WHERE ${resources};
-    DELETE FROM private.attributes WHERE org_id = ${str(org)} AND (name IN (${inList(ATTRIBUTES.map((a) => a.name))})
-      OR id IN (${inList(ATTRIBUTES.map((a) => seedId('attribute', a.name)))}));
     DELETE FROM private.dbrole_jobs WHERE org_id = ${str(org)} AND id IN (${inList(JOBS.map((j) => j.id))});`
 }
 
@@ -97,9 +95,17 @@ function roleSql(org, agentId, r) {
   return out.join('\n')
 }
 
+// Upserted, never deleted: a delete cascades to every role and rule a flow
+// gave the attribute, the seed's or not. A seeded attribute a flow renamed
+// gets its name back; its links follow (ON UPDATE CASCADE).
 function attributeSql(org, a) {
-  return `INSERT INTO private.attributes (id, org_id, name, description, created_at)
-    VALUES (${str(seedId('attribute', a.name))}, ${str(org)}, ${str(a.name)}, ${str(a.description)}, ${ts(AT)});`
+  const id = seedId('attribute', a.name)
+  return `UPDATE private.attributes SET name = ${str(a.name)} WHERE org_id = ${str(org)} AND id = ${str(id)}
+      AND NOT EXISTS (SELECT 1 FROM private.attributes WHERE org_id = ${str(org)} AND name = ${str(a.name)});
+    INSERT INTO private.attributes (id, org_id, name, description, rulepack_id, managed_by, created_at)
+    VALUES (${str(id)}, ${str(org)}, ${str(a.name)}, ${str(a.description)}, NULL, NULL, ${ts(AT)})
+    ON CONFLICT (org_id, name) DO UPDATE SET description = EXCLUDED.description, rulepack_id = NULL,
+      managed_by = NULL, created_at = EXCLUDED.created_at;`
 }
 
 function jobSql(org, j) {
@@ -202,45 +208,51 @@ async function empty() {
     `Open ${API_URL}/onboarding.`)
 }
 
-// One JSON object per row, ordered by a key, without org_id: it is random per
-// database. An agent shows as its name: run-dev fixes its id, other stacks do not.
+// The seeded organization's rows, one JSON object per row, ordered by a key,
+// without org_id: it is random per database. An agent shows as its name:
+// run-dev fixes its id, other stacks do not.
 function dump() {
+  const org = str(orgId())
   const agent = (alias) => `jsonb_build_object('agent', (SELECT name FROM private.agents a WHERE a.id = ${alias}.agent_id))`
   const tagIds = roles().flatMap((r) => Object.entries(r.tags ?? {}).map(([k, v]) => seedId('tag', `${k}=${v}`)))
   process.stdout.write(psql(`
     SELECT '-- private.resources';
-    SELECT (to_jsonb(r) - 'org_id' - 'agent_id') || ${agent('r')} FROM private.resources r ORDER BY r.name;
+    SELECT (to_jsonb(r) - 'org_id' - 'agent_id') || ${agent('r')} FROM private.resources r WHERE r.org_id = ${org}
+      ORDER BY r.name;
     SELECT '-- private.connections';
-    SELECT (to_jsonb(c) - 'org_id' - 'agent_id') || ${agent('c')} FROM private.connections c ORDER BY c.name;
+    SELECT (to_jsonb(c) - 'org_id' - 'agent_id') || ${agent('c')} FROM private.connections c WHERE c.org_id = ${org}
+      ORDER BY c.name;
     SELECT '-- private.env_vars';
-    SELECT to_jsonb(e) - 'org_id' FROM private.env_vars e ORDER BY e.id;
+    SELECT to_jsonb(e) - 'org_id' FROM private.env_vars e WHERE e.org_id = ${org} ORDER BY e.id;
     SELECT '-- private.connection_tags (the seed''s: the gateway writes its defaults at boot)';
-    SELECT to_jsonb(t) - 'org_id' FROM private.connection_tags t WHERE t.id IN (${inList(tagIds)}) ORDER BY t.id;
+    SELECT to_jsonb(t) - 'org_id' FROM private.connection_tags t WHERE t.org_id = ${org} AND t.id IN (${inList(tagIds)})
+      ORDER BY t.id;
     SELECT '-- private.connection_tags_association';
-    SELECT to_jsonb(t) - 'org_id' FROM private.connection_tags_association t ORDER BY t.id;
+    SELECT to_jsonb(t) - 'org_id' FROM private.connection_tags_association t WHERE t.org_id = ${org} ORDER BY t.id;
     SELECT '-- private.attributes (the seed''s: the gateway writes the rulepack ones at boot)';
-    SELECT to_jsonb(a) - 'org_id' FROM private.attributes a WHERE a.name IN (${inList(ATTRIBUTES.map((a) => a.name))})
-      ORDER BY a.name;
+    SELECT to_jsonb(a) - 'org_id' FROM private.attributes a
+      WHERE a.org_id = ${org} AND a.name IN (${inList(ATTRIBUTES.map((a) => a.name))}) ORDER BY a.name;
     SELECT '-- private.connections_attributes';
-    SELECT to_jsonb(a) - 'org_id' FROM private.connections_attributes a ORDER BY a.connection_name, a.attribute_name;
+    SELECT to_jsonb(a) - 'org_id' FROM private.connections_attributes a WHERE a.org_id = ${org}
+      ORDER BY a.connection_name, a.attribute_name;
     SELECT '-- private.connection_federation_configs (whether admin credentials are set: the nonce is random)';
     SELECT (to_jsonb(f) - 'org_id' - 'admin_credentials_encrypted')
       || jsonb_build_object('has_admin_credentials', f.admin_credentials_encrypted IS NOT NULL)
-      FROM private.connection_federation_configs f ORDER BY f.id;
+      FROM private.connection_federation_configs f WHERE f.org_id = ${org} ORDER BY f.id;
     SELECT '-- private.dbrole_jobs';
-    SELECT to_jsonb(j) - 'org_id' FROM private.dbrole_jobs j ORDER BY j.id;
+    SELECT to_jsonb(j) - 'org_id' FROM private.dbrole_jobs j WHERE j.org_id = ${org} ORDER BY j.id;
     SELECT '-- private.sidecars';
-    SELECT to_jsonb(s) - 'org_id' FROM private.sidecars s ORDER BY s.id;
+    SELECT to_jsonb(s) - 'org_id' FROM private.sidecars s WHERE s.org_id = ${org} ORDER BY s.id;
     SELECT '-- private.users (without last_login_at)';
-    SELECT to_jsonb(u) - 'org_id' - 'last_login_at' FROM private.users u ORDER BY u.subject;
+    SELECT to_jsonb(u) - 'org_id' - 'last_login_at' FROM private.users u WHERE u.org_id = ${org} ORDER BY u.subject;
     SELECT '-- private.user_groups';
-    SELECT to_jsonb(g) - 'org_id' FROM private.user_groups g ORDER BY g.user_id, g.name;
+    SELECT to_jsonb(g) - 'org_id' FROM private.user_groups g WHERE g.org_id = ${org} ORDER BY g.user_id, g.name;
     SELECT '-- private.org_feature_flags (name, enabled)';
     SELECT jsonb_build_object('name', f.name, 'enabled', f.enabled) FROM private.org_feature_flags f
-      JOIN private.orgs o ON o.id = f.org_id WHERE o.name = ${str(ORG_NAME)} ORDER BY f.name;
+      WHERE f.org_id = ${org} ORDER BY f.name;
     SELECT '-- private.orgs (default_protection_profile)';
     SELECT jsonb_build_object('default_protection_profile', default_protection_profile) FROM private.orgs
-      WHERE name = ${str(ORG_NAME)};`))
+      WHERE id = ${org};`))
 }
 
 // Run as a command; seed.test.mjs imports the SQL builders.

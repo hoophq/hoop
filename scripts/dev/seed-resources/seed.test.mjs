@@ -1,7 +1,7 @@
 // node --test scripts/dev/seed-resources/seed.test.mjs
 //
-// The SQL tests run anywhere. "two runs write the same rows" needs a stack:
-// set SEED_DB_URI and API_URL.
+// The SQL tests run anywhere. The others need a stack: set SEED_DB_URI and
+// API_URL.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { ATTRIBUTES, JOBS, RESOURCES, roles, users } from './catalog.mjs'
 import { emptySql, seedSql } from './seed.mjs'
+import { psql, str } from '../seed-sessions/seed.mjs'
 
 const ORG = '00000000-0000-4000-8000-000000000000'
 const AGENT = '75122bce-f957-49eb-a812-2ab60977cd9f'
@@ -76,14 +77,15 @@ test('README maps every SEED row to names the seed has', () => {
   }
 })
 
+function run(env, ...args) {
+  const r = spawnSync(process.execPath, [SEED, ...args], { encoding: 'utf8', maxBuffer: 1 << 26, env })
+  assert.equal(r.status, 0, r.stderr)
+  return r.stdout
+}
+
 function seedAndDump(env) {
-  const run = (...args) => {
-    const r = spawnSync(process.execPath, [SEED, ...args], { encoding: 'utf8', maxBuffer: 1 << 26, env })
-    assert.equal(r.status, 0, r.stderr)
-    return r.stdout
-  }
-  run()
-  return run('dump')
+  run(env)
+  return run(env, 'dump')
 }
 
 const stack = process.env.SEED_DB_URI && process.env.API_URL
@@ -102,14 +104,18 @@ async function call(method, path, token, body) {
   return res
 }
 
+async function admin() {
+  const login = await call('POST', '/localauth/login', null, { email: 'admin@seed.example.com', password: 'hoop-seed-1234' })
+  const token = login.headers.get('token')
+  const agents = await (await call('GET', '/agents', token)).json()
+  return { token, agentId: agents.find((a) => a.name === (process.env.SEED_AGENT || 'default')).id }
+}
+
 // The flows the matrix records delete, rename and add rows; the next run
 // writes the same rows again.
 test('a run after the matrix flows writes the same rows', { skip: !stack && 'set SEED_DB_URI and API_URL' }, async () => {
   const first = seedAndDump(process.env)
-  const login = await call('POST', '/localauth/login', null, { email: 'admin@seed.example.com', password: 'hoop-seed-1234' })
-  const token = login.headers.get('token')
-  const agents = await (await call('GET', '/agents', token)).json()
-  const agentId = agents.find((a) => a.name === (process.env.SEED_AGENT || 'default')).id
+  const { token, agentId } = await admin()
 
   await call('DELETE', '/connections/seed-res-many-55', token) // RL20
   await call('DELETE', '/resources/seed-res-no-roles', token) // RC06
@@ -123,6 +129,52 @@ test('a run after the matrix flows writes the same rows', { skip: !stack && 'set
   })
 
   assert.equal(seedAndDump(process.env), first)
+})
+
+const OUTSIDER = 'seed-test-outsider'
+const dropOutsider = () => psql(`BEGIN;
+  DELETE FROM private.env_vars WHERE id IN (SELECT id FROM private.connections WHERE name = ${str(OUTSIDER)}
+    UNION ALL SELECT id FROM private.resources WHERE name = ${str(OUTSIDER)});
+  DELETE FROM private.connections WHERE name = ${str(OUTSIDER)};
+  DELETE FROM private.resources WHERE name = ${str(OUTSIDER)};
+  COMMIT;`)
+
+// A flow can give a seeded attribute to a role the seed does not own.
+test('a run keeps a seeded attribute on a role outside the seed', { skip: !stack && 'set SEED_DB_URI and API_URL' }, async (t) => {
+  run(process.env)
+  const { token, agentId } = await admin()
+  t.after(dropOutsider)
+  await call('POST', '/connections', token, {
+    name: OUTSIDER, type: 'custom', subtype: '', command: ['bash'], agent_id: agentId, attributes: ['seed-prod'],
+    access_mode_runbooks: 'enabled', access_mode_exec: 'enabled', access_mode_connect: 'enabled', access_schema: 'disabled',
+  })
+  run(process.env)
+  const conn = await (await call('GET', `/connections/${OUTSIDER}`, token)).json()
+  assert.deepEqual(conn.attributes, ['seed-prod'])
+})
+
+const OTHER_ORG = '00000000-0000-4000-8000-0000000009a9'
+const dropOtherOrg = () => psql(`BEGIN;
+  DELETE FROM private.env_vars WHERE org_id = ${str(OTHER_ORG)};
+  DELETE FROM private.connections WHERE org_id = ${str(OTHER_ORG)};
+  DELETE FROM private.resources WHERE org_id = ${str(OTHER_ORG)};
+  DELETE FROM private.users WHERE org_id = ${str(OTHER_ORG)};
+  DELETE FROM private.orgs WHERE id = ${str(OTHER_ORG)};
+  COMMIT;`)
+
+test('the dump holds the seeded organization only', { skip: !stack && 'set SEED_DB_URI and API_URL' }, (t) => {
+  const first = seedAndDump(process.env)
+  t.after(dropOtherOrg)
+  psql(`BEGIN;
+    INSERT INTO private.orgs (id, name) VALUES (${str(OTHER_ORG)}, 'seed-test-other-org');
+    INSERT INTO private.resources (org_id, name, type, subtype) VALUES (${str(OTHER_ORG)}, 'other-db', 'database', 'postgres');
+    INSERT INTO private.connections (id, org_id, name, resource_name, type, subtype)
+      VALUES (${str(OTHER_ORG)}, ${str(OTHER_ORG)}, 'other-db', 'other-db', 'database', 'postgres');
+    INSERT INTO private.env_vars (id, org_id, envs) VALUES (${str(OTHER_ORG)}, ${str(OTHER_ORG)}, '{"envvar:PASS": "c2VjcmV0"}');
+    INSERT INTO private.users (org_id, subject, email, name, status)
+      VALUES (${str(OTHER_ORG)}, 'other-org@seed.example.com', 'other-org@seed.example.com', 'Other org', 'active');
+    COMMIT;`)
+  assert.equal(run(process.env, 'dump'), first)
 })
 
 // Run it on two new databases: the org ids differ, the dumps do not.

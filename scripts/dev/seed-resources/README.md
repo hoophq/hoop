@@ -1,8 +1,9 @@
 # Resources seed
 
-Writes a resource per type family of the Resources behavior matrix (project
-"Resources, Onboarding and AWS Connect in React"), the roles the matrix needs,
-and three AWS Connect jobs. Both UIs, CLJS and React, then show the same rows.
+Writes a resource per type family of the "Resources behavior matrix (CLJS
+parity reference)", a document of the Linear project "Resources, Onboarding
+and AWS Connect in React", the roles the matrix needs, and three AWS Connect
+jobs. Both UIs, CLJS and React, then show the same rows.
 Two runs write the same rows.
 
 ## Run
@@ -104,8 +105,10 @@ the catalog holds what ENG-909 lists, and that this README maps every SEED row
 of the matrix to names the catalog has; CI runs it in the "Webapp v2 Lint and
 Build" job, which has no stack. With `SEED_DB_URI` and `API_URL` set, it also
 seeds that stack twice and compares the dumps, and again after the RL20, RC06,
-RC05 and RA03 flows. With `SEED_DB_URI_2` and `API_URL_2` set to a second new
-stack, it seeds both and compares them.
+RC05 and RA03 flows; checks that a run keeps a seeded attribute on a role the
+seed does not own; and that another organization's rows stay out of the dump.
+With `SEED_DB_URI_2` and `API_URL_2` set to a second new stack, it seeds both
+and compares them.
 
 ## Matrix rows marked SEED
 
