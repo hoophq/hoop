@@ -71,13 +71,14 @@ func TestDecideSendsCallerToolsAndReturnsEveryCall(t *testing.T) {
 	}
 }
 
-// A refusal or a content filter is an error, even beside a call; an empty
-// reply is not.
+// A refusal, a content filter or a reply cut off at the token limit is an
+// error, even beside a call; an empty reply is not.
 func TestDecideReportsARefusal(t *testing.T) {
 	for reply, wantErr := range map[string]bool{
 		`{"choices":[{"message":{"refusal":"I can't help with that."}}]}`:                                                                                  true,
 		`{"choices":[{"message":{"refusal":"no","tool_calls":[{"function":{"name":"decide","arguments":"{\"verdict\":\"allow\"}"}}]}}]}`:                   true,
 		`{"choices":[{"message":{"tool_calls":[{"function":{"name":"decide","arguments":"{\"verdict\":\"allow\"}"}}]},"finish_reason":"content_filter"}]}`: true,
+		`{"choices":[{"message":{"tool_calls":[{"function":{"name":"decide","arguments":"{\"verdict\":\"allow\"}"}}]},"finish_reason":"length"}]}`:         true,
 		`{"choices":[{"message":{"content":"prose"}}]}`:                                                                                                    false,
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

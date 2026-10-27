@@ -42,6 +42,36 @@ func getSession(t *testing.T, orgID, sessionID string) map[string]any {
 	return out
 }
 
+// listSidecarMetadata runs GET /sessions as an admin of org and returns
+// metadata.sidecar of sessionID's row.
+func listSidecarMetadata(t *testing.T, orgID, sessionID string) map[string]any {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set(storagev2.ContextKey, storagev2.NewContext("user-1", orgID).
+		WithUserInfo("User One", "user1@hoop.dev", "active", "", []string{types.GroupAdmin}))
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	List(c)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out struct {
+		Data []struct {
+			ID       string         `json:"id"`
+			Metadata map[string]any `json:"metadata"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	for _, s := range out.Data {
+		if s.ID == sessionID {
+			sidecar, ok := s.Metadata["sidecar"].(map[string]any)
+			require.True(t, ok, "metadata has no sidecar: %v", s.Metadata)
+			return sidecar
+		}
+	}
+	t.Fatalf("session %s is not in the list", sessionID)
+	return nil
+}
+
 // The analyzer's decision on each statement reaches the session details, in
 // metadata.sidecar, bounded, and once per event.
 func TestASidecarSessionReturnsItsAIDecisions(t *testing.T) {
@@ -126,4 +156,9 @@ func TestASidecarSessionReturnsItsAIDecisions(t *testing.T) {
 	assert.EqualValues(t, 2, dropped)
 	last, _ := list[199].(map[string]any)
 	assert.EqualValues(t, 202, last["seq"], "the first 200 are kept")
+
+	// The list leaves the decisions out; only the details return them.
+	listed := listSidecarMetadata(t, aiDecisionsOrgID, sessionID)
+	assert.NotContains(t, listed, "ai_decisions")
+	assert.EqualValues(t, 2, listed["ai_decisions_dropped"], "the rest of metadata.sidecar stays")
 }

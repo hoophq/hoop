@@ -328,24 +328,39 @@ func (cp *controlPlane) fileReview(ctx context.Context, f reviewFiling) (analyze
 	}
 	if f.decision != "" {
 		// A decided review is recorded, never released: the plane answers
-		// forward false, and only a 2xx matters here.
+		// forward false. Only a 2xx that names the review it recorded counts.
 		switch resp.StatusCode {
 		case http.StatusOK, http.StatusCreated:
-			var answer struct {
-				Review *struct {
-					ID     string `json:"id"`
-					Status string `json:"status"`
-				} `json:"review"`
-			}
-			_ = json.Unmarshal(raw, &answer)
-			if answer.Review != nil {
-				out.ID, out.Status = answer.Review.ID, answer.Review.Status
-			}
-			return out, nil
+			return cp.decidedAnswer(f.decision, raw)
 		}
 		return out, cp.reviewError(resp, raw)
 	}
 	return cp.reviewAnswer(resp, raw)
+}
+
+// decidedAnswer reads the plane's answer to an approval agent's decision. An
+// answer that does not name the review and the decision filed is no proof the
+// plane recorded it, and an approval must not forward on it.
+func (cp *controlPlane) decidedAnswer(decision string, raw []byte) (analyzer.ReviewResult, error) {
+	var answer struct {
+		Review *struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"review"`
+	}
+	if err := json.Unmarshal(raw, &answer); err != nil {
+		return analyzer.ReviewResult{}, fmt.Errorf(
+			"the control plane at %s answered the approval agent's decision with JSON that could not be read: %w", cp.url, err)
+	}
+	want := "REJECTED"
+	if decision == analyzer.DecisionApproved {
+		want = "APPROVED"
+	}
+	if answer.Review == nil || answer.Review.ID == "" || answer.Review.Status != want {
+		return analyzer.ReviewResult{}, fmt.Errorf(
+			"the control plane at %s did not confirm it recorded the approval agent's decision as %s", cp.url, want)
+	}
+	return analyzer.ReviewResult{ID: answer.Review.ID, Status: answer.Review.Status}, nil
 }
 
 // claimReview runs one POST /api/sidecars/reviews/<id>/claim: what a waiting

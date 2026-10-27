@@ -58,13 +58,21 @@ func ComposeSidecarConfigurationWithOwners(db *gorm.DB, sc *models.Sidecar) (Com
 // to each listener. A filing is authorized against it, so a sidecar files
 // under what it was served. A build the plane refuses to serve gets
 // ErrSidecarCapabilityMissing.
+//
+// The build is read from the stored row, not from sc: the auth lookups load
+// no handshake columns, and nil capabilities would read as a build too old
+// for the object form.
 func ServedSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (ComposedSidecar, error) {
-	composed, err := composeSidecar(db, sc, "", "")
+	stored, err := models.GetSidecarByNameOrID(db, sc.OrgID, sc.ID)
+	if err != nil {
+		return ComposedSidecar{}, fmt.Errorf("failed reading the sidecar's last handshake: %w", err)
+	}
+	composed, err := composeSidecar(db, stored, "", "")
 	if err != nil {
 		return composed, err
 	}
-	hs := daemon.Handshake{Version: reportedVersion(sc), Capabilities: sc.Capabilities}
-	composed.Config, err = DowngradeForBuild(db, sc, composed, hs, "")
+	hs := daemon.Handshake{Version: reportedVersion(stored), Capabilities: stored.Capabilities}
+	composed.Config, err = DowngradeForBuild(db, stored, composed, hs, "")
 	return composed, err
 }
 
