@@ -73,11 +73,15 @@ func ParseProfileFile(data []byte) (ProfileFile, error) {
 		if !ok {
 			return ProfileFile{}, fmt.Errorf("line %d: expected key = value", lineNo)
 		}
-		if _, ok := seen[key]; ok {
-			return ProfileFile{}, fmt.Errorf("line %d: duplicate key %q", lineNo, key)
+		name, err := assignmentKey(key)
+		if err != nil {
+			return ProfileFile{}, fmt.Errorf("line %d: %w", lineNo, err)
 		}
-		seen[key] = struct{}{}
-		if current == nil && key == "current" {
+		if _, ok := seen[name]; ok {
+			return ProfileFile{}, fmt.Errorf("line %d: duplicate key %q", lineNo, name)
+		}
+		seen[name] = struct{}{}
+		if current == nil && name == "current" {
 			name, err := parseString(raw)
 			if err != nil {
 				return ProfileFile{}, fmt.Errorf("line %d: current: %w", lineNo, err)
@@ -89,16 +93,16 @@ func ParseProfileFile(data []byte) (ProfileFile, error) {
 			continue
 		}
 		if current == nil {
-			if err := doc.setFlat(key, raw); err != nil {
+			if err := doc.setFlat(name, raw); err != nil {
 				return ProfileFile{}, fmt.Errorf("line %d: %w", lineNo, err)
 			}
 			continue
 		}
-		if err := setProfileField(current, key, raw); err != nil {
+		if err := setProfileField(current, name, raw); err != nil {
 			if !errors.Is(err, errUnknownKey) {
 				return ProfileFile{}, fmt.Errorf("line %d: profile %q: %w", lineNo, current.Name, err)
 			}
-			current.Extra = append(current.Extra, extraField{Key: key, Raw: raw})
+			current.Extra = append(current.Extra, extraField{Key: name, Raw: raw})
 		}
 	}
 	return doc, nil
@@ -228,7 +232,7 @@ func (f ProfileFile) Marshal() []byte {
 		}
 		fmt.Fprintf(&buf, "skip_tls_verify = %t\n", p.SkipTLSVerify)
 		for _, extra := range p.Extra {
-			fmt.Fprintf(&buf, "%s = %s\n", extra.Key, extra.Raw)
+			fmt.Fprintf(&buf, "%s = %s\n", formatKey(extra.Key), extra.Raw)
 		}
 	}
 	return buf.Bytes()
@@ -493,6 +497,49 @@ func validProfileName(name string) bool {
 		}
 	}
 	return true
+}
+
+// assignmentKey returns the key name. "token" and token are the same key.
+func assignmentKey(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("empty key")
+	}
+	if raw[0] == '"' || raw[0] == '\'' {
+		return parseString(raw)
+	}
+	return raw, nil
+}
+
+// formatKey writes a bare key, or a quoted key when the name is not bare.
+func formatKey(name string) string {
+	if bareKey(name) {
+		return name
+	}
+	return strconv.Quote(name)
+}
+
+func bareKey(name string) bool {
+	if name == "" {
+		return false
+	}
+	part := true
+	for _, r := range name {
+		if r == '.' {
+			if !part {
+				return false
+			}
+			part = false
+			continue
+		}
+		part = true
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return part
 }
 
 // splitAssignment separates a key and a value at the = outside quotes.

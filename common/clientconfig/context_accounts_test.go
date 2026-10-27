@@ -208,6 +208,45 @@ skip_tls_verify = false
 	}
 }
 
+func TestQuotedCredentialKeysLoadAndDoNotDuplicate(t *testing.T) {
+	const raw = `
+"current" = "profile2"
+[profile profile1]
+"token" = "profile1-token"
+"api_url" = "https://profile1.example:8009"
+"grpc_url" = "grpcs://profile1.example:8010"
+"skip_tls_verify" = false
+
+[profile profile2]
+'token' = 'profile2-token'
+'api_url' = 'https://profile2.example:8009'
+'grpc_url' = 'grpcs://profile2.example:8010'
+'skip_tls_verify' = true
+`
+	doc, err := ParseProfileFile([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := doc.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.Name != "profile2" || active.Token != "profile2-token" || !active.SkipTLSVerify {
+		t.Fatalf("active = %+v", active)
+	}
+	if doc.Profiles[0].Token != "profile1-token" || doc.Profiles[0].APIURL == "" {
+		t.Fatalf("profile1 = %+v", doc.Profiles[0])
+	}
+	out := string(doc.Marshal())
+	if strings.Contains(out, `"token"`) || strings.Count(out, "token = ") != 2 {
+		t.Fatalf("rewrite duplicated the token:\n%s", out)
+	}
+	mixed := raw + "token = \"again\"\n"
+	if _, err := ParseProfileFile([]byte(mixed)); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestUseProfileKeepsQuotedKeyThatContainsEquals(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
