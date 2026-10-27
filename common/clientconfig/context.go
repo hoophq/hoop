@@ -69,12 +69,10 @@ func ParseProfileFile(data []byte) (ProfileFile, error) {
 			seen = map[string]struct{}{}
 			continue
 		}
-		key, raw, ok := strings.Cut(text, "=")
+		key, raw, ok := splitAssignment(text)
 		if !ok {
 			return ProfileFile{}, fmt.Errorf("line %d: expected key = value", lineNo)
 		}
-		key = strings.TrimSpace(key)
-		raw = strings.TrimSpace(raw)
 		if _, ok := seen[key]; ok {
 			return ProfileFile{}, fmt.Errorf("line %d: duplicate key %q", lineNo, key)
 		}
@@ -495,6 +493,42 @@ func validProfileName(name string) bool {
 		}
 	}
 	return true
+}
+
+// splitAssignment separates a key and a value at the = outside quotes.
+// A quoted key may contain =, as in "team=x" = "one".
+func splitAssignment(text string) (string, string, bool) {
+	var quote byte
+	escape := false
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if quote != 0 {
+			if quote == '"' && escape {
+				escape = false
+				continue
+			}
+			if quote == '"' && c == '\\' {
+				escape = true
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' {
+			quote = c
+			continue
+		}
+		if c == '=' {
+			key := strings.TrimSpace(text[:i])
+			if key == "" {
+				return "", "", false
+			}
+			return key, strings.TrimSpace(text[i+1:]), true
+		}
+	}
+	return "", "", false
 }
 
 func parseBool(raw string) (bool, error) {

@@ -208,6 +208,42 @@ skip_tls_verify = false
 	}
 }
 
+func TestUseProfileKeepsQuotedKeyThatContainsEquals(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := "" +
+		"[profile profile1]\n" +
+		"token = \"profile1-token\"\n" +
+		"api_url = \"https://profile1.example:8009\"\n" +
+		"grpc_url = \"grpcs://profile1.example:8010\"\n" +
+		"\"team=x\" = \"one\"\n" +
+		"skip_tls_verify = false\n" +
+		"\n" +
+		"[profile profile2]\n" +
+		"token = \"profile2-token\"\n" +
+		"api_url = \"https://profile2.example:8009\"\n" +
+		"grpc_url = \"grpcs://profile2.example:8010\"\n" +
+		"\"team=x\" = \"two\"\n" +
+		"skip_tls_verify = false\n"
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UseProfile(path, "profile2"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if strings.Contains(text, `"team = x"`) {
+		t.Fatalf("quoted key was rewritten:\n%s", text)
+	}
+	if !strings.Contains(text, `"team=x" = "one"`) || !strings.Contains(text, `"team=x" = "two"`) {
+		t.Fatalf("quoted key was dropped:\n%s", text)
+	}
+}
+
 func TestUseProfileKeepsExtraKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
