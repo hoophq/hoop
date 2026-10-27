@@ -13,19 +13,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// seedCredentialUser creates an active user in groups and returns its id.
-func seedCredentialUser(t *testing.T, subject string, groups ...string) string {
+// seedCredentialUser creates an active user in groups and returns its subject,
+// which is neither its id nor its email, as the request context carries it.
+func seedCredentialUser(t *testing.T, name string, groups ...string) string {
 	t.Helper()
+	subject := "idp|" + name
 	execSQL(t, `INSERT INTO private.users (org_id, subject, email, name, status)
-		VALUES (?, ?, ?, ?, 'active')`, testOrgID, subject, subject+"@hoop.dev", subject)
+		VALUES (?, ?, ?, ?, 'active')`, testOrgID, subject, name+"@hoop.dev", name)
 	for _, g := range groups {
 		execSQL(t, `INSERT INTO private.user_groups (org_id, user_id, name)
 			SELECT ?, id, ? FROM private.users WHERE org_id = ? AND subject = ?`, testOrgID, g, testOrgID, subject)
 	}
-	var id string
-	require.NoError(t, models.DB.Raw(`SELECT id FROM private.users WHERE org_id = ? AND subject = ?`,
-		testOrgID, subject).Scan(&id).Error)
-	return id
+	return subject
 }
 
 func seedCredentialSidecar(t *testing.T, name string) *models.Sidecar {
@@ -35,13 +34,13 @@ func seedCredentialSidecar(t *testing.T, name string) *models.Sidecar {
 	return sc
 }
 
-func seedSidecarCredential(t *testing.T, userID, sidecarName, lane string, expireAt time.Time) *models.ConnectionCredentials {
+func seedSidecarCredential(t *testing.T, userSubject, sidecarName, lane string, expireAt time.Time) *models.ConnectionCredentials {
 	t.Helper()
 	key := uuid.NewString()
 	cred := &models.ConnectionCredentials{
 		ID:             uuid.NewString(),
 		OrgID:          testOrgID,
-		UserSubject:    userID,
+		UserSubject:    userSubject,
 		ConnectionName: models.SidecarCredentialConnectionName(sidecarName, lane),
 		ConnectionType: models.SidecarCredentialType,
 		SecretKeyHash:  models.HashAPIKey(key),
@@ -147,7 +146,7 @@ func TestListValidSidecarCredentials(t *testing.T) {
 	require.Len(t, rows, 2)
 	assert.Equal(t, live.ID, rows[0].ID)
 	assert.Equal(t, "appdb", rows[0].Lane())
-	assert.Equal(t, "jane", rows[0].UserSubject)
+	assert.Equal(t, "idp|jane", rows[0].UserSubject)
 	assert.Equal(t, "jane@hoop.dev", rows[0].UserEmail)
 	assert.ElementsMatch(t, []string{"dba", "sre"}, []string(rows[0].UserGroups))
 	assert.Equal(t, live.SecretKeyHash, rows[0].SecretKeyHash)
@@ -167,7 +166,7 @@ func TestListValidSidecarCredentials(t *testing.T) {
 
 	t.Run("an inactive user's key drops out", func(t *testing.T) {
 		execSQL(t, `UPDATE private.sidecars SET created_at = NOW() - INTERVAL '30 minutes' WHERE id = ?`, sc.ID)
-		execSQL(t, `UPDATE private.users SET status = 'inactive' WHERE id = ?`, bob)
+		execSQL(t, `UPDATE private.users SET status = 'inactive' WHERE subject = ?`, bob)
 		rows, err := models.ListValidSidecarCredentials(models.DB, testOrgID, mustGetSidecar(t, sc.ID))
 		require.NoError(t, err)
 		require.Len(t, rows, 1)
@@ -175,7 +174,7 @@ func TestListValidSidecarCredentials(t *testing.T) {
 		mine, err := models.ListSidecarCredentialsByUser(models.DB, testOrgID, bob)
 		require.NoError(t, err)
 		assert.Empty(t, mine)
-		execSQL(t, `UPDATE private.users SET status = 'active' WHERE id = ?`, bob)
+		execSQL(t, `UPDATE private.users SET status = 'active' WHERE subject = ?`, bob)
 	})
 
 	t.Run("by user", func(t *testing.T) {
@@ -206,11 +205,11 @@ func mustGetSidecar(t *testing.T, id string) *models.Sidecar {
 	return sc
 }
 
-func mustCredentialID(t *testing.T, userID, sidecarName string) string {
+func mustCredentialID(t *testing.T, userSubject, sidecarName string) string {
 	t.Helper()
 	var id string
 	require.NoError(t, models.DB.Raw(`SELECT id FROM private.connection_credentials
 		WHERE org_id = ? AND user_subject = ? AND connection_name LIKE ?`,
-		testOrgID, userID, "sidecar:"+sidecarName+"/%").Scan(&id).Error)
+		testOrgID, userSubject, "sidecar:"+sidecarName+"/%").Scan(&id).Error)
 	return id
 }

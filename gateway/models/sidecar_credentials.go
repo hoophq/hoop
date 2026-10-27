@@ -39,12 +39,12 @@ func ParseSidecarCredentialConnectionName(name string) (sidecarName, lane string
 
 // SidecarCredential is a sidecar lane credential joined with the user who
 // minted it, as the sidecar needs it: the user's identity and the material to
-// verify the key, never the key itself.
+// verify the key, never the key itself. user_subject holds the subject the
+// request context carries as its user id, never the users row id.
 type SidecarCredential struct {
 	ID             string                `gorm:"column:id"`
 	ConnectionName string                `gorm:"column:connection_name"`
 	SecretKeyHash  string                `gorm:"column:secret_key_hash"`
-	UserID         string                `gorm:"column:user_id"`
 	UserSubject    string                `gorm:"column:user_subject"`
 	UserEmail      string                `gorm:"column:user_email"`
 	UserGroups     pq.StringArray        `gorm:"column:user_groups;type:text[]"`
@@ -63,11 +63,11 @@ func (c SidecarCredential) Lane() string {
 const sidecarCredentialSelect = `
 	SELECT cc.id, cc.connection_name, cc.secret_key_hash, cc.created_at, cc.expire_at, cc.revoked_at,
 		cc.scram_sha256,
-		u.id AS user_id, u.subject AS user_subject, u.email AS user_email,
+		u.subject AS user_subject, u.email AS user_email,
 		COALESCE((SELECT array_agg(ug.name::TEXT) FROM private.user_groups ug WHERE ug.user_id = u.id),
 			ARRAY[]::TEXT[]) AS user_groups
 	FROM private.connection_credentials cc
-	JOIN private.users u ON u.org_id = cc.org_id AND u.id::TEXT = cc.user_subject
+	JOIN private.users u ON u.org_id = cc.org_id AND u.subject = cc.user_subject
 	WHERE cc.org_id = ? AND cc.connection_type = ?`
 
 // ListValidSidecarCredentials returns the credentials a sidecar verifies a
@@ -96,8 +96,8 @@ func ListValidSidecarCredentials(db *gorm.DB, orgID string, sc *Sidecar) ([]Side
 }
 
 // ListSidecarCredentialsByUser returns every non-revoked, unexpired sidecar
-// lane credential one active user minted, across sidecars.
-func ListSidecarCredentialsByUser(db *gorm.DB, orgID, userID string) ([]SidecarCredential, error) {
+// lane credential one active user, named by subject, minted across sidecars.
+func ListSidecarCredentialsByUser(db *gorm.DB, orgID, userSubject string) ([]SidecarCredential, error) {
 	var rows []SidecarCredential
 	err := db.Raw(sidecarCredentialSelect+`
 		AND u.status = 'active'
@@ -105,7 +105,7 @@ func ListSidecarCredentialsByUser(db *gorm.DB, orgID, userID string) ([]SidecarC
 		AND cc.revoked_at IS NULL
 		AND cc.expire_at > ?
 	ORDER BY cc.created_at DESC`,
-		orgID, SidecarCredentialType, userID, time.Now().UTC()).Scan(&rows).Error
+		orgID, SidecarCredentialType, userSubject, time.Now().UTC()).Scan(&rows).Error
 	return rows, err
 }
 

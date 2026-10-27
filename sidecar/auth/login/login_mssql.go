@@ -218,15 +218,18 @@ func loginMSSQL(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, err
 	c.Upstream = upTLS
 
 	if passthrough {
+		claimedFail := func(err error) (proxy.LoginResult, error) {
+			return proxy.LoginResult{Identity: claimed, Passthrough: true}, err
+		}
 		pkt := mssqlauth.Frame(mssqlauth.PacketLogin7, loginBody, mssqlauth.DefaultPacketSize)
 		if err := inspectPkt(inspect.FromClient, pkt); err != nil {
-			return proxy.LoginResult{Identity: claimed}, err
+			return claimedFail(err)
 		}
 		if _, err := upTLS.Write(pkt); err != nil {
-			return proxy.LoginResult{Identity: claimed}, fmt.Errorf("mssql login: upstream login7: %w", err)
+			return claimedFail(fmt.Errorf("mssql login: upstream login7: %w", err))
 		}
 		if err := mssqlRelayLoginResponse(upTLS, clientIn, clientOut, nil, inspectPkt); err != nil {
-			return proxy.LoginResult{Identity: claimed}, err
+			return claimedFail(err)
 		}
 		return proxy.LoginResult{Identity: claimed, Passthrough: true}, nil
 	}

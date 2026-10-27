@@ -151,7 +151,9 @@ type LoginConn struct {
 type LoginResult struct {
 	// Identity is the verified identity; on ErrLoginRefused, the identity
 	// the client claimed (Subject = the login user), so the refusal is
-	// audited under it.
+	// audited under it. A driver that fails after verifying the client
+	// returns it too, so the failure is audited under the principal it
+	// verified; empty means the connection never became a session.
 	Identity session.Identity
 	// Credential names what went upstream; Release runs at session end.
 	// A driver that fails after selecting one returns it here too, and
@@ -178,8 +180,9 @@ type LoginResult struct {
 // On a refusal it returns an error wrapping ErrLoginRefused with
 // LoginResult.Identity set to the claimed user, AFTER writing the
 // protocol's own login-failure frame to c.Client: the relay writes none,
-// it only audits the refusal and closes. Any other error closes quietly,
-// after releasing the credential the result carries.
+// it only audits the refusal and closes. Any other error closes after
+// releasing the credential the result carries; when the result names an
+// identity the relay audits the failure under it first.
 //
 // One driver per protocol, registered from init() with RegisterLogin.
 type LoginFunc func(ctx context.Context, c *LoginConn) (LoginResult, error)

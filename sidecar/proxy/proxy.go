@@ -734,22 +734,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		upstream, err = s.dialUpstream(ctx)
 		if err != nil {
 			log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
-			span.fail(err)
-			if serr := g.Start(ctx); serr != nil {
-				log.Warn("session start not recorded", "error", serr)
-			}
-			if s.cfg.Audit != nil {
-				if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil {
-					// The one audit write that happens outside a Gate, so it
-					// reports its own failure into the same counters.
-					if s.cfg.Metrics != nil {
-						s.cfg.Metrics.AuditError()
-					}
-					if s.cfg.Telemetry != nil {
-						s.cfg.Telemetry.AuditError()
-					}
-				}
-			}
+			s.failSession(ctx, g, sess, span, log, err)
 			return
 		}
 		defer upstream.Close()
@@ -844,6 +829,20 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 			}
 			if !errors.Is(lerr, ErrLoginRefused) {
 				log.Debug("login failed", "error", lerr)
+				if result.Identity.Subject == "" {
+					// Never became a session: the client hung up, or
+					// spoke no login. Closes quietly.
+					return
+				}
+				// The driver verified the client and then failed on the
+				// relay's side (dial, upstream login). The trail names
+				// the verified principal, and the failure.
+				if err := g.AdoptIdentity(result.Identity, loginMetadata(result, true)); err != nil {
+					log.Error("login identity not adopted", "error", err)
+					return
+				}
+				log = sessionLog()
+				s.failSession(ctx, g, sess, span, log, lerr)
 				return
 			}
 			// The refusal is the whole session: start, one violation
@@ -944,6 +943,29 @@ func (s *Server) connIdentity(c net.Conn) session.Identity {
 		id.PeerAddr = c.RemoteAddr().String()
 	}
 	return id
+}
+
+// failSession records a session that ended before its pumps started: a
+// start under whatever identity the gate holds, then the failure. The
+// teardown closes it.
+func (s *Server) failSession(ctx context.Context, g *gate.Gate, sess *session.Session, span *sessionSpan, log *slog.Logger, err error) {
+	span.fail(err)
+	if serr := g.Start(ctx); serr != nil {
+		log.Warn("session start not recorded", "error", serr)
+	}
+	if s.cfg.Audit == nil {
+		return
+	}
+	if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil {
+		// The one audit write that happens outside a Gate, so it
+		// reports its own failure into the same counters.
+		if s.cfg.Metrics != nil {
+			s.cfg.Metrics.AuditError()
+		}
+		if s.cfg.Telemetry != nil {
+			s.cfg.Telemetry.AuditError()
+		}
+	}
 }
 
 // dialUpstream connects to the backend, negotiating TLS when configured.

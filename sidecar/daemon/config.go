@@ -2281,8 +2281,13 @@ func validatePoolEntry(sources *CredentialSourcesConfig, l ListenerConfig, e Cre
 		if err := ValidateVaultEntry(e); err != nil {
 			pf("%v", err)
 		}
-		if perRequest && VaultIsDynamic(e.Path) {
-			pf("a database engine path mints a user per session, and a %s listener swaps the credential per request; use a KV path", l.Protocol)
+		if VaultIsDynamic(e.Path) {
+			switch {
+			case perRequest:
+				pf("a database engine path mints a user per session, and a %s listener swaps the credential per request; use a KV path", l.Protocol)
+			case p == inspect.ClickHouse:
+				pf("a database engine path mints a user per session, and a clickhouse listener terminates the login in its codec, which cannot revoke the lease; use a KV path")
+			}
 		}
 	case SourceGCPSecretManager:
 		if err := ValidateGCPSecretManagerEntry(e); err != nil {

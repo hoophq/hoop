@@ -80,19 +80,20 @@ func startCredentialsTestDB(t *testing.T) {
 		`INSERT INTO private.orgs (id, name) VALUES (?, 'sidecar-credentials-test')`, credentialsTestOrgID).Error)
 }
 
-func seedCredentialsUser(t *testing.T, subject string, groups ...string) string {
+// seedCredentialsUser creates an active user in groups and returns its
+// subject, which is neither its id nor its email, as the request context
+// carries it.
+func seedCredentialsUser(t *testing.T, name string, groups ...string) string {
 	t.Helper()
+	subject := "idp|" + name
 	require.NoError(t, models.DB.Exec(`INSERT INTO private.users (org_id, subject, email, name, status)
-		VALUES (?, ?, ?, ?, 'active')`, credentialsTestOrgID, subject, subject+"@hoop.dev", subject).Error)
+		VALUES (?, ?, ?, ?, 'active')`, credentialsTestOrgID, subject, name+"@hoop.dev", name).Error)
 	for _, g := range groups {
 		require.NoError(t, models.DB.Exec(`INSERT INTO private.user_groups (org_id, user_id, name)
 			SELECT ?, id, ? FROM private.users WHERE org_id = ? AND subject = ?`,
 			credentialsTestOrgID, g, credentialsTestOrgID, subject).Error)
 	}
-	var id string
-	require.NoError(t, models.DB.Raw(`SELECT id FROM private.users WHERE org_id = ? AND subject = ?`,
-		credentialsTestOrgID, subject).Scan(&id).Error)
-	return id
+	return subject
 }
 
 func seedCredentialsSidecar(t *testing.T, name string) *models.Sidecar {
@@ -137,7 +138,7 @@ func TestComposeSidecarConfigurationCredentialSet(t *testing.T) {
 	require.Len(t, composed.CredentialSet, 1)
 	entry := composed.CredentialSet[0]
 	assert.Equal(t, models.HashAPIKey(key), entry.Hash)
-	assert.Equal(t, "jane", entry.Subject)
+	assert.Equal(t, "idp|jane", entry.Subject)
 	assert.Equal(t, "jane@hoop.dev", entry.Email)
 	assert.Equal(t, []string{"dba"}, entry.Groups)
 	assert.Equal(t, "appdb", entry.Lane)

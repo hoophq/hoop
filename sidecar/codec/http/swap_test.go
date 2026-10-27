@@ -133,6 +133,15 @@ func TestASwapLaneDropsClientImpersonationWithoutImpersonate(t *testing.T) {
 	swapFilter(t, authSwap, in, want)
 }
 
+// Proxy-Authorization is a credential too, aimed at a proxy the sidecar now
+// stands in for: it never rides the swapped request, however it is cased.
+func TestASwapLaneDropsProxyAuthorization(t *testing.T) {
+	in := "GET /x HTTP/1.1\r\nHost: h\r\npROXY-aUTHORIZATION: Basic cHJveHk6cHc=\r\nAuthorization: Bearer " + secret +
+		"\r\nAccept: */*\r\n\r\n"
+	want := "GET /x HTTP/1.1\r\nHost: h\r\nAccept: */*\r\nAuthorization: Bearer " + upstreamToken + "\r\n" + via() + "\r\n"
+	swapFilter(t, authSwap, in, want)
+}
+
 // Without an email the subject names the caller; with no identity at all
 // the request runs as the credential and no Impersonate field is added.
 func TestImpersonationFallsBackToTheSubject(t *testing.T) {

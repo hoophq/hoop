@@ -216,13 +216,15 @@ type swapper struct {
 }
 
 // dropsField reports a field the forwarded head must not carry: the
-// caller's credential, the Authorization the swap replaces, and every
-// Impersonate-* the client wrote (User, Group, Uid, Extra-*), on every
-// swap lane: riding a credential that holds the impersonate verb, it would
-// let the caller act as anyone.
+// caller's credential, the Authorization the swap replaces, the
+// Proxy-Authorization a client aimed at a proxy that is now the sidecar,
+// and every Impersonate-* the client wrote (User, Group, Uid, Extra-*),
+// on every swap lane: riding a credential that holds the impersonate
+// verb, it would let the caller act as anyone.
 func (s *swapper) dropsField(name string) bool {
 	const impersonate = "Impersonate-"
 	return strings.EqualFold(name, "Authorization") ||
+		strings.EqualFold(name, "Proxy-Authorization") ||
 		(s.header != "" && strings.EqualFold(name, s.header)) ||
 		(len(name) > len(impersonate) && strings.EqualFold(name[:len(impersonate)], impersonate))
 }

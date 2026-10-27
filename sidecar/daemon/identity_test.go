@@ -59,6 +59,8 @@ func TestLaneAuthIsRefusedWhereItCannotWork(t *testing.T) {
 			"credentials.vault: addr is required"},
 		{"vault dynamic path on http", `"credentials":{"vault":{"addr":"https://vault","auth":{"type":"kubernetes","role":"r"}}},`, `"protocol":"http","identity":{"type":"hoop_credential"},"credentials":{"pool":[{"name":"a","source":"vault","path":"database/creds/x"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"a database engine path mints a user per session"},
+		{"vault dynamic path on clickhouse", `"credentials":{"vault":{"addr":"https://vault","auth":{"type":"kubernetes","role":"r"}}},`, `"protocol":"clickhouse","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"vault","path":"database/creds/x"}],"select":{"rules":[{"credential":"a"}]}}`,
+			"a clickhouse listener terminates the login in its codec, which cannot revoke the lease"},
 		{"secret manager without a secret", `"credentials":{"gcp_secret_manager":{}},`, `"protocol":"http","identity":{"type":"hoop_credential"},"credentials":{"pool":[{"name":"a","source":"gcp_secret_manager"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"secret is required"},
 		{"source not configured", "", `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},` + pool,

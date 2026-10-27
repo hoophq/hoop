@@ -178,7 +178,7 @@ func DeleteGrant(c *gin.Context) {
 // Mint
 //
 //	@Summary		Mint Sidecar Lane Credential
-//	@Description	Mint a key the caller presents to this lane of the sidecar as their password. The key is shown once. Refused when no grant of the lane names the caller or one of their groups.
+//	@Description	Mint a key the caller presents to this lane of the sidecar as their password. The key is shown once. Refused when the caller is not a user (an API key, an AI agent or a service account), or when no grant of the lane names the caller or one of their groups.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -215,6 +215,18 @@ func Mint(c *gin.Context) {
 		ttl = time.Duration(req.ExpiresInHours) * time.Hour
 	}
 
+	// A credential is served, listed and revoked through the minting user's
+	// users row. An API key, an AI agent or a service account has none: its
+	// key would reach no sidecar and its holder could not list or revoke it.
+	user, err := models.GetUserBySubjectAndOrg(ctx.UserID, ctx.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching the caller")
+		return
+	}
+	if user == nil {
+		c.JSON(http.StatusForbidden, gin.H{"message": "only a user can mint a sidecar credential; API keys, AI agents and service accounts cannot"})
+		return
+	}
 	allowed, err := models.HasSidecarLaneGrant(models.DB, ctx.OrgID, ln.sidecar.ID, ln.listener.Name,
 		[]string{ctx.UserID, ctx.UserEmail}, ctx.UserGroups)
 	if err != nil {
@@ -305,7 +317,7 @@ func Revoke(c *gin.Context) {
 		return
 	}
 	// Another user's credential reads as absent, so the id leaks nothing.
-	if cred.UserID != ctx.UserID && !ctx.IsAdmin() {
+	if cred.UserSubject != ctx.UserID && !ctx.IsAdmin() {
 		c.JSON(http.StatusNotFound, gin.H{"message": "credential not found"})
 		return
 	}

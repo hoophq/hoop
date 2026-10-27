@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
@@ -36,20 +37,22 @@ func startTestDB(t *testing.T) {
 		`INSERT INTO private.orgs (id, name) VALUES (?, 'sidecar-credentials-api-test')`, testOrgID).Error)
 }
 
+// testUser is one caller, as the auth middleware fills the request context:
+// UserID is the subject, never the users row id.
 type testUser struct {
-	id, email string
-	groups    []string
+	subject, email string
+	groups         []string
 }
 
-func seedUser(t *testing.T, subject string, groups ...string) testUser {
+// seedUser creates an active user whose subject is not its id nor its email,
+// as an IdP subject is, so a lookup through either would miss it.
+func seedUser(t *testing.T, name string, groups ...string) testUser {
 	t.Helper()
-	email := subject + "@hoop.dev"
+	subject := "idp|" + name
+	email := name + "@hoop.dev"
 	require.NoError(t, models.DB.Exec(`INSERT INTO private.users (org_id, subject, email, name, status)
-		VALUES (?, ?, ?, ?, 'active')`, testOrgID, subject, email, subject).Error)
-	var id string
-	require.NoError(t, models.DB.Raw(`SELECT id FROM private.users WHERE org_id = ? AND subject = ?`,
-		testOrgID, subject).Scan(&id).Error)
-	return testUser{id: id, email: email, groups: groups}
+		VALUES (?, ?, ?, ?, 'active')`, testOrgID, subject, email, name).Error)
+	return testUser{subject: subject, email: email, groups: groups}
 }
 
 func seedSidecar(t *testing.T, name string, capabilities []string) *models.Sidecar {
@@ -74,7 +77,7 @@ func call(user testUser, method, body string, params gin.Params, handler gin.Han
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	ctx := storagev2.NewContext(user.id, testOrgID).WithUserInfo(user.email, user.email, "active", "", user.groups)
+	ctx := storagev2.NewContext(user.subject, testOrgID).WithUserInfo(user.email, user.email, "active", "", user.groups)
 	c.Set(storagev2.ContextKey, ctx)
 	c.Params = params
 	c.Request = httptest.NewRequest(method, "/api/x", strings.NewReader(body))
@@ -173,6 +176,23 @@ func TestMintNeedsAGrant(t *testing.T) {
 		rec = call(jane, http.MethodPost, "", laneParams(fresh.Name, "appdb"), Mint)
 		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
 		assert.Contains(t, rec.Body.String(), "upgrade it first")
+	})
+
+	// Each holds the dba grant, and none has a users row to serve a key through.
+	t.Run("an API key, an AI agent or a service account is refused", func(t *testing.T) {
+		require.NoError(t, models.DB.Exec(`INSERT INTO private.service_accounts (org_id, subject, name, status)
+			VALUES (?, 'sa|deploy', 'deploy', 'active')`, testOrgID).Error)
+		for name, caller := range map[string]testUser{
+			// The legacy Api-Key header: the auth middleware fills a constant.
+			"legacy api key": {subject: "API_KEY", email: "API_KEY", groups: []string{types.GroupAdmin, "dba"}},
+			// An hpk_ key or an AI agent: the subject is the key's row id.
+			"hpk key":         {subject: uuid.NewString(), email: "ci", groups: []string{"dba"}},
+			"service account": {subject: "sa|deploy", email: "sa|deploy", groups: []string{"dba"}},
+		} {
+			rec := call(caller, http.MethodPost, "", laneParams("pay", "appdb"), Mint)
+			assert.Equal(t, http.StatusForbidden, rec.Code, "%s: %s", name, rec.Body.String())
+			assert.Contains(t, rec.Body.String(), "only a user can mint", name)
+		}
 	})
 
 	t.Run("grants list and delete", func(t *testing.T) {

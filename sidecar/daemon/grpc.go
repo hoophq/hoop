@@ -482,16 +482,12 @@ func buildGRPCServer(
 	openFor := func(gap *grpcSchemaGap) codecgrpc.OpenFunc {
 		return func(ctx context.Context, info codecgrpc.RPCInfo) (*codecgrpc.RPCHandler, *codecgrpc.Status, error) {
 			identity := session.Identity{PeerAddr: info.Request.RemoteAddr}
-			if lc.IdentityHeader != "" {
-				identity.Subject = info.Request.Header.Get(lc.IdentityHeader)
-			}
-			if identity.Subject == "" {
-				identity.Subject = grpcPeerSubject(info.Request)
-			}
 			// A pooled lane verifies the RPC's bearer and swaps it for the
-			// upstream credential. A refusal still opens the session, so
-			// the trail records it under the claimed identity, and ends
-			// it with the handler's Close.
+			// upstream credential; the login is its only verifier. A
+			// refusal still opens the session, under the user the login
+			// named, or the peer alone when it named none: never under
+			// the identity header, which nothing verified. The session
+			// ends with the handler's Close.
 			var cred Credential
 			var loginErr error
 			if ln.auth != nil {
@@ -501,8 +497,15 @@ func buildGRPCServer(
 				if loginErr == nil {
 					verified.PeerAddr = identity.PeerAddr
 					identity = verified
-				} else if user != "" {
+				} else {
 					identity.Subject = user
+				}
+			} else {
+				if lc.IdentityHeader != "" {
+					identity.Subject = info.Request.Header.Get(lc.IdentityHeader)
+				}
+				if identity.Subject == "" {
+					identity.Subject = grpcPeerSubject(info.Request)
 				}
 			}
 

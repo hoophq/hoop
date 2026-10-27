@@ -239,6 +239,63 @@ func TestLoginFailureAfterSelectionReleasesCredential(t *testing.T) {
 	}
 }
 
+// A login the lane verified and then could not complete on its own side
+// is in the trail under the verified principal, with the failure: an
+// outage after a successful login is not an anonymous connection, and not
+// a refusal either.
+func TestLoginFailureAfterVerificationIsAuditedUnderThePrincipal(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dead := ln.Addr().String()
+	ln.Close()
+	sink := audit.NewMemorySink(64)
+	var released atomic.Int32
+	srv := startServer(t, proxy.Config{
+		Upstream:     dead,
+		Protocol:     lineProto,
+		Connection:   "appdb",
+		Audit:        sink,
+		CodecFactory: func() inspect.Codec { return lineCodec{} },
+		Authenticate: lineAuthenticate(&released),
+	})
+	br := dialLine(t, srv, "login alice s3cret\n")
+	if _, err := br.ReadString('\n'); err == nil {
+		t.Fatal("a login with no upstream answered")
+	}
+
+	events := waitKind(t, sink, audit.KindSessionEnd)
+	var kinds []audit.Kind
+	for _, e := range events {
+		kinds = append(kinds, e.Kind)
+		if e.Principal != "alice@example.com" {
+			t.Errorf("%s principal = %q, want the verified principal", e.Kind, e.Principal)
+		}
+		switch e.Kind {
+		case audit.KindSessionStart:
+			want := map[string]string{"verified": "true", "credential": "app-rw", "upstream_user": "app_rw", "identity_type": "kubernetes"}
+			for k, v := range want {
+				if e.Metadata[k] != v {
+					t.Errorf("session_start metadata[%s] = %q, want %q", k, e.Metadata[k], v)
+				}
+			}
+		case audit.KindError:
+			if !strings.Contains(e.Error, "connection refused") {
+				t.Errorf("error event = %q, want the dial failure", e.Error)
+			}
+		case audit.KindViolation:
+			t.Errorf("a failure after verification was recorded as a refusal: %+v", e)
+		}
+	}
+	if len(kinds) != 3 || kinds[0] != audit.KindSessionStart || kinds[1] != audit.KindError || kinds[2] != audit.KindSessionEnd {
+		t.Fatalf("events = %v, want start, error, end", kinds)
+	}
+	if _, _, denied := srv.Stats(); denied != 0 {
+		t.Errorf("denied = %d, want 0: a failure is not a refusal", denied)
+	}
+}
+
 func TestLoginRefusedIsOneViolation(t *testing.T) {
 	up := newEchoUpstream(t, nil)
 	sink := audit.NewMemorySink(64)

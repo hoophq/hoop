@@ -4252,7 +4252,7 @@ listeners:
 | `x509` | `cert_file`, `key_file`, loaded per login; `user` defaults to the common name | a client certificate |
 | `spiffe` | `spiffe_id`; an X509-SVID from the Workload API | a client certificate |
 | `kerberos` | `principal`; `credentials.kerberos.cache` or `keytab` | a GSSAPI initiator |
-| `vault` | `path`: a KV path (`secret/data/<name>` on v2, `secret/<name>` on v1) read at every login, with `user_key`/`password_key` (default `user`/`password`) or a literal `user`; or a database engine path (`database/creds/<role>`) that mints a user for the session and revokes its lease when the session ends. `credentials.vault` names `addr` (https), `auth` (`kubernetes` with `role`, the pod's service account token; or `token_file`), `ca_file`, `namespace`. A token in the config is refused | user and password |
+| `vault` | `path`: a KV path (`secret/data/<name>` on v2, `secret/<name>` on v1) read at every login, with `user_key`/`password_key` (default `user`/`password`) or a literal `user`; or a database engine path (`database/creds/<role>`) that mints a user for the session and revokes its lease when the session ends; not valid on http, grpc, spanner or clickhouse, which cannot revoke it. `credentials.vault` names `addr` (https), `auth` (`kubernetes` with `role`, the pod's service account token; or `token_file`), `ca_file`, `namespace`. A token in the config is refused | user and password |
 | `gcp_secret_manager` | `secret`: `projects/<p>/secrets/<s>/versions/<v>`, read at every login with the pod's Workload Identity; the payload is the password when `user` is set, else a JSON document with `user` and `password` | user and password |
 
 A `when` key is `identity.subject`, `identity.email`, `identity.groups`

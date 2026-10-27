@@ -164,7 +164,7 @@ under `deploy/docker-compose/` binds:
 | `spiffe.enabled` | Mount the SPIFFE Workload API socket at `/run/spire/sockets` without `identity: spiffe`, for the `spiffe` credential source alone. Default `false`; `identity: spiffe` mounts it regardless |
 | `spiffe.socketHostPath` | Reach the socket through a `hostPath` to this directory instead of the `csi.spiffe.io` CSI volume. Empty uses the driver. Refused when nothing mounts the socket |
 | `spiffe.tokenFile` | Under `identity: spiffe`, read the JWT-SVID from this file (written by spiffe-helper) → `HOOP_SIDECAR_IDENTITY_TOKEN_FILE`, instead of the socket. Mount the file with `extraVolumes` |
-| `credentials.secretMounts` | List of `{name, secretName, mountPath, defaultMode}`: one Secret volume and read-only mount each, for the files a lane's credential pool names. `defaultMode` default `0400`. All three names required; a `name` used twice is refused |
+| `credentials.secretMounts` | List of `{name, secretName, mountPath, defaultMode}`: one Secret volume and read-only mount each, for the files a lane's credential pool names. `defaultMode` default `0400`. All three names required; a `name` used twice, by another mount or an `extraVolumes` entry, is refused |
 | `kerberos.ccache.hostPath`, `kerberos.ccache.secretName` | The Kerberos credential cache the `kerberos` credential source reads: a node path or a Secret (mounted `0400`). One of the two, or neither |
 | `kerberos.ccache.mountPath` | Where the cache lands, read-only. Default `/run/krb5` |
 | `analytics.enabled` | Usage analytics to Segment. `false` → `HOOP_SIDECAR_ANALYTICS=off`. Default `true` |

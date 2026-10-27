@@ -73,9 +73,10 @@ func scramHMAC(key []byte, msg string) []byte {
 	return m.Sum(nil)
 }
 
-// MintSidecarCredential stores a new credential for one lane and returns the
-// row with the raw key, the only time the key exists in the clear.
-func MintSidecarCredential(db *gorm.DB, sc *models.Sidecar, lane, userID string, ttl time.Duration) (*models.ConnectionCredentials, string, error) {
+// MintSidecarCredential stores a new credential for one lane, under the
+// minting user's subject, and returns the row with the raw key, the only time
+// the key exists in the clear.
+func MintSidecarCredential(db *gorm.DB, sc *models.Sidecar, lane, userSubject string, ttl time.Duration) (*models.ConnectionCredentials, string, error) {
 	key, err := GenerateSidecarCredentialKey()
 	if err != nil {
 		return nil, "", err
@@ -88,7 +89,7 @@ func MintSidecarCredential(db *gorm.DB, sc *models.Sidecar, lane, userID string,
 	cred := &models.ConnectionCredentials{
 		ID:             uuid.NewString(),
 		OrgID:          sc.OrgID,
-		UserSubject:    userID,
+		UserSubject:    userSubject,
 		ConnectionName: models.SidecarCredentialConnectionName(sc.Name, lane),
 		ConnectionType: models.SidecarCredentialType,
 		SecretKeyHash:  models.HashAPIKey(key),

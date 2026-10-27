@@ -33,6 +33,22 @@ function written(state, updated) {
   }
 }
 
+// Open one write of a sidecar: the generation it must still hold when the
+// response arrives. Two writes to the same sidecar can overlap (the owner
+// field and a listener form, say), and the gateway answers each with the
+// whole record, so the slower one would install a document the other
+// already replaced. Keyed by the id the caller passes; every page passes
+// `sidecar.id`.
+function beginWrite(set, get, id) {
+  const generation = (get().writes[id] ?? 0) + 1
+  set((state) => ({ writes: { ...state.writes, [id]: generation } }))
+  const session = get().session
+  // Installs the record unless a later write to this sidecar or a logout
+  // took over. The caller still gets its own result either way.
+  return (updated) =>
+    set((state) => (state.session === session && state.writes[id] === generation ? written(state, updated) : {}))
+}
+
 // The fleet as the gateway lists it, and the single record the details page
 // reads. createSidecar returns the response, token included, and keeps none of
 // it: the token is shown once by the wizard that asked for it and must not
@@ -49,11 +65,14 @@ export const useSidecarStore = create((set, get) => ({
   refreshRequestId: 0,
   // Moves on logout, so a write that answers after it is dropped.
   session: 0,
+  // One generation per sidecar id, moved by every write to it (beginWrite).
+  writes: {},
 
   reset: () =>
     set((state) => ({
       ...EMPTY,
       session: state.session + 1,
+      writes: {},
       listRequestId: state.listRequestId + 1,
       selectedRequestId: state.selectedRequestId + 1,
       refreshRequestId: state.refreshRequestId + 1,
@@ -147,24 +166,18 @@ export const useSidecarStore = create((set, get) => ({
   // control plane, the stored document is emptied and the sidecar imports its
   // file again.
   setUsesConfigFile: async (id, usesConfigFile) => {
+    const commit = beginWrite(set, get, id)
     const { data: updated } = await sidecarsService.patch(id, { load_from_disk: usesConfigFile })
-    set((state) => ({
-      sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
-      // Only the record on screen: a flip still in flight when the route
-      // moves on must not write the previous sidecar back over the next.
-      selected: state.selected?.id === updated.id ? updated : state.selected,
-      listRequestId: state.listRequestId + 1,
-      refreshRequestId: state.refreshRequestId + 1,
-    }))
+    commit(updated)
     return updated
   },
 
   // Shallow merge of the keys sent; `{ ok, error }` like updateSidecar.
-  patchSidecar: async (nameOrId, configuration) => {
+  patchSidecar: async (id, configuration) => {
+    const commit = beginWrite(set, get, id)
     try {
-      const session = get().session
-      const { data: updated } = await sidecarsService.patch(nameOrId, configuration)
-      set((state) => (state.session === session ? written(state, updated) : {}))
+      const { data: updated } = await sidecarsService.patch(id, configuration)
+      commit(updated)
       return { ok: true, sidecar: updated }
     } catch (error) {
       return { ok: false, error }
@@ -178,11 +191,11 @@ export const useSidecarStore = create((set, get) => ({
    * gateway's message next to the field it is about. The rest of this store
    * still throws; the wizard it serves has no field to put a message in.
    */
-  updateSidecar: async (nameOrId, configuration) => {
+  updateSidecar: async (id, configuration) => {
+    const commit = beginWrite(set, get, id)
     try {
-      const session = get().session
-      const { data: updated } = await sidecarsService.update(nameOrId, configuration)
-      set((state) => (state.session === session ? written(state, updated) : {}))
+      const { data: updated } = await sidecarsService.update(id, configuration)
+      commit(updated)
       return { ok: true, sidecar: updated }
     } catch (error) {
       return { ok: false, error }
@@ -191,11 +204,11 @@ export const useSidecarStore = create((set, get) => ({
 
   // Set who approval requests and anonymous sessions are filed under; "" clears
   // it. The stored document is not sent. `{ ok, error }` like updateSidecar.
-  setOwner: async (nameOrId, ownerEmail) => {
+  setOwner: async (id, ownerEmail) => {
+    const commit = beginWrite(set, get, id)
     try {
-      const session = get().session
-      const { data: updated } = await sidecarsService.setOwner(nameOrId, ownerEmail)
-      set((state) => (state.session === session ? written(state, updated) : {}))
+      const { data: updated } = await sidecarsService.setOwner(id, ownerEmail)
+      commit(updated)
       return { ok: true, sidecar: updated }
     } catch (error) {
       return { ok: false, error }

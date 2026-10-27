@@ -267,10 +267,14 @@ changed a selector label would detach the pods from their Deployment.
 {{- fail (printf "spiffe.socketHostPath is %q: a hostPath is absolute" .Values.spiffe.socketHostPath) -}}
 {{- end -}}
 {{/*
-Every credential mount needs all three names, and a volume name used twice
-is an apply-time error the chart can refuse now.
+Every credential mount needs all three names, and a volume name used twice,
+by another mount, by a chart-owned volume or by an extraVolumes entry, is an
+apply-time error the chart can refuse now.
 */}}
 {{- $seen := dict -}}
+{{- range $i, $v := .Values.extraVolumes -}}
+{{- with $v.name -}}{{- $_ := set $seen . (printf "extraVolumes[%d]" $i) -}}{{- end -}}
+{{- end -}}
 {{- range $i, $m := .Values.credentials.secretMounts -}}
 {{- if not (and $m.name $m.secretName $m.mountPath) -}}
 {{- fail (printf "credentials.secretMounts[%d]: name, secretName and mountPath are all required" $i) -}}
@@ -278,10 +282,13 @@ is an apply-time error the chart can refuse now.
 {{- if not (hasPrefix "/" $m.mountPath) -}}
 {{- fail (printf "credentials.secretMounts[%d].mountPath is %q: a mount path is absolute" $i $m.mountPath) -}}
 {{- end -}}
-{{- if or (hasKey $seen $m.name) (has $m.name (list "sidecar-config-volume" "sidecar-identity" "sidecar-spiffe" "sidecar-krb5-ccache")) -}}
-{{- fail (printf "credentials.secretMounts[%d].name %q is used twice" $i $m.name) -}}
+{{- if has $m.name (list "sidecar-config-volume" "sidecar-identity" "sidecar-spiffe" "sidecar-krb5-ccache") -}}
+{{- fail (printf "credentials.secretMounts[%d].name %q is a volume the chart mounts itself: pick another name" $i $m.name) -}}
 {{- end -}}
-{{- $_ := set $seen $m.name true -}}
+{{- if hasKey $seen $m.name -}}
+{{- fail (printf "credentials.secretMounts[%d].name %q is also the name of %s: a pod refuses two volumes with one name" $i $m.name (get $seen $m.name)) -}}
+{{- end -}}
+{{- $_ := set $seen $m.name (printf "credentials.secretMounts[%d]" $i) -}}
 {{- end -}}
 {{- with .Values.kerberos.ccache -}}
 {{- if and .hostPath .secretName -}}

@@ -25761,7 +25761,7 @@
     },
     "/sidecars/{nameOrID}/lanes/{lane}/credentials": {
       "post": {
-        "description": "Mint a key the caller presents to this lane of the sidecar as their password. The key is shown once. Refused when no grant of the lane names the caller or one of their groups.",
+        "description": "Mint a key the caller presents to this lane of the sidecar as their password. The key is shown once. Refused when the caller is not a user (an API key, an AI agent or a service account), or when no grant of the lane names the caller or one of their groups.",
         "parameters": [
           {
             "description": "Name or UUID of the sidecar",
