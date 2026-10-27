@@ -10,7 +10,8 @@
 // Chrome is CHROME_PATH (or CHROME), else Google Chrome on macOS, else the
 // Chromium of a cloud sandbox, else the newest Chromium Playwright installed
 // (`npx playwright install chromium`; Linux CI and containers).
-// A DevTools call with no answer in 30 s stops the run with an error.
+// A DevTools call of the flow with no answer in 30 s stops the run with an
+// error; a frame capture gives up after 3 s and the frame is skipped.
 // See examples/access-control.flow.mjs.
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -98,6 +99,8 @@ const send = (method, params = {}) => new Promise((ok, fail) => {
     pending.delete(n)
     fail(new Error(`${method}: no answer in ${CALL_TIMEOUT_MS / 1000} s, the page does not respond`))
   }, CALL_TIMEOUT_MS)
+  // The open socket keeps the process up while a call waits; the timer must not.
+  timer.unref()
   pending.set(n, (m) => {
     clearTimeout(timer)
     if (m.error) fail(new Error(`${method}: ${m.error.message}`))
