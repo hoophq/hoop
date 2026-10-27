@@ -8,17 +8,10 @@ const TRAFFIC_BADGES = {
   [TRAFFIC_BOTH]: { label: 'Agent and sidecar', color: 'amber', Icon: Waypoints },
 }
 
-export default function RuleTrafficBadge({ traffic, ...props }) {
+export default function RuleTrafficBadge({ traffic }) {
   const { label, color, Icon } = TRAFFIC_BADGES[traffic]
   return (
-    <Badge
-      tag
-      chip
-      variant="light"
-      color={color}
-      icon={<Icon size={12} aria-hidden="true" />}
-      {...props}
-    >
+    <Badge tag chip variant="light" color={color} icon={<Icon size={12} aria-hidden="true" />}>
       {label}
     </Badge>
   )

@@ -2,7 +2,6 @@ package apigdatamasking
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -257,6 +256,7 @@ func Post(c *gin.Context) {
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
 		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: "",
 		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
+		SupportedEntityTypes: supportedEntityTypes, CustomEntityTypes: customEntityTypes, ScoreThreshold: req.ScoreThreshold,
 	}) {
 		return
 	}
@@ -276,8 +276,6 @@ func Post(c *gin.Context) {
 	// One transaction: the rule, its attributes and its sidecar bindings. A
 	// binding that fails after the rule row commits leaves the OLD bindings
 	// serving the NEW spec, which is the pairing sidecarbind.Refuse rejects.
-	// A sidecar the rule reaches through a mirror connection is composed in
-	// the same transaction, so a rule it cannot run is never saved.
 	var attrErr, bindErr error
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
 		if err := models.CreateDataMaskingRuleTx(tx, rule); err != nil {
@@ -286,10 +284,8 @@ func Post(c *gin.Context) {
 		if attrErr = upsertDatamaskingRuleAttributes(tx, ctx, req.Name, req.Attributes); attrErr != nil {
 			return attrErr
 		}
-		if bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name, req.SidecarTargets); bindErr != nil {
-			return bindErr
-		}
-		return services.CheckSidecarsReachedByGatewayRule(tx, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name, req.SidecarTargets)
+		return bindErr
 	})
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionCreate).
 		Resource("", req.Name).
@@ -304,16 +300,12 @@ func Post(c *gin.Context) {
 
 	evt.Resource(rule.ID, req.Name)
 	evt.Err(err)
-	var refused services.ErrSidecarBindingBroken
 	switch {
 	case attrErr != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting data masking rule attributes: %v", attrErr)
 		return
 	case bindErr != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
-		return
-	case errors.As(err, &refused):
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": refused.Reason})
 		return
 	}
 	switch err {
@@ -395,6 +387,7 @@ func Put(c *gin.Context) {
 	bind := sidecarbind.Request{
 		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: existing.Name,
 		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
+		SupportedEntityTypes: supportedEntityTypes, CustomEntityTypes: customEntityTypes, ScoreThreshold: req.ScoreThreshold,
 	}
 	if !requireRedactProvider(c, req, bind.EffectiveSpec()) {
 		return
@@ -434,22 +427,16 @@ func Put(c *gin.Context) {
 		if attrErr = upsertDatamaskingRuleAttributes(tx, ctx, req.Name, req.Attributes); attrErr != nil {
 			return attrErr
 		}
-		if bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name, req.SidecarTargets); bindErr != nil {
-			return bindErr
-		}
-		return services.CheckSidecarsReachedByGatewayRule(tx, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name, req.SidecarTargets)
+		return bindErr
 	})
 	evt.Err(err)
-	var refused services.ErrSidecarBindingBroken
 	switch {
 	case attrErr != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting data masking rule attributes: %v", attrErr)
 		return
 	case bindErr != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
-		return
-	case errors.As(err, &refused):
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": refused.Reason})
 		return
 	}
 	switch err {
@@ -490,9 +477,20 @@ func List(c *gin.Context) {
 		return
 	}
 
+	// The web app reads the targets to show which traffic the rule protects.
+	targets, err := sidecarbind.LoadAll(models.DB, ctx.GetOrgID(), services.SidecarRuleMask)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the sidecar targets of the rules: %v", err)
+		return
+	}
+
 	rules := []openapi.DataMaskingRule{}
 	for _, rule := range ruleList {
-		rules = append(rules, *toOpenApi(&rule))
+		out := toOpenApi(&rule)
+		if bound, ok := targets[rule.Name]; ok {
+			out.SidecarTargets = &bound
+		}
+		rules = append(rules, *out)
 	}
 	c.JSON(http.StatusOK, rules)
 }

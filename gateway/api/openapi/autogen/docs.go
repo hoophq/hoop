@@ -2187,13 +2187,6 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "boolean",
-                        "format": "bool",
-                        "description": "Include the connections that mirror a sidecar listener (managed_by=sidecar), left out by default",
-                        "name": "include_sidecar_mirrors",
-                        "in": "query"
-                    },
-                    {
                         "type": "integer",
                         "format": "int",
                         "description": "Maximum number of items to return (1-100). When provided, enables pagination",
@@ -14961,19 +14954,6 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "2025-01-15T10:30:00Z"
                 },
-                "sidecar_id": {
-                    "description": "The sidecar this connection mirrors a listener of; absent on an agent connection",
-                    "type": "string",
-                    "format": "uuid",
-                    "readOnly": true,
-                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
-                },
-                "sidecar_listener": {
-                    "description": "The mirrored listener name; absent on an agent connection",
-                    "type": "string",
-                    "readOnly": true,
-                    "example": "appdb"
-                },
                 "status": {
                     "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
                     "type": "string",
@@ -21438,7 +21418,7 @@ const docTemplate = `{
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
                 },
                 "bound_rules": {
-                    "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on: the rules bound to its\nlisteners and the gateway rules reaching them through a mirror\nconnection (source \"gateway\").\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
+                    "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on: sidecar rules, and the\ngateway rules bound to its listeners, served translated (source\n\"gateway\").\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
@@ -21674,7 +21654,7 @@ const docTemplate = `{
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
                 },
                 "bound_rules": {
-                    "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on: the rules bound to its\nlisteners and the gateway rules reaching them through a mirror\nconnection (source \"gateway\").\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
+                    "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on: sidecar rules, and the\ngateway rules bound to its listeners, served translated (source\n\"gateway\").\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
@@ -21924,7 +21904,7 @@ const docTemplate = `{
                     "example": "no-destructive-sql"
                 },
                 "source": {
-                    "description": "\"gateway\" when the rule is a gateway rule the listener runs translated,\nreached through its mirror connection; empty for a sidecar rule",
+                    "description": "\"gateway\" when the rule is one the agent runs (input/output rules or\nentity types, no sidecar_spec) that the listener runs translated;\nempty for a sidecar rule",
                     "type": "string",
                     "enum": [
                         "gateway"

@@ -23,13 +23,15 @@ type GuardrailRuleListener struct {
 func (GuardrailRuleListener) TableName() string { return "private.guardrail_rules_listeners" }
 
 // ListGuardrailRulesForSidecar returns every guardrail rule bound to this
-// sidecar, with the listener each one targets. Ordered by name so a composed
-// document is byte-stable across calls: the served revision is a hash of it,
-// and an unstable order would report every sidecar as lagging forever.
+// sidecar, with the listener each one targets and, for a rule with no
+// sidecar_spec, the input and output the agent runs. Ordered by name so a
+// composed document is byte-stable across calls: the served revision is a
+// hash of it, and an unstable order would report every sidecar as lagging
+// forever.
 func ListGuardrailRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]BoundRule, error) {
 	var out []BoundRule
 	err := db.Raw(`
-	SELECT b.listener_name, r.name AS rule_name, r.sidecar_spec
+	SELECT b.listener_name, r.name AS rule_name, r.sidecar_spec, r.input, r.output
 	FROM private.guardrail_rules_listeners b
 	JOIN private.guardrail_rules r ON r.org_id = b.org_id AND r.name = b.guardrail_rule_name
 	WHERE b.org_id = ? AND b.sidecar_id = ?

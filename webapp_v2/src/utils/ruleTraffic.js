@@ -30,16 +30,9 @@ const AGENT_FIELDS = {
     RISK_ACTIONS.some((key) => (r.risk_evaluation?.[key] ?? DEFAULT_RISK_ACTION) !== DEFAULT_RISK_ACTION),
 }
 
-const NO_MIRRORS = new Set()
-
-// `mirrorIds` holds the ids of the connections that mirror a sidecar listener.
-// An agent rule bound to one reaches that sidecar through the gateway.
-export function ruleTraffic(kind, rule, mirrorIds = NO_MIRRORS) {
-  if (rule?.sidecar_spec != null) return AGENT_FIELDS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
-  const ids = rule?.connection_ids ?? []
-  if (!ids.some((id) => mirrorIds.has(id))) return TRAFFIC_AGENT
-  const agentBound = ids.some((id) => !mirrorIds.has(id)) || nonEmpty(rule.attributes)
-  return agentBound ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
+export function ruleTraffic(kind, rule) {
+  if (rule?.sidecar_spec == null) return TRAFFIC_AGENT
+  return AGENT_FIELDS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
 }
 
 // `traffics` is what useRuleTraffics() answers. With one, the page needs no data to pick.

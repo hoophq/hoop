@@ -3,7 +3,6 @@ package models_test
 import (
 	"encoding/json"
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,12 +12,10 @@ import (
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/policy"
-	"gorm.io/gorm"
 )
 
-// mirroredSidecar is a sidecar with one postgres listener and its mirror
-// connection written, the way the sidecar API writes them.
-func mirroredSidecar(t *testing.T, name, doc string) (*models.Sidecar, *models.SidecarMirror) {
+// storedSidecar is a sidecar with the given configuration stored.
+func storedSidecar(t *testing.T, name, doc string) *models.Sidecar {
 	t.Helper()
 	sc := newTestSidecar(t, name)
 	cfg, err := services.ParseSidecarConfiguration([]byte(doc))
@@ -29,32 +26,30 @@ func mirroredSidecar(t *testing.T, name, doc string) (*models.Sidecar, *models.S
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}
-	err = models.DB.Transaction(func(tx *gorm.DB) error {
-		return services.SyncSidecarListenerConnectionsTx(tx, stored)
-	})
-	if err != nil {
-		t.Fatalf("mirror: %v", err)
-	}
-	mirror, err := models.GetSidecarMirror(models.DB, testOrgID, sc.ID, "appdb")
-	if err != nil {
-		t.Fatalf("read mirror: %v", err)
-	}
-	return stored, mirror
+	return stored
 }
 
-const mirroredDoc = `{"listeners":[{"name":"appdb","protocol":"postgres","listen":":5432","upstream":"db:5432",
+const bareListenerDoc = `{"listeners":[{"name":"appdb","protocol":"postgres","listen":":5432","upstream":"db:5432"}]}`
+
+const nativeRuleDoc = `{"listeners":[{"name":"appdb","protocol":"postgres","listen":":5432","upstream":"db:5432",
 	"guardrails":{"rules":[{"name":"native","type":"operation","operations":["truncate"]}]}}]}`
 
-func gatewayGuardrail(t *testing.T, name string, input, output map[string]any, connectionIDs []string, attributes []string) *models.GuardRailRules {
+func appdbOn(sc *models.Sidecar) []models.SidecarRuleTarget {
+	return []models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}
+}
+
+// agentGuardrail is a guardrail rule as the Guardrails page writes it:
+// input/output rules, no sidecar_spec, bound to listeners through the junction.
+func agentGuardrail(t *testing.T, name string, input, output map[string]any, sc *models.Sidecar) *models.GuardRailRules {
 	t.Helper()
 	rule := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: name,
 		Input: input, Output: output, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
-	if err := models.UpsertGuardRailRuleWithConnections(rule, connectionIDs, true); err != nil {
+	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
 		t.Fatalf("seed guardrail %s: %v", name, err)
 	}
-	if len(attributes) > 0 {
-		if err := models.UpsertGuardrailRuleAttributes(models.DB, uuid.MustParse(testOrgID), name, attributes); err != nil {
-			t.Fatalf("attributes of %s: %v", name, err)
+	if sc != nil {
+		if err := models.SetGuardrailRuleListeners(models.DB, uuid.MustParse(testOrgID), name, appdbOn(sc)); err != nil {
+			t.Fatalf("bind %s: %v", name, err)
 		}
 	}
 	return rule
@@ -66,17 +61,18 @@ func denyWords(words ...string) map[string]any {
 
 var noRules = map[string]any{"rules": []any{}}
 
-func gatewayMasking(t *testing.T, name string, entities []string, connectionIDs []string, attributes []string) *models.DataMaskingRule {
+// agentMasking is a data masking rule as the Data Masking page writes it.
+func agentMasking(t *testing.T, name string, entities []string, sc *models.Sidecar) *models.DataMaskingRule {
 	t.Helper()
 	rule := &models.DataMaskingRule{ID: uuid.NewString(), OrgID: testOrgID, Name: name, UpdatedAt: time.Now().UTC(),
 		SupportedEntityTypes: models.SupportedEntityTypesList{{Name: "PII", EntityTypes: entities}},
-		CustomEntityTypes:    models.CustomEntityTypesList{}, ConnectionIDs: connectionIDs}
+		CustomEntityTypes:    models.CustomEntityTypesList{}}
 	if _, err := models.CreateDataMaskingRule(rule); err != nil {
 		t.Fatalf("seed masking %s: %v", name, err)
 	}
-	if len(attributes) > 0 {
-		if err := models.UpsertDatamaskingRuleAttributes(models.DB, uuid.MustParse(testOrgID), name, attributes); err != nil {
-			t.Fatalf("attributes of %s: %v", name, err)
+	if sc != nil {
+		if err := models.SetDataMaskingRuleListeners(models.DB, uuid.MustParse(testOrgID), name, appdbOn(sc)); err != nil {
+			t.Fatalf("bind %s: %v", name, err)
 		}
 	}
 	return rule
@@ -90,193 +86,176 @@ func ruleNames(rules []policy.Rule) string {
 	return strings.Join(names, ",")
 }
 
-// A gateway guardrail reaches a listener through its mirror by connection id,
-// exactly as it reaches an agent connection, and lands after the native rule.
-func TestAGatewayGuardrailReachesAMirrorByConnectionID(t *testing.T) {
+// The junction read carries the agent fields of a rule with no sidecar_spec,
+// beside the spec of a native one, and the binding list tells them apart.
+func TestTheJunctionReadCarriesTheAgentFields(t *testing.T) {
 	startTestDB(t)
-	sc, mirror := mirroredSidecar(t, "by-id", mirroredDoc)
-	gatewayGuardrail(t, "no-drop", denyWords("DROP TABLE"), noRules, []string{mirror.ID}, nil)
-	// A rule on another connection, and a rule on no connection, reach nothing.
-	gatewayGuardrail(t, "elsewhere", denyWords("x"), noRules, nil, nil)
-
-	reached, err := models.ListMirrorGuardrailRules(models.DB, uuid.MustParse(testOrgID), sc.ID)
-	if err != nil {
+	sc := storedSidecar(t, "junction", bareListenerDoc)
+	agentGuardrail(t, "no-drop", denyWords("DROP TABLE"), noRules, sc)
+	native := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: "native-only",
+		SidecarSpec: json.RawMessage(`{"rules":[{"name":"n","type":"operation","operations":["drop"]}]}`),
+		CreatedAt:   time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	if err := models.UpsertGuardRailRuleWithConnections(native, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	if len(reached) != 1 || reached[0].RuleName != "no-drop" || reached[0].ListenerName != "appdb" {
-		t.Fatalf("reached = %+v", reached)
-	}
-	ids, err := models.SidecarsReachedByGuardrailRule(models.DB, uuid.MustParse(testOrgID), "no-drop")
-	if err != nil || len(ids) != 1 || ids[0] != sc.ID {
-		t.Fatalf("sidecars reached = %v, %v", ids, err)
-	}
-	// What the Sidecars page lists, org-wide and for one sidecar.
-	for _, scope := range []string{"", sc.ID} {
-		bound, err := models.ListMirrorRuleBindings(models.DB, uuid.MustParse(testOrgID), scope)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := []models.SidecarRuleBinding{{SidecarID: sc.ID, Kind: "guardrail", RuleName: "no-drop", ListenerName: "appdb"}}
-		if !reflect.DeepEqual(bound, want) {
-			t.Fatalf("bindings(%q) = %+v, want %+v", scope, bound, want)
-		}
-	}
-
-	lane := composedLane(t, sc, "appdb")
-	if got := ruleNames(lane.Guardrails.Rules); got != "native,no-drop" {
-		t.Fatalf("rules = %s, want the translated rule after the native one", got)
-	}
-	if r := lane.Guardrails.Rules[1]; r.Type != policy.MatchPattern || r.Pattern != "DROP TABLE" {
-		t.Errorf("translation = %+v", r)
-	}
-}
-
-// A shared attribute binds a gateway rule to a mirror the way it binds the
-// rule to an agent connection.
-func TestAGatewayRuleReachesAMirrorByAttribute(t *testing.T) {
-	startTestDB(t)
-	sc, mirror := mirroredSidecar(t, "by-attr", mirroredDoc)
-	org := uuid.MustParse(testOrgID)
-	if err := models.UpsertConnectionAttributes(models.DB, org, mirror.Name, []string{"prod"}); err != nil {
+	if err := models.SetGuardrailRuleListeners(models.DB, uuid.MustParse(testOrgID), native.Name, appdbOn(sc)); err != nil {
 		t.Fatal(err)
 	}
-	gatewayGuardrail(t, "prod-guard", denyWords("TRUNCATE"), noRules, nil, []string{"prod"})
-	gatewayGuardrail(t, "staging-guard", denyWords("x"), noRules, nil, []string{"staging"})
-	gatewayMasking(t, "prod-mask", []string{"EMAIL_ADDRESS"}, nil, []string{"prod"})
-
-	lane := composedLane(t, sc, "appdb")
-	if got := ruleNames(lane.Guardrails.Rules); got != "native,prod-guard" {
-		t.Fatalf("rules = %s", got)
-	}
-	if lane.Mask == nil || !strings.Contains(string(lane.Mask.Rules), `"EMAIL_ADDRESS"`) {
-		t.Fatalf("mask = %+v", lane.Mask)
-	}
-	ids, err := models.SidecarsReachedByDataMaskingRule(models.DB, org, "prod-mask")
-	if err != nil || len(ids) != 1 || ids[0] != sc.ID {
-		t.Fatalf("sidecars reached = %v, %v", ids, err)
-	}
-	bound, err := models.ListMirrorRuleBindings(models.DB, org, sc.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []models.SidecarRuleBinding{
-		{SidecarID: sc.ID, Kind: "datamasking", RuleName: "prod-mask", ListenerName: "appdb"},
-		{SidecarID: sc.ID, Kind: "guardrail", RuleName: "prod-guard", ListenerName: "appdb"},
-	}
-	if !reflect.DeepEqual(bound, want) {
-		t.Fatalf("bindings = %+v, want %+v", bound, want)
-	}
-}
-
-// A masking rule by connection id becomes one mask rule, strategy mask, and
-// the write gate composes the sidecar it reaches.
-func TestAGatewayMaskingRuleReachesAMirrorByConnectionID(t *testing.T) {
-	startTestDB(t)
-	sc, mirror := mirroredSidecar(t, "mask-id", mirroredDoc)
-	gatewayMasking(t, "pii", []string{"EMAIL_ADDRESS", "US_SSN"}, []string{mirror.ID}, nil)
-
-	lane := composedLane(t, sc, "appdb")
-	var rules []struct {
-		Name     string   `json:"name"`
-		Entities []string `json:"entities"`
-		Strategy string   `json:"strategy"`
-	}
-	if lane.Mask == nil {
-		t.Fatal("no mask block")
-	}
-	if err := json.Unmarshal(lane.Mask.Rules, &rules); err != nil {
-		t.Fatal(err)
-	}
-	if len(rules) != 1 || rules[0].Name != "pii" || rules[0].Strategy != "mask" || len(rules[0].Entities) != 2 {
-		t.Errorf("mask rules = %+v", rules)
-	}
-	if err := services.CheckSidecarsReachedByGatewayRule(models.DB, testOrgID, services.SidecarRuleMask, "pii"); err != nil {
-		t.Errorf("the write gate refused a rule the sidecar runs: %v", err)
-	}
-}
-
-// The write gate refuses, with the reason, a rule the sidecar cannot run:
-// an output rule, a custom entity type. The refusal reads 422.
-func TestTheWriteGateRefusesAnUntranslatableRule(t *testing.T) {
-	startTestDB(t)
-	_, mirror := mirroredSidecar(t, "gate", mirroredDoc)
-	withOutput := gatewayGuardrail(t, "with-output", denyWords("x"),
-		map[string]any{"rules": []any{map[string]any{"type": "pattern_match", "pattern_regex": "\\d{3}-\\d{2}-\\d{4}"}}},
-		[]string{mirror.ID}, nil)
-	err := services.CheckSidecarsReachedByGatewayRule(models.DB, testOrgID, services.SidecarRuleGuardrail, "with-output")
-	var broken services.ErrSidecarBindingBroken
-	if !errors.As(err, &broken) || !strings.Contains(err.Error(), "has output rules") {
-		t.Fatalf("want a 422 refusal naming the output rules, got %v", err)
-	}
-	if err := models.DeleteGuardRailRules(testOrgID, withOutput.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	custom := &models.DataMaskingRule{ID: uuid.NewString(), OrgID: testOrgID, Name: "custom", UpdatedAt: time.Now().UTC(),
+	low := 0.5
+	mask := &models.DataMaskingRule{ID: uuid.NewString(), OrgID: testOrgID, Name: "emails", UpdatedAt: time.Now().UTC(),
 		SupportedEntityTypes: models.SupportedEntityTypesList{{Name: "PII", EntityTypes: []string{"EMAIL_ADDRESS"}}},
-		CustomEntityTypes:    models.CustomEntityTypesList{{Name: "ORDER_ID", Regex: "ORD-\\d+", Score: 0.9}},
-		ConnectionIDs:        []string{mirror.ID}}
-	if _, err := models.CreateDataMaskingRule(custom); err != nil {
+		CustomEntityTypes:    models.CustomEntityTypesList{{Name: "ORDER_ID", Regex: `ORD-\d+`, Score: 0.9}},
+		ScoreThreshold:       &low}
+	if _, err := models.CreateDataMaskingRule(mask); err != nil {
 		t.Fatal(err)
 	}
-	err = services.CheckSidecarsReachedByGatewayRule(models.DB, testOrgID, services.SidecarRuleMask, "custom")
-	if !errors.As(err, &broken) || !strings.Contains(err.Error(), "custom entity types") {
-		t.Fatalf("want a 422 refusal naming the custom entity types, got %v", err)
+	if err := models.SetDataMaskingRuleListeners(models.DB, uuid.MustParse(testOrgID), mask.Name, appdbOn(sc)); err != nil {
+		t.Fatal(err)
 	}
 
-	// The handshake composes the same document and refuses it the same way.
-	sc, err := models.GetSidecarByNameOrID(models.DB, testOrgID, "gate")
+	guardrails, err := models.ListGuardrailRulesForSidecar(models.DB, uuid.MustParse(testOrgID), sc.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = services.ComposeSidecarConfiguration(models.DB, sc)
-	var refused services.ErrSidecarGatewayRuleRefused
-	if !errors.As(err, &refused) {
-		t.Fatalf("want the handshake refusal, got %v", err)
+	if len(guardrails) != 2 {
+		t.Fatalf("want two bound guardrails, got %+v", guardrails)
 	}
-}
+	byName := map[string]models.BoundRule{}
+	for _, b := range guardrails {
+		byName[b.RuleName] = b
+	}
+	agent := byName["no-drop"]
+	var output struct {
+		Rules []any `json:"rules"`
+	}
+	if err := json.Unmarshal(agent.Output, &output); err != nil {
+		t.Fatalf("output read = %s: %v", agent.Output, err)
+	}
+	if agent.HasSpec() || agent.ListenerName != "appdb" || !strings.Contains(string(agent.Input), "DROP TABLE") || len(output.Rules) != 0 {
+		t.Errorf("agent rule read = %+v", agent)
+	}
+	if n := byName["native-only"]; !n.HasSpec() || len(n.Input) > 0 && string(n.Input) != "null" {
+		t.Errorf("native rule read = %+v", n)
+	}
 
-// The gate refuses only the rule being written. A sidecar another rule
-// already breaks lets every other rule through to the handshake.
-func TestTheWriteGateRefusesOnlyTheRuleBeingWritten(t *testing.T) {
-	startTestDB(t)
-	// No native rule: the free tier runs one guardrail per listener.
-	_, mirror := mirroredSidecar(t, "crossrule",
-		`{"listeners":[{"name":"appdb","protocol":"postgres","listen":":5432","upstream":"db:5432"}]}`)
-	org := uuid.MustParse(testOrgID)
-	if err := models.UpsertConnectionAttributes(models.DB, org, mirror.Name, []string{"prod"}); err != nil {
+	masking, err := models.ListDataMaskingRulesForSidecar(models.DB, uuid.MustParse(testOrgID), sc.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	gatewayGuardrail(t, "ssn-out", noRules,
-		map[string]any{"rules": []any{map[string]any{"type": "pattern_match", "pattern_regex": "\\d{3}-\\d{2}-\\d{4}"}}},
-		nil, []string{"prod"})
-
-	gatewayGuardrail(t, "no-drop", denyWords("DROP TABLE"), noRules, []string{mirror.ID}, nil)
-	if err := services.CheckSidecarsReachedByGatewayRule(models.DB, testOrgID, services.SidecarRuleGuardrail, "no-drop"); err != nil {
-		t.Fatalf("a rule the sidecar runs is refused for another rule's fault: %v", err)
-	}
-	gatewayMasking(t, "emails", []string{"EMAIL_ADDRESS"}, []string{mirror.ID}, nil)
-	if err := services.CheckSidecarsReachedByGatewayRule(models.DB, testOrgID, services.SidecarRuleMask, "emails"); err != nil {
-		t.Fatalf("a masking rule the sidecar runs is refused for another rule's fault: %v", err)
+	if len(masking) != 1 || masking[0].HasSpec() || len(masking[0].SupportedEntityTypes) != 1 ||
+		masking[0].SupportedEntityTypes[0].EntityTypes[0] != "EMAIL_ADDRESS" ||
+		len(masking[0].CustomEntityTypes) != 1 || masking[0].CustomEntityTypes[0].Name != "ORDER_ID" ||
+		masking[0].ScoreThreshold == nil || *masking[0].ScoreThreshold != 0.5 {
+		t.Errorf("masking rule read = %+v", masking)
 	}
 
-	gatewayGuardrail(t, "with-output", denyWords("x"),
-		map[string]any{"rules": []any{map[string]any{"type": "pattern_match", "pattern_regex": "secret"}}},
-		[]string{mirror.ID}, nil)
-	err := services.CheckSidecarsReachedByGatewayRule(models.DB, testOrgID, services.SidecarRuleGuardrail, "with-output")
-	var broken services.ErrSidecarBindingBroken
-	if !errors.As(err, &broken) || !strings.Contains(err.Error(), `rule "with-output"`) || strings.Contains(err.Error(), "ssn-out") {
-		t.Fatalf("want a 422 refusal naming with-output alone, got %v", err)
+	bound, err := models.ListSidecarRuleBindings(models.DB, uuid.MustParse(testOrgID), sc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	translated := map[string]bool{}
+	for _, b := range bound {
+		translated[b.Kind+"/"+b.RuleName] = b.Translated
+	}
+	if len(bound) != 3 || !translated["guardrail/no-drop"] || translated["guardrail/native-only"] || !translated["datamasking/emails"] {
+		t.Errorf("bindings = %+v", bound)
 	}
 }
 
-// A sidecar edit that takes an entity out of the detector breaks a gateway
-// rule reaching it: the configuration write is refused, like a broken
-// native binding.
-func TestASidecarEditThatBreaksAReachingRuleIsRefused(t *testing.T) {
+// Composition translates a bound agent rule after the listener's native
+// rules, and a masking rule into the lane's mask block.
+func TestCompositionTranslatesABoundAgentRule(t *testing.T) {
 	startTestDB(t)
-	sc, mirror := mirroredSidecar(t, "pii-edit", mirroredDoc)
-	gatewayMasking(t, "ssn", []string{"US_SSN"}, []string{mirror.ID}, nil)
+	sc := storedSidecar(t, "compose", nativeRuleDoc)
+	agentGuardrail(t, "no-drop", denyWords("DROP TABLE"), noRules, sc)
+	agentMasking(t, "emails", []string{"EMAIL_ADDRESS"}, sc)
+	// Rules bound nowhere reach nothing.
+	agentGuardrail(t, "elsewhere", denyWords("x"), noRules, nil)
+	agentMasking(t, "unbound", []string{"US_SSN"}, nil)
+
+	composed, err := services.ComposeSidecarConfiguration(models.DB, sc)
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	lane := composed.Listeners[0]
+	if lane.Guardrails == nil || ruleNames(lane.Guardrails.Rules) != "native,no-drop" {
+		t.Fatalf("guardrails = %+v", lane.Guardrails)
+	}
+	if got := lane.Guardrails.Rules[1]; got.Type != policy.MatchPattern || got.Pattern != "DROP TABLE" {
+		t.Errorf("translation = %+v", got)
+	}
+	if lane.Mask == nil || !strings.Contains(string(lane.Mask.Rules), `"EMAIL_ADDRESS"`) ||
+		strings.Contains(string(lane.Mask.Rules), "US_SSN") {
+		t.Errorf("mask = %+v", lane.Mask)
+	}
+	if stored, _ := models.GetSidecarByNameOrID(models.DB, testOrgID, sc.ID); len(stored.Configuration.Listeners[0].Guardrails.Rules) != 1 {
+		t.Error("composition wrote the translation into the stored configuration")
+	}
+}
+
+// The write gate translates an agent rule for each target and refuses what
+// the sidecar cannot run, with the reason.
+func TestTheWriteGateRefusesAnUntranslatableAgentRule(t *testing.T) {
+	startTestDB(t)
+	sc := storedSidecar(t, "gate", bareListenerDoc)
+	targets := appdbOn(sc)
+	gate := func(kind services.SidecarRuleKind, rule models.BoundRule) error {
+		return services.ValidateSidecarRuleTargets(models.DB, testOrgID, kind, "", rule, targets)
+	}
+	guardrail := func(name, input, output string) models.BoundRule {
+		return models.BoundRule{RuleName: name, AgentRule: models.AgentRule{
+			Input: json.RawMessage(input), Output: json.RawMessage(output)}}
+	}
+	masking := func(name string, entities []string, threshold *float64, custom ...models.CustomEntityTypesEntry) models.BoundRule {
+		return models.BoundRule{RuleName: name, AgentRule: models.AgentRule{
+			SupportedEntityTypes: models.SupportedEntityTypesList{{Name: "PII", EntityTypes: entities}},
+			CustomEntityTypes:    custom, ScoreThreshold: threshold}}
+	}
+
+	if err := gate(services.SidecarRuleGuardrail, guardrail("no-drop",
+		`{"rules":[{"type":"deny_words_list","words":["DROP TABLE"]}]}`, `{"rules":[]}`)); err != nil {
+		t.Errorf("a rule the sidecar runs was refused: %v", err)
+	}
+	err := gate(services.SidecarRuleGuardrail, guardrail("with-output",
+		`{"rules":[{"type":"deny_words_list","words":["x"]}]}`, `{"rules":[{"type":"pattern_match","pattern_regex":"secret"}]}`))
+	if err == nil || !strings.Contains(err.Error(), `guardrail rule "with-output", bound to listener "appdb", has output rules`) {
+		t.Errorf("want the output rules refused, got %v", err)
+	}
+	err = gate(services.SidecarRuleGuardrail, guardrail("empty", `{"rules":[{"type":"deny_words_list","words":[""]}]}`, ``))
+	if err == nil || !strings.Contains(err.Error(), "has no rules") {
+		t.Errorf("want a rule that translates to nothing refused, got %v", err)
+	}
+
+	if err := gate(services.SidecarRuleMask, masking("emails", []string{"EMAIL_ADDRESS"}, nil)); err != nil {
+		t.Errorf("a masking rule the sidecar runs was refused: %v", err)
+	}
+	err = gate(services.SidecarRuleMask, masking("ids", []string{"EMAIL_ADDRESS"}, nil,
+		models.CustomEntityTypesEntry{Name: "ORDER_ID", Regex: `ORD-\d+`, Score: 0.9}))
+	if err == nil || !strings.Contains(err.Error(), "has custom entity types") {
+		t.Errorf("want the custom entity refused, got %v", err)
+	}
+	low := 0.2
+	err = gate(services.SidecarRuleMask, masking("low", []string{"EMAIL_ADDRESS"}, &low))
+	if err == nil || !strings.Contains(err.Error(), "score threshold of 0.2") {
+		t.Errorf("want the threshold refused, got %v", err)
+	}
+
+	// The entity check reads THAT sidecar's pii section.
+	narrow := storedSidecar(t, "narrow", `{"pii":{"entities":["US_SSN"]},`+bareListenerDoc[1:])
+	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleMask, "",
+		masking("emails", []string{"EMAIL_ADDRESS"}, nil), appdbOn(narrow))
+	if err == nil || !strings.Contains(err.Error(), `names entity "EMAIL_ADDRESS"`) {
+		t.Errorf("want the unloaded entity refused, got %v", err)
+	}
+}
+
+// A configuration edit that takes an entity away from a bound masking rule
+// is refused, and the rule's own binding list is what the edit is checked
+// against.
+func TestAPiiEditUnderABoundAgentRuleIsRefused(t *testing.T) {
+	startTestDB(t)
+	sc := storedSidecar(t, "pii-edit", bareListenerDoc)
+	agentMasking(t, "ssn", []string{"US_SSN"}, sc)
 	if err := services.CheckComposedSidecarConfiguration(models.DB, sc); err != nil {
 		t.Fatalf("the rule runs on the sidecar as stored: %v", err)
 	}
@@ -287,18 +266,11 @@ func TestASidecarEditThatBreaksAReachingRuleIsRefused(t *testing.T) {
 	if !errors.As(err, &broken) || !strings.Contains(err.Error(), `"US_SSN"`) {
 		t.Fatalf("want a refusal naming the entity, got %v", err)
 	}
-}
 
-// Removing the listener removes the mirror and, with it, the rule's reach:
-// nothing is left to refuse.
-func TestAListenerRemovalTakesTheReachWithIt(t *testing.T) {
-	startTestDB(t)
-	sc, mirror := mirroredSidecar(t, "removed", mirroredDoc)
-	gatewayGuardrail(t, "with-output", denyWords("x"),
-		map[string]any{"rules": []any{map[string]any{"type": "pattern_match", "pattern_regex": "x"}}},
-		[]string{mirror.ID}, nil)
-	sc.Configuration.Listeners = []daemon.ListenerConfig{{Name: "other", Protocol: "postgres", Listen: ":5433", Upstream: "db:5432"}}
-	if err := services.CheckComposedSidecarConfiguration(models.DB, sc); err != nil {
-		t.Fatalf("a rule on a gone listener refused the edit: %v", err)
+	// Removing the bound listener is refused the way it is for a native rule.
+	gone := *sc
+	gone.Configuration.Listeners = []daemon.ListenerConfig{{Name: "other", Protocol: "postgres", Listen: ":5433", Upstream: "db:5432"}}
+	if err := services.ValidateSidecarBindingsForConfiguration(models.DB, &gone); err == nil {
+		t.Fatal("dropping a listener with a bound agent rule must be refused")
 	}
 }

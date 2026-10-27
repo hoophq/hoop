@@ -2,34 +2,32 @@ package services
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	"github.com/hoophq/hoop/sidecar/policy"
-	"gorm.io/gorm"
 )
 
-// A gateway rule reaches a sidecar listener through the listener's mirror
-// connection, the way it reaches an agent connection: by connection id or by
-// a shared attribute. Composition translates it into the sidecar's own
+// A rule the agent runs (input/output rules, supported entity types; no
+// sidecar_spec) binds to a sidecar listener the way a native sidecar rule
+// does: sidecar_targets. Composition translates it into the sidecar's own
 // vocabulary and places it on the listener AFTER the listener's native rules.
 // Nothing is stored; the translation is derived on every handshake.
 //
 // A rule that cannot be translated is refused whole, never applied in part:
 // a rule that saved and enforces less than the admin sees bound is the
 // failure this file exists to prevent. The rule APIs refuse at the save
-// (422); a rule bound another way is refused at the handshake, where the
-// sidecar keeps its last good rules and the page shows the reason.
+// (422); what slips through (a sidecar's pii section edited under a bound
+// rule) is refused at the handshake, where the sidecar keeps its last good
+// rules and the page shows the reason.
 //
 // Known difference: a sidecar matches each statement, the agent the whole input.
 
-// ErrSidecarGatewayRuleRefused is a gateway rule that reaches a sidecar and
+// ErrSidecarGatewayRuleRefused is a gateway rule bound to a sidecar that
 // cannot run there. The admin's to fix, so it reads 422 and the handshake
 // records it as not_served.
 type ErrSidecarGatewayRuleRefused struct{ Reason string }
@@ -58,20 +56,28 @@ func decodeGatewayGuardrails(raw json.RawMessage) ([]gatewayGuardrailRule, error
 	return block.Rules, nil
 }
 
+// ruleWhere names a rule and, when bound, its listener, for a refusal.
+func ruleWhere(kind SidecarRuleKind, b models.BoundRule) string {
+	if b.ListenerName == "" {
+		return fmt.Sprintf("%s rule %q", kind, b.RuleName)
+	}
+	return fmt.Sprintf("%s rule %q, bound to listener %q,", kind, b.RuleName, b.ListenerName)
+}
+
 // translateGuardrail turns a gateway guardrail rule into sidecar rules.
 //
 // deny_words_list becomes a pattern_match on the quoted words: the sidecar's
 // own deny_words_list is case-insensitive and would deny more than the agent
 // does. An output rule is refused: a sidecar checks statements, not results.
-func translateGuardrail(r models.MirrorGuardrailRule) ([]policy.Rule, error) {
-	where := fmt.Sprintf("guardrail rule %q, reaching listener %q,", r.RuleName, r.ListenerName)
+func translateGuardrail(r models.BoundRule) ([]policy.Rule, error) {
+	where := ruleWhere(SidecarRuleGuardrail, r)
 	output, err := decodeGatewayGuardrails(r.Output)
 	if err != nil {
 		return nil, fmt.Errorf("%s has output rules that are not readable: %v", where, err)
 	}
 	if len(output) > 0 {
 		return nil, fmt.Errorf("%s has output rules, which a sidecar cannot run: it checks statements, "+
-			"not results; keep only input rules on a rule that reaches a sidecar", where)
+			"not results; keep only input rules on a rule bound to a sidecar", where)
 	}
 	input, err := decodeGatewayGuardrails(r.Input)
 	if err != nil {
@@ -119,11 +125,11 @@ func translateGuardrail(r models.MirrorGuardrailRule) ([]policy.Rule, error) {
 // stays with that rule, because two rules on one entity is a block the
 // sidecar refuses whole. det is the detector the sidecar's pii section
 // builds. The result has no entities when every entity is already masked.
-func translateDataMasking(r models.MirrorDataMaskingRule, det *alcatraz.Detector, masked map[string]bool) (maskRule, error) {
-	where := fmt.Sprintf("data masking rule %q, reaching listener %q,", r.RuleName, r.ListenerName)
+func translateDataMasking(r models.BoundRule, det *alcatraz.Detector, masked map[string]bool) (maskRule, error) {
+	where := ruleWhere(SidecarRuleMask, r)
 	if len(r.CustomEntityTypes) > 0 {
 		return maskRule{}, fmt.Errorf("%s has custom entity types, which a sidecar cannot run: it has "+
-			"no custom recognizer; keep only supported entity types on a rule that reaches a sidecar", where)
+			"no custom recognizer; keep only supported entity types on a rule bound to a sidecar", where)
 	}
 	if r.ScoreThreshold != nil && *r.ScoreThreshold < det.Threshold() {
 		return maskRule{}, fmt.Errorf("%s asks for a score threshold of %g, below the %g the sidecar "+
@@ -155,6 +161,34 @@ func translateDataMasking(r models.MirrorDataMaskingRule, det *alcatraz.Detector
 	return maskRule{Name: r.RuleName, Entities: entities, Strategy: string(alcatraz.StrategyMask)}, nil
 }
 
+// translatedSpec is the block an agent rule puts on a lane of the sidecar,
+// in the sidecar's vocabulary, for the write gate: the same checks a native
+// spec gets run over it. The lane's own mask rules are not folded out here;
+// composition does that when it places the rule.
+func translatedSpec(kind SidecarRuleKind, r models.BoundRule, cfg daemon.Config) (json.RawMessage, error) {
+	switch kind {
+	case SidecarRuleGuardrail:
+		rules, err := translateGuardrail(r)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(daemon.GuardrailsConfig{Rules: rules})
+	case SidecarRuleMask:
+		det, err := alcatraz.DetectorFromConfig(cfg.PII)
+		if err != nil {
+			return nil, fmt.Errorf("the sidecar's pii section cannot build a detector: %v", err)
+		}
+		rule, err := translateDataMasking(r, det, nil)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(struct {
+			Rules []maskRule `json:"rules"`
+		}{Rules: []maskRule{rule}})
+	}
+	return nil, fmt.Errorf("a %s rule has no agent form to translate", kind)
+}
+
 // maskedEntities reads the entities a mask block already rewrites. Lenient on
 // purpose: the block is the listener's own, written in the plugin's shape,
 // and the deprecated singular spelling still loads on a sidecar.
@@ -182,31 +216,34 @@ func maskedEntities(mc *daemon.MaskConfig) (map[string]bool, error) {
 }
 
 // foldGatewayRules places the translated gateway rules on their listeners,
-// after everything foldSidecarRules put there.
-//
-// A listener the configuration no longer has is skipped, not refused: its
-// mirror goes with it in the same write, and with the mirror every binding
-// that reached it. Everything else that cannot land is a refusal.
-func foldGatewayRules(cfg daemon.Config, sidecarName string, guardrails []models.MirrorGuardrailRule, masking []models.MirrorDataMaskingRule) (daemon.Config, error) {
+// after everything the native fold put there. Every rule here has no
+// sidecar_spec. Anything that cannot land is a refusal, a gone listener
+// included, as it is for a native rule.
+func foldGatewayRules(cfg daemon.Config, sidecarName string, guardrails, masking []models.BoundRule) (daemon.Config, error) {
 	if len(guardrails) == 0 && len(masking) == 0 {
 		return cfg, nil
 	}
 	listeners := make([]daemon.ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
 	cfg.Listeners = listeners
-	index := map[string]int{}
-	for i, l := range listeners {
-		index[l.Name] = i
-	}
 	refuse := func(err error) (daemon.Config, error) {
 		return cfg, ErrSidecarGatewayRuleRefused{Reason: err.Error()}
+	}
+	index := func(kind SidecarRuleKind, b models.BoundRule) (int, error) {
+		for i, l := range listeners {
+			if l.Name == b.ListenerName && b.ListenerName != "" {
+				return i, nil
+			}
+		}
+		return -1, fmt.Errorf("%s rule %q is bound to listener %q, which this sidecar's "+
+			"configuration no longer has; rebind or restore the listener", kind, b.RuleName, b.ListenerName)
 	}
 	hasAnalyzer := cfg.Analyzer != nil
 
 	for _, r := range guardrails {
-		idx, ok := index[r.ListenerName]
-		if !ok {
-			continue
+		idx, err := index(SidecarRuleGuardrail, r)
+		if err != nil {
+			return refuse(err)
 		}
 		rules, err := translateGuardrail(r)
 		if err != nil {
@@ -237,9 +274,9 @@ func foldGatewayRules(cfg daemon.Config, sidecarName string, guardrails []models
 		return refuse(fmt.Errorf("the sidecar's pii section cannot build a detector: %v", err))
 	}
 	for _, r := range masking {
-		idx, ok := index[r.ListenerName]
-		if !ok {
-			continue
+		idx, err := index(SidecarRuleMask, r)
+		if err != nil {
+			return refuse(err)
 		}
 		// What the lane masks today: its own block after the native fold, or
 		// the top-level block it inherits when it has none.
@@ -292,166 +329,4 @@ func foldGatewayRules(cfg daemon.Config, sidecarName string, guardrails []models
 		listeners[idx].Mask = &block
 	}
 	return cfg, nil
-}
-
-// mirrorRules are the gateway rules reaching a sidecar through its mirrors.
-type mirrorRules struct {
-	guardrails []models.MirrorGuardrailRule
-	masking    []models.MirrorDataMaskingRule
-}
-
-func loadMirrorRules(db *gorm.DB, sc *models.Sidecar) (mirrorRules, error) {
-	orgID, err := uuid.Parse(sc.OrgID)
-	if err != nil {
-		return mirrorRules{}, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
-	}
-	guardrails, err := models.ListMirrorGuardrailRules(db, orgID, sc.ID)
-	if err != nil {
-		return mirrorRules{}, fmt.Errorf("%w: failed loading the guardrail rules reaching this sidecar's mirrors: %v", ErrSidecarRulesUnavailable, err)
-	}
-	masking, err := models.ListMirrorDataMaskingRules(db, orgID, sc.ID)
-	if err != nil {
-		return mirrorRules{}, fmt.Errorf("%w: failed loading the data masking rules reaching this sidecar's mirrors: %v", ErrSidecarRulesUnavailable, err)
-	}
-	return mirrorRules{guardrails: guardrails, masking: masking}, nil
-}
-
-// split parts one rule's reach from the rest, by the name it is stored under.
-func (m mirrorRules) split(kind SidecarRuleKind, name string) (alone, others mirrorRules) {
-	switch kind {
-	case SidecarRuleGuardrail:
-		others.masking = m.masking
-		for _, r := range m.guardrails {
-			if r.RuleName == name {
-				alone.guardrails = append(alone.guardrails, r)
-			} else {
-				others.guardrails = append(others.guardrails, r)
-			}
-		}
-	case SidecarRuleMask:
-		others.guardrails = m.guardrails
-		for _, r := range m.masking {
-			if r.RuleName == name {
-				alone.masking = append(alone.masking, r)
-			} else {
-				others.masking = append(others.masking, r)
-			}
-		}
-	}
-	return alone, others
-}
-
-// CheckSidecarsReachedByGatewayRule re-composes every sidecar a gateway rule
-// reaches through a mirror, in the caller's transaction, after the rule and
-// its bindings are written there. It refuses the write with
-// ErrSidecarBindingBroken (422) only when THIS rule is what the sidecar cannot
-// run: on its own over the native rules, or together with the other rules
-// that reach it. A sidecar those other rules already break is left to the
-// handshake, which refuses it and names them on the Sidecars page; otherwise
-// every edit of every rule reaching it, a description alone, would answer
-// with the other rule's reason.
-func CheckSidecarsReachedByGatewayRule(tx *gorm.DB, orgID string, kind SidecarRuleKind, ruleName string) error {
-	org, err := uuid.Parse(orgID)
-	if err != nil {
-		return fmt.Errorf("%w: parsing the organization id: %v", ErrSidecarRulesUnavailable, err)
-	}
-	var ids []string
-	switch kind {
-	case SidecarRuleGuardrail:
-		ids, err = models.SidecarsReachedByGuardrailRule(tx, org, ruleName)
-	case SidecarRuleMask:
-		ids, err = models.SidecarsReachedByDataMaskingRule(tx, org, ruleName)
-	default:
-		return fmt.Errorf("a %s rule does not reach a sidecar through a mirror", kind)
-	}
-	if err != nil {
-		return fmt.Errorf("%w: reading the sidecars %s rule %q reaches: %v", ErrSidecarRulesUnavailable, kind, ruleName, err)
-	}
-	for _, id := range ids {
-		sc, err := models.GetSidecarByNameOrID(tx, orgID, id)
-		if err != nil {
-			return fmt.Errorf("%w: reading sidecar %q: %v", ErrSidecarRulesUnavailable, id, err)
-		}
-		// The plane serves no rules to a sidecar that runs its config file.
-		if sc.Configuration.LoadFromDisk != nil && *sc.Configuration.LoadFromDisk {
-			continue
-		}
-		if err := checkSidecarWithGatewayRule(tx, sc, kind, ruleName); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// checkSidecarWithGatewayRule is CheckSidecarsReachedByGatewayRule for one
-// sidecar. nil is "this rule does not break it", broken or not.
-func checkSidecarWithGatewayRule(tx *gorm.DB, sc *models.Sidecar, kind SidecarRuleKind, ruleName string) error {
-	licenseData, err := models.GetOrgLicenseData(tx, sc.OrgID)
-	if err != nil {
-		return fmt.Errorf("%w: reading the license of the organization owning sidecar %q: %v",
-			ErrSidecarRulesUnavailable, sc.Name, err)
-	}
-	native, err := composeNativeRules(tx, sc, "", "")
-	if err != nil {
-		if errors.Is(err, ErrSidecarRulesUnavailable) {
-			return err
-		}
-		return nil
-	}
-	reaching, err := loadMirrorRules(tx, sc)
-	if err != nil {
-		return err
-	}
-	alone, others := reaching.split(kind, ruleName)
-	refuse := func(err error) error {
-		return ErrSidecarBindingBroken{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
-	}
-	// Broken before any gateway rule: not this write's to refuse.
-	if err := checkComposedSidecar(sc, native, mirrorRules{}, licenseData); err != nil {
-		if errors.Is(err, ErrSidecarRulesUnavailable) {
-			return err
-		}
-		return nil
-	}
-	// This rule on its own: its reason, whatever the other rules do.
-	if err := checkComposedSidecar(sc, native, alone, licenseData); err != nil {
-		if errors.Is(err, ErrSidecarRulesUnavailable) {
-			return err
-		}
-		return refuse(err)
-	}
-	// Broken by the other rules alone: theirs to fix, at the handshake.
-	if err := checkComposedSidecar(sc, native, others, licenseData); err != nil {
-		if errors.Is(err, ErrSidecarRulesUnavailable) {
-			return err
-		}
-		return nil
-	}
-	// Fine without this rule, broken with it: the cap, or a mask it collides with.
-	if err := checkComposedSidecar(sc, native, reaching, licenseData); err != nil {
-		if errors.Is(err, ErrSidecarRulesUnavailable) {
-			return err
-		}
-		return refuse(err)
-	}
-	return nil
-}
-
-// checkComposedSidecar is the document check of checkComposedWithRule over
-// the native fold plus one set of reaching gateway rules.
-func checkComposedSidecar(sc *models.Sidecar, native daemon.Config, reaching mirrorRules, licenseData json.RawMessage) error {
-	composed, err := foldGatewayRules(native, sc.Name, reaching.guardrails, reaching.masking)
-	if err != nil {
-		return err
-	}
-	if err := validateComposedAnalyzers(composed); err != nil {
-		return err
-	}
-	if err := CheckSidecarCapabilities(sc, composed); err != nil {
-		return err
-	}
-	if err := CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
-		return fmt.Errorf("the rules reaching it put it over its rule limit: %w", err)
-	}
-	return nil
 }

@@ -1,7 +1,7 @@
 // Package gatewayrulestest drives the rule APIs and the sidecar handshake
-// together: a gateway rule bound to a sidecar's mirror connection is served
-// translated, refused at the save with 422, or refused at the handshake as
-// not_served when it was bound another way.
+// together: a rule the agent runs, bound to a sidecar listener through
+// sidecar_targets, is served translated, refused at the save with 422, or
+// refused at the handshake as not_served when the sidecar changed under it.
 package gatewayrulestest
 
 import (
@@ -28,14 +28,13 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
 const orgID = "00000000-0000-0000-0000-0000000000d4"
 
 func TestMain(m *testing.M) {
-	// The data masking API needs a DLP provider for a rule bound to
-	// connections; alcatraz needs no credentials.
+	// The data masking API needs a DLP provider for a rule the agent runs;
+	// alcatraz needs no credentials.
 	os.Setenv("DLP_PROVIDER", "alcatraz")
 	if err := appconfig.Load(); err != nil {
 		panic(err)
@@ -53,8 +52,8 @@ func startDB(t *testing.T) {
 	require.NoError(t, models.DB.Exec(`INSERT INTO private.orgs (id, name) VALUES (?, 'gatewayrules-test')`, orgID).Error)
 }
 
-// mirroredSidecar is a sidecar with one postgres listener and its mirror.
-func mirroredSidecar(t *testing.T, name string) (*models.Sidecar, *models.SidecarMirror) {
+// sidecarWithListener is a sidecar with one postgres listener named appdb.
+func sidecarWithListener(t *testing.T, name string) *models.Sidecar {
 	t.Helper()
 	sc := &models.Sidecar{OrgID: orgID, Name: name, KeyHash: models.HashAPIKey("hsc_" + name), CreatedBy: "tests@hoop.dev"}
 	require.NoError(t, models.CreateSidecar(models.DB, sc))
@@ -63,12 +62,19 @@ func mirroredSidecar(t *testing.T, name string) (*models.Sidecar, *models.Sideca
 	require.NoError(t, err)
 	stored, err := models.UpdateSidecarConfiguration(models.DB, orgID, sc.ID, models.SidecarConfiguration(cfg))
 	require.NoError(t, err)
-	require.NoError(t, models.DB.Transaction(func(tx *gorm.DB) error {
-		return services.SyncSidecarListenerConnectionsTx(tx, stored)
-	}))
-	mirror, err := models.GetSidecarMirror(models.DB, orgID, sc.ID, "appdb")
-	require.NoError(t, err)
-	return stored, mirror
+	return stored
+}
+
+// agentConnection is a plain connection an agent serves, the kind a gateway
+// rule binds to with connection_ids.
+func agentConnection(t *testing.T, name string) string {
+	t.Helper()
+	id := uuid.NewString()
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.resources (org_id, name, type, subtype)
+		VALUES (?, ?, 'database', 'postgres')`, orgID, name).Error)
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.connections (id, org_id, name, type, resource_name)
+		VALUES (?, ?, ?, 'postgres', ?)`, id, orgID, name, name).Error)
+	return id
 }
 
 // licenseDoc lifts the OSS one-rule cap of the rule APIs, which these tests
@@ -113,30 +119,56 @@ func patternRules(regex string) map[string]any {
 	return map[string]any{"rules": []any{map[string]any{"type": "pattern_match", "words": []any{}, "pattern_regex": regex}}}
 }
 
-func guardrailRequest(name string, input, output map[string]any, connectionIDs []string) map[string]any {
-	return map[string]any{"name": name, "description": "", "input": input, "output": output,
-		"connection_ids": connectionIDs, "attributes": []string{}}
+var noRules = map[string]any{"rules": []any{}}
+
+func targets(sc *models.Sidecar) []map[string]any {
+	return []map[string]any{{"sidecar_id": sc.ID, "listener_name": "appdb"}}
 }
 
-func maskingRequest(name string, entities []string, custom []map[string]any, connectionIDs []string) map[string]any {
+func guardrailRequest(name string, input, output map[string]any, connectionIDs []string, sidecarTargets []map[string]any) map[string]any {
+	req := map[string]any{"name": name, "description": "", "input": input, "output": output,
+		"connection_ids": connectionIDs, "attributes": []string{}}
+	if sidecarTargets != nil {
+		req["sidecar_targets"] = sidecarTargets
+	}
+	return req
+}
+
+func maskingRequest(name string, entities []string, custom []map[string]any, connectionIDs []string, sidecarTargets []map[string]any) map[string]any {
 	supported := []map[string]any{}
 	if len(entities) > 0 {
 		supported = append(supported, map[string]any{"name": "PII", "entity_types": entities})
 	}
-	return map[string]any{"name": name, "description": "",
+	req := map[string]any{"name": name, "description": "",
 		"supported_entity_types": supported,
 		"custom_entity_types":    custom,
 		"connection_ids":         connectionIDs, "attributes": []string{}}
+	if sidecarTargets != nil {
+		req["sidecar_targets"] = sidecarTargets
+	}
+	return req
 }
 
-// Done when #1: a guardrail created on the gateway page, bound to the
-// mirror, reaches the sidecar translated, after the listener's own rules.
-func TestAGatewayGuardrailIsServedTranslated(t *testing.T) {
+func createdID(t *testing.T, w *httptest.ResponseRecorder) string {
+	t.Helper()
+	var created struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &created))
+	return created.ID
+}
+
+// A guardrail the agent runs, bound to a listener through sidecar_targets,
+// reaches the sidecar translated; its agent binding stays; the Sidecars page
+// lists it with source gateway.
+func TestAnAgentGuardrailBoundToAListenerIsServedTranslated(t *testing.T) {
 	startDB(t)
-	sc, mirror := mirroredSidecar(t, "served")
+	sc := sidecarWithListener(t, "served")
+	conn := agentConnection(t, "pg-prod")
 	w := call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
-		guardrailRequest("no-drop", denyWords("DROP TABLE"), map[string]any{"rules": []any{}}, []string{mirror.ID}))
+		guardrailRequest("no-drop", denyWords("DROP TABLE"), noRules, []string{conn}, targets(sc)))
 	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	id := createdID(t, w)
 
 	w = handshake(t, sc)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
@@ -154,8 +186,16 @@ func TestAGatewayGuardrailIsServedTranslated(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, row.LastError)
 
-	// The Sidecars page lists what the listener enforces, the translated
-	// rule included, with the source that tells it from a native rule.
+	// The rule keeps its agent binding and its targets, and stores no
+	// sidecar_spec: the translation is derived, never written.
+	w = call(t, apiguardrails.Get, http.MethodGet, "/api/guardrails/"+id, nil, gin.Param{Key: "id", Value: id})
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	var got openapi.GuardRailRuleResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	assert.Equal(t, []string{conn}, got.ConnectionIDs)
+	assert.Equal(t, []openapi.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}, got.SidecarTargets)
+	assert.Empty(t, got.SidecarSpec)
+
 	w = call(t, apisidecar.Get, http.MethodGet, "/api/sidecars/"+sc.ID, nil, gin.Param{Key: "nameOrID", Value: sc.ID})
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
 	var page openapi.SidecarResponse
@@ -166,123 +206,100 @@ func TestAGatewayGuardrailIsServedTranslated(t *testing.T) {
 	}, page.BoundRules)
 }
 
-// A sidecar another rule already breaks (here: an output rule bound by
-// attribute, which no save gates) does not refuse the writes of the rules
-// that reach it: the gate refuses only the rule that breaks it.
-func TestTheGateRefusesOnlyTheRuleBeingWritten(t *testing.T) {
-	startDB(t)
-	sc, mirror := mirroredSidecar(t, "crossrule")
-	w := call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
-		map[string]any{"name": "ssn-out", "input": map[string]any{"rules": []any{}},
-			"output": patternRules(`\d{3}-\d{2}-\d{4}`), "connection_ids": []string{}, "attributes": []string{"prod"}})
-	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
-	require.NoError(t, models.UpsertConnectionAttributes(models.DB, uuid.MustParse(orgID), mirror.Name, []string{"prod"}))
-	w = handshake(t, sc)
-	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "the sidecar is broken by ssn-out: %s", w.Body)
-
-	w = call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
-		guardrailRequest("no-drop", denyWords("DROP TABLE"), map[string]any{"rules": []any{}}, []string{mirror.ID}))
-	require.Equal(t, http.StatusCreated, w.Code, "an unrelated rule the sidecar runs saves: %s", w.Body)
-	var created struct {
-		ID string `json:"id"`
-	}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &created))
-	req := guardrailRequest("no-drop", denyWords("DROP TABLE"), map[string]any{"rules": []any{}}, []string{mirror.ID})
-	req["description"] = "edited"
-	w = call(t, apiguardrails.Put, http.MethodPut, "/api/guardrails/"+created.ID, req, gin.Param{Key: "id", Value: created.ID})
-	require.Equal(t, http.StatusOK, w.Code, "an edit of that rule saves: %s", w.Body)
-
-	w = call(t, apidatamasking.Post, http.MethodPost, "/api/datamasking-rules",
-		maskingRequest("emails", []string{"EMAIL_ADDRESS"}, nil, []string{mirror.ID}))
-	require.Equal(t, http.StatusCreated, w.Code, "a masking rule the sidecar runs saves: %s", w.Body)
-
-	// A rule that breaks the sidecar on its own is still refused, with ITS reason.
-	w = call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
-		guardrailRequest("mask-ssn", denyWords("x"), patternRules("secret"), []string{mirror.ID}))
-	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
-	assert.Contains(t, w.Body.String(), `guardrail rule \"mask-ssn\", reaching listener \"appdb\", has output rules`)
-	assert.NotContains(t, w.Body.String(), "ssn-out")
-
-	// Once the other rule is unbound, every rule reaching the listener serves.
-	require.NoError(t, models.UpsertGuardrailRuleAttributes(models.DB, uuid.MustParse(orgID), "ssn-out", nil))
-	w = handshake(t, sc)
-	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
-	assert.Contains(t, w.Body.String(), "DROP TABLE")
-	assert.Contains(t, w.Body.String(), "EMAIL_ADDRESS")
-}
-
-// Done when #2: a rule the sidecar cannot run is refused at the save, with
-// the reason, and nothing of it is stored.
+// A rule the sidecar cannot run is refused at the save, with the reason, and
+// nothing of it is stored. An edit that makes a served rule untranslatable
+// is refused the same way, and the stored rule goes on serving.
 func TestAnUntranslatableRuleIsRefusedAtTheSave(t *testing.T) {
 	startDB(t)
-	sc, mirror := mirroredSidecar(t, "refused")
+	sc := sidecarWithListener(t, "refused")
 
 	w := call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
-		guardrailRequest("mask-ssn", denyWords("x"), patternRules(`\d{3}-\d{2}-\d{4}`), []string{mirror.ID}))
+		guardrailRequest("mask-ssn", denyWords("x"), patternRules(`\d{3}-\d{2}-\d{4}`), []string{}, targets(sc)))
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
-	assert.Contains(t, w.Body.String(), `guardrail rule \"mask-ssn\", reaching listener \"appdb\", has output rules`)
+	assert.Contains(t, w.Body.String(), `guardrail rule \"mask-ssn\", bound to listener \"appdb\", has output rules`)
 	rules, err := models.ListGuardRailRules(orgID)
 	require.NoError(t, err)
 	assert.Empty(t, rules, "a refused rule is not saved")
 
 	w = call(t, apidatamasking.Post, http.MethodPost, "/api/datamasking-rules",
 		maskingRequest("ids", nil,
-			[]map[string]any{{"name": "ORDER_ID", "regex": `ORD-\d+`, "deny_list": []string{}, "score": 0.9}}, []string{mirror.ID}))
+			[]map[string]any{{"name": "ORDER_ID", "regex": `ORD-\d+`, "deny_list": []string{}, "score": 0.9}}, []string{}, targets(sc)))
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
 	assert.Contains(t, w.Body.String(), "has custom entity types")
 	masks, err := models.ListDataMaskingRules(orgID)
 	require.NoError(t, err)
 	assert.Empty(t, masks, "a refused rule is not saved")
 
-	// An edit that makes a served rule untranslatable is refused the same way.
+	// The same rules save when they name no sidecar: the agent runs them.
 	w = call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
-		guardrailRequest("no-drop", denyWords("DROP TABLE"), map[string]any{"rules": []any{}}, []string{mirror.ID}))
+		guardrailRequest("agent-only", denyWords("x"), patternRules("secret"), []string{}, nil))
 	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
-	var created struct {
-		ID string `json:"id"`
-	}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &created))
-	w = call(t, apiguardrails.Put, http.MethodPut, "/api/guardrails/"+created.ID,
-		guardrailRequest("no-drop", denyWords("DROP TABLE"), patternRules("secret"), []string{mirror.ID}),
-		gin.Param{Key: "id", Value: created.ID})
+
+	w = call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
+		guardrailRequest("no-drop", denyWords("DROP TABLE"), noRules, []string{}, targets(sc)))
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	id := createdID(t, w)
+	w = call(t, apiguardrails.Put, http.MethodPut, "/api/guardrails/"+id,
+		guardrailRequest("no-drop", denyWords("DROP TABLE"), patternRules("secret"), []string{}, targets(sc)),
+		gin.Param{Key: "id", Value: id})
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
 	assert.Contains(t, w.Body.String(), "has output rules")
 
 	w = handshake(t, sc)
 	require.Equal(t, http.StatusOK, w.Code, "the stored rule still serves: %s", w.Body)
+	assert.Contains(t, w.Body.String(), "DROP TABLE")
 	assert.NotContains(t, w.Body.String(), "secret")
 }
 
-// A rule bound another way (here: the mirror gains the rule's attribute
-// through the connection side) is refused at the handshake: the sidecar
-// keeps its rules, and the page shows not_served with the reason.
-func TestARuleBoundAnotherWayIsRefusedAtTheHandshake(t *testing.T) {
+// A masking rule the agent runs, bound to a listener, masks there with the
+// sidecar's detector; a sidecar whose pii section changes under it (here:
+// written past the configuration API, which refuses the edit) is refused at
+// the handshake, keeps its rules, and the page names the reason.
+func TestAMaskingRuleIsServedUntilThePiiSectionDropsItsEntity(t *testing.T) {
 	startDB(t)
-	sc, mirror := mirroredSidecar(t, "attr")
-	w := call(t, apiguardrails.Post, http.MethodPost, "/api/guardrails",
-		map[string]any{"name": "ssn-out", "input": map[string]any{"rules": []any{}},
-			"output": patternRules(`\d{3}-\d{2}-\d{4}`), "connection_ids": []string{}, "attributes": []string{"prod"}})
-	require.Equal(t, http.StatusCreated, w.Code, "a rule reaching no sidecar saves: %s", w.Body)
+	sc := sidecarWithListener(t, "pii")
+	w := call(t, apidatamasking.Post, http.MethodPost, "/api/datamasking-rules",
+		maskingRequest("emails", []string{"EMAIL_ADDRESS"}, nil, []string{}, targets(sc)))
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
 
 	w = handshake(t, sc)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	var served daemon.Config
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &served))
+	require.NotNil(t, served.Listeners[0].Mask)
+	assert.Contains(t, string(served.Listeners[0].Mask.Rules), `"EMAIL_ADDRESS"`)
+	assert.Contains(t, string(served.Listeners[0].Mask.Rules), `"strategy":"mask"`)
 
-	require.NoError(t, models.UpsertConnectionAttributes(models.DB, uuid.MustParse(orgID), mirror.Name, []string{"prod"}))
-	w = handshake(t, sc)
+	// The configuration API refuses the edit that breaks the bound rule.
+	narrowed := *sc
+	narrowed.Configuration.PII = json.RawMessage(`{"entities":["US_SSN"]}`)
+	err := services.CheckComposedSidecarConfiguration(models.DB, &narrowed)
+	var broken services.ErrSidecarBindingBroken
+	require.ErrorAs(t, err, &broken)
+	assert.Contains(t, err.Error(), `names entity "EMAIL_ADDRESS"`)
+
+	// Written anyway: the handshake is the backstop.
+	stored, err := models.UpdateSidecarConfiguration(models.DB, orgID, sc.ID, narrowed.Configuration)
+	require.NoError(t, err)
+	w = handshake(t, stored)
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
-	assert.Contains(t, w.Body.String(), `guardrail rule \"ssn-out\", reaching listener \"appdb\", has output rules`)
-
+	assert.Contains(t, w.Body.String(), `names entity \"EMAIL_ADDRESS\"`)
 	row, err := models.GetSidecarByNameOrID(models.DB, orgID, sc.ID)
 	require.NoError(t, err)
 	require.NotNil(t, row.LastOutcome)
 	assert.Equal(t, models.SidecarOutcomeNotServed, *row.LastOutcome)
 	require.NotNil(t, row.LastError)
-	assert.Contains(t, *row.LastError, "has output rules")
+	assert.Contains(t, *row.LastError, `names entity "EMAIL_ADDRESS"`)
 
-	// Removing the attribute from the rule serves the sidecar again and
-	// clears the verdict.
-	require.NoError(t, models.UpsertGuardrailRuleAttributes(models.DB, uuid.MustParse(orgID), "ssn-out", nil))
-	w = handshake(t, sc)
+	// Unbinding the rule serves the sidecar again and clears the verdict.
+	masks, err := models.ListDataMaskingRules(orgID)
+	require.NoError(t, err)
+	require.Len(t, masks, 1)
+	w = call(t, apidatamasking.Put, http.MethodPut, "/api/datamasking-rules/"+masks[0].ID,
+		maskingRequest("emails", []string{"EMAIL_ADDRESS"}, nil, []string{}, []map[string]any{}),
+		gin.Param{Key: "id", Value: masks[0].ID})
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	w = handshake(t, stored)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
 	row, err = models.GetSidecarByNameOrID(models.DB, orgID, sc.ID)
 	require.NoError(t, err)

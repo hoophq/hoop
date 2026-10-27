@@ -223,12 +223,11 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
 
         <SectionRow
           title="Associate Resource Roles"
-          description="Select the resource roles or sidecar listeners where this guardrail should be applied."
+          description="Select the resource roles where this guardrail should be applied."
         >
           <ConnectionsMultiSelect
             value={form.connectionIds}
             onChange={(values) => setField({ connectionIds: values })}
-            includeSidecarMirrors
           />
         </SectionRow>
 

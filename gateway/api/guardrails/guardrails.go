@@ -2,7 +2,6 @@ package apiguardrails
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -64,7 +63,7 @@ func validateOssRulesLimitations(req *openapi.GuardRailRuleRequest) error {
 //	@Tags			Guard Rails
 //	@Accept			json
 //	@Produce		json
-//	@Param			request			body		openapi.GuardRailRuleRequest	true	"The request body resource"
+//	@Param			request		body		openapi.GuardRailRuleRequest	true	"The request body resource"
 //	@Success		201				{object}	openapi.GuardRailRuleResponse
 //	@Failure		400,409,422,500	{object}	openapi.HTTPError
 //	@Router			/guardrails [post]
@@ -111,6 +110,7 @@ func Post(c *gin.Context) {
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
 		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: "",
 		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
+		Input: req.Input, Output: req.Output,
 	}) {
 		return
 	}
@@ -118,8 +118,6 @@ func Post(c *gin.Context) {
 	// One transaction: the rule, its attributes and its sidecar bindings. A
 	// binding that fails after the rule row commits leaves the OLD bindings
 	// serving the NEW spec, which is the pairing sidecarbind.Refuse rejects.
-	// A sidecar the rule reaches through a mirror connection is composed in
-	// the same transaction, so a rule it cannot run is never saved.
 	var attrErr, bindErr error
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
 		if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, rule, validConnectionIDs, true); err != nil {
@@ -128,21 +126,15 @@ func Post(c *gin.Context) {
 		if attrErr = upsertGuardrailRuleAttributes(tx, ctx, rule.Name, req.Attributes); attrErr != nil {
 			return attrErr
 		}
-		if bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets); bindErr != nil {
-			return bindErr
-		}
-		return services.CheckSidecarsReachedByGatewayRule(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name)
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets)
+		return bindErr
 	})
-	var refused services.ErrSidecarBindingBroken
 	switch {
 	case attrErr != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting guard rail rule attributes: %v", attrErr)
 		return
 	case bindErr != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
-		return
-	case errors.As(err, &refused):
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": refused.Reason})
 		return
 	}
 	switch err {
@@ -181,7 +173,7 @@ func Post(c *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			request	body		openapi.GuardRailRuleRequest	true	"The request body resource"
-//	@Success		200		{object}	openapi.GuardRailRuleResponse
+//	@Success		200				{object}	openapi.GuardRailRuleResponse
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/guardrails/{id} [put]
 func Put(c *gin.Context) {
@@ -228,6 +220,7 @@ func Put(c *gin.Context) {
 	bind := sidecarbind.Request{
 		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: existing.Name,
 		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
+		Input: req.Input, Output: req.Output,
 	}
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {
 		return
@@ -245,8 +238,7 @@ func Put(c *gin.Context) {
 	}
 
 	// Update the guardrail, its connections, its attributes and its sidecar
-	// bindings in a single transaction, then compose every sidecar the rule
-	// reaches through a mirror connection.
+	// bindings in a single transaction.
 	var attrErr, bindErr error
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
 		if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, rule, validConnectionIDs, false); err != nil {
@@ -255,21 +247,15 @@ func Put(c *gin.Context) {
 		if attrErr = upsertGuardrailRuleAttributes(tx, ctx, rule.Name, req.Attributes); attrErr != nil {
 			return attrErr
 		}
-		if bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets); bindErr != nil {
-			return bindErr
-		}
-		return services.CheckSidecarsReachedByGatewayRule(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name)
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets)
+		return bindErr
 	})
-	var refused services.ErrSidecarBindingBroken
 	switch {
 	case attrErr != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting guard rail rule attributes: %v", attrErr)
 		return
 	case bindErr != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
-		return
-	case errors.As(err, &refused):
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": refused.Reason})
 		return
 	}
 	switch err {
@@ -317,22 +303,29 @@ func List(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guard rail rules: %v", err)
 		return
 	}
+	// The web app reads the sidecar block and the targets to show which
+	// traffic the rule protects.
+	targets, err := sidecarbind.LoadAll(models.DB, ctx.GetOrgID(), services.SidecarRuleGuardrail)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the sidecar targets of the rules: %v", err)
+		return
+	}
 
 	rules := []openapi.GuardRailRuleResponse{}
 	for _, rule := range ruleList {
 		rules = append(rules, openapi.GuardRailRuleResponse{
-			ID:            rule.ID,
-			Name:          rule.Name,
-			Description:   rule.Description,
-			ManagedBy:     rule.ManagedBy,
-			Input:         rule.Input,
-			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			Attributes:    rule.Attributes,
-			// The web app reads it to show which traffic the rule protects.
-			SidecarSpec: rule.SidecarSpec,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+			ID:             rule.ID,
+			Name:           rule.Name,
+			Description:    rule.Description,
+			ManagedBy:      rule.ManagedBy,
+			Input:          rule.Input,
+			Output:         rule.Output,
+			ConnectionIDs:  rule.ConnectionIDs,
+			Attributes:     rule.Attributes,
+			SidecarSpec:    rule.SidecarSpec,
+			SidecarTargets: targets[rule.Name],
+			CreatedAt:      rule.CreatedAt,
+			UpdatedAt:      rule.UpdatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, rules)

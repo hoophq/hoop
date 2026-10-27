@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { connectionOption, usePaginatedConnections } from '@/hooks/usePaginatedConnections'
+import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { connectionsService } from '@/services/connections'
 import PaginatedMultiSelect from '@/components/PaginatedMultiSelect'
 
@@ -14,8 +14,7 @@ function chunk(arr, size) {
 /**
  * Resource-role (connection) multi-select with paginated options + server search.
  * Labels for already-selected ids are resolved via `?connection_ids=`, so chips
- * show names without loading the full connection list. `includeSidecarMirrors`
- * offers the sidecar listener mirrors too, tagged "Sidecar".
+ * show names without loading the full connection list.
  *
  * Usage:
  *   <ConnectionsMultiSelect value={form.connectionIds} onChange={setIds} />
@@ -26,24 +25,23 @@ export default function ConnectionsMultiSelect({
   label = 'Resource Roles',
   placeholder = 'Select resource roles...',
   required = false,
-  includeSidecarMirrors = false,
 }) {
   const { options, loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded } =
-    usePaginatedConnections({ pageSize: 50, includeSidecarMirrors })
+    usePaginatedConnections({ pageSize: 50 })
 
-  // id -> option cache. Unresolvable ids store the id as label so they aren't retried.
+  // id -> label cache. Unresolvable ids store the id itself so they aren't retried.
   const [resolved, setResolved] = useState({})
   const inFlightRef = useRef(new Set())
 
-  const optionByValue = useMemo(
-    () => new Map(options.map((o) => [o.value, o])),
+  const optionLabelByValue = useMemo(
+    () => new Map(options.map((o) => [o.value, o.label])),
     [options],
   )
 
   useEffect(() => {
     const missing = value.filter(
       (id) =>
-        !optionByValue.has(id) &&
+        !optionLabelByValue.has(id) &&
         !(id in resolved) &&
         !inFlightRef.current.has(id),
     )
@@ -59,11 +57,11 @@ export default function ConnectionsMultiSelect({
       try {
         const batches = await Promise.all(
           chunk(missing, RESOLVE_CHUNK).map((ids) =>
-            connectionsService.getConnectionsByIds(ids, { includeSidecarMirrors }),
+            connectionsService.getConnectionsByIds(ids),
           ),
         )
         batches.forEach((rows) =>
-          (rows ?? []).forEach((c) => found.set(c.id, connectionOption(c))),
+          (rows ?? []).forEach((c) => found.set(c.id, c.name)),
         )
       } catch {
         // fall back to the id below
@@ -72,17 +70,20 @@ export default function ConnectionsMultiSelect({
       }
       const next = {}
       missing.forEach((id) => {
-        next[id] = found.get(id) ?? { value: id, label: id }
+        next[id] = found.get(id) ?? id
       })
       setResolved((prev) => ({ ...prev, ...next }))
     })()
-  }, [value, optionByValue, resolved, includeSidecarMirrors])
+  }, [value, optionLabelByValue, resolved])
 
   // label: null = still resolving → the pill shows a skeleton instead of the id.
   const selectedOptions = useMemo(
     () =>
-      value.map((id) => optionByValue.get(id) ?? resolved[id] ?? { value: id, label: null }),
-    [value, optionByValue, resolved],
+      value.map((id) => ({
+        value: id,
+        label: optionLabelByValue.get(id) ?? resolved[id] ?? null,
+      })),
+    [value, optionLabelByValue, resolved],
   )
 
   return (

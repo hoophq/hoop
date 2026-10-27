@@ -10,21 +10,7 @@ import {
   Text,
   useCombobox,
 } from '@mantine/core'
-import RuleTrafficBadge from '@/components/RuleTrafficBadge'
-import { TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 import classes from './PaginatedMultiSelect.module.css'
-
-// An option `{ value, label, sidecar }`: a sidecar one carries the Sidecar tag.
-// A pill is sized at min-content, so the tag keeps its full label.
-function OptionLabel({ option }) {
-  if (!option.sidecar) return option.label
-  return (
-    <Group gap="xs" wrap="nowrap" component="span">
-      {option.label}
-      <RuleTrafficBadge traffic={TRAFFIC_SIDECAR} fullLabel />
-    </Group>
-  )
-}
 
 /**
  * Multi-select over a paginated, server-searched option source (infinite scroll).
@@ -83,8 +69,8 @@ export default function PaginatedMultiSelect({
     return [...byValue.values()]
   }, [options, selectedOptions])
 
-  const optionByValue = useMemo(
-    () => new Map(mergedOptions.map((o) => [o.value, o])),
+  const labelByValue = useMemo(
+    () => new Map(mergedOptions.map((o) => [o.value, o.label])),
     [mergedOptions],
   )
 
@@ -100,7 +86,7 @@ export default function PaginatedMultiSelect({
   const handleValueRemove = (val) => onChange?.(value.filter((v) => v !== val))
 
   const pills = value.map((val) => {
-    const option = optionByValue.get(val)
+    const label = labelByValue.get(val)
     return (
       <Pill
         key={val}
@@ -108,8 +94,8 @@ export default function PaginatedMultiSelect({
         disabled={disabled}
         onRemove={() => handleValueRemove(val)}
       >
-        {option?.label != null ? (
-          <OptionLabel option={option} />
+        {label != null ? (
+          label
         ) : (
           <Skeleton
             className={classes.skeleton}
@@ -126,7 +112,7 @@ export default function PaginatedMultiSelect({
     .filter((o) => o.label != null && !selectedSet.has(o.value))
     .map((o) => (
       <Combobox.Option value={o.value} key={o.value}>
-        <OptionLabel option={o} />
+        {o.label}
       </Combobox.Option>
     ))
 

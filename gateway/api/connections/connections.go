@@ -452,7 +452,6 @@ func Delete(c *gin.Context) {
 //	@Param			resource_name	query		string											false	"Filter by resource name"																Format(string)
 //	@Param			attribute		query		string											false	"Filter by attributes, separated by comma"												Format(string)
 //	@Param			connection_ids	query		string											false	"Filter by specific connection IDs, separated by comma"									Format(string)
-//	@Param			include_sidecar_mirrors	query	bool										false	"Include the connections that mirror a sidecar listener (managed_by=sidecar), left out by default"	Format(bool)
 //	@Param			page_size		query		int												false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
 //	@Param			page			query		int												false	"Page number (1-based). When provided, enables pagination"								Format(int)
 //	@Success		200				{object}	openapi.PaginatedResponse[openapi.Connection]	"Returns Connection objects paginated when using pagination"
@@ -466,11 +465,8 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	// Sidecar mirrors belong to the Sidecars page: a list leaves them out
-	// unless a rule picker asks for them.
-	if c.Query("include_sidecar_mirrors") != "true" {
-		filterOpts.ExcludeManagedBy = models.ConnectionManagedBySidecar
-	}
+	// Sidecar mirrors belong to the Sidecars page: no list shows them.
+	filterOpts.ExcludeManagedBy = models.ConnectionManagedBySidecar
 
 	urlValues := c.Request.URL.Query()
 	pageStr := urlValues.Get("page")
@@ -735,8 +731,6 @@ func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
 		RedactEnabled:           conn.RedactEnabled,
 		RedactTypes:             conn.RedactTypes,
 		ManagedBy:               managedBy,
-		SidecarID:               conn.SidecarID.String,
-		SidecarListener:         conn.SidecarListener.String,
 		Tags:                    conn.Tags,
 		ConnectionTags:          conn.ConnectionTags,
 		AccessModeRunbooks:      conn.AccessModeRunbooks,

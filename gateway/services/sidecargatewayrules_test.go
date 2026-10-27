@@ -13,15 +13,15 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
-func guardrailOn(listener, name, input, output string) models.MirrorGuardrailRule {
-	return models.MirrorGuardrailRule{RuleName: name, ListenerName: listener,
-		Input: json.RawMessage(input), Output: json.RawMessage(output)}
+func guardrailOn(listener, name, input, output string) models.BoundRule {
+	return models.BoundRule{RuleName: name, ListenerName: listener, AgentRule: models.AgentRule{
+		Input: json.RawMessage(input), Output: json.RawMessage(output)}}
 }
 
-func maskingOn(listener, name string, entities []string, threshold *float64, custom ...models.CustomEntityTypesEntry) models.MirrorDataMaskingRule {
-	return models.MirrorDataMaskingRule{RuleName: name, ListenerName: listener,
+func maskingOn(listener, name string, entities []string, threshold *float64, custom ...models.CustomEntityTypesEntry) models.BoundRule {
+	return models.BoundRule{RuleName: name, ListenerName: listener, AgentRule: models.AgentRule{
 		SupportedEntityTypes: models.SupportedEntityTypesList{{Name: "PII", EntityTypes: entities}},
-		CustomEntityTypes:    custom, ScoreThreshold: threshold}
+		CustomEntityTypes:    custom, ScoreThreshold: threshold}}
 }
 
 func twoLanes() daemon.Config {
@@ -45,7 +45,7 @@ func refusedWith(t *testing.T, err error, want string) {
 // A deny_words_list keeps the agent's case-sensitive match: it becomes a
 // pattern_match on the quoted words, never the sidecar's own deny_words_list.
 func TestADenyWordsListBecomesACaseSensitivePattern(t *testing.T) {
-	cfg, err := foldGatewayRules(twoLanes(), "pay", []models.MirrorGuardrailRule{
+	cfg, err := foldGatewayRules(twoLanes(), "pay", []models.BoundRule{
 		guardrailOn("appdb", "no-drop",
 			`{"rules":[{"type":"deny_words_list","words":["DROP TABLE","","a.b*"],"pattern_regex":"","message":"ask the DBA"}]}`,
 			`{"rules":[]}`),
@@ -83,7 +83,7 @@ func statement(text string) inspect.Statement {
 // A pattern_match stays one, and several entries keep their order under
 // numbered names.
 func TestAPatternMatchStaysOne(t *testing.T) {
-	cfg, err := foldGatewayRules(twoLanes(), "pay", []models.MirrorGuardrailRule{
+	cfg, err := foldGatewayRules(twoLanes(), "pay", []models.BoundRule{
 		guardrailOn("appdb", "writes",
 			`{"rules":[{"type":"pattern_match","words":[],"pattern_regex":"(?i)^\\s*delete"},`+
 				`{"type":"pattern_match","pattern_regex":""},`+
@@ -106,7 +106,7 @@ func TestTranslatedRulesComeAfterNativeOnes(t *testing.T) {
 	cfg.Listeners[0].Guardrails = &daemon.GuardrailsConfig{Rules: []policy.Rule{
 		{Name: "native", Type: policy.MatchOperation, Operations: []inspect.Operation{"drop"}},
 	}}
-	out, err := foldGatewayRules(cfg, "pay", []models.MirrorGuardrailRule{
+	out, err := foldGatewayRules(cfg, "pay", []models.BoundRule{
 		guardrailOn("appdb", "gateway", `{"rules":[{"type":"deny_words_list","words":["x"]}]}`, ``),
 	}, nil)
 	if err != nil {
@@ -124,48 +124,42 @@ func TestTranslatedRulesComeAfterNativeOnes(t *testing.T) {
 // An output rule is refused whole: a sidecar checks statements, not results,
 // and a rule applied in part is the failure the ticket names.
 func TestAnOutputRuleIsRefused(t *testing.T) {
-	_, err := foldGatewayRules(twoLanes(), "pay", []models.MirrorGuardrailRule{
+	_, err := foldGatewayRules(twoLanes(), "pay", []models.BoundRule{
 		guardrailOn("appdb", "mask-ssn",
 			`{"rules":[{"type":"deny_words_list","words":["x"]}]}`,
 			`{"rules":[{"type":"pattern_match","pattern_regex":"\\d{3}-\\d{2}-\\d{4}"}]}`),
 	}, nil)
-	refusedWith(t, err, `guardrail rule "mask-ssn", reaching listener "appdb", has output rules`)
+	refusedWith(t, err, `guardrail rule "mask-ssn", bound to listener "appdb", has output rules`)
 }
 
 // A rule type the agent does not run is refused, and so is a pattern the
 // sidecar's engine cannot compile: the sidecar's own check runs over the
 // translation, as it does over a native block.
 func TestATranslatedBlockPassesTheNativeChecks(t *testing.T) {
-	_, err := foldGatewayRules(twoLanes(), "pay", []models.MirrorGuardrailRule{
+	_, err := foldGatewayRules(twoLanes(), "pay", []models.BoundRule{
 		guardrailOn("appdb", "odd", `{"rules":[{"type":"something_else","words":["x"]}]}`, ``),
 	}, nil)
 	refusedWith(t, err, `type "something_else"`)
 
-	_, err = foldGatewayRules(twoLanes(), "pay", []models.MirrorGuardrailRule{
+	_, err = foldGatewayRules(twoLanes(), "pay", []models.BoundRule{
 		guardrailOn("appdb", "lookahead", `{"rules":[{"type":"pattern_match","pattern_regex":"^(?!x)"}]}`, ``),
 	}, nil)
 	refusedWith(t, err, "bad pattern")
 }
 
-// A listener the configuration no longer has is skipped: its mirror goes in
-// the same write, and the binding with it.
-func TestARuleOnAGoneListenerIsSkipped(t *testing.T) {
-	cfg, err := foldGatewayRules(twoLanes(), "pay", []models.MirrorGuardrailRule{
+// A listener the configuration no longer has is a refusal, as it is for a
+// native rule: the configuration write that removes a bound listener is
+// refused first, so this is the handshake's backstop.
+func TestARuleOnAGoneListenerIsRefused(t *testing.T) {
+	_, err := foldGatewayRules(twoLanes(), "pay", []models.BoundRule{
 		guardrailOn("renamed", "r", `{"rules":[{"type":"deny_words_list","words":["x"]}]}`, ``),
 	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, l := range cfg.Listeners {
-		if l.Guardrails != nil {
-			t.Errorf("lane %q gained a rule bound to another listener", l.Name)
-		}
-	}
+	refusedWith(t, err, `guardrail rule "r" is bound to listener "renamed", which this sidecar's configuration no longer has`)
 }
 
 // A masking rule's entity types become ONE mask rule with strategy mask.
 func TestAMaskingRuleBecomesOneMaskRule(t *testing.T) {
-	cfg, err := foldGatewayRules(twoLanes(), "pay", nil, []models.MirrorDataMaskingRule{
+	cfg, err := foldGatewayRules(twoLanes(), "pay", nil, []models.BoundRule{
 		maskingOn("shell", "pii", []string{"EMAIL_ADDRESS", "US_SSN", "EMAIL_ADDRESS"}, nil),
 	})
 	if err != nil {
@@ -198,24 +192,24 @@ func TestAMaskingRuleBecomesOneMaskRule(t *testing.T) {
 
 // Custom entity types have no recognizer on a sidecar: refused.
 func TestACustomEntityTypeIsRefused(t *testing.T) {
-	_, err := foldGatewayRules(twoLanes(), "pay", nil, []models.MirrorDataMaskingRule{
+	_, err := foldGatewayRules(twoLanes(), "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "ids", []string{"EMAIL_ADDRESS"}, nil,
 			models.CustomEntityTypesEntry{Name: "ORDER_ID", Regex: "ORD-\\d+", Score: 0.9}),
 	})
-	refusedWith(t, err, `data masking rule "ids", reaching listener "appdb", has custom entity types`)
+	refusedWith(t, err, `data masking rule "ids", bound to listener "appdb", has custom entity types`)
 }
 
 // An entity the sidecar's detector does not load is refused: PERSON needs the
 // ner module, and the pii section can also leave one out.
 func TestAnEntityTheDetectorDoesNotLoadIsRefused(t *testing.T) {
-	_, err := foldGatewayRules(twoLanes(), "pay", nil, []models.MirrorDataMaskingRule{
+	_, err := foldGatewayRules(twoLanes(), "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "names", []string{"PERSON"}, nil),
 	})
 	refusedWith(t, err, `names entity "PERSON"`)
 
 	cfg := twoLanes()
 	cfg.PII = json.RawMessage(`{"entities":["EMAIL_ADDRESS"]}`)
-	_, err = foldGatewayRules(cfg, "pay", nil, []models.MirrorDataMaskingRule{
+	_, err = foldGatewayRules(cfg, "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "ssn", []string{"US_SSN"}, nil),
 	})
 	refusedWith(t, err, `names entity "US_SSN"`)
@@ -225,12 +219,12 @@ func TestAnEntityTheDetectorDoesNotLoadIsRefused(t *testing.T) {
 // mask less than the rule asks. At or above it, and absent, pass.
 func TestAThresholdBelowTheDetectorsIsRefused(t *testing.T) {
 	low, high := 0.3, 0.5
-	_, err := foldGatewayRules(twoLanes(), "pay", nil, []models.MirrorDataMaskingRule{
+	_, err := foldGatewayRules(twoLanes(), "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "pii", []string{"EMAIL_ADDRESS"}, &low),
 	})
 	refusedWith(t, err, "score threshold of 0.3, below the 0.4")
 
-	if _, err := foldGatewayRules(twoLanes(), "pay", nil, []models.MirrorDataMaskingRule{
+	if _, err := foldGatewayRules(twoLanes(), "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "pii", []string{"EMAIL_ADDRESS"}, &high),
 	}); err != nil {
 		t.Errorf("a threshold above the sidecar's was refused: %v", err)
@@ -238,13 +232,13 @@ func TestAThresholdBelowTheDetectorsIsRefused(t *testing.T) {
 
 	cfg := twoLanes()
 	cfg.PII = json.RawMessage(`{"threshold":0.6}`)
-	_, err = foldGatewayRules(cfg, "pay", nil, []models.MirrorDataMaskingRule{
+	_, err = foldGatewayRules(cfg, "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "pii", []string{"EMAIL_ADDRESS"}, &high),
 	})
 	refusedWith(t, err, "below the 0.6")
 
 	cfg.PII = json.RawMessage(`{"threshold":-1}`)
-	if _, err := foldGatewayRules(cfg, "pay", nil, []models.MirrorDataMaskingRule{
+	if _, err := foldGatewayRules(cfg, "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "pii", []string{"EMAIL_ADDRESS"}, &low),
 	}); err != nil {
 		t.Errorf("a sidecar with no threshold refused a rule: %v", err)
@@ -258,7 +252,7 @@ func TestANativeMaskRuleKeepsItsEntity(t *testing.T) {
 	cfg := twoLanes()
 	cfg.Listeners[0].Mask = &daemon.MaskConfig{Rules: json.RawMessage(
 		`[{"name":"emails","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]`)}
-	out, err := foldGatewayRules(cfg, "pay", nil, []models.MirrorDataMaskingRule{
+	out, err := foldGatewayRules(cfg, "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "pii", []string{"EMAIL_ADDRESS", "US_SSN"}, nil),
 	})
 	if err != nil {
@@ -279,7 +273,7 @@ func TestANativeMaskRuleKeepsItsEntity(t *testing.T) {
 
 	cfg.Listeners[0].Mask = &daemon.MaskConfig{Rules: json.RawMessage(
 		`[{"name":"emails","entity":"EMAIL_ADDRESS"}]`)}
-	out, err = foldGatewayRules(cfg, "pay", nil, []models.MirrorDataMaskingRule{
+	out, err = foldGatewayRules(cfg, "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "pii", []string{"EMAIL_ADDRESS"}, nil),
 	})
 	if err != nil {
@@ -295,7 +289,7 @@ func TestANativeMaskRuleKeepsItsEntity(t *testing.T) {
 func TestAnInheritedMaskBlockSurvives(t *testing.T) {
 	cfg := twoLanes()
 	cfg.Mask = &daemon.MaskConfig{Rules: json.RawMessage(`[{"name":"cards","entities":["CREDIT_CARD"]}]`)}
-	out, err := foldGatewayRules(cfg, "pay", nil, []models.MirrorDataMaskingRule{
+	out, err := foldGatewayRules(cfg, "pay", nil, []models.BoundRule{
 		maskingOn("appdb", "pii", []string{"US_SSN"}, nil),
 	})
 	if err != nil {
@@ -317,10 +311,10 @@ func TestATranslatedDocumentStillDecodesStrictly(t *testing.T) {
 		{Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432"},
 		{Name: "reporting", Protocol: "mysql", Listen: ":3306", Upstream: "warehouse:3306"},
 	}}
-	cfg, err := foldGatewayRules(base, "pay", []models.MirrorGuardrailRule{
+	cfg, err := foldGatewayRules(base, "pay", []models.BoundRule{
 		guardrailOn("appdb", "no-drop", `{"rules":[{"type":"deny_words_list","words":["DROP"],"message":"no"}]}`, ``),
 		guardrailOn("reporting", "no-load", `{"rules":[{"type":"pattern_match","pattern_regex":"(?i)load data"}]}`, ``),
-	}, []models.MirrorDataMaskingRule{
+	}, []models.BoundRule{
 		maskingOn("appdb", "pii", []string{"EMAIL_ADDRESS"}, nil),
 		maskingOn("reporting", "pii", []string{"EMAIL_ADDRESS"}, nil),
 	})

@@ -23,7 +23,7 @@ import (
 )
 
 // Request is the part of a rule request this package reads. The three openapi
-// request types carry these two fields under the same names.
+// request types carry these fields under the same names.
 type Request struct {
 	Kind services.SidecarRuleKind
 	// Name the rule is written under, and StoredName the name it currently
@@ -34,7 +34,8 @@ type Request struct {
 	Name, StoredName string
 	// Spec is the rule in the sidecar's own vocabulary. Nil means the request
 	// did not mention it, and StoredSpec stands in for it; an explicit JSON
-	// null clears it, which a bound rule is then refused for.
+	// null clears it, and a bound rule is then served as the translation of
+	// its agent fields below.
 	Spec json.RawMessage
 	// StoredSpec is what the rule carries in the database today, so a write
 	// that says nothing about the sidecar block keeps it rather than erasing
@@ -43,6 +44,13 @@ type Request struct {
 	// Targets is the listener set. Nil means the request did not mention it,
 	// which LEAVES THE BINDINGS ALONE; an empty slice unbinds everywhere.
 	Targets *[]openapi.SidecarRuleTarget
+	// The rule as the agent runs it. A rule bound to a listener with no
+	// sidecar block is served as its translation, which the gate checks
+	// instead; what cannot be translated is the 422 reason.
+	Input, Output        map[string]any
+	SupportedEntityTypes models.SupportedEntityTypesList
+	CustomEntityTypes    models.CustomEntityTypesList
+	ScoreThreshold       *float64
 }
 
 // EffectiveSpec is the sidecar block this write leaves on the rule.
@@ -98,11 +106,17 @@ func Refuse(c *gin.Context, orgID string, req Request) bool {
 	}
 
 	spec := req.EffectiveSpec()
-	if err := services.ValidateSidecarRuleSpec(req.Kind, req.Name, spec); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+	rule := models.BoundRule{RuleName: req.Name, Spec: spec}
+	if rule.HasSpec() || req.Kind == services.SidecarRuleAnalyzer {
+		if err := services.ValidateSidecarRuleSpec(req.Kind, req.Name, spec); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return true
+		}
+	} else if rule.AgentRule, err = agentRule(req); err != nil {
+		abort(c, err)
 		return true
 	}
-	err = services.ValidateSidecarRuleTargets(models.DB, orgID, req.Kind, req.Name, req.StoredName, spec, targets)
+	err = services.ValidateSidecarRuleTargets(models.DB, orgID, req.Kind, req.StoredName, rule, targets)
 	switch {
 	case err == nil:
 		return false
@@ -115,6 +129,21 @@ func Refuse(c *gin.Context, orgID string, req Request) bool {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 	}
 	return true
+}
+
+// agentRule is the request's agent fields in the shape composition reads
+// them from the row, so the gate checks the translation the handshake serves.
+func agentRule(req Request) (models.AgentRule, error) {
+	input, err := json.Marshal(req.Input)
+	if err != nil {
+		return models.AgentRule{}, fmt.Errorf("rendering the rule's input rules: %w", err)
+	}
+	output, err := json.Marshal(req.Output)
+	if err != nil {
+		return models.AgentRule{}, fmt.Errorf("rendering the rule's output rules: %w", err)
+	}
+	return models.AgentRule{Input: input, Output: output, SupportedEntityTypes: req.SupportedEntityTypes,
+		CustomEntityTypes: req.CustomEntityTypes, ScoreThreshold: req.ScoreThreshold}, nil
 }
 
 // effectiveTargets is where the rule will be bound AFTER this write, which is
@@ -200,6 +229,35 @@ func Load(db *gorm.DB, orgID string, kind services.SidecarRuleKind, ruleName str
 	out := make([]openapi.SidecarRuleTarget, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, openapi.SidecarRuleTarget{SidecarID: r.SidecarID, ListenerName: r.ListenerName})
+	}
+	return out, nil
+}
+
+// bindingKinds maps a kind to the name ListSidecarRuleBindings reports.
+var bindingKinds = map[services.SidecarRuleKind]string{
+	services.SidecarRuleGuardrail: "guardrail",
+	services.SidecarRuleMask:      "datamasking",
+	services.SidecarRuleAnalyzer:  "analyzer",
+}
+
+// LoadAll is Load for every rule of one kind in the organization, keyed by
+// rule name, in one query: the list pages read it to tell which traffic a
+// rule protects. A rule bound nowhere has no entry.
+func LoadAll(db *gorm.DB, orgID string, kind services.SidecarRuleKind) (map[string][]openapi.SidecarRuleTarget, error) {
+	org, err := uuid.Parse(orgID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := models.ListSidecarRuleBindings(db, org, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed reading the sidecar targets of the %s rules: %w", kind, err)
+	}
+	out := map[string][]openapi.SidecarRuleTarget{}
+	for _, r := range rows {
+		if r.Kind != bindingKinds[kind] {
+			continue
+		}
+		out[r.RuleName] = append(out[r.RuleName], openapi.SidecarRuleTarget{SidecarID: r.SidecarID, ListenerName: r.ListenerName})
 	}
 	return out, nil
 }

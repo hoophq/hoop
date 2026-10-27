@@ -367,9 +367,9 @@ type SidecarResponse struct {
 	// The stored daemon configuration.
 	Configuration daemon.Config `json:"configuration" swaggertype:"object"`
 	// BoundRules names the rules the control plane distributes to this
-	// sidecar, and the listener each one lands on: the rules bound to its
-	// listeners and the gateway rules reaching them through a mirror
-	// connection (source "gateway").
+	// sidecar, and the listener each one lands on: sidecar rules, and the
+	// gateway rules bound to its listeners, served translated (source
+	// "gateway").
 	//
 	// They are NOT inside Configuration and never will be: a bound rule is
 	// folded into the SERVED document on every handshake and nothing is
@@ -461,13 +461,14 @@ type SidecarRuleBinding struct {
 	RuleName string `json:"rule_name" example:"no-destructive-sql"`
 	// The listener that enforces it
 	ListenerName string `json:"listener_name" example:"appdb"`
-	// "gateway" when the rule is a gateway rule the listener runs translated,
-	// reached through its mirror connection; empty for a sidecar rule
+	// "gateway" when the rule is one the agent runs (input/output rules or
+	// entity types, no sidecar_spec) that the listener runs translated;
+	// empty for a sidecar rule
 	Source string `json:"source,omitempty" enums:"gateway" example:"gateway"`
 }
 
-// SidecarRuleSourceGateway marks a binding a gateway rule makes through a
-// mirror connection.
+// SidecarRuleSourceGateway marks a binding of a rule the agent runs, which
+// the listener runs translated.
 const SidecarRuleSourceGateway = "gateway"
 
 type SidecarCreateResponse struct {
@@ -852,10 +853,6 @@ type Connection struct {
 	// Managed By is a read only field that indicates who is managing this resource.
 	// When this attribute is set, this resource is considered immutable
 	ManagedBy *string `json:"managed_by" readonly:"true" example:""`
-	// The sidecar this connection mirrors a listener of; absent on an agent connection
-	SidecarID string `json:"sidecar_id,omitempty" readonly:"true" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
-	// The mirrored listener name; absent on an agent connection
-	SidecarListener string `json:"sidecar_listener,omitempty" readonly:"true" example:"appdb"`
 	// DEPRECATED: Tags to classify the connection
 	Tags []string `json:"tags" example:"prod"`
 	// Tags to identify the connection

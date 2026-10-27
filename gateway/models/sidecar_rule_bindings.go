@@ -35,13 +35,24 @@ type SidecarRuleTarget struct {
 	Position *int `json:"-"`
 }
 
+// AgentRule is the gateway's own columns of a guardrail or data masking
+// rule: what the agent runs. A bound rule with no sidecar_spec is served as
+// their translation (services/sidecargatewayrules.go).
+type AgentRule struct {
+	Input                json.RawMessage          `gorm:"column:input"`
+	Output               json.RawMessage          `gorm:"column:output"`
+	SupportedEntityTypes SupportedEntityTypesList `gorm:"column:supported_entity_types;serializer:json"`
+	CustomEntityTypes    CustomEntityTypesList    `gorm:"column:custom_entity_types;serializer:json"`
+	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
+}
+
 // BoundRule is a rule the control plane must fold into one sidecar's served
 // configuration: which listener it goes on, and the block that listener gets.
 //
 // Spec is sidecar_spec verbatim -- the rule as the SIDECAR spells it, which is
 // the block the lane receives rather than a translation of one. Composition
-// places it; nothing converts it. The gateway's own columns beside it are that
-// feature's, and this layer never reads them.
+// places it. When it is null the rule is one the agent runs, and composition
+// translates AgentRule instead, after the lane's native rules.
 //
 // One shape for all three features: they differ in what the block contains,
 // not in how it is bound or delivered.
@@ -49,7 +60,12 @@ type BoundRule struct {
 	RuleName     string
 	ListenerName string
 	Spec         json.RawMessage `gorm:"column:sidecar_spec"`
+	AgentRule    `gorm:"embedded"`
 }
+
+// HasSpec reports whether the rule is in the sidecar's vocabulary. Without
+// one, composition translates its agent fields.
+func (b BoundRule) HasSpec() bool { return len(b.Spec) > 0 && string(b.Spec) != "null" }
 
 // SidecarRuleBinding names one rule bound to one listener, for the READ side.
 //
@@ -61,6 +77,9 @@ type SidecarRuleBinding struct {
 	Kind         string `json:"kind"`
 	RuleName     string `json:"rule_name"`
 	ListenerName string `json:"listener_name"`
+	// Translated is a rule with no sidecar_spec: the listener runs the
+	// translation of what the agent runs.
+	Translated bool `json:"translated"`
 }
 
 // ListSidecarRuleBindings returns every rule bound to any sidecar in the
@@ -77,13 +96,19 @@ type SidecarRuleBinding struct {
 func ListSidecarRuleBindings(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]SidecarRuleBinding, error) {
 	var out []SidecarRuleBinding
 	err := db.Raw(`
-	SELECT sidecar_id, 'guardrail' AS kind, guardrail_rule_name AS rule_name, listener_name
-	FROM private.guardrail_rules_listeners WHERE org_id = @org AND (@sc = '' OR sidecar_id::text = @sc)
+	SELECT b.sidecar_id, 'guardrail' AS kind, b.guardrail_rule_name AS rule_name, b.listener_name,
+	       (r.sidecar_spec IS NULL OR r.sidecar_spec = 'null'::jsonb) AS translated
+	FROM private.guardrail_rules_listeners b
+	JOIN private.guardrail_rules r ON r.org_id = b.org_id AND r.name = b.guardrail_rule_name
+	WHERE b.org_id = @org AND (@sc = '' OR b.sidecar_id::text = @sc)
 	UNION ALL
-	SELECT sidecar_id, 'datamasking', datamasking_rule_name, listener_name
-	FROM private.datamasking_rules_listeners WHERE org_id = @org AND (@sc = '' OR sidecar_id::text = @sc)
+	SELECT b.sidecar_id, 'datamasking', b.datamasking_rule_name, b.listener_name,
+	       (r.sidecar_spec IS NULL OR r.sidecar_spec = 'null'::jsonb)
+	FROM private.datamasking_rules_listeners b
+	JOIN private.datamasking_rules r ON r.org_id = b.org_id AND r.name = b.datamasking_rule_name
+	WHERE b.org_id = @org AND (@sc = '' OR b.sidecar_id::text = @sc)
 	UNION ALL
-	SELECT sidecar_id, 'analyzer', analyzer_rule_name, listener_name
+	SELECT sidecar_id, 'analyzer', analyzer_rule_name, listener_name, false
 	FROM private.ai_session_analyzer_rules_listeners WHERE org_id = @org AND (@sc = '' OR sidecar_id::text = @sc)
 	ORDER BY sidecar_id, listener_name, kind, rule_name`,
 		sql.Named("org", orgID), sql.Named("sc", sidecarID)).Scan(&out).Error

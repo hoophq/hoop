@@ -324,8 +324,8 @@ func List(c *gin.Context) {
 }
 
 // bindingsBySidecar groups the org's rule bindings by sidecar id, for one
-// sidecar when id is set and for every one otherwise: the rules bound to its
-// listeners, then the gateway rules reaching them through a mirror.
+// sidecar when id is set and for every one otherwise. A rule with no
+// sidecar_spec, served translated, carries source "gateway".
 //
 // A failure does not fail the request: the bindings annotate a page whose
 // subject is the sidecar, and taking that page down over them would hide the
@@ -344,19 +344,11 @@ func bindingsBySidecar(orgID, sidecarID string) (bindings map[string][]openapi.S
 		return out, false
 	}
 	for _, r := range rows {
-		out[r.SidecarID] = append(out[r.SidecarID], openapi.SidecarRuleBinding{
-			Kind: r.Kind, RuleName: r.RuleName, ListenerName: r.ListenerName,
-		})
-	}
-	reaching, err := models.ListMirrorRuleBindings(models.DB, org, sidecarID)
-	if err != nil {
-		log.Warnf("failed listing the gateway rules reaching the organization's sidecars, err=%v", err)
-		return map[string][]openapi.SidecarRuleBinding{}, false
-	}
-	for _, r := range reaching {
-		out[r.SidecarID] = append(out[r.SidecarID], openapi.SidecarRuleBinding{
-			Kind: r.Kind, RuleName: r.RuleName, ListenerName: r.ListenerName, Source: openapi.SidecarRuleSourceGateway,
-		})
+		b := openapi.SidecarRuleBinding{Kind: r.Kind, RuleName: r.RuleName, ListenerName: r.ListenerName}
+		if r.Translated {
+			b.Source = openapi.SidecarRuleSourceGateway
+		}
+		out[r.SidecarID] = append(out[r.SidecarID], b)
 	}
 	return out, true
 }

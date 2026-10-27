@@ -111,10 +111,16 @@ func ValidateSidecarRuleSpec(kind SidecarRuleKind, ruleName string, spec json.Ra
 // refusals on the sidecar,
 // which means a rule saved without this check bricks a fleet at its next
 // restart rather than at the save.
+// rule is the rule as written: RuleName is the name being written and Spec
+// its sidecar block. A rule with no Spec is one the agent runs; its
+// translation for each target is what the lane checks get, and what the
+// composed check folds in. Translation depends on the target's pii section,
+// so it runs per target, not once up front.
 // storedName is the name the rule's bindings currently sit under, so the
 // composed check can leave the version already in the database out. A rename
-// makes it differ from ruleName; empty means the rule is new.
-func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind, ruleName, storedName string, spec json.RawMessage, targets []models.SidecarRuleTarget) error {
+// makes it differ from rule.RuleName; empty means the rule is new.
+func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind, storedName string, rule models.BoundRule, targets []models.SidecarRuleTarget) error {
+	ruleName := rule.RuleName
 	seen := map[string]*models.Sidecar{}
 	order := []string{}
 	candidates := map[string][]models.BoundRule{}
@@ -166,15 +172,30 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 			return fmt.Errorf("sidecar %q has %d listeners named %q; a rule must name exactly one",
 				sc.Name, matches, t.ListenerName)
 		}
+		spec := rule.Spec
+		if !rule.HasSpec() {
+			// The agent rule as THIS sidecar would run it. A failed
+			// translation is the refusal; a translation that passes gets
+			// every check a native block gets.
+			bound := rule
+			bound.ListenerName = t.ListenerName
+			var err error
+			if spec, err = translatedSpec(kind, bound, daemon.Config(sc.Configuration)); err != nil {
+				return err
+			}
+			if err := ValidateSidecarRuleSpec(kind, ruleName, spec); err != nil {
+				return err
+			}
+		}
 		if err := validateSpecForLane(kind, ruleName, spec, sc.Name, *lane, sc.Configuration.Analyzer != nil); err != nil {
 			return err
 		}
-		candidates[t.SidecarID] = append(candidates[t.SidecarID], models.BoundRule{
-			RuleName: ruleName, ListenerName: t.ListenerName, Spec: spec,
-		})
+		candidate := rule
+		candidate.ListenerName = t.ListenerName
+		candidates[t.SidecarID] = append(candidates[t.SidecarID], candidate)
 	}
 	if kind == SidecarRuleAnalyzer && len(targets) > 0 {
-		if err := checkApprovalRuleExists(db, orgID, ruleName, spec); err != nil {
+		if err := checkApprovalRuleExists(db, orgID, ruleName, rule.Spec); err != nil {
 			return err
 		}
 	}
