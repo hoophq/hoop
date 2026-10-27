@@ -66,6 +66,15 @@ jobs:
           }
       - name: Assert the agent image holds no sidecar and no database address
         run: "$RUNNER_TEMP/support-agent/tests/agent_image.sh"
+      # An IPv6 upstream is searched in the project's own files, README.md
+      # among them, so the README must name no IPv6 literal.
+      - name: Assert the same with an IPv6 upstream
+        run: |
+          cfg="$RUNNER_TEMP/support-agent/deploy/sidecar/sidecar.yaml"
+          sed -i "s#^\(    upstream: \)[^ ]*#\1'[::1]:5432'#" "$cfg"
+          grep -q "^    upstream: '\[::1\]:5432'" "$cfg" \
+            || { echo "::error::could not set an IPv6 upstream in $cfg"; exit 1; }
+          "$RUNNER_TEMP/support-agent/tests/agent_image.sh"
       - name: Validate deploy/sidecar against its pinned module release
         run: |
           terraform -chdir="$TEMPLATE/deploy/sidecar" init -input=false -backend=false
