@@ -51,7 +51,7 @@ func TestARuleApprovalModeIsServed(t *testing.T) {
 	}}}
 	analyzers := []models.BoundRule{{RuleName: "hold", ListenerName: "agents",
 		Spec: json.RawMessage(`{"high":"require_approval","approval_rule":"r","approval_mode":"return"}`)}}
-	composed, err := foldSidecarRules(cfg, "pay", nil, nil, analyzers)
+	composed, err := foldSidecarRules(cfg, nil, nil, analyzers)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,9 +26,6 @@ import (
 // sidecar is authored and stored in the sidecar's own vocabulary
 // (sidecar_spec, migration 000121), so there is no translation step to get
 // wrong and no rule that saves cleanly and arrives meaning something else.
-// The one exception is a rule the agent runs, bound to a listener with no
-// sidecar_spec: sidecargatewayrules.go translates it, after the native
-// rules, and refuses what it cannot translate.
 //
 // It only ever touches a listener's guardrails, mask and analyzer blocks.
 // Those are exactly the sections sidecar/daemon/reload.go strips into its
@@ -104,7 +101,7 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 	default:
 		return cfg, fmt.Errorf("cannot compose a candidate %s rule", skipKind)
 	}
-	return foldSidecarRules(cfg, sc.Name, guardrails, masking, analyzers)
+	return foldSidecarRules(cfg, guardrails, masking, analyzers)
 }
 
 // withoutRule drops every binding of one rule, by the name the bindings are
@@ -125,34 +122,7 @@ func withoutRule(bound []models.BoundRule, name string) []models.BoundRule {
 // database: that the result still decodes strictly (no key an older sidecar
 // would refuse), and that nothing a rule contributes lands outside the
 // hot-reloadable sections.
-//
-// A rule with no sidecar_spec is one the agent runs. It is folded last,
-// translated (foldGatewayRules), so a listener's native rules keep their
-// position.
-func foldSidecarRules(cfg daemon.Config, sidecarName string, guardrails, masking, analyzers []models.BoundRule) (daemon.Config, error) {
-	nativeGuardrails, agentGuardrails := splitBySpec(guardrails)
-	nativeMasking, agentMasking := splitBySpec(masking)
-	cfg, err := foldNativeRules(cfg, nativeGuardrails, nativeMasking, analyzers)
-	if err != nil {
-		return cfg, err
-	}
-	return foldGatewayRules(cfg, sidecarName, agentGuardrails, agentMasking)
-}
-
-// splitBySpec parts the rules in the sidecar's vocabulary from the agent's.
-func splitBySpec(bound []models.BoundRule) (native, agent []models.BoundRule) {
-	for _, b := range bound {
-		if b.HasSpec() {
-			native = append(native, b)
-		} else {
-			agent = append(agent, b)
-		}
-	}
-	return native, agent
-}
-
-// foldNativeRules places every stored sidecar_spec on its listener.
-func foldNativeRules(cfg daemon.Config, guardrails, masking, analyzers []models.BoundRule) (daemon.Config, error) {
+func foldSidecarRules(cfg daemon.Config, guardrails, masking, analyzers []models.BoundRule) (daemon.Config, error) {
 	if len(guardrails) == 0 && len(masking) == 0 && len(analyzers) == 0 {
 		return cfg, nil
 	}

@@ -323,8 +323,7 @@ func List(c *gin.Context) {
 }
 
 // bindingsBySidecar groups the org's rule bindings by sidecar id, for one
-// sidecar when id is set and for every one otherwise. A rule with no
-// sidecar_spec, served translated, carries source "gateway".
+// sidecar when id is set and for every one otherwise.
 //
 // A failure does not fail the request: the bindings annotate a page whose
 // subject is the sidecar, and taking that page down over them would hide the
@@ -343,11 +342,9 @@ func bindingsBySidecar(orgID, sidecarID string) (bindings map[string][]openapi.S
 		return out, false
 	}
 	for _, r := range rows {
-		b := openapi.SidecarRuleBinding{Kind: r.Kind, RuleName: r.RuleName, ListenerName: r.ListenerName}
-		if r.Translated {
-			b.Source = openapi.SidecarRuleSourceGateway
-		}
-		out[r.SidecarID] = append(out[r.SidecarID], b)
+		out[r.SidecarID] = append(out[r.SidecarID], openapi.SidecarRuleBinding{
+			Kind: r.Kind, RuleName: r.RuleName, ListenerName: r.ListenerName,
+		})
 	}
 	return out, true
 }
@@ -721,13 +718,10 @@ func Handshake(c *gin.Context) {
 		// Recorded even on refusal, with the reason: a later write knows
 		// this build is too old instead of reading it as never seen, and
 		// the page shows why the plane refused. Not last_seen_at: a sidecar
-		// that cannot run is not recently seen. A gateway rule the sidecar
-		// cannot run is recorded the same way: the sidecar keeps its last
-		// good rules, and the page names the rule.
+		// that cannot run is not recently seen.
 		var missing services.ErrSidecarCapabilityMissing
-		var refused services.ErrSidecarGatewayRuleRefused
-		if errors.As(err, &missing) || errors.As(err, &refused) {
-			if rerr := models.RecordSidecarServeRefusal(models.DB, sidecar.ID, req.Version, capabilities, err.Error()); rerr != nil {
+		if errors.As(err, &missing) {
+			if rerr := models.RecordSidecarServeRefusal(models.DB, sidecar.ID, req.Version, capabilities, missing.Error()); rerr != nil {
 				log.With("sidecar", sidecar.ID).Warnf("failed recording the refused handshake, reason=%v", rerr)
 			}
 		}
@@ -1043,14 +1037,12 @@ func Configuration(c *gin.Context) {
 }
 
 // answerServeError answers a document the plane will not serve. A missing
-// capability and a gateway rule the sidecar cannot run are 422, which a
-// sidecar reports as a config it cannot build and survives by keeping its
-// current rules; the refusal names the upgrade or the rule.
+// capability is 422, which a sidecar reports as a config it cannot build and
+// survives by keeping its current rules; the refusal names the upgrade.
 func answerServeError(c *gin.Context, err error) {
 	var missing services.ErrSidecarCapabilityMissing
-	var refused services.ErrSidecarGatewayRuleRefused
-	if errors.As(err, &missing) || errors.As(err, &refused) {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+	if errors.As(err, &missing) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": missing.Error()})
 		return
 	}
 	httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")

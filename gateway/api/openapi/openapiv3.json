@@ -8691,7 +8691,7 @@
             "type": "string"
           },
           "bound_rules": {
-            "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on: sidecar rules, and the\ngateway rules bound to its listeners, served translated (source\n\"gateway\").\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
+            "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on.\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
             "items": {
               "$ref": "#/components/schemas/openapi.SidecarRuleBinding"
             },
@@ -9020,7 +9020,7 @@
             "type": "string"
           },
           "bound_rules": {
-            "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on: sidecar rules, and the\ngateway rules bound to its listeners, served translated (source\n\"gateway\").\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
+            "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on.\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
             "items": {
               "$ref": "#/components/schemas/openapi.SidecarRuleBinding"
             },
@@ -9267,14 +9267,6 @@
           "rule_name": {
             "description": "The rule's name",
             "example": "no-destructive-sql",
-            "type": "string"
-          },
-          "source": {
-            "description": "\"gateway\" when the rule is one the agent runs (input/output rules or\nentity types, no sidecar_spec) that the listener runs translated;\nempty for a sidecar rule",
-            "enum": [
-              "gateway"
-            ],
-            "example": "gateway",
             "type": "string"
           }
         },
@@ -15183,16 +15175,6 @@
             },
             "description": "Conflict"
           },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
           "500": {
             "content": {
               "application/json": {
@@ -15348,26 +15330,6 @@
               }
             },
             "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {

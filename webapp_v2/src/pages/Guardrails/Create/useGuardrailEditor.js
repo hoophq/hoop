@@ -28,7 +28,7 @@ const withKey = (rule) => ({ ...emptyRule(), ...rule, key: Math.random().toStrin
 
 // The spec is the UI's truth for statement rules; the agent `input` half is
 // read only when there is no spec, since save rewrites it from the spec. An
-// agent rule has no name, so it takes the one the gateway's translation gives it.
+// agent rule has no name, so it takes the guardrail's (numbered when several).
 function loadRules(guardrail) {
   const spec = guardrail?.sidecar_spec?.rules
   const input = guardrail?.input?.rules ?? []

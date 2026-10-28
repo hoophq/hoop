@@ -9,7 +9,7 @@ import DataMaskingFields from '@/pages/Features/DataMasking/Create/DataMaskingFi
 import { useDataMaskingEditor } from '@/pages/Features/DataMasking/Create/useDataMaskingEditor'
 import GuardrailFields from '@/pages/Guardrails/Create/GuardrailFields'
 import { useGuardrailEditor } from '@/pages/Guardrails/Create/useGuardrailEditor'
-import { RULE_APIS, findRule, lanesAsTargets, ruleErrorMessage, targetLanes } from '../rules'
+import { RULE_APIS, lanesAsTargets, ruleErrorMessage, targetLanes } from '../rules'
 
 function Footer({ editor, onCancel }) {
   return (
@@ -86,7 +86,9 @@ function Form({ feature, sidecar, listener, ruleName, onClose, onSaved }) {
     if (!ruleName) return
     let cancelled = false
     const load = async () => {
-      const { data } = await api.get(await findRule(api, ruleName))
+      const found = (await api.list()).find((r) => r.name === ruleName)
+      if (!found) throw new Error(`Rule "${ruleName}" was not found.`)
+      const { data } = await api.get(found)
       if (cancelled) return
       setStored(data)
       setStatus('ready')

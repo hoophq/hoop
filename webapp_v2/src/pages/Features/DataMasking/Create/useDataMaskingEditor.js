@@ -22,7 +22,7 @@ export const emptyRule = () => ({
 export const emptyCustomEntity = () => ({ key: newKey(), name: '', regex: '' })
 
 // The spec is the UI's truth; without one, each agent entity group becomes a
-// rule with the strategy the gateway's translation applies.
+// rule masked in place, the closest sidecar strategy to what a DLP provider does.
 function loadRules(stored) {
   const spec = stored?.sidecar_spec?.rules
   const rules = spec

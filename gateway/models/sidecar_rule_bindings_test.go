@@ -382,8 +382,8 @@ func TestEditingABoundRuleIsNotCountedTwice(t *testing.T) {
 
 	// The same rule, edited. No license, so the cap is one rule per process.
 	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID,
-		services.SidecarRuleGuardrail, rule.Name,
-		models.BoundRule{RuleName: rule.Name, Spec: json.RawMessage(fmt.Sprintf(spec, "truncate"))}, targets)
+		services.SidecarRuleGuardrail, rule.Name, rule.Name,
+		json.RawMessage(fmt.Sprintf(spec, "truncate")), targets)
 	if err != nil {
 		t.Fatalf("editing the one bound rule was refused at the cap: %v", err)
 	}
@@ -391,8 +391,8 @@ func TestEditingABoundRuleIsNotCountedTwice(t *testing.T) {
 	// A rename still finds the stored version, which sits under the old name
 	// until the write cascades it.
 	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID,
-		services.SidecarRuleGuardrail, rule.Name,
-		models.BoundRule{RuleName: "no-drop-v2", Spec: json.RawMessage(fmt.Sprintf(spec, "truncate"))}, targets)
+		services.SidecarRuleGuardrail, "no-drop-v2", rule.Name,
+		json.RawMessage(fmt.Sprintf(spec, "truncate")), targets)
 	if err != nil {
 		t.Fatalf("renaming the one bound rule was refused at the cap: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestEditingABoundRuleIsNotCountedTwice(t *testing.T) {
 	// The cap itself still holds: a SECOND rule on the same lane is over it.
 	second := json.RawMessage(`{"rules":[{"name":"no-delete","type":"operation","operations":["delete"]}]}`)
 	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID,
-		services.SidecarRuleGuardrail, "", models.BoundRule{RuleName: "no-delete", Spec: second}, targets)
+		services.SidecarRuleGuardrail, "no-delete", "", second, targets)
 	if err == nil {
 		t.Fatal("a second guardrail rule on the free tier must be refused")
 	}
@@ -456,14 +456,14 @@ func TestASecondAnalyzerRuleOnOneListenerIsRefusedAtTheWrite(t *testing.T) {
 	// itself: the stored version is left out and the incoming one takes its
 	// place.
 	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID,
-		services.SidecarRuleAnalyzer, first.Name, models.BoundRule{RuleName: first.Name, Spec: json.RawMessage(spec)}, targets)
+		services.SidecarRuleAnalyzer, first.Name, first.Name, json.RawMessage(spec), targets)
 	if err != nil {
 		t.Fatalf("editing the rule that owns the lane was refused: %v", err)
 	}
 
 	// A DIFFERENT rule on the same lane is the conflict.
 	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID,
-		services.SidecarRuleAnalyzer, "", models.BoundRule{RuleName: "risk-b", Spec: json.RawMessage(spec)}, targets)
+		services.SidecarRuleAnalyzer, "risk-b", "", json.RawMessage(spec), targets)
 	if err == nil {
 		t.Fatal("a second analyzer rule on one listener must be refused at the write")
 	}
@@ -614,7 +614,7 @@ func TestABoundAnalyzerRuleCarriesItsApprovalRuleIntoTheServedConfig(t *testing.
 	// The write gate accepts it: the hold names a rule that exists, on a lane
 	// whose client resends the statement.
 	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID,
-		services.SidecarRuleAnalyzer, "", models.BoundRule{RuleName: rule.Name, Spec: json.RawMessage(spec)}, targets)
+		services.SidecarRuleAnalyzer, rule.Name, "", json.RawMessage(spec), targets)
 	if err != nil {
 		t.Fatalf("a hold naming an existing sidecar approval rule was refused: %v", err)
 	}
@@ -651,7 +651,7 @@ func TestABoundAnalyzerRuleCarriesItsApprovalRuleIntoTheServedConfig(t *testing.
 	// once per held statement, long after the admin left the form.
 	missing := `{"high":"require_review","approval_rule":"nobody-review"}`
 	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID,
-		services.SidecarRuleAnalyzer, rule.Name, models.BoundRule{RuleName: rule.Name, Spec: json.RawMessage(missing)}, targets)
+		services.SidecarRuleAnalyzer, rule.Name, rule.Name, json.RawMessage(missing), targets)
 	if err == nil {
 		t.Fatal("a hold naming a missing approval rule must be refused at the save")
 	}
@@ -699,15 +699,15 @@ func TestAnAnalyzerRuleReachesALaneWithoutItsOwnBlock(t *testing.T) {
 		t.Fatalf("seed analyzer rule: %v", err)
 	}
 
-	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleAnalyzer, "",
-		models.BoundRule{RuleName: rule.Name, Spec: json.RawMessage(spec)}, []models.SidecarRuleTarget{{SidecarID: without.ID, ListenerName: "appdb"}})
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleAnalyzer,
+		rule.Name, "", json.RawMessage(spec), []models.SidecarRuleTarget{{SidecarID: without.ID, ListenerName: "appdb"}})
 	if err == nil || !strings.Contains(err.Error(), "has no analyzer section") {
 		t.Fatalf("err = %v; want the missing analyzer section named", err)
 	}
 
 	targets := []models.SidecarRuleTarget{{SidecarID: with.ID, ListenerName: "appdb"}}
-	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleAnalyzer, "",
-		models.BoundRule{RuleName: rule.Name, Spec: json.RawMessage(spec)}, targets)
+	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleAnalyzer,
+		rule.Name, "", json.RawMessage(spec), targets)
 	if err != nil {
 		t.Fatalf("a lane without a block on a sidecar with the analyzer section was refused: %v", err)
 	}
@@ -1133,8 +1133,8 @@ func TestABindingToAConfigFileSidecarIsRefused(t *testing.T) {
 	if err := models.CreateSidecar(models.DB, sc); err != nil {
 		t.Fatalf("seed sidecar: %v", err)
 	}
-	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail, "",
-		models.BoundRule{RuleName: "r", Spec: json.RawMessage(`{"rules":[{"name":"r","type":"deny_words_list","words":["x"]}]}`)},
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail, "r", "",
+		json.RawMessage(`{"rules":[{"name":"r","type":"deny_words_list","words":["x"]}]}`),
 		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}})
 	if err == nil || !strings.Contains(err.Error(), "config file") {
 		t.Fatalf("want a refusal naming the config file, got %v", err)
@@ -1437,11 +1437,11 @@ func TestAnEditKeepsABindingToAConfigFileSidecar(t *testing.T) {
 
 	old := models.SidecarRuleTarget{SidecarID: sc.ID, ListenerName: "appdb"}
 	if err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail,
-		"held", models.BoundRule{RuleName: "held", Spec: spec}, []models.SidecarRuleTarget{old}); err != nil {
+		"held", "held", spec, []models.SidecarRuleTarget{old}); err != nil {
 		t.Fatalf("an edit that keeps the old binding was refused: %v", err)
 	}
 	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail,
-		"held", models.BoundRule{RuleName: "held", Spec: spec}, []models.SidecarRuleTarget{old, {SidecarID: sc.ID, ListenerName: "other"}})
+		"held", "held", spec, []models.SidecarRuleTarget{old, {SidecarID: sc.ID, ListenerName: "other"}})
 	if err == nil || !strings.Contains(err.Error(), "config file") {
 		t.Fatalf("want a new binding refused, got %v", err)
 	}

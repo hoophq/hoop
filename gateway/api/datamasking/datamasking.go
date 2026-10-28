@@ -256,7 +256,6 @@ func Post(c *gin.Context) {
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
 		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: "",
 		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
-		SupportedEntityTypes: supportedEntityTypes, CustomEntityTypes: customEntityTypes, ScoreThreshold: req.ScoreThreshold,
 	}) {
 		return
 	}
@@ -387,7 +386,6 @@ func Put(c *gin.Context) {
 	bind := sidecarbind.Request{
 		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: existing.Name,
 		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
-		SupportedEntityTypes: supportedEntityTypes, CustomEntityTypes: customEntityTypes, ScoreThreshold: req.ScoreThreshold,
 	}
 	if !requireRedactProvider(c, req, bind.EffectiveSpec()) {
 		return
@@ -476,7 +474,6 @@ func List(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing data masking rules: %v", err)
 		return
 	}
-
 	// The web app reads the targets to show which traffic the rule protects.
 	targets, err := sidecarbind.LoadAll(models.DB, ctx.GetOrgID(), services.SidecarRuleMask)
 	if err != nil {

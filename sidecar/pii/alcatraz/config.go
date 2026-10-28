@@ -56,16 +56,6 @@ type piiSection struct {
 // linked no detector at all. The sidecar reports that case separately
 // (checkPIIPlugin), and it can no longer be reached through configuration.
 func PluginFromConfig(raw json.RawMessage) (Plugin, error) {
-	det, err := DetectorFromConfig(raw)
-	if err != nil {
-		return nil, err
-	}
-	return det, nil
-}
-
-// DetectorFromConfig is PluginFromConfig returning the concrete Detector, for
-// a caller that reads its entity set and threshold without scanning anything.
-func DetectorFromConfig(raw json.RawMessage) (*Detector, error) {
 	var s piiSection
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &s); err != nil {

@@ -22,14 +22,10 @@ type DatamaskingRuleListener struct {
 
 func (DatamaskingRuleListener) TableName() string { return "private.datamasking_rules_listeners" }
 
-// ListDataMaskingRulesForSidecar is ListGuardrailRulesForSidecar for data
-// masking: a rule with no sidecar_spec carries its entity lists and score
-// threshold, which composition translates.
 func ListDataMaskingRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]BoundRule, error) {
 	var out []BoundRule
 	err := db.Raw(`
-	SELECT b.listener_name, r.name AS rule_name, r.sidecar_spec,
-	       r.supported_entity_types, r.custom_entity_types, r.score_threshold
+	SELECT b.listener_name, r.name AS rule_name, r.sidecar_spec
 	FROM private.datamasking_rules_listeners b
 	JOIN private.datamasking_rules r ON r.org_id = b.org_id AND r.name = b.datamasking_rule_name
 	WHERE b.org_id = ? AND b.sidecar_id = ?

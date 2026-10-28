@@ -131,7 +131,7 @@ func TestSplitSidecarConfigurationServesTheSameDocument(t *testing.T) {
 		}
 	}
 
-	folded, err := foldSidecarRules(stripped, "pay", guardrails, masking, analyzers)
+	folded, err := foldSidecarRules(stripped, guardrails, masking, analyzers)
 	if err != nil {
 		t.Fatal(err)
 	}

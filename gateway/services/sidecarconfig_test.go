@@ -81,7 +81,7 @@ func boundEverything() (daemon.Config, []models.BoundRule, []models.BoundRule, [
 // checks it here, rather than a hand-listed set of keys.
 func TestComposedDocumentStillDecodesStrictly(t *testing.T) {
 	cfg, guardrails, masking, analyzers := boundEverything()
-	composed, err := foldSidecarRules(cfg, "pay", guardrails, masking, analyzers)
+	composed, err := foldSidecarRules(cfg, guardrails, masking, analyzers)
 	if err != nil {
 		t.Fatalf("composition failed: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestCompositionNeverReachesTheBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	composed, err := foldSidecarRules(cfg, "pay", guardrails, masking, analyzers)
+	composed, err := foldSidecarRules(cfg, guardrails, masking, analyzers)
 	if err != nil {
 		t.Fatalf("composition failed: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestCompositionLeavesTheStoredDocumentAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, err := foldSidecarRules(cfg, "pay", guardrails, masking, analyzers); err != nil {
+	if _, err := foldSidecarRules(cfg, guardrails, masking, analyzers); err != nil {
 		t.Fatalf("composition failed: %v", err)
 	}
 	again, err := json.Marshal(cfg)
@@ -195,7 +195,7 @@ func TestCompositionRefusesARuleBoundToAMissingListener(t *testing.T) {
 	cfg, guardrails, _, _ := boundEverything()
 	cfg.Listeners[0].Name = "appdb-renamed"
 
-	_, err := foldSidecarRules(cfg, "pay", guardrails, nil, nil)
+	_, err := foldSidecarRules(cfg, guardrails, nil, nil)
 	if err == nil {
 		t.Fatal("want a refusal for a rule bound to a listener that no longer exists")
 	}
@@ -220,15 +220,15 @@ func TestABindingWithNoListenerIsRefused(t *testing.T) {
 		fold  func(daemon.Config, []models.BoundRule) error
 	}{
 		{"guardrail", guardrails, func(c daemon.Config, b []models.BoundRule) error {
-			_, err := foldSidecarRules(c, "pay", b, nil, nil)
+			_, err := foldSidecarRules(c, b, nil, nil)
 			return err
 		}},
 		{"data masking", masking, func(c daemon.Config, b []models.BoundRule) error {
-			_, err := foldSidecarRules(c, "pay", nil, b, nil)
+			_, err := foldSidecarRules(c, nil, b, nil)
 			return err
 		}},
 		{"analyzer", analyzers, func(c daemon.Config, b []models.BoundRule) error {
-			_, err := foldSidecarRules(c, "pay", nil, nil, b)
+			_, err := foldSidecarRules(c, nil, nil, b)
 			return err
 		}},
 	} {
@@ -255,7 +255,7 @@ func TestTwoAnalyzerRulesOnOneListenerAreRefused(t *testing.T) {
 	second := analyzers[0]
 	second.RuleName = "also-risky"
 
-	_, err := foldSidecarRules(cfg, "pay", nil, nil, append(analyzers, second))
+	_, err := foldSidecarRules(cfg, nil, nil, append(analyzers, second))
 	if err == nil {
 		t.Fatal("want a refusal for two analyzer rules on one listener")
 	}
@@ -289,7 +289,7 @@ func TestAnAnalyzerRuleKeepsTheListenersOwnControls(t *testing.T) {
 		HighRisk: "warn",
 	}
 
-	composed, err := foldSidecarRules(cfg, "pay", nil, nil, analyzers)
+	composed, err := foldSidecarRules(cfg, nil, nil, analyzers)
 	if err != nil {
 		t.Fatalf("composition failed: %v", err)
 	}
@@ -341,14 +341,14 @@ func TestASpecWithAnUnknownKeyIsRefused(t *testing.T) {
 	// It must decode.
 	guardrails[0].Spec = json.RawMessage(`{"mode":"observe","rules":[{"name":"r",` +
 		`"type":"operation","operations":["drop"]}]}`)
-	if _, err := foldSidecarRules(cfg, "pay", guardrails, nil, nil); err != nil {
+	if _, err := foldSidecarRules(cfg, guardrails, nil, nil); err != nil {
 		t.Fatalf("a field the daemon declares must decode: %v", err)
 	}
 
 	guardrails[0].Spec = json.RawMessage(`{"rules":[{"name":"r","type":"operation",` +
 		`"operations":["drop"]}],"enforcement":"observe"}`)
 
-	if _, err := foldSidecarRules(cfg, "pay", guardrails, nil, nil); err == nil {
+	if _, err := foldSidecarRules(cfg, guardrails, nil, nil); err == nil {
 		t.Fatal("want a refusal for a spec carrying a key no sidecar declares")
 	}
 }

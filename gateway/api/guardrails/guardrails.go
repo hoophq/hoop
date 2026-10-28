@@ -64,8 +64,8 @@ func validateOssRulesLimitations(req *openapi.GuardRailRuleRequest) error {
 //	@Accept			json
 //	@Produce		json
 //	@Param			request		body		openapi.GuardRailRuleRequest	true	"The request body resource"
-//	@Success		201				{object}	openapi.GuardRailRuleResponse
-//	@Failure		400,409,422,500	{object}	openapi.HTTPError
+//	@Success		201			{object}	openapi.GuardRailRuleResponse
+//	@Failure		400,409,500	{object}	openapi.HTTPError
 //	@Router			/guardrails [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -110,7 +110,6 @@ func Post(c *gin.Context) {
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
 		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: "",
 		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
-		Input: req.Input, Output: req.Output,
 	}) {
 		return
 	}
@@ -173,8 +172,8 @@ func Post(c *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			request	body		openapi.GuardRailRuleRequest	true	"The request body resource"
-//	@Success		200				{object}	openapi.GuardRailRuleResponse
-//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Success		200		{object}	openapi.GuardRailRuleResponse
+//	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/guardrails/{id} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -220,7 +219,6 @@ func Put(c *gin.Context) {
 	bind := sidecarbind.Request{
 		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: existing.Name,
 		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
-		Input: req.Input, Output: req.Output,
 	}
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {
 		return

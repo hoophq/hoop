@@ -4,22 +4,18 @@ import { guardrailsService } from '@/services/guardrails'
 import { analyzerBlocked } from './config'
 
 // Guardrail and masking rules are addressed by id, analyzer rules by name.
-// `editPath` is the gateway's own form of the rule: a rule the agent runs is
-// edited there, never on a sidecar form.
 export const RULE_APIS = {
   guardrails: {
     kind: 'guardrail',
     list: async () => (await guardrailsService.list()).data ?? [],
     get: (rule) => guardrailsService.get(rule.id),
     update: (rule, body) => guardrailsService.update(rule.id, body),
-    editPath: (rule) => `/guardrails/edit/${rule.id}`,
   },
   'data-masking': {
     kind: 'datamasking',
     list: async () => (await dataMaskingService.list()).data ?? [],
     get: (rule) => dataMaskingService.get(rule.id),
     update: (rule, body) => dataMaskingService.update(rule.id, body),
-    editPath: (rule) => `/features/data-masking/edit/${rule.id}`,
   },
   'ai-analyzer': {
     kind: 'analyzer',
@@ -27,15 +23,7 @@ export const RULE_APIS = {
     list: async () => (await aiSessionAnalyzerService.listRules()).data?.data ?? [],
     get: (rule) => aiSessionAnalyzerService.getRule(rule.name),
     update: (rule, body) => aiSessionAnalyzerService.updateRule(rule.name, body),
-    editPath: (rule) => `/features/ai-session-analyzer/rules/edit/${encodeURIComponent(rule.name)}`,
   },
-}
-
-// A binding only names the rule, so the record is found in the list first.
-export async function findRule(api, ruleName) {
-  const found = (await api.list()).find((r) => r.name === ruleName)
-  if (!found) throw new Error(`Rule "${ruleName}" was not found.`)
-  return found
 }
 
 // A rule binds to listeners, never to a sidecar, so the sidecar level fans out.
