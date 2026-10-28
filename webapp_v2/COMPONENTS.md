@@ -645,6 +645,12 @@ Props: `label`, `placeholder`, `required`, `disabled`, `value` (ids[]), `onChang
 
 ---
 
+### `PaginatedSelect`
+Single-value sibling of `PaginatedMultiSelect`: a select over a **paginated, server-searched** option source, with the search box in the dropdown and infinite scroll. Controlled (no fetching). `onChange` receives the whole option; `selectedLabel` names a value that is not on the loaded pages. The CMDB fields of the Jira prompt gate use it.
+Props: `label`, `placeholder`, `searchPlaceholder`, `nothingFound`, `required`, `error`, `disabled`, `value`, `selectedLabel`, `onChange(option)`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onDropdownOpen()`, `comboboxProps`.
+
+---
+
 ### `ConnectionsMultiSelect`
 Resource-role (connection) multi-select with infinite-scroll pagination + server search. Composes `usePaginatedConnections` + `PaginatedMultiSelect` and resolves labels for already-selected ids on demand via `?connection_ids=` (so edit-mode chips show names without loading every connection). This is the React port of CLJS `connections-select` — use it anywhere a feature needs a connection picker.
 ```jsx
@@ -914,6 +920,14 @@ Non-obvious notes only:
   revisit cannot open on a record minutes old, or on one already deleted.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
+- `useJiraPromptStore` — the Jira prompt gate (`features/JiraPromptGate`), the
+  React port of the CLJS runtime prompt. A caller runs `load(connectionName)`
+  before it runs something on a resource: `{ needed: false, fields }` means add
+  `fields` to the request now, `{ needed: true }` means open `<JiraPromptGate>`,
+  whose `onSubmit` gets `{ jira_fields }`, and `null` means a newer load replaced
+  this one. CMDB picks go in `jira_fields` too; the gateway reads nothing else.
+  The pure parts (`cascade.js`, `jiraFields.js`) are tested against fixtures the
+  CLJS code writes (`npm --prefix ../webapp run fixtures:jira`). Resets on logout.
 
 ---
 
