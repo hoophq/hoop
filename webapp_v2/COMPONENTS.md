@@ -221,7 +221,7 @@ import StepAccordion from '@/components/StepAccordion'
 ```
 
 ### `ProtectedRoute` / `GatewayProtectedRoute`
-Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`. `GatewayProtectedRoute` adds the agents landing swap. Both already wrap every route through the product `Page` (`layout/GatewayPage`). Do not add another instance.
+Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`. `GatewayProtectedRoute` adds the agents swap: with `experimental.agents` off, every agent path (`modes/agentPaths.js`) lands on Sidecars or Reviews. Both already wrap every route through the product `Page` (`layout/GatewayPage`). Do not add another instance.
 
 ### `Stepper`
 Horizontal step indicator for a multi-page flow (numbered circles joined by a rule). Controlled by the zero-based `active` step; render the step body below it yourself.

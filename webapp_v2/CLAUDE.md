@@ -55,12 +55,14 @@ One product: the gateway. `hoop start control-plane` runs the same gateway and U
 - **Sidecar features are always on.** Every gateway serves sidecars, so the Sidecars
   pages, nav and palette items and the sidecar traffic of a rule carry no gate. The
   agents product follows `agentsEnabled()` (`modes/agents.js`, the `experimental.agents`
-  flag). Off, `GatewayProtectedRoute` turns `/`, `/client` and the agent onboarding into
-  the landing by role (`pages/Home`) on every route change, and the CLJS app does not
-  move the URL while it is parked (`routes/navigate!`).
+  flag). Off, `GatewayProtectedRoute` turns `/`, the agent onboarding and every path a
+  nav or palette entry flags with `AGENTS_FLAG` (`modes/agentPaths.js`), sub-paths
+  included, into the landing by role (`pages/Home`) on every route change, and the CLJS
+  app does not move the URL while it is parked (`routes/navigate!`). Flag a new agent
+  page in `gatewayNav.js` and its URL closes too.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`). `GatewayProtectedRoute` adds the
-  agents landing swap.
+  agents swap.
 - **Roles.** `/userinfo` reports `role`. A role is a reserved group name; `standard` is
   the absence of one and is never stored as a group. The group names come from
   `/serverinfo` (`admin_role_name`, `approver_role_name`), never a literal. Gate a route
@@ -275,7 +277,7 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 - `stores/useAuthStore.js` - Token management, cookie/query param handling
 - `services/auth.js` - Login/logout API calls
 - `services/api.js` - Axios interceptor for auth header and 401 handling
-- `components/ProtectedRoute.jsx` - Route protection wrapper; `GatewayProtectedRoute.jsx` adds the agents landing swap
+- `components/ProtectedRoute.jsx` - Route protection wrapper; `GatewayProtectedRoute.jsx` adds the agents swap
 - `pages/Auth/Login/` - Login page (detects auth method from gateway)
 - `pages/Auth/Register/` - Local auth signup form
 - `pages/Auth/Signup/` - IDP org setup (post-OAuth)
