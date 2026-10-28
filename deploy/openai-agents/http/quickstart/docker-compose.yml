@@ -9,6 +9,8 @@ services:
     environment:
       HOOP_SIDECAR_CONFIG: /etc/hoop-quickstart/sidecar.yaml
       HOOP_SIDECAR_INSTALL_SOURCE: openai-agents-http
+      # The free tier runs with no login code: nobody can approve one here (ENG-906).
+      HOOP_SIDECAR_FREE_STANDALONE: "true"
       # Empty runs the free tier. The document itself, not a path: no host
       # file is mounted for it. README.md, "Free tier".
       HOOP_LICENSE: ${HOOP_LICENSE:-}

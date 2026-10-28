@@ -83,3 +83,9 @@ jobs:
           rm -rf "$dir/.terraform"
           terraform -chdir="$dir" init -input=false -backend=false
           terraform -chdir="$dir" validate
+      # The template installs the module in document mode, so its free
+      # sidecar starts only while the values set HOOP_SIDECAR_FREE_STANDALONE.
+      - name: Test the Marketplace values module
+        run: |
+          terraform -chdir=deploy/gcp-marketplace/sidecar/modules/values init -input=false -backend=false
+          terraform -chdir=deploy/gcp-marketplace/sidecar/modules/values test

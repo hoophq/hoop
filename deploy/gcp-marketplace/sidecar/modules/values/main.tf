@@ -80,6 +80,12 @@ locals {
     control_plane = yamlencode({ controlPlane = { url = var.control_plane_url } })
   }[var.config_source]
 
+  # A sidecar that runs its own file has nobody to approve a login code, so
+  # the free tier runs with no login (ENG-906). control_plane has a credential.
+  standalone_values = var.config_source == "control_plane" ? "" : yamlencode({
+    extraSecret = { HOOP_SIDECAR_FREE_STANDALONE = "true" }
+  })
+
   lane_values = length(local.lane_ports) == 0 ? "" : yamlencode({
     laneServices = {
       lanes = {
