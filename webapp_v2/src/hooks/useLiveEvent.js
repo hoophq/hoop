@@ -75,8 +75,12 @@ function open() {
       dispatch(data?.event)
     }
   }
+  let held = false
   const run = shared
-    ? navigator.locks.request(name, { signal: own.signal }, () => holdStream(own.signal))
+    ? navigator.locks.request(name, { signal: own.signal }, () => {
+        held = true
+        return holdStream(own.signal)
+      })
     : stream(own.signal)
   run
     .catch(() => {})
@@ -87,7 +91,9 @@ function open() {
       // again. A page also keeps its own polling, so a lost stream only
       // costs speed.
       if (subscriberCount() === 0) return
-      if (shared) open()
+      // The lock holder waited already. A request that ends without the lock
+      // (it rejects on a document that is not active) waits here, or open() loops.
+      if (held) open()
       else setTimeout(() => subscriberCount() > 0 && open(), retryDelay())
     })
 }
