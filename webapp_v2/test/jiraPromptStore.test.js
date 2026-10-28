@@ -1,18 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const connectionsService = { getConnection: vi.fn() }
-const jiraTemplatesService = {
-  getIntegration: vi.fn(),
-  get: vi.fn(),
-  getAssetFieldConfigs: vi.fn(),
-  searchAssetObjects: vi.fn(),
-}
-
-vi.mock('@/services/connections', () => ({ connectionsService }))
-vi.mock('@/services/jiraTemplates', () => ({ jiraTemplatesService }))
+// The axios instance is the seam: the real services run, so a test sees the
+// response shape each one hands to the store.
+const api = { get: vi.fn() }
+vi.mock('@/services/api', () => ({ default: api }))
 vi.mock('@/stores/useAuthStore', () => ({ useAuthStore: { subscribe: vi.fn() } }))
 
 const { useJiraPromptStore, GATE_STATUS } = await import('@/stores/useJiraPromptStore')
+const { promptOptions } = await import('@/features/JiraPromptGate/jiraFields')
 
 const ok = (data) => Promise.resolve({ data })
 const fail = () => Promise.reject(Object.assign(new Error('boom'), { response: { status: 500 } }))
@@ -29,35 +24,48 @@ const prompt = (jiraField, fieldType, required = false) => ({
   required,
 })
 
-const cmdb = (jiraField, objectType, { value = '', required = false } = {}) => ({
+// `value` left out means the template has no preset key at all.
+const cmdb = (jiraField, objectType, { required = false, ...preset } = {}) => ({
   label: `Label of ${jiraField}`,
   jira_field: jiraField,
   jira_object_type: objectType,
   jira_object_schema_id: '7',
-  value,
   required,
+  ...preset,
 })
 
-// A resource role with a template, an enabled integration, and CMDB values
-// answered per object type.
+// The gateway, per route. A test replaces one handler to change one answer.
+let handlers
+
 function seed({ prompts = [], cmdbItems = [], fieldconfigs = [], values = {} } = {}) {
-  connectionsService.getConnection.mockImplementation(() =>
-    ok({ name: 'pg', jira_issue_template_id: 'tpl-1' }),
-  )
-  jiraTemplatesService.getIntegration.mockImplementation(() => ok({ status: 'enabled' }))
-  jiraTemplatesService.get.mockImplementation(() =>
-    ok({ id: 'tpl-1', prompt_types: { items: prompts }, cmdb_types: { items: cmdbItems } }),
-  )
-  jiraTemplatesService.getAssetFieldConfigs.mockImplementation(() => ok({ items: fieldconfigs }))
-  jiraTemplatesService.searchAssetObjects.mockImplementation(({ objectTypeId }) =>
-    ok({ values: values[objectTypeId] ?? [], total: 0, has_next_page: false }),
-  )
+  handlers = {
+    connection: (name) => ok({ name, jira_issue_template_id: 'tpl-1' }),
+    integration: () => ok({ status: 'enabled' }),
+    template: (id) => ok({ id, prompt_types: { items: prompts }, cmdb_types: { items: cmdbItems } }),
+    fieldconfigs: () => ok({ items: fieldconfigs }),
+    objects: ({ object_type_id }) =>
+      ok({ values: values[object_type_id] ?? [], total: 0, has_next_page: false }),
+  }
 }
+
+api.get.mockImplementation((url, config = {}) => {
+  if (url.startsWith('/connections/')) return handlers.connection(decodeURIComponent(url.slice(13)))
+  if (url === '/integrations/jira') return handlers.integration()
+  if (url.startsWith('/integrations/jira/issuetemplates/')) return handlers.template(url.split('/').pop())
+  if (url === '/integrations/jira/assets/fieldconfigs') return handlers.fieldconfigs(config.params)
+  if (url === '/integrations/jira/assets/objects') return handlers.objects(config.params)
+  throw new Error(`unexpected GET ${url}`)
+})
+
+const objectCalls = () =>
+  api.get.mock.calls.filter(([url]) => url === '/integrations/jira/assets/objects').map(([, c]) => c.params)
+const templateCalls = () =>
+  api.get.mock.calls.filter(([url]) => url.startsWith('/integrations/jira/issuetemplates/'))
 
 const state = () => useJiraPromptStore.getState()
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  api.get.mockClear()
   state().reset()
 })
 
@@ -66,20 +74,27 @@ afterEach(() => {
 })
 
 describe('load: is the gate needed?', () => {
+  it('reads the template the resource names', async () => {
+    seed({ prompts: [prompt('customfield_1', 'text')] })
+    await expect(state().load('pg prod')).resolves.toEqual({ needed: true })
+    expect(api.get).toHaveBeenCalledWith('/connections/pg%20prod')
+    expect(api.get).toHaveBeenCalledWith('/integrations/jira/issuetemplates/tpl-1')
+  })
+
   it('no template on the resource: run now, nothing to add', async () => {
     seed()
-    connectionsService.getConnection.mockImplementation(() => ok({ name: 'pg', jira_issue_template_id: '' }))
+    handlers.connection = (name) => ok({ name, jira_issue_template_id: '' })
     await expect(state().load('pg')).resolves.toEqual({ needed: false, fields: {} })
-    expect(jiraTemplatesService.get).not.toHaveBeenCalled()
+    expect(templateCalls()).toHaveLength(0)
   })
 
   it('integration not enabled: run now, nothing to add (no race with its fetch)', async () => {
     seed({ prompts: [prompt('customfield_1', 'text', true)] })
-    jiraTemplatesService.getIntegration.mockImplementation(() => ok({ status: 'disabled' }))
+    handlers.integration = () => ok({ status: 'disabled' })
     await expect(state().load('pg')).resolves.toEqual({ needed: false, fields: {} })
-    jiraTemplatesService.getIntegration.mockImplementation(() => ok(null))
+    handlers.integration = () => ok(null)
     await expect(state().load('pg')).resolves.toEqual({ needed: false, fields: {} })
-    expect(jiraTemplatesService.get).not.toHaveBeenCalled()
+    expect(templateCalls()).toHaveLength(0)
   })
 
   it('a template with only mapping rules: run now, nothing to add', async () => {
@@ -104,8 +119,18 @@ describe('load: is the gate needed?', () => {
     })
   })
 
-  it('a CMDB row without a preset: open the gate (CLJS sent nothing)', async () => {
+  it('a required CMDB row with no preset: open the gate (CLJS sent nothing, 422)', async () => {
+    seed({ cmdbItems: [cmdb('customfield_2', '21', { required: true })], values: { 21: servers } })
+    await expect(state().load('pg')).resolves.toEqual({ needed: true })
+  })
+
+  it('an optional CMDB row with no preset: run now without it, as CLJS', async () => {
     seed({ cmdbItems: [cmdb('customfield_2', '21')], values: { 21: servers } })
+    await expect(state().load('pg')).resolves.toEqual({ needed: false, fields: {} })
+  })
+
+  it('an empty preset counts as one the values do not hold, as in CLJS', async () => {
+    seed({ cmdbItems: [cmdb('customfield_2', '21', { value: '' })], values: { 21: servers } })
     await expect(state().load('pg')).resolves.toEqual({ needed: true })
   })
 
@@ -116,24 +141,23 @@ describe('load: is the gate needed?', () => {
 
   it('rejects when the resource cannot be read', async () => {
     seed()
-    connectionsService.getConnection.mockImplementation(fail)
+    handlers.connection = fail
     await expect(state().load('pg')).rejects.toThrow('boom')
     expect(state().status).toBe(GATE_STATUS.IDLE)
   })
 
   it('rejects when the template cannot be read', async () => {
     seed()
-    jiraTemplatesService.get.mockImplementation(fail)
+    handlers.template = fail
     await expect(state().load('pg')).rejects.toThrow('boom')
   })
 
   it('a newer load replaces an older one, which resolves to null', async () => {
     seed({ prompts: [prompt('customfield_1', 'text')] })
     let release
-    connectionsService.getConnection.mockImplementationOnce(
-      () => new Promise((resolve) => (release = resolve)),
-    )
+    handlers.connection = () => new Promise((resolve) => (release = resolve))
     const first = state().load('old')
+    handlers.connection = (name) => ok({ name, jira_issue_template_id: 'tpl-1' })
     const second = state().load('pg')
     release({ data: { name: 'old', jira_issue_template_id: 'tpl-1' } })
     await expect(first).resolves.toBeNull()
@@ -148,11 +172,13 @@ describe('CMDB error state', () => {
       cmdbItems: [cmdb('customfield_2', '21')],
       values: { 21: servers },
     })
-    jiraTemplatesService.searchAssetObjects.mockImplementationOnce(fail)
+    const objects = handlers.objects
+    handlers.objects = fail
     await expect(state().load('pg')).resolves.toEqual({ needed: true })
     expect(state().status).toBe(GATE_STATUS.ERROR)
 
     state().setAnswer('customfield_1', 'kept')
+    handlers.objects = objects
     await expect(state().retry()).resolves.toEqual({ needed: true })
     expect(state().status).toBe(GATE_STATUS.READY)
     expect(state().fields.customfield_1).toBe('kept')
@@ -164,29 +190,47 @@ describe('CMDB error state', () => {
       cmdbItems: [cmdb('customfield_2', '21', { value: 'db-prod-01' })],
       values: { 21: servers },
     })
-    jiraTemplatesService.searchAssetObjects.mockImplementationOnce(fail)
+    const objects = handlers.objects
+    handlers.objects = fail
     await expect(state().load('pg')).resolves.toEqual({ needed: true })
+    handlers.objects = objects
     await expect(state().retry()).resolves.toEqual({
       needed: false,
       fields: { jira_fields: { customfield_2: 'ari:server:1' } },
     })
   })
 
+  it('Cancel during Try again: the retry resolves to null, so nothing is sent', async () => {
+    seed({
+      cmdbItems: [cmdb('customfield_2', '21', { value: 'db-prod-01', required: true })],
+      values: { 21: servers },
+    })
+    const objects = handlers.objects
+    handlers.objects = fail
+    await state().load('pg')
+    let release
+    handlers.objects = () => new Promise((resolve) => (release = resolve))
+    const retry = state().retry()
+    state().abandon()
+    release(await objects({ object_type_id: '21' }))
+    await expect(retry).resolves.toBeNull()
+  })
+
   it('a failed field config lookup is no error: the dropdowns stay unfiltered', async () => {
-    seed({ cmdbItems: [cmdb('customfield_2', '21')], values: { 21: servers } })
-    jiraTemplatesService.getAssetFieldConfigs.mockImplementation(fail)
+    seed({ cmdbItems: [cmdb('customfield_2', '21', { required: true })], values: { 21: servers } })
+    handlers.fieldconfigs = fail
     await state().load('pg')
     expect(state().status).toBe(GATE_STATUS.READY)
-    expect(jiraTemplatesService.searchAssetObjects).toHaveBeenCalledWith(
-      expect.objectContaining({ objectTypeId: '21', objectSchemaId: '7', aql: undefined }),
-    )
+    expect(objectCalls()).toEqual([
+      { object_type_id: '21', object_schema_id: '7', limit: 50, offset: 0 },
+    ])
   })
 
   it('a failed search shows the error state', async () => {
     vi.useFakeTimers()
-    seed({ cmdbItems: [cmdb('customfield_2', '21')], values: { 21: servers } })
+    seed({ cmdbItems: [cmdb('customfield_2', '21', { required: true })], values: { 21: servers } })
     await state().load('pg')
-    jiraTemplatesService.searchAssetObjects.mockImplementationOnce(fail)
+    handlers.objects = fail
     state().setSearch('customfield_2', 'db')
     await vi.advanceTimersByTimeAsync(300)
     expect(state().status).toBe(GATE_STATUS.ERROR)
@@ -196,48 +240,43 @@ describe('CMDB error state', () => {
 describe('CMDB options', () => {
   it('search runs 300 ms after the last key, by name, from the first page', async () => {
     vi.useFakeTimers()
-    seed({ cmdbItems: [cmdb('customfield_2', '21')], values: { 21: servers } })
+    seed({ cmdbItems: [cmdb('customfield_2', '21', { required: true })], values: { 21: servers } })
     await state().load('pg')
-    jiraTemplatesService.searchAssetObjects.mockClear()
+    api.get.mockClear()
     state().setSearch('customfield_2', 'd')
     state().setSearch('customfield_2', 'db-prod-0')
     await vi.advanceTimersByTimeAsync(299)
-    expect(jiraTemplatesService.searchAssetObjects).not.toHaveBeenCalled()
+    expect(objectCalls()).toHaveLength(0)
     await vi.advanceTimersByTimeAsync(1)
-    expect(jiraTemplatesService.searchAssetObjects).toHaveBeenCalledTimes(1)
-    expect(jiraTemplatesService.searchAssetObjects).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'db-prod-0', offset: 0, limit: 50 }),
-    )
+    expect(objectCalls()).toEqual([
+      { object_type_id: '21', object_schema_id: '7', name: 'db-prod-0', limit: 50, offset: 0 },
+    ])
   })
 
   it('load more appends the next page', async () => {
-    seed({ cmdbItems: [cmdb('customfield_2', '21')] })
-    jiraTemplatesService.searchAssetObjects.mockImplementation(({ offset }) =>
+    seed({ cmdbItems: [cmdb('customfield_2', '21', { required: true })] })
+    handlers.objects = ({ offset }) =>
       ok(
         offset === 0
           ? { values: [servers[0]], has_next_page: true }
           : { values: [servers[1]], has_next_page: false },
-      ),
-    )
+      )
     await state().load('pg')
     await state().loadMore('customfield_2')
-    expect(jiraTemplatesService.searchAssetObjects).toHaveBeenLastCalledWith(
-      expect.objectContaining({ offset: 50 }),
-    )
+    expect(objectCalls().at(-1)).toMatchObject({ offset: 50 })
     expect(state().rows[0].jira_values).toEqual(servers)
     expect(state().rows[0].hasMore).toBe(false)
   })
 
   it('an older response for a row does not replace a newer one', async () => {
     vi.useFakeTimers()
-    seed({ cmdbItems: [cmdb('customfield_2', '21')], values: { 21: servers } })
+    seed({ cmdbItems: [cmdb('customfield_2', '21', { required: true })], values: { 21: servers } })
     await state().load('pg')
     let releaseOld
-    jiraTemplatesService.searchAssetObjects
-      .mockImplementationOnce(() => new Promise((resolve) => (releaseOld = resolve)))
-      .mockImplementationOnce(() => ok({ values: [servers[1]], has_next_page: false }))
+    handlers.objects = () => new Promise((resolve) => (releaseOld = resolve))
     state().setSearch('customfield_2', 'a')
     await vi.advanceTimersByTimeAsync(300)
+    handlers.objects = () => ok({ values: [servers[1]], has_next_page: false })
     state().setSearch('customfield_2', 'db-prod-02')
     await vi.advanceTimersByTimeAsync(300)
     releaseOld({ data: { values: [servers[0]], has_next_page: false } })
@@ -268,44 +307,55 @@ describe('CMDB cascade', () => {
     values: { 11: products, 12: components },
   }
 
+  it('asks for the field configs of every CMDB row once', async () => {
+    seed(chain)
+    await state().load('pg')
+    expect(api.get).toHaveBeenCalledWith('/integrations/jira/assets/fieldconfigs', {
+      params: { jira_fields: 'customfield_20001,customfield_20002' },
+    })
+  })
+
   it('a dependent row fetches with the AQL of the preset above it', async () => {
     seed(chain)
     await expect(state().load('pg')).resolves.toEqual({
       needed: false,
       fields: { jira_fields: { customfield_20001: 'ari:product:1', customfield_20002: 'ari:component:1' } },
     })
-    expect(jiraTemplatesService.searchAssetObjects).toHaveBeenCalledWith(
-      expect.objectContaining({
-        objectTypeId: '12',
-        objectSchemaId: '9',
-        aql: '(objectType = "Component") AND (Product = "Payments")',
-      }),
-    )
+    expect(objectCalls()).toContainEqual({
+      object_type_id: '12',
+      object_schema_id: '9',
+      aql: '(objectType = "Component") AND (Product = "Payments")',
+      limit: 50,
+      offset: 0,
+    })
   })
 
   it('a pick clears the dependent row and fetches it with the new filter', async () => {
     seed(chain)
     await state().load('pg')
-    jiraTemplatesService.searchAssetObjects.mockClear()
+    api.get.mockClear()
     state().pickCmdb('customfield_20001', { value: 'ari:product:2', label: 'Ledger' })
     expect(state().fields).toEqual({ customfield_20001: { value: 'ari:product:2', label: 'Ledger' } })
     expect(state().rows[1]).toMatchObject({ value: null, selectedName: null, search: '' })
-    expect(jiraTemplatesService.searchAssetObjects).toHaveBeenCalledWith(
+    expect(objectCalls()).toEqual([
       expect.objectContaining({ aql: '(objectType = "Component") AND (Product = "Ledger")' }),
-    )
+    ])
   })
 
   it('a row waiting on an upstream pick fetches nothing and offers nothing', async () => {
-    seed({ ...chain, cmdbItems: [cmdb('customfield_20001', '11'), cmdb('customfield_20002', '12')] })
+    seed({
+      ...chain,
+      cmdbItems: [cmdb('customfield_20001', '11', { value: '' }), cmdb('customfield_20002', '12', { value: '' })],
+    })
     await expect(state().load('pg')).resolves.toEqual({ needed: true })
-    expect(jiraTemplatesService.searchAssetObjects).toHaveBeenCalledTimes(1)
+    expect(objectCalls()).toHaveLength(1)
     expect(state().rows[1].jira_values).toEqual([])
   })
 
   it('a failed cascade refetch is no error', async () => {
     seed(chain)
     await state().load('pg')
-    jiraTemplatesService.searchAssetObjects.mockImplementationOnce(fail)
+    handlers.objects = fail
     state().pickCmdb('customfield_20001', { value: 'ari:product:2', label: 'Ledger' })
     await vi.waitFor(() => expect(state().rows[1].loading).toBe(false))
     expect(state().status).toBe(GATE_STATUS.READY)
@@ -345,5 +395,12 @@ describe('Send', () => {
     seed({ prompts: [{ ...prompt('customfield_1', 'text'), required: 'false' }] })
     await state().load('pg')
     expect(state().submit()).toEqual({ jira_fields: {} })
+  })
+})
+
+describe('select prompt options', () => {
+  it('drops duplicates, which Mantine Select rejects', () => {
+    expect(promptOptions({ field_options: ['low', 'low', 'high'] })).toEqual(['low', 'high'])
+    expect(promptOptions({})).toEqual([])
   })
 })

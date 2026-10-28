@@ -4,7 +4,7 @@ import PaginatedSelect from '@/components/PaginatedSelect'
 import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import { useJiraPromptStore } from '@/stores/useJiraPromptStore'
-import { isRequired } from './jiraFields'
+import { isRequired, promptOptions } from './jiraFields'
 
 const REQUIRED = 'Required'
 
@@ -20,7 +20,7 @@ function PromptField({ prompt, value, error, onChange }) {
       <Select
         {...common}
         placeholder="Select an option"
-        data={prompt.field_options ?? []}
+        data={promptOptions(prompt)}
         value={value ?? null}
         onChange={(v) => onChange(v ?? '')}
         allowDeselect={false}

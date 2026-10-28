@@ -59,8 +59,17 @@ export function missingRequired(prompts, rows, fields) {
     .map(({ jira_field }) => jira_field)
 }
 
-// The user must answer when the template asks something, or when a CMDB row
-// has no preset the loaded values hold.
+// The user must answer when the template has prompts, or a CMDB row is not
+// resolved and either has a preset (an empty one counts, as in CLJS) or is
+// required. CLJS skipped the form for a required row with no preset, and the
+// gateway answered 422.
 export function needsForm(prompts, rows, fields) {
-  return prompts.length > 0 || rows.some((r) => fields[r.jira_field] == null)
+  return (
+    prompts.length > 0 ||
+    rows.some((r) => fields[r.jira_field] == null && (r.value != null || isRequired(r)))
+  )
 }
+
+// A select prompt's options. Mantine Select throws on a duplicate option, and
+// the gateway accepts a template that has one.
+export const promptOptions = (prompt) => [...new Set((prompt.field_options ?? []).map(String))]

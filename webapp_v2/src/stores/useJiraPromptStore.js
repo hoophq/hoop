@@ -26,7 +26,9 @@ import {
  * - "Try again" after a CMDB error stays in the caller's flow (CLJS went on
  *   into the Runbooks flow) and keeps what the user typed.
  * - CMDB presets the values hold are sent when no form is needed (CLJS sent
- *   nothing). A row without one opens the form.
+ *   nothing). A required row with no preset opens the form (CLJS sent
+ *   nothing and the gateway answered 422).
+ * - Cancel drops a "Try again" still in flight (abandon()).
  * - The integration status is read here, so there is no race with its fetch.
  */
 
@@ -139,11 +141,13 @@ export const useJiraPromptStore = create((set, get) => {
     return !results.includes('failed')
   }
 
-  // What the caller does next: open the gate, or send `fields` at once.
+  // What the caller does next: open the gate, or send `fields` at once. With
+  // no CMDB preset to send, the body has no jira_fields, as in CLJS.
   const decision = () => {
     const { prompts, rows, fields } = get()
     if (needsForm(prompts, rows, fields)) return { needed: true }
-    return { needed: false, fields: rows.length ? submitFields(prompts, fields) : {} }
+    const body = submitFields(prompts, fields)
+    return { needed: false, fields: Object.keys(body.jira_fields).length ? body : {} }
   }
 
   return {
@@ -162,7 +166,8 @@ export const useJiraPromptStore = create((set, get) => {
       clearSearchTimers()
       set({ ...initial, status: GATE_STATUS.LOADING })
       try {
-        const { data: connection } = await connectionsService.getConnection(connectionName)
+        // connectionsService still unwraps the response body.
+        const connection = await connectionsService.getConnection(connectionName)
         const templateId = connection?.jira_issue_template_id
         if (gen !== generation) return null
         if (isBlank(templateId)) {
@@ -283,6 +288,14 @@ export const useJiraPromptStore = create((set, get) => {
       const missing = missingRequired(prompts, rows, fields)
       set({ missing })
       return missing.length ? null : submitFields(prompts, fields)
+    },
+
+    // Cancel: a fetch or a retry still in flight commits nothing, so a retry
+    // cannot go on to send after the user cancelled. The state stays for the
+    // close transition; the next load() clears it.
+    abandon: () => {
+      generation += 1
+      clearSearchTimers()
     },
 
     reset: () => {
