@@ -137,7 +137,7 @@ type ICAOptions struct {
 	PIIThreshold            *float64 `json:"pii_threshold,omitempty"`
 	// PIIMatchesOnly replaces masks from fresh full-screen CPU OCR matches;
 	// it disables historical uncertainty coverage, not protocol checks.
-	PIIMatchesOnly *bool `json:"pii_matches_only,omitempty"`
+	PIIMatchesOnly *bool `json:"pii_matches_only,omitempty" cap:"ica_pii_matches_only"`
 	// PIIEntities replaces the profile's structured entity set
 	// (HEALTHCARE_IDENTIFIERS) when non-empty. NER runs in both cases.
 	PIIEntities            []string `json:"pii_entities,omitempty"`
