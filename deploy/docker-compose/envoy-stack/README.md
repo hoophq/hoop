@@ -489,19 +489,23 @@ reference in [`sidecar/README.md`](../../../sidecar/README.md) and
 
 ## Identity
 
-Every session in this stack records `principal: anonymous`, and that is honest
-rather than broken. `session.Identity` carries a Subject, and
-`proxy.Config.IdentityFn` is the seam a deployment fills from a verified JWT,
-an mTLS peer cert or a credential token
-(`sidecar/proxy/proxy.go:86-93`). The sidecar exposes it as
-`identity_header` on a listener, but the current implementation contributes
-only the peer address: extracting a header there would mean buffering ahead of
-the relay, and identity for HTTP belongs in the gate where the request is
-already parsed (`sidecar/daemon/daemon.go:650-667`).
+The httpbin lane sets `identity_header: X-Hoop-User`
+(`sidecar/config.yaml`). Envoy forwards the header OPA admitted, and the
+lane reads it on every request, so each http session is filed under its
+caller and a request naming a different user on the same pooled connection
+opens its own session. The postgres lane names the `user` from the
+StartupMessage instead.
 
-So the actor column is wired end to end and unpopulated. Filling it takes one
-function rather than an architecture change, and `X-Hoop-User` already rides
-on every request that reaches the sidecar.
+A request with no header, or a blank one, names nobody and runs as the
+connection: anonymous here, the mTLS subject on a lane that verified one.
+It is served, not refused; a policy that needs a named caller denies
+`input.context.principal == "anonymous"` itself. `./demo.sh` shows that by
+sending one request from the client container straight to
+`hoop-inspect:18080`, past Envoy. The header is trusted exactly as far as
+the network is, which is why that port is reachable on the compose network
+and never published on the host.
+
+`X-Hoop-User` stands in for a verified JWT subject; see Known gaps.
 
 ## Known gaps
 

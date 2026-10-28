@@ -925,9 +925,14 @@ session (`session_end`) and opens a new one on the same connection
 (`session_start`), so the policy context and the audit rows of each request
 carry its own caller. A caller change while an earlier response on the
 connection is still outstanding is refused: that response belongs to the
-session that sent its request. The header value is lifted out of the
-statement, so it reaches policy input and the audit trail only when
-`http.headers` names it. A grpc lane reads it per RPC. The header is trusted
+session that sent its request. A request that carries no header, or one
+whose value is blank, names nobody and runs as the connection: anonymous,
+or the mTLS subject on a lane that verified one. It ends the session of a
+caller a previous request named, so nothing runs under a borrowed name;
+a policy that requires a named caller denies `principal == "anonymous"`.
+The header value is lifted out of the statement, so it reaches policy input
+and the audit trail only when `http.headers` names it. A grpc lane reads it
+per RPC. The header is trusted
 exactly as far as the network is: nothing but that proxy may be able to reach
 the listener.
 

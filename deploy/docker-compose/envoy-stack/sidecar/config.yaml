@@ -276,6 +276,10 @@ listeners:
     protocol: http
     listen: 0.0.0.0:18080
     upstream: httpbin:8080
+    # The principal OPA admitted, forwarded by Envoy on every request. A
+    # request without it names nobody and runs as the connection, anonymous
+    # here; ./demo.sh sends one straight to this port to show that.
+    identity_header: X-Hoop-User
     guardrails:
       rules:
         # ---- over the limit: this lane's own guardrails ----------------

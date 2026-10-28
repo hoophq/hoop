@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -461,15 +462,19 @@ func TestHTTPPooledConnectionAttributesEachCaller(t *testing.T) {
 	}
 }
 
-// A blank identity header is refused, as a missing one is. Parsers trim
-// ASCII blanks to ""; Unicode spaces and repeated blank lines, joined as
-// ", ", reach the resolver.
-func TestHTTPBlankIdentityHeaderIsRefused(t *testing.T) {
+// A request with no identity header, or one that names nobody (blank,
+// Unicode spaces, repeated blank lines joined as ", "), runs as the
+// connection: anonymous here, the mTLS subject on a lane that verified
+// one. The proxy in front vouched for no one, so the request is served
+// under no name, and never under the caller a previous request on the same
+// pooled connection named.
+func TestHTTPRequestNamingNobodyRunsAsTheConnection(t *testing.T) {
 	const ok = "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
-	refusingLane := func(t *testing.T) (*echoUpstream, net.Conn) {
+	lane := func(t *testing.T) (*echoUpstream, *audit.MemorySink, net.Conn) {
 		t.Helper()
 		up := newEchoUpstream(t, []byte(ok))
-		cfg := identityLane(up.addr(), nil)
+		sink := audit.NewMemorySink(64)
+		cfg := identityLane(up.addr(), sink)
 		cfg.DenyWriter = proxy.ProtocolDenyWriter{}
 		srv := startServer(t, cfg)
 		c, err := net.Dial("tcp", srv.Addr().String())
@@ -477,7 +482,7 @@ func TestHTTPBlankIdentityHeaderIsRefused(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		t.Cleanup(func() { c.Close() })
-		return up, c
+		return up, sink, c
 	}
 	exchange := func(t *testing.T, c net.Conn, req string) string {
 		t.Helper()
@@ -491,39 +496,64 @@ func TestHTTPBlankIdentityHeaderIsRefused(t *testing.T) {
 		n, _ := c.Read(buf)
 		return string(buf[:n])
 	}
-	blanks := []struct{ name, header string }{
+	nobody := []struct{ name, header string }{
+		{"absent", ""},
 		{"spaces", "X-Forwarded-User:   \r\n"},
 		{"no-break space", "X-Forwarded-User: \u00a0\r\n"},
 		{"ideographic space", "X-Forwarded-User: \u3000\r\n"},
 		{"repeated blank lines", "X-Forwarded-User: \r\nX-Forwarded-User: \r\n"},
 	}
-	for _, tc := range blanks {
+	for _, tc := range nobody {
 		t.Run(tc.name, func(t *testing.T) {
-			up, c := refusingLane(t)
-			got := exchange(t, c, "GET / HTTP/1.1\r\nHost: api\r\n"+tc.header+"\r\n")
-			if !strings.HasPrefix(got, "HTTP/1.1 403") {
-				t.Errorf("response = %q, want a 403", got)
+			up, sink, c := lane(t)
+			req := "GET / HTTP/1.1\r\nHost: api\r\n" + tc.header + "\r\n"
+			if got := exchange(t, c, req); got != ok {
+				t.Fatalf("response = %q, want the upstream's %q", got, ok)
 			}
-			if n := len(up.got()); n != 0 {
-				t.Errorf("upstream received %d bytes of a request that named nobody", n)
+			if sent := viaLine.ReplaceAllString(string(up.got()), ""); sent != req {
+				t.Errorf("upstream received %q, want the request as sent", sent)
+			}
+			for _, ev := range sink.Events() {
+				if ev.Principal != session.AnonymousPrincipal {
+					t.Errorf("event %s has principal %q, want anonymous", ev.Kind, ev.Principal)
+				}
 			}
 		})
 	}
 
-	// A pooling proxy sends a blank header after a named caller: the
-	// request must not run as that caller or as the connection.
+	// A pooling proxy sends a headerless request after a named caller: it
+	// closes alice's session and runs in an anonymous one.
 	t.Run("after a named caller", func(t *testing.T) {
-		up, c := refusingLane(t)
+		up, sink, c := lane(t)
 		const named = "GET / HTTP/1.1\r\nHost: api\r\nX-Forwarded-User: alice@example.com\r\n\r\n"
+		const bare = "GET / HTTP/1.1\r\nHost: api\r\n\r\n"
 		if got := exchange(t, c, named); got != ok {
 			t.Fatalf("named request: response = %q", got)
 		}
-		got := exchange(t, c, "GET / HTTP/1.1\r\nHost: api\r\n"+blanks[1].header+"\r\n")
-		if !strings.HasPrefix(got, "HTTP/1.1 403") {
-			t.Errorf("blank request: response = %q, want a 403", got)
+		if got := exchange(t, c, bare); got != ok {
+			t.Fatalf("headerless request: response = %q, want %q", got, ok)
 		}
-		if sent := viaLine.ReplaceAllString(string(up.got()), ""); sent != named {
-			t.Errorf("upstream received %q, want only the named request", sent)
+		if sent := viaLine.ReplaceAllString(string(up.got()), ""); sent != named+bare {
+			t.Errorf("upstream received %q, want both requests", sent)
+		}
+		c.Close()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) && countKind(sink.Events(), audit.KindSessionEnd) < 2 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		// One row per request and one per response.
+		var principals []string
+		for _, ev := range sink.Events() {
+			if ev.Kind == audit.KindStatement {
+				principals = append(principals, ev.Principal)
+			}
+		}
+		want := []string{"alice@example.com", "alice@example.com", session.AnonymousPrincipal, session.AnonymousPrincipal}
+		if !slices.Equal(principals, want) {
+			t.Errorf("statements filed under %v, want %v", principals, want)
+		}
+		if countKind(sink.Events(), audit.KindSessionEnd) != 2 {
+			t.Errorf("want alice's session closed and the anonymous one opened on the same connection")
 		}
 	})
 }
