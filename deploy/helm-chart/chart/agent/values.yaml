@@ -80,8 +80,9 @@ config: {}
   # Runtime, the backend that does not leak memory); the `-alcatraz` tags
   # bundle the runtime and set ALCATRAZ_ORT_LIBRARY_PATH themselves. With
   # hoophq/hoopdev and a mounted model, either mount libonnxruntime.so and
-  # name it here, or set ALCATRAZ_NER_BACKEND: 'go'. An unknown value stops
-  # the agent at startup.
+  # name it here, or set ALCATRAZ_NER_BACKEND: 'go': an agent with a model
+  # but no runtime to load it on refuses to start. An unknown value stops
+  # the agent at startup too.
   # ALCATRAZ_NER_BACKEND: 'ort|go'
   # ALCATRAZ_ORT_LIBRARY_PATH: '/opt/alcatraz/ort/releases/1.28.0/lib/libonnxruntime.so'
   #

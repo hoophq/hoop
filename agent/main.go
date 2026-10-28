@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,18 +59,61 @@ var (
 // shared library at run time; ALCATRAZ_ORT_LIBRARY_PATH names it when it is
 // not in a probed location (/usr/local/lib, /usr/lib). ALCATRAZ_NER_BACKEND
 // overrides the build default.
+//
+// A model with no library to run it on would fail on the first session that
+// asks for a PERSON, hours after a deploy; the agent refuses to start instead.
 func configureAlcatrazNer() {
 	configureAlcatrazNerOnce.Do(func() {
 		backend := nerBackend()
+		modelsDir := os.Getenv("ALCATRAZ_NER_MODEL_PATH")
+		libPath := os.Getenv("ALCATRAZ_ORT_LIBRARY_PATH")
 		if backend == ner.BackendORT && !ortCompiledIn {
 			log.Warn("ALCATRAZ_NER_BACKEND=ort on a build without the ORT tag: NER sessions will be refused at load")
 		}
+		if backend == ner.BackendORT && ortCompiledIn && modelsDir != "" {
+			if _, err := resolveORTLibrary(libPath, ortProbeDirs); err != nil {
+				log.Fatalf("%v: mount the ONNX Runtime library and set ALCATRAZ_ORT_LIBRARY_PATH, or set ALCATRAZ_NER_BACKEND=%s", err, ner.BackendGo)
+			}
+		}
 		redactoralcatraz.SetNlpProvider(alcatraznlp.Provider(alcatraznlp.Options{
-			ModelsDir:      os.Getenv("ALCATRAZ_NER_MODEL_PATH"),
+			ModelsDir:      modelsDir,
 			Backend:        backend,
-			ORTLibraryPath: os.Getenv("ALCATRAZ_ORT_LIBRARY_PATH"),
+			ORTLibraryPath: libPath,
 		}))
 	})
+}
+
+// Where the ORT backend looks for the shared library, in order, after an
+// explicit path: alcatraz's probe, then hugot's own default (/usr/lib). The
+// ORT build is Linux-only, so the Linux name suffices.
+var ortProbeDirs = []string{"/usr/local/lib", "/usr/lib"}
+
+const ortLibraryName = "libonnxruntime.so"
+
+// resolveORTLibrary answers where the ORT backend will load the library from:
+// `explicit` is the file or its directory; empty falls back to probeDirs.
+func resolveORTLibrary(explicit string, probeDirs []string) (string, error) {
+	if explicit != "" {
+		info, err := os.Stat(explicit)
+		if err != nil {
+			return "", fmt.Errorf("ALCATRAZ_ORT_LIBRARY_PATH: %w", err)
+		}
+		if !info.IsDir() {
+			return explicit, nil
+		}
+		lib := filepath.Join(explicit, ortLibraryName)
+		if _, err := os.Stat(lib); err != nil {
+			return "", fmt.Errorf("ALCATRAZ_ORT_LIBRARY_PATH: %w", err)
+		}
+		return lib, nil
+	}
+	for _, dir := range probeDirs {
+		lib := filepath.Join(dir, ortLibraryName)
+		if _, err := os.Stat(lib); err == nil {
+			return lib, nil
+		}
+	}
+	return "", fmt.Errorf("%s not found in %s and ALCATRAZ_ORT_LIBRARY_PATH is unset", ortLibraryName, strings.Join(probeDirs, ", "))
 }
 
 // nerBackend reads ALCATRAZ_NER_BACKEND. Empty selects the build default;
