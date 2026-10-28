@@ -376,7 +376,7 @@ const [opened, { open, close }] = useDisclosure(false)
 ```
 
 ### `ConfirmDialog`
-Confirmation for a destructive or irreversible action: title, body, Cancel and a confirm button. `danger` paints the confirm red; `loading` disables Cancel and outside clicks.
+Confirmation for a destructive or irreversible action: title, body, Cancel and a confirm button. `danger` paints the confirm red; `loading` keeps it open (Cancel, Escape, outside click, close button).
 ```jsx
 import ConfirmDialog from '@/components/ConfirmDialog'
 
@@ -388,6 +388,14 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 
 ### `TestConnectionModal`
 The "Connectivity Check" modal: agent status and connection status, each updating on its own. Presentational; the caller runs the two probes (`GET /connections/:name`, `GET /connections/:name/test`). Used by Configure Role and `/resources`.
+```jsx
+import TestConnectionModal from '@/components/TestConnectionModal'
+
+<TestConnectionModal opened={test.opened} testing={test.testing} connectionName={test.connectionName}
+  agentStatus={test.agentStatus} connectionStatus={test.connectionStatus}
+  durationMs={test.durationMs} errorMessage={test.errorMessage} onClose={closeTest} />
+```
+`agentStatus`: `checking | online | offline`. `connectionStatus`: `checking | successful | failed`.
 
 ### `Select`
 Single-value select input.

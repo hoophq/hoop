@@ -90,7 +90,8 @@ function ListPanel({ tab, children }) {
 
 function useDisplayName() {
   const metadata = useConnectionsMetadataStore((s) => s.metadata)
-  return (subtype) => metadata?.connections?.find((c) => c.id === subtype)?.name || subtype || ''
+  const getDisplayName = useConnectionsMetadataStore((s) => s.getDisplayName)
+  return metadata ? getDisplayName : (subtype) => subtype || ''
 }
 
 export default function Resources() {
@@ -216,7 +217,7 @@ export default function Resources() {
         danger
         loading={deleting}
         onConfirm={confirmDelete}
-        onClose={() => !deleting && setDeleteTarget(null)}
+        onClose={() => setDeleteTarget(null)}
       >
         <Stack gap={4}>
           <Text size="sm">

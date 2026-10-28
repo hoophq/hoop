@@ -4,7 +4,7 @@ import { Check, ChevronLeft, ChevronRight, Search, Tag } from 'lucide-react'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import TextInput from '@/components/TextInput'
-import { countSelected, displayKey, groupTags, tagKeyName } from '@/pages/Resources/utils'
+import { countSelected, displayKey, groupTags, selectedValues, tagKeyName } from '@/pages/Resources/utils'
 import classes from './TagsFilter.module.css'
 
 // Port of webapp/src/webapp/connections/views/tag_selector.cljs: pick values
@@ -24,7 +24,7 @@ function Option({ selected, onClick, children }) {
 }
 
 function ValuesView({ tagKey, values, selected, onChange, onBack }) {
-  const current = selected[tagKey] ?? []
+  const current = selectedValues(selected, tagKey)
   const toggle = (value) => {
     const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value]
     const { [tagKey]: _omit, ...rest } = selected
@@ -140,7 +140,7 @@ export default function TagsFilter({ tags, selected, onChange, size }) {
               ) : (
                 <Stack gap={2} role="listbox" aria-label="Tag groups">
                   {Object.keys(grouped).map((key) => {
-                    const selectedCount = (selected[key] ?? []).length
+                    const selectedCount = selectedValues(selected, key).length
                     return (
                       <Option key={key} onClick={() => openKey(key)}>
                         <Text size="sm" truncate>{displayKey(key)}</Text>

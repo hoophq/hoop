@@ -34,6 +34,8 @@ const emptyTest = {
 
 // Module-level so a response that outlives reset() is still recognised as stale.
 const generation = { [TABS.RESOURCES]: 0, [TABS.ROLES]: 0 }
+let session = 0
+let testRun = 0
 
 // Every request carries every active filter (Q2).
 export function listParams(tab, filters, page) {
@@ -168,18 +170,24 @@ export const useResourcesStore = create((set, get) => {
     },
 
     // Stays on the page and reloads after the DELETE succeeds, with the
-    // filters in place (Q4).
+    // filters in place (Q4). The row goes first, so a failed reload cannot keep it.
     deleteRole: async (name) => {
+      const current = session
       await connectionsService.deleteConnection(name)
+      if (current !== session) return
+      const list = get().lists[TABS.ROLES]
+      const items = list.items.filter((role) => role.name !== name)
+      patchList(TABS.ROLES, { items, total: Math.max(0, list.total - (list.items.length - items.length)) })
       await get().load(TABS.ROLES)
     },
 
     testConnection: async (name) => {
+      const run = ++testRun
       const startedAt = Date.now()
       set({ test: { ...emptyTest, opened: true, connectionName: name, testing: true } })
       const settle = (patch) =>
         set((state) => {
-          if (state.test.connectionName !== name) return {}
+          if (run !== testRun) return {}
           const test = { ...state.test, ...patch }
           if (test.agentStatus !== 'checking' && test.connectionStatus !== 'checking') {
             test.durationMs = Date.now() - startedAt
@@ -203,9 +211,16 @@ export const useResourcesStore = create((set, get) => {
       settle({ testing: false })
     },
 
-    closeTest: () => set({ test: emptyTest }),
+    closeTest: () => {
+      testRun++
+      set({ test: emptyTest })
+    },
 
-    reset: () =>
+    reset: () => {
+      session++
+      testRun++
+      generation[TABS.RESOURCES]++
+      generation[TABS.ROLES]++
       set({
         tab: TABS.ROLES,
         filters: EMPTY_FILTERS,
@@ -214,7 +229,8 @@ export const useResourcesStore = create((set, get) => {
         tags: [],
         attributes: [],
         test: emptyTest,
-      }),
+      })
+    },
   }
 })
 

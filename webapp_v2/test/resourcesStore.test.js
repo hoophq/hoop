@@ -10,7 +10,7 @@ vi.mock('@/services/attributes', () => ({ attributesService: { listAll: vi.fn(as
 vi.mock('@/stores/useAuthStore', () => ({ useAuthStore: { subscribe: () => () => {} } }))
 
 const { useResourcesStore, listParams, TABS, EMPTY_FILTERS } = await import('@/pages/Resources/store')
-const { displayKey, tagsToSelector } = await import('@/pages/Resources/utils')
+const { displayKey, groupTags, selectedValues, tagsToSelector } = await import('@/pages/Resources/utils')
 
 const page = (names, total = names.length) => ({
   data: { pages: { total }, data: names.map((name) => ({ id: name, name })) },
@@ -97,6 +97,53 @@ describe('resources store', () => {
     expect(useResourcesStore.getState().lists.roles.items).toHaveLength(51)
   })
 
+  it('keeps the store empty when a list answers after logout', async () => {
+    const slow = deferred()
+    connectionsService.list.mockReturnValueOnce(slow.promise)
+    const pending = useResourcesStore.getState().load(TABS.ROLES)
+    useResourcesStore.getState().reset()
+    slow.resolve(page(['previous-user-role']))
+    await pending
+    expect(useResourcesStore.getState().lists.roles.items).toEqual([])
+  })
+
+  it('drops the deleted row even when the reload fails', async () => {
+    connectionsService.list
+      .mockResolvedValueOnce(page(['pg-ro', 'pg-rw'], 2))
+      .mockRejectedValueOnce({ response: { data: { message: 'bad gateway' } } })
+    connectionsService.deleteConnection.mockResolvedValueOnce({})
+    await useResourcesStore.getState().load(TABS.ROLES)
+    await useResourcesStore.getState().deleteRole('pg-ro')
+    const roles = useResourcesStore.getState().lists.roles
+    expect(roles.items.map((r) => r.name)).toEqual(['pg-rw'])
+    expect(roles.total).toBe(1)
+    expect(roles.error).toBe('bad gateway')
+  })
+
+  it('ignores a late result from an earlier test of the same role', async () => {
+    const firstAgent = deferred()
+    const firstProbe = deferred()
+    connectionsService.getConnection = vi
+      .fn()
+      .mockReturnValueOnce(firstAgent.promise)
+      .mockResolvedValueOnce({ status: 'online' })
+    connectionsService.testConnection = vi
+      .fn()
+      .mockReturnValueOnce(firstProbe.promise)
+      .mockReturnValueOnce(new Promise(() => {}))
+    const store = useResourcesStore.getState()
+    const first = store.testConnection('pg-ro')
+    store.closeTest()
+    store.testConnection('pg-ro')
+    firstAgent.resolve({ status: 'offline' })
+    firstProbe.resolve({})
+    await first
+    const { test } = useResourcesStore.getState()
+    expect(test.agentStatus).toBe('online')
+    expect(test.connectionStatus).toBe('checking')
+    expect(test.testing).toBe(true)
+  })
+
   it('reloads the roles after the DELETE succeeds, with the filters kept (Q4)', async () => {
     const order = []
     connectionsService.deleteConnection.mockImplementation(async () => order.push('delete'))
@@ -117,5 +164,11 @@ describe('tag helpers', () => {
     )
     expect(displayKey('hoop.dev/infrastructure.environment')).toBe('environment')
     expect(displayKey('env')).toBe('env')
+  })
+
+  it('groups a tag key that names an Object.prototype member', () => {
+    const grouped = groupTags([{ key: 'constructor', value: 'a' }, { key: 'constructor', value: 'a' }])
+    expect(grouped.constructor).toEqual(['a'])
+    expect(selectedValues({}, 'constructor')).toEqual([])
   })
 })

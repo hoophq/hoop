@@ -34,6 +34,7 @@ export default function RoleRow({
   const online = role.status === 'online'
 
   const openWebTerminal = () => {
+    useBridgeStore.getState().clearDatabaseSchema()
     navigate('/client?role=' + encodeURIComponent(role.name))
     useBridgeStore.getState().syncPrimaryConnectionFromUrl()
   }

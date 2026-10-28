@@ -17,14 +17,17 @@ export function displayKey(key) {
   return parts.length === 1 ? parts[0] : parts[1]
 }
 
+// Tag keys come from users, so a key like `constructor` must not reach Object.prototype.
 export function groupTags(tags) {
-  const grouped = {}
+  const grouped = Object.create(null)
   for (const { key, value } of tags) {
     if (!grouped[key]) grouped[key] = []
     if (!grouped[key].includes(value)) grouped[key].push(value)
   }
   return grouped
 }
+
+export const selectedValues = (selected, key) => (Object.hasOwn(selected, key) ? selected[key] : [])
 
 export function countSelected(selected) {
   return Object.values(selected).reduce((sum, values) => sum + values.length, 0)
