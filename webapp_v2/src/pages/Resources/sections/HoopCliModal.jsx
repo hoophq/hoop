@@ -44,7 +44,7 @@ export default function HoopCliModal({ connectionName, onClose }) {
   const apiUrl = useUserStore((s) => s.apiUrl) || window.location.origin
 
   return (
-    <Modal opened={Boolean(connectionName)} onClose={onClose} size="xl" withCloseButton={false} padding={0}>
+    <Modal opened={Boolean(connectionName)} onClose={onClose} size={1100} withCloseButton={false} padding={0}>
       <Group align="stretch" gap={0} wrap="nowrap">
         <ScrollArea.Autosize mah={696} flex={1}>
           <Stack gap="xl" p="xl">

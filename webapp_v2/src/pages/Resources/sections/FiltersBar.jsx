@@ -3,12 +3,14 @@ import { Group } from '@mantine/core'
 import { ListVideo, Search, Shapes } from 'lucide-react'
 import Button from '@/components/Button'
 import FilterPopover from '@/components/FilterPopover'
+import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import { hasFilters, MIN_SEARCH_LENGTH, TABS, useResourcesStore } from '@/pages/Resources/store'
 import { RESOURCE_TYPES } from '@/pages/Resources/utils'
 import TagsFilter from '@/pages/Resources/sections/TagsFilter'
 
 const SEARCH_DEBOUNCE_MS = 500
+const ALL_TYPES = 'all'
 
 export default function FiltersBar() {
   const tab = useResourcesStore((s) => s.tab)
@@ -40,8 +42,6 @@ export default function FiltersBar() {
     clearFilters()
   }
 
-  const typeLabel = RESOURCE_TYPES.find((t) => t.value === filters.type)?.label ?? null
-
   return (
     <Group gap="xs" wrap="nowrap">
       {hasFilters(filters) && (
@@ -70,13 +70,16 @@ export default function FiltersBar() {
           onClear={() => setFilters({ attribute: null })}
         />
       )}
-      <FilterPopover
-        icon={Shapes}
-        label="Resource"
-        values={RESOURCE_TYPES.map((t) => t.label)}
-        selected={typeLabel}
-        onSelect={(label) => setFilters({ type: RESOURCE_TYPES.find((t) => t.label === label)?.value ?? null })}
-        onClear={() => setFilters({ type: null })}
+      <Select
+        aria-label="Filter by resource type"
+        placeholder="Resource"
+        leftSection={<Shapes size={16} aria-hidden="true" />}
+        data={[{ value: ALL_TYPES, label: 'All resources' }, ...RESOURCE_TYPES]}
+        value={filters.type}
+        onChange={(value) => setFilters({ type: value === ALL_TYPES ? null : value })}
+        allowDeselect={false}
+        w={170}
+        comboboxProps={{ width: 200, position: 'bottom-end' }}
       />
     </Group>
   )
