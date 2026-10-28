@@ -95,8 +95,8 @@ export default function TagsFilter({ tags, selected, onChange }) {
     <Popover opened={opened} onChange={(next) => (next ? setOpened(true) : close())} position="bottom-start" width={300} withinPortal>
       <Popover.Target>
         <Button
-          variant={count ? 'light' : 'default'}
-          color="gray"
+          variant="field"
+          data-filled={count > 0 || undefined}
           leftSection={<Tag size={16} aria-hidden="true" />}
           rightSection={count ? <Badge size="sm" circle color="gray.8" variant="filled">{count}</Badge> : null}
           aria-label={count ? 'Filter by tags, ' + count + ' selected' : 'Filter by tags'}

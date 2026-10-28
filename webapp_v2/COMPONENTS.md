@@ -30,6 +30,8 @@ Rules:
 - **Never pass `radius`** on these components — `defaultRadius: 'md'` (9px) applies.
 - Row-action `ActionIcon`s next to inputs need no size prop: both default to 40px
   and align automatically.
+- A filter trigger next to a `Select` takes `<Button variant="field">`: input
+  surface, border and placeholder color. Add `data-filled` once it holds a value.
 
 ---
 

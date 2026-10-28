@@ -6,3 +6,20 @@
 .section:where([data-position='right']) {
   margin-inline-start: var(--mantine-spacing-xsAlt);
 }
+
+/* A filter trigger that sits next to a Select and must read as one. */
+.root[data-variant='field'] {
+  --button-bg: var(--hoop-surface-raised);
+  --button-hover: var(--hoop-surface-raised);
+  --button-color: var(--mantine-color-placeholder);
+  --button-bd: rem(1px) solid var(--mantine-color-gray-2);
+  font-weight: 400;
+}
+
+.root[data-variant='field'][data-filled] {
+  --button-color: var(--mantine-color-text);
+}
+
+.root[data-variant='field'] .section:where([data-position='left']) {
+  color: var(--mantine-color-dimmed);
+}
