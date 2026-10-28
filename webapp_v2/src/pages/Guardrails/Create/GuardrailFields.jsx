@@ -24,9 +24,11 @@ import { emptyRule } from './useGuardrailEditor'
 // One form for agents and sidecars. The sidecar vocabulary is the superset;
 // an option one engine does not run carries a RuleSupportTag.
 
-const DIRECTIONS = [
+// Only the agent checks results, with its two engines; every other type is
+// a statement rule, so Results stays visible but cannot be picked.
+const directionsFor = (type) => [
   { value: 'input', label: 'Statements (requests)' },
-  { value: 'output', label: 'Results (responses)' },
+  { value: 'output', label: 'Results (responses)', disabled: !AGENT_GUARDRAIL_TYPES.includes(type) },
 ]
 
 const taggedOption = (isTagged, side) =>
@@ -47,7 +49,6 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
   const type = types.find((t) => t.value === rule.type) ?? types[0]
   const set = (patch) => onChange({ ...rule, ...patch })
   const has = (field) => type?.fields.includes(field)
-  const agentType = AGENT_GUARDRAIL_TYPES.includes(rule.type)
   const output = rule.direction === 'output'
 
   return (
@@ -91,17 +92,15 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
             allowDeselect={false}
             w={200}
           />
-          {agentType && (
-            <Select
-              label="Checks"
-              data={DIRECTIONS}
-              value={rule.direction}
-              onChange={(v) => set({ direction: v ?? 'input' })}
-              renderOption={DirectionOption}
-              allowDeselect={false}
-              w={220}
-            />
-          )}
+          <Select
+            label="Checks"
+            data={directionsFor(rule.type)}
+            value={rule.direction}
+            onChange={(v) => set({ direction: v ?? 'input' })}
+            renderOption={DirectionOption}
+            allowDeselect={false}
+            w={220}
+          />
         </Group>
 
         {has('operations') && (
