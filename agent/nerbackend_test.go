@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hoophq/alcatraz/ner"
@@ -53,35 +54,43 @@ func TestDefaultNerBackendIsAccepted(t *testing.T) {
 
 // The startup check must answer what the ORT backend will do at load: an
 // explicit path wins and must exist (file or directory), otherwise the probe
-// directories are searched in order.
+// directories are searched in order. Only a missing file keeps the probe
+// going: a filesystem error is reported as itself, not as absence.
 func TestResolveORTLibrary(t *testing.T) {
+	const name = "libonnxruntime.so"
 	withLib := t.TempDir()
-	lib := filepath.Join(withLib, ortLibraryName)
+	lib := filepath.Join(withLib, name)
 	if err := os.WriteFile(lib, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	empty := t.TempDir()
+	// A probe "directory" that is a file: stat answers ENOTDIR, not ENOENT.
+	notDir := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(notDir, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name     string
 		explicit string
 		probe    []string
 		want     string
-		wantErr  bool
+		wantErr  string
 	}{
 		{name: "explicit file", explicit: lib, want: lib},
 		{name: "explicit dir", explicit: withLib, want: lib},
-		{name: "explicit missing", explicit: filepath.Join(empty, "nope.so"), wantErr: true},
-		{name: "explicit dir without library", explicit: empty, wantErr: true},
+		{name: "explicit missing", explicit: filepath.Join(empty, "nope.so"), wantErr: "ALCATRAZ_ORT_LIBRARY_PATH"},
+		{name: "explicit dir without library", explicit: empty, wantErr: "ALCATRAZ_ORT_LIBRARY_PATH"},
 		{name: "probe finds it", probe: []string{empty, withLib}, want: lib},
-		{name: "probe misses", probe: []string{empty}, wantErr: true},
-		{name: "nothing to probe", wantErr: true},
+		{name: "probe misses", probe: []string{empty}, wantErr: "not found in " + empty},
+		{name: "probe hits an I/O error", probe: []string{notDir, withLib}, wantErr: "not a directory"},
+		{name: "nothing to probe", wantErr: "not found"},
 	}
 	for _, tc := range tests {
-		got, err := resolveORTLibrary(tc.explicit, tc.probe)
-		if tc.wantErr {
-			if err == nil {
-				t.Errorf("%s: got %q, want error", tc.name, got)
+		got, err := resolveORTLibrary(tc.explicit, name, tc.probe)
+		if tc.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("%s: got (%q, %v), want error containing %q", tc.name, got, err, tc.wantErr)
 			}
 			continue
 		}

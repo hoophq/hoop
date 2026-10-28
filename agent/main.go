@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -71,9 +74,12 @@ func configureAlcatrazNer() {
 			log.Warn("ALCATRAZ_NER_BACKEND=ort on a build without the ORT tag: NER sessions will be refused at load")
 		}
 		if backend == ner.BackendORT && ortCompiledIn && modelsDir != "" {
-			if _, err := resolveORTLibrary(libPath, ortProbeDirs); err != nil {
+			lib, err := resolveORTLibrary(libPath, ortLibraryName(), ortProbeDirs())
+			if err != nil {
 				log.Fatalf("%v: mount the ONNX Runtime library and set ALCATRAZ_ORT_LIBRARY_PATH, or set ALCATRAZ_NER_BACKEND=%s", err, ner.BackendGo)
 			}
+			// The file the check found is the file the load uses.
+			libPath = lib
 		}
 		redactoralcatraz.SetNlpProvider(alcatraznlp.Provider(alcatraznlp.Options{
 			ModelsDir:      modelsDir,
@@ -83,16 +89,33 @@ func configureAlcatrazNer() {
 	})
 }
 
-// Where the ORT backend looks for the shared library, in order, after an
-// explicit path: alcatraz's probe, then hugot's own default (/usr/lib). The
-// ORT build is Linux-only, so the Linux name suffices.
-var ortProbeDirs = []string{"/usr/local/lib", "/usr/lib"}
+// The ONNX Runtime library name and the directories alcatraz probes for it
+// (ner/backend.go), by platform. Windows has no probe: hugot reads the
+// working directory there.
+func ortLibraryName() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "onnxruntime.dll"
+	case "darwin":
+		return "libonnxruntime.dylib"
+	}
+	return "libonnxruntime.so"
+}
 
-const ortLibraryName = "libonnxruntime.so"
+func ortProbeDirs() []string {
+	switch runtime.GOOS {
+	case "windows":
+		return nil
+	case "darwin":
+		return []string{"/opt/homebrew/lib", "/usr/local/lib"}
+	}
+	return []string{"/usr/local/lib", "/usr/lib"}
+}
 
 // resolveORTLibrary answers where the ORT backend will load the library from:
 // `explicit` is the file or its directory; empty falls back to probeDirs.
-func resolveORTLibrary(explicit string, probeDirs []string) (string, error) {
+// Only a missing file keeps the probe going; any other error is the answer.
+func resolveORTLibrary(explicit, name string, probeDirs []string) (string, error) {
 	if explicit != "" {
 		info, err := os.Stat(explicit)
 		if err != nil {
@@ -101,19 +124,23 @@ func resolveORTLibrary(explicit string, probeDirs []string) (string, error) {
 		if !info.IsDir() {
 			return explicit, nil
 		}
-		lib := filepath.Join(explicit, ortLibraryName)
+		lib := filepath.Join(explicit, name)
 		if _, err := os.Stat(lib); err != nil {
 			return "", fmt.Errorf("ALCATRAZ_ORT_LIBRARY_PATH: %w", err)
 		}
 		return lib, nil
 	}
 	for _, dir := range probeDirs {
-		lib := filepath.Join(dir, ortLibraryName)
-		if _, err := os.Stat(lib); err == nil {
+		lib := filepath.Join(dir, name)
+		_, err := os.Stat(lib)
+		if err == nil {
 			return lib, nil
 		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("ONNX Runtime library: %w", err)
+		}
 	}
-	return "", fmt.Errorf("%s not found in %s and ALCATRAZ_ORT_LIBRARY_PATH is unset", ortLibraryName, strings.Join(probeDirs, ", "))
+	return "", fmt.Errorf("%s not found in %s and ALCATRAZ_ORT_LIBRARY_PATH is unset", name, strings.Join(probeDirs, ", "))
 }
 
 // nerBackend reads ALCATRAZ_NER_BACKEND. Empty selects the build default;
