@@ -52,6 +52,9 @@ const initial = {
   fields: {},
   // Required fields left empty at the last submit.
   missing: [],
+  // The CMDB error came from load(), before any form: only then may "Try
+  // again" go on without the form. From an open form it goes back to it.
+  errorBeforeForm: false,
 }
 
 // One generation per load(): a response of an older load changes nothing.
@@ -205,7 +208,7 @@ export const useJiraPromptStore = create((set, get) => {
         if (gen !== generation) return null
         set({ fields: initFields(get().rows) })
         if (!ok) {
-          set({ status: GATE_STATUS.ERROR })
+          set({ status: GATE_STATUS.ERROR, errorBeforeForm: true })
           return { needed: true }
         }
         set({ status: GATE_STATUS.READY })
@@ -217,9 +220,12 @@ export const useJiraPromptStore = create((set, get) => {
     },
 
     // "Try again" on the CMDB error: every row's first page again. The answers
-    // and picks stay. Resolves like load(), without the null.
+    // and picks stay. Resolves like load(), without the null; it says
+    // `needed: false` only when the error came before any form, so an open
+    // form is never sent without Send.
     retry: async () => {
       const gen = generation
+      const beforeForm = get().errorBeforeForm
       clearSearchTimers()
       set((state) => ({
         status: GATE_STATUS.LOADING,
@@ -230,8 +236,10 @@ export const useJiraPromptStore = create((set, get) => {
       set((state) => ({
         status: ok ? GATE_STATUS.READY : GATE_STATUS.ERROR,
         fields: { ...initFields(state.rows), ...state.fields },
+        errorBeforeForm: ok ? false : beforeForm,
       }))
-      return ok ? decision() : { needed: true }
+      if (!ok || !beforeForm) return { needed: true }
+      return decision()
     },
 
     setAnswer: (jiraField, value) =>
@@ -269,7 +277,9 @@ export const useJiraPromptStore = create((set, get) => {
       clearTimeout(searchTimers[jiraField])
       searchTimers[jiraField] = setTimeout(async () => {
         delete searchTimers[jiraField]
-        if ((await fetchRow(jiraField)) === 'failed') set({ status: GATE_STATUS.ERROR })
+        if ((await fetchRow(jiraField)) === 'failed') {
+          set({ status: GATE_STATUS.ERROR, errorBeforeForm: false })
+        }
       }, SEARCH_DEBOUNCE_MS)
     },
 
@@ -277,7 +287,7 @@ export const useJiraPromptStore = create((set, get) => {
       const row = get().rows.find((r) => r.jira_field === jiraField)
       if (!row || row.loading || !row.hasMore) return
       if ((await fetchRow(jiraField, { offset: row.offset + PAGE_SIZE })) === 'failed') {
-        set({ status: GATE_STATUS.ERROR })
+        set({ status: GATE_STATUS.ERROR, errorBeforeForm: false })
       }
     },
 

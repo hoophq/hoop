@@ -65,8 +65,8 @@ export default function JiraPromptGate({ opened, onSubmit, onCancel, zIndex }) {
     onCancel()
   }
 
-  // A retry that finds every preset and no prompt goes on without the form.
-  // A cancelled retry resolves to null.
+  // A retry after a load-time error that finds every preset and no prompt goes
+  // on without the form. A cancelled retry resolves to null.
   const handleRetry = async () => {
     const result = await retry()
     if (result && !result.needed) onSubmit(result.fields)

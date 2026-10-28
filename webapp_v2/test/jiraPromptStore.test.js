@@ -216,6 +216,31 @@ describe('CMDB error state', () => {
     await expect(retry).resolves.toBeNull()
   })
 
+  it('Try again after an error in the open form goes back to the form, never sends', async () => {
+    vi.useFakeTimers()
+    const products = [{ id: 'ari:product:2', name: 'Ledger' }]
+    seed({
+      cmdbItems: [
+        cmdb('customfield_30001', '21', { value: 'db-prod-01', required: true }),
+        cmdb('customfield_20001', '11', { value: '', required: true }),
+      ],
+      values: { 21: servers, 11: products },
+    })
+    await expect(state().load('pg')).resolves.toEqual({ needed: true })
+    // Every row resolved now: a load-time decision would say "no form".
+    state().pickCmdb('customfield_20001', { value: 'ari:product:2', label: 'Ledger' })
+    const objects = handlers.objects
+    handlers.objects = fail
+    state().setSearch('customfield_30001', 'db')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(state().status).toBe(GATE_STATUS.ERROR)
+
+    handlers.objects = objects
+    await expect(state().retry()).resolves.toEqual({ needed: true })
+    expect(state().status).toBe(GATE_STATUS.READY)
+    expect(state().fields.customfield_20001).toEqual({ value: 'ari:product:2', label: 'Ledger' })
+  })
+
   it('a failed field config lookup is no error: the dropdowns stay unfiltered', async () => {
     seed({ cmdbItems: [cmdb('customfield_2', '21', { required: true })], values: { 21: servers } })
     handlers.fieldconfigs = fail
