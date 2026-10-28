@@ -8,9 +8,9 @@
   border: 0;
   background: transparent;
   cursor: pointer;
-  font-size: var(--mantine-h3-font-size);
+  font-size: var(--mantine-h2-font-size);
   font-weight: 700;
-  line-height: var(--mantine-h3-line-height);
+  line-height: var(--mantine-h2-line-height);
   color: var(--mantine-color-gray-5);
 }
 
