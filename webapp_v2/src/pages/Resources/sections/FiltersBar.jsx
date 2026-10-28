@@ -83,7 +83,7 @@ export default function FiltersBar() {
         allowDeselect={false}
         maxDropdownHeight={400}
         size="sm"
-        w={170}
+        w={130}
         comboboxProps={{ width: 200, position: 'bottom-end' }}
       />
     </Group>
