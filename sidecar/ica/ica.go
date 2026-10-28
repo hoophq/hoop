@@ -127,6 +127,10 @@ func resolveRuntimeConfig(rt daemon.ICARuntime) ica.RuntimeConfig {
 	override(&cfg.NERThreads, o.NERThreads)
 	override(&cfg.NERParallel, o.NERParallel)
 	override(&cfg.PIIThreshold, o.PIIThreshold)
+	override(&cfg.PIIMatchesOnly, o.PIIMatchesOnly)
+	if cfg.PIIMatchesOnly {
+		cfg.OCRFreshReuseFrames = 0
+	}
 	if len(o.PIIEntities) > 0 {
 		cfg.PIIEntities = slices.Clone(o.PIIEntities)
 	}
@@ -258,6 +262,7 @@ func notes(cfg ica.RuntimeConfig, rt daemon.ICARuntime, lane daemon.ICALane) []s
 		fmt.Sprintf("ica: ner backend %s (onnx runtime compiled in: %t), %d parallel, %d threads",
 			cfg.NERBackend, ica.ORTCompiled, cfg.NERParallel, cfg.NERThreads),
 		fmt.Sprintf("ica: pii threshold %.2f, entities %s", cfg.PIIThreshold, strings.Join(cfg.PIIEntities, ",")),
+		fmt.Sprintf("ica: match-only masking %t; CPU match-only uses fresh full-screen OCR without retained uncertainty covers", cfg.PIIMatchesOnly),
 		fmt.Sprintf("ica: video batch %t, output pipeline %t, adaptive coalescing %t, presentation v2 %t, screen copy %t, latest frame %t",
 			cfg.VideoBatch, cfg.OutputPipeline, cfg.AdaptiveCoalescing, cfg.PresentationV2, cfg.PresentationScreenCopy, cfg.OutputLatestFrame),
 		fmt.Sprintf("ica: ocr worker %s, tessdata %s, ner model %s, ort library %s",
