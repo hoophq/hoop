@@ -55,9 +55,12 @@ export const useConnectionsMetadataStore = create((set, get) => ({
     return credentials.map(jsonCredentialToField)
   },
 
-  // Returns the icon-name slug for the subtype, or null.
+  // Returns the icon-name slug for the subtype, or null. An HTTP proxy role
+  // carries the catalog id `httpproxy`; its catalog subtype is `web-application`.
   getIconName: (subtype) => {
-    const entry = get().getConnection(subtype)
+    const entry =
+      get().getConnection(subtype) ||
+      (get().metadata?.connections || []).find((c) => c.id === subtype)
     return entry?.['icon-name'] || null
   },
 }))

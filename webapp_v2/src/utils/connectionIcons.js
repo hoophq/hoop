@@ -2,7 +2,8 @@ import { useCallback } from 'react'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 
 // Icon for any connection. The connection's `subtype` is the only key
-// we look up — no aliases, no command-parsing fallbacks. If the
+// we look up, against the catalog subtype and then the catalog id — no
+// aliases, no command-parsing fallbacks. If the
 // subtype is missing from connections-metadata.json the fallback icon
 // renders, which forces legacy backend rows (e.g. subtype "cloudwatch"
 // rather than "aws-cloudwatch") to be corrected rather than papered
