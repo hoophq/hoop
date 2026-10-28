@@ -1,0 +1,17 @@
+# The sidecar's rules, read from this file: no license, no control plane.
+# The free tier runs one guardrail rule and one masking rule.
+admin:
+  listen: 0.0.0.0:19000
+audit:
+  file: "-"
+guardrails:
+  rules:
+    - name: agents-read-only
+      type: operation
+      operations: [insert, update, delete, create, drop, alter, truncate, grant, revoke, call, other]
+      message: "hoop: this agent may read appdb, not change it"
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb.appdb.svc.cluster.local:5432   # EDIT: your database, host:port

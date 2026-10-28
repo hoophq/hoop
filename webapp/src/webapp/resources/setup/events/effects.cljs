@@ -123,25 +123,6 @@
                    :configuration-files []}]
      (update-in db [:resource-setup :roles] (fnil conj []) new-role))))
 
-;; The MCP Gateway edit screen renders the create form, which reads a role out
-;; of [:resource-setup :roles role-index]. These two seat a saved connection
-;; there and clear it again on the way out. Seating it wholesale rather than
-;; merging: leftovers from an earlier wizard would render as this
-;; connection's own configuration and be saved onto it.
-(rf/reg-event-db
- :resource-setup->set-mcpproxy-edit-role
- (fn [db [_ role-index role]]
-   (assoc-in db [:resource-setup :roles role-index] role)))
-
-(rf/reg-event-db
- :resource-setup->clear-mcpproxy-edit-role
- (fn [db [_ role-index]]
-   (update-in db [:resource-setup :roles]
-              (fn [roles]
-                (if (< role-index (count (or roles [])))
-                  (assoc (vec roles) role-index nil)
-                  roles)))))
-
 (rf/reg-event-db
  :resource-setup->remove-role
  (fn [db [_ role-index]]

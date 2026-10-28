@@ -552,5 +552,11 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Sessions seed tests
+        run: node --test ../scripts/dev/seed-sessions/seed.test.mjs
+      - name: Resources seed tests
+        run: node --test ../scripts/dev/seed-resources/seed.test.mjs
       - name: Build
         run: npm run build

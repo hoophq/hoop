@@ -187,45 +187,6 @@ import RingProgress from '@/components/RingProgress'
 <RingProgress value={80} size={48} label={<Text fz="xs">4/5</Text>} />
 ```
 
-### `BarChart`
-Bar chart, wrapping `@mantine/charts` (recharts). Carries app-wide defaults only — `gridAxis="none"`, `withLegend={false}`, `tickLine="none"`, and a `valueFormatter` that adds thousands separators. Everything chart-specific stays at the call site, because two charts on the same page can need opposite configurations.
-```jsx
-import BarChart from '@/components/BarChart'
-
-// Grouped bars, no axes (identification via tooltip):
-<BarChart
-  h={300}
-  data={buckets}
-  dataKey="label"
-  withXAxis={false}
-  withYAxis={false}
-  barProps={{ radius: 4 }}
-  series={[
-    { name: 'approved', label: 'Approved', color: 'green.5' },
-    { name: 'rejected', label: 'Rejected', color: 'red.5' },
-  ]}
-/>
-```
-Note Mantine colors **per series**, not per data point. `getBarColor` only receives the numeric value, so it cannot map a category to a color — if you need one color per bar, either show the category on the x-axis with a single series, or reach for `barProps.shape` and accept that the tooltip swatch will still use the series color.
-
-### `DonutChart`
-Donut/pie chart, wrapping `@mantine/charts`. `data` is `[{ name, value, color }]`, so colors are per slice — pull them from `CHART_SERIES_COLORS` and cycle with `i % length`. Defaults to `withLabels={false}` and `tooltipDataSource="segment"` (Mantine's default lists every slice at once).
-```jsx
-import DonutChart from '@/components/DonutChart'
-
-<DonutChart data={slices} size={240} thickness={60} strokeWidth={5} />
-```
-Radii are derived: `outerRadius = size / 2`, `innerRadius = size / 2 - thickness`.
-
-### `CHART_SERIES_COLORS` (theme export, not a component)
-The categorical palette for chart series and slices, exported from `src/theme.js`. Entries are theme color references (`'indigo.6'`, `'green.5'`, …) so the theme stays the single source of truth.
-```jsx
-import { CHART_SERIES_COLORS } from '@/theme'
-
-const color = CHART_SERIES_COLORS[index % CHART_SERIES_COLORS.length]
-```
-**Always cycle with `%`** — a category list longer than the palette would otherwise resolve to `undefined` and render black. Shades 0–1 are deliberately absent: they are invisible against `--mantine-color-body`.
-
 ### `SegmentedControl`
 Segmented control with a **locked item** concept for gated options: visible and hoverable, but not selectable.
 ```jsx
@@ -925,7 +886,8 @@ Non-obvious notes only:
   `useAuthStore`), and every read is scoped by `forUserId`.
 - `usePendingApprovalsStore` — the sidebar's pending approvals count. One call
   to `GET /approvals/count?status=PENDING`; never count the list. Read on
-  navigation and window focus (`layout/Sidebar/usePendingApprovalsCount`,
+  navigation, window focus and `review.created` (with
+  `experimental.review_notifications` on) (`layout/Sidebar/usePendingApprovalsCount`,
   called once in `GatewayLayout` for both sidebars) and after every `decide`;
   never while the sidebar is collapsed. Resets on logout.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
@@ -1117,6 +1079,15 @@ Branch on `license_info.status`, never on a local `expire_at` comparison — the
 gateway decides expiry against its own clock, which is the clock that actually
 blocks sessions. `daysUntilExpiration` is only for the "expires in N days"
 countdown while the status is still `valid`.
+
+### `csv.js`
+CSV export for tables. Used by Users → Export CSV.
+```js
+import { toCSV, downloadCSV } from '@/utils/csv'
+
+downloadCSV('hoop-users-2026-10-23.csv', toCSV(['Name', 'Email'], [['Doe, John', 'j@x.com']]))
+```
+`toCSV` writes RFC 4180 (quotes for comma, double quote, line break; CRLF), a UTF-8 BOM for Excel, and a leading `'` on cells that start with `=`, `+`, `-`, `@` (ASCII or full-width), tab, CR or LF (CSV injection). `null`/`undefined` become empty cells.
 
 ### `support.js`
 Opens the same destination as "Contact support" in the header user menu.

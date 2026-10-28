@@ -35,10 +35,8 @@
    [webapp.resources.setup.events.subs]
    [webapp.resources.setup.events.mcp-oauth]
    [webapp.resources.setup.events.mcp-catalog]
-   [webapp.resources.configure-role.mcp-oauth-edit]
    [webapp.resources.main :as resources-main]
    [webapp.resources.configure.main :as resource-configure]
-   [webapp.resources.configure-role.main :as configure-role]
    [webapp.resources.add-role.main :as add-role]
    [webapp.resources.add-role.events]
    [webapp.resources.subs]
@@ -443,14 +441,6 @@
     [layout :application-hoop
      [routes/wrap-admin-only
       [resource-configure/main resource-id]]]))
-
-(defmethod routes/panels :configure-role-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        connection-name (:connection-name (:route-params current-route))]
-    [layout :application-hoop
-     [routes/wrap-admin-only
-      [configure-role/main connection-name]]]))
 
 (defmethod routes/panels :add-role-to-resource-panel []
   (let [pathname (.. js/window -location -pathname)

@@ -9,6 +9,7 @@ import { useNewRuleTraffics } from '@/hooks/useNewRuleTraffics'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
+import { useAgentsEnabled } from '@/modes/agents'
 import Alert from '@/components/Alert'
 import PageLoader from '@/components/PageLoader'
 import NewRuleButton from '@/components/NewRuleButton'
@@ -59,7 +60,8 @@ export default function DataMasking() {
   const agentRules = traffics.includes(TRAFFIC_AGENT)
   const sidecarRules = traffics.includes(TRAFFIC_SIDECAR)
   const newTraffics = useNewRuleTraffics()
-  const agentBlocked = agentRules && !RULE_DRIVEN_PROVIDERS.includes(redactProvider)
+  const agentsEnabled = useAgentsEnabled()
+  const agentBlocked = agentsEnabled && agentRules && !RULE_DRIVEN_PROVIDERS.includes(redactProvider)
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [selectedAttribute, setSelectedAttribute] = useState(null)

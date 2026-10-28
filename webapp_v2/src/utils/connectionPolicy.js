@@ -13,6 +13,7 @@ export const CONNECTION_METHODS = {
   MANUAL: 'manual',
   SECRETS_MANAGER: 'secrets_manager',
   AWS_IAM: 'aws_iam',
+  IAM_FEDERATION: 'iam_federation',
 }
 
 // Subtypes that route to the free-form custom editor regardless of
@@ -40,6 +41,12 @@ export function isFreeFormCustomSubtype(subtype) {
 const AWS_IAM_ROLE_SUBTYPES = new Set(['postgres', 'mysql'])
 export function supportsAwsIam(subtype) {
   return AWS_IAM_ROLE_SUBTYPES.has(subtype)
+}
+
+// The gateway's federation providers (gcp_iam, gcp_oauth) only mint BigQuery
+// credentials (webapp/.../setup/connection_method.cljs:91).
+export function supportsIamFederation(subtype) {
+  return subtype === 'bigquery'
 }
 
 // Whether the connection is eligible for the Test Connection action.

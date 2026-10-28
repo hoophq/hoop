@@ -240,9 +240,8 @@ fixed at build. ADR-0014 records the boundary; the control plane's heartbeat
 applies the same one.
 
 `SIGHUP` is a forced reload: the document runs even when its bytes did not
-move. That is how a license file replaced behind an unchanged `license` path
-is picked up — a stat of the config file cannot see it, and a `SIGHUP` (or
-any later rule edit) re-resolves the path and adopts the new document.
+move. It also re-reads the license file, which is watched on the same ten
+second tick; see "Changing the license of a running process".
 
 On Kubernetes, mount the ConfigMap as a volume, not through `subPath`: the
 kubelet updates a volume in place (an atomic symlink swap the stat sees, on
@@ -285,6 +284,69 @@ The plane issues the token once, when you register the sidecar
 means registering a new sidecar. The token flag and `HOOP_SIDECAR_TOKEN`
 hold the token itself, never a path, and no config key exists for it: a
 bearer secret does not belong in a file that gets committed.
+
+#### Logging in instead of a token
+
+The free plan always runs identified. `hoop start sidecar` logs in on its
+first run, with a config file or without one, unless the run already has a
+credential (the token flag, `HOOP_SIDECAR_TOKEN` or a platform identity) or a
+license, which is not the free plan. `--validate`, `--migrate` and
+`--codec-test` never log in.
+
+The login goes to `HOOP_CONTROL_PLANE_URL`, then the config file's
+`control_plane_url`, else `https://use.hoop.dev`. A plane other than hoop's is
+an Enterprise deployment, and its own web app approves the code. The login
+prints a URL and a code; an admin approves the code in the web app, and the
+sidecar joins that admin's organization.
+
+```bash
+hoop start sidecar --config sidecar.yaml
+#   To connect this sidecar, approve it in your browser:
+#     https://use.hoop.dev/sidecars/login?code=BCDF-GHJK
+#   The page shows the code BCDF-GHJK. Approve only if it matches this one.
+```
+
+The sidecar makes its own `hsc_` token and sends it once; the plane keeps
+only its hash, and approving creates the sidecar with it. The token is saved
+in `~/.hoop/sidecar/credentials.json` (mode 0600; `HOOP_SIDECAR_STATE_DIR`
+moves the folder), one login per control plane, and is only ever sent to the
+plane that issued it. The next run on that plane reuses it without asking.
+
+A run with a config file boots that file, connected: the file stays the
+source and the plane shows it (`load_from_disk`). A bare run at a terminal
+asks first: **Managed by hoop (free)** logs in on the first-run screen and
+then sets the config up there, and **Enterprise** opens the Connect page (your
+own Control Plane and token, or a license). The setup screen also asks the
+plane every few seconds, and boots on a configuration set in the web app as
+soon as there is one. The next bare run boots the file the last run booted.
+
+| Command | Does |
+|---|---|
+| `hoop sidecar status` | the planes this machine is logged in to, each with its sidecar and config file |
+| `hoop sidecar status --token` | the same, with each token, to set `HOOP_SIDECAR_TOKEN` elsewhere |
+| `hoop sidecar logout` | forgets this machine's token; `--control-plane <url>` or `--all` when it holds several |
+| `--login` | logs in again even when a login is saved |
+| `--no-login` | runs standalone; refused on the free plan, accepted with a license |
+
+Logout is local, like `docker logout`: the sidecar stays in its organization.
+Delete it in the web app to remove it there, which also stops its token.
+
+**Headless** (a container, a marketplace image, an agent): log in once and
+pass the token. Get it from the web app (Connect an existing Sidecar) or from
+a machine that logged in (`hoop sidecar status --token`), and set
+`HOOP_SIDECAR_TOKEN`. With no `HOOP_CONTROL_PLANE_URL` the token goes to the
+hosted plane. A headless run with no credential logs in by itself and writes
+the login as JSON lines on stdout, for a console or an agent to show a person:
+
+```json
+{"time":"2026-10-16T20:00:00Z","level":"INFO","msg":"sidecar login required: approve the code in the web app","event":"sidecar_login_required","control_plane_url":"https://use.hoop.dev","verification_url":"https://use.hoop.dev/sidecars/login?code=BCDF-GHJK","user_code":"BCDF-GHJK","expires_in":600}
+{"time":"2026-10-16T20:01:10Z","level":"INFO","msg":"sidecar login approved","event":"sidecar_login_approved","control_plane_url":"https://use.hoop.dev","sidecar":"edge-1"}
+```
+
+Keep `HOOP_SIDECAR_STATE_DIR` on a volume, or the next restart logs in again.
+
+An organization without an Enterprise license holds one sidecar, under the
+free rule caps below. This is the hoop CLI only: `hoop-inspect` takes a token.
 
 #### Service account identity instead of a token
 
@@ -530,8 +592,9 @@ A control plane credential makes `HOOP_SIDECAR_ID` unnecessary anywhere.
 `install-source` says which hoop template started the sidecar. The template
 sets `HOOP_SIDECAR_INSTALL_SOURCE`; unset, the property is omitted. Values
 are a fixed list, `managed-agents-http`, `managed-agents-kubernetes`,
-`openai-agents-http` and `openai-agents-kubernetes` today, and any other
-value is sent as `other`, so it can never carry a name.
+`openai-agents-http`, `openai-agents-kubernetes`, `agentcore-http`,
+`agentcore-kubernetes` and `agentcore-postgres` today, and any other value
+is sent as `other`, so it can never carry a name.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends
@@ -668,6 +731,56 @@ a path is the silent downgrade this build refuses everywhere else.
 
 `/config` serves the same verdict under `license`, without the signature, and
 the caps under `limits`, where a `null` means the license lifted one.
+
+#### Changing the license of a running process
+
+No restart is needed to renew or replace a license. Three ways, and a
+restart picks the same license the running process ends up with:
+
+- **Replace the file.** When the source in force (`-license`,
+  `HOOP_LICENSE` or the `license` key) names a path, the process stats that
+  file every ten seconds and re-reads it when it moves, or at once on
+  `SIGHUP`. A new document is in force on that tick and logged as
+  `license file replaced`. A file that does not load keeps the license in
+  use and warns once. On Kubernetes, mount a Secret as a directory, not a
+  `subPath`, and point the source at the file in it.
+- **Edit the `license` key** in the config file, when no flag or
+  `HOOP_LICENSE` outranks it. It applies with the next config reload.
+- **`PUT /license` on the admin listener**, with the document as the body.
+  Off unless `HOOP_SIDECAR_ADMIN_SECRET` is set; then the request needs
+  `Authorization: Bearer <secret>`. The admin listener is plain HTTP, so
+  send it from the host or through an encrypted tunnel (`kubectl
+  port-forward`, SSH), never across a network others can read:
+
+  ```bash
+  curl -X PUT --data-binary @license.json \
+    -H "Authorization: Bearer $HOOP_SIDECAR_ADMIN_SECRET" localhost:19000/license
+  ```
+
+  The answer is `{"outcome": "installed" | "unchanged", "license": {...}}`,
+  the same report `/config` serves. Status `401` is a missing or wrong
+  secret, `403` means the endpoint is off, `409` means a control plane owns
+  the license, and `422` is a license this process refuses, with the reason.
+  The license lives in memory: the next change to the source in force
+  replaces it, and so does a restart. Update the source as well.
+
+A replaced file or an edited key is the owner's change, so it is in force
+even when it covers fewer rules; then the relay stops, as when a term ends.
+The admin API is stricter: it takes only a current license that covers the
+running rules, so a holder of the secret cannot stop the relay. It also
+takes only a document, never a path.
+
+A license given inline (`-license '{...}'`, `HOOP_LICENSE='{...}'`) cannot
+change in a running process; use a path, the admin API, or a restart. Under
+a control plane that owns the license, set it there: the file is not
+watched and the admin API answers `409`.
+
+Connecting a licensed standalone sidecar to a control plane takes a restart.
+After it, a control plane that manages licenses (every current gateway) is the
+only license source. Set the organization's license there first: rules past
+the free tier do not start without a current license that covers them. When
+the config file starts naming a control plane, the running process warns about
+this before the restart.
 
 #### When a term ends under a running process
 
@@ -826,7 +939,7 @@ license: /etc/hoop-inspect/license.json
 # control_plane_url: https://cp.example.com
 
 admin:
-  listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*
+  listen: 127.0.0.1:19000   # /healthz /stats /metrics /config /events /api/*, PUT /license
 
 # Metrics, traces and audit events over OTLP. See "OpenTelemetry".
 # telemetry:
@@ -3056,8 +3169,16 @@ listeners:
     upstream: 10.77.0.30:2598
     ica:
       tenant_id: finance
+      source_cidrs: [10.20.1.10/32]    # optional: only the Citrix Gateway SNIP may connect
       edt: true                        # optional: EDT over UDP on the same port
 ```
+
+This is single mode: the lane serves one VDA, named in `upstream`, and the
+Gateway (or Workspace) is pointed at this host as that VDA — the STA/broker
+hands out the sidecar's address. `ica.source_cidrs` pins who may connect;
+with no list the lane admits any source that reaches it, as the other lanes
+do. A connection from elsewhere is refused before a session exists and
+recorded with stage `gateway_source_policy`. No TPROXY, no privileges.
 
 The `hoophq/hoopsidecar:<version>-ica` image runs `hoop-inspect` with the
 engine, tesseract, ONNX Runtime and the NER model in place, so a config like
@@ -3093,9 +3214,10 @@ rule and policy route stay yours. Rerunning the installer from a newer
 bundle upgrades the binary, the worker and ONNX Runtime, and keeps the
 config and the model. The source of the installer is
 `deploy/ica-sidecar/install.sh`; `deploy/ica-sidecar/examples/` holds a
-commented config for each mode (`config.single.yaml`, `config.cidr.yaml`),
-shipped in the bundle, and the single one is what a host without a config
-gets to edit.
+commented config for each mode (`config.single.yaml`, `config.cidr.yaml`,
+and `config.gateway-direct.yaml` for a single-mode lane a Citrix Gateway
+dials directly, with its SNIP pinned in `source_cidrs`), shipped in the
+bundle, and the single one is what a host without a config gets to edit.
 
 With the assets installed, the Linux `hoop` CLI serves the same file
 in-process: `hoop start sidecar --config /etc/hoop-inspect/config.yaml`.
@@ -3772,8 +3894,8 @@ stmts, _ := i.Inspect(inspect.FromClient, packetBytes)
 ```
 
 **Build it through the seam.** `codec/http.New` returns `*Codec`, libhoop's
-Inspector with the relay's additions around it: Connect Gateway
-normalization on every entry point, and on the byte path the Via marker and
+Inspector with the relay's additions around it: path cleaning and Connect
+Gateway normalization on every entry point, and on the byte path the Via marker and
 the lifting of `Options.CredentialHeader`. `InspectRequest` does not lift the
 credential, since a caller holding the `*http.Request` already has the
 header; it still keeps it out of `HTTP.Headers` unless `Options.Headers`
@@ -3784,6 +3906,23 @@ names it.
 like `/users/alice` survives intact: merging it with `/users/settings` would
 silently widen every rule written against either. The normalizer errs toward
 keeping segments, so a policy comes out too narrow rather than too broad.
+
+**Dot and empty segments resolve.** The resource is the resolved path: `\`
+becomes `/`, `.`, `..` and empty segments resolve, and a trailing slash
+stays. `/x/../admin/users` and
+`//admin//users` both become `/admin/users`. The path, the target and the
+statement text stay as sent.
+
+**A dot segment is matched three ways.** When the path held `.` or `..`,
+`metadata["http.resource_unresolved"]` keeps the resource before resolution.
+`http_resource` rules and the `resources` scope of `http_header` rules match
+the resolved resource, the unresolved form, and the unresolved form resolved
+on its own. The sidecar cannot see how an upstream routes: Express 4 runs
+`/admin/../x` under `/admin`, and Connect Gateway may route the raw
+membership and leave the rest to a cluster that resolves it. Analyzer
+triggers and `match_ignore` read the resolved form only. OPA gets the
+resolved form in `input.http.resource` and the unresolved form in
+`input.metadata`, and does its own matching.
 
 **Data exposure is opt-in.** Bodies and headers are NOT captured by default.
 A policy engine's decision log is a copy of everything you send it, and
@@ -3993,6 +4132,15 @@ and the body included. Keep the token in `X-Hoop-Token` only. The setup is
 in `deploy/openai-agents/http/` and on the docs page,
 [OpenAI Agents API](https://hoop.dev/docs/integrations/openai-agents).
 
+#### A private lane in an AgentCore VPC
+
+An Amazon Bedrock AgentCore agent calls a lane inside the customer's VPC,
+not on a public URL. The lane is plain HTTP: the harness loop runs outside
+the agent's container and trusts no private CA. The security groups admit
+only the agents, and the caller token still names the caller in the audit
+trail. The setup is in `deploy/agentcore/http/` and on the docs page,
+[Amazon Bedrock AgentCore](https://hoop.dev/docs/integrations/aws-agentcore).
+
 ### kubectl through GKE Connect Gateway
 
 **The cluster prefix is removed before policy sees the resource.** Connect
@@ -4007,7 +4155,8 @@ through the gateway as it does against the API server. Without it such a rule
 matches nothing and kubectl through the gateway passes it untouched. The path,
 the target and the statement text stay as sent, and
 `metadata["http.resource_prefix"]` records what was removed. Any other host
-or shape is left alone.
+or shape is left alone. `metadata["http.resource_unresolved"]` loses its
+prefix the same way, split on its own.
 
 The lane below names each caller from kubectl's own Google bearer with
 [`google_identity`](#1-write-the-file), and serves kubectl's h2 over ALPN (see

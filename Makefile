@@ -65,6 +65,27 @@ run-dev-control-plane:
 run-dev-postgres:
 	./scripts/dev/run-postgres.sh
 
+# Every session kind of the Sessions behavior matrix, on a running dev stack.
+# See scripts/dev/seed-sessions/README.md.
+seed-dev-sessions:
+	node scripts/dev/seed-sessions/seed.mjs
+
+# With SEED_DB_URI and API_URL set, it also seeds the stack twice and compares.
+test-seed-sessions:
+	node --test scripts/dev/seed-sessions/seed.test.mjs
+
+# Every resource family of the Resources behavior matrix and the AWS Connect
+# jobs, on a running dev stack. See scripts/dev/seed-resources/README.md.
+seed-dev-resources:
+	node scripts/dev/seed-resources/seed.mjs
+
+# The org with no connection, no resource and no protection profile.
+seed-dev-resources-empty:
+	node scripts/dev/seed-resources/seed.mjs empty
+
+test-seed-resources:
+	node --test scripts/dev/seed-resources/seed.test.mjs
+
 run-dev-presidio:
 	./scripts/dev/run-presidio.sh
 
@@ -507,26 +528,21 @@ release-s3-latest:
 	aws s3 cp ${DIST_FOLDER}/latest.txt s3://hoopartifacts/release/latest.txt
 	aws s3 cp ./scripts/install-cli.sh s3://hoopartifacts/release/install-cli.sh
 
+# CloudFormation templates for Launch Stack links: one bucket per Region.
+CF_TEMPLATE_REGIONS := us-east-1 us-east-2 us-west-1 us-west-2 eu-west-1 eu-west-2 eu-central-1 ap-southeast-2
+CF_TEMPLATES := hoopdev-platform.template.yaml agentcore-http.template.yaml
+
 release-s3-cf-templates-latest:
-	aws s3 cp --region us-east-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-east-1/latest/hoopdev-platform.template.yaml
-	aws s3 cp --region us-east-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-east-2/latest/hoopdev-platform.template.yaml
-	aws s3 cp --region us-west-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-west-1/latest/hoopdev-platform.template.yaml
-	aws s3 cp --region us-west-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-west-2/latest/hoopdev-platform.template.yaml
-	aws s3 cp --region eu-west-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-eu-west-1/latest/hoopdev-platform.template.yaml
-	aws s3 cp --region eu-west-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-eu-west-2/latest/hoopdev-platform.template.yaml
-	aws s3 cp --region eu-central-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-eu-central-1/latest/hoopdev-platform.template.yaml
-	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/latest/hoopdev-platform.template.yaml
+	@set -e; for r in ${CF_TEMPLATE_REGIONS}; do for t in ${CF_TEMPLATES}; do \
+		aws s3 cp --region $$r ${DIST_FOLDER}/$$t s3://hoopdev-platform-cf-$$r/latest/$$t; \
+	done; done
 
 release-s3-cf-templates:
 	sed "s|LATEST_HOOP_VERSION|${VERSION}|g" deploy/aws/hoopdev-platform.template.yaml > ${DIST_FOLDER}/hoopdev-platform.template.yaml
-	aws s3 cp --region us-east-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-east-1/${VERSION}/hoopdev-platform.template.yaml
-	aws s3 cp --region us-east-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-east-2/${VERSION}/hoopdev-platform.template.yaml
-	aws s3 cp --region us-west-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-west-1/${VERSION}/hoopdev-platform.template.yaml
-	aws s3 cp --region us-west-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-us-west-2/${VERSION}/hoopdev-platform.template.yaml
-	aws s3 cp --region eu-west-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-eu-west-1/${VERSION}/hoopdev-platform.template.yaml
-	aws s3 cp --region eu-west-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-eu-west-2/${VERSION}/hoopdev-platform.template.yaml
-	aws s3 cp --region eu-central-1 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-eu-central-1/${VERSION}/hoopdev-platform.template.yaml
-	aws s3 cp --region ap-southeast-2 ${DIST_FOLDER}/hoopdev-platform.template.yaml s3://hoopdev-platform-cf-ap-southeast-2/${VERSION}/hoopdev-platform.template.yaml
+	cp deploy/agentcore/http/template.yaml ${DIST_FOLDER}/agentcore-http.template.yaml
+	@set -e; for r in ${CF_TEMPLATE_REGIONS}; do for t in ${CF_TEMPLATES}; do \
+		aws s3 cp --region $$r ${DIST_FOLDER}/$$t s3://hoopdev-platform-cf-$$r/${VERSION}/$$t; \
+	done; done
 
 publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
@@ -545,4 +561,4 @@ gcp-marketplace-sidecar-publish:
 gcp-marketplace-sidecar-test:
 	VERSION=$(VERSION) DIST_FOLDER=$(abspath $(DIST_FOLDER)) ./scripts/gcp-marketplace/sidecar.sh test
 
-.PHONY: test-parity test-twins test-twins-scenario test-twins-browser twins-up twins-down run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: test-parity test-twins test-twins-scenario test-twins-browser twins-up twins-down run-dev run-dev-control-plane run-dev-postgres seed-dev-sessions test-seed-sessions seed-dev-resources seed-dev-resources-empty test-seed-resources build-dev-webapp test-oss test-unit test test-sidecar-plugins prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-controlplane-readonly test-sidecar-compat test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
