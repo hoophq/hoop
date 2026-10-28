@@ -159,7 +159,7 @@ and avoids the cycle a call from `useAuthStore` would create. Live examples:
 | Where it lives | What it is | Examples |
 |---|---|---|
 | `pages/[Page]/<X>.jsx` | A tab body or top-level slice of the page | `CredentialsTab.jsx`, `DetailsTab.jsx`, `ConfigureHeader.jsx` |
-| `pages/[Page]/sections/` | Decomposition, single consumer, not reusable | `TestConnectionModal.jsx`, `MetadataFieldsInput.jsx` |
+| `pages/[Page]/sections/` | Decomposition, single consumer, not reusable | `SidecarMirrorView.jsx`, `MetadataFieldsInput.jsx` |
 | `pages/[Page]/components/` | Reusable within the page (≥2 consumers) | `SecretField/`, `ToggleSection.jsx`, `ReviewSection.jsx` |
 | `src/components/` | Reusable across the whole app | `Button`, `TextInput`, `Table` |
 

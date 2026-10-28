@@ -16,7 +16,7 @@ import CredentialsTab from '@/pages/Roles/Configure/CredentialsTab'
 import DetailsTab from '@/pages/Roles/Configure/DetailsTab'
 import TerminalAccessTab from '@/pages/Roles/Configure/TerminalAccessTab'
 import NativeAccessTab from '@/pages/Roles/Configure/NativeAccessTab'
-import TestConnectionModal from '@/pages/Roles/Configure/sections/TestConnectionModal'
+import TestConnectionModal from '@/components/TestConnectionModal'
 import SidecarMirrorView from '@/pages/Roles/Configure/sections/SidecarMirrorView'
 import { federationOutcomeSnackbar } from '@/pages/Roles/Configure/utils/federation'
 

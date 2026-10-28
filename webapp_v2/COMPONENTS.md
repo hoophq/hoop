@@ -373,6 +373,20 @@ const [opened, { open, close }] = useDisclosure(false)
 </Modal>
 ```
 
+### `ConfirmDialog`
+Confirmation for a destructive or irreversible action: title, body, Cancel and a confirm button. `danger` paints the confirm red; `loading` disables Cancel and outside clicks.
+```jsx
+import ConfirmDialog from '@/components/ConfirmDialog'
+
+<ConfirmDialog opened={opened} title="Delete role?" confirmLabel="Confirm and delete" danger
+  loading={deleting} onConfirm={handleDelete} onClose={close}>
+  <Text size="sm">This cannot be undone.</Text>
+</ConfirmDialog>
+```
+
+### `TestConnectionModal`
+The "Connectivity Check" modal: agent status and connection status, each updating on its own. Presentational; the caller runs the two probes (`GET /connections/:name`, `GET /connections/:name/test`). Used by Configure Role and `/resources`.
+
 ### `Select`
 Single-value select input.
 ```jsx
@@ -830,6 +844,9 @@ credential). Expiry side effects belong to the owning store, not to this hook â€
 ```jsx
 const { label } = useCountdown(credential.expire_at)
 ```
+
+### `useInfiniteScroll(onLoadMore, enabled = true)`
+Returns a ref for a sentinel at the end of a list; `onLoadMore` runs when it scrolls into view. Pass `enabled = hasMore && !loading`, so a page that loads while the sentinel stays visible asks for the next one. Used by `/resources`.
 
 ### `usePaginatedConnections({ pageSize = 50 })`
 Page-local paginated connection (resource role) option source with server-side search and infinite scroll â€” the data layer behind `ConnectionsMultiSelect` and the paginated Resource Role filter. Each call site gets independent state.
