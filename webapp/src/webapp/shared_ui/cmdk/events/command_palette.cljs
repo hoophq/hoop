@@ -17,17 +17,22 @@
  :command-palette->open
  (fn [{:keys [db]} [_]]
    ;; The flags loaded with the app go stale when an admin toggles one.
-   {:db (assoc-in db [:command-palette :open?] true)
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri "/serverinfo"
-                             :on-success #(rf/dispatch [:command-palette->set-feature-flags (:feature_flags %)])
-                             :on-failure (fn [_])}]]]}))
+   (let [request-id (inc (get-in db [:command-palette :flags-request-id] 0))]
+     {:db (-> db
+              (assoc-in [:command-palette :open?] true)
+              (assoc-in [:command-palette :flags-request-id] request-id))
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri "/serverinfo"
+                               :on-success #(rf/dispatch [:command-palette->set-feature-flags request-id (:feature_flags %)])
+                               :on-failure (fn [_])}]]]})))
 
 (rf/reg-event-fx
  :command-palette->set-feature-flags
- (fn [{:keys [db]} [_ flags]]
-   ;; Never creates :gateway->info :data: license gating reads its absence as "not loaded".
-   (when (get-in db [:gateway->info :data])
+ (fn [{:keys [db]} [_ request-id flags]]
+   ;; A late answer to an earlier open must not restore older flags. Never creates
+   ;; :gateway->info :data: license gating reads its absence as "not loaded".
+   (when (and (= request-id (get-in db [:command-palette :flags-request-id]))
+              (get-in db [:gateway->info :data]))
      (cond-> {:db (assoc-in db [:gateway->info :data :feature_flags] flags)}
        (get-in db [:command-palette :open?])
        (assoc :fx [[:dispatch [:command-palette->search (get-in db [:command-palette :query])]]])))))
