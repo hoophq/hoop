@@ -14,7 +14,8 @@
     "postcss:build": "cross-env TAILWIND_MODE=build postcss src/css/tailwind.css -o ./resources/public/css/site.css --verbose",
     "postcss:release": "cross-env NODE_ENV=production postcss src/css/tailwind.css -o ./resources/public/css/site.css --verbose",
     "release:hoop-ui": "npm run download-connection-metadata && run-s genversion shadow:release:hoop-ui postcss:release",
-    "build-report:hoop-ui": "npx shadow-cljs run shadow.cljs.build-report hoop-ui target/hoop-ui-build-report.html"
+    "build-report:hoop-ui": "npx shadow-cljs run shadow.cljs.build-report hoop-ui target/hoop-ui-build-report.html",
+    "fixtures:sessions": "npm run genversion && npx shadow-cljs compile session-fixtures && node target/session-fixtures.js ../webapp_v2/test/fixtures/sessions"
   },
   "dependencies": {
     "@codemirror/commands": "^6.3.2",

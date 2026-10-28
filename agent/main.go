@@ -2,12 +2,18 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/hoophq/alcatraz/ner"
 	llog "github.com/hoophq/libhoop/llog"
 	redactoralcatraz "github.com/hoophq/libhoop/redactor/alcatraz"
 	alcatraznlp "github.com/hoophq/libhoop/redactor/alcatraz/nlp"
@@ -49,10 +55,114 @@ var (
 // image does not carry one refuses those sessions with an error naming the
 // missing file. Loading costs a few hundred MB of resident memory that is
 // not released until the process restarts.
+//
+// The inference backend is ONNX Runtime where the build carries it: the
+// pure-Go backend leaks memory across sessions, ORT does not. ORT is compiled
+// in only in the Linux build (-tags ORT, Makefile build-go) and needs the
+// shared library at run time; ALCATRAZ_ORT_LIBRARY_PATH names it when it is
+// not in a probed location (/usr/local/lib, /usr/lib). ALCATRAZ_NER_BACKEND
+// overrides the build default.
+//
+// A model with no library to run it on would fail on the first session that
+// asks for a PERSON, hours after a deploy; the agent refuses to start instead.
 func configureAlcatrazNer() {
 	configureAlcatrazNerOnce.Do(func() {
-		redactoralcatraz.SetNlpProvider(alcatraznlp.Provider(os.Getenv("ALCATRAZ_NER_MODEL_PATH")))
+		backend := nerBackend()
+		modelsDir := os.Getenv("ALCATRAZ_NER_MODEL_PATH")
+		libPath := os.Getenv("ALCATRAZ_ORT_LIBRARY_PATH")
+		if backend == ner.BackendORT && !ortCompiledIn {
+			log.Warn("ALCATRAZ_NER_BACKEND=ort on a build without the ORT tag: NER sessions will be refused at load")
+		}
+		if backend == ner.BackendORT && ortCompiledIn && modelsDir != "" {
+			lib, err := resolveORTLibrary(libPath, ortLibraryName(), ortProbeDirs())
+			if err != nil {
+				log.Fatalf("%v: mount the ONNX Runtime library and set ALCATRAZ_ORT_LIBRARY_PATH, or set ALCATRAZ_NER_BACKEND=%s", err, ner.BackendGo)
+			}
+			// The file the check found is the file the load uses.
+			libPath = lib
+		}
+		redactoralcatraz.SetNlpProvider(alcatraznlp.Provider(alcatraznlp.Options{
+			ModelsDir:      modelsDir,
+			Backend:        backend,
+			ORTLibraryPath: libPath,
+		}))
 	})
+}
+
+// The ONNX Runtime library name and the directories alcatraz probes for it
+// (ner/backend.go), by platform. Windows has no probe: hugot reads the
+// working directory there.
+func ortLibraryName() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "onnxruntime.dll"
+	case "darwin":
+		return "libonnxruntime.dylib"
+	}
+	return "libonnxruntime.so"
+}
+
+func ortProbeDirs() []string {
+	switch runtime.GOOS {
+	case "windows":
+		return nil
+	case "darwin":
+		return []string{"/opt/homebrew/lib", "/usr/local/lib"}
+	}
+	return []string{"/usr/local/lib", "/usr/lib"}
+}
+
+// resolveORTLibrary answers where the ORT backend will load the library from:
+// `explicit` is the file or its directory; empty falls back to probeDirs.
+// Only a missing file keeps the probe going; any other error is the answer.
+func resolveORTLibrary(explicit, name string, probeDirs []string) (string, error) {
+	if explicit != "" {
+		info, err := os.Stat(explicit)
+		if err != nil {
+			return "", fmt.Errorf("ALCATRAZ_ORT_LIBRARY_PATH: %w", err)
+		}
+		if !info.IsDir() {
+			return explicit, nil
+		}
+		lib := filepath.Join(explicit, name)
+		if _, err := os.Stat(lib); err != nil {
+			return "", fmt.Errorf("ALCATRAZ_ORT_LIBRARY_PATH: %w", err)
+		}
+		return lib, nil
+	}
+	for _, dir := range probeDirs {
+		lib := filepath.Join(dir, name)
+		_, err := os.Stat(lib)
+		if err == nil {
+			return lib, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("ONNX Runtime library: %w", err)
+		}
+	}
+	return "", fmt.Errorf("%s not found in %s and ALCATRAZ_ORT_LIBRARY_PATH is unset", name, strings.Join(probeDirs, ", "))
+}
+
+// nerBackend reads ALCATRAZ_NER_BACKEND. Empty selects the build default;
+// any value other than "ort" or "go" stops the agent at startup.
+func nerBackend() string {
+	backend, err := parseNerBackend(os.Getenv("ALCATRAZ_NER_BACKEND"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return backend
+}
+
+// parseNerBackend is nerBackend without the exit, so a test can cover it.
+func parseNerBackend(v string) (string, error) {
+	switch v {
+	case "":
+		return defaultNerBackend, nil
+	case ner.BackendORT, ner.BackendGo:
+		return v, nil
+	}
+	return "", fmt.Errorf("ALCATRAZ_NER_BACKEND=%q: accepted values are %q and %q (empty selects the build default %q)",
+		v, ner.BackendORT, ner.BackendGo, defaultNerBackend)
 }
 
 func Run() {

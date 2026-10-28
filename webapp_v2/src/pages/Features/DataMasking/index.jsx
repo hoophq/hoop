@@ -8,6 +8,7 @@ import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
+import { useAgentsEnabled } from '@/modes/agents'
 import Alert from '@/components/Alert'
 import PageLoader from '@/components/PageLoader'
 import Button from '@/components/Button'
@@ -51,7 +52,8 @@ export default function DataMasking() {
   const { traffics, mixed, showAgentFilters, showSidecarFilter, matches } = traffic
   const agentRules = traffics.includes(TRAFFIC_AGENT)
   const sidecarRules = traffics.includes(TRAFFIC_SIDECAR)
-  const agentBlocked = agentRules && !RULE_DRIVEN_PROVIDERS.includes(redactProvider)
+  const agentsEnabled = useAgentsEnabled()
+  const agentBlocked = agentsEnabled && agentRules && !RULE_DRIVEN_PROVIDERS.includes(redactProvider)
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [selectedAttribute, setSelectedAttribute] = useState(null)

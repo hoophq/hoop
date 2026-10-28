@@ -52,9 +52,9 @@
                   ["/ai-session-analyzer" :ai-session-analyzer]
                   ["/ai-session-analyzer/rules/new" :create-ai-session-analyzer-rule]]
      ;; Rendered by the React shell (webapp_v2) — these two bidi entries exist
-     ;; only so CLJS code can navigate to them: the sidebar constants and the
-     ;; configure-role terminal tab url-for :guardrails, and the
-     ;; activation-journey feature cards navigate to both. The /edit/:id entry
+     ;; only so CLJS code can navigate to them: the sidebar constants url-for
+     ;; :guardrails, and the activation-journey feature cards navigate to
+     ;; both. The /edit/:id entry
      ;; had no caller outside the deleted CLJS panels and is gone.
      "/guardrails" [["" :guardrails]
                     ["/new" :create-guardrail]]
