@@ -23,6 +23,7 @@ export default function FilterPopover({
 	selected,
 	onSelect,
 	onClear,
+	size,
 }) {
 	const [open, setOpen] = useState(false);
 	const [searchTerm, setSearchTerm] = useState("");
@@ -51,6 +52,7 @@ export default function FilterPopover({
 			<Popover.Target>
 				<Button
 					variant="field"
+					size={size}
 					data-filled={hasSelected || undefined}
 					onClick={() => setOpen((value) => !value)}
 					leftSection={<Icon size={16} />}

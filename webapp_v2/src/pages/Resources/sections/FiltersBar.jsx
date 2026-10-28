@@ -45,7 +45,7 @@ export default function FiltersBar() {
   return (
     <Group gap="xs" wrap="nowrap">
       {hasFilters(filters) && (
-        <Button variant="light" color="gray" onClick={onClear}>
+        <Button variant="light" color="gray" size="sm" onClick={onClear}>
           Clear Filters
         </Button>
       )}
@@ -55,10 +55,11 @@ export default function FiltersBar() {
         value={searchInput}
         onChange={(e) => onSearchChange(e.currentTarget.value)}
         leftSection={<Search size={16} />}
+        size="sm"
         w={200}
       />
       {tab === TABS.ROLES && (
-        <TagsFilter tags={tags} selected={filters.tags} onChange={(next) => setFilters({ tags: next })} />
+        <TagsFilter tags={tags} selected={filters.tags} onChange={(next) => setFilters({ tags: next })} size="sm" />
       )}
       {tab === TABS.ROLES && (
         <FilterPopover
@@ -68,6 +69,7 @@ export default function FiltersBar() {
           selected={filters.attribute}
           onSelect={(name) => setFilters({ attribute: name })}
           onClear={() => setFilters({ attribute: null })}
+          size="sm"
         />
       )}
       <Select
@@ -79,6 +81,7 @@ export default function FiltersBar() {
         onChange={(value) => setFilters({ type: value === ALL_TYPES ? null : value })}
         allowDeselect={false}
         maxDropdownHeight={400}
+        size="sm"
         w={170}
         comboboxProps={{ width: 200, position: 'bottom-end' }}
       />

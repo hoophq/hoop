@@ -63,7 +63,7 @@ function ValuesView({ tagKey, values, selected, onChange, onBack }) {
   )
 }
 
-export default function TagsFilter({ tags, selected, onChange }) {
+export default function TagsFilter({ tags, selected, onChange, size }) {
   const [opened, setOpened] = useState(false)
   const [search, setSearch] = useState('')
   const [currentKey, setCurrentKey] = useState(null)
@@ -96,6 +96,7 @@ export default function TagsFilter({ tags, selected, onChange }) {
       <Popover.Target>
         <Button
           variant="field"
+          size={size}
           data-filled={count > 0 || undefined}
           leftSection={<Tag size={16} aria-hidden="true" />}
           rightSection={count ? <Badge size="sm" circle color="gray.8" variant="filled">{count}</Badge> : null}
