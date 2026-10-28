@@ -16,6 +16,7 @@ export default function ResourceRow({ resource, iconSrc, iconAlt, isAdmin }) {
       {isAdmin && (
         <Button
           variant="light"
+          size="sm"
           color="gray"
           aria-label={'Configure ' + resource.name}
           onClick={() => navigate('/resources/configure/' + encodeURIComponent(resource.name))}

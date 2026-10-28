@@ -63,7 +63,7 @@ export default function RoleRow({
           <ActionMenu
             width={220}
             target={
-              <Button variant="light" rightSection={<ChevronDown size={14} />} aria-label={'Connect to ' + role.name}>
+              <Button variant="light" size="sm" rightSection={<ChevronDown size={14} />} aria-label={'Connect to ' + role.name}>
                 Connect
               </Button>
             }
@@ -90,7 +90,7 @@ export default function RoleRow({
         {isAdmin && (
           <ActionMenu
             target={
-              <ActionIcon variant="subtle" color="gray" aria-label={'More options for ' + role.name}>
+              <ActionIcon variant="subtle" color="gray" size="sm" aria-label={'More options for ' + role.name}>
                 <EllipsisVertical size={16} />
               </ActionIcon>
             }
