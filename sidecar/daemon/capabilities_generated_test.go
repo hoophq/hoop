@@ -30,7 +30,7 @@ func TestTheHeaderIsGeneratedFromTheBuild(t *testing.T) {
 		want = append(want, "rule:"+string(mt))
 	}
 	for _, p := range Protocols() {
-		if p == string(inspect.ICA) {
+		if p == string(inspect.ICA) || p == string(inspect.MCP) {
 			continue
 		}
 		want = append(want, "protocol:"+p)

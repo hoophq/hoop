@@ -289,7 +289,7 @@ type ListenerConfig struct {
 	// Network is "tcp" (default) or "unix". Pick a unix socket for a sandbox
 	// with no network egress: filesystem permissions decide who can reach the
 	// proxy.
-	Network string `json:"network,omitempty" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic"`
+	Network string `json:"network,omitempty" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic" protocols:"!mcp"`
 
 	// Upstream is the real backend. An http listener also takes a URL,
 	// which makes it a reverse proxy in front of that origin; see
@@ -342,7 +342,7 @@ type ListenerConfig struct {
 	// this listener, which the sidecar topology guarantees by binding
 	// loopback or a unix socket. Set this on a listener reachable from
 	// anywhere else and a caller can assert any identity.
-	IdentityHeader string `json:"identity_header,omitempty" label:"Identity header" placeholder:"x-forwarded-user" help:"The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener." protocols:"http,grpc,spanner"`
+	IdentityHeader string `json:"identity_header,omitempty" label:"Identity header" placeholder:"x-forwarded-user" help:"The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener." protocols:"http,grpc,spanner,mcp"`
 
 	// GoogleIdentity names the caller from the Google OAuth2 bearer in the
 	// request's own Authorization header, verified with Google's tokeninfo
@@ -458,6 +458,9 @@ type ListenerConfig struct {
 	// that predates it (EVL-338). The protocol entry alone cannot gate this
 	// key, because an older build refuses the whole document on it.
 	ICA *ICAConfig `json:"ica,omitempty" label:"Citrix ICA" help:"The tenant this listener serves, how it finds the VDA, and the session geometry." protocols:"ica" cap:"ica" ui:"required"`
+
+	// MCPGateway is an mcp lane's upstream transport and tool policy (RD-379 spike).
+	MCPGateway *MCPGatewayConfig `json:"mcp_gateway,omitempty" cap:"mcp_gateway" ui:"-"`
 
 	// Plugin carries a plug-in lane's options, the `options` its module's
 	// manifest declares, to every codec the lane builds. Only valid on a
@@ -1311,6 +1314,8 @@ func (c *Config) validate(onHost bool) error {
 			// the connection is encrypted end to end, so there are no relay
 			// bytes for a registry decoder to be handed. The lane terminates
 			// the handshake and enters at statements the endpoint reports.
+		} else if isMCPGateway(l) {
+			// mcp has no codec: the lane embeds mcpproxy; see mcpgateway.go.
 		} else if isICA(l) {
 			// ica has no codec for a fourth reason: the lane embeds an
 			// engine that terminates the session and masks pixels on the
@@ -1429,7 +1434,7 @@ func (c *Config) validate(onHost bool) error {
 		// analytics, and leave every session anonymous, which is how the
 		// http path behaved before it read the header at all.
 		if l.IdentityHeader != "" && !isSSH(l) {
-			if p := inspect.Protocol(l.Protocol); p != inspect.HTTP && !isGRPCTransport(l) {
+			if p := inspect.Protocol(l.Protocol); p != inspect.HTTP && !isGRPCTransport(l) && !isMCPGateway(l) {
 				problems = append(problems, fmt.Sprintf(
 					"%s: identity_header is only supported on http, grpc and spanner, not %q",
 					name, l.Protocol))
@@ -1611,6 +1616,11 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 		problems = append(problems, fmt.Sprintf(
 			"%s: an \"ica\" block is only valid on an ica listener, not %s",
 			name, lc.Protocol))
+	}
+	if isMCPGateway(lc) {
+		problems = append(problems, validateMCPGatewayLane(lc, name)...)
+	} else if lc.MCPGateway != nil {
+		problems = append(problems, fmt.Sprintf("%s: an \"mcp_gateway\" block is only valid on an mcp listener, not %s", name, lc.Protocol))
 	}
 
 	// A pii guardrail on a grpc lane scans Statement.Text, and Text holds

@@ -1321,7 +1321,7 @@ func MaskSupported(p inspect.Protocol) bool {
 	// a different length. Without this branch inspect.New would be asked
 	// for a protocol that has no decoder and masking would be refused on
 	// the lane whose whole content path is masking.
-	if p == inspect.SSH {
+	if p == inspect.SSH || p == inspect.MCP {
 		return true
 	}
 	insp, err := inspect.New(p)

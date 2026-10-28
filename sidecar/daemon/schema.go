@@ -15,7 +15,7 @@ import (
 // Protocols lists every protocol a listener may declare in this build: the
 // codec registry plus the lanes that have no codec.
 func Protocols() []string {
-	out := []string{string(inspect.GRPC), string(inspect.Spanner), string(inspect.SSH), string(inspect.ICA)}
+	out := []string{string(inspect.GRPC), string(inspect.Spanner), string(inspect.SSH), string(inspect.ICA), string(inspect.MCP)}
 	for _, p := range inspect.Registered() {
 		out = append(out, string(p))
 	}
@@ -127,6 +127,7 @@ var protocolLabels = map[string]string{
 	"grpc":       "gRPC",
 	"http":       "HTTP",
 	"ica":        "Citrix ICA",
+	"mcp":        "MCP",
 	"mongodb":    "MongoDB",
 	"mssql":      "SQL Server",
 	"mysql":      "MySQL",
