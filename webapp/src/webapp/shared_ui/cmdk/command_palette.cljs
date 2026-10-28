@@ -24,12 +24,14 @@
   []
   (let [palette-state (rf/subscribe [:command-palette])
         search-results (rf/subscribe [:command-palette->search-results])
-        current-user (rf/subscribe [:users->current-user])]
+        current-user (rf/subscribe [:users->current-user])
+        gateway-info (rf/subscribe [:gateway->info])]
     (fn []
       (let [status (:status @search-results)
             current-page (:current-page @palette-state)
             context (:context @palette-state)
             user-data (:data @current-user)
+            feature-flags (get-in @gateway-info [:data :feature_flags])
             ;; Show subtle search indicator only on icon
             is-searching? (or (= status :searching) (= status :loading))
             ;; Dynamic placeholder based on current page
@@ -71,7 +73,7 @@
            ;; Render content based on current page
            (case current-page
              :main
-             [pages/main-page @search-results user-data]
+             [pages/main-page @search-results user-data feature-flags]
 
              :resource-roles
              [pages/resource-roles-page context user-data]
@@ -80,7 +82,7 @@
              [pages/connection-actions-page context user-data]
 
              ;; Default: main page
-             [pages/main-page @search-results user-data])]}]))))
+             [pages/main-page @search-results user-data feature-flags])]}]))))
 
 (defn keyboard-listener
   "Component to capture CMD+K / Ctrl+K keyboard shortcuts.

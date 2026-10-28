@@ -86,13 +86,13 @@
 
 (defn main-page
   "Main page with all pages + search functionality"
-  [search-results user-data]
+  [search-results user-data feature-flags]
   (let [search-status (:status search-results)
         resources (:resources (:data search-results))
         connections (:connections (:data search-results))
         runbooks (:runbooks (:data search-results))
         ;; Filter items based on user permissions
-        filtered-items (constants/filter-items-by-permissions user-data)
+        filtered-items (constants/filter-items-by-permissions user-data feature-flags)
         ;; Separate items into groups
         suggestions (filter #(contains? #{"Resources" "Terminal"} (:id %)) filtered-items)
         quick-access (remove #(contains? #{"Resources" "Terminal"} (:id %)) filtered-items)]
@@ -124,13 +124,15 @@
         [:> CommandSeparator]])
 
      ;; Suggestions (Resources and Terminal)
-     [:> CommandGroup
-      {:heading "Suggestions"}
-      (for [item suggestions]
-        ^{:key (:id item)}
-        [action-item item])]
+     (when (seq suggestions)
+       [:<>
+        [:> CommandGroup
+         {:heading "Suggestions"}
+         (for [item suggestions]
+           ^{:key (:id item)}
+           [action-item item])]
 
-     [:> CommandSeparator]
+        [:> CommandSeparator]])
 
      ;; Quick Access (rest of the pages)
      [:> CommandGroup

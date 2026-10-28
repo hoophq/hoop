@@ -2,7 +2,8 @@
   (:require
    [clojure.string]
    [re-frame.core :as rf]
-   [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]))
+   [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
+   [webapp.shared-ui.cmdk.command-palette-constants :as constants]))
 
 ;; Event handlers for command palette
 
@@ -49,7 +50,8 @@
        (js/clearTimeout @search-debounce-timer)
        (reset! search-debounce-timer nil))
 
-     (if (contains? search-enabled-pages current-page)
+     (if (and (contains? search-enabled-pages current-page)
+              (constants/search-enabled? (get-in db [:gateway->info :data :feature_flags])))
        ;; Main page - search enabled
        (if (< (count trimmed-query) 2)
          ;; Query too short, clear results
