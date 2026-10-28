@@ -71,6 +71,8 @@ const chromeArgs = [
 // user-namespace limits (Ubuntu 23.10+).
 if (process.platform === 'linux') chromeArgs.push('--disable-dev-shm-usage', '--no-sandbox')
 const proc = spawn(findChrome(), [...chromeArgs, 'about:blank'], { stdio: 'ignore' })
+// Any exit, a setup call that times out included, must not leave the browser running.
+process.on('exit', () => proc.kill())
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function target() {
