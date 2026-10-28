@@ -118,7 +118,7 @@ names the limits:
 
 ```bash
 docker run --rm -v "$PWD/deploy/sidecar:/c:ro" -e HOOP_SIDECAR_CONFIG=/c/sidecar.yaml \
-  hoophq/hoopsidecar:1.260.0-distroless hoop start sidecar --validate
+  hoophq/hoopsidecar:1.281.0-distroless hoop start sidecar --validate
 ```
 
 Use the image tag of `sidecar_version` in `deploy/sidecar/main.tf`.

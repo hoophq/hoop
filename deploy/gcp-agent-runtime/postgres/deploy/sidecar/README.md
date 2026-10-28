@@ -34,8 +34,8 @@ a release tag, and installs the sidecar chart and image of the same release
 
    Or install the same module from Google Cloud Marketplace, with **Config
    source: document** and the contents of `sidecar.yaml`. Its simple fields
-   (protocol, upstream, port) install a sidecar with no rule: it audits and
-   denies nothing.
+   with **Guardrail: Read-only** install the same operations under a generic
+   message; `sidecar.yaml` keeps this agent's own.
 3. **Lock the database to the sidecar.** This is what makes the sidecar the
    only way in. Database on GKE: set the selector in `database-policy.yaml` to
    your database pods' labels (and the namespace, if the sidecar's is not
