@@ -1,0 +1,121 @@
+{
+  "source": "webapp/test/webapp/jira_templates/jira_vectors.cljs",
+  "generator": "npm --prefix webapp run fixtures:jira",
+  "function": "webapp.jira-templates.cascade/all-dependents",
+  "timezone": "America/Sao_Paulo",
+  "cases": [
+    {
+      "name": "a chain clears breadth-first",
+      "changed": "customfield_1",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": []
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        },
+        {
+          "jira_field": "customfield_3",
+          "jira_values": []
+        },
+        {
+          "jira_field": "customfield_4",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_2",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "P = ${customfield_1}"
+        },
+        {
+          "jira_field": "customfield_3",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "C = ${customfield_2.label}"
+        },
+        {
+          "jira_field": "customfield_4",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "P = ${customfield_1}"
+        }
+      ],
+      "expected": [
+        "customfield_2",
+        "customfield_4",
+        "customfield_3"
+      ]
+    },
+    {
+      "name": "a cycle ends",
+      "changed": "customfield_1",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": []
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_1",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "X = ${customfield_2}"
+        },
+        {
+          "jira_field": "customfield_2",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "Y = ${customfield_1}"
+        }
+      ],
+      "expected": [
+        "customfield_2"
+      ]
+    },
+    {
+      "name": "a row naming itself is not its own dependent",
+      "changed": "customfield_1",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [
+        {
+          "jira_field": "customfield_1",
+          "object_schema_id": "7",
+          "object_filter_query": "",
+          "issue_scope_filter_query": "X = ${customfield_1}"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "no configuration, no dependents",
+      "changed": "customfield_1",
+      "items": [
+        {
+          "jira_field": "customfield_1",
+          "jira_values": []
+        },
+        {
+          "jira_field": "customfield_2",
+          "jira_values": []
+        }
+      ],
+      "fieldconfigs": [],
+      "expected": []
+    }
+  ]
+}
