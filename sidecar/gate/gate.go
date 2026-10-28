@@ -302,7 +302,9 @@ type CredentialSource interface {
 }
 
 // RequestIdentity turns one request's credential into the identity behind
-// it. credential is "" when the request did not carry one. An error refuses
+// it. credential is "" when the request did not carry one, and the resolver
+// decides what that means: a proxy-trust header names nobody and the
+// request runs as the connection; a token lane refuses it. An error refuses
 // the request: a credential that cannot be verified must not be served
 // under whichever identity the connection had before.
 //
@@ -976,6 +978,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 				// running session. Nothing is outstanding on such a
 				// lane: the codec does not pair responses to requests,
 				// so a caller change applies from this frame on.
+				//
+				// A frame with no credential is not lifted at all, so
+				// an empty lifted one is the WASM host answering ("",
+				// true) when the guest's credential export failed: it
+				// names nobody, and no resolver sees it.
+				if credentials[i] == "" {
+					r := g.refuseAs(ctx, stmt, session.Identity{PeerAddr: g.session().Identity.PeerAddr},
+						"request refused: the codec lifted an empty credential")
+					r.Statements = stmts
+					return *r
+				}
 				if r := g.identify(ctx, stmt, credentials[i], true); r != nil {
 					r.Statements = stmts
 					return *r
@@ -1574,18 +1587,16 @@ func (g *Gate) resolveCaller(ctx context.Context, stmt inspect.Statement, creden
 // The reason is the client's 403 body after "request refused: ", and the
 // same text whether the gate refuses the request or a codec does before
 // forwarding it (CallerAuthenticator).
+//
+// An empty credential reaches the resolver: the HTTP codec lifts one from
+// every request, so "" is a request without the header, and only the
+// resolver knows whether that names the connection or nobody.
 func (g *Gate) callerFor(ctx context.Context, credential string, lifted bool) (session.Identity, error) {
-	switch {
-	case !lifted:
+	if !lifted {
 		// New checked the codec implements the seam, so this is a codec
 		// that stopped lifting mid-connection. Serving the request under
 		// the old identity is the failure this whole path exists to stop.
 		return session.Identity{}, errors.New("the codec lifted no credential from it")
-	case credential == "":
-		// A request without the header, or the WASM host answering ("",
-		// true) when the guest's credential export failed: no caller is
-		// named by an empty value, so no resolver sees it.
-		return session.Identity{}, errors.New("the request carried no credential")
 	}
 	return g.cfg.RequestIdentity.Resolve(ctx, credential)
 }

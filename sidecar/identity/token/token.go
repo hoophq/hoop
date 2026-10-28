@@ -53,8 +53,9 @@ const maxFileBytes = 64 << 10
 // Sentinels the resolver wraps, so a caller can tell the two refusals apart.
 // The text reaches the client in its 403 body after "request refused: ".
 var (
-	// ErrNoToken: the header was present and held only whitespace.
-	ErrNoToken = errors.New("the caller token is empty")
+	// ErrNoToken: the header was absent, or held only whitespace. The text
+	// is what the integration guides quote for a request without the token.
+	ErrNoToken = errors.New("the request carried no credential")
 	// ErrInvalidToken: the value is not a listed token.
 	ErrInvalidToken = errors.New("the caller token is not accepted")
 )
@@ -162,7 +163,7 @@ func NewResolver(subject string, tokens Matcher) (*Resolver, error) {
 // Resolve admits credential, one request's raw header value, when it is a
 // listed token. The value is trimmed first, so the whitespace an
 // intermediary may leave around it is not part of the token, and a value of
-// whitespace alone is refused rather than taken for no header.
+// whitespace alone is refused the same way as no header.
 func (r *Resolver) Resolve(_ context.Context, credential string) (session.Identity, error) {
 	v := strings.TrimSpace(credential)
 	if v == "" {

@@ -13,12 +13,16 @@ import (
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
-// onlyGood admits the credential "good" as agents.
+// onlyGood admits the credential "good" as agents, and names a request
+// without one the way the token resolver does.
 var onlyGood = gate.RequestIdentityFunc(func(_ context.Context, cred string) (session.Identity, error) {
-	if cred != "good" {
-		return session.Identity{}, errors.New("not accepted")
+	switch cred {
+	case "":
+		return session.Identity{}, errors.New("the request carried no credential")
+	case "good":
+		return session.Identity{Subject: "agents"}, nil
 	}
-	return session.Identity{Subject: "agents"}, nil
+	return session.Identity{}, errors.New("not accepted")
 })
 
 func authenticatingGate(t *testing.T, sink audit.Sink) *gate.Gate {

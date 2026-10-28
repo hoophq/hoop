@@ -43,6 +43,19 @@ printf '  bob       HTTP %s\n' \
 printf '  anonymous HTTP %s\n' \
     "$(curl -sk https://localhost:8443/json -o /dev/null -w '%{http_code}')"
 
+# ---------------------------------------------------------------- identity
+h "IDENTITY / the http lane names the caller from X-Hoop-User"
+note "Envoy forwards the header OPA admitted, so the audit rows below carry"
+note "alice. A request with no header names nobody and runs as the connection,"
+note "anonymous here: it is served, not refused, and a policy that needs a"
+note "named caller denies principal == \"anonymous\" itself. The client sends"
+note "that one straight to the lane, past Envoy, which only the compose"
+note "network allows."
+printf '  alice via Envoy      HTTP %s\n' \
+    "$(curl -sk https://localhost:8443/json -H 'X-Hoop-User: alice' -o /dev/null -w '%{http_code}')"
+printf '  no header, direct    HTTP %s\n' \
+    "$(docker compose exec -T client curl -s http://hoop-inspect:18080/json -o /dev/null -w '%{http_code}')"
+
 # ---------------------------------------------------------------- postgres
 h "POSTGRES / allowed -- SELECT reaches appdb and returns rows"
 note "Envoy forwarded this as opaque TCP. It has no pgwire parser, so OPA was"
@@ -166,8 +179,8 @@ cat <<'EOF'
   The postgres DELETE was refused before the database ever received it,
   and the developer got a readable reason in their psql session.
 
-  Every session above records principal=anonymous: the actor column is
-  wired (proxy.Config.IdentityFn) and not yet filled from X-Hoop-User.
-  See the Identity section of the README, or docs/sidecar-flow.md for
-  the full flow and a per-command runbook.
+  Each http session above names its caller from X-Hoop-User, and the one
+  request sent without it ran as anonymous. See the Identity section of
+  the README, or docs/sidecar-flow.md for the full flow and a per-command
+  runbook.
 EOF
