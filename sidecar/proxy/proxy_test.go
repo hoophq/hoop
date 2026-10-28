@@ -536,7 +536,9 @@ func TestHTTPRequestNamingNobodyRunsAsTheConnection(t *testing.T) {
 		if sent := viaLine.ReplaceAllString(string(up.got()), ""); sent != named+bare {
 			t.Errorf("upstream received %q, want both requests", sent)
 		}
-		c.Close()
+		if err := c.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
 		deadline := time.Now().Add(3 * time.Second)
 		for time.Now().Before(deadline) && countKind(sink.Events(), audit.KindSessionEnd) < 2 {
 			time.Sleep(10 * time.Millisecond)
