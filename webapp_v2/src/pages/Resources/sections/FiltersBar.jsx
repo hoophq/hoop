@@ -76,6 +76,7 @@ export default function FiltersBar() {
         aria-label="Filter by resource type"
         placeholder="Resource"
         leftSection={<Shapes size={16} aria-hidden="true" />}
+        rightSection={null}
         data={[{ value: ALL_TYPES, label: 'All resources' }, ...RESOURCE_TYPES]}
         value={filters.type}
         onChange={(value) => setFilters({ type: value === ALL_TYPES ? null : value })}
