@@ -99,7 +99,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
             onChange={(v) => set({ direction: v ?? 'input' })}
             renderOption={DirectionOption}
             allowDeselect={false}
-            w={220}
+            w={290}
           />
         </Group>
 

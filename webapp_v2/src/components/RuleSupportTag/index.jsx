@@ -6,7 +6,7 @@ import { AGENT_ONLY, SIDECAR_ONLY } from '@/utils/ruleSupport'
 export default function RuleSupportTag({ side }) {
   const sidecar = side === 'sidecar'
   return (
-    <Badge tag variant="light" color={sidecar ? 'indigo' : 'gray'} size="xs">
+    <Badge tag fullLabel variant="light" color={sidecar ? 'indigo' : 'gray'} size="xs">
       {sidecar ? SIDECAR_ONLY : AGENT_ONLY}
     </Badge>
   )
