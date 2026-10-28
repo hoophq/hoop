@@ -93,7 +93,7 @@ inference. A real GPU build and its smoke logs are required before publication.
 
 `.github/workflows/ica-gpu-runtime.yml` is manually dispatched. It requires a
 prepared self-hosted runner labelled `self-hosted`, `linux`, `x64`, `ica-gpu`, and
-`GH_TOKEN` with read access to both source repositories. It never provisions Vast.
+`GH_TOKEN` with read access to both source repositories. It never provisions a GPU host.
 Ordinary CPU runners cannot replace this GPU gate. Dispatch from trusted source.
 
 Inputs are runtime asset `version`, the full `turboocr_revision`, the host-owned

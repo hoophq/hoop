@@ -1,7 +1,7 @@
 name: ICA GPU Runtime Asset
 
 # A real GPU is required for the native ABI/device tests and engine smoke.
-# Manual only: this never provisions/restarts Vast and never runs on PRs.
+# Manual only: this never provisions a GPU host and never runs on PRs.
 on:
   workflow_dispatch:
     inputs:
