@@ -30,6 +30,16 @@ variable "service_port" {
   default     = 0
 }
 
+variable "guardrail_preset" {
+  description = "simple: none, or read-only, one rule that denies the write operations. read-only is for postgres only."
+  type        = string
+  default     = "none"
+  validation {
+    condition     = contains(["none", "read-only"], var.guardrail_preset)
+    error_message = "guardrail_preset must be none or read-only. Another rule needs config_source = document."
+  }
+}
+
 variable "config_document" {
   description = "document: the whole sidecar config, YAML or JSON."
   type        = string
