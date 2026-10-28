@@ -1478,15 +1478,11 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		problems = append(problems, err.Error())
 	}
 
-	// The credential set and the sources are process-wide: built once, on
-	// the startup config, and handed to every later document by the
-	// reloader, the way codec plug-ins are. A source holds a connection or
-	// a token cache a reload must not rebuild. A build with no engine has
-	// no set: checkAuthEngine refused every lane that would read one.
+	// The credential sources are process-wide: built once, on the startup
+	// config, and handed to every later document by the reloader, the way
+	// codec plug-ins are. A source holds a connection or a token cache a
+	// reload must not rebuild.
 	engine := registeredAuthEngine()
-	if cfg.credentials == nil && engine != nil {
-		cfg.credentials = engine.NewCredentialSet(cfg.CredentialSet)
-	}
 	if cfg.credentialSources == nil {
 		sources, serr := BuildCredentialSources(cfg, roots)
 		if serr != nil {
@@ -1532,7 +1528,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			if opa.enabled() {
 				deps.OPA = opa.client("")
 			}
-			auth, err = engine.BuildLaneAuth(lc, name, deps, cfg.credentials, cfg.credentialSources)
+			auth, err = engine.BuildLaneAuth(lc, name, deps, cfg.credentialSources)
 			if err != nil {
 				problems = append(problems, name+": "+err.Error())
 				continue
@@ -1807,8 +1803,6 @@ func buildServer(
 	// and lets the listed users through unchanged.
 	if ln.auth != nil {
 		cfg.Authenticate = ln.auth.Authenticate
-		cfg.AuthenticateProven = ln.auth.AuthenticateProven
-		cfg.SCRAMVerifier = ln.auth.SCRAM()
 		cfg.PassthroughUsers = lc.PassthroughUsers
 		if lc.Propagate != nil {
 			cfg.Propagate = proxy.PropagateInfo{ApplicationName: lc.Propagate.ApplicationName}

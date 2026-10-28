@@ -12,7 +12,6 @@ import (
 	"time"
 
 	pgauth "github.com/hoophq/libhoop/v2/codec/postgres/auth"
-	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/proxy"
@@ -438,7 +437,7 @@ func TestPostgresLoginRefusesWrongSecret(t *testing.T) {
 	}
 }
 
-func TestPostgresLoginRefusesPlainTCPWithoutSCRAM(t *testing.T) {
+func TestPostgresLoginRefusesPlainTCP(t *testing.T) {
 	h := newPGLoginHarness(t, &pgFakeServer{method: "trust", user: "x"}, pgTCPLane(false))
 	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", proxy.Credential{User: "x"})
 	done := h.run()
@@ -447,100 +446,6 @@ func TestPostgresLoginRefusesPlainTCPWithoutSCRAM(t *testing.T) {
 	res, err := h.wait(done)
 	if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "alice" {
 		t.Fatalf("err=%v res=%+v", err, res)
-	}
-}
-
-func TestPostgresLoginSCRAMClientLeg(t *testing.T) {
-	material, err := pgauth.Material("hoop-key-123", []byte("laneSaltlaneSalt"), 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	material.Hash = "deadbeef"
-	for _, tc := range []struct {
-		name     string
-		password string
-		ok       bool
-	}{
-		{"right password", "hoop-key-123", true},
-		{"wrong password", "nope", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			server := &pgFakeServer{method: "md5", user: "app_rw", password: "pool-secret"}
-			h := newPGLoginHarness(t, server, pgTCPLane(false))
-			h.conn.SCRAM = func(user string) (codectypes.SCRAMMaterial, bool) {
-				return material, user == "alice"
-			}
-			// The proof reaches the proven route with the hash; the
-			// password route sees nothing.
-			h.conn.Authenticate = func(context.Context, string, string) (session.Identity, proxy.Credential, error) {
-				t.Error("Authenticate called on a SCRAM login")
-				return session.Identity{}, proxy.Credential{}, proxy.ErrLoginRefused
-			}
-			h.conn.AuthenticateProven = pgAuthenticator(t, "alice", "deadbeef", proxy.Credential{Name: "rw", User: "app_rw", Password: "pool-secret"})
-			done := h.run()
-
-			h.client.Write(pgauth.Startup(map[string]string{"user": "alice", "database": "app"}))
-			mechs, err := pgauth.ParseAuthSASL(h.expectAuth(pgauth.AuthSASLCode))
-			if err != nil || len(mechs) != 1 || mechs[0] != pgauth.ScramSHA256 {
-				t.Fatalf("mechs %v err=%v", mechs, err)
-			}
-			sc := pgauth.NewScramClient("alice", tc.password)
-			first, _ := sc.First()
-			h.client.Write(pgauth.SASLInitialResponse(pgauth.ScramSHA256, first))
-			serverFirst := h.expectAuth(pgauth.AuthSASLContinueCode)
-			final, err := sc.Final(serverFirst)
-			if err != nil {
-				t.Fatal(err)
-			}
-			h.client.Write(pgauth.SASLResponse(final))
-			if !tc.ok {
-				h.expectRefusal()
-				res, err := h.wait(done)
-				if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "alice" || len(h.dialed) != 0 {
-					t.Fatalf("err=%v res=%+v dialed=%v", err, res, h.dialed)
-				}
-				return
-			}
-			if err := sc.Verify(h.expectAuth(pgauth.AuthSASLFinalCode)); err != nil {
-				t.Fatalf("server signature: %v", err)
-			}
-			h.expectLoggedIn()
-			res, err := h.wait(done)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if res.Identity.Subject != "alice@example.com" || res.Credential.Name != "rw" {
-				t.Fatalf("result %+v", res)
-			}
-			seen, serr := server.seen()
-			if serr != nil || seen["user"] != "app_rw" || seen["database"] != "app" {
-				t.Fatalf("upstream startup %v err=%v", seen, serr)
-			}
-		})
-	}
-}
-
-// A client-final that is not a SCRAM message at all ends like a wrong
-// proof: the 28P01 frame and a refusal under the claimed user, so the
-// audit records it and the client is told.
-func TestPostgresLoginMalformedSCRAMIsRefused(t *testing.T) {
-	material, _ := pgauth.Material("hoop-key-123", []byte("laneSaltlaneSalt"), 4096)
-	h := newPGLoginHarness(t, &pgFakeServer{method: "trust", user: "x"}, pgTCPLane(false))
-	h.conn.SCRAM = func(string) (codectypes.SCRAMMaterial, bool) { return material, true }
-	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", proxy.Credential{User: "x"})
-	h.conn.AuthenticateProven = pgAuthenticator(t, "alice", material.Hash, proxy.Credential{User: "x"})
-	done := h.run()
-	h.client.Write(pgauth.Startup(map[string]string{"user": "alice"}))
-	h.expectAuth(pgauth.AuthSASLCode)
-	sc := pgauth.NewScramClient("alice", "hoop-key-123")
-	first, _ := sc.First()
-	h.client.Write(pgauth.SASLInitialResponse(pgauth.ScramSHA256, first))
-	h.expectAuth(pgauth.AuthSASLContinueCode)
-	h.client.Write(pgauth.SASLResponse([]byte("this is not client-final")))
-	h.expectRefusal()
-	res, err := h.wait(done)
-	if !errors.Is(err, proxy.ErrLoginRefused) || res.Identity.Subject != "alice" || len(h.dialed) != 0 {
-		t.Fatalf("err=%v res=%+v dialed=%v", err, res, h.dialed)
 	}
 }
 
@@ -607,18 +512,6 @@ func TestPostgresLoginReportsCredentialOnUpstreamFailure(t *testing.T) {
 	}
 	if released != 0 {
 		t.Fatal("the driver released; that is the relay's job")
-	}
-}
-
-func TestPostgresLoginSCRAMUnknownUserIsRefusedLikeAWrongPassword(t *testing.T) {
-	h := newPGLoginHarness(t, &pgFakeServer{method: "trust", user: "x"}, pgTCPLane(false))
-	h.conn.SCRAM = func(string) (codectypes.SCRAMMaterial, bool) { return codectypes.SCRAMMaterial{}, false }
-	h.conn.Authenticate = pgAuthenticator(t, "alice", "k", proxy.Credential{User: "x"})
-	done := h.run()
-	h.client.Write(pgauth.Startup(map[string]string{"user": "mallory"}))
-	h.expectRefusal()
-	if _, err := h.wait(done); !errors.Is(err, proxy.ErrLoginRefused) {
-		t.Fatalf("err=%v", err)
 	}
 }
 

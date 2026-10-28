@@ -30,9 +30,9 @@ const pgInvalidPassword = "28P01"
 //
 // Client leg: the StartupMessage names the user. A pass-through user is
 // dialed and forwarded unchanged. Any other user is asked for its secret in
-// clear when the leg cannot be read by a third party (unix socket or TLS the
-// relay terminated), or proves it with SCRAM-SHA-256 against the material
-// the lane serves. The secret never reaches the upstream.
+// clear, which the relay allows only when the leg cannot be read by a third
+// party (unix socket or TLS the relay terminated). The secret never reaches
+// the upstream.
 //
 // Upstream leg: a StartupMessage with the credential's user, the client's
 // database, encoding, DateStyle and TimeZone (options and the rest stop
@@ -74,23 +74,17 @@ func loginPostgres(ctx context.Context, c *proxy.LoginConn) (proxy.LoginResult, 
 		return proxy.LoginResult{Identity: claimed}, fmt.Errorf("%w: %s", proxy.ErrLoginRefused, msg)
 	}
 
-	secret, hash, err := pgClientSecret(c, user)
+	secret, err := pgClientSecret(c)
 	if err != nil {
 		if errors.Is(err, proxy.ErrLoginRefused) {
 			return refuse(err.Error())
 		}
 		return proxy.LoginResult{}, err
 	}
-	if c.Authenticate == nil || (hash != "" && c.AuthenticateProven == nil) {
+	if c.Authenticate == nil {
 		return refuse("lane has no authenticator")
 	}
-	var identity session.Identity
-	var cred proxy.Credential
-	if hash != "" {
-		identity, cred, err = c.AuthenticateProven(ctx, user, hash)
-	} else {
-		identity, cred, err = c.Authenticate(ctx, user, secret)
-	}
+	identity, cred, err := c.Authenticate(ctx, user, secret)
 	if err != nil {
 		if errors.Is(err, proxy.ErrLoginRefused) {
 			return refuse(err.Error())
@@ -206,73 +200,21 @@ func pgUpstreamParams(client map[string]string, user string) map[string]string {
 	return out
 }
 
-// pgClientSecret runs the client leg of the login and returns the secret to
-// verify: the password in clear, or the hash of the material the client
-// proved by SCRAM. A refusal wraps proxy.ErrLoginRefused.
-func pgClientSecret(c *proxy.LoginConn, user string) (secret, hash string, err error) {
-	switch {
-	case c.Lane.Network == "unix" || c.Lane.ClientTLS:
-		if _, err := c.Client.Write(pgauth.AuthCleartext()); err != nil {
-			return "", "", err
-		}
-		body, err := pgReadPassword(c.Client)
-		if err != nil {
-			return "", "", err
-		}
-		secret, err = pgauth.ParsePasswordMessage(body)
-		return secret, "", err
-	case c.SCRAM != nil:
-		material, ok := c.SCRAM(user)
-		if !ok {
-			return "", "", fmt.Errorf("%w: no scram material for user", proxy.ErrLoginRefused)
-		}
-		if _, err := c.Client.Write(pgauth.AuthSASL([]string{pgauth.ScramSHA256})); err != nil {
-			return "", "", err
-		}
-		body, err := pgReadPassword(c.Client)
-		if err != nil {
-			return "", "", err
-		}
-		mech, first, err := pgauth.ParseSASLInitialResponse(body)
-		if err != nil {
-			return "", "", err
-		}
-		if mech != pgauth.ScramSHA256 {
-			return "", "", fmt.Errorf("%w: sasl mechanism %q", proxy.ErrLoginRefused, mech)
-		}
-		srv := pgauth.NewScramServer(material)
-		serverFirst, err := srv.ServerFirst(first)
-		if err != nil {
-			return "", "", pgScramRefused(err)
-		}
-		if _, err := c.Client.Write(pgauth.AuthSASLContinue(serverFirst)); err != nil {
-			return "", "", err
-		}
-		body, err = pgReadPassword(c.Client)
-		if err != nil {
-			return "", "", err
-		}
-		serverFinal, err := srv.ServerFinal(body)
-		if err != nil {
-			return "", "", pgScramRefused(err)
-		}
-		if _, err := c.Client.Write(pgauth.AuthSASLFinal(serverFinal)); err != nil {
-			return "", "", err
-		}
-		return "", material.Hash, nil
-	default:
-		return "", "", fmt.Errorf("%w: no password method is safe on a plain tcp lane without scram", proxy.ErrLoginRefused)
+// pgClientSecret runs the client leg of the login and returns the password
+// the client sent in clear. A leg a third party could read is refused
+// before anything is asked. A refusal wraps proxy.ErrLoginRefused.
+func pgClientSecret(c *proxy.LoginConn) (string, error) {
+	if c.Lane.Network != "unix" && !c.Lane.ClientTLS {
+		return "", fmt.Errorf("%w: no password method is safe on a plain tcp lane", proxy.ErrLoginRefused)
 	}
-}
-
-// pgScramRefused makes every SCRAM failure on the client leg a refusal: a
-// wrong proof and a malformed exchange both end in the 28P01 frame and the
-// refused-login audit, not a silent close.
-func pgScramRefused(err error) error {
-	if errors.Is(err, proxy.ErrLoginRefused) {
-		return err
+	if _, err := c.Client.Write(pgauth.AuthCleartext()); err != nil {
+		return "", err
 	}
-	return fmt.Errorf("%w: scram: %v", proxy.ErrLoginRefused, err)
+	body, err := pgReadPassword(c.Client)
+	if err != nil {
+		return "", err
+	}
+	return pgauth.ParsePasswordMessage(body)
 }
 
 // pgReadPassword reads the client's next message, which must be a 'p'.

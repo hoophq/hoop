@@ -15,7 +15,7 @@ What a GitOps reconciler sends the control plane for one sidecar, in order. Ever
       "name": "appdb", "protocol": "postgres", "listen": "0.0.0.0:15432",
       "upstream": "appdb.default.svc:5432",
       "downstream_tls": {"cert_file": "/etc/hoop-inspect/tls/tls.crt", "key_file": "/etc/hoop-inspect/tls/tls.key"},
-      "identity": {"type": "hoop_credential"},
+      "identity": {"type": "jwt", "issuer": "https://login.acme.com"},
       "credentials": {
         "pool": [
           {"name": "ro", "source": "secret_files", "user_file": "/run/secrets/appdb-ro/user", "password_file": "/run/secrets/appdb-ro/password"},
@@ -30,7 +30,7 @@ What a GitOps reconciler sends the control plane for one sidecar, in order. Ever
 }
 ```
 
-`credential_set` is never in the body: the plane fills it from minted keys. A `422` names the lane and the key the sidecar would refuse (`identity` beside `identity_header`, a pool `source` the build lacks, `credentials` on an `ica` lane).
+A `422` names the lane and the key the sidecar would refuse (`identity` beside `identity_header`, a pool `source` the build lacks, `credentials` on an `ica` lane).
 
 ## 2. Slack channels per lane
 `PUT /sidecars/<name>/slack-channels`. A lane left out posts to the org default.
@@ -38,19 +38,7 @@ What a GitOps reconciler sends the control plane for one sidecar, in order. Ever
 {"listeners": [{"name": "appdb", "channels": ["C0APPDB"]}]}
 ```
 
-## 3. Who may mint a key on a lane
-
-Grants are per (sidecar, lane), one subject or one group each. Reconcile by listing and diffing; the plane does not replace the set.
-
-```
-GET    /sidecars/<name>/lanes/<lane>/grants                → [{"id","sidecar_id","listener_name","subject","group_name","created_by","created_at"}]
-POST   /sidecars/<name>/lanes/<lane>/grants  {"group_name": "dba"}      → 201   (or {"subject": "jane@acme.com"}; one of the two)
-DELETE /sidecars/<name>/lanes/<lane>/grants/<id>                        → 204
-```
-
-Users then mint their own: `POST /sidecars/<name>/lanes/<lane>/credentials {"expires_in_hours": 24}` → `201 {"key": "hlc_…", …}`, shown once; `GET /users/me/sidecar-credentials`; `DELETE /sidecar-credentials/<id>`. A mint without a matching grant is `403`. The reconciler never mints.
-
-## 4. Switching the sidecar to SPIRE
+## 3. Switching the sidecar to SPIRE
 
 A sidecar bound to a service account keeps that issuer. Moving it to `controlPlane.identity: spiffe` (a new issuer, the trust domain) is three steps:
 

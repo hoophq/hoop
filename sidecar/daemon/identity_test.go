@@ -2,12 +2,10 @@ package daemon
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 // A pooled lane is a login the sidecar terminates. Each refusal below is a
@@ -17,14 +15,14 @@ func TestLaneAuthIsRefusedWhereItCannotWork(t *testing.T) {
 	const pool = `"credentials":{"pool":[{"name":"ro","source":"secret_files","user":"app","password_file":"ro/password"}],"select":{"rules":[{"credential":"ro"}]}}`
 	const sources = `"credentials":{"secret_files":{"dir":"/run/creds"}},`
 	for _, tc := range []struct{ name, top, listener, want string }{
-		{"identity without a pool", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{}`,
+		{"identity without a pool", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{}`,
 			"identity needs a credentials pool"},
 		{"none on tcp", sources, `"protocol":"postgres","identity":{"type":"none"},` + pool,
 			"identity type none needs network: unix"},
 		{"pool without identity on tcp", sources, `"protocol":"postgres",` + pool,
 			"credentials without identity needs network: unix"},
 		{"unknown type", sources, `"protocol":"postgres","identity":{"type":"kubernets"},` + pool,
-			`identity.type "kubernets" is not none, kubernetes, hoop_credential, jwt or spiffe`},
+			`identity.type "kubernets" is not none, kubernetes, jwt or spiffe`},
 		{"jwt without an issuer", sources, `"protocol":"http","identity":{"type":"jwt"},` + pool,
 			"identity type jwt needs identity.issuer"},
 		{"jwt on plain tcp postgres", sources, `"protocol":"postgres","identity":{"type":"jwt","issuer":"https://login.acme.com"},` + pool,
@@ -33,69 +31,69 @@ func TestLaneAuthIsRefusedWhereItCannotWork(t *testing.T) {
 			"identity.jwks_url and identity.claims are jwt settings, not kubernetes ones"},
 		{"spiffe settings on jwt", sources, `"protocol":"http","identity":{"type":"jwt","issuer":"https://login.acme.com","prefix":"/x"},` + pool,
 			"identity.trust_domain and identity.prefix are spiffe settings, not jwt ones"},
-		{"beside identity_header", sources, `"protocol":"http","identity_header":"x-user","identity":{"type":"hoop_credential"},` + pool,
+		{"beside identity_header", sources, `"protocol":"http","identity_header":"x-user","identity":{"type":"kubernetes"},` + pool,
 			"identity and identity_header both name the caller"},
-		{"beside google_identity", sources, `"protocol":"http","google_identity":{},"identity":{"type":"hoop_credential"},` + pool,
+		{"beside google_identity", sources, `"protocol":"http","google_identity":{},"identity":{"type":"kubernetes"},` + pool,
 			"identity and google_identity both name the caller"},
-		{"beside caller_token", sources, `"protocol":"http","caller_token":{"file":"/t","name":"a"},"identity":{"type":"hoop_credential"},` + pool,
+		{"beside caller_token", sources, `"protocol":"http","caller_token":{"file":"/t","name":"a"},"identity":{"type":"kubernetes"},` + pool,
 			"identity and caller_token both name the caller"},
-		{"hoop_credential on plain tcp postgres", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},` + pool,
+		{"jwt on plain tcp clickhouse", sources, `"protocol":"clickhouse","identity":{"type":"jwt","issuer":"https://login.acme.com"},` + pool,
 			"needs downstream_tls, or a unix socket"},
-		{"hoop_credential on plain tcp clickhouse", sources, `"protocol":"clickhouse","identity":{"type":"hoop_credential"},` + pool,
+		{"jwt on plain tcp mongodb", sources, `"protocol":"mongodb","identity":{"type":"jwt","issuer":"https://login.acme.com"},` + pool,
 			"needs downstream_tls, or a unix socket"},
 		{"credentials on ssh", sources, `"protocol":"ssh",` + pool,
 			"credentials is not valid on an ssh listener"},
 		{"identity on ssh", sources, `"protocol":"ssh","identity":{"type":"none"}`,
 			"identity is not valid on an ssh listener"},
-		{"credentials on oracle", sources, `"protocol":"oracle","identity":{"type":"hoop_credential"},` + pool,
+		{"credentials on oracle", sources, `"protocol":"oracle","identity":{"type":"kubernetes"},` + pool,
 			"oracle: credential swap is not supported in this release; use passthrough_users"},
 		{"identity on oracle", sources, `"protocol":"oracle","identity":{"type":"kubernetes"}`,
 			"oracle: credential swap is not supported in this release"},
-		{"empty pool", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[],"select":{"opa":true}}`,
+		{"empty pool", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[],"select":{"opa":true}}`,
 			"credentials.pool is empty"},
-		{"unknown source", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"consul"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"unknown source", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"consul"}],"select":{"rules":[{"credential":"a"}]}}`,
 			`source "consul" is not secret_files, gcp_impersonation, x509, vault, gcp_secret_manager, spiffe or kerberos`},
-		{"vault without addr", `"credentials":{"vault":{"auth":{"type":"kubernetes","role":"r"}}},`, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"vault","path":"secret/data/x"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"vault without addr", `"credentials":{"vault":{"auth":{"type":"kubernetes","role":"r"}}},`, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"vault","path":"secret/data/x"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"credentials.vault: addr is required"},
-		{"vault dynamic path on http", `"credentials":{"vault":{"addr":"https://vault","auth":{"type":"kubernetes","role":"r"}}},`, `"protocol":"http","identity":{"type":"hoop_credential"},"credentials":{"pool":[{"name":"a","source":"vault","path":"database/creds/x"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"vault dynamic path on http", `"credentials":{"vault":{"addr":"https://vault","auth":{"type":"kubernetes","role":"r"}}},`, `"protocol":"http","identity":{"type":"kubernetes"},"credentials":{"pool":[{"name":"a","source":"vault","path":"database/creds/x"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"a database engine path mints a user per session"},
-		{"vault dynamic path on clickhouse", `"credentials":{"vault":{"addr":"https://vault","auth":{"type":"kubernetes","role":"r"}}},`, `"protocol":"clickhouse","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"vault","path":"database/creds/x"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"vault dynamic path on clickhouse", `"credentials":{"vault":{"addr":"https://vault","auth":{"type":"kubernetes","role":"r"}}},`, `"protocol":"clickhouse","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"vault","path":"database/creds/x"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"a clickhouse listener terminates the login in its codec, which cannot revoke the lease"},
-		{"secret manager without a secret", `"credentials":{"gcp_secret_manager":{}},`, `"protocol":"http","identity":{"type":"hoop_credential"},"credentials":{"pool":[{"name":"a","source":"gcp_secret_manager"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"secret manager without a secret", `"credentials":{"gcp_secret_manager":{}},`, `"protocol":"http","identity":{"type":"kubernetes"},"credentials":{"pool":[{"name":"a","source":"gcp_secret_manager"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"secret is required"},
-		{"source not configured", "", `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},` + pool,
+		{"source not configured", "", `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},` + pool,
 			"names source secret_files, and the configuration has no credentials.secret_files block"},
-		{"duplicate name", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"},{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"duplicate name", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"},{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"rules":[{"credential":"a"}]}}`,
 			`name "a" is used twice`},
-		{"rules and opa", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"rules":[{"credential":"a"}],"opa":true}}`,
+		{"rules and opa", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"rules":[{"credential":"a"}],"opa":true}}`,
 			"credentials.select names rules and opa; keep one"},
-		{"neither rules nor opa", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}]}`,
+		{"neither rules nor opa", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}]}`,
 			"credentials.select needs rules, or opa: true"},
-		{"opa without an endpoint", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"opa":true}}`,
+		{"opa without an endpoint", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"opa":true}}`,
 			"credentials.select.opa needs an opa.url"},
-		{"rule names a stranger", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"rules":[{"credential":"b"}]}}`,
+		{"rule names a stranger", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"rules":[{"credential":"b"}]}}`,
 			`names credential "b", which is not in the pool`},
-		{"rule with a bad key", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"rules":[{"when":{"identity.role":"x"},"credential":"a"}]}}`,
+		{"rule with a bad key", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"p"}],"select":{"rules":[{"when":{"identity.role":"x"},"credential":"a"}]}}`,
 			`when key "identity.role" is not`},
-		{"secret_files without a user on postgres", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","password_file":"p"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"secret_files without a user on postgres", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","password_file":"p"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"user or user_file is required on a postgres listener"},
-		{"secret_files outside the dir", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"/etc/shadow"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"secret_files outside the dir", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"credentials":{"pool":[{"name":"a","source":"secret_files","user":"u","password_file":"/etc/shadow"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"is outside credentials.secret_files.dir"},
-		{"gcp without an account", `"credentials":{"gcp_impersonation":{}},`, `"protocol":"http","identity":{"type":"hoop_credential"},"credentials":{"pool":[{"name":"a","source":"gcp_impersonation"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"gcp without an account", `"credentials":{"gcp_impersonation":{}},`, `"protocol":"http","identity":{"type":"kubernetes"},"credentials":{"pool":[{"name":"a","source":"gcp_impersonation"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"service_account is required"},
-		{"x509 on http", `"credentials":{"x509":{}},`, `"protocol":"http","identity":{"type":"hoop_credential"},"credentials":{"pool":[{"name":"a","source":"x509","cert_file":"c","key_file":"k"}],"select":{"rules":[{"credential":"a"}]}}`,
+		{"x509 on http", `"credentials":{"x509":{}},`, `"protocol":"http","identity":{"type":"kubernetes"},"credentials":{"pool":[{"name":"a","source":"x509","cert_file":"c","key_file":"k"}],"select":{"rules":[{"credential":"a"}]}}`,
 			"a certificate is offered per connection"},
-		{"passthrough on http", sources, `"protocol":"http","identity":{"type":"hoop_credential"},"passthrough_users":["admin"],` + pool,
+		{"passthrough on http", sources, `"protocol":"http","identity":{"type":"kubernetes"},"passthrough_users":["admin"],` + pool,
 			"passthrough_users is only supported on a database listener"},
 		{"passthrough without identity", sources, `"protocol":"postgres","passthrough_users":["admin"]`,
 			"passthrough_users needs an identity block"},
 		{"propagate without a pool", sources, `"protocol":"postgres","propagate":{"application_name":"x"}`,
 			"propagate needs a credentials pool"},
-		{"application_name off postgres", sources, `"protocol":"mysql","identity":{"type":"hoop_credential"},"propagate":{"application_name":"x"},` + pool,
+		{"application_name off postgres", sources, `"protocol":"mysql","identity":{"type":"kubernetes"},"propagate":{"application_name":"x"},` + pool,
 			"propagate.application_name is a postgres startup parameter"},
-		{"impersonate off http", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"propagate":{"impersonate_user":true},` + pool,
+		{"impersonate off http", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"propagate":{"impersonate_user":true},` + pool,
 			"propagate.impersonate_user adds Impersonate-User"},
-		{"bad template", sources, `"protocol":"postgres","identity":{"type":"hoop_credential"},"downstream_tls":{},"propagate":{"application_name":"{{.Principal"},` + pool,
+		{"bad template", sources, `"protocol":"postgres","identity":{"type":"kubernetes"},"downstream_tls":{},"propagate":{"application_name":"{{.Principal"},` + pool,
 			"propagate.application_name:"},
 		{"reserved context key", sources, `"protocol":"postgres","context":{"principal":"x"}`,
 			`context key "principal" is one the policy context reserves`},
@@ -120,10 +118,10 @@ func TestLaneAuthLoads(t *testing.T) {
 	for _, tc := range []struct{ name, top, listener string }{
 		{"unix implies none", `"credentials":{"secret_files":{"dir":"/run/creds"}},`,
 			`"protocol":"postgres","network":"unix","listen":"` + sock + `","upstream":"h:1","credentials":{"pool":[{"name":"ro","source":"secret_files","user":"app","password_file":"ro/password"}],"select":{"rules":[{"credential":"ro"}]}},"passthrough_users":["postgres"],"propagate":{"application_name":"{{.Principal}} via {{.Context.env}}"},"context":{"env":"demo"}`},
-		{"hoop_credential under downstream tls", `"credentials":{"secret_files":{"dir":"/run/creds"}},`,
-			`"protocol":"postgres","listen":":1","upstream":"h:1","identity":{"type":"hoop_credential"},"downstream_tls":{"cert_file":"` + cert + `","key_file":"` + key + `"},"credentials":{"pool":[{"name":"ro","source":"secret_files","user_file":"ro/user","password_file":"ro/password"}],"select":{"rules":[{"when":{"identity.groups":"dba"},"credential":"ro"}]}}`},
+		{"jwt under downstream tls", `"credentials":{"secret_files":{"dir":"/run/creds"}},`,
+			`"protocol":"postgres","listen":":1","upstream":"h:1","identity":{"type":"jwt","issuer":"https://login.acme.com"},"downstream_tls":{"cert_file":"` + cert + `","key_file":"` + key + `"},"credentials":{"pool":[{"name":"ro","source":"secret_files","user_file":"ro/user","password_file":"ro/password"}],"select":{"rules":[{"when":{"identity.groups":"dba"},"credential":"ro"}]}}`},
 		{"http with impersonation", `"credentials":{"gcp_impersonation":{"metadata_host":"meta:80"}},`,
-			`"protocol":"http","listen":":1","upstream":"h:1","identity":{"type":"hoop_credential"},"credentials":{"pool":[{"name":"gw","source":"gcp_impersonation","service_account":"sa@p.iam.gserviceaccount.com"}],"select":{"rules":[{"credential":"gw"}]}},"propagate":{"impersonate_user":true}`},
+			`"protocol":"http","listen":":1","upstream":"h:1","identity":{"type":"kubernetes"},"credentials":{"pool":[{"name":"gw","source":"gcp_impersonation","service_account":"sa@p.iam.gserviceaccount.com"}],"select":{"rules":[{"credential":"gw"}]}},"propagate":{"impersonate_user":true}`},
 		{"kubernetes picks by opa", `"credentials":{"x509":{}},"opa":{"url":"http://opa:8181/v1/data/hoop"},`,
 			`"protocol":"mysql","listen":":1","upstream":"h:1","identity":{"type":"kubernetes","issuer":"https://oidc.example.com/id/abc"},"credentials":{"pool":[{"name":"svc","source":"x509","cert_file":"c.pem","key_file":"k.pem"}],"select":{"opa":true}}`},
 		{"oracle passthrough with none", ``,
@@ -193,12 +191,12 @@ func TestLaneAuthIsRefusedWithoutTheAuthModule(t *testing.T) {
 // engine; the field caps are in every build.
 func TestTheHeaderListsVerifiersAndSources(t *testing.T) {
 	caps := SidecarCapabilities()
-	for _, want := range []string{"identity", "credentials", "credential_set"} {
+	for _, want := range []string{"identity", "credentials"} {
 		if !slices.Contains(caps, want) {
 			t.Errorf("the header lacks %q: %v", want, caps)
 		}
 	}
-	builtins := []string{"identity:none", "identity:kubernetes", "identity:hoop_credential", "identity:jwt",
+	builtins := []string{"identity:none", "identity:kubernetes", "identity:jwt",
 		"credentials.secret_files", "credentials.gcp_impersonation", "credentials.x509", "credentials.vault", "credentials.gcp_secret_manager"}
 	_, linked := RegisteredIdentitySource(IdentityNone)
 	for _, entry := range builtins {
@@ -230,63 +228,10 @@ func TestTheHeaderListsVerifiersAndSources(t *testing.T) {
 	}
 	// A build with no engine has none of the built-ins, so the plane holds
 	// a pooled lane back from it.
-	cfg.Listeners[0].Identity = &IdentityConfig{Type: IdentityHoopCredential}
+	cfg.Listeners[0].Identity = &IdentityConfig{Type: IdentityKubernetes}
 	err = CheckServable(cfg, Handshake{Capabilities: caps})
 	if (err == nil) != linked {
 		t.Fatalf("CheckServable = %v with the engine linked = %v", err, linked)
-	}
-}
-
-// recordingSet is the engine's set as the reloader sees it: what was last
-// swapped in.
-type recordingSet struct{ entries []CredentialSetEntry }
-
-func (s *recordingSet) Swap(entries []CredentialSetEntry) { s.entries = entries }
-func (s *recordingSet) Size() int                         { return len(s.entries) }
-
-func (s *recordingSet) has(lane, hash string) bool {
-	for _, e := range s.entries {
-		if e.Lane == lane && e.Hash == hash {
-			return true
-		}
-	}
-	return false
-}
-
-// The reloader swaps the set from every document the plane sends, whatever
-// the document's fate, and the set never reaches the baseline: a mint is
-// not a restart.
-func TestAReloadSwapsTheCredentialSet(t *testing.T) {
-	const base = `{"listeners":[{"name":"l","protocol":"postgres","listen":"127.0.0.1:0","upstream":"h:1"}]}`
-	rl, buf := testReloader(t, base)
-	set := &recordingSet{}
-	rl.credentials = set
-	entry, _ := json.Marshal([]CredentialSetEntry{{Hash: strings.Repeat("ab", 32), Subject: "a", Lane: "l", ExpiresAt: time.Now().Add(time.Hour)}})
-	withKey := strings.TrimSuffix(base, "}") + `,"credential_set":` + string(entry) + `}`
-	if out := applyWith(rl, buf, withKey); out == reloadRestart || out == reloadRefused {
-		t.Fatalf("outcome = %v: %s", out, buf.String())
-	}
-	if !set.has("l", strings.Repeat("ab", 32)) {
-		t.Fatal("the reload did not put the served key in force")
-	}
-	if !strings.Contains(buf.String(), "credential set swapped") {
-		t.Fatalf("the swap was not logged: %s", buf.String())
-	}
-	// A document that needs a restart still carries the keys in force:
-	// here one that revokes the key and moves the listen address.
-	moved := strings.Replace(base, "127.0.0.1:0", "127.0.0.1:1", 1)
-	if out := applyWith(rl, buf, moved); out != reloadRestart {
-		t.Fatalf("outcome = %v, want a restart", out)
-	}
-	if set.Size() != 0 {
-		t.Fatal("a revoked key survived the reload")
-	}
-	cfg := Config{Listeners: []ListenerConfig{{Name: "l", Protocol: "postgres", Listen: ":1", Upstream: "h:1"}}}
-	before, _ := BaselineDoc(&cfg)
-	cfg.CredentialSet = []CredentialSetEntry{{Hash: strings.Repeat("ab", 32), Lane: "l"}}
-	after, _ := BaselineDoc(&cfg)
-	if string(before) != string(after) {
-		t.Fatalf("the credential set reached the baseline:\n%s\n%s", before, after)
 	}
 }
 

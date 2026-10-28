@@ -35,8 +35,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	codectypes "github.com/hoophq/libhoop/v2/codec/types"
-
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -192,16 +190,6 @@ type Config struct {
 	// http, grpc and clickhouse, whose codecs swap the credential
 	// themselves.
 	Authenticate func(ctx context.Context, user, secret string) (session.Identity, Credential, error)
-
-	// AuthenticateProven is Authenticate for a login the driver proved
-	// by SCRAM against the material SCRAMVerifier served; hash is that
-	// material's Hash. Required with SCRAMVerifier.
-	AuthenticateProven func(ctx context.Context, user, hash string) (session.Identity, Credential, error)
-
-	// SCRAMVerifier returns the SCRAM-SHA-256 material of a login user so
-	// a driver can act as the SCRAM server on the client leg. Nil offers
-	// no SCRAM. Needs Authenticate.
-	SCRAMVerifier func(user string) (codectypes.SCRAMMaterial, bool)
 
 	// Propagate says what of the verified identity the upstream login
 	// carries.

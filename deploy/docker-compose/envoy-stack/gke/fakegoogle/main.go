@@ -4,6 +4,7 @@
 //	POST /tokeninfo                                        oauth2.googleapis.com
 //	POST /v1/projects/-/serviceAccounts/*:generateAccessToken  iamcredentials.googleapis.com
 //	/v1/projects/*/locations/*/gkeMemberships/*            connectgateway.googleapis.com
+//	GET  /.well-known/openid-configuration, /oauth2/v3/certs  accounts.google.com
 //
 // and, with -metadata-addr, for the GCE metadata server on plain HTTP:
 //
@@ -19,34 +20,51 @@
 // static token instead of impersonation), so the cluster's own RBAC still
 // decides. Impersonate-* headers pass through to the cluster.
 //
+// As accounts.google.com it is an OIDC issuer: discovery, a JWKS with one
+// RSA key made at startup, and with -tokens-dir an ID token per demo user
+// written there, what `gcloud auth print-identity-token` gives a person
+// after SSO. The sidecar's jwt lanes verify those tokens against the JWKS.
+//
 // Its certificate is signed by the stack's "customer CA", the one the
 // intercepting Envoy also uses, so the sidecar reaches it only through
 // trust.ca_file, as it would reach Google through a real MITM.
 package main
 
 import (
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 // users maps the Google access tokens the demo hands out to the identity
-// Google would report and the k3s token Connect Gateway would act as. The
-// last one is the token generateAccessToken mints for the sidecar's service
-// account; the cluster knows it as a user that may only impersonate.
-var users = map[string]struct{ sub, email, k3sToken string }{
-	"tok-alice":      {"104771111111111111111", "alice@example.com", "alice-token"},
-	"tok-bob":        {"104772222222222222222", "bob@example.com", "bob-token"},
-	"tok-sa-gateway": {"105550000000000000001", impersonatedSA, "gateway-token"},
+// Google would report, the groups the ID token carries (a claim a real
+// IdP adds; Google's own ID token has none) and the k3s token Connect
+// Gateway would act as. The last one is the token generateAccessToken
+// mints for the sidecar's service account; the cluster knows it as a user
+// that may only impersonate.
+var users = map[string]struct {
+	sub, email, k3sToken string
+	groups               []string
+}{
+	"tok-alice":      {"104771111111111111111", "alice@example.com", "alice-token", []string{"dba"}},
+	"tok-bob":        {"104772222222222222222", "bob@example.com", "bob-token", []string{"developers"}},
+	"tok-sa-gateway": {"105550000000000000001", impersonatedSA, "gateway-token", nil},
 }
 
 // The metadata server's identity and the one service account it may
@@ -57,9 +75,19 @@ const (
 	impersonatedSA = "hoop-sidecar@demo-project.iam.gserviceaccount.com"
 )
 
+// The issuer half: Google's issuer name, the audience the sidecar lanes
+// expect, and the one signing key's id.
+const (
+	issuerURL     = "https://accounts.google.com"
+	tokenAudience = "hoop-sidecar"
+	signingKid    = "fake-google-1"
+	tokenLifetime = 30 * 24 * time.Hour
+)
+
 func main() {
 	addr := flag.String("addr", ":443", "listen address")
 	metadataAddr := flag.String("metadata-addr", "", "plain-HTTP listen address for the metadata server; empty disables it")
+	tokensDir := flag.String("tokens-dir", "", "directory to write one ID token per demo user into; empty writes none")
 	pki := flag.String("pki", "/pki", "directory holding fake-google.crt and fake-google.key")
 	k3s := flag.String("k3s", "https://k3s:6443", "the cluster behind the gateway")
 	k3sCA := flag.String("k3s-ca", "/k3s/server-ca.crt", "CA that verifies the cluster")
@@ -74,10 +102,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	iss, err := newIssuer()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if *tokensDir != "" {
+		if err := iss.writeTokens(*tokensDir); err != nil {
+			log.Fatal(err)
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /tokeninfo", tokeninfo)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
 	mux.HandleFunc("POST /v1/projects/-/serviceAccounts/{sa}", generateAccessToken)
+	mux.HandleFunc("GET /.well-known/openid-configuration", iss.discovery)
+	mux.HandleFunc("GET /oauth2/v3/certs", iss.jwks)
 	mux.Handle("/v1/", gateway)
 
 	if *metadataAddr != "" {
@@ -86,8 +125,83 @@ func main() {
 		go func() { log.Fatal(md.ListenAndServe()) }()
 	}
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	log.Printf("fake-google on %s (tokeninfo + iamcredentials + connect gateway -> %s)", *addr, *k3s)
+	log.Printf("fake-google on %s (tokeninfo + iamcredentials + issuer + connect gateway -> %s)", *addr, *k3s)
 	log.Fatal(srv.ListenAndServeTLS(*pki+"/fake-google.crt", *pki+"/fake-google.key"))
+}
+
+// issuer is the accounts.google.com half: one RSA key, made at startup, so
+// a token outlives nothing but this process and the files it wrote.
+type issuer struct {
+	key *rsa.PrivateKey
+}
+
+func newIssuer() (*issuer, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
+	}
+	return &issuer{key: key}, nil
+}
+
+func (i *issuer) discovery(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"issuer":                                issuerURL,
+		"jwks_uri":                              issuerURL + "/oauth2/v3/certs",
+		"id_token_signing_alg_values_supported": []string{"RS256"},
+	})
+}
+
+func (i *issuer) jwks(w http.ResponseWriter, _ *http.Request) {
+	log.Printf("jwks served")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]string{{
+		"kty": "RSA", "use": "sig", "alg": "RS256", "kid": signingKid,
+		"n": base64.RawURLEncoding.EncodeToString(i.key.N.Bytes()),
+		"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(i.key.E)).Bytes()),
+	}}})
+}
+
+// writeTokens mints one ID token per person (the service account gets
+// none: it is impersonated, never a caller) and writes it to dir under the
+// local part of the email, readable by the client sandbox.
+func (i *issuer) writeTokens(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, u := range users {
+		if u.groups == nil {
+			continue
+		}
+		tok, err := i.idToken(u.sub, u.email, u.groups)
+		if err != nil {
+			return err
+		}
+		name, _, _ := strings.Cut(u.email, "@")
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(tok), 0o644); err != nil {
+			return err
+		}
+		log.Printf("id token for %s written to %s", u.email, filepath.Join(dir, name))
+	}
+	return nil
+}
+
+// idToken signs a Google-shaped ID token with RS256.
+func (i *issuer) idToken(sub, email string, groups []string) (string, error) {
+	now := time.Now()
+	header, _ := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT", "kid": signingKid})
+	claims, _ := json.Marshal(map[string]any{
+		"iss": issuerURL, "sub": sub, "aud": tokenAudience,
+		"email": email, "email_verified": true, "groups": groups,
+		"iat": now.Unix(), "exp": now.Add(tokenLifetime).Unix(),
+	})
+	signing := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(claims)
+	digest := sha256.Sum256([]byte(signing))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, i.key, crypto.SHA256, digest[:])
+	if err != nil {
+		return "", err
+	}
+	return signing + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
 // metadata is the GCE metadata server's token endpoint: the pod's own

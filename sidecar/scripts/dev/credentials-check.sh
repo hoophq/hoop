@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Verifies the credential-swap overlay: a hoop key logs in and the database
-# sees the pool's role, a wrong key is refused at the door, the shared role
-# cannot be escaped, the GKE lane impersonates the caller, and the audit
+# Verifies the credential-swap overlay: an ID token logs in and the database
+# sees the pool's role, a forged token is refused at the door, the shared
+# role cannot be escaped, the GKE lane impersonates the caller, and the audit
 # trail names the principal and the credential.
 #
 #   cd deploy/docker-compose/envoy-stack && ./run.sh --rebuild
@@ -27,14 +27,12 @@ ok()   { printf '\033[32m  PASS\033[0m %s\n' "$*"; PASS=$((PASS+1)); }
 bad()  { printf '\033[31m  FAIL\033[0m %s\n' "$*"; FAIL=$((FAIL+1)); }
 note() { printf '\033[90m       %s\033[0m\n' "$*"; }
 
-ALICE_PG=hlc_demo_alice_appdb_7f3a9c1e5b2d4f6a8c0e2b4d6f8a1c3e
-BOB_PG=hlc_demo_bob_appdb_2b4d6f8a1c3e5b7d9f1a3c5e7b9d1f3a
 GW=https://connectgateway.googleapis.com/v1/projects/123456789012/locations/global/gkeMemberships/demo
 
 # The sidecar terminates TLS and answers the login itself, so
 # SCRAM-SHA-256-PLUS is not offered: channel_binding=disable.
 PGOPTS="host=envoy port=5432 dbname=appdb sslmode=require channel_binding=disable"
-pg() { # pg <user> <key> <psql args>
+pg() { # pg <user> <token> <psql args>
     local u="$1" k="$2"; shift 2
     dc exec -T -e PGPASSWORD="$k" client psql "$PGOPTS user=$u" "$@" 2>&1
 }
@@ -53,22 +51,30 @@ for _ in $(seq 1 20); do
     dc exec -T client sh -c 'command -v psql && command -v kubectl' >/dev/null 2>&1 && break
     sleep 2
 done
+# The ID tokens fake-google issued at startup: what the person holds after
+# SSO. kubectl reads the same files through the kubeconfig.
+ALICE_PG="$(dc exec -T client cat /etc/gke-tokens/alice 2>/dev/null)"
+BOB_PG="$(dc exec -T client cat /etc/gke-tokens/bob 2>/dev/null)"
+if [[ -z "$ALICE_PG" || -z "$BOB_PG" ]]; then
+    echo "no ID tokens under /etc/gke-tokens in the client; is the credentials overlay up?" >&2
+    exit 1
+fi
 
 CHECK_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 sleep 1
 
 # ----------------------------------------------------------- 1. the swap
-c_step "1. The hoop key logs in, and the database sees the pool's role"
+c_step "1. The ID token logs in, and the database sees the pool's role"
 WHO="$(pg alice@example.com "$ALICE_PG" -tAc "SELECT current_user || ' ' || application_name FROM pg_stat_activity WHERE pid = pg_backend_pid()")"
 if grep -q '^appuser alice@example.com via demo$' <<<"$WHO"; then
-    ok "alice's key selected rw: upstream user appuser, application_name names her"
+    ok "alice's token selected rw: upstream user appuser, application_name names her"
 else
     bad "expected 'appuser alice@example.com via demo', got: $WHO"
 fi
 
 WHO="$(pg bob@example.com "$BOB_PG" -tAc "SELECT current_user")"
 if grep -q '^app_ro$' <<<"$WHO"; then
-    ok "bob's key selected ro: upstream user app_ro"
+    ok "bob's token selected ro: upstream user app_ro"
 else
     bad "expected app_ro for bob, got: $WHO"
 fi
@@ -81,12 +87,12 @@ else
 fi
 
 # ---------------------------------------------------------- 2. refusals
-c_step "2. A wrong key is refused at the door"
-BAD="$(pg alice@example.com "hlc_forged" -tAc "SELECT 1")"
+c_step "2. A forged token is refused at the door"
+BAD="$(pg alice@example.com "forged.token.value" -tAc "SELECT 1")"
 if grep -qiE 'password authentication failed|login refused|authentication failed' <<<"$BAD" && ! grep -qE '^ *1$' <<<"$BAD"; then
-    ok "wrong key refused: $(head -1 <<<"$BAD")"
+    ok "forged token refused: $(head -1 <<<"$BAD")"
 else
-    bad "wrong key was not refused: $BAD"
+    bad "forged token was not refused: $BAD"
 fi
 
 ROLE="$(pg alice@example.com "$ALICE_PG" -tAc "SET ROLE app_ro")"
@@ -107,23 +113,23 @@ fi
 c_step "3. The GKE lane impersonates the caller behind a service account"
 PODS="$(kc get pods)"
 if grep -q '^demo ' <<<"$PODS"; then
-    ok "alice's key reaches the cluster as alice@example.com (admin)"
+    ok "alice's token reaches the cluster as alice@example.com (admin)"
 else
     bad "kubectl as alice failed: $PODS"
 fi
 
 BOBPODS="$(kc --context bob get pods)"
 if grep -qi 'forbidden' <<<"$BOBPODS" && grep -q 'bob@example.com' <<<"$BOBPODS"; then
-    ok "bob's key reaches the cluster as bob@example.com, refused by RBAC"
+    ok "bob's token reaches the cluster as bob@example.com, refused by RBAC"
 else
     bad "expected Forbidden naming bob@example.com, got: $BOBPODS"
 fi
 
-CODE="$(curlc -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer hlc_forged' "$GW/api/v1/namespaces/default/pods")"
+CODE="$(curlc -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer forged.token.value' "$GW/api/v1/namespaces/default/pods")"
 if [[ "$CODE" == "401" || "$CODE" == "403" ]]; then
-    ok "a forged key is refused by the sidecar ($CODE)"
+    ok "a forged token is refused by the sidecar ($CODE)"
 else
-    bad "forged key answered $CODE"
+    bad "forged token answered $CODE"
 fi
 
 sleep 1
@@ -144,7 +150,7 @@ c_step "4. The audit trail names the principal and the credential"
 LOG="$(dc logs hoop-inspect --no-log-prefix --since "$CHECK_START" 2>&1)"
 START="$(grep '"kind":"session_start"' <<<"$LOG" | grep '"connection":"appdb"' | grep 'alice@example.com' | tail -1)"
 if [[ -n "$START" ]] && grep -q '"credential":"rw"' <<<"$START" && grep -q '"upstream_user":"appuser"' <<<"$START" \
-   && grep -q '"identity_type":"hoop_credential"' <<<"$START" && grep -q '"verified":"true"' <<<"$START"; then
+   && grep -q '"identity_type":"jwt"' <<<"$START" && grep -q '"verified":"true"' <<<"$START"; then
     ok "session_start: principal alice@example.com, credential rw, upstream_user appuser, verified"
 else
     bad "session_start metadata incomplete: ${START:-<none>}"
@@ -165,9 +171,9 @@ else
     bad "no identity violation for the refused login in the trail"
 fi
 
-SECRETS="$(grep -c 'hlc_demo_\|apppass\|ro-secret\|tok-sa-gateway' <<<"$LOG")"
+SECRETS="$(grep -cF -e "$ALICE_PG" -e "$BOB_PG" -e apppass -e ro-secret -e tok-sa-gateway <<<"$LOG")"
 if [[ "$SECRETS" == "0" ]]; then
-    ok "no key, password or minted token in the trail"
+    ok "no token or password in the trail"
 else
     bad "$SECRETS line(s) of the trail hold a secret"
 fi

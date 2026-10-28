@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/hoophq/hoop/sidecar/daemon"
 	"gorm.io/gorm"
 )
 
@@ -22,20 +21,6 @@ type ConnectionCredentials struct {
 	CreatedAt          time.Time  `gorm:"column:created_at"`
 	ExpireAt           time.Time  `gorm:"column:expire_at"`
 	RevokedAt          *time.Time `gorm:"column:revoked_at"`
-	// ScramSHA256 is the SCRAM-SHA-256 verifier of a sidecar lane credential,
-	// computed at mint. Nil on every other credential.
-	ScramSHA256 *daemon.SCRAMMaterial `gorm:"column:scram_sha256;type:jsonb;serializer:json"`
-}
-
-// InsertConnectionCredentials stores a credential row. An empty SessionID is
-// stored as NULL: (org_id, session_id) is unique, and a sidecar lane
-// credential has no session.
-func InsertConnectionCredentials(db *gorm.DB, cred *ConnectionCredentials) error {
-	q := db.Table("private.connection_credentials")
-	if cred.SessionID == "" {
-		q = q.Omit("session_id")
-	}
-	return q.Create(cred).Error
 }
 
 func CreateConnectionCredentials(db *ConnectionCredentials) (*ConnectionCredentials, error) {

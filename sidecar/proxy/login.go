@@ -128,13 +128,6 @@ type LoginConn struct {
 
 	Lane         LaneInfo
 	Authenticate func(ctx context.Context, user, secret string) (session.Identity, Credential, error)
-	// AuthenticateProven is Authenticate for a login the driver proved by
-	// SCRAM against the material SCRAM returned: hash is the material's
-	// Hash. Set with SCRAM.
-	AuthenticateProven func(ctx context.Context, user, hash string) (session.Identity, Credential, error)
-	// SCRAM returns the client's SCRAM-SHA-256 verifier; nil when the lane
-	// offers no SCRAM on the client leg.
-	SCRAM func(user string) (codectypes.SCRAMMaterial, bool)
 	// Passthrough reports a startup user that keeps today's pass-through
 	// login, unchanged bytes and a claimed identity.
 	Passthrough func(user string) bool
@@ -169,10 +162,10 @@ type LoginResult struct {
 // pre-login negotiation and the pumps.
 //
 // It reads the login from c.Client, verifies it through c.Authenticate (or
-// c.SCRAM then c.AuthenticateProven, or lets it through when c.Passthrough
-// says so), calls c.Dial with the credential it was given, logs in
-// upstream with it, and leaves both legs positioned at the first
-// post-login message. It stores the upstream it dialed in c.Upstream.
+// lets it through when c.Passthrough says so), calls c.Dial with the
+// credential it was given, logs in upstream with it, and leaves both legs
+// positioned at the first post-login message. It stores the upstream it
+// dialed in c.Upstream.
 // Every login packet it forwards or synthesizes goes through c.Inspect
 // first so the codec keeps its phase.
 //
@@ -222,13 +215,10 @@ func loginFor(p inspect.Protocol) (LoginFunc, bool) {
 // http and grpc swap per request inside their codecs instead.
 func checkLoginConfig(cfg *Config) error {
 	if cfg.Authenticate == nil {
-		if cfg.SCRAMVerifier != nil || cfg.AuthenticateProven != nil || len(cfg.PassthroughUsers) > 0 {
-			return errors.New("sidecar/proxy: SCRAMVerifier, AuthenticateProven and PassthroughUsers need Authenticate")
+		if len(cfg.PassthroughUsers) > 0 {
+			return errors.New("sidecar/proxy: PassthroughUsers need Authenticate")
 		}
 		return nil
-	}
-	if cfg.SCRAMVerifier != nil && cfg.AuthenticateProven == nil {
-		return errors.New("sidecar/proxy: SCRAMVerifier needs AuthenticateProven")
 	}
 	switch cfg.Protocol {
 	case inspect.HTTP, inspect.GRPC, inspect.ClickHouse:
@@ -339,9 +329,7 @@ func (s *Server) newLoginConn(ctx context.Context, client net.Conn, g *gate.Gate
 			ClientTLS:    isTLS(client),
 			UpstreamAddr: s.cfg.Upstream,
 		},
-		Authenticate:       s.cfg.Authenticate,
-		AuthenticateProven: s.cfg.AuthenticateProven,
-		SCRAM:              s.cfg.SCRAMVerifier,
+		Authenticate: s.cfg.Authenticate,
 		Passthrough: func(user string) bool {
 			return slices.Contains(s.cfg.PassthroughUsers, user)
 		},

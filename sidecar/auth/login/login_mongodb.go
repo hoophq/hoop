@@ -1,6 +1,7 @@
 package login
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"strings"
 
 	mongoauth "github.com/hoophq/libhoop/v2/codec/mongodb/auth"
-	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/proxy"
@@ -21,17 +21,22 @@ func init() { proxy.RegisterLogin(inspect.MongoDB, loginMongoDB) }
 // a login runs. mongod numbers them from 1 too.
 const mongoConversationID = 1
 
+// mongoPlain is the SASL mechanism the relay terminates: the user and the
+// secret in one message (RFC 4616), as a driver sends with
+// authMechanism=PLAIN. It is the one mechanism that hands the relay the
+// secret itself, which the verifier needs.
+const mongoPlain = "PLAIN"
+
 // loginMongoDB terminates a MongoDB login on the relay.
 //
 // Client leg: the first hello is answered from the upstream's own reply,
-// with SCRAM-SHA-256 as the one mechanism. The saslStart, folded into the
-// hello or sent after it, names the user. A pass-through user's exchange
-// goes upstream unchanged. Any other user proves its key against the
-// material the lane serves, so the key never crosses the wire; the hash
-// of the material proved is what AuthenticateProven verifies. A connection
-// that sends a second hello instead of a login is a driver's monitor: it
-// carries no identity and stays unauthenticated upstream, where the server
-// refuses every command that needs a user.
+// with PLAIN as the one mechanism. The saslStart names the user and
+// carries the secret in clear, which the relay allows only when the leg
+// cannot be read by a third party (unix socket or TLS the relay
+// terminated). A pass-through user's SCRAM exchange goes upstream
+// unchanged. A connection that sends a second hello instead of a login is
+// a driver's monitor: it carries no identity and stays unauthenticated
+// upstream, where the server refuses every command that needs a user.
 //
 // Upstream leg: the client's hello without its authentication, then
 // SCRAM-SHA-256 with the credential's user and password on admin, or
@@ -94,91 +99,50 @@ func (l *mongoLogin) run() (proxy.LoginResult, error) {
 	return l.monitor(next)
 }
 
-// speculative handles a hello that carries the client's saslStart.
+// speculative handles a hello that carries the client's saslStart. Only a
+// pass-through user's SCRAM is speculative here: drivers never fold PLAIN
+// into a hello, and nothing else is terminated on this lane.
 func (l *mongoLogin) speculative(first mongoauth.Message, hello mongoauth.Hello) (proxy.LoginResult, error) {
 	start := *hello.Speculative
 	user, uerr := mongoauth.ClientFirstUser(start.Payload)
 	if isScram(start.Mechanism) && uerr == nil && l.passthrough(user) {
 		return l.passthroughHello(first, hello, start, user)
 	}
-	if start.Mechanism != mongoauth.ScramSHA256 {
-		return l.refuseMechanism(first, user, start.Mechanism)
-	}
-	if uerr != nil {
-		return l.refuse(first, user, "malformed client-first-message")
-	}
-	material, ok := l.material(user)
-	if !ok {
-		return l.refuse(first, user, "no scram material for user")
-	}
-	if err := l.connect(first.OpCode, first.Namespace, mongoauth.UpstreamHello(hello, false)); err != nil {
-		return proxy.LoginResult{}, err
-	}
-	conv, serverFirst, err := l.serverFirst(user, material, start.Payload)
-	if err != nil {
-		return l.refuse(first, user, err.Error())
-	}
-	spec := mongoauth.SpeculativeReply(mongoConversationID, false, serverFirst)
-	if err := l.reply(first, mongoauth.HelloReply(l.upReply, l.mechs(hello, false), spec)); err != nil {
-		return proxy.LoginResult{}, err
-	}
-	return l.finish(conv, user, material, start)
+	return l.refuseMechanism(first, user, start.Mechanism)
 }
 
-// saslStart handles a standalone saslStart after the hello was answered.
+// saslStart handles a standalone saslStart after the hello was answered:
+// a pass-through user's SCRAM goes upstream unchanged, anyone else logs in
+// with PLAIN.
 func (l *mongoLogin) saslStart(msg mongoauth.Message) (proxy.LoginResult, error) {
 	start, err := mongoauth.DecodeSASLStart(msg.Body)
 	if err != nil {
 		return proxy.LoginResult{}, fmt.Errorf("mongodb login: %w", err)
 	}
-	user, uerr := mongoauth.ClientFirstUser(start.Payload)
-	if isScram(start.Mechanism) && uerr == nil && l.passthrough(user) {
-		return l.passthroughCommand(msg, user)
+	if isScram(start.Mechanism) {
+		if user, err := mongoauth.ClientFirstUser(start.Payload); err == nil && l.passthrough(user) {
+			return l.passthroughCommand(msg, user)
+		}
 	}
-	if start.Mechanism != mongoauth.ScramSHA256 {
-		return l.refuseMechanism(msg, user, start.Mechanism)
+	if start.Mechanism != mongoPlain {
+		return l.refuseMechanism(msg, "", start.Mechanism)
 	}
-	if uerr != nil {
-		return l.refuse(msg, user, "malformed client-first-message")
-	}
-	material, ok := l.material(user)
-	if !ok {
-		return l.refuse(msg, user, "no scram material for user")
-	}
-	conv, serverFirst, err := l.serverFirst(user, material, start.Payload)
+	user, secret, err := plainCredentials(start.Payload)
 	if err != nil {
 		return l.refuse(msg, user, err.Error())
 	}
-	if err := l.reply(msg, mongoauth.SASLReply(mongoConversationID, false, serverFirst)); err != nil {
-		return proxy.LoginResult{}, err
+	if l.c.Lane.Network != "unix" && !l.c.Lane.ClientTLS {
+		return l.refuse(msg, user, "no password method is safe on a plain tcp lane")
 	}
-	return l.finish(conv, user, material, start)
-}
-
-// finish reads the client's proof, verifies the identity, logs in upstream
-// with the credential and completes the client's conversation.
-func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, material codectypes.SCRAMMaterial, start mongoauth.SASLStart) (proxy.LoginResult, error) {
-	cont, err := l.readSASLContinue()
-	if err != nil {
-		return proxy.LoginResult{Identity: session.Identity{Subject: user}}, err
+	if l.c.Authenticate == nil {
+		return l.refuse(msg, user, "lane has no authenticator")
 	}
-	_, clientFinal, err := mongoauth.DecodeSASLContinue(cont.Body)
-	if err != nil {
-		return proxy.LoginResult{}, fmt.Errorf("mongodb login: %w", err)
-	}
-	serverFinal, err := conv.Step(clientFinal)
-	if err != nil || !conv.Valid() {
-		return l.refuse(cont, user, "proof did not match")
-	}
-	if l.c.AuthenticateProven == nil {
-		return l.refuse(cont, user, "lane has no authenticator")
-	}
-	identity, cred, err := l.c.AuthenticateProven(l.ctx, user, material.Hash)
+	identity, cred, err := l.c.Authenticate(l.ctx, user, secret)
 	if err != nil {
 		if errors.Is(err, proxy.ErrLoginRefused) {
-			return l.refuse(cont, user, err.Error())
+			return l.refuse(msg, user, err.Error())
 		}
-		_ = l.reply(cont, mongoauth.AuthenticationFailed())
+		_ = l.reply(msg, mongoauth.AuthenticationFailed())
 		return proxy.LoginResult{}, fmt.Errorf("mongodb login: authenticate: %w", err)
 	}
 	if identity.Subject == "" {
@@ -190,26 +154,29 @@ func (l *mongoLogin) finish(conv *mongoauth.ServerConversation, user string, mat
 	}
 	if err := l.upstreamLogin(cred); err != nil {
 		l.log.Warn("mongodb upstream login failed", "credential", cred.Name, "upstream_user", cred.User, "error", err)
-		_ = l.reply(cont, mongoauth.CommandError(mongoauth.CodeAuthenticationFailed,
+		_ = l.reply(msg, mongoauth.CommandError(mongoauth.CodeAuthenticationFailed,
 			"AuthenticationFailed", "upstream authentication failed"))
 		return fail(fmt.Errorf("mongodb login: upstream: %w", err))
 	}
-	if err := l.reply(cont, mongoauth.SASLReply(mongoConversationID, start.SkipEmptyExchange, serverFinal)); err != nil {
+	if err := l.reply(msg, mongoauth.SASLReply(mongoConversationID, true, nil)); err != nil {
 		return fail(err)
 	}
-	if !start.SkipEmptyExchange {
-		// The client confirms with an empty saslContinue and the server
-		// closes the conversation; skipEmptyExchange folds this into the
-		// previous reply.
-		last, err := l.readSASLContinue()
-		if err != nil {
-			return fail(err)
-		}
-		if err := l.reply(last, mongoauth.SASLReply(mongoConversationID, true, nil)); err != nil {
-			return fail(err)
-		}
-	}
 	return proxy.LoginResult{Identity: identity, Credential: cred}, nil
+}
+
+// plainCredentials reads a PLAIN payload: authzid NUL authcid NUL passwd.
+// An authorization identity other than the authentication one is refused,
+// as mongod refuses it. The error names the shape, never the secret.
+func plainCredentials(payload []byte) (user, secret string, err error) {
+	parts := bytes.Split(payload, []byte{0})
+	if len(parts) != 3 || len(parts[1]) == 0 {
+		return "", "", errors.New("malformed PLAIN payload")
+	}
+	user = string(parts[1])
+	if len(parts[0]) != 0 && !bytes.Equal(parts[0], parts[1]) {
+		return user, "", errors.New("PLAIN authorization identity must match the authentication identity")
+	}
+	return user, string(parts[2]), nil
 }
 
 // upstreamLogin authenticates the upstream leg with cred. A password
@@ -337,30 +304,8 @@ func (l *mongoLogin) mechs(hello mongoauth.Hello, passThrough bool) []string {
 		}
 		return []string{}
 	default:
-		return []string{mongoauth.ScramSHA256}
+		return []string{mongoPlain}
 	}
-}
-
-func (l *mongoLogin) serverFirst(user string, material codectypes.SCRAMMaterial, clientFirst []byte) (*mongoauth.ServerConversation, []byte, error) {
-	conv, err := mongoauth.NewServerConversation(mongoauth.ScramSHA256,
-		func(name string) (codectypes.SCRAMMaterial, bool) {
-			return material, name == user
-		})
-	if err != nil {
-		return nil, nil, err
-	}
-	serverFirst, err := conv.Step(clientFirst)
-	if err != nil {
-		return nil, nil, err
-	}
-	return conv, serverFirst, nil
-}
-
-func (l *mongoLogin) material(user string) (codectypes.SCRAMMaterial, bool) {
-	if l.c.SCRAM == nil {
-		return codectypes.SCRAMMaterial{}, false
-	}
-	return l.c.SCRAM(user)
 }
 
 func (l *mongoLogin) passthrough(user string) bool {
@@ -403,29 +348,6 @@ func (l *mongoLogin) readLogin() (mongoauth.Message, error) {
 	return msg, nil
 }
 
-// readSASLContinue reads the client's next conversation step and refuses
-// anything else with a ProtocolError, as mongod does.
-func (l *mongoLogin) readSASLContinue() (mongoauth.Message, error) {
-	msg, err := l.read()
-	if err != nil {
-		return msg, err
-	}
-	if msg.Command() != "saslContinue" {
-		l.answer(msg, mongoauth.CommandError(mongoauth.CodeProtocolError, "ProtocolError",
-			"expected saslContinue, got "+msg.Command()))
-		return msg, fmt.Errorf("mongodb login: %q before the login finished", msg.Command())
-	}
-	if cid, _, err := mongoauth.DecodeSASLContinue(msg.Body); err != nil || cid != mongoConversationID {
-		l.answer(msg, mongoauth.CommandError(mongoauth.CodeProtocolError, "ProtocolError",
-			"unknown conversationId"))
-		return msg, errors.New("mongodb login: saslContinue for an unknown conversation")
-	}
-	if err := l.inspect(msg); err != nil {
-		return msg, err
-	}
-	return msg, nil
-}
-
 // answer writes a reply the gate never sees, for a request it never saw.
 func (l *mongoLogin) answer(req mongoauth.Message, doc []byte) {
 	l.replyIDs++
@@ -459,7 +381,7 @@ func (l *mongoLogin) refuse(req mongoauth.Message, user, reason string) (proxy.L
 // refuseMechanism names the mechanism, which the client chose and can
 // change; nothing about the user leaks.
 func (l *mongoLogin) refuseMechanism(req mongoauth.Message, user, mechanism string) (proxy.LoginResult, error) {
-	msg := fmt.Sprintf("mechanism %s is not supported on this lane; use %s", mechanism, mongoauth.ScramSHA256)
+	msg := fmt.Sprintf("mechanism %s is not supported on this lane; use %s", mechanism, mongoPlain)
 	l.log.Debug("mongodb login refused", "user", user, "reason", msg)
 	_ = l.reply(req, mongoauth.CommandError(mongoauth.CodeAuthenticationFailed, "AuthenticationFailed", msg))
 	return proxy.LoginResult{Identity: session.Identity{Subject: user}},

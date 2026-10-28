@@ -255,7 +255,7 @@ the handshake and the reasoning behind each check.
 # Testing the credential swap
 
 One check over the `credentials/` overlay of the envoy-stack: the sidecar
-terminates the login with a hoop key and authenticates upstream as a role
+terminates the login with an ID token and authenticates upstream as a role
 of its own, on the postgres lane and the GKE lane.
 
 ```bash
@@ -268,15 +268,15 @@ cd ../../../sidecar/scripts/dev
 ./credentials-check.sh         # verify: swap, refusal, impersonation, audit
 ```
 
-No cloud account: the metadata server and `iamcredentials` are the gke
-overlay's `fake-google`. The checks, in order: alice's key logs in and
-`pg_stat_activity` shows `appuser` with her name in `application_name`;
-bob's key gets `app_ro` and the database refuses his `INSERT`; a wrong key,
-`SET ROLE` and the lane's guardrail are refused; kubectl with a hoop key
-reaches k3s as `alice@example.com` through the impersonated service
-account, bob is refused by RBAC, a forged key by the sidecar; the
+No cloud account: the issuer, the metadata server and `iamcredentials` are
+the gke overlay's `fake-google`. The checks, in order: alice's token logs in
+and `pg_stat_activity` shows `appuser` with her name in `application_name`;
+bob's token gets `app_ro` and the database refuses his `INSERT`; a forged
+token, `SET ROLE` and the lane's guardrail are refused; kubectl with an ID
+token reaches k3s as `alice@example.com` through the impersonated service
+account, bob is refused by RBAC, a forged token by the sidecar; the
 `session_start` rows carry `credential`, `upstream_user`, `identity_type`
-and `verified`, and no key or password is in the trail.
+and `verified`, and no token or password is in the trail.
 
 See `deploy/docker-compose/envoy-stack/credentials/README.md` for the
 topology and what is faked.

@@ -38,24 +38,25 @@ const oracleConnectAttempts = 3
 // (verifier 18453: AES-256 with SHA-512(PBKDF2-HMAC-SHA512(password,
 // salt||"AUTH_PBKDF2_SPEEDY_KEY", vgen) || salt)[:32]); the client answers
 // with its own session key and the password under the same derivation.
-// Nothing in the exchange opens without that key, and the material the
-// plane serves today (a SHA-256 digest of the hoop key, SCRAM-SHA-256) does
-// not derive it. The agent proxy re-keys only because hoop's CLI tells it
-// the placeholder password the client uses.
+// Nothing in the exchange opens without that key, and no verifier the
+// sidecar links holds it: a token is checked, never derived from. The agent
+// proxy re-keys only because hoop's CLI tells it the placeholder password
+// the client uses.
 //
-// What a follow-up needs, per hoop credential, so the relay can be the
-// O5LOGON server on the client leg and recover the raw key in clear:
+// What a follow-up needs, per user, so the relay can be the O5LOGON server
+// on the client leg and recover the secret in clear:
 //
 //	Salt      [16]byte  random, AUTH_VFR_DATA of the challenge the relay sends
 //	VgenCount int       4096, AUTH_PBKDF2_VGEN_COUNT
-//	Key       [32]byte  SHA-512(PBKDF2-HMAC-SHA512(key, Salt||"AUTH_PBKDF2_SPEEDY_KEY", VgenCount) || Salt)[:32]
+//	Key       [32]byte  SHA-512(PBKDF2-HMAC-SHA512(secret, Salt||"AUTH_PBKDF2_SPEEDY_KEY", VgenCount) || Salt)[:32]
 //
 // That is the 12c "T:" verifier Oracle itself stores. With it the relay
 // decrypts the client's AUTH_SESSKEY and AUTH_PASSWORD (oraauth.DeriveUserKey
-// and decryptSessKey with Key in place of the derived key), passes the raw
-// key to Authenticate unchanged, logs in upstream with a session key of its
-// own, and rewrites AUTH_SVR_RESPONSE in the accept RPA so OCI clients verify.
-var errOracleNoVerifier = errors.New("oracle O5LOGON needs a server-side verifier the plane does not serve for this lane")
+// and decryptSessKey with Key in place of the derived key), passes the
+// secret to Authenticate unchanged, logs in upstream with a session key of
+// its own, and rewrites AUTH_SVR_RESPONSE in the accept RPA so OCI clients
+// verify.
+var errOracleNoVerifier = errors.New("oracle O5LOGON needs a server-side verifier this sidecar does not hold for this lane")
 
 // loginOracle relays the TNS handshake until the client names its user.
 //

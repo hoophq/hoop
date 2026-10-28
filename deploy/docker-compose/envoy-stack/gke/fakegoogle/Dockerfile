@@ -12,7 +12,9 @@ RUN CGO_ENABLED=0 go build -ldflags "-s -w" -o /out/fakegoogle .
 FROM alpine:3.20
 COPY --from=build /out/fakegoogle /usr/local/bin/fakegoogle
 # Non-root; compose lowers ip_unprivileged_port_start so it can bind 443,
-# the port the sidecar's default tokeninfo URL names.
-RUN adduser -D -u 10001 fakegoogle
+# the port the sidecar's default tokeninfo URL names. /tokens is where the
+# credentials overlay has it write the demo ID tokens: owned here so the
+# named volume mounted there inherits the owner.
+RUN adduser -D -u 10001 fakegoogle && mkdir /tokens && chown fakegoogle /tokens
 USER fakegoogle
 ENTRYPOINT ["/usr/local/bin/fakegoogle"]

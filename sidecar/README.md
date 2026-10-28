@@ -4206,10 +4206,9 @@ not yet in the control plane's form.
 | Type | The client presents | Needs |
 |---|---|---|
 | `none` | nothing; whoever opened the socket is the caller | `network: unix` |
-| `hoop_credential` | a key the control plane minted for this lane, as the password (databases) or bearer (http, grpc) | `downstream_tls` on a tcp postgres, mysql or clickhouse lane, or a unix socket |
 | `kubernetes` | a projected service account token as the password or bearer. Verified against the issuer's JWKS through OIDC discovery: `aud` (`audience`, default `hoop-sidecar`), `exp`, `iss`; with `POD_UID` set, the token must be this pod's | `issuer` off-cluster; in-cluster the API server, reached with the mounted CA and token |
 | `spiffe` | a JWT-SVID; `trust_domain` and `prefix` narrow it | the Workload API; linked by `hoop-inspect` only |
-| `jwt` | a token from any issuer the lane names (an identity provider, a CI provider, a gateway's authorization service), as the password or bearer. Verified against the issuer's JWKS: `iss`, `aud` (`audience`, default `hoop-sidecar`), `exp`, `nbf`, signature; `claims` maps which claims become the subject, email and groups (default `sub`, `email`, `groups`); on a protocol with a login user, the user must be the subject or the email | `issuer` (https); `jwks_url` to skip discovery; `downstream_tls` on a tcp postgres, mysql or clickhouse lane |
+| `jwt` | a token from any issuer the lane names (an identity provider, a CI provider, a gateway's authorization service), as the password or bearer. Verified against the issuer's JWKS: `iss`, `aud` (`audience`, default `hoop-sidecar`), `exp`, `nbf`, signature; `claims` maps which claims become the subject, email and groups (default `sub`, `email`, `groups`); on a protocol with a login user, the user must be the subject or the email | `issuer` (https); `jwks_url` to skip discovery; `downstream_tls` on a tcp postgres, mysql, mongodb or clickhouse lane |
 
 `identity` is exclusive with `identity_header`, `google_identity` and
 `caller_token`, and needs a `credentials` pool: a verified login with
@@ -4218,6 +4217,14 @@ nothing to present upstream does nothing. A lane with a pool and no
 `passthrough_users` lists startup users the lane relays unchanged, claimed
 and unverified (`integrated` on mssql relays a Windows login). An oracle lane
 takes `none` and `passthrough_users` only: O5LOGON never carries the secret.
+
+A database lane asks the client for the secret in clear, so the client leg
+must be a unix socket or TLS the sidecar terminates: postgres as a cleartext
+password, mysql as `mysql_clear_password`, mssql in the login record, and
+mongodb as the `PLAIN` mechanism (`authMechanism=PLAIN` in the URI; the
+client's SCRAM is relayed only for a pass-through user). Upstream the
+sidecar logs in with whatever the server asks for: SCRAM, MD5, GSSAPI, a
+certificate.
 
 ### Upstream credentials
 
@@ -4231,7 +4238,7 @@ credentials:                       # top level: which sources this process has
 listeners:
   - name: appdb
     protocol: postgres
-    identity: {type: hoop_credential}
+    identity: {type: jwt, issuer: https://login.acme.com}
     downstream_tls: {cert_file: ..., key_file: ...}
     credentials:
       pool:
@@ -4280,37 +4287,13 @@ and `credentials.<source>` for what the build links, so the plane serves such
 a lane only to a build that can run it; `-validate` refuses one this build
 cannot.
 
-### Credential set
-
-`credential_set` is what `hoop_credential` verifies against: one entry per
-key a user minted on the control plane for a lane of this sidecar, as
-`{hash, subject, email, groups, lane, expires_at, scram}`. The plane
-composes it into the served document and the heartbeat swaps it in place:
-a minted or revoked key is in force at the next login, with no restart, and
-the set never reaches the restart compare. The raw key never travels; the
-sidecar compares `sha256(secret)` against every entry of the lane in
-constant time, refuses an expired one, and refuses a key presented under
-another login user. `scram` is the SCRAM-SHA-256 server verifier the
-mongodb and postgres drivers use when the client leg cannot carry the key
-in clear; the driver then names the entry it proved. A config file may
-carry a static set, as the compose demo does.
-
 ### Operating a shared sidecar
 
-A lane with `identity: {type: hoop_credential}` admits only keys the control
-plane minted for it. The order of operations, all on the plane:
-
-1. An admin grants a user or a group the lane: `POST
-   /sidecars/<name>/lanes/<lane>/grants` with `{subject}` or `{group_name}`.
-   The grant is the entitlement; without one a mint is refused with 403.
-2. The user mints a key after SSO: `hoop sidecar credential <name>/<lane>
-   --expires 24h`, or `POST /sidecars/<name>/lanes/<lane>/credentials`. The
-   key is shown once and goes where the client keeps a password
-   (`PGPASSWORD`, `.pgpass`, the Mongo URI, a bearer header).
-3. The sidecar receives the entry on its next heartbeat and the key logs in.
-   A key sent to a lane or a sidecar it was not minted for matches nothing.
-4. Revocation is `DELETE /sidecar-credentials/<id>` by the user or an admin;
-   the next heartbeat drops it and the next login is refused at the door.
+A lane with an `identity` block admits only what its verifier accepts: a
+token the issuer signed for this audience, a projected service account
+token, an SVID. The token goes where the client keeps a password
+(`PGPASSWORD`, `.pgpass`, the Mongo URI, a bearer header); its expiry is the
+issuer's, and a revoked or expired token is refused at the door.
 
 Refusals are audited as a one-event session under the claimed user, rule
 `identity`, so an attempt is in the trail without an upstream byte.

@@ -461,7 +461,7 @@ config:
       listen: '0.0.0.0:15432'
       upstream: appdb.default.svc.cluster.local:5432
       downstream_tls: {cert_file: /etc/hoop-inspect/tls/tls.crt, key_file: /etc/hoop-inspect/tls/tls.key}
-      identity: {type: hoop_credential}
+      identity: {type: jwt, issuer: https://login.acme.com}
       credentials:
         pool:
           - {name: ro, source: secret_files, user_file: /run/secrets/appdb-ro/user, password_file: /run/secrets/appdb-ro/password}
@@ -491,7 +491,7 @@ service account token and binds it to this pod through `POD_UID`, which the
 chart always sets.
 
 What a GitOps reconciler sends the control plane for such a sidecar — owner,
-lanes, grants, Slack channels — is in `RECONCILER.md` beside this file.
+lanes, Slack channels — is in `RECONCILER.md` beside this file.
 
 ## Service account identity
 

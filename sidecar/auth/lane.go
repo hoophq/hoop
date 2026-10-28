@@ -27,14 +27,9 @@ type laneAuth struct {
 	proto        inspect.Protocol
 	identityType string
 	verifier     daemon.IdentitySource
-	// scram is the SCRAM material lookup a hoop_credential lane offers a
-	// driver, and proven the verification of the hash it proves; nil on
-	// every other verifier.
-	scram   func(user string) (codectypes.SCRAMMaterial, bool)
-	proven  func(user, hash string) (session.Identity, error)
-	pool    []daemon.CredentialEntry
-	sources map[string]daemon.CredentialSource
-	rules   []daemon.CredentialRule
+	pool         []daemon.CredentialEntry
+	sources      map[string]daemon.CredentialSource
+	rules        []daemon.CredentialRule
 	// opa is the lane's decision endpoint when select.opa names the
 	// credential; nil under rules.
 	opa     *policy.OPAClient
@@ -48,7 +43,7 @@ type laneAuth struct {
 // configure, a selector with no endpoint. It logs through deps.Log, the
 // lane's logger under the process logger Run installed.
 func buildLaneAuth(lc daemon.ListenerConfig, name string, deps daemon.AuthDeps,
-	set daemon.CredentialSet, sources map[string]daemon.CredentialSource) (daemon.LaneAuth, error) {
+	sources map[string]daemon.CredentialSource) (daemon.LaneAuth, error) {
 	if !lc.HasPool() {
 		return nil, errors.New("the lane has no credentials pool")
 	}
@@ -65,7 +60,7 @@ func buildLaneAuth(lc daemon.ListenerConfig, name string, deps daemon.AuthDeps,
 	if laneLog == nil {
 		laneLog = slog.Default().With("listener", name)
 	}
-	verifier, err := build(idCfg, daemon.IdentityDeps{Roots: deps.Roots, Log: laneLog, Lane: name, CredentialSet: set})
+	verifier, err := build(idCfg, daemon.IdentityDeps{Roots: deps.Roots, Log: laneLog})
 	if err != nil {
 		return nil, fmt.Errorf("identity %s: %w", typ, err)
 	}
@@ -80,10 +75,6 @@ func buildLaneAuth(lc daemon.ListenerConfig, name string, deps daemon.AuthDeps,
 		context:      lc.Context,
 		peer:         deps.Peer,
 		log:          laneLog,
-	}
-	if h, ok := verifier.(*hoopCredentialIdentity); ok {
-		a.scram = h.scramVerifier()
-		a.proven = h.verifyProven
 	}
 	for _, e := range lc.Credentials.Pool {
 		src, ok := sources[e.Source]
@@ -106,25 +97,7 @@ func buildLaneAuth(lc daemon.ListenerConfig, name string, deps daemon.AuthDeps,
 // is wrapped too, since the client is refused either way, and logged with
 // its cause, which never reaches the client.
 func (a *laneAuth) Authenticate(ctx context.Context, user, secret string) (session.Identity, daemon.Credential, error) {
-	return a.authenticate(ctx, user, func() (session.Identity, error) {
-		return a.verifier.Verify(ctx, user, secret, a.peer)
-	})
-}
-
-// AuthenticateProven is Authenticate for a SCRAM proof a driver ran
-// against the material SCRAM served. A lane whose verifier serves no
-// material has nothing to prove against and refuses.
-func (a *laneAuth) AuthenticateProven(ctx context.Context, user, hash string) (session.Identity, daemon.Credential, error) {
-	return a.authenticate(ctx, user, func() (session.Identity, error) {
-		if a.proven == nil {
-			return session.Identity{}, daemon.Refused("identity %s offers no scram proof", a.identityType)
-		}
-		return a.proven(user, hash)
-	})
-}
-
-func (a *laneAuth) authenticate(ctx context.Context, user string, verify func() (session.Identity, error)) (session.Identity, daemon.Credential, error) {
-	id, err := verify()
+	id, err := a.verifier.Verify(ctx, user, secret, a.peer)
 	if err != nil {
 		return a.refuse(session.Identity{Subject: user}, "verify", err)
 	}
@@ -166,9 +139,6 @@ func (a *laneAuth) Authenticator() codectypes.Authenticator {
 			codectypes.UpstreamCredential{User: cred.User, Password: cred.Password, Cert: cred.Cert, GSS: cred.GSS}, nil
 	}
 }
-
-// SCRAM is the material lookup of a hoop_credential lane; nil elsewhere.
-func (a *laneAuth) SCRAM() func(user string) (codectypes.SCRAMMaterial, bool) { return a.scram }
 
 func (a *laneAuth) IdentityType() string { return a.identityType }
 

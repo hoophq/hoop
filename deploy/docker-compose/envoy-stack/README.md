@@ -132,14 +132,14 @@ gateway prefix, `kubectl exec` over the HTTP/1.1 route, and the `Via` loop
 refusal when the MITM also catches the sidecar's own egress.
 
 [`credentials/`](credentials/README.md) stacks on `gke/` and swaps the
-login: the client holds a hoop key, the sidecar verifies it
-(`identity: {type: hoop_credential}`), picks a credential from the lane's
-pool by the caller's group, and logs in upstream as a role of its own:
-two database roles from files on the postgres lane, and on the GKE lane a
-service account token minted through `gcp_impersonation` against the
-fake metadata server and `iamcredentials`, with `Impersonate-User` naming
-the caller. The database's `application_name` and the audit trail still
-name the person.
+login: the client holds an ID token, the sidecar verifies it against the
+issuer's JWKS (`identity: {type: jwt}`; `fake-google` answers as
+`accounts.google.com`), picks a credential from the lane's pool by the
+caller's group, and logs in upstream as a role of its own: two database
+roles from files on the postgres lane, and on the GKE lane a service
+account token minted through `gcp_impersonation` against the fake metadata
+server and `iamcredentials`, with `Impersonate-User` naming the caller. The
+database's `application_name` and the audit trail still name the person.
 
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:

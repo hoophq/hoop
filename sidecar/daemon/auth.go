@@ -18,10 +18,10 @@ import (
 )
 
 // authModule is the nested module that carries the credential-swap runtime:
-// the built-in verifiers and sources, the credential set and the lane's
-// login termination. The root module keeps the config, its validation and
-// the registries, so the control plane decodes and checks a pooled lane
-// without linking the runtime; a sidecar that serves one links the module.
+// the built-in verifiers and sources and the lane's login termination. The
+// root module keeps the config, its validation and the registries, so the
+// control plane decodes and checks a pooled lane without linking the
+// runtime; a sidecar that serves one links the module.
 const authModule = "github.com/hoophq/hoop/sidecar/auth"
 
 // LaneAuth is one lane's login termination: the verifier of the client leg,
@@ -34,12 +34,6 @@ type LaneAuth interface {
 	// failure is wrapped too, and logged with its cause, which never
 	// reaches the client.
 	Authenticate(ctx context.Context, user, secret string) (session.Identity, Credential, error)
-	// AuthenticateProven is Authenticate for a login a driver already
-	// proved by SCRAM against the material SCRAM served: hash names the
-	// credential proved, the key never crossed the wire. Only a driver
-	// that ran the proof calls it; a secret shaped like a hash through
-	// Authenticate is refused.
-	AuthenticateProven(ctx context.Context, user, hash string) (session.Identity, Credential, error)
 	// Authenticator is the libhoop form of Authenticate, for a codec that
 	// terminates the login itself (ClickHouse).
 	Authenticator() codectypes.Authenticator
@@ -49,26 +43,12 @@ type LaneAuth interface {
 	// RequestIdentity is the gate's per-request resolver on a pooled http
 	// lane: the verifier alone.
 	RequestIdentity() gate.RequestIdentity
-	// SCRAM is the material lookup a hoop_credential lane offers a driver
-	// acting as the SCRAM server on the client leg; nil on every other
-	// verifier.
-	SCRAM() func(user string) (codectypes.SCRAMMaterial, bool)
 	// UpstreamAuthorization is the gRPC server's per-RPC hook: the header
 	// value the upstream sees for a credential already resolved.
 	UpstreamAuthorization(cred Credential) string
 	// IdentityType and PoolSize feed the log line a pooled lane prints.
 	IdentityType() string
 	PoolSize() int
-}
-
-// CredentialSet is the hoop credentials the plane minted for this sidecar,
-// as the reloader sees them: one per process, swapped whole on every
-// heartbeat that carries one. The hoop_credential verifier reads it through
-// IdentityDeps.
-type CredentialSet interface {
-	Swap(entries []CredentialSetEntry)
-	// Size is the number of entries in force, for a log line.
-	Size() int
 }
 
 // AuthDeps is what the engine draws on for one lane, resolved by buildLanes:
@@ -85,12 +65,10 @@ type AuthDeps struct {
 // AuthEngine is the credential-swap runtime. sidecar/auth registers one from
 // init; a binary gets it by importing that module.
 type AuthEngine interface {
-	// NewCredentialSet indexes the plane's entries for the verifiers.
-	NewCredentialSet(entries []CredentialSetEntry) CredentialSet
 	// BuildLaneAuth builds a pooled lane's login termination. Every error is
 	// a config fact: an unlinked type, a source the pool names and the
 	// block does not configure, a selector with no endpoint.
-	BuildLaneAuth(lc ListenerConfig, name string, deps AuthDeps, set CredentialSet, sources map[string]CredentialSource) (LaneAuth, error)
+	BuildLaneAuth(lc ListenerConfig, name string, deps AuthDeps, sources map[string]CredentialSource) (LaneAuth, error)
 	// CredentialBoundary prepends the guardrail every pooled SQL lane runs
 	// ahead of its own policy, outside any observe wrapper.
 	CredentialBoundary(pol policy.Evaluator, proto inspect.Protocol) policy.Evaluator

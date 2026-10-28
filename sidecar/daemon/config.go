@@ -146,13 +146,6 @@ type Config struct {
 	// CredentialSourcesConfig.
 	Credentials *CredentialSourcesConfig `json:"credentials,omitempty" cap:"credentials"`
 
-	// CredentialSet is the set of hoop credentials the plane minted for this
-	// sidecar's lanes, hashed. Served by the plane, never authored: a lane
-	// with identity type hoop_credential verifies a client login against it.
-	// Live data, not configuration: the reloader swaps it on every
-	// heartbeat and nonRuleDoc leaves it out of the baseline.
-	CredentialSet []CredentialSetEntry `json:"credential_set,omitempty" cap:"credential_set"`
-
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level,omitempty"`
 
@@ -254,12 +247,9 @@ type Config struct {
 	codecPlugins    map[inspect.Protocol]CodecPlugin
 	codecPluginInfo []CodecPluginInfo
 
-	// credentials is the live credential set and credentialSources the
-	// built sources, both process-wide: buildLanes creates them on the
-	// startup config and the reloader hands them to every later document,
-	// swapping the set's entries in place. credentials is nil in a build
-	// that links no auth engine.
-	credentials       CredentialSet
+	// credentialSources are the built sources, process-wide: buildLanes
+	// creates them on the startup config and the reloader hands them to
+	// every later document.
 	credentialSources map[string]CredentialSource
 }
 
@@ -289,31 +279,6 @@ func (c *Config) UseLicense(ref license.Ref) error {
 		c.licPinned = ref
 	}
 	return nil
-}
-
-// CredentialSetEntry is one minted hoop credential, as the plane serves it.
-// The raw key never travels: Hash is what a client login is checked against.
-type CredentialSetEntry struct {
-	// Hash is the hex sha256 of the raw key.
-	Hash    string   `json:"hash,omitempty"`
-	Subject string   `json:"subject,omitempty"`
-	Email   string   `json:"email,omitempty"`
-	Groups  []string `json:"groups,omitempty"`
-	// Lane is the listener name the credential was minted for.
-	Lane      string    `json:"lane,omitempty"`
-	ExpiresAt time.Time `json:"expires_at,omitzero"`
-	// SCRAM is the SCRAM-SHA-256 server-side verifier, for lanes whose
-	// client login is SCRAM (mongodb, postgres).
-	SCRAM *SCRAMMaterial `json:"scram,omitempty"`
-}
-
-// SCRAMMaterial is the RFC 7677 server-side verifier of one credential. All
-// byte fields are base64.
-type SCRAMMaterial struct {
-	Salt       string `json:"salt,omitempty"`
-	Iterations int    `json:"iterations,omitempty"`
-	StoredKey  string `json:"stored_key,omitempty"`
-	ServerKey  string `json:"server_key,omitempty"`
 }
 
 // CredentialSourcesConfig is the top-level credentials block: one entry per
@@ -412,7 +377,7 @@ type KerberosSourceConfig struct {
 // IdentityConfig is a listener's client-leg verifier: who a client has to
 // prove to be before the sidecar presents a credential of its own upstream.
 type IdentityConfig struct {
-	// Type is none, kubernetes, hoop_credential, jwt or spiffe.
+	// Type is none, kubernetes, jwt or spiffe.
 	Type string `json:"type,omitempty"`
 	// Audience a kubernetes, jwt or spiffe token must carry. Empty is
 	// hoop-sidecar.
@@ -2090,8 +2055,8 @@ func (c *Config) validateLaneAuth(l ListenerConfig, name string) []string {
 		if !pool && p != inspect.Oracle {
 			pf("identity needs a credentials pool: the login is terminated only to present a credential of the sidecar's own upstream")
 		}
-		if (l.Identity.Type == IdentityHoopCredential || l.Identity.Type == IdentityJWT) && l.network() != "unix" && l.DownstreamTLS == nil &&
-			(p == inspect.Postgres || p == inspect.MySQL || p == inspect.ClickHouse) {
+		if l.Identity.Type == IdentityJWT && l.network() != "unix" && l.DownstreamTLS == nil &&
+			(p == inspect.Postgres || p == inspect.MySQL || p == inspect.MongoDB || p == inspect.ClickHouse) {
 			pf("identity type %s sends the secret as the login password; a tcp %s listener needs downstream_tls, or a unix socket", l.Identity.Type, l.Protocol)
 		}
 		if l.Identity.Type != IdentityJWT && (l.Identity.JWKSURL != "" || l.Identity.Claims != nil) {
@@ -2113,7 +2078,7 @@ func (c *Config) validateLaneAuth(l ListenerConfig, name string) []string {
 			if l.Identity.Issuer != "" {
 				pf("identity.issuer is a kubernetes or jwt setting, not a spiffe one")
 			}
-		case IdentityNone, IdentityHoopCredential:
+		case IdentityNone:
 			if l.Identity.Audience != "" || l.Identity.Issuer != "" || l.Identity.TrustDomain != "" || l.Identity.Prefix != "" {
 				pf("identity type %s reads no audience, issuer, trust_domain or prefix", l.Identity.Type)
 			}

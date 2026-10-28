@@ -18,11 +18,10 @@ import (
 // (checkAuthEngine, checkIdentitySources), while the control plane accepts
 // it.
 const (
-	IdentityNone           = "none"
-	IdentityKubernetes     = "kubernetes"
-	IdentityHoopCredential = "hoop_credential"
-	IdentityJWT            = "jwt"
-	IdentitySPIFFE         = "spiffe"
+	IdentityNone       = "none"
+	IdentityKubernetes = "kubernetes"
+	IdentityJWT        = "jwt"
+	IdentitySPIFFE     = "spiffe"
 
 	// DefaultIdentityAudience is the audience a kubernetes, jwt or spiffe
 	// token must carry when the lane names none.
@@ -40,7 +39,7 @@ const (
 // knownIdentityTypes is the vocabulary Config.validate accepts, built-in or
 // nested, so a typo is refused everywhere and a missing module only on the
 // host.
-var knownIdentityTypes = []string{IdentityNone, IdentityKubernetes, IdentityHoopCredential, IdentityJWT, IdentitySPIFFE}
+var knownIdentityTypes = []string{IdentityNone, IdentityKubernetes, IdentityJWT, IdentitySPIFFE}
 
 // PeerInfo is what a verifier may know about the connection: the lane's
 // transport, the peer address when the relay has it, and whether the client
@@ -61,14 +60,10 @@ type IdentitySource interface {
 }
 
 // IdentityDeps is what a verifier builder may draw on. Roots is the process
-// trust pool (nil is the host store); Log is the lane's logger. Lane and
-// CredentialSet back the hoop_credential verifier: the set the plane
-// serves, read on every login, scoped to this listener.
+// trust pool (nil is the host store); Log is the lane's logger.
 type IdentityDeps struct {
-	Roots         *x509.CertPool
-	Log           *slog.Logger
-	Lane          string
-	CredentialSet CredentialSet
+	Roots *x509.CertPool
+	Log   *slog.Logger
 }
 
 // IdentityBuilder builds one lane's verifier. It must not dial or read a
