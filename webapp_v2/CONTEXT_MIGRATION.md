@@ -98,6 +98,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/features/data-masking/new` | React | Done |
 | `/features/data-masking/edit/:id` | React | Done |
 | `/roles/:connectionName/configure` | React | Done |
+| `/resources` | React | Done (ENG-911). The CLJS `:resources` panel stays until ENG-922, so a rollback reverts the route |
 | `/rulepacks` | React | Done (gated by `experimental.rulepacks`) |
 | `/rulepacks/:id` | React | Done (gated by `experimental.rulepacks`) |
 | `/features/event-routing` | React | Done |
@@ -149,7 +150,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 /onboarding/*                 first-run setup (except /onboarding/protection-rules → React)
 /sessions, /sessions/filtered, /sessions/:id
 /workflows/:correlation-id
-/resources, /resources/new, /resources/configure/:id, /resources/:id/add-role
+/resources/new, /resources/configure/:id, /resources/:id/add-role
 /resource-catalog
 /provisioning
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
@@ -224,7 +225,7 @@ sub, which resource setup/configure and the activation journey still consume.
 | Command Palette (cmd+k) | `shared_ui/cmdk/command_palette.cljs` | ✅ Yes — `features/CommandPalette/` (Native Client action still bridges to CLJS) |
 | Modal system | `components/modal.cljs` | ✅ Pattern replaced — `components/Modal` + colocated `useDisclosure` (no global registry by design) |
 | Snackbar / Toast | `components/snackbar.cljs`, `components/toast.cljs` | ✅ Yes — `utils/snackbar.jsx` + `components/Snackbar/Toast.jsx` (sonner, top-right) |
-| Confirmation Dialog | `components/dialog.cljs` | 🔶 Partial — no shared ConfirmDialog yet; pages build ad-hoc confirmations (planned: roadmap Wave 1) |
+| Confirmation Dialog | `components/dialog.cljs` | 🔶 Partial — `components/ConfirmDialog` exists (ENG-911); older pages still build ad-hoc confirmations |
 | Page loader | Re-frame `:page-loader-status` | ✅ Yes — `components/PageLoader` |
 | Native client access + draggable card | `connections/native_client_access/`, `components/draggable_card.cljs` | ✅ Yes — `features/NativeConnections/` drawer + `stores/useNativeAccessStore`. The draggable card is replaced by the drawer plus an active-session badge on the header button. CLJS stands down via `react-shell?`; the namespaces are deleted in a follow-up once the drawer has baked |
 | org-migration dialog | `features/users/views/org_migration_dialog.cljs` | ❌ Not yet (roadmap Wave 3) |
@@ -288,7 +289,7 @@ blocks"); full props in `COMPONENTS.md`.
 - Slack & Webhooks integration pages (`/integrations/slack`, `/integrations/webhooks`) — legacy `/plugins/manage/*` route removed from CLJS
 
 ### In Progress / Known Gaps 🔄
-- No shared ConfirmDialog component yet (pages build ad-hoc confirmations)
+- Older pages build ad-hoc confirmations instead of `components/ConfirmDialog`
 - Sentry, MS Clarity, Segment `track()`, document-level clipboard blocking and the org-migration dialog exist only in CLJS
 
 ### Migration order

@@ -174,6 +174,17 @@ export function canOpenWebTerminal(connection) {
   )
 }
 
+// Whether a role offers any way in. Mirrors can-connect? in
+// webapp/src/webapp/resources/helpers.cljs.
+export function canConnect(connection) {
+  if (!connection) return false
+  return !(
+    connection.access_mode_runbooks === 'disabled' &&
+    connection.access_mode_exec === 'disabled' &&
+    connection.access_mode_connect === 'disabled'
+  )
+}
+
 // Whether the connection can be reached with `hoop connect`. Everything the
 // CLI can open qualifies except custom RDP, which needs the native client.
 export function canHoopCli(connection) {

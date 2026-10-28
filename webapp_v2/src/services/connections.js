@@ -1,6 +1,9 @@
 import api from './api'
 
 export const connectionsService = {
+  // Paginated with filters (`search`, `tag_selector`, `attribute`, `subtype`):
+  // { pages: { page, size, total }, data }.
+  list: (params) => api.get('/connections', { params }),
   getConnections: () => api.get('/connections').then((res) => res.data),
 
   // Non-paginated lookup by id. NOT the paginated endpoint: pagination adds an
