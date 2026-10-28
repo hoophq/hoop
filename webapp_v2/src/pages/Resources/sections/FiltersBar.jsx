@@ -78,6 +78,7 @@ export default function FiltersBar() {
         value={filters.type}
         onChange={(value) => setFilters({ type: value === ALL_TYPES ? null : value })}
         allowDeselect={false}
+        maxDropdownHeight={400}
         w={170}
         comboboxProps={{ width: 200, position: 'bottom-end' }}
       />
