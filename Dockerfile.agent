@@ -3,8 +3,8 @@
 #
 # One Dockerfile, four final stages selected with `docker build --target`. They
 # share the `unpack` stage, so release-tarball handling exists in exactly one
-# place, and the `models` stage, so one model download serves both -alcatraz
-# targets:
+# place, and the `models` and `ort` stages, so one model download and one
+# ONNX Runtime download serve both -alcatraz targets:
 #
 #   --target minimal              -> hoophq/hoopagent:<version>-minimal
 #   --target distroless           -> hoophq/hoopagent:<version>-distroless
@@ -61,9 +61,15 @@
 # DLP_PROVIDER=alcatraz serves PERSON, LOCATION and NRP from an ONNX model that
 # runs in-process on the agent. The NER backend is Offline: it never fetches at
 # runtime, so the model has to be on disk already, and these stages are that
-# disk. Each adds ~250MB of weights and one env var to the flavour it derives
-# from — binary, user, CMD and invocation contract are untouched, so a
-# deployment moves between `-minimal` and `-minimal-alcatraz` by editing the tag.
+# disk. Each adds ~250MB of weights, ONNX Runtime and two env vars to the
+# flavour it derives from — binary, user, CMD and invocation contract are
+# untouched, so a deployment moves between `-minimal` and `-minimal-alcatraz`
+# by editing the tag.
+#
+# ONNX Runtime is the inference backend that does not leak memory across
+# sessions, so the Linux `hoop` (-tags ORT) selects it by default and these
+# flavours carry the shared library it dlopens. ALCATRAZ_ORT_LIBRARY_PATH
+# names it; ALCATRAZ_NER_BACKEND=go falls back to the pure-Go backend.
 #
 # Nothing here installs or links alcatraz: that dependency lives in libhoop's
 # go.mod. The manifest names the files and their layout, so no model id,
@@ -111,6 +117,11 @@ ARG CURL_IMAGE=curlimages/curl:8.11.1
 # model, and model/binary skew is caught when the agent loads. In exchange
 # nothing here can drift out of sync with alcatraz's pin table.
 ARG ALCATRAZ_MODEL_ORIGIN=https://hoopartifacts.s3.us-east-1.amazonaws.com/alcatraz/current
+
+# ONNX Runtime for the -alcatraz flavours. The same release layout as
+# Dockerfile.sidecar: /opt/alcatraz/ort/releases/<version>/lib. Bump the two
+# together.
+ARG ORT_VERSION=1.28.0
 
 # --- Stage: unpack the release tarball ---------------------------------------
 # A separate stage so the ~200MB of release tarballs in dist/binaries/ never
@@ -163,6 +174,27 @@ RUN set -eu; \
     sha256sum -c checksums.txt; \
     chmod -R a+rX /opt/alcatraz/models
 
+# --- Stage: fetch ONNX Runtime -----------------------------------------------
+# BUILDPLATFORM for the same reason as `models`: curl, not QEMU, picks the
+# archive, keyed on TARGETARCH. Microsoft publishes linux-x64 and
+# linux-aarch64; nothing else is built here. Only `lib/` and the notices
+# reach a flavour.
+FROM --platform=${BUILDPLATFORM} ${CURL_IMAGE} AS ort
+ARG ORT_VERSION
+ARG TARGETARCH
+USER root
+WORKDIR /opt/ort
+RUN set -eu; \
+    case "${TARGETARCH}" in \
+      amd64) ort=linux-x64 ;; \
+      arm64) ort=linux-aarch64 ;; \
+      *) echo "no onnxruntime release for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-${ort}-${ORT_VERSION}.tgz" \
+      | tar -xz -C /opt/ort --strip-components=1; \
+    test -f /opt/ort/lib/libonnxruntime.so; \
+    chmod -R a+rX /opt/ort
+
 # --- Flavour: distroless -----------------------------------------------------
 # The cc rootfs already ships the CA bundle the agent needs for grpcs://, and
 # the glibc, libstdc++ and libgcc_s the cgo-built `hoop` links, so nothing is
@@ -181,9 +213,16 @@ CMD ["hoop", "start", "agent"]
 # COPY lands root-owned and a+rX from the models stage, so uid 10001 can read it
 # without a USER dance. The models directory is the parent holding one
 # subdirectory per model id, not the model's own directory.
+#
+# ARG ORT_VERSION is redeclared so COPY and ENV expand it here; the ENV lands
+# in the image as a literal path.
 FROM distroless AS distroless-alcatraz
+ARG ORT_VERSION
 COPY --from=models /opt/alcatraz/models /opt/alcatraz/models
+COPY --from=ort /opt/ort/lib/libonnxruntime* /opt/alcatraz/ort/releases/${ORT_VERSION}/lib/
+COPY --from=ort /opt/ort/LICENSE /opt/ort/ThirdPartyNotices.txt /opt/alcatraz/ort/releases/${ORT_VERSION}/
 ENV ALCATRAZ_NER_MODEL_PATH=/opt/alcatraz/models
+ENV ALCATRAZ_ORT_LIBRARY_PATH=/opt/alcatraz/ort/releases/${ORT_VERSION}/lib/libonnxruntime.so
 
 # --- Flavour: minimal (Ubuntu 24.04 LTS) -------------------------------------
 FROM ${UBUNTU_IMAGE} AS minimal
@@ -218,5 +257,9 @@ CMD ["hoop", "start", "agent"]
 # the model, so that same command answers "is this intact" for any copy of the
 # image, running or not.
 FROM minimal AS minimal-alcatraz
+ARG ORT_VERSION
 COPY --from=models /opt/alcatraz/models /opt/alcatraz/models
+COPY --from=ort /opt/ort/lib/libonnxruntime* /opt/alcatraz/ort/releases/${ORT_VERSION}/lib/
+COPY --from=ort /opt/ort/LICENSE /opt/ort/ThirdPartyNotices.txt /opt/alcatraz/ort/releases/${ORT_VERSION}/
 ENV ALCATRAZ_NER_MODEL_PATH=/opt/alcatraz/models
+ENV ALCATRAZ_ORT_LIBRARY_PATH=/opt/alcatraz/ort/releases/${ORT_VERSION}/lib/libonnxruntime.so

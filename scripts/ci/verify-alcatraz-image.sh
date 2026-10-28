@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Verify that a published alcatraz agent image still carries an intact NER
-# model, once per architecture in its manifest list.
+# model and the ONNX Runtime library, once per architecture in its manifest
+# list.
 #
 # The build already checksummed the weights in the download stage; this checks
 # the artifact that actually landed in the registry, which a single-platform
 # build stage cannot. The manifest ships inside the image, so the answer comes
 # from the image itself and nothing here needs to know a model id or digest.
+# The ORT check is presence only: the agent dlopens the library the image
+# names, so a missing file refuses every NER session.
 #
 # The files are read by exporting the container filesystem rather than by
 # running sha256sum inside the container: hoophq/hoopagent:<tag>-distroless has
@@ -17,6 +20,7 @@
 set -euo pipefail
 
 MODELS_DIR=opt/alcatraz/models
+ORT_DIR=opt/alcatraz/ort
 PLATFORMS=(linux/amd64 linux/arm64)
 
 if [ "$#" -eq 0 ]; then
@@ -53,11 +57,20 @@ for image in "$@"; do
     # carrying neither ENTRYPOINT nor CMD; it is never executed.
     cid=$(docker create --platform "$platform" "$image" /verify-never-runs)
     # tar fails when the archive holds no such member, which is exactly the
-    # failure this step exists to catch: an image built without the model.
-    docker export "$cid" | tar -x -C "$workdir" "$MODELS_DIR"
+    # failure this step exists to catch: an image built without the model or
+    # the runtime.
+    docker export "$cid" | tar -x -C "$workdir" "$MODELS_DIR" "$ORT_DIR"
     docker rm -f "$cid" >/dev/null
     cid=""
     (cd "${workdir}/${MODELS_DIR}" && sha256sum -c checksums.txt)
+    # Dockerfile.agent names releases/<ORT_VERSION>/lib/libonnxruntime.so, a
+    # symlink in the upstream archive: it has to resolve inside the image.
+    lib=$(find "${workdir}/${ORT_DIR}" -path '*/lib/libonnxruntime.so' | head -n 1)
+    if [ -z "$lib" ] || [ ! -f "$(readlink -f "$lib")" ]; then
+      echo "${image} (${platform}): no ONNX Runtime library under /${ORT_DIR}" >&2
+      exit 1
+    fi
+    echo "ONNX Runtime: ${lib#"${workdir}/"} -> $(basename "$(readlink -f "$lib")")"
     cleanup
   done
 done

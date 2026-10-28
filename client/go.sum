@@ -353,6 +353,8 @@ github.com/hoophq/alcatraz/ner v0.23.0 h1:6JVKEQALt0Ww5f7bkgOZF/mChRqsveOoAMeB6E
 github.com/hoophq/alcatraz/ner v0.23.0/go.mod h1:5Tg+Umlanahu9LIHSRTP4g7Jx4ESCv6oq2Z8o8I78ZA=
 github.com/hoophq/libhoop v0.0.0-20261022191641-55dc7bef0843 h1:6NE6iJLeYNxbvVbqLjkeKTi59M9tvWnCL5aag8Y576c=
 github.com/hoophq/libhoop v0.0.0-20261022191641-55dc7bef0843/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261028122443-e602d2f8d44b h1:pbLjDOKldmkH5P7DJ+MRQelEx5WQNGJIGKs/bE2C2Ug=
+github.com/hoophq/libhoop v0.0.0-20261028122443-e602d2f8d44b/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/libhoop-ica v0.5.0 h1:iSeCkUpN1wPRxUmxgICF/TPX6s2aWmRsXcjlM0/svAE=
 github.com/hoophq/libhoop-ica v0.5.0/go.mod h1:nCG6U5dBE1UTtXE08RocosY4rUwzdjxvuYEuJ0oaK5U=
 github.com/hoophq/libhoop-ica v0.7.0 h1:B7le0L/1Nu1zluLvz9yJ3UzubTNuBBPrSoHWrTbcGAQ=
