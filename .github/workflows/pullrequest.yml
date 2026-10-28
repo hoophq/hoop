@@ -131,6 +131,11 @@ jobs:
           GODEBUG: http2client=1
         run: make test-sidecar
 
+      # deploy/ica-sidecar's GPU asset packer and runtime builder are
+      # Python; their offline contract tests live beside them.
+      - name: ICA GPU asset tool tests
+        run: python3 -m unittest discover -s deploy/ica-sidecar -p 'test_*.py'
+
   # The ica image links hoop-inspect with cgo and -tags ORT (Dockerfile.sidecar
   # --target ica); the other builds use CGO_ENABLED=0, which compiles out the
   # ORT NER backend and hugot's Rust tokenizer. This job links that cgo build,
@@ -168,6 +173,14 @@ jobs:
         run: |
           go build -tags ORT -trimpath -o "$RUNNER_TEMP/hoop-inspect" .
           "$RUNNER_TEMP/hoop-inspect" -version
+
+      # The GPU example configs validate only in an ORT build; the test
+      # skips itself elsewhere.
+      - name: Validate the ICA GPU example configs
+        working-directory: sidecar/cmd
+        env:
+          CGO_ENABLED: "1"
+        run: go test -tags ORT -count=1 -run '^TestICAGPUSamples$' .
 
   # The test-sidecar-plugins third of `make test-oss`: the codec plug-in
   # SDKs and examples. Go and Rust only; the checked-in .wasm artifacts are

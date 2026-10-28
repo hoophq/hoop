@@ -61,6 +61,11 @@
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
+# GPU bundles use their own preflight/immutable release switch. The CPU
+# install path below is unchanged.
+if [[ -f $here/release.txt ]] && grep -qx 'flavour=ica-gpu' "$here/release.txt"; then
+  exec bash "$here/install-gpu.sh" "$@"
+fi
 
 usage() { sed -n '/^# Usage/,/^# --config replaces/p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "install: $*" >&2; exit 1; }

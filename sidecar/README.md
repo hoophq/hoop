@@ -5234,3 +5234,12 @@ because `e2e/` is deliberately not a `go.work` member:
 Each codec runs a split-read matrix: the tests feed the same message in two
 chunks at every possible boundary, then assert that a fragment emits no
 statement and that reassembly loses none.
+
+### ICA GPU assets
+
+The ICA sidecar also supports TurboOCR device framebuffers and CUDA ONNX NER.
+Use `Dockerfile.sidecar --target ica-gpu` or the native `ica-gpu-assets` export;
+the CPU `ica` target stays unchanged. GPU assets and TensorRT engines are an
+explicit versioned/checksummed build input. See [ICA GPU delivery](../deploy/ica-sidecar/GPU.md)
+for the asset contract, installer, configuration keys, and separate fixed-upstream
+and TPROXY examples. No OCR text inspector is enabled by this profile.

@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -39,9 +40,19 @@ func init() { daemon.RegisterICAEngine(Build, HostCheck) }
 // elsewhere (ica.ocr_worker and friends), but the capabilities header is
 // sent before any config arrives from a plane, so the defaults are what
 // decide whether this process offers an ica lane at all. The error names
-// the first missing path.
+// the first missing path. A GPU bundle manifest selects GPU asset discovery
+// instead of requiring Tesseract; Serve still checks actual inference health.
 func HostCheck() error {
 	cfg := ica.DefaultRuntimeConfig()
+	gpuRoot := os.Getenv("HOOP_ICA_GPU_ASSETS")
+	if gpuRoot == "" {
+		gpuRoot = defaultGPUAssets
+	}
+	if _, err := os.Stat(filepath.Join(gpuRoot, "manifest.json")); err == nil {
+		return checkGPUAssets(gpuRoot, filepath.Join(filepath.Dir(gpuRoot), "models/KnightsAnalytics_distilbert-NER"))
+	} else if os.Getenv("HOOP_ICA_GPU_ASSETS") != "" || !os.IsNotExist(err) {
+		return fmt.Errorf("ica: GPU assets manifest: %w", err)
+	}
 	checks := [][2]string{
 		{"ocr worker", cfg.OCRWorker},
 		{"tessdata", cfg.Tessdata + "/eng.traineddata"},
@@ -93,22 +104,41 @@ func override[T any](dst *T, src *T) {
 	}
 }
 
-// resolveRuntimeConfig lays the operator's paths and overrides over the
-// engine's production profile. The override surface excludes OCRBackend
-// and BitmapDecoder, so the sidecar runs the profile's
-// tesseract/independent pair. Serve opens the FailureDiagnostics writer, so
-// this function leaves it unset.
+// resolveRuntimeConfig applies backend defaults before explicit overrides.
+// BitmapDecoder stays independent. This function never loads native code.
 func resolveRuntimeConfig(rt daemon.ICARuntime) ica.RuntimeConfig {
 	cfg := ica.DefaultRuntimeConfig()
+	o := rt.Options
+	override(&cfg.OCRBackend, o.OCRBackend)
+	if cfg.OCRBackend == "turboocr" {
+		cfg.OCRWorkers, cfg.OCRTiles, cfg.OCRScaleFactor = 1, 1, 1
+		cfg.OCRThreadLimit, cfg.OCRFreshReuseFrames = 0, 0
+		cfg.OCRGrayPreparation, cfg.OCRLineFallback = false, false
+		cfg.OCRLineBandScale, cfg.OCRFreshNativeScale = false, false
+		cfg.TurboLibrary = defaultGPUAssets + "/lib/libhoop-gpuframe.so"
+		cfg.TurboDetModel = defaultGPUAssets + "/engines/det.engine"
+		cfg.TurboRecModel = defaultGPUAssets + "/engines/rec.engine"
+		cfg.TurboRecDict = defaultGPUAssets + "/engines/dict.txt"
+	}
 	for _, p := range [...]struct {
 		dst *string
 		src string
-	}{{&cfg.OCRWorker, rt.OCRWorker}, {&cfg.Tessdata, rt.Tessdata}, {&cfg.NERModel, rt.NERModel}, {&cfg.NERORTLibrary, rt.NERORTLibrary}} {
+	}{{&cfg.TurboLibrary, rt.OCRTurboLibrary}, {&cfg.TurboDetModel, rt.OCRTurboDetModel},
+		{&cfg.TurboRecModel, rt.OCRTurboRecModel}, {&cfg.TurboRecDict, rt.OCRTurboRecDict}, {&cfg.TurboClsModel, rt.OCRTurboClsModel},
+		{&cfg.OCRWorker, rt.OCRWorker}, {&cfg.Tessdata, rt.Tessdata}, {&cfg.NERModel, rt.NERModel}, {&cfg.NERORTLibrary, rt.NERORTLibrary}} {
 		if p.src != "" {
 			*p.dst = p.src
 		}
 	}
-	o := rt.Options
+	override(&cfg.TurboDevice, o.OCRTurboDevice)
+	override(&cfg.TurboFramebufferBytes, o.OCRTurboFramebufferBytes)
+	override(&cfg.TurboFullScreen, o.OCRTurboFullScreen)
+	override(&cfg.TurboRegionalCache, o.OCRTurboRegionalCache)
+	override(&cfg.NERAccelerator, o.NERAccelerator)
+	override(&cfg.NERGPUDevice, o.NERGPUDevice)
+	if len(o.NEREntities) > 0 {
+		cfg.NEREntities = slices.Clone(o.NEREntities)
+	}
 	override(&cfg.OCRWorkers, o.OCRWorkers)
 	override(&cfg.OCRTiles, o.OCRTiles)
 	override(&cfg.OCRThreadLimit, o.OCRThreadLimit)
@@ -257,8 +287,8 @@ var anySource = []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustPar
 // them without an engine, for the control plane.
 func notes(cfg ica.RuntimeConfig, rt daemon.ICARuntime, lane daemon.ICALane) []string {
 	out := []string{
-		fmt.Sprintf("ica: ocr tesseract, %d workers, %d tiles, thread limit %d, timeout %s, min confidence %.2f",
-			cfg.OCRWorkers, cfg.OCRTiles, cfg.OCRThreadLimit, cfg.OCRTimeout, cfg.OCRMinConfidence),
+		fmt.Sprintf("ica: ocr %s, %d workers, %d tiles, thread limit %d, timeout %s, min confidence %.2f",
+			cfg.OCRBackend, cfg.OCRWorkers, cfg.OCRTiles, cfg.OCRThreadLimit, cfg.OCRTimeout, cfg.OCRMinConfidence),
 		fmt.Sprintf("ica: ner backend %s (onnx runtime compiled in: %t), %d parallel, %d threads",
 			cfg.NERBackend, ica.ORTCompiled, cfg.NERParallel, cfg.NERThreads),
 		fmt.Sprintf("ica: pii threshold %.2f, entities %s", cfg.PIIThreshold, strings.Join(cfg.PIIEntities, ",")),
@@ -267,6 +297,13 @@ func notes(cfg ica.RuntimeConfig, rt daemon.ICARuntime, lane daemon.ICALane) []s
 			cfg.VideoBatch, cfg.OutputPipeline, cfg.AdaptiveCoalescing, cfg.PresentationV2, cfg.PresentationScreenCopy, cfg.OutputLatestFrame),
 		fmt.Sprintf("ica: ocr worker %s, tessdata %s, ner model %s, ort library %s",
 			cfg.OCRWorker, cfg.Tessdata, cfg.NERModel, cfg.NERORTLibrary),
+	}
+	out = append(out, fmt.Sprintf("ica: ner accelerator %s, device %d, entities %s",
+		cfg.NERAccelerator, cfg.NERGPUDevice, strings.Join(cfg.NEREntities, ",")))
+	if cfg.OCRBackend == "turboocr" {
+		out = append(out, fmt.Sprintf("ica: turboocr device %d, full screen %t, regional cache %t, framebuffer bytes %d, library %s, det %s, rec %s, dict %s, cls %s",
+			cfg.TurboDevice, cfg.TurboFullScreen, cfg.TurboRegionalCache, cfg.TurboFramebufferBytes,
+			cfg.TurboLibrary, cfg.TurboDetModel, cfg.TurboRecModel, cfg.TurboRecDict, cfg.TurboClsModel))
 	}
 	if lane.Transparent && runtime.GOOS != "linux" {
 		out = append(out, "ica: this host is not Linux and cannot serve CIDR mode; -validate passes, Serve will not")
@@ -713,4 +750,31 @@ func (s *server) Ready() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.manager != nil && s.manager.Ready()
+}
+
+// GPU bundles have a fixed relative layout shared by Docker and native installs.
+const defaultGPUAssets = "/opt/libhoop-ica/current/gpu"
+
+func checkGPUAssets(root, model string) error {
+	if !ica.ORTCompiled {
+		return errors.New("ica: GPU assets require an ORT-tagged build")
+	}
+	for _, path := range []string{
+		filepath.Join(root, "manifest.json"),
+		filepath.Join(root, "lib/libhoop-gpuframe.so"),
+		filepath.Join(root, "lib/libturboocr-device.so"),
+		filepath.Join(root, "engines/det.engine"),
+		filepath.Join(root, "engines/rec.engine"),
+		filepath.Join(root, "engines/dict.txt"),
+		filepath.Join(root, "ort/lib/libonnxruntime.so"),
+		filepath.Join(root, "ort/lib/libonnxruntime_providers_cuda.so"),
+		filepath.Join(root, "ort/lib/libonnxruntime_providers_shared.so"),
+		filepath.Join(model, "config.json"),
+	} {
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("ica: missing GPU asset %s; install the matching ica-gpu assets bundle", path)
+		}
+	}
+	return nil
 }
