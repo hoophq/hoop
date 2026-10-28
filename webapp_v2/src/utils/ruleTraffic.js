@@ -12,17 +12,9 @@ const nonEmpty = (value) => Array.isArray(value) && value.length > 0
 const DEFAULT_RISK_ACTION = 'allow_execution'
 const RISK_ACTIONS = ['low_risk_action', 'medium_risk_action', 'high_risk_action']
 
+// The agent half of an analyzer rule. Guardrail and masking rules need no such
+// test: their one form writes both halves, so field presence says nothing.
 const AGENT_FIELDS = {
-  [RULE_KIND_GUARDRAIL]: (r) =>
-    nonEmpty(r.connection_ids) ||
-    nonEmpty(r.attributes) ||
-    nonEmpty(r.input?.rules) ||
-    nonEmpty(r.output?.rules),
-  [RULE_KIND_DATAMASKING]: (r) =>
-    nonEmpty(r.connection_ids) ||
-    nonEmpty(r.attributes) ||
-    nonEmpty(r.supported_entity_types) ||
-    nonEmpty(r.custom_entity_types),
   [RULE_KIND_ANALYZER]: (r) =>
     nonEmpty(r.connection_names) ||
     Boolean(r.custom_prompt) ||
@@ -37,20 +29,17 @@ const AGENT_BINDINGS = {
   [RULE_KIND_ANALYZER]: (r) => nonEmpty(r.connection_names),
 }
 
-// A rule the agent runs (no sidecar_spec) also reaches the sidecar listeners
-// it is bound to, served translated; bound to agent resources too, it reads
-// as both. A sidecar rule reaches the agent when it carries agent fields.
+// Where a rule runs is where it is bound: agent resources, sidecar listeners, or both.
 export function ruleTraffic(kind, rule) {
-  if (rule?.sidecar_spec == null) {
-    if (!nonEmpty(rule?.sidecar_targets)) return TRAFFIC_AGENT
-    return AGENT_BINDINGS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
-  }
-  return AGENT_FIELDS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
+  const agent = AGENT_BINDINGS[kind](rule ?? {})
+  const sidecar = nonEmpty(rule?.sidecar_targets)
+  if (agent && sidecar) return TRAFFIC_BOTH
+  return sidecar ? TRAFFIC_SIDECAR : TRAFFIC_AGENT
 }
 
-// Which form edits a stored rule. A rule the agent runs opens the gateway
-// form whatever its targets: that form binds them too. A sidecar rule that
-// also carries agent fields has no form that keeps both halves.
+// Which form edits a stored analyzer rule. A rule the agent runs opens the
+// gateway form whatever its targets: that form binds them too. A sidecar rule
+// that also carries agent fields has no form that keeps both halves.
 export function ruleForm(kind, rule) {
   if (rule?.sidecar_spec == null) return TRAFFIC_AGENT
   return AGENT_FIELDS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR

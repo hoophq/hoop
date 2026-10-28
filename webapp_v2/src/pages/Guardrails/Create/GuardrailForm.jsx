@@ -1,25 +1,29 @@
 import { useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import { useDisclosure, useInViewport } from '@mantine/hooks'
 import { ArrowLeft } from 'lucide-react'
 import Button from '@/components/Button'
+import EnterpriseBanner from '@/components/EnterpriseBanner'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import { PAGE_PADDING } from '@/layout/PageLayout'
+import { useUserStore } from '@/stores/useUserStore'
 import { useGuardrailsStore } from '../store'
-import SidecarGuardrailFields from './SidecarGuardrailFields'
-import { useSidecarGuardrailEditor } from './useSidecarGuardrailEditor'
+import { findGuardrailTemplate } from '../templates'
+import GuardrailFields from './GuardrailFields'
+import { useGuardrailEditor } from './useGuardrailEditor'
 import classes from './Create.module.css'
 
-// Page shell around SidecarGuardrailFields; Router.jsx picks this or the Gateway sibling with <ByRuleTraffic>.
+// Page shell around GuardrailFields; the sidecar dialog shares the editor and fields.
 
 function FormFields({ guardrail, id, isEdit }) {
   const navigate = useNavigate()
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   const back = () => navigate('/guardrails')
-  const editor = useSidecarGuardrailEditor({ guardrail, id, isEdit, onSaved: back, onDeleted: back })
+  const editor = useGuardrailEditor({ guardrail, id, isEdit, onSaved: back, onDeleted: back })
 
   const handleDelete = async () => {
     await editor.remove()
@@ -42,8 +46,8 @@ function FormFields({ guardrail, id, isEdit }) {
         </Button>
       </Box>
 
-      {/* The header of the gateway sibling: pulled up by the shell header's
-          height, since useInViewport takes no rootMargin. */}
+      {/* Pulled up by the shell header's height so it leaves the viewport when
+          the sticky bar meets the header: useInViewport takes no rootMargin. */}
       <Box
         ref={sentinelRef}
         aria-hidden="true"
@@ -78,14 +82,20 @@ function FormFields({ guardrail, id, isEdit }) {
         </Group>
       </Group>
 
-      <SidecarGuardrailFields editor={editor} />
+      {isFreeLicense && (
+        <Box mb="xl">
+          <EnterpriseBanner />
+        </Box>
+      )}
+
+      <GuardrailFields editor={editor} />
 
       <Modal opened={deleteOpened} onClose={deleteModal.close} title="Delete Guardrail?">
         <Stack gap="lg">
           <Text size="sm">
             This action will permanently delete this Guardrail and cannot be undone. Every
-            listener it is distributed to stops enforcing it. Are you sure you want to
-            proceed?
+            resource role and listener it applies to stops enforcing it. Are you sure you
+            want to proceed?
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="subtle" color="gray" onClick={deleteModal.close}>
@@ -101,19 +111,29 @@ function FormFields({ guardrail, id, isEdit }) {
   )
 }
 
-export default function SidecarGuardrailForm() {
+export default function GuardrailForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
+
+  // Activation-journey deep link: /guardrails/new?template=<name>&connections=<ids>
+  // seeds a recommended guardrail. An unknown name falls back to the blank form;
+  // the URL is the source of truth, so a refresh re-seeds the same template.
+  const [searchParams] = useSearchParams()
+  const template = isEdit ? null : findGuardrailTemplate(searchParams.get('template'))
+  const templateConnectionIds = (searchParams.get('connections') ?? '').split(',').filter(Boolean)
+  const seededGuardrail = template ? { ...template, connection_ids: templateConnectionIds } : null
 
   const active = useGuardrailsStore((s) => s.active)
   const activeStatus = useGuardrailsStore((s) => s.activeStatus)
   const fetchActive = useGuardrailsStore((s) => s.fetchActive)
   const clearActive = useGuardrailsStore((s) => s.clearActive)
+  const fetchAttributes = useGuardrailsStore((s) => s.fetchAttributes)
 
   useEffect(() => {
+    fetchAttributes()
     if (isEdit) fetchActive(id)
     return () => clearActive()
-  }, [isEdit, id, fetchActive, clearActive])
+  }, [isEdit, id, fetchAttributes, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />
@@ -126,8 +146,8 @@ export default function SidecarGuardrailForm() {
 
   return (
     <FormFields
-      key={isEdit ? (active?.id ?? id) : 'new'}
-      guardrail={isEdit ? active : null}
+      key={isEdit ? (active?.id ?? id) : template ? `template-${template.name}` : 'new'}
+      guardrail={isEdit ? active : seededGuardrail}
       id={id}
       isEdit={isEdit}
     />

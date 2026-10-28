@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
+import { maskingAgentBlockers } from '@/utils/ruleSupport'
 import { DEFAULT_KEEP_LAST, MASK_STRATEGIES, SSH_ONLY_STRATEGY } from '@/pages/sidecarRuleVocabulary'
 import { useDataMaskingStore } from '../store'
+import { normalizeEntityName, scoreToPercent } from '../helpers'
+
+const newKey = () => Math.random().toString(36).slice(2)
 
 export const emptyRule = () => ({
-  key: Math.random().toString(36).slice(2),
+  key: newKey(),
   name: '',
   match: 'entities',
   entities: [],
@@ -15,18 +19,29 @@ export const emptyRule = () => ({
   mask_char: '',
 })
 
-function specToRules(spec) {
-  const rules = spec?.rules ?? []
-  if (rules.length === 0) return [emptyRule()]
-  return rules.map((r) => ({
-    ...emptyRule(),
-    ...r,
-    match: (r.columns ?? []).length > 0 ? 'columns' : 'entities',
-    strategy: r.strategy || 'redact',
-    keep_last: r.keep_last ?? DEFAULT_KEEP_LAST,
-    mask_char: r.mask_char ? String.fromCodePoint(r.mask_char) : '',
-    key: Math.random().toString(36).slice(2),
-  }))
+export const emptyCustomEntity = () => ({ key: newKey(), name: '', regex: '' })
+
+// The spec is the UI's truth; without one, each agent entity group becomes a
+// rule with the strategy the gateway's translation applies.
+function loadRules(stored) {
+  const spec = stored?.sidecar_spec?.rules
+  const rules = spec
+    ? spec.map((r) => ({
+        ...emptyRule(),
+        ...r,
+        match: (r.columns ?? []).length > 0 ? 'columns' : 'entities',
+        strategy: r.strategy || 'redact',
+        keep_last: r.keep_last ?? DEFAULT_KEEP_LAST,
+        mask_char: r.mask_char ? String.fromCodePoint(r.mask_char) : '',
+        key: newKey(),
+      }))
+    : (stored?.supported_entity_types ?? []).map((entry) => ({
+        ...emptyRule(),
+        name: entry.name,
+        entities: entry.entity_types ?? entry.values ?? [],
+        strategy: 'mask',
+      }))
+  return rules.length > 0 ? rules : [emptyRule()]
 }
 
 function rulesToSpec(rules, sshBound) {
@@ -50,7 +65,7 @@ function rulesToSpec(rules, sshBound) {
 }
 
 // Shared by the rule page and the sidecar dialog. `targets` seeds a new rule's listeners.
-export function useSidecarDataMaskingEditor({ rule: stored, id, isEdit, targets: seed = [], onSaved, onDeleted }) {
+export function useDataMaskingEditor({ rule: stored, id, isEdit, targets: seed = [], onSaved, onDeleted }) {
   const submitting = useDataMaskingStore((s) => s.submitting)
   const createRule = useDataMaskingStore((s) => s.createRule)
   const updateRule = useDataMaskingStore((s) => s.updateRule)
@@ -59,8 +74,18 @@ export function useSidecarDataMaskingEditor({ rule: stored, id, isEdit, targets:
 
   const [name, setName] = useState(stored?.name ?? '')
   const [description, setDescription] = useState(stored?.description ?? '')
+  const [connectionIds, setConnectionIds] = useState(stored?.connection_ids ?? [])
+  const [attributes, setAttributes] = useState(stored?.attributes ?? [])
   const [targets, setTargets] = useState(stored?.sidecar_targets ?? seed)
-  const [rules, setRules] = useState(() => specToRules(stored?.sidecar_spec))
+  const [rules, setRules] = useState(() => loadRules(stored))
+  const [customEntities, setCustomEntities] = useState(
+    () => stored?.custom_entity_types?.map((c) => ({ key: newKey(), name: c.name, regex: c.regex })) ?? [],
+  )
+  // Percent, '' = unset. A new blank rule starts at 85; a stored or template
+  // rule keeps its own value so saving adds no threshold it did not have.
+  const [scoreThreshold, setScoreThreshold] = useState(() =>
+    stored ? scoreToPercent(stored.score_threshold) : 85,
+  )
 
   // An ssh lane masks bytes in place, so only the length-preserving strategy is offered.
   const sshBound = useMemo(() => {
@@ -73,6 +98,10 @@ export function useSidecarDataMaskingEditor({ rule: stored, id, isEdit, targets:
 
   const strategies = sshBound ? MASK_STRATEGIES.filter((s) => s.value === SSH_ONLY_STRATEGY) : MASK_STRATEGIES
 
+  // Rules the agent cannot run. One of them empties the agent's entity list.
+  const agentBlocked = useMemo(() => rules.filter((r) => maskingAgentBlockers(r).length > 0), [rules])
+  const agentBound = connectionIds.length > 0 || attributes.length > 0
+
   const canSubmit = name.trim() !== '' && !submitting
 
   const save = async () => {
@@ -82,17 +111,39 @@ export function useSidecarDataMaskingEditor({ rule: stored, id, isEdit, targets:
       showSnackbar({ level: 'error', text: 'Give every rule a name, or remove it.' })
       return false
     }
+    const half = customEntities.findIndex((c) => (c.name.trim() === '') !== (c.regex.trim() === ''))
+    if (half !== -1) {
+      showSnackbar({ level: 'error', text: `Custom entity ${half + 1} needs a name and a regex, or remove it.` })
+      return false
+    }
+    const custom = customEntities.filter((c) => c.name.trim() !== '' && c.regex.trim() !== '')
+    if (custom.length > 0 && agentBlocked.length > 0) {
+      const n = rules.indexOf(agentBlocked[0]) + 1
+      showSnackbar({
+        level: 'error',
+        text: `Custom entity types run on agents only, and rule ${n} matches by column, so agents would run nothing from this rule. Remove one or the other.`,
+      })
+      return false
+    }
+    const named = rules.filter((r) => r.name.trim() !== '')
     const payload = {
       name: name.trim(),
       description,
-      // Gateway-only fields.
-      connection_ids: [],
-      attributes: [],
-      supported_entity_types: [],
-      custom_entity_types: [],
+      connection_ids: connectionIds,
+      attributes,
+      supported_entity_types:
+        agentBlocked.length > 0
+          ? []
+          : named.map((r) => ({ name: r.name.trim().toUpperCase(), entity_types: r.entities })),
+      custom_entity_types: custom.map((c) => ({
+        name: normalizeEntityName(c.name),
+        regex: c.regex.trim(),
+        score: 0.8,
+      })),
       sidecar_spec: spec,
       sidecar_targets: targets,
     }
+    if (scoreThreshold !== '') payload.score_threshold = Number(scoreThreshold) / 100
     const { ok, error } = isEdit ? await updateRule(id, payload) : await createRule(payload)
     if (ok) {
       showSnackbar({ level: 'success', text: isEdit ? 'Rule updated.' : 'Rule created.' })
@@ -120,12 +171,22 @@ export function useSidecarDataMaskingEditor({ rule: stored, id, isEdit, targets:
     setName,
     description,
     setDescription,
+    connectionIds,
+    setConnectionIds,
+    attributes,
+    setAttributes,
     targets,
     setTargets,
     rules,
     setRules,
+    customEntities,
+    setCustomEntities,
+    scoreThreshold,
+    setScoreThreshold,
     strategies,
     sshBound,
+    agentBlocked,
+    agentBound,
     canSubmit,
     submitting,
     save,

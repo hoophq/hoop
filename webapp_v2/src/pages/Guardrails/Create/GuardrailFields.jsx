@@ -1,26 +1,54 @@
 import { Group, Paper, Stack, Text } from '@mantine/core'
-import { Plus, Trash2 } from 'lucide-react'
+import { Info, Plus, Trash2 } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
+import Alert from '@/components/Alert'
 import Button from '@/components/Button'
+import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import MultiSelect from '@/components/MultiSelect'
+import RuleSupportTag from '@/components/RuleSupportTag'
 import SectionRow from '@/components/SectionRow'
 import Select from '@/components/Select'
 import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
+import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
+import { AGENT_GUARDRAIL_TYPES, agentRunsNothingMessage } from '@/utils/ruleSupport'
 import { ENTITY_TYPES, GUARDRAIL_ACTIONS } from '@/pages/sidecarRuleVocabulary'
-import { emptyRule } from './useSidecarGuardrailEditor'
+import { useGuardrailsStore } from '../store'
+import { AGENT_DLP_REQUIRED } from '../helpers'
+import { emptyRule } from './useGuardrailEditor'
 
-// No resource roles, attributes or output rules here: a sidecar rule reaches
-// listeners, and a sidecar denies requests only (responses are masking).
+// One form for agents and sidecars. The sidecar vocabulary is the superset;
+// an option one engine does not run carries a RuleSupportTag.
+
+const DIRECTIONS = [
+  { value: 'input', label: 'Statements (requests)' },
+  { value: 'output', label: 'Results (responses)' },
+]
+
+const taggedOption = (isTagged, side) =>
+  function Option({ option }) {
+    return (
+      <Group gap="xs" justify="space-between" w="100%" wrap="nowrap">
+        {option.label}
+        {isTagged(option.value) && <RuleSupportTag side={side} />}
+      </Group>
+    )
+  }
+
+const TypeOption = taggedOption((v) => !AGENT_GUARDRAIL_TYPES.includes(v), 'sidecar')
+const DirectionOption = taggedOption((v) => v === 'output', 'agent')
+const ActionOption = taggedOption((v) => v === 'defer', 'sidecar')
 
 function RuleEditor({ rule, index, onChange, onRemove, removable, types, operations }) {
   const type = types.find((t) => t.value === rule.type) ?? types[0]
   const set = (patch) => onChange({ ...rule, ...patch })
   const has = (field) => type?.fields.includes(field)
+  const agentType = AGENT_GUARDRAIL_TYPES.includes(rule.type)
+  const output = rule.direction === 'output'
 
   return (
     <Paper p="md" radius="md" withBorder>
@@ -49,10 +77,31 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
             label="Type"
             data={types.map((t) => ({ value: t.value, label: t.label }))}
             value={rule.type}
-            onChange={(v) => set({ type: v ?? 'operation' })}
+            onChange={(v) => {
+              const next = v ?? 'operation'
+              const patch = { type: next }
+              // Only the agent checks results, with its two engines.
+              if (!AGENT_GUARDRAIL_TYPES.includes(next)) patch.direction = 'input'
+              // `operations` is the match on an operation rule and a scope on
+              // every other, so it does not survive the switch between them.
+              if ((rule.type === 'operation') !== (next === 'operation')) patch.operations = []
+              set(patch)
+            }}
+            renderOption={TypeOption}
             allowDeselect={false}
             w={200}
           />
+          {agentType && (
+            <Select
+              label="Checks"
+              data={DIRECTIONS}
+              value={rule.direction}
+              onChange={(v) => set({ direction: v ?? 'input' })}
+              renderOption={DirectionOption}
+              allowDeselect={false}
+              w={220}
+            />
+          )}
         </Group>
 
         {has('operations') && (
@@ -97,7 +146,13 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
           />
         )}
         {has('words') && (
-          <TagsInput label="Words" placeholder="pg_sleep" value={rule.words} onChange={(v) => set({ words: v })} />
+          <TagsInput
+            label="Words"
+            placeholder="pg_sleep"
+            description="Case-insensitive on sidecars, case-sensitive on agents."
+            value={rule.words}
+            onChange={(v) => set({ words: v })}
+          />
         )}
         {has('pattern_regex') && (
           <TextInput
@@ -146,9 +201,13 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
           />
         )}
 
-        {rule.type !== 'operation' && (
+        {rule.type !== 'operation' && !output && (
           <MultiSelect
-            label="Only for these operations (optional)"
+            label={
+              <Group gap="xs" component="span">
+                Only for these operations (optional) <RuleSupportTag side="sidecar" />
+              </Group>
+            }
             placeholder="Every operation"
             data={operations}
             value={rule.operations}
@@ -166,23 +225,46 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
             onChange={(e) => set({ message: e.currentTarget.value })}
             flex={1}
           />
-          <Select
-            label="On a match"
-            data={GUARDRAIL_ACTIONS}
-            value={rule.action}
-            onChange={(v) => set({ action: v ?? '' })}
-            allowDeselect={false}
-            w={280}
-          />
+          {!output && (
+            <Select
+              label="On a match"
+              data={GUARDRAIL_ACTIONS}
+              value={rule.action}
+              onChange={(v) => set({ action: v ?? '' })}
+              renderOption={ActionOption}
+              allowDeselect={false}
+              w={280}
+            />
+          )}
         </Group>
       </Stack>
     </Paper>
   )
 }
 
-export default function SidecarGuardrailFields({ editor }) {
-  const { name, setName, description, setDescription, targets, setTargets, rules, setRules, types, operations } =
-    editor
+export default function GuardrailFields({ editor }) {
+  const {
+    name,
+    setName,
+    description,
+    setDescription,
+    connectionIds,
+    setConnectionIds,
+    attributes,
+    setAttributes,
+    targets,
+    setTargets,
+    rules,
+    setRules,
+    types,
+    operations,
+    agentBlocked,
+    agentBound,
+  } = editor
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  // Agents enforce guardrails through a DLP provider; sidecars need none.
+  const hasRedactCredentials = useUserStore((s) => s.hasRedactCredentials)
+  const attributeOptions = useGuardrailsStore((s) => s.attributes).map((a) => a.name)
 
   return (
     <Stack gap="xxlAlt">
@@ -206,6 +288,41 @@ export default function SidecarGuardrailFields({ editor }) {
       </SectionRow>
 
       <SectionRow
+        title="Associate Resource Roles"
+        description={
+          hasRedactCredentials
+            ? 'Agent traffic. Select the resource roles where this guardrail applies.'
+            : AGENT_DLP_REQUIRED
+        }
+      >
+        <ConnectionsMultiSelect
+          value={connectionIds}
+          onChange={setConnectionIds}
+          disabled={!hasRedactCredentials}
+        />
+      </SectionRow>
+
+      <SectionRow
+        title="Attribute configuration"
+        description={
+          hasRedactCredentials
+            ? 'Agent traffic. Select which attributes apply this guardrail.'
+            : AGENT_DLP_REQUIRED
+        }
+      >
+        <MultiSelect
+          label="Attributes"
+          placeholder="Select attributes..."
+          data={attributeOptions}
+          value={attributes}
+          onChange={setAttributes}
+          disabled={!hasRedactCredentials}
+          searchable
+          clearable
+        />
+      </SectionRow>
+
+      <SectionRow
         title="Distribute to listeners"
         description="Pick these first: the rule types below narrow to what every listener you choose can run."
       >
@@ -220,6 +337,14 @@ export default function SidecarGuardrailFields({ editor }) {
         }
       >
         <Stack gap="md">
+          {agentBound && agentBlocked.length > 0 && (
+            <Alert color="amber" variant="light" icon={<Info size={16} />}>
+              {agentRunsNothingMessage(
+                'guardrail',
+                agentBlocked.map((r) => rules.indexOf(r)),
+              )}
+            </Alert>
+          )}
           {rules.map((rule, i) => (
             <RuleEditor
               key={rule.key}
@@ -236,6 +361,7 @@ export default function SidecarGuardrailFields({ editor }) {
             variant="light"
             leftSection={<Plus size={16} />}
             onClick={() => setRules([...rules, emptyRule()])}
+            disabled={isFreeLicense && rules.length >= 1}
             w="fit-content"
           >
             Add rule

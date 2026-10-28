@@ -14,11 +14,12 @@ import { useRuleTraffics } from './index'
 const NEW_RULE_TRAFFICS = [TRAFFIC_AGENT, TRAFFIC_SIDECAR]
 
 /**
- * Picks the agent or the sidecar form of a guardrail, masking or analyzer rule.
- * Used in Router.jsx only:
+ * Picks the agent or the sidecar form of an AI analyzer rule. Guardrails and
+ * masking have one form for both and do not use it. Used in Router.jsx only:
  *
- *   <ByRuleTraffic kind="guardrail" fetchRule={guardrailsService.get} listPath="/guardrails"
- *     agent={<GatewayGuardrailForm />} sidecar={<SidecarGuardrailForm />} />
+ *   <ByRuleTraffic kind="analyzer" fetchRule={aiSessionAnalyzerService.getRule}
+ *     listPath="/features/ai-session-analyzer"
+ *     agent={<GatewayAiAnalyzerForm />} sidecar={<SidecarAiAnalyzerForm />} />
  *
  * With one traffic available it renders that form. With both, an edit reads the
  * rule first and a new rule takes `?traffic=`; without it, the agents flag picks.

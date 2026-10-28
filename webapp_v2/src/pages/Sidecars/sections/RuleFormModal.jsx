@@ -5,10 +5,10 @@ import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import SidecarAiAnalyzerFields from '@/pages/Features/AiSessionAnalyzer/Create/SidecarAiAnalyzerFields'
 import { useSidecarAiAnalyzerEditor } from '@/pages/Features/AiSessionAnalyzer/Create/useSidecarAiAnalyzerEditor'
-import SidecarDataMaskingFields from '@/pages/Features/DataMasking/Create/SidecarDataMaskingFields'
-import { useSidecarDataMaskingEditor } from '@/pages/Features/DataMasking/Create/useSidecarDataMaskingEditor'
-import SidecarGuardrailFields from '@/pages/Guardrails/Create/SidecarGuardrailFields'
-import { useSidecarGuardrailEditor } from '@/pages/Guardrails/Create/useSidecarGuardrailEditor'
+import DataMaskingFields from '@/pages/Features/DataMasking/Create/DataMaskingFields'
+import { useDataMaskingEditor } from '@/pages/Features/DataMasking/Create/useDataMaskingEditor'
+import GuardrailFields from '@/pages/Guardrails/Create/GuardrailFields'
+import { useGuardrailEditor } from '@/pages/Guardrails/Create/useGuardrailEditor'
 import { RULE_APIS, findRule, lanesAsTargets, ruleErrorMessage, targetLanes } from '../rules'
 
 function Footer({ editor, onCancel }) {
@@ -26,7 +26,7 @@ function Footer({ editor, onCancel }) {
 
 // One body per feature, so the hook never changes under a mounted dialog.
 function GuardrailBody({ stored, targets, onSaved, onCancel }) {
-  const editor = useSidecarGuardrailEditor({
+  const editor = useGuardrailEditor({
     guardrail: stored,
     id: stored?.id,
     isEdit: Boolean(stored),
@@ -35,14 +35,14 @@ function GuardrailBody({ stored, targets, onSaved, onCancel }) {
   })
   return (
     <Stack gap="xl">
-      <SidecarGuardrailFields editor={editor} />
+      <GuardrailFields editor={editor} />
       <Footer editor={editor} onCancel={onCancel} />
     </Stack>
   )
 }
 
 function DataMaskingBody({ stored, targets, onSaved, onCancel }) {
-  const editor = useSidecarDataMaskingEditor({
+  const editor = useDataMaskingEditor({
     rule: stored,
     id: stored?.id,
     isEdit: Boolean(stored),
@@ -51,7 +51,7 @@ function DataMaskingBody({ stored, targets, onSaved, onCancel }) {
   })
   return (
     <Stack gap="xl">
-      <SidecarDataMaskingFields editor={editor} />
+      <DataMaskingFields editor={editor} />
       <Footer editor={editor} onCancel={onCancel} />
     </Stack>
   )
