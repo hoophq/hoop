@@ -81,6 +81,22 @@ describe('resources store', () => {
     await vi.waitFor(() => expect(useResourcesStore.getState().lists.roles.items).toHaveLength(51))
   })
 
+  it('does not ask for the next page again after it failed, until a retry', async () => {
+    connectionsService.list
+      .mockResolvedValueOnce(page(Array.from({ length: 50 }, (_, i) => 'r' + i), 60))
+      .mockRejectedValueOnce({ response: { data: { message: 'bad gateway' } } })
+      .mockResolvedValueOnce(page(['r50'], 60))
+    const store = useResourcesStore.getState()
+    await store.load(TABS.ROLES)
+    await store.loadMore(TABS.ROLES)
+    expect(useResourcesStore.getState().lists.roles.error).toBe('bad gateway')
+    store.loadMore(TABS.ROLES)
+    expect(connectionsService.list).toHaveBeenCalledTimes(2)
+    await store.retry(TABS.ROLES)
+    expect(connectionsService.list.mock.calls[2][0]).toMatchObject({ page: 2 })
+    expect(useResourcesStore.getState().lists.roles.items).toHaveLength(51)
+  })
+
   it('reloads the roles after the DELETE succeeds, with the filters kept (Q4)', async () => {
     const order = []
     connectionsService.deleteConnection.mockImplementation(async () => order.push('delete'))

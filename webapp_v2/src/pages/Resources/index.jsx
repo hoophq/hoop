@@ -45,10 +45,10 @@ function ListEmpty({ isAdmin }) {
 function ListPanel({ tab, children }) {
   const list = useResourcesStore((s) => s.lists[tab])
   const loadMore = useResourcesStore((s) => s.loadMore)
-  const load = useResourcesStore((s) => s.load)
+  const retry = useResourcesStore((s) => s.retry)
   const isAdmin = useUserStore((s) => s.isAdmin)
   const more = hasMore(list)
-  const sentinel = useInfiniteScroll(() => loadMore(tab), more && !list.loading)
+  const sentinel = useInfiniteScroll(() => loadMore(tab), more && !list.loading && !list.error)
 
   // No empty state until the first answer: the loader covers a page with no
   // rows yet (Q1). Rows already on screen stay while they refresh.
@@ -57,7 +57,7 @@ function ListPanel({ tab, children }) {
     return (
       <Stack h={400} align="center" justify="center" gap="md">
         <PageLoader h="auto" error message="Could not load the list." description={list.error} />
-        <Button variant="default" onClick={() => load(tab)}>
+        <Button variant="default" onClick={() => retry(tab)}>
           Try again
         </Button>
       </Stack>
@@ -73,6 +73,16 @@ function ListPanel({ tab, children }) {
         <Center>
           <Loader size="sm" />
         </Center>
+      )}
+      {list.error && !list.loading && (
+        <Stack align="center" gap="xs" role="alert">
+          <Text size="sm" c="red">
+            {'Could not load more: ' + list.error}
+          </Text>
+          <Button variant="default" onClick={() => retry(tab)}>
+            Try again
+          </Button>
+        </Stack>
       )}
     </Stack>
   )

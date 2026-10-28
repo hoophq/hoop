@@ -11,7 +11,16 @@ export const TABS = { RESOURCES: 'resources', ROLES: 'roles' }
 export const MIN_SEARCH_LENGTH = 3
 
 export const EMPTY_FILTERS = { search: '', tags: {}, type: null, attribute: null }
-const emptyList = { items: [], total: 0, page: 0, loading: false, loaded: false, error: null, key: null }
+const emptyList = {
+  items: [],
+  total: 0,
+  page: 0,
+  loading: false,
+  loaded: false,
+  error: null,
+  failedAppend: false,
+  key: null,
+}
 
 const emptyTest = {
   opened: false,
@@ -126,16 +135,20 @@ export const useResourcesStore = create((set, get) => {
           loading: false,
           loaded: true,
           error: err?.response?.data?.message || 'Failed to load the list.',
+          failedAppend: append,
         })
       }
     },
 
-    // One request per page: no second request while one is in flight (Q1).
+    // One request per page (Q1): none while one is in flight, and none after a
+    // failure until the user retries; the sentinel would otherwise loop on it.
     loadMore: (tab) => {
       const list = get().lists[tab]
-      if (list.loading || !list.loaded || !hasMore(list)) return
-      get().load(tab, { append: true })
+      if (list.loading || list.error || !list.loaded || !hasMore(list)) return undefined
+      return get().load(tab, { append: true })
     },
+
+    retry: (tab) => get().load(tab, { append: Boolean(get().lists[tab].failedAppend) }),
 
     loadTags: async () => {
       try {
