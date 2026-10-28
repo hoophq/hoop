@@ -77,7 +77,7 @@ function ListPanel({ tab, children }) {
       {list.error && !list.loading && (
         <Stack align="center" gap="xs" role="alert">
           <Text size="sm" c="red">
-            {'Could not load more: ' + list.error}
+            {(list.failedAppend ? 'Could not load more: ' : 'Could not refresh the list: ') + list.error}
           </Text>
           <Button variant="default" onClick={() => retry(tab)}>
             Try again
