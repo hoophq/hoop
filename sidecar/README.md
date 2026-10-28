@@ -3178,6 +3178,16 @@ listeners:
       edt: true                        # optional: EDT over UDP on the same port
 ```
 
+CPU masking is conservative by default. To replace historical protection with
+only current accepted policy matches, set `ica.options.pii_matches_only: true`
+in a build supporting CPU match-only mode. Each visible update then performs
+fresh full-screen Tesseract OCR, with fresh-result reuse disabled, and replaces
+the active masks. Unreadable boxes and uncertainty do not independently mask;
+configured entity sets and acceptance thresholds still apply. OCR misses may
+remain visible, and full-screen CPU work may increase latency. OCR, policy and
+protocol errors still block output. The option does not enable an inspector or
+text logging.
+
 This is single mode: the lane serves one VDA, named in `upstream`, and the
 Gateway (or Workspace) is pointed at this host as that VDA — the STA/broker
 hands out the sidecar's address. `ica.source_cidrs` pins who may connect;
