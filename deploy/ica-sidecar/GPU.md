@@ -135,7 +135,10 @@ The tag release workflow builds/publishes the GPU image and includes the native
 bundle in its release artifacts only when repository variables
 `ICA_GPU_ASSETS_URL` and `ICA_GPU_ASSETS_SHA256` are both configured. With neither,
 existing CPU releases behave as before; one without the other fails the release
-job. Updating that asset set is an explicit release input, not an automatic engine
+job. A PR that changes the bundle inputs gets the same preview as the CPU bundle:
+`hoophq/hoopsidecar:<PR>.0.0-g<sha>-ica-gpu` and the native bundle at
+`releases.hoop.dev/release/<PR>.0.0-g<sha>/`, skipped while the variables are
+unset. Updating that asset set is an explicit release input, not an automatic engine
 regeneration. No GPU artifacts are published by this source change itself.
 
 On a GPU host with NVIDIA Container Toolkit, first run the smoke test:
