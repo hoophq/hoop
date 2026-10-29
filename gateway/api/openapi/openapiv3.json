@@ -17121,6 +17121,7 @@
         "parameters": [
           {
             "description": "Filter by connection types (e.g., postgres, mysql)",
+            "explode": false,
             "in": "query",
             "name": "connection_type",
             "schema": {
@@ -17128,10 +17129,12 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Filter by connection subtypes (e.g., amazon-rds, azure-db)",
+            "explode": false,
             "in": "query",
             "name": "connection_subtype",
             "schema": {
@@ -17139,10 +17142,12 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Filter by specific connection names",
+            "explode": false,
             "in": "query",
             "name": "connection_name",
             "schema": {
@@ -17150,10 +17155,12 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Filter by Presidio data types (e.g., EMAIL_ADDRESS, CREDIT_CARD, PHONE_NUMBER)",
+            "explode": false,
             "in": "query",
             "name": "info_type",
             "schema": {
@@ -17161,7 +17168,8 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Only return masked data (count_masked \u003e 0)",
@@ -17197,6 +17205,7 @@
           },
           {
             "description": "Filter by specific session IDs",
+            "explode": false,
             "in": "query",
             "name": "session_id",
             "schema": {
@@ -17204,7 +17213,8 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Filter sessions that started on or after this date (format: YYYY-MM-DD)",
@@ -22233,6 +22243,7 @@
           },
           {
             "description": "Choose the type of events to include\n* `i` - Input (stdin)\n* `o` - Output (stdout)\n* `e` - Error (stderr)",
+            "explode": false,
             "in": "query",
             "name": "events",
             "schema": {
@@ -22240,7 +22251,8 @@
                 "type": "string"
               },
               "type": "array"
-            }
+            },
+            "style": "form"
           },
           {
             "description": "Expand the given attributes",
@@ -26713,6 +26725,11 @@
       }
     }
   },
+  "servers": [
+    {
+      "url": "/api"
+    }
+  ],
   "tags": [
     {
       "description": "Hoop implements Oauth2 and OIDC protocol to authenticate users in the system. To obtain a valid access token users need to authenticate in their own identity provider which is generated as a JSON response to the endpoint `http(s):///api/login`. The identity provider them redirects the user to the callback endpoint containing the access token.\n\nThe recommended approach of obtaining an access token is by visiting the Webapp main's page or using the **Hoop command line**. Example:\n\n```sh\nhoop config create --api-url https://\n# save the token after authenticating at $HOME/.hoop/config.toml\nhoop login\n# show token information\nhoop config view --raw\n```\n\nWith an access token you could use any HTTP client to interact with the documented endpoints.\nThe token must be sent through the `Authorization` header.\n\nExample:\n\n```sh\n# obtain the current configuration of the server\ncurl https:///api/serverinfo -H \"Authorization: Bearer $ACCESS_TOKEN\"\n```\n",

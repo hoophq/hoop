@@ -1,13 +1,10 @@
 package apiroutes
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/externaljwt"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 const (
@@ -44,12 +41,6 @@ func New(route *gin.RouterGroup) *Router {
 		log.Fatalf("route is nil")
 	}
 
-	route.Use(otelgin.Middleware("hoopgateway",
-		otelgin.WithFilter(func(r *http.Request) bool {
-			return r.RequestURI != "/api/healthz"
-		}),
-	))
-	route.Use(contextTracerMiddleware())
 	return &Router{
 		RouterGroup:     route,
 		apiURL:          appconfig.Get().ApiURL(),

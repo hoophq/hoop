@@ -1,6 +1,3 @@
 package monitoring
 
-var (
-	honeycombApiKey string
-	sentryDSN       string
-)
+var sentryDSN string

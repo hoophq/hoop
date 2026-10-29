@@ -34,7 +34,6 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.version=${VERSION} \
 -X github.com/hoophq/hoop/common/version.gitCommit=${GITCOMMIT} \
 -X github.com/hoophq/hoop/common/version.buildDate=${DATE} \
--X github.com/hoophq/hoop/common/monitoring.honeycombApiKey=${HONEYCOMB_API_KEY} \
 -X github.com/hoophq/hoop/common/monitoring.sentryDSN=${SENTRY_DSN} \
 -X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY} \
 -X github.com/hoophq/hoop/sidecar/analytics.writeKey=${SEGMENT_API_KEY} \

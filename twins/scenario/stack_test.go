@@ -52,13 +52,10 @@ const (
 
 // knownEgress is traffic the gateway sends to a real third party that has no
 // twin. The router refuses it. The egress check fails on any other host.
-var knownEgress = map[string]string{
-	"api.honeycomb.io:443": "the tracing exporter starts in every build, with no API key too (common/monitoring NewOpenTracing)",
-}
+var knownEgress = map[string]string{}
 
 // egressSettle is how long the egress check lets background senders dial
-// after the last scenario. The tracing exporter dials about 4s after the
-// spans that feed it. A sender that dials later is not caught.
+// after the last scenario. A sender that dials later is not caught.
 const egressSettle = 10 * time.Second
 
 // stackOpts changes what newStack boots.

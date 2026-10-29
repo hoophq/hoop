@@ -24,7 +24,6 @@ import (
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	authinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/auth"
 	sessionuuidinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/sessionuuid"
-	tracinginterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/tracing"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
@@ -49,7 +48,7 @@ type (
 const listenAddr = "0.0.0.0:8010"
 
 // NewGRPCServer builds the transport gRPC server with the full production
-// interceptor chain (sessionuuid → auth → tracing, plus the unary auth
+// interceptor chain (sessionuuid → auth, plus the unary auth
 // validator) and registers the transport service on it. It is the single
 // wiring shared by the production entrypoint (StartRPCServer) and the
 // integration harness, which serves it on an ephemeral listener — so both
@@ -59,7 +58,6 @@ func (s *Server) NewGRPCServer() *grpc.Server {
 	grpcInterceptors := grpc.ChainStreamInterceptor(
 		sessionuuidinterceptor.New(),
 		authinterceptor.New(),
-		tracinginterceptor.New(s.AppConfig.ApiURL()),
 	)
 	opts := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
