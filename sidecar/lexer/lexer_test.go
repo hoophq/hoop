@@ -875,6 +875,8 @@ func TestObjectCreatingForms(t *testing.T) {
 		`SELECT * INTO TEMPORARY TABLE snap FROM customers`,
 		`SELECT * INTO UNLOGGED snap FROM customers`,
 		`WITH c AS (SELECT 1) SELECT * INTO snap FROM c`,
+		`(SELECT * INTO snap FROM customers)`,
+		`((SELECT * INTO snap FROM customers))`,
 	} {
 		if a := lexer.Analyze(sql, lexer.Postgres); a.Severity() != lexer.Create {
 			t.Errorf("Severity = %v, want create: effects %v: %s", a.Severity(), a.Effects, sql)

@@ -109,6 +109,7 @@ var statementVerb = map[string]Verb{
 	"savepoint": Other,
 	"explain":   Explain,
 	"analyze":   Other,
+	"analyse":   Other, // PostgreSQL's British spelling of ANALYZE
 	"vacuum":    Other,
 	"comment":   Other,
 	"prepare":   Other,
