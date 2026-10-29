@@ -27,7 +27,7 @@
 
 .footer {
   flex-shrink: 0;
-  border-top: 1px solid var(--mantine-color-gray-3);
+  border-top: 1px solid var(--mantine-color-gray-2);
   background-color: var(--hoop-surface-raised);
   padding: var(--mantine-spacing-lgAlt);
 }
