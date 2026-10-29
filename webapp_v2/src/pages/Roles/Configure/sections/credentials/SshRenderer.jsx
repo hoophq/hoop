@@ -3,7 +3,7 @@ import { Stack, Title, Text } from '@mantine/core'
 import Radio from '@/components/Radio'
 import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/shared/PredefinedFields'
 import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 
 // React-specific field schema. SSH's auth-method radio drives which
 // field is rendered and which is required — neither is encodable in
@@ -54,10 +54,10 @@ function deriveAuthMethod(connection) {
 export default function SshRenderer({ connection, availableSources, forceNewState, hideRoleInfo }) {
   const initialMethod = useMemo(() => deriveAuthMethod(connection), [connection])
   const [authMethod, setAuthMethod] = useState(initialMethod)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
-  const setDraft = useConfigureRoleStore((s) => s.setDraft)
-  const draftSubtype = useConfigureRoleStore((s) => s.drafts.subtype)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const setDraft = useCredentialsStore((s) => s.setDraft)
+  const draftSubtype = useCredentialsStore((s) => s.drafts.subtype)
 
   // Proxy ("ssh") vs local ("ssh-local") lives in the subtype draft so
   // CredentialsTab (which hosts the connection-method cards outside this

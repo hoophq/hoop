@@ -8,7 +8,7 @@ import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/share
 import HttpHeaders from '@/pages/Roles/Configure/sections/credentials/shared/HttpHeaders'
 import AllowInsecureSsl from '@/pages/Roles/Configure/sections/credentials/shared/AllowInsecureSsl'
 import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 import { decodeSecretValue, encodeSecretValue } from '@/pages/Roles/Configure/utils/secretsCodec'
 
 // Claude Code httpproxy connection. Catalog's `httpproxy/claude-code`
@@ -119,8 +119,8 @@ function stageLegacyApiKeyMove(secrets, replaceSecret) {
 // Anthropic header onto a Vertex config would persist junk — but the
 // legacy key itself is dropped either way.
 function useLegacyApiKeyMigration(connection, initialProvider) {
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
   const migratedRef = useRef(false)
   useEffect(() => {
     if (migratedRef.current) return
@@ -148,10 +148,10 @@ export default function ClaudeCodeRenderer({
   const flagOn = useUserStore((s) => !!s.featureFlags?.[VERTEX_FLAG])
   const showProviderSelect = flagOn || initialProvider === 'vertex'
 
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
 
   useLegacyApiKeyMigration(connection, initialProvider)
 

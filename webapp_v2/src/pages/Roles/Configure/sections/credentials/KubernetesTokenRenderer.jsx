@@ -9,7 +9,7 @@ import {
   sourceFromEncodedValue,
   SOURCES,
 } from '@/pages/Roles/Configure/utils/secretsCodec'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 import AllowInsecureSsl from '@/pages/Roles/Configure/sections/credentials/shared/AllowInsecureSsl'
 import AgentSelector from '@/pages/Roles/Configure/sections/credentials/shared/AgentSelector'
 
@@ -44,11 +44,11 @@ export default function KubernetesTokenRenderer({
   forceNewState,
   hideRoleInfo,
 }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
-  const setFieldSource = useConfigureRoleStore((s) => s.setFieldSource)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const fieldSources = useCredentialsStore((s) => s.fieldSources)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const setFieldSource = useCredentialsStore((s) => s.setFieldSource)
 
   const currentSecrets = connection.secret || {}
   const defaultSource = availableSources?.[0] || SOURCES.MANUAL

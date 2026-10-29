@@ -16,7 +16,7 @@ import {
   PLACEHOLDER_KEY_RE,
   SOURCES,
 } from '@/pages/Roles/Configure/utils/secretsCodec'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 import { sourceOptionsFor } from '@/pages/Roles/Configure/components/SecretField/util'
 
 // HTTP headers editor for httpproxy connections. Same row shape as
@@ -139,14 +139,14 @@ export default function HttpHeaders({
   keyPlaceholder = 'X-Request-Id',
   addLabel = 'Add header',
 }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
-  const renames = useConfigureRoleStore((s) => s.renames)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const deleteSecret = useConfigureRoleStore((s) => s.deleteSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
-  const renameSecret = useConfigureRoleStore((s) => s.renameSecret)
-  const setFieldSource = useConfigureRoleStore((s) => s.setFieldSource)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const fieldSources = useCredentialsStore((s) => s.fieldSources)
+  const renames = useCredentialsStore((s) => s.renames)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const deleteSecret = useCredentialsStore((s) => s.deleteSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const renameSecret = useCredentialsStore((s) => s.renameSecret)
+  const setFieldSource = useCredentialsStore((s) => s.setFieldSource)
 
   const defaultSource = availableSources?.[0] || SOURCES.MANUAL
   const exclude = new Set(excludeKeys)
