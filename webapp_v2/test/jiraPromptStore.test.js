@@ -312,6 +312,21 @@ describe('CMDB options', () => {
     expect(state().rows[0].hasMore).toBe(false)
   })
 
+  it('a late option response of an older load does not fill the same row of a newer one', async () => {
+    seed({ cmdbItems: [cmdb('customfield_2', '21', { required: true })] })
+    let releaseOld
+    handlers.objects = () => new Promise((resolve) => (releaseOld = resolve))
+    const older = state().load('a')
+    await vi.waitFor(() => expect(objectCalls()).toHaveLength(1))
+
+    // Same template, so the same jira_field, and its row starts again at requestId 1.
+    handlers.objects = () => ok({ values: [servers[1]], has_next_page: false })
+    await expect(state().load('b')).resolves.toEqual({ needed: true })
+    releaseOld({ data: { values: [servers[0]], has_next_page: false } })
+    await expect(older).resolves.toBeNull()
+    expect(state().rows[0].jira_values).toEqual([servers[1]])
+  })
+
   it('an older response for a row does not replace a newer one', async () => {
     vi.useFakeTimers()
     seed({ cmdbItems: [cmdb('customfield_2', '21', { required: true })], values: { 21: servers } })
