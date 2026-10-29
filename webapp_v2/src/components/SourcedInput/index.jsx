@@ -50,7 +50,7 @@ export default function SourcedInput({
 
   if (isTextarea) {
     return (
-      <Stack gap={4}>
+      <Stack gap="var(--input-label-gap, var(--mantine-spacing-xsAlt))">
         {labelNode}
         {showSourceMenu && (
           <Select
@@ -78,7 +78,7 @@ export default function SourcedInput({
   }
 
   return (
-    <Stack gap={4}>
+    <Stack gap="var(--input-label-gap, var(--mantine-spacing-xsAlt))">
       {labelNode}
       <Group gap={0} wrap="nowrap" align="stretch">
         {showSourceMenu && (
@@ -110,14 +110,18 @@ export default function SourcedInput({
   )
 }
 
+// Follows the Mantine input label, so a page that resizes those (the resource
+// setup wizard) resizes these too.
+const LABEL_SIZE = 'var(--input-label-size, var(--mantine-font-size-sm))'
+
 function FieldLabel({ label, required, tooltip }) {
   return (
     <Group gap={4}>
-      <Text size="sm" fw={700}>
+      <Text fz={LABEL_SIZE} fw={700}>
         {label}
       </Text>
       {required && (
-        <Text size="sm" c="red">
+        <Text fz={LABEL_SIZE} c="red">
           *
         </Text>
       )}

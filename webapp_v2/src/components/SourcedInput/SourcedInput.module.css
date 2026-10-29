@@ -17,20 +17,20 @@
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
-  font-size: var(--mantine-font-size-md);
+  font-size: var(--mantine-font-size-sm);
   transition: background-color 100ms ease, border-color 100ms ease;
 }
 
 .pickerSibling[data-size='sm'] {
   min-height: var(--hoop-control-height-sm);
   padding: 0 var(--mantine-spacing-xs);
-  font-size: var(--mantine-font-size-sm);
+  font-size: var(--mantine-font-size-xs);
 }
 
 .pickerSibling[data-size='lg'] {
   min-height: var(--hoop-control-height-lg);
   padding: 0 var(--mantine-spacing-md);
-  font-size: var(--mantine-font-size-lg);
+  font-size: var(--mantine-font-size-md);
 }
 
 .pickerSibling:hover {

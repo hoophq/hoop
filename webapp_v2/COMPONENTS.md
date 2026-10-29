@@ -486,6 +486,7 @@ import SourcedInput from '@/components/SourcedInput'
 ```
 Supports `type="text" | "password" | "textarea"` and `size="sm" | "md" | "lg"` (default `md`, the app-wide control default). Heights track the `--hoop-control-height-*` variables so a SourcedInput lines up with a TextInput of the same size on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
 `tooltip` adds a help icon next to the label that shows the text on hover (the resource setup wizard passes the catalog field description).
+The picker keeps the width of its longest option, so inputs line up. The label reads `--input-label-size` and its gap `--input-label-gap`, so a page that resizes Mantine labels resizes these too.
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.

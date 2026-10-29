@@ -1,6 +1,7 @@
 import { Menu, Text, UnstyledButton } from '@mantine/core'
 import { ChevronDown } from 'lucide-react'
 import { SOURCE_LABELS } from '@/pages/Roles/Configure/utils/secretsCodec'
+import classes from './SourceMenu.module.css'
 
 // Source picker dropdown. Accepts either a string array
 // (`['manual-input', ...]`) or the Mantine Select shape
@@ -29,9 +30,25 @@ export default function SourceMenu({
           aria-label="Credential source"
           disabled={disabled}
         >
-          <Text lh={1} component="span" inherit>
-            {activeLabel}
-          </Text>
+          <span className={classes.labels}>
+            {options.length === 0 ? (
+              <Text lh={1} component="span" inherit>
+                {activeLabel}
+              </Text>
+            ) : (
+              options.map((opt) => (
+                <Text
+                  key={opt.value}
+                  lh={1}
+                  component="span"
+                  inherit
+                  data-hidden={opt.value !== activeOption.value || undefined}
+                >
+                  {opt.label}
+                </Text>
+              ))
+            )}
+          </span>
           <ChevronDown size={14} />
         </UnstyledButton>
       </Menu.Target>
