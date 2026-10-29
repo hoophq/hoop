@@ -372,7 +372,7 @@ type ListenerConfig struct {
 	IdleTimeoutSec int `json:"idle_timeout_sec,omitempty" label:"Idle timeout (seconds)" help:"0 disables it. A short value breaks interactive sessions."`
 
 	// MaxConns bounds concurrency. Zero is unlimited.
-	MaxConns int `json:"max_conns,omitempty" label:"Max connections" help:"0 is unlimited."`
+	MaxConns int `json:"max_conns,omitempty" label:"Max connections" help:"0 is unlimited." protocols:"!mcp"`
 
 	// Guardrails overrides the top-level default for this listener.
 	//

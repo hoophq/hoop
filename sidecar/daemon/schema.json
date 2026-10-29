@@ -245,7 +245,10 @@
       "key": "max_conns",
       "type": "integer",
       "label": "Max connections",
-      "help": "0 is unlimited."
+      "help": "0 is unlimited.",
+      "except_protocols": [
+        "mcp"
+      ]
     },
     {
       "key": "http",
