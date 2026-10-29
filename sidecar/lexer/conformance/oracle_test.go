@@ -54,7 +54,7 @@ func TestScannerNeverContradictsPostgres(t *testing.T) {
 				// scanner finding. Fail loudly rather than skip quietly.
 				t.Fatalf("oracle could not parse fixture: %v", err)
 			}
-			mine := scannerWrites(got)
+			mine := scannerRelations(got, lexer.Write)
 			tally := byGroup[c.group]
 
 			switch {
@@ -85,16 +85,16 @@ func TestScannerNeverContradictsPostgres(t *testing.T) {
 	}
 }
 
-// scannerWrites reduces an Analysis to the sorted, lowercased set of relation
-// names it says the statement changes.
+// scannerRelations reduces an Analysis to the sorted, lowercased set of
+// relation names it says the statement reads or changes, as acc says.
 //
 // Lowercasing is what the root adapter does before a policy sees a name, so
 // it is what the comparison must do. Both sides get it, so a quoted
 // "Orders" folds the same way on both and the comparison stays sound.
-func scannerWrites(a lexer.Analysis) []string {
+func scannerRelations(a lexer.Analysis, acc lexer.Access) []string {
 	out := make([]string, 0, len(a.Relations))
 	for _, r := range a.Relations {
-		if r.Access == lexer.Write {
+		if r.Access == acc {
 			out = append(out, strings.ToLower(r.Name))
 		}
 	}
@@ -381,7 +381,7 @@ func TestClickHouseDialectCorpus(t *testing.T) {
 			if verb := got.Severity(); verb != tc.verb {
 				t.Errorf("verb = %q, want %q", verb, tc.verb)
 			}
-			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+			if writes := scannerRelations(got, lexer.Write); !slices.Equal(writes, tc.writes) {
 				t.Errorf("writes = %v, want %v", writes, tc.writes)
 			}
 		})
@@ -430,7 +430,7 @@ func TestOracleDialectCorpus(t *testing.T) {
 			if verb := got.Severity(); verb != tc.verb {
 				t.Errorf("verb = %q, want %q", verb, tc.verb)
 			}
-			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+			if writes := scannerRelations(got, lexer.Write); !slices.Equal(writes, tc.writes) {
 				t.Errorf("writes = %v, want %v", writes, tc.writes)
 			}
 		})
@@ -530,8 +530,45 @@ func TestSparkDialectCorpus(t *testing.T) {
 			if verb := got.Severity(); verb != tc.verb {
 				t.Errorf("verb = %q, want %q", verb, tc.verb)
 			}
-			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+			if writes := scannerRelations(got, lexer.Write); !slices.Equal(writes, tc.writes) {
 				t.Errorf("writes = %v, want %v", writes, tc.writes)
+			}
+		})
+	}
+
+	// Reads of a table's metadata or change feed. Each names the table read,
+	// and a rule fencing reads of it depends on that.
+	for _, tc := range []struct {
+		name  string
+		sql   string
+		reads []string
+	}{
+		{"table_changes reads its table", "SELECT * FROM table_changes('salaries', 1)", []string{"salaries"}},
+		{"SHOW TBLPROPERTIES reads its table", "SHOW TBLPROPERTIES salaries", []string{"salaries"}},
+		{"SHOW COLUMNS reads its table", "SHOW COLUMNS IN salaries", []string{"salaries"}},
+		{"SHOW COLUMNS reads its table in a schema", "SHOW COLUMNS IN salaries IN hr", []string{"hr.salaries"}},
+		{"SHOW PARTITIONS reads its table", "SHOW PARTITIONS salaries", []string{"salaries"}},
+		{"SHOW CREATE TABLE reads its table", "SHOW CREATE TABLE salaries", []string{"salaries"}},
+		{"DESCRIBE HISTORY reads its table", "DESCRIBE HISTORY salaries", []string{"salaries"}},
+		{"DESC of a table called history", "DESC history", []string{"history"}},
+		{"DESCRIBE of a table called extended", "DESCRIBE extended", []string{"extended"}},
+		{"DESCRIBE DETAIL of a path names no table", "DESCRIBE DETAIL '/data/events'", nil},
+		{"DESCRIBE HISTORY of a path names no table", "DESCRIBE HISTORY '/data/events'", nil},
+		{"SHOW TBLPROPERTIES of a table called only", "SHOW TBLPROPERTIES only", []string{"only"}},
+		{"SHOW COLUMNS in a schema called only", "SHOW COLUMNS IN t IN only", []string{"only.t"}},
+		{"builtin.table_changes reads its table", "SELECT * FROM builtin.table_changes('salaries', 1)", []string{"salaries"}},
+		{"system.builtin.table_changes reads its table", "SELECT * FROM system.builtin.table_changes('salaries', 1)", []string{"salaries"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lexer.Analyze(tc.sql, lexer.Spark)
+			if !got.Complete {
+				t.Fatalf("analysis conceded: %s", got.Reason)
+			}
+			if writes := scannerRelations(got, lexer.Write); len(writes) != 0 {
+				t.Errorf("writes = %v, want none", writes)
+			}
+			if reads := scannerRelations(got, lexer.Read); !slices.Equal(reads, tc.reads) {
+				t.Errorf("reads = %v, want %v", reads, tc.reads)
 			}
 		})
 	}
