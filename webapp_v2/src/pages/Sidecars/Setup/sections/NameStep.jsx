@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Anchor, Grid, Group, Stack, Text, ThemeIcon, Title } from '@mantine/core'
+import { Anchor, Grid, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
+import { Boxes, Container, SquareTerminal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Button from '@/components/Button'
 import CodeSnippet from '@/components/CodeSnippet'
+import SelectionCard from '@/components/SelectionCard'
 import Tabs from '@/components/Tabs'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
@@ -48,60 +50,62 @@ function SourceTabs({ sources }) {
   )
 }
 
-// The container shapes the documentation publishes for the sidecar
-// (Config File Reference → Components → "As a sidecar container" and
-// "On Kubernetes"). The image is built from the Dockerfile in the repository;
-// there is no published sidecar image to name here.
+// The three ways to run a sidecar, from the documentation's "Running the
+// Sidecar" page. The words match the docs so a reader finds the same choices
+// in both places.
+const DEPLOY_TARGETS = [
+  { value: 'k8s', icon: Boxes, title: 'Kubernetes', description: 'Run it as a container in your cluster.' },
+  { value: 'compose', icon: Container, title: 'Docker Compose', description: 'Run it as a service with Docker Compose.' },
+  { value: 'cli', icon: SquareTerminal, title: 'CLI / Binary', description: 'Run it on a VM or your machine with the hoop CLI.' },
+]
+
+// hoophq/hoopsidecar is the dedicated sidecar image: its own entrypoint runs
+// the relay and reads the config at /etc/hoop-inspect/config.yaml, which is
+// what the helm chart deploys (deploy/helm-chart/chart/sidecar). The relay also
+// ships inside hoophq/hoopdev and hoophq/hoop as `hoop start sidecar`, which the
+// CLI block uses. See sidecar/README.md.
 //
-// Both carry the URL and the token as environment variables, because a
-// container has no other way to take them: its command reads the config file
-// only, and the daemon refuses to start with a control plane and no token
-// (resolveConfigSource, sidecar/daemon/controlplane.go). The CLI block further
-// down is the host install, where the flags are available instead.
-const dockerCompose = (url, token) => `hoop-inspect:
-  image: hoop-inspect:local
-  environment:
-    HOOP_CONTROL_PLANE_URL: ${url}
-    HOOP_SIDECAR_TOKEN: ${token}
-  volumes:
-    - ./config.yaml:/etc/hoop-inspect/config.yaml:ro
-  ports:
-    - "19000:19000"    # admin only
-  healthcheck:
-    test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]`
+// The container takes the Control Plane URL and the Sidecar token as
+// environment variables: the daemon refuses to start with a control plane and
+// no token (resolveConfigSource, sidecar/daemon/controlplane.go).
+const composeConfig = (image, url, token) => `services:
+  hoop-sidecar:
+    image: ${image}
+    environment:
+      HOOP_CONTROL_PLANE_URL: ${url}
+      HOOP_SIDECAR_TOKEN: ${token}
+    volumes:
+      - ./config.yaml:/etc/hoop-inspect/config.yaml:ro
+    ports:
+      - "19000:19000"    # admin only
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]`
 
 // The token goes in a Secret rather than the manifest: a Deployment is the
 // thing most likely to sit in git.
-const kubernetes = (url) => `# kubectl create secret generic hoop-sidecar-token --from-literal=token=<token>
-containers:
-  - name: hoop-inspect
-    image: hoop-inspect:local
-    env:
-      - name: HOOP_SIDECAR_CONFIG
-        value: /etc/hoop-inspect/config.yaml
-      - name: HOOP_CONTROL_PLANE_URL
-        value: ${url}
-      - name: HOOP_SIDECAR_TOKEN
-        valueFrom:
-          secretKeyRef:
-            name: hoop-sidecar-token
-            key: token
-    volumeMounts:
-      - name: config
-        mountPath: /etc/hoop-inspect
-volumes:
-  - name: config
-    configMap:
-      name: hoop-inspect-config`
+const k8sSecret = (token) => `kubectl create secret generic hoop-sidecar-token \\
+  --from-literal=token=${token}`
+
+const k8sEnv = (image, url) => `# in your Deployment's container spec
+image: ${image}
+env:
+  - name: HOOP_CONTROL_PLANE_URL
+    value: ${url}
+  - name: HOOP_SIDECAR_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: hoop-sidecar-token
+        key: token`
 
 /**
  * Step 1 of the sidecar wizard. The control plane issues a token for a named
- * sidecar (POST /sidecars), so the name comes first; the blocks that follow
- * are the documented steps for connecting one, in the documentation's order:
- * point it at the control plane, take the token, start it.
+ * sidecar (POST /sidecars), so the name comes first. In the create flow the
+ * reader then picks where the sidecar runs, and the blocks that follow are the
+ * documented steps for that one target.
  */
-export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creating, error, onCreate }) {
+export default function NameStep({ mode, sidecar, token, controlPlaneUrl, imageRef, creating, error, onCreate }) {
   const [name, setName] = useState('')
+  const [target, setTarget] = useState('k8s')
   const created = !!sidecar
   const isConnect = mode === 'connect'
 
@@ -111,84 +115,195 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
     onCreate(name.trim())
   }
 
-  // The deploy block only exists in the "create and deploy" flow; everything
-  // after it is shared, so the numbering is computed rather than written.
-  const blocks = []
-  if (!isConnect) {
-    blocks.push(
-      <NumberedBlock key="deploy" n={blocks.length + 1} title="Deploy the sidecar">
-        <SourceTabs
-          sources={[
-            { value: 'compose', label: 'Docker Compose', code: dockerCompose(controlPlaneUrl, token) },
-            { value: 'k8s', label: 'Kubernetes', code: kubernetes(controlPlaneUrl) },
-          ]}
-        />
+  // Shown once, in one place: the token is a bearer credential the control
+  // plane never returns again. The deploy snippets below reference it, but this
+  // is where the reader is told to copy it.
+  const tokenBlock = {
+    key: 'token',
+    title: 'Copy the sidecar token',
+    node: (
+      <>
+        <CodeSnippet code={token} />
         <Text size="xs" c="dimmed">
+          <Text component="span" fw={700}>
+            Shown once.
+          </Text>
           {
-            'A container takes the URL and the token from its environment, so the two blocks below are the same settings for a sidecar you install on a host. '
+            ' Copy it before you continue — a bearer credential has no config file key. Leaving this page discards it; delete the sidecar to get a new one.'
           }
-          <Anchor href={docsUrl.sidecar.getStarted} target="_blank" rel="noopener noreferrer" size="xs">
-            Running the Sidecar
-          </Anchor>
-          {' walks through the config file itself.'}
         </Text>
-      </NumberedBlock>
-    )
+      </>
+    ),
   }
 
-  blocks.push(
-    <NumberedBlock key="url" n={blocks.length + 1} title="Point the sidecar at Hoop">
-      <SourceTabs
-        sources={[
-          { value: 'file', label: 'config.yaml', code: `control_plane_url: ${controlPlaneUrl}` },
-          { value: 'env', label: 'Environment Variables', code: `export HOOP_CONTROL_PLANE_URL=${controlPlaneUrl}` },
-        ]}
-      />
-      <Text size="xs" c="dimmed">
-        The environment variable outranks the config file.
-      </Text>
-    </NumberedBlock>
-  )
+  // The create flow branches on the deploy target. Kubernetes keeps the full
+  // manifest in the docs and shows only the two settings the sidecar needs;
+  // Docker Compose and the CLI show the whole flow on screen.
+  const targetBlocks = {
+    k8s: [
+      tokenBlock,
+      {
+        key: 'install',
+        title: 'Create the token secret',
+        node: (
+          <>
+            <CodeSnippet code={k8sSecret(token)} variant="black" />
+            <Text size="xs" c="dimmed">
+              The Deployment reads the Sidecar token from this Secret.
+            </Text>
+          </>
+        ),
+      },
+      {
+        key: 'config',
+        title: 'Configure the container',
+        node: (
+          <>
+            <CodeSnippet code={k8sEnv(imageRef, controlPlaneUrl)} />
+            <Text size="xs" c="dimmed">
+              {'The Control Plane URL and the Sidecar token are all it needs here. '}
+              <Anchor href={docsUrl.sidecar.getStarted} target="_blank" rel="noopener noreferrer" size="xs">
+                Running the Sidecar
+              </Anchor>
+              {' has the full Deployment and ConfigMap.'}
+            </Text>
+          </>
+        ),
+      },
+    ],
+    compose: [
+      {
+        key: 'install',
+        title: 'Pull the image',
+        node: (
+          <>
+            <CodeSnippet code={`docker pull ${imageRef}`} variant="black" />
+            <Text size="xs" c="dimmed">
+              The dedicated sidecar image. docker compose up pulls it too.
+            </Text>
+          </>
+        ),
+      },
+      tokenBlock,
+      {
+        key: 'config',
+        title: 'Configure the service',
+        node: (
+          <>
+            <CodeSnippet code={composeConfig(imageRef, controlPlaneUrl, token)} />
+            <Text size="xs" c="dimmed">
+              {'Save this as compose.yaml next to your config.yaml. '}
+              <Anchor href={docsUrl.sidecar.getStarted} target="_blank" rel="noopener noreferrer" size="xs">
+                Running the Sidecar
+              </Anchor>
+              {' walks through the config file itself.'}
+            </Text>
+          </>
+        ),
+      },
+      {
+        key: 'run',
+        title: 'Run it',
+        node: <CodeSnippet code="docker compose up -d" variant="black" />,
+      },
+    ],
+    cli: [
+      {
+        key: 'install',
+        title: 'Install the hoop CLI',
+        node: (
+          <Text size="xs" c="dimmed">
+            {'See the '}
+            <Anchor href={docsUrl.clients.commandLine.overview} target="_blank" rel="noopener noreferrer" size="xs">
+              installation docs for your OS
+            </Anchor>
+            {'.'}
+          </Text>
+        ),
+      },
+      tokenBlock,
+      {
+        key: 'config',
+        title: 'Point the sidecar at Hoop',
+        node: (
+          <>
+            <CodeSnippet code={`control_plane_url: ${controlPlaneUrl}`} />
+            <Text size="xs" c="dimmed">
+              config.yaml. The token is a flag, not a config file key.
+            </Text>
+          </>
+        ),
+      },
+      {
+        key: 'run',
+        title: 'Start the sidecar with the token',
+        node: (
+          <>
+            <CodeSnippet code={`hoop start sidecar --config config.yaml --token "${token}"`} variant="black" />
+            <Text size="xs" c="dimmed">
+              {
+                'Run this on the host that reaches your resources. Listeners come from its local file; guardrails, masking and analyzer settings come from Hoop.'
+              }
+            </Text>
+          </>
+        ),
+      },
+    ],
+  }
 
-  blocks.push(
-    <NumberedBlock key="token" n={blocks.length + 1} title="Copy the sidecar token">
-      <CodeSnippet code={token} />
-      <Text size="xs" c="dimmed">
-        <Text component="span" fw={700}>
-          Shown once.
-        </Text>
-        {
-          ' There is no config file key for the token: it is a bearer credential, and a config file is the thing most likely to be committed. Leaving this page discards it; delete the sidecar to get a new one.'
-        }
-      </Text>
-    </NumberedBlock>
-  )
+  // The connect flow is for a sidecar that already runs, so it never chooses a
+  // deploy target: point it at Hoop, take the token, restart it.
+  const connectBlocks = [
+    {
+      key: 'url',
+      title: 'Point the sidecar at Hoop',
+      node: (
+        <>
+          <SourceTabs
+            sources={[
+              { value: 'file', label: 'config.yaml', code: `control_plane_url: ${controlPlaneUrl}` },
+              { value: 'env', label: 'Environment Variables', code: `export HOOP_CONTROL_PLANE_URL=${controlPlaneUrl}` },
+            ]}
+          />
+          <Text size="xs" c="dimmed">
+            The environment variable outranks the config file.
+          </Text>
+        </>
+      ),
+    },
+    tokenBlock,
+    {
+      key: 'start',
+      title: 'Restart your sidecar with the token',
+      node: (
+        <>
+          <SourceTabs
+            sources={[
+              {
+                value: 'flag',
+                label: 'CLI Options',
+                code: `hoop start sidecar --config config.yaml --token "${token}"`,
+                variant: 'black',
+              },
+              {
+                value: 'env',
+                label: 'Environment Variables',
+                code: `export HOOP_SIDECAR_TOKEN=${token}\nhoop start sidecar --config config.yaml`,
+                variant: 'black',
+              },
+            ]}
+          />
+          <Text size="xs" c="dimmed">
+            {
+              'Run this on the host that reaches your resources. Listeners come from its local file; guardrails, masking and analyzer settings come from Hoop.'
+            }
+          </Text>
+        </>
+      ),
+    },
+  ]
 
-  blocks.push(
-    <NumberedBlock key="start" n={blocks.length + 1} title={isConnect ? 'Restart your sidecar with the token' : 'Start your sidecar with the token'}>
-      <SourceTabs
-        sources={[
-          {
-            value: 'flag',
-            label: 'CLI Options',
-            code: `hoop start sidecar --config config.yaml --token "${token}"`,
-            variant: 'black',
-          },
-          {
-            value: 'env',
-            label: 'Environment Variables',
-            code: `export HOOP_SIDECAR_TOKEN=${token}\nhoop start sidecar --config config.yaml`,
-            variant: 'black',
-          },
-        ]}
-      />
-      <Text size="xs" c="dimmed">
-        {
-          'Run this on the host that reaches your resources. Listeners come from its local file; guardrails, masking and analyzer settings come from Hoop.'
-        }
-      </Text>
-    </NumberedBlock>
-  )
+  const blocks = isConnect ? connectBlocks : targetBlocks[target]
 
   return (
     <Grid columns={7} gutter="xl">
@@ -198,7 +313,7 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
           <Text size="sm" c="dimmed">
             {isConnect
               ? 'Name the sidecar you already run to issue its token, then work through each block in order.'
-              : 'Name the sidecar you are about to deploy to issue its token, then work through each block in order.'}
+              : 'Name the sidecar you are about to deploy to issue its token, pick where it runs, then work through each block in order.'}
           </Text>
           <Anchor href={docsUrl.sidecar.connectToControlPlane} target="_blank" rel="noopener noreferrer" size="xs">
             Connect a Sidecar
@@ -238,7 +353,33 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
             </Stack>
           </form>
 
-          {created && <Stack gap="xl">{blocks}</Stack>}
+          {created && (
+            <Stack gap="xl">
+              {!isConnect && (
+                <Stack gap="sm">
+                  <Text fw={600}>Where do you want to deploy the sidecar?</Text>
+                  <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                    {DEPLOY_TARGETS.map((t) => (
+                      <SelectionCard
+                        key={t.value}
+                        icon={t.icon}
+                        title={t.title}
+                        description={t.description}
+                        selected={target === t.value}
+                        onClick={() => setTarget(t.value)}
+                      />
+                    ))}
+                  </SimpleGrid>
+                </Stack>
+              )}
+
+              {blocks.map((block, i) => (
+                <NumberedBlock key={block.key} n={i + 1} title={block.title}>
+                  {block.node}
+                </NumberedBlock>
+              ))}
+            </Stack>
+          )}
         </Stack>
       </Grid.Col>
     </Grid>

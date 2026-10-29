@@ -27,7 +27,7 @@ const COPY = {
   },
   create: {
     title: 'Create and deploy a new Sidecar',
-    subtitle: 'Deploy a new sidecar with Docker or Kubernetes, then point it at Hoop.',
+    subtitle: 'Deploy a new sidecar with Kubernetes, Docker Compose or the CLI, then point it at Hoop.',
     steps: ['Deploy', 'Configure', 'Overview'],
   },
 }
@@ -42,6 +42,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
   const copy = COPY[mode] ?? COPY.connect
   const navigate = useNavigate()
   const apiUrl = useUserStore((s) => s.apiUrl)
+  const gatewayVersion = useUserStore((s) => s.gatewayVersion)
   const { createSidecar, deleteSidecar } = useSidecarStore()
   const fetchSidecar = useSidecarStore((s) => s.fetchSidecar)
   const clearSelected = useSidecarStore((s) => s.clearSelected)
@@ -187,6 +188,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
           sidecar={sidecar}
           token={token}
           controlPlaneUrl={apiUrl || window.location.origin}
+          imageRef={`hoophq/hoopsidecar:${gatewayVersion || 'latest'}`}
           creating={creating}
           error={createError}
           onCreate={handleCreate}
