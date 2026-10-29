@@ -1,5 +1,6 @@
 import { Stack, Group, Text, Title, Loader, ThemeIcon } from '@mantine/core'
-import { Check, X } from 'lucide-react'
+import { Check, TriangleAlert, X } from 'lucide-react'
+import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 
@@ -59,7 +60,8 @@ export default function TestConnectionModal({
   connectionName,
   onClose,
 }) {
-  const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null
+  const duration =
+    durationMs == null ? null : durationMs < 1000 ? durationMs + ' ms' : (durationMs / 1000).toFixed(1) + ' seconds'
   return (
     <Modal
       opened={opened}
@@ -74,9 +76,9 @@ export default function TestConnectionModal({
           <Text size="sm" c="dimmed">
             {'Resource Role: ' + (connectionName || '')}
           </Text>
-          {durationSec != null && (
+          {duration && (
             <Text size="xs" c="dimmed">
-              {'Completed in ' + durationSec + ' seconds'}
+              {'Completed in ' + duration}
             </Text>
           )}
         </Stack>
@@ -90,7 +92,9 @@ export default function TestConnectionModal({
         </Stack>
 
         {connectionStatus === 'failed' && errorMessage && (
-          <Text size="sm" c="red">{errorMessage}</Text>
+          <Alert color="red" icon={<TriangleAlert size={16} />}>
+            <Text size="xs">{errorMessage}</Text>
+          </Alert>
         )}
 
         <Group justify="flex-end">
