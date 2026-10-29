@@ -443,6 +443,16 @@ func (a *analyzer) walk() {
 			continue
 		}
 
+		// A quoted EXPLAIN option is still an option: PostgreSQL compares
+		// its name verbatim, so `EXPLAIN ("analyze") DELETE` runs the
+		// delete. A quoted name the option table does not know is one
+		// PostgreSQL rejects, an extension's option, or an escape this
+		// scanner does not decode (U&"\0061nalyze"). It counts as ANALYZE:
+		// the worst case refuses a plan, and never lets a write through.
+		if t.Kind == Quoted && a.explainOptionName(i) && (t.Text == "analyze" || !wrapperModifier[t.Text]) {
+			a.analyzeSeen = true
+		}
+
 		if t.Kind != Word {
 			atHead = a.wrapper
 			continue
@@ -483,7 +493,7 @@ func (a *analyzer) walk() {
 		// EXPLAIN and its option list precede the real statement, so the
 		// head position has to survive them.
 		if a.wrapper && wrapperModifier[t.Text] {
-			if t.Text == "analyze" {
+			if t.Text == "analyze" || t.Text == "analyse" {
 				a.analyzeSeen = true
 			}
 			atHead = true
@@ -547,7 +557,18 @@ func (a *analyzer) walk() {
 			!(a.d == Oracle && a.forUpdate(i)) {
 			column := a.namesAColumn(i)
 			if !column || a.mayBeAClause(i) {
-				if j := a.claimRelations(i); !column {
+				j := a.claimRelations(i)
+				// PostgreSQL's SELECT ... INTO t creates t, and access
+				// already reports t as written. The effect must say so
+				// too: an operation rule sees the effects, and a select
+				// passed a read-only lane while the table was created.
+				// T-SQL's SELECT INTO creates a table as well, and
+				// MySQL's writes a file or a variable; ENG-905 covers
+				// the dialects outside PostgreSQL.
+				if a.d == Postgres && t.Text == "into" && a.top().verb == Select && j != i {
+					a.effects = append(a.effects, Create)
+				}
+				if !column {
 					i = j
 				}
 			}
@@ -563,6 +584,26 @@ func (a *analyzer) walk() {
 	if len(a.stack) != 1 {
 		a.fail("unbalanced parentheses")
 	}
+}
+
+// explainOptionName reports whether the token at i names an option in the
+// parenthesised list right after EXPLAIN: `EXPLAIN (FORMAT JSON, "analyze")`.
+// A name follows the opening parenthesis or a comma; a value follows its
+// name. The list holds no nested parentheses, so the nearest opening one is
+// the list's own. Anywhere else a quoted name is a column or a relation:
+// `EXPLAIN WITH x("analyze") AS (...)` names a CTE column.
+func (a *analyzer) explainOptionName(i int) bool {
+	if !a.wrapper || i == 0 || !a.puncts(i-1, "(") && !a.puncts(i-1, ",") {
+		return false
+	}
+	j := i - 1
+	for j > 0 && !a.puncts(j, "(") {
+		if a.puncts(j, ")") {
+			return false
+		}
+		j--
+	}
+	return j > 0 && a.toks[j-1].isWord("explain")
 }
 
 // headFollows reports whether a statement verb may begin after this keyword.
