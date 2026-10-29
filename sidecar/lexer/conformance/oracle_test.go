@@ -671,6 +671,7 @@ func corpus() []stmtCase {
 		`CREATE TABLE snap AS SELECT * FROM customers`,
 		`SELECT * INTO snap2 FROM customers`,
 		`SELECT * INTO TEMP snap3 FROM customers`,
+		`(SELECT * INTO snap4 FROM customers)`,
 		`MERGE INTO customers c USING staging s ON c.id = s.id
 		   WHEN MATCHED AND s.dead THEN DELETE
 		   WHEN MATCHED THEN UPDATE SET n = s.n

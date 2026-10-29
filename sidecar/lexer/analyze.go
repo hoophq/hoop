@@ -375,7 +375,7 @@ func (a *analyzer) walk() {
 		if t.Kind == Punct {
 			switch t.Text {
 			case "(":
-				a.push(i)
+				a.push(i, atHead)
 				atHead = a.top().kind == regCTE || a.top().kind == regSub || a.wrapper
 				continue
 			case ")":
@@ -739,7 +739,12 @@ func (a *analyzer) sparkStatementAt(i int) bool {
 }
 
 // push opens a region, labelling it from the token before the parenthesis.
-func (a *analyzer) push(i int) {
+//
+// A parenthesis where a statement may begin opens a query, not an
+// expression: `(SELECT * INTO t FROM s)` and `UNION (SELECT ...)`. Read as
+// an expression group, its SELECT was never a head, the statement reported
+// no verb, and the table that SELECT INTO created passed a read-only lane.
+func (a *analyzer) push(i int, head bool) {
 	kind := regParen
 	if prev, ok := a.prevWord(i); ok {
 		switch {
@@ -749,6 +754,9 @@ func (a *analyzer) push(i int) {
 			prev == "exists" || prev == "using" || prev == "copy":
 			kind = regSub
 		}
+	}
+	if kind == regParen && head {
+		kind = regSub
 	}
 	verb := Unknown
 	if kind == regParen {

@@ -406,7 +406,8 @@ func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
 // GCP Marketplace read-only preset and the agents-cli template ship. These
 // statements got past it and changed the database (ENG-803): the EXPLAIN
 // forms ran their DELETE and were audited as an allowed select, and
-// SELECT ... INTO created its table the same way.
+// SELECT ... INTO created its table the same way, in parentheses as an
+// allowed unknown. ANALYSE ran, while the rule refuses ANALYZE as other.
 //
 // The plans stay allowed. EXPLAIN without ANALYZE runs nothing, and a quoted
 // FORMAT value is not the ANALYZE option.
@@ -433,11 +434,19 @@ func TestReadOnlyRuleRefusesWritesBehindExplainAndSelectInto(t *testing.T) {
 			`SELECT * INTO customers_copy FROM customers`, true, inspect.OpCreate},
 		{"SELECT INTO TEMP is refused as the create it is",
 			`SELECT * INTO TEMP t1 FROM customers`, true, inspect.OpCreate},
+		{"SELECT INTO in parentheses is refused as the create it is",
+			`(SELECT * INTO t6 FROM customers)`, true, inspect.OpCreate},
+		{"SELECT INTO in two pairs of parentheses is refused as the create it is",
+			`((SELECT * INTO t30 FROM customers))`, true, inspect.OpCreate},
+		{"ANALYSE, the British spelling, is refused as ANALYZE is",
+			`ANALYSE customers`, true, inspect.OpOther},
 
 		{"EXPLAIN without ANALYZE passes", `EXPLAIN DELETE FROM customers`, false, ""},
 		{"EXPLAIN with plan options passes", `EXPLAIN (VERBOSE, FORMAT JSON) DELETE FROM customers`, false, ""},
 		{"a quoted FORMAT value passes", `EXPLAIN (FORMAT "json") DELETE FROM customers`, false, ""},
 		{"a plain SELECT passes", `SELECT * FROM customers`, false, ""},
+		{"a SELECT in parentheses passes as a select", `(SELECT * FROM customers)`, false, inspect.OpSelect},
+		{"a UNION of parenthesized SELECTs passes", `(SELECT id FROM customers) UNION (SELECT id FROM orders)`, false, inspect.OpSelect},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stmts := inspectOne(t, tc.sql)
