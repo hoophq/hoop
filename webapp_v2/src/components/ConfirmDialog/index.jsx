@@ -30,7 +30,7 @@ export default function ConfirmDialog({
   onClose,
 }) {
   return (
-    <Modal opened={opened} onClose={() => !loading && onClose?.()} title={title} size="md">
+    <Modal opened={opened} onClose={() => !loading && onClose?.()} title={title} size={600}>
       <Stack>
         {children}
         <Group justify="flex-end" mt="xs">
