@@ -447,6 +447,14 @@ func TestReadOnlyRuleRefusesWritesBehindExplainAndSelectInto(t *testing.T) {
 		{"a plain SELECT passes", `SELECT * FROM customers`, false, ""},
 		{"a SELECT in parentheses passes as a select", `(SELECT * FROM customers)`, false, inspect.OpSelect},
 		{"a UNION of parenthesized SELECTs passes", `(SELECT id FROM customers) UNION (SELECT id FROM orders)`, false, inspect.OpSelect},
+		// A privilege table names its columns after the statements, and a
+		// CASE branch in parentheses reads them. They are expressions.
+		{"a parenthesized column called update in a CASE passes",
+			`SELECT name, CASE WHEN owner THEN true ELSE (update) END AS can_update FROM privs`, false, inspect.OpSelect},
+		{"a parenthesized column called delete in a CASE passes",
+			`SELECT name, CASE WHEN owner THEN (delete) ELSE false END AS can_delete FROM privs`, false, inspect.OpSelect},
+		{"a parenthesized expression of columns called insert and update passes",
+			`SELECT CASE WHEN owner THEN true ELSE (insert OR update) END FROM privs`, false, inspect.OpSelect},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stmts := inspectOne(t, tc.sql)

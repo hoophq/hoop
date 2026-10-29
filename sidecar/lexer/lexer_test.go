@@ -884,6 +884,32 @@ func TestObjectCreatingForms(t *testing.T) {
 	}
 }
 
+// A parenthesis opens a query only when a query keyword follows it. In a
+// CASE branch, a type's attribute list or a join group it is an expression,
+// and a column named after a statement is a column.
+func TestParenthesizedExpressionIsNotAStatement(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		want lexer.Verb
+	}{
+		{`SELECT CASE WHEN a THEN (drop) ELSE (truncate) END FROM privs`, lexer.Select},
+		{`SELECT CASE WHEN a THEN (alter) ELSE (merge) END FROM privs`, lexer.Select},
+		{`SELECT CASE WHEN a THEN ((update)) END FROM privs`, lexer.Select},
+		{`SELECT * FROM ((comment c JOIN orders o ON o.c = c.id))`, lexer.Select},
+		{`CREATE TYPE ty AS (update boolean)`, lexer.Create},
+	} {
+		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.ClickHouse, lexer.GoogleSQL, lexer.Spark} {
+			a := lexer.Analyze(tc.sql, d)
+			if a.Severity() != tc.want {
+				t.Errorf("%v: Severity = %v, want %v: effects %v: %s", d, a.Severity(), tc.want, a.Effects, tc.sql)
+			}
+			if got := writes(a); tc.want == lexer.Select && len(got) > 0 {
+				t.Errorf("%v: a read reported writes %v: %s", d, got, tc.sql)
+			}
+		}
+	}
+}
+
 // The backtick is MySQL's only out-of-the-box identifier quote, so a scanner
 // without it loses every relation a client bothered to quote — and clients
 // quote exactly the names that collide with keywords, which is the set most
