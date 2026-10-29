@@ -346,6 +346,13 @@ func TestExplainPlansButAnalyzeExecutes(t *testing.T) {
 		`EXPLAIN (ANALYZE 'off') DELETE FROM customers`,
 		`EXPLAIN (ANALYZE false, ANALYZE) DELETE FROM customers`,
 		`EXPLAIN (ANALYZE, "analyze" off) DELETE FROM customers`,
+		// PostgreSQL 16 integer literals that start with 0 and are 1.
+		`EXPLAIN (ANALYZE 0x1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 0X1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 0_1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 0b1) DELETE FROM customers`,
+		`EXPLAIN ("analyze" 0o1) DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, ANALYSE 0X1) DELETE FROM customers`,
 	} {
 		if a := lexer.Analyze(sql, lexer.Postgres); !slices.Contains(a.Effects, lexer.Delete) {
 			t.Errorf("EXPLAIN that executes reported no delete: %v: %s", a.Effects, sql)

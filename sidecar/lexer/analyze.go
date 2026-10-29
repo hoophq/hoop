@@ -609,12 +609,14 @@ func (a *analyzer) explainOptionName(i int) bool {
 
 // explainOptionOff reports whether the value of the EXPLAIN option named at i
 // turns it off: `EXPLAIN (ANALYZE false) DELETE` plans the DELETE and runs
-// nothing. PostgreSQL reads false, off and 0 as off. Any other value leaves
-// the option on, a string literal included, whose text the scanner does not
-// keep: that reading refuses a write. One ANALYZE that is on is enough, so a
-// second one that is off cannot hide it.
+// nothing. PostgreSQL reads false, off and 0 as off. The value must be the
+// whole value, ended by a comma or the closing parenthesis: the scanner reads
+// `0x1`, `0_1` or `0b1` as 0 and a word, and PostgreSQL 16 reads each as 1.
+// Any other value leaves the option on, a string literal included, whose text
+// the scanner does not keep: that reading refuses a write. One ANALYZE that is
+// on is enough, so a second one that is off cannot hide it.
 func (a *analyzer) explainOptionOff(i int) bool {
-	if !a.explainOptionName(i) || i+1 >= len(a.toks) {
+	if !a.explainOptionName(i) || !a.puncts(i+2, ",") && !a.puncts(i+2, ")") {
 		return false
 	}
 	v := a.toks[i+1]

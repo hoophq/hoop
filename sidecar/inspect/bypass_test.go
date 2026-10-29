@@ -442,6 +442,12 @@ func TestReadOnlyRuleRefusesWritesBehindExplainAndSelectInto(t *testing.T) {
 			`ANALYSE customers`, true, inspect.OpOther},
 		{"a second ANALYZE turned off does not hide the first",
 			`EXPLAIN (ANALYZE, ANALYZE false) DELETE FROM customers`, true, inspect.OpDelete},
+		{"ANALYZE 0x1, a hexadecimal 1, is refused as the delete it runs",
+			`EXPLAIN (ANALYZE 0x1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"ANALYZE 0_1, a 1 with a separator, is refused as the delete it runs",
+			`EXPLAIN (ANALYZE 0_1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"a quoted analyze option with an octal 1 is refused as the delete it runs",
+			`EXPLAIN ("analyze" 0o1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
 
 		{"EXPLAIN without ANALYZE passes", `EXPLAIN DELETE FROM customers`, false, ""},
 		{"EXPLAIN with plan options passes", `EXPLAIN (VERBOSE, FORMAT JSON) DELETE FROM customers`, false, ""},
