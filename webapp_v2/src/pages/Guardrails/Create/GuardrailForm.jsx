@@ -127,13 +127,11 @@ export default function GuardrailForm() {
   const activeStatus = useGuardrailsStore((s) => s.activeStatus)
   const fetchActive = useGuardrailsStore((s) => s.fetchActive)
   const clearActive = useGuardrailsStore((s) => s.clearActive)
-  const fetchAttributes = useGuardrailsStore((s) => s.fetchAttributes)
 
   useEffect(() => {
-    fetchAttributes()
     if (isEdit) fetchActive(id)
     return () => clearActive()
-  }, [isEdit, id, fetchAttributes, fetchActive, clearActive])
+  }, [isEdit, id, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />

@@ -44,6 +44,24 @@ function loadRules(stored) {
   return rules.length > 0 ? rules : [emptyRule()]
 }
 
+// The agent's entity groups: one per named entity rule. Column rules are the sidecar's.
+const agentEntities = (rules) =>
+  rules
+    .filter((r) => r.name.trim() !== '' && maskingAgentBlockers(r).length === 0)
+    .map((r) => ({ name: r.name.trim().toUpperCase(), entity_types: r.entities }))
+
+// Whether the stored agent entity groups are what the loaded list writes.
+// They differ when the API or Terraform set the two halves apart; saving
+// then rewrites the agent half, which the form says before it does.
+function agentHalfDiffersFrom(stored, rules) {
+  if (!stored?.sidecar_spec?.rules) return false
+  const have = (stored.supported_entity_types ?? []).map((e) =>
+    JSON.stringify({ name: e.name, entity_types: e.entity_types ?? e.values ?? [] }),
+  )
+  const want = agentEntities(rules).map((e) => JSON.stringify(e))
+  return have.length !== want.length || have.some((s, i) => s !== want[i])
+}
+
 function rulesToSpec(rules, sshBound) {
   const out = rules
     .filter((r) => r.name.trim() !== '')
@@ -78,6 +96,7 @@ export function useDataMaskingEditor({ rule: stored, id, isEdit, targets: seed =
   const [attributes, setAttributes] = useState(stored?.attributes ?? [])
   const [targets, setTargets] = useState(stored?.sidecar_targets ?? seed)
   const [rules, setRules] = useState(() => loadRules(stored))
+  const [agentHalfDiffers] = useState(() => agentHalfDiffersFrom(stored, rules))
   const [customEntities, setCustomEntities] = useState(
     () => stored?.custom_entity_types?.map((c) => ({ key: newKey(), name: c.name, regex: c.regex })) ?? [],
   )
@@ -117,24 +136,13 @@ export function useDataMaskingEditor({ rule: stored, id, isEdit, targets: seed =
       return false
     }
     const custom = customEntities.filter((c) => c.name.trim() !== '' && c.regex.trim() !== '')
-    if (custom.length > 0 && agentBlocked.length > 0) {
-      const n = rules.indexOf(agentBlocked[0]) + 1
-      showSnackbar({
-        level: 'error',
-        text: `Custom entity types run on agents only, and rule ${n} matches by column, so agents would run nothing from this rule. Remove one or the other.`,
-      })
-      return false
-    }
     const named = rules.filter((r) => r.name.trim() !== '')
     const payload = {
       name: name.trim(),
       description,
       connection_ids: connectionIds,
       attributes,
-      supported_entity_types:
-        agentBlocked.length > 0
-          ? []
-          : named.map((r) => ({ name: r.name.trim().toUpperCase(), entity_types: r.entities })),
+      supported_entity_types: agentEntities(named),
       custom_entity_types: custom.map((c) => ({
         name: normalizeEntityName(c.name),
         regex: c.regex.trim(),
@@ -187,6 +195,7 @@ export function useDataMaskingEditor({ rule: stored, id, isEdit, targets: seed =
     sshBound,
     agentBlocked,
     agentBound,
+    agentHalfDiffers,
     canSubmit,
     submitting,
     save,

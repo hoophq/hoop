@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Group, Paper, Stack, Text } from '@mantine/core'
 import { Info, Plus, Trash2 } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
@@ -6,7 +7,7 @@ import Button from '@/components/Button'
 import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import MultiSelect from '@/components/MultiSelect'
-import RuleSupportTag from '@/components/RuleSupportTag'
+import { TaggedLabel, TaggedOption } from '@/components/RuleSupportTag'
 import SectionRow from '@/components/SectionRow'
 import Select from '@/components/Select'
 import SidecarTargetPicker from '@/components/SidecarTargetPicker'
@@ -15,7 +16,7 @@ import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
-import { AGENT_GUARDRAIL_TYPES, agentRunsNothingMessage } from '@/utils/ruleSupport'
+import { AGENT_GUARDRAIL_TYPES, AGENT_HALF_DIFFERS, agentSkipsMessage } from '@/utils/ruleSupport'
 import { ENTITY_TYPES, GUARDRAIL_ACTIONS } from '@/pages/sidecarRuleVocabulary'
 import { useGuardrailsStore } from '../store'
 import { AGENT_DLP_REQUIRED } from '../helpers'
@@ -31,19 +32,11 @@ const directionsFor = (type) => [
   { value: 'output', label: 'Results (responses)', disabled: !AGENT_GUARDRAIL_TYPES.includes(type) },
 ]
 
-const taggedOption = (isTagged, side) =>
-  function Option({ option }) {
-    return (
-      <Group gap="xs" justify="space-between" w="100%" wrap="nowrap">
-        {option.label}
-        {isTagged(option.value) && <RuleSupportTag side={side} />}
-      </Group>
-    )
-  }
-
-const TypeOption = taggedOption((v) => !AGENT_GUARDRAIL_TYPES.includes(v), 'sidecar')
-const DirectionOption = taggedOption((v) => v === 'output', 'agent')
-const ActionOption = taggedOption((v) => v === 'defer', 'sidecar')
+const TypeOption = ({ option }) => (
+  <TaggedOption option={option} tagged={!AGENT_GUARDRAIL_TYPES.includes(option.value)} side="sidecar" />
+)
+const DirectionOption = ({ option }) => <TaggedOption option={option} tagged={option.value === 'output'} side="agent" />
+const ActionOption = ({ option }) => <TaggedOption option={option} tagged={option.value === 'defer'} side="sidecar" />
 
 function RuleEditor({ rule, index, onChange, onRemove, removable, types, operations }) {
   const type = types.find((t) => t.value === rule.type) ?? types[0]
@@ -202,11 +195,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
 
         {rule.type !== 'operation' && !output && (
           <MultiSelect
-            label={
-              <Group gap="xs" component="span">
-                Only for these operations (optional) <RuleSupportTag side="sidecar" />
-              </Group>
-            }
+            label={<TaggedLabel text="Only for these operations (optional)" side="sidecar" />}
             placeholder="Every operation"
             data={operations}
             value={rule.operations}
@@ -259,11 +248,17 @@ export default function GuardrailFields({ editor }) {
     operations,
     agentBlocked,
     agentBound,
+    agentHalfDiffers,
   } = editor
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   // Agents enforce guardrails through a DLP provider; sidecars need none.
   const hasRedactCredentials = useUserStore((s) => s.hasRedactCredentials)
   const attributeOptions = useGuardrailsStore((s) => s.attributes).map((a) => a.name)
+  const fetchAttributes = useGuardrailsStore((s) => s.fetchAttributes)
+  // The sidecar dialog renders these fields too, with no page around it to load the options.
+  useEffect(() => {
+    fetchAttributes()
+  }, [fetchAttributes])
 
   return (
     <Stack gap="xxlAlt">
@@ -336,9 +331,14 @@ export default function GuardrailFields({ editor }) {
         }
       >
         <Stack gap="md">
+          {agentHalfDiffers && (
+            <Alert color="amber" variant="light" icon={<Info size={16} />}>
+              {AGENT_HALF_DIFFERS.guardrail}
+            </Alert>
+          )}
           {agentBound && agentBlocked.length > 0 && (
             <Alert color="amber" variant="light" icon={<Info size={16} />}>
-              {agentRunsNothingMessage(
+              {agentSkipsMessage(
                 'guardrail',
                 agentBlocked.map((r) => rules.indexOf(r)),
               )}

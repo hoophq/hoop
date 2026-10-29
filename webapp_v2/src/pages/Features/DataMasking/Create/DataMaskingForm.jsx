@@ -130,13 +130,11 @@ export default function DataMaskingForm() {
   const activeStatus = useDataMaskingStore((s) => s.activeStatus)
   const fetchActive = useDataMaskingStore((s) => s.fetchActive)
   const clearActive = useDataMaskingStore((s) => s.clearActive)
-  const fetchAttributes = useDataMaskingStore((s) => s.fetchAttributes)
 
   useEffect(() => {
-    fetchAttributes()
     if (isEdit) fetchActive(id)
     return () => clearActive()
-  }, [isEdit, id, fetchAttributes, fetchActive, clearActive])
+  }, [isEdit, id, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />

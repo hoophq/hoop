@@ -65,10 +65,23 @@ function rulesToSpec(rules, typeFields) {
 
 const agentRule = (r) => ({
   type: r.type,
-  words: r.type === 'deny_words_list' ? r.words : [],
-  pattern_regex: r.type === 'pattern_match' ? r.pattern_regex : '',
-  message: r.message.trim(),
+  words: r.type === 'deny_words_list' ? (r.words ?? []) : [],
+  pattern_regex: r.type === 'pattern_match' ? (r.pattern_regex ?? '') : '',
+  message: (r.message ?? '').trim(),
 })
+
+const agentInput = (rules) =>
+  rules.filter((r) => r.direction === 'input' && guardrailAgentBlockers(r).length === 0).map(agentRule)
+
+// Whether the stored agent statement rules are what the loaded list writes.
+// They differ when the API or Terraform set the two halves apart; saving
+// then rewrites the agent half, which the form says before it does.
+function agentHalfDiffersFrom(guardrail, rules) {
+  if (!guardrail?.sidecar_spec?.rules) return false
+  const stored = (guardrail.input?.rules ?? []).map((r) => JSON.stringify(agentRule(r)))
+  const derived = agentInput(rules).map((r) => JSON.stringify(r))
+  return stored.length !== derived.length || stored.some((s, i) => s !== derived[i])
+}
 
 // Shared by the rule page and the sidecar dialog. `targets` seeds a new rule's listeners.
 export function useGuardrailEditor({ guardrail, id, isEdit, targets: seed = [], onSaved, onDeleted }) {
@@ -84,6 +97,7 @@ export function useGuardrailEditor({ guardrail, id, isEdit, targets: seed = [], 
   const [attributes, setAttributes] = useState(guardrail?.attributes ?? [])
   const [targets, setTargets] = useState(guardrail?.sidecar_targets ?? seed)
   const [rules, setRules] = useState(() => loadRules(guardrail))
+  const [agentHalfDiffers] = useState(() => agentHalfDiffersFrom(guardrail, rules))
 
   // A sidecar refuses at startup a rule type its lane cannot read, so the
   // type list narrows to what every bound lane accepts.
@@ -99,7 +113,7 @@ export function useGuardrailEditor({ guardrail, id, isEdit, targets: seed = [], 
   const operations = useMemo(() => operationsFor(protocols[0]), [protocols])
   const typeFields = (t) => types.find((x) => x.value === t)?.fields ?? []
 
-  // Statement rules the agent cannot run. One of them empties the agent's input half.
+  // Statement rules the agent cannot run. The agent half carries the others.
   const agentBlocked = useMemo(
     () => rules.filter((r) => r.direction === 'input' && guardrailAgentBlockers(r).length > 0),
     [rules],
@@ -130,14 +144,6 @@ export function useGuardrailEditor({ guardrail, id, isEdit, targets: seed = [], 
       return false
     }
     const outputRules = named.filter((r) => r.direction === 'output')
-    if (outputRules.length > 0 && agentBlocked.length > 0) {
-      const n = rules.indexOf(agentBlocked[0]) + 1
-      showSnackbar({
-        level: 'error',
-        text: `Result rules run on agents only, and rule ${n} has a sidecar-only option, so agents would run nothing from this rule. Remove one or the other.`,
-      })
-      return false
-    }
     const inputRules = named.filter((r) => r.direction === 'input')
     const spec = rulesToSpec(inputRules, typeFields)
     const payload = {
@@ -146,7 +152,7 @@ export function useGuardrailEditor({ guardrail, id, isEdit, targets: seed = [], 
       description,
       connection_ids: connectionIds,
       attributes,
-      input: { rules: agentBlocked.length > 0 ? [] : inputRules.map(agentRule) },
+      input: { rules: agentInput(inputRules) },
       output: { rules: outputRules.map(agentRule) },
       sidecar_spec: spec.rules.length > 0 ? spec : null,
       sidecar_targets: targets,
@@ -190,6 +196,7 @@ export function useGuardrailEditor({ guardrail, id, isEdit, targets: seed = [], 
     operations,
     agentBlocked,
     agentBound,
+    agentHalfDiffers,
     canSubmit,
     submitting,
     save,

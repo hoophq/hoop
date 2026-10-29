@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Group, Paper, Stack, Text } from '@mantine/core'
 import { Info, Plus, Trash2 } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
@@ -7,7 +8,7 @@ import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
-import RuleSupportTag from '@/components/RuleSupportTag'
+import RuleSupportTag, { TaggedLabel, TaggedOption } from '@/components/RuleSupportTag'
 import SectionRow from '@/components/SectionRow'
 import Select from '@/components/Select'
 import SidecarTargetPicker from '@/components/SidecarTargetPicker'
@@ -15,8 +16,8 @@ import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
-import { agentRunsNothingMessage } from '@/utils/ruleSupport'
-import { SSH_ONLY_STRATEGY, maskPreview } from '@/pages/sidecarRuleVocabulary'
+import { AGENT_HALF_DIFFERS, agentSkipsMessage } from '@/utils/ruleSupport'
+import { ENTITY_TYPES, SSH_ONLY_STRATEGY, maskPreview } from '@/pages/sidecarRuleVocabulary'
 import { useDataMaskingStore } from '../store'
 import {
   ENTITY_OPTIONS,
@@ -41,14 +42,9 @@ const MATCHES = [
   { value: 'columns', label: 'Result-set columns' },
 ]
 
-function MatchOption({ option }) {
-  return (
-    <Group gap="xs" justify="space-between" w="100%" wrap="nowrap">
-      {option.label}
-      {option.value === 'columns' && <RuleSupportTag side="sidecar" />}
-    </Group>
-  )
-}
+const MatchOption = ({ option }) => <TaggedOption option={option} tagged={option.value === 'columns'} side="sidecar" />
+// The sidecar's detector loads ENTITY_TYPES; the rest is the agent's DLP provider.
+const EntityOption = ({ option }) => <TaggedOption option={option} tagged={!ENTITY_TYPES.includes(option.value)} side="agent" />
 
 function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, sshBound, maxEntities }) {
   const set = (patch) => onChange({ ...rule, ...patch })
@@ -91,13 +87,14 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
 
         {rule.match === 'entities' ? (
           <>
-            {/* A quick-fill of the entity list; edited afterwards, it reads empty again. */}
+            {/* A quick-fill of the entity list; edited afterwards, it reads empty again.
+                The free plan takes one entity per rule, so the fill is clamped to it. */}
             <Select
               label="Preset (optional)"
               placeholder="Fill the entity types from a preset"
               data={PRESET_OPTIONS}
               value={presetFor(rule.entities)}
-              onChange={(k) => k && set({ entities: getPresetValues(k) })}
+              onChange={(k) => k && set({ entities: getPresetValues(k).slice(0, maxEntities ?? Infinity) })}
               allowDeselect={false}
             />
             <MultiSelect
@@ -106,6 +103,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
               data={ENTITY_OPTIONS}
               value={rule.entities}
               onChange={(v) => set({ entities: v })}
+              renderOption={EntityOption}
               maxValues={maxEntities}
               searchable
               clearable
@@ -118,11 +116,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
         {/* Top-aligned: the Strategy hint sits under its input. */}
         <Group align="flex-start" gap="sm" wrap="nowrap">
           <Select
-            label={
-              <Group gap="xs" component="span">
-                Strategy <RuleSupportTag side="sidecar" />
-              </Group>
-            }
+            label={<TaggedLabel text="Strategy" side="sidecar" />}
             data={strategies.map((s) => ({ value: s.value, label: s.label }))}
             value={value}
             onChange={(v) => set({ strategy: v ?? 'redact' })}
@@ -213,11 +207,17 @@ export default function DataMaskingFields({ editor }) {
     sshBound,
     agentBlocked,
     agentBound,
+    agentHalfDiffers,
   } = editor
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   const redactProvider = useUserStore((s) => s.redactProvider)
   const agentReady = RULE_DRIVEN_PROVIDERS.includes(redactProvider)
   const attributeOptions = useDataMaskingStore((s) => s.attributes).map((a) => a.name)
+  const fetchAttributes = useDataMaskingStore((s) => s.fetchAttributes)
+  // The sidecar dialog renders these fields too, with no page around it to load the options.
+  useEffect(() => {
+    fetchAttributes()
+  }, [fetchAttributes])
 
   return (
     <Stack gap="xxlAlt">
@@ -241,11 +241,7 @@ export default function DataMaskingFields({ editor }) {
             onChange={(e) => setDescription(e.currentTarget.value)}
           />
           <TextInput
-            label={
-              <Group gap="xs" component="span">
-                Analyzer confidence threshold (Optional) <RuleSupportTag side="agent" />
-              </Group>
-            }
+            label={<TaggedLabel text="Analyzer confidence threshold (Optional)" side="agent" />}
             type="number"
             min={1}
             max={100}
@@ -306,9 +302,14 @@ export default function DataMaskingFields({ editor }) {
         }
       >
         <Stack gap="md">
+          {agentHalfDiffers && (
+            <Alert color="amber" variant="light" icon={<Info size={16} />}>
+              {AGENT_HALF_DIFFERS.datamasking}
+            </Alert>
+          )}
           {agentBound && agentBlocked.length > 0 && (
             <Alert color="amber" variant="light" icon={<Info size={16} />}>
-              {agentRunsNothingMessage(
+              {agentSkipsMessage(
                 'datamasking',
                 agentBlocked.map((r) => rules.indexOf(r)),
               )}
