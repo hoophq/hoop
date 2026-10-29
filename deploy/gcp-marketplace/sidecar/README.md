@@ -43,7 +43,8 @@ calls this one at a release tag, in an empty directory:
 
 ```hcl
 # main.tf. RELEASE is a hoop release, for example 1.281.0. Terraform takes
-# no variable in source, so the release is written out each time.
+# no variable in source, so the release is written out each time. The // in
+# source ends the repository and starts the module's folder in it.
 module "hoop_sidecar" {
   source = "github.com/hoophq/hoop//deploy/gcp-marketplace/sidecar?ref=RELEASE"
 
