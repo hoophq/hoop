@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Group, Image, Stack, Text, Title } from '@mantine/core'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import Button from '@/components/Button'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
@@ -178,7 +178,7 @@ export default function ConfigureResource() {
 
         <FormFooter
           left={
-            <Button variant="default" leftSection={<ArrowLeft size={16} />} onClick={() => navigate(-1)}>
+            <Button variant="default" onClick={() => navigate(-1)}>
               Back
             </Button>
           }
