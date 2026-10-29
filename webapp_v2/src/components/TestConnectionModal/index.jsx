@@ -68,7 +68,7 @@ export default function TestConnectionModal({
       onClose={onClose}
       withCloseButton={!testing}
       title={<Title order={3} fw={700} c="gray.9">Connectivity Check</Title>}
-      size="md"
+      size={500}
       centered
     >
       <Stack gap="lg">
