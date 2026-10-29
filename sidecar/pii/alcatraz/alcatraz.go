@@ -247,7 +247,7 @@ func NewDetector(o Options) (*Detector, error) {
 	if o.NER != nil {
 		var err error
 		if nlp, err = loadNER(*o.NER, lang); err != nil {
-			return nil, fmt.Errorf("alcatraz: ner: %w", err)
+			return nil, fmt.Errorf("alcatraz: %w", err)
 		}
 	}
 	eng := newEngine(lang, nlp)

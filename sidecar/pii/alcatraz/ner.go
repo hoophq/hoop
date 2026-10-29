@@ -53,6 +53,10 @@ func NEREntities() []string {
 // daemon rebuilds the Detector on a reload and a running connection may
 // still hold the previous one, so a changed block loads a second engine
 // beside the first until restart.
+//
+// The go backend is the portability floor: about 100 ms per masked value
+// on a laptop CPU, which a result set of thousands of names turns into
+// minutes. Serve those from a -tags ORT build.
 type NER struct {
 	// ModelsDir is the parent directory holding one subdirectory per model
 	// id, what "alcatraz models download --dest <dir>" writes. The model
@@ -160,11 +164,12 @@ var nerEngines = struct {
 	byConfig map[NER]nlpEngine
 }{byConfig: map[NER]nlpEngine{}}
 
-// loadNER returns the engine for n, loading it on first use.
+// loadNER returns the engine for n, loading it on first use. Errors from
+// resolve carry the "ner:" prefix here; ner.New's already do.
 func loadNER(n NER, lang string) (nlpEngine, error) {
 	n, err := n.resolve()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ner: %w", err)
 	}
 	nerEngines.Lock()
 	defer nerEngines.Unlock()

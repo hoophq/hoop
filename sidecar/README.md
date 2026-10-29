@@ -4723,6 +4723,10 @@ Two backends run the same model. `ort` is ONNX Runtime, loaded from
 `ort_library`, and exists only in a cgo `-tags ORT` build: the Linux `hoop`
 and the `hoop-inspect` ica build. The darwin and windows CLIs are `go` only,
 the pure-Go backend; `backend: ort` on a build without it is a startup error.
+`go` is the portability floor, not a production path: measured at ~100 ms
+per masked value on an Apple M-series CPU (2000 rows of one column took
+200 s through a lane), where alcatraz puts `ort` at 5-10x faster. Serve a
+result set of more than a few hundred names from an `ort` build.
 
 The `hoophq/hoopsidecar:<version>-alcatraz` and `<version>-distroless-alcatraz`
 images carry the model at `/opt/alcatraz/models` and ONNX Runtime under

@@ -204,6 +204,9 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if build == nil {
 		return cfg, nil, nil
 	}
+	// The detector may load a model and say so; the process logger is
+	// installed first so that line has the same shape as every other.
+	newLogger(cfg.LogLevel)
 	det, err := build(cfg.PII)
 	if err != nil {
 		_ = cfg.closeCodecPlugins()

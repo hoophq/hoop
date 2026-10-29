@@ -294,6 +294,11 @@ func TestNERRealModel(t *testing.T) {
 	if dir == "" {
 		t.Skip("HOOP_ALCATRAZ_MODELS_DIR is unset")
 	}
+	if raceEnabled && !ORTCompiled {
+		// gomlx/compute v0.1.2's pure-Go matmul fails checkptr under the race
+		// detector. Drop this skip when the dependency moves past it.
+		t.Skip("the go backend trips checkptr under -race (gomlx/compute v0.1.2)")
+	}
 	n := &NER{ModelsDir: dir, Backend: ner.BackendGo}
 	if ORTCompiled {
 		n.Backend = ner.BackendORT
