@@ -22,7 +22,7 @@ const METHODS = [
     id: 'create',
     icon: CirclePlus,
     title: 'Create and deploy a new Sidecar',
-    description: 'Generate the config and deploy a new sidecar with Kubernetes, Docker Compose or the CLI.',
+    description: 'Generate the config and deploy a new sidecar with Kubernetes, Docker or the CLI.',
     action: 'Create',
     path: CREATE_PATH,
   },

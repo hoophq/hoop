@@ -27,7 +27,7 @@ const COPY = {
   },
   create: {
     title: 'Create and deploy a new Sidecar',
-    subtitle: 'Deploy a new sidecar with Kubernetes, Docker Compose or the CLI, then point it at Hoop.',
+    subtitle: 'Deploy a new sidecar with Kubernetes, Docker or the CLI, then point it at Hoop.',
     steps: ['Deploy', 'Configure', 'Overview'],
   },
 }

@@ -32,7 +32,8 @@ function NumberedBlock({ n, title, children }) {
 /**
  * A block whose command has more than one spelling. The tabs are the sources
  * the documentation lists for that one setting, in its precedence order, so a
- * reader who knows the docs finds the same choices here.
+ * reader who knows the docs finds the same choices here. A source is one
+ * `code`, or a `node` when its spelling takes more than one block.
  */
 function SourceTabs({ sources }) {
   const [tab, setTab] = useState(sources[0].value)
@@ -47,7 +48,7 @@ function SourceTabs({ sources }) {
       </Tabs.List>
       {sources.map((s) => (
         <Tabs.Panel key={s.value} value={s.value} pt="sm">
-          <CodeSnippet code={s.code} variant={s.variant ?? 'black'} />
+          {s.node ?? <CodeSnippet code={s.code} variant={s.variant ?? 'black'} />}
         </Tabs.Panel>
       ))}
     </Tabs>
@@ -65,21 +66,21 @@ const DEPLOY_TARGETS = [
     description: { create: 'Run it as a container in your cluster.', connect: 'It runs as a container in your cluster.' },
   },
   {
-    value: 'compose',
+    value: 'docker',
     icon: Container,
-    title: 'Docker Compose',
+    title: 'Docker',
     description: {
-      create: 'Run it as a service with Docker Compose.',
-      connect: 'It runs as a service with Docker Compose.',
+      create: 'Run it as a container with docker run or Docker Compose.',
+      connect: 'It runs as a container with docker run or Docker Compose.',
     },
   },
   {
     value: 'cli',
     icon: SquareTerminal,
-    title: 'CLI / Binary',
+    title: 'CLI / Bare metal',
     description: {
-      create: 'Run it on a VM or your machine with the hoop CLI.',
-      connect: 'It runs on a VM or your machine with the hoop CLI.',
+      create: 'Run it on a server, a VM or your machine with the hoop CLI.',
+      connect: 'It runs on a server, a VM or your machine with the hoop CLI.',
     },
   },
 ]
@@ -105,6 +106,16 @@ const composeConfig = (image, url, token) => `services:
       - "19000:19000"    # admin only
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]`
+
+// docker run takes the same two variables and config mount as the compose
+// service (install/container-images.mdx). The name is how a later restart
+// finds the container again.
+const dockerRun = (image, url, token, name = 'hoop-sidecar') => `docker run -d --name ${name} \\
+  -e HOOP_CONTROL_PLANE_URL=${url} \\
+  -e HOOP_SIDECAR_TOKEN=${token} \\
+  -v "$PWD/config.yaml:/etc/hoop-inspect/config.yaml:ro" \\
+  -p 19000:19000 \\
+  ${image}`
 
 // The token goes in a Secret rather than the manifest: a Deployment is the
 // thing most likely to sit in git.
@@ -181,7 +192,7 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
 
   // The create flow branches on the deploy target. Kubernetes keeps the full
   // manifest in the docs and shows only the two settings the sidecar needs;
-  // Docker Compose and the CLI show the whole flow on screen.
+  // Docker and the CLI show the whole flow on screen.
   const targetBlocks = {
     k8s: [
       tokenBlock,
@@ -214,7 +225,7 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
         ),
       },
     ],
-    compose: [
+    docker: [
       {
         key: 'install',
         title: 'Pull the image',
@@ -222,20 +233,37 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
           <>
             <CodeSnippet code={`docker pull ${imageRef}`} variant="black" />
             <Text size="xs" c="dimmed">
-              The dedicated sidecar image. docker compose up pulls it too.
+              The dedicated sidecar image. docker run and docker compose up pull it too.
             </Text>
           </>
         ),
       },
       tokenBlock,
       {
-        key: 'config',
-        title: 'Configure the service',
+        key: 'run',
+        title: 'Run it',
         node: (
           <>
-            <CodeSnippet code={composeConfig(imageRef, controlPlaneUrl, token)} />
+            <SourceTabs
+              sources={[
+                { value: 'run', label: 'docker run', code: dockerRun(imageRef, controlPlaneUrl, token) },
+                {
+                  value: 'compose',
+                  label: 'Docker Compose',
+                  node: (
+                    <Stack gap="sm">
+                      <CodeSnippet code={composeConfig(imageRef, controlPlaneUrl, token)} />
+                      <Text size="xs" c="dimmed">
+                        Save this as compose.yaml next to your config.yaml, then start it:
+                      </Text>
+                      <CodeSnippet code="docker compose up -d" />
+                    </Stack>
+                  ),
+                },
+              ]}
+            />
             <Text size="xs" c="dimmed">
-              {'Save this as compose.yaml next to your config.yaml. '}
+              {'Run it from the folder that holds your config.yaml. '}
               <Anchor href={docsUrl.sidecar.getStarted} target="_blank" rel="noopener noreferrer" size="xs">
                 Running the Sidecar
               </Anchor>
@@ -243,11 +271,6 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
             </Text>
           </>
         ),
-      },
-      {
-        key: 'run',
-        title: 'Run it',
-        node: <CodeSnippet code="docker compose up -d" variant="black" />,
       },
     ],
     cli: [
@@ -336,29 +359,48 @@ export default function ConnectStep({ mode, sidecar, token, controlPlaneUrl, ima
         ),
       },
     ],
-    compose: [
+    // A container keeps the variables it started with, so both spellings
+    // create it again: docker run by hand, compose by noticing the change.
+    docker: [
       tokenBlock,
       {
-        key: 'config',
-        title: 'Point the service at Hoop',
-        node: (
-          <>
-            <CodeSnippet code={composeConnectEnv(controlPlaneUrl, token)} />
-            <Text size="xs" c="dimmed">
-              Add the two variables to the service in your compose.yaml. Keep its config file mount.
-            </Text>
-          </>
-        ),
-      },
-      {
         key: 'start',
-        title: 'Restart it',
+        title: 'Point it at Hoop and restart it',
         node: (
           <>
-            <CodeSnippet code="docker compose up -d" />
-            <Text size="xs" c="dimmed">
-              Compose recreates the service with the new variables.
-            </Text>
+            <SourceTabs
+              sources={[
+                {
+                  value: 'run',
+                  label: 'docker run',
+                  node: (
+                    <Stack gap="sm">
+                      <CodeSnippet
+                        code={`docker rm -f <your-sidecar-container>\n${dockerRun(imageRef, controlPlaneUrl, token, '<your-sidecar-container>')}`}
+                      />
+                      <Text size="xs" c="dimmed">
+                        A container keeps the variables it started with, so this creates it again. Keep the mounts
+                        and ports it runs with now.
+                      </Text>
+                    </Stack>
+                  ),
+                },
+                {
+                  value: 'compose',
+                  label: 'Docker Compose',
+                  node: (
+                    <Stack gap="sm">
+                      <CodeSnippet code={composeConnectEnv(controlPlaneUrl, token)} />
+                      <Text size="xs" c="dimmed">
+                        Add the two variables to the service in your compose.yaml. Keep its config file mount, then
+                        restart it:
+                      </Text>
+                      <CodeSnippet code="docker compose up -d" />
+                    </Stack>
+                  ),
+                },
+              ]}
+            />
             {keepsFileNote}
           </>
         ),
