@@ -402,6 +402,61 @@ func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
 	}
 }
 
+// A read-only lane is one operation rule naming every write, the rule the
+// GCP Marketplace read-only preset and the agents-cli template ship. These
+// statements got past it and changed the database (ENG-803): the EXPLAIN
+// forms ran their DELETE and were audited as an allowed select, and
+// SELECT ... INTO created its table the same way.
+//
+// The plans stay allowed. EXPLAIN without ANALYZE runs nothing, and a quoted
+// FORMAT value is not the ANALYZE option.
+func TestReadOnlyRuleRefusesWritesBehindExplainAndSelectInto(t *testing.T) {
+	readOnly := rulesFor(t, "read-only",
+		inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete, inspect.OpCreate,
+		inspect.OpDrop, inspect.OpAlter, inspect.OpTruncate, inspect.OpGrant,
+		inspect.OpRevoke, inspect.OpCall, inspect.OpOther)
+
+	for _, tc := range []struct {
+		name, sql  string
+		wantDenied bool
+		wantOp     inspect.Operation
+	}{
+		{"EXPLAIN ANALYSE, the British spelling, is refused as the delete it runs",
+			`EXPLAIN ANALYSE DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"EXPLAIN (ANALYSE) is refused as the delete it runs",
+			`EXPLAIN (ANALYSE) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"a quoted analyze option is refused as the delete it runs",
+			`EXPLAIN ("analyze") DELETE FROM customers WHERE id = 3`, true, inspect.OpDelete},
+		{"a quoted analyze option after another option is refused as the delete it runs",
+			`EXPLAIN (FORMAT JSON, "analyze") DELETE FROM customers WHERE id = 4`, true, inspect.OpDelete},
+		{"SELECT INTO is refused as the create it is",
+			`SELECT * INTO customers_copy FROM customers`, true, inspect.OpCreate},
+		{"SELECT INTO TEMP is refused as the create it is",
+			`SELECT * INTO TEMP t1 FROM customers`, true, inspect.OpCreate},
+
+		{"EXPLAIN without ANALYZE passes", `EXPLAIN DELETE FROM customers`, false, ""},
+		{"EXPLAIN with plan options passes", `EXPLAIN (VERBOSE, FORMAT JSON) DELETE FROM customers`, false, ""},
+		{"a quoted FORMAT value passes", `EXPLAIN (FORMAT "json") DELETE FROM customers`, false, ""},
+		{"a plain SELECT passes", `SELECT * FROM customers`, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stmts := inspectOne(t, tc.sql)
+			if len(stmts) == 0 {
+				t.Fatalf("no statements for %q", tc.sql)
+			}
+			for _, s := range stmts {
+				if denied := readOnly.Evaluate(s).Denied; denied != tc.wantDenied {
+					t.Errorf("denied = %v, want %v: operation %q, effects %v, relations %v",
+						denied, tc.wantDenied, s.Operation, s.Effects, s.Relations)
+				}
+				if tc.wantOp != "" && s.Operation != tc.wantOp {
+					t.Errorf("Operation = %q, want %q", s.Operation, tc.wantOp)
+				}
+			}
+		})
+	}
+}
+
 // rulesFor builds a single MatchOperation deny rule.
 func rulesFor(t *testing.T, name string, ops ...inspect.Operation) *policy.Rules {
 	t.Helper()
