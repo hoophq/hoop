@@ -99,6 +99,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/features/data-masking/edit/:id` | React | Done |
 | `/roles/:connectionName/configure` | React | Done |
 | `/resources` | React | Done (ENG-911). The CLJS `:resources` panel stays until ENG-922, so a rollback reverts the route |
+| `/resources/configure/:resourceName` | React | Done (ENG-912). The CLJS `:configure-resource` panel stays until ENG-922 |
 | `/rulepacks` | React | Done (gated by `experimental.rulepacks`) |
 | `/rulepacks/:id` | React | Done (gated by `experimental.rulepacks`) |
 | `/features/event-routing` | React | Done |
@@ -150,7 +151,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 /onboarding/*                 first-run setup (except /onboarding/protection-rules → React)
 /sessions, /sessions/filtered, /sessions/:id
 /workflows/:correlation-id
-/resources/new, /resources/configure/:id, /resources/:id/add-role
+/resources/new, /resources/:id/add-role
 /resource-catalog
 /provisioning
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
@@ -171,9 +172,9 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `/features/runbooks/edit/:connection-id`.
 
 Shadowed bidi entries (route + panel both alive but React matching first):
-none. ENG-910 deleted the last shadowed panel, `:configure-role`, with
-`resources/configure_role/`. Its bidi entry stays because `/resources` and the
-configure-resource roles tab navigate to it.
+`:resources` and `:configure-resource`, kept until ENG-922. ENG-910 deleted
+the `:configure-role` panel with `resources/configure_role/`; its bidi entry
+stays because those two shadowed panels still name it.
 
 `/guardrails/*` lost its CLJS pages in EVL-147; `/features/access-control/*`
 and `/features/access-request/*` lost theirs in EVL-184;

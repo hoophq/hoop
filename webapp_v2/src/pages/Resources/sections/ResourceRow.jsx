@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Group, Image, Text } from '@mantine/core'
 import Button from '@/components/Button'
-import classes from './List.module.css'
+import classes from '@/pages/Resources/List.module.css'
 
 export default function ResourceRow({ resource, iconSrc, iconAlt, isAdmin }) {
   const navigate = useNavigate()

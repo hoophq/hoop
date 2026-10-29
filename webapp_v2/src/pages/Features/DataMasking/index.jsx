@@ -223,7 +223,7 @@ export default function DataMasking() {
                 navigate(`/features/data-masking/edit/${id}`)
               }
               onConfigureConnection={(name) =>
-                navigate(`/resources/configure/${encodeURIComponent(name)}`)
+                navigate(`/roles/${encodeURIComponent(name)}/configure`)
               }
             />
           ))}
