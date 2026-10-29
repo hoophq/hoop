@@ -81,11 +81,16 @@ func TestMCPGatewayListenerValidation(t *testing.T) {
 		{`{"name":"m","protocol":"postgres","listen":"127.0.0.1:1","upstream":"h:5432","mcp_gateway":{}}`, "only valid on an mcp listener"},
 		{`{` + ok + `,"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}}`, "RD-373"},
 		{`{` + ok + `,"analyzer":{"trigger":{"operations":["delete"]}}}`, "RD-372"},
+		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1","upstream":"https://h/mcp"}`, "host:port"},
+		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"http://h/mcp"}`, "loopback only"},
 	}
 	for _, tc := range cases {
 		if p := mcpProblems(t, tc.listener); !strings.Contains(p, tc.want) {
 			t.Errorf("%s\n  problems %q lack %q", tc.listener, p, tc.want)
 		}
+	}
+	if p := mcpProblems(t, `{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"http://127.0.0.1:18900/mcp"}`); p != "" {
+		t.Fatalf("plain http to loopback refused: %s", p)
 	}
 	if p := mcpProblems(t, `{`+ok+`,"identity_header":"x-user"}`); p != "" {
 		t.Fatalf("identity_header refused on an mcp lane: %s", p)
@@ -195,5 +200,24 @@ func TestMCPLaneRuleSwapEndsSessions(t *testing.T) {
 	rules.swapLane(ln, func() { drained = true })
 	if !drained || len(srv.ended) != 1 || srv.ended[0] != "rules reloaded" {
 		t.Fatalf("drained=%v ended=%v", drained, srv.ended)
+	}
+}
+
+// Mask rules inherited from the top level reach an mcp lane, so one file
+// serves every lane and the ADR-0034 example validates; Validate notes that
+// they do not apply to this lane until RD-373.
+func TestMCPGatewayNotesInheritedMaskRules(t *testing.T) {
+	cfg, err := LoadConfigBytes([]byte(`{"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]},"listeners":[` + mcpLane + `]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	build, _ := fakeMCPEngine()
+	withMCPGatewayEngine(t, build)
+	info, err := Validate(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if notes := strings.Join(info[0].Notes, "\n"); !strings.Contains(notes, "RD-373") {
+		t.Fatalf("notes lack the mask note: %s", notes)
 	}
 }

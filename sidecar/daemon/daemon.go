@@ -692,6 +692,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 				return nil, err
 			}
 			notes = append(notes, srv.Notes()...)
+			if _, _, mc := cfg.resolve(ln.cfg); mc.hasRules() {
+				notes = append(notes, "mcp: mask rules reach this lane from the top-level block and do not apply to it until RD-373")
+			}
 			_ = srv.Close()
 		}
 		out = append(out, LaneInfo{
@@ -1509,7 +1512,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if plugin != nil {
 			pluginFactory = factory
 		}
-		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		// An mcp lane masks nothing until RD-373: inherited rules are accepted and
+		// Validate notes them, so one mask block can serve every lane.
+		var masker gate.Masker
+		if !isMCPGateway(lc) {
+			masker, err = buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		}
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue

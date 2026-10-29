@@ -3380,13 +3380,16 @@ change to the lane itself (`upstream`, `listen`, the `mcp_gateway` block)
 is restart-required, as for every listener fact.
 
 What the lane refuses at validate, and why: a `listen` off loopback (no
-caller check yet, RD-462); `network: unix` (MCP clients speak TCP);
-`max_conns` (MCP is requests, not connections); `downstream_tls` (RD-462);
-`mask` rules (RD-373) and an `analyzer` block (RD-372) until those land; a
+caller check yet, RD-462) or without a port; `network: unix` (MCP clients
+speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
+requests, not connections); `downstream_tls` (RD-462); a `mask` block on
+the lane (RD-373) and an `analyzer` block (RD-372) until those land; a
 pasted mcpproxy key the block does not map, such as `approval_tools`,
-`command` or `headers`, as `unknown field`. `identity_header` is accepted
-and names the caller, only behind a proxy that sets it. Sessions live in
-memory: run one replica, or pin `Mcp-Session-Id` to one.
+`command` or `headers`, as `unknown field`. Mask rules inherited from the
+top-level block are accepted, so one file serves every lane, and `-validate`
+notes that they do not apply to this lane until RD-373. `identity_header`
+is accepted and names the caller, only behind a proxy that sets it.
+Sessions live in memory: run one replica, or pin `Mcp-Session-Id` to one.
 
 ### Postgres: trace ids from the startup packet
 

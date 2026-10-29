@@ -369,7 +369,7 @@ type ListenerConfig struct {
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
 	// psql; leaving it unset is the safe default.
-	IdleTimeoutSec int `json:"idle_timeout_sec,omitempty" label:"Idle timeout (seconds)" help:"0 disables it. A short value breaks interactive sessions."`
+	IdleTimeoutSec int `json:"idle_timeout_sec,omitempty" label:"Idle timeout (seconds)" help:"0 disables it (an mcp listener keeps the 30-minute default). A short value breaks interactive sessions."`
 
 	// MaxConns bounds concurrency. Zero is unlimited.
 	MaxConns int `json:"max_conns,omitempty" label:"Max connections" help:"0 is unlimited." protocols:"!mcp"`
@@ -1632,8 +1632,8 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	}
 	if isMCPGateway(lc) {
 		problems = append(problems, validateMCPGatewayLane(lc, name)...)
-		if mc.hasRules() {
-			problems = append(problems, name+": mask rules do not apply to an mcp listener yet (RD-373). Write mask: {rules: []} on this listener to opt out of inherited rules")
+		if lc.Mask != nil && lc.Mask.hasRules() {
+			problems = append(problems, name+": a mask block on an mcp listener does not apply yet (RD-373); mask rules inherited from the top level are accepted and noted")
 		}
 		if lc.Analyzer != nil {
 			problems = append(problems, name+": analyzer does not apply to an mcp listener yet (RD-372)")

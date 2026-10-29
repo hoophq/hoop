@@ -62,10 +62,14 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 	u, err := url.Parse(lc.Upstream)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		problems = append(problems, name+": an mcp listener needs upstream as an http(s) URL of the MCP server, such as https://mcp.example.com/mcp")
+	} else if u.Scheme == "http" && !loopbackHost(u.Hostname()) {
+		problems = append(problems, name+": an mcp upstream is an https URL; plain http is accepted on loopback only")
 	}
 	if lc.Network == "unix" {
 		problems = append(problems, name+": an mcp listener listens on tcp; MCP clients do not connect to unix sockets")
-	} else if host, _, err := net.SplitHostPort(lc.Listen); err == nil && !loopbackHost(host) {
+	} else if host, _, err := net.SplitHostPort(lc.Listen); err != nil {
+		problems = append(problems, name+": an mcp listener needs listen as host:port")
+	} else if !loopbackHost(host) {
 		problems = append(problems, name+": an mcp listener may bind only a loopback address until it authenticates its callers (I-18 R6)")
 	}
 	if lc.MaxConns > 0 {

@@ -239,7 +239,7 @@
       "key": "idle_timeout_sec",
       "type": "integer",
       "label": "Idle timeout (seconds)",
-      "help": "0 disables it. A short value breaks interactive sessions."
+      "help": "0 disables it (an mcp listener keeps the 30-minute default). A short value breaks interactive sessions."
     },
     {
       "key": "max_conns",
