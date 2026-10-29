@@ -355,6 +355,8 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
   not about the wire (JSON paths, SQL classification, guardrail matching) goes
   in a protocol-neutral package, with a thin seam per protocol. The design
   note and the PR say which pieces are reusable and which are protocol-bound.
+ - **sidecar protocol-specific parsers**: if the code must be added to libhoop, the sidecar parsers must live under `libhoop/v2/*`.
+ -  **When adding new sidecar capabilities like guardrails, data masking, AI analyzer**, check if the codec WASM in sidecar plugins has these same capabilities; we must ensure new capabilities like that need to be added to plugins as well.
 
 ## Running it
 
