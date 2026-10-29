@@ -321,12 +321,14 @@ func MatchResource(pattern, resource string) bool {
 // ValidResourcePattern says why pattern can never match what it appears to
 // name, or returns nil. It sits beside matchResource so the two read one
 // syntax: "*" stands for one whole segment and "**" only as the trailing
-// "/**". Any other segment holding a "*" is compared as text, and an empty
-// segment never matches a cleaned resource.
+// "/**". Any other segment holding a "*" is compared as text, and an empty,
+// "." or ".." segment never matches a cleaned resource.
 func ValidResourcePattern(pattern string) error {
 	segs := strings.Split(strings.Trim(pattern, "/"), "/")
 	for i, s := range segs {
 		switch {
+		case s == "." || s == "..":
+			return fmt.Errorf("segment %q: a resource arrives with its dot segments resolved", s)
 		case s == "*":
 		case s == "**" && i == len(segs)-1 && strings.HasSuffix(pattern, "/**"):
 		case strings.Contains(s, "*"):

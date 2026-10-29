@@ -370,12 +370,12 @@ func (s *Server) writeDenyFrame(g *gate.Gate, target net.Conn, dir inspect.Direc
 	writeBeforeClose(target, frame, "deny frame", dir, log)
 }
 
-// writeBeforeClose writes b to target on a connection about to close. The
-// connection closes either way; the log is the only place a client left
-// without what it was owed shows.
-func writeBeforeClose(target net.Conn, b []byte, what string, dir inspect.Direction, log *slog.Logger) {
+// writeBeforeClose writes b to target on a connection about to close and
+// reports whether all of it went out. The connection closes either way; the
+// log is the only place a client left without what it was owed shows.
+func writeBeforeClose(target net.Conn, b []byte, what string, dir inspect.Direction, log *slog.Logger) bool {
 	if len(b) == 0 {
-		return
+		return true
 	}
 	err := target.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err == nil {
@@ -383,7 +383,9 @@ func writeBeforeClose(target net.Conn, b []byte, what string, dir inspect.Direct
 	}
 	if err != nil {
 		log.Warn(what+" not delivered", "direction", string(dir), "error", err)
+		return false
 	}
+	return true
 }
 
 func (s *Server) reserveMySQLHandshake() bool {
@@ -1038,8 +1040,11 @@ func (s *Server) pump(
 				}
 				// Responses the codec finished before the refused one go
 				// first, or the client reads the deny frame as their answer.
-				writeBeforeClose(target, d.Preceding, "responses before a refused one", dir, log)
-				s.writeDenyFrame(g, target, dir, d, log)
+				// After a write that may have stopped inside one of them, a
+				// deny frame would garble it: close instead.
+				if writeBeforeClose(target, d.Preceding, "responses before a refused one", dir, log) {
+					s.writeDenyFrame(g, target, dir, d, log)
+				}
 				return
 			}
 

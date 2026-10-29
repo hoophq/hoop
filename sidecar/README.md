@@ -4230,7 +4230,7 @@ it.
   pattern wins; two of the same length that match and name different paths
   refuse the request, because reading one would leave SQL at the other
   unread. A pattern that can match nothing as written (`**` not at the end,
-  `*` inside a segment, an empty segment) is refused at load. A pattern
+  `*` inside a segment, an empty, `.` or `..` segment) is refused at load. A pattern
   matches the cleaned path, because Databricks routes
   `/api/2.0/./sql/statements`, a doubled slash, a backslash or `x/..` like the
   canonical path. `dialect` is required: it decides what a comment or a string is, and
@@ -4272,6 +4272,8 @@ it.
   its operation, by the method of the request that carried it through
   `http.sql_method`, or by resource through `http.sql_resource`, so a
   trigger written for the request (`operations: [post]`) still selects it.
+  An `exclude` item reads the SQL's own operation: excluding `post` skips
+  the requests, as before, and not the SQL they carry.
 - **Not with approvals yet.** A lane whose analyzer holds for approval cannot
   set the block: the gate spends an approval on the request, not on the SQL
   read from its body, so one approval would release that SQL again and again.

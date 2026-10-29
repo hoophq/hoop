@@ -73,8 +73,10 @@ func (i TriggerItem) isZero() bool {
 	return len(i.Operations) == 0 && len(i.Tables) == 0 && len(i.Resources) == 0
 }
 
-func (i TriggerItem) matches(stmt inspect.Statement) bool {
-	return (len(i.Operations) == 0 || matchOperation(i.Operations, stmt)) &&
+// matches reports whether stmt meets every field of the item; op is
+// selectOperation on an Any item and matchOperation on an Exclude item.
+func (i TriggerItem) matches(stmt inspect.Statement, op func([]inspect.Operation, inspect.Statement) bool) bool {
+	return (len(i.Operations) == 0 || op(i.Operations, stmt)) &&
 		(len(i.Tables) == 0 || matchTable(i.Tables, stmt)) &&
 		(len(i.Resources) == 0 || matchResource(i.Resources, stmt))
 }
@@ -105,29 +107,36 @@ func (t Trigger) validate() error {
 // matches reports whether stmt should be classified.
 func (t Trigger) matches(stmt inspect.Statement) bool {
 	for _, item := range t.Exclude {
-		if item.matches(stmt) {
+		if item.matches(stmt, matchOperation) {
 			return false
 		}
 	}
-	if t.All || matchOperation(t.Operations, stmt) || matchTable(t.Tables, stmt) ||
+	if t.All || selectOperation(t.Operations, stmt) || matchTable(t.Tables, stmt) ||
 		matchResource(t.Resources, stmt) {
 		return true
 	}
 	for _, item := range t.Any {
-		if item.matches(stmt) {
+		if item.matches(stmt, selectOperation) {
 			return true
 		}
 	}
 	return false
 }
 
-// matchOperation matches the statement's operation. SQL an http lane read out
+// matchOperation matches the statement's own operation.
+func matchOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
+	return slices.Contains(ops, stmt.Operation)
+}
+
+// selectOperation is matchOperation for selecting. SQL an http lane read out
 // of a request body also matches the method of the request that carried it
 // (the key is a literal: analyzer does not import codec/http). That request
 // is not sent to the model, so without this a trigger naming its method
-// would classify nothing on the route.
-func matchOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
-	if slices.Contains(ops, stmt.Operation) {
+// would classify nothing on the route. An Exclude item reads the SQL's own
+// operation only: excluding post skips the requests, as it did, and not the
+// SQL they carry.
+func selectOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
+	if matchOperation(ops, stmt) {
 		return true
 	}
 	m := stmt.Metadata["http.sql_method"]

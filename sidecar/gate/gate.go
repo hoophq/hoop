@@ -1356,11 +1356,13 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 				// the codec masked and cut the response instead.
 				d.Payload = out
 				d.NoFrame = true
+				g.recordMasked(ctx, d, entities, res.Cells)
 			} else if _, ok := g.reframer.(responseStarter); ok {
 				// The refused response has not started, so out holds only
 				// the responses before it, whole. Dropping them would make
 				// the client read the deny frame as their answer.
 				d.Preceding = out
+				g.recordMasked(ctx, d, entities, res.Cells)
 			}
 			g.mu.Lock()
 			g.denied++
@@ -1375,13 +1377,20 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 	}
 
 	d.Payload = out
-	if res.Cells > 0 {
-		sort.Strings(entities)
-		d.Masked = entities
-		d.MaskedCount = res.Cells
-		g.countMasked(res.Cells)
-		g.writeAudit(ctx, audit.MaskedEvent(g.session(), entities, res.Cells))
+	g.recordMasked(ctx, d, entities, res.Cells)
+}
+
+// recordMasked counts and audits the cells the codec masked in bytes that
+// go out, on a refusal as on a forwarded response.
+func (g *Gate) recordMasked(ctx context.Context, d *Decision, entities []string, cells int) {
+	if cells == 0 {
+		return
 	}
+	sort.Strings(entities)
+	d.Masked = entities
+	d.MaskedCount = cells
+	g.countMasked(cells)
+	g.writeAudit(ctx, audit.MaskedEvent(g.session(), entities, cells))
 }
 
 // MaskSupported reports whether a protocol's response payload can be masked.

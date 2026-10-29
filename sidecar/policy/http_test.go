@@ -463,12 +463,13 @@ func TestOPAInputOmitsHTTPForSQL(t *testing.T) {
 }
 
 // A pattern matchResource can never match as written is named: "**" only
-// as the trailing /**, "*" only as a whole segment, no empty segment.
+// as the trailing /**, "*" only as a whole segment, no empty or dot segment.
 func TestValidResourcePattern(t *testing.T) {
 	for p, ok := range map[string]bool{
 		"/": true, "/api/2.0/sql/statements": true, "/api/2.0/sql/statements/": true,
 		"/ai-gateway/mcp-services/**": true, "/api/*/sql": true, "/**": true,
 		"/api/**/": false, "/api/**/x": false, "/api/v*": false, "/api//x": false,
+		"/api/./x": false, "/api/../x": false, "/x/../api/**": false,
 	} {
 		if err := policy.ValidResourcePattern(p); (err == nil) != ok {
 			t.Errorf("ValidResourcePattern(%q) = %v, want ok=%v", p, err, ok)

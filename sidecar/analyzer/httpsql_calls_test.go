@@ -53,6 +53,8 @@ func TestHTTPSQLRequestIsOneModelCall(t *testing.T) {
 			analyzer.Trigger{Operations: []inspect.Operation{inspect.OpDelete}}, 1},
 		{"trigger on another method", "/api/2.0/sql/statements",
 			analyzer.Trigger{Operations: []inspect.Operation{inspect.OpGet}}, 0},
+		{"excluding the method keeps the SQL", "/api/2.0/sql/statements",
+			analyzer.Trigger{All: true, Exclude: []analyzer.TriggerItem{{Operations: []inspect.Operation{inspect.OpPost}}}}, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := codechttp.New(codechttp.Options{SQL: &codechttp.SQLOptions{

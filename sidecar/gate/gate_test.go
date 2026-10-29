@@ -382,13 +382,18 @@ func (m stubMasker) MaskCell(_ string, value []byte) ([]byte, []string, int) {
 }
 
 // Two responses in one server read, the second refused before its head went
-// out: the first is whole and masked, so it goes ahead of the deny frame.
-// Dropped, the client would read the deny frame as the first one's answer.
+// out: the first is whole and masked, so it goes ahead of the deny frame,
+// and its masking is counted and audited. Dropped, the client would read the
+// deny frame as the first one's answer.
 func TestARefusedResponseKeepsTheOneBeforeIt(t *testing.T) {
 	var zb bytes.Buffer
 	zw := gzip.NewWriter(&zb)
-	zw.Write([]byte(`{"pad":"` + strings.Repeat("a", 17<<20) + `"}`))
-	zw.Close()
+	if _, err := zw.Write([]byte(`{"pad":"` + strings.Repeat("a", 17<<20) + `"}`)); err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
 	refused := map[string][]byte{
 		"br":                     []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: br\r\nContent-Length: 4\r\n\r\nabcd"),
 		"gzip too large to mask": append([]byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\nContent-Length: "+strconv.Itoa(zb.Len())+"\r\n\r\n"), zb.Bytes()...),
@@ -396,8 +401,10 @@ func TestARefusedResponseKeepsTheOneBeforeIt(t *testing.T) {
 	first := []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 23\r\n\r\n{\"e\":\"ada@example.com\"}")
 	for name, second := range refused {
 		t.Run(name, func(t *testing.T) {
+			sink := &recordingSink{}
 			g, _ := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}), gate.Config{
 				Protocol: inspect.HTTP,
+				Audit:    sink,
 				Masker:   stubMasker{find: "ada@example.com", replace: "[REDACTED]"},
 			})
 			ctx := context.Background()
@@ -412,6 +419,9 @@ func TestARefusedResponseKeepsTheOneBeforeIt(t *testing.T) {
 			if bytes.Count(p, []byte("HTTP/1.1 ")) != 1 || !bytes.HasPrefix(p, []byte("HTTP/1.1 200 OK")) ||
 				!bytes.Contains(p, []byte("[REDACTED]")) || bytes.Contains(p, []byte("ada@example.com")) {
 				t.Fatalf("want the first response alone, masked, ahead of the deny frame; got %.200q", p)
+			}
+			if d.MaskedCount != 1 || sink.find(audit.KindMasked) == nil {
+				t.Errorf("the masking sent ahead of the deny frame went unrecorded: MaskedCount=%d", d.MaskedCount)
 			}
 		})
 	}
