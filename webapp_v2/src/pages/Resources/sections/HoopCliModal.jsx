@@ -13,6 +13,9 @@ const DOCS = {
   windows: 'https://hoop.dev/docs/clients/cli#windows',
 }
 
+// CLJS caps the modal at 696px; 90dvh is the Mantine modal's own limit.
+const MAX_HEIGHT = 'min(696px, 90dvh)'
+
 function steps(os, apiUrl, connectionName) {
   const install =
     os === 'macos'
@@ -46,7 +49,7 @@ export default function HoopCliModal({ connectionName, onClose }) {
   return (
     <Modal opened={Boolean(connectionName)} onClose={onClose} size={1100} withCloseButton={false} padding={0}>
       <Group align="stretch" gap={0} wrap="nowrap">
-        <ScrollArea.Autosize mah={696} flex={1}>
+        <ScrollArea.Autosize mah={MAX_HEIGHT} flex={1}>
           <Stack gap="xl" p="xl">
             <Stack gap="xs">
               <Title order={2}>Get more with Hoop CLI</Title>
@@ -91,8 +94,9 @@ export default function HoopCliModal({ connectionName, onClose }) {
             </Group>
           </Stack>
         </ScrollArea.Autosize>
-        <Box w="45%" bg="indigo.0" visibleFrom="sm">
-          <Image src="/images/illustrations/cli-promotion.png" alt="" h="100%" fit="cover" />
+        {/* Absolute, so the picture takes the content's height instead of setting it. */}
+        <Box w="45%" pos="relative" bg="indigo.0" visibleFrom="sm">
+          <Image src="/images/illustrations/cli-promotion.png" alt="" pos="absolute" inset={0} w="100%" h="100%" fit="cover" />
         </Box>
       </Group>
     </Modal>
