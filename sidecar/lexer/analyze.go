@@ -740,10 +740,12 @@ func (a *analyzer) sparkStatementAt(i int) bool {
 
 // push opens a region, labelling it from the token before the parenthesis.
 //
-// A parenthesis where a statement may begin opens a query, not an
-// expression: `(SELECT * INTO t FROM s)` and `UNION (SELECT ...)`. Read as
-// an expression group, its SELECT was never a head, the statement reported
-// no verb, and the table that SELECT INTO created passed a read-only lane.
+// A parenthesis where a statement may begin, and that a query keyword
+// follows, opens a query: `(SELECT * INTO t FROM s)` and `UNION (SELECT
+// ...)`. Read as an expression group, its SELECT was never a head, the
+// statement reported no verb, and the table that SELECT INTO created passed
+// a read-only lane. Anything else stays an expression: THEN and ELSE are
+// head positions too, and `ELSE (update)` reads a column called update.
 func (a *analyzer) push(i int, head bool) {
 	kind := regParen
 	if prev, ok := a.prevWord(i); ok {
@@ -755,7 +757,7 @@ func (a *analyzer) push(i int, head bool) {
 			kind = regSub
 		}
 	}
-	if kind == regParen && head {
+	if kind == regParen && head && a.opensQuery(i) {
 		kind = regSub
 	}
 	verb := Unknown
@@ -765,6 +767,21 @@ func (a *analyzer) push(i int, head bool) {
 		verb = a.top().verb
 	}
 	a.stack = append(a.stack, region{kind: kind, verb: verb})
+}
+
+// opensQuery reports whether the parenthesis at i opens a query: a query
+// keyword follows it, or another parenthesis that may open one, as in
+// `((SELECT ...))`. A column that one of these keywords names, where a
+// dialect allows it, reads as a select: never as a write.
+func (a *analyzer) opensQuery(i int) bool {
+	if a.puncts(i+1, "(") {
+		return true
+	}
+	if i+1 >= len(a.toks) {
+		return false
+	}
+	next := a.toks[i+1]
+	return next.isWord("select") || next.isWord("with") || next.isWord("values") || next.isWord("table")
 }
 
 func (a *analyzer) pop() {
