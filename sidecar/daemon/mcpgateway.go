@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -66,6 +67,9 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 		problems = append(problems, name+": an mcp listener listens on tcp; MCP clients do not connect to unix sockets")
 	} else if host, _, err := net.SplitHostPort(lc.Listen); err == nil && !loopbackHost(host) {
 		problems = append(problems, name+": an mcp listener may bind only a loopback address until it authenticates its callers (I-18 R6)")
+	}
+	if lc.MaxConns > 0 {
+		problems = append(problems, name+": max_conns does not apply to an mcp listener; MCP runs over HTTP requests, not long connections")
 	}
 	if lc.DownstreamTLS != nil {
 		problems = append(problems, name+": downstream_tls is not supported on an mcp listener yet")
@@ -143,6 +147,8 @@ type MCPGatewayLane struct {
 	Policy         MCPGatewayConfig
 	UpstreamTLS    *tls.Config
 	IdentityHeader string
+	// SessionIdleTimeout is idle_timeout_sec; zero keeps mcpproxy's 30 minutes.
+	SessionIdleTimeout time.Duration
 	// Open starts the sidecar session for one MCP session. Nil on a
 	// -validate run.
 	Open func(ctx context.Context, caller MCPCaller) (MCPLaneSession, error)
@@ -213,13 +219,14 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 	rules := newLiveRules(ln)
 	laneLog := log.With("listener", ln.name)
 	resolved := MCPGatewayLane{
-		Name:           ln.name,
-		Listen:         lc.Listen,
-		Upstream:       lc.Upstream,
-		Transport:      lc.MCPGateway.transport(),
-		UpstreamTLS:    tlsConf,
-		IdentityHeader: lc.IdentityHeader,
-		Log:            laneLog,
+		Name:               ln.name,
+		Listen:             lc.Listen,
+		Upstream:           lc.Upstream,
+		Transport:          lc.MCPGateway.transport(),
+		UpstreamTLS:        tlsConf,
+		IdentityHeader:     lc.IdentityHeader,
+		SessionIdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		Log:                laneLog,
 	}
 	if lc.MCPGateway != nil {
 		resolved.Policy = *lc.MCPGateway

@@ -71,10 +71,11 @@ func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
 	pipeline = append(pipeline[:last:last], &hoopCheck{s: s}, pipeline[last])
 
 	gw, err := mcpgw.New(mcpgw.Options{
-		Backends: map[string]backend.Factory{lane.Name: factory},
-		Pipeline: pipeline,
-		Sink:     s,
-		Logger:   s.log,
+		Backends:           map[string]backend.Factory{lane.Name: factory},
+		Pipeline:           pipeline,
+		Sink:               s,
+		Logger:             s.log,
+		SessionIdleTimeout: lane.SessionIdleTimeout,
 		Resolver: func(r *http.Request) (inspect.Identity, error) {
 			id := inspect.Identity{Claims: map[string]any{"peer": r.RemoteAddr}}
 			if lane.IdentityHeader != "" {
