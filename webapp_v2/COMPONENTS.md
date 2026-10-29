@@ -647,6 +647,23 @@ Props: `label`, `placeholder`, `required`, `disabled`, `value` (ids[]), `onChang
 
 ### `PaginatedSelect`
 Single-value sibling of `PaginatedMultiSelect`: a select over a **paginated, server-searched** option source, with the search box in the dropdown and infinite scroll. Controlled (no fetching). `onChange` receives the whole option; `selectedLabel` names a value that is not on the loaded pages. The CMDB fields of the Jira prompt gate use it.
+```jsx
+import PaginatedSelect from '@/components/PaginatedSelect'
+
+<PaginatedSelect
+  label="Database server"
+  required
+  value={pick?.value ?? null}
+  selectedLabel={pick?.label ?? null}
+  onChange={(option) => setPick(option)}
+  options={rows.map((r) => ({ value: r.id, label: r.name }))}
+  loading={loading}
+  hasMore={hasMore}
+  onLoadMore={loadMore}
+  searchValue={search}
+  onSearchChange={setSearch}
+/>
+```
 Props: `label`, `placeholder`, `searchPlaceholder`, `nothingFound`, `required`, `error`, `disabled`, `value`, `selectedLabel`, `onChange(option)`, `options` (`[{value,label}]`), `loading`, `hasMore`, `onLoadMore()`, `searchValue`, `onSearchChange(term)`, `onDropdownOpen()`, `comboboxProps`.
 
 ---

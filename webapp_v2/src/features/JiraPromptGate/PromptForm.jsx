@@ -7,6 +7,7 @@ import { useJiraPromptStore } from '@/stores/useJiraPromptStore'
 import { isRequired, promptOptions } from './jiraFields'
 
 const REQUIRED = 'Required'
+const LOOKUP_FAILED = 'Could not load the options from Jira. Open the list again to retry.'
 
 // One prompt of the template: text (the default), select or datetime-local.
 function PromptField({ prompt, value, error, onChange }) {
@@ -47,11 +48,13 @@ function PromptField({ prompt, value, error, onChange }) {
   )
 }
 
-// One CMDB row: the Jira Assets objects its field accepts.
+// One CMDB row: the Jira Assets objects its field accepts. A row whose
+// lookup failed after a pick above it says so, and tries again when opened.
 function CmdbField({ row, pick, error }) {
   const pickCmdb = useJiraPromptStore((s) => s.pickCmdb)
   const setSearch = useJiraPromptStore((s) => s.setSearch)
   const loadMore = useJiraPromptStore((s) => s.loadMore)
+  const retryRow = useJiraPromptStore((s) => s.retryRow)
 
   return (
     <PaginatedSelect
@@ -67,6 +70,10 @@ function CmdbField({ row, pick, error }) {
       onLoadMore={() => loadMore(row.jira_field)}
       searchValue={row.search}
       onSearchChange={(term) => setSearch(row.jira_field, term)}
+      nothingFound={row.failed ? LOOKUP_FAILED : undefined}
+      onDropdownOpen={() => {
+        if (row.failed && !row.loading) retryRow(row.jira_field)
+      }}
     />
   )
 }

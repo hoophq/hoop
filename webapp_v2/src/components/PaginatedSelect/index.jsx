@@ -93,6 +93,7 @@ export default function PaginatedSelect({
         <Combobox.Search
           value={searchValue}
           placeholder={searchPlaceholder}
+          aria-label={typeof label === 'string' ? `Search ${label}` : searchPlaceholder}
           onChange={(event) => onSearchChange?.(event.currentTarget.value)}
         />
         <Combobox.Options>

@@ -57,17 +57,15 @@ const initial = {
   errorBeforeForm: false,
 }
 
-// One generation per load(): a response of an older load changes nothing.
-let generation = 0
-// Per row (jira_field), the latest fetch: only it may change the row's options,
-// so a slow unfiltered response cannot replace AQL-filtered ones.
-const rowRequestIds = {}
 const searchTimers = {}
 
 const isBlank = (s) => s == null || String(s).trim() === ''
 
 const toRow = (item) => ({
   ...item,
+  // The row's latest fetch: only it may change the options, so a slow
+  // unfiltered response cannot replace AQL-filtered ones.
+  requestId: 0,
   selectedName: null,
   jira_values: [],
   hasMore: false,
@@ -93,24 +91,25 @@ export const useJiraPromptStore = create((set, get) => {
     }))
 
   // Fetches one page of a row's options with its cascade filter. Resolves to
-  // 'ok', 'failed' or 'stale'. A failed cascade refetch keeps what the row
-  // shows (its dependents were emptied when the pick changed) and is not an
-  // error: an error page would hide what the user already filled.
+  // 'ok', 'failed' or 'stale'. A failed cascade refetch marks the row failed
+  // (its picker says so and retries when opened) but is no gate error: an
+  // error page would hide what the user already filled.
   const fetchRow = async (jiraField, { offset = 0, cascade = false } = {}) => {
-    const gen = generation
-    const { rows, fieldconfigs } = get()
+    const { loadId, rows, fieldconfigs } = get()
     const row = rows.find((r) => r.jira_field === jiraField)
     if (!row) return 'stale'
-    const requestId = (rowRequestIds[jiraField] ?? 0) + 1
-    rowRequestIds[jiraField] = requestId
-    const isCurrent = () => gen === generation && rowRequestIds[jiraField] === requestId
+    const requestId = row.requestId + 1
+    const isCurrent = () => {
+      const state = get()
+      return state.loadId === loadId && state.rows.find((r) => r.jira_field === jiraField)?.requestId === requestId
+    }
 
     const filter = filterFor(row, rows, fieldconfigs)
     if (filter === PENDING) {
-      patchRow(jiraField, { loading: false, failed: false, jira_values: [], hasMore: false, offset: 0 })
+      patchRow(jiraField, { requestId, loading: false, failed: false, jira_values: [], hasMore: false, offset: 0 })
       return 'ok'
     }
-    patchRow(jiraField, { loading: true })
+    patchRow(jiraField, { requestId, loading: true })
     try {
       const { data } = await jiraTemplatesService.searchAssetObjects({
         objectTypeId: row.jira_object_type,
@@ -133,7 +132,7 @@ export const useJiraPromptStore = create((set, get) => {
       return 'ok'
     } catch {
       if (!isCurrent()) return 'stale'
-      patchRow(jiraField, cascade ? { loading: false } : { loading: false, failed: true })
+      patchRow(jiraField, { loading: false, failed: true })
       return cascade ? 'ok' : 'failed'
     }
   }
@@ -155,6 +154,9 @@ export const useJiraPromptStore = create((set, get) => {
 
   return {
     ...initial,
+    // One generation per load(): a response of an older load changes nothing.
+    // reset() and abandon() move it too; it never goes back.
+    loadId: 0,
 
     /**
      * Loads the Jira template of a resource role and its CMDB options.
@@ -165,28 +167,29 @@ export const useJiraPromptStore = create((set, get) => {
      * Rejects when the resource, the integration or the template cannot be read.
      */
     load: async (connectionName) => {
-      const gen = ++generation
+      const gen = get().loadId + 1
+      const isCurrent = () => get().loadId === gen
       clearSearchTimers()
-      set({ ...initial, status: GATE_STATUS.LOADING })
+      set({ ...initial, loadId: gen, status: GATE_STATUS.LOADING })
       try {
         // connectionsService still unwraps the response body.
         const connection = await connectionsService.getConnection(connectionName)
         const templateId = connection?.jira_issue_template_id
-        if (gen !== generation) return null
+        if (!isCurrent()) return null
         if (isBlank(templateId)) {
           set({ status: GATE_STATUS.IDLE })
           return { needed: false, fields: {} }
         }
 
         const { data: integration } = await jiraTemplatesService.getIntegration()
-        if (gen !== generation) return null
+        if (!isCurrent()) return null
         if (integration?.status !== 'enabled') {
           set({ status: GATE_STATUS.IDLE })
           return { needed: false, fields: {} }
         }
 
         const { data: template } = await jiraTemplatesService.get(templateId)
-        if (gen !== generation) return null
+        if (!isCurrent()) return null
         const prompts = template?.prompt_types?.items ?? []
         const rows = (template?.cmdb_types?.items ?? []).map(toRow)
 
@@ -200,12 +203,12 @@ export const useJiraPromptStore = create((set, get) => {
             // No cascade is better than no prompt: unfiltered dropdowns.
             fieldconfigs = {}
           }
-          if (gen !== generation) return null
+          if (!isCurrent()) return null
         }
         set({ prompts, rows, fieldconfigs })
 
         const ok = await fetchAllRows()
-        if (gen !== generation) return null
+        if (!isCurrent()) return null
         set({ fields: initFields(get().rows) })
         if (!ok) {
           set({ status: GATE_STATUS.ERROR, errorBeforeForm: true })
@@ -214,7 +217,7 @@ export const useJiraPromptStore = create((set, get) => {
         set({ status: GATE_STATUS.READY })
         return decision()
       } catch (err) {
-        if (gen === generation) set({ ...initial })
+        if (isCurrent()) set({ ...initial })
         throw err
       }
     },
@@ -224,7 +227,7 @@ export const useJiraPromptStore = create((set, get) => {
     // `needed: false` only when the error came before any form, so an open
     // form is never sent without Send.
     retry: async () => {
-      const gen = generation
+      const gen = get().loadId
       const beforeForm = get().errorBeforeForm
       clearSearchTimers()
       set((state) => ({
@@ -232,10 +235,13 @@ export const useJiraPromptStore = create((set, get) => {
         rows: state.rows.map((r) => ({ ...r, search: '' })),
       }))
       const ok = await fetchAllRows()
-      if (gen !== generation) return null
+      if (gen !== get().loadId) return null
+      // Before any form the user answered nothing: the presets come from the
+      // fresh options alone, so one that left Jira is not sent. In an open
+      // form the user's answers and picks stay.
       set((state) => ({
         status: ok ? GATE_STATUS.READY : GATE_STATUS.ERROR,
-        fields: { ...initFields(state.rows), ...state.fields },
+        fields: beforeForm ? initFields(state.rows) : { ...initFields(state.rows), ...state.fields },
         errorBeforeForm: ok ? false : beforeForm,
       }))
       if (!ok || !beforeForm) return { needed: true }
@@ -271,6 +277,9 @@ export const useJiraPromptStore = create((set, get) => {
       }
     },
 
+    // A row whose cascade refetch failed fetches again (its picker opened).
+    retryRow: (jiraField) => fetchRow(jiraField, { cascade: true }),
+
     // Server search by object name, 300 ms after the last key.
     setSearch: (jiraField, term) => {
       patchRow(jiraField, { search: term })
@@ -304,14 +313,13 @@ export const useJiraPromptStore = create((set, get) => {
     // cannot go on to send after the user cancelled. The state stays for the
     // close transition; the next load() clears it.
     abandon: () => {
-      generation += 1
       clearSearchTimers()
+      set((state) => ({ loadId: state.loadId + 1 }))
     },
 
     reset: () => {
-      generation += 1
       clearSearchTimers()
-      set({ ...initial })
+      set((state) => ({ ...initial, loadId: state.loadId + 1 }))
     },
   }
 })

@@ -166,7 +166,7 @@ describe('load: is the gate needed?', () => {
 })
 
 describe('CMDB error state', () => {
-  it('a failed CMDB fetch opens the gate on the error; Try again keeps the answers', async () => {
+  it('a failed CMDB fetch opens the gate on the error; Try again shows the form', async () => {
     seed({
       prompts: [prompt('customfield_1', 'text', true)],
       cmdbItems: [cmdb('customfield_2', '21')],
@@ -177,11 +177,9 @@ describe('CMDB error state', () => {
     await expect(state().load('pg')).resolves.toEqual({ needed: true })
     expect(state().status).toBe(GATE_STATUS.ERROR)
 
-    state().setAnswer('customfield_1', 'kept')
     handlers.objects = objects
     await expect(state().retry()).resolves.toEqual({ needed: true })
     expect(state().status).toBe(GATE_STATUS.READY)
-    expect(state().fields.customfield_1).toBe('kept')
     expect(state().rows[0].jira_values).toEqual(servers)
   })
 
@@ -198,6 +196,27 @@ describe('CMDB error state', () => {
       needed: false,
       fields: { jira_fields: { customfield_2: 'ari:server:1' } },
     })
+  })
+
+  it('Try again before any form takes presets from the fresh options only', async () => {
+    const products = [{ id: 'ari:product:1', name: 'Payments' }]
+    seed({
+      cmdbItems: [
+        cmdb('customfield_30001', '21', { value: 'db-prod-01', required: true }),
+        cmdb('customfield_20001', '11', { value: 'Payments' }),
+      ],
+      values: { 21: servers, 11: products },
+    })
+    const objects = handlers.objects
+    handlers.objects = (params) => (params.object_type_id === '11' ? fail() : objects(params))
+    await expect(state().load('pg')).resolves.toEqual({ needed: true })
+    expect(state().fields.customfield_30001).toEqual({ value: 'ari:server:1', label: 'db-prod-01' })
+
+    // db-prod-01 left Jira before the user tried again.
+    handlers.objects = (params) =>
+      params.object_type_id === '21' ? ok({ values: [servers[1]], has_next_page: false }) : objects(params)
+    await expect(state().retry()).resolves.toEqual({ needed: true })
+    expect(state().fields.customfield_30001).toBeUndefined()
   })
 
   it('Cancel during Try again: the retry resolves to null, so nothing is sent', async () => {
@@ -377,12 +396,19 @@ describe('CMDB cascade', () => {
     expect(state().rows[1].jira_values).toEqual([])
   })
 
-  it('a failed cascade refetch is no error', async () => {
+  it('a failed cascade refetch is no error: the row says so and retries when opened', async () => {
     seed(chain)
     await state().load('pg')
+    const objects = handlers.objects
     handlers.objects = fail
     state().pickCmdb('customfield_20001', { value: 'ari:product:2', label: 'Ledger' })
     await vi.waitFor(() => expect(state().rows[1].loading).toBe(false))
+    expect(state().status).toBe(GATE_STATUS.READY)
+    expect(state().rows[1].failed).toBe(true)
+
+    handlers.objects = objects
+    await state().retryRow('customfield_20002')
+    expect(state().rows[1]).toMatchObject({ failed: false, jira_values: components })
     expect(state().status).toBe(GATE_STATUS.READY)
   })
 })
