@@ -623,6 +623,23 @@ func corpus() []stmtCase {
 		`SELECT has_table_privilege(current_user, t.tablename, 'delete') AS delete,
 		        has_table_privilege(current_user, t.tablename, 'update') AS update
 		   FROM pg_catalog.pg_tables t`,
+		// A column or alias that spells a relation introducer took the
+		// FROM after it for a relation (ENG-859). Under SELECT it read a
+		// table called from; under INTO it wrote one.
+		`SELECT x.into FROM (SELECT * FROM salaries) x`,
+		`SELECT s.update, s.truncate FROM salaries s`,
+		`SELECT amount AS update, 1 AS from FROM salaries`,
+		`SELECT * FROM salaries update JOIN secrets ON true`,
+		`INSERT INTO audit SELECT s.into FROM salaries s`,
+		`INSERT INTO audit SELECT amount AS into FROM salaries`,
+		// The FROM list now continues past an aliased item, so its commas
+		// are read up to the next clause. A comma there must not name a
+		// written relation (ENG-859).
+		`INSERT INTO audit SELECT * FROM salaries s, secrets t, (SELECT 1) u`,
+		`UPDATE t SET a = 1, b = 2 FROM s x, u WHERE t.id = x.id RETURNING t.a, t.b`,
+		`DELETE FROM t x USING s y, u WHERE x.id = y.id RETURNING x.a, x.b`,
+		`INSERT INTO t SELECT * FROM s x, u ON CONFLICT (k) DO UPDATE SET c = 1, d = 2`,
+		`SELECT * FROM a x, b y GROUP BY 1, 2 ORDER BY 1, 2 FOR UPDATE OF x, y`,
 	)
 
 	add("cte",
