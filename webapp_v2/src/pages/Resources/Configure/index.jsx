@@ -12,7 +12,7 @@ import EmptyState from '@/layout/EmptyState'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { showSnackbar } from '@/utils/snackbar'
 import { useResourcesStore } from '@/pages/Resources/store'
-import { useConfigureResourceStore } from '@/pages/Resources/Configure/store'
+import { roleCountKnown, useConfigureResourceStore } from '@/pages/Resources/Configure/store'
 import InformationTab from '@/pages/Resources/Configure/InformationTab'
 import RolesTab from '@/pages/Resources/Configure/RolesTab'
 
@@ -97,7 +97,7 @@ export default function ConfigureResource() {
 
   const save = async () => {
     try {
-      await rename(name)
+      if (!(await rename(name))) return
       showSnackbar({ level: 'success', text: 'Resource name updated successfully!' })
       navigate('/resources/configure/' + encodeURIComponent(name), { replace: true })
     } catch (err) {
@@ -112,7 +112,7 @@ export default function ConfigureResource() {
   const confirmDelete = async () => {
     setDeleting(true)
     try {
-      await deleteResource()
+      if (!(await deleteResource())) return
       showSnackbar({ level: 'success', text: 'Resource deleted successfully!' })
       navigate('/resources?tab=resources')
     } catch (err) {
@@ -183,7 +183,7 @@ export default function ConfigureResource() {
             </Button>
           }
         >
-          <Button variant="transparent" color="red" disabled={!roles.loaded} onClick={() => setDeleteOpen(true)}>
+          <Button variant="transparent" color="red" disabled={!roleCountKnown(roles)} onClick={() => setDeleteOpen(true)}>
             Delete
           </Button>
           <Button loading={saving} disabled={!dirty} onClick={save}>

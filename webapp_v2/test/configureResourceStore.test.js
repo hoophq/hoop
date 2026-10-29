@@ -9,7 +9,7 @@ vi.mock('@/services/connectionTags', () => ({ connectionTagsService: { list: vi.
 vi.mock('@/services/attributes', () => ({ attributesService: { listAll: vi.fn() } }))
 vi.mock('@/stores/useAuthStore', () => ({ useAuthStore: { subscribe: () => () => {} } }))
 
-const { useConfigureResourceStore } = await import('@/pages/Resources/Configure/store')
+const { roleCountKnown, useConfigureResourceStore } = await import('@/pages/Resources/Configure/store')
 
 const resource = { id: 'r1', name: 'pg', type: 'database', subtype: 'postgres', agent_id: 'a1', env_vars: { HOST: 'x' } }
 const page = (names, total = names.length) => ({
@@ -83,6 +83,57 @@ describe('rename', () => {
     expect(store().resource.name).toBe('pg-new')
     expect(connectionsService.list).toHaveBeenLastCalledWith({ resource_name: 'pg-new', page: 1, page_size: 50 })
     expect(store().saving).toBe(false)
+  })
+})
+
+describe('stale completions', () => {
+  async function opened() {
+    resourcesService.get.mockResolvedValue({ data: resource })
+    connectionsService.list.mockResolvedValue(page([]))
+    store().open('pg')
+    await vi.waitFor(() => expect(store().resource).toEqual(resource))
+  }
+
+  it('rename resolves false and changes nothing when the page was left during the PUT', async () => {
+    await opened()
+    const put = deferred()
+    resourcesService.update.mockReturnValue(put.promise)
+    const done = store().rename('pg-new')
+    store().reset()
+    put.resolve({ data: {} })
+    expect(await done).toBe(false)
+    expect(store().name).toBe(null)
+  })
+
+  it('deleteResource resolves false when the page was left during the DELETE', async () => {
+    await opened()
+    const del = deferred()
+    resourcesService.remove.mockReturnValue(del.promise)
+    const done = store().deleteResource()
+    store().reset()
+    del.resolve({})
+    expect(await done).toBe(false)
+  })
+
+  it('deleteResource resolves true on the same page', async () => {
+    await opened()
+    resourcesService.remove.mockResolvedValue({})
+    expect(await store().deleteResource()).toBe(true)
+    expect(resourcesService.remove).toHaveBeenCalledWith('pg')
+  })
+})
+
+describe('roleCountKnown', () => {
+  it('is false while no roles response succeeded, so Delete cannot trust a zero count', async () => {
+    resourcesService.get.mockResolvedValue({ data: resource })
+    connectionsService.list.mockRejectedValue({ response: { data: { message: 'boom' } } })
+    store().open('pg')
+    await vi.waitFor(() => expect(store().roles.loaded).toBe(true))
+    expect(store().roles.total).toBe(0)
+    expect(roleCountKnown(store().roles)).toBe(false)
+    connectionsService.list.mockResolvedValue(page(['pg-ro']))
+    await store().retryRoles()
+    expect(roleCountKnown(store().roles)).toBe(true)
   })
 })
 

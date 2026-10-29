@@ -35,6 +35,11 @@ export function hasMoreRoles(roles) {
   return roles.page * PAGE_SIZE < roles.total
 }
 
+// Only a successful response gives the count; a failed first load leaves it unknown.
+export function roleCountKnown(roles) {
+  return roles.page > 0
+}
+
 export const useConfigureResourceStore = create((set, get) => ({
   ...initial,
 
@@ -100,6 +105,7 @@ export const useConfigureResourceStore = create((set, get) => ({
   retryRoles: () => get().loadRoles({ append: get().roles.failedAppend }),
 
   // The roles follow the rename in the database; the list reloads under the new name (Q7).
+  // Resolves to false when the page was left or switched before the PUT ended.
   rename: async (newName) => {
     const current = session
     const { resource } = get()
@@ -112,15 +118,21 @@ export const useConfigureResourceStore = create((set, get) => ({
         agent_id: resource.agent_id,
         env_vars: resource.env_vars || {},
       })
-      if (current !== session) return
+      if (current !== session) return false
       set({ name: newName, resource: { ...resource, name: newName } })
       get().loadRoles()
+      return true
     } finally {
       if (current === session) set({ saving: false })
     }
   },
 
-  deleteResource: () => resourcesService.remove(get().resource.name),
+  // Resolves to false when the page was left or switched before the DELETE ended.
+  deleteResource: async () => {
+    const current = session
+    await resourcesService.remove(get().resource.name)
+    return current === session
+  },
 
   // Stays on the page and reloads after the DELETE ends (Q4). The row goes
   // first, so a failed reload cannot keep it.
