@@ -1,3 +1,4 @@
 .root {
   --tab-hover-color: var(--mantine-color-gray-0);
+  --tab-border-color: var(--mantine-color-default-border);
 }
