@@ -155,6 +155,7 @@ export default function ConfigureResource() {
             </Group>
           </Stack>
           <Button
+            size="sm"
             leftSection={<Plus size={16} />}
             onClick={() => navigate('/resources/' + encodeURIComponent(resource.name) + '/add-role')}
           >
