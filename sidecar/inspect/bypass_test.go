@@ -409,8 +409,8 @@ func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
 // SELECT ... INTO created its table the same way, in parentheses as an
 // allowed unknown. ANALYSE ran, while the rule refuses ANALYZE as other.
 //
-// The plans stay allowed. EXPLAIN without ANALYZE runs nothing, and a quoted
-// FORMAT value is not the ANALYZE option.
+// The plans stay allowed. EXPLAIN without ANALYZE, or with ANALYZE false,
+// runs nothing, and a quoted FORMAT value is not the ANALYZE option.
 func TestReadOnlyRuleRefusesWritesBehindExplainAndSelectInto(t *testing.T) {
 	readOnly := rulesFor(t, "read-only",
 		inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete, inspect.OpCreate,
@@ -440,10 +440,14 @@ func TestReadOnlyRuleRefusesWritesBehindExplainAndSelectInto(t *testing.T) {
 			`((SELECT * INTO t30 FROM customers))`, true, inspect.OpCreate},
 		{"ANALYSE, the British spelling, is refused as ANALYZE is",
 			`ANALYSE customers`, true, inspect.OpOther},
+		{"a second ANALYZE turned off does not hide the first",
+			`EXPLAIN (ANALYZE, ANALYZE false) DELETE FROM customers`, true, inspect.OpDelete},
 
 		{"EXPLAIN without ANALYZE passes", `EXPLAIN DELETE FROM customers`, false, ""},
 		{"EXPLAIN with plan options passes", `EXPLAIN (VERBOSE, FORMAT JSON) DELETE FROM customers`, false, ""},
 		{"a quoted FORMAT value passes", `EXPLAIN (FORMAT "json") DELETE FROM customers`, false, ""},
+		{"EXPLAIN with ANALYZE turned off passes", `EXPLAIN (ANALYZE false) DELETE FROM customers`, false, ""},
+		{"a quoted analyze option turned off passes", `EXPLAIN ("analyze" off) DELETE FROM customers`, false, ""},
 		{"a plain SELECT passes", `SELECT * FROM customers`, false, ""},
 		{"a SELECT in parentheses passes as a select", `(SELECT * FROM customers)`, false, inspect.OpSelect},
 		{"a UNION of parenthesized SELECTs passes", `(SELECT id FROM customers) UNION (SELECT id FROM orders)`, false, inspect.OpSelect},

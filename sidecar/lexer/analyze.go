@@ -449,7 +449,8 @@ func (a *analyzer) walk() {
 		// PostgreSQL rejects, an extension's option, or an escape this
 		// scanner does not decode (U&"\0061nalyze"). It counts as ANALYZE:
 		// the worst case refuses a plan, and never lets a write through.
-		if t.Kind == Quoted && a.explainOptionName(i) && (t.Text == "analyze" || !wrapperModifier[t.Text]) {
+		if t.Kind == Quoted && a.explainOptionName(i) && (t.Text == "analyze" || !wrapperModifier[t.Text]) &&
+			!a.explainOptionOff(i) {
 			a.analyzeSeen = true
 		}
 
@@ -493,7 +494,7 @@ func (a *analyzer) walk() {
 		// EXPLAIN and its option list precede the real statement, so the
 		// head position has to survive them.
 		if a.wrapper && wrapperModifier[t.Text] {
-			if t.Text == "analyze" || t.Text == "analyse" {
+			if (t.Text == "analyze" || t.Text == "analyse") && !a.explainOptionOff(i) {
 				a.analyzeSeen = true
 			}
 			atHead = true
@@ -604,6 +605,20 @@ func (a *analyzer) explainOptionName(i int) bool {
 		j--
 	}
 	return j > 0 && a.toks[j-1].isWord("explain")
+}
+
+// explainOptionOff reports whether the value of the EXPLAIN option named at i
+// turns it off: `EXPLAIN (ANALYZE false) DELETE` plans the DELETE and runs
+// nothing. PostgreSQL reads false, off and 0 as off. Any other value leaves
+// the option on, a string literal included, whose text the scanner does not
+// keep: that reading refuses a write. One ANALYZE that is on is enough, so a
+// second one that is off cannot hide it.
+func (a *analyzer) explainOptionOff(i int) bool {
+	if !a.explainOptionName(i) || i+1 >= len(a.toks) {
+		return false
+	}
+	v := a.toks[i+1]
+	return v.isWord("false") || v.isWord("off") || v.Kind == Number && v.Text == "0"
 }
 
 // headFollows reports whether a statement verb may begin after this keyword.

@@ -323,14 +323,32 @@ func TestExplainPlansButAnalyzeExecutes(t *testing.T) {
 		}
 	}
 	// A quoted FORMAT value and a quoted CTE column are not the ANALYZE
-	// option, so these stay plans.
+	// option, and false, off or 0 turn ANALYZE off, so these stay plans.
 	for _, sql := range []string{
 		`EXPLAIN (FORMAT "json") DELETE FROM customers`,
 		`EXPLAIN ("verbose") DELETE FROM customers`,
 		`EXPLAIN WITH x("analyze") AS (SELECT 1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE false) DELETE FROM customers`,
+		`EXPLAIN (ANALYSE OFF, BUFFERS) DELETE FROM customers`,
+		`EXPLAIN (FORMAT JSON, ANALYZE 0) DELETE FROM customers`,
+		`EXPLAIN ("analyze" false) DELETE FROM customers`,
 	} {
 		if a := lexer.Analyze(sql, lexer.Postgres); a.Writes() {
 			t.Errorf("a plan reported a write: %v: %s", a.Effects, sql)
+		}
+	}
+	// Any other value runs the statement. A string literal's text is not
+	// kept, so 'off' reads as on, and one ANALYZE that is on is enough.
+	for _, sql := range []string{
+		`EXPLAIN (ANALYZE true) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE on) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 1) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE 'off') DELETE FROM customers`,
+		`EXPLAIN (ANALYZE false, ANALYZE) DELETE FROM customers`,
+		`EXPLAIN (ANALYZE, "analyze" off) DELETE FROM customers`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Postgres); !slices.Contains(a.Effects, lexer.Delete) {
+			t.Errorf("EXPLAIN that executes reported no delete: %v: %s", a.Effects, sql)
 		}
 	}
 }

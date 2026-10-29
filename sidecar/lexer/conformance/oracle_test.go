@@ -608,6 +608,9 @@ func corpus() []stmtCase {
 		`EXPLAIN (ANALYSE) DELETE FROM customers`,
 		`EXPLAIN ("analyze") DELETE FROM customers`,
 		`EXPLAIN (FORMAT JSON, "analyze") DELETE FROM customers`,
+		// U& escapes spell the same option; the scanner does not decode
+		// them, so a quoted name it does not know counts as ANALYZE.
+		`EXPLAIN (U&"\0061nalyze") DELETE FROM customers`,
 		`INSERT INTO staging SELECT * FROM customers`,
 		`DO $$ BEGIN DELETE FROM customers; END $$`,
 		`CALL purge()`,
@@ -672,6 +675,10 @@ func corpus() []stmtCase {
 		`SELECT * INTO snap2 FROM customers`,
 		`SELECT * INTO TEMP snap3 FROM customers`,
 		`(SELECT * INTO snap4 FROM customers)`,
+		`((SELECT * INTO snap5 FROM customers))`,
+		`(WITH c AS (SELECT * FROM customers) SELECT * INTO snap6 FROM c)`,
+		`(VALUES (1), (2))`,
+		`(TABLE customers)`,
 		`MERGE INTO customers c USING staging s ON c.id = s.id
 		   WHEN MATCHED AND s.dead THEN DELETE
 		   WHEN MATCHED THEN UPDATE SET n = s.n
