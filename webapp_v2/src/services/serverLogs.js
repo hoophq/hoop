@@ -1,4 +1,4 @@
-import api from './api'
+import api, { storeRenewedToken } from './api'
 import { useAuthStore } from '@/stores/useAuthStore'
 
 export const serverLogsService = {
@@ -11,7 +11,7 @@ export const serverLogsService = {
    * Cancel via an AbortController signal.
    */
   async stream({ backlog = 500, signal, onOpen, onEntry }) {
-    const token = useAuthStore.getState().token
+    const token = useAuthStore.getState().getToken()
     const res = await fetch(`${api.defaults.baseURL}/server-logs/stream?backlog=${backlog}`, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -19,6 +19,7 @@ export const serverLogsService = {
       },
       signal,
     })
+    storeRenewedToken(token, res.headers)
     if (!res.ok || !res.body) {
       throw new Error(`server-logs stream failed with status ${res.status}`)
     }

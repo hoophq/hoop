@@ -1,4 +1,4 @@
-import api from './api'
+import api, { storeRenewedToken } from './api'
 import { useAuthStore } from '@/stores/useAuthStore'
 
 // The event types the gateway sends (gateway/liveevents).
@@ -16,11 +16,12 @@ export const liveEventsService = {
    * signal.
    */
   async stream({ signal, onEvent }) {
-    const token = useAuthStore.getState().token
+    const token = useAuthStore.getState().getToken()
     const res = await fetch(`${api.defaults.baseURL}/events/stream`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
       signal,
     })
+    storeRenewedToken(token, res.headers)
     if (!res.ok || !res.body) {
       throw new Error(`live events stream failed with status ${res.status}`)
     }
