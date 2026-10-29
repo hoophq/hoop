@@ -14,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
-	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/events"
@@ -184,7 +183,6 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	reviewIdOrSid := c.Param("id")
 	if sid := c.Param("session_id"); sid != "" {
 		reviewIdOrSid = sid
-		apiroutes.SetSidSpanAttr(c, sid)
 	}
 
 	var req openapi.ReviewRequest

@@ -222,7 +222,6 @@ jobs:
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
@@ -231,7 +230,6 @@ jobs:
       - name: Build hsh-tunneld (${{ matrix.goos }}/${{ matrix.goarch }})
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}

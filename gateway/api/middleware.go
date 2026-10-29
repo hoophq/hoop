@@ -258,7 +258,7 @@ func (a *Api) AuditMiddleware() gin.HandlerFunc {
 		// Snapshot everything the audit entry needs while still on the request
 		// goroutine. The audit write is dispatched asynchronously below, and
 		// gin.Context (plus the wrapped writer) must not be read from that
-		// goroutine: outer middlewares (otelgin, sentry) mutate the context
+		// goroutine: outer middlewares (sentry) mutate the context
 		// during request teardown, which races a goroutine that outlives the
 		// handler. Reading here — before returning — keeps all context access
 		// single-threaded.

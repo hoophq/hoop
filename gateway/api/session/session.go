@@ -222,7 +222,6 @@ func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
 //	@Router					/sessions [post]
 func Post(c *gin.Context) {
 	sid := uuid.NewString()
-	apiroutes.SetSidSpanAttr(c, sid)
 	trackClient := analytics.New()
 	defer trackClient.Close()
 
@@ -478,7 +477,6 @@ func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	sessionID := c.Param("session_id")
-	apiroutes.SetSidSpanAttr(c, sessionID)
 	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
 	switch err {
 	case models.ErrNotFound:
@@ -609,7 +607,6 @@ func Get(c *gin.Context) {
 //	@Router			/sessions/{session_id}/download [get]
 func DownloadSession(c *gin.Context) {
 	sid := c.Param("session_id")
-	apiroutes.SetSidSpanAttr(c, sid)
 	requestToken := c.Query("token")
 	fileExt := c.Query("extension")
 	withLineBreak := c.Query("newline") == "1"
@@ -799,7 +796,6 @@ func DownloadSessionInput(c *gin.Context) {
 func StreamSessionResult(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	sessionID := c.Param("session_id")
-	apiroutes.SetSidSpanAttr(c, sessionID)
 
 	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
 	switch err {
@@ -872,7 +868,6 @@ func StreamSessionResult(c *gin.Context) {
 //	@Router		/sessions/{session_id}/metadata [patch]
 func PatchMetadata(c *gin.Context) {
 	ctx, sessionID := storagev2.ParseContext(c), c.Param("session_id")
-	apiroutes.SetSidSpanAttr(c, sessionID)
 	var req openapi.SessionUpdateMetadataRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -901,7 +896,6 @@ func PatchMetadata(c *gin.Context) {
 //	@Router		/sessions/{session_id}/kill [post]
 func Kill(c *gin.Context) {
 	ctx, sid := storagev2.ParseContext(c), c.Param("session_id")
-	apiroutes.SetSidSpanAttr(c, sid)
 
 	sess, err := models.GetSessionByID(ctx.OrgID, sid)
 	switch err {
@@ -1085,7 +1079,6 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 //	@Router		/sessions/provision [post]
 func Provision(c *gin.Context) {
 	sid := uuid.NewString()
-	apiroutes.SetSidSpanAttr(c, sid)
 
 	trackClient := analytics.New()
 	defer trackClient.Close()

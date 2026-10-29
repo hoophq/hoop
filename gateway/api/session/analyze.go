@@ -304,7 +304,6 @@ func Analyze(c *gin.Context) {
 
 	if analysis.Action == string(models.BlockExecution) {
 		sid := uuid.NewString()
-		apiroutes.SetSidSpanAttr(c, sid)
 		session, _ := newExecSession(c, ctx, sid, req, conn)
 		decision, resp, err := ApplyAIAnalysisDecision(ctx, &session, conn, analysis, accessRule, req.EnvVars, req.ClientArgs)
 		if err != nil {
