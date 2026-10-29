@@ -272,6 +272,50 @@ func TestSQLBodyLongestPatternWins(t *testing.T) {
 	}
 }
 
+// Two patterns of the same length leave the choice to their spelling. When
+// both match and name different paths, the request is refused, not read at
+// one path while a DROP waits at the other. A tie on one path, a request
+// only one of them matches and a request without a body pass as before.
+func TestSQLBodyTiedPatternsNamingTwoPathsRefuse(t *testing.T) {
+	o := databricksSQL()
+	o.Fields = map[string]string{"/api/*/sql/x": "query", "/api/2.0/*/x": "statement"}
+	c := codechttp.New(codechttp.Options{SQL: o})
+	_, err := decodeClient(t, c, post("/api/2.0/sql/x", `{"query":"SELECT 1","statement":"DROP TABLE t"}`))
+	if !errors.Is(err, inspect.ErrStreamUnsafe) || !strings.Contains(err.Error(), `"/api/*/sql/x" and "/api/2.0/*/x"`) {
+		t.Fatalf("err = %v, want the tie refused", err)
+	}
+
+	c = codechttp.New(codechttp.Options{SQL: o})
+	if stmts := mustDecode(t, c, post("/api/9.9/sql/x", `{"query":"DROP TABLE t"}`)); len(stmts) != 2 || stmts[1].Operation != inspect.OpDrop {
+		t.Errorf("a request one pattern matches: %+v", stmts)
+	}
+	c = codechttp.New(codechttp.Options{SQL: o})
+	if stmts := mustDecode(t, c, "GET /api/2.0/sql/x HTTP/1.1\r\nHost: h\r\n\r\n"); len(stmts) != 1 {
+		t.Errorf("a request without a body: %+v", stmts)
+	}
+
+	o.Fields = map[string]string{"/api/*/sql/x": "statement", "/api/2.0/*/x": "statement"}
+	c = codechttp.New(codechttp.Options{SQL: o})
+	if stmts := mustDecode(t, c, post("/api/2.0/sql/x", `{"statement":"DROP TABLE t"}`)); len(stmts) != 2 || stmts[1].Operation != inspect.OpDrop {
+		t.Errorf("a tie on one path: %+v", stmts)
+	}
+}
+
+// A JSON-RPC member on the Statement Execution route decides nothing: the API
+// runs such a body (checked on a workspace, 2026-10-29), so its DROP is read
+// like any other.
+func TestSQLBodyJSONRPCMembersOnAPlainRoute(t *testing.T) {
+	for _, body := range []string{
+		`{"jsonrpc":1,"statement":"DROP TABLE t","warehouse_id":"w"}`,
+		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_tables"},"statement":"DROP TABLE t"}`,
+	} {
+		c := codechttp.New(codechttp.Options{SQL: databricksSQL()})
+		if stmts := mustDecode(t, c, post("/api/2.0/sql/statements", body)); len(stmts) != 2 || stmts[1].Operation != inspect.OpDrop {
+			t.Errorf("%s: statements = %+v, want the request and its DROP", body, stmts)
+		}
+	}
+}
+
 // The SQL statement carries no credential handle: the gate resolves the
 // caller on the request statement, and a handle on the SQL statement would be
 // a second resolution for one request.

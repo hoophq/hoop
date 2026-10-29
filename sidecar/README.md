@@ -4227,18 +4227,23 @@ it.
 
 - **Fields.** `fields` maps a resource pattern, written as an `http_resource`
   rule writes it, to the dotted JSON path of the SQL. The longest matching
-  pattern wins. A pattern matches the cleaned path, because Databricks routes
+  pattern wins; two of the same length that match and name different paths
+  refuse the request, because reading one would leave SQL at the other
+  unread. A pattern matches the cleaned path, because Databricks routes
   `/api/2.0/./sql/statements`, a doubled slash, a backslash or `x/..` like the
   canonical path. `dialect` is required: it decides what a comment or a string is, and
   `spark` is Databricks SQL. A request with no body carries no SQL.
-- **MCP.** A body with a `jsonrpc` member carries SQL only as a `tools/call`
-  naming one of `tools`; `initialize`, `tools/list` and other tools carry
-  none. A JSON-RPC batch yields one statement per call.
+- **MCP.** Where the path is under `params.arguments`, a body with a
+  `jsonrpc` member carries SQL only as a `tools/call` naming one of `tools`;
+  `initialize`, `tools/list` and other tools carry none. Such a path needs
+  `tools`. Anywhere else `jsonrpc` decides nothing: the Statement Execution
+  API runs a body that also holds it, so its SQL is read. A JSON-RPC batch
+  yields one statement per call.
 - **Refuse.** `refuse` lists `field=value` pairs whose results would not pass
   through the lane. Databricks' `disposition: EXTERNAL_LINKS` answers with
   links to cloud storage, so the rows would skip the masking and the audit.
   Such a request is refused before it is forwarded, with `refuse_message`,
-  whatever the rules say. A value at a `refuse` field that is not a string is
+  whatever the rules say, and whether or not the message carries SQL. A value at a `refuse` field that is not a string is
   refused too: Databricks takes `"disposition": 2` for `EXTERNAL_LINKS`.
   `refuse_message` is required with `refuse`, since only the operator knows
   what the client should ask for instead.
@@ -4268,9 +4273,10 @@ it.
 
 A lane in front of a Databricks workspace, with a URL upstream so clients dial
 the sidecar by its own name. The one guardrail the free tier allows denies
-the writes it names and every statement the classifier cannot read. A rule
-naming `unknown` judges client statements only; responses carry no verb and
-never match it. `other` is left out: it holds `COMMENT ON`, `ANALYZE TABLE`
+the writes it names and every statement the classifier cannot read. An
+`operation` rule naming `unknown` judges client statements only; responses
+carry no verb and never match it. The `operations` scope of another rule
+type still reaches responses through `unknown`. `other` is left out: it holds `COMMENT ON`, `ANALYZE TABLE`
 and `REFRESH`, but also `USE CATALOG`, which clients send.
 
 ```yaml

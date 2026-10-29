@@ -1029,8 +1029,13 @@ func (s *Server) pump(
 					// what the codec masked before it refused and cut the
 					// response: a deny frame now would sit inside it.
 					if len(d.Payload) > 0 {
-						_ = target.SetWriteDeadline(time.Now().Add(5 * time.Second))
-						_, _ = target.Write(d.Payload)
+						err := target.SetWriteDeadline(time.Now().Add(5 * time.Second))
+						if err == nil {
+							_, err = target.Write(d.Payload)
+						}
+						if err != nil {
+							log.Warn("masked part of a refused response not delivered", "direction", string(dir), "error", err)
+						}
 					}
 					return
 				}

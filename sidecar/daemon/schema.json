@@ -304,7 +304,7 @@
               "key": "tools",
               "type": "list",
               "label": "JSON-RPC tools",
-              "help": "For an MCP server: the tools whose tools/call arguments carry SQL. Any other JSON-RPC message carries none."
+              "help": "For an MCP server: the tools whose tools/call arguments carry SQL. Required when a path is under params.arguments; any other JSON-RPC message there carries none."
             },
             {
               "key": "refuse",

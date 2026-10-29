@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"path"
 	"slices"
 	"strconv"
@@ -102,7 +103,8 @@ func newSQLReader(o *SQLOptions) *sqlReader {
 		r.patterns = append(r.patterns, p)
 	}
 	// The longest pattern first, so a specific route wins over a "/**"
-	// that also covers it; then lexically, for a stable tie-break.
+	// that also covers it; then lexically, for a stable order. fieldFor
+	// refuses a tie that names two paths.
 	slices.SortFunc(r.patterns, func(a, b string) int {
 		if len(a) != len(b) {
 			return len(b) - len(a)
@@ -121,16 +123,20 @@ func newSQLReader(o *SQLOptions) *sqlReader {
 // (cleanpath.go), which every rule reads too; a SQL route also ignores the
 // trailing slash that cleanResource keeps.
 func (r *sqlReader) route(d *inspect.HTTPDetail) (sqlRoute, bool) {
-	resource := path.Clean(d.Resource)
-	field, ok := r.fieldFor(resource)
-	return sqlRoute{resource: resource, field: field}, ok
+	rt := sqlRoute{resource: path.Clean(d.Resource)}
+	var ok bool
+	rt.field, rt.conflict, ok = r.fieldFor(rt.resource)
+	return rt, ok
 }
 
 // sqlRoute is where a request's SQL is read: the cleaned resource it went
-// to, and the JSON path of the SQL in its body.
+// to, and the JSON path of the SQL in its body. conflict is set when a
+// pattern as long as the one that matched also matches and names another
+// path.
 type sqlRoute struct {
 	resource string
 	field    string
+	conflict string
 }
 
 // extract returns the SQL statements a request to rt carries, to be placed
@@ -140,6 +146,10 @@ func (r *sqlReader) extract(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.State
 		// Nothing to run: an MCP client opens its event stream with a GET
 		// on the same route, and the server answers it without SQL.
 		return nil, nil
+	}
+	if rt.conflict != "" {
+		return nil, fmt.Errorf("this listener cannot tell where this request's SQL is: %s: %w",
+			rt.conflict, inspect.ErrStreamUnsafe)
 	}
 	var (
 		found []jsonsql.SQL
@@ -160,14 +170,29 @@ func (r *sqlReader) extract(d *inspect.HTTPDetail, rt sqlRoute) ([]inspect.State
 	return out, nil
 }
 
-// fieldFor returns the JSON path of the SQL in a request to resource.
-func (r *sqlReader) fieldFor(resource string) (string, bool) {
-	for _, p := range r.patterns {
-		if r.opts.MatchResource(p, resource) {
-			return r.opts.Fields[p], true
+// fieldFor returns the JSON path of the SQL in a request to resource: the
+// longest matching pattern's. Between two of the same length the tie-break
+// is their spelling, which says nothing about where the SQL is, so when
+// both match and name different paths, conflict names them: reading one
+// would let SQL at the other pass unread.
+func (r *sqlReader) fieldFor(resource string) (field, conflict string, ok bool) {
+	for i, p := range r.patterns {
+		if !r.opts.MatchResource(p, resource) {
+			continue
 		}
+		field = r.opts.Fields[p]
+		for _, q := range r.patterns[i+1:] {
+			if len(q) != len(p) {
+				break
+			}
+			if r.opts.Fields[q] != field && r.opts.MatchResource(q, resource) {
+				conflict = fmt.Sprintf("http.sql.fields %q and %q both match it and name different paths", p, q)
+				break
+			}
+		}
+		return field, conflict, true
 	}
-	return "", false
+	return "", "", false
 }
 
 // statement is one SQL string as a statement of this lane. It carries fresh

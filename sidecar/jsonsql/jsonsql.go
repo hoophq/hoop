@@ -24,10 +24,10 @@ type Options struct {
 	// Dialect classifies the SQL.
 	Dialect lexer.Dialect
 
-	// Tools names the JSON-RPC tools whose tools/call carries SQL. A message
-	// with a "jsonrpc" member is JSON-RPC: it carries SQL only as a
-	// tools/call naming one of these, and any other message (initialize,
-	// tools/list, another tool) carries none.
+	// Tools names the JSON-RPC tools whose tools/call carries SQL. Where
+	// the SQL is a tool argument (ToolArgument), a message with a "jsonrpc"
+	// member carries SQL only as a tools/call naming one of these, and any
+	// other message (initialize, tools/list, another tool) carries none.
 	Tools []string
 
 	// Refuse lists document values that send a request's results around the
@@ -116,6 +116,7 @@ func (r *Reader) Read(doc, field string) ([]SQL, error) {
 	if batch, isBatch := v.([]any); isBatch {
 		messages = batch
 	}
+	toolRoute := ToolArgument(field)
 	var out []SQL
 	for _, m := range messages {
 		obj, isObject := m.(map[string]any)
@@ -123,11 +124,13 @@ func (r *Reader) Read(doc, field string) ([]SQL, error) {
 			out = append(out, SQL{Text: doc, Unreadable: "the body holds a JSON value that is not an object"})
 			continue
 		}
-		if _, rpc := obj["jsonrpc"]; rpc && !r.toolCall(obj) {
-			continue // a JSON-RPC message that runs no SQL tool
-		}
+		// Before any skip: a refused value sends the results around the
+		// relay, whatever else the message holds.
 		if err := r.checkRefuse(obj); err != nil {
 			return nil, err
+		}
+		if _, rpc := obj["jsonrpc"]; rpc && toolRoute && !r.toolCall(obj) {
+			continue // a JSON-RPC message that runs no SQL tool
 		}
 		sql, isString := Lookup(obj, field).(string)
 		if !isString || strings.TrimSpace(sql) == "" {
@@ -157,6 +160,16 @@ func (r *Reader) checkRefuse(obj map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// ToolArgument reports whether field is an argument of a JSON-RPC
+// tools/call, which MCP puts under params.arguments. Only there does the
+// tool a message calls decide whether it carries SQL. Anywhere else
+// "jsonrpc", "method" and "params" are members the client chose:
+// Databricks' Statement Execution API runs a body that also holds
+// "jsonrpc": 1, so skipping on them would let its DROP past the lane.
+func ToolArgument(field string) bool {
+	return strings.HasPrefix(field, "params.arguments.")
 }
 
 // toolCall reports whether a JSON-RPC message calls one of the SQL tools.

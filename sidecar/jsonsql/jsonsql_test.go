@@ -21,7 +21,9 @@ func reader(refuse ...jsonsql.RefuseValue) *jsonsql.Reader {
 
 // The Reader knows JSON and JSON-RPC, not the protocol that carried them: a
 // plain object, a tools/call, a batch, and the places SQL should be but is
-// not, each read the same way whatever the transport.
+// not, each read the same way whatever the transport. JSON-RPC members
+// decide nothing where the SQL is not a tool argument: Databricks' Statement
+// Execution API runs a body that also holds them.
 func TestReadFindsTheSQL(t *testing.T) {
 	call := func(q string) string {
 		return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_sql","arguments":{"query":"` + q + `"}}}`
@@ -31,6 +33,9 @@ func TestReadFindsTheSQL(t *testing.T) {
 		want             []string // an operation, or "?reason" for Unreadable
 	}{
 		{"object", `{"statement":"DROP TABLE t"}`, "statement", []string{"drop"}},
+		{"jsonrpc member on a plain field", `{"jsonrpc":1,"statement":"DROP TABLE t"}`, "statement", []string{"drop"}},
+		{"another tool on a plain field", `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_tables"},"statement":"DROP TABLE t"}`,
+			"statement", []string{"drop"}},
 		{"tools/call", call("DELETE FROM t"), "params.arguments.query", []string{"delete"}},
 		{"another tool", `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_tables"}}`, "params.arguments.query", nil},
 		{"batch", "[" + call("SELECT 1") + `,{"jsonrpc":"2.0","method":"notifications/initialized"},` + call("DROP TABLE t") + "]",
@@ -80,12 +85,34 @@ func TestRefuse(t *testing.T) {
 	if got, err := reader(refuse).Read(`{"statement":"SELECT 1","disposition":null}`, "statement"); err != nil || len(got) != 1 {
 		t.Errorf("a null disposition: %+v, %v", got, err)
 	}
+	// A message read as carrying no SQL is still checked: the refused value
+	// is about where the results go, not about the SQL.
+	for doc, field := range map[string]string{
+		`{"jsonrpc":1,"statement":"SELECT 1","disposition":"EXTERNAL_LINKS"}`:                  "statement",
+		`{"jsonrpc":"2.0","method":"initialize","disposition":"EXTERNAL_LINKS"}`:               "params.arguments.query",
+		`[{"jsonrpc":"2.0","method":"ping"},{"jsonrpc":"2.0","disposition":"external_links"}]`: "params.arguments.query",
+	} {
+		if _, err := reader(refuse).Read(doc, field); !errors.Is(err, inspect.ErrStreamUnsafe) {
+			t.Errorf("%s: err = %v, want the operator's refusal", doc, err)
+		}
+	}
 
 	if _, err := reader(refuse).Unparseable("{", "cut short"); !errors.Is(err, inspect.ErrStreamUnsafe) {
 		t.Errorf("Unparseable with Refuse: err = %v", err)
 	}
 	if got, err := reader().Unparseable("{", "cut short"); err != nil || len(got) != 1 || got[0].Unreadable != "cut short" {
 		t.Errorf("Unparseable without Refuse: %+v, %v", got, err)
+	}
+}
+
+func TestToolArgument(t *testing.T) {
+	for f, want := range map[string]bool{
+		"params.arguments.query": true, "params.arguments.sql.text": true,
+		"statement": false, "params.query": false, "params.arguments": false, "arguments.query": false,
+	} {
+		if got := jsonsql.ToolArgument(f); got != want {
+			t.Errorf("ToolArgument(%q) = %v, want %v", f, got, want)
+		}
 	}
 }
 

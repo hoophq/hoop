@@ -756,3 +756,19 @@ func TestUnknownRuleDoesNotMatchResponses(t *testing.T) {
 		t.Error("an unknown statement with no direction was allowed")
 	}
 }
+
+// The exemption above is the operation rule's. Another rule type scoped to
+// `unknown` still reaches responses, which is how an operator aims a
+// pattern at them.
+func TestUnknownScopeStillReachesResponses(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{{Name: "no-ssn", Type: policy.MatchPattern,
+		Pattern: `\d{3}-\d{2}-\d{4}`, Operations: []inspect.Operation{inspect.OpUnknown}}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	resp := inspect.Statement{Protocol: inspect.HTTP, Direction: inspect.FromServer,
+		Text: `{"ssn":"123-45-6789"}`, Operation: inspect.OpUnknown, HTTP: &inspect.HTTPDetail{StatusCode: 200}}
+	if !rules.Evaluate(resp).Denied {
+		t.Error("a pattern rule scoped to unknown no longer reaches a response")
+	}
+}

@@ -27,12 +27,14 @@ type HTTPSQLConfig struct {
 
 	// Fields maps a resource pattern, written as an http_resource rule
 	// writes it, to the dotted JSON path of the SQL string in a request to
-	// that resource.
+	// that resource. When two patterns match a request, the longer wins;
+	// two of the same length that name different paths refuse it.
 	Fields map[string]string `json:"fields,omitempty" label:"Fields" placeholder:"/api/2.0/sql/statements" help:"A resource pattern, as an http_resource rule writes it, and the JSON path of the SQL in a request to it, such as statement or params.arguments.query."`
 
 	// Tools names the JSON-RPC tools whose tools/call carries SQL, for an
-	// MCP server. Any other JSON-RPC message carries none.
-	Tools []string `json:"tools,omitempty" label:"JSON-RPC tools" help:"For an MCP server: the tools whose tools/call arguments carry SQL. Any other JSON-RPC message carries none."`
+	// MCP server. A path under params.arguments is read only from a call to
+	// one of them, so such a path requires it.
+	Tools []string `json:"tools,omitempty" label:"JSON-RPC tools" help:"For an MCP server: the tools whose tools/call arguments carry SQL. Required when a path is under params.arguments; any other JSON-RPC message there carries none."`
 
 	// Refuse lists field=value pairs that send a request's results around
 	// the lane. A SQL-bearing request carrying one is refused before it is
@@ -87,6 +89,13 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 		if !jsonsql.ValidPath(s.Fields[p]) {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: http.sql.fields[%q] = %q is not a dotted JSON path such as statement or params.arguments.query",
+				lane, p, s.Fields[p]))
+		}
+		// Without tools no call would be read, and the lane would pass
+		// every tools/call it was configured to judge.
+		if jsonsql.ToolArgument(s.Fields[p]) && len(s.Tools) == 0 {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: http.sql.fields[%q] = %q is a tools/call argument and http.sql.tools is empty; name the tools whose calls run SQL",
 				lane, p, s.Fields[p]))
 		}
 	}
