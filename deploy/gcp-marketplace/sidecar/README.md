@@ -34,21 +34,45 @@ gcloud container clusters get-credentials CLUSTER --location LOCATION
 
 ## Installation
 
-From Google Cloud Marketplace, pick the sidecar and fill in the form. From the
-command line, with this directory as the module:
+Once hoop is on Google Cloud Marketplace, its form runs this module and
+supplies the chart and the image. The listing is not public yet.
+
+From the command line, use hoop's public release artifacts: the chart from
+`releases.hoop.dev` and the image from Docker Hub. Write a root module that
+calls this one at a release tag, in an empty directory:
+
+```hcl
+# main.tf. RELEASE is a hoop release, for example 1.281.0. Terraform takes
+# no variable in source, so the release is written out each time.
+module "hoop_sidecar" {
+  source = "github.com/hoophq/hoop//deploy/gcp-marketplace/sidecar?ref=RELEASE"
+
+  project_id       = "PROJECT"
+  cluster_name     = "CLUSTER"
+  cluster_location = "LOCATION"
+
+  # Empty: the chart is a URL, not an oci:// repository.
+  helm_chart_repo    = ""
+  helm_chart_name    = "https://releases.hoop.dev/release/RELEASE/hoopsidecar-chart-RELEASE.tgz"
+  helm_chart_version = "RELEASE"
+  image_repo         = "docker.io/hoophq/hoopsidecar"
+  image_tag          = "RELEASE-distroless"
+
+  goog_cm_deployment_name = "appdb-sidecar"
+  upstream                = "appdb.default.svc.cluster.local:5432"
+  guardrail_preset        = "read-only"
+}
+
+output "lane_service" { value = module.hoop_sidecar.lane_service }
+```
 
 ```bash
 terraform init
-terraform apply \
-  -var project_id=PROJECT -var cluster_name=CLUSTER -var cluster_location=LOCATION \
-  -var helm_chart_repo=oci://REGISTRY/PATH -var helm_chart_name=hoopsidecar-chart \
-  -var helm_chart_version=MAJOR.MINOR \
-  -var image_repo=REGISTRY/PATH/hoopsidecar -var image_tag=MAJOR.MINOR \
-  -var goog_cm_deployment_name=appdb-sidecar \
-  -var upstream=appdb.default.svc.cluster.local:5432
+terraform apply
 ```
 
-The chart and image locations are the ones the Marketplace listing shows.
+The preset needs 1.281.0 or later. Without a license the sidecar starts
+on its own, with no login code, from 1.279.2.
 
 ### Parameters
 
@@ -113,14 +137,16 @@ listeners:
     upstream: appdb:5432
 ```
 
-From the command line: `-var config_document="$(cat config.yaml)"`.
+From the command line, in `main.tf`: `config_source = "document"` and
+`config_document = file("config.yaml")`.
 
 ### Pin the image to a digest
 
-`image_tag` accepts a tag and a digest together; the digest wins:
+`image_tag` accepts a tag and a digest together; the digest wins. In
+`main.tf`:
 
-```bash
--var image_tag="MAJOR.MINOR@sha256:DIGEST"
+```hcl
+image_tag = "RELEASE-distroless@sha256:DIGEST"
 ```
 
 ## Basic usage
@@ -145,12 +171,57 @@ curl -s localhost:19000/stats
 
 In `simple` mode the audit trail goes to the pod's log, so Cloud Logging
 collects it. A `document` or ConfigMap config decides that itself with
-`audit.file`: `-` is the pod's log, a path is a file in the pod.
+`audit.file`: `-` is the pod's log, a path is a file in the pod. Each
+statement is a JSON line; a denied one has `"kind":"violation"` and the rule:
+
+```bash
+kubectl -n hoop-sidecar logs deploy/appdb-sidecar-hoopsidecar | grep '"kind":"violation"'
+gcloud logging read 'resource.type="k8s_container" AND resource.labels.namespace_name="hoop-sidecar"
+  AND jsonPayload.kind="violation"' --freshness 1h --format 'value(jsonPayload.statement,jsonPayload.rule)'
+```
+
+The Deployment is `<goog_cm_deployment_name>-hoopsidecar`.
 
 TLS: on `postgres`, `clickhouse`, `http`, `grpc` and `spanner` lanes the
 sidecar can terminate client TLS (`downstream_tls` in a `document` config).
 The other protocols are plaintext between client and sidecar, which is why no
 public load balancer is offered.
+
+## Lock the database to the sidecar
+
+The sidecar sees only what passes through it. A client that reaches the
+database directly, with the login, goes around it. On GKE, a NetworkPolicy in
+the database's namespace admits the sidecar's pods only. Autopilot clusters
+enforce it; a Standard cluster needs Dataplane V2 or network policy enforcement.
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-only-from-hoop-sidecar
+  namespace: DB_NAMESPACE
+spec:
+  podSelector:
+    matchLabels: {app: appdb}          # your database pods' labels
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: hoop-sidecar}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: hoopsidecar
+              app.kubernetes.io/instance: appdb-sidecar   # goog_cm_deployment_name
+      ports: [{port: 5432, protocol: TCP}]
+```
+
+Check it: a connection straight to the database must time out, and one
+through the lane Service must work. A selector that matches nothing locks
+nothing, with no error. NetworkPolicies add up: another policy that selects
+the database's pods and admits other clients keeps them in. List them with
+`kubectl -n DB_NAMESPACE get networkpolicy`, and test a direct connection
+from each workload that had access. A database outside the cluster needs its own firewall
+rule; this guide does not cover it.
 
 ## Back up and restore
 
@@ -159,8 +230,9 @@ ConfigMap, or the control plane); back those up.
 
 ## Image updates
 
-Apply again with a newer `image_tag` and `helm_chart_version`, or deploy the
-newer release from Marketplace. The Deployment rolls one pod at a time;
+From the command line: write the newer release in every place `main.tf` names
+RELEASE, then `terraform init -upgrade` and `terraform apply`. From
+Marketplace: deploy the newer release. The Deployment rolls one pod at a time;
 connections on a replaced pod close.
 
 ## Scaling
@@ -171,9 +243,13 @@ connections across them.
 ## Deletion
 
 ```bash
-terraform destroy   # same -var flags as apply
+terraform destroy   # in the directory of main.tf
 kubectl delete namespace hoop-sidecar
+kubectl -n DB_NAMESPACE delete networkpolicy database-only-from-hoop-sidecar
 ```
+
+Delete the NetworkPolicy with the sidecar: while it stays, it admits only the
+sidecar's pods, so no client reaches the database.
 
 `terraform destroy` removes the release. The namespace stays because other
 releases may share it; delete it when nothing else uses it. A cluster made with
