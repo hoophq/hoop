@@ -74,37 +74,40 @@
                           (str "Create new " feature-name)
                           "Request demo"))]
     [:> Box {:class "flex h-full overflow-hidden"}
-     [:> Box {:class "w-1/2 p-12 space-y-radix-8 flex flex-col justify-center"}
-      [:> Box
-       [:> Heading {:size "8" :weight "bold" :class "text-gray-12"}
-        (str "Get more with " feature-name)]
+     ;; my-auto centers only while the content fits; justify-center clipped the
+     ;; primary button out of reach on a short window.
+     [:> Box {:class "w-1/2 p-12 flex flex-col overflow-y-auto"}
+      [:> Box {:class "my-auto space-y-radix-8"}
+       [:> Box
+        [:> Heading {:size "8" :weight "bold" :class "text-gray-12"}
+         (str "Get more with " feature-name)]
 
-       [:> Text {:as "p" :size "5" :class "text-gray-11"}
-        description]]
+        [:> Text {:as "p" :size "5" :class "text-gray-11"}
+         description]]
 
-      [:> Box {:class "space-y-radix-6"}
-       (for [item feature-items]
-         ^{:key (:title item)}
-         [feature-item item])]
+       [:> Box {:class "space-y-radix-6"}
+        (for [item feature-items]
+          ^{:key (:title item)}
+          [feature-item item])]
 
-      (when extra-information
-        [:> Text {:size "2" :class "text-gray-11"}
-         extra-information])
+       (when extra-information
+         [:> Text {:size "2" :class "text-gray-11"}
+          extra-information])
 
-      (when (and link-button-href link-button-text)
-        [:> Link {:href (get-in config/docs-url link-button-href)
-                  :target "_blank"}
-         [:> Callout.Root {:size "1" :variant "outline" :color "gray" :class "w-fit"}
-          [:> Callout.Icon
-           [:> ArrowUpRight {:size 16}]]
-          [:> Callout.Text
-           link-button-text]]])
+       (when (and link-button-href link-button-text)
+         [:> Link {:href (get-in config/docs-url link-button-href)
+                   :target "_blank"}
+          [:> Callout.Root {:size "1" :variant "outline" :color "gray" :class "w-fit"}
+           [:> Callout.Icon
+            [:> ArrowUpRight {:size 16}]]
+           [:> Callout.Text
+            link-button-text]]])
 
-      (when (and on-primary-click button-text)
-        [:> Button {:size "3"
-                    :onClick on-primary-click
-                    :class "self-start"}
-         button-text])]
+       (when (and on-primary-click button-text)
+         [:> Button {:size "3"
+                     :onClick on-primary-click
+                     :class "self-start"}
+          button-text])]]
 
      [:> Box {:class "w-1/2 bg-blue-50 min-h-full flex-shrink-0"}
       (if image
