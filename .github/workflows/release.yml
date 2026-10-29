@@ -1037,6 +1037,59 @@ jobs:
             gh_token=${{ secrets.GH_TOKEN }}
             segment_api_key=${{ secrets.SEGMENT_API_KEY }}
           outputs: type=local,dest=ica-assets
+      # Opt in only with a reviewed GPU-native asset set matching the engine
+      # module pin. Both image and native bundle use this exact digest.
+      - name: Check ICA GPU release inputs
+        env:
+          GPU_URL: ${{ vars.ICA_GPU_ASSETS_URL }}
+          GPU_SHA: ${{ vars.ICA_GPU_ASSETS_SHA256 }}
+        run: |
+          if { [ -n "$GPU_URL" ] && [ -z "$GPU_SHA" ]; } || { [ -z "$GPU_URL" ] && [ -n "$GPU_SHA" ]; }; then
+            echo "Set both ICA_GPU_ASSETS_URL and ICA_GPU_ASSETS_SHA256, or neither" >&2
+            exit 1
+          fi
+      - name: Build and push (ica-gpu)
+        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica-gpu
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+            ICA_GPU_ASSETS_URL=${{ vars.ICA_GPU_ASSETS_URL }}
+            ICA_GPU_ASSETS_SHA256=${{ vars.ICA_GPU_ASSETS_SHA256 }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
+          tags: hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica-gpu
+      - name: Export the ica GPU assets bundle
+        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica-gpu-assets
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+            ICA_GPU_ASSETS_URL=${{ vars.ICA_GPU_ASSETS_URL }}
+            ICA_GPU_ASSETS_SHA256=${{ vars.ICA_GPU_ASSETS_SHA256 }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+            segment_api_key=${{ secrets.SEGMENT_API_KEY }}
+          outputs: type=local,dest=ica-gpu-assets
+      - name: Stage the ica GPU assets bundle
+        if: ${{ vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        run: |
+          mkdir -p stage/binaries
+          mv ica-gpu-assets/binaries/* stage/binaries/
       - name: Stage the ica assets bundle
         run: |
           set -euo pipefail

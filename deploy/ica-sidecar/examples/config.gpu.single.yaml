@@ -1,0 +1,63 @@
+# ICA GPU sidecar. Linux amd64, NVIDIA driver and compatible TensorRT plans.
+# Paths belong to this bundle; no dependency on an existing lab agent install.
+# Do not copy CPU-only workers/tiles/gray/thread/reuse overrides into this file.
+log_level: info
+admin:
+  listen: 127.0.0.1:19000
+# Text inspector is intentionally absent. Audit contains metadata, not OCR text.
+audit:
+  file: '-'
+  fail_open: false
+ica:
+  ocr_turbo_library: /opt/libhoop-ica/current/gpu/lib/libhoop-gpuframe.so
+  ocr_turbo_det_model: /opt/libhoop-ica/current/gpu/engines/det.engine
+  ocr_turbo_rec_model: /opt/libhoop-ica/current/gpu/engines/rec.engine
+  ocr_turbo_rec_dict: /opt/libhoop-ica/current/gpu/engines/dict.txt
+  # Set ocr_turbo_cls_model only when that engine is in the GPU asset set.
+  ner_model: /opt/libhoop-ica/current/models/KnightsAnalytics_distilbert-NER
+  ner_ort_library: /opt/libhoop-ica/current/gpu/ort/lib/libonnxruntime.so
+  max_sessions: 32
+  connect_timeout_sec: 10
+  options:
+    ocr_backend: turboocr
+    ocr_turbo_device: 0
+    ocr_turbo_regional_cache: true
+    ocr_turbo_full_screen: false
+    # Match-only: low confidence / empty OCR never independently masks.
+    # Missed text cannot reach policy and may remain visible.
+    pii_matches_only: true
+    ocr_min_confidence: 0.8
+    ocr_browser_optimizations: true
+    ocr_screen_optimizations: true
+    ner_backend: ort
+    ner_accelerator: cuda
+    ner_gpu_device: 0
+    ner_parallel: 4
+    ner_threads: 2
+    ner_entities: [PERSON, LOCATION, NRP]
+    pii_threshold: 0.8
+    pii_entities: [HEALTHCARE_IDENTIFIERS]
+    video_batch: true
+    output_pipeline: true
+    adaptive_coalescing: true
+    presentation_v2: true
+    presentation_screen_copy: true
+    output_latest_frame: true
+
+# Fixed upstream: Gateway/relay -> this listener -> VM702.
+# listen is this host, not the VDA. 0.0.0.0 binds all local IPv4 interfaces.
+# Through SSH forwarding the admitted peer can be 127.0.0.1/32; use the
+# actual TCP peer, not a guessed Gateway address. Keep network firewall rules.
+listeners:
+  - name: ica-lab-gpu
+    protocol: ica
+    listen: 0.0.0.0:2598
+    upstream: 10.77.0.31:2598           # EDIT: reachable VDA through your VPN/relay
+    ica:
+      tenant_id: azure-ica-lab         # EDIT: your audit tenant
+      source_cidrs: [10.20.1.10/32]    # EDIT: actual connecting Gateway/relay peer
+      display:
+        width: 1264                   # EDIT: published session geometry
+        height: 1040
+        thinwire_channel: 9
+      edt: false

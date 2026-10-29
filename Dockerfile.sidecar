@@ -9,6 +9,8 @@
 #                           hoophq/hoopsidecar:latest
 #   --target distroless  -> hoophq/hoopsidecar:<version>-distroless
 #   --target ica         -> hoophq/hoopsidecar:<version>-ica
+#   --target ica-gpu     -> ICA + TurboOCR and CUDA NER (Linux amd64)
+#   --target ica-gpu-assets -> native GPU bundle (explicit native payload required)
 #   --target ica-assets  -> hoop-ica-assets_<version>_Linux_<arch>.tar.gz, not
 #                           an image: see "The ica assets bundle" below
 #
@@ -434,6 +436,59 @@ RUN set -eu; \
 
 FROM scratch AS ica-assets
 COPY --from=ica-assets-package /dist/ /
+
+# --- GPU native input: produced by deploy/ica-sidecar/gpu-assets.py ---------
+# Deliberately no default URL/engine: TensorRT plans must match the target GPU.
+FROM --platform=${BUILDPLATFORM} ${UBUNTU_IMAGE} AS ica-gpu-native
+ARG TARGETARCH
+ARG ICA_GPU_ASSETS_URL
+ARG ICA_GPU_ASSETS_SHA256
+RUN apt-get update -y && apt-get install -y --no-install-recommends ca-certificates curl python3
+COPY deploy/ica-sidecar/gpu-assets.py /usr/local/bin/gpu-assets.py
+COPY --from=ica-build /out/worker/libhoop-ica-version /engine-version
+RUN set -eu; test "$TARGETARCH" = amd64; \
+    test -n "$ICA_GPU_ASSETS_URL"; \
+    printf '%s' "$ICA_GPU_ASSETS_SHA256" | grep -Eq '^[a-f0-9]{64}$'; \
+    curl --proto '=https' --proto-redir '=https' -fsSL "$ICA_GPU_ASSETS_URL" -o /native.tar.gz; \
+    printf '%s  /native.tar.gz\n' "$ICA_GPU_ASSETS_SHA256" | sha256sum -c -; \
+    python3 /usr/local/bin/gpu-assets.py unpack /native.tar.gz --engine "$(cat /engine-version)" --output /gpu
+
+# Same standalone ICA sidecar binary; no Tesseract/CPU ORT assets in this image.
+FROM ${UBUNTU_IMAGE} AS ica-gpu
+RUN groupadd --gid 10001 hoop && useradd --uid 10001 --gid 10001 --shell /sbin/nologin hoop && \
+    apt-get update -y && apt-get install -y --no-install-recommends ca-certificates tini libstdc++6 && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives && \
+    mkdir -p /opt/libhoop-ica/releases/image/models && \
+    ln -s releases/image /opt/libhoop-ica/current
+COPY --from=ica-build /out/bin/hoop-inspect /app/hoop-inspect
+COPY --from=ica-gpu-native /gpu/ /opt/libhoop-ica/releases/image/gpu/
+COPY --from=models /opt/alcatraz/models/KnightsAnalytics_distilbert-NER /opt/libhoop-ica/releases/image/models/KnightsAnalytics_distilbert-NER
+ENV PATH="/app:${PATH}"
+ENV LD_LIBRARY_PATH="/opt/libhoop-ica/current/gpu/lib:/opt/libhoop-ica/current/gpu/ort/lib"
+USER 10001:10001
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["hoop-inspect", "-config", "/etc/hoop-inspect/config.yaml"]
+
+FROM --platform=${BUILDPLATFORM} ${UBUNTU_IMAGE} AS ica-gpu-assets-package
+ARG VERSION=unknown
+COPY --from=ica-build /out/bin/hoop-inspect /bundle/hoop-ica
+COPY --from=ica-build /out/worker/LICENSE /out/worker/NOTICE /out/worker/libhoop-ica-version /bundle/
+COPY --from=ica-gpu-native /gpu/ /bundle/gpu/
+COPY --from=models /opt/alcatraz/models/KnightsAnalytics_distilbert-NER /bundle/models/KnightsAnalytics_distilbert-NER
+COPY deploy/ica-sidecar/install.sh deploy/ica-sidecar/install-gpu.sh deploy/ica-sidecar/gpu-assets.py /bundle/
+COPY deploy/ica-sidecar/examples/ /bundle/examples/
+COPY deploy/ica-sidecar/GPU.md deploy/ica-sidecar/GPU-RUNTIME.md /bundle/
+RUN set -eu; { echo "version=${VERSION}"; echo arch=amd64; echo flavour=ica-gpu; \
+      echo "libhoop_ica=$(cat /bundle/libhoop-ica-version)"; } > /bundle/release.txt; \
+    rm /bundle/libhoop-ica-version; \
+    chmod 0755 /bundle/hoop-ica /bundle/install.sh /bundle/install-gpu.sh; \
+    mkdir -p /dist/binaries; \
+    name="hoop-ica-gpu-assets_${VERSION}_Linux_amd64"; \
+    tar -czf "/dist/binaries/${name}.tar.gz" --owner=0 --group=0 -C /bundle .; \
+    (cd / && sha256sum "./dist/binaries/${name}.tar.gz" > "/dist/binaries/${name}_checksum.txt")
+
+FROM scratch AS ica-gpu-assets
+COPY --from=ica-gpu-assets-package /dist/ /
 
 # --- Flavour: default (Ubuntu 24.04 LTS) -------------------------------------
 # The unsuffixed image, and what :latest points at. Declared last on purpose:

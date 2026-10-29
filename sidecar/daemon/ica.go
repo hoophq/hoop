@@ -59,6 +59,12 @@ func isICA(lc ListenerConfig) bool {
 // share one profile. Options holds overrides only; the lane's Notes report
 // the resolved values.
 type ICARuntimeConfig struct {
+	// TurboOCR native device assets; used only with options.ocr_backend: turboocr.
+	OCRTurboLibrary  string `json:"ocr_turbo_library,omitempty" cap:"ica_gpu"`
+	OCRTurboDetModel string `json:"ocr_turbo_det_model,omitempty" cap:"ica_gpu"`
+	OCRTurboRecModel string `json:"ocr_turbo_rec_model,omitempty" cap:"ica_gpu"`
+	OCRTurboRecDict  string `json:"ocr_turbo_rec_dict,omitempty" cap:"ica_gpu"`
+	OCRTurboClsModel string `json:"ocr_turbo_cls_model,omitempty" cap:"ica_gpu"`
 	// OCRWorker is the hoop-tesseract-worker binary. Default: the engine's
 	// installed-release path (/opt/libhoop-ica/current/bin/hoop-tesseract-worker).
 	OCRWorker string `json:"ocr_worker,omitempty"`
@@ -119,22 +125,32 @@ const (
 // output_pipeline…) belong to the engine, and its validator checks them on
 // the host.
 type ICAOptions struct {
-	OCRWorkers              *int     `json:"ocr_workers,omitempty"`
-	OCRTiles                *int     `json:"ocr_tiles,omitempty"`
-	OCRThreadLimit          *int     `json:"ocr_thread_limit,omitempty"`
-	OCRTimeoutSec           *int     `json:"ocr_timeout_sec,omitempty"`
-	OCRMinConfidence        *float64 `json:"ocr_min_confidence,omitempty"`
-	OCRBrowserOptimizations *bool    `json:"ocr_browser_optimizations,omitempty"`
-	OCRScreenOptimizations  *bool    `json:"ocr_screen_optimizations,omitempty"`
-	OCRGrayPreparation      *bool    `json:"ocr_gray_preparation,omitempty"`
-	OCRNoInvert             *bool    `json:"ocr_no_invert,omitempty"`
-	OCRFreshReuseFrames     *int     `json:"ocr_fresh_reuse_frames,omitempty"`
-	OCRLineBandScale        *bool    `json:"ocr_line_band_scale,omitempty"`
-	OCRLineBandMinRows      *int     `json:"ocr_line_band_min_rows,omitempty"`
-	NERBackend              *string  `json:"ner_backend,omitempty"`
-	NERThreads              *int     `json:"ner_threads,omitempty"`
-	NERParallel             *int     `json:"ner_parallel,omitempty"`
-	PIIThreshold            *float64 `json:"pii_threshold,omitempty"`
+	// Backend selection keeps CPU defaults unchanged. TurboOCR relaxes only
+	// implicit Tesseract settings; explicit incompatible overrides are refused.
+	OCRBackend               *string  `json:"ocr_backend,omitempty" cap:"ica_gpu"`
+	OCRTurboDevice           *int     `json:"ocr_turbo_device,omitempty" cap:"ica_gpu"`
+	OCRTurboFramebufferBytes *uint64  `json:"ocr_turbo_framebuffer_bytes,omitempty" cap:"ica_gpu"`
+	OCRTurboFullScreen       *bool    `json:"ocr_turbo_full_screen,omitempty" cap:"ica_gpu"`
+	OCRTurboRegionalCache    *bool    `json:"ocr_turbo_regional_cache,omitempty" cap:"ica_gpu"`
+	NERAccelerator           *string  `json:"ner_accelerator,omitempty" cap:"ica_gpu"`
+	NERGPUDevice             *int     `json:"ner_gpu_device,omitempty" cap:"ica_gpu"`
+	NEREntities              []string `json:"ner_entities,omitempty" cap:"ica_gpu"`
+	OCRWorkers               *int     `json:"ocr_workers,omitempty"`
+	OCRTiles                 *int     `json:"ocr_tiles,omitempty"`
+	OCRThreadLimit           *int     `json:"ocr_thread_limit,omitempty"`
+	OCRTimeoutSec            *int     `json:"ocr_timeout_sec,omitempty"`
+	OCRMinConfidence         *float64 `json:"ocr_min_confidence,omitempty"`
+	OCRBrowserOptimizations  *bool    `json:"ocr_browser_optimizations,omitempty"`
+	OCRScreenOptimizations   *bool    `json:"ocr_screen_optimizations,omitempty"`
+	OCRGrayPreparation       *bool    `json:"ocr_gray_preparation,omitempty"`
+	OCRNoInvert              *bool    `json:"ocr_no_invert,omitempty"`
+	OCRFreshReuseFrames      *int     `json:"ocr_fresh_reuse_frames,omitempty"`
+	OCRLineBandScale         *bool    `json:"ocr_line_band_scale,omitempty"`
+	OCRLineBandMinRows       *int     `json:"ocr_line_band_min_rows,omitempty"`
+	NERBackend               *string  `json:"ner_backend,omitempty"`
+	NERThreads               *int     `json:"ner_threads,omitempty"`
+	NERParallel              *int     `json:"ner_parallel,omitempty"`
+	PIIThreshold             *float64 `json:"pii_threshold,omitempty"`
 	// PIIMatchesOnly replaces masks from fresh full-screen CPU OCR matches;
 	// it disables historical uncertainty coverage, not protocol checks.
 	PIIMatchesOnly *bool `json:"pii_matches_only,omitempty" cap:"ica_pii_matches_only"`
@@ -166,7 +182,14 @@ func (r *ICARuntimeConfig) validate(onHost bool, listeners []ListenerConfig) []s
 	// lay those out, and a developer's -validate of a config that names no
 	// path must not depend on them.
 	if onHost {
-		for key, path := range map[string]string{"ocr_worker": r.OCRWorker, "tessdata": r.Tessdata, "ner_model": r.NERModel, "ner_ort_library": r.NERORTLibrary, "failure_diagnostic_dir": r.FailureDiagnosticDir} {
+		for key, path := range map[string]string{
+			"ocr_worker": r.OCRWorker, "tessdata": r.Tessdata,
+			"ner_model": r.NERModel, "ner_ort_library": r.NERORTLibrary,
+			"failure_diagnostic_dir": r.FailureDiagnosticDir,
+			"ocr_turbo_library":      r.OCRTurboLibrary, "ocr_turbo_det_model": r.OCRTurboDetModel,
+			"ocr_turbo_rec_model": r.OCRTurboRecModel, "ocr_turbo_rec_dict": r.OCRTurboRecDict,
+			"ocr_turbo_cls_model": r.OCRTurboClsModel,
+		} {
 			if path == "" {
 				continue
 			}
@@ -203,6 +226,20 @@ func (o *ICAOptions) validate(where string) []string {
 	unit := func(name string, v *float64) {
 		if v != nil && (*v < 0 || *v > 1) {
 			problems = append(problems, fmt.Sprintf("%s.%s must be 0..1", where, name))
+		}
+	}
+	rng("ocr_turbo_device", o.OCRTurboDevice, 0, 65535)
+	rng("ner_gpu_device", o.NERGPUDevice, 0, 65535)
+	if o.OCRBackend != nil && *o.OCRBackend != "tesseract" && *o.OCRBackend != "turboocr" {
+		problems = append(problems, where+".ocr_backend must be tesseract or turboocr")
+	}
+	if o.NERAccelerator != nil && *o.NERAccelerator != "cpu" && *o.NERAccelerator != "cuda" {
+		problems = append(problems, where+".ner_accelerator must be cpu or cuda")
+	}
+	for _, e := range o.NEREntities {
+		if !slices.Contains([]string{"PERSON", "LOCATION", "ORGANIZATION", "NRP"}, e) {
+			problems = append(problems, where+".ner_entities must contain PERSON, LOCATION, ORGANIZATION or NRP")
+			break
 		}
 	}
 	rng("ocr_workers", o.OCRWorkers, 1, 64)
@@ -445,10 +482,11 @@ type ICALane struct {
 // ICARuntime is the resolved top-level block: paths and bounds as the
 // operator wrote them (empty = engine default) plus the overrides.
 type ICARuntime struct {
-	OCRWorker, Tessdata, NERModel, NERORTLibrary string
-	FailureDiagnosticDir                         string
-	MaxSessions, ConnectTimeoutSec               int
-	Options                                      ICAOptions
+	OCRTurboLibrary, OCRTurboDetModel, OCRTurboRecModel, OCRTurboRecDict, OCRTurboClsModel string
+	OCRWorker, Tessdata, NERModel, NERORTLibrary                                           string
+	FailureDiagnosticDir                                                                   string
+	MaxSessions, ConnectTimeoutSec                                                         int
+	Options                                                                                ICAOptions
 	// EDTRetentionSec and EDTReplayBudgetBytes are 0 for the engine's
 	// defaults.
 	EDTRetentionSec      int
@@ -563,7 +601,9 @@ func icaRuntimeFor(cfg *Config) ICARuntime {
 	if r == nil {
 		return ICARuntime{}
 	}
-	out := ICARuntime{OCRWorker: r.OCRWorker, Tessdata: r.Tessdata, NERModel: r.NERModel, NERORTLibrary: r.NERORTLibrary,
+	out := ICARuntime{OCRTurboLibrary: r.OCRTurboLibrary, OCRTurboDetModel: r.OCRTurboDetModel,
+		OCRTurboRecModel: r.OCRTurboRecModel, OCRTurboRecDict: r.OCRTurboRecDict, OCRTurboClsModel: r.OCRTurboClsModel,
+		OCRWorker: r.OCRWorker, Tessdata: r.Tessdata, NERModel: r.NERModel, NERORTLibrary: r.NERORTLibrary,
 		FailureDiagnosticDir: r.FailureDiagnosticDir, MaxSessions: r.MaxSessions, ConnectTimeoutSec: r.ConnectTimeoutSec}
 	if r.Options != nil {
 		out.Options = *r.Options

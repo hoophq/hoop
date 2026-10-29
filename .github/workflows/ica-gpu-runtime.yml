@@ -1,0 +1,128 @@
+name: ICA GPU Runtime Asset
+
+# A real GPU is required for the native ABI/device tests and engine smoke.
+# Manual only: this never provisions a GPU host and never runs on PRs.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable runtime asset version (for example 0.1.0)
+        type: string
+        required: true
+      turboocr_revision:
+        description: Reviewed full TurboOCR commit SHA
+        type: string
+        required: true
+      builder_config:
+        description: Prepared SDK/model/profile JSON on the trusted GPU runner
+        type: string
+        default: /opt/ica-gpu-builder/config.json
+        required: true
+      publish:
+        description: Publish verified runtime to the release artifact mirror
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ica-gpu-runtime
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux, x64, ica-gpu]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate inputs and resolve engine pin
+        id: pins
+        env:
+          VERSION: ${{ inputs.version }}
+          TURBO_REVISION: ${{ inputs.turboocr_revision }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          [[ "$TURBO_REVISION" =~ ^[a-f0-9]{40}$ ]]
+          engine=$(python3 -c 'import re; from pathlib import Path; print(re.search(r"github\.com/hoophq/libhoop-ica\s+(v\S+)", Path("sidecar/ica/go.mod").read_text())[1])')
+          echo "engine=$engine" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: matheusfrancisco/TurboOCR
+          ref: ${{ inputs.turboocr_revision }}
+          token: ${{ secrets.GH_TOKEN }}
+          path: turboocr-source
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: hoophq/libhoop-ica
+          ref: ${{ steps.pins.outputs.engine }}
+          token: ${{ secrets.GH_TOKEN }}
+          path: ica-source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and test native GPU runtime
+        env:
+          VERSION: ${{ inputs.version }}
+          TURBO_REVISION: ${{ inputs.turboocr_revision }}
+          BUILDER_CONFIG: ${{ inputs.builder_config }}
+        run: |
+          set -euo pipefail
+          # The profile is host-owned. Refuse a profile prepared for another
+          # source revision, rather than silently changing its recorded pin.
+          python3 -c 'import json,os; c=json.load(open(os.environ["BUILDER_CONFIG"])); assert c["turboocr_revision"] == os.environ["TURBO_REVISION"], "builder profile/source revision mismatch"'
+          python3 deploy/ica-sidecar/build-gpu-runtime.py \
+            --config "$BUILDER_CONFIG" --version "$VERSION" \
+            --turboocr-source "$GITHUB_WORKSPACE/turboocr-source" \
+            --ica-source "$GITHUB_WORKSPACE/ica-source" \
+            --work-dir "$RUNNER_TEMP/ica-gpu-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --jobs 4
+      - name: Retain configure, device and smoke logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ica-gpu-runtime-logs
+          path: ${{ runner.temp }}/ica-gpu-${{ github.run_id }}-${{ github.run_attempt }}/logs/
+          if-no-files-found: ignore
+      - name: Upload verified runtime asset
+        uses: actions/upload-artifact@v7
+        with:
+          name: ica-gpu-runtime
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/ica-gpu-${{ github.run_id }}-${{ github.run_attempt }}/ica-gpu-runtime_*.tar.gz
+            ${{ runner.temp }}/ica-gpu-${{ github.run_id }}-${{ github.run_attempt }}/ica-gpu-runtime_*.sha256
+
+  publish:
+    needs: build
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ica-gpu-runtime
+          path: runtime-asset
+      - name: Publish immutable GPU runtime beside the CPU release assets
+        env:
+          VERSION: ${{ inputs.version }}
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          cd runtime-asset
+          sha256sum -c ./*.sha256
+          prefix="release/ica-gpu-runtime/$VERSION/"
+          count=$(aws s3api list-objects-v2 --bucket hoopartifacts --prefix "$prefix" --query 'length(Contents || `[]`)' --output text)
+          [[ "$count" == 0 ]] || { echo 'Runtime version already exists; choose a new version' >&2; exit 1; }
+          aws s3 cp . "s3://hoopartifacts/$prefix" --recursive --exclude '*' --include '*.tar.gz' --include '*.sha256'
+          for archive in ./*.tar.gz; do
+            name=${archive#./}
+            url="https://releases.hoop.dev/$prefix$name"
+            curl --fail --silent --show-error --head "$url" >/dev/null
+            digest=$(awk '{print $1}' "$name.sha256")
+            printf 'ICA_GPU_ASSETS_URL=%s\nICA_GPU_ASSETS_SHA256=%s\n' "$url" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          done

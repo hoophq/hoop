@@ -743,6 +743,11 @@ jobs:
   # reach publish-release through dist-artifacts-ica-assets and land at
   # releases.hoop.dev/release/<PR>.0.0-g<sha>/ beside the CLI tarballs, so
   # the Docker-less install can be tried against the branch.
+  #
+  # The GPU image and bundle follow, from the same build, when the repository
+  # variables name a published GPU runtime (deploy/ica-sidecar/GPU-RUNTIME.md).
+  # No GPU is needed here: the targets download that runtime by URL and
+  # digest. The image is pushed as hoophq/hoopsidecar:<PR>.0.0-g<sha>-ica-gpu.
   ica-assets:
     runs-on: ubuntu-latest
     name: Build ica assets bundle
@@ -795,6 +800,53 @@ jobs:
           set -euo pipefail
           mkdir -p stage/binaries
           mv ica-assets/linux_*/binaries/* stage/binaries/
+          ls -l stage/binaries
+      - name: Login to Docker Hub
+        if: ${{ steps.changed.outputs.build == 'true' && vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build and push (ica-gpu)
+        if: ${{ steps.changed.outputs.build == 'true' && vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica-gpu
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+            ICA_GPU_ASSETS_URL=${{ vars.ICA_GPU_ASSETS_URL }}
+            ICA_GPU_ASSETS_SHA256=${{ vars.ICA_GPU_ASSETS_SHA256 }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+          tags: hoophq/hoopsidecar:${{ env.GIT_TAG }}-ica-gpu
+      - name: Export the ica GPU assets bundle
+        if: ${{ steps.changed.outputs.build == 'true' && vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: ica-gpu-assets
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+            ICA_GPU_ASSETS_URL=${{ vars.ICA_GPU_ASSETS_URL }}
+            ICA_GPU_ASSETS_SHA256=${{ vars.ICA_GPU_ASSETS_SHA256 }}
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
+          outputs: type=local,dest=ica-gpu-assets
+      - name: Stage the ica GPU assets bundle
+        if: ${{ steps.changed.outputs.build == 'true' && vars.ICA_GPU_ASSETS_URL != '' && vars.ICA_GPU_ASSETS_SHA256 != '' }}
+        run: |
+          set -euo pipefail
+          mv ica-gpu-assets/binaries/* stage/binaries/
           ls -l stage/binaries
       - uses: actions/upload-artifact@v7
         if: steps.changed.outputs.build == 'true'
