@@ -46,10 +46,11 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
    service agent use it:
 
    ```bash
-   gcloud compute networks subnets create agent-psci --network NETWORK \
+   ATTACHMENT=agent-psci-$(date +%Y%m%d%H%M)
+   gcloud compute networks subnets create $ATTACHMENT --network NETWORK \
      --region REGION --range 192.168.10.0/28
-   gcloud compute network-attachments create agent-psci --region REGION \
-     --subnets agent-psci --connection-preference ACCEPT_AUTOMATIC
+   gcloud compute network-attachments create $ATTACHMENT --region REGION \
+     --subnets $ATTACHMENT --connection-preference ACCEPT_AUTOMATIC
    gcloud iam roles create agentRuntimePsci --project PROJECT \
      --permissions compute.networkAttachments.get,compute.networkAttachments.update,compute.regionOperations.get
    gcloud projects add-iam-policy-binding PROJECT \
@@ -62,7 +63,9 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
    cause. The custom role holds the three permissions Google documents for the
    service agent; `roles/compute.networkAdmin` also works. The attachment's
    subnet must reach the sidecar's IP on port 15432. It must not reach the
-   database: the lock in step 1 sees to that.
+   database: the lock in step 1 sees to that. Give the attachment a name the
+   project never used: on an attachment whose name was deleted and created
+   again, Agent Runtime failed to deploy the agent and logged no cause.
 3. **Deploy the agent**, with the database password in Secret Manager. The
    agent runs as its own Agent Identity, which exists only once the deploy
    starts, so grant the secret to every agent of the project first:
@@ -72,8 +75,8 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
    gcloud secrets add-iam-policy-binding appdb-password \
      --role roles/secretmanager.secretAccessor \
      --member principalSet://agents.global.org-ORGANIZATION_ID.system.id.goog/attribute.platformContainer/aiplatform/projects/PROJECT_NUMBER
-   agents-cli deploy \
-     --network-attachment projects/PROJECT/regions/REGION/networkAttachments/agent-psci \
+   agents-cli deploy --project PROJECT \
+     --network-attachment projects/PROJECT/regions/REGION/networkAttachments/$ATTACHMENT \
      --env-vars APPDB_HOST=SIDECAR_IP,APPDB_USER=agent \
      --secrets APPDB_PASSWORD=appdb-password
    ```
