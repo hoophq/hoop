@@ -29,7 +29,7 @@ export default function SourceMenu({
           aria-label="Credential source"
           disabled={disabled}
         >
-          <Text lh={1} fw={500} component="span" inherit>
+          <Text lh={1} component="span" inherit>
             {activeLabel}
           </Text>
           <ChevronDown size={14} />

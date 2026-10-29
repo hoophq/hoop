@@ -113,7 +113,7 @@ export default function SourcedInput({
 function FieldLabel({ label, required, tooltip }) {
   return (
     <Group gap={4}>
-      <Text size="sm" fw={500}>
+      <Text size="sm" fw={700}>
         {label}
       </Text>
       {required && (

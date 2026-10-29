@@ -21,6 +21,7 @@ export default function AttributesSelect({
   onChange,
   onCreate,
   placeholder,
+  label,
 }) {
   const combobox = useCombobox({
     onDropdownClose: () => combobox.resetSelectedOption(),
@@ -55,8 +56,8 @@ export default function AttributesSelect({
           withRemoveButton
           onRemove={() => handleValueRemove(val)}
           className={classes.managedPill}
-          bg="indigo.3"
-          c="indigo.9"
+          bg="indigo.0"
+          c="indigo.7"
         >
           <Group gap={4} wrap="nowrap" component="span" display="inline-flex">
             <Award size={12} aria-hidden="true" />
@@ -120,6 +121,7 @@ export default function AttributesSelect({
     <Combobox store={combobox} onOptionSubmit={handleOptionSubmit}>
       <Combobox.DropdownTarget>
         <PillsInput
+          label={label}
           onClick={() => combobox.openDropdown()}
           rightSection={<Combobox.Chevron />}
           rightSectionPointerEvents="none"

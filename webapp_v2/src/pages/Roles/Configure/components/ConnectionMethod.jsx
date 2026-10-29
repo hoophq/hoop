@@ -1,5 +1,5 @@
-import { Stack, Title, Text, Anchor } from '@mantine/core'
-import { FileText, Cloud, ShieldCheck, ExternalLink, Fingerprint } from 'lucide-react'
+import { Anchor, Group, Stack, Title } from '@mantine/core'
+import { FileSpreadsheet, GlobeLock, ExternalLink, Fingerprint } from 'lucide-react'
 import SelectionCard from '@/components/SelectionCard'
 import Select from '@/components/Select'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
@@ -17,21 +17,21 @@ const METHOD_DEFINITIONS = [
     title: 'Manual Input',
     description:
       'Enter credentials directly, including host, user, password, and other connection details.',
-    icon: FileText,
+    icon: FileSpreadsheet,
   },
   {
     id: CONNECTION_METHODS.SECRETS_MANAGER,
     title: 'Secrets Manager',
     description:
       'Connect to a secrets provider like AWS Secrets Manager or HashiCorp Vault to automatically fetch your resource credentials.',
-    icon: Cloud,
+    icon: GlobeLock,
   },
   {
     id: CONNECTION_METHODS.AWS_IAM,
     title: 'AWS IAM Role',
     description:
       'Use an IAM Role that can be assumed to authenticate and access AWS resources.',
-    icon: ShieldCheck,
+    image: '/icons/automatic-resources/aws.svg',
   },
   {
     id: CONNECTION_METHODS.IAM_FEDERATION,
@@ -58,10 +58,11 @@ export function ConnectionMethodSection({
     <Stack gap="md">
       <Title order={4}>{heading}</Title>
       <Stack gap="sm">
-        {visibleMethods.map(({ id, title, description, icon }) => (
+        {visibleMethods.map(({ id, title, description, icon, image }) => (
           <SelectionCard
             key={id}
             icon={icon}
+            image={image}
             title={title}
             description={description}
             selected={selectedMethod === id}
@@ -88,10 +89,12 @@ export function SecretsManagerProviderSection({ provider, onProviderChange }) {
         href="https://hoop.dev/docs/setup/configuration/secrets-manager"
         target="_blank"
         rel="noopener noreferrer"
-        display="inline-flex"
+        w="fit-content"
       >
-        <ExternalLink size={12} />
-        <Text component="span" ml={4}>Learn more about secrets manager setup</Text>
+        <Group gap={4} component="span" wrap="nowrap">
+          <ExternalLink size={12} />
+          Learn more about secrets manager setup
+        </Group>
       </Anchor>
     </Stack>
   )

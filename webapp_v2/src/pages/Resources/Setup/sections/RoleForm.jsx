@@ -52,10 +52,8 @@ function RoleAttributes({ role }) {
 
   return (
     <Stack gap="xs">
-      <Text size="sm" fw={500}>
-        Attributes
-      </Text>
       <AttributesSelect
+        label="Attributes"
         options={options}
         value={value}
         placeholder="Select or type to create"
@@ -103,12 +101,12 @@ function RoleCredentials({ role, fields }) {
             href={docsUrl.setup.configuration.rdsIamAuth}
             target="_blank"
             rel="noopener noreferrer"
-            display="inline-flex"
+            w="fit-content"
           >
-            <ExternalLink size={12} />
-            <Text component="span" ml={4}>
+            <Group gap={4} component="span" wrap="nowrap">
+              <ExternalLink size={12} />
               Learn more about AWS IAM Role setup
-            </Text>
+            </Group>
           </Anchor>
         )}
       </Stack>
