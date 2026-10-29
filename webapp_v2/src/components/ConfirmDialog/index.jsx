@@ -34,10 +34,10 @@ export default function ConfirmDialog({
       <Stack>
         {children}
         <Group justify="flex-end" mt="xs">
-          <Button variant="subtle" color="gray" onClick={onClose} disabled={loading}>
+          <Button variant="subtle" color="gray" size="sm" onClick={onClose} disabled={loading}>
             {cancelLabel}
           </Button>
-          <Button color={danger ? 'red' : undefined} onClick={onConfirm} loading={loading}>
+          <Button color={danger ? 'red' : undefined} size="sm" onClick={onConfirm} loading={loading}>
             {confirmLabel}
           </Button>
         </Group>
