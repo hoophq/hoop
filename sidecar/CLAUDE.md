@@ -346,6 +346,17 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
   pinned.
 - `inspect/bypass_test.go` holds statements that evade classification. A new
   evasion belongs there, phrased as the verdict an operator would get.
+- **Ask whether a piece is protocol-specific before you add it.** Build
+  pieces that combine, the way the http and WebSocket codecs do and a lane
+  splits into more than one listener. The generic layers (`gate/`, `proxy/`,
+  `policy/`, `inspect/`) name no protocol: protocol knowledge stays in the
+  codec and reaches them through an optional interface the gate asserts, as
+  it does `Reframer`, or a sentinel in `libhoop/v2/codec/types`. Logic that is
+  not about the wire (JSON paths, SQL classification, guardrail matching) goes
+  in a protocol-neutral package, with a thin seam per protocol. The design
+  note and the PR say which pieces are reusable and which are protocol-bound.
+ - **sidecar protocol-specific parsers**: if the code must be added to libhoop, the sidecar parsers must live under `libhoop/v2/*`.
+ -  **When adding new sidecar capabilities like guardrails, data masking, AI analyzer**, check if the codec WASM in sidecar plugins has these same capabilities; we must ensure new capabilities like that need to be added to plugins as well.
 
 ## Running it
 
