@@ -30,7 +30,7 @@ export default function CmdbAssetPicker({ row, onPatch }) {
     let cancelled = false
     jiraTemplatesService
       .searchAssetObjects({ objectTypeId, objectSchemaId, name, limit: 50 })
-      .then((data) => {
+      .then(({ data }) => {
         if (cancelled) return
         const names = (data?.values ?? []).map((v) => v.name).filter(Boolean)
         setOptions([...new Set(names)])

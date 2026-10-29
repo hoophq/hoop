@@ -449,8 +449,8 @@ export const useConfigureRoleStore = create((set, get) => ({
       ])
       // /guardrails returns a bare array and guardrailsService leaves the
       // axios response untouched, so it sits at value.data.
-      // /integrations/jira/issuetemplates also returns a bare array, but that
-      // service unwraps res.data for us. /attributes returns a paginated
+      // /integrations/jira/issuetemplates also returns a bare array, at
+      // value.data for the same reason. /attributes returns a paginated
       // envelope { data: [...], pages: {...} } and attributesService leaves
       // the axios response untouched, so the array sits at value.data.data.
       // /connection-tags returns { items: [{ id, key, value, ... }] }.
@@ -472,7 +472,7 @@ export const useConfigureRoleStore = create((set, get) => ({
         guardrailsList:
           guardrails.status === 'fulfilled' ? guardrails.value?.data || [] : [],
         jiraTemplatesList:
-          jiraTemplates.status === 'fulfilled' ? jiraTemplates.value || [] : [],
+          jiraTemplates.status === 'fulfilled' ? jiraTemplates.value?.data || [] : [],
         attributesList,
         connectionTagsPool,
         userGroupsList,

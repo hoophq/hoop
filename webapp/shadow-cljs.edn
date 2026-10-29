@@ -65,4 +65,8 @@
   :session-fixtures {:target :node-script
                      :main webapp.audit.views.session-fixtures/main
                      :output-to "target/session-fixtures.js"
-                     :prepend "globalThis.location = new URL('http://localhost/');\n"}}}
+                     :prepend "globalThis.location = new URL('http://localhost/');\n"}
+  ;; Writes the Jira prompt gate vectors as JSON fixtures for webapp_v2.
+  :jira-fixtures {:target :node-script
+                  :main webapp.jira-templates.jira-fixtures/main
+                  :output-to "target/jira-fixtures.js"}}}
