@@ -609,6 +609,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkICA(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkMCPGateway(cfg); err != nil {
+		return nil, err
+	}
 	if err := checkTelemetry(cfg); err != nil {
 		return nil, err
 	}
@@ -679,6 +682,14 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			srv, _, err := buildICAServer(ln, icaRuntimeFor(cfg), cfg.Audit, nil, validationLog)
 			if err != nil {
 				return nil, err // buildICAServer names the lane
+			}
+			notes = append(notes, srv.Notes()...)
+			_ = srv.Close()
+		}
+		if isMCPGateway(ln.cfg) {
+			srv, _, err := buildMCPGatewayServer(ln, cfg.Audit, nil, validationLog)
+			if err != nil {
+				return nil, err
 			}
 			notes = append(notes, srv.Notes()...)
 			_ = srv.Close()
@@ -889,6 +900,9 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkICA(cfg); err != nil {
 		return err
 	}
+	if err := checkMCPGateway(cfg); err != nil {
+		return err
+	}
 	if err := checkTelemetry(cfg); err != nil {
 		return err
 	}
@@ -1076,6 +1090,16 @@ func Run(cfg *Config, det Plugin) error {
 			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, isrv})
 			swappers[ln.name] = rules
+		case isMCPGateway(ln.cfg):
+			msrv, rules, serr := buildMCPGatewayServer(ln, cfg.Audit, auditSink, log)
+			if serr != nil {
+				return serr
+			}
+			endpoints = append(endpoints, msrv)
+			endpointNames = append(endpointNames, ln.name)
+			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, msrv})
+			swappers[ln.name] = mcpLaneRules{liveRules: rules, srv: msrv}
 		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), cfg.reviewSettler(log), log)
 			if serr != nil {

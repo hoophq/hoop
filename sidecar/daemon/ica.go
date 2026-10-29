@@ -826,8 +826,11 @@ func notReadyEndpoints(endpoints []endpointServer, names []string) []string {
 // the plane renders the form from it and the schema must match across builds.
 func ServableProtocols() []string {
 	out := Protocols()
-	if icaServable() {
-		return out
+	if !icaServable() {
+		out = slices.DeleteFunc(out, func(p string) bool { return p == string(inspect.ICA) })
 	}
-	return slices.DeleteFunc(out, func(p string) bool { return p == string(inspect.ICA) })
+	if registeredMCPGatewayEngine() == nil {
+		out = slices.DeleteFunc(out, func(p string) bool { return p == string(inspect.MCP) })
+	}
+	return out
 }

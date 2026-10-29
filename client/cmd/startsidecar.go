@@ -42,6 +42,8 @@ import (
 	"github.com/hoophq/hoop/sidecar/license"
 	// The MCP server an "mcp" block turns on (ADR-0021), same rule again.
 	_ "github.com/hoophq/hoop/sidecar/mcp"
+	// The mcp lane engine a "protocol: mcp" lane needs (ADR-0034), same rule.
+	_ "github.com/hoophq/hoop/sidecar/mcpgateway"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	// The OpenTelemetry exporter a "telemetry" block turns on, same rule:
 	// the capabilities header advertises the block in every build, so

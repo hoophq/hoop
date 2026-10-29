@@ -3320,6 +3320,74 @@ a session whose `session_start` row the sink refuses is stopped: the engine
 has admitted it by the time it reports, so the lane ends it, where the ssh
 and grpc lanes refuse the connection.
 
+### mcp: the lane that embeds mcpproxy
+
+A `protocol: mcp` lane uses no relay and no codec. It embeds
+[mcpproxy](https://github.com/hoophq/mcpproxy), which terminates MCP
+streamable HTTP on `/mcp`, forwards to one remote MCP server over
+`streamable-http` or `sse`, filters the tool catalog, and hands each
+`tools/call` to the lane as a statement: `Protocol mcp`, `Operation call`,
+`Tables [tool]`, `Text` the tool name and its arguments. The engine is a
+nested module, `sidecar/mcpgateway`, linked by `hoop-inspect` and by
+`hoop start sidecar`; a build without it refuses the lane at `-validate`
+and advertises no `protocol:mcp` to a control plane, so the plane never
+serves one to it. ADR-0034 holds the decisions.
+
+```yaml
+guardrails:                      # every lane inherits it, mcp lanes too
+  rules:
+    - {name: no-delete-tools, type: table, tables: [delete_customer], message: deleting through MCP is not allowed}
+
+listeners:
+  - name: github-mcp
+    protocol: mcp
+    listen: 127.0.0.1:18901      # loopback only until the lane authenticates callers (RD-462)
+    upstream: https://api.githubcopilot.com/mcp/   # the MCP endpoint, with its path
+    upstream_tls: {ca_file: /etc/ssl/cert.pem}
+    idle_timeout_sec: 1800       # an idle MCP session ends after this; default 30 minutes
+    mcp_gateway:
+      transport: streamable-http # or sse
+      allowed_tools: ["get_*", "list_*", "search_*"]   # from here on, mcpproxy policy keys, as they are
+      denied_tools: ["*delete*"]
+      block_sampling: true
+      block_elicitation: true
+      on_rug_pull: kill
+      max_calls_per_session: 200
+      max_result_kb: 256
+      tool_rate_limits: {"search_*": 30}
+      overrides:
+        get_file_contents: {description: Read one file from a repository.}
+```
+
+Tool allow and deny have two layers with different jobs. The `mcp_gateway`
+block is mcpproxy policy, key for key: it filters `tools/list`, so the
+model never sees a denied tool, and refuses a call to one with a JSON-RPC
+error. Sidecar rules judge each call: a `table` rule names a tool, in
+lower case. A call a rule denies answers as a tool result with
+`isError: true` and the text `denied by the hoop sidecar (rule <name>):
+<message>`, because agents keep a server that returns a tool error and
+drop one that returns a protocol error.
+
+One sidecar session per MCP session: it opens on the first message,
+records `initialize` as an activity (client name, version, protocol
+version), one statement per `tools/call` (allowed or denied, with the
+rule) and one `tools/list` catalog statement, and closes on the client
+DELETE or the idle timeout. mcpproxy refusals (a denied tool, a budget, a
+rug pull) reach the session as activities. A rule reload ends the open MCP
+sessions: a session read its rules when it opened, so the next message on
+it is refused and the client initializes again under the new rules. A
+change to the lane itself (`upstream`, `listen`, the `mcp_gateway` block)
+is restart-required, as for every listener fact.
+
+What the lane refuses at validate, and why: a `listen` off loopback (no
+caller check yet, RD-462); `network: unix` (MCP clients speak TCP);
+`max_conns` (MCP is requests, not connections); `downstream_tls` (RD-462);
+`mask` rules (RD-373) and an `analyzer` block (RD-372) until those land; a
+pasted mcpproxy key the block does not map, such as `approval_tools`,
+`command` or `headers`, as `unknown field`. `identity_header` is accepted
+and names the caller, only behind a proxy that sets it. Sessions live in
+memory: run one replica, or pin `Mcp-Session-Id` to one.
+
 ### Postgres: trace ids from the startup packet
 
 A postgres lane reads the client's StartupMessage before the gate sees a byte.

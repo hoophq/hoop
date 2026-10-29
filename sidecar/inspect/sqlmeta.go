@@ -85,6 +85,12 @@ func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 			Complete:  false,
 			Reason:    "ssh statements carry no SQL to analyze",
 		}
+	case MCP:
+		return SQLAnalysis{
+			Operation: OpUnknown,
+			Complete:  false,
+			Reason:    "mcp statements carry a tool call, not SQL",
+		}
 	}
 	return AnalyzeSQLIn(sql, d)
 }

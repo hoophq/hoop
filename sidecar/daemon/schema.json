@@ -17,6 +17,10 @@
       "label": "Citrix ICA"
     },
     {
+      "value": "mcp",
+      "label": "MCP"
+    },
+    {
       "value": "mongodb",
       "label": "MongoDB"
     },
@@ -82,7 +86,10 @@
         "tcp",
         "unix"
       ],
-      "default": "tcp"
+      "default": "tcp",
+      "except_protocols": [
+        "mcp"
+      ]
     },
     {
       "key": "upstream",
@@ -189,7 +196,8 @@
       "protocols": [
         "http",
         "grpc",
-        "spanner"
+        "spanner",
+        "mcp"
       ]
     },
     {
@@ -237,7 +245,10 @@
       "key": "max_conns",
       "type": "integer",
       "label": "Max connections",
-      "help": "0 is unlimited."
+      "help": "0 is unlimited.",
+      "except_protocols": [
+        "mcp"
+      ]
     },
     {
       "key": "http",

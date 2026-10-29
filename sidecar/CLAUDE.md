@@ -69,6 +69,7 @@ it is removing a directory.
 | `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
 | `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the review status MCP server an `mcp:` block turns on (ADR-0021) |
 | `ica/` | `github.com/hoophq/libhoop-ica`, the Citrix ICA engine a `protocol: ica` lane embeds; registers through `daemon.RegisterICAEngine`, linked into `hoop-inspect` only |
+| `mcpgateway/` | `github.com/hoophq/mcpproxy`, the engine a `protocol: mcp` lane embeds (ADR-0034); registers through `daemon.RegisterMCPGatewayEngine`, linked into `hoop-inspect` and `hoop start sidecar` |
 | `codec/wasm/` | `github.com/tetratelabs/wazero`, the codec plug-in host; `daemon` only sees `LoadCodecPlugin`. `sdk/` and `examples/` hold the guest side: Rust, TinyGo and C |
 | `telemetry/otlp/` | the OpenTelemetry SDK and its OTLP exporters, behind the `telemetry` block; `daemon` sees only `telemetry.Builder`, injected by `cmd` like `LoadCodecPlugin`. The contract is the root package `telemetry/` |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |

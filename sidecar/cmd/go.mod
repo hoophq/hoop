@@ -43,6 +43,7 @@ require (
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
 	github.com/hoophq/libhoop v0.0.0-20261028122443-e602d2f8d44b // indirect
 	github.com/hoophq/libhoop-ica v0.7.1 // indirect
+	github.com/hoophq/mcpproxy v0.1.1 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/knights-analytics/hugot v0.7.7 // indirect
 	github.com/knights-analytics/ortgenai v0.3.2 // indirect
@@ -100,6 +101,7 @@ require (
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0
 	github.com/hoophq/hoop/sidecar/ica v0.0.0
 	github.com/hoophq/hoop/sidecar/mcp v0.0.0
+	github.com/hoophq/hoop/sidecar/mcpgateway v0.0.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
@@ -114,6 +116,8 @@ replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../analyzer/vertex
 replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../descriptors/gcs
 
 replace github.com/hoophq/hoop/sidecar/mcp => ../mcp
+
+replace github.com/hoophq/hoop/sidecar/mcpgateway => ../mcpgateway
 
 replace github.com/hoophq/hoop/sidecar/ica => ../ica
 
