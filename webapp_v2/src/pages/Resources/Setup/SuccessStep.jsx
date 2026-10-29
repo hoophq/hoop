@@ -69,7 +69,7 @@ export default function SuccessStep() {
         </Stack>
         <Group justify="center" gap="xs">
           {createdRoles.map((role) => (
-            <Badge key={role.name} variant="filled" color="indigo" leftSection={<Cable size={12} />}>
+            <Badge key={role.name} variant="filled" color="indigo" tag chip fullLabel icon={<Cable size={12} />}>
               {role.name}
             </Badge>
           ))}

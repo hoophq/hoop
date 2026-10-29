@@ -263,9 +263,21 @@ describe('wizard store', () => {
       'envvar:PASS': btoa('_aws_iam_rds:authtoken'),
     })
 
-    // The forced `authtoken` is not a password to keep.
+    // Leaving AWS IAM brings back the PASS the admin typed, not `authtoken`.
     store().setRoleMethod(role(0).id, CONNECTION_METHODS.MANUAL)
-    expect(secretOf(role(0).credentials)).toEqual({ 'envvar:HOST': btoa('db'), 'envvar:USER': btoa('app') })
+    expect(secretOf(role(0).credentials)).toEqual({
+      'envvar:HOST': btoa('db'),
+      'envvar:USER': btoa('app'),
+      'envvar:PASS': btoa('secret'),
+    })
+  })
+
+  it('drops the forced PASS when the admin never typed one', () => {
+    begin('mysql', { name: 'my', agentId: 'a1' })
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.AWS_IAM)
+    awsIamPass(0)
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.MANUAL)
+    expect(secretOf(role(0).credentials)).toEqual({})
   })
 
   it('leaves a cleared field out of the secret', () => {

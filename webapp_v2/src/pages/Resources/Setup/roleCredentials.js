@@ -8,7 +8,8 @@ import {
 } from '@/pages/Roles/Configure/utils/secretsCodec'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
 
-const AWS_IAM_KEYS = new Set(['envvar:USER', 'envvar:PASS'])
+const PASS_KEY = 'envvar:PASS'
+const AWS_IAM_KEYS = new Set(['envvar:USER', PASS_KEY])
 
 function sourceFor(key, method, provider) {
   if (key.startsWith('filesystem:')) return SOURCES.MANUAL
@@ -22,14 +23,34 @@ function sourceFor(key, method, provider) {
 function reencode(stagedSecrets, method, provider) {
   const next = {}
   for (const [key, change] of Object.entries(stagedSecrets)) {
-    // AWS IAM stages PASS as `authtoken`: it is not a password to keep.
-    const forcedPass =
-      key === 'envvar:PASS' && sourceFromEncodedValue(change.value) === SOURCES.AWS_IAM_ROLE
-    if (forcedPass && method !== CONNECTION_METHODS.AWS_IAM) continue
     const plain = decodeForDisplay(change.value)
     next[key] = { ...change, value: encodeSecretForSource(plain, sourceFor(key, method, provider)) }
   }
   return next
+}
+
+function without(stagedSecrets, key) {
+  const next = { ...stagedSecrets }
+  delete next[key]
+  return next
+}
+
+// PredefinedFields stages PASS as `authtoken` in AWS IAM mode. The admin's own
+// PASS waits in `parkedPass` and comes back when the role leaves AWS IAM.
+function swapPass(state, method) {
+  const toAwsIam = method === CONNECTION_METHODS.AWS_IAM
+  const pass = state.stagedSecrets[PASS_KEY]
+  const forced = pass && sourceFromEncodedValue(pass.value) === SOURCES.AWS_IAM_ROLE
+  if (toAwsIam && pass && !forced) {
+    return { stagedSecrets: without(state.stagedSecrets, PASS_KEY), parkedPass: pass }
+  }
+  if (!toAwsIam && forced) {
+    const stagedSecrets = state.parkedPass
+      ? { ...state.stagedSecrets, [PASS_KEY]: state.parkedPass }
+      : without(state.stagedSecrets, PASS_KEY)
+    return { stagedSecrets, parkedPass: null }
+  }
+  return { stagedSecrets: state.stagedSecrets, parkedPass: state.parkedPass }
 }
 
 // One store per wizard role. The Configure Role credential renderers read it
@@ -42,12 +63,13 @@ export function createRoleCredentialsStore({ type, subtype }) {
     fieldSources: {},
     renames: {},
     hideRoleInfo: false,
+    parkedPass: null,
     ...credentialsSlice(set),
     applyMethod: (method, provider) =>
-      set((state) => ({
-        stagedSecrets: reencode(state.stagedSecrets, method, provider),
-        fieldSources: {},
-      })),
+      set((state) => {
+        const { stagedSecrets, parkedPass } = swapPass(state, method)
+        return { stagedSecrets: reencode(stagedSecrets, method, provider), fieldSources: {}, parkedPass }
+      }),
   }))
 }
 
