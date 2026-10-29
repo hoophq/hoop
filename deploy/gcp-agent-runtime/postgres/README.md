@@ -58,9 +58,8 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
      --role projects/PROJECT/roles/agentRuntimePsci
    ```
 
-   The subnet is a free `/28`. Keep the `192.168.10.0/28` range if it is free:
-   with `10.10.0.0/28`, Agent Runtime failed to start the agent and logged no
-   cause. The custom role holds the three permissions Google documents for the
+   The subnet is a free `/28`. Keep the `192.168.10.0/28` range if it is
+   free: it is the one the agent ran on in our tests. The custom role holds the three permissions Google documents for the
    service agent; `roles/compute.networkAdmin` also works. The attachment's
    subnet must reach the sidecar's IP on port 15432. It must not reach the
    database: the lock in step 1 sees to that. Give the attachment a name the
