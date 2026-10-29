@@ -1,0 +1,10 @@
+/* Title, tabs and filters stay in view while the list scrolls, as in CLJS. */
+.toolbar {
+  position: sticky;
+  top: var(--app-shell-header-offset, 0rem);
+  z-index: 10;
+  background-color: var(--mantine-color-body);
+  /* Space above the title once stuck; the negative margin keeps the resting layout. */
+  margin-top: calc(-1 * var(--mantine-spacing-lgAlt));
+  padding-top: var(--mantine-spacing-lgAlt);
+}

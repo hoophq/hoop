@@ -49,29 +49,21 @@ export function supportsIamFederation(subtype) {
   return subtype === 'bigquery'
 }
 
-// Whether the connection is eligible for the Test Connection action.
-// Mirrors the CLJS can-test-connection? predicate. Databases and
-// applications are universally testable; a few subtype-specific
-// connections (AWS shell paths) also are.
-const TESTABLE_TYPES = new Set(['database', 'application'])
-const TESTABLE_SUBTYPES = new Set([
-  'postgres',
-  'mysql',
-  'mssql',
-  'oracledb',
-  'mongodb',
-  'dynamodb',
-  // Keep the legacy and current AWS resource subtypes. The Test
-  // Connection action drives a server-side probe by connection name,
-  // not by credential shape, so honouring both spellings here doesn't
-  // collide with the metadata-driven catalog (which uses the prefixed
-  // names only).
-  'cloudwatch',
-  'aws-cloudwatch',
+// Whether the connection is eligible for the Test Connection action: the
+// shapes the gateway has a probe for (getScriptsForTestConnection in
+// gateway/api/connections/connections.go); any other answers 400. Same set as
+// the CLJS can-test-connection? predicate.
+const TESTABLE_SHAPES = new Set([
+  'database/postgres',
+  'database/mysql',
+  'database/mssql',
+  'database/mongodb',
+  'database/oracledb',
+  'custom/dynamodb',
+  'custom/cloudwatch',
 ])
 export function canTestConnection({ type, subtype } = {}) {
-  if (TESTABLE_SUBTYPES.has(subtype)) return true
-  return TESTABLE_TYPES.has(type)
+  return TESTABLE_SHAPES.has(type + '/' + subtype)
 }
 
 // Every subtype the gateway proxies over HTTP. Mirrors the CLJS
@@ -171,6 +163,17 @@ export function canOpenWebTerminal(connection) {
   return (
     connection.access_mode_runbooks === 'enabled' ||
     connection.access_mode_exec === 'enabled'
+  )
+}
+
+// Whether a role offers any way in. Mirrors can-connect? in
+// webapp/src/webapp/resources/helpers.cljs.
+export function canConnect(connection) {
+  if (!connection) return false
+  return !(
+    connection.access_mode_runbooks === 'disabled' &&
+    connection.access_mode_exec === 'disabled' &&
+    connection.access_mode_connect === 'disabled'
   )
 }
 

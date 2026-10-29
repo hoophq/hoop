@@ -19,6 +19,7 @@ import SignupCallback from '@/pages/Auth/SignupCallback'
 import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
 import ConfigureRolePage from '@/pages/Roles/Configure'
+import Resources from '@/pages/Resources'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
 import SettingsApiKeys from '@/pages/Settings/ApiKeys'
@@ -202,6 +203,17 @@ function Router() {
         element={
           <Page adminOnly>
             <ConfigureRolePage />
+          </Page>
+        }
+      />
+
+      {/* The CLJS :resources panel stays until ENG-922, so a rollback is
+          reverting this route. */}
+      <Route
+        path="/resources"
+        element={
+          <Page>
+            <Resources />
           </Page>
         }
       />
