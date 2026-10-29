@@ -98,7 +98,7 @@ export default function TestConnectionModal({
         )}
 
         <Group justify="flex-end">
-          <Button onClick={onClose} disabled={testing}>Done</Button>
+          <Button size="sm" onClick={onClose} disabled={testing}>Done</Button>
         </Group>
       </Stack>
     </Modal>
