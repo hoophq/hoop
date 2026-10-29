@@ -59,11 +59,14 @@ export default function SuccessStep() {
         </Center>
         <Stack gap="xs" align="center">
           <Title order={2}>Your resource is ready</Title>
-          <Text c="dimmed" ta="center">
-            {`Your ${setup.subtype} is now protected by the access gateway.`}
-            <br />
-            Every resource role will be authenticated, audited, and secured.
-          </Text>
+          <Stack gap={0} align="center">
+            <Text c="dimmed" ta="center">
+              {`Your ${setup.subtype} is now protected by the access gateway.`}
+            </Text>
+            <Text c="dimmed" ta="center">
+              Every resource role will be authenticated, audited, and secured.
+            </Text>
+          </Stack>
         </Stack>
         <Group justify="center" gap="xs">
           {createdRoles.map((role) => (

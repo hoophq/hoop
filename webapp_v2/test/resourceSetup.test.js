@@ -98,6 +98,8 @@ describe('setupConfigFor', () => {
     ['kubernetes-token', { type: 'custom', subtype: 'kubernetes', command: ['bash'] }],
     ['python-scripts', { type: 'custom', subtype: 'python', command: ['python3', '-'] }],
     ['linux-vm', { type: 'custom', subtype: 'linux-vm', command: ['bash'] }],
+    ['oracle', { type: 'database', subtype: 'oracledb', command: null }],
+    ['tcp', { type: 'application', subtype: 'tcp', command: null }],
   ])('resolves %s', (id, config) => {
     expect(setupConfigFor(id, connections)).toEqual(config)
   })
@@ -214,7 +216,7 @@ describe('wizard store', () => {
     store().setAgentMode('create')
     store().setNewAgentName('agent-1')
     await store().createAgent()
-    expect(store().newAgent).toEqual({ name: 'agent-1', status: 'ready', token: 'old-key' })
+    expect(store().newAgent).toEqual({ name: 'agent-1', status: 'ready', token: 'old-key', lookup: 'done' })
     expect(store().agentId).toBe('a1')
 
     store().start(setupConfigFor('mysql', connections))
@@ -223,7 +225,7 @@ describe('wizard store', () => {
       name: '',
       agentId: null,
       agentMode: 'select',
-      newAgent: { name: '', status: 'idle', token: null },
+      newAgent: { name: '', status: 'idle', token: null, lookup: 'idle' },
       roles: [],
       setup: { subtype: 'mysql' },
     })
@@ -298,6 +300,96 @@ describe('wizard store', () => {
     resourcesService.get.mockRejectedValueOnce({ response: { status: 404 } })
     await store().checkName()
     expect(store().step).toBe('agent')
+  })
+
+  it('drops a name check whose name changed while it ran', async () => {
+    begin('postgres', { name: 'old', agentId: 'a1' })
+    store().setStep('name')
+    let answer
+    resourcesService.get.mockReturnValueOnce(new Promise((_, reject) => { answer = reject }))
+    const check = store().checkName()
+    store().setName('new')
+    answer({ response: { status: 404 } })
+    await check
+    expect(store()).toMatchObject({ step: 'name', checkingName: false })
+  })
+
+  it('keeps an older agent list from replacing a newer one', async () => {
+    begin('postgres', { name: 'pg', agentId: null })
+    let answerOld
+    agentsService.list
+      .mockReturnValueOnce(new Promise((resolve) => { answerOld = resolve }))
+      .mockResolvedValueOnce({ data: [{ id: 'a2', name: 'new' }] })
+    const old = store().loadAgents()
+    await store().loadAgents()
+    answerOld({ data: [{ id: 'a1', name: 'old' }] })
+    await old
+    expect(store().agents).toEqual([{ id: 'a2', name: 'new' }])
+  })
+
+  it('keeps the new agent key and retries the id lookup', async () => {
+    begin('postgres', { name: 'pg', agentId: null })
+    agentsService.create.mockResolvedValue({ data: { token: 'key' } })
+    agentsService.list.mockResolvedValueOnce({ data: [] })
+    store().setNewAgentName('agent-1')
+    await store().createAgent()
+    expect(store().newAgent).toMatchObject({ status: 'ready', token: 'key', lookup: 'error' })
+    expect(store().agentId).toBeNull()
+
+    agentsService.list.mockResolvedValueOnce({ data: [{ id: 'a1', name: 'agent-1' }] })
+    await store().findNewAgent()
+    expect(store().newAgent).toMatchObject({ token: 'key', lookup: 'done' })
+    expect(store().agentId).toBe('a1')
+    expect(agentsService.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('puts a new attribute on the role at once, and takes it off when the create fails', async () => {
+    const { attributesService } = await import('@/services/attributes')
+    begin('postgres', { name: 'pg', agentId: 'a1' })
+    let fail
+    attributesService.create.mockReturnValueOnce(new Promise((_, reject) => { fail = reject }))
+    const created = store().createAttribute(role(0).id, 'pii')
+    expect(role(0).attributes).toEqual(['pii'])
+    expect(payload().roles[0].attributes).toContain('pii')
+
+    fail(new Error('boom'))
+    await created
+    expect(role(0).attributes).toEqual([])
+    expect(showSnackbar).toHaveBeenCalledWith(expect.objectContaining({ level: 'error' }))
+  })
+
+  it('saves only once the protection profile is known', async () => {
+    const { protectionProfilesService } = await import('@/services/protectionProfiles')
+    begin('postgres', { name: 'pg', agentId: 'a1' })
+    protectionProfilesService.get.mockRejectedValueOnce(new Error('down'))
+    await store().loadRoleOptions()
+    expect(store().roleOptions).toBe('error')
+    await store().submit(connections)
+    expect(resourcesService.create).not.toHaveBeenCalled()
+
+    protectionProfilesService.get.mockResolvedValueOnce(PROFILE)
+    await store().loadRoleOptions()
+    expect(store().roleOptions).toBe('ready')
+    resourcesService.create.mockResolvedValueOnce({})
+    await store().submit(connections)
+    expect(resourcesService.create.mock.calls[0][0].roles[0].attributes).toContain(PROFILE.attribute_name)
+  })
+
+  it('drops activation data of an earlier run', async () => {
+    const { guardrailsService } = await import('@/services/guardrails')
+    const { dataMaskingService } = await import('@/services/dataMasking')
+    const { aiSessionAnalyzerService } = await import('@/services/aiSessionAnalyzer')
+    begin('postgres', { name: 'pg', agentId: 'a1' })
+    let answer
+    guardrailsService.list.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+    dataMaskingService.list.mockResolvedValueOnce({ data: [] })
+    aiSessionAnalyzerService.listRules.mockResolvedValueOnce({ data: { data: [] } })
+    aiSessionAnalyzerService.getProvider.mockResolvedValueOnce({ data: {} })
+    const loading = store().loadActivation()
+    store().start(setupConfigFor('mysql', connections))
+    answer({ data: [] })
+    await loading
+    expect(store().activation).toBeNull()
   })
 })
 

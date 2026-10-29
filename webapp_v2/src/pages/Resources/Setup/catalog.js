@@ -8,7 +8,9 @@ const SETUP_MAPPINGS = {
   mysql: { type: 'database', subtype: 'mysql' },
   mongodb: { type: 'database', subtype: 'mongodb' },
   mssql: { type: 'database', subtype: 'mssql' },
+  oracle: { type: 'database', subtype: 'oracledb' },
   ssh: { type: 'application', subtype: 'ssh' },
+  tcp: { type: 'application', subtype: 'tcp' },
   httpproxy: { type: 'httpproxy', subtype: 'httpproxy' },
   // A catalog-only entry: it is not in the metadata.
   'linux-vm': { type: 'custom', subtype: 'linux-vm', command: ['bash'] },

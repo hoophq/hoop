@@ -24,6 +24,10 @@ function roleName(resourceName, suffix) {
 }
 
 let lastRoleId = 0
+// A response commits only while its wizard run, or its agent-list request,
+// is still the latest.
+let run = 0
+let agentsRequest = 0
 
 function newRole(setup, resourceName) {
   const suffix = String(Math.floor(1000 + Math.random() * 9000))
@@ -41,7 +45,8 @@ function newRole(setup, resourceName) {
   }
 }
 
-const NEW_AGENT = { name: '', status: 'idle', token: null }
+// lookup: finding the new agent's id in GET /agents ('idle', 'pending', 'done', 'error').
+const NEW_AGENT = { name: '', status: 'idle', token: null, lookup: 'idle' }
 
 const initialState = {
   setup: null,
@@ -57,6 +62,8 @@ const initialState = {
   roles: [],
   attributes: [],
   profile: null,
+  // Save waits for 'ready': an unknown profile would drop its attribute.
+  roleOptions: 'idle',
   submitting: false,
   createdRoles: [],
   activation: null,
@@ -73,7 +80,10 @@ export const useResourceSetupStore = create((set, get) => {
   return {
     ...initialState,
 
-    start: (setup) => set({ ...initialState, setup }),
+    start: (setup) => {
+      run += 1
+      set({ ...initialState, setup })
+    },
 
     setStep: (step) => set({ step }),
 
@@ -89,15 +99,21 @@ export const useResourceSetupStore = create((set, get) => {
     },
 
     // GET /resources/:name answers 404 when the name is free.
+    // An answer for a name the admin has since changed is dropped.
     checkName: async () => {
+      const { name } = get()
+      const started = run
+      const current = () => started === run && get().name === name
       set({ checkingName: true })
       try {
-        await resourcesService.get(get().name)
+        await resourcesService.get(name)
+        if (!current()) return
         showSnackbar({
           level: 'error',
           text: 'This resource name is already in use. Please choose a different name.',
         })
       } catch (error) {
+        if (!current()) return
         if (error?.response?.status === 404) {
           set({ step: 'agent' })
         } else {
@@ -109,11 +125,13 @@ export const useResourceSetupStore = create((set, get) => {
     },
 
     loadAgents: async () => {
+      const request = ++agentsRequest
       set({ agentsLoading: true })
       try {
         const { data } = await agentsService.list()
-        set({ agents: data ?? [], agentsLoading: false })
+        if (request === agentsRequest) set({ agents: data ?? [], agentsLoading: false })
       } catch (error) {
+        if (request !== agentsRequest) return
         set({ agentsLoading: false })
         showSnackbar({ level: 'error', text: 'Failed to fetch agents', description: errorText(error) })
       }
@@ -127,26 +145,42 @@ export const useResourceSetupStore = create((set, get) => {
 
     setInstallMethod: (installMethod) => set({ installMethod }),
 
-    // POST /agents answers only the key, so the new agent's id comes from
-    // GET /agents, by name.
     createAgent: async () => {
       const { name } = get().newAgent
-      set({ newAgent: { name, status: 'creating', token: null } })
+      set({ newAgent: { ...NEW_AGENT, name, status: 'creating' } })
       try {
         const { data } = await agentsService.create({ name })
-        set({ newAgent: { name, status: 'ready', token: data?.token ?? null } })
+        set({ newAgent: { ...NEW_AGENT, name, status: 'ready', token: data?.token ?? null } })
       } catch (error) {
-        set({ newAgent: { name, status: 'error', token: null } })
+        set({ newAgent: { ...NEW_AGENT, name, status: 'error' } })
         showSnackbar({ level: 'error', text: errorText(error) || 'Failed to create the agent' })
         return
       }
+      await get().findNewAgent()
+    },
+
+    // POST /agents answers only the key, so the new agent's id comes from
+    // GET /agents, by name. A failed lookup keeps the key on screen for a retry.
+    findNewAgent: async () => {
+      const { name } = get().newAgent
+      const started = run
+      const request = ++agentsRequest
+      const current = () => started === run && get().newAgent.name === name
+      set((state) => ({ newAgent: { ...state.newAgent, lookup: 'pending' } }))
+      let created
       try {
-        const { data: agents } = await agentsService.list()
-        const created = (agents ?? []).find((agent) => agent.name === name)
-        set({ agents: agents ?? [], agentId: created?.id ?? null })
+        const { data } = await agentsService.list()
+        if (!current()) return
+        created = (data ?? []).find((agent) => agent.name === name)
+        if (request === agentsRequest) set({ agents: data ?? [], agentsLoading: false })
       } catch (error) {
+        if (!current()) return
         showSnackbar({ level: 'error', text: 'Failed to fetch agents', description: errorText(error) })
       }
+      set((state) => ({
+        agentId: created?.id ?? null,
+        newAgent: { ...state.newAgent, lookup: created ? 'done' : 'error' },
+      }))
     },
 
     // Back from the agent step forgets the agent, as CLJS clear-agent-state does.
@@ -160,13 +194,17 @@ export const useResourceSetupStore = create((set, get) => {
       })),
 
     loadRoleOptions: async () => {
+      const started = run
+      set({ roleOptions: 'loading' })
       const [attributes, profile] = await Promise.allSettled([
         attributesService.listAll(),
         protectionProfilesService.get(),
       ])
+      if (started !== run) return
       set({
         attributes: attributes.status === 'fulfilled' ? attributes.value : [],
         profile: profile.status === 'fulfilled' ? profile.value : null,
+        roleOptions: profile.status === 'fulfilled' ? 'ready' : 'error',
       })
     },
 
@@ -178,19 +216,25 @@ export const useResourceSetupStore = create((set, get) => {
 
     setRoleAttributes: (id, attributes, skipProfile) => updateRole(id, { attributes, skipProfile }),
 
+    // The role gets the attribute at once, as in CLJS, so a save right after
+    // still carries it. A failed create takes it back off.
     createAttribute: async (id, name) => {
+      const withAttribute = (role) => (role.id === id ? { ...role, attributes: [...role.attributes, name] } : role)
+      const withoutAttribute = (role) =>
+        role.id === id ? { ...role, attributes: role.attributes.filter((a) => a !== name) } : role
+      set((state) => ({
+        attributes: [...state.attributes, { name }],
+        roles: state.roles.map(withAttribute),
+      }))
       try {
         await attributesService.create({ name })
       } catch (error) {
+        set((state) => ({
+          attributes: state.attributes.filter((a) => a.name !== name),
+          roles: state.roles.map(withoutAttribute),
+        }))
         showSnackbar({ level: 'error', text: 'Failed to create attribute', description: errorText(error) })
-        return
       }
-      set((state) => ({
-        attributes: [...state.attributes, { name }],
-        roles: state.roles.map((role) =>
-          role.id === id ? { ...role, attributes: [...role.attributes, name] } : role,
-        ),
-      }))
     },
 
     setRoleMethod: (id, method) => {
@@ -206,7 +250,8 @@ export const useResourceSetupStore = create((set, get) => {
     },
 
     submit: async (connections) => {
-      const { name, setup, agentId, roles, profile } = get()
+      const { name, setup, agentId, roles, profile, roleOptions } = get()
+      if (roleOptions !== 'ready') return
       const payload = buildCreatePayload({
         name,
         setup,
@@ -230,6 +275,7 @@ export const useResourceSetupStore = create((set, get) => {
     // The activation cards: the org's rules per feature, whether the AI
     // provider is set up, and the ids of the created roles.
     loadActivation: async () => {
+      const started = run
       set({ activation: null })
       const names = get().createdRoles.map((role) => role.name)
       const [guardrails, masking, analyzer, provider, ...roles] = await Promise.allSettled([
@@ -239,6 +285,7 @@ export const useResourceSetupStore = create((set, get) => {
         aiSessionAnalyzerService.getProvider(),
         ...names.map((name) => connectionsService.list({ name, page: 1, page_size: 1 })),
       ])
+      if (started !== run) return
       const value = (result, pick) => (result.status === 'fulfilled' ? pick(result.value.data) ?? [] : [])
       roles.forEach((result, i) => {
         if (result.status === 'rejected') {

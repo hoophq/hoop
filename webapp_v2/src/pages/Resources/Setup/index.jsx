@@ -22,6 +22,7 @@ function Footer({ step }) {
   const agentId = useResourceSetupStore((s) => s.agentId)
   const roles = useResourceSetupStore((s) => s.roles)
   const submitting = useResourceSetupStore((s) => s.submitting)
+  const roleOptions = useResourceSetupStore((s) => s.roleOptions)
   const setStep = useResourceSetupStore((s) => s.setStep)
   const leaveAgentStep = useResourceSetupStore((s) => s.leaveAgentStep)
   const goToRoles = useResourceSetupStore((s) => s.goToRoles)
@@ -47,7 +48,12 @@ function Footer({ step }) {
     )
   } else {
     next = (
-      <Button size="sm" type="submit" form={FORM_ID} disabled={roles.length === 0 || submitting}>
+      <Button
+        size="sm"
+        type="submit"
+        form={FORM_ID}
+        disabled={roles.length === 0 || submitting || roleOptions !== 'ready'}
+      >
         {submitting ? 'Creating...' : 'Save and Finish'}
       </Button>
     )

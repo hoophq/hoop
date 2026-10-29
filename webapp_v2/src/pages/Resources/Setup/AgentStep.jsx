@@ -10,6 +10,7 @@ import {
   DockerDeployment,
   KubernetesDeployment,
 } from '@/pages/Agents/Create/DeploymentInstructions'
+import RetryAlert from './components/RetryAlert'
 import StepHeader from './components/StepHeader'
 import StepRow from './components/StepRow'
 import { useResourceSetupStore } from './store'
@@ -37,6 +38,7 @@ function NewAgent() {
   const setNewAgentName = useResourceSetupStore((s) => s.setNewAgentName)
   const setInstallMethod = useResourceSetupStore((s) => s.setInstallMethod)
   const createAgent = useResourceSetupStore((s) => s.createAgent)
+  const findNewAgent = useResourceSetupStore((s) => s.findNewAgent)
   const created = newAgent.status === 'creating' || newAgent.status === 'ready'
 
   return (
@@ -90,11 +92,20 @@ function NewAgent() {
           title="Agent deployment"
           description="Setup your Agent with a docker image or manually run it in your environment."
         >
-          {installMethod === 'docker' ? (
-            <DockerDeployment hoopKey={newAgent.token} />
-          ) : (
-            <KubernetesDeployment hoopKey={newAgent.token} />
-          )}
+          <Stack gap="lg">
+            {newAgent.lookup === 'error' && (
+              <RetryAlert
+                title="Agent not found"
+                text="The Agent was created, but the agent list does not show it yet."
+                onRetry={findNewAgent}
+              />
+            )}
+            {installMethod === 'docker' ? (
+              <DockerDeployment hoopKey={newAgent.token} />
+            ) : (
+              <KubernetesDeployment hoopKey={newAgent.token} />
+            )}
+          </Stack>
         </StepRow>
       )}
     </Stack>

@@ -2,12 +2,14 @@ import { Fragment, useEffect } from 'react'
 import { Divider, Grid, Stack } from '@mantine/core'
 import { Plus } from 'lucide-react'
 import Button from '@/components/Button'
+import RetryAlert from './components/RetryAlert'
 import StepHeader from './components/StepHeader'
 import RoleForm from './sections/RoleForm'
 import { useResourceSetupStore } from './store'
 
 export default function RolesStep() {
   const roles = useResourceSetupStore((s) => s.roles)
+  const roleOptions = useResourceSetupStore((s) => s.roleOptions)
   const addRole = useResourceSetupStore((s) => s.addRole)
   const loadRoleOptions = useResourceSetupStore((s) => s.loadRoleOptions)
 
@@ -22,6 +24,14 @@ export default function RolesStep() {
         description="Roles are the central concept in Hoop.dev that serve as secure bridges between users and your organization's resources. They enable controlled access to internal services, databases, and other resources while maintaining security and compliance."
         docs={{ href: 'https://hoop.dev/docs/', topic: 'Roles' }}
       />
+
+      {roleOptions === 'error' && (
+        <RetryAlert
+          title="Protection profile unavailable"
+          text="Save waits for the protection profile, so its attribute reaches every role."
+          onRetry={loadRoleOptions}
+        />
+      )}
 
       {roles.map((role, index) => (
         <Fragment key={role.id}>

@@ -143,6 +143,14 @@ export default function AttributesSelect({
                     event.preventDefault()
                     handleValueRemove(value[value.length - 1])
                   }
+                  // Enter never submits the enclosing form. With no option
+                  // highlighted it creates the typed attribute, as CLJS does.
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    if (canCreate && combobox.getSelectedOptionIndex() === -1) {
+                      handleOptionSubmit(CREATE_PREFIX + typed)
+                    }
+                  }
                 }}
               />
             </Combobox.EventsTarget>
