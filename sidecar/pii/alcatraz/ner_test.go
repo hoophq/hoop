@@ -224,6 +224,24 @@ func TestNEREngineIsLoadedOncePerBlock(t *testing.T) {
 	}
 }
 
+// A changed ort block cannot load beside the engine that holds the one
+// ONNX Runtime session; the same block, and a go block, can.
+func TestNERSecondORTBlockIsRefused(t *testing.T) {
+	withFakeNLP(t, &fakeNLP{}, nil)
+	held := NER{ModelsDir: "/a", Backend: ner.BackendORT, ORTLibrary: "/lib.so", Threads: 2}
+	nerEngines.Lock()
+	nerEngines.byConfig[held] = &fakeNLP{}
+	nerEngines.Unlock()
+	changed := held
+	changed.Threads = 4
+	if err := ortSessionHeld(changed); err == nil || !strings.Contains(err.Error(), "restart") {
+		t.Errorf("a changed ort block was not refused: %v", err)
+	}
+	if err := ortSessionHeld(NER{ModelsDir: "/b", Backend: ner.BackendGo}); err != nil {
+		t.Errorf("a go block was refused: %v", err)
+	}
+}
+
 func TestNERLoadFailureRefusesTheDetector(t *testing.T) {
 	withFakeNLP(t, nil, errors.New("offline: model.onnx: sha256 mismatch"))
 	_, err := NewDetector(Options{NER: goNER()})

@@ -4731,14 +4731,21 @@ result set of more than a few hundred names from an `ort` build.
 The `hoophq/hoopsidecar:<version>-alcatraz` and `<version>-distroless-alcatraz`
 images carry the model at `/opt/alcatraz/models` and ONNX Runtime under
 `/opt/alcatraz/ort/releases/<ort>/lib/`, the defaults above, so the block
-needs no paths there. The `-ica` image holds the same model under
-`/opt/libhoop-ica/releases/image/models`; point `models_dir` at it.
+needs no paths there.
+
+One process holds one ONNX Runtime session (hugot's rule), and the ICA
+engine takes it for its own NER. So `pii.ner` on `ort` and an `ica` listener
+do not share a process: Validate refuses that document unless one side sets
+`go` (`pii.ner.backend: go`, or `ica.options.ner_backend: go`). The
+production shape is two sidecars, the `-ica` image for the ICA lanes and the
+`-alcatraz` image for the database and HTTP lanes.
 
 A loaded engine lives as long as the process. A reload that changes only
-rules reuses it; one that changes `ner` loads a second engine beside the
-first, which stays in memory until a restart, so plan a restart for a
-backend or model change. The handshake header carries `pii_ner`, and the
-control plane serves `pii.ner` only to a build that reports it.
+rules reuses it. A reload that changes `ner` itself loads a second engine
+beside the first on `go`, and is refused on `ort`, where the first engine
+holds the one session; either way a backend or model change wants a
+restart. The handshake header carries `pii_ner`, and the control plane
+serves `pii.ner` only to a build that reports it.
 
 ### The guardrail half
 

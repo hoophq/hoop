@@ -17,8 +17,7 @@ import (
 
 // Default paths of the NER model and ONNX Runtime, the layout of the
 // hoopsidecar -alcatraz and hoopagent -alcatraz images (Dockerfile.sidecar,
-// Dockerfile.agent). The -ica image holds the same model under
-// /opt/libhoop-ica/releases/image/models.
+// Dockerfile.agent).
 const (
 	DefaultModelsDir  = "/opt/alcatraz/models"
 	DefaultORTLibrary = "/opt/alcatraz/ort/releases/1.28.0/lib/libonnxruntime.so"
@@ -51,8 +50,11 @@ func NEREntities() []string {
 // A loaded engine holds hundreds of MB and is shared by every Detector built
 // over the same NER for the life of the process. It is never closed: the
 // daemon rebuilds the Detector on a reload and a running connection may
-// still hold the previous one, so a changed block loads a second engine
-// beside the first until restart.
+// still hold the previous one. On the go backend a changed block loads a
+// second engine beside the first until restart. On ort it cannot: hugot
+// holds one ONNX Runtime session per process, so a changed block is refused
+// until restart, and so is a second ORT user in the process, such as the
+// ICA engine (daemon.Config refuses that pairing at validation).
 //
 // The go backend is the portability floor: about 100 ms per masked value
 // on a laptop CPU, which a result set of thousands of names turns into
@@ -176,6 +178,9 @@ func loadNER(n NER, lang string) (nlpEngine, error) {
 	if eng, ok := nerEngines.byConfig[n]; ok {
 		return eng, nil
 	}
+	if err := ortSessionHeld(n); err != nil {
+		return nil, err
+	}
 	slog.Info("alcatraz: loading the NER model",
 		"models_dir", n.ModelsDir, "backend", n.Backend, "ort_library", n.ORTLibrary, "threads", n.Threads)
 	eng, err := newNLPEngine(n, lang)
@@ -187,4 +192,20 @@ func loadNER(n NER, lang string) (nlpEngine, error) {
 	slog.Info("alcatraz: NER model loaded", "backend", n.Backend, "entities", strings.Join(supported, ","))
 	nerEngines.byConfig[n] = eng
 	return eng, nil
+}
+
+// ortSessionHeld refuses a second ORT engine: hugot allows one ONNX Runtime
+// session per process, and the engine that holds it is never closed (see
+// NER). The message says so, where hugot's says "another session is
+// currently active". The caller holds nerEngines.
+func ortSessionHeld(n NER) error {
+	if n.Backend != ner.BackendORT {
+		return nil
+	}
+	for prev := range nerEngines.byConfig {
+		if prev.Backend == ner.BackendORT {
+			return fmt.Errorf("ner: ONNX Runtime is held by the previous pii.ner block; restart the sidecar to change models_dir, ort_library or threads")
+		}
+	}
+	return nil
 }

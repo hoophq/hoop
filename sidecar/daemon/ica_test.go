@@ -114,6 +114,13 @@ func TestICAListenerValidation(t *testing.T) {
 		"edt retention":        {`{"ica":{"edt":{"retention_sec":601}},"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","edt":true}}]}`, "ica.edt.retention_sec must be 1..600"},
 		"edt budget":           {`{"ica":{"edt":{"replay_budget_bytes":9000000000}},"listeners":[{"name":"v","protocol":"ica","listen":":1","upstream":"10.0.0.1:2598","ica":{"tenant_id":"t","edt":true}}]}`, "ica.edt.replay_budget_bytes must be 1..8589934592"},
 		"edt block unused":     {`{"ica":{"edt":{"retention_sec":60}},"listeners":[` + icaSingle + `]}`, "ica.edt is set but no ica listener sets edt: true"},
+		// hugot holds one ONNX Runtime session per process: pii.ner and the
+		// ica engine both on ort is refused, either on go passes.
+		"pii.ner ort beside ica":   {`{"pii":{"ner":{}},"listeners":[` + icaSingle + `]}`, "one session"},
+		"pii.ner ort, ica ort":     {`{"pii":{"ner":{"backend":"ort"}},"ica":{"options":{"ner_backend":"ort"}},"listeners":[` + icaSingle + `]}`, "one session"},
+		"pii.ner go beside ica":    {`{"pii":{"ner":{"backend":"go"}},"listeners":[` + icaSingle + `]}`, ""},
+		"pii.ner ort, ica go":      {`{"pii":{"ner":{}},"ica":{"options":{"ner_backend":"go"}},"listeners":[` + icaSingle + `]}`, ""},
+		"pii.ner ort, no ica lane": {`{"pii":{"ner":{}},"listeners":[{"name":"db","protocol":"postgres","listen":":1","upstream":"h:1"}]}`, ""},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
