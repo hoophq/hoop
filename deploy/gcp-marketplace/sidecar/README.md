@@ -137,14 +137,16 @@ listeners:
     upstream: appdb:5432
 ```
 
-From the command line: `-var config_document="$(cat config.yaml)"`.
+From the command line, in `main.tf`: `config_source = "document"` and
+`config_document = file("config.yaml")`.
 
 ### Pin the image to a digest
 
-`image_tag` accepts a tag and a digest together; the digest wins:
+`image_tag` accepts a tag and a digest together; the digest wins. In
+`main.tf`:
 
-```bash
--var image_tag="MAJOR.MINOR@sha256:DIGEST"
+```hcl
+image_tag = "RELEASE-distroless@sha256:DIGEST"
 ```
 
 ## Basic usage
