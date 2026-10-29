@@ -10,7 +10,7 @@
 module "hoop_sidecar" {
   # A release tag, never a branch. Terraform takes no variable here: keep
   # sidecar_version below on the same release.
-  source = "github.com/hoophq/hoop//deploy/gcp-marketplace/sidecar?ref=1.260.0"
+  source = "github.com/hoophq/hoop//deploy/gcp-marketplace/sidecar?ref=1.281.0"
 
   project_id       = var.project_id
   cluster_name     = var.cluster_name
@@ -44,7 +44,7 @@ variable "cluster_location" { type = string }
 variable "sidecar_version" {
   description = "hoop release of the sidecar chart and image. Keep it on the module's ref."
   type        = string
-  default     = "1.260.0"
+  default     = "1.281.0"
 }
 
 # Empty: the sidecar alone. Set both to connect it to a control plane.
