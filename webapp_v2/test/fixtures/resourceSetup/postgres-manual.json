@@ -1,0 +1,35 @@
+{
+  "name": "pg-manual",
+  "type": "database",
+  "subtype": "postgres",
+  "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "pg-manual-ro",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "database",
+      "secret": {
+        "envvar:HOST": "ZGIuaW50ZXJuYWw=",
+        "envvar:USER": "YXBw",
+        "envvar:PASS": "czNjcmV0",
+        "envvar:PORT": "NTQzMg==",
+        "envvar:DB": "YXBw",
+        "envvar:SSLMODE": "ZGlzYWJsZQ=="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+      "access_schema": "enabled",
+      "attributes": [
+        "pii",
+        "hoop_protection_profile-protection_permissive"
+      ],
+      "reviewers": [],
+      "subtype": "postgres"
+    }
+  ]
+}

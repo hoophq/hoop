@@ -1,0 +1,427 @@
+{
+  "connections": [
+    {
+      "id": "aws-ssm-script",
+      "name": "AWS SSM",
+      "badges": null,
+      "resourceConfiguration": {
+        "credentials": [
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "AWS_ACCESS_KEY_ID",
+            "description": "The AWS access key id value",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "AWS_SECRET_ACCESS_KEY",
+            "description": "The AWS secret access key value"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "AWS_REGION",
+            "description": "The AWS region to issue commands",
+            "placeholder": "us-east-1"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "PIPE_EXEC",
+            "description": "The runtime command to be executed when running ad-hoc commands via Web Console. It defaults to /bin/bash",
+            "placeholder": "/bin/bash"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "INSTANCE_ID",
+            "description": "The EC2 instance id to use when starting an interactive shell session. Add this value if you want to prevent users from specifying which instance to connect to.",
+            "placeholder": "i-0d1a333276d48ec0d"
+          }
+        ],
+        "type": "custom",
+        "subtype": "aws-ssm",
+        "command": [
+          "aws-ssm.sh"
+        ]
+      }
+    },
+    {
+      "id": "bigquery",
+      "name": "BigQuery",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "bigquery",
+        "command": [
+          "bq",
+          "query",
+          "--use_legacy_sql=false",
+          "--format=prettyjson",
+          "--project_id=$CLOUDSDK_CORE_PROJECT"
+        ],
+        "credentials": [
+          {
+            "name": "GOOGLE_APPLICATION_CREDENTIALS",
+            "type": "filesystem",
+            "required": true,
+            "description": "The service account credentials file in JSON format",
+            "placeholder": "file content of service-account.json"
+          },
+          {
+            "name": "CLOUDSDK_CORE_PROJECT",
+            "type": "env-var",
+            "required": true,
+            "description": "The project id to use for request",
+            "placeholder": "my-project-id"
+          }
+        ]
+      }
+    },
+    {
+      "id": "httpproxy",
+      "name": "HTTP Proxy",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "web-application",
+        "credentials": [
+          {
+            "name": "REMOTE_URL",
+            "type": "env-var",
+            "required": true,
+            "description": "The target HTTP/HTTPS URL to proxy requests to",
+            "placeholder": "https://example.com"
+          }
+        ]
+      }
+    },
+    {
+      "id": "kubernetes-token",
+      "name": "Kubernetes",
+      "badges": null,
+      "resourceConfiguration": {
+        "credentials": [
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "KUBERNETES_CLUSTER_URL",
+            "description": "The Kubernetes API Server URL. Defaults to in cluster value\nhttps://kubernetes.default.svc.cluster.local",
+            "placeholder": "https://kubernetes.default.svc.cluster.local"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "KUBERNETES_INSECURE_SKIP_VERIFY",
+            "description": "Controls whether a client verifies the server's certificate chain and host name. If is true, it accepts any certificate presented by the server and any host name in that certificate. Defaults to false if no value is provided.",
+            "placeholder": "true"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "KUBERNETES_BEARER_TOKEN",
+            "description": "The bearer token to authenticate with Kubernetes. It defaults reading the token from the service account when running inside the Kubernetes cluster.",
+            "placeholder": "Bearer <k8s-bearer-token>"
+          }
+        ],
+        "type": "custom",
+        "subtype": "kubernetes",
+        "command": [
+          "bash"
+        ]
+      }
+    },
+    {
+      "id": "mysql",
+      "name": "MySQL",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "mysql",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or Host of the MySQL server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The user to connect in the MySQL server",
+            "placeholder": "root"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password to connect to the MySQL server",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the MySQL server",
+            "placeholder": "3306"
+          },
+          {
+            "name": "DB",
+            "type": "env-var",
+            "required": true,
+            "description": "The name of the database to connect (Required when using the connection via the command line).",
+            "placeholder": "mydb"
+          },
+          {
+            "name": "PRE_SQL_SCRIPT_FILE",
+            "type": "filesystem",
+            "required": false,
+            "description": "Append a custom SQL script at the beginning of the execution.",
+            "placeholder": "file content of script.sql"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oracledb",
+      "name": "Oracle",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "oracledb",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or Host of the Oracle server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The user to connect in the Oracle server",
+            "placeholder": "user"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password to connect to the Oracle server. Make sure to URL encode the password if it contains any special characters.",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the Oracle server",
+            "placeholder": "1521"
+          },
+          {
+            "name": "SID",
+            "type": "env-var",
+            "required": true,
+            "description": "The service name or SID (System identifier) to identify the database service.",
+            "placeholder": "SID or Service name"
+          }
+        ]
+      }
+    },
+    {
+      "id": "postgres",
+      "name": "PostgreSQL",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "postgres",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or hostname of the PostgreSQL server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The username to connect to PostgreSQL",
+            "placeholder": "postgres"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password to connect to the Postgres server. Make sure to URL encode the password if it contains any special characters.",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the Postgres server",
+            "placeholder": "5432"
+          },
+          {
+            "name": "DB",
+            "type": "env-var",
+            "required": true,
+            "description": "The name of the database to connect (Required when using the connection via the command line).",
+            "placeholder": "mydb"
+          },
+          {
+            "name": "SSLMODE",
+            "type": "env-var",
+            "required": false,
+            "description": "How to connect via tls with the remote host, it defaults to prefer. See [PostgreSQL SSL documentation](https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION) for more information. Available options are disable, prefer, require, and verify-full",
+            "placeholder": "prefer"
+          }
+        ]
+      }
+    },
+    {
+      "id": "python-scripts",
+      "name": "Python Scripts",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "python",
+        "command": [
+          "python3",
+          "-"
+        ]
+      }
+    },
+    {
+      "id": "remote-desktop",
+      "name": "Remote Desktop (RDP)",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "rdp",
+        "command": [],
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The host of the remote desktop server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The username of the remote desktop server",
+            "placeholder": "ubuntu"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password of the remote desktop server",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the remote desktop server",
+            "placeholder": "3389"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ruby-on-rails",
+      "name": "Ruby on Rails",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "ruby-on-rails",
+        "command": [
+          "rails",
+          "runner",
+          "-"
+        ]
+      }
+    },
+    {
+      "id": "ssh",
+      "name": "Secure Shell (SSH)",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "ssh",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or hostname of the SSH server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": false,
+            "description": "The port of the SSH server, default to 22",
+            "placeholder": "22"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The username of the Linux server",
+            "placeholder": "ubuntu"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": false,
+            "description": "The credentials of the username if password authentication is enabled in the SSH server.",
+            "placeholder": "password"
+          },
+          {
+            "name": "AUTHORIZED_SERVER_KEYS",
+            "type": "env-var",
+            "required": false,
+            "description": "The private key of the user that corresponds to the public key at $HOME/<user>/.ssh/authorized_keys",
+            "placeholder": "Enter your private key"
+          }
+        ]
+      }
+    },
+    {
+      "id": "webapps-and-apis",
+      "name": "Web Applications and APIs",
+      "badges": null,
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "tcp",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or hostname of the service",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the service",
+            "placeholder": "8080"
+          }
+        ]
+      }
+    }
+  ]
+}

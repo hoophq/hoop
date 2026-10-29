@@ -1,0 +1,33 @@
+{
+  "name": "pg-vault",
+  "type": "database",
+  "subtype": "postgres",
+  "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "pg-vault-ro",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "database",
+      "secret": {
+        "envvar:HOST": "X3ZhdWx0a3YyOnNlY3JldC9kYXRhL3BnOkhPU1Q=",
+        "envvar:USER": "X3ZhdWx0a3YyOnNlY3JldC9kYXRhL3BnOlVTRVI=",
+        "envvar:PASS": "X3ZhdWx0a3YyOnNlY3JldC9kYXRhL3BnOlBBU1M=",
+        "envvar:DB": "X3ZhdWx0a3YyOmFwcA==",
+        "envvar:PORT": "NTQzMg=="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "7b16ea93-62fc-5077-a50c-4f441ba5d28a",
+      "access_schema": "enabled",
+      "attributes": [
+        "hoop_protection_profile-protection_permissive"
+      ],
+      "reviewers": [],
+      "subtype": "postgres"
+    }
+  ]
+}

@@ -821,17 +821,26 @@ Reference implementation for a **multi-tab edit page with write-only secrets and
 
 When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
 
-> **`sections/AttributesSelect.jsx` (single consumer — graduation planned).**
-> Combobox+PillsInput attribute picker with mixed pill styles: Hoop-managed
-> protection-profile attributes render as indigo award pills (removable and
-> re-addable like any other — removing one detaches the role from the
-> profile on save), user attributes as plain pills. Deliberately NOT built on
-> `components/MultiSelect` (Mantine's MultiSelect can't custom-render
-> individual selected pills) nor on `components/PaginatedMultiSelect` (its
-> contract is pagination/server-search specific, and it also only renders
-> uniform pills). When the React resource-creation wizard needs the same
-> control, graduate this to `src/components/` and consider extracting a
-> shared PillsInput base with `PaginatedMultiSelect`.
+> **The credential renderers read `useCredentialsStore`**
+> (`sections/credentials/store.js`), not `useConfigureRoleStore`. With no
+> provider it is the Configure Role store. The resource setup wizard wraps each
+> role in `CredentialsStoreProvider` with a store of its own
+> (`pages/Resources/Setup/roleCredentials.js`); `createMode: true` there makes
+> `PredefinedFields` render every field as a new, masked input. The secret
+> actions both stores share are `utils/credentialsSlice.js`.
+
+### `AttributesSelect`
+Role attributes picker (Configure Role, resource setup wizard). Hoop-managed
+protection-profile attributes (`managed: true`) render as indigo award pills,
+removable and re-addable like any other; user attributes as plain pills.
+`onCreate(name)` adds a "Create" option for a search that matches nothing.
+```jsx
+import AttributesSelect from '@/components/AttributesSelect'
+
+<AttributesSelect options={options} value={selected} onChange={setSelected} onCreate={createAttribute} />
+```
+Not built on `MultiSelect` (it cannot render one pill differently) nor on
+`PaginatedMultiSelect` (its contract is server search and paging).
 
 ### Settings `SectionRow`
 Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
@@ -985,7 +994,7 @@ Non-obvious notes only:
 
 - `api.js` — the base Axios instance (Bearer-token interceptor + 401 → saved
   URL + logout). Every other service imports it; never call axios directly.
-- `analytics.js` — Segment (`identify()` only today), not a gateway API
+- `analytics.js` — Segment, not a gateway API: `identify()` and `track(event, props)`. Send events through `useUserStore.trackEvent`, which checks `analytics_tracking`; names live in `EVENTS`
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
 - `accessRequests.js` — `/access-requests/rules`. `list()` deliberately sends no
