@@ -3,12 +3,15 @@ import { Box, Stack } from '@mantine/core'
 import { Plus } from 'lucide-react'
 import Button from '@/components/Button'
 import MethodCard from '@/components/MethodCard'
-import SectionRow from '@/components/SectionRow'
 import Select from '@/components/Select'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
-import { DeploymentMain } from '@/pages/Agents/Create/DeploymentInstructions'
+import {
+  DockerDeployment,
+  KubernetesDeployment,
+} from '@/pages/Agents/Create/DeploymentInstructions'
 import StepHeader from './components/StepHeader'
+import StepRow from './components/StepRow'
 import { useResourceSetupStore } from './store'
 
 const INSTALL_METHODS = [
@@ -37,8 +40,8 @@ function NewAgent() {
   const created = newAgent.status === 'creating' || newAgent.status === 'ready'
 
   return (
-    <Stack gap="xxlAlt">
-      <SectionRow
+    <Stack gap="xxxlAlt">
+      <StepRow
         title="Set an Agent name"
         description="This name is used to identify your Agent in your environment."
       >
@@ -62,10 +65,10 @@ function NewAgent() {
             {!created && <Button type="submit">Create Agent</Button>}
           </Stack>
         </Box>
-      </SectionRow>
+      </StepRow>
 
       {created && (
-        <SectionRow
+        <StepRow
           title="Installation method"
           description="Select the type of environment to setup the Agent in your service."
         >
@@ -79,11 +82,20 @@ function NewAgent() {
               />
             ))}
           </Stack>
-        </SectionRow>
+        </StepRow>
       )}
 
       {newAgent.status === 'ready' && newAgent.token && (
-        <DeploymentMain installMethod={installMethod} hoopKey={newAgent.token} />
+        <StepRow
+          title="Agent deployment"
+          description="Setup your Agent with a docker image or manually run it in your environment."
+        >
+          {installMethod === 'docker' ? (
+            <DockerDeployment hoopKey={newAgent.token} />
+          ) : (
+            <KubernetesDeployment hoopKey={newAgent.token} />
+          )}
+        </StepRow>
       )}
     </Stack>
   )
@@ -104,14 +116,14 @@ export default function AgentStep() {
   }, [loadAgents])
 
   return (
-    <Stack gap="xxlAlt" pt="xl">
+    <Stack gap="xxxlAlt">
       <StepHeader
         title="Setup your Organization Agents"
         description="The Agent serves as the component linking your private infrastructure to Hoop's services. It functions as a proxy, connecting to a central gateway and exposing services within its network scope. Select or create one to get started."
         docs={{ href: docsUrl.concepts.agents, topic: 'Agents' }}
       />
 
-      <SectionRow
+      <StepRow
         title="Select an Agent"
         description="The Agent that reaches this resource from your network."
       >
@@ -133,7 +145,7 @@ export default function AgentStep() {
             </Button>
           )}
         </Stack>
-      </SectionRow>
+      </StepRow>
 
       {creating && <NewAgent />}
     </Stack>

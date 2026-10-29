@@ -42,7 +42,13 @@ const METHOD_DEFINITIONS = [
   },
 ]
 
-export function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvailable, federationAvailable }) {
+export function ConnectionMethodSection({
+  selectedMethod,
+  onSelect,
+  awsIamAvailable,
+  federationAvailable,
+  heading = 'Connection method',
+}) {
   const visibleMethods = METHOD_DEFINITIONS.filter((m) => {
     if (m.id === CONNECTION_METHODS.AWS_IAM) return awsIamAvailable
     if (m.id === CONNECTION_METHODS.IAM_FEDERATION) return federationAvailable
@@ -50,7 +56,7 @@ export function ConnectionMethodSection({ selectedMethod, onSelect, awsIamAvaila
   })
   return (
     <Stack gap="md">
-      <Title order={4}>Connection method</Title>
+      <Title order={4}>{heading}</Title>
       <Stack gap="sm">
         {visibleMethods.map(({ id, title, description, icon }) => (
           <SelectionCard

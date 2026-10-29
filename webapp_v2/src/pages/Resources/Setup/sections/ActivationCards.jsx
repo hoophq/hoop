@@ -110,7 +110,7 @@ export default function ActivationCards() {
             <Group justify="space-between" align="flex-start">
               <FeatureIcon card={card} />
               {card.badge && (
-                <Badge size="sm" variant="light" color={card.badge.color}>
+                <Badge variant="light" color={card.badge.color} tag chip>
                   {card.badge.label}
                 </Badge>
               )}

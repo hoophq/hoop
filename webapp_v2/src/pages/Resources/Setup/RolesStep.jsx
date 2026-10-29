@@ -16,7 +16,7 @@ export default function RolesStep() {
   }, [loadRoleOptions])
 
   return (
-    <Stack gap="xxlAlt" pt="xl">
+    <Stack gap="xxxlAlt">
       <StepHeader
         title="Setup your Resource roles"
         description="Roles are the central concept in Hoop.dev that serve as secure bridges between users and your organization's resources. They enable controlled access to internal services, databases, and other resources while maintaining security and compliance."
@@ -31,8 +31,8 @@ export default function RolesStep() {
       ))}
 
       <Grid columns={7} gutter="xl">
-        <Grid.Col span={{ base: 7, sm: 5 }} offset={{ base: 0, sm: 2 }}>
-          <Button variant="light" leftSection={<Plus size={16} />} onClick={addRole}>
+        <Grid.Col span={{ base: 7, sm: 4 }} offset={{ base: 0, sm: 3 }}>
+          <Button size="sm" variant="light" leftSection={<Plus size={16} />} onClick={addRole}>
             Add New Role
           </Button>
         </Grid.Col>

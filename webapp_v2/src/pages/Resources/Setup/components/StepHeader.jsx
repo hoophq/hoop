@@ -3,7 +3,7 @@ import { ArrowUpRight } from 'lucide-react'
 
 export default function StepHeader({ title, description, docs }) {
   return (
-    <Stack gap="xs">
+    <Stack gap={4}>
       <Title order={2}>{title}</Title>
       <Text size="md">{description}</Text>
       {docs && (

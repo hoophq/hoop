@@ -113,6 +113,7 @@ export default function PredefinedFields({
             <SourcedInput
               key={envKey}
               label={field.label}
+              tooltip={field.description}
               required={field.required}
               placeholder={field.placeholder}
               type={field.type}

@@ -1,5 +1,7 @@
 import { Group, Stack, Text } from '@mantine/core'
+import { CircleHelp } from 'lucide-react'
 import TextInput from '@/components/TextInput'
+import Tooltip from '@/components/Tooltip'
 import PasswordInput from '@/components/PasswordInput'
 import Textarea from '@/components/Textarea'
 import Select from '@/components/Select'
@@ -34,6 +36,7 @@ export default function SourcedInput({
   rightSectionPointerEvents,
   size = 'md',
   minRows,
+  tooltip,
 }) {
   const Input = INPUT_BY_TYPE[type] || TextInput
   const showSourceMenu = Array.isArray(sources) && sources.length > 1
@@ -43,7 +46,7 @@ export default function SourcedInput({
   // at 6 rows, so the max is raised alongside the min.
   const textareaSizing = minRows ? { minRows, maxRows: minRows } : {}
 
-  const labelNode = label ? <FieldLabel label={label} required={required} /> : null
+  const labelNode = label ? <FieldLabel label={label} required={required} tooltip={tooltip} /> : null
 
   if (isTextarea) {
     return (
@@ -107,7 +110,7 @@ export default function SourcedInput({
   )
 }
 
-function FieldLabel({ label, required }) {
+function FieldLabel({ label, required, tooltip }) {
   return (
     <Group gap={4}>
       <Text size="sm" fw={500}>
@@ -117,6 +120,11 @@ function FieldLabel({ label, required }) {
         <Text size="sm" c="red">
           *
         </Text>
+      )}
+      {tooltip && (
+        <Tooltip label={tooltip} multiline maw={320}>
+          <CircleHelp size={14} aria-label={tooltip} />
+        </Tooltip>
       )}
     </Group>
   )

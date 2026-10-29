@@ -4,7 +4,6 @@ import { useStore } from 'zustand'
 import { ExternalLink, Trash2 } from 'lucide-react'
 import AttributesSelect from '@/components/AttributesSelect'
 import Button from '@/components/Button'
-import SectionRow from '@/components/SectionRow'
 import TextInput from '@/components/TextInput'
 import { labelForManagedAttribute } from '@/features/ProtectionProfiles/constants'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
@@ -19,7 +18,14 @@ import {
 import { CredentialsStoreProvider } from '@/pages/Roles/Configure/sections/credentials/store'
 import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/shared/PredefinedFields'
 import { metadataForSubtype } from '../catalog'
+import StepRow from '../components/StepRow'
 import { useResourceSetupStore } from '../store'
+
+// The CLJS wizard's label: HOST → Host, PRE_SQL_SCRIPT_FILE → Pre sql script file.
+function wizardLabel(name) {
+  const words = name.replace(/[^a-zA-Z0-9]/g, ' ').toLowerCase()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
 
 function RoleAttributes({ role }) {
   const attributes = useResourceSetupStore((s) => s.attributes)
@@ -79,6 +85,7 @@ function RoleCredentials({ role, fields }) {
     <Stack gap="xl">
       <Stack gap="md">
         <ConnectionMethodSection
+          heading="Role connection method"
           selectedMethod={role.method}
           onSelect={(method) => setRoleMethod(role.id, method)}
           awsIamAvailable={supportsAwsIam(connection.subtype)}
@@ -129,11 +136,12 @@ export default function RoleForm({ role }) {
   const fields = useMemo(() => {
     const credentials = metadataForSubtype(metadata?.connections, setup.subtype)
       ?.resourceConfiguration?.credentials
-    return credentials?.length ? credentials.map(jsonCredentialToField) : null
+    if (!credentials?.length) return null
+    return credentials.map((entry) => ({ ...jsonCredentialToField(entry), label: wizardLabel(entry.name) }))
   }, [metadata, setup.subtype])
 
   return (
-    <SectionRow
+    <StepRow
       title="New Role"
       description="Fill out the information to access your Resource with this specific Role."
     >
@@ -155,6 +163,7 @@ export default function RoleForm({ role }) {
         {canRemove && (
           <Group justify="flex-end">
             <Button
+              size="sm"
               variant="subtle"
               color="red"
               leftSection={<Trash2 size={16} />}
@@ -165,6 +174,6 @@ export default function RoleForm({ role }) {
           </Group>
         )}
       </Stack>
-    </SectionRow>
+    </StepRow>
   )
 }

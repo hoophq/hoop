@@ -21,7 +21,7 @@ function ActionCard({ icon: Icon, title, badge, description, onClick }) {
             <Group gap="xs">
               <Text fw={500}>{title}</Text>
               {badge && (
-                <Badge size="sm" variant="light" color="indigo">
+                <Badge variant="light" color="indigo" tag chip>
                   {badge}
                 </Badge>
               )}
@@ -52,12 +52,10 @@ export default function SuccessStep() {
   }
 
   return (
-    <Stack gap="xxlAlt" py="xl" px={{ base: 0, md: 'xxlAlt' }}>
+    <Stack gap="xxlAlt" py="xs" px={{ base: 0, md: 'xxxlAlt' }}>
       <Stack gap="lg" align="center">
         <Center>
-          <Avatar size={80} color="green" variant="light">
-            <Image src="/icons/icon-lock-big.svg" alt="Lock icon, success." w={150} h={150} />
-          </Avatar>
+          <Image src="/icons/icon-lock-big.svg" alt="Lock icon, success." w={80} h={80} />
         </Center>
         <Stack gap="xs" align="center">
           <Title order={2}>Your resource is ready</Title>

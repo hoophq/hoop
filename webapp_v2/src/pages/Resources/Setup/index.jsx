@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo } from 'react'
+import { Fragment, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Box, Divider, Group, Stack } from '@mantine/core'
+import { Box, Group } from '@mantine/core'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
+import FullBleed from '@/layout/FullBleed'
 import { useConnectionsMetadataStore } from '@/stores/useConnectionsMetadataStore'
 import { setupConfigFor } from './catalog'
 import { useResourceSetupStore } from './store'
@@ -10,11 +11,10 @@ import NameStep from './NameStep'
 import AgentStep from './AgentStep'
 import RolesStep from './RolesStep'
 import SuccessStep from './SuccessStep'
+import classes from './Setup.module.css'
 
 const FORM_ID = 'resource-setup-form'
 
-// The footer flows at the end of the content, not pinned to the viewport, so
-// "Save and Finish" shows only after every field (EVL-103, as the CLJS wizard).
 function Footer({ step }) {
   const navigate = useNavigate()
   const name = useResourceSetupStore((s) => s.name)
@@ -35,19 +35,19 @@ function Footer({ step }) {
   let next
   if (step === 'name') {
     next = (
-      <Button type="submit" form={FORM_ID} disabled={!name} loading={checkingName}>
+      <Button size="sm" type="submit" form={FORM_ID} disabled={!name} loading={checkingName}>
         Next: Agents
       </Button>
     )
   } else if (step === 'agent') {
     next = (
-      <Button onClick={goToRoles} disabled={!agentId}>
+      <Button size="sm" onClick={goToRoles} disabled={!agentId}>
         Next: Resource Roles
       </Button>
     )
   } else {
     next = (
-      <Button type="submit" form={FORM_ID} disabled={roles.length === 0 || submitting}>
+      <Button size="sm" type="submit" form={FORM_ID} disabled={roles.length === 0 || submitting}>
         {submitting ? 'Creating...' : 'Save and Finish'}
       </Button>
     )
@@ -56,15 +56,12 @@ function Footer({ step }) {
   // A new button per step: React would otherwise turn the clicked "Next" into
   // the next step's submit button while the click runs, and submit the form.
   return (
-    <Stack gap={0}>
-      <Divider />
-      <Group justify="flex-end" gap="lg" py="lg">
-        <Button variant="subtle" color="gray" onClick={back}>
-          Back
-        </Button>
-        <Fragment key={step}>{next}</Fragment>
-      </Group>
-    </Stack>
+    <Group justify="flex-end" gap="lg" className={classes.footer}>
+      <Button size="sm" variant="subtle" color="gray" onClick={back}>
+        Back
+      </Button>
+      <Fragment key={step}>{next}</Fragment>
+    </Group>
   )
 }
 
@@ -78,10 +75,16 @@ export default function ResourceSetup() {
   const start = useResourceSetupStore((s) => s.start)
   const checkName = useResourceSetupStore((s) => s.checkName)
   const submit = useResourceSetupStore((s) => s.submit)
+  const scrollRef = useRef(null)
 
   useEffect(() => {
     start(setup)
   }, [setup, start])
+
+  // Each step opens at its top.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 })
+  }, [step])
 
   // The store still holds an earlier run until start() lands.
   if (!setup || current !== setup) return <PageLoader h={400} />
@@ -92,21 +95,24 @@ export default function ResourceSetup() {
     if (step === 'roles') submit(connections)
   }
 
-  if (step === 'success') return <SuccessStep />
-
   // The agent step holds its own form (the new agent's name), and forms do not nest.
+  let body
+  if (step === 'success') body = <SuccessStep />
+  else if (step === 'agent') body = <AgentStep />
+  else {
+    body = (
+      <form id={FORM_ID} onSubmit={onSubmit}>
+        {step === 'name' ? <NameStep /> : <RolesStep />}
+      </form>
+    )
+  }
+
   return (
-    <Stack gap={0}>
-      {step === 'agent' ? (
-        <Box pb="xxlAlt">
-          <AgentStep />
-        </Box>
-      ) : (
-        <Box component="form" id={FORM_ID} onSubmit={onSubmit} pb="xxlAlt">
-          {step === 'name' ? <NameStep /> : <RolesStep />}
-        </Box>
-      )}
-      <Footer step={step} />
-    </Stack>
+    <FullBleed>
+      <Box ref={scrollRef} className={classes.scroll}>
+        <Box className={classes.content}>{body}</Box>
+        {step !== 'success' && <Footer step={step} />}
+      </Box>
+    </FullBleed>
   )
 }

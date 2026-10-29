@@ -1,0 +1,21 @@
+/* One viewport tall with its own scroll, as the CLJS wizard: the footer ends
+   the content, so it sits at the bottom of a short step and only shows after
+   every field of a long one (EVL-103). */
+.scroll {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  flex: 1 0 auto;
+  padding: var(--mantine-spacing-xlAlt);
+}
+
+.footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--mantine-color-gray-3);
+  background-color: var(--hoop-surface-raised);
+  padding: var(--mantine-spacing-lgAlt);
+}
