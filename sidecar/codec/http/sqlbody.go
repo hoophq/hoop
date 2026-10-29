@@ -113,17 +113,15 @@ func newSQLReader(o *SQLOptions) *sqlReader {
 }
 
 // route returns the JSON path of the SQL in a request to one of the lane's
-// routes. The resource is cleaned first: Databricks reads a backslash as a
-// slash and resolves `.` and `..` segments and doubled or trailing slashes
-// before it routes, so `/api/2.0/./sql/statements` and
-// `/api/2.0\sql\statements` run a statement like the canonical path and must
-// be read like it, or an operation rule never sees their SQL.
+// routes. Databricks reads a backslash as a slash and resolves `.` and `..`
+// segments and doubled or trailing slashes before it routes, so
+// `/api/2.0/./sql/statements` and `/api/2.0\sql\statements` run a statement
+// like the canonical path and must be read like it, or an operation rule
+// never sees their SQL. The resource arrives resolved by cleanResource
+// (cleanpath.go), which every rule reads too; a SQL route also ignores the
+// trailing slash that cleanResource keeps.
 func (r *sqlReader) route(d *inspect.HTTPDetail) (sqlRoute, bool) {
-	resource := d.Resource
-	if resource == "" {
-		resource = d.Path
-	}
-	resource = path.Clean("/" + strings.ReplaceAll(resource, `\`, "/"))
+	resource := path.Clean(d.Resource)
 	field, ok := r.fieldFor(resource)
 	return sqlRoute{resource: resource, field: field}, ok
 }

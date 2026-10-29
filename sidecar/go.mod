@@ -21,7 +21,7 @@ module github.com/hoophq/hoop/sidecar
 
 go 1.26.10
 
-require github.com/hoophq/libhoop v0.0.0-20261028122443-e602d2f8d44b
+require github.com/hoophq/libhoop v0.0.0-20261029143615-ce8131aa0e1c
 
 require (
 	cloud.google.com/go/auth v0.20.0 // indirect
