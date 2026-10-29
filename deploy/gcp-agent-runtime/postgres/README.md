@@ -46,7 +46,7 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
    service agent use it:
 
    ```bash
-   ATTACHMENT=agent-psci-$(date +%Y%m%d%H%M)
+   ATTACHMENT=agent-psci-$(date +%Y%m%d%H%M%S)
    gcloud compute networks subnets create $ATTACHMENT --network NETWORK \
      --region REGION --range 192.168.10.0/28
    gcloud compute network-attachments create $ATTACHMENT --region REGION \
@@ -97,6 +97,38 @@ agents-cli create my-agent -a hoophq/hoop/deploy/gcp-agent-runtime/postgres@<hoo
 
 PSC-I does not stop the agent from calling Google front ends (`*.run.app`). A
 VPC Service Controls perimeter does.
+
+## Clean up
+
+Delete the agent first: it holds the network attachment. `AGENT_ID` is in
+`deployment_metadata.json`; in a new shell, `gcloud compute network-attachments
+list --filter='name~^agent-psci-'` finds `ATTACHMENT`.
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://REGION-aiplatform.googleapis.com/v1/projects/PROJECT_NUMBER/locations/REGION/reasoningEngines/AGENT_ID?force=true"
+AGENT=principal://agents.global.org-ORGANIZATION_ID.system.id.goog/resources/aiplatform/projects/PROJECT_NUMBER/locations/REGION/reasoningEngines/AGENT_ID
+for role in aiplatform.user browser cloudapiregistry.viewer logging.logWriter \
+            monitoring.metricWriter serviceusage.serviceUsageConsumer; do
+  gcloud projects remove-iam-policy-binding PROJECT --member "$AGENT" --role "roles/$role" --quiet >/dev/null
+done
+terraform -chdir=deploy/sidecar destroy \
+  -var project_id=PROJECT -var cluster_name=CLUSTER -var cluster_location=LOCATION
+kubectl delete namespace hoop-sidecar
+kubectl -n DB_NAMESPACE delete -f deploy/sidecar/database-policy.yaml
+gcloud compute network-attachments delete $ATTACHMENT --region REGION --quiet
+gcloud compute networks subnets delete $ATTACHMENT --region REGION --quiet
+gcloud projects remove-iam-policy-binding PROJECT \
+  --member serviceAccount:service-PROJECT_NUMBER@gcp-sa-aiplatform.iam.gserviceaccount.com \
+  --role projects/PROJECT/roles/agentRuntimePsci
+gcloud iam roles delete agentRuntimePsci --project PROJECT
+gcloud secrets delete appdb-password --quiet
+rm deployment_metadata.json
+```
+
+agents-cli grants the six roles in the loop to the agent's identity and does
+not remove them. Google can hold the attachment for an hour or more after the
+agent moves off it: run the two attachment lines again later.
 
 ## Free tier
 

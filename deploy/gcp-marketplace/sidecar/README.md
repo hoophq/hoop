@@ -34,8 +34,8 @@ gcloud container clusters get-credentials CLUSTER --location LOCATION
 
 ## Installation
 
-From Google Cloud Marketplace, pick the sidecar and fill in the form: the
-listing supplies the chart and the image.
+Once hoop is on Google Cloud Marketplace, its form runs this module and
+supplies the chart and the image. The listing is not public yet.
 
 From the command line, use hoop's public release artifacts: the chart from
 `releases.hoop.dev` and the image from Docker Hub. Write a root module that
@@ -217,7 +217,10 @@ spec:
 
 Check it: a connection straight to the database must time out, and one
 through the lane Service must work. A selector that matches nothing locks
-nothing, with no error. A database outside the cluster needs its own firewall
+nothing, with no error. NetworkPolicies add up: another policy that selects
+the database's pods and admits other clients keeps them in. List them with
+`kubectl -n DB_NAMESPACE get networkpolicy`, and test a direct connection
+from each workload that had access. A database outside the cluster needs its own firewall
 rule; this guide does not cover it.
 
 ## Back up and restore
@@ -242,7 +245,11 @@ connections across them.
 ```bash
 terraform destroy   # in the directory of main.tf
 kubectl delete namespace hoop-sidecar
+kubectl -n DB_NAMESPACE delete networkpolicy database-only-from-hoop-sidecar
 ```
+
+Delete the NetworkPolicy with the sidecar: while it stays, it admits only the
+sidecar's pods, so no client reaches the database.
 
 `terraform destroy` removes the release. The namespace stays because other
 releases may share it; delete it when nothing else uses it. A cluster made with
