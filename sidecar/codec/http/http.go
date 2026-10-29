@@ -250,9 +250,19 @@ func (c *Codec) withSQL(stmts []inspect.Statement) ([]inspect.Statement, error) 
 		out = append(out, stmts[i])
 		d := stmts[i].HTTP
 		if d == nil || d.Method == "" || d.StatusCode != 0 {
-			continue // not a request: a WebSocket message, a response
+			continue // a response
 		}
-		rt, ok := c.sql.route(d)
+		// A WebSocket message carries its handshake's method and resource
+		// (libhoop fillRequestIdentity), but its payload is a frame, not a
+		// request body: no SQL is read from it, and it keeps its body only
+		// as a request to no SQL route does.
+		var (
+			rt sqlRoute
+			ok bool
+		)
+		if d.WebSocket == nil {
+			rt, ok = c.sql.route(d)
+		}
 		if !ok {
 			if !c.keepBodies {
 				d.Body, d.BodyTruncated = "", false

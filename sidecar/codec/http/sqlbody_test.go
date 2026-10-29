@@ -316,6 +316,38 @@ func TestSQLBodyJSONRPCMembersOnAPlainRoute(t *testing.T) {
 	}
 }
 
+// A WebSocket message on a SQL route carries its handshake's method and
+// resource, but its payload is a frame, not a request body: it is not read
+// for SQL, so a payload that is not JSON is not refused, and it keeps no body
+// the lane captured only to look for SQL.
+func TestSQLBodyIgnoresWebSocketMessages(t *testing.T) {
+	o := databricksSQL()
+	o.Fields = map[string]string{"/ws/**": "statement"}
+	c := codechttp.New(codechttp.Options{SQL: o})
+	mustDecode(t, c, "GET /ws/sql HTTP/1.1\r\nHost: h\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"+
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n")
+	if _, _, err := c.Decode(inspect.FromServer, []byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"+
+		"Connection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n")); err != nil {
+		t.Fatalf("101: %v", err)
+	}
+	for _, payload := range []string{"not json", `{"statement":"DROP TABLE t"}`} {
+		frame := []byte{0x81, 0x80 | byte(len(payload)), 1, 2, 3, 4}
+		for i := range len(payload) {
+			frame = append(frame, payload[i]^byte(i%4+1))
+		}
+		stmts, err := decodeClient(t, c, string(frame))
+		if err != nil {
+			t.Fatalf("%s: a WebSocket message was refused: %v", payload, err)
+		}
+		if len(stmts) != 1 || stmts[0].HTTP == nil || stmts[0].HTTP.WebSocket == nil {
+			t.Fatalf("%s: statements = %+v, want the WebSocket message only", payload, stmts)
+		}
+		if stmts[0].HTTP.Body != "" {
+			t.Errorf("%s: the message kept a body the lane captured only for SQL: %q", payload, stmts[0].HTTP.Body)
+		}
+	}
+}
+
 // The SQL statement carries no credential handle: the gate resolves the
 // caller on the request statement, and a handle on the SQL statement would be
 // a second resolution for one request.
