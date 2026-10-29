@@ -4,42 +4,50 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.command-dialog :as command-dialog]
+   [webapp.shared-ui.cmdk.command-palette-constants :as constants]
    [webapp.shared-ui.cmdk.command-palette-pages :as pages]))
 
 
 (defn enhanced-empty-state
   "Enhanced empty state with contextual messages"
-  [current-status current-page]
+  [current-status current-page search-on?]
   [:> CommandEmpty
    {:className "flex items-center justify-center text-center text-sm text-gray-11 h-full"}
-   (case [current-status current-page]
-     [:idle :main] "Search for resources, features and more..."
-     [:idle :resource-roles] "Select a role from this resource"
-     [:idle :connection-actions] "Choose an action for this resource role"
-     [:searching :main] "Searching..."
-     "No results found.")])
+   (if (and (= current-page :main) (not search-on?))
+     "No results found."
+     (case [current-status current-page]
+       [:idle :main] "Search for resources, features and more..."
+       [:idle :resource-roles] "Select a role from this resource"
+       [:idle :connection-actions] "Choose an action for this resource role"
+       [:searching :main] "Searching..."
+       "No results found."))])
 
 (defn command-palette
   "Main command palette component"
   []
   (let [palette-state (rf/subscribe [:command-palette])
         search-results (rf/subscribe [:command-palette->search-results])
-        current-user (rf/subscribe [:users->current-user])]
+        current-user (rf/subscribe [:users->current-user])
+        gateway-info (rf/subscribe [:gateway->info])]
     (fn []
       (let [status (:status @search-results)
             current-page (:current-page @palette-state)
             context (:context @palette-state)
             user-data (:data @current-user)
+            feature-flags (get-in @gateway-info [:data :feature_flags])
+            search-on? (constants/search-enabled? feature-flags)
             ;; Show subtle search indicator only on icon
             is-searching? (or (= status :searching) (= status :loading))
             ;; Dynamic placeholder based on current page
             placeholder (case current-page
-                          :main "Search for resources, features and more..."
+                          :main (if search-on?
+                                  "Search for resources, features and more..."
+                                  "Search pages...")
                           :resource-roles "Select or search a role"
                           :connection-actions "Select or search an action"
                           "Search...")
-            ;; Enable native filtering for non-main pages (client-side search)
-            should-filter? (not= current-page :main)]
+            ;; Native filtering where /search does not run (client-side search)
+            should-filter? (or (not= current-page :main) (not search-on?))]
         [command-dialog/command-dialog
          {:open? (:open? @palette-state)
           :on-open-change #(if %
@@ -66,12 +74,12 @@
                                 :on-close #(rf/dispatch [:command-palette->back])})
           :content
           [:<>
-           [enhanced-empty-state status current-page]
+           [enhanced-empty-state status current-page search-on?]
 
            ;; Render content based on current page
            (case current-page
              :main
-             [pages/main-page @search-results user-data]
+             [pages/main-page @search-results user-data feature-flags]
 
              :resource-roles
              [pages/resource-roles-page context user-data]
@@ -80,7 +88,7 @@
              [pages/connection-actions-page context user-data]
 
              ;; Default: main page
-             [pages/main-page @search-results user-data])]}]))))
+             [pages/main-page @search-results user-data feature-flags])]}]))))
 
 (defn keyboard-listener
   "Component to capture CMD+K / Ctrl+K keyboard shortcuts.
