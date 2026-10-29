@@ -24,10 +24,16 @@ function roleName(resourceName, suffix) {
 }
 
 let lastRoleId = 0
-// A response commits only while its wizard run, or its agent-list request,
-// is still the latest.
+
+// A response commits only while its wizard run and its request are still the
+// latest of their kind. latest(kind) starts a request and answers its check.
 let run = 0
-let agentsRequest = 0
+const requests = {}
+function latest(kind) {
+  const id = (requests[kind] = (requests[kind] ?? 0) + 1)
+  const started = run
+  return () => started === run && requests[kind] === id
+}
 
 function newRole(setup, resourceName) {
   const suffix = String(Math.floor(1000 + Math.random() * 9000))
@@ -102,8 +108,8 @@ export const useResourceSetupStore = create((set, get) => {
     // An answer for a name the admin has since changed is dropped.
     checkName: async () => {
       const { name } = get()
-      const started = run
-      const current = () => started === run && get().name === name
+      const request = latest('name')
+      const current = () => request() && get().name === name
       set({ checkingName: true })
       try {
         await resourcesService.get(name)
@@ -125,13 +131,13 @@ export const useResourceSetupStore = create((set, get) => {
     },
 
     loadAgents: async () => {
-      const request = ++agentsRequest
+      const current = latest('agents')
       set({ agentsLoading: true })
       try {
         const { data } = await agentsService.list()
-        if (request === agentsRequest) set({ agents: data ?? [], agentsLoading: false })
+        if (current()) set({ agents: data ?? [], agentsLoading: false })
       } catch (error) {
-        if (request !== agentsRequest) return
+        if (!current()) return
         set({ agentsLoading: false })
         showSnackbar({ level: 'error', text: 'Failed to fetch agents', description: errorText(error) })
       }
@@ -145,13 +151,17 @@ export const useResourceSetupStore = create((set, get) => {
 
     setInstallMethod: (installMethod) => set({ installMethod }),
 
+    // Leaving the agent step or a new run drops a create still in flight.
     createAgent: async () => {
       const { name } = get().newAgent
+      const current = latest('agent')
       set({ newAgent: { ...NEW_AGENT, name, status: 'creating' } })
       try {
         const { data } = await agentsService.create({ name })
+        if (!current()) return
         set({ newAgent: { ...NEW_AGENT, name, status: 'ready', token: data?.token ?? null } })
       } catch (error) {
+        if (!current()) return
         set({ newAgent: { ...NEW_AGENT, name, status: 'error' } })
         showSnackbar({ level: 'error', text: errorText(error) || 'Failed to create the agent' })
         return
@@ -163,17 +173,17 @@ export const useResourceSetupStore = create((set, get) => {
     // GET /agents, by name. A failed lookup keeps the key on screen for a retry.
     findNewAgent: async () => {
       const { name } = get().newAgent
-      const started = run
-      const request = ++agentsRequest
-      const current = () => started === run && get().newAgent.name === name
+      const current = latest('lookup')
+      const currentList = latest('agents')
       set((state) => ({ newAgent: { ...state.newAgent, lookup: 'pending' } }))
       let created
       try {
         const { data } = await agentsService.list()
+        if (currentList()) set({ agents: data ?? [], agentsLoading: false })
         if (!current()) return
         created = (data ?? []).find((agent) => agent.name === name)
-        if (request === agentsRequest) set({ agents: data ?? [], agentsLoading: false })
       } catch (error) {
+        if (currentList()) set({ agentsLoading: false })
         if (!current()) return
         showSnackbar({ level: 'error', text: 'Failed to fetch agents', description: errorText(error) })
       }
@@ -184,8 +194,11 @@ export const useResourceSetupStore = create((set, get) => {
     },
 
     // Back from the agent step forgets the agent, as CLJS clear-agent-state does.
-    leaveAgentStep: () =>
-      set({ step: 'name', agentId: null, agentMode: 'select', newAgent: NEW_AGENT }),
+    leaveAgentStep: () => {
+      latest('agent')
+      latest('lookup')
+      set({ step: 'name', agentId: null, agentMode: 'select', newAgent: NEW_AGENT })
+    },
 
     goToRoles: () =>
       set((state) => ({
@@ -194,13 +207,13 @@ export const useResourceSetupStore = create((set, get) => {
       })),
 
     loadRoleOptions: async () => {
-      const started = run
+      const current = latest('roleOptions')
       set({ roleOptions: 'loading' })
       const [attributes, profile] = await Promise.allSettled([
         attributesService.listAll(),
         protectionProfilesService.get(),
       ])
-      if (started !== run) return
+      if (!current()) return
       set({
         attributes: attributes.status === 'fulfilled' ? attributes.value : [],
         profile: profile.status === 'fulfilled' ? profile.value : null,
@@ -275,7 +288,7 @@ export const useResourceSetupStore = create((set, get) => {
     // The activation cards: the org's rules per feature, whether the AI
     // provider is set up, and the ids of the created roles.
     loadActivation: async () => {
-      const started = run
+      const current = latest('activation')
       set({ activation: null })
       const names = get().createdRoles.map((role) => role.name)
       const [guardrails, masking, analyzer, provider, ...roles] = await Promise.allSettled([
@@ -285,7 +298,7 @@ export const useResourceSetupStore = create((set, get) => {
         aiSessionAnalyzerService.getProvider(),
         ...names.map((name) => connectionsService.list({ name, page: 1, page_size: 1 })),
       ])
-      if (started !== run) return
+      if (!current()) return
       const value = (result, pick) => (result.status === 'fulfilled' ? pick(result.value.data) ?? [] : [])
       roles.forEach((result, i) => {
         if (result.status === 'rejected') {

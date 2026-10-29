@@ -343,6 +343,48 @@ describe('wizard store', () => {
     expect(agentsService.create).toHaveBeenCalledTimes(1)
   })
 
+  it('drops a create still in flight when the admin leaves the agent step', async () => {
+    begin('postgres', { name: 'pg', agentId: null })
+    store().setStep('agent')
+    let answer
+    agentsService.create.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+    store().setNewAgentName('agent-1')
+    const creating = store().createAgent()
+    store().leaveAgentStep()
+    answer({ data: { token: 'old-key' } })
+    await creating
+    expect(store()).toMatchObject({ agentId: null, newAgent: { status: 'idle', token: null } })
+    expect(agentsService.list).not.toHaveBeenCalled()
+  })
+
+  it('keeps the newest of two id lookups', async () => {
+    begin('postgres', { name: 'pg', agentId: null })
+    useResourceSetupStore.setState({ newAgent: { name: 'agent-1', status: 'ready', token: 'key', lookup: 'error' } })
+    let answerOld
+    agentsService.list
+      .mockReturnValueOnce(new Promise((resolve) => { answerOld = resolve }))
+      .mockResolvedValueOnce({ data: [{ id: 'a1', name: 'agent-1' }] })
+    const old = store().findNewAgent()
+    await store().findNewAgent()
+    answerOld({ data: [] })
+    await old
+    expect(store()).toMatchObject({ agentId: 'a1', newAgent: { lookup: 'done' } })
+  })
+
+  it('keeps the newest of two role-option loads', async () => {
+    const { protectionProfilesService } = await import('@/services/protectionProfiles')
+    begin('postgres', { name: 'pg', agentId: 'a1' })
+    let failOld
+    protectionProfilesService.get
+      .mockReturnValueOnce(new Promise((_, reject) => { failOld = reject }))
+      .mockResolvedValueOnce(PROFILE)
+    const old = store().loadRoleOptions()
+    await store().loadRoleOptions()
+    failOld(new Error('late'))
+    await old
+    expect(store()).toMatchObject({ roleOptions: 'ready', profile: PROFILE })
+  })
+
   it('puts a new attribute on the role at once, and takes it off when the create fails', async () => {
     const { attributesService } = await import('@/services/attributes')
     begin('postgres', { name: 'pg', agentId: 'a1' })
