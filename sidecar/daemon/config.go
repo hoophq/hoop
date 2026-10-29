@@ -239,6 +239,21 @@ type Config struct {
 	codecPluginInfo []CodecPluginInfo
 }
 
+// usesPIINER reports whether the pii section sets a ner block. It reads the
+// one key and nothing of its shape, which stays the detector plugin's.
+func (c Config) usesPIINER() bool {
+	if len(c.PII) == 0 {
+		return false
+	}
+	var s struct {
+		NER json.RawMessage `json:"ner"`
+	}
+	if json.Unmarshal(c.PII, &s) != nil {
+		return false
+	}
+	return len(s.NER) > 0 && string(s.NER) != "null"
+}
+
 // Licensing reports the license this config runs under. The zero value is a
 // missing license, so this always has something to say.
 func (c *Config) Licensing() license.Status { return c.lic }

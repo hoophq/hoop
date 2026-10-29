@@ -63,7 +63,7 @@ it is removing a directory.
 |---|---|
 | `cmd/` | the `hoop-inspect` binary, where the optional plugins are linked |
 | `config/yaml/` | `gopkg.in/yaml.v3` |
-| `pii/alcatraz/` | `github.com/hoophq/alcatraz` |
+| `pii/alcatraz/` | `github.com/hoophq/alcatraz` and `github.com/hoophq/alcatraz/ner`, the ONNX NER model runtime: pure Go by default, ONNX Runtime under `-tags ORT` |
 | `store/sqlite/` | `modernc.org/sqlite`, pure Go because the sidecar is a static binary |
 | `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one. It wraps the `anthropic`, `gemini` and `openai` encoders from the root under a GCP bearer; the API-key providers stay in the root |
 | `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
@@ -132,6 +132,9 @@ go vet ./...
 for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp ica lexer/conformance codec/wasm telemetry/otlp; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
+
+# pii/alcatraz under -tags ORT is cgo; the real-model test runs only with the env set
+(cd pii/alcatraz && CGO_ENABLED=1 HOOP_ALCATRAZ_MODELS_DIR=/opt/alcatraz/models HOOP_ALCATRAZ_ORT_LIBRARY=/opt/alcatraz/ort/releases/1.28.0/lib/libonnxruntime.so go test -tags ORT -run TestNERRealModel ./...)
 
 # the oracle: run this for ANY change under lexer/
 (cd lexer/conformance && CGO_ENABLED=0 go test ./...)

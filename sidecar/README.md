@@ -194,12 +194,13 @@ docker build -f deploy/docker-compose/envoy-stack/sidecar/Dockerfile \
   -t hoop-inspect:local sidecar/
 ```
 
-There are no build tags. The config file decides every capability, so an
-operator turning on PII detection does not also have to swap the binary. Omit
-the `pii` section and the detector still runs, holding all 55 entity types:
-the section narrows that set rather than switching it on. A binary built
-without the alcatraz plugin is the case that refuses a `mask` block at
-startup.
+The one build tag is `ORT`, and it decides only which backend runs the NER
+model (see "Names, places and organizations" under Masking and PII). The
+config file decides every other capability, so an operator turning on PII
+detection does not also have to swap the binary. Omit the `pii` section and
+the detector still runs, holding all 55 entity types: the section narrows
+that set rather than switching it on. A binary built without the alcatraz
+plugin is the case that refuses a `mask` block at startup.
 
 To embed the relay in your own process, call `daemon.Setup` to load the config
 and build the detector, then `daemon.Run`. That is all `hoop start sidecar`
@@ -4698,6 +4699,43 @@ secret, so `pii/alcatraz/secrets.go` registers three into the same engine:
 and `PRIVATE_KEY` (including a PEM block a size limit cut short). You name
 them in config like any other entity.
 
+### Names, places and organizations: NER
+
+`PERSON`, `LOCATION`, `ORGANIZATION` and `NRP` (nationality, religion,
+political group) have no pattern. They come from an ONNX token-classification
+model, `github.com/hoophq/alcatraz/ner`, that the `pii.ner` block loads:
+
+```yaml
+pii:
+  ner:
+    models_dir: /opt/alcatraz/models   # default; parent of KnightsAnalytics_distilbert-NER/
+    backend: ort                       # go | ort; default ort in a -tags ORT build, go otherwise
+    ort_library: /opt/alcatraz/ort/releases/1.28.0/lib/libonnxruntime.so  # default; ort only
+    threads: 2                         # ort intra-op threads, 1..16; go ignores it
+```
+
+`alcatraz models download --dest <models_dir>` writes the directory. Every
+pinned file is sha256-verified at load and nothing is fetched at runtime.
+Without `pii.ner`, a mask rule or a `pii` guardrail rule naming one of the
+four is refused at load, and the message names `pii.ner`.
+
+Two backends run the same model. `ort` is ONNX Runtime, loaded from
+`ort_library`, and exists only in a cgo `-tags ORT` build: the Linux `hoop`
+and the `hoop-inspect` ica build. The darwin and windows CLIs are `go` only,
+the pure-Go backend; `backend: ort` on a build without it is a startup error.
+
+The `hoophq/hoopsidecar:<version>-alcatraz` and `<version>-distroless-alcatraz`
+images carry the model at `/opt/alcatraz/models` and ONNX Runtime under
+`/opt/alcatraz/ort/releases/<ort>/lib/`, the defaults above, so the block
+needs no paths there. The `-ica` image holds the same model under
+`/opt/libhoop-ica/releases/image/models`; point `models_dir` at it.
+
+A loaded engine lives as long as the process. A reload that changes only
+rules reuses it; one that changes `ner` loads a second engine beside the
+first, which stays in memory until a restart, so plan a restart for a
+backend or model change. The handshake header carries `pii_ner`, and the
+control plane serves `pii.ner` only to a build that reports it.
+
 ### The guardrail half
 
 One `Detector` drives both paths. The `pii` guardrail rule answers a different
@@ -4730,7 +4768,7 @@ switch off keeps running and the detector boots looking exactly like one that
 obeyed you. Write `US_SSSN` and the process stops with
 
 ```
-pii section: alcatraz: unknown entity type(s) in ignored: US_SSSN (PERSON, ...)
+pii section: alcatraz: unknown entity type(s) in ignored: US_SSSN
 ```
 
 A wide detector costs a wider scan and nothing else. `NewMasker` narrows the

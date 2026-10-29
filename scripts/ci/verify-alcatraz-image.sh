@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Verify that a published alcatraz agent image still carries an intact NER
-# model and the ONNX Runtime library, once per architecture in its manifest
-# list.
+# Verify that a published alcatraz image (hoophq/hoopagent or
+# hoophq/hoopsidecar) still carries an intact NER model and the ONNX Runtime
+# library, once per architecture in its manifest list.
 #
 # The build already checksummed the weights in the download stage; this checks
 # the artifact that actually landed in the registry, which a single-platform
@@ -11,8 +11,8 @@
 # names, so a missing file refuses every NER session.
 #
 # The files are read by exporting the container filesystem rather than by
-# running sha256sum inside the container: hoophq/hoopagent:<tag>-distroless has
-# no shell and no coreutils, and one verification path for every flavour beats
+# running sha256sum inside the container: the -distroless flavours have no
+# shell and no coreutils, and one verification path for every flavour beats
 # two that can drift.
 #
 # Usage: verify-alcatraz-image.sh <image-ref> [<image-ref> ...]
@@ -63,8 +63,9 @@ for image in "$@"; do
     docker rm -f "$cid" >/dev/null
     cid=""
     (cd "${workdir}/${MODELS_DIR}" && sha256sum -c checksums.txt)
-    # Dockerfile.agent names releases/<ORT_VERSION>/lib/libonnxruntime.so, a
-    # symlink in the upstream archive: it has to resolve inside the image.
+    # Dockerfile.agent and Dockerfile.sidecar name
+    # releases/<ORT_VERSION>/lib/libonnxruntime.so, a symlink in the upstream
+    # archive: it has to resolve inside the image.
     lib=$(find "${workdir}/${ORT_DIR}" -path '*/lib/libonnxruntime.so' | head -n 1)
     if [ -z "$lib" ] || [ ! -f "$(readlink -f "$lib")" ]; then
       echo "${image} (${platform}): no ONNX Runtime library under /${ORT_DIR}" >&2
