@@ -59,7 +59,8 @@ One product: the gateway. `hoop start control-plane` runs the same gateway and U
   nav or palette entry flags with `AGENTS_FLAG` (`modes/agentPaths.js`), sub-paths
   included, into the landing by role (`pages/Home`) on every route change, and the CLJS
   app does not move the URL while it is parked (`routes/navigate!`). Flag a new agent
-  page in `gatewayNav.js` and its URL closes too.
+  page in `gatewayNav.js` and its URL closes too; an agent page without a menu entry
+  goes in `UNLISTED_AGENT_PATHS` (`modes/agentPaths.js`).
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`). `GatewayProtectedRoute` adds the
   agents swap.
