@@ -367,17 +367,22 @@ func (s *Server) writeDenyFrame(g *gate.Gate, target net.Conn, dir inspect.Direc
 			frame = s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, d.Message)
 		}
 	}
-	if len(frame) == 0 {
+	writeBeforeClose(target, frame, "deny frame", dir, log)
+}
+
+// writeBeforeClose writes b to target on a connection about to close. The
+// connection closes either way; the log is the only place a client left
+// without what it was owed shows.
+func writeBeforeClose(target net.Conn, b []byte, what string, dir inspect.Direction, log *slog.Logger) {
+	if len(b) == 0 {
 		return
 	}
-	// The connection closes either way; the log is the only place a client
-	// left without its reason shows.
 	err := target.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err == nil {
-		_, err = target.Write(frame)
+		_, err = target.Write(b)
 	}
 	if err != nil {
-		log.Warn("deny frame not delivered", "direction", string(dir), "error", err)
+		log.Warn(what+" not delivered", "direction", string(dir), "error", err)
 	}
 }
 
@@ -1028,17 +1033,12 @@ func (s *Server) pump(
 					// The response already reached the client in part. Send
 					// what the codec masked before it refused and cut the
 					// response: a deny frame now would sit inside it.
-					if len(d.Payload) > 0 {
-						err := target.SetWriteDeadline(time.Now().Add(5 * time.Second))
-						if err == nil {
-							_, err = target.Write(d.Payload)
-						}
-						if err != nil {
-							log.Warn("masked part of a refused response not delivered", "direction", string(dir), "error", err)
-						}
-					}
+					writeBeforeClose(target, d.Payload, "masked part of a refused response", dir, log)
 					return
 				}
+				// Responses the codec finished before the refused one go
+				// first, or the client reads the deny frame as their answer.
+				writeBeforeClose(target, d.Preceding, "responses before a refused one", dir, log)
 				s.writeDenyFrame(g, target, dir, d, log)
 				return
 			}

@@ -262,6 +262,7 @@ func (c *Codec) withSQL(stmts []inspect.Statement) ([]inspect.Statement, error) 
 		)
 		if d.WebSocket == nil {
 			rt, ok = c.sql.route(d)
+			rt.method = stmts[i].Operation
 		}
 		if !ok {
 			if !c.keepBodies {

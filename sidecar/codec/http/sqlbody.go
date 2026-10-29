@@ -51,6 +51,10 @@ const (
 	// carried the SQL. The SQL statement has no HTTP detail, so an analyzer
 	// resource trigger reads this key instead (analyzer/evaluator.go).
 	MetadataSQLResource = "http.sql_resource"
+	// MetadataSQLMethod is the operation of the request that carried the
+	// SQL ("post"). That request is not sent to the analyzer, so a trigger
+	// naming its method selects the SQL through this key instead.
+	MetadataSQLMethod = "http.sql_method"
 )
 
 // SQLOptions makes an http lane read SQL out of JSON request bodies.
@@ -132,11 +136,12 @@ func (r *sqlReader) route(d *inspect.HTTPDetail) (sqlRoute, bool) {
 // sqlRoute is where a request's SQL is read: the cleaned resource it went
 // to, and the JSON path of the SQL in its body. conflict is set when a
 // pattern as long as the one that matched also matches and names another
-// path.
+// path. method is the request's operation, for MetadataSQLMethod.
 type sqlRoute struct {
 	resource string
 	field    string
 	conflict string
+	method   inspect.Operation
 }
 
 // extract returns the SQL statements a request to rt carries, to be placed
@@ -215,6 +220,7 @@ func (r *sqlReader) statement(s jsonsql.SQL, rt sqlRoute, index int) inspect.Sta
 			MetadataSQLField:    rt.field,
 			MetadataSQLDialect:  r.opts.DialectName,
 			MetadataSQLResource: rt.resource,
+			MetadataSQLMethod:   string(rt.method),
 		},
 	}
 	if s.Unreadable != "" {

@@ -47,6 +47,12 @@ func TestHTTPSQLRequestIsOneModelCall(t *testing.T) {
 			analyzer.Trigger{Resources: []string{"/api/2.0/sql/**"}}, 1},
 		{"resource trigger on another route", "/api/2.0/sql/statements",
 			analyzer.Trigger{Resources: []string{"/api/2.0/jobs/**"}}, 0},
+		{"method trigger", "/api/2.0/sql/statements",
+			analyzer.Trigger{Operations: []inspect.Operation{inspect.OpPost}}, 1},
+		{"SQL operation trigger", "/api/2.0/sql/statements",
+			analyzer.Trigger{Operations: []inspect.Operation{inspect.OpDelete}}, 1},
+		{"trigger on another method", "/api/2.0/sql/statements",
+			analyzer.Trigger{Operations: []inspect.Operation{inspect.OpGet}}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := codechttp.New(codechttp.Options{SQL: &codechttp.SQLOptions{

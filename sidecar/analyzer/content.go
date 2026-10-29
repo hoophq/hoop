@@ -319,8 +319,9 @@ func (HTTPBuilder) Protocol() inspect.Protocol { return inspect.HTTP }
 // a JSON envelope. The request that carried it, marked
 // `http.sql_statements`, declines: its SQL is judged on its own, and
 // sending the JSON around it too would call the model twice per query. A
-// resource trigger selects that SQL by the route that carried it
-// (`http.sql_resource`, see matchResource).
+// trigger selects that SQL by the route and the method of the request that
+// carried it (`http.sql_resource`, `http.sql_method`; see matchResource and
+// matchOperation).
 func (HTTPBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 	if _, ok := stmt.Metadata["http.sql_index"]; ok && stmt.HTTP == nil {
 		return SQLBuilder{Protocol_: inspect.HTTP}.Build(stmt, maxBytes)

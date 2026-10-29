@@ -3,6 +3,7 @@ package gate_test
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -378,6 +379,42 @@ func (m stubMasker) Mask(data []byte) ([]byte, []string, int) {
 
 func (m stubMasker) MaskCell(_ string, value []byte) ([]byte, []string, int) {
 	return m.Mask(value)
+}
+
+// Two responses in one server read, the second refused before its head went
+// out: the first is whole and masked, so it goes ahead of the deny frame.
+// Dropped, the client would read the deny frame as the first one's answer.
+func TestARefusedResponseKeepsTheOneBeforeIt(t *testing.T) {
+	var zb bytes.Buffer
+	zw := gzip.NewWriter(&zb)
+	zw.Write([]byte(`{"pad":"` + strings.Repeat("a", 17<<20) + `"}`))
+	zw.Close()
+	refused := map[string][]byte{
+		"br":                     []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: br\r\nContent-Length: 4\r\n\r\nabcd"),
+		"gzip too large to mask": append([]byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\nContent-Length: "+strconv.Itoa(zb.Len())+"\r\n\r\n"), zb.Bytes()...),
+	}
+	first := []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 23\r\n\r\n{\"e\":\"ada@example.com\"}")
+	for name, second := range refused {
+		t.Run(name, func(t *testing.T) {
+			g, _ := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}), gate.Config{
+				Protocol: inspect.HTTP,
+				Masker:   stubMasker{find: "ada@example.com", replace: "[REDACTED]"},
+			})
+			ctx := context.Background()
+			if d := g.Request(ctx, []byte("GET /a HTTP/1.1\r\nHost: h\r\n\r\nGET /b HTTP/1.1\r\nHost: h\r\n\r\n")); !d.Allowed {
+				t.Fatalf("requests denied: %+v", d)
+			}
+			d := g.Response(ctx, append(append([]byte(nil), first...), second...))
+			if d.Allowed || d.NoFrame {
+				t.Fatalf("want a deny with a frame; got Allowed=%v NoFrame=%v", d.Allowed, d.NoFrame)
+			}
+			p := d.Preceding
+			if bytes.Count(p, []byte("HTTP/1.1 ")) != 1 || !bytes.HasPrefix(p, []byte("HTTP/1.1 200 OK")) ||
+				!bytes.Contains(p, []byte("[REDACTED]")) || bytes.Contains(p, []byte("ada@example.com")) {
+				t.Fatalf("want the first response alone, masked, ahead of the deny frame; got %.200q", p)
+			}
+		})
+	}
 }
 
 func TestResponseMaskingRewritesAndAudits(t *testing.T) {

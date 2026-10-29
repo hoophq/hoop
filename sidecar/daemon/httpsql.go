@@ -85,6 +85,11 @@ func (s *HTTPSQLConfig) validate(lane string) []string {
 		if !strings.HasPrefix(p, "/") {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: http.sql.fields key %q is not a resource pattern; it starts with /", lane, p))
+		} else if err := policy.ValidResourcePattern(p); err != nil {
+			// It would match no request, and its SQL would reach the
+			// upstream unread.
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: http.sql.fields key %q matches no request as written: %v", lane, p, err))
 		}
 		if !jsonsql.ValidPath(s.Fields[p]) {
 			problems = append(problems, fmt.Sprintf(

@@ -4229,7 +4229,9 @@ it.
   rule writes it, to the dotted JSON path of the SQL. The longest matching
   pattern wins; two of the same length that match and name different paths
   refuse the request, because reading one would leave SQL at the other
-  unread. A pattern matches the cleaned path, because Databricks routes
+  unread. A pattern that can match nothing as written (`**` not at the end,
+  `*` inside a segment, an empty segment) is refused at load. A pattern
+  matches the cleaned path, because Databricks routes
   `/api/2.0/./sql/statements`, a doubled slash, a backslash or `x/..` like the
   canonical path. `dialect` is required: it decides what a comment or a string is, and
   `spark` is Databricks SQL. A request with no body carries no SQL.
@@ -4255,8 +4257,9 @@ it.
   set, a body cut at the limit or not JSON is refused outright: its
   disposition cannot be checked either.
 - **What the statement carries.** Protocol `http`, no HTTP detail, the SQL as
-  its text, `http.sql_index`, `http.sql_field`, `http.sql_dialect` and
-  `http.sql_resource` (the cleaned route) in its metadata; the request records
+  its text, `http.sql_index`, `http.sql_field`, `http.sql_dialect`,
+  `http.sql_resource` (the cleaned route) and `http.sql_method` (the
+  request's operation, `post`) in its metadata; the request records
   `http.sql_statements`. An `http_resource`
   rule never matches it. The request is judged as before, so `delete` names
   both an HTTP `DELETE` and a SQL `DELETE`.
@@ -4266,7 +4269,9 @@ it.
   `capture_body`, or on a lane that holds.
 - **The analyzer** renders the SQL statement as SQL. The request that carried
   it is not sent, so a query is one model call. A trigger selects the SQL by
-  operation, or by resource through `http.sql_resource`.
+  its operation, by the method of the request that carried it through
+  `http.sql_method`, or by resource through `http.sql_resource`, so a
+  trigger written for the request (`operations: [post]`) still selects it.
 - **Not with approvals yet.** A lane whose analyzer holds for approval cannot
   set the block: the gate spends an approval on the request, not on the SQL
   read from its body, so one approval would release that SQL again and again.

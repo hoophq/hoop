@@ -429,6 +429,12 @@ type Decision struct {
 	// then closes; Allowed is false alongside it.
 	NoFrame bool
 
+	// Preceding is what the caller sends ahead of the deny frame: responses
+	// the codec finished, in the same read, before the one it refused. Only
+	// a codec that reports the refused response had not started sets it, so
+	// nothing of that response is in it.
+	Preceding []byte
+
 	// Payload is the bytes to forward. It differs from the input only when
 	// masking rewrote something; otherwise it aliases the input.
 	Payload []byte
@@ -1350,6 +1356,11 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 				// the codec masked and cut the response instead.
 				d.Payload = out
 				d.NoFrame = true
+			} else if _, ok := g.reframer.(responseStarter); ok {
+				// The refused response has not started, so out holds only
+				// the responses before it, whole. Dropping them would make
+				// the client read the deny frame as their answer.
+				d.Preceding = out
 			}
 			g.mu.Lock()
 			g.denied++

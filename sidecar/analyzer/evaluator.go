@@ -121,8 +121,17 @@ func (t Trigger) matches(stmt inspect.Statement) bool {
 	return false
 }
 
+// matchOperation matches the statement's operation. SQL an http lane read out
+// of a request body also matches the method of the request that carried it
+// (the key is a literal: analyzer does not import codec/http). That request
+// is not sent to the model, so without this a trigger naming its method
+// would classify nothing on the route.
 func matchOperation(ops []inspect.Operation, stmt inspect.Statement) bool {
-	return slices.Contains(ops, stmt.Operation)
+	if slices.Contains(ops, stmt.Operation) {
+		return true
+	}
+	m := stmt.Metadata["http.sql_method"]
+	return m != "" && slices.Contains(ops, inspect.Operation(m))
 }
 
 func matchTable(tables []string, stmt inspect.Statement) bool {
@@ -136,9 +145,10 @@ func matchTable(tables []string, stmt inspect.Statement) bool {
 	return false
 }
 
-// matchResource matches an HTTP target. A statement with no HTTP detail
-// never matches, so an item pairing resources with operations stays on the
-// http lane.
+// matchResource matches an HTTP target: an HTTP statement's resource, or
+// the route of the request that carried SQL an http lane read out of its
+// body. Any other statement never matches, so an item pairing resources
+// with operations stays on the http lane.
 func matchResource(patterns []string, stmt inspect.Statement) bool {
 	var target string
 	switch {

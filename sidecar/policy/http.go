@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -315,6 +316,26 @@ func (r Rule) methodAllowed(method string) bool {
 // matches and a trigger that does not.
 func MatchResource(pattern, resource string) bool {
 	return matchResource(pattern, resource)
+}
+
+// ValidResourcePattern says why pattern can never match what it appears to
+// name, or returns nil. It sits beside matchResource so the two read one
+// syntax: "*" stands for one whole segment and "**" only as the trailing
+// "/**". Any other segment holding a "*" is compared as text, and an empty
+// segment never matches a cleaned resource.
+func ValidResourcePattern(pattern string) error {
+	segs := strings.Split(strings.Trim(pattern, "/"), "/")
+	for i, s := range segs {
+		switch {
+		case s == "*":
+		case s == "**" && i == len(segs)-1 && strings.HasSuffix(pattern, "/**"):
+		case strings.Contains(s, "*"):
+			return fmt.Errorf("segment %q: \"*\" stands for one whole segment, and \"**\" only as the trailing /**", s)
+		case s == "" && pattern != "/":
+			return errors.New("it has an empty segment")
+		}
+	}
+	return nil
 }
 
 // matchResource compares a normalized resource against a pattern.
