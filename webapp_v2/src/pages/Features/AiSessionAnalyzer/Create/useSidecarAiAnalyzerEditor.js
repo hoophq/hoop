@@ -292,8 +292,11 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       return { ...f, handoff: { ...f.handoff, [level]: { ...f.handoff[level], allowed } } }
     })
   // A level that turns to a person starts with every group selected; an
-  // emptied list leaves the decision to the administrators.
+  // emptied list leaves the decision to the administrators. Picking the
+  // approver a level already has changes nothing, so an administrators-only
+  // level keeps its empty list.
   const setApprover = (level, approver) => {
+    if (form.approval[level].approver === approver) return
     if (approver === APPROVER_HUMAN && !groupsLoaded.current) awaitingGroups.current.add(level)
     else awaitingGroups.current.delete(level)
     setForm((f) => {
