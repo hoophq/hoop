@@ -239,6 +239,48 @@ type Config struct {
 	codecPluginInfo []CodecPluginInfo
 }
 
+// piiNER reports whether the pii section sets a ner block, and the backend
+// it names. It reads those two keys and nothing else of the shape, which
+// stays the detector plugin's.
+func (c Config) piiNER() (set bool, backend string) {
+	if len(c.PII) == 0 {
+		return false, ""
+	}
+	var s struct {
+		NER *struct {
+			Backend string `json:"backend"`
+		} `json:"ner"`
+	}
+	if json.Unmarshal(c.PII, &s) != nil || s.NER == nil {
+		return false, ""
+	}
+	return true, strings.ToLower(strings.TrimSpace(s.NER.Backend))
+}
+
+// usesPIINER reports whether the pii section sets a ner block.
+func (c Config) usesPIINER() bool {
+	set, _ := c.piiNER()
+	return set
+}
+
+// checkOneORTSession refuses pii.ner beside an ica lane when both would
+// open ONNX Runtime: hugot allows one ORT session per process
+// (hugot_ort.go NewORTSession), so the second load fails at startup with
+// a message that names neither block. Either side on the go backend is
+// fine. The default of each side is ort in the build that links the ica
+// engine, so the check wants an explicit go on one of them.
+func (c *Config) checkOneORTSession() []string {
+	set, backend := c.piiNER()
+	if !set || backend == "go" || !slices.ContainsFunc(c.Listeners, isICA) {
+		return nil
+	}
+	if c.ICA != nil && c.ICA.Options != nil && c.ICA.Options.NERBackend != nil && *c.ICA.Options.NERBackend == "go" {
+		return nil
+	}
+	return []string{"pii.ner and an ica listener would both open ONNX Runtime, and this process can hold one session; " +
+		"run the ica lanes in their own sidecar, or set pii.ner.backend: go, or set ica.options.ner_backend: go"}
+}
+
 // Licensing reports the license this config runs under. The zero value is a
 // missing license, so this always has something to say.
 func (c *Config) Licensing() license.Status { return c.lic }
@@ -1282,6 +1324,7 @@ func (c *Config) validate(onHost bool) error {
 	// Detection is always available now, so the analyzer's redacting send
 	// modes always have a scanner to use.
 	problems = append(problems, c.Analyzer.validate(true, onHost)...)
+	problems = append(problems, c.checkOneORTSession()...)
 
 	// Loaded, not merely checked for a path: a bundle with no certificate in
 	// it must fail here, where -validate reports it, and not at the first
