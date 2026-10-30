@@ -75,6 +75,13 @@ const defaultMaxSessions = 32
 
 // Build implements daemon.ICABuilder.
 func Build(rt daemon.ICARuntime, lane daemon.ICALane) (daemon.ICAServer, error) {
+	maxSessions := rt.MaxSessions
+	if maxSessions == 0 {
+		maxSessions = defaultMaxSessions
+	}
+	if rt.DrainTimeoutSec < 0 || rt.DrainTimeoutSec > 3600 || rt.ReadinessHeadroom < 0 || rt.ReadinessHeadroom >= maxSessions || (!rt.ReadinessCapacity && rt.ReadinessHeadroom != 0) {
+		return nil, errors.New("invalid ICA capacity readiness or drain settings")
+	}
 	cfg := resolveRuntimeConfig(rt)
 	if err := ica.ValidateRuntimeConfig(cfg); err != nil {
 		return nil, fmt.Errorf("ica options: %w", err)
@@ -82,6 +89,13 @@ func Build(rt daemon.ICARuntime, lane daemon.ICALane) (daemon.ICAServer, error) 
 	if err := validateLane(lane); err != nil {
 		return nil, err
 	}
+	if lane.Slots != nil {
+		c := *lane.Slots
+		c.Names = slices.Clone(c.Names)
+		c.UpstreamCIDRs = slices.Clone(c.UpstreamCIDRs)
+		lane.Slots = &c
+	}
+	lane.SourcePrefixes = slices.Clone(lane.SourcePrefixes)
 	return &server{cfg: cfg, rt: rt, lane: lane, notes: notes(cfg, rt, lane)}, nil
 }
 
@@ -150,6 +164,13 @@ func resolveRuntimeConfig(rt daemon.ICARuntime) ica.RuntimeConfig {
 func validateLane(lane daemon.ICALane) error {
 	if strings.TrimSpace(lane.TenantID) == "" {
 		return errors.New("ica.tenant_id is required")
+	}
+	if lane.Slots != nil {
+		if lane.Transparent || lane.Upstream != "" || lane.EDT || lane.Network == "unix" || len(lane.SourcePrefixes) == 0 {
+			return errors.New("ica slots need TCP, Gateway sources and no other routing mode")
+		}
+		_, e := slotTable(lane)
+		return e
 	}
 	if lane.EDT {
 		if err := validateEDTListen(lane); err != nil {
@@ -433,12 +454,15 @@ type server struct {
 	// sessions the pipeline blocked. The engine's Stats count neither.
 	denied atomic.Int64
 
-	mu      sync.Mutex
-	closed  bool
-	shared  *sharedRuntime
-	manager *ica.Manager
-	tcp     net.Listener
-	edt     net.Listener // nil unless lane.EDT
+	mu            sync.Mutex
+	closed        bool
+	closeDone     chan struct{}
+	closeErr      error
+	sessionCancel context.CancelFunc
+	shared        *sharedRuntime
+	manager       *ica.Manager
+	tcp           net.Listener
+	edt           net.Listener // nil unless lane.EDT
 }
 
 // Serve loads the runtime (which takes minutes), resolves the destination
@@ -462,8 +486,10 @@ func (s *server) Serve(ctx context.Context) error {
 		s.logReleaseError(releaseRuntime(shared))
 		return nil
 	}
-	manager, tcp, edt, tc, summary, err := s.start(ctx, shared)
+	sessionCtx, sessionCancel := context.WithCancel(context.WithoutCancel(ctx))
+	manager, tcp, edt, tc, summary, err := s.start(sessionCtx, shared)
 	if err != nil {
+		sessionCancel()
 		err = errors.Join(err, releaseRuntime(shared))
 		if ctx.Err() != nil {
 			s.logReleaseError(err)
@@ -475,17 +501,32 @@ func (s *server) Serve(ctx context.Context) error {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
+		sessionCancel()
 		s.logReleaseError(errors.Join(tcp.Close(), closeListener(edt), manager.Close(), releaseRuntime(shared)))
 		return nil
 	}
 	s.shared, s.manager, s.tcp, s.edt = shared, manager, tcp, edt
+	s.sessionCancel = sessionCancel
 	s.mu.Unlock()
 
 	if s.lane.Log != nil {
 		s.lane.Log.Info("ica lane ready", "listen", tcp.Addr().String(), "mode", s.mode(), "edt", edt != nil,
 			"policy", summary, "tenant", s.lane.TenantID, "max_sessions", s.maxSessions())
 	}
-	return serveBoth(manager, tcp, edt, tc)
+	serveDone := make(chan struct{})
+	defer close(serveDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.logReleaseError(s.Close())
+		case <-serveDone:
+		}
+	}()
+	err = serveBoth(manager, tcp, edt, tc)
+	if ctx.Err() != nil {
+		err = errors.Join(err, s.Close())
+	}
+	return err
 }
 
 // serveBoth runs the TCP accept loop and, with EDT on, the UDP one, and
@@ -545,6 +586,9 @@ func (s *server) isClosed() bool {
 }
 
 func (s *server) mode() string {
+	if s.lane.Slots != nil {
+		return "slots"
+	}
 	if s.lane.Transparent {
 		return "cidr"
 	}
@@ -561,7 +605,17 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 		policy  ica.NetworkPolicy
 		summary string
 	)
-	if s.lane.Transparent {
+	if s.lane.Slots != nil {
+		table, e := slotTable(s.lane)
+		if e != nil {
+			return nil, nil, nil, tc, "", e
+		}
+		policy = ica.NetworkPolicy{Prefixes: tablePrefixes(s.lane.Slots.UpstreamCIDRs), Ports: map[uint16]struct{}{uint16(s.lane.Slots.UpstreamPort): {}}}
+		tc.Mode = ica.ModeSlots
+		tc.SourcePrefixes = s.lane.SourcePrefixes
+		tc.ResolveSlot = table.Resolve
+		summary = fmt.Sprintf("%d slots; DNS per connection", table.Count())
+	} else if s.lane.Transparent {
 		policy = cidrPolicy(s.lane)
 		tc.Mode = ica.ModeTPROXY
 		tc.SourcePrefixes = s.lane.SourcePrefixes
@@ -610,6 +664,17 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 // accepted connection keeps its original destination; a plain socket in
 // single mode, where the destination is fixed.
 func (s *server) listen(ctx context.Context) (net.Listener, error) {
+	if s.lane.Slots != nil {
+		table, e := slotTable(s.lane)
+		if e != nil {
+			return nil, e
+		}
+		host, _, e := net.SplitHostPort(s.lane.Listen)
+		if e != nil {
+			return nil, e
+		}
+		return ica.ListenSlots(ctx, host, table)
+	}
 	if s.lane.Transparent {
 		return ica.Listen(ctx, s.lane.Listen)
 	}
@@ -663,25 +728,42 @@ func (s *server) observe(e ica.Event) {
 // stops the manager and drops the lane's hold on the shared runtime. Close
 // is idempotent and safe before Serve or during Serve's load: Serve checks
 // the closed flag before it installs what it built.
-func (s *server) Close() error {
+func (s *server) Close() (result error) {
 	s.mu.Lock()
 	if s.closed {
+		done := s.closeDone
 		s.mu.Unlock()
-		return nil
+		if done != nil {
+			<-done
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.closeErr
 	}
 	s.closed = true
-	shared, manager, tcp, edt := s.shared, s.manager, s.tcp, s.edt
+	s.closeDone = make(chan struct{})
+	shared, manager, tcp, edt, cancel := s.shared, s.manager, s.tcp, s.edt, s.sessionCancel
 	s.mu.Unlock()
+	defer func() { s.mu.Lock(); s.closeErr = result; close(s.closeDone); s.mu.Unlock() }()
 	if manager == nil {
 		return nil
 	}
-	err := errors.Join(closeListener(tcp), closeListener(edt))
-	deadline := time.Now().Add(drainTimeout)
-	for manager.Stats().Active > 0 && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
+	manager.BeginDrain()
+	result = errors.Join(closeListener(tcp), closeListener(edt))
+	timeout := drainTimeout
+	if s.rt.DrainTimeoutSec > 0 {
+		timeout = time.Duration(s.rt.DrainTimeoutSec) * time.Second
 	}
-	err = errors.Join(err, manager.Close(), releaseRuntime(shared))
-	return err
+	ctx, stop := context.WithTimeout(context.Background(), timeout)
+	if err := manager.Drain(ctx); err != nil && s.lane.Log != nil {
+		s.lane.Log.Warn("ica drain deadline reached", "error", err)
+	}
+	stop()
+	result = errors.Join(result, manager.Close())
+	if cancel != nil {
+		cancel()
+	}
+	return errors.Join(result, releaseRuntime(shared))
 }
 
 func (s *server) Addr() net.Addr {
@@ -712,5 +794,5 @@ func (s *server) Notes() []string { return slices.Clone(s.notes) }
 func (s *server) Ready() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.manager != nil && s.manager.Ready()
+	return !s.closed && s.manager != nil && !s.manager.Draining() && s.manager.Ready() && (!s.rt.ReadinessCapacity || !s.manager.Saturated(s.rt.ReadinessHeadroom))
 }

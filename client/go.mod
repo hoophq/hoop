@@ -34,7 +34,6 @@ require (
 	github.com/hoophq/hoop/sidecar/telemetry/otlp v0.0.0-00010101000000-000000000000
 	github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/lib/pq v1.12.3
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.56.0
 	golang.org/x/mod v0.38.0
@@ -157,7 +156,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hoophq/alcatraz v0.23.0 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
-	github.com/hoophq/libhoop-ica v0.7.1 // indirect
+	github.com/hoophq/libhoop-ica v0.8.0 // indirect
 	github.com/hoophq/mcpproxy v0.1.5 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -174,6 +173,7 @@ require (
 	github.com/knights-analytics/ortgenai v0.3.2 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/lib/pq v1.12.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.27 // indirect

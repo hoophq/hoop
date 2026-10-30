@@ -44,6 +44,12 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 30 }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with (include "hoopsidecar.serviceAccountName" .) }}
       serviceAccountName: {{ . }}
       {{- end }}
@@ -51,6 +57,10 @@ spec:
       - image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
         name: sidecar
         imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
+        {{- with .Values.containerSecurityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         {{- if .Values.resources }}
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
@@ -88,18 +98,32 @@ spec:
         - name: admin
           containerPort: 19000
           protocol: TCP
+        {{- with .Values.extraContainerPorts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.probe.startupPath }}
+        startupProbe:
+          httpGet:
+            path: {{ . | quote }}
+            port: 19000
+          periodSeconds: {{ $.Values.probe.startupPeriodSeconds | default 5 }}
+          timeoutSeconds: {{ $.Values.probe.timeoutSeconds | default 2 }}
+          failureThreshold: {{ $.Values.probe.startupFailureThreshold | default 120 }}
+        {{- end }}
         readinessProbe:
           httpGet:
-            path: /healthz
+            path: {{ .Values.probe.readinessPath | default "/healthz" | quote }}
             port: 19000
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
+          timeoutSeconds: {{ .Values.probe.timeoutSeconds | default 2 }}
         livenessProbe:
           httpGet:
-            path: /healthz
+            path: {{ .Values.probe.livenessPath | default "/healthz" | quote }}
             port: 19000
           initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
           periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
+          timeoutSeconds: {{ .Values.probe.timeoutSeconds | default 2 }}
         {{- $k8sIdentity := eq .Values.controlPlane.identity "kubernetes" }}
         {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumeMounts $k8sIdentity }}
         volumeMounts:
