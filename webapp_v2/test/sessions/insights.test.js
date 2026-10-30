@@ -47,8 +47,20 @@ describe('maskingAnalytics', () => {
       total: 2,
     })
     expect(maskingAnalytics(null, { metrics: { data_masking: { info_types: { 'email+ssn': 3 } } } })).toEqual({
-      items: [{ infoType: 'email+ssn', count: 3 }],
+      items: [
+        { infoType: 'email', count: 3 },
+        { infoType: 'ssn', count: 3 },
+      ],
       total: 3,
+    })
+    expect(
+      maskingAnalytics(null, { metrics: { data_masking: { info_types: { 'email+ssn': 3, email: 2 } } } }),
+    ).toEqual({
+      items: [
+        { infoType: 'email', count: 5 },
+        { infoType: 'ssn', count: 3 },
+      ],
+      total: 5,
     })
     expect(maskingAnalytics(null, {})).toEqual({ items: [], total: 0 })
   })
