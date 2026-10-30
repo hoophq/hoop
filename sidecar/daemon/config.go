@@ -956,8 +956,7 @@ func (c *Config) normalize() error {
 
 // foldApprovalSpellings folds the approval spellings of an analyzer block
 // onto the canonical review ones: approval_mode onto review_mode, and
-// require_approval onto require_review on every risk level. An object level
-// that holds and names no approver gets the ai_agent default written down.
+// require_approval onto require_review on every risk level.
 //
 // Aliases, not deprecations: the plane serves the canonical names and every
 // released sidecar decodes them, so a document the plane served is never
@@ -982,9 +981,9 @@ func foldApprovalSpellings(la *LaneAnalyzerConfig) error {
 		}
 		la.ApprovalMode = ""
 	}
-	for _, l := range la.levels() {
-		*l.level = l.level.canonical()
-	}
+	la.HighRisk = canonicalAction(la.HighRisk)
+	la.MediumRisk = canonicalAction(la.MediumRisk)
+	la.LowRisk = canonicalAction(la.LowRisk)
 	return nil
 }
 
@@ -998,14 +997,14 @@ func fileDeprecations(where string, la *LaneAnalyzerConfig) []string {
 	}
 	var out []string
 	for _, l := range la.levels() {
-		if analyzer.Action(l.level.Action) == analyzer.ActionRequireReview {
+		if analyzer.Action(*l.action) == analyzer.ActionRequireReview {
 			out = append(out, fmt.Sprintf("%s: analyzer: %s risk: require_review is deprecated; "+
 				"write require_approval", where, l.name))
 		}
 	}
 	if la.ApprovalRule != "" {
 		out = append(out, fmt.Sprintf("%s: analyzer: approval_rule is deprecated; write each held "+
-			"level as {action: require_approval, approver: human, approval_groups: [...]}. "+
+			"level as approvers.<level>: {type: human, groups: [...]}. "+
 			"-migrate cannot convert it: the groups are in the control plane's rule %q",
 			where, la.ApprovalRule))
 	}
@@ -1935,7 +1934,7 @@ func buildPolicy(lane string, gc GuardrailsConfig, la *LaneAnalyzerConfig,
 	gated := opa.enabled() && opa.Gate
 	if la != nil {
 		ev, err := buildLaneAnalyzer(lane, la, ac, opa.enabled(), gated,
-			ac.reviewerFor(lane, la, gc.observing()))
+			ac.reviewerFor(lane, la, gc.observing()), gc.observing())
 		if err != nil {
 			return nil, err
 		}
@@ -1998,7 +1997,7 @@ func analyzerDefers(la *LaneAnalyzerConfig) bool {
 		return false
 	}
 	for _, l := range la.levels() {
-		if analyzer.Action(l.level.Action) == analyzer.ActionDefer {
+		if analyzer.Action(*l.action) == analyzer.ActionDefer {
 			return true
 		}
 	}

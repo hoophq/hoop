@@ -112,8 +112,9 @@ const (
 	MetadataHandoffDecision = "handoff_decision"
 
 	// MetadataHandoffReason is the hand-off agent's reason, or the fixed
-	// reason of a fail-safe decision. It is model prose under the same
-	// exception as MetadataApprovalReason, bounded by maxAgentReasonBytes.
+	// reason of a fail-safe decision. The agent's reason is model prose
+	// under the same exception as MetadataApprovalReason: kept only after
+	// Config.RecordRedact ran on it, bounded by maxAgentReasonBytes.
 	MetadataHandoffReason = "handoff_reason"
 )
 

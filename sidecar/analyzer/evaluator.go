@@ -180,15 +180,23 @@ type Config struct {
 	// Actions maps risk to enforcement.
 	Actions ActionMap
 
-	// Approvals names the approver of each held level written in the
-	// per-level form. A held level absent here files under the lane's
-	// approval rule, as before the per-level form. A level here must map
-	// to ActionRequireReview; an ai_agent one needs a Provider that is a
-	// ToolCaller.
+	// Approvals names the approver of each held level that has one. A held
+	// level absent here files under the lane's approval rule. A level here
+	// must map to ActionRequireReview; an ai_agent one needs a Provider
+	// that is a ToolCaller.
 	Approvals map[RiskLevel]Approval
 
 	// Listener is the connection name the approval agent reads.
 	Listener string
+
+	// Observing is set on an observe-mode lane. The approval agent is then
+	// not called: its hold denies, and policy.Observe records would_deny.
+	Observing bool
+
+	// RecordRedact rewrites the approval agent's and the hand-off agent's
+	// reasons before the audit record keeps them, with the build's detector
+	// whatever the send mode. Nil keeps no free text from either agent.
+	RecordRedact func(string) string
 
 	// Trigger narrows what is classified. A zero Trigger classifies
 	// nothing, which makes a misconfigured rule silent rather than
@@ -659,7 +667,7 @@ func (e *Evaluator) requestApproval(stmt inspect.Statement, ec *policy.EvalConte
 	}
 	switch approver {
 	case ApproverAIAgent:
-		return e.requestAgentApproval(ctx, stmt, ec, notes, level, c.res, c.text, agentPrompt, handoff)
+		return e.requestAgentApproval(ctx, stmt, ec, notes, level, c.res, c.text, agentPrompt)
 	case ApproverHuman:
 		ctx = withFiledLevel(ctx, level)
 	}

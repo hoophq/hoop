@@ -97,6 +97,7 @@ const (
 	attrAnalyzer   = "hoop.analyzer"
 	attrProvider   = "hoop.provider"
 	attrModel      = "hoop.model"
+	attrCallKind   = "hoop.analyzer.kind"
 	attrStatus     = "hoop.status"
 	attrAction     = "hoop.action"
 
@@ -345,6 +346,7 @@ func (e *Exporter) AnalyzerCall(c telemetry.AnalyzerCall) {
 		attribute.String(attrAnalyzer, c.Analyzer),
 		attribute.String(attrProvider, c.Provider),
 		attribute.String(attrModel, c.Model),
+		attribute.String(attrCallKind, c.Kind),
 	}
 	e.analyzerDuration.Record(context.Background(), c.Duration.Seconds(),
 		metric.WithAttributeSet(attribute.NewSet(append(ident, attribute.String(attrOutcome, c.Outcome))...)))

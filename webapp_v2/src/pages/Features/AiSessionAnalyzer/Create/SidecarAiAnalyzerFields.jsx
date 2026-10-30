@@ -213,6 +213,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                 <LevelHandoff
                   handoff={form.handoff[level]}
                   approval={form.approval[level]}
+                  approvalRule={form.approval_rule}
                   groupOptions={groupOptionsFor(level)}
                   onPrompt={(prompt) => setHandoffPrompt(level, prompt)}
                   onAllowed={(value, checked) => setAllowed(level, value, checked)}

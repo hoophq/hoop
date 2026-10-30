@@ -23,9 +23,10 @@ type Handoff struct {
 	// list and any other action.
 	Allowed []Action
 
-	// Approval is who decides on a require_review the agent selects. An
-	// empty Approver is ApproverAIAgent. Set only when require_review is
-	// allowed.
+	// Approval is who decides on a require_review the agent selects, as
+	// for a held level: ApproverHuman files the level, ApproverAIAgent
+	// decides in the sidecar, and an empty Approver files under the lane's
+	// approval rule. Set only when require_review is allowed.
 	Approval Approval
 }
 
@@ -178,8 +179,12 @@ func newHandoffLevel(level RiskLevel, h Handoff) (*handoffLevel, error) {
 			return nil, fmt.Errorf("sidecar/analyzer: risk %q names approver %q and its hand-off agent "+
 				"cannot select %s", level, ap.Approver, ActionRequireReview)
 		}
-	case ap.Approver == "", ap.Approver == ApproverAIAgent:
-		ap.Approver = ApproverAIAgent
+	case ap.Approver == "":
+		if ap.Prompt != "" {
+			return nil, fmt.Errorf("sidecar/analyzer: risk %q sets an approval prompt and names no "+
+				"approver for its hand-off", level)
+		}
+	case ap.Approver == ApproverAIAgent:
 		hl.approvalPrompt = BuildApprovalPrompt(ap.Prompt)
 	case ap.Approver == ApproverHuman:
 		ap.Prompt = ""
@@ -266,7 +271,7 @@ func (e *Evaluator) handoff(ctx context.Context, stmt inspect.Statement, ec *pol
 			return fmt.Errorf("the hand-off agent answered %d tool call(s), not one allowed action with a reason",
 				len(calls))
 		}
-		d = handoffDecision{action: action, reason: Truncate(reason, maxAgentReasonBytes)}
+		d = handoffDecision{action: action, reason: e.recordReason(reason)}
 		return nil
 	})
 	if err != nil {
@@ -311,11 +316,15 @@ func parseHandoff(calls []ToolCall, tools []ToolSpec) (Action, string, bool) {
 
 // applyHandoff runs the action the hand-off resolved to through the paths
 // the level's own action would take: allow and warn forward, block denies
-// with the reason, and require_review holds under the hand-off's approver.
+// with the recorded reason, and require_review holds under the hand-off's
+// approver.
 func (e *Evaluator) applyHandoff(stmt inspect.Statement, ec *policy.EvalContext,
 	notes map[string]string, level RiskLevel, c classified, d handoffDecision) policy.Verdict {
 	notes[MetadataHandoffDecision] = HandoffToolName(d.action)
-	notes[MetadataHandoffReason] = d.reason
+	reason := d.reason
+	if reason != "" {
+		notes[MetadataHandoffReason] = reason
+	}
 	switch d.action {
 	case ActionAllow, ActionWarn:
 		return policy.Verdict{Annotations: notes}
@@ -336,10 +345,21 @@ func (e *Evaluator) applyHandoff(stmt inspect.Statement, ec *policy.EvalContext,
 		return v
 	}
 	const blocked = "the hand-off agent blocked the statement"
-	reason := blocked
+	denial := blocked
 	room := maxDenialBytes - len(msg+": "+blocked+": ")
-	if q := rejectionReason(d.reason, min(maxReasonBytes, room)); q != "" {
-		reason = blocked + ": " + q
+	if q := rejectionReason(reason, min(maxReasonBytes, room)); q != "" {
+		denial = blocked + ": " + q
 	}
-	return e.deny(notes, msg+": "+reason)
+	return e.deny(notes, msg+": "+denial)
+}
+
+// recordReason is the hand-off agent's prose as the record may keep it:
+// the whole text goes through Config.RecordRedact first, so a cut cannot
+// split a value the detector would find, and only then is it bounded.
+// With no record redactor nothing is kept. The cache stores this result.
+func (e *Evaluator) recordReason(reason string) string {
+	if e.cfg.RecordRedact == nil {
+		return ""
+	}
+	return Truncate(e.cfg.RecordRedact(reason), maxAgentReasonBytes)
 }

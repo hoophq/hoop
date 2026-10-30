@@ -1,7 +1,7 @@
 import { Box, Paper, Stack, Text } from '@mantine/core'
 import { Sparkles } from 'lucide-react'
 import Checkbox from '@/components/Checkbox'
-import { HANDOFF_CHOICES, REVIEW_ACTION } from '@/pages/sidecarRuleVocabulary'
+import { HANDOFF_CHOICES, HANDOFF_HOLD } from '@/pages/sidecarRuleVocabulary'
 import PromptField from '../../components/PromptField'
 import SettingsCard from '../../components/SettingsCard'
 import { ApproverCard } from './LevelApprover'
@@ -43,10 +43,18 @@ function AllowedActions({ allowed, onAllowed }) {
 
 // The card stack under a hand-off level: the Hand-off card (the agent's
 // prompt and allowed actions) and, when "Hold for approval" is allowed, the
-// Approver card. A stored level the form cannot read is shown as text and
-// saved unchanged.
-export default function LevelHandoff({ handoff, approval, groupOptions, onPrompt, onAllowed, onApprover, onApproval }) {
-  const holds = !handoff.stored && handoff.allowed.includes(REVIEW_ACTION)
+// Approver card.
+export default function LevelHandoff({
+  handoff,
+  approval,
+  approvalRule,
+  groupOptions,
+  onPrompt,
+  onAllowed,
+  onApprover,
+  onApproval,
+}) {
+  const holds = handoff.allowed.includes(HANDOFF_HOLD)
   return (
     <Paper withBorder radius="lg" p="md">
       <SettingsCard
@@ -54,26 +62,26 @@ export default function LevelHandoff({ handoff, approval, groupOptions, onPrompt
         title="Hand-off"
         subtitle="Let an AI agent select the action for each statement in this risk level."
       >
-        {handoff.stored ? (
-          <Text size="sm" c="dimmed">
-            This level sets the Hold for approval approver twice, under require_approval and require_review. The sidecar refuses it. Saving keeps it as stored; change the action to replace it.
-          </Text>
-        ) : (
-          <Stack gap="lg">
-            <PromptField
-              prompt={handoff.prompt}
-              onChange={onPrompt}
-              placeholder="e.g. Block any write that has no WHERE clause."
-              helper="The agent selects an action with these instructions. Empty uses the default prompt."
-            />
-            <AllowedActions allowed={handoff.allowed} onAllowed={onAllowed} />
-          </Stack>
-        )}
+        <Stack gap="lg">
+          <PromptField
+            prompt={handoff.prompt}
+            onChange={onPrompt}
+            placeholder="e.g. Block any write that has no WHERE clause."
+            helper="The agent selects an action with these instructions. Empty uses the default prompt."
+          />
+          <AllowedActions allowed={handoff.allowed} onAllowed={onAllowed} />
+        </Stack>
       </SettingsCard>
       {holds && (
         <>
           <Box ml={36} w={1} h={24} bg="gray.2" />
-          <ApproverCard approval={approval} groupOptions={groupOptions} onApprover={onApprover} onChange={onApproval} />
+          <ApproverCard
+            approval={approval}
+            approvalRule={approvalRule}
+            groupOptions={groupOptions}
+            onApprover={onApprover}
+            onChange={onApproval}
+          />
         </>
       )}
     </Paper>

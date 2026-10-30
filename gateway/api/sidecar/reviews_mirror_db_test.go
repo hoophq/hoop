@@ -30,7 +30,7 @@ func seedMirroredSidecar(t *testing.T, name string) (*models.Sidecar, *models.Si
 		Configuration: models.SidecarConfiguration{Listeners: []daemon.ListenerConfig{{
 			Name:     "appdb",
 			Protocol: "postgres",
-			Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: "payments-approvers"},
+			Analyzer: &daemon.LaneAnalyzerConfig{ApprovalRule: "payments-approvers"},
 		}}},
 	}
 	require.NoError(t, models.CreateSidecar(models.DB, sc))

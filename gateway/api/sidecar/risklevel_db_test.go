@@ -15,23 +15,26 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
-// levelSpec holds high for dba, medium for the administrators, and low for
-// the approval agent.
-const levelSpec = `{
-	"high": {"action": "require_approval", "approver": "human", "approval_groups": ["dba"]},
-	"medium": {"action": "require_approval", "approver": "human"},
-	"low": {"action": "require_approval", "approver": "ai_agent"}}`
+// levelSpec holds every level under the rule's own approval rule: high for
+// dba, medium for the administrators, and low for the approval agent.
+func levelSpec(ruleName string) string {
+	return `{"high": "require_approval", "medium": "require_approval", "low": "require_approval",
+		"approval_rule": "` + ruleName + `",
+		"approvers": {
+			"high": {"type": "human", "groups": ["dba"]},
+			"medium": {"type": "human"},
+			"low": {"type": "ai_agent"}}}`
+}
 
-// Migration 000147 rewrites no spec, so a hold stored before the object form
-// (bare, under the rule's own managed rule) must keep working as it is: served
-// unchanged to every build, filed under the managed rule, and released by its
-// groups.
+// A hold stored without approvers is served unchanged to every build, files
+// under the rule's own managed rule, and is released by its groups.
 func TestAStoredBareHoldUnderTheManagedRuleKeepsWorking(t *testing.T) {
 	startStatusTestDB(t)
 	org := uuid.MustParse(statusTestOrgID)
@@ -42,23 +45,20 @@ func TestAStoredBareHoldUnderTheManagedRuleKeepsWorking(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"dba"}, groups)
 
-	for _, caps := range []string{"", daemon.CapabilityRiskLevelObject} {
+	for _, caps := range []string{"", daemon.CapabilityLevelApprovers} {
 		w := handshake(t, sc, caps)
 		require.Equal(t, http.StatusOK, w.Code, "caps %q: %s", caps, w.Body.String())
 		var served daemon.Config
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &served))
 		la := served.Listeners[0].Analyzer
 		require.NotNil(t, la, caps)
-		assert.Equal(t, "require_review", la.HighRisk.Action, caps)
-		assert.Equal(t, "require_review", la.MediumRisk.Action, caps)
+		assert.Equal(t, "require_review", la.HighRisk, caps)
+		assert.Equal(t, "require_review", la.MediumRisk, caps)
 		assert.Equal(t, "stored-hold", la.ApprovalRule, caps)
-		assert.NotContains(t, w.Body.String(), `"approver"`, caps)
+		assert.NotContains(t, w.Body.String(), `"approvers"`, caps)
 
-		// The build that just handshaked files under the rule it was served.
-		row, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
-		require.NoError(t, err)
 		statement := "DELETE FROM payouts WHERE build = '" + caps + "'"
-		rec := postLevelBody(row, statement, map[string]any{"approval_rule": "stored-hold"})
+		rec := postLevelBody(sc, statement, map[string]any{"approval_rule": "stored-hold"})
 		require.Equal(t, http.StatusCreated, rec.Code, "caps %q: %s", caps, rec.Body.String())
 		filed := decodeReviewResponse(t, rec)
 		require.NotNil(t, filed.Review.AccessRequestRuleName)
@@ -73,12 +73,6 @@ func TestAStoredBareHoldUnderTheManagedRuleKeepsWorking(t *testing.T) {
 		claim := decodeReviewResponse(t, claimSidecarReview(sc, filed.Review.ID))
 		assert.True(t, claim.Forward, caps)
 	}
-
-	// The stored spec is still the bare form: nothing rewrote it.
-	var stored string
-	require.NoError(t, models.DB.Raw(`SELECT sidecar_spec::text FROM private.ai_session_analyzer_rules
-		WHERE org_id = ? AND name = 'stored-hold'`, org).Row().Scan(&stored))
-	assert.JSONEq(t, spec, stored)
 }
 
 // seedLevelSidecar stores a sidecar whose appdb listener runs the analyzer
@@ -107,14 +101,7 @@ func seedLevelSidecar(t *testing.T, name, ruleName, spec string) *models.Sidecar
 	require.NoError(t, models.SetAnalyzerRuleListenersTx(models.DB, org, ruleName,
 		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}))
 	require.NoError(t, services.SyncAnalyzerApprovalRule(models.DB, org, ruleName, rule.SidecarSpec, nil))
-	// A build that reads the object form, as a level filing needs. A test of
-	// an older build handshakes again without it.
-	_, err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.300.0", "", "", "", "",
-		[]string{daemon.CapabilityRiskLevelObject})
-	require.NoError(t, err)
-	stored, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
-	require.NoError(t, err)
-	return stored
+	return sc
 }
 
 // setLevelSpec replaces the spec of an analyzer rule, as a save does.
@@ -145,12 +132,7 @@ func postLevelBody(sc *models.Sidecar, statement string, body map[string]any) *h
 }
 
 func fileLevel(sc *models.Sidecar, statement, level string) *httptest.ResponseRecorder {
-	return postLevelBody(sc, statement, map[string]any{"risk_level": level, "approver": "human"})
-}
-
-func postAgentDecision(sc *models.Sidecar, statement, level, decision, reason string) *httptest.ResponseRecorder {
-	return postLevelBody(sc, statement, map[string]any{"risk_level": level, "approver": "ai_agent",
-		"decision": decision, "reason": reason})
+	return postLevelBody(sc, statement, map[string]any{"risk_level": level})
 }
 
 func reviewGroupNames(rev *openapi.Review) []string {
@@ -163,10 +145,11 @@ func reviewGroupNames(rev *openapi.Review) []string {
 
 func TestALevelReviewIsAuthorizedByTheLevelGroups(t *testing.T) {
 	startStatusTestDB(t)
-	sc := seedLevelSidecar(t, "levels", "levels-rule", levelSpec)
+	sc := seedLevelSidecar(t, "levels", "levels-rule", levelSpec("levels-rule"))
+	const statement = "DELETE FROM payments WHERE id = 1"
 
 	// high: dba approves, one approval, no access request rule.
-	rec := fileLevel(sc, "DELETE FROM payments WHERE id = 1", "high")
+	rec := fileLevel(sc, statement, "high")
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	filed := decodeReviewResponse(t, rec)
 	assert.False(t, filed.Forward)
@@ -176,16 +159,25 @@ func TestALevelReviewIsAuthorizedByTheLevelGroups(t *testing.T) {
 	assert.Nil(t, filed.Review.AccessRequestRuleName)
 	require.NotNil(t, filed.Review.RiskLevel)
 	assert.Equal(t, "high", *filed.Review.RiskLevel)
-	assert.Equal(t, models.ApproverTypeHuman, filed.Review.ApproverType)
 
 	// A retry of the same bytes answers from the same review.
-	retry := decodeReviewResponse(t, fileLevel(sc, "DELETE FROM payments WHERE id = 1", "high"))
+	retry := decodeReviewResponse(t, fileLevel(sc, statement, "high"))
 	assert.Equal(t, filed.Review.ID, retry.Review.ID)
+	// Another level is another review.
+	other := decodeReviewResponse(t, fileLevel(sc, statement, "medium"))
+	assert.NotEqual(t, filed.Review.ID, other.Review.ID)
 	// A rule filing of the same bytes never matches it.
 	_, err := models.GetLiveSidecarReview(models.DB, statusTestOrgID, sc.ID, "appdb",
-		models.SidecarReviewKey{RuleName: "levels-rule"}, models.HashStatement([]byte("DELETE FROM payments WHERE id = 1")),
-		time.Now().UTC())
+		models.SidecarReviewKey{RuleName: "levels-rule"}, models.HashStatement([]byte(statement)), time.Now().UTC())
 	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+
+	// The status read names the level.
+	statusRec := getReview(sc, filed.Review.ID)
+	require.Equal(t, http.StatusOK, statusRec.Code, statusRec.Body.String())
+	var status openapi.SidecarReviewStatus
+	require.NoError(t, json.Unmarshal(statusRec.Body.Bytes(), &status))
+	assert.Equal(t, "high", status.RiskLevel)
+	assert.Empty(t, status.ApprovalRule)
 
 	// Someone outside the level groups cannot see it, so cannot approve it.
 	rec = putReview(t, filed.Review.ID, `{"status":"approved"}`, []string{"sre"})
@@ -198,184 +190,81 @@ func TestALevelReviewIsAuthorizedByTheLevelGroups(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	claim := decodeReviewResponse(t, claimSidecarReview(sc, filed.Review.ID))
 	assert.True(t, claim.Forward)
+	again := decodeReviewResponse(t, claimSidecarReview(sc, filed.Review.ID))
+	assert.False(t, again.Forward, "an approval releases one statement")
 
 	// medium names no groups: the administrators approve.
-	rec = fileLevel(sc, "DELETE FROM payments WHERE id = 2", "medium")
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	medium := decodeReviewResponse(t, rec)
-	assert.Equal(t, []string{types.GroupAdmin}, reviewGroupNames(medium.Review))
-	rec = putReview(t, medium.Review.ID, `{"status":"approved"}`, []string{types.GroupAdmin})
+	assert.Equal(t, []string{types.GroupAdmin}, reviewGroupNames(other.Review))
+	rec = putReview(t, other.Review.ID, `{"status":"approved"}`, []string{types.GroupAdmin})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
-	// The limits come from the analyzer rule's managed approval rule.
+	// The limits come from the block's approval_rule, here the managed rule.
 	pending := 900
 	require.NoError(t, services.ApplyAnalyzerApprovalTTLs(models.DB, uuid.MustParse(statusTestOrgID),
 		"levels-rule", &pending, nil))
 	timed := decodeReviewResponse(t, fileLevel(sc, "DELETE FROM payments WHERE id = 3", "high"))
-	require.NotNil(t, timed.Review.ExpiresAt, "the level review takes the managed rule's pending limit")
+	require.NotNil(t, timed.Review.ExpiresAt, "the level review takes the approval rule's pending limit")
 	assert.WithinDuration(t, time.Now().Add(15*time.Minute), *timed.Review.ExpiresAt, time.Minute)
 }
 
-// A filing carries the row the token lookup loads, which has no handshake
-// columns. The plane must still judge it by the build the sidecar reported,
-// or every current build reads as one without the object form.
-func TestALevelFilingWithTheTokenAuthRowIsAuthorized(t *testing.T) {
+// A level filing needs a level that holds with a human approvers entry. The
+// body names only the level, so it cannot pick its approvers.
+func TestALevelFilingIsRefusedUnlessAHumanHoldsTheLevel(t *testing.T) {
 	startStatusTestDB(t)
-	seedLevelSidecar(t, "token-row", "token-row-rule", levelSpec)
-	authRow, err := models.GetSidecarByKeyHash(models.DB, models.HashAPIKey("hsc_token-row"))
-	require.NoError(t, err)
-	require.Nil(t, authRow.Capabilities, "the token lookup loads no handshake columns")
-
-	rec := fileLevel(authRow, "DELETE FROM payments WHERE id = 41", "high")
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	assert.Equal(t, []string{"dba"}, reviewGroupNames(decodeReviewResponse(t, rec).Review))
-
-	rec = postAgentDecision(authRow, "DELETE FROM payments WHERE id = 42", "low", "approved", "bounded by id")
-	assert.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-}
-
-func TestALevelThatDoesNotHoldForTheApproverIsRefused(t *testing.T) {
-	startStatusTestDB(t)
-	sc := seedLevelSidecar(t, "mismatch", "mismatch-rule",
-		`{"high":{"action":"require_approval","approver":"human"},"medium":"block",`+
-			`"low":{"action":"require_approval","approver":"ai_agent"}}`)
+	sc := seedLevelSidecar(t, "mismatch", "mismatch-rule", `{"high": "require_approval", "medium": "require_approval",
+		"low": "block", "approval_rule": "mismatch-rule",
+		"approvers": {"high": {"type": "human"}, "low": {"type": "human", "groups": ["dba"]}}}`)
+	agent := seedLevelSidecar(t, "agent-level", "agent-level-rule", levelSpec("agent-level-rule"))
 
 	for name, rec := range map[string]*httptest.ResponseRecorder{
-		"a human filing on an agent level":    fileLevel(sc, "DELETE FROM t", "low"),
-		"an agent decision on a human level":  postAgentDecision(sc, "DELETE FROM t", "high", "approved", "bounded"),
-		"a filing on a level that holds none": fileLevel(sc, "DELETE FROM t", "medium"),
-		"a listener the sidecar does not have": postLevelBody(sc, "DELETE FROM t",
-			map[string]any{"listener_name": "other", "risk_level": "high", "approver": "human"}),
+		"an ai_agent level":                    fileLevel(agent, "DELETE FROM t", "low"),
+		"a held level with no approvers entry": fileLevel(sc, "DELETE FROM t", "medium"),
+		"a level that does not hold":           fileLevel(sc, "DELETE FROM t", "low"),
+		"a listener the sidecar does not have": postLevelBody(sc, "DELETE FROM t", map[string]any{"listener_name": "other", "risk_level": "high"}),
 	} {
 		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s: %s", name, rec.Body.String())
 		assert.Contains(t, rec.Body.String(), "is not configured to hold the", name)
 	}
 
 	for name, body := range map[string]map[string]any{
-		"neither rule nor level":    {},
-		"both rule and level":       {"approval_rule": "r", "risk_level": "high", "approver": "human"},
-		"an unknown level":          {"risk_level": "critical", "approver": "human"},
-		"no approver":               {"risk_level": "high"},
-		"a decision from a person":  {"risk_level": "high", "approver": "human", "decision": "approved", "reason": "r"},
-		"an agent with no reason":   {"risk_level": "low", "approver": "ai_agent", "decision": "approved", "reason": " "},
-		"an agent with no decision": {"risk_level": "low", "approver": "ai_agent", "reason": "r"},
-		"an agent that reserves": {"risk_level": "low", "approver": "ai_agent", "decision": "approved",
-			"reason": "r", "reserve": true},
-		"a decision on a rule filing": {"approval_rule": "r", "decision": "approved"},
+		"neither rule nor level": {},
+		"both rule and level":    {"approval_rule": "mismatch-rule", "risk_level": "high"},
+		"an unknown level":       {"risk_level": "critical"},
 	} {
 		rec := postLevelBody(sc, "DELETE FROM t", body)
 		assert.Equal(t, http.StatusBadRequest, rec.Code, "%s: %s", name, rec.Body.String())
 	}
+
+	// The held human level files.
+	assert.Equal(t, http.StatusCreated, fileLevel(sc, "DELETE FROM t", "high").Code)
 }
 
-func TestAnAgentDecisionIsFiledDecidedAndFinal(t *testing.T) {
+// A build that does not read approvers gets every held level under the
+// block's approval_rule, and files there. A block with approvers and no
+// approval_rule is refused to that build, naming the capability.
+func TestAnOldBuildIsServedTheHeldLevelsUnderTheApprovalRule(t *testing.T) {
 	startStatusTestDB(t)
-	sc := seedLevelSidecar(t, "agent", "agent-rule", levelSpec)
-	const statement = "UPDATE users SET plan = 'pro' WHERE id = 7"
+	org := uuid.MustParse(statusTestOrgID)
+	spec := levelSpec("old-rule")
+	sc := seedLevelSidecar(t, "old-build", "old-rule", spec)
+	require.NoError(t, services.SyncAnalyzerApprovalRule(models.DB, org, "old-rule", json.RawMessage(spec), &[]string{"dba"}))
 
-	rec := postAgentDecision(sc, statement, "low", "approved", "The update names one row.")
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	approved := decodeReviewResponse(t, rec)
-	assert.False(t, approved.Forward, "the sidecar already decided; the plane releases nothing")
-	assert.Equal(t, openapi.ReviewStatusType(models.ReviewStatusApproved), approved.Review.Status)
-	assert.Equal(t, models.ApproverTypeAIAgent, approved.Review.ApproverType)
-	require.NotNil(t, approved.Review.DecisionReason)
-	assert.Equal(t, "The update names one row.", *approved.Review.DecisionReason)
-	assert.Nil(t, approved.Review.RejectionReason)
-	assert.Empty(t, approved.Review.ReviewGroupsData)
-
-	stored, err := models.GetSidecarReview(models.DB, statusTestOrgID, sc.ID, approved.Review.ID)
-	require.NoError(t, err)
-	assert.False(t, stored.StatementHash.Valid, "no filing can match an agent decision")
-	sess, err := models.GetSessionByID(statusTestOrgID, stored.SessionID)
-	require.NoError(t, err)
-	assert.Equal(t, string(openapi.SessionStatusDone), sess.Status)
-	assert.NotNil(t, sess.EndSession, "the approved statement ran")
-	require.NotNil(t, sess.Review)
-	assert.Equal(t, models.ApproverTypeAIAgent, sess.Review.ApproverType)
-
-	// Nothing claims it.
-	claim := decodeReviewResponse(t, claimSidecarReview(sc, approved.Review.ID))
-	assert.False(t, claim.Forward)
-	assert.Equal(t, openapi.ReviewStatusType(models.ReviewStatusApproved), claim.Review.Status)
-	claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, statusTestOrgID, approved.Review.ID, time.Now().UTC())
-	require.NoError(t, err)
-	assert.False(t, claimed)
-
-	// The status read names the agent and when it decided.
-	statusRec := getReview(sc, approved.Review.ID)
-	require.Equal(t, http.StatusOK, statusRec.Code, statusRec.Body.String())
-	var status openapi.SidecarReviewStatus
-	require.NoError(t, json.Unmarshal(statusRec.Body.Bytes(), &status))
-	assert.Equal(t, models.ApproverTypeAIAgent, status.ApproverType)
-	assert.Equal(t, "low", status.RiskLevel)
-	assert.NotNil(t, status.DecidedAt)
-
-	// The same bytes again file a new decision, never the old one.
-	rec = postAgentDecision(sc, statement, "low", "rejected", "The update has no WHERE clause.")
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	rejected := decodeReviewResponse(t, rec)
-	assert.NotEqual(t, approved.Review.ID, rejected.Review.ID)
-	assert.Equal(t, openapi.ReviewStatusType(models.ReviewStatusRejected), rejected.Review.Status)
-	require.NotNil(t, rejected.Review.RejectionReason)
-	assert.Equal(t, "The update has no WHERE clause.", *rejected.Review.RejectionReason)
-	// Closed as a person's rejection closes it: done, with no end, since
-	// nothing ran.
-	storedRejected, err := models.GetSidecarReview(models.DB, statusTestOrgID, sc.ID, rejected.Review.ID)
-	require.NoError(t, err)
-	rejectedSess, err := models.GetSessionByID(statusTestOrgID, storedRejected.SessionID)
-	require.NoError(t, err)
-	assert.Equal(t, string(openapi.SessionStatusDone), rejectedSess.Status)
-	assert.Nil(t, rejectedSess.EndSession, "the rejected statement never ran")
-
-	// And a person's level files its own review for those bytes.
-	human := decodeReviewResponse(t, fileLevel(sc, statement, "high"))
-	assert.NotEqual(t, approved.Review.ID, human.Review.ID)
-	assert.Equal(t, openapi.ReviewStatusType(models.ReviewStatusPending), human.Review.Status)
-
-	// No person decides it again, an administrator included.
-	for _, body := range []string{`{"status":"rejected"}`, `{"status":"revoked"}`, `{"status":"approved"}`} {
-		rec = putReview(t, approved.Review.ID, body, []string{types.GroupAdmin})
-		assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-		assert.Contains(t, rec.Body.String(), "approval agent")
-	}
-	after, err := models.GetSidecarReview(models.DB, statusTestOrgID, sc.ID, approved.Review.ID)
-	require.NoError(t, err)
-	assert.Equal(t, models.ReviewStatusApproved, after.Status)
-}
-
-func TestAnOldBuildIsServedTheBareHoldUnderTheManagedRule(t *testing.T) {
-	startStatusTestDB(t)
-	sc := seedLevelSidecar(t, "old-build", "old-rule",
-		`{"high":{"action":"require_approval","approver":"human","approval_groups":["dba"]},`+
-			`"medium":{"action":"require_approval","approver":"human","approval_groups":["dba"]},"low":{"action":"warn"}}`)
-
-	// A build without the object form reads the bare hold and the rule that
-	// carries the level groups.
 	w := handshake(t, sc, "")
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.NotContains(t, w.Body.String(), `"approvers"`)
 	var served daemon.Config
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &served))
 	la := served.Listeners[0].Analyzer
 	require.NotNil(t, la)
-	assert.Equal(t, "require_review", la.HighRisk.Action)
-	assert.Equal(t, "require_review", la.MediumRisk.Action)
-	assert.Equal(t, "warn", la.LowRisk.Action)
+	assert.Nil(t, la.Approvers)
 	assert.Equal(t, "old-rule", la.ApprovalRule)
-	assert.NotContains(t, w.Body.String(), `"approver"`)
-	approval, err := services.AnalyzerApprovalReviewers(models.DB, uuid.MustParse(statusTestOrgID), "old-rule")
-	require.NoError(t, err)
-	assert.Equal(t, []string{"dba"}, approval)
-
-	// The old build files under the rule it was served, as before the object
-	// form; a level group member approves and the claim releases it.
-	legacy := func(statement string) *httptest.ResponseRecorder {
-		t.Helper()
-		row, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
-		require.NoError(t, err)
-		return postLevelBody(row, statement, map[string]any{"approval_rule": "old-rule"})
+	for _, action := range []string{la.HighRisk, la.MediumRisk, la.LowRisk} {
+		assert.Equal(t, analyzer.ActionRequireReview, analyzer.Action(action).Canonical(),
+			"an ai_agent level becomes a human hold: more oversight, never less")
 	}
-	rec := legacy("DELETE FROM payouts WHERE id = 1")
+
+	// The old build files under the rule, and its groups release it.
+	rec := postLevelBody(sc, "DELETE FROM payouts WHERE id = 1", map[string]any{"approval_rule": "old-rule"})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	filed := decodeReviewResponse(t, rec)
 	require.NotNil(t, filed.Review.AccessRequestRuleName)
@@ -383,149 +272,28 @@ func TestAnOldBuildIsServedTheBareHoldUnderTheManagedRule(t *testing.T) {
 	assert.Equal(t, []string{"dba"}, reviewGroupNames(filed.Review))
 	rec = putReview(t, filed.Review.ID, `{"status":"approved"}`, []string{"dba"})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	claim := decodeReviewResponse(t, claimSidecarReview(sc, filed.Review.ID))
-	assert.True(t, claim.Forward, "the approval releases the statement the old build held")
+	assert.True(t, decodeReviewResponse(t, claimSidecarReview(sc, filed.Review.ID)).Forward)
 
-	// A build with it reads the levels as written.
-	w = handshake(t, sc, daemon.CapabilityRiskLevelObject)
+	// A build that reads approvers gets them, and the stored row is unchanged.
+	w = handshake(t, sc, daemon.CapabilityLevelApprovers)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Contains(t, w.Body.String(), `"approver":"human"`)
-	assert.NotContains(t, w.Body.String(), `"approval_rule"`)
-	// That build was served object levels, so the rule authorizes nothing.
-	rec = legacy("DELETE FROM payouts WHERE id = 2")
-	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+	assert.Contains(t, w.Body.String(), `"approvers"`)
+	// The level filing is authorized against the stored rules, whatever the build.
+	assert.Equal(t, http.StatusCreated, fileLevel(sc, "DELETE FROM payouts WHERE id = 2", "high").Code)
 
-	// An agent level has no bare form: the old build is refused, and the
-	// refusal is recorded with its reason.
-	setLevelSpec(t, "old-rule", `{"high":{"action":"require_approval","approver":"ai_agent"}}`)
+	// No approval_rule: nothing to fall back on, so the old build is refused.
+	setLevelSpec(t, "old-rule", `{"high": "require_approval", "approvers": {"high": {"type": "human", "groups": ["dba"]}}}`)
 	w = handshake(t, sc, "")
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
-	assert.Contains(t, w.Body.String(), daemon.CapabilityRiskLevelObject)
+	assert.Contains(t, w.Body.String(), daemon.CapabilityLevelApprovers)
 	row, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
 	require.NoError(t, err)
 	require.NotNil(t, row.LastOutcome)
 	assert.Equal(t, models.SidecarOutcomeNotServed, *row.LastOutcome)
 	require.NotNil(t, row.LastError)
-	assert.Contains(t, *row.LastError, daemon.CapabilityRiskLevelObject)
-	// A build the plane does not serve files nothing.
-	rec = legacy("DELETE FROM payouts WHERE id = 3")
-	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+	assert.Contains(t, *row.LastError, daemon.CapabilityLevelApprovers)
 
 	// The build with the capability is still served.
-	w = handshake(t, sc, daemon.CapabilityRiskLevelObject)
+	w = handshake(t, sc, daemon.CapabilityLevelApprovers)
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
-}
-
-// The managed rule is editable through the access request API. An old build
-// files under it, so it is served only while the rule grants what the levels
-// grant; else the plane refuses that build, naming the capability.
-func TestAnOldBuildIsRefusedWhenTheManagedRuleGrantsMore(t *testing.T) {
-	startStatusTestDB(t)
-	org := uuid.MustParse(statusTestOrgID)
-	for name, edit := range map[string]func(*models.AccessRequestRule){
-		"force":     func(r *models.AccessRequestRule) { r.ForceApprovalGroups = []string{"security"} },
-		"reviewers": func(r *models.AccessRequestRule) { r.ReviewersGroups = []string{"dba", "payments"} },
-		"minimum": func(r *models.AccessRequestRule) {
-			r.ReviewersGroups = []string{"dba", "payments"}
-			two := 2
-			r.MinApprovals = &two
-		},
-		"all groups": func(r *models.AccessRequestRule) { r.AllGroupsMustApprove = true },
-	} {
-		ruleName := "edited-" + strings.ReplaceAll(name, " ", "-")
-		sc := seedLevelSidecar(t, ruleName, ruleName,
-			`{"high":{"action":"require_approval","approver":"human","approval_groups":["dba"]}}`)
-		require.Equal(t, http.StatusOK, handshake(t, sc, "").Code, "%s: the untouched rule serves", name)
-
-		rule, err := services.AnalyzerApprovalRule(models.DB, org, ruleName)
-		require.NoError(t, err)
-		require.NotNil(t, rule)
-		edit(rule)
-		require.NoError(t, models.UpdateAccessRequestRule(models.DB, rule))
-
-		w := handshake(t, sc, "")
-		assert.Equal(t, http.StatusUnprocessableEntity, w.Code, "%s: %s", name, w.Body.String())
-		assert.Contains(t, w.Body.String(), daemon.CapabilityRiskLevelObject, name)
-		row, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
-		require.NoError(t, err)
-		rec := postLevelBody(row, "DELETE FROM t", map[string]any{"approval_rule": ruleName})
-		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s: an old build files nothing: %s", name, rec.Body.String())
-
-		// A build that reads the object form never uses the rule.
-		assert.Equal(t, http.StatusOK, handshake(t, sc, daemon.CapabilityRiskLevelObject).Code, name)
-	}
-}
-
-// An approval_rule a listener keeps from its own block is inherited by the
-// bound rule's block. Beside object levels it releases nothing, and a filing
-// under it must not let its groups approve.
-func TestAnInheritedApprovalRuleDoesNotReleaseAnObjectLevel(t *testing.T) {
-	startStatusTestDB(t)
-	seedApprovalRule(t)
-	for name, spec := range map[string]string{
-		"inherit-human": `{"high":{"action":"require_approval","approver":"human","approval_groups":["sre"]}}`,
-		"inherit-agent": `{"high":{"action":"require_approval","approver":"ai_agent"}}`,
-	} {
-		sc := seedLevelSidecar(t, name, name+"-rule", spec)
-		stored := daemon.Config(sc.Configuration)
-		stored.Listeners[0].Analyzer = &daemon.LaneAnalyzerConfig{ApprovalRule: "payments-approvers"}
-		row, err := models.UpdateSidecarConfiguration(models.DB, statusTestOrgID, sc.ID, models.SidecarConfiguration(stored))
-		require.NoError(t, err)
-		// A build that reads the object form, so nothing is downgraded.
-		row.Capabilities = []string{daemon.CapabilityRiskLevelObject}
-
-		served, err := services.ServedSidecarConfiguration(models.DB, row)
-		require.NoError(t, err)
-		require.Equal(t, "payments-approvers", served.Config.Listeners[0].Analyzer.ApprovalRule, "%s: the rule is inherited", name)
-
-		rec := postLevelBody(row, "DELETE FROM t", map[string]any{"approval_rule": "payments-approvers"})
-		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s: %s", name, rec.Body.String())
-	}
-}
-
-// A level filing is authorized against the document served to the build. A
-// build without the object form is served a bare hold, or is refused, so it
-// never holds a level object and cannot file under one.
-func TestALevelFilingFromAnOldBuildIsRefused(t *testing.T) {
-	startStatusTestDB(t)
-	for name, spec := range map[string]string{
-		// Refused service: the agent level has no bare form.
-		"mixed": `{"high":{"action":"require_approval","approver":"human","approval_groups":["dba"]},` +
-			`"low":{"action":"require_approval","approver":"ai_agent"}}`,
-		// Served downgraded: a bare hold under the managed rule.
-		"human": `{"high":{"action":"require_approval","approver":"human","approval_groups":["dba"]}}`,
-	} {
-		sc := seedLevelSidecar(t, "old-"+name, "old-"+name+"-rule", spec)
-		filings := map[string]func(*models.Sidecar, string) *httptest.ResponseRecorder{
-			"human": func(row *models.Sidecar, stmt string) *httptest.ResponseRecorder { return fileLevel(row, stmt, "high") },
-		}
-		if name == "mixed" {
-			filings["ai_agent"] = func(row *models.Sidecar, stmt string) *httptest.ResponseRecorder {
-				return postAgentDecision(row, stmt, "low", "approved", "bounded")
-			}
-		}
-		reread := func() *models.Sidecar {
-			row, err := models.GetSidecarByNameOrID(models.DB, statusTestOrgID, sc.ID)
-			require.NoError(t, err)
-			return row
-		}
-
-		// The old build: no analyzer_risk_level_object.
-		handshake(t, sc, "")
-		old := reread()
-		require.NotNil(t, old.Capabilities)
-		for approver, file := range filings {
-			rec := file(old, "DELETE FROM t WHERE old = '"+name+approver+"'")
-			assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s/%s: %s", name, approver, rec.Body.String())
-			assert.Contains(t, rec.Body.String(), "is not configured to hold the", "%s/%s", name, approver)
-		}
-
-		// The new build files under the same levels.
-		require.Equal(t, http.StatusOK, handshake(t, sc, daemon.CapabilityRiskLevelObject).Code, name)
-		current := reread()
-		for approver, file := range filings {
-			rec := file(current, "DELETE FROM t WHERE new = '"+name+approver+"'")
-			assert.Equal(t, http.StatusCreated, rec.Code, "%s/%s: %s", name, approver, rec.Body.String())
-		}
-	}
 }

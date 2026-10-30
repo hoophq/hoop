@@ -265,23 +265,17 @@ func checkComposedWithRule(db *gorm.DB, sc *models.Sidecar, kind SidecarRuleKind
 	// Composed with the rule's own stored version left out and the incoming
 	// one folded in its place: an edit would otherwise count the old content
 	// and the new one as two rules and refuse itself at a cap it does not move.
-	withRule, err := composeSidecar(db, sc, kind, storedName, candidates...)
+	withRule, err := composeSidecarConfiguration(db, sc, kind, storedName, candidates...)
 	if err != nil {
 		if errors.Is(err, ErrSidecarRulesUnavailable) {
 			return err
 		}
 		return fmt.Errorf("binding %s rule %q to sidecar %q: %w", kind, ruleName, sc.Name, err)
 	}
-	if err := validateComposedAnalyzers(withRule.Config); err != nil {
+	if err := validateComposedAnalyzers(withRule); err != nil {
 		return fmt.Errorf("binding %s rule %q to sidecar %q: %w", kind, ruleName, sc.Name, err)
 	}
-	// The save creates this rule's managed approval rule beside it
-	// (SyncAnalyzerApprovalRule), so an older build can be served it.
-	pending := ""
-	if kind == SidecarRuleAnalyzer {
-		pending = ruleName
-	}
-	if err := CheckSidecarCapabilities(db, sc, withRule, pending); err != nil {
+	if err := CheckSidecarCapabilities(sc, withRule); err != nil {
 		return err
 	}
 	if kind == SidecarRuleAnalyzer {
@@ -289,7 +283,7 @@ func checkComposedWithRule(db *gorm.DB, sc *models.Sidecar, kind SidecarRuleKind
 		// budget, not a number of rules.
 		return nil
 	}
-	if err := CheckSidecarConfigurationLimits(withRule.Config, licenseData); err != nil {
+	if err := CheckSidecarConfigurationLimits(withRule, licenseData); err != nil {
 		return fmt.Errorf("binding %s rule %q to sidecar %q puts that sidecar over its rule "+
 			"limit: %w", kind, ruleName, sc.Name, err)
 	}

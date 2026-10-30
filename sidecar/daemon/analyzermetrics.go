@@ -28,13 +28,27 @@ type analyzerMetrics struct {
 
 	mu        sync.Mutex
 	durations map[durationKey]*histogram
-	retries   map[string]uint64
+	retries   map[retryKey]uint64
 	outcomes  map[outcomeKey]uint64
 }
 
 type durationKey struct {
 	rule    string
+	kind    analyzer.CallKind
 	outcome analyzer.CallOutcome
+}
+
+type retryKey struct {
+	rule string
+	kind analyzer.CallKind
+}
+
+// callKind is c's kind, classify when unset.
+func callKind(c analyzer.Call) analyzer.CallKind {
+	if c.Kind == "" {
+		return analyzer.CallClassify
+	}
+	return c.Kind
 }
 
 type outcomeKey struct {
@@ -57,18 +71,19 @@ func newAnalyzerMetrics(provider, model string) *analyzerMetrics {
 		provider:  provider,
 		model:     model,
 		durations: map[durationKey]*histogram{},
-		retries:   map[string]uint64{},
+		retries:   map[retryKey]uint64{},
 		outcomes:  map[outcomeKey]uint64{},
 	}
 }
 
-// call records one classification's provider call.
+// call records one provider call: a classification or a decision.
 func (m *analyzerMetrics) call(c analyzer.Call) {
 	secs := c.Duration.Seconds()
 	i, _ := slices.BinarySearch(durationBuckets, secs)
+	kind := callKind(c)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	k := durationKey{c.Rule, c.Outcome}
+	k := durationKey{c.Rule, kind, c.Outcome}
 	h := m.durations[k]
 	if h == nil {
 		h = &histogram{counts: make([]uint64, len(durationBuckets)+1)}
@@ -78,7 +93,7 @@ func (m *analyzerMetrics) call(c analyzer.Call) {
 	h.sum += secs
 	h.count++
 	if c.Attempts > 1 {
-		m.retries[c.Rule] += uint64(c.Attempts - 1)
+		m.retries[retryKey{c.Rule, kind}] += uint64(c.Attempts - 1)
 	}
 }
 
@@ -110,18 +125,20 @@ func (m *analyzerMetrics) render() string {
 	var b strings.Builder
 
 	const dur = "hoop_inspect_analyzer_request_duration_seconds"
-	b.WriteString("# HELP " + dur + " Time one classification spent with the provider, retries included. A timeout reports about timeout_sec.\n")
+	b.WriteString("# HELP " + dur + " Time one provider call spent with the provider, retries included, by kind (classify or decide). A timeout reports about timeout_sec.\n")
 	b.WriteString("# TYPE " + dur + " histogram\n")
 	dkeys := make([]durationKey, 0, len(m.durations))
 	for k := range m.durations {
 		dkeys = append(dkeys, k)
 	}
 	slices.SortFunc(dkeys, func(a, b durationKey) int {
-		return strings.Compare(a.rule+"\x00"+string(a.outcome), b.rule+"\x00"+string(b.outcome))
+		return strings.Compare(a.rule+"\x00"+string(a.kind)+"\x00"+string(a.outcome),
+			b.rule+"\x00"+string(b.kind)+"\x00"+string(b.outcome))
 	})
 	for _, k := range dkeys {
 		h := m.durations[k]
-		base := labels("analyzer", k.rule, "provider", m.provider, "model", m.model, "outcome", string(k.outcome))
+		base := labels("analyzer", k.rule, "provider", m.provider, "model", m.model,
+			"outcome", string(k.outcome), "kind", string(k.kind))
 		var cum uint64
 		for i, le := range durationBuckets {
 			cum += h.counts[i]
@@ -133,16 +150,19 @@ func (m *analyzerMetrics) render() string {
 	}
 
 	const ret = "hoop_inspect_analyzer_retries_total"
-	b.WriteString("# HELP " + ret + " Classifications re-sent after a 408, 429 or 5xx answer.\n")
+	b.WriteString("# HELP " + ret + " Provider calls re-sent after a 408, 429 or 5xx answer, by kind.\n")
 	b.WriteString("# TYPE " + ret + " counter\n")
-	rkeys := make([]string, 0, len(m.retries))
+	rkeys := make([]retryKey, 0, len(m.retries))
 	for k := range m.retries {
 		rkeys = append(rkeys, k)
 	}
-	slices.Sort(rkeys)
+	slices.SortFunc(rkeys, func(a, b retryKey) int {
+		return strings.Compare(a.rule+"\x00"+string(a.kind), b.rule+"\x00"+string(b.kind))
+	})
 	for _, k := range rkeys {
 		fmt.Fprintf(&b, "%s{%s} %d\n", ret,
-			labels("analyzer", k, "provider", m.provider, "model", m.model), m.retries[k])
+			labels("analyzer", k.rule, "provider", m.provider, "model", m.model, "kind", string(k.kind)),
+			m.retries[k])
 	}
 
 	const st = "hoop_inspect_analyzer_statements_total"
@@ -205,6 +225,7 @@ func (ac *analyzerDeps) callObserver() func(analyzer.Call) {
 		if ac.log != nil {
 			ac.log.Debug("analyzer call",
 				"analyzer", c.Rule,
+				"kind", string(callKind(c)),
 				"outcome", string(c.Outcome),
 				"duration_ms", c.Duration.Milliseconds(),
 				"timeout_ms", c.Timeout.Milliseconds(),

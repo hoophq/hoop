@@ -66,10 +66,14 @@ func ReviewPolicyFromRule(orgID string, rule *models.AccessRequestRule) (*Review
 }
 
 // ReviewPolicyForLevel is the policy of a review filed under a human risk
-// level: one pending row per approval group, or the admin group when the level
-// names none, and one approval releases.
-func ReviewPolicyForLevel(orgID string, level daemon.RiskLevel) *ReviewPolicy {
-	names := LevelReviewerGroups(level)
+// level: one pending row per group of approvers.<level>, or the admin group
+// when it names none, and one approval releases.
+func ReviewPolicyForLevel(orgID string, level *daemon.LevelApprover) *ReviewPolicy {
+	var named []string
+	if level != nil {
+		named = level.Groups
+	}
+	names := reviewersOrDefault(named)
 	groups := make([]models.ReviewGroups, 0, len(names))
 	for _, groupName := range names {
 		groups = append(groups, models.ReviewGroups{

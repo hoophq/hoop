@@ -13,162 +13,167 @@ import (
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
-func handoffLevel(allowed *AllowedActions) RiskLevel {
-	return RiskLevel{Action: "ai-handoff", AllowedActions: allowed}
+// handoffBlock hands high risk off with the allowed actions given.
+func handoffBlock(allowed ...string) *LaneAnalyzerConfig {
+	la := laneBlock()
+	la.HighRisk = "ai-handoff"
+	la.Handoffs = &LevelHandoffs{High: &LevelHandoff{AllowedActions: allowed}}
+	return la
 }
 
-// allowed_actions reads the list and the object form, and writes the object
-// form only when require_approval carries a configuration.
-func TestAllowedActionsDecodeAndEncodeBothForms(t *testing.T) {
-	for name, tc := range map[string]struct {
-		in, out  string
-		actions  []analyzer.Action
-		approval HandoffApproval
-		holds    bool
-	}{
-		"list": {
-			in:      `["allow","warn"]`,
-			actions: []analyzer.Action{analyzer.ActionAllow, analyzer.ActionWarn},
-		},
-		"list with the review spelling": {
-			in:      `["require_review","block"]`,
-			actions: []analyzer.Action{analyzer.ActionBlock, analyzer.ActionRequireReview},
-			holds:   true, approval: HandoffApproval{Approver: "ai_agent"},
-		},
-		"object with a configured hold": {
-			in:      `{"warn":{},"require_approval":{"approver":"human","approval_groups":["payments-approvers"]}}`,
-			actions: []analyzer.Action{analyzer.ActionWarn, analyzer.ActionRequireReview},
-			holds:   true, approval: HandoffApproval{Approver: "human", ApprovalGroups: []string{"payments-approvers"}},
-		},
-		"object with an empty hold": {
-			in:      `{"block":{},"require_approval":{}}`,
-			out:     `["block","require_approval"]`,
-			actions: []analyzer.Action{analyzer.ActionBlock, analyzer.ActionRequireReview},
-			holds:   true, approval: HandoffApproval{Approver: "ai_agent"},
-		},
-		"object with an agent prompt": {
-			in:      `{"require_approval":{"prompt":"Approve reads only."}}`,
-			actions: []analyzer.Action{analyzer.ActionRequireReview},
-			holds:   true, approval: HandoffApproval{Approver: "ai_agent", Prompt: "Approve reads only."},
-		},
-		"empty list": {
-			in:      `[]`,
-			actions: []analyzer.Action{analyzer.ActionBlock},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			doc := `{"action":"ai-handoff","prompt":"Prefer warn","allowed_actions":` + tc.in + `}`
-			var r RiskLevel
-			if err := json.Unmarshal([]byte(doc), &r); err != nil {
-				t.Fatal(err)
-			}
-			if got := r.AllowedActions.Actions(); !slices.Equal(got, tc.actions) {
-				t.Errorf("actions = %v, want %v", got, tc.actions)
-			}
-			ap, holds := r.AllowedActions.RequireApproval()
-			if holds != tc.holds || ap.Approver != tc.approval.Approver || ap.Prompt != tc.approval.Prompt ||
-				!slices.Equal(ap.ApprovalGroups, tc.approval.ApprovalGroups) {
-				t.Errorf("require_approval = %+v %t, want %+v %t", ap, holds, tc.approval, tc.holds)
-			}
-			raw, err := json.Marshal(r)
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := tc.out
-			if want == "" {
-				want = tc.in
-			}
-			if wantDoc := `{"action":"ai-handoff","prompt":"Prefer warn","allowed_actions":` + want + `}`; string(raw) != wantDoc {
-				t.Errorf("encoded %s\nwant    %s", raw, wantDoc)
-			}
-		})
+// The handoffs block decodes beside the string levels, strictly, and maps
+// each ai-handoff level onto its hand-off, the approver from approvers.
+func TestHandoffsDecode(t *testing.T) {
+	doc := `{"listeners":[{"name":"appdb","protocol":"postgres","listen":":1","upstream":"h:1",
+		"analyzer":{"high":"ai-handoff","medium":"ai-handoff","low":"ai-handoff","approval_rule":"dba-rule",
+			"handoffs":{"high":{"allowed_actions":["allow","warn","block","require_approval"],"prompt":"Prefer warn"},
+				"medium":{"allowed_actions":["warn","require_review"]},"low":{"allowed_actions":["allow"]}},
+			"approvers":{"high":{"type":"human","groups":["dba"]},"medium":{"type":"ai_agent","prompt":"p"}}}}]}`
+	cfg, err := LoadConfigBytes([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	la := cfg.Listeners[0].Analyzer
+	if la.HighRisk != "ai-handoff" {
+		t.Errorf("high = %q", la.HighRisk)
+	}
+	if h := la.LevelHandoff(analyzer.RiskHigh); h == nil || h.Prompt != "Prefer warn" || len(h.AllowedActions) != 4 {
+		t.Errorf("high hand-off = %+v", h)
+	}
+	got := la.handoffs()
+	want := map[analyzer.RiskLevel]analyzer.Handoff{
+		analyzer.RiskHigh: {Prompt: "Prefer warn", Allowed: []analyzer.Action{analyzer.ActionAllow, analyzer.ActionWarn,
+			analyzer.ActionBlock, analyzer.ActionRequireReview}, Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}},
+		analyzer.RiskMedium: {Allowed: []analyzer.Action{analyzer.ActionWarn, analyzer.ActionRequireReview},
+			Approval: analyzer.Approval{Approver: analyzer.ApproverAIAgent, Prompt: "p"}},
+		analyzer.RiskLow: {Allowed: []analyzer.Action{analyzer.ActionAllow}},
+	}
+	for level, w := range want {
+		g := got[level]
+		if g.Prompt != w.Prompt || !slices.Equal(g.Allowed, w.Allowed) || g.Approval != w.Approval {
+			t.Errorf("%s hand-off = %+v, want %+v", level, g, w)
+		}
+	}
+	if a := la.approvals(); len(a) != 0 {
+		t.Errorf("approvals = %v, want none: the hand-off carries its approver", a)
+	}
+	if !analyzerHolds(la) || !humanHolds(la) || ruleHolds(la) {
+		t.Errorf("holds=%t human=%t rule=%t", analyzerHolds(la), humanHolds(la), ruleHolds(la))
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
 	}
 
-	// Absent: all four, and a hold goes to the approval agent.
-	r := handoffLevel(nil)
-	if got := r.AllowedActions.Actions(); len(got) != 4 {
-		t.Errorf("absent allowed_actions = %v, want all four", got)
+	raw, err := json.Marshal(ServedForm(*cfg).Listeners[0].Analyzer)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ap, ok := r.AllowedActions.RequireApproval(); !ok || ap.Approver != "ai_agent" {
-		t.Errorf("absent allowed_actions hold = %+v %t", ap, ok)
-	}
-	if raw, _ := json.Marshal(r); string(raw) != `"ai-handoff"` {
-		t.Errorf("a bare hand-off serves %s", raw)
+	if !strings.Contains(string(raw), `"handoffs":{"high":{"allowed_actions":["allow","warn","block","require_approval"],"prompt":"Prefer warn"}`) {
+		t.Errorf("served %s", raw)
 	}
 
-	for name, in := range map[string]string{
-		"unknown key in the hold": `{"require_approval":{"approvers":"human"}}`,
-		"hold is not an object":   `{"require_approval":"human"}`,
-		"a key twice":             `{"warn":{},"warn":{}}`,
-		"a scalar":                `"allow"`,
-		"two configured holds":    `{"require_approval":{"approver":"human"},"require_review":{"approver":"ai_agent"}}`,
+	for name, bad := range map[string]string{
+		"map form":    `"low":{"allowed_actions":{"allow":{}}}`,
+		"unknown key": `"low":{"allowed_actions":["allow"],"approver":"human"}`,
 	} {
-		var r RiskLevel
-		if err := json.Unmarshal([]byte(`{"action":"ai-handoff","allowed_actions":`+in+`}`), &r); err == nil {
+		in := strings.Replace(doc, `"low":{"allowed_actions":["allow"]}`, bad, 1)
+		if _, err := LoadConfigBytes([]byte(in)); err == nil {
 			t.Errorf("%s: loaded", name)
 		}
 	}
 }
 
-// Each row of the ticket's warning table. Warned, never refused.
-func TestEachHandoffSettingThatDoesNothingIsWarned(t *testing.T) {
+// Every hand-off the sidecar cannot act on is refused at load, by -validate
+// and by the plane's validation.
+func TestHandoffRefusals(t *testing.T) {
 	for name, tc := range map[string]struct {
-		level string
-		want  string
+		la   func() *LaneAnalyzerConfig
+		want string
 	}{
-		"empty allowed_actions": {`{"action":"ai-handoff","allowed_actions":[]}`,
-			"allowed_actions is empty, so the level falls back to block"},
-		"ai-handoff in allowed_actions": {`{"action":"ai-handoff","allowed_actions":["warn","ai-handoff"]}`,
-			`allowed_actions value "ai-handoff" is ignored`},
-		"unknown value": {`{"action":"ai-handoff","allowed_actions":["warn","delete"]}`,
-			`allowed_actions value "delete" is unknown and ignored`},
-		"only ignored values": {`{"action":"ai-handoff","allowed_actions":["ai-handoff"]}`,
-			"names no action the hand-off agent can select, so the level falls back to block"},
-		"configuration inside warn": {`{"action":"ai-handoff","allowed_actions":{"warn":{"x":1},"block":{}}}`,
-			"allowed_actions.warn carries a configuration, which is ignored"},
-		"allowed_actions on another action": {`{"action":"block","allowed_actions":["warn"]}`,
-			`sets allowed_actions, and its action "block" is not ai-handoff, so they are ignored`},
-		"prompt on a level that holds nothing": {`{"action":"warn","prompt":"p"}`, "holds nothing"},
-		"prompt on a human level": {`{"action":"require_approval","approver":"human","prompt":"p"}`,
-			"prompt is ignored"},
-		"approver beside ai-handoff": {`{"action":"ai-handoff","approver":"human"}`,
-			"write them under allowed_actions.require_approval"},
-		"prompt on a human hand-off hold": {`{"action":"ai-handoff","allowed_actions":{"require_approval":` +
-			`{"approver":"human","prompt":"p"}}}`, "allowed_actions.require_approval prompt is ignored"},
+		"no handoffs entry": {func() *LaneAnalyzerConfig {
+			la := handoffBlock("warn")
+			la.Handoffs = nil
+			return la
+		}, "high risk is ai-handoff and appdb: analyzer block: handoffs.high is missing"},
+		"empty allowed_actions": {func() *LaneAnalyzerConfig { return handoffBlock() },
+			"handoffs.high: allowed_actions is empty"},
+		"unknown action": {func() *LaneAnalyzerConfig { return handoffBlock("warn", "delete") },
+			`handoffs.high: allowed_actions[1] "delete" is not an action the hand-off agent can select`},
+		"hand-off in allowed_actions": {func() *LaneAnalyzerConfig { return handoffBlock("ai-handoff") },
+			`allowed_actions[0] "ai-handoff" is not an action`},
+		"defer in allowed_actions": {func() *LaneAnalyzerConfig { return handoffBlock("defer") },
+			`allowed_actions[0] "defer" is not an action`},
+		"duplicate": {func() *LaneAnalyzerConfig { return handoffBlock("warn", "warn") },
+			`allowed_actions[1] "warn" names warn twice`},
+		"duplicate after folding": {func() *LaneAnalyzerConfig {
+			return handoffBlock("require_approval", "require_review")
+		}, `allowed_actions[1] "require_review" names require_approval twice`},
+		"handoffs on another level": {func() *LaneAnalyzerConfig {
+			la := handoffBlock("warn")
+			la.Handoffs.Medium = &LevelHandoff{AllowedActions: []string{"warn"}}
+			return la
+		}, `handoffs.medium configures a hand-off, and the medium risk action "" is not ai-handoff`},
+		"approver without a hold": {func() *LaneAnalyzerConfig {
+			la := handoffBlock("allow", "warn")
+			la.Approvers = &LevelApprovers{High: human("dba")}
+			return la
+		}, "approvers.high names an approver, and the high risk hand-off agent cannot select require_approval"},
+		"bare hand-off hold without a rule": {func() *LaneAnalyzerConfig { return handoffBlock("warn", "require_approval") },
+			"names no approval_rule"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			la := laneBlock()
-			if err := json.Unmarshal([]byte(tc.level), &la.MediumRisk); err != nil {
-				t.Fatal(err)
+			if got := strings.Join(ValidateLaneAnalyzerBlock(tc.la(), "appdb"), "; "); !strings.Contains(got, tc.want) {
+				t.Errorf("ValidateLaneAnalyzerBlock = %q, want %q", got, tc.want)
 			}
-			if p := ValidateLaneAnalyzerBlock(la, "appdb"); len(p) != 0 {
-				t.Fatalf("refused: %v", p)
+			cfg := blockLane(tc.la())
+			cfg.Analyzer.Provider = "stub-tools"
+			cfg.ControlPlaneURL = "https://cp.example.com"
+			if name == "bare hand-off hold without a rule" {
+				// A local file decides that at build, where a terminal
+				// may take the hold.
+				if _, err := buildLanes(cfg, nil, &analyzerDeps{cfg: cfg.Analyzer,
+					provider: &handoffAgent{replies: []string{"warn"}}, cp: &controlPlane{}}); err == nil ||
+					!strings.Contains(err.Error(), "names no approval_rule") {
+					t.Errorf("buildLanes = %v", err)
+				}
+				return
 			}
-			if got := strings.Join(LaneAnalyzerWarnings(la), "\n"); !strings.Contains(got, tc.want) {
-				t.Errorf("warnings %q, want %q", got, tc.want)
+			if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Validate = %v, want %q", err, tc.want)
 			}
 		})
 	}
-	clean := laneBlock()
-	clean.MediumRisk = RiskLevel{Action: "ai-handoff", Prompt: "p",
-		AllowedActions: NewAllowedActions([]string{"warn", "block"}, HandoffApproval{Approver: "human"})}
-	if w := LaneAnalyzerWarnings(clean); len(w) != 0 {
-		t.Errorf("a clean hand-off warned: %v", w)
-	}
-}
 
-// The warnings reach -validate's lane notes.
-func TestValidateReportsTheHandoffWarnings(t *testing.T) {
-	la := laneBlock()
-	la.MediumRisk = handoffLevel(NewAllowedActions([]string{}, HandoffApproval{}))
-	cfg := blockLane(la)
-	cfg.Analyzer.Provider = "stub-tools"
-	lanes, err := Validate(cfg, nil)
-	if err != nil {
-		t.Fatal(err)
+	// Accepted: a hold with an approver needs no rule, a hold with none
+	// takes the rule, and both spellings of the hold read the same.
+	for name, la := range map[string]*LaneAnalyzerConfig{
+		"human approver": func() *LaneAnalyzerConfig {
+			la := handoffBlock("warn", "require_approval")
+			la.Approvers = &LevelApprovers{High: human("dba")}
+			return la
+		}(),
+		"agent approver": func() *LaneAnalyzerConfig {
+			la := handoffBlock("block", "require_review")
+			la.Approvers = &LevelApprovers{High: agent("p")}
+			return la
+		}(),
+		"rule": func() *LaneAnalyzerConfig {
+			la := handoffBlock("warn", "require_approval")
+			la.ApprovalRule = "dba-rule"
+			return la
+		}(),
+		"no hold": handoffBlock("allow", "warn"),
+	} {
+		if got := ValidateLaneAnalyzerBlock(la, "appdb"); len(got) != 0 {
+			t.Errorf("%s: refused: %v", name, got)
+		}
 	}
-	if !strings.Contains(strings.Join(lanes[0].Notes, "\n"), "falls back to block") {
-		t.Errorf("notes %v lack the warning", lanes[0].Notes)
+
+	// approval_rule beside a hand-off that cannot hold holds nothing.
+	la := handoffBlock("allow", "warn")
+	la.ApprovalRule = "dba-rule"
+	if got := strings.Join(ValidateLaneAnalyzerBlock(la, "appdb"), "; "); !strings.Contains(got, "nothing on this lane would hold one") {
+		t.Errorf("approval_rule beside a hand-off with no hold = %q", got)
 	}
 }
 
@@ -179,7 +184,8 @@ func init() {
 }
 
 // handoffAgent rates everything high and answers each Decide in order, the
-// last reply repeating, as a ToolCaller.
+// last reply repeating, as a ToolCaller. A reply is a tool name, or a tool
+// name and its JSON arguments after a space.
 type handoffAgent struct {
 	highRiskProvider
 	mu      sync.Mutex
@@ -192,55 +198,60 @@ func (h *handoffAgent) Decide(_ context.Context, system, _ string, _ []analyzer.
 	defer h.mu.Unlock()
 	n := len(h.systems)
 	h.systems = append(h.systems, system)
-	name := h.replies[min(n, len(h.replies)-1)]
-	return []analyzer.ToolCall{{Name: name, Args: json.RawMessage(`{"reason":"checked"}`)}}, nil
+	reply := h.replies[min(n, len(h.replies)-1)]
+	name, args, ok := strings.Cut(reply, " ")
+	if !ok {
+		args = `{"reason":"checked"}`
+	}
+	return []analyzer.ToolCall{{Name: name, Args: json.RawMessage(args)}}, nil
 }
 
-// A hand-off level whose hold is human needs a plane or a terminal, like a
-// human level; one the approval agent decides needs neither. The wait
-// settings count it as a level a person approves.
+// A hand-off level whose hold a person approves needs a plane or a
+// terminal, like a held level; one the approval agent decides, or one with
+// no hold, needs neither. The wait settings count it as a level a person
+// approves.
 func TestAHumanHandoffNeedsSomewhereToFile(t *testing.T) {
 	deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: &handoffAgent{replies: []string{"warn"}}}
-	lane := func(allowed *AllowedActions) *Config {
-		la := laneBlock()
-		la.HighRisk = handoffLevel(allowed)
-		return blockLane(la)
+	withHuman := func() *LaneAnalyzerConfig {
+		la := handoffBlock("warn", "require_approval")
+		la.Approvers = &LevelApprovers{High: human("dba")}
+		return la
 	}
-	human := NewAllowedActions([]string{"warn"}, HandoffApproval{Approver: "human", ApprovalGroups: []string{"dba"}})
-	if _, err := buildLanes(lane(human), nil, deps); err == nil || !strings.Contains(err.Error(), "in a terminal") {
+	if _, err := buildLanes(blockLane(withHuman()), nil, deps); err == nil || !strings.Contains(err.Error(), "in a terminal") {
 		t.Fatalf("a human hand-off with nowhere to file built: %v", err)
 	}
-	withPlane := lane(human)
+	withPlane := blockLane(withHuman())
 	withPlane.ControlPlaneURL = "https://cp.example.com"
 	if _, err := buildLanes(withPlane, nil, deps); err != nil {
 		t.Fatalf("a human hand-off under a plane was refused: %v", err)
 	}
-	for name, allowed := range map[string]*AllowedActions{
-		"absent: ai_agent hold": nil,
-		"agent hold":            NewAllowedActions([]string{"require_approval"}, HandoffApproval{Prompt: "p"}),
-		"no hold":               NewAllowedActions([]string{"allow", "warn"}, HandoffApproval{}),
+	withAgent := handoffBlock("block", "require_approval")
+	withAgent.Approvers = &LevelApprovers{High: agent("p")}
+	for name, la := range map[string]*LaneAnalyzerConfig{
+		"agent hold": withAgent,
+		"no hold":    handoffBlock("allow", "warn"),
 	} {
-		if _, err := buildLanes(lane(allowed), nil, deps); err != nil {
+		if _, err := buildLanes(blockLane(la), nil, deps); err != nil {
 			t.Errorf("%s: refused without a plane: %v", name, err)
 		}
 	}
 
-	la := laneBlock()
-	la.HighRisk, la.ReviewMode = handoffLevel(human), "return"
+	la := withHuman()
+	la.ReviewMode = "return"
 	if p := ValidateLaneAnalyzerBlock(la, "appdb"); len(p) != 0 {
 		t.Errorf("review_mode beside a human hand-off was refused: %v", p)
 	}
-	la.HighRisk = handoffLevel(nil)
-	if p := strings.Join(ValidateLaneAnalyzerBlock(la, "appdb"), "\n"); !strings.Contains(p, "with a human approver") {
+	withAgent.ReviewMode = "return"
+	if p := strings.Join(ValidateLaneAnalyzerBlock(withAgent, "appdb"), "\n"); !strings.Contains(p, "with a human approver") {
 		t.Errorf("review_mode beside an agent-only hand-off: %q", p)
 	}
-	if !analyzerHolds(la) || humanHolds(la) {
-		t.Errorf("an agent hand-off: holds=%t human=%t", analyzerHolds(la), humanHolds(la))
+	if !analyzerHolds(withAgent) || humanHolds(withAgent) {
+		t.Errorf("an agent hand-off: holds=%t human=%t", analyzerHolds(withAgent), humanHolds(withAgent))
 	}
 
 	// The provider must run the agent's tools.
 	deps.provider = highRiskProvider{}
-	if _, err := buildLanes(lane(nil), nil, deps); err == nil || !strings.Contains(err.Error(), "hand-off agent") {
+	if _, err := buildLanes(blockLane(handoffBlock("warn")), nil, deps); err == nil || !strings.Contains(err.Error(), "hand-off agent") {
 		t.Fatalf("a hand-off built on a provider without tool calls: %v", err)
 	}
 }
@@ -254,96 +265,118 @@ func TestTheRuleFormRefusesAHandoff(t *testing.T) {
 	}
 }
 
-// ai-handoff and allowed_actions are a capability: reported by this build,
-// refused to one without it, with no downgrade.
+// ai-handoff and handoffs are a capability: reported by this build, refused
+// to one without it, with no downgrade.
 func TestTheHandoffNeedsItsCapability(t *testing.T) {
 	if !slices.Contains(SidecarCapabilities(), CapabilityAIHandoff) {
 		t.Fatalf("the header lacks %s", CapabilityAIHandoff)
 	}
 	without := slices.DeleteFunc(slices.Clone(SidecarCapabilities()), func(c string) bool { return c == CapabilityAIHandoff })
-	old := Handshake{Version: "1.200.0", Capabilities: []string{"protocol:postgres"}}
-	rule := func(string) string { return "managed-rule" }
-	for name, level := range map[string]RiskLevel{
-		"bare hand-off":   handoffLevel(nil),
-		"allowed_actions": handoffLevel(NewAllowedActions([]string{"warn"}, HandoffApproval{})),
+	cfg := *blockLane(handoffBlock("warn"))
+	for _, hs := range []Handshake{
+		{Version: "1.200.0", Capabilities: []string{"protocol:postgres"}},
+		{Version: "1.200.0", Capabilities: without},
 	} {
-		t.Run(name, func(t *testing.T) {
-			la := laneBlock()
-			la.MediumRisk = level
-			cfg := *blockLane(la)
-			for _, hs := range []Handshake{old, {Version: "1.200.0", Capabilities: without}} {
-				if err := CheckServable(cfg, hs); err == nil || !strings.Contains(err.Error(), CapabilityAIHandoff) {
-					t.Errorf("servable to a build without the capability: %v", err)
-				}
-				if _, err := DowngradeRiskLevels(cfg, hs, rule); err == nil || !strings.Contains(err.Error(), CapabilityAIHandoff) ||
-					!strings.Contains(err.Error(), "medium risk") {
-					t.Errorf("downgraded for a build without the capability: %v", err)
-				}
-			}
-			full := Handshake{Version: "1.200.0", Capabilities: SidecarCapabilities()}
-			if err := CheckServable(cfg, full); err != nil {
-				t.Errorf("refused to this build: %v", err)
-			}
-			if out, err := DowngradeRiskLevels(cfg, full, rule); err != nil || out.Listeners[0].Analyzer != cfg.Listeners[0].Analyzer {
-				t.Errorf("this build's document changed: %v", err)
-			}
-		})
+		err := CheckServable(cfg, hs)
+		if err == nil || !strings.Contains(err.Error(), CapabilityAIHandoff) ||
+			!strings.Contains(err.Error(), "sets high risk to ai-handoff") || !strings.Contains(err.Error(), "handoffs") {
+			t.Errorf("servable to a build without the capability: %v", err)
+		}
+	}
+	if err := CheckServable(cfg, Handshake{Version: "1.200.0", Capabilities: SidecarCapabilities()}); err != nil {
+		t.Errorf("refused to this build: %v", err)
+	}
+
+	// An empty handoffs block says nothing, and is not served.
+	empty := laneBlock()
+	empty.Handoffs = &LevelHandoffs{}
+	if err := CheckServable(*blockLane(empty), Handshake{Version: "1.200.0", Capabilities: without}); err != nil {
+		t.Errorf("an empty handoffs block was refused: %v", err)
 	}
 }
 
-// A hold the hand-off agent selects files beside its level and approver the
-// hand-off mark: a person's review, and the approval agent's decision.
-func TestAHandoffHoldFilesTheHandoffMark(t *testing.T) {
+// A hold the hand-off agent selects files by its approver: a human level
+// files the level and the hand-off mark, the rule path files the rule as it
+// always did, and the approval agent decides in the sidecar and files
+// nothing.
+func TestAHandoffHoldFiling(t *testing.T) {
+	const answer = `{"forward":false,"review":{"id":"r1","status":"REJECTED"}}`
 	t.Run("human", func(t *testing.T) {
-		cp, bodies := filingPlane(t, http.StatusCreated, `{"forward":false,"review":{"id":"r1","status":"REJECTED"}}`)
+		cp, bodies := filingPlane(t, http.StatusCreated, answer)
 		deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"},
 			provider: &handoffAgent{replies: []string{"require_approval"}}, cp: cp}
-		la := laneBlock()
-		la.HighRisk = handoffLevel(NewAllowedActions([]string{"warn"},
-			HandoffApproval{Approver: "human", ApprovalGroups: []string{"payments-approvers"}}))
+		la := handoffBlock("warn", "require_approval")
+		la.Approvers = &LevelApprovers{High: human("payments-approvers")}
+		pol, err := buildPolicy("payments", GuardrailsConfig{}, la, nil, nil, deps)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v := pol.Evaluate(deleteFromUsers()); !v.Denied || len(*bodies) != 1 {
+			t.Fatalf("verdict %+v, %d filings", v, len(*bodies))
+		}
+		body := (*bodies)[0]
+		if body["listener_name"] != "payments" || body["risk_level"] != "high" || body["handoff"] != true {
+			t.Errorf("body = %v", body)
+		}
+		for _, k := range []string{"approval_rule", "approver", "decision", "reason"} {
+			if _, ok := body[k]; ok {
+				t.Errorf("body sent %s: %v", k, body)
+			}
+		}
+	})
+	t.Run("rule", func(t *testing.T) {
+		cp, bodies := filingPlane(t, http.StatusCreated, answer)
+		deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"},
+			provider: &handoffAgent{replies: []string{"require_approval"}}, cp: cp}
+		la := handoffBlock("warn", "require_approval")
+		la.ApprovalRule = "payments-approvers"
+		pol, err := buildPolicy("payments", GuardrailsConfig{}, la, nil, nil, deps)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v := pol.Evaluate(deleteFromUsers()); !v.Denied || len(*bodies) != 1 {
+			t.Fatalf("verdict %+v, %d filings", v, len(*bodies))
+		}
+		body := (*bodies)[0]
+		if body["approval_rule"] != "payments-approvers" {
+			t.Errorf("body = %v", body)
+		}
+		for _, k := range []string{"risk_level", "handoff", "approver"} {
+			if _, ok := body[k]; ok {
+				t.Errorf("body sent %s: %v", k, body)
+			}
+		}
+	})
+	t.Run("ai_agent", func(t *testing.T) {
+		cp, bodies := filingPlane(t, http.StatusCreated, answer)
+		agentStub := &handoffAgent{replies: []string{"require_approval",
+			`approve {"reason_code":"in_scope","reason":"bounded"}`}}
+		deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: agentStub, cp: cp}
+		la := handoffBlock("block", "require_approval")
+		la.Approvers = &LevelApprovers{High: agent("Approve reads only.")}
 		pol, err := buildPolicy("payments", GuardrailsConfig{}, la, nil, nil, deps)
 		if err != nil {
 			t.Fatal(err)
 		}
 		v := pol.Evaluate(deleteFromUsers())
-		if !v.Denied || len(*bodies) != 1 {
-			t.Fatalf("verdict %+v, %d filings", v, len(*bodies))
-		}
-		body := (*bodies)[0]
-		if body["risk_level"] != "high" || body["approver"] != "human" || body["handoff"] != true {
-			t.Errorf("body = %v", body)
-		}
-		if _, ok := body["approval_rule"]; ok {
-			t.Errorf("a hand-off hold named an approval_rule: %v", body)
-		}
-	})
-	t.Run("ai_agent", func(t *testing.T) {
-		cp, bodies := filingPlane(t, http.StatusCreated, `{"forward":false,"review":{"id":"a1","status":"APPROVED"}}`)
-		agent := &handoffAgent{replies: []string{"require_approval", "approve"}}
-		deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: agent, cp: cp}
-		la := laneBlock()
-		la.HighRisk = handoffLevel(NewAllowedActions([]string{"block"}, HandoffApproval{Prompt: "Approve reads only."}))
-		pol, err := buildPolicy("payments", GuardrailsConfig{}, la, nil, nil, deps)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if v := pol.Evaluate(deleteFromUsers()); v.Denied {
+		if v.Denied {
 			t.Fatalf("denied: %s", v.Message)
 		}
-		if len(agent.systems) != 2 || !strings.HasPrefix(agent.systems[1], "Approve reads only.") {
-			t.Errorf("approval agent prompts %q", agent.systems)
+		if len(agentStub.systems) != 2 || !strings.HasPrefix(agentStub.systems[1], "Approve reads only.") {
+			t.Errorf("approval agent prompts %q", agentStub.systems)
 		}
-		body := (*bodies)[0]
-		if body["risk_level"] != "high" || body["approver"] != "ai_agent" || body["decision"] != "approved" ||
-			body["handoff"] != true {
-			t.Errorf("body = %v", body)
+		if len(*bodies) != 0 {
+			t.Errorf("the approval agent's decision was filed: %v", *bodies)
+		}
+		if v.Annotations[analyzer.MetadataApprovalDecision] != "approved" ||
+			v.Annotations[analyzer.MetadataApprovalReasonCode] != "in_scope" {
+			t.Errorf("annotations = %v", v.Annotations)
 		}
 	})
 	t.Run("a level outside a hand-off sends no mark", func(t *testing.T) {
-		cp, bodies := filingPlane(t, http.StatusCreated, `{"forward":false,"review":{"id":"r1","status":"REJECTED"}}`)
+		cp, bodies := filingPlane(t, http.StatusCreated, answer)
 		deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: highRiskProvider{}, cp: cp}
-		la := laneBlock()
-		la.HighRisk = humanLevel("dba")
+		la := approverBlock(LevelApprovers{High: human("dba"), Medium: human("dba")})
 		pol, err := buildPolicy("payments", GuardrailsConfig{}, la, nil, nil, deps)
 		if err != nil {
 			t.Fatal(err)
@@ -353,4 +386,37 @@ func TestAHandoffHoldFilesTheHandoffMark(t *testing.T) {
 			t.Errorf("body = %v", (*bodies)[0])
 		}
 	})
+}
+
+// The hand-off agent's reason reaches the record only after the detector;
+// with no detector the record keeps no free text.
+func TestTheHandoffReasonIsRedactedForTheRecord(t *testing.T) {
+	for name, tc := range map[string]struct {
+		det    Plugin
+		reason string
+		kept   bool
+	}{
+		"detector, send raw": {stubPlugin{entities: []string{"CREDIT_CARD"}, find: "4111111111111111"},
+			"scoped to <CREDIT_CARD>", true},
+		"no detector": {nil, "", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := &handoffAgent{replies: []string{`warn {"reason":"scoped to 4111111111111111"}`}}
+			deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: stub, det: tc.det}
+			la := handoffBlock("warn", "block")
+			la.Send = SendRaw
+			pol, err := buildPolicy("payments", GuardrailsConfig{}, la, nil, nil, deps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			v := pol.Evaluate(deleteFromUsers())
+			got, kept := v.Annotations[analyzer.MetadataHandoffReason]
+			if kept != tc.kept || got != tc.reason {
+				t.Errorf("handoff_reason = %q (%t), want %q (%t)", got, kept, tc.reason, tc.kept)
+			}
+			if v.Annotations[analyzer.MetadataHandoffDecision] != "warn" {
+				t.Errorf("annotations = %v", v.Annotations)
+			}
+		})
+	}
 }

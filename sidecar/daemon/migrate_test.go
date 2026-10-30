@@ -25,7 +25,7 @@ func TestMigrateMovesAListenerRuleOntoTheBlock(t *testing.T) {
 	if lc.Analyzer == nil {
 		t.Fatal("no analyzer block was created")
 	}
-	if lc.Analyzer.HighRisk.Action != "block" || lc.Analyzer.MediumRisk.Action != "warn" ||
+	if lc.Analyzer.HighRisk != "block" || lc.Analyzer.MediumRisk != "warn" ||
 		lc.Analyzer.Prompt != "judge the ledger" || lc.Analyzer.Message != "refused" ||
 		lc.Analyzer.Trigger.IsZero() {
 		t.Errorf("block lost fields: %+v", lc.Analyzer)
@@ -82,7 +82,7 @@ func TestMigrateLeavesAMultiRuleLaneAlone(t *testing.T) {
 func TestMigrateLeavesAnOccupiedLaneAlone(t *testing.T) {
 	cfg := pgLane(aiRule("risky"))
 	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
-	la := LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "block"}}
+	la := LaneAnalyzerConfig{HighRisk: "block"}
 	cfg.Listeners[0].Analyzer = &la
 
 	notes := cfg.MigrateDeprecated()
@@ -113,7 +113,7 @@ func TestMigrateCopiesATopLevelRuleToEveryFreeLane(t *testing.T) {
 		t.Errorf("the emptied top-level guardrails block was kept: %+v", cfg.Guardrails)
 	}
 	for _, lc := range cfg.Listeners {
-		if lc.Analyzer == nil || lc.Analyzer.HighRisk.Action != "block" {
+		if lc.Analyzer == nil || lc.Analyzer.HighRisk != "block" {
 			t.Fatalf("%s did not receive the block: %+v", lc.Name, lc.Analyzer)
 		}
 	}
@@ -130,7 +130,7 @@ func TestMigrateCopiesATopLevelRuleToEveryFreeLane(t *testing.T) {
 // A top-level rule with one occupied lane stays put: moving it to the free
 // lanes only would change which lanes run it.
 func TestMigrateLeavesATopLevelRuleWhenALaneIsOccupied(t *testing.T) {
-	la := LaneAnalyzerConfig{HighRisk: RiskLevel{Action: "block"}}
+	la := LaneAnalyzerConfig{HighRisk: "block"}
 	cfg := &Config{
 		Analyzer:   &AnalyzerConfig{Provider: "stub", Model: "m"},
 		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{aiRule("risky")}},

@@ -17,7 +17,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS index_reviews_sidecar_level_statement
       AND access_request_rule_name IS NULL
       AND risk_level IS NOT NULL
       AND statement_hash IS NOT NULL
-      AND approver_type = 'human'
       AND status NOT IN ('EXECUTED', 'REJECTED', 'REVOKED');
 
 COMMIT;

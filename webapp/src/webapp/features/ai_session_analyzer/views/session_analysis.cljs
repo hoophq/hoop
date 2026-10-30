@@ -45,7 +45,7 @@
 
 (defn- ai-decision-row
   [{:keys [timestamp risk_level risk_action handoff_decision handoff_reason
-           approver approval_decision approval_reason review_id]}]
+           approver approval_decision approval_reason_code approval_reason review_id]}]
   [:li {:class "py-3 border-t border-[--gray-3] first:border-t-0"}
    [:> Flex {:direction "column" :gap "2"}
     [:> Flex {:align "center" :gap "3" :wrap "wrap"}
@@ -67,7 +67,9 @@
            (get approver-label approver approver)])
         (when approval_decision
           [:> Badge {:variant "soft" :color (get decision-color approval_decision "gray")}
-           (cs/upper-case approval_decision)])]
+           (cs/upper-case approval_decision)])
+        (when-not (cs/blank? approval_reason_code)
+          [:> Text {:size "1" :class "text-[--gray-11] font-mono"} approval_reason_code])]
        approval_reason])
     (when review_id
       [:a {:href (str "/approvals/" (js/encodeURIComponent review_id))

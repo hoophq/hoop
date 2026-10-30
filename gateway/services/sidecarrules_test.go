@@ -140,6 +140,63 @@ func TestValidateSidecarRuleSpec(t *testing.T) {
 			spec: `{"trigger":{"operations":["update"]}}`,
 			want: "names no action",
 		},
+		// ---- hand-off levels: the sidecar's own refusals, at save --------
+		{
+			name: "a hand-off level with no handoffs entry",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff"}`,
+			want: "handoffs.high is missing",
+		},
+		{
+			name: "a handoffs entry on a level that does not hand off",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"block","handoffs":{"high":{"allowed_actions":["allow"]}}}`,
+			want: "configures a hand-off",
+		},
+		{
+			name: "a hand-off with no allowed actions",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff","handoffs":{"high":{"allowed_actions":[]}}}`,
+			want: "allowed_actions is empty",
+		},
+		{
+			name: "a hand-off allowing an action the agent cannot select",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff","handoffs":{"high":{"allowed_actions":["allow","defer"]}}}`,
+			want: "is not an action the hand-off agent can select",
+		},
+		{
+			name: "a hand-off naming the hold twice",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff","approval_rule":"r",` +
+				`"handoffs":{"high":{"allowed_actions":["require_review","require_approval"]}}}`,
+			want: "twice",
+		},
+		{
+			name: "an approver on a hand-off that cannot hold",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff","handoffs":{"high":{"allowed_actions":["allow","block"]}},` +
+				`"approvers":{"high":{"type":"human"}}}`,
+			want: "cannot select require_approval",
+		},
+		{
+			name: "a bare hand-off hold with no approval rule",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff","handoffs":{"high":{"allowed_actions":["allow","require_approval"]}}}`,
+			want: "names no approval_rule",
+		},
+		{
+			name: "a bare hand-off hold with its approval rule",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff","approval_rule":"r",` +
+				`"handoffs":{"high":{"allowed_actions":["allow","require_approval"],"prompt":"Prefer warn"}}}`,
+		},
+		{
+			name: "a hand-off hold for a human approver",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"ai-handoff","handoffs":{"high":{"allowed_actions":["allow","require_approval"]}},` +
+				`"approvers":{"high":{"type":"human","groups":["dba"]}}}`,
+		},
 		// ---- the review pairing, which the sidecar refuses at STARTUP -----
 		// A hold and the rule that releases it must arrive together. Either
 		// alone is a control nobody reads: reviewers no statement ever

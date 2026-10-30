@@ -73,8 +73,8 @@ const maxSidecarAIDecisionsBytes = 256 << 10
 
 // sidecarAIDecisionTextOverhead is what the stored jsonb text adds to an
 // entry's compact JSON at most: a space after each colon and comma of its
-// ten keys (19), and the ", " that separates it from the previous entry.
-const sidecarAIDecisionTextOverhead = 22
+// eleven keys (21), and the ", " that separates it from the previous entry.
+const sidecarAIDecisionTextOverhead = 23
 
 // maxSidecarSessionStreamBytes caps the stream as the audit plugin caps its WAL
 // read; metrics.truncated marks it.
@@ -374,18 +374,20 @@ func (p *sidecarSessionPlan) addReview(ev audit.Event) {
 }
 
 // sidecarAIDecision is one entry of metadata.sidecar.ai_decisions: what the
-// analyzer decided on one statement. Empty fields are left out.
+// analyzer decided on one statement. Empty fields are left out. The reasons
+// are stored as the sidecar sent them: it redacts them before they leave.
 type sidecarAIDecision struct {
-	Seq              int64  `json:"seq"`
-	Timestamp        string `json:"timestamp,omitempty"`
-	RiskLevel        string `json:"risk_level,omitempty"`
-	RiskAction       string `json:"risk_action,omitempty"`
-	HandoffDecision  string `json:"handoff_decision,omitempty"`
-	HandoffReason    string `json:"handoff_reason,omitempty"`
-	Approver         string `json:"approver,omitempty"`
-	ApprovalDecision string `json:"approval_decision,omitempty"`
-	ApprovalReason   string `json:"approval_reason,omitempty"`
-	ReviewID         string `json:"review_id,omitempty"`
+	Seq                int64  `json:"seq"`
+	Timestamp          string `json:"timestamp,omitempty"`
+	RiskLevel          string `json:"risk_level,omitempty"`
+	RiskAction         string `json:"risk_action,omitempty"`
+	HandoffDecision    string `json:"handoff_decision,omitempty"`
+	HandoffReason      string `json:"handoff_reason,omitempty"`
+	Approver           string `json:"approver,omitempty"`
+	ApprovalDecision   string `json:"approval_decision,omitempty"`
+	ApprovalReasonCode string `json:"approval_reason_code,omitempty"`
+	ApprovalReason     string `json:"approval_reason,omitempty"`
+	ReviewID           string `json:"review_id,omitempty"`
 }
 
 // sidecarAIDecisionFor reads the analyzer's decision off an event. ok is
@@ -406,7 +408,9 @@ func sidecarAIDecisionFor(e daemon.SessionEvent) (sidecarAIDecision, bool) {
 		HandoffReason:    truncateChars(pgText(md[analyzer.MetadataHandoffReason]), maxSidecarAIDecisionReasonChars),
 		Approver:         knownValue(md[analyzer.MetadataApprover], approverValue(md[analyzer.MetadataApprover])),
 		ApprovalDecision: knownValue(md[analyzer.MetadataApprovalDecision], approvalDecision(md[analyzer.MetadataApprovalDecision])),
-		ApprovalReason:   truncateChars(pgText(md[analyzer.MetadataApprovalReason]), maxSidecarAIDecisionReasonChars),
+		ApprovalReasonCode: knownValue(md[analyzer.MetadataApprovalReasonCode],
+			analyzer.ReasonCode(md[analyzer.MetadataApprovalReasonCode]).Valid()),
+		ApprovalReason: truncateChars(pgText(md[analyzer.MetadataApprovalReason]), maxSidecarAIDecisionReasonChars),
 	}
 	if !e.Event.Timestamp.IsZero() {
 		d.Timestamp = e.Event.Timestamp.UTC().Format(time.RFC3339Nano)

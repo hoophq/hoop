@@ -100,13 +100,13 @@ func TestASidecarSessionReturnsItsAIDecisions(t *testing.T) {
 			Principal: "alice@example.com", Protocol: inspect.Postgres, Connection: "appdb"}},
 		event(2, audit.KindStatement, map[string]string{
 			analyzer.MetadataRiskLevel: "medium", analyzer.MetadataAction: "ai-handoff",
-			analyzer.MetadataHandoffDecision: "require_approval", analyzer.MetadataHandoffReason: "writes rows",
+			analyzer.MetadataHandoffDecision: "require_approval", analyzer.MetadataHandoffReason: "writes rows of [EMAIL_ADDRESS]",
 			analyzer.MetadataApprover: "human", analyzer.MetadataReviewID: reviewID,
 		}),
 		event(3, audit.KindViolation, map[string]string{
 			analyzer.MetadataRiskLevel: "high", analyzer.MetadataAction: "require_review",
 			analyzer.MetadataApprover: "ai_agent", analyzer.MetadataApprovalDecision: "rejected",
-			analyzer.MetadataApprovalReason: "drops a table",
+			analyzer.MetadataApprovalReasonCode: "schema_change", analyzer.MetadataApprovalReason: "drops a table",
 		}),
 		// Not rated: no entry.
 		event(4, audit.KindStatement, map[string]string{analyzer.MetadataAIStatus: "skipped"}),
@@ -130,12 +130,13 @@ func TestASidecarSessionReturnsItsAIDecisions(t *testing.T) {
 	assert.Nil(t, dropped)
 	assert.Equal(t, map[string]any{
 		"seq": float64(2), "timestamp": "2026-10-01T12:00:02Z", "risk_level": "medium", "risk_action": "ai-handoff",
-		"handoff_decision": "require_approval", "handoff_reason": "writes rows", "approver": "human",
+		"handoff_decision": "require_approval", "handoff_reason": "writes rows of [EMAIL_ADDRESS]", "approver": "human",
 		"review_id": reviewID,
 	}, list[0])
 	assert.Equal(t, map[string]any{
 		"seq": float64(3), "timestamp": "2026-10-01T12:00:03Z", "risk_level": "high", "risk_action": "require_review",
-		"approver": "ai_agent", "approval_decision": "rejected", "approval_reason": "drops a table",
+		"approver": "ai_agent", "approval_decision": "rejected", "approval_reason_code": "schema_change",
+		"approval_reason": "drops a table",
 	}, list[1])
 
 	// A resend adds nothing.

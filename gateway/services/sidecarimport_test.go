@@ -72,7 +72,7 @@ func importFixture() daemon.Config {
 			{Name: "appdb", Protocol: "postgres",
 				Guardrails: &daemon.GuardrailsConfig{Rules: []policy.Rule{gr("lane-a")}},
 				Analyzer: &daemon.LaneAnalyzerConfig{
-					HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: "dba", ReviewMode: "return", MaxCalls: 40,
+					HighRisk: "require_review", ApprovalRule: "dba", ReviewMode: "return", MaxCalls: 40,
 					Trigger: &policy.AITrigger{Tables: []string{"payments"}}, Prompt: "p",
 				}},
 			{Name: "optout", Protocol: "mysql",
@@ -149,7 +149,7 @@ func TestSplitSidecarConfigurationServesTheSameDocument(t *testing.T) {
 	// The analyzer keeps its decision and the file's approval rule; the
 	// import checks that rule against the database.
 	a := got["appdb"].Analyzer
-	if a == nil || a.HighRisk.Action != "require_review" || a.MaxCalls != 40 || a.Prompt != "p" ||
+	if a == nil || a.HighRisk != "require_review" || a.MaxCalls != 40 || a.Prompt != "p" ||
 		a.Trigger == nil || a.ApprovalRule != "dba" || a.ReviewMode != "return" {
 		t.Errorf("appdb analyzer after the fold: %+v", a)
 	}

@@ -10,18 +10,18 @@ import (
 	"github.com/hoophq/hoop/gateway/pglite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // The migration before and the one under test, stepped to by number.
 const (
-	beforeApproverVersion = 146
-	approverVersion       = 147
+	beforeRiskLevelVersion = 146
+	riskLevelVersion       = 147
 )
 
-// Migration 000147 changes the schema only. An older gateway replica decodes
-// sidecar_spec strictly, so the stored specs must keep every byte, and the
-// review columns must come and go with the migration.
-func TestRiskLevelApproverMigrationIsSchemaOnly(t *testing.T) {
+// Migration 000147 adds reviews.risk_level and its dedup index, and the down
+// removes both. No other column comes or goes.
+func TestReviewRiskLevelMigration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping embedded database test in -short mode")
 	}
@@ -30,105 +30,86 @@ func TestRiskLevelApproverMigrationIsSchemaOnly(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { inst.Close(ctx) })
 
-	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(beforeApproverVersion) })
-
-	specs := map[string]string{
-		// A hold under the rule's own managed rule: the form the new code
-		// still reads, and the old one too.
-		"own-hold": `{"high":"require_review","medium":"require_approval","low":"warn","approval_rule":"own-hold","review_mode":"return"}`,
-		// Under a hand-made rule.
-		"other-hold": `{"high":"require_review","approval_rule":"hand-made"}`,
-		// Names its own name with no managed rule behind it.
-		"orphan":  `{"high":"require_review","approval_rule":"orphan"}`,
-		"no-hold": `{"high":"block","trigger":{"operations":["delete"]}}`,
-	}
-	storedSpecs := func() map[string]string {
+	riskLevelColumn := func() int64 {
 		t.Helper()
-		var rows []struct {
-			Name string `gorm:"column:name"`
-			Spec string `gorm:"column:spec"`
-		}
-		require.NoError(t, models.DB.Raw(`SELECT name, sidecar_spec::text AS spec FROM private.ai_session_analyzer_rules
-			WHERE org_id = ? ORDER BY name`, testOrgID).Scan(&rows).Error)
-		out := map[string]string{}
-		for _, r := range rows {
-			out[r.Name] = r.Spec
-		}
-		return out
+		var n int64
+		require.NoError(t, models.DB.Raw(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'private' AND table_name = 'reviews' AND column_name = 'risk_level'`).Scan(&n).Error)
+		return n
 	}
 	reviewColumns := func() int64 {
 		t.Helper()
 		var n int64
 		require.NoError(t, models.DB.Raw(`SELECT count(*) FROM information_schema.columns
-			WHERE table_schema = 'private' AND table_name = 'reviews'
-			AND column_name IN ('approver_type', 'decision_reason', 'risk_level')`).Scan(&n).Error)
+			WHERE table_schema = 'private' AND table_name = 'reviews'`).Scan(&n).Error)
 		return n
 	}
+	levelIndex := func() int64 {
+		t.Helper()
+		var n int64
+		require.NoError(t, models.DB.Raw(`SELECT count(*) FROM pg_indexes WHERE schemaname = 'private'
+			AND indexname = 'index_reviews_sidecar_level_statement'`).Scan(&n).Error)
+		return n
+	}
+	sidecarID := uuid.NewString()
+	// A live sidecar review filed under a risk level, as the plane writes it.
+	// In its own transaction: a refused insert rolls back and leaves the
+	// session usable.
+	insertLevelReview := func(status, level string) error {
+		return models.DB.Transaction(func(tx *gorm.DB) error {
+			return tx.Exec(`INSERT INTO private.reviews (id, org_id, connection_name, type, status, owner_id,
+				owner_email, sidecar_id, listener_name, risk_level, statement_hash)
+				VALUES (?, ?, '', 'onetime', ?, 'u', 'hoop@hoop.dev', ?, 'appdb', ?, 'hash-1')`,
+				uuid.NewString(), testOrgID, status, sidecarID, level).Error
+		})
+	}
 
-	var before map[string]string
+	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(beforeRiskLevelVersion) })
+	var columnsBefore int64
 	withDB(t, inst, func() {
-		execSQL(t, `INSERT INTO private.orgs (id, name) VALUES (?, 'approver-migration')`, testOrgID)
-		execSQL(t, `INSERT INTO private.access_request_rules (org_id, name, connection_names, access_type,
-			approval_required_groups, reviewers_groups, force_approval_groups, min_approvals, managed_by)
-			VALUES (?, 'own-hold', '{}', 'sidecar', '{}', '{dba,sre}', '{}', 1, 'ai-session-analyzer'),
-			       (?, 'hand-made', '{}', 'sidecar', '{}', '{ops}', '{}', 1, NULL)`, testOrgID, testOrgID)
-		for name, spec := range specs {
-			execSQL(t, `INSERT INTO private.ai_session_analyzer_rules (org_id, name, connection_names, risk_evaluation, sidecar_spec)
-				VALUES (?, ?, '{}', '{}'::jsonb, ?::jsonb)`, testOrgID, name, spec)
-		}
-		// A review filed before the columns existed.
+		execSQL(t, `INSERT INTO private.orgs (id, name) VALUES (?, 'risk-level-migration')`, testOrgID)
+		execSQL(t, `INSERT INTO private.sidecars (id, org_id, name, key_hash, created_by)
+			VALUES (?, ?, 'edge', 'risk-level-key', 'tests@hoop.dev')`, sidecarID, testOrgID)
+		// A review filed before the column existed.
 		execSQL(t, `INSERT INTO private.reviews (id, org_id, connection_name, type, status, owner_id, owner_email, listener_name)
 			VALUES (?, ?, '', 'onetime', 'PENDING', 'u', 'hoop@hoop.dev', 'old-lane')`, uuid.NewString(), testOrgID)
-		before = storedSpecs()
-		require.Len(t, before, len(specs))
-		assert.Zero(t, reviewColumns())
+		assert.Zero(t, riskLevelColumn())
+		assert.Zero(t, levelIndex())
+		columnsBefore = reviewColumns()
 	})
 
-	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(approverVersion) })
-
+	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(riskLevelVersion) })
 	withDB(t, inst, func() {
-		assert.Equal(t, before, storedSpecs(), "the up migration rewrites no sidecar_spec")
-		assert.EqualValues(t, 3, reviewColumns())
+		assert.EqualValues(t, 1, riskLevelColumn())
+		assert.Equal(t, columnsBefore+1, reviewColumns(), "the up adds risk_level and nothing else")
+		assert.EqualValues(t, 1, levelIndex())
 
-		var approver string
-		require.NoError(t, models.DB.Raw(`SELECT approver_type FROM private.reviews WHERE org_id = ? AND listener_name = 'old-lane'`,
-			testOrgID).Row().Scan(&approver))
-		assert.Equal(t, models.ApproverTypeHuman, approver, "an existing review reads as decided by a person")
+		var level *string
+		require.NoError(t, models.DB.Raw(`SELECT risk_level FROM private.reviews WHERE org_id = ? AND listener_name = 'old-lane'`,
+			testOrgID).Row().Scan(&level))
+		assert.Nil(t, level, "an existing review has no risk level")
 
-		// An agent decision, as the plane files it.
-		execSQL(t, `INSERT INTO private.reviews (id, org_id, connection_name, type, status, owner_id, owner_email,
-			listener_name, approver_type, decision_reason, risk_level)
-			VALUES (?, ?, '', 'onetime', 'APPROVED', 'u', 'hoop@hoop.dev', 'appdb', 'ai_agent', 'bounded', 'high')`,
-			uuid.NewString(), testOrgID)
-		// A spec the new UI wrote: the down leaves it as written.
-		execSQL(t, `UPDATE private.ai_session_analyzer_rules SET sidecar_spec = ?::jsonb WHERE org_id = ? AND name = 'no-hold'`,
-			`{"high":{"action":"require_approval","approver":"human","approval_groups":["dba"]}}`, testOrgID)
-		before = storedSpecs()
+		assert.Error(t, insertLevelReview("PENDING", "urgent"), "the check refuses a level that is not high, medium or low")
+		require.NoError(t, insertLevelReview("PENDING", "high"))
+		assert.Error(t, insertLevelReview("PENDING", "high"), "one live review per listener, level and statement")
+		require.NoError(t, insertLevelReview("PENDING", "medium"), "another level is another key")
+		execSQL(t, `UPDATE private.reviews SET status = 'EXECUTED' WHERE org_id = ? AND risk_level = 'high'`, testOrgID)
+		require.NoError(t, insertLevelReview("PENDING", "high"), "a spent review does not block the next one")
 	})
 
-	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(beforeApproverVersion) })
-
+	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(beforeRiskLevelVersion) })
 	withDB(t, inst, func() {
-		assert.Equal(t, before, storedSpecs(), "the down migration rewrites no sidecar_spec")
-		assert.Zero(t, reviewColumns())
-		var status string
-		require.NoError(t, models.DB.Raw(`SELECT status FROM private.reviews WHERE org_id = ? AND listener_name = 'appdb'`,
-			testOrgID).Row().Scan(&status))
-		assert.Equal(t, "EXECUTED", status, "an older binary must not release an agent approval")
-		var index int64
-		require.NoError(t, models.DB.Raw(`SELECT count(*) FROM pg_indexes WHERE schemaname = 'private'
-			AND indexname = 'index_reviews_sidecar_level_statement'`).Scan(&index).Error)
-		assert.Zero(t, index)
+		assert.Zero(t, riskLevelColumn())
+		assert.Equal(t, columnsBefore, reviewColumns(), "the down removes risk_level and nothing else")
+		assert.Zero(t, levelIndex())
+		var n int64
+		require.NoError(t, models.DB.Raw(`SELECT count(*) FROM private.reviews WHERE org_id = ?`, testOrgID).Scan(&n).Error)
+		assert.EqualValues(t, 4, n, "the down deletes no review")
 	})
 
-	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(approverVersion) })
-
+	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(riskLevelVersion) })
 	withDB(t, inst, func() {
-		assert.Equal(t, before, storedSpecs())
-		assert.EqualValues(t, 3, reviewColumns())
-		var index int64
-		require.NoError(t, models.DB.Raw(`SELECT count(*) FROM pg_indexes WHERE schemaname = 'private'
-			AND indexname = 'index_reviews_sidecar_level_statement'`).Scan(&index).Error)
-		assert.EqualValues(t, 1, index)
+		assert.EqualValues(t, 1, riskLevelColumn())
+		assert.EqualValues(t, 1, levelIndex())
 	})
 }
