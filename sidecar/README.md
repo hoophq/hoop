@@ -4790,7 +4790,9 @@ ends and what declares its length.
   get -w` or a `kubectl logs -f` is not held to its end — and a gzip or
   deflate body is undone around the masker and compressed again. A binary
   body is forwarded as it arrives, and a text body streams line by line,
-  so neither has a size limit. A text or JSON body under an encoding
+  so neither has a size limit; a fixed-length text body over 16 MiB goes
+  out chunked, which an HTTP/1.0 response cannot, so that one is held and
+  refused at 16 MiB. A text or JSON body under an encoding
   the codec cannot undo (zstd, br, lz4) is refused with a 403 and an error
   event rather than forwarded unmasked. So is a body masked as one unit
   that is larger than 16 MiB: one JSON document, or a gzip or deflate body
