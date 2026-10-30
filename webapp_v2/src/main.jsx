@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
 import { theme, cssVariablesResolver } from '@/theme';
+import { watchAccountSwitch } from '@/features/AccountSwitch';
 import App from './App';
 
 // layers.css MUST come first. A cascade layer takes its position from where the
@@ -23,6 +24,9 @@ import '@mantine/carousel/styles.layer.css';
 // ClojureApp.jsx, this lets the CLJS handler bail out on React-only routes
 // instead of opening a second Radix dialog underneath the Mantine Spotlight.
 window.__hoopReactShellPresent = true;
+
+// A sign-in as another account in another tab reloads this one.
+watchAccountSwitch();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
