@@ -87,6 +87,10 @@ const initial = {
 // a re-run): a list on screen reads it and fetches again.
 let revision = 0
 
+// Sent on window with each bump, for the ClojureScript list behind the modal
+// (audit/session_details_bridge.cljs). It refetches as after its own details.
+export const SESSION_CHANGED_EVENT = 'hoop:session-details-changed'
+
 let watchTimer = null
 
 function stopWatch() {
@@ -99,7 +103,10 @@ export const useSessionDetailsStore = create((set, get) => ({
   revision,
 
   // A list on screen fetches again when this changes.
-  bumpRevision: () => set({ revision: ++revision }),
+  bumpRevision: () => {
+    set({ revision: ++revision })
+    window.dispatchEvent(new CustomEvent(SESSION_CHANGED_EVENT))
+  },
 
   // One modal for the whole app: a new open replaces the session it shows.
   open: (id, { prefill = null, onClose = null, onNavigate = null } = {}) => {

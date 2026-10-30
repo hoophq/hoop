@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { blockReasonTab, executedBy, insightsByTab, isOutputHidden, sessionStatusKey } from '@/features/SessionDetails/sessionState'
+import {
+  blockReasonTab,
+  canDownloadInput,
+  executedBy,
+  insightsByTab,
+  isOutputHidden,
+  reviewBadgeStatus,
+  sessionStatusKey,
+} from '@/features/SessionDetails/sessionState'
 
 describe('sessionStatusKey', () => {
   it.each([
@@ -67,5 +75,32 @@ describe('executed by (NB12)', () => {
     expect(executedBy({ user: 'owner@x.com', review: review('EXECUTED', undefined) })).toBe(null)
     expect(executedBy({ user: 'owner@x.com', review: review('APPROVED', 'admin@x.com') })).toBe(null)
     expect(executedBy({ user: 'owner@x.com' })).toBe(null)
+  })
+})
+
+describe('review badge (E1)', () => {
+  it.each([
+    ['APPROVED', 'APPROVED'],
+    ['PROCESSING', 'APPROVED'],
+    ['EXECUTED', 'APPROVED'],
+    ['PENDING', 'PENDING'],
+    ['REJECTED', 'REJECTED'],
+    ['REVOKED', null],
+    ['EXPIRED', null],
+    [undefined, null],
+  ])('%s draws %s', (status, expected) => {
+    expect(reviewBadgeStatus(status)).toBe(expected)
+  })
+})
+
+describe('input download (NB01)', () => {
+  const session = { user_id: 'owner-1' }
+  it('shows to the owner and to an admin', () => {
+    expect(canDownloadInput(session, { user: { id: 'owner-1' } })).toBe(true)
+    expect(canDownloadInput(session, { user: { id: 'admin-1' }, isAdmin: true })).toBe(true)
+  })
+  it('hides from an approver the gateway refuses', () => {
+    expect(canDownloadInput(session, { user: { id: 'approver-1' } })).toBe(false)
+    expect(canDownloadInput({ user_id: '' }, { user: { id: '' } })).toBe(false)
   })
 })

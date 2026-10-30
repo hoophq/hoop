@@ -8,6 +8,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
 import PreviewUnavailable from '../components/PreviewUnavailable'
 import Insights from '../insights/Insights'
+import { canDownloadInput } from '../sessionState'
 import ViewOptions from '../components/ViewOptions'
 
 async function downloadInput(sessionId) {
@@ -24,7 +25,10 @@ async function downloadInput(sessionId) {
 export default function InputTab({ session }) {
   const largeInput = useSessionDetailsStore((s) => s.largeInput)
   const disableDownload = useUserStore((s) => s.disableSessionsDownload)
-  const onDownload = disableDownload ? undefined : () => downloadInput(session.id)
+  const user = useUserStore((s) => s.user)
+  const isAdmin = useUserStore((s) => s.isAdmin)
+  const allowed = !disableDownload && canDownloadInput(session, { user, isAdmin })
+  const onDownload = allowed ? () => downloadInput(session.id) : undefined
 
   const insights = <Insights session={session} tabs={['input']} />
 

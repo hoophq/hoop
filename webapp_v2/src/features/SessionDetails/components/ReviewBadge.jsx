@@ -1,5 +1,6 @@
 import { Check, Clock2, X } from 'lucide-react'
 import Badge from '@/components/Badge'
+import { reviewBadgeStatus } from '../sessionState'
 
 // `yellow` is not a palette of this theme; amber with darker text reads at 12px
 // (components/Badge).
@@ -9,10 +10,9 @@ const BADGES = {
   REJECTED: { color: 'red', c: 'red.9', icon: X, label: 'Rejected' },
 }
 
-// The status of a review or of one of its groups. Other statuses (REVOKED,
-// PROCESSING, EXECUTED, UNKNOWN, EXPIRED) draw nothing.
+// The status of a review or of one of its groups.
 export default function ReviewBadge({ status }) {
-  const badge = BADGES[status]
+  const badge = BADGES[reviewBadgeStatus(status)]
   if (!badge) return null
   const Icon = badge.icon
   return (

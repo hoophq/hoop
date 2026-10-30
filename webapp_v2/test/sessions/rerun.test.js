@@ -7,7 +7,9 @@ vi.mock('@/services/api', () => ({ default: api }))
 vi.mock('@/stores/useAuthStore', () => ({ useAuthStore: { subscribe: vi.fn() } }))
 vi.mock('@/utils/snackbar', () => ({ showSnackbar: vi.fn() }))
 
-const { useSessionDetailsStore } = await import('@/stores/useSessionDetailsStore')
+// The store tells the ClojureScript list on window; vitest runs in node.
+globalThis.window = new EventTarget()
+const { SESSION_CHANGED_EVENT, useSessionDetailsStore } = await import('@/stores/useSessionDetailsStore')
 
 const original = {
   id: 'orig-1',
@@ -63,5 +65,18 @@ describe('re-run (NB05)', () => {
     await pending
 
     expect(useSessionDetailsStore.getState().rerunId).toBe(null)
+  })
+})
+
+describe('the ClojureScript list behind the modal (R06, L15)', () => {
+  it('hears each change the details make', async () => {
+    const heard = vi.fn()
+    window.addEventListener(SESSION_CHANGED_EVENT, heard)
+    api.post.mockResolvedValueOnce({ data: { session_id: 'new-6' } })
+    await useSessionDetailsStore.getState().rerun()
+    expect(heard).not.toHaveBeenCalled()
+    vi.runAllTimers()
+    expect(heard).toHaveBeenCalledTimes(1)
+    window.removeEventListener(SESSION_CHANGED_EVENT, heard)
   })
 })
