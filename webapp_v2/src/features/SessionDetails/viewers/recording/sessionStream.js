@@ -6,15 +6,18 @@ export class StreamRefused extends Error {}
 export class StreamDropped extends Error {}
 
 // Reads GET /sessions/:id/stream over fetch: EventSource cannot send the
-// Authorization header. Calls onOpen once the gateway answers, then onMessage
-// with each { event, data }. Resolves on session_end; throws StreamRefused on
-// an HTTP error and StreamDropped when the stream closes before session_end.
-export async function readSessionStream(url, { token, signal, onOpen, onMessage }) {
+// Authorization header. Calls onResponse with the response headers, on an error
+// too (a renewed token, services/api.js), onOpen once the gateway answers, then
+// onMessage with each { event, data }. Resolves on session_end; throws
+// StreamRefused on an HTTP error and StreamDropped when the stream closes
+// before session_end.
+export async function readSessionStream(url, { token, signal, onResponse, onOpen, onMessage }) {
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
     cache: 'no-store',
     signal,
   })
+  onResponse?.(response.headers)
   if (!response.ok || !response.body) throw new StreamRefused(`stream answered ${response.status}`)
   onOpen()
   const reader = response.body.getReader()
