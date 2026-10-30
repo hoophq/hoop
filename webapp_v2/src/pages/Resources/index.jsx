@@ -18,7 +18,7 @@ import HoopCliModal from '@/pages/Resources/sections/HoopCliModal'
 import ResourceRow from '@/pages/Resources/sections/ResourceRow'
 import RoleRow from '@/pages/Resources/sections/RoleRow'
 import ViewTabs from '@/pages/Resources/sections/ViewTabs'
-import classes from '@/pages/Resources/sections/List.module.css'
+import classes from '@/pages/Resources/List.module.css'
 import pageClasses from './Resources.module.css'
 
 const GETTING_STARTED_URL = 'https://hoop.dev/docs/introduction/getting-started'
