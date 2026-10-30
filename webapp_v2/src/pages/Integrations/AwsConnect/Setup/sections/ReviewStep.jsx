@@ -11,6 +11,8 @@ import TreeTable from '../../components/TreeTable'
 import { useAwsConnectSetupStore } from '../store'
 import { roleName, selectedTree } from '../wizard'
 
+const INPUT_MIN_WIDTH = 220
+
 function DocsLink({ href, children }) {
   return (
     <Anchor href={href} target="_blank" rel="noopener noreferrer" size="sm">
@@ -81,17 +83,17 @@ export default function ReviewStep({ validationError, onAgentChange }) {
   }
 
   const columns = [
-    { id: 'name', header: 'Resources', width: '25%' },
-    { id: 'account', header: 'Account ID', width: '15%', render: (row) => (row.isAccount ? row.id : '') },
+    { id: 'name', header: 'Resources' },
+    { id: 'account', header: 'Account ID', render: (row) => (row.isAccount ? row.id : '') },
     {
       id: 'roleName',
       header: 'Resource Role Name',
-      width: '30%',
       render: (row) =>
         row.isAccount ? (
           ''
         ) : (
           <TextInput
+            miw={INPUT_MIN_WIDTH}
             aria-label={`Resource role name for ${row.name}`}
             placeholder="Enter resource role name"
             value={roleName(row, roleNames)}
@@ -102,7 +104,6 @@ export default function ReviewStep({ validationError, onAgentChange }) {
     {
       id: 'agent',
       header: 'Agent',
-      width: '30%',
       render: (row) => {
         if (row.isAccount) return ''
         const agentId = assignments[row.id] ?? null
@@ -110,6 +111,7 @@ export default function ReviewStep({ validationError, onAgentChange }) {
           <Group gap="xs" wrap="nowrap">
             <Select
               flex={1}
+              miw={INPUT_MIN_WIDTH}
               aria-label={`Agent for ${row.name}`}
               placeholder="Select an agent"
               data={agentOptions}

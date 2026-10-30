@@ -10,7 +10,7 @@ import PageLoader from '@/components/PageLoader'
 import { useUserStore } from '@/stores/useUserStore'
 import TreeTable from './components/TreeTable'
 import { useAwsJobsStore } from './store'
-import { formatDate, isRunning, limitReached, POLL_INTERVAL_MS, SETUP_PATH, toJobRows } from './utils'
+import { formatDate, isRunning, limitReached, SETUP_PATH, toJobRows } from './utils'
 
 const LIMIT_MESSAGE =
   'Your organization has reached Resource Discovery free usage limits. Upgrade to Enterprise to have unlimited access to Resource Discovery.'
@@ -46,23 +46,18 @@ export default function AwsConnect() {
   const jobs = useAwsJobsStore((s) => s.jobs)
   const loaded = useAwsJobsStore((s) => s.loaded)
   const error = useAwsJobsStore((s) => s.error)
-  const updatedAt = useAwsJobsStore((s) => s.updatedAt)
   const fetchJobs = useAwsJobsStore((s) => s.fetchJobs)
+  const startPolling = useAwsJobsStore((s) => s.startPolling)
+  const stopPolling = useAwsJobsStore((s) => s.stopPolling)
 
   const running = jobs.some(isRunning)
   const limit = isFreeLicense && limitReached(jobs)
   const rows = useMemo(() => toJobRows(jobs), [jobs])
 
   useEffect(() => {
-    fetchJobs()
-  }, [fetchJobs])
-
-  // Each answer arms the next poll while a job runs (Q28).
-  useEffect(() => {
-    if (!running) return undefined
-    const timer = setTimeout(fetchJobs, POLL_INTERVAL_MS)
-    return () => clearTimeout(timer)
-  }, [running, updatedAt, fetchJobs])
+    startPolling()
+    return stopPolling
+  }, [startPolling, stopPolling])
 
   return (
     <Stack gap="xl">

@@ -12,6 +12,8 @@ import TreeTable from '../../components/TreeTable'
 import { useAwsConnectSetupStore } from '../store'
 import { accountChecked, resourceIds, toggleResource } from '../wizard'
 
+const CIDR_INPUT_MIN_WIDTH = 170
+
 const STATUS_COLOR = {
   available: 'green',
   active: 'green',
@@ -139,6 +141,7 @@ export default function ResourcesStep() {
           <Group gap="xs" wrap="nowrap">
             <TextInput
               flex={1}
+              miw={CIDR_INPUT_MIN_WIDTH}
               aria-label={`Security group CIDR for ${row.name}`}
               placeholder="e.g. 10.10.10.10/32"
               value={cidr}

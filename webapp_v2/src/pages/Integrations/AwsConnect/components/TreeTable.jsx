@@ -83,42 +83,44 @@ export default function TreeTable({ columns, rows, empty, selection, expanded, o
     })
 
   return (
-    <Table>
-      <Table.Thead>
-        <Table.Tr>
-          {selection && (
-            <Table.Th w={40}>
-              <Checkbox
-                aria-label="Select all"
-                checked={selection.all === true}
-                indeterminate={selection.all === 'some'}
-                disabled={selection.allDisabled || rows.length === 0}
-                onChange={(e) => selection.onChangeAll(e.currentTarget.checked)}
-              />
-            </Table.Th>
-          )}
-          <Table.Th w={40} />
-          {columns.map((column) => (
-            <Table.Th key={column.id} w={column.width}>
-              {column.header}
-            </Table.Th>
-          ))}
-          <Table.Th w={40} />
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {rows.length === 0 ? (
+    <Box w="100%">
+      <Table scrollable>
+        <Table.Thead>
           <Table.Tr>
-            <Table.Td colSpan={span}>
-              <Text size="sm" c="dimmed" ta="center" py="md">
-                {empty}
-              </Text>
-            </Table.Td>
+            {selection && (
+              <Table.Th w={40}>
+                <Checkbox
+                  aria-label="Select all"
+                  checked={selection.all === true}
+                  indeterminate={selection.all === 'some'}
+                  disabled={selection.allDisabled || rows.length === 0}
+                  onChange={(e) => selection.onChangeAll(e.currentTarget.checked)}
+                />
+              </Table.Th>
+            )}
+            <Table.Th w={40} />
+            {columns.map((column) => (
+              <Table.Th key={column.id} w={column.width}>
+                {column.header}
+              </Table.Th>
+            ))}
+            <Table.Th w={40} />
           </Table.Tr>
-        ) : (
-          renderRows(rows, 0)
-        )}
-      </Table.Tbody>
-    </Table>
+        </Table.Thead>
+        <Table.Tbody>
+          {rows.length === 0 ? (
+            <Table.Tr>
+              <Table.Td colSpan={span}>
+                <Text size="sm" c="dimmed" ta="center" py="md">
+                  {empty}
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          ) : (
+            renderRows(rows, 0)
+          )}
+        </Table.Tbody>
+      </Table>
+    </Box>
   )
 }

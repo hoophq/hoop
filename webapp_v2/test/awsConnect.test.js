@@ -103,6 +103,50 @@ describe('jobs', () => {
     expect(useAwsJobsStore.getState()).toMatchObject({ jobs: [], loaded: true, error: null })
   })
 
+  it('polls every 5 s while a job runs and stops when none runs (Q28)', async () => {
+    vi.useFakeTimers()
+    try {
+      awsConnectService.listJobs.mockResolvedValue({ data: { items: [job('a', 'x', { completed_at: null })] } })
+      await useAwsJobsStore.getState().startPolling()
+      expect(awsConnectService.listJobs).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(awsConnectService.listJobs).toHaveBeenCalledTimes(2)
+
+      awsConnectService.listJobs.mockResolvedValue({ data: { items: [job('a', 'x')] } })
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(awsConnectService.listJobs).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(20000)
+      expect(awsConnectService.listJobs).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops polling when the page leaves', async () => {
+    vi.useFakeTimers()
+    try {
+      awsConnectService.listJobs.mockResolvedValue({ data: { items: [job('a', 'x', { completed_at: null })] } })
+      await useAwsJobsStore.getState().startPolling()
+      useAwsJobsStore.getState().stopPolling()
+      await vi.advanceTimersByTimeAsync(20000)
+      expect(awsConnectService.listJobs).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not poll outside the jobs page', async () => {
+    vi.useFakeTimers()
+    try {
+      awsConnectService.listJobs.mockResolvedValue({ data: { items: [job('a', 'x', { completed_at: null })] } })
+      await useAwsJobsStore.getState().fetchJobs()
+      await vi.advanceTimersByTimeAsync(20000)
+      expect(awsConnectService.listJobs).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps the newest answer when an older one arrives last', async () => {
     const first = deferred()
     awsConnectService.listJobs.mockReturnValueOnce(first.promise).mockResolvedValueOnce({ data: { items: [job('new', 'x')] } })
