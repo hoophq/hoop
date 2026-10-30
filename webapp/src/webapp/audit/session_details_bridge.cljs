@@ -21,6 +21,15 @@
  (fn [db _]
    (react-details? db)))
 
+;; The flag arrives with /serverinfo. Before the first answer an opener cannot
+;; tell which details to open, and a guess runs both (matrix N05). A failed
+;; read settles it: the ClojureScript details open.
+(rf/reg-sub
+ :session-details/flag-known?
+ (fn [db _]
+   (let [{:keys [loading data]} (:gateway->info db)]
+     (or (some? data) (not loading)))))
+
 ;; close-to: the path React opens when the details close (the /sessions/:id page).
 (rf/reg-fx
  :session-details-bridge/emit
