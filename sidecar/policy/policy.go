@@ -1038,7 +1038,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 		return r.compiled.MatchString(stmt.Text), nil
 
 	case MatchOperation:
-		return slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return performs(stmt, op) }), nil
+		return slices.ContainsFunc(r.Operations, func(op inspect.Operation) bool { return operationMatches(stmt, op) }), nil
 
 	case MatchTable:
 		if len(stmt.Relations) == 0 && len(stmt.Tables) == 0 {
@@ -1079,6 +1079,21 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 // and its operation alone would let a rule naming delete miss it.
 func performs(stmt inspect.Statement, op inspect.Operation) bool {
 	return stmt.Operation == op || stmt.Operation == inspect.OpUnknown && slices.Contains(stmt.Effects, op)
+}
+
+// operationMatches reports whether an operation rule naming op matches stmt.
+//
+// `unknown` names a client statement the classifier could not read. A
+// response is never one: it carries no verb, so the codecs report it as
+// unknown (a Postgres result, every HTTP response on the relay), and an
+// operation rule naming unknown would refuse every response on the lane
+// (ENG-893, ENG-545). Only the operation rule: the operations scope of the
+// other rule types still reaches responses through unknown, as it did.
+func operationMatches(stmt inspect.Statement, op inspect.Operation) bool {
+	if op == inspect.OpUnknown && stmt.Direction == inspect.FromServer {
+		return false
+	}
+	return performs(stmt, op)
 }
 
 // accessMatches reports whether a relation's access satisfies the rule.

@@ -3782,8 +3782,9 @@ Those choices buy this, measured through the real Postgres path:
 
 #### Spark SQL (Databricks)
 
-`lexer.Spark` reads Spark SQL as Databricks runs it. No config key selects
-it yet; a caller passes it to `inspect.AnalyzeSQLIn`. Its quoting is close to
+`lexer.Spark` reads Spark SQL as Databricks runs it. An http lane selects it
+with `http.sql.dialect: spark` (SQL in request bodies, below); a caller
+passes it to `inspect.AnalyzeSQLIn`. Its quoting is close to
 GoogleSQL's: backslash escapes in `'...'` and `"..."`, `"..."` is a string,
 backticks escape by doubling, `r'...'` is raw, and `:name` and `?` are
 parameters. Five rules differ from every other dialect here, and each one
@@ -4212,6 +4213,120 @@ listeners:
           message: listing secrets is fine; reading one is not
 ```
 
+### SQL in request bodies: Databricks
+
+**An `http.sql` block reads the SQL a JSON API carries in its request body.**
+Databricks' Statement Execution API sends its SQL in `statement`, and the
+workspace SQL MCP server in the arguments of a `tools/call`. Without the block
+the lane's statement is `POST /api/2.0/sql/statements`, and an `operation` or
+table rule matches nothing there: a `DROP` passes a lane written to refuse it.
+With the block, each SQL string becomes a statement of its own, right after
+the request that carried it, classified under the block's `dialect`. The
+JSON reading is the `jsonsql` package, which knows no protocol; `codec/http`
+only routes requests to it, so another protocol that carries JSON can reuse
+it.
+
+- **Fields.** `fields` maps a resource pattern, written as an `http_resource`
+  rule writes it, to the dotted JSON path of the SQL. The longest matching
+  pattern wins; two of the same length that match and name different paths
+  refuse the request, because reading one would leave SQL at the other
+  unread. A pattern that can match nothing as written (`**` not at the end,
+  `*` inside a segment, an empty, `.` or `..` segment) is refused at load. A pattern
+  matches the cleaned path, because Databricks routes
+  `/api/2.0/./sql/statements`, a doubled slash, a backslash or `x/..` like the
+  canonical path. `dialect` is required: it decides what a comment or a string is, and
+  `spark` is Databricks SQL. A request with no body carries no SQL.
+- **MCP.** Where the path is under `params.arguments`, a body with a
+  `jsonrpc` member carries SQL only as a `tools/call` naming one of `tools`;
+  `initialize`, `tools/list` and other tools carry none. Such a path needs
+  `tools`. Anywhere else `jsonrpc` decides nothing: the Statement Execution
+  API runs a body that also holds it, so its SQL is read. A JSON-RPC batch
+  yields one statement per call.
+- **Refuse.** `refuse` lists `field=value` pairs whose results would not pass
+  through the lane. Databricks' `disposition: EXTERNAL_LINKS` answers with
+  links to cloud storage, so the rows would skip the masking and the audit.
+  Such a request is refused before it is forwarded, with `refuse_message`,
+  whatever the rules say, and whether or not the message carries SQL. A value at a `refuse` field that is not a string is
+  refused too: Databricks takes `"disposition": 2` for `EXTERNAL_LINKS`.
+  `refuse_message` is required with `refuse`, since only the operator knows
+  what the client should ask for instead.
+- **Unreadable is `unknown`.** A body that should carry SQL and does not
+  yield it (cut at `max_body_bytes`, not JSON, no string at the path) becomes
+  an `unknown` statement with the reason in `sql.incomplete`, as every codec
+  reports SQL it cannot read, so a rule naming `unknown` refuses it and
+  padding a body past the limit is no way around the rules. With `refuse`
+  set, a body cut at the limit or not JSON is refused outright: its
+  disposition cannot be checked either.
+- **What the statement carries.** Protocol `http`, no HTTP detail, the SQL as
+  its text, `http.sql_index`, `http.sql_field`, `http.sql_dialect`,
+  `http.sql_resource` (the cleaned route) and `http.sql_method` (the
+  request's operation, `post`) in its metadata; the request records
+  `http.sql_statements`. An `http_resource`
+  rule never matches it. The request is judged as before, so `delete` names
+  both an HTTP `DELETE` and a SQL `DELETE`.
+- **Bodies are captured on its routes.** The block captures the bodies of
+  requests to its routes, so they reach policy, the analyzer and the audit
+  trail. A request to any other route keeps its body only under
+  `capture_body`, or on a lane that holds.
+- **The analyzer** renders the SQL statement as SQL. The request that carried
+  it is not sent, so a query is one model call. A trigger selects the SQL by
+  its operation, by the method of the request that carried it through
+  `http.sql_method`, or by resource through `http.sql_resource`, so a
+  trigger written for the request (`operations: [post]`) still selects it.
+  An `exclude` item reads the SQL's own operation: excluding `post` skips
+  the requests, as before, and not the SQL they carry.
+- **Not with approvals yet.** A lane whose analyzer holds for approval cannot
+  set the block: the gate spends an approval on the request, not on the SQL
+  read from its body, so one approval would release that SQL again and again.
+
+A lane in front of a Databricks workspace, with a URL upstream so clients dial
+the sidecar by its own name. The one guardrail the free tier allows denies
+the writes it names and every statement the classifier cannot read. An
+`operation` rule naming `unknown` judges client statements only; responses
+carry no verb and never match it. The `operations` scope of another rule
+type still reaches responses through `unknown`. `other` is left out: it holds `COMMENT ON`, `ANALYZE TABLE`
+and `REFRESH`, but also `USE CATALOG`, which clients send.
+
+```yaml
+listeners:
+  - name: databricks
+    protocol: http
+    listen: https://0.0.0.0:8443
+    upstream: https://dbc-xxxxxxxx-xxxx.cloud.databricks.com
+    downstream_tls:
+      cert_file: /etc/hoop-inspect/certs/relay.crt
+      key_file:  /etc/hoop-inspect/certs/relay.key
+    http:
+      sql:
+        dialect: spark
+        fields:
+          /api/2.0/sql/statements: statement
+          /ai-gateway/mcp-services/**: params.arguments.query
+          /api/2.0/mcp/sql: params.arguments.query
+        tools: [execute_sql]
+        refuse: [disposition=EXTERNAL_LINKS, disposition=INLINE_OR_EXTERNAL_LINKS]
+        refuse_message: ask for disposition INLINE; external links skip this listener
+    guardrails:
+      rules:
+        - name: read-only
+          type: operation
+          operations: [insert, update, delete, create, drop, alter, truncate, grant, revoke, unknown]
+          message: this listener allows reads only
+    mask:
+      rules:
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+```
+
+JDBC, ODBC and the other Databricks drivers speak Thrift, not JSON, so this
+block does not cover them: their requests reach the lane as opaque bodies.
+
+What that rule refuses besides writes, from the Spark dialect above: every
+SQL script (`BEGIN ... END`), `EXECUTE IMMEDIATE`, any statement holding
+`${`, `VACUUM t DRY RUN` and `COPY INTO t ... VALIDATE`, and a read naming a
+column like a write verb after THEN. `IDENTIFIER(:t)` hides the table from
+table rules; the operation is still read. Table rules miss the table of
+`SHOW TBLPROPERTIES`, `SHOW COLUMNS`, `SHOW PARTITIONS` and `table_changes()`.
+
 ## Guardrails and OPA
 
 Two evaluators under two config sections, layered via `policy.Chain{local,
@@ -4275,8 +4390,11 @@ policy.NewRules([]policy.Rule{
 An `operation` rule matches the statement's `operation`. When that is
 `unknown` (the scanner could not read the whole statement, e.g. a PL/SQL
 block), the rule also matches the effects the scanner did see, so
-`BEGIN DELETE FROM t; END;` is denied by a rule naming `delete`. The
-`operations` scope of every other rule type uses the same test.
+`BEGIN DELETE FROM t; END;` is denied by a rule naming `delete`. `unknown`
+matches client statements only: a response carries no verb, so the codecs
+report it as `unknown`, and a rule naming `unknown` would otherwise refuse
+every response. The `operations` scope of every other rule type uses the
+same test.
 
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
@@ -4663,9 +4781,12 @@ ends and what declares its length.
   deflate body is undone around the masker and compressed again. A binary
   body is forwarded as it arrives. A text or JSON body under an encoding
   the codec cannot undo (zstd, br, lz4) is refused with a 403 and an error
-  event rather than forwarded unmasked. A body the codec is holding that
-  outgrows `MaxMessageBytes` goes out unmasked and the next response is
-  masked again.
+  event rather than forwarded unmasked. So is a body too large to mask: one
+  held past the 8 MiB inspection buffer, or a gzip or deflate body that
+  inflates past 16 MiB. A gzip body is small on the wire, so the server, not
+  the client, decides whether it reaches that size, and forwarding it as it
+  came would hand the client every row unmasked. The lane keeps serving after
+  the refusal.
 
 A codec that cannot re-frame gets its `mask.rules` refused at startup,
 because accepting a masking config that can never fire is the failure that
