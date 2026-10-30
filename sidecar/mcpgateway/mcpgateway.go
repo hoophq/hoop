@@ -30,14 +30,25 @@ func init() { daemon.RegisterMCPGatewayEngine(Build) }
 
 const checkName = "hoop_gate"
 
-// errSessionEnded answers a message on an MCP session EndSessions closed.
-// The Kill it turns into makes mcpproxy drop the session, so the client
-// gets 404 next and initializes again.
-var errSessionEnded = errors.New("the sidecar ended this session (rules reloaded); initialize a new session")
+// errSessionEnded answers a message on an MCP session that already ended
+// here: EndSessions closed it, or it ended while the message was in flight.
+// The Kill it turns into makes mcpproxy drop the session, so the client gets
+// 404 next and initializes again.
+var errSessionEnded = errors.New("the sidecar ended this session; initialize a new session")
+
+var errServerClosed = errors.New("the lane is shutting down")
+
+const (
+	// codeInvalidParams is JSON-RPC's invalid params; mcpproxy does not name it.
+	codeInvalidParams = -32602
+	// goneTTL is how long an ended MCP session stays refused: longer than any
+	// message still in flight on it.
+	goneTTL = time.Hour
+)
 
 // Build implements daemon.MCPGatewayBuilder. It binds nothing.
 func Build(lane daemon.MCPGatewayLane) (daemon.MCPGatewayServer, error) {
-	s := &server{lane: lane, log: lane.Log, sessions: map[string]daemon.MCPLaneSession{}, stale: map[string]struct{}{}}
+	s := &server{lane: lane, log: lane.Log, sessions: map[string]daemon.MCPLaneSession{}, gone: map[string]time.Time{}}
 	if s.log == nil {
 		s.log = slog.Default()
 	}
@@ -124,10 +135,11 @@ type server struct {
 	ln       net.Listener
 	srv      *http.Server
 	sessions map[string]daemon.MCPLaneSession
-	// stale holds the MCP sessions EndSessions closed and mcpproxy still
-	// knows: the next message on one is refused with a Kill.
-	stale  map[string]struct{}
-	closed bool
+	// gone holds the MCP sessions that ended here, so a message still in
+	// flight on one opens no new sidecar session.
+	gone      map[string]time.Time
+	lastPurge time.Time
+	closed    bool
 
 	total, denied atomic.Int64
 }
@@ -167,7 +179,7 @@ func (s *server) Close() error {
 	srv := s.srv
 	sessions := s.sessions
 	s.sessions = map[string]daemon.MCPLaneSession{}
-	s.stale = map[string]struct{}{}
+	s.gone = map[string]time.Time{}
 	s.mu.Unlock()
 	if srv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -209,8 +221,9 @@ func (s *server) EndSessions(reason string) {
 	s.mu.Lock()
 	sessions := s.sessions
 	s.sessions = map[string]daemon.MCPLaneSession{}
+	now := time.Now()
 	for id := range sessions {
-		s.stale[id] = struct{}{}
+		s.markGone(id, now)
 	}
 	s.mu.Unlock()
 	ctx := context.Background()
@@ -225,10 +238,13 @@ func (s *server) EndSessions(reason string) {
 func (s *server) laneSession(ctx context.Context, ms inspect.Session) (daemon.MCPLaneSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return nil, errServerClosed
+	}
 	if ls, ok := s.sessions[ms.ID()]; ok {
 		return ls, nil
 	}
-	if _, ok := s.stale[ms.ID()]; ok {
+	if _, ok := s.gone[ms.ID()]; ok {
 		return nil, errSessionEnded
 	}
 	if s.lane.Open == nil {
@@ -245,6 +261,21 @@ func (s *server) laneSession(ctx context.Context, ms inspect.Session) (daemon.MC
 	return ls, nil
 }
 
+// markGone records an ended MCP session and drops the ones past goneTTL,
+// at most once a minute. s.mu must be held.
+func (s *server) markGone(id string, now time.Time) {
+	s.gone[id] = now
+	if now.Sub(s.lastPurge) < time.Minute {
+		return
+	}
+	s.lastPurge = now
+	for id, at := range s.gone {
+		if now.Sub(at) > goneTTL {
+			delete(s.gone, id)
+		}
+	}
+}
+
 // Emit implements audit.Sink: it ends the sidecar session with the MCP
 // session and records mcpproxy's own refusals on it.
 func (s *server) Emit(ctx context.Context, ev audit.Event) {
@@ -253,7 +284,7 @@ func (s *server) Emit(ctx context.Context, ev audit.Event) {
 		s.mu.Lock()
 		ls := s.sessions[ev.Session]
 		delete(s.sessions, ev.Session)
-		delete(s.stale, ev.Session)
+		s.markGone(ev.Session, time.Now())
 		s.mu.Unlock()
 		if ls == nil {
 			return
@@ -307,7 +338,9 @@ func (c *hoopCheck) request(ctx context.Context, ls daemon.MCPLaneSession, m *in
 				Version string `json:"version"`
 			} `json:"clientInfo"`
 		}
-		_ = json.Unmarshal(m.Env.Params, &p)
+		if err := json.Unmarshal(m.Env.Params, &p); err != nil {
+			c.s.log.Warn("mcp initialize params not decoded", "error", err)
+		}
 		ls.Record(ctx, "mcp_initialize", map[string]string{
 			"protocol_version": p.ProtocolVersion, "client": p.ClientInfo.Name, "client_version": p.ClientInfo.Version,
 		})
@@ -316,7 +349,10 @@ func (c *hoopCheck) request(ctx context.Context, ls daemon.MCPLaneSession, m *in
 			Name      string          `json:"name"`
 			Arguments json.RawMessage `json:"arguments"`
 		}
-		_ = json.Unmarshal(m.Env.Params, &p)
+		if err := json.Unmarshal(m.Env.Params, &p); err != nil || p.Name == "" {
+			c.s.denied.Add(1)
+			return inspect.Denyf(m.Env, codeInvalidParams, checkName, "invalid tools/call params: a tool name is required")
+		}
 		v := ls.ToolCall(ctx, p.Name, p.Arguments)
 		if !v.Allowed {
 			c.s.denied.Add(1)

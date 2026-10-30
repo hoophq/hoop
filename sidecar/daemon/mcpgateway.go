@@ -240,7 +240,7 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 	if sink != nil {
 		failOnAuditError := ac.failOnAuditError()
 		resolved.Open = func(ctx context.Context, caller MCPCaller) (MCPLaneSession, error) {
-			return openMCPLaneSession(ctx, ln, rules, sink, failOnAuditError, caller)
+			return openMCPLaneSession(ctx, ln, rules, sink, failOnAuditError, caller, laneLog)
 		}
 	}
 	srv, err := build(resolved)
@@ -268,10 +268,11 @@ type mcpLaneSession struct {
 	g       *gate.Gate
 	release func()
 	mcpSID  string
+	log     *slog.Logger
 	closed  bool
 }
 
-func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink audit.Sink, failOnAuditError bool, caller MCPCaller) (MCPLaneSession, error) {
+func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink audit.Sink, failOnAuditError bool, caller MCPCaller, log *slog.Logger) (MCPLaneSession, error) {
 	sess := session.New(inspect.MCP, session.Identity{Subject: caller.Subject, PeerAddr: caller.PeerAddr})
 	sess.Connection = ln.name
 	sess.Upstream = ln.cfg.Upstream
@@ -289,12 +290,15 @@ func openMCPLaneSession(ctx context.Context, ln lane, rules *liveRules, sink aud
 		release()
 		return nil, err
 	}
-	if err := g.Start(ctx); err != nil && failOnAuditError {
-		_ = g.Close(ctx)
-		release()
-		return nil, fmt.Errorf("audit trail unavailable: %w", err)
+	if err := g.Start(ctx); err != nil {
+		if failOnAuditError {
+			_ = g.Close(ctx)
+			release()
+			return nil, fmt.Errorf("audit trail unavailable: %w", err)
+		}
+		log.Warn("mcp session start not recorded", "error", err)
 	}
-	return &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID}, nil
+	return &mcpLaneSession{g: g, release: release, mcpSID: caller.MCPSessionID, log: log}, nil
 }
 
 func (s *mcpLaneSession) ID() string { return string(s.g.Session().ID) }
@@ -342,7 +346,9 @@ func (s *mcpLaneSession) Record(ctx context.Context, activity string, attrs map[
 	if s.closed {
 		return
 	}
-	_ = s.g.RecordActivity(ctx, activity, attrs)
+	if err := s.g.RecordActivity(ctx, activity, attrs); err != nil {
+		s.log.Warn("mcp activity not recorded", "activity", activity, "error", err)
+	}
 }
 
 func (s *mcpLaneSession) Close(ctx context.Context) {
@@ -352,6 +358,8 @@ func (s *mcpLaneSession) Close(ctx context.Context) {
 		return
 	}
 	s.closed = true
-	_ = s.g.Close(ctx)
+	if err := s.g.Close(ctx); err != nil {
+		s.log.Warn("mcp session close reported an error", "error", err)
+	}
 	s.release()
 }

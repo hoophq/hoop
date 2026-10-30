@@ -332,3 +332,21 @@ func TestALaneWithoutASessionOpenerRefusesEveryRequest(t *testing.T) {
 		t.Fatalf("initialize without an opener: %d %s", code, body)
 	}
 }
+
+// A tools/call whose params name no tool is refused as invalid params; no
+// rule judges it and the upstream never sees it.
+func TestAToolCallWithoutAToolNameIsRefused(t *testing.T) {
+	ln := &testLane{}
+	_, url := startLane(t, daemon.MCPGatewayConfig{}, ln.open)
+	c := &client{url: url}
+	c.init(t)
+	for i, params := range []string{`{"name":7}`, `{"arguments":{}}`, `[]`} {
+		code, body := c.post(t, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":%s}`, 10+i, params))
+		if code != 200 || !strings.Contains(body, "-32602") {
+			t.Errorf("params %s: %d %s", params, code, body)
+		}
+	}
+	if calls, _, _ := ln.session(0).snapshot(); len(calls) != 0 {
+		t.Fatalf("the lane judged %v", calls)
+	}
+}

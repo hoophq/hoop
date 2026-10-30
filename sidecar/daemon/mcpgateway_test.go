@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -165,7 +168,7 @@ func TestMCPLaneSessionRecordsOneStatementPerCall(t *testing.T) {
 	ln := mcpTestLane(t, `{"guardrails":{"rules":[{"name":"no-delete","type":"table","tables":["delete_customer"],"message":"deleting through MCP is not allowed"}]},"listeners":[`+mcpLane+`]}`)
 	sink := audit.NewMemorySink(16)
 	ctx := context.Background()
-	ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), sink, true, MCPCaller{Subject: "alice", PeerAddr: "127.0.0.1:5", MCPSessionID: "m1"})
+	ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), sink, true, MCPCaller{Subject: "alice", PeerAddr: "127.0.0.1:5", MCPSessionID: "m1"}, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +247,7 @@ func TestMCPLaneRuleTypes(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ln := mcpTestLane(t, `{"guardrails":{"rules":[`+c.rule+`]},"listeners":[`+mcpLane+`]}`)
-			ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), audit.NewMemorySink(16), true, MCPCaller{Subject: "alice"})
+			ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), audit.NewMemorySink(16), true, MCPCaller{Subject: "alice"}, slog.Default())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -291,7 +294,7 @@ func TestMCPLaneConsultsOPA(t *testing.T) {
 			t.Cleanup(opa.Close)
 
 			ln := mcpTestLane(t, fmt.Sprintf(`{"opa":`+c.opa+`,"listeners":[`+mcpLane+`]}`, opa.URL))
-			ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), audit.NewMemorySink(16), true, MCPCaller{Subject: "alice", MCPSessionID: "m1"})
+			ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), audit.NewMemorySink(16), true, MCPCaller{Subject: "alice", MCPSessionID: "m1"}, slog.Default())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -328,6 +331,44 @@ func TestMCPLaneConsultsOPA(t *testing.T) {
 				if in := inputs[2]; in["operation"] != "show" || in["tables"] != nil || in["statement"] != "get_file_contents: Read a file\n" {
 					t.Fatalf("tools/list input: %v", in)
 				}
+			}
+		})
+	}
+}
+
+type activityBrokenSink struct{ audit.Sink }
+
+func (s activityBrokenSink) Write(ctx context.Context, ev audit.Event) error {
+	if ev.Kind == audit.KindActivity {
+		return errors.New("disk full")
+	}
+	return s.Sink.Write(ctx, ev)
+}
+
+// An audit write the sink refuses is logged, as on the other lanes: the
+// session start on a fail-open lane, an activity on a fail-closed one.
+func TestMCPLaneLogsAuditWriteFailures(t *testing.T) {
+	ln := mcpTestLane(t, `{"listeners":[`+mcpLane+`]}`)
+	ctx := context.Background()
+	for _, c := range []struct {
+		name             string
+		sink             audit.Sink
+		failOnAuditError bool
+		want             string
+	}{
+		{"start, fail-open", brokenSink{}, false, "mcp session start not recorded"},
+		{"activity, fail-closed", activityBrokenSink{audit.NewMemorySink(16)}, true, "mcp activity not recorded"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), c.sink, c.failOnAuditError, MCPCaller{Subject: "alice"}, slog.New(slog.NewTextHandler(&buf, nil)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ls.Record(ctx, "mcp_initialize", nil)
+			ls.Close(ctx)
+			if !strings.Contains(buf.String(), c.want) {
+				t.Fatalf("log lacks %q:\n%s", c.want, buf.String())
 			}
 		})
 	}
