@@ -1,9 +1,7 @@
-import { Alert, Group, Text } from '@mantine/core'
-import Button from '@/components/Button'
-import { Download, Info } from 'lucide-react'
 import { sessionsService } from '@/services/sessions'
 import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
+import PreviewUnavailable from '../../components/PreviewUnavailable'
 
 async function download(sessionId) {
   try {
@@ -19,15 +17,10 @@ async function download(sessionId) {
 export default function LargeRecording({ session }) {
   const disableDownload = useUserStore((s) => s.disableSessionsDownload)
   return (
-    <Alert variant="light" color="gray" icon={<Info size={16} />}>
-      <Group justify="space-between" wrap="nowrap">
-        <Text size="sm">This recording is too large to display</Text>
-        {!disableDownload && (
-          <Button size="sm" variant="light" color="gray" rightSection={<Download size={16} />} onClick={() => download(session.id)}>
-            Download
-          </Button>
-        )}
-      </Group>
-    </Alert>
+    <PreviewUnavailable
+      size={session.event_size}
+      message="This recording is too large to display"
+      onDownload={disableDownload ? undefined : () => download(session.id)}
+    />
   )
 }

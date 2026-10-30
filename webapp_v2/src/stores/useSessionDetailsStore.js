@@ -79,6 +79,8 @@ const initial = {
   deciding: false,
   killing: false,
   rerunning: false,
+  // The session a re-run of this one created: the header links it (NB05).
+  rerunId: null,
 }
 
 // Bumped after the details change a session (a decision, an execution, a kill,
@@ -371,24 +373,22 @@ export const useSessionDetailsStore = create((set, get) => ({
             ...correlation,
             ...extra,
           })
-      get().showRerun(data?.session_id)
+      get().showRerun(data?.session_id, session.id)
     } catch (err) {
       // The gateway answers an error with the session it created when the run
       // itself failed: show that session, do not post again.
       const sessionId = err?.response?.data?.session_id
-      if (sessionId) get().showRerun(sessionId)
+      if (sessionId) get().showRerun(sessionId, session.id)
       else showSnackbar({ level: 'error', text: messageOf(err) || 'Failed to re-run the session' })
     } finally {
       set({ rerunning: false })
     }
   },
 
-  showRerun: (sessionId) => {
-    setTimeout(() => {
-      showSnackbar({ level: 'success', text: 'The session was re-ran' })
-      get().bumpRevision()
-      if (sessionId) get().showSession(sessionId, { verb: 'exec' })
-    }, REFETCH_DELAY_MS)
+  // The original session stays open, with a note that links the new one.
+  showRerun: (sessionId, originId) => {
+    if (sessionId && get().sessionId === originId) set({ rerunId: sessionId })
+    setTimeout(() => get().bumpRevision(), REFETCH_DELAY_MS)
   },
 
   reset: () => {
