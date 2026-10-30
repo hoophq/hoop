@@ -11,6 +11,7 @@
    [webapp.agents.new :as create-agent]
    [webapp.agents.panel :as agents]
    [webapp.audit.views.main :as audit]
+   [webapp.audit.session-details-bridge]
    [webapp.audit.views.session-details :as session-details]
    [webapp.audit.views.sessions-filtered-by-id :as session-filtered-by-id]
    [webapp.auth.local.login :as local-auth-login]
@@ -467,21 +468,31 @@
   ;; users to sessions instead of audit
   (rf/dispatch [:navigate :sessions]))
 
-(defmethod routes/panels :sessions-panel []
-  (rf/dispatch [:destroy-page-loader])
+(defn- sessions-page []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
                              [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
                               "Sessions"]
                              [audit/panel]]])
+
+(defmethod routes/panels :sessions-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [sessions-page])
 
 (defmethod routes/panels :session-details-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
         session-id (-> current-route :route-params :session-id)]
     (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:audit->get-session-details-page session-id])
-    [layout :application-hoop [:div {:class "bg-white p-large h-full"}
-                               [session-details/main]]]))
+    ;; With the React session details, /sessions/:id is the list with the
+    ;; details open over it; closing them goes back to /sessions.
+    (if @(rf/subscribe [:session-details/react?])
+      (do
+        (rf/dispatch [:session-details/open {:id session-id :close-to "/sessions"}])
+        [sessions-page])
+      (do
+        (rf/dispatch [:audit->get-session-details-page session-id])
+        [layout :application-hoop [:div {:class "bg-white p-large h-full"}
+                                   [session-details/main]]]))))
 
 (defn- safe-decode-uri-component
   "URL-decode but never throw. Falls back to the raw string when the input
