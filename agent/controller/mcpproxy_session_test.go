@@ -32,12 +32,17 @@ import (
 // than one.
 func mcpPost(t *testing.T, h http.Handler, sid, body string) (int, string, string) {
 	t.Helper()
+	return mcpPostAt(t, h, sid, mcpNegotiatedVersion, body)
+}
+
+func mcpPostAt(t *testing.T, h http.Handler, sid, version, body string) (int, string, string) {
+	t.Helper()
 	r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Accept", "application/json, text/event-stream")
 	if sid != "" {
 		r.Header.Set("Mcp-Session-Id", sid)
-		r.Header.Set("MCP-Protocol-Version", mcpNegotiatedVersion)
+		r.Header.Set("MCP-Protocol-Version", version)
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -107,6 +112,27 @@ func TestMCPSessionSurvivesAcrossRequests(t *testing.T) {
 	}
 	if !strings.Contains(body, "whoami") {
 		t.Fatalf("tools/list body = %s, want the client-hosted server's catalog", body)
+	}
+}
+
+// A client that negotiated an older revision echoes it on every later request.
+func TestMCPNegotiatedOlderRevisionIsAccepted(t *testing.T) {
+	for _, rev := range []string{"2025-06-18", "2025-03-26"} {
+		t.Run(rev, func(t *testing.T) {
+			h := newTunnelGateway(t, "sid-rev-"+rev, mcpconfig.Policy{}).Handler()
+			code, sid, body := mcpPostAt(t, h, "", rev, strings.Replace(mcpInitialize, mcpNegotiatedVersion, rev, 1))
+			if code != http.StatusOK || sid == "" {
+				t.Fatalf("initialize = HTTP %d: %s", code, body)
+			}
+			code, _, body = mcpPostAt(t, h, sid, rev, mcpToolsList)
+			if code != http.StatusOK || !strings.Contains(body, "whoami") {
+				t.Fatalf("tools/list on %s = HTTP %d: %s", rev, code, body)
+			}
+			code, _, body = mcpPostAt(t, h, sid, mcpNegotiatedVersion, mcpToolsList)
+			if code != http.StatusBadRequest {
+				t.Fatalf("tools/list echoing %s after negotiating %s = HTTP %d: %s, want 400", mcpNegotiatedVersion, rev, code, body)
+			}
+		})
 	}
 }
 
