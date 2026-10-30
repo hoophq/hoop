@@ -36,11 +36,27 @@ export function maskingAnalytics(report, session) {
     }
   }
   const metrics = session?.metrics || {}
-  const counts = metrics.data_analyzer && Object.keys(metrics.data_analyzer).length
-    ? metrics.data_analyzer
-    : metrics.data_masking?.info_types
-  const fallback = fromCounts(counts)
-  return { items: fallback, total: fallback.reduce((sum, item) => sum + (Number(item.count) || 0), 0) }
+  if (metrics.data_analyzer && Object.keys(metrics.data_analyzer).length) {
+    const fallback = fromCounts(metrics.data_analyzer)
+    return { items: fallback, total: sumCounts(fallback) }
+  }
+  const joined = fromCounts(metrics.data_masking?.info_types)
+  return { items: splitJoined(joined), total: sumCounts(joined) }
+}
+
+const sumCounts = (items) => items.reduce((sum, item) => sum + (Number(item.count) || 0), 0)
+
+// The gateway files the entities one sidecar event masked as one info type,
+// "email+ssn", and counts the event's cells once (sidecarsessions.go). Each
+// entity is a category; the volume stays the event's.
+function splitJoined(items) {
+  const byType = new Map()
+  for (const { infoType, count } of items) {
+    for (const part of infoType.split('+').filter(Boolean)) {
+      byType.set(part, (byType.get(part) || 0) + (Number(count) || 0))
+    }
+  }
+  return [...byType].map(([infoType, count]) => ({ infoType, count }))
 }
 
 export const itemsText = (total) => `${total} ${total === 1 ? 'item' : 'items'}`
