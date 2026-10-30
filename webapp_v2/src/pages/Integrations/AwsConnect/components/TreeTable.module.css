@@ -1,0 +1,5 @@
+/* Resource and job names break at their hyphens otherwise. No Mantine style
+   prop expresses white-space. */
+.name {
+  white-space: nowrap;
+}

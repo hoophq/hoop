@@ -4,8 +4,11 @@ import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import Checkbox from '@/components/Checkbox'
 import Table from '@/components/Table'
+import classes from './TreeTable.module.css'
 
 const INDENT = 20
+
+const hasError = (rows) => rows.some((row) => row.error || hasError(row.children ?? []))
 
 /**
  * Rows with children and an error message that expand under their row, and an
@@ -23,7 +26,8 @@ export default function TreeTable({ columns, rows, empty, selection, expanded, o
   const open = expanded ?? ownExpanded
   const toggle =
     onToggleExpand ?? ((id) => setOwnExpanded((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])))
-  const span = columns.length + (selection ? 3 : 2)
+  const errors = hasError(rows)
+  const span = columns.length + 1 + (selection ? 1 : 0) + (errors ? 1 : 0)
 
   const renderRows = (list, level) =>
     list.map((row) => {
@@ -61,12 +65,22 @@ export default function TreeTable({ columns, rows, empty, selection, expanded, o
             </Table.Td>
             {columns.map((column, index) => (
               <Table.Td key={column.id} w={column.width}>
-                <Box pl={index === 0 ? level * INDENT : 0}>{column.render ? column.render(row) : row[column.id]}</Box>
+                {index === 0 ? (
+                  <Box pl={level * INDENT} className={classes.name}>
+                    {column.render ? column.render(row) : row[column.id]}
+                  </Box>
+                ) : column.render ? (
+                  column.render(row)
+                ) : (
+                  row[column.id]
+                )}
               </Table.Td>
             ))}
-            <Table.Td w={40}>
-              {row.error && <AlertCircle size={16} color="var(--mantine-color-red-6)" aria-label="Error" />}
-            </Table.Td>
+            {errors && (
+              <Table.Td w={40}>
+                {row.error && <AlertCircle size={16} color="var(--mantine-color-red-6)" aria-label="Error" />}
+              </Table.Td>
+            )}
           </Table.Tr>
           {row.error && isOpen && (
             <Table.Tr>
@@ -104,7 +118,7 @@ export default function TreeTable({ columns, rows, empty, selection, expanded, o
                 {column.header}
               </Table.Th>
             ))}
-            <Table.Th w={40} />
+            {errors && <Table.Th w={40} />}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>

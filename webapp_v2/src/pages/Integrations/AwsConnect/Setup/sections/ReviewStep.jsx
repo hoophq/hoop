@@ -11,7 +11,8 @@ import TreeTable from '../../components/TreeTable'
 import { useAwsConnectSetupStore } from '../store'
 import { roleName, selectedTree } from '../wizard'
 
-const INPUT_MIN_WIDTH = 220
+const ROLE_NAME_MIN_WIDTH = 180
+const AGENT_SELECT_MIN_WIDTH = 200
 
 function DocsLink({ href, children }) {
   return (
@@ -93,7 +94,7 @@ export default function ReviewStep({ validationError, onAgentChange }) {
           ''
         ) : (
           <TextInput
-            miw={INPUT_MIN_WIDTH}
+            miw={ROLE_NAME_MIN_WIDTH}
             aria-label={`Resource role name for ${row.name}`}
             placeholder="Enter resource role name"
             value={roleName(row, roleNames)}
@@ -111,7 +112,7 @@ export default function ReviewStep({ validationError, onAgentChange }) {
           <Group gap="xs" wrap="nowrap">
             <Select
               flex={1}
-              miw={INPUT_MIN_WIDTH}
+              miw={AGENT_SELECT_MIN_WIDTH}
               aria-label={`Agent for ${row.name}`}
               placeholder="Select an agent"
               data={agentOptions}
