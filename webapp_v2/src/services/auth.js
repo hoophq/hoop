@@ -1,4 +1,4 @@
-import api, { storeRenewedToken } from './api';
+import api from './api';
 
 const AUTH_ENDPOINTS = {
   LOCAL_LOGIN: '/localauth/login',
@@ -100,15 +100,15 @@ export const authService = {
 
   // The user `token` belongs to. Over fetch, outside the api.js interceptors:
   // it asks about one given token, and a 401 for it must not sign out the
-  // token that is current by the time it answers. Returns that user and the
-  // token this check leaves stored: the gateway may renew it in the answer.
+  // token that is current by the time it answers. It stores nothing, not even
+  // a renewal in the answer: the tab that stored `token` keeps it renewed, and
+  // a write here would start the same check in that tab, and so on.
   async getUserForToken(token) {
     const res = await fetch(`${api.defaults.baseURL}${AUTH_ENDPOINTS.USER}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    storeRenewedToken(token, res.headers);
     if (!res.ok) throw new Error(`userinfo failed with status ${res.status}`);
-    return { user: await res.json(), token: res.headers.get('X-New-Access-Token') || token };
+    return res.json();
   },
 
   // Get server info (license, features)

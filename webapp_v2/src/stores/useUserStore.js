@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { identify as analyticsIdentify } from '@/services/analytics'
 import { authService } from '@/services/auth'
 import licenseService from '@/services/license'
+import { useAuthStore } from '@/stores/useAuthStore'
 import { ROLE_ADMIN, ROLE_APPROVER, ROLE_STANDARD } from '@/utils/roles'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
@@ -206,18 +207,43 @@ export const useUserStore = create((set, get) => ({
   },
 }))
 
+// The account a JWT names (`sub`), or null for an opaque token: some OIDC
+// providers hand the browser one.
+function tokenSubject(token) {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(payload)).sub || null
+  } catch {
+    return null
+  }
+}
+
+const storedToken = () => localStorage.getItem('jwt-token')
+
 // Another tab stored a token. Every request reads the token from localStorage,
-// so this tab now sends that one: ask the gateway whose it is. Another account
-// (a sign-in in that tab): reload, so every store and the CLJS app start over
-// as that account. The same account (a renewal in that tab): nothing changes.
+// so this tab now sends that one. Another account (a sign-in in that tab):
+// reload, so every store and the CLJS app start over as that account. The
+// same account (a renewal in that tab): nothing changes. This check never
+// writes a token, or two tabs would answer each other's writes without end.
 window.addEventListener('storage', async (event) => {
   const token = event.newValue
   if (event.key !== 'jwt-token' || !token || !useUserStore.getState().user) return
+  // A newer token replaced this one before or while it is checked: its own
+  // event decides.
+  if (storedToken() !== token) return
+
+  // Two JWTs: their `sub` tells the account, with no request.
+  const signedIn = tokenSubject(useAuthStore.getState().token)
+  const stored = tokenSubject(token)
+  if (signedIn && stored) {
+    if (stored !== signedIn) window.location.reload()
+    return
+  }
+
+  // An opaque token: ask the gateway whose it is.
   try {
-    const { user, token: checked } = await authService.getUserForToken(token)
-    // A newer token replaced this one while the check ran: its own check
-    // decides. `checked` is this token, or its renewal from the check's answer.
-    if (localStorage.getItem('jwt-token') !== checked) return
+    const user = await authService.getUserForToken(token)
+    if (storedToken() !== token) return
     const shown = useUserStore.getState().user?.id
     if (user?.id && shown && user.id !== shown) window.location.reload()
   } catch {

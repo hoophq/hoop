@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // The network is the seam: the real auth service, api.js and stores run, and
 // fetch answers /userinfo as the gateway would for the token it carries.
 const storage = new Map()
+const setItem = vi.fn((key, value) => storage.set(key, String(value)))
 vi.stubGlobal('localStorage', {
   getItem: (key) => (storage.has(key) ? storage.get(key) : null),
-  setItem: (key, value) => storage.set(key, String(value)),
+  setItem,
   removeItem: (key) => storage.delete(key),
 })
 const listeners = {}
@@ -19,9 +20,14 @@ vi.stubGlobal('window', {
 vi.mock('@/services/analytics', () => ({ identify: () => Promise.resolve() }))
 
 const { useUserStore } = await import('@/stores/useUserStore')
+const { useAuthStore } = await import('@/stores/useAuthStore')
 
-// The account each token belongs to; a token not listed gets a 401.
-const owners = { 'token-of-a': 'user-a', 'renewed-token-of-a': 'user-a', 'token-of-b': 'user-b' }
+// A JWT names its account in `sub`; `n` tells two tokens of one account apart.
+const base64url = (json) => btoa(JSON.stringify(json)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+const jwt = (sub, n = 1) => `h.${base64url({ sub, n })}.s`
+
+// Opaque tokens: the account each one belongs to; one not listed gets a 401.
+const owners = { 'opaque-a': 'user-a', 'opaque-a-2': 'user-a', 'opaque-b': 'user-b' }
 // Per token, a promise the test holds back to answer late, and the renewal
 // the gateway sends in X-New-Access-Token.
 let held
@@ -46,43 +52,75 @@ const otherTab = (key, value) => {
   return listeners.storage({ key, newValue: value })
 }
 
+// This tab signed in with `token`, as user-a.
+function signedIn(token) {
+  storage.set('jwt-token', token)
+  useAuthStore.setState({ token, isAuthenticated: true })
+  useUserStore.setState({ user: { id: 'user-a' } })
+}
+
 beforeEach(() => {
   fetch.mockClear()
   reload.mockClear()
   held = {}
   renewals = {}
-  storage.set('jwt-token', 'token-of-a')
-  useUserStore.setState({ user: { id: 'user-a' } })
 })
 
-describe('a token another tab stores', () => {
+describe('a JWT another tab stores', () => {
+  beforeEach(() => signedIn(jwt('sub-a')))
+
+  it('of another account reloads this tab, with no request', async () => {
+    await otherTab('jwt-token', jwt('sub-b'))
+    expect(reload).toHaveBeenCalledOnce()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('of the same account (a renewal) changes nothing, with no request', async () => {
+    await otherTab('jwt-token', jwt('sub-a', 2))
+    expect(reload).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('replaced before its event arrives does not reload: the newer token decides', async () => {
+    storage.set('jwt-token', jwt('sub-a', 3))
+    await listeners.storage({ key: 'jwt-token', newValue: jwt('sub-b') })
+    expect(reload).not.toHaveBeenCalled()
+  })
+})
+
+describe('an opaque token another tab stores', () => {
+  beforeEach(() => signedIn('opaque-a'))
+
   it('of another account reloads this tab', async () => {
-    await otherTab('jwt-token', 'token-of-b')
+    await otherTab('jwt-token', 'opaque-b')
     expect(fetch.mock.calls[0][0]).toBe('http://gateway.test/api/userinfo')
     expect(reload).toHaveBeenCalledOnce()
   })
 
-  it('of another account reloads this tab when the check renews it', async () => {
-    renewals['token-of-b'] = 'renewed-token-of-b'
-    await otherTab('jwt-token', 'token-of-b')
-    expect(localStorage.getItem('jwt-token')).toBe('renewed-token-of-b')
-    expect(reload).toHaveBeenCalledOnce()
-  })
-
   it('of the same account (a renewal) changes nothing', async () => {
-    await otherTab('jwt-token', 'renewed-token-of-a')
+    await otherTab('jwt-token', 'opaque-a-2')
     expect(fetch).toHaveBeenCalledOnce()
     expect(reload).not.toHaveBeenCalled()
   })
 
+  it('is checked without writing a token, even when the answer renews it', async () => {
+    // A write here fires the same check in the other tab: two tabs would loop.
+    renewals['opaque-a-2'] = 'opaque-a-3'
+    renewals['opaque-b'] = 'opaque-b-2'
+    setItem.mockClear()
+    await otherTab('jwt-token', 'opaque-a-2')
+    await otherTab('jwt-token', 'opaque-b')
+    expect(setItem).not.toHaveBeenCalled()
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
   it('replaced before its check answers does not reload: the newer token decides', async () => {
-    // B, then A again, and the check of B answers last.
     let answerB
-    held['token-of-b'] = new Promise((resolve) => {
+    held['opaque-b'] = new Promise((resolve) => {
       answerB = resolve
     })
-    const checkB = otherTab('jwt-token', 'token-of-b')
-    await otherTab('jwt-token', 'token-of-a')
+    const checkB = otherTab('jwt-token', 'opaque-b')
+    await otherTab('jwt-token', 'opaque-a-2')
     answerB()
     await checkB
     expect(reload).not.toHaveBeenCalled()
@@ -94,17 +132,17 @@ describe('a token another tab stores', () => {
       answerBad = resolve
     })
     const checkBad = otherTab('jwt-token', 'bad-token')
-    await otherTab('jwt-token', 'token-of-a')
+    await otherTab('jwt-token', 'opaque-a-2')
     answerBad()
     await checkBad
-    expect(localStorage.getItem('jwt-token')).toBe('token-of-a')
+    expect(localStorage.getItem('jwt-token')).toBe('opaque-a-2')
     expect(window.location.href).toBe('http://gateway.test/sidecars')
     expect(reload).not.toHaveBeenCalled()
   })
 
   it('is not checked while this tab shows no user', async () => {
     useUserStore.setState({ user: null })
-    await otherTab('jwt-token', 'token-of-b')
+    await otherTab('jwt-token', 'opaque-b')
     expect(fetch).not.toHaveBeenCalled()
   })
 
