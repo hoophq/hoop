@@ -342,8 +342,7 @@ func (d *draft) config() (*daemon.Config, configyaml.RenderOptions, error) {
 		} else {
 			cfg.Analyzer.CredentialsFile = d.an.keyFile
 		}
-		l.Analyzer = &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: d.an.high},
-			MediumRisk: daemon.RiskLevel{Action: d.an.medium}, LowRisk: daemon.RiskLevel{Action: d.an.low}}
+		l.Analyzer = &daemon.LaneAnalyzerConfig{HighRisk: d.an.high, MediumRisk: d.an.medium, LowRisk: d.an.low}
 		if len(d.an.trigger) > 0 {
 			l.Analyzer.Trigger = &policy.AITrigger{Operations: ops(d.an.trigger...)}
 		}

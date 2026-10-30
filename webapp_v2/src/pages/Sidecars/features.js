@@ -1,4 +1,4 @@
-import { APPROVER_HUMAN, isHoldAction, readRiskLevel } from '@/pages/sidecarRuleVocabulary'
+import { APPROVER_HUMAN, isHoldAction, readLevelApprover } from '@/pages/sidecarRuleVocabulary'
 import { FEATURES, FEATURE_ORDER } from './config'
 import {
   SOURCE_DISTRIBUTED,
@@ -37,14 +37,15 @@ const RISK_ACTIONS = {
   defer: 'reports',
 }
 
-// A level is a bare action or an object; a hold names its approver (ENG-680).
-// A bare hold is decided through the listener's approval rule.
-function riskDetail(value) {
-  const { action, approver, groups } = readRiskLevel(value)
+// A held level names its approver in `approvers.<level>` (ENG-680). A hold
+// with no entry is decided through the block's approval rule.
+function riskDetail(spec, level) {
+  const action = spec[level]
   if (!isHoldAction(action)) return RISK_ACTIONS[action] ?? action
-  if (!approver) return 'hold (approval rule)'
-  if (approver !== APPROVER_HUMAN) return 'hold (AI agent)'
-  return groups.length > 0 ? `hold (Human: ${groups.join(', ')})` : 'hold (Human: administrators)'
+  const read = readLevelApprover(spec, level)
+  if (!read) return 'hold (approval rule)'
+  if (read.approver !== APPROVER_HUMAN) return 'hold (AI agent)'
+  return read.groups.length > 0 ? `hold (Human: ${read.groups.join(', ')})` : 'hold (Human: administrators)'
 }
 
 const MASK_STRATEGY_LABELS = {
@@ -113,8 +114,8 @@ function analyzerDetail(spec) {
     .join(', ')
   const excluded = exclude ? `${exclude} exclusion${exclude > 1 ? 's' : ''}` : null
   const risks = ['high', 'medium', 'low']
-    .filter((level) => readRiskLevel(spec[level]).action)
-    .map((level) => `${level}: ${riskDetail(spec[level])}`)
+    .filter((level) => spec[level])
+    .map((level) => `${level}: ${riskDetail(spec, level)}`)
   const prompt = spec.prompt ? 'custom prompt' : null
   // An omitted trigger is not "nothing": declaring the analyzer is the opt-in.
   return [trigger || 'Every statement', excluded, ...risks, prompt].filter(Boolean).join(' · ')

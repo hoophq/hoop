@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/hoophq/hoop/gateway/services"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,7 +54,7 @@ func sidecarWithListener(listenerName, ruleName string) *models.Sidecar {
 	sc := &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "payments-sidecar"}
 	listener := daemon.ListenerConfig{Name: listenerName}
 	if ruleName != "" {
-		listener.Analyzer = &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: ruleName}
+		listener.Analyzer = &daemon.LaneAnalyzerConfig{ApprovalRule: ruleName}
 	}
 	sc.Configuration = models.SidecarConfiguration{Listeners: []daemon.ListenerConfig{listener}}
 	return sc
@@ -217,7 +218,7 @@ func sidecarWithListeners(listeners ...daemon.ListenerConfig) *models.Sidecar {
 func lane(name, ruleName string) daemon.ListenerConfig {
 	return daemon.ListenerConfig{
 		Name:     name,
-		Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_review"}, ApprovalRule: ruleName},
+		Analyzer: &daemon.LaneAnalyzerConfig{ApprovalRule: ruleName},
 	}
 }
 
@@ -239,24 +240,31 @@ func TestListenerNamesApprovalRuleFailsClosedOnDuplicateNames(t *testing.T) {
 	assert.True(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "reporting", "strict-approvers"))
 }
 
-// approval_rule releases only a bare hold. Beside object levels the sidecar
-// ignores it, so a filing under it must not let its groups release a level
-// that names other people or the approval agent.
-func TestAnIgnoredApprovalRuleAuthorizesNothing(t *testing.T) {
-	block := func(high, medium daemon.RiskLevel) []daemon.ListenerConfig {
+// A risk level filing is authorized only for a level that holds and whose
+// approvers entry names a human. An ai_agent level is decided in the
+// sidecar and never files.
+func TestListenerHoldsForHuman(t *testing.T) {
+	block := func(high string, approvers *daemon.LevelApprovers) []daemon.ListenerConfig {
 		return []daemon.ListenerConfig{{Name: "appdb", Analyzer: &daemon.LaneAnalyzerConfig{
-			HighRisk: high, MediumRisk: medium, ApprovalRule: "payments-approvers"}}}
+			HighRisk: high, MediumRisk: "warn", ApprovalRule: "payments-approvers", Approvers: approvers}}}
 	}
-	human := daemon.RiskLevel{Action: "require_approval", Approver: "human", ApprovalGroups: []string{"dba"}}
-	agent := daemon.RiskLevel{Action: "require_approval", Approver: "ai_agent"}
-	warn := daemon.RiskLevel{Action: "warn"}
-	bare := daemon.RiskLevel{Action: "require_approval"}
+	human := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverHuman, Groups: []string{"dba"}}}
+	agent := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverAIAgent}}
 
-	assert.False(t, listenerNamesApprovalRule(block(human, warn), "appdb", "payments-approvers"), "human object level")
-	assert.False(t, listenerNamesApprovalRule(block(agent, warn), "appdb", "payments-approvers"), "ai_agent object level")
-	assert.False(t, listenerNamesApprovalRule(block(warn, warn), "appdb", "payments-approvers"), "no level holds")
-	assert.True(t, listenerNamesApprovalRule(block(agent, bare), "appdb", "payments-approvers"),
-		"a bare hold beside an object level still files under the rule")
+	got := listenerHoldsForHuman(block("require_approval", human), "appdb", analyzer.RiskHigh)
+	require.NotNil(t, got, "a held human level")
+	assert.Equal(t, []string{"dba"}, got.LevelApprover(analyzer.RiskHigh).Groups)
+	assert.NotNil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskHigh), "either spelling")
+
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", agent), "appdb", analyzer.RiskHigh), "ai_agent level")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", nil), "appdb", analyzer.RiskHigh),
+		"a bare hold files under approval_rule, not by level")
+	assert.Nil(t, listenerHoldsForHuman(block("block", human), "appdb", analyzer.RiskHigh), "a level that does not hold")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskMedium), "another level")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "reporting", analyzer.RiskHigh), "another listener")
+
+	dup := append(block("require_review", human), block("require_review", human)...)
+	assert.Nil(t, listenerHoldsForHuman(dup, "appdb", analyzer.RiskHigh), "a duplicate listener name authorizes nothing")
 }
 
 // The control plane stores a sidecar rule without checking these fields, so a
@@ -577,7 +585,6 @@ func TestToSidecarReviewStatusOmitsStatementAndReviewers(t *testing.T) {
 		"status": "REJECTED",
 		"listener_name": "appdb",
 		"approval_rule": "payments-approvers",
-		"approver_type": "human",
 		"created_at": "0001-01-01T00:00:00Z",
 		"decided_at": "2026-09-28T12:00:00Z",
 		"rejection_reason": "not now"

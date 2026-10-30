@@ -1524,11 +1524,13 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		// Said out loud because it is the one control observe mode
 		// switches OFF rather than records: every other rule still runs
 		// and still writes what it would have done, while a review
-		// nobody filed cannot be approved later either.
-		if gc.observing() && humanHolds(lc.Analyzer) {
+		// nobody filed cannot be approved later either. The approval
+		// agent is not asked either: its call would decide nothing.
+		if gc.observing() && analyzerHolds(lc.Analyzer) {
 			ln.notes = append(ln.notes,
 				"observe mode files no approval request: a held statement is recorded as "+
-					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
+					policy.AnnotationWouldDeny+" and forwarded, and no approver, person or "+
+					"approval agent, is asked")
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
 		// before the review wait does.
@@ -1570,9 +1572,6 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if lc.Analyzer != nil {
 			ln.notes = append(ln.notes,
 				rateLimitNotes(cfg.Analyzer, lc.Analyzer, "the analyzer block")...)
-			// Settings that do nothing, said where -validate and the
-			// startup log read them; none of them refuses the lane.
-			ln.notes = append(ln.notes, LaneAnalyzerWarnings(lc.Analyzer)...)
 		}
 		for _, r := range gc.Rules {
 			if r.Type == policy.MatchAIAnalysis {

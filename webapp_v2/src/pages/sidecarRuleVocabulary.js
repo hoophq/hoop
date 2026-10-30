@@ -200,10 +200,10 @@ export const ANALYZER_ACTIONS = [
   { value: 'defer', label: 'Defer to Rego', description: 'Let a Rego policy decide' },
 ]
 
-// The action that holds a statement for approval. `require_review` is the
-// older spelling of the same action; the daemon reads both.
-export const REVIEW_ACTION = 'require_approval'
-const HOLD_ACTIONS = new Set([REVIEW_ACTION, 'require_review'])
+// The action that holds a statement for approval. `require_approval` is the
+// newer spelling of the same action; the plane serves `require_review`.
+export const REVIEW_ACTION = 'require_review'
+const HOLD_ACTIONS = new Set([REVIEW_ACTION, 'require_approval'])
 export const isHoldAction = (action) => HOLD_ACTIONS.has(action)
 
 // analyzerActionsFor lists the level actions, the hold included.
@@ -214,8 +214,8 @@ export function analyzerActionsFor() {
   ]
 }
 
-// Who decides a held statement of one risk level (ENG-680). A level object
-// with no approver uses the AI agent.
+// Who decides a held statement of one risk level (ENG-680): the
+// `approvers.<level>.type` of an analyzer spec.
 export const APPROVER_AI = 'ai_agent'
 export const APPROVER_HUMAN = 'human'
 export const APPROVERS = [
@@ -223,20 +223,13 @@ export const APPROVERS = [
   { value: APPROVER_HUMAN, label: 'Human', description: 'A person approves or rejects the request. AI can select groups.' },
 ]
 
-// readRiskLevel reads one level of a stored analyzer spec. A level is a bare
-// action string or an object {action, approver, approval_groups, prompt}.
-// `approver` is null for a bare hold: the listener's approval_rule decides it.
-export function readRiskLevel(level) {
-  if (level == null || level === '') return { action: '', approver: null, groups: [], prompt: '' }
-  if (typeof level === 'string') return { action: level, approver: null, groups: [], prompt: '' }
-  const action = level.action ?? ''
-  const hold = isHoldAction(action)
-  return {
-    action,
-    approver: hold ? (level.approver === APPROVER_HUMAN ? APPROVER_HUMAN : APPROVER_AI) : null,
-    groups: hold ? (level.approval_groups ?? []) : [],
-    prompt: hold ? (level.prompt ?? '') : '',
-  }
+// readLevelApprover reads `approvers.<level>` of a stored analyzer spec. It is
+// null when the level has no entry: the spec's approval_rule decides that hold.
+export function readLevelApprover(spec, level) {
+  const entry = spec?.approvers?.[level]
+  if (entry?.type === APPROVER_HUMAN) return { approver: APPROVER_HUMAN, groups: entry.groups ?? [], prompt: '' }
+  if (entry?.type === APPROVER_AI) return { approver: APPROVER_AI, groups: [], prompt: entry.prompt ?? '' }
+  return null
 }
 
 // How a held statement answers its client. Hold is the sidecar's default, so

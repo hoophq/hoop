@@ -23,12 +23,27 @@ const (
 	CallTimeout CallOutcome = "timeout"
 )
 
-// Call describes one classification sent to the provider: every attempt,
-// retries included, under one deadline.
+// CallKind is what one provider call was for.
+type CallKind string
+
+const (
+	// CallClassify is a risk classification.
+	CallClassify CallKind = "classify"
+
+	// CallDecide is the approval agent's decision on a held statement.
+	// It spends from the same purse as a classification.
+	CallDecide CallKind = "decide"
+)
+
+// Call describes one provider call: every attempt, retries included, under
+// one deadline.
 type Call struct {
 	// Rule is the evaluator's name: the lane for an analyzer block, the
 	// rule name for the deprecated rule form.
 	Rule string
+
+	// Kind is classify or decide.
+	Kind CallKind
 
 	Outcome CallOutcome
 
@@ -78,7 +93,7 @@ func (e *Evaluator) call(ctx context.Context, text string) (*Result, error) {
 	if err == nil && (res == nil || !res.RiskLevel.Valid()) {
 		err = errors.New("provider returned no usable risk level")
 	}
-	return res, e.reportCall(ctx, start, attempts, err)
+	return res, e.reportCall(ctx, CallClassify, start, attempts, err)
 }
 
 // retrying runs send until it succeeds, its error is not a retryable provider
@@ -116,9 +131,10 @@ func (e *Evaluator) retrying(ctx context.Context, send func() error) (int, error
 
 // reportCall reports one provider call through OnCall and returns err with
 // the duration and the limit added.
-func (e *Evaluator) reportCall(ctx context.Context, start time.Time, attempts int, err error) error {
+func (e *Evaluator) reportCall(ctx context.Context, kind CallKind, start time.Time, attempts int, err error) error {
 	c := Call{
 		Rule:     e.cfg.Rule,
+		Kind:     kind,
 		Outcome:  CallOK,
 		Duration: time.Since(start),
 		Timeout:  e.cfg.Timeout,

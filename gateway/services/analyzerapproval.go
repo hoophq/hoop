@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -89,169 +88,61 @@ func reviewersOrDefault(groups []string) []string {
 	return defaultReviewerGroups()
 }
 
-// AnalyzerLevel is one risk level of an analyzer block, with its name.
-type AnalyzerLevel struct {
-	Name  analyzer.RiskLevel
-	Level daemon.RiskLevel
-}
-
-// AnalyzerLevels lists the three levels of a block, high first.
-func AnalyzerLevels(b *daemon.LaneAnalyzerConfig) []AnalyzerLevel {
-	if b == nil {
-		return nil
-	}
-	return []AnalyzerLevel{
-		{Name: analyzer.RiskHigh, Level: b.HighRisk},
-		{Name: analyzer.RiskMedium, Level: b.MediumRisk},
-		{Name: analyzer.RiskLow, Level: b.LowRisk},
-	}
-}
-
-// AnalyzerBlockLevel returns the named level of a block.
-func AnalyzerBlockLevel(b *daemon.LaneAnalyzerConfig, name analyzer.RiskLevel) (daemon.RiskLevel, bool) {
-	for _, l := range AnalyzerLevels(b) {
-		if l.Name == name {
-			return l.Level, true
-		}
-	}
-	return daemon.RiskLevel{}, false
-}
-
-// LevelApprover is who releases a held level of a canonical block (decodeSpec
-// or Canonicalize wrote the ai_agent default down). It is "" for a level that
-// does not hold and for the bare form, which files under approval_rule. An
-// unknown approver reads as ai_agent, as in the sidecar.
-func LevelApprover(r daemon.RiskLevel) analyzer.Approver {
-	if !holdsAction(r.Action) {
-		return ""
-	}
-	switch {
-	case analyzer.Approver(r.Approver) == analyzer.ApproverHuman:
-		return analyzer.ApproverHuman
-	case r.Approver != "" || len(r.ApprovalGroups) > 0 || r.Prompt != "":
-		return analyzer.ApproverAIAgent
-	}
-	return ""
-}
-
-// bareHold reports a level that holds in the bare form.
-func bareHold(r daemon.RiskLevel) bool {
-	return holdsAction(r.Action) && LevelApprover(r) == ""
-}
-
-// LevelReviewerGroups are who may release a human level: its approval_groups,
-// or the admin group when it names nobody.
-func LevelReviewerGroups(r daemon.RiskLevel) []string {
-	return reviewersOrDefault(r.ApprovalGroups)
-}
-
 // AnalyzerRuleHolds reports whether a stored analyzer spec asks to hold a
-// statement for a human on any risk level: a bare hold, or an object level
-// with approver human. An ai_agent level needs no person.
+// statement for a human on any risk level.
 //
-// A spec that does not decode is not a hold: the write gate refuses it
-// separately, with a message about the shape, and answering "yes" here would
-// create an approval rule for a rule that is about to be refused.
+// It reads the same field the sidecar reads. A spec that does not decode is
+// not a hold: the write gate refuses it separately, with a message about the
+// shape, and answering "yes" here would create an approval rule for a rule
+// that is about to be refused.
 func AnalyzerRuleHolds(spec json.RawMessage) bool {
 	var block daemon.LaneAnalyzerConfig
 	if err := decodeSpec(spec, &block); err != nil {
 		return false
 	}
-	for _, l := range AnalyzerLevels(&block) {
-		if bareHold(l.Level) || LevelApprover(l.Level) == analyzer.ApproverHuman {
+	for _, action := range []string{block.HighRisk, block.MediumRisk, block.LowRisk} {
+		if holdsAction(action) {
 			return true
 		}
 	}
 	return false
 }
 
-// holdsAction reports whether a risk level's action holds the statement, in
-// either spelling: require_review, or require_approval, which the daemon
-// folds onto it.
+// specApprovalRule reads the approval_rule a spec names, empty when it does
+// not decode.
+func specApprovalRule(spec json.RawMessage) string {
+	var block daemon.LaneAnalyzerConfig
+	if err := decodeSpec(spec, &block); err != nil {
+		return ""
+	}
+	return block.ApprovalRule
+}
+
+// holdsAction reports whether a risk level's action holds the statement for
+// a human, in either spelling: require_review, or require_approval, which the
+// daemon folds onto it.
 func holdsAction(action string) bool {
 	return analyzer.Action(action).Canonical() == analyzer.ActionRequireReview
 }
 
 // SyncAnalyzerApprovalRule makes the approval rule match what the analyzer rule
-// now asks for: present while a person releases a held level, gone once none
-// does.
+// now asks for: present while the rule holds, gone once it stops.
 //
-// Object levels with approver human name their own groups, and the rule
-// carries them: a sidecar that predates the object form files under it
-// (DowngradeRiskLevels), and per-level reviews read its limits. When those
-// levels name different groups the highest level's groups win; a build that
-// needs the rule is then refused at serve time instead.
-//
-// With only bare holds that name this rule, reviewers are the groups the
-// request names. nil means the request said nothing about them: a new rule
-// gets the admin group and an existing one keeps what it has, so an edit that
-// only touches the prompt, from a script or another page, does not reset the
-// reviewers someone chose.
-//
-// A bare hold under this rule beside a human level shares the one rule, so
-// both must name the same reviewers. One that does not is refused: writing
-// the level's groups would silently change who releases the bare hold.
+// reviewers are the groups the request names. nil means the request said
+// nothing about them: a new rule gets the admin group and an existing one
+// keeps what it has, so an edit that only touches the prompt, from a script or
+// another page, does not reset the reviewers someone chose.
 //
 // Called inside the caller's transaction, so the two rules commit together. A
 // rule that held statements and lost its approval rule halfway would deny
 // every matching statement with no way to release one.
 func SyncAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spec json.RawMessage, reviewers *[]string) error {
-	var block daemon.LaneAnalyzerConfig
-	if err := decodeSpec(spec, &block); err != nil {
-		return DeleteAnalyzerApprovalRule(tx, orgID, ruleName)
-	}
-	var human []string
-	humanFound, ownBare := false, false
-	for _, l := range AnalyzerLevels(&block) {
-		if !humanFound && LevelApprover(l.Level) == analyzer.ApproverHuman {
-			humanFound, human = true, NormalizeReviewerGroups(l.Level.ApprovalGroups)
-		}
-		// Only a bare hold that names this rule's own approval rule is ours
-		// to keep. One naming another rule leaves that rule alone.
-		ownBare = ownBare || (bareHold(l.Level) && block.ApprovalRule == ruleName)
-	}
-	if humanFound {
-		if ownBare {
-			if err := checkBareHoldReviewers(tx, orgID, ruleName, human, reviewers); err != nil {
-				return err
-			}
-		}
-		return upsertAnalyzerApprovalRule(tx, orgID, ruleName, &human)
-	}
-	if ownBare {
+	// Only a hold that names this rule's own approval rule is ours to keep.
+	// One naming another rule leaves that rule alone, as an admin wrote it.
+	if AnalyzerRuleHolds(spec) && specApprovalRule(spec) == ruleName {
 		return upsertAnalyzerApprovalRule(tx, orgID, ruleName, reviewers)
 	}
 	return DeleteAnalyzerApprovalRule(tx, orgID, ruleName)
-}
-
-// checkBareHoldReviewers refuses a human level whose groups differ from the
-// reviewers of a bare hold under the same rule: the ones the request names,
-// else the ones the rule already has. A new rule with none named has no
-// reviewers yet to keep.
-func checkBareHoldReviewers(tx *gorm.DB, orgID uuid.UUID, ruleName string, human []string, reviewers *[]string) error {
-	var bare []string
-	switch {
-	case reviewers != nil:
-		bare = NormalizeReviewerGroups(*reviewers)
-	default:
-		rule, err := AnalyzerApprovalRule(tx, orgID, ruleName)
-		if err != nil {
-			return fmt.Errorf("failed reading the approval rule for analyzer rule %q: %w", ruleName, err)
-		}
-		if rule == nil {
-			return nil
-		}
-		bare = NormalizeReviewerGroups(rule.ReviewersGroups)
-	}
-	want, got := reviewersOrDefault(human), reviewersOrDefault(bare)
-	slices.Sort(want)
-	slices.Sort(got)
-	if slices.Equal(want, got) {
-		return nil
-	}
-	return fmt.Errorf("analyzer rule %q holds a level in the bare form under approval_rule %q, whose "+
-		"reviewers are %v, and a human level whose approval_groups are %v; one approval rule cannot "+
-		"carry both: give them the same groups, or write the bare level as an object", ruleName, ruleName, got, want)
 }
 
 // AnalyzerApprovalRule returns the approval rule an analyzer rule manages, or

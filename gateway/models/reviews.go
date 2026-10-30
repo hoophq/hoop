@@ -115,24 +115,10 @@ type Review struct {
 	// the upstream answers. Set only while the review is PROCESSING.
 	ReservedAt *time.Time `gorm:"column:reserved_at"`
 
-	// ApproverType is who decides: human, or ai_agent for a review a sidecar's
-	// approval agent filed already decided. Empty writes the column default.
-	ApproverType string `gorm:"column:approver_type;default:human"`
-	// DecisionReason is the approval agent's reason, for either decision.
-	DecisionReason *string `gorm:"column:decision_reason"`
 	// RiskLevel is the analyzer level a sidecar filed the review under, in
 	// place of an approval rule. Null on a review filed under a rule.
 	RiskLevel sql.NullString `gorm:"column:risk_level"`
 }
-
-const (
-	ApproverTypeHuman   = "human"
-	ApproverTypeAIAgent = "ai_agent"
-)
-
-// DecidedByAgent reports a review the approval agent decided. Its decision
-// is final: nothing claims, decides or revokes it.
-func (r *Review) DecidedByAgent() bool { return r.ApproverType == ApproverTypeAIAgent }
 
 // SidecarReviewKey is what a sidecar filing is matched on beside the
 // statement: the approval rule, or the risk level filed in its place.
@@ -379,7 +365,7 @@ func getReviewByIdOrSid(db *gorm.DB, orgID, id string, viewer *ReviewViewer) (*R
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	approver_type, decision_reason, risk_level
+	risk_level
 	FROM private.reviews rv
 	WHERE org_id = ? AND (id = ? OR session_id = ?)`+visibility,
 		append([]any{orgID, id, id}, visibilityArgs...)...).
@@ -422,7 +408,7 @@ func ListReviews(db *gorm.DB, orgID string, viewer ReviewViewer) (*[]Review, err
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	approver_type, decision_reason, risk_level
+	risk_level
 	FROM private.reviews rv
 	WHERE org_id = ?`+visibility, append([]any{orgID}, visibilityArgs...)...).
 		Find(&reviews).
@@ -640,8 +626,8 @@ func UpdateSidecarReview(db *gorm.DB, rev *Review, fromStatus ReviewStatusType, 
 			rev.ExpiresAt = SidecarReviewDeadline(from, rev.ApprovalTTLSec)
 		}
 		res := tx.Table("private.reviews").
-			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL AND approver_type = ? AND "+
-				"(expires_at IS NULL OR "+sidecarInsideDeadline+")", rev.OrgID, rev.ID, fromStatus, ApproverTypeHuman, now).
+			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL AND (expires_at IS NULL OR "+
+				sidecarInsideDeadline+")", rev.OrgID, rev.ID, fromStatus, now).
 			Updates(rev)
 		if res.Error != nil {
 			return res.Error
@@ -763,12 +749,12 @@ const sidecarReviewSelect = `
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	approver_type, decision_reason, risk_level
+	risk_level
 	FROM private.reviews rv`
 
 // GetLiveSidecarReview returns the review already filed for these exact
 // statement bytes on this listener and key (rule or risk level), or
-// gorm.ErrRecordNotFound. A review the approval agent decided never matches.
+// gorm.ErrRecordNotFound.
 //
 // "Live" excludes EXECUTED, REJECTED and REVOKED, matching the partial unique
 // index: a spent approval or a refusal is final for that review, and the next
@@ -779,14 +765,14 @@ func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName string, ke
 	now = now.UTC()
 	var review Review
 	args := append([]any{orgID, sidecarID, listenerName}, key.args()...)
-	args = append(args, ApproverTypeHuman, statementHash,
+	args = append(args, statementHash,
 		ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked, ReviewStatusExpired,
 		ReviewStatusPending, ReviewStatusApproved, now,
 		ReviewStatusProcessing, leaseStart(now))
 	err := db.Raw(sidecarReviewSelect+`
 	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
 	AND access_request_rule_name IS NOT DISTINCT FROM ? AND risk_level IS NOT DISTINCT FROM ?
-	AND approver_type = ? AND statement_hash = ? AND status NOT IN (?, ?, ?, ?)
+	AND statement_hash = ? AND status NOT IN (?, ?, ?, ?)
 	AND (status NOT IN (?, ?) OR expires_at IS NULL OR `+sidecarInsideDeadline+`)
 	AND (status <> ? OR reserved_at IS NULL OR `+sidecarInsideLease+`)`, args...).
 		First(&review).
@@ -901,9 +887,9 @@ func takeApprovedSidecarReview(db *gorm.DB, orgID, reviewID string, now time.Tim
 		res := tx.Exec(`
 		UPDATE private.reviews
 		SET status = ?, reserved_at = ?
-		WHERE org_id = ? AND id = ? AND status = ? AND sidecar_id IS NOT NULL AND approver_type = ?
+		WHERE org_id = ? AND id = ? AND status = ? AND sidecar_id IS NOT NULL
 		AND (expires_at IS NULL OR `+sidecarInsideDeadline+`)`,
-			status, reservedAt, orgID, reviewID, ReviewStatusApproved, ApproverTypeHuman, now)
+			status, reservedAt, orgID, reviewID, ReviewStatusApproved, now)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -1005,17 +991,10 @@ func spendLapsedReservationsTx(tx *gorm.DB, now time.Time, scope string, args ..
 // display is the reviewer's text (apisidecar displayStatement): raw binary bytes
 // fail the JSONB blob write. The approval binds to rev.StatementHash. A lapsed holder of the same key
 // is expired first in the transaction, and its ids are returned; a reservation past its lease is spent.
-//
-// A review the approval agent decided is written decided, with no statement
-// hash: no filing matches it, and the unique indexes skip it.
 func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string) ([]string, error) {
 	// CreatedAt is the expiry clock: a zero one would expire no lapsed holder.
 	if rev.CreatedAt.IsZero() {
 		return nil, errors.New("a sidecar review needs its creation time")
-	}
-	if rev.DecidedByAgent() && (rev.StatementHash.Valid ||
-		(rev.Status != ReviewStatusApproved && rev.Status != ReviewStatusRejected)) {
-		return nil, errors.New("a review the approval agent decided is approved or rejected, with no statement hash")
 	}
 	var expired []string
 	err := db.Transaction(func(tx *gorm.DB) error {

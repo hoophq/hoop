@@ -25,7 +25,7 @@ func holdingHTTPLane() *Config {
 // nonHoldingHTTPLane is the same lane blocking instead of holding.
 func nonHoldingHTTPLane() *Config {
 	cfg := holdingHTTPLane()
-	cfg.Listeners[0].Analyzer.HighRisk = RiskLevel{Action: "block"}
+	cfg.Listeners[0].Analyzer.HighRisk = "block"
 	cfg.Listeners[0].Analyzer.ApprovalRule = ""
 	return cfg
 }

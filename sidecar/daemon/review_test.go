@@ -456,7 +456,7 @@ func TestAHoldingLaneFilesUnderTheListenerName(t *testing.T) {
 		cp:       cp,
 	}
 	la := laneBlock()
-	la.HighRisk = RiskLevel{Action: "require_review"}
+	la.HighRisk = "require_review"
 	la.ApprovalRule = "payments-approvers"
 
 	pol, err := buildPolicy("payments", GuardrailsConfig{}, la, nil, nil, deps)
@@ -498,7 +498,7 @@ func TestAnObservingLaneRecordsTheHoldAndFilesNothing(t *testing.T) {
 		cp:       cp,
 	}
 	la := laneBlock()
-	la.HighRisk = RiskLevel{Action: "require_review"}
+	la.HighRisk = "require_review"
 	la.ApprovalRule = "payments-approvers"
 
 	pol, err := buildPolicy("payments", GuardrailsConfig{Mode: ModeObserve}, la, nil, nil, deps)
@@ -530,7 +530,7 @@ func TestReviewerForFilesOnlyWhereItShould(t *testing.T) {
 	deps := &analyzerDeps{cp: &controlPlane{url: "https://cp.example.com", cred: tokenCredential("t")}}
 	holding := func() *LaneAnalyzerConfig {
 		la := laneBlock()
-		la.HighRisk = RiskLevel{Action: "require_review"}
+		la.HighRisk = "require_review"
 		la.ApprovalRule = "payments-approvers"
 		return la
 	}
@@ -574,8 +574,8 @@ func TestADecideDenialOnAHoldingLaneFilesNothing(t *testing.T) {
 		cp:       cp,
 	}
 	la := laneBlock()
-	la.HighRisk = RiskLevel{Action: "require_review"}
-	la.MediumRisk = RiskLevel{Action: "defer"}
+	la.HighRisk = "require_review"
+	la.MediumRisk = "defer"
 	la.ApprovalRule = "payments-approvers"
 
 	pol, err := buildPolicy("payments", GuardrailsConfig{}, la, &OPAConfig{URL: opa.URL}, nil, deps)
