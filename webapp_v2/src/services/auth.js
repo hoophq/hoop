@@ -1,4 +1,4 @@
-import api from './api';
+import api, { storeRenewedToken } from './api';
 
 const AUTH_ENDPOINTS = {
   LOCAL_LOGIN: '/localauth/login',
@@ -96,6 +96,18 @@ export const authService = {
   async getCurrentUser() {
     const response = await api.get(AUTH_ENDPOINTS.USER);
     return response.data;
+  },
+
+  // The user `token` belongs to. Over fetch, outside the api.js interceptors:
+  // it asks about one given token, and a 401 for it must not sign out the
+  // token that is current by the time it answers.
+  async getUserForToken(token) {
+    const res = await fetch(`${api.defaults.baseURL}${AUTH_ENDPOINTS.USER}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    storeRenewedToken(token, res.headers);
+    if (!res.ok) throw new Error(`userinfo failed with status ${res.status}`);
+    return res.json();
   },
 
   // Get server info (license, features)

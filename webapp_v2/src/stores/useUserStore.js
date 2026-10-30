@@ -211,13 +211,15 @@ export const useUserStore = create((set, get) => ({
 // (a sign-in in that tab): reload, so every store and the CLJS app start over
 // as that account. The same account (a renewal in that tab): nothing changes.
 window.addEventListener('storage', async (event) => {
-  if (event.key !== 'jwt-token' || !event.newValue) return
-  const shown = useUserStore.getState().user?.id
-  if (!shown) return
+  const token = event.newValue
+  if (event.key !== 'jwt-token' || !token || !useUserStore.getState().user) return
   try {
-    const user = await authService.getCurrentUser()
-    if (user?.id && user.id !== shown) window.location.reload()
+    const user = await authService.getUserForToken(token)
+    // A newer token replaced this one while the check ran: its own check decides.
+    if (localStorage.getItem('jwt-token') !== token) return
+    const shown = useUserStore.getState().user?.id
+    if (user?.id && shown && user.id !== shown) window.location.reload()
   } catch {
-    // A 401 sends this tab to /login in the api.js interceptor.
+    // A token the gateway refuses: the next request of this tab signs it out.
   }
 })
