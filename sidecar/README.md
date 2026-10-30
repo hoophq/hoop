@@ -3341,7 +3341,7 @@ guardrails:                      # every lane inherits it, mcp lanes too
 listeners:
   - name: github-mcp
     protocol: mcp
-    listen: 127.0.0.1:18901      # loopback only until the lane authenticates callers (RD-462)
+    listen: 127.0.0.1:18901      # loopback only until the lane authenticates callers (ENG-963)
     upstream: https://api.githubcopilot.com/mcp/   # the MCP endpoint, with its path
     upstream_tls: {ca_file: /etc/ssl/cert.pem}
     idle_timeout_sec: 1800       # an idle MCP session ends after this; default 30 minutes
@@ -3380,14 +3380,14 @@ change to the lane itself (`upstream`, `listen`, the `mcp_gateway` block)
 is restart-required, as for every listener fact.
 
 What the lane refuses at validate, and why: a `listen` off loopback (no
-caller check yet, RD-462) or without a port; `network: unix` (MCP clients
+caller check yet, ENG-963) or without a port; `network: unix` (MCP clients
 speak TCP); an `upstream` on plain http off loopback; `max_conns` (MCP is
-requests, not connections); `downstream_tls` (RD-462); a `mask` block on
-the lane (RD-373) and an `analyzer` block (RD-372) until those land; a
+requests, not connections); `downstream_tls` (ENG-963); a `mask` block on
+the lane (ENG-965) and an `analyzer` block (ENG-964) until those land; a
 pasted mcpproxy key the block does not map, such as `approval_tools`,
 `command` or `headers`, as `unknown field`. Mask rules inherited from the
 top-level block are accepted, so one file serves every lane, and `-validate`
-notes that they do not apply to this lane until RD-373. `identity_header`
+notes that they do not apply to this lane until ENG-965. `identity_header`
 is accepted and names the caller, only behind a proxy that sets it.
 Sessions live in memory: run one replica, or pin `Mcp-Session-Id` to one.
 

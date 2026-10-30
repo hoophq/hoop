@@ -460,7 +460,7 @@ type ListenerConfig struct {
 	ICA *ICAConfig `json:"ica,omitempty" label:"Citrix ICA" help:"The tenant this listener serves, how it finds the VDA, and the session geometry." protocols:"ica" cap:"ica" ui:"required"`
 
 	// MCPGateway is an mcp lane upstream transport and mcpproxy tool policy
-	// (ADR-0034). Out of the form until RD-466.
+	// (ADR-0034). Out of the form until ENG-959.
 	MCPGateway *MCPGatewayConfig `json:"mcp_gateway,omitempty" cap:"mcp_gateway" ui:"-"`
 
 	// Plugin carries a plug-in lane's options, the `options` its module's
@@ -1633,10 +1633,10 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	if isMCPGateway(lc) {
 		problems = append(problems, validateMCPGatewayLane(lc, name)...)
 		if lc.Mask != nil && lc.Mask.hasRules() {
-			problems = append(problems, name+": a mask block on an mcp listener does not apply yet (RD-373); mask rules inherited from the top level are accepted and noted")
+			problems = append(problems, name+": a mask block on an mcp listener does not apply yet (ENG-965); mask rules inherited from the top level are accepted and noted")
 		}
 		if lc.Analyzer != nil {
-			problems = append(problems, name+": analyzer does not apply to an mcp listener yet (RD-372)")
+			problems = append(problems, name+": analyzer does not apply to an mcp listener yet (ENG-964)")
 		}
 	} else if lc.MCPGateway != nil {
 		problems = append(problems, fmt.Sprintf("%s: an \"mcp_gateway\" block is only valid on an mcp listener, not %s", name, lc.Protocol))

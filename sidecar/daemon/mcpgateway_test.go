@@ -84,8 +84,8 @@ func TestMCPGatewayListenerValidation(t *testing.T) {
 		{`{` + ok + `,"mcp_gateway":{"tool_rate_limits":{"x":0}}}`, "must be positive"},
 		{`{` + ok + `,"mcp_gateway":{"approval_tools":["x"]}}`, "unknown field"},
 		{`{"name":"m","protocol":"postgres","listen":"127.0.0.1:1","upstream":"h:5432","mcp_gateway":{}}`, "only valid on an mcp listener"},
-		{`{` + ok + `,"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}}`, "RD-373"},
-		{`{` + ok + `,"analyzer":{"trigger":{"operations":["delete"]}}}`, "RD-372"},
+		{`{` + ok + `,"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}}`, "ENG-965"},
+		{`{` + ok + `,"analyzer":{"trigger":{"operations":["delete"]}}}`, "ENG-964"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1","upstream":"https://h/mcp"}`, "host:port"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"http://h/mcp"}`, "loopback only"},
 	}
@@ -210,7 +210,7 @@ func TestMCPLaneRuleSwapEndsSessions(t *testing.T) {
 
 // Mask rules inherited from the top level reach an mcp lane, so one file
 // serves every lane and the ADR-0034 example validates; Validate notes that
-// they do not apply to this lane until RD-373.
+// they do not apply to this lane until ENG-965.
 func TestMCPGatewayNotesInheritedMaskRules(t *testing.T) {
 	cfg, err := LoadConfigBytes([]byte(`{"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]},"listeners":[` + mcpLane + `]}`))
 	if err != nil {
@@ -222,7 +222,7 @@ func TestMCPGatewayNotesInheritedMaskRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if notes := strings.Join(info[0].Notes, "\n"); !strings.Contains(notes, "RD-373") {
+	if notes := strings.Join(info[0].Notes, "\n"); !strings.Contains(notes, "ENG-965") {
 		t.Fatalf("notes lack the mask note: %s", notes)
 	}
 }

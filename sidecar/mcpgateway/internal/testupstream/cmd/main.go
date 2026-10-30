@@ -1,4 +1,4 @@
-// Command upstream serves the RD-379 test MCP server.
+// Command upstream serves the ENG-987 test MCP server.
 package main
 
 import (
