@@ -205,3 +205,19 @@ export const useUserStore = create((set, get) => ({
     })
   },
 }))
+
+// Another tab stored a token. Every request reads the token from localStorage,
+// so this tab now sends that one: ask the gateway whose it is. Another account
+// (a sign-in in that tab): reload, so every store and the CLJS app start over
+// as that account. The same account (a renewal in that tab): nothing changes.
+window.addEventListener('storage', async (event) => {
+  if (event.key !== 'jwt-token' || !event.newValue) return
+  const shown = useUserStore.getState().user?.id
+  if (!shown) return
+  try {
+    const user = await authService.getCurrentUser()
+    if (user?.id && user.id !== shown) window.location.reload()
+  } catch {
+    // A 401 sends this tab to /login in the api.js interceptor.
+  }
+})
