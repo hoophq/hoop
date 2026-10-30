@@ -89,6 +89,16 @@ type checkedFlusher interface {
 	FlushChecked(mask func(column string, value []byte) []byte) ([]byte, error)
 }
 
+// streamEnder is a codec that completes a statement only when the server
+// stream ends (libhoop codec/http EndOfStream): a close-delimited HTTP
+// body has no length and no terminator, so its response statement exists
+// only once the upstream closes. Optional; the gate asks at
+// FlushResponseChecked, before the reframer releases what it holds, so the
+// audit row precedes the last bytes out.
+type streamEnder interface {
+	EndOfStream(dir inspect.Direction) []inspect.Statement
+}
+
 // responseStarter is a Reframer that knows whether the response in progress
 // already went out in part (libhoop codec/http ResponseStarted).
 type responseStarter interface {
@@ -796,6 +806,7 @@ func (g *Gate) FlushResponse() []byte {
 // held its head, so nothing of it reached the client: the relay answers
 // with its deny frame. The refusal is audited and counted here.
 func (g *Gate) FlushResponseChecked() ([]byte, error) {
+	g.endOfStream(context.Background())
 	if g.reframer == nil {
 		return nil, nil
 	}
@@ -838,6 +849,40 @@ func (g *Gate) FlushResponseChecked() ([]byte, error) {
 func (g *Gate) DiscardResponse() {
 	if g.reframer != nil {
 		g.reframer.Flush(nil)
+	}
+}
+
+// endOfStream judges the server statements a codec completes only at
+// stream end. Each takes the path a decoded response takes in inspect:
+// the exchange it answers, the request it releases once judged, then
+// policy, audit and the counters through judge. A denial here is moot,
+// the upstream has already closed, but the trail still records it.
+func (g *Gate) endOfStream(ctx context.Context) {
+	if g.server == nil {
+		return
+	}
+	ender, ok := g.server.Codec().(streamEnder)
+	if !ok {
+		return
+	}
+	stmts := ender.EndOfStream(inspect.FromServer)
+	if len(stmts) == 0 {
+		return
+	}
+	var finals int
+	if g.creds != nil {
+		defer func() { g.releaseResponses(finals) }()
+	}
+	for _, stmt := range stmts {
+		if isFinalHTTPResponse(stmt) {
+			g.answerExchange(ctx, stmt)
+			if g.creds != nil {
+				finals++
+			}
+		}
+		if j := g.judge(ctx, stmt); j.refusal != nil {
+			return
+		}
 	}
 }
 
