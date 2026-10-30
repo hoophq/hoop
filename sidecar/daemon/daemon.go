@@ -612,6 +612,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkICA(cfg); err != nil {
 		return nil, err
 	}
+	if err := checkMCPGateway(cfg); err != nil {
+		return nil, err
+	}
 	if err := checkTelemetry(cfg); err != nil {
 		return nil, err
 	}
@@ -684,6 +687,17 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 				return nil, err // buildICAServer names the lane
 			}
 			notes = append(notes, srv.Notes()...)
+			_ = srv.Close()
+		}
+		if isMCPGateway(ln.cfg) {
+			srv, _, err := buildMCPGatewayServer(ln, cfg.Audit, nil, validationLog)
+			if err != nil {
+				return nil, err
+			}
+			notes = append(notes, srv.Notes()...)
+			if _, _, mc := cfg.resolve(ln.cfg); mc.hasRules() {
+				notes = append(notes, "mcp: mask rules reach this lane from the top-level block and do not apply to it yet")
+			}
 			_ = srv.Close()
 		}
 		out = append(out, LaneInfo{
@@ -892,6 +906,9 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkICA(cfg); err != nil {
 		return err
 	}
+	if err := checkMCPGateway(cfg); err != nil {
+		return err
+	}
 	if err := checkTelemetry(cfg); err != nil {
 		return err
 	}
@@ -1079,6 +1096,16 @@ func Run(cfg *Config, det Plugin) error {
 			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, isrv})
 			swappers[ln.name] = rules
+		case isMCPGateway(ln.cfg):
+			msrv, rules, serr := buildMCPGatewayServer(ln, cfg.Audit, auditSink, log)
+			if serr != nil {
+				return serr
+			}
+			endpoints = append(endpoints, msrv)
+			endpointNames = append(endpointNames, ln.name)
+			endpointProtocols = append(endpointProtocols, ln.cfg.Protocol)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, msrv})
+			swappers[ln.name] = mcpLaneRules{liveRules: rules, srv: msrv}
 		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), cfg.reviewSettler(log), log)
 			if serr != nil {
@@ -1488,7 +1515,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if plugin != nil {
 			pluginFactory = factory
 		}
-		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		// An mcp lane masks nothing yet: inherited rules are accepted and
+		// Validate notes them, so one mask block can serve every lane.
+		var masker gate.Masker
+		if !isMCPGateway(lc) {
+			masker, err = buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasSchema(), pluginFactory)
+		}
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue

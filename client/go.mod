@@ -30,6 +30,7 @@ require (
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/ica v0.0.0
+	github.com/hoophq/hoop/sidecar/mcpgateway v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/telemetry/otlp v0.0.0-00010101000000-000000000000
 	github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33
@@ -320,6 +321,8 @@ replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../sidecar/analyzer/ve
 replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../sidecar/descriptors/gcs
 
 replace github.com/hoophq/hoop/sidecar/mcp => ../sidecar/mcp
+
+replace github.com/hoophq/hoop/sidecar/mcpgateway => ../sidecar/mcpgateway
 
 replace github.com/hoophq/hoop/sidecar/ica => ../sidecar/ica
 

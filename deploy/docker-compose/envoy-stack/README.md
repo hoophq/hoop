@@ -131,6 +131,11 @@ tokeninfo and Connect Gateway, so nothing touches Google. It shows
 gateway prefix, `kubectl exec` over the HTTP/1.1 route, and the `Via` loop
 refusal when the MITM also catches the sidecar's own egress.
 
+[`mcp/`](mcp/README.md) runs one MCP session through a `protocol: mcp` lane
+in front of a test MCP server: `initialize`, `tools/list`, an allowed call,
+a call a guardrail rule denies and a call `mcp_gateway` denies, then the
+audit rows. It runs without Envoy: the lane binds loopback only.
+
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
 
