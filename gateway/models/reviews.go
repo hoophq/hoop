@@ -678,6 +678,23 @@ func UpdateReviewStatus(orgID, id string, status ReviewStatusType) error {
 	return nil
 }
 
+// MarkReviewProcessing sets a one-time review to PROCESSING and records who runs
+// it, in one update. Callers call it on an APPROVED review, as they did with
+// UpdateReviewStatus. executedBy is an email; an empty one stores NULL. It
+// returns gorm.ErrRecordNotFound when no review has this id.
+func MarkReviewProcessing(db *gorm.DB, orgID, id, executedBy string) error {
+	res := db.Exec(`UPDATE private.reviews SET status = ?, executed_by = NULLIF(?, '')
+	WHERE org_id = ? AND id = ?`,
+		ReviewStatusProcessing, executedBy, orgID, id)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // SetReviewStatusExecutedIfFinished settles the one-time review of the given
 // session as EXECUTED once the session has finished. A review stays in
 // PROCESSING while the execution runs in the agent (legacy rows may hold

@@ -46,6 +46,14 @@ export const HIDDEN_METADATA_KEYS = new Set([
   'sidecar_session_id',
 ])
 
+// Who ran an approved review, when it was not the user who created the session
+// (NB12). A review the MCP federation reset to APPROVED did not finish its run.
+export function executedBy({ review, user } = {}) {
+  const executor = review?.executed_by
+  if (!executor || executor === user) return null
+  return review.status === 'PROCESSING' || review.status === 'EXECUTED' ? executor : null
+}
+
 // The insight cards by tab (NB19): the AI Session Analyzer and the input
 // guardrails judged the input, the output guardrails the output. A guardrail
 // entry with no direction is an input rule, as the card labels it.

@@ -10,6 +10,7 @@ import {
   ChevronUp,
   CircleCheck,
   CircleUser,
+  CirclePlay,
   ExternalLink,
   FastForward,
   Hash,
@@ -25,6 +26,7 @@ import { formatFullDate } from '@/utils/datetime'
 import InfoRow from '../components/InfoRow'
 import ReviewBadge from '../components/ReviewBadge'
 import SessionStatusBadge from '../components/SessionStatusBadge'
+import { executedBy } from '../sessionState'
 import classes from './InfoModule.module.css'
 
 // The module always shows its first three details; "See more" shows the rest.
@@ -82,6 +84,7 @@ export default function InfoModule({ session }) {
   const jiraUrl = session.integrations_metadata?.jira_issue_url
   const aiAction = session.ai_analysis?.action
   const credentialSession = session.metadata?.credential_session
+  const executor = executedBy(session)
 
   const rows = [
     <InfoRow key="first" icon={BoxIcon} label={identity.first[0]}>
@@ -108,6 +111,13 @@ export default function InfoModule({ session }) {
         </Text>
       </Group>
     </InfoRow>,
+    executor && (
+      <InfoRow key="executed" icon={CirclePlay} label="Executed by">
+        <Text size="sm" fw={500}>
+          {executor}
+        </Text>
+      </InfoRow>
+    ),
     <InfoRow key="created" icon={CalendarArrowUp} label="Created at">
       <Text size="sm" fw={500}>
         {formatFullDate(session.start_date)}

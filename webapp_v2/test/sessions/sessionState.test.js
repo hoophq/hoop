@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blockReasonTab, insightsByTab, isOutputHidden, sessionStatusKey } from '@/features/SessionDetails/sessionState'
+import { blockReasonTab, executedBy, insightsByTab, isOutputHidden, sessionStatusKey } from '@/features/SessionDetails/sessionState'
 
 describe('sessionStatusKey', () => {
   it.each([
@@ -53,5 +53,19 @@ describe('insights by tab (NB19)', () => {
     expect(blockReasonTab({ guardrails_info: [output, input] })).toBe('input')
     expect(blockReasonTab({ ai_analysis: { action: 'allow_execution' } })).toBe(null)
     expect(blockReasonTab({})).toBe(null)
+  })
+})
+
+describe('executed by (NB12)', () => {
+  const review = (status, executor) => ({ status, executed_by: executor })
+  it('names who ran the review when it was not the creator', () => {
+    expect(executedBy({ user: 'owner@x.com', review: review('EXECUTED', 'admin@x.com') })).toBe('admin@x.com')
+    expect(executedBy({ user: 'owner@x.com', review: review('PROCESSING', 'admin@x.com') })).toBe('admin@x.com')
+  })
+  it('hides the row for the creator, an older review and a reset run', () => {
+    expect(executedBy({ user: 'owner@x.com', review: review('EXECUTED', 'owner@x.com') })).toBe(null)
+    expect(executedBy({ user: 'owner@x.com', review: review('EXECUTED', undefined) })).toBe(null)
+    expect(executedBy({ user: 'owner@x.com', review: review('APPROVED', 'admin@x.com') })).toBe(null)
+    expect(executedBy({ user: 'owner@x.com' })).toBe(null)
   })
 })
