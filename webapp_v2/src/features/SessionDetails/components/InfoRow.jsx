@@ -16,7 +16,7 @@ export default function InfoRow({ icon: Icon, label, children }) {
   return (
     <Group gap="smAlt" wrap="nowrap" mih={32}>
       <Group gap="smAlt" w={160} wrap="nowrap" flex="none">
-        {Icon && <Icon size={20} color="var(--mantine-color-dimmed)" aria-hidden />}
+        {Icon && <Icon size={20} color="var(--mantine-color-dimmed)" className={classes.icon} aria-hidden />}
         <Tooltip label={label} disabled={!cut}>
           <Text ref={labelRef} size="sm" c="dimmed" truncate onMouseEnter={measure} onFocus={measure}>
             {`${label}:`}

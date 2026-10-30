@@ -53,11 +53,16 @@ export function utcTimeToDisplay(hhmm) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-// A window that ends before it starts crosses midnight (22:00 to 02:00).
+const MS_PER_MINUTE = 60 * 1000
+
+// A window that ends before it starts crosses midnight (22:00 to 02:00). It
+// ends at the start of its last minute, to the millisecond, as the gateway
+// checks it (withinTimeWindow in run-exec.go): 02:00:30 is outside.
 export function isWithinTimeWindow(startUtc, endUtc, now = new Date()) {
   if (!startUtc || !endUtc) return false
-  const current = now.getUTCHours() * 60 + now.getUTCMinutes()
-  const start = toMinutes(startUtc)
-  const end = toMinutes(endUtc)
+  const current =
+    (now.getUTCHours() * 60 + now.getUTCMinutes()) * MS_PER_MINUTE + now.getUTCSeconds() * 1000 + now.getUTCMilliseconds()
+  const start = toMinutes(startUtc) * MS_PER_MINUTE
+  const end = toMinutes(endUtc) * MS_PER_MINUTE
   return start <= end ? current >= start && current <= end : current >= start || current <= end
 }

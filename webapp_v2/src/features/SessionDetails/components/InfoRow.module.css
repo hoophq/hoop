@@ -2,3 +2,8 @@
 .value {
   overflow-wrap: anywhere;
 }
+
+/* A long label is cut, never the icon beside it. */
+.icon {
+  flex-shrink: 0;
+}

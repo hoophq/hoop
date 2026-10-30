@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Modal from '@/components/Modal'
 import { useSessionDetailsStore } from '@/stores/useSessionDetailsStore'
 import Header from './sections/Header'
@@ -15,24 +15,32 @@ const MODAL_WIDTH = 1276
 const OVERLAP_SLACK = 24
 
 // Whether content scrolls behind the action bar (Figma "Main Action Bar", nice
-// to have): the bar then has a border and a translucent fill.
+// to have): the bar then has a border and a translucent fill. The modal mounts
+// its body after the first render, so the box arrives through a callback ref;
+// the children it observes change as the session loads.
 function useOverlap() {
-  const ref = useRef(null)
+  const [box, setBox] = useState(null)
   const [overlap, setOverlap] = useState(false)
   const measure = useCallback(() => {
-    const el = ref.current
-    if (el) setOverlap(el.scrollHeight - el.scrollTop - el.clientHeight > OVERLAP_SLACK)
-  }, [])
+    if (box) setOverlap(box.scrollHeight - box.scrollTop - box.clientHeight > OVERLAP_SLACK)
+  }, [box])
   useEffect(() => {
-    const el = ref.current
-    if (!el) return undefined
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    for (const child of el.children) observer.observe(child)
-    measure()
-    return () => observer.disconnect()
-  })
-  return { ref, overlap, onScroll: measure }
+    if (!box) return undefined
+    const sizes = new ResizeObserver(measure)
+    const observe = () => {
+      sizes.disconnect()
+      sizes.observe(box)
+      for (const child of box.children) sizes.observe(child)
+    }
+    const children = new MutationObserver(observe)
+    children.observe(box, { childList: true })
+    observe()
+    return () => {
+      children.disconnect()
+      sizes.disconnect()
+    }
+  }, [box, measure])
+  return { ref: setBox, overlap, onScroll: measure }
 }
 
 export default function SessionDetailsModal() {

@@ -40,6 +40,17 @@ describe('maskingAnalytics', () => {
     })
   })
 
+  it('splits the joined info type of a sidecar report (G3)', () => {
+    const sidecar = { items: [{ info_type: 'email+ssn', redact_total: 3 }], total_redact_count: 3 }
+    expect(maskingAnalytics(sidecar, {})).toEqual({
+      items: [
+        { infoType: 'email', count: 3 },
+        { infoType: 'ssn', count: 3 },
+      ],
+      total: 3,
+    })
+  })
+
   it('falls back to the agent metrics, then to the sidecar metrics', () => {
     const empty = { items: [], total_redact_count: 0 }
     expect(maskingAnalytics(empty, { metrics: { data_analyzer: { PERSON: 2 } } })).toEqual({

@@ -6,12 +6,15 @@ import (
 )
 
 func TestWithinTimeWindow(t *testing.T) {
-	at := func(hhmm string) time.Time {
-		v, err := time.Parse("15:04", hhmm)
+	at := func(clock string) time.Time {
+		if len(clock) == len("15:04") {
+			clock += ":00"
+		}
+		v, err := time.Parse("15:04:05", clock)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return time.Date(2026, 10, 30, v.Hour(), v.Minute(), 0, 0, time.UTC)
+		return time.Date(2026, 10, 30, v.Hour(), v.Minute(), v.Second(), 0, time.UTC)
 	}
 	for _, tc := range []struct {
 		start, end, now string
@@ -28,6 +31,9 @@ func TestWithinTimeWindow(t *testing.T) {
 		{"22:00", "02:00", "00:00", true},
 		{"22:00", "02:00", "01:30", true},
 		{"22:00", "02:00", "02:00", true},
+		// The window ends at the start of its last minute; the web app agrees
+		// (webapp_v2/test/sessions/timeWindow.test.js).
+		{"22:00", "02:00", "02:00:30", false},
 		{"22:00", "02:00", "02:01", false},
 		{"22:00", "02:00", "12:00", false},
 	} {

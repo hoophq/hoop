@@ -46,6 +46,21 @@ export const HIDDEN_METADATA_KEYS = new Set([
   'sidecar_session_id',
 ])
 
+// The gateway serves a session file to its owner, an admin or an auditor
+// (session.go); NB01's input Download shows only to them. The web app cannot
+// name the auditor group (AUDITOR_USERNAME), so an auditor does not see it.
+export function canDownloadInput(session, { user, isAdmin } = {}) {
+  return Boolean(isAdmin) || (Boolean(session?.user_id) && session.user_id === user?.id)
+}
+
+// The badge of a review or of one of its groups. A review that runs
+// (PROCESSING) or ran (EXECUTED) was approved first (matrix E1). REVOKED,
+// UNKNOWN and EXPIRED draw no badge.
+export function reviewBadgeStatus(status) {
+  if (status === 'PROCESSING' || status === 'EXECUTED') return 'APPROVED'
+  return ['APPROVED', 'PENDING', 'REJECTED'].includes(status) ? status : null
+}
+
 // Who ran an approved review, when it was not the user who created the session
 // (NB12). A review the MCP federation reset to APPROVED did not finish its run.
 export function executedBy({ review, user } = {}) {

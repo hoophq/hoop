@@ -8,6 +8,10 @@
 ;; details: it listens to this event on window (features/SessionDetails).
 (def ^:private open-event "hoop:session-details-open")
 
+;; React sends this one on window after its details change a session (a
+;; decision, an execution, a kill, a re-run; stores/useSessionDetailsStore).
+(def ^:private changed-event "hoop:session-details-changed")
+
 (defn- react-details? [db]
   (and (shell/react-shell?)
        (get-in db [:gateway->info :data :feature_flags :experimental.sessions_react] false)))
@@ -35,3 +39,14 @@
      {:fx [[:dispatch [:modal->open {:id "session-details"
                                      :maxWidth "95vw"
                                      :content [session-details/main session]}]]]})))
+
+;; The list behind the React details reads its rows again, as it does after the
+;; same actions in the ClojureScript details. Other pages fetch nothing.
+(rf/reg-event-fx
+ :session-details/changed
+ (fn [{:keys [db]} _]
+   (when (#{:sessions-panel :session-details-panel} (:active-panel db))
+     {:fx [[:dispatch [:audit->get-sessions]]]})))
+
+(defonce ^:private changed-listener
+  (.addEventListener js/window changed-event #(rf/dispatch [:session-details/changed])))

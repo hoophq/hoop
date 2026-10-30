@@ -31,7 +31,7 @@ export function maskingAnalytics(report, session) {
   const items = report?.items || []
   if (items.length || report?.total_redact_count > 0) {
     return {
-      items: items.map((item) => ({ infoType: item.info_type, count: item.redact_total })),
+      items: splitJoined(items.map((item) => ({ infoType: item.info_type, count: item.redact_total }))),
       total: report.total_redact_count ?? items.reduce((sum, item) => sum + (item.redact_total || 0), 0),
     }
   }
@@ -47,8 +47,9 @@ export function maskingAnalytics(report, session) {
 const sumCounts = (items) => items.reduce((sum, item) => sum + (Number(item.count) || 0), 0)
 
 // The gateway files the entities one sidecar event masked as one info type,
-// "email+ssn", and counts the event's cells once (sidecarsessions.go). Each
-// entity is a category; the volume stays the event's.
+// "email+ssn", and counts the event's cells once (sidecarsessions.go), in the
+// session metrics and in its report alike. Each entity is a category; the
+// volume stays the event's. An info type with no "+" passes as it is.
 function splitJoined(items) {
   const byType = new Map()
   for (const { infoType, count } of items) {

@@ -11,7 +11,10 @@ describe('recordingFormat matches the ClojureScript vectors', () => {
 describe('outputViewer', () => {
   it.each([
     [{ verb: 'exec', type: 'custom', connection_subtype: 'rdp' }, 'exec'],
-    [{ verb: 'connect', status: 'open', type: 'custom', connection_subtype: 'rdp' }, 'live'],
+    // P2: an open RDP session does not tail its bitmaps as text.
+    [{ verb: 'connect', status: 'open', type: 'custom', connection_subtype: 'rdp' }, 'rdp'],
+    [{ verb: 'connect', status: 'open', recording_format: 'rdp' }, 'rdp'],
+    [{ verb: 'connect', status: 'open', type: 'custom', connection_subtype: 'bash' }, 'live'],
     [{ verb: 'connect', status: 'done', type: 'database', connection_subtype: 'postgres' }, 'live'],
     [{ verb: 'connect', status: 'done', type: 'custom', connection_subtype: 'rdp' }, 'rdp'],
     [{ verb: 'connect', status: 'done', recording_format: 'ssh' }, 'ssh'],

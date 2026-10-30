@@ -17,10 +17,11 @@ export function recordingFormat(session) {
 // The output viewer of a session: 'exec', 'live', 'rdp', 'ssh', 'pty' or 'raw'.
 // An exec keeps its viewer whatever it recorded. A connect session tails live
 // while it is open; a finished postgres one keeps the tail, ended, because it
-// decodes the queries. Other finished sessions replay their recording.
+// decodes the queries. Other finished sessions replay their recording. An RDP
+// session never tails: its events are bitmaps, not text (matrix P2).
 export function outputViewer(session) {
   if (session.verb === 'exec') return 'exec'
-  if (session.verb === 'connect') {
+  if (session.verb === 'connect' && recordingFormat(session) !== 'rdp') {
     const live = session.status === 'open'
     if (live || session.connection_subtype === 'postgres') return 'live'
   }
