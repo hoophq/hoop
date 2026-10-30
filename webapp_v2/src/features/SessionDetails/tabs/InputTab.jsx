@@ -26,12 +26,12 @@ export default function InputTab({ session }) {
   const largeInput = useSessionDetailsStore((s) => s.largeInput)
   const disableDownload = useUserStore((s) => s.disableSessionsDownload)
   const user = useUserStore((s) => s.user)
-  const isAdmin = useUserStore((s) => s.isAdmin)
+  const role = useUserStore((s) => s.role)
   const download = () => downloadInput(session.id)
   // The large-input card offers Download to every user, as the ClojureScript
   // one did (matrix FD16); the gateway refuses who it does not serve.
   const onLargeDownload = disableDownload ? undefined : download
-  const onDownload = !disableDownload && canDownloadInput(session, { user, isAdmin }) ? download : undefined
+  const onDownload = !disableDownload && canDownloadInput(session, { user, role }) ? download : undefined
 
   const insights = <Insights session={session} tabs={['input']} />
 

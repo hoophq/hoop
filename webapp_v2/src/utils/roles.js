@@ -1,5 +1,7 @@
 export const ROLE_ADMIN = 'admin'
 export const ROLE_APPROVER = 'approver'
+// /userinfo reports it for the auditor group when the user is not admin or approver.
+export const ROLE_AUDITOR = 'auditor'
 export const ROLE_STANDARD = 'standard'
 
 // standard is the absence of a reserved group, never a group itself. Names come
