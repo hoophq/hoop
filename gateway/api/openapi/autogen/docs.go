@@ -13627,7 +13627,7 @@ const docTemplate = `{
                     "example": 900
                 },
                 "reviewers_groups": {
-                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement.",
+                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement. Ignored when\nsidecar_spec has approvers and names its own approval rule: the groups\nevery human level shares apply, else the admin group.",
                     "type": "array",
                     "items": {
                         "type": "string"
