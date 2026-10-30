@@ -81,6 +81,18 @@ func TestReviewToMapAddsTheDeadlineOnlyWhenSet(t *testing.T) {
 	}
 }
 
+// A review filed by risk level shows the level; any other review has no key.
+func TestReviewToMapShowsTheRiskLevel(t *testing.T) {
+	rev := &models.Review{ID: "rev-1", Status: models.ReviewStatusPending}
+	if _, ok := reviewToMap(rev)["risk_level"]; ok {
+		t.Error("a review with no level shows risk_level")
+	}
+	rev.RiskLevel = sql.NullString{String: "high", Valid: true}
+	if got := reviewToMap(rev)["risk_level"]; got != "high" {
+		t.Errorf("risk_level = %v, want high", got)
+	}
+}
+
 // reviews_update answers a refused decision as a tool error, not a Go error.
 func TestReviewsUpdateAnswersExpired(t *testing.T) {
 	for _, tt := range []struct {

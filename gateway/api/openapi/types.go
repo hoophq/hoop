@@ -4272,7 +4272,9 @@ type AISessionAnalyzerRuleRequest struct {
 	// none set the admin group approves.
 	//
 	// Read only while sidecar_spec holds a statement, directly or through an
-	// ai-handoff level that allows require_approval.
+	// ai-handoff level that allows require_approval. Ignored when
+	// sidecar_spec has approvers and names its own approval rule: the groups
+	// every human level shares apply, else the admin group.
 	ReviewersGroups *[]string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 
 	// Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec
