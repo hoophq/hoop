@@ -213,6 +213,31 @@ func (c *Codec) CredentialHeader() string { return c.creds.header }
 // same way a lifting failure is.
 func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
 	stmts, n, err := c.Inspector.Decode(dir, data)
+	if liftErr := c.fixup(dir, stmts); liftErr != nil {
+		err = errors.Join(liftErr, err)
+	}
+	if c.sql != nil && dir == inspect.FromClient {
+		var sqlErr error
+		stmts, sqlErr = c.withSQL(stmts)
+		if sqlErr != nil {
+			err = errors.Join(sqlErr, err)
+		}
+	}
+	return stmts, n, err
+}
+
+// EndOfStream is libhoop's, followed by the same fixups Decode applies: the
+// response a close-delimited body completes answers the request filter and
+// is scrubbed like any other. A response never fails the lift.
+func (c *Codec) EndOfStream(dir inspect.Direction) []inspect.Statement {
+	stmts := c.Inspector.EndOfStream(dir)
+	_ = c.fixup(dir, stmts)
+	return stmts
+}
+
+// fixup applies the relay's per-statement pass and reports the first
+// lifting failure.
+func (c *Codec) fixup(dir inspect.Direction, stmts []inspect.Statement) error {
 	var liftErr error
 	for i := range stmts {
 		if dir == inspect.FromServer && stmts[i].HTTP != nil && stmts[i].HTTP.StatusCode != 0 {
@@ -224,17 +249,7 @@ func (c *Codec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement,
 			liftErr = e
 		}
 	}
-	if liftErr != nil {
-		err = errors.Join(liftErr, err)
-	}
-	if c.sql != nil && dir == inspect.FromClient {
-		var sqlErr error
-		stmts, sqlErr = c.withSQL(stmts)
-		if sqlErr != nil {
-			err = errors.Join(sqlErr, err)
-		}
-	}
-	return stmts, n, err
+	return liftErr
 }
 
 // withSQL places each request's SQL statements right after it. The order is
