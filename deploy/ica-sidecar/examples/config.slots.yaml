@@ -1,4 +1,5 @@
-# Requires a sidecar built with the new libhoop-ica slot API. Not a live lab profile.
+# Minimal pattern example for libhoop-ica v0.8.0+; not a live lab profile.
+# Complete CPU config and ILB/probe notes: cell/config.yaml and cell/README.md.
 # Preserve the approved runtime OCR/NER/PII overrides for your deployment.
 ica:
   max_sessions: 32
