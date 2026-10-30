@@ -177,11 +177,22 @@ type InputSchema struct {
 	Required   []string            `json:"required"`
 }
 
-// Property is one schema field.
+// Property is one schema field. Items describes an array's elements.
 type Property struct {
-	Type        string   `json:"type"`
-	Description string   `json:"description"`
-	Enum        []string `json:"enum,omitempty"`
+	Type        string    `json:"type"`
+	Description string    `json:"description"`
+	Enum        []string  `json:"enum,omitempty"`
+	Items       *Property `json:"items,omitempty"`
+}
+
+// property renders one tool argument, its array elements included.
+func property(p analyzer.ToolProperty) Property {
+	out := Property{Type: p.Type, Description: p.Description, Enum: p.Enum}
+	if p.Items != nil {
+		items := property(*p.Items)
+		out.Items = &items
+	}
+	return out
 }
 
 // ToolChoice forces the model to call a tool.
@@ -211,7 +222,7 @@ func BuildToolRequest(model string, maxTokens int, s analyzer.Sampling, systemPr
 	for _, s := range specs {
 		props := make(map[string]Property, len(s.Input.Properties))
 		for name, p := range s.Input.Properties {
-			props[name] = Property{Type: p.Type, Description: p.Description, Enum: p.Enum}
+			props[name] = property(p)
 		}
 		tools = append(tools, Tool{
 			Name:        s.Name,

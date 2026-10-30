@@ -116,6 +116,10 @@ type Config struct {
 	Audit  audit.Sink
 	Masker gate.Masker
 
+	// MaskScope is handed to each connection's Gate; see gate.MaskScope.
+	// SwapLane replaces it.
+	MaskScope gate.MaskScope
+
 	// FailOnAuditError makes a failed audit write deny the statement.
 	FailOnAuditError bool
 
@@ -216,6 +220,7 @@ type laneRules struct {
 	policy       policy.Evaluator
 	masker       gate.Masker
 	codecFactory func() inspect.Codec
+	maskScope    gate.MaskScope
 }
 
 // Server accepts connections and relays them through a Gate.
@@ -344,7 +349,8 @@ func NewServer(cfg Config) (*Server, error) {
 		mysqlAuth:           mysqlAuth,
 		mysqlHandshakeSlots: mysqlHandshakeSlots,
 	}
-	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker, codecFactory: cfg.CodecFactory})
+	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker, codecFactory: cfg.CodecFactory,
+		maskScope: cfg.MaskScope})
 	if cfg.Protocol == inspect.HTTP {
 		s.h2 = newH2Lane(s)
 	}
@@ -382,8 +388,12 @@ func (s *Server) releaseMySQLHandshake() {
 // The factory must lift the header NewServer checked. The daemon keeps that
 // true: a change to a listener's credential header or http block is
 // restart-bound, so a reload never reaches here with one.
-func (s *Server) SwapLane(pol policy.Evaluator, masker gate.Masker, codecFactory func() inspect.Codec) {
-	s.rules.Store(&laneRules{policy: pol, masker: masker, codecFactory: codecFactory})
+//
+// maskScope ties a mask the policy applies to one statement to its response;
+// it swaps with the policy that applies such masks.
+func (s *Server) SwapLane(pol policy.Evaluator, masker gate.Masker, codecFactory func() inspect.Codec,
+	maskScope gate.MaskScope) {
+	s.rules.Store(&laneRules{policy: pol, masker: masker, codecFactory: codecFactory, maskScope: maskScope})
 }
 
 // reclaimStaleSocket removes a leftover unix socket file so a restart can
@@ -652,6 +662,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		Policy:           rules.policy,
 		Audit:            s.cfg.Audit,
 		Masker:           rules.masker,
+		MaskScope:        rules.maskScope,
 		FailOnAuditError: s.cfg.FailOnAuditError,
 		CodecFactory:     rules.codecFactory,
 		Metrics:          s.cfg.Metrics,
@@ -886,7 +897,11 @@ func (s *Server) pump(
 				g.DiscardResponse()
 				return
 			}
-			if tail := g.FlushResponse(); len(tail) > 0 {
+			tail, err := g.FlushResponseChecked()
+			if err != nil {
+				log.Warn("response tail dropped at connection end", "error", err)
+			}
+			if len(tail) > 0 {
 				_, _ = dst.Write(tail)
 			}
 		}()

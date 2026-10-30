@@ -119,6 +119,13 @@ type Config struct {
 	// stays out via the analyzer registry, not via an opaque section.
 	Analyzer *AnalyzerConfig `json:"analyzer,omitempty"`
 
+	// RuleLibrary holds the existing Guardrails and Data Masking rules an
+	// analyzer risk level may let the AI apply (ENG-662). They never run
+	// unless the AI applies one to a statement: the rules a listener
+	// attaches keep running as before. A config file writes them here; the
+	// control plane serves here the rules the levels select.
+	RuleLibrary *RuleLibrary `json:"rule_library,omitempty" cap:"analyzer_ai_rules"`
+
 	// Trust adds CA certificates to the host trust store for every outbound
 	// TLS client this process builds. See TrustConfig. Absent is the host
 	// trust store alone, which is every config written before the key.
@@ -1306,6 +1313,7 @@ func (c *Config) validate(onHost bool) error {
 	// limit its license lifts. buildLanes is the single site instead.
 
 	problems = append(problems, c.MCP.validate()...)
+	problems = append(problems, c.RuleLibrary.validate()...)
 	problems = append(problems, c.ICA.validate(onHost, c.Listeners)...)
 	problems = append(problems, c.Telemetry.Validate()...)
 

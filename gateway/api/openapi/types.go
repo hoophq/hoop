@@ -4247,6 +4247,12 @@ type AISessionAnalyzerRuleRequest struct {
 	// defer, and the per-lane cost overrides. It IS the analyzer block the
 	// listener receives.
 	//
+	// ai_rules.<level> may set guardrails and mask, {mode, rules}: the guardrail and data
+	// masking rules of this organization the AI may apply to a statement at that risk level.
+	// mode is existing_only (default) or existing_and_new; rules names library rules, and
+	// absent allows all. Refused on a block or defer level, for an entry with neither, for a
+	// name the library does not hold, and without an Enterprise license.
+	//
 	// Omitted on a rule no sidecar runs.
 	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
 

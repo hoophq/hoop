@@ -1,7 +1,8 @@
-import { Box, Paper, Stack, Text } from '@mantine/core'
+import { Paper, Stack, Text } from '@mantine/core'
 import { Sparkles } from 'lucide-react'
 import Checkbox from '@/components/Checkbox'
 import { HANDOFF_CHOICES, HANDOFF_HOLD } from '@/pages/sidecarRuleVocabulary'
+import CardConnector from '../../components/CardConnector'
 import PromptField from '../../components/PromptField'
 import SettingsCard from '../../components/SettingsCard'
 import { ApproverCard } from './LevelApprover'
@@ -42,13 +43,14 @@ function AllowedActions({ allowed, onAllowed }) {
 }
 
 // The card stack under a hand-off level: the Hand-off card (the agent's
-// prompt and allowed actions) and, when "Hold for approval" is allowed, the
-// Approver card.
+// prompt and allowed actions), the AI policy settings card (`policy`) and,
+// when "Hold for approval" is allowed, the Approver card.
 export default function LevelHandoff({
   handoff,
   approval,
   approvalRule,
   groupOptions,
+  policy,
   onPrompt,
   onAllowed,
   onApprover,
@@ -72,9 +74,15 @@ export default function LevelHandoff({
           <AllowedActions allowed={handoff.allowed} onAllowed={onAllowed} />
         </Stack>
       </SettingsCard>
+      {policy && (
+        <>
+          <CardConnector />
+          {policy}
+        </>
+      )}
       {holds && (
         <>
-          <Box ml={36} w={1} h={24} bg="gray.2" />
+          <CardConnector />
           <ApproverCard
             approval={approval}
             approvalRule={approvalRule}

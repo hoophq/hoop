@@ -1,7 +1,10 @@
 import {
+  AI_RULE_FEATURES,
   APPROVER_HUMAN,
+  appliesAIRules,
   isHandoffAction,
   isHoldAction,
+  readLevelAIRules,
   readLevelApprover,
   readLevelHandoff,
 } from '@/pages/sidecarRuleVocabulary'
@@ -55,16 +58,30 @@ function approverDetail(read, sep) {
 // A held level names its approver in `approvers.<level>` (ENG-680). A hold
 // with no entry is decided through the block's approval rule. A hand-off
 // lists in `handoffs.<level>` the actions its agent may select (ENG-661).
-function riskDetail(spec, level) {
-  const action = spec[level]
+function riskAction(spec, level) {
+  const action = spec[level] ?? ''
   const read = readLevelApprover(spec, level)
   if (isHandoffAction(action)) {
     const allowed = readLevelHandoff(spec, level)?.allowed ?? []
     const parts = allowed.map((a) => (isHoldAction(a) ? `hold: ${approverDetail(read, ' ')}` : a))
     return parts.length > 0 ? `hand-off (${parts.join(', ')})` : 'hand-off'
   }
-  if (!isHoldAction(action)) return RISK_ACTIONS[action] ?? action
+  if (!isHoldAction(action)) return RISK_ACTIONS[action || 'allow'] ?? action
   return `hold (${approverDetail(read, ': ')})`
+}
+
+// The AI rule features `ai_rules.<level>` sets (ENG-662), named as their keys.
+// A block or defer level ignores them, so they are not shown there.
+function aiRuleKeys(spec, level) {
+  if (!appliesAIRules(spec[level])) return []
+  const ai = readLevelAIRules(spec, level)
+  return AI_RULE_FEATURES.map(({ key }) => key).filter((key) => ai[key])
+}
+
+function riskDetail(spec, level) {
+  const ai = aiRuleKeys(spec, level)
+  const action = riskAction(spec, level)
+  return ai.length > 0 ? `${action} + AI rules (${ai.join(', ')})` : action
 }
 
 const MASK_STRATEGY_LABELS = {
@@ -133,7 +150,7 @@ function analyzerDetail(spec) {
     .join(', ')
   const excluded = exclude ? `${exclude} exclusion${exclude > 1 ? 's' : ''}` : null
   const risks = ['high', 'medium', 'low']
-    .filter((level) => spec[level])
+    .filter((level) => spec[level] || aiRuleKeys(spec, level).length > 0)
     .map((level) => `${level}: ${riskDetail(spec, level)}`)
   const prompt = spec.prompt ? 'custom prompt' : null
   // An omitted trigger is not "nothing": declaring the analyzer is the opt-in.

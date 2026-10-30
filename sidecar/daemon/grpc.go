@@ -436,7 +436,9 @@ func buildGRPCServer(
 	if gc.Strict {
 		payloadOpts["strict"] = "true"
 	}
-	if ln.masker != nil {
+	// An AI mask needs the libhoop server to decode responses too, so it
+	// decides the option at build like a mask block (restart-bound).
+	if ln.masker != nil || ln.maskScope == gate.MaskScopeExchange {
 		payloadOpts["mask_responses"] = "true"
 	}
 	if ut := lc.UpstreamTLS; ut != nil {
@@ -515,6 +517,7 @@ func buildGRPCServer(
 				Policy:           live.policy,
 				Audit:            sink,
 				Masker:           live.masker,
+				MaskScope:        live.maskScope,
 				FailOnAuditError: failOnAuditError,
 				Metrics:          ln.metrics,
 				Telemetry:        ln.telemetry,
@@ -891,11 +894,10 @@ func (r *grpcRPCState) responseStatus(
 	return nil
 }
 
+// maskCell masks one decoded field with the lane's masker and the AI mask of
+// this call, if any; the gate holds both.
 func (r *grpcRPCState) maskCell(path string, value []byte) ([]byte, []string, int) {
-	if r.gate.Masker() == nil {
-		return value, nil, 0
-	}
-	return r.gate.Masker().MaskCell(path, value)
+	return r.gate.MaskCell(path, value)
 }
 
 func (r *grpcRPCState) recordMasked(ctx context.Context, entities []string, count int) error {

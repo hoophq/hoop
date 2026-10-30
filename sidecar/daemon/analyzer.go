@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -521,6 +522,11 @@ type LaneAnalyzerConfig struct {
 	// an entry; an entry on another level is refused. See LevelHandoffs.
 	Handoffs *LevelHandoffs `json:"handoffs,omitempty" cap:"analyzer_ai_handoff"`
 
+	// AIRules lets the AI apply rule_library rules, and create new ones,
+	// to a statement each level rates (ENG-662). An entry on a level whose
+	// action applies no AI rule is refused. See LevelAIRules.
+	AIRules *LevelAIRules `json:"ai_rules,omitempty" cap:"analyzer_ai_rules"`
+
 	// Prompt replaces the inherited risk guidance for this lane. This is
 	// where protocol-specific wording belongs: analyzer.prompt reaches
 	// every lane, so SQL advice written there follows an HTTP body to the
@@ -597,6 +603,10 @@ type LaneAnalyzerConfig struct {
 	MaxCalls      int                      `json:"max_calls,omitempty"`
 	RateLimit     *AnalyzerRateLimitConfig `json:"rate_limit,omitempty" cap:"analyzer_rate_limit"`
 	Cache         *AnalyzerCacheConfig     `json:"cache,omitempty"`
+
+	// ai is the block's AI rule options resolved against rule_library,
+	// set by buildLanes on its own copy of the block. Not a config key.
+	ai *laneAIRules
 }
 
 // specFromRule maps a DEPRECATED ai_analysis rule onto the lane block
@@ -1189,7 +1199,7 @@ func buildAnalyzerEvaluator(
 				"send: %s needs a detector, and this build has none", send)
 		}
 	}
-	return analyzer.New(analyzer.Config{
+	acfg := analyzer.Config{
 		Rule:      name,
 		Provider:  ac.provider,
 		Guidance:  guidance,
@@ -1220,7 +1230,19 @@ func buildAnalyzerEvaluator(
 		ReviewMode:    la.ReviewMode,
 		MatchIgnore:   la.MatchIgnore,
 		ReturnNext:    returnNext(ac.mcp),
-	})
+	}
+	switch {
+	case la.ai != nil:
+		acfg.Rules = la.ai.levels
+		acfg.CompileGuardrail = la.ai.compileGuardrail
+		acfg.CompileMask = la.ai.compileMask
+		acfg.OnRuleInvalid = la.ai.onInvalid
+	case len(la.aiRuleLevels()) > 0:
+		// buildLanes resolves the options against rule_library. A block
+		// that skipped it must not run with its AI rules silently off.
+		return nil, errors.New("the AI rule options of this block were not resolved against rule_library")
+	}
+	return analyzer.New(acfg)
 }
 
 // returnNext is the step a return-mode denial names before the resend: the
@@ -1630,6 +1652,7 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 		la.HighRisk, la.MediumRisk, la.LowRisk, where)...)
 	problems = append(problems, validateLevelApprovers(la, where)...)
 	problems = append(problems, validateLevelHandoffs(la, where)...)
+	problems = append(problems, validateLevelAIRules(la, where)...)
 	problems = append(problems, validateTriggerItems(la.Trigger, where)...)
 
 	switch la.Send {

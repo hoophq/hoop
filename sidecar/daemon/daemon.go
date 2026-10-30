@@ -1343,6 +1343,11 @@ type lane struct {
 	policy policy.Evaluator
 	masker gate.Masker
 
+	// maskScope ties a mask the lane's analyzer applies to one statement
+	// to its response (ENG-662); none on a lane whose analyzer masks no
+	// response. See laneMaskScope.
+	maskScope gate.MaskScope
+
 	// codecFactory overrides the registry for this lane. Nil means the
 	// registry default: every non-http lane that did not configure its
 	// codec. An http lane always has one; see laneCodecFactory.
@@ -1454,7 +1459,28 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		pol, err := buildPolicy(name, gc, lc.Analyzer, opa, det, ac)
+		// The block's AI rule options resolve against rule_library on a
+		// copy, so the config keeps what was written.
+		la := lc.Analyzer
+		var aiNotes []string
+		if la != nil {
+			var logger *slog.Logger
+			if ac != nil {
+				logger = ac.log
+			}
+			ai, notes, err := buildLaneAIRules(cfg.RuleLibrary, la, lc, det, logger)
+			if err != nil {
+				problems = append(problems, name+": "+err.Error())
+				continue
+			}
+			if ai != nil {
+				resolved := *la
+				resolved.ai = ai
+				la = &resolved
+			}
+			aiNotes = notes
+		}
+		pol, err := buildPolicy(name, gc, la, opa, det, ac)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -1485,6 +1511,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
 			trustRoots:   roots,
+			maskScope:    laneMaskScope(lc),
 		}
 		// Reported whether or not the lane enforces. An observing lane runs
 		// every one of these, and a reader of the startup log needs to see
@@ -1572,6 +1599,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if lc.Analyzer != nil {
 			ln.notes = append(ln.notes,
 				rateLimitNotes(cfg.Analyzer, lc.Analyzer, "the analyzer block")...)
+			// What the AI rule options do not do, said where -validate
+			// and the startup log read them; none of them refuses the lane.
+			ln.notes = append(ln.notes, aiNotes...)
 		}
 		for _, r := range gc.Rules {
 			if r.Type == policy.MatchAIAnalysis {
@@ -1696,6 +1726,7 @@ func buildServer(
 		Policy:              ln.policy,
 		Audit:               sink,
 		Masker:              ln.masker,
+		MaskScope:           ln.maskScope,
 		FailOnAuditError:    ac.failOnAuditError(),
 		DenyWriter:          proxy.ProtocolDenyWriter{},
 		Answer:              reviewStatusAnswer(lc, ln.name, reviews, log.With("listener", ln.name)),

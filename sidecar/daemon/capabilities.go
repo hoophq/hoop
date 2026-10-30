@@ -371,6 +371,9 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 	if cfg.Guardrails != nil {
 		visit("the configuration", cfg.Guardrails.Rules)
 	}
+	if cfg.RuleLibrary != nil {
+		visit("the configuration's rule_library", cfg.RuleLibrary.Guardrails)
+	}
 	if cfg.Policy != nil {
 		visit("the configuration", cfg.Policy.Rules)
 	}
@@ -399,8 +402,8 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 // and refuses the whole document over one, and the canonical form is what
 // every build reads. approval_mode that disagrees with review_mode is served
 // as written: normalize refuses it, and picking one here would hide that.
-// An approvers or handoffs block that names no level is dropped: it says
-// nothing, and an older build refuses the key.
+// An approvers, handoffs or ai_rules block that names no level is dropped:
+// it says nothing, and an older build refuses the key.
 func ServedForm(cfg Config) Config {
 	listeners := make([]ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
@@ -430,6 +433,9 @@ func ServedForm(cfg Config) Config {
 		}
 		if block.Handoffs != nil && block.Handoffs.isZero() {
 			block.Handoffs = nil
+		}
+		if block.AIRules != nil && block.AIRules.isZero() {
+			block.AIRules = nil
 		}
 		if !reflect.DeepEqual(block, *l.Analyzer) {
 			listeners[i].Analyzer = &block

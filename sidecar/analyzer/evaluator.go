@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -193,9 +194,10 @@ type Config struct {
 	// not called: its hold denies, and policy.Observe records would_deny.
 	Observing bool
 
-	// RecordRedact rewrites the approval agent's and the hand-off agent's
-	// reasons before the audit record keeps them, with the build's detector
-	// whatever the send mode. Nil keeps no free text from either agent.
+	// RecordRedact rewrites the approval, hand-off and rule agents' prose
+	// (reasons, and the definitions and errors of AI rules) before the
+	// audit record keeps it, with the build's detector whatever the send
+	// mode. Nil keeps no free text from any of them.
 	RecordRedact func(string) string
 
 	// Trigger narrows what is classified. A zero Trigger classifies
@@ -318,6 +320,28 @@ type Config struct {
 	// Such a level needs an entry here and a Provider that is a
 	// ToolCaller; an entry for a level with another action is refused.
 	Handoffs map[RiskLevel]Handoff
+
+	// Rules are the AI rule options per risk level (ENG-662): the
+	// guardrails and data masking rules the AI may apply to a statement it
+	// rated, or create for it. Valid on allow, warn, require_review and
+	// ai-handoff levels; New refuses an entry on any other action. Such
+	// a level needs a Provider that is a ToolCaller.
+	Rules map[RiskLevel]LevelRules
+
+	// CompileGuardrail compiles one guardrail, existing or AI-created, the
+	// way the lane compiles a config rule. Nil uses policy.NewRules, which
+	// refuses a pii rule.
+	CompileGuardrail func(policy.Rule) (policy.Evaluator, error)
+
+	// CompileMask compiles one data masking rule, existing or AI-created,
+	// the way the lane compiles a config rule. Required when a level has
+	// mask options.
+	CompileMask func(definition json.RawMessage) (policy.ResponseMask, error)
+
+	// OnRuleInvalid is told about every rule the AI created that failed
+	// validation, so the operator sees it beside the audit record. Nil
+	// reports nothing.
+	OnRuleInvalid func(level RiskLevel, kind string, err error)
 }
 
 // Evaluator classifies statements and turns verdicts into policy decisions.
@@ -347,6 +371,10 @@ type Evaluator struct {
 	// handoffs is the runtime form of Config.Handoffs, per ai-handoff
 	// level.
 	handoffs map[RiskLevel]*handoffLevel
+
+	// ruleLevels is the runtime form of Config.Rules, per level with at
+	// least one rule tool.
+	ruleLevels map[RiskLevel]*ruleLevel
 
 	// reviewWait and reviewPoll pace a hold's wait. Fields rather than the
 	// constants read directly, so a test can shorten them; nothing outside
@@ -462,6 +490,10 @@ func New(cfg Config) (*Evaluator, error) {
 			holds = true
 		}
 	}
+	ruleLevels, err := newRuleLevels(cfg, actions)
+	if err != nil {
+		return nil, err
+	}
 	prompt := BuildSystemPrompt(cfg.Guidance)
 	budget := cfg.Budget
 	if budget == nil {
@@ -474,6 +506,7 @@ func New(cfg Config) (*Evaluator, error) {
 		promptKey:    fingerprint(prompt),
 		agentPrompts: agentPrompts,
 		handoffs:     handoffs,
+		ruleLevels:   ruleLevels,
 		holds:        holds,
 		budget:       budget,
 		reviewWait:   ReviewWait,
@@ -618,6 +651,15 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// hold asked for from inside a Resolve is never run, which would
 		// forward a statement the agent held.
 		return e.applyHandoff(stmt, ec, notes, level, c, e.handoff(ctx, stmt, ec, level, c))
+	}
+
+	if e.ruleLevels[level] != nil {
+		// The rule turn runs before the hold, so an AI guardrail that
+		// matches ends the statement with nothing filed, and an AI mask
+		// is attached before anyone approves the statement.
+		if v, ok := e.enforceRules(stmt, ec, notes, e.ruleTurn(ctx, stmt, ec, level, c)); !ok {
+			return v
+		}
 	}
 
 	if action == ActionRequireReview {
