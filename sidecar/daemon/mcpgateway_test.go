@@ -2,9 +2,14 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -219,5 +224,112 @@ func TestMCPGatewayNotesInheritedMaskRules(t *testing.T) {
 	}
 	if notes := strings.Join(info[0].Notes, "\n"); !strings.Contains(notes, "RD-373") {
 		t.Fatalf("notes lack the mask note: %s", notes)
+	}
+}
+
+// Which rule types judge a tools/call and which judge the catalog
+// (ADR-0034, decision 3).
+func TestMCPLaneRuleTypes(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name, rule               string
+		callAllowed, listAllowed bool
+	}{
+		{"table", `{"name":"r","type":"table","tables":["delete_customer"]}`, false, true},
+		{"table require_table_match", `{"name":"r","type":"table","tables":["delete_customer"],"require_table_match":true}`, false, true},
+		{"deny_words_list in args", `{"name":"r","type":"deny_words_list","words":["prod-db"]}`, false, true},
+		{"deny_words_list in catalog", `{"name":"r","type":"deny_words_list","words":["wipes"]}`, true, false},
+		{"pattern_match", `{"name":"r","type":"pattern_match","pattern_regex":"\"db\":\\s*\"prod-"}`, false, true},
+		{"operation call", `{"name":"r","type":"operation","operations":["call"]}`, false, true},
+		{"metadata mcp.tool", `{"name":"r","type":"metadata","metadata":{"mcp.tool":["delete_customer"]}}`, false, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ln := mcpTestLane(t, `{"guardrails":{"rules":[`+c.rule+`]},"listeners":[`+mcpLane+`]}`)
+			ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), audit.NewMemorySink(16), true, MCPCaller{Subject: "alice"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ls.Close(ctx)
+			if v := ls.ToolCall(ctx, "delete_customer", []byte(`{"db":"prod-db","id":"7"}`)); v.Allowed != c.callAllowed {
+				t.Errorf("tools/call allowed=%v, want %v: %+v", v.Allowed, c.callAllowed, v)
+			}
+			if v := ls.ToolList(ctx, []MCPToolInfo{{Name: "delete_customer", Description: "Wipes one customer"}}); v.Allowed != c.listAllowed {
+				t.Errorf("tools/list allowed=%v, want %v: %+v", v.Allowed, c.listAllowed, v)
+			}
+		})
+	}
+}
+
+// OPA is consulted on every tools/call and on the catalog, with the input
+// document the README shows; `opa: {responses: false}` keeps the catalog
+// from it.
+func TestMCPLaneConsultsOPA(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name, opa, wantDirections string
+	}{
+		{"default", `{"url":%q}`, "client,client,server"},
+		{"responses false", `{"url":%q,"responses":false}`, "client,client"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var (
+				mu     sync.Mutex
+				inputs []map[string]any
+			)
+			opa := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body struct {
+					Input map[string]any `json:"input"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decoding OPA input: %v", err)
+				}
+				mu.Lock()
+				inputs = append(inputs, body.Input)
+				mu.Unlock()
+				allow := fmt.Sprint(body.Input["tables"]) != "[delete_customer]"
+				fmt.Fprintf(w, `{"result":{"allow":%v,"message":"denied by opa"}}`, allow)
+			}))
+			t.Cleanup(opa.Close)
+
+			ln := mcpTestLane(t, fmt.Sprintf(`{"opa":`+c.opa+`,"listeners":[`+mcpLane+`]}`, opa.URL))
+			ls, err := openMCPLaneSession(ctx, ln, newLiveRules(ln), audit.NewMemorySink(16), true, MCPCaller{Subject: "alice", MCPSessionID: "m1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ls.Close(ctx)
+			if v := ls.ToolCall(ctx, "get_file_contents", []byte(`{"path":"README.md"}`)); !v.Allowed {
+				t.Fatalf("get_file_contents denied: %+v", v)
+			}
+			if v := ls.ToolCall(ctx, "delete_customer", []byte(`{"id":"7"}`)); v.Allowed || v.Message != "denied by opa" {
+				t.Fatalf("delete_customer verdict: %+v", v)
+			}
+			if v := ls.ToolList(ctx, []MCPToolInfo{{Name: "get_file_contents", Description: "Read a file"}}); !v.Allowed {
+				t.Fatalf("tools/list denied: %+v", v)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			dirs := make([]string, len(inputs))
+			for i, in := range inputs {
+				dirs[i] = fmt.Sprint(in["direction"])
+			}
+			if got := strings.Join(dirs, ","); got != c.wantDirections {
+				t.Fatalf("OPA saw directions %s, want %s", got, c.wantDirections)
+			}
+			in := inputs[0]
+			meta, _ := in["metadata"].(map[string]any)
+			sctx, _ := in["context"].(map[string]any)
+			if in["protocol"] != "mcp" || in["operation"] != "call" || fmt.Sprint(in["tables"]) != "[get_file_contents]" ||
+				in["statement"] != "get_file_contents\n{\"path\":\"README.md\"}" ||
+				meta["mcp.tool"] != "get_file_contents" || meta["mcp.method"] != "tools/call" || meta["mcp.session"] != "m1" ||
+				sctx["connection"] != "github" {
+				t.Fatalf("tools/call input: %v", in)
+			}
+			if len(inputs) == 3 {
+				if in := inputs[2]; in["operation"] != "show" || in["tables"] != nil || in["statement"] != "get_file_contents: Read a file\n" {
+					t.Fatalf("tools/list input: %v", in)
+				}
+			}
+		})
 	}
 }
