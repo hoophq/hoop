@@ -1,0 +1,28 @@
+{
+  "name": "tcp",
+  "type": "application",
+  "subtype": "tcp",
+  "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "tcp-web",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "application",
+      "secret": {
+        "envvar:HOST": "d2ViLmludGVybmFs",
+        "envvar:PORT": "ODA4MA=="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "tcp"
+    }
+  ]
+}

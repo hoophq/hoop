@@ -16,8 +16,11 @@ import {
   SecretsManagerProviderSection,
 } from '@/pages/Roles/Configure/components/ConnectionMethod'
 import { CredentialsStoreProvider } from '@/pages/Roles/Configure/sections/credentials/store'
+import FreeFormCustomRenderer from '@/pages/Roles/Configure/sections/credentials/FreeFormCustomRenderer'
+import HttpProxyRenderer from '@/pages/Roles/Configure/sections/credentials/HttpProxyRenderer'
+import SshRenderer from '@/pages/Roles/Configure/sections/credentials/SshRenderer'
 import PredefinedFields from '@/pages/Roles/Configure/sections/credentials/shared/PredefinedFields'
-import { metadataForSubtype } from '../catalog'
+import { metadataForSubtype, roleFormFor } from '../catalog'
 import StepRow from '../components/StepRow'
 import { useResourceSetupStore } from '../store'
 
@@ -73,51 +76,62 @@ function RoleAttributes({ role }) {
   )
 }
 
-function RoleCredentials({ role, fields }) {
+function CredentialsForm({ form, role, fields, connection, availableSources }) {
+  const props = { connection, availableSources, forceNewState: false, hideRoleInfo: false }
+  if (form === 'ssh') return <SshRenderer {...props} />
+  if (form === 'httpproxy') return <HttpProxyRenderer {...props} />
+  if (form === 'linux-vm') return <FreeFormCustomRenderer {...props} />
+  return <PredefinedFields {...props} fields={fields} connectionMethod={role.method} />
+}
+
+function RoleCredentials({ form, role, fields }) {
   const setRoleMethod = useResourceSetupStore((s) => s.setRoleMethod)
   const setRoleProvider = useResourceSetupStore((s) => s.setRoleProvider)
   const connection = useStore(role.credentials, (s) => s.connection)
+  // Local SSH has no credentials, so no method.
+  const localSsh = useStore(role.credentials, (s) => s.drafts.subtype === 'ssh-local')
   const isSecretsManager = role.method === CONNECTION_METHODS.SECRETS_MANAGER
 
   return (
     <Stack gap="xl">
-      <Stack gap="md">
-        <ConnectionMethodSection
-          heading="Role connection method"
-          selectedMethod={role.method}
-          onSelect={(method) => setRoleMethod(role.id, method)}
-          awsIamAvailable={supportsAwsIam(connection.subtype)}
-          federationAvailable={false}
-        />
-        {isSecretsManager && (
-          <SecretsManagerProviderSection
-            provider={role.provider}
-            onProviderChange={(provider) => setRoleProvider(role.id, provider)}
+      {!localSsh && (
+        <Stack gap="md">
+          <ConnectionMethodSection
+            heading="Role connection method"
+            selectedMethod={role.method}
+            onSelect={(method) => setRoleMethod(role.id, method)}
+            awsIamAvailable={supportsAwsIam(connection.subtype)}
+            federationAvailable={false}
           />
-        )}
-        {role.method === CONNECTION_METHODS.AWS_IAM && (
-          <Anchor
-            size="sm"
-            href={docsUrl.setup.configuration.rdsIamAuth}
-            target="_blank"
-            rel="noopener noreferrer"
-            w="fit-content"
-          >
-            <Group gap={4} component="span" wrap="nowrap">
-              <ExternalLink size={12} />
-              Learn more about AWS IAM Role setup
-            </Group>
-          </Anchor>
-        )}
-      </Stack>
+          {isSecretsManager && (
+            <SecretsManagerProviderSection
+              provider={role.provider}
+              onProviderChange={(provider) => setRoleProvider(role.id, provider)}
+            />
+          )}
+          {role.method === CONNECTION_METHODS.AWS_IAM && (
+            <Anchor
+              size="sm"
+              href={docsUrl.setup.configuration.rdsIamAuth}
+              target="_blank"
+              rel="noopener noreferrer"
+              w="fit-content"
+            >
+              <Group gap={4} component="span" wrap="nowrap">
+                <ExternalLink size={12} />
+                Learn more about AWS IAM Role setup
+              </Group>
+            </Anchor>
+          )}
+        </Stack>
+      )}
       <CredentialsStoreProvider value={role.credentials}>
-        <PredefinedFields
-          connection={connection}
+        <CredentialsForm
+          form={form}
+          role={role}
           fields={fields}
+          connection={connection}
           availableSources={isSecretsManager ? [role.provider, SOURCES.MANUAL] : null}
-          forceNewState={false}
-          connectionMethod={role.method}
-          hideRoleInfo={false}
         />
       </CredentialsStoreProvider>
     </Stack>
@@ -130,6 +144,7 @@ export default function RoleForm({ role }) {
   const setRoleName = useResourceSetupStore((s) => s.setRoleName)
   const removeRole = useResourceSetupStore((s) => s.removeRole)
   const metadata = useConnectionsMetadataStore((s) => s.metadata)
+  const form = roleFormFor(setup.subtype)
   // Dev envs have no credentials: no method, no fields.
   const fields = useMemo(() => {
     const credentials = metadataForSubtype(metadata?.connections, setup.subtype)
@@ -156,7 +171,7 @@ export default function RoleForm({ role }) {
           <RoleAttributes role={role} />
         </Stack>
 
-        {fields && <RoleCredentials role={role} fields={fields} />}
+        {(form !== 'metadata' || fields) && <RoleCredentials form={form} role={role} fields={fields} />}
 
         {canRemove && (
           <Group justify="flex-end">

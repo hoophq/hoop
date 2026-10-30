@@ -1,0 +1,25 @@
+{
+  "name": "ssh-local",
+  "type": "application",
+  "subtype": "ssh",
+  "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "ssh-local-sh",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "application",
+      "secret": {},
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "ssh-local"
+    }
+  ]
+}

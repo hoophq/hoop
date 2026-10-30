@@ -104,8 +104,8 @@ export default function PredefinedFields({
         const isAwsIamScoped = isAwsIam && (fieldKeyLower === 'user' || fieldKeyLower === 'pass')
         const source = isAwsIamScoped ? SOURCES.AWS_IAM_ROLE : detectedSource
 
-        // The resource setup wizard keeps every field masked, as the CLJS
-        // wizard does. A file has no source picker there and is sent as typed.
+        // The resource setup wizard keeps every untyped field masked, as the
+        // CLJS wizard does. A file has no source picker there and is sent as typed.
         if (createMode) {
           const isFile = envKey.startsWith('filesystem:')
           const fieldSource = isFile ? SOURCES.MANUAL : source
@@ -116,7 +116,7 @@ export default function PredefinedFields({
               tooltip={field.description}
               required={field.required}
               placeholder={field.placeholder}
-              type={field.type}
+              type={field.type ?? 'password'}
               minRows={field.minRows}
               value={decodeForDisplay(staged?.value)}
               onChange={(plain) =>
