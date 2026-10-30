@@ -24,6 +24,7 @@ type stubProvider struct {
 	seen       atomic.Value // string: the last content
 	seenPrompt atomic.Value // string: the last system prompt
 	delay      time.Duration
+	title      string // the model's title; "dangerous statement" when empty
 }
 
 func (s *stubProvider) Name() string { return "stub" }
@@ -42,9 +43,13 @@ func (s *stubProvider) Classify(ctx context.Context, systemPrompt, content strin
 	if s.err != nil {
 		return nil, s.err
 	}
+	title := s.title
+	if title == "" {
+		title = "dangerous statement"
+	}
 	return &analyzer.Result{
 		RiskLevel:   s.level,
-		Title:       "dangerous statement",
+		Title:       title,
 		Explanation: "because reasons",
 	}, nil
 }

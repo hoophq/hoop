@@ -114,20 +114,11 @@ function approverToSpec(approval) {
   return null
 }
 
-// The groups of the rule's own approval rule: every human level's groups. A
-// build that does not read approvers files each held level under that rule.
-function reviewersGroups(f) {
-  const human = LEVEL_KEYS.filter((level) => canHold(f, level) && f.approval[level].approver === APPROVER_HUMAN)
-  const groups = human.flatMap((level) => f.approval[level].groups)
-  return [...new Set(groups)].sort()
-}
-
 // handoffs.<level> (ENG-661): the actions the agent may select, and its prompt.
 function handoffToSpec(handoff) {
   const prompt = handoff.prompt.trim()
   return prompt !== '' ? { allowed_actions: [...handoff.allowed], prompt } : { allowed_actions: [...handoff.allowed] }
 }
-
 // An item keeps only the fields it names, or is null when it names none.
 function compactItem(item) {
   const out = {}
@@ -319,8 +310,6 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
   const waits = approvers.has(APPROVER_HUMAN) || approvers.has(APPROVER_RULE)
   // Time limits belong to this rule's own reviews, not an imported rule's.
   const humanHold = approvers.has(APPROVER_HUMAN)
-  // The rule's own approval rule decides the holds; it is not an imported one.
-  const ownRule = approvers.size > 0 && !approvers.has(APPROVER_RULE)
 
   const save = async () => {
     if (!canSubmit) return false
@@ -342,7 +331,8 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       agentic: false,
       sidecar_spec: spec,
       sidecar_targets: targets,
-      reviewers_groups: ownRule ? reviewersGroups(form) : undefined,
+      // No reviewers_groups: the gateway derives the rule's own approval rule
+      // groups from approvers, and an imported rule keeps its groups.
       pending_ttl_sec: humanHold && pendingTouched ? minutesToSec(pendingMinutes) : undefined,
       approval_ttl_sec: humanHold && approvalTouched ? minutesToSec(approvalMinutes) : undefined,
     }

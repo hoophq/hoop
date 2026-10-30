@@ -125,7 +125,8 @@ type Review struct {
 
 // SidecarReviewKey is what a sidecar filing is matched on beside the
 // statement: the approval rule, or the risk level filed in its place, and
-// whether a hand-off filed it. A hand-off review never matches a direct
+// whether a hand-off filed it. Exactly one of rule and level is set; only a
+// level carries the hand-off flag. A hand-off review never matches a direct
 // filing of the same level, nor the reverse.
 type SidecarReviewKey struct {
 	RuleName   string
@@ -133,15 +134,43 @@ type SidecarReviewKey struct {
 	ViaHandoff bool
 }
 
-func (k SidecarReviewKey) args() []any {
-	return []any{nullIfEmpty(k.RuleName), nullIfEmpty(k.RiskLevel), k.ViaHandoff}
+// The statement scopes, one per key. Each implies the predicate of its
+// partial unique index (000125 for a rule, 000148 for a level), so a lookup
+// uses the index. IS NOT DISTINCT FROM implies neither. The statuses are
+// literal: a generic plan proves no predicate from a bound status. Args: org,
+// sidecar, listener, the key, the statement hash.
+var (
+	sidecarRuleStatement  = sidecarStatementScope(`access_request_rule_name = ? AND risk_level IS NULL`)
+	sidecarLevelStatement = sidecarStatementScope(`access_request_rule_name IS NULL AND risk_level = ? AND via_handoff = ?`)
+)
+
+// sidecarStatementScope matches the reviews of one statement under key that
+// the partial unique indexes cover, less EXPIRED.
+func sidecarStatementScope(key string) string {
+	return `org_id = ? AND sidecar_id = ? AND listener_name = ? AND ` + key +
+		fmt.Sprintf(` AND statement_hash = ? AND status NOT IN ('%s', '%s', '%s', '%s')`,
+			ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked, ReviewStatusExpired)
 }
 
-func nullIfEmpty(s string) any {
-	if s == "" {
-		return nil
+// scope returns the statement scope of the key and its args. A rule filing
+// carries no hand-off flag: a rule key with one is refused.
+func (k SidecarReviewKey) scope(orgID, sidecarID, listenerName, statementHash string) (string, []any, error) {
+	switch {
+	case k.RuleName != "" && k.RiskLevel == "" && !k.ViaHandoff:
+		return sidecarRuleStatement, []any{orgID, sidecarID, listenerName, k.RuleName, statementHash}, nil
+	case k.RuleName == "" && k.RiskLevel != "":
+		return sidecarLevelStatement, []any{orgID, sidecarID, listenerName, k.RiskLevel, k.ViaHandoff, statementHash}, nil
 	}
-	return s
+	return "", nil, fmt.Errorf("a sidecar review key needs a rule or a risk level, and a hand-off only with a level, not %+v", k)
+}
+
+// sidecarReviewKeyOf is the key rev was filed under.
+func sidecarReviewKeyOf(rev *Review) SidecarReviewKey {
+	key := SidecarReviewKey{RiskLevel: rev.RiskLevel.String, ViaHandoff: rev.ViaHandoff}
+	if rev.AccessRequestRuleName != nil {
+		key.RuleName = *rev.AccessRequestRuleName
+	}
+	return key
 }
 
 // SidecarReservationLease is how long a reserved approval waits for its
@@ -763,24 +792,25 @@ const sidecarReviewSelect = `
 // gorm.ErrRecordNotFound.
 //
 // "Live" excludes EXECUTED, REJECTED and REVOKED, matching the partial unique
-// index: a spent approval or a refusal is final for that review, and the next
-// request files a new one. Groups load as GetReviewByIdOrSid loads them, so a
-// match carries the same policy as a fresh review. A lapsed PENDING or APPROVED holder is not live,
-// nor is a reservation past its lease; CreateSidecarReview settles exactly those, so none blocks the insert.
+// indexes, which the key scope uses: a spent approval or a refusal is final
+// for that review, and the next request files a new one. Groups load as
+// GetReviewByIdOrSid loads them, so a match carries the same policy as a
+// fresh review. A lapsed PENDING or APPROVED holder is not live, nor is a
+// reservation past its lease; CreateSidecarReview settles exactly those, so
+// none blocks the insert.
 func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName string, key SidecarReviewKey, statementHash string, now time.Time) (*Review, error) {
+	scope, args, err := key.scope(orgID, sidecarID, listenerName, statementHash)
+	if err != nil {
+		return nil, err
+	}
 	now = now.UTC()
 	var review Review
-	args := append([]any{orgID, sidecarID, listenerName}, key.args()...)
-	args = append(args, statementHash,
-		ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked, ReviewStatusExpired,
-		ReviewStatusPending, ReviewStatusApproved, now,
-		ReviewStatusProcessing, leaseStart(now))
-	err := db.Raw(sidecarReviewSelect+`
-	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
-	AND access_request_rule_name IS NOT DISTINCT FROM ? AND risk_level IS NOT DISTINCT FROM ? AND via_handoff = ?
-	AND statement_hash = ? AND status NOT IN (?, ?, ?, ?)
+	err = db.Raw(sidecarReviewSelect+`
+	WHERE `+scope+`
 	AND (status NOT IN (?, ?) OR expires_at IS NULL OR `+sidecarInsideDeadline+`)
-	AND (status <> ? OR reserved_at IS NULL OR `+sidecarInsideLease+`)`, args...).
+	AND (status <> ? OR reserved_at IS NULL OR `+sidecarInsideLease+`)`,
+		append(args, ReviewStatusPending, ReviewStatusApproved, now,
+			ReviewStatusProcessing, leaseStart(now))...).
 		First(&review).
 		Error
 	if err != nil {
@@ -971,7 +1001,7 @@ func closeSidecarSessionsTx(tx *gorm.DB, now time.Time, reviewIDs []string) erro
 // their lease and closes their sessions. EXECUTED leaves the 000125 index, so
 // the statement is free for a new review.
 func spendLapsedReservationsTx(tx *gorm.DB, now time.Time, scope string, args ...any) error {
-	if scope != expireScopeReview && scope != expireScopeStatement {
+	if !knownSidecarScope(scope) {
 		return fmt.Errorf("unknown reservation scope")
 	}
 	now = now.UTC()
@@ -1004,12 +1034,15 @@ func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string)
 	}
 	var expired []string
 	err := db.Transaction(func(tx *gorm.DB) error {
-		scope := []any{rev.OrgID, rev.SidecarID, rev.ListenerName, rev.AccessRequestRuleName, rev.RiskLevel, rev.ViaHandoff, rev.StatementHash}
-		if err := spendLapsedReservationsTx(tx, rev.CreatedAt, expireScopeStatement, scope...); err != nil {
+		scope, args, err := sidecarReviewKeyOf(rev).scope(rev.OrgID, rev.SidecarID.String,
+			rev.ListenerName.String, rev.StatementHash.String)
+		if err != nil {
+			return err
+		}
+		if err := spendLapsedReservationsTx(tx, rev.CreatedAt, scope, args...); err != nil {
 			return fmt.Errorf("failed spending the previous reservation: %w", err)
 		}
-		var err error
-		expired, err = expireSidecarReviewsTx(tx, rev.CreatedAt, expireScopeStatement, scope...)
+		expired, err = expireSidecarReviewsTx(tx, rev.CreatedAt, scope, args...)
 		if err != nil {
 			return fmt.Errorf("failed expiring the previous review: %w", err)
 		}
@@ -1066,17 +1099,20 @@ func lockSidecarReviewTx(tx *gorm.DB, orgID, reviewID string) error {
 	return tx.Exec(`SELECT 1 FROM private.reviews WHERE org_id = ? AND id = ? FOR UPDATE`, orgID, reviewID).Error
 }
 
-// The scopes expireSidecarReviewsTx accepts. No input reaches the SQL text.
-const (
-	expireScopeReview    = `org_id = ? AND id = ?`
-	expireScopeStatement = `org_id = ? AND sidecar_id = ? AND listener_name = ? AND ` +
-		`access_request_rule_name IS NOT DISTINCT FROM ? AND risk_level IS NOT DISTINCT FROM ? AND via_handoff = ? AND statement_hash = ?`
-)
+// expireScopeReview is the one scope beside the statement scopes. No input
+// reaches the SQL text.
+const expireScopeReview = `org_id = ? AND id = ?`
+
+// knownSidecarScope reports a scope expireSidecarReviewsTx and
+// spendLapsedReservationsTx accept.
+func knownSidecarScope(scope string) bool {
+	return scope == expireScopeReview || scope == sidecarRuleStatement || scope == sidecarLevelStatement
+}
 
 // expireSidecarReviewsTx records EXPIRED on the lapsed live sidecar reviews in
 // scope and closes their sessions. Clearing the hash frees the statement.
 func expireSidecarReviewsTx(tx *gorm.DB, now time.Time, scope string, args ...any) ([]string, error) {
-	if scope != expireScopeReview && scope != expireScopeStatement {
+	if !knownSidecarScope(scope) {
 		return nil, fmt.Errorf("unknown expiry scope")
 	}
 	now = now.UTC()
