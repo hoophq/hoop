@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import api from '@/services/api'
+import api, { storeRenewedToken } from '@/services/api'
 import { sessionsService } from '@/services/sessions'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useSessionDetailsStore } from '@/stores/useSessionDetailsStore'
@@ -98,9 +98,12 @@ export function useSessionStream(session, { enabled, catchUp }) {
       while (!signal.aborted) {
         setValue('connecting')
         try {
+          // Read on each (re)connect: the gateway renews the token while a tail runs (EVL-389).
+          const token = useAuthStore.getState().getToken()
           await readSessionStream(`${api.defaults.baseURL}/sessions/${encodeURIComponent(sessionId)}/stream`, {
-            token: useAuthStore.getState().token,
+            token,
             signal,
+            onResponse: (headers) => storeRenewedToken(token, headers),
             onOpen: () => {
               setValue('live')
               failures = 0

@@ -56,4 +56,14 @@ describe('readSessionStream', () => {
     )
     expect(onOpen).not.toHaveBeenCalled()
   })
+
+  it('hands over the headers, on an error too, so a renewed token is kept (EVL-389)', async () => {
+    const headers = new Headers({ 'X-New-Access-Token': 'token-2' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ...answer([], 401), headers }))
+    const onResponse = vi.fn()
+    await expect(
+      readSessionStream('/x', { token: 't', onResponse, onOpen: () => {}, onMessage: () => {} }),
+    ).rejects.toBeInstanceOf(StreamRefused)
+    expect(onResponse).toHaveBeenCalledWith(headers)
+  })
 })
