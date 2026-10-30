@@ -1,0 +1,20 @@
+# Requires a sidecar built with the new libhoop-ica slot API. Not a live lab profile.
+# Preserve the approved runtime OCR/NER/PII overrides for your deployment.
+ica:
+  max_sessions: 32
+  readiness_capacity: false
+  drain_timeout_sec: 30
+listeners:
+  - name: cell-a-slots
+    protocol: ica
+    listen: 0.0.0.0:21001
+    ica:
+      tenant_id: citrix-lab
+      source_cidrs: [10.20.1.10/32]
+      slots:
+        first_port: 21001
+        count: 2
+        upstream_pattern: prot-a%03d.lab.local
+        upstream_port: 2598
+        frontend_cidr: 10.240.16.0/22
+        upstream_cidrs: [10.77.0.0/24]
