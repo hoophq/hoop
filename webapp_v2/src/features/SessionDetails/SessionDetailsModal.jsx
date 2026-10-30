@@ -10,6 +10,8 @@ import ErrorState from './sections/ErrorState'
 import classes from './SessionDetails.module.css'
 
 const MODAL_WIDTH = 1276
+// The CLJS details dim the page as every Radix dialog does (black-a6, 40%).
+const OVERLAY = { backgroundOpacity: 0.4 }
 // The footer padding grows by 24px when nothing is behind it. A gap under this
 // still counts as nothing, so the change cannot flip the state back.
 const OVERLAP_SLACK = 24
@@ -61,6 +63,7 @@ export default function SessionDetailsModal() {
       closeOnClickOutside={!stacked}
       padding={0}
       size={MODAL_WIDTH}
+      overlayProps={OVERLAY}
       aria-label="Session Details"
       classNames={{ inner: classes.inner, content: classes.content, body: classes.body }}
     >

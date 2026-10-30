@@ -48,7 +48,7 @@
 
 .footer[data-overlap] {
   padding: var(--mantine-spacing-sm) var(--mantine-spacing-lgAlt);
-  border-top: 1px solid var(--mantine-color-gray-3);
+  border-top: 1px solid var(--mantine-color-gray-1);
   background: color-mix(in srgb, var(--mantine-color-body) 75%, transparent);
 }
 
