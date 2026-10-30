@@ -64,6 +64,8 @@ function open() {
   clearTimeout(closeTimer)
   closeTimer = null
   if (controller) return
+  // Logged out: the stream would carry no token. The sign-in restarts it.
+  if (!useAuthStore.getState().getToken()) return
   const own = new AbortController()
   controller = own
   const name = lockName()
@@ -108,7 +110,6 @@ function close() {
 }
 
 function restart() {
-  if (!controller) return
   close()
   if (subscriberCount() > 0) open()
 }
