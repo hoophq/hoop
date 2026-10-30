@@ -27,7 +27,7 @@ require (
 	github.com/hoophq/hoop/client v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33
-	github.com/hoophq/mcpproxy v0.1.1
+	github.com/hoophq/mcpproxy v0.1.5
 	github.com/lib/pq v1.12.3
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/stretchr/testify v1.11.1
