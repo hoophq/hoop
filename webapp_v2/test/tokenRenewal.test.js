@@ -9,6 +9,12 @@ vi.stubGlobal('localStorage', {
   setItem: (key, value) => storage.set(key, String(value)),
   removeItem: (key) => storage.delete(key),
 })
+const session = new Map()
+vi.stubGlobal('sessionStorage', {
+  getItem: (key) => (session.has(key) ? session.get(key) : null),
+  setItem: (key, value) => session.set(key, String(value)),
+  removeItem: (key) => session.delete(key),
+})
 vi.stubGlobal('window', { location: { protocol: 'http:', host: 'gateway.test', href: 'http://gateway.test/sessions' } })
 vi.mock('@/stores/useUserStore', () => ({ useUserStore: { getState: () => ({ clear: () => {} }) } }))
 
@@ -39,6 +45,8 @@ const gateway = (config) => {
 beforeEach(() => {
   api.defaults.adapter = gateway
   storage.set('jwt-token', 'token-1')
+  session.clear()
+  window.location.href = 'http://gateway.test/sessions'
   useAuthStore.setState({ token: 'token-1', isAuthenticated: true })
   reply = { status: 200 }
   sent = []
@@ -101,6 +109,60 @@ describe('a token the CLJS app stored', () => {
   })
 })
 
+describe('a 401', () => {
+  // The token changes while the first request is in flight: another response
+  // stored a renewal (`renewed`), or the user logged out (`renewed` null).
+  const gatewayThatRenewsMeanwhile = (renewed, ...statuses) => (config) => {
+    if (sent.length === 0) {
+      if (renewed) localStorage.setItem('jwt-token', renewed)
+      else useAuthStore.getState().logout()
+    }
+    reply = { status: statuses[Math.min(sent.length, statuses.length - 1)] }
+    return gateway(config)
+  }
+
+  it('for a token renewed meanwhile: sent once more with the current token, no logout', async () => {
+    api.defaults.adapter = gatewayThatRenewsMeanwhile('token-2', 401, 200)
+    const res = await api.get('/userinfo')
+    expect(res.status).toBe(200)
+    expect(sent).toEqual(['Bearer token-1', 'Bearer token-2'])
+    expect(localStorage.getItem('jwt-token')).toBe('token-2')
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(window.location.href).toBe('http://gateway.test/sessions')
+  })
+
+  it('with the current token logs out', async () => {
+    reply = { status: 401 }
+    await expect(api.get('/userinfo')).rejects.toThrow()
+    expect(sent).toEqual(['Bearer token-1'])
+    expect(localStorage.getItem('jwt-token')).toBeNull()
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(sessionStorage.getItem('redirect-after-auth')).toBe('http://gateway.test/sessions')
+    expect(window.location.href).toBe('/login')
+  })
+
+  it('on the retry logs out', async () => {
+    api.defaults.adapter = gatewayThatRenewsMeanwhile('token-2', 401, 401)
+    await expect(api.get('/userinfo')).rejects.toThrow()
+    expect(sent).toEqual(['Bearer token-1', 'Bearer token-2'])
+    expect(localStorage.getItem('jwt-token')).toBeNull()
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(window.location.href).toBe('/login')
+  })
+
+  it('after a logout rejects, and does not log out once more', async () => {
+    const listener = vi.fn()
+    const unsubscribe = useAuthStore.subscribe(listener)
+    api.defaults.adapter = gatewayThatRenewsMeanwhile(null, 401)
+    await expect(api.get('/userinfo')).rejects.toThrow()
+    unsubscribe()
+    expect(sent).toEqual(['Bearer token-1'])
+    expect(listener).toHaveBeenCalledTimes(1) // the logout in flight, no other
+    expect(sessionStorage.getItem('redirect-after-auth')).toBeNull()
+    expect(window.location.href).toBe('http://gateway.test/sessions')
+  })
+})
+
 describe('the SSE clients', () => {
   const streams = [
     ['liveEventsService', (signal) => liveEventsService.stream({ signal, onEvent: () => {} })],
@@ -124,5 +186,13 @@ describe('the SSE clients', () => {
 
     const tokens = fetch.mock.calls.map(([, init]) => init.headers.Authorization)
     expect(tokens).toEqual(['Bearer token-1', 'Bearer renewed-by-cljs'])
+  })
+
+  it.each(streams)('%s does not connect with no stored token', async (_, connect) => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    useAuthStore.getState().logout()
+    await expect(connect(new AbortController().signal)).rejects.toThrow()
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

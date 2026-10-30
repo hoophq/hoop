@@ -17,6 +17,7 @@ export const liveEventsService = {
    */
   async stream({ signal, onEvent }) {
     const token = useAuthStore.getState().getToken()
+    if (!token) throw new Error('live events stream: no token')
     const res = await fetch(`${api.defaults.baseURL}/events/stream`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
       signal,
