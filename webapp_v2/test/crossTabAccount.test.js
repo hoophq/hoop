@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The network is the seam: the real auth service, api.js and stores run, and
 // fetch answers /userinfo as the gateway would for the token it carries.
@@ -21,6 +21,8 @@ vi.mock('@/services/analytics', () => ({ identify: () => Promise.resolve() }))
 
 const { useUserStore } = await import('@/stores/useUserStore')
 const { useAuthStore } = await import('@/stores/useAuthStore')
+const { watchAccountSwitch } = await import('@/features/AccountSwitch')
+watchAccountSwitch()
 
 // A JWT names its account in `sub`; `n` tells two tokens of one account apart.
 const base64url = (json) => btoa(JSON.stringify(json)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
@@ -28,13 +30,18 @@ const jwt = (sub, n = 1) => `h.${base64url({ sub, n })}.s`
 
 // Opaque tokens: the account each one belongs to; one not listed gets a 401.
 const owners = { 'opaque-a': 'user-a', 'opaque-a-2': 'user-a', 'opaque-b': 'user-b' }
-// Per token, a promise the test holds back to answer late, and the renewal
-// the gateway sends in X-New-Access-Token.
+// Per token, a promise the test holds back to answer late, the renewal the
+// gateway sends in X-New-Access-Token, and how many requests fail first.
 let held
 let renewals
+let networkFailures
 const fetch = vi.fn(async (url, init) => {
   const token = init.headers.Authorization.replace(/^Bearer /, '')
   await held[token]
+  if (networkFailures[token] > 0) {
+    networkFailures[token]--
+    throw new TypeError('Failed to fetch')
+  }
   const id = owners[token]
   return {
     ok: !!id,
@@ -64,6 +71,12 @@ beforeEach(() => {
   reload.mockClear()
   held = {}
   renewals = {}
+  networkFailures = {}
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('a JWT another tab stores', () => {
@@ -137,6 +150,36 @@ describe('an opaque token another tab stores', () => {
     await checkBad
     expect(localStorage.getItem('jwt-token')).toBe('opaque-a-2')
     expect(window.location.href).toBe('http://gateway.test/sidecars')
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('that the network fails to check is checked again until the gateway answers', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    networkFailures['opaque-b'] = 2
+    const check = otherTab('jwt-token', 'opaque-b')
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(reload).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(3000)
+    await check
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
+  it('that the network fails to check is not checked again once replaced', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    networkFailures['opaque-b'] = 1
+    const check = otherTab('jwt-token', 'opaque-b')
+    await vi.advanceTimersByTimeAsync(0)
+    await otherTab('jwt-token', 'opaque-a-2')
+    await vi.advanceTimersByTimeAsync(3000)
+    await check
+    expect(fetch.mock.calls.map(([, init]) => init.headers.Authorization)).toEqual([
+      'Bearer opaque-b',
+      'Bearer opaque-a-2',
+    ])
     expect(reload).not.toHaveBeenCalled()
   })
 

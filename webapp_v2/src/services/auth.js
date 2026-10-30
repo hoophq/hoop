@@ -107,7 +107,9 @@ export const authService = {
     const res = await fetch(`${api.defaults.baseURL}${AUTH_ENDPOINTS.USER}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) throw new Error(`userinfo failed with status ${res.status}`);
+    if (!res.ok) {
+      throw Object.assign(new Error(`userinfo failed with status ${res.status}`), { status: res.status });
+    }
     return res.json();
   },
 
