@@ -153,15 +153,14 @@ function FeatureRow({ feature, value, options, status, locked, onChange, onToggl
 }
 
 // The "AI policy settings" card of one risk level (ENG-662): which guardrail
-// and data masking rules the AI may apply to a statement of this level.
-// `helper` says when the rules apply. `unavailable` replaces the rows with a
-// reason when the level cannot carry AI rules.
-export default function AIPolicyCard({ ai, status, optionsFor, onFeature, onToggleRule, helper, unavailable }) {
+// and data masking rules the AI may apply to a statement of this level, saved
+// as `ai_rules.<level>`. `helper` says when the rules apply.
+export default function AIPolicyCard({ ai, status, optionsFor, onFeature, onToggleRule, helper }) {
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   // Subscribed so a license change re-renders; the check itself is the store's.
   useUserStore((s) => s.licenseFeatures)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
-  const configured = !unavailable && AI_RULE_FEATURES.some(({ key }) => ai[key].on)
+  const configured = AI_RULE_FEATURES.some(({ key }) => ai[key].on)
 
   return (
     <SettingsCard
@@ -178,32 +177,26 @@ export default function AIPolicyCard({ ai, status, optionsFor, onFeature, onTogg
       }
       done={configured}
     >
-      {unavailable ? (
-        <Text size="sm" c="dimmed">
-          {unavailable}
-        </Text>
-      ) : (
-        <Stack gap="sm">
-          {isFreeLicense && <FreeLicenseCallout message="Letting the AI apply rules is an Enterprise feature." />}
-          {AI_RULE_FEATURES.map((feature) => (
-            <FeatureRow
-              key={feature.key}
-              feature={feature}
-              value={ai[feature.key]}
-              options={optionsFor(feature.key)}
-              status={status}
-              locked={isFreeLicense || !isLicenseFeatureEnabled(feature.license)}
-              onChange={(patch) => onFeature(feature.key, patch)}
-              onToggleRule={(name) => onToggleRule(feature.key, name)}
-            />
-          ))}
-          {helper && (
-            <Text size="xs" c="dimmed">
-              {helper}
-            </Text>
-          )}
-        </Stack>
-      )}
+      <Stack gap="sm">
+        {isFreeLicense && <FreeLicenseCallout message="Letting the AI apply rules is an Enterprise feature." />}
+        {AI_RULE_FEATURES.map((feature) => (
+          <FeatureRow
+            key={feature.key}
+            feature={feature}
+            value={ai[feature.key]}
+            options={optionsFor(feature.key)}
+            status={status}
+            locked={isFreeLicense || !isLicenseFeatureEnabled(feature.license)}
+            onChange={(patch) => onFeature(feature.key, patch)}
+            onToggleRule={(name) => onToggleRule(feature.key, name)}
+          />
+        ))}
+        {helper && (
+          <Text size="xs" c="dimmed">
+            {helper}
+          </Text>
+        )}
+      </Stack>
     </SettingsCard>
   )
 }

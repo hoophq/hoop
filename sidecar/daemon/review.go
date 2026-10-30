@@ -71,33 +71,19 @@ type planReviewer struct {
 	log      *slog.Logger
 }
 
-// File implements analyzer.Reviewer. A hold under a level's own approver
-// (analyzer.FiledLevel) files that level and no approval_rule; the plane then
-// authorizes it against the level's approval_groups, or, for a hold the
-// hand-off agent selected (analyzer.ViaHandoff), against the level's
-// allowed_actions.require_approval.
+// File implements analyzer.Reviewer. A hold under a level's human approver
+// (analyzer.FiledLevel) files that risk level and no approval_rule; the plane
+// then authorizes it against the level's groups. A hold the hand-off agent
+// selected (analyzer.ViaHandoff) says so with handoff.
 func (r planReviewer) File(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
 	f := reviewFiling{listener: r.listener, rule: r.rule, statement: statement, reserve: r.reserve}
 	if level, ok := analyzer.FiledLevel(ctx); ok {
-		f.rule, f.level, f.approver = "", level, analyzer.ApproverHuman
+		f.rule, f.level = "", level
 		f.handoff = analyzer.ViaHandoff(ctx)
 	}
 	res, err := r.cp.fileReview(ctx, f)
 	r.checkReserved(res)
 	return res, err
-}
-
-// FileDecision implements analyzer.DecisionFiler: the plane records the
-// approval agent's decision as a review already decided.
-func (r planReviewer) FileDecision(ctx context.Context, statement string, d analyzer.Decision) (analyzer.ReviewResult, error) {
-	decision := analyzer.DecisionRejected
-	if d.Approved {
-		decision = analyzer.DecisionApproved
-	}
-	return r.cp.fileReview(ctx, reviewFiling{
-		listener: r.listener, statement: statement, level: d.RiskLevel,
-		approver: analyzer.ApproverAIAgent, decision: decision, reason: d.Reason, handoff: d.Handoff,
-	})
 }
 
 // Claim implements analyzer.Reviewer.
@@ -185,11 +171,11 @@ func WithLocalReviewer(r LocalReviewer) Option {
 // holdRefusal is why a lane that holds statements cannot be built, or "".
 //
 // Two refusals, both at build rather than in Config.Validate for the reason
-// holdsWithoutAPlane gives. With a control plane, a bare require_review level
-// needs an approval_rule: the plane refuses a review that names none. Without
-// one, a level a person approves needs a local reviewer, or there is nowhere
-// to file the review at all. A level the approval agent decides needs
-// neither.
+// holdsWithoutAPlane gives. With a control plane, a held level with no
+// approvers entry needs an approval_rule: the plane refuses a review that
+// names none. Without one, a level a person approves needs a local reviewer,
+// or there is nowhere to file the review at all. A level the approval agent
+// decides needs neither.
 func holdRefusal(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) string {
 	if !humanHolds(la) {
 		return ""
@@ -252,16 +238,13 @@ func holdsWithoutAPlane(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) b
 
 // reviewFiling is one POST /api/sidecars/reviews.
 //
-// level set files under that level's own approver and omits approval_rule;
-// the plane reads the level in the stored block. decision and reason are the
-// approval agent's, set only with approver ai_agent. handoff marks a hold
-// the hand-off agent selected on an ai-handoff level.
+// level set files under that level's human approver and omits
+// approval_rule; the plane reads approvers.<level> in the stored block.
+// handoff marks a hold the hand-off agent selected on an ai-handoff level.
 type reviewFiling struct {
 	listener, rule, statement string
 	reserve                   bool
 	level                     analyzer.RiskLevel
-	approver                  analyzer.Approver
-	decision, reason          string
 	handoff                   bool
 }
 
@@ -288,13 +271,8 @@ func (cp *controlPlane) fileReview(ctx context.Context, f reviewFiling) (analyze
 	if f.level == "" {
 		req["approval_rule"] = f.rule
 	} else {
-		under = fmt.Sprintf("the %s risk level's %s approver", f.level, f.approver)
+		under = fmt.Sprintf("the %s risk level's approvers", f.level)
 		req["risk_level"] = string(f.level)
-		req["approver"] = string(f.approver)
-		if f.decision != "" {
-			req["decision"] = f.decision
-			req["reason"] = f.reason
-		}
 		// Only when set, so a level outside a hand-off sends the body it
 		// always sent.
 		if f.handoff {
@@ -322,45 +300,12 @@ func (cp *controlPlane) fileReview(ctx context.Context, f reviewFiling) (analyze
 	case http.StatusUnprocessableEntity:
 		// The plane authorizes each review against the configuration it
 		// stored for this sidecar, so a listener whose approval_rule or
-		// level was edited locally, or a rule with no reviewers, lands here.
+		// approvers were edited locally, or a rule with no reviewers,
+		// lands here.
 		return out, fmt.Errorf("the control plane at %s refused an approval request for listener %q "+
 			"under %s: %s", cp.url, f.listener, under, controlPlaneMessage(raw))
 	}
-	if f.decision != "" {
-		// A decided review is recorded, never released: the plane answers
-		// forward false. Only a 2xx that names the review it recorded counts.
-		switch resp.StatusCode {
-		case http.StatusOK, http.StatusCreated:
-			return cp.decidedAnswer(f.decision, raw)
-		}
-		return out, cp.reviewError(resp, raw)
-	}
 	return cp.reviewAnswer(resp, raw)
-}
-
-// decidedAnswer reads the plane's answer to an approval agent's decision. An
-// answer that does not name the review and the decision filed is no proof the
-// plane recorded it, and an approval must not forward on it.
-func (cp *controlPlane) decidedAnswer(decision string, raw []byte) (analyzer.ReviewResult, error) {
-	var answer struct {
-		Review *struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-		} `json:"review"`
-	}
-	if err := json.Unmarshal(raw, &answer); err != nil {
-		return analyzer.ReviewResult{}, fmt.Errorf(
-			"the control plane at %s answered the approval agent's decision with JSON that could not be read: %w", cp.url, err)
-	}
-	want := "REJECTED"
-	if decision == analyzer.DecisionApproved {
-		want = "APPROVED"
-	}
-	if answer.Review == nil || answer.Review.ID == "" || answer.Review.Status != want {
-		return analyzer.ReviewResult{}, fmt.Errorf(
-			"the control plane at %s did not confirm it recorded the approval agent's decision as %s", cp.url, want)
-	}
-	return analyzer.ReviewResult{ID: answer.Review.ID, Status: answer.Review.Status}, nil
 }
 
 // claimReview runs one POST /api/sidecars/reviews/<id>/claim: what a waiting

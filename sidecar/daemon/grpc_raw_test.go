@@ -160,8 +160,7 @@ func TestARawLaneRefusesAStatementTheAIMasks(t *testing.T) {
 	upstreamAddr, stopUpstream := startRawTestUpstream(t, marshalGRPCTestMessage("server-secret", "visible"))
 	defer stopUpstream()
 
-	la := laneBlock()
-	la.HighRisk = RiskLevel{Action: "warn", Mask: &AIRuleOptions{}}
+	la := aiBlock("warn", LevelAIRule{Mask: &AIRuleOptions{}})
 	lc := ListenerConfig{
 		Name: "raw-ai-mask", Protocol: "grpc", Listen: "127.0.0.1:0", Upstream: upstreamAddr,
 		GRPC: &GRPCCodecConfig{Raw: &GRPCRawConfig{StringFields: []GRPCRawStringFields{

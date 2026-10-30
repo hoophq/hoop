@@ -36,7 +36,6 @@ var (
 	ErrUnknownStatus        = errors.New("unknown status")
 	ErrNoTimeWindow         = errors.New("an approval request bound to a listener takes no time window")
 	ErrExpired              = errors.New("approval request expired")
-	ErrDecidedByAgent       = errors.New("the approval agent decided this approval request; its decision is final")
 )
 
 type TransportReleaseConnectionFunc func(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason, rejectedBy string)
@@ -208,7 +207,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	case ErrNotFound:
 		// The GET answer, so a hidden review reads as one that does not exist.
 		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
-	case ErrNotEligible, ErrSelfApproval, ErrWrongState, ErrNoTimeWindow, ErrExpired, ErrDecidedByAgent:
+	case ErrNotEligible, ErrSelfApproval, ErrWrongState, ErrNoTimeWindow, ErrExpired:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	case ErrForbidden:
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "access denied"})
@@ -328,12 +327,6 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 			rev.OwnerEmail, len(rev.ReviewGroups), rev.CreatedAt.Format(time.RFC3339))
 	default:
 		return nil, fmt.Errorf("failed obtaining approval request, err=%v", err)
-	}
-
-	// The approval agent decided it as it was filed, and the sidecar acted on
-	// that decision. Nobody approves, rejects or revokes it again.
-	if rev.DecidedByAgent() {
-		return nil, ErrDecidedByAgent
 	}
 
 	// A sidecar review carries its own policy (groups, minimum, force groups)
@@ -702,8 +695,6 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
 		RejectionReason:       r.RejectionReason,
-		ApproverType:          r.ApproverType,
-		DecisionReason:        r.DecisionReason,
 		RiskLevel:             nullStringPtr(r.RiskLevel),
 		ViaHandoff:            r.ViaHandoff,
 		SidecarID:             nullStringPtr(r.SidecarID),

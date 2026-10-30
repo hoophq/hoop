@@ -193,6 +193,8 @@ type AnalyzerCall struct {
 	// the deprecated rule form.
 	Analyzer        string
 	Provider, Model string
+	// Kind is classify or decide.
+	Kind string
 	// Outcome is ok, error or timeout.
 	Outcome  string
 	Duration time.Duration

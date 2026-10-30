@@ -271,12 +271,8 @@ type SessionReview struct {
 	RejectionReason       *string           `json:"rejection_reason"`
 	// Set on a sidecar review only. GetSessionByID reads it; the list does not.
 	ListenerName *string `json:"listener_name"`
-	// Who decides: human, or ai_agent for a review the approval agent
-	// decided. Like the two below, GetSessionByID reads it; the list does not.
-	ApproverType string `json:"approver_type"`
-	// The approval agent's reason for its decision.
-	DecisionReason *string `json:"decision_reason"`
-	// The analyzer risk level a sidecar filed the review under.
+	// The analyzer risk level a sidecar filed the review under. Like
+	// ListenerName, GetSessionByID reads it; the list does not.
 	RiskLevel *string `json:"risk_level"`
 	// ViaHandoff marks a review filed for a hold the hand-off agent selected.
 	ViaHandoff bool `json:"via_handoff"`
@@ -373,8 +369,6 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'force_approval_groups', rv.force_approval_groups,
 				'rejection_reason', rv.rejection_reason,
 				'listener_name', rv.listener_name,
-				'approver_type', rv.approver_type,
-				'decision_reason', rv.decision_reason,
 				'risk_level', rv.risk_level,
 				'via_handoff', rv.via_handoff,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),

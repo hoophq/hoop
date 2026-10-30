@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,20 +50,22 @@ func compileMask(def json.RawMessage) (policy.ResponseMask, error) {
 
 var emailMask = analyzer.MaskRule{Name: "emails", Definition: json.RawMessage(`{"entities":["EMAIL_ADDRESS"]}`)}
 
-// rulesEvaluator rates every delete medium and lets medium apply rules.
+// rulesEvaluator rates every delete medium and lets medium apply rules. The
+// record redactor is set, as the daemon sets it whenever it has a detector.
 func rulesEvaluator(t *testing.T, p *handoffProvider, action analyzer.Action, lr analyzer.LevelRules,
 	edit func(*analyzer.Config)) *analyzer.Evaluator {
 	t.Helper()
 	p.level = analyzer.RiskMedium
 	cfg := analyzer.Config{
-		Rule:        "payments",
-		Listener:    "payments",
-		Provider:    p,
-		Trigger:     deleteTrigger(),
-		Actions:     analyzer.ActionMap{analyzer.RiskMedium: action},
-		Rules:       map[analyzer.RiskLevel]analyzer.LevelRules{analyzer.RiskMedium: lr},
-		CompileMask: compileMask,
-		Timeout:     time.Second,
+		Rule:         "payments",
+		Listener:     "payments",
+		Provider:     p,
+		Trigger:      deleteTrigger(),
+		Actions:      analyzer.ActionMap{analyzer.RiskMedium: action},
+		Rules:        map[analyzer.RiskLevel]analyzer.LevelRules{analyzer.RiskMedium: lr},
+		CompileMask:  compileMask,
+		RecordRedact: redactSecret,
+		Timeout:      time.Second,
 	}
 	if edit != nil {
 		edit(&cfg)
@@ -589,5 +592,108 @@ func TestRuleTextCannotInjectPromptLines(t *testing.T) {
 	}
 	if got := p.asks()[0].tools[0].Input.Properties["rule"].Enum; len(got) != 1 || got[0] != evil {
 		t.Errorf("enum = %q", got)
+	}
+}
+
+// aiRuleCard is the value the record redactor rewrites. aiRuleCalls carry it
+// in every model-authored field a rule record keeps: a reason long enough
+// that a cut before the redactor would split the card, a created rule's
+// definition and message, an invalid rule's definition, error and unknown
+// key, and a number.
+const aiRuleCard = "4111111111111111"
+
+func aiRuleCalls() decideReply {
+	card := aiRuleCard
+	long := strings.Repeat("a", 1016) + card + " tail"
+	return reply(
+		call("apply_mask", `{"rule":"emails","reason":"`+long+`"}`),
+		call("create_guardrail", `{"type":"operation","operations":["delete"],"message":"card `+card+`","reason":"card `+card+`"}`),
+		call("create_mask", `{"entities":["EMAIL_ADDRESS"],"strategy":"partial","keep_last":`+card+`,"reason":"r"}`),
+		call("create_guardrail", `{"type":"pattern_match","pattern_regex":"`+card+`(","message":"x","reason":"bad `+card+`"}`),
+		call("create_mask", `{"columns":["`+card+`"],"strategy":"`+card+`","reason":"r"}`),
+		call("create_guardrail", `{"type":"operation","`+card+`":1,"message":"m","reason":"r"}`),
+	)
+}
+
+func aiRulesBothNew() analyzer.LevelRules {
+	return analyzer.LevelRules{
+		Guardrails: &analyzer.GuardrailOptions{Mode: analyzer.RuleModeExistingAndNew},
+		Mask:       &analyzer.MaskOptions{Mode: analyzer.RuleModeExistingAndNew, Rules: []analyzer.MaskRule{emailMask}},
+	}
+}
+
+func invalidRecords(t *testing.T, v policy.Verdict) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	if err := json.Unmarshal([]byte(v.Annotations[analyzer.MetadataAIRuleInvalid]), &out); err != nil {
+		t.Fatalf("ai_rule_invalid is not a JSON list: %v (%s)", err, v.Annotations[analyzer.MetadataAIRuleInvalid])
+	}
+	return out
+}
+
+// The reasons, definitions and errors of AI rules are model prose. Each goes
+// through the record redactor whole, before any cut, and the cache keeps the
+// redacted form. The rule that enforces is the one the agent wrote.
+func TestAIRuleAuditFieldsGoThroughTheRecordRedactor(t *testing.T) {
+	var redactions atomic.Int32
+	p := &handoffProvider{replies: []decideReply{aiRuleCalls()}}
+	ev := rulesEvaluator(t, p, analyzer.ActionWarn, aiRulesBothNew(), func(c *analyzer.Config) {
+		withCache(c)
+		c.RecordRedact = func(s string) string { redactions.Add(1); return redactSecret(s) }
+	})
+	var first int32
+	for i := range 2 {
+		v := ev.EvaluateWith(deleteStatement(), withUser("ana@corp"))
+		if !v.Denied || v.Message != "card "+aiRuleCard {
+			t.Fatalf("statement %d: verdict = %+v, want the created guardrail's own message", i, v)
+		}
+		trail := v.Annotations[analyzer.MetadataAIRules] + v.Annotations[analyzer.MetadataAIRuleInvalid]
+		if strings.Contains(trail, "4111") || !strings.Contains(trail, "CREDIT_CARD") {
+			t.Errorf("statement %d: the record kept the card:\n%s", i, trail)
+		}
+		if recs, inv := records(t, v), invalidRecords(t, v); len(recs) != 3 || len(inv) != 3 {
+			t.Fatalf("statement %d: %d applied, %d invalid", i, len(recs), len(inv))
+		}
+		if i == 0 {
+			first = redactions.Load()
+		}
+	}
+	if first == 0 || redactions.Load() != first {
+		t.Errorf("redactions = %d then %d: the cached decision must carry the redacted record", first, redactions.Load())
+	}
+	if n := len(p.asks()); n != 1 {
+		t.Errorf("rule turns = %d, want 1", n)
+	}
+}
+
+// With no record redactor the record keeps no model prose: kinds, rule names
+// and the closed-vocabulary type and strategy stay.
+func TestWithNoRecordRedactorAIRuleRecordsKeepNoModelProse(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{aiRuleCalls()}}
+	ev := rulesEvaluator(t, p, analyzer.ActionWarn, aiRulesBothNew(), func(c *analyzer.Config) { c.RecordRedact = nil })
+	v := ev.EvaluateWith(deleteStatement(), withUser("ana@corp"))
+	if !v.Denied || v.Message != "card "+aiRuleCard {
+		t.Fatalf("verdict = %+v, want the created guardrail's own message", v)
+	}
+	trail := v.Annotations[analyzer.MetadataAIRules] + v.Annotations[analyzer.MetadataAIRuleInvalid]
+	for _, prose := range []string{"4111", "aaaa", "card", `"r"`, " tail"} {
+		if strings.Contains(trail, prose) {
+			t.Errorf("the record kept %q:\n%s", prose, trail)
+		}
+	}
+	def := func(m map[string]any) string { b, _ := json.Marshal(m["definition"]); return string(b) }
+	recs := records(t, v)
+	if len(recs) != 3 || recs[0]["kind"] != "mask" || recs[0]["rule"] != "emails" ||
+		def(recs[1]) != `{"type":"operation"}` || recs[1]["matched"] != true || def(recs[2]) != `{"strategy":"partial"}` {
+		t.Errorf("ai_rules = %v", recs)
+	}
+	inv := invalidRecords(t, v)
+	if len(inv) != 3 || def(inv[0]) != `{"type":"pattern_match"}` || def(inv[1]) != "null" || def(inv[2]) != `{"type":"operation"}` {
+		t.Errorf("ai_rule_invalid = %v", inv)
+	}
+	for _, r := range inv {
+		if r["error"] == "" || r["error"] == nil {
+			t.Errorf("an invalid record has no error: %v", r)
+		}
 	}
 }

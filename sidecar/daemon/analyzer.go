@@ -504,13 +504,28 @@ type LaneAnalyzerConfig struct {
 	Trigger *policy.AITrigger `json:"trigger,omitempty"`
 
 	// HighRisk, MediumRisk and LowRisk map a verdict onto an action:
-	// allow, warn, block, defer or require_approval. An unset level
-	// defaults to allow, so an operator opts into blocking a tier by
-	// naming it. A level that holds may be an object naming its own
-	// approver; see RiskLevel.
-	HighRisk   RiskLevel `json:"high,omitzero"`
-	MediumRisk RiskLevel `json:"medium,omitzero"`
-	LowRisk    RiskLevel `json:"low,omitzero"`
+	// allow, warn, block, defer, require_approval or ai-handoff. An unset
+	// level defaults to allow, so an operator opts into blocking a tier by
+	// naming it.
+	HighRisk   string `json:"high,omitempty"`
+	MediumRisk string `json:"medium,omitempty"`
+	LowRisk    string `json:"low,omitempty"`
+
+	// Approvers names who releases each held level, and each hold a
+	// hand-off agent selects: a person in the level's groups, or the
+	// approval agent. A held level with no entry files under ApprovalRule.
+	// An entry on a level that cannot hold is refused. See LevelApprovers.
+	Approvers *LevelApprovers `json:"approvers,omitempty" cap:"analyzer_level_approvers"`
+
+	// Handoffs configures each ai-handoff level: the actions its hand-off
+	// agent may select and the agent's prompt. Every ai-handoff level needs
+	// an entry; an entry on another level is refused. See LevelHandoffs.
+	Handoffs *LevelHandoffs `json:"handoffs,omitempty" cap:"analyzer_ai_handoff"`
+
+	// AIRules lets the AI apply rule_library rules, and create new ones,
+	// to a statement each level rates (ENG-662). An entry on a level whose
+	// action applies no AI rule is refused. See LevelAIRules.
+	AIRules *LevelAIRules `json:"ai_rules,omitempty" cap:"analyzer_ai_rules"`
 
 	// Prompt replaces the inherited risk guidance for this lane. This is
 	// where protocol-specific wording belongs: analyzer.prompt reaches
@@ -524,18 +539,20 @@ type LaneAnalyzerConfig struct {
 	Message string `json:"message,omitempty"`
 
 	// ApprovalRule names the control plane access request rule that decides
-	// who may approve a statement a BARE require_approval level holds. The
-	// rule carries the reviewer groups, the approval count and the
-	// force-approval list; this field carries only its name, because the
-	// sidecar never holds that policy and the control plane authorizes the
-	// review against the stored config.
+	// who may approve a statement a held level with no approvers entry
+	// holds. The rule carries the reviewer groups, the approval count and
+	// the force-approval list; this field carries only its name, because
+	// the sidecar never holds that policy and the control plane authorizes
+	// the review against the stored config.
 	//
-	// DEPRECATED for the object form of a level, which names its own
-	// approver and groups. Levels in the object form ignore this field.
+	// PER LANE, not process-wide: the people who may release a statement
+	// against the payments database are not the people who may release one
+	// against a reporting replica, and an inherited default would make the
+	// looser of the two the accident.
 	//
-	// It is meaningful only where a bare level asks for require_review, and
-	// required there: the two arrive together or startup refuses the lane,
-	// because either one alone is a control nothing reads.
+	// Required where a held level has no approvers entry, and refused where
+	// no level holds: either one alone is a control nothing reads. Beside
+	// approvers it is what an older build files under (ServeLevelApprovers).
 	ApprovalRule string `json:"approval_rule,omitempty"`
 
 	// ReviewMode is what a held statement does while its review is
@@ -600,9 +617,9 @@ type LaneAnalyzerConfig struct {
 func specFromRule(r policy.Rule) LaneAnalyzerConfig {
 	return LaneAnalyzerConfig{
 		Trigger:    r.Trigger,
-		HighRisk:   RiskLevel{Action: r.HighRisk},
-		MediumRisk: RiskLevel{Action: r.MediumRisk},
-		LowRisk:    RiskLevel{Action: r.LowRisk},
+		HighRisk:   r.HighRisk,
+		MediumRisk: r.MediumRisk,
+		LowRisk:    r.LowRisk,
 		Prompt:     r.Prompt,
 		Message:    r.Message,
 	}
@@ -979,15 +996,15 @@ func (ac *analyzerDeps) rateLimitLog(name string) func(limited bool, refused int
 	}
 }
 
-// reviewerFor returns the backend this lane files with: held statements for
-// human approval, and the approval agent's decisions. Nil when nothing should
-// be filed.
+// reviewerFor returns the backend this lane holds statements against for human
+// approval, or nil when nothing should be filed. The approval agent decides
+// in the sidecar and files nothing.
 //
 // Nil in three cases, and each one denies a human hold rather than forwards:
 //
-//   - No level on the lane holds, or, with a control plane, a bare level
-//     holds and the lane names no approval_rule (holdRefusal refuses that
-//     lane first).
+//   - No level on the lane waits for a person, or, with a control plane, a
+//     held level has no approvers entry and the lane names no approval_rule
+//     (holdRefusal refuses that lane first).
 //   - The lane is OBSERVING. A dry run that paged approvers would be a dry
 //     run with consequences, and the statement runs anyway: policy.Observe
 //     turns the hold's denial into an allow annotated would_deny, which is
@@ -996,14 +1013,13 @@ func (ac *analyzerDeps) rateLimitLog(name string) func(limited bool, refused int
 //     every -validate run outside a terminal.
 //
 // The plane is asked first: a process connected to one files there even when
-// a local reviewer is linked, so its approvers are never bypassed. A local
-// reviewer serves human levels only; the approval agent needs none.
+// a local reviewer is linked, so its approvers are never bypassed.
 func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, observing bool) analyzer.Reviewer {
 	if ac == nil || la == nil || observing {
 		return nil
 	}
 	if ac.cp != nil {
-		if !analyzerHolds(la) || ruleHolds(la) && la.ApprovalRule == "" {
+		if !humanHolds(la) || ruleHolds(la) && la.ApprovalRule == "" {
 			return nil
 		}
 		return ac.cp.reviewer(listener, la.ApprovalRule, la.reserves(), ac.log)
@@ -1053,7 +1069,7 @@ func buildAnalyzerEvaluators(
 	out := make([]policy.Evaluator, 0, len(rules))
 	for _, r := range rules {
 		ev, err := buildAnalyzerEvaluator(r.Name, budgetRulePrefix+r.Name,
-			specFromRule(r), ac, hasOPA, gated, nil)
+			specFromRule(r), ac, hasOPA, gated, nil, false)
 		if err != nil {
 			return nil, fmt.Errorf("rule %q: %w", r.Name, err)
 		}
@@ -1068,13 +1084,15 @@ func buildAnalyzerEvaluators(
 // component rather than a named rule: that name is what Finding.Rule, the
 // ai_rule audit key and the call budget all carry, and it is the identity
 // an operator edits. Two lanes therefore never share a budget, which is
-// what "per lane" promises.
+// what "per lane" promises. observing is the lane's guardrails mode: an
+// observing lane never asks the approval agent.
 func buildLaneAnalyzer(
 	lane string,
 	la *LaneAnalyzerConfig,
 	ac *analyzerDeps,
 	hasOPA, gated bool,
 	review analyzer.Reviewer,
+	observing bool,
 ) (policy.Evaluator, error) {
 	if la == nil {
 		return nil, nil
@@ -1084,7 +1102,7 @@ func buildLaneAnalyzer(
 			"listener %q has an analyzer block, and the config has no top-level "+
 				"analyzer section to supply the provider", lane)
 	}
-	ev, err := buildAnalyzerEvaluator(lane, budgetLanePrefix+lane, *la, ac, hasOPA, gated, review)
+	ev, err := buildAnalyzerEvaluator(lane, budgetLanePrefix+lane, *la, ac, hasOPA, gated, review, observing)
 	if err != nil {
 		return nil, fmt.Errorf("analyzer block: %w", err)
 	}
@@ -1116,6 +1134,7 @@ func buildAnalyzerEvaluator(
 	ac *analyzerDeps,
 	hasOPA, gated bool,
 	review analyzer.Reviewer,
+	observing bool,
 ) (policy.Evaluator, error) {
 	cfg := ac.cfg
 
@@ -1190,6 +1209,8 @@ func buildAnalyzerEvaluator(
 		// Only a block reaches the approval agent, and a block is
 		// named after its lane.
 		Listener:      name,
+		Observing:     observing,
+		RecordRedact:  recordRedactorFor(ac.det),
 		Trigger:       trigger,
 		Message:       la.Message,
 		Timeout:       time.Duration(timeout) * time.Second,
@@ -1273,7 +1294,7 @@ func triggerItems(items []policy.AITriggerItem) []analyzer.TriggerItem {
 func actionMap(la LaneAnalyzerConfig, hasOPA bool) (analyzer.ActionMap, error) {
 	m := analyzer.ActionMap{}
 	for _, l := range la.levels() {
-		raw := l.level.Action
+		raw := *l.action
 		if raw == "" {
 			continue
 		}
@@ -1397,6 +1418,20 @@ func redactorFor(mode SendMode, det Plugin) func(string) string {
 		}
 	}
 	return nil
+}
+
+// recordRedactorFor builds the redactor of model prose kept on the audit
+// record: the approval agent's reason. It uses the detector whatever the
+// lane's send mode, because the record outlives the call. Nil without a
+// detector, and the evaluator then keeps no free text.
+func recordRedactorFor(det Plugin) func(string) string {
+	if det == nil {
+		return nil
+	}
+	return func(s string) string {
+		redacted, _ := det.RedactText(s)
+		return redacted
+	}
 }
 
 // refuseSentinel marks content that must not be transmitted.
@@ -1544,7 +1579,8 @@ func ValidateLaneAnalyzerBlock(la *LaneAnalyzerConfig, lane string) []string {
 	if la == nil {
 		return nil
 	}
-	// The plane always files with a rule, so a hold there must name one.
+	// The plane files a held level with no approvers entry under a rule,
+	// so such a hold there must name one.
 	return validateLaneBlock(la, lane, true)
 }
 
@@ -1613,8 +1649,10 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 	}
 	la = &folded
 	problems = append(problems, validateRiskActions(
-		la.HighRisk.Action, la.MediumRisk.Action, la.LowRisk.Action, where)...)
-	problems = append(problems, validateLevelObjects(la, where)...)
+		la.HighRisk, la.MediumRisk, la.LowRisk, where)...)
+	problems = append(problems, validateLevelApprovers(la, where)...)
+	problems = append(problems, validateLevelHandoffs(la, where)...)
+	problems = append(problems, validateLevelAIRules(la, where)...)
 	problems = append(problems, validateTriggerItems(la.Trigger, where)...)
 
 	switch la.Send {
@@ -1642,21 +1680,22 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 		}
 	}
 
-	// The approval rule and the BARE levels that hold have to arrive
-	// together. Either one alone is a control that loads and is read by
-	// nobody: a reviewer list nothing consults, or a hold with no one able
-	// to release it. A level in the object form names its own approver and
-	// ignores the rule; LaneAnalyzerWarnings says so. The blank case is
-	// separate because a name of spaces matches no rule in the control
-	// plane and would surface as a refused review long after startup.
+	// The approval rule and the held levels with no approvers entry have
+	// to arrive together. Either one alone is a control that loads and is
+	// read by nobody: a reviewer list nothing consults, or a hold with no
+	// one able to release it. Beside approvers the rule is what an older
+	// build files under, so it is accepted wherever a level holds. The
+	// blank case is separate because a name of spaces matches no rule in
+	// the control plane and would surface as a refused review long after
+	// startup.
 	holds := analyzerHolds(la)
 	switch {
 	case la.ApprovalRule == "" && ruleHolds(la) && holdNeedsRule:
 		problems = append(problems, fmt.Sprintf(
 			"%s asks for %s and names no approval_rule; the rule is what decides who "+
 				"may approve a held statement, and the control plane refuses an approval "+
-				"request that does not name one. Or write the level as an object that "+
-				"names its approver", where, holdAction))
+				"request that does not name one. Or name the level's approver under "+
+				"approvers", where, holdAction))
 	case la.ApprovalRule == "":
 	case strings.TrimSpace(la.ApprovalRule) == "":
 		problems = append(problems, where+

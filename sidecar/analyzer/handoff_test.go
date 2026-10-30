@@ -71,18 +71,20 @@ func pick(tool, reason string) decideReply {
 var allFour = []analyzer.Action{analyzer.ActionAllow, analyzer.ActionWarn, analyzer.ActionBlock,
 	analyzer.ActionRequireApproval}
 
-// handoffEvaluator rates every delete medium and hands medium off.
+// handoffEvaluator rates every delete medium and hands medium off. The
+// record keeps the agents' reasons after redactSecret.
 func handoffEvaluator(t *testing.T, p *handoffProvider, h analyzer.Handoff, edit func(*analyzer.Config)) *analyzer.Evaluator {
 	t.Helper()
 	p.level = analyzer.RiskMedium
 	cfg := analyzer.Config{
-		Rule:     "payments",
-		Listener: "payments",
-		Provider: p,
-		Trigger:  deleteTrigger(),
-		Actions:  analyzer.ActionMap{analyzer.RiskMedium: analyzer.ActionHandoff},
-		Handoffs: map[analyzer.RiskLevel]analyzer.Handoff{analyzer.RiskMedium: h},
-		Timeout:  time.Second,
+		Rule:         "payments",
+		Listener:     "payments",
+		Provider:     p,
+		Trigger:      deleteTrigger(),
+		Actions:      analyzer.ActionMap{analyzer.RiskMedium: analyzer.ActionHandoff},
+		Handoffs:     map[analyzer.RiskLevel]analyzer.Handoff{analyzer.RiskMedium: h},
+		Timeout:      time.Second,
+		RecordRedact: redactSecret,
 	}
 	if edit != nil {
 		edit(&cfg)
@@ -245,8 +247,15 @@ func TestAHandoffHoldGoesToAPerson(t *testing.T) {
 	}
 }
 
+// approve is the approval agent's approve call with a code and a reason.
+func approve(reason string) decideReply {
+	return decideReply{calls: []analyzer.ToolCall{call("approve",
+		`{"reason_code":"in_scope","reason":"`+reason+`"}`)}}
+}
+
 // require_approval with the ai_agent approver runs the approval agent with
-// the nested prompt, and files its decision as reached through the hand-off.
+// the nested prompt, in the sidecar: its decision is recorded and nothing is
+// filed.
 func TestAHandoffHoldGoesToTheApprovalAgent(t *testing.T) {
 	for name, tc := range map[string]struct {
 		prompt string
@@ -256,10 +265,11 @@ func TestAHandoffHoldGoesToTheApprovalAgent(t *testing.T) {
 		"default prompt": {"", analyzer.DefaultApprovalPrompt + "\n\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			rev := &decisionReviewer{}
-			p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a check"), pick("approve", "bounded")}}
+			rev := &handoffReviewer{}
+			p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a check"), approve("bounded")}}
 			ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
-				Approval: analyzer.Approval{Prompt: tc.prompt}}, func(c *analyzer.Config) { c.Review = rev })
+				Approval: analyzer.Approval{Approver: analyzer.ApproverAIAgent, Prompt: tc.prompt}},
+				func(c *analyzer.Config) { c.Review = rev })
 			v := ev.Evaluate(deleteStatement())
 			if v.Denied {
 				t.Fatalf("denied: %s", v.Message)
@@ -276,23 +286,121 @@ func TestAHandoffHoldGoesToTheApprovalAgent(t *testing.T) {
 				t.Errorf("approval tools = %v", got)
 			}
 			for k, want := range map[string]string{
-				analyzer.MetadataHandoffDecision:  "require_approval",
-				analyzer.MetadataHandoffReason:    "needs a check",
-				analyzer.MetadataApprover:         "ai_agent",
-				analyzer.MetadataApprovalDecision: "approved",
-				analyzer.MetadataApprovalReason:   "bounded",
+				analyzer.MetadataHandoffDecision:    "require_approval",
+				analyzer.MetadataHandoffReason:      "needs a check",
+				analyzer.MetadataApprover:           "ai_agent",
+				analyzer.MetadataApprovalDecision:   "approved",
+				analyzer.MetadataApprovalReasonCode: "in_scope",
+				analyzer.MetadataApprovalReason:     "bounded",
 			} {
 				if got := v.Annotations[k]; got != want {
 					t.Errorf("%s = %q, want %q", k, got, want)
 				}
 			}
-			if len(rev.got) != 1 || !rev.got[0].Handoff || rev.got[0].RiskLevel != analyzer.RiskMedium {
-				t.Errorf("filed %+v, want one decision marked as a hand-off", rev.got)
+			if rev.filed() != 0 {
+				t.Errorf("filed %d review(s), want none", rev.filed())
 			}
 			if got := ev.Stats().Calls; got != 3 {
 				t.Errorf("calls = %d, want classification, hand-off and approval", got)
 			}
 		})
+	}
+}
+
+// A rejection of the nested approval agent denies with its code, never its
+// prose; an observing lane does not call it.
+func TestTheHandoffApprovalAgentRejectsAndSkipsObserve(t *testing.T) {
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "check"),
+		{calls: []analyzer.ToolCall{call("reject", `{"reason_code":"unbounded_scope","reason":"no where clause"}`)}}}}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
+		Approval: analyzer.Approval{Approver: analyzer.ApproverAIAgent}}, nil)
+	v := ev.Evaluate(deleteStatement())
+	if !v.Denied || v.Message != "statement held for approval: the approval agent rejected the statement (unbounded_scope)" {
+		t.Fatalf("verdict %+v", v)
+	}
+	if v.Annotations[analyzer.MetadataApprovalDecision] != "rejected" ||
+		v.Annotations[analyzer.MetadataApprovalReasonCode] != "unbounded_scope" {
+		t.Errorf("annotations = %v", v.Annotations)
+	}
+
+	p = &handoffProvider{replies: []decideReply{pick("require_approval", "check"), approve("ok")}}
+	ev = handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour,
+		Approval: analyzer.Approval{Approver: analyzer.ApproverAIAgent}},
+		func(c *analyzer.Config) { c.Observing = true })
+	v = ev.Evaluate(deleteStatement())
+	if !v.Denied || !strings.Contains(v.Message, "the approval agent is not consulted in observe mode") {
+		t.Fatalf("observing verdict %+v", v)
+	}
+	if len(p.asks()) != 1 {
+		t.Errorf("asked %d time(s), want the hand-off agent only", len(p.asks()))
+	}
+}
+
+// require_approval on a level with no approver files under the lane's
+// approval rule: no level is filed, and the hold is marked as a hand-off.
+func TestAHandoffHoldWithNoApproverFilesUnderTheRule(t *testing.T) {
+	rev := &handoffReviewer{}
+	p := &handoffProvider{replies: []decideReply{pick("require_approval", "needs a person")}}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour}, func(c *analyzer.Config) { c.Review = rev })
+	if v := ev.Evaluate(deleteStatement()); !v.Denied {
+		t.Fatalf("forwarded: %+v", v)
+	}
+	if len(rev.levels) != 1 || rev.levels[0] != "" || !rev.handoff[0] {
+		t.Fatalf("filed levels %q handoff %v, want one rule filing", rev.levels, rev.handoff)
+	}
+}
+
+// The agent's reason reaches the record and a block's denial only after the
+// record redactor. With no redactor neither keeps it; a fail-safe's fixed
+// reason stays.
+func TestTheHandoffReasonIsRedactedForTheRecord(t *testing.T) {
+	const secret = "card 4111111111111111"
+	p := &handoffProvider{replies: []decideReply{pick("block", secret)}}
+	v := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour}, nil).Evaluate(deleteStatement())
+	if got := v.Annotations[analyzer.MetadataHandoffReason]; got != "card <CREDIT_CARD>" {
+		t.Errorf("reason = %q", got)
+	}
+	if strings.Contains(v.Message, "4111") || !strings.Contains(v.Message, "<CREDIT_CARD>") {
+		t.Errorf("message = %q", v.Message)
+	}
+
+	p = &handoffProvider{replies: []decideReply{pick("block", secret)}}
+	v = handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour},
+		func(c *analyzer.Config) { c.RecordRedact = nil }).Evaluate(deleteStatement())
+	if _, ok := v.Annotations[analyzer.MetadataHandoffReason]; ok {
+		t.Errorf("no redactor kept the reason: %v", v.Annotations)
+	}
+	if v.Message != "dangerous statement: the hand-off agent blocked the statement" ||
+		v.Annotations[analyzer.MetadataHandoffDecision] != "block" {
+		t.Errorf("message = %q, annotations = %v", v.Message, v.Annotations)
+	}
+
+	p = &handoffProvider{}
+	v = handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour},
+		func(c *analyzer.Config) { c.RecordRedact = nil }).Evaluate(deleteStatement())
+	if got := v.Annotations[analyzer.MetadataHandoffReason]; got != "the hand-off agent did not decide" {
+		t.Errorf("fail-safe reason = %q", got)
+	}
+}
+
+// A value that crosses the length bound is redacted whole: redaction runs
+// on the full reason before the cut, and a cache hit repeats the redacted
+// text, not the model's.
+func TestAHandoffReasonIsRedactedBeforeItIsCut(t *testing.T) {
+	reason := strings.Repeat("a", 1009) + " 4111111111111111"
+	p := &handoffProvider{replies: []decideReply{pick("allow", reason)}}
+	ev := handoffEvaluator(t, p, analyzer.Handoff{Allowed: allFour}, withCache)
+	for _, name := range []string{"model answer", "cache hit"} {
+		v := ev.Evaluate(deleteStatement())
+		got := v.Annotations[analyzer.MetadataHandoffReason]
+		if strings.Contains(got, "4111") || !strings.Contains(got, "<CREDIT_CARD>") {
+			t.Errorf("%s: reason keeps the card digits: %q", name, got[max(0, len(got)-40):])
+		}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.asked) != 1 {
+		t.Errorf("%d model calls, want 1 (the second evaluation is a cache hit)", len(p.asked))
 	}
 }
 
@@ -510,14 +618,17 @@ func TestTheHandoffDecisionIsCached(t *testing.T) {
 // A decision is kept under the hand-off configuration it was made with: a
 // cache that outlives a change of prompt, allowed set or approver misses.
 func TestAHandoffConfigChangeMissesTheCache(t *testing.T) {
-	base := analyzer.Handoff{Prompt: "p", Allowed: allFour, Approval: analyzer.Approval{Prompt: "a"}}
+	agentAt := func(prompt string) analyzer.Approval {
+		return analyzer.Approval{Approver: analyzer.ApproverAIAgent, Prompt: prompt}
+	}
+	base := analyzer.Handoff{Prompt: "p", Allowed: allFour, Approval: agentAt("a")}
 	for name, changed := range map[string]analyzer.Handoff{
-		"same":     base,
-		"prompt":   {Prompt: "q", Allowed: allFour, Approval: analyzer.Approval{Prompt: "a"}},
-		"allowed":  {Prompt: "p", Allowed: allFour[:3]},
-		"approver": {Prompt: "p", Allowed: allFour, Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}},
-		"approval prompt": {Prompt: "p", Allowed: allFour,
-			Approval: analyzer.Approval{Prompt: "b"}},
+		"same":            base,
+		"prompt":          {Prompt: "q", Allowed: allFour, Approval: agentAt("a")},
+		"allowed":         {Prompt: "p", Allowed: allFour[:3]},
+		"approver":        {Prompt: "p", Allowed: allFour, Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}},
+		"rule":            {Prompt: "p", Allowed: allFour},
+		"approval prompt": {Prompt: "p", Allowed: allFour, Approval: agentAt("b")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := &handoffProvider{replies: []decideReply{pick("allow", "ok")}}
@@ -574,6 +685,9 @@ func TestNewRefusesAHandoffItCannotRun(t *testing.T) {
 		"approver without a hold": {Provider: &handoffProvider{}, Actions: handoff,
 			Handoffs: map[analyzer.RiskLevel]analyzer.Handoff{analyzer.RiskHigh: {Allowed: allFour[:2],
 				Approval: analyzer.Approval{Approver: analyzer.ApproverHuman}}}},
+		"approval prompt without an approver": {Provider: &handoffProvider{}, Actions: handoff,
+			Handoffs: map[analyzer.RiskLevel]analyzer.Handoff{analyzer.RiskHigh: {Allowed: allFour,
+				Approval: analyzer.Approval{Prompt: "p"}}}},
 	} {
 		if _, err := analyzer.New(cfg); err == nil {
 			t.Errorf("%s: accepted", name)

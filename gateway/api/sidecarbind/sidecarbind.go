@@ -89,10 +89,11 @@ func Refuse(c *gin.Context, orgID string, req Request) bool {
 		}
 		return true
 	}
-	// AI rule options (ENG-662) are checked bound or not: the license and the
-	// library names do not depend on where the rule runs.
+	// AI rule options (ENG-662) are checked bound or not: the license does not
+	// depend on where the rule runs. A library name resolves against the
+	// organization's library, or the rule_library of each target.
 	if req.Kind == services.SidecarRuleAnalyzer &&
-		answerValidation(c, services.ValidateAnalyzerAIRules(models.DB, orgID, req.Name, req.EffectiveSpec())) {
+		answerValidation(c, services.ValidateAnalyzerAIRules(models.DB, orgID, req.Name, req.EffectiveSpec(), targets)) {
 		return true
 	}
 	// A rule bound nowhere is stored and reaches nobody, which is a valid

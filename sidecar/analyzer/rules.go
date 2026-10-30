@@ -51,13 +51,15 @@ const (
 	// statement: {kind, rule|definition, reason, matched}. An empty list
 	// means the turn ran and applied none. matched is set on a guardrail
 	// only. The definitions and reasons are model prose, under the same
-	// exception as MetadataApprovalReason: the fixed suffix forbids
-	// quoting a literal.
+	// exception as MetadataApprovalReason: kept only after
+	// Config.RecordRedact ran on each whole value. With no record redactor
+	// no reason is kept, and a definition keeps only its type or strategy.
 	MetadataAIRules = "ai_rules"
 
 	// MetadataAIRuleInvalid is a JSON list of the rules the AI created
 	// that failed validation: {kind, definition, reason, error}. They
-	// were dropped; none of them applied.
+	// were dropped; none of them applied. Redacted as MetadataAIRules;
+	// with no record redactor the error is a fixed text.
 	MetadataAIRuleInvalid = "ai_rule_invalid"
 
 	// MetadataAIRulesError is why the rule turn applied no rule at all: a
@@ -499,7 +501,9 @@ func (rl *ruleLevel) joinedPrompt(handoffPrompt string) string {
 }
 
 // appliedRule is one rule the AI applied: existing (name) or created
-// (definition), compiled.
+// (definition), compiled. reason and definition are the record forms
+// (recordReason, recordDefinition); guard and mask are compiled from what
+// the agent sent.
 type appliedRule struct {
 	kind       string
 	name       string
@@ -509,7 +513,8 @@ type appliedRule struct {
 	mask       policy.ResponseMask
 }
 
-// invalidRule is a rule the AI created that failed validation.
+// invalidRule is a rule the AI created that failed validation, in its
+// record form.
 type invalidRule struct {
 	kind       string
 	definition json.RawMessage
@@ -572,7 +577,7 @@ func (rl *ruleLevel) parse(e *Evaluator, level RiskLevel, calls []ToolCall, solo
 			if d.has(kind, args.Rule) {
 				continue
 			}
-			a := appliedRule{kind: kind, name: args.Rule, reason: reason}
+			a := appliedRule{kind: kind, name: args.Rule, reason: e.recordReason(reason)}
 			if kind == RuleKindGuardrail {
 				a.guard = rl.guards[args.Rule]
 			} else {
@@ -596,7 +601,8 @@ func (d *ruleDecision) has(kind, name string) bool {
 }
 
 // add builds one created rule. A rule that fails is recorded and dropped,
-// never applied half-valid.
+// never applied half-valid. The decision keeps only the record forms of the
+// agent's prose, so the cache never holds an unredacted one.
 func (d *ruleDecision) add(e *Evaluator, level RiskLevel, kind, reason string, args json.RawMessage,
 	build func(json.RawMessage) (appliedRule, json.RawMessage, error)) {
 	var a appliedRule
@@ -608,15 +614,92 @@ func (d *ruleDecision) add(e *Evaluator, level RiskLevel, kind, reason string, a
 		a, def, err = build(args)
 	}
 	if err != nil {
-		d.invalid = append(d.invalid, invalidRule{kind: kind, definition: def, reason: reason,
-			err: Truncate(err.Error(), maxRuleErrorBytes)})
+		d.invalid = append(d.invalid, invalidRule{kind: kind, definition: e.recordDefinition(def),
+			reason: e.recordReason(reason), err: e.recordRuleError(err)})
 		if e.cfg.OnRuleInvalid != nil {
 			e.cfg.OnRuleInvalid(level, kind, err)
 		}
 		return
 	}
-	a.kind, a.reason, a.definition = kind, reason, def
+	a.kind, a.reason, a.definition = kind, e.recordReason(reason), e.recordDefinition(def)
 	d.applied = append(d.applied, a)
+}
+
+// ruleErrorUnrecorded is the error an invalid rule is recorded with when no
+// record redactor runs: the validation error quotes the agent's arguments.
+const ruleErrorUnrecorded = "the created rule failed validation; with no record redactor the detail is not kept"
+
+// recordRuleError is a validation error as the record may keep it: the whole
+// text goes through Config.RecordRedact, then it is bounded.
+func (e *Evaluator) recordRuleError(err error) string {
+	if e.cfg.RecordRedact == nil {
+		return ruleErrorUnrecorded
+	}
+	return Truncate(e.cfg.RecordRedact(err.Error()), maxRuleErrorBytes)
+}
+
+// recordDefinition is a created rule's definition as the record may keep it.
+// Every key, string and number in it is the agent's, so each goes through
+// Config.RecordRedact whole; a number the redactor rewrites is kept as the
+// rewritten string. With no record redactor only the closed vocabulary
+// stays: a guardrail type create_guardrail offers and a known mask
+// strategy. The rule that enforces is compiled from the arguments, not
+// from this.
+func (e *Evaluator) recordDefinition(def json.RawMessage) json.RawMessage {
+	dec := json.NewDecoder(bytes.NewReader(def))
+	dec.UseNumber()
+	var m map[string]any
+	if len(def) == 0 || dec.Decode(&m) != nil {
+		return nil
+	}
+	var kept any
+	if redact := e.cfg.RecordRedact; redact != nil {
+		kept = redactValue(m, redact)
+	} else {
+		closed := map[string]any{}
+		if t, ok := m["type"].(string); ok && slices.Contains(DefaultGuardrailTypes, policy.MatchType(t)) {
+			closed["type"] = t
+		}
+		if s, ok := m["strategy"].(string); ok && slices.Contains(MaskStrategies, s) {
+			closed["strategy"] = s
+		}
+		if len(closed) == 0 {
+			return nil
+		}
+		kept = closed
+	}
+	out, err := json.Marshal(kept)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+// redactValue runs redact over every key, string and number of a decoded
+// JSON value.
+func redactValue(v any, redact func(string) string) any {
+	switch x := v.(type) {
+	case string:
+		return redact(x)
+	case json.Number:
+		if s := redact(x.String()); s != x.String() {
+			return s
+		}
+		return x
+	case []any:
+		out := make([]any, len(x))
+		for i, el := range x {
+			out[i] = redactValue(el, redact)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, el := range x {
+			out[redact(k)] = redactValue(el, redact)
+		}
+		return out
+	}
+	return v
 }
 
 // decodeStrict decodes one JSON object into v and refuses an unknown field or
@@ -782,7 +865,8 @@ func (rl *ruleLevel) compile(r policy.Rule) (policy.Evaluator, error) {
 	return rl.compiler(r)
 }
 
-// callReason reads a call's non-blank reason, bounded.
+// callReason reads a call's non-blank reason, whole: recordReason redacts
+// it before it is bounded.
 func callReason(args json.RawMessage) (string, bool) {
 	var a struct {
 		Reason string `json:"reason"`
@@ -791,10 +875,7 @@ func callReason(args json.RawMessage) (string, bool) {
 		return "", false
 	}
 	reason := strings.TrimSpace(a.Reason)
-	if reason == "" {
-		return "", false
-	}
-	return Truncate(reason, maxAgentReasonBytes), true
+	return reason, reason != ""
 }
 
 // ruleOutcome is what a statement's rule turn resolved to: a decision, or
@@ -868,7 +949,7 @@ type ruleRecord struct {
 	Kind       string          `json:"kind"`
 	Rule       string          `json:"rule,omitempty"`
 	Definition json.RawMessage `json:"definition,omitempty"`
-	Reason     string          `json:"reason"`
+	Reason     string          `json:"reason,omitempty"`
 	Matched    *bool           `json:"matched,omitempty"`
 }
 
@@ -876,7 +957,7 @@ type ruleRecord struct {
 type invalidRecord struct {
 	Kind       string          `json:"kind"`
 	Definition json.RawMessage `json:"definition,omitempty"`
-	Reason     string          `json:"reason"`
+	Reason     string          `json:"reason,omitempty"`
 	Error      string          `json:"error"`
 }
 

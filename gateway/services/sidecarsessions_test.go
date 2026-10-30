@@ -1198,12 +1198,13 @@ func TestPlanSidecarSessionAIDecisions(t *testing.T) {
 		rated(1, audit.KindStatement, map[string]string{analyzer.MetadataRiskLevel: "high"}),
 		rated(2, audit.KindStatement, map[string]string{
 			analyzer.MetadataRiskLevel: "medium", analyzer.MetadataAction: "ai-handoff",
-			analyzer.MetadataHandoffDecision: "block", analyzer.MetadataHandoffReason: "no\x00 where",
+			analyzer.MetadataHandoffDecision: "block", analyzer.MetadataHandoffReason: "no\x00 where [REDACTED]",
 			analyzer.MetadataReviewID: strings.ToUpper(reviewID),
 		}),
 		rated(3, audit.KindViolation, map[string]string{
 			analyzer.MetadataRiskLevel: "high", analyzer.MetadataApprover: "ai_agent",
-			analyzer.MetadataApprovalDecision: "rejected", analyzer.MetadataApprovalReason: "drops",
+			analyzer.MetadataApprovalDecision: "rejected", analyzer.MetadataApprovalReasonCode: "destructive",
+			analyzer.MetadataApprovalReason: "drops",
 			analyzer.MetadataReviewID: "not-a-uuid",
 		}),
 		rated(4, audit.KindStatement, map[string]string{analyzer.MetadataAIStatus: "skipped"}),
@@ -1213,16 +1214,17 @@ func TestPlanSidecarSessionAIDecisions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []sidecarAIDecision{
 		{Seq: 2, Timestamp: "2026-10-01T12:00:02Z", RiskLevel: "medium", RiskAction: "ai-handoff",
-			HandoffDecision: "block", HandoffReason: "no where", ReviewID: reviewID},
+			HandoffDecision: "block", HandoffReason: "no where [REDACTED]", ReviewID: reviewID},
 		{Seq: 3, Timestamp: "2026-10-01T12:00:03Z", RiskLevel: "high", Approver: "ai_agent",
-			ApprovalDecision: "rejected", ApprovalReason: "drops"},
+			ApprovalDecision: "rejected", ApprovalReasonCode: "destructive", ApprovalReason: "drops"},
 	}, plan.AIDecisions, "seq 1 and the repeated seq 5 were applied before; an unrated or error event adds none")
 	assert.NotContains(t, plan.Sidecar, "ai_decisions_dropped")
 
 	raw, err := json.Marshal(plan.AIDecisions[1])
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"seq":3,"timestamp":"2026-10-01T12:00:03Z","risk_level":"high","approver":"ai_agent",
-		"approval_decision":"rejected","approval_reason":"drops"}`, string(raw), "empty fields are left out")
+		"approval_decision":"rejected","approval_reason_code":"destructive","approval_reason":"drops"}`, string(raw),
+		"empty fields are left out")
 
 	// Past the cap the rest are counted, on top of what was dropped before.
 	prior := existingSidecarSession(1)
@@ -1254,6 +1256,7 @@ func TestPlanSidecarSessionAIDecisionVocabulary(t *testing.T) {
 			analyzer.MetadataRiskLevel: "high", analyzer.MetadataAction: huge,
 			analyzer.MetadataHandoffDecision: huge, analyzer.MetadataApprover: huge,
 			analyzer.MetadataApprovalDecision: huge, analyzer.MetadataReviewID: huge,
+			analyzer.MetadataApprovalReasonCode: huge,
 			analyzer.MetadataHandoffReason: huge, analyzer.MetadataApprovalReason: huge,
 		}),
 		// An unknown risk level is not a rating: no entry.
@@ -1265,7 +1268,7 @@ func TestPlanSidecarSessionAIDecisionVocabulary(t *testing.T) {
 			analyzer.MetadataApprovalDecision: "approved"}),
 		rated(6, map[string]string{analyzer.MetadataRiskLevel: "low", analyzer.MetadataAction: "require_review",
 			analyzer.MetadataHandoffDecision: "require_approval", analyzer.MetadataApprover: "ai_agent",
-			analyzer.MetadataApprovalDecision: "rejected"}),
+			analyzer.MetadataApprovalDecision: "rejected", analyzer.MetadataApprovalReasonCode: "unbounded_scope"}),
 		rated(7, map[string]string{analyzer.MetadataRiskLevel: "low", analyzer.MetadataAction: "ai-handoff",
 			analyzer.MetadataHandoffDecision: "ai-handoff"}),
 		rated(8, map[string]string{analyzer.MetadataRiskLevel: "low", analyzer.MetadataAction: "defer",
@@ -1281,7 +1284,8 @@ func TestPlanSidecarSessionAIDecisionVocabulary(t *testing.T) {
 		RiskAction: "require_approval", HandoffDecision: "require_review", Approver: "human", ApprovalDecision: "approved"},
 		plan.AIDecisions[1])
 	assert.Equal(t, sidecarAIDecision{Seq: 6, Timestamp: first.Timestamp, RiskLevel: "low",
-		RiskAction: "require_review", HandoffDecision: "require_approval", Approver: "ai_agent", ApprovalDecision: "rejected"},
+		RiskAction: "require_review", HandoffDecision: "require_approval", Approver: "ai_agent", ApprovalDecision: "rejected",
+		ApprovalReasonCode: "unbounded_scope"},
 		plan.AIDecisions[2])
 	assert.Equal(t, sidecarAIDecision{Seq: 7, Timestamp: first.Timestamp, RiskLevel: "low", RiskAction: "ai-handoff"},
 		plan.AIDecisions[3], "the hand-off agent never selects ai-handoff")

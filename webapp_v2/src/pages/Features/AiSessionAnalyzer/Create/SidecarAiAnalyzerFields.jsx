@@ -15,7 +15,6 @@ import { analyzerBlocked } from '@/pages/Sidecars/config'
 import { REVIEW_MODE_HOLD, REVIEW_MODES, appliesAIRules, isHandoffAction, isHoldAction } from '@/pages/sidecarRuleVocabulary'
 import AIPolicyCard from '../components/AIPolicyCard'
 import OptionalLabel from '../components/OptionalLabel'
-import { APPROVER_RULE } from './useSidecarAiAnalyzerEditor'
 import LevelApprover from './sections/LevelApprover'
 import LevelHandoff from './sections/LevelHandoff'
 import TriggerItemsInput from './sections/TriggerItemsInput'
@@ -96,9 +95,6 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     let helper
     if (isHoldAction(action)) helper = 'Rules apply before the approval.'
     else if (isHandoffAction(action)) helper = 'Rules apply when the agent does not block.'
-    // A bare hold files under an imported approval rule; an object would name
-    // the AI agent instead, so this level cannot carry AI rules.
-    const imported = isHoldAction(action) && form.approval[level].approver === APPROVER_RULE
     return (
       <AIPolicyCard
         ai={form.ai[level]}
@@ -107,11 +103,6 @@ export default function SidecarAiAnalyzerFields({ editor }) {
         onFeature={(key, patch) => setAIFeature(level, key, patch)}
         onToggleRule={(key, name) => toggleAIRule(level, key, name)}
         helper={helper}
-        unavailable={
-          imported
-            ? `The approval rule ${form.approval_rule} decides this level. To let the AI apply rules, change the action, then select Hold for approval again.`
-            : undefined
-        }
       />
     )
   }
@@ -249,6 +240,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                 <LevelHandoff
                   handoff={form.handoff[level]}
                   approval={form.approval[level]}
+                  approvalRule={form.approval_rule}
                   groupOptions={groupOptionsFor(level)}
                   policy={policyCard(level)}
                   onPrompt={(prompt) => setHandoffPrompt(level, prompt)}

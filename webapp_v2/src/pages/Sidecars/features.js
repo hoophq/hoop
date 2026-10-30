@@ -4,7 +4,9 @@ import {
   appliesAIRules,
   isHandoffAction,
   isHoldAction,
-  readRiskLevel,
+  readLevelAIRules,
+  readLevelApprover,
+  readLevelHandoff,
 } from '@/pages/sidecarRuleVocabulary'
 import { FEATURES, FEATURE_ORDER } from './config'
 import {
@@ -44,39 +46,41 @@ const RISK_ACTIONS = {
   defer: 'reports',
 }
 
-// Who approves a hold: the AI agent, or the members of some groups. `sep`
-// follows "Human": ": " in a level, " " inside a hand-off list.
-function approverDetail({ approver, groups }, sep) {
-  if (approver !== APPROVER_HUMAN) return 'AI agent'
-  return `Human${sep}${groups.length > 0 ? groups.join(', ') : 'administrators'}`
+// Who approves a hold: the block's approval rule, the AI agent, or the members
+// of some groups. `sep` follows "Human": ": " in a level, " " inside a hand-off
+// list.
+function approverDetail(read, sep) {
+  if (!read) return 'approval rule'
+  if (read.approver !== APPROVER_HUMAN) return 'AI agent'
+  return `Human${sep}${read.groups.length > 0 ? read.groups.join(', ') : 'administrators'}`
 }
 
-// A level is a bare action or an object; a hold names its approver (ENG-680).
-// A bare hold is decided through the listener's approval rule. A hand-off
-// lists the actions its agent may pick (ENG-661).
-function riskAction(read) {
-  if (isHandoffAction(read.action)) {
-    const { actions, approval, conflict } = read.allowed
-    if (conflict) return 'hand-off (approver set twice)'
-    const parts = actions.map((a) => (isHoldAction(a) ? `hold: ${approverDetail(approval, ' ')}` : a))
-    return `hand-off (${parts.join(', ')})`
+// A held level names its approver in `approvers.<level>` (ENG-680). A hold
+// with no entry is decided through the block's approval rule. A hand-off
+// lists in `handoffs.<level>` the actions its agent may select (ENG-661).
+function riskAction(spec, level) {
+  const action = spec[level] ?? ''
+  const read = readLevelApprover(spec, level)
+  if (isHandoffAction(action)) {
+    const allowed = readLevelHandoff(spec, level)?.allowed ?? []
+    const parts = allowed.map((a) => (isHoldAction(a) ? `hold: ${approverDetail(read, ' ')}` : a))
+    return parts.length > 0 ? `hand-off (${parts.join(', ')})` : 'hand-off'
   }
-  if (!isHoldAction(read.action)) return RISK_ACTIONS[read.action || 'allow'] ?? read.action
-  if (!read.approver) return 'hold (approval rule)'
+  if (!isHoldAction(action)) return RISK_ACTIONS[action || 'allow'] ?? action
   return `hold (${approverDetail(read, ': ')})`
 }
 
-// The AI rule features a level sets (ENG-662), named as the level keys. A
-// block or defer level ignores them, so they are not shown there.
-function aiRuleKeys(read) {
-  if (!appliesAIRules(read.action)) return []
-  return AI_RULE_FEATURES.map(({ key }) => key).filter((key) => read.ai[key])
+// The AI rule features `ai_rules.<level>` sets (ENG-662), named as their keys.
+// A block or defer level ignores them, so they are not shown there.
+function aiRuleKeys(spec, level) {
+  if (!appliesAIRules(spec[level])) return []
+  const ai = readLevelAIRules(spec, level)
+  return AI_RULE_FEATURES.map(({ key }) => key).filter((key) => ai[key])
 }
 
-function riskDetail(value) {
-  const read = readRiskLevel(value)
-  const ai = aiRuleKeys(read)
-  const action = riskAction(read)
+function riskDetail(spec, level) {
+  const ai = aiRuleKeys(spec, level)
+  const action = riskAction(spec, level)
   return ai.length > 0 ? `${action} + AI rules (${ai.join(', ')})` : action
 }
 
@@ -146,11 +150,8 @@ function analyzerDetail(spec) {
     .join(', ')
   const excluded = exclude ? `${exclude} exclusion${exclude > 1 ? 's' : ''}` : null
   const risks = ['high', 'medium', 'low']
-    .filter((level) => {
-      const read = readRiskLevel(spec[level])
-      return read.action || aiRuleKeys(read).length > 0
-    })
-    .map((level) => `${level}: ${riskDetail(spec[level])}`)
+    .filter((level) => spec[level] || aiRuleKeys(spec, level).length > 0)
+    .map((level) => `${level}: ${riskDetail(spec, level)}`)
   const prompt = spec.prompt ? 'custom prompt' : null
   // An omitted trigger is not "nothing": declaring the analyzer is the opt-in.
   return [trigger || 'Every statement', excluded, ...risks, prompt].filter(Boolean).join(' · ')

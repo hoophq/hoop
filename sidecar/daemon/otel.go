@@ -135,6 +135,7 @@ func (o *otelExporter) analyzerCall(provider, model string) func(analyzer.Call) 
 			Analyzer: c.Rule,
 			Provider: provider,
 			Model:    model,
+			Kind:     string(callKind(c)),
 			Outcome:  string(c.Outcome),
 			Duration: c.Duration,
 			Timeout:  c.Timeout,

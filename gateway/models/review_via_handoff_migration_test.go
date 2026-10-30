@@ -35,15 +35,25 @@ func TestReviewViaHandoffMigrationRoundTrip(t *testing.T) {
 
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(prev) })
 
-	var sidecarID string
+	levelIndexDef := func() string {
+		t.Helper()
+		var def string
+		require.NoError(t, models.DB.Raw(`SELECT indexdef FROM pg_indexes
+			WHERE schemaname = 'private' AND indexname = 'index_reviews_sidecar_level_statement'`).Row().Scan(&def))
+		return def
+	}
+
+	var sidecarID, indexBefore string
 	oldReview := uuid.NewString()
 	withDB(t, inst, func() {
+		indexBefore = levelIndexDef()
 		execSQL(t, `INSERT INTO private.orgs (id, name) VALUES (?, 'via-handoff-migration')`, testOrgID)
 		require.NoError(t, models.DB.Raw(`INSERT INTO private.sidecars (org_id, name, key_hash, created_by)
 			VALUES (?, 'sc', 'via-handoff-key', 'x') RETURNING id`, testOrgID).Row().Scan(&sidecarID))
 		execSQL(t, `INSERT INTO private.reviews (id, org_id, connection_name, type, status, owner_id, owner_email, listener_name)
 			VALUES (?, ?, '', 'onetime', 'PENDING', 'u', 'hoop@hoop.dev', 'old-lane')`, oldReview, testOrgID)
 	})
+	assert.NotContains(t, indexBefore, "via_handoff")
 
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(viaHandoffVersion) })
 
@@ -80,10 +90,7 @@ func TestReviewViaHandoffMigrationRoundTrip(t *testing.T) {
 		loneHandoff, _ = levelReview(true, "other-hash")
 
 		// The live-review index keys on via_handoff.
-		var indexDef string
-		require.NoError(t, models.DB.Raw(`SELECT indexdef FROM pg_indexes
-			WHERE schemaname = 'private' AND indexname = 'index_reviews_sidecar_level_statement'`).Row().Scan(&indexDef))
-		assert.Contains(t, indexDef, "via_handoff")
+		assert.Contains(t, levelIndexDef(), "via_handoff")
 	})
 
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(prev) })
@@ -94,7 +101,9 @@ func TestReviewViaHandoffMigrationRoundTrip(t *testing.T) {
 			WHERE table_schema = 'private' AND table_name = 'reviews' AND column_name = 'via_handoff'`).Scan(&columns).Error)
 		assert.Zero(t, columns)
 
-		// The older index holds one live review per level and statement.
+		// The 000147 index comes back as it was, and holds one live review
+		// per level and statement.
+		assert.Equal(t, indexBefore, levelIndexDef())
 		assert.Equal(t, "EXPIRED", status("reviews", collidingHandoff),
 			"the hand-off review beside a direct one expires")
 		assert.Equal(t, "done", status("sessions", collidingSession), "its session closes")

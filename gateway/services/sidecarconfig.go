@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"gorm.io/gorm"
@@ -35,45 +33,7 @@ import (
 // per-lane rule document, so a rule edit hot-swaps into a running sidecar
 // instead of asking it to restart (ADR-0014).
 func ComposeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (daemon.Config, error) {
-	composed, err := composeSidecar(db, sc, "", "")
-	return composed.Config, err
-}
-
-// ComposedSidecar is a composed document and, per listener, the name of the
-// analyzer rule whose block it carries.
-type ComposedSidecar struct {
-	Config    daemon.Config
-	Analyzers map[string]string
-}
-
-// ComposeSidecarConfigurationWithOwners is ComposeSidecarConfiguration that
-// also names the analyzer rule bound to each listener.
-func ComposeSidecarConfigurationWithOwners(db *gorm.DB, sc *models.Sidecar) (ComposedSidecar, error) {
-	return composeSidecar(db, sc, "", "")
-}
-
-// ServedSidecarConfiguration is the document the plane serves this sidecar's
-// build, as its last handshake reported it: composed, then downgraded for a
-// build without the object form of a risk level, with the analyzer rule bound
-// to each listener. A filing is authorized against it, so a sidecar files
-// under what it was served. A build the plane refuses to serve gets
-// ErrSidecarCapabilityMissing.
-//
-// The build is read from the stored row, not from sc: the auth lookups load
-// no handshake columns, and nil capabilities would read as a build too old
-// for the object form.
-func ServedSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (ComposedSidecar, error) {
-	stored, err := models.GetSidecarByNameOrID(db, sc.OrgID, sc.ID)
-	if err != nil {
-		return ComposedSidecar{}, fmt.Errorf("failed reading the sidecar's last handshake: %w", err)
-	}
-	composed, err := composeSidecar(db, stored, "", "")
-	if err != nil {
-		return composed, err
-	}
-	hs := daemon.Handshake{Version: reportedVersion(stored), Capabilities: stored.Capabilities}
-	composed.Config, err = DowngradeForBuild(db, stored, composed, hs, "")
-	return composed, err
+	return composeSidecarConfiguration(db, sc, "", "")
 }
 
 // ErrSidecarRulesUnavailable marks a composition that could not be ATTEMPTED,
@@ -86,7 +46,7 @@ func ServedSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (ComposedSideca
 // exists to prevent.
 var ErrSidecarRulesUnavailable = errors.New("the rules bound to this sidecar could not be read")
 
-// composeSidecar is ComposeSidecarConfigurationWithOwners with one rule left
+// composeSidecarConfiguration is ComposeSidecarConfiguration with one rule left
 // out of the fold.
 //
 // The exclusion serves the WRITE path. A rule being edited is already in the
@@ -101,26 +61,25 @@ var ErrSidecarRulesUnavailable = errors.New("the rules bound to this sidecar cou
 // way: a second mask rule REPLACES a lane's block and a second analyzer rule
 // on one lane is a conflict, so a candidate laid over a composed result would
 // under-count the first and never see the second.
-func composeSidecar(db *gorm.DB, sc *models.Sidecar, skipKind SidecarRuleKind, skipName string, candidates ...models.BoundRule) (ComposedSidecar, error) {
+func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind SidecarRuleKind, skipName string, candidates ...models.BoundRule) (daemon.Config, error) {
 	cfg := daemon.Config(sc.Configuration)
-	out := ComposedSidecar{Config: cfg}
 
 	orgID, err := uuid.Parse(sc.OrgID)
 	if err != nil {
-		return out, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
+		return cfg, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
 	}
 
 	guardrails, err := models.ListGuardrailRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
-		return out, fmt.Errorf("%w: failed loading the guardrail rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
+		return cfg, fmt.Errorf("%w: failed loading the guardrail rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
 	}
 	masking, err := models.ListDataMaskingRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
-		return out, fmt.Errorf("%w: failed loading the data masking rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
+		return cfg, fmt.Errorf("%w: failed loading the data masking rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
 	}
 	analyzers, err := models.ListAnalyzerRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
-		return out, fmt.Errorf("%w: failed loading the analyzer rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
+		return cfg, fmt.Errorf("%w: failed loading the analyzer rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
 	}
 	if skipName != "" {
 		switch skipKind {
@@ -141,23 +100,15 @@ func composeSidecar(db *gorm.DB, sc *models.Sidecar, skipKind SidecarRuleKind, s
 	case skipKind == SidecarRuleAnalyzer:
 		analyzers = append(analyzers, candidates...)
 	default:
-		return out, fmt.Errorf("cannot compose a candidate %s rule", skipKind)
+		return cfg, fmt.Errorf("cannot compose a candidate %s rule", skipKind)
 	}
-	out.Config, err = foldSidecarRules(cfg, guardrails, masking, analyzers)
+	composed, err := foldSidecarRules(cfg, guardrails, masking, analyzers)
 	if err != nil {
-		return out, err
+		return composed, err
 	}
-	// After the fold: a level's AI rule options come from the bound
-	// analyzer rule as well as from the stored listener block.
-	out.Config, err = composeRuleLibrary(db, orgID, out.Config)
-	if err != nil {
-		return out, err
-	}
-	out.Analyzers = make(map[string]string, len(analyzers))
-	for _, b := range analyzers {
-		out.Analyzers[b.ListenerName] = b.RuleName
-	}
-	return out, nil
+	// After the fold: a level's AI rules come from the bound analyzer rule
+	// as well as from the stored listener block.
+	return composeRuleLibrary(db, orgID, composed)
 }
 
 // withoutRule drops every binding of one rule, by the name the bindings are
@@ -328,6 +279,7 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	// would make a rule unable to widen what it narrowed.
 	out.Trigger = rule.Trigger
 	out.HighRisk, out.MediumRisk, out.LowRisk = rule.HighRisk, rule.MediumRisk, rule.LowRisk
+	out.Approvers, out.Handoffs, out.AIRules = rule.Approvers, rule.Handoffs, rule.AIRules
 	out.Prompt, out.Message = rule.Prompt, rule.Message
 
 	// The overrides, kept from the listener unless the rule names one. The
@@ -431,120 +383,18 @@ type ErrSidecarCapabilityMissing struct{ Reason string }
 func (e ErrSidecarCapabilityMissing) Error() string { return e.Reason }
 
 // CheckSidecarCapabilities refuses a composed document that the sidecar's last
-// handshake says it cannot decode, after the downgrade the handshake would
-// apply (DowngradeForBuild). A sidecar that never handshaked passes: its
-// support is unknown, and the handshake refuses to serve it instead. pending
-// is as in DowngradeForBuild.
-func CheckSidecarCapabilities(db *gorm.DB, sc *models.Sidecar, composed ComposedSidecar, pending string) error {
+// handshake says it cannot decode, as the handshake serves it
+// (daemon.ServeLevelApprovers). A sidecar that never handshaked passes: its
+// support is unknown, and the handshake refuses to serve it instead.
+func CheckSidecarCapabilities(sc *models.Sidecar, composed daemon.Config) error {
 	if sc.Capabilities == nil {
 		return nil
 	}
 	hs := daemon.Handshake{Version: reportedVersion(sc), Capabilities: sc.Capabilities}
-	served, err := DowngradeForBuild(db, sc, composed, hs, pending)
-	var missing ErrSidecarCapabilityMissing
-	switch {
-	case errors.As(err, &missing):
-		return ErrSidecarCapabilityMissing{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, missing.Reason)}
-	case err != nil:
-		return err
-	}
-	if err := daemon.CheckServable(served, hs); err != nil {
+	if err := daemon.CheckServable(daemon.ServeLevelApprovers(composed, hs), hs); err != nil {
 		return ErrSidecarCapabilityMissing{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
 	}
 	return nil
-}
-
-// DowngradeForBuild is daemon.DowngradeRiskLevels for one sidecar. A human
-// level files, on a build without the object form, under the managed approval
-// rule of the analyzer rule bound to its listener, and only when that rule
-// grants what the level grants (ManagedRuleMatchesLevel); else the listener
-// gets no rule, and the downgrade refuses the build. pending names an
-// analyzer rule whose managed rule the caller's write syncs: the sync writes
-// its reviewers and approvals, so only its force groups are checked. A
-// refusal is ErrSidecarCapabilityMissing.
-func DowngradeForBuild(db *gorm.DB, sc *models.Sidecar, composed ComposedSidecar, hs daemon.Handshake, pending string) (daemon.Config, error) {
-	orgID, err := uuid.Parse(sc.OrgID)
-	if err != nil {
-		return composed.Config, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
-	}
-	// The callback cannot fail, so a lookup error is kept and wins below.
-	var lookupErr error
-	managed := map[string]*models.AccessRequestRule{}
-	approvalRule := func(listener string) string {
-		name := composed.Analyzers[listener]
-		if name == "" {
-			return ""
-		}
-		level, ok := listenerHumanLevel(composed.Config, listener)
-		if !ok {
-			return ""
-		}
-		rule, seen := managed[name]
-		if !seen {
-			found, err := AnalyzerApprovalRule(db, orgID, name)
-			if err != nil {
-				lookupErr = err
-				return ""
-			}
-			rule, managed[name] = found, found
-		}
-		switch {
-		case name == pending && (rule == nil || len(NormalizeReviewerGroups(rule.ForceApprovalGroups)) == 0):
-			return name
-		case name != pending && ManagedRuleMatchesLevel(rule, level):
-			return name
-		}
-		return ""
-	}
-	served, err := daemon.DowngradeRiskLevels(composed.Config, hs, approvalRule)
-	if lookupErr != nil {
-		return composed.Config, fmt.Errorf("%w: reading the approval rules of the analyzer rules: %v",
-			ErrSidecarRulesUnavailable, lookupErr)
-	}
-	if err != nil {
-		return composed.Config, ErrSidecarCapabilityMissing{Reason: err.Error()}
-	}
-	return served, nil
-}
-
-// listenerHumanLevel returns the first human level of the listener's analyzer
-// block. DowngradeRiskLevels refuses a block whose human levels name
-// different groups before it asks for the rule, so the first stands for all.
-func listenerHumanLevel(cfg daemon.Config, listener string) (daemon.RiskLevel, bool) {
-	for _, l := range cfg.Listeners {
-		if l.Name != listener || l.Analyzer == nil {
-			continue
-		}
-		block := *l.Analyzer
-		if err := block.Canonicalize(); err != nil {
-			return daemon.RiskLevel{}, false
-		}
-		for _, lvl := range AnalyzerLevels(&block) {
-			if LevelApprover(lvl.Level) == analyzer.ApproverHuman {
-				return lvl.Level, true
-			}
-		}
-	}
-	return daemon.RiskLevel{}, false
-}
-
-// ManagedRuleMatchesLevel reports whether an approval rule grants exactly what
-// a human level grants: the level's groups (the admin group when it names
-// none), one approval, no force approvers. A review filed under the rule then
-// has the policy of a review filed under the level.
-func ManagedRuleMatchesLevel(rule *models.AccessRequestRule, level daemon.RiskLevel) bool {
-	if rule == nil || rule.AllGroupsMustApprove || len(NormalizeReviewerGroups(rule.ForceApprovalGroups)) > 0 {
-		return false
-	}
-	reviewers := NormalizeReviewerGroups(rule.ReviewersGroups)
-	// An absent minimum is every group, which is one only with one group.
-	if rule.MinApprovals == nil && len(reviewers) != 1 || rule.MinApprovals != nil && *rule.MinApprovals != 1 {
-		return false
-	}
-	slices.Sort(reviewers)
-	groups := LevelReviewerGroups(level)
-	slices.Sort(groups)
-	return slices.Equal(reviewers, groups)
 }
 
 // ErrSidecarAnalyzerInvalid marks a composed analyzer block the sidecar would
@@ -578,17 +428,17 @@ func validateComposedAnalyzers(cfg daemon.Config) error {
 // a feature its last handshake did not report. It composes, because a rule
 // bound to a lane can be what breaks the block.
 func CheckComposedSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) error {
-	composed, err := composeSidecar(db, sc, "", "")
+	composed, err := ComposeSidecarConfiguration(db, sc)
 	if err != nil {
 		if errors.Is(err, ErrSidecarRulesUnavailable) {
 			return err
 		}
 		return ErrSidecarBindingBroken{Reason: err.Error()}
 	}
-	if err := validateComposedAnalyzers(composed.Config); err != nil {
+	if err := validateComposedAnalyzers(composed); err != nil {
 		return err
 	}
-	return CheckSidecarCapabilities(db, sc, composed, "")
+	return CheckSidecarCapabilities(sc, composed)
 }
 
 // reportedVersion is the release the sidecar last reported, or empty.

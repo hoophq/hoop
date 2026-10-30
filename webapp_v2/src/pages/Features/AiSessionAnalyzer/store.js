@@ -7,11 +7,18 @@ import { useAuthStore } from '@/stores/useAuthStore'
 
 const EMPTY_LIBRARY = { guardrails: [], mask: [] }
 
-// A library row the AI may apply: one with a sidecar block, which is what the
-// plane serves into rule_library (rulepack rows are not listed at all).
+const isObject = (v) => v != null && typeof v === 'object' && !Array.isArray(v)
+
+// A library row the AI may apply: its sidecar block holds at least one rule,
+// each an object. The gateway accepts only these names (libraryGuardrails,
+// libraryMasks in gateway/services/sidecarairules.go) and serves only these
+// rows into rule_library; rulepack rows are not listed at all.
+const holdsSidecarRules = (spec) =>
+  isObject(spec) && Array.isArray(spec.rules) && spec.rules.length > 0 && spec.rules.every(isObject)
+
 const libraryEntries = (rows) =>
   (Array.isArray(rows) ? rows : [])
-    .filter((r) => r.sidecar_spec != null && typeof r.sidecar_spec === 'object')
+    .filter((r) => holdsSidecarRules(r.sidecar_spec))
     .map((r) => ({ name: r.name, description: r.description ?? '' }))
     .sort((a, b) => a.name.localeCompare(b.name))
 

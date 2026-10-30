@@ -590,12 +590,12 @@
             "type": "string"
           },
           "pending_ttl_sec": {
-            "description": "Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds a statement for a human approver, directly or through an ai-handoff level. Absent keeps, 0 clears",
+            "description": "Seconds a held statement's approval request may wait for a decision, 60 to 604800. Read only while sidecar_spec\nholds under its own approval rule, directly or through an ai-handoff level. Absent keeps, 0 clears",
             "example": 900,
             "type": "integer"
           },
           "reviewers_groups": {
-            "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement in the bare form\n(high: require_approval) under its own approval rule. A level written\nas an object with approver human, or an ai-handoff level whose\nallowed_actions.require_approval has approver human, names its own\napproval_groups, and this field is ignored.",
+            "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement, directly or through an\nai-handoff level that allows require_approval.",
             "example": [
               "dba-leads"
             ],
@@ -613,7 +613,7 @@
             "description": "Risk evaluation actions per level"
           },
           "sidecar_spec": {
-            "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /\ndefer, and the per-lane cost overrides. It IS the analyzer block the\nlistener receives.\n\nA risk level in object form may set guardrails and mask, {mode, rules}: the guardrail\nand data masking rules of this organization the AI may apply to a statement. mode is\nexisting_only (default) or existing_and_new; rules names library rules, and absent allows\nall. Refused on a block or defer level, for a name the library does not hold, and without\nan Enterprise license.\n\nOmitted on a rule no sidecar runs.",
+            "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /\ndefer, and the per-lane cost overrides. It IS the analyzer block the\nlistener receives.\n\nai_rules.\u003clevel\u003e may set guardrails and mask, {mode, rules}: the guardrail and data\nmasking rules of this organization the AI may apply to a statement at that risk level.\nmode is existing_only (default) or existing_and_new; rules names library rules, and\nabsent allows all. Refused on a block or defer level, for an entry with neither, for a\nname the library does not hold, and without an Enterprise license.\n\nOmitted on a rule no sidecar runs.",
             "type": "object"
           },
           "sidecar_targets": {
@@ -6063,16 +6063,6 @@
             "readOnly": true,
             "type": "integer"
           },
-          "approver_type": {
-            "description": "Who decided: human, or ai_agent for a sidecar approval request the sidecar's approval agent decided.\nThe decision of ai_agent is final: it is not approved, rejected or revoked again",
-            "enum": [
-              "human",
-              "ai_agent"
-            ],
-            "example": "human",
-            "readOnly": true,
-            "type": "string"
-          },
           "connection": {
             "allOf": [
               {
@@ -6085,12 +6075,6 @@
           "created_at": {
             "description": "The time the resource was created",
             "example": "2024-07-25T15:56:35.317601Z",
-            "readOnly": true,
-            "type": "string"
-          },
-          "decision_reason": {
-            "description": "The approval agent's reason for its decision. On a rejection, rejection_reason holds the same text",
-            "example": "The delete names no rows.",
             "readOnly": true,
             "type": "string"
           },
@@ -8575,25 +8559,9 @@
             "readOnly": true,
             "type": "string"
           },
-          "approver_type": {
-            "description": "Who decided: human, or ai_agent for a sidecar approval request the sidecar's approval agent decided.\nOnly GET /sessions/{session_id} returns it",
-            "enum": [
-              "human",
-              "ai_agent"
-            ],
-            "example": "human",
-            "readOnly": true,
-            "type": "string"
-          },
           "created_at": {
             "description": "The time the resource was created",
             "example": "2024-07-25T15:56:35.317601Z",
-            "readOnly": true,
-            "type": "string"
-          },
-          "decision_reason": {
-            "description": "The approval agent's reason for its decision. On a rejection, rejection_reason holds the same text.\nOnly GET /sessions/{session_id} returns it",
-            "example": "The delete names no rows.",
             "readOnly": true,
             "type": "string"
           },
@@ -9207,26 +9175,8 @@
             "maxLength": 254,
             "type": "string"
           },
-          "approver": {
-            "description": "Who approves the level: human, or ai_agent. Required with risk_level",
-            "enum": [
-              "human",
-              "ai_agent"
-            ],
-            "example": "human",
-            "type": "string"
-          },
-          "decision": {
-            "description": "The approval agent's decision. Required with approver ai_agent, refused otherwise.\nThe approval request is stored decided and never releases the statement",
-            "enum": [
-              "approved",
-              "rejected"
-            ],
-            "example": "rejected",
-            "type": "string"
-          },
           "handoff": {
-            "description": "The hand-off agent of the level selected the hold. The level must be ai-handoff and allow\nrequire_approval for this approver; its allowed_actions.require_approval names the approval groups.\nRead only with risk_level",
+            "description": "The hand-off agent of the level selected the hold. The level must be ai-handoff, allow\nrequire_approval, and name a human approver for that level (approvers). Read only with risk_level",
             "example": false,
             "type": "boolean"
           },
@@ -9240,18 +9190,13 @@
             "example": "REVMRVRFIEZST00gdXNlcnM7",
             "type": "string"
           },
-          "reason": {
-            "description": "The approval agent's reason, at most 4096 bytes. Required with decision",
-            "example": "The delete names no rows.",
-            "type": "string"
-          },
           "reserve": {
-            "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release. Refused with a decision.",
+            "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release.",
             "example": false,
             "type": "boolean"
           },
           "risk_level": {
-            "description": "The analyzer risk level that held the statement, when the listener\nwrites that level as an object. The control plane reads the level's\napprover and approval groups in the listener's stored configuration",
+            "description": "The analyzer risk level that held the statement, when the listener's\nanalyzer block names a human approver for that level (approvers). The\ncontrol plane reads the level's approval groups in the listener's\nstored configuration",
             "enum": [
               "high",
               "medium",
@@ -9306,16 +9251,6 @@
             "readOnly": true,
             "type": "string"
           },
-          "approver_type": {
-            "description": "Who decided: human, or ai_agent for the sidecar's approval agent",
-            "enum": [
-              "human",
-              "ai_agent"
-            ],
-            "example": "human",
-            "readOnly": true,
-            "type": "string"
-          },
           "created_at": {
             "description": "The time the approval request was created",
             "example": "2024-07-25T15:56:35.317601Z",
@@ -9325,12 +9260,6 @@
           "decided_at": {
             "description": "The time of the last approver decision. Null while the approval request is pending",
             "example": "2024-07-25T16:01:12.000Z",
-            "readOnly": true,
-            "type": "string"
-          },
-          "decision_reason": {
-            "description": "The approval agent's reason for its decision",
-            "example": "The delete names no rows.",
             "readOnly": true,
             "type": "string"
           },
@@ -24934,7 +24863,7 @@
         ]
       },
       "post": {
-        "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the listener's analyzer level decides who approves; with approver ai_agent the request records the approval agent's decision, is filed decided and never releases the statement. With handoff, the level is ai-handoff and its allowed_actions.require_approval decides who approves.",
+        "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the groups of the listener's analyzer approvers entry for that level decide who approves. With handoff, the level is ai-handoff and its hand-off agent selected require_approval.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",

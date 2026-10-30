@@ -32,7 +32,7 @@ func TestDecodeSpecFoldsTheApprovalSpellings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if block.HighRisk.Action != "require_review" || block.ReviewMode != "return" || block.ApprovalMode != "" {
+	if block.HighRisk != "require_review" || block.ReviewMode != "return" || block.ApprovalMode != "" {
 		t.Errorf("decoded %+v, want require_review and review_mode return", block)
 	}
 
@@ -56,7 +56,7 @@ func TestARuleApprovalModeIsServed(t *testing.T) {
 		t.Fatal(err)
 	}
 	la := composed.Listeners[0].Analyzer
-	if la.ReviewMode != "return" || la.HighRisk.Action != "require_review" || la.ApprovalMode != "" {
+	if la.ReviewMode != "return" || la.HighRisk != "require_review" || la.ApprovalMode != "" {
 		t.Errorf("served block %+v, want review_mode return and require_review", la)
 	}
 }
@@ -88,7 +88,7 @@ func TestParseSidecarConfigurationStoresTheCanonicalSpellings(t *testing.T) {
 		t.Fatal(err)
 	}
 	la := cfg.Listeners[0].Analyzer
-	if la.HighRisk.Action != "require_review" || la.ReviewMode != "return" || la.ApprovalMode != "" {
+	if la.HighRisk != "require_review" || la.ReviewMode != "return" || la.ApprovalMode != "" {
 		t.Errorf("stored block %+v, want the canonical spellings", la)
 	}
 
@@ -105,7 +105,7 @@ func TestParseSidecarConfigurationStoresTheCanonicalSpellings(t *testing.T) {
 func TestSplitAnalyzerReadsTheApprovalSpellings(t *testing.T) {
 	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{{
 		Name:     "agents",
-		Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: daemon.RiskLevel{Action: "require_approval"}, ApprovalMode: "return", MaxCalls: 5},
+		Analyzer: &daemon.LaneAnalyzerConfig{HighRisk: "require_approval", ApprovalMode: "return", MaxCalls: 5},
 	}}}
 	_, items, err := SplitSidecarConfiguration("edge", cfg, nil)
 	if err != nil {
@@ -118,7 +118,7 @@ func TestSplitAnalyzerReadsTheApprovalSpellings(t *testing.T) {
 	if err := json.Unmarshal(items[0].Spec, &rule); err != nil {
 		t.Fatal(err)
 	}
-	if rule.HighRisk.Action != "require_review" || rule.ReviewMode != "return" || rule.ApprovalRule == "" {
+	if rule.HighRisk != "require_review" || rule.ReviewMode != "return" || rule.ApprovalRule == "" {
 		t.Errorf("split rule %+v, want a hold with its mode and an approval_rule", rule)
 	}
 	if cfg.Listeners[0].Analyzer.ApprovalMode != "return" {

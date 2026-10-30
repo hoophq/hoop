@@ -385,18 +385,20 @@ func (p *sidecarSessionPlan) addReview(ev audit.Event) {
 }
 
 // sidecarAIDecision is one entry of metadata.sidecar.ai_decisions: what the
-// analyzer decided on one statement. Empty fields are left out.
+// analyzer decided on one statement. Empty fields are left out. The reasons
+// are stored as the sidecar sent them: it redacts them before they leave.
 type sidecarAIDecision struct {
-	Seq              int64  `json:"seq"`
-	Timestamp        string `json:"timestamp,omitempty"`
-	RiskLevel        string `json:"risk_level,omitempty"`
-	RiskAction       string `json:"risk_action,omitempty"`
-	HandoffDecision  string `json:"handoff_decision,omitempty"`
-	HandoffReason    string `json:"handoff_reason,omitempty"`
-	Approver         string `json:"approver,omitempty"`
-	ApprovalDecision string `json:"approval_decision,omitempty"`
-	ApprovalReason   string `json:"approval_reason,omitempty"`
-	ReviewID         string `json:"review_id,omitempty"`
+	Seq                int64  `json:"seq"`
+	Timestamp          string `json:"timestamp,omitempty"`
+	RiskLevel          string `json:"risk_level,omitempty"`
+	RiskAction         string `json:"risk_action,omitempty"`
+	HandoffDecision    string `json:"handoff_decision,omitempty"`
+	HandoffReason      string `json:"handoff_reason,omitempty"`
+	Approver           string `json:"approver,omitempty"`
+	ApprovalDecision   string `json:"approval_decision,omitempty"`
+	ApprovalReasonCode string `json:"approval_reason_code,omitempty"`
+	ApprovalReason     string `json:"approval_reason,omitempty"`
+	ReviewID           string `json:"review_id,omitempty"`
 	// AIRules are the rules the AI applied to the statement (ENG-662). An
 	// empty list is a rule turn that applied none; nil is no rule turn.
 	AIRules []sidecarAIRule `json:"ai_rules,omitzero"`
@@ -443,7 +445,9 @@ func sidecarAIDecisionFor(e daemon.SessionEvent) (sidecarAIDecision, bool) {
 		HandoffReason:    truncateChars(pgText(md[analyzer.MetadataHandoffReason]), maxSidecarAIDecisionReasonChars),
 		Approver:         knownValue(md[analyzer.MetadataApprover], approverValue(md[analyzer.MetadataApprover])),
 		ApprovalDecision: knownValue(md[analyzer.MetadataApprovalDecision], approvalDecision(md[analyzer.MetadataApprovalDecision])),
-		ApprovalReason:   truncateChars(pgText(md[analyzer.MetadataApprovalReason]), maxSidecarAIDecisionReasonChars),
+		ApprovalReasonCode: knownValue(md[analyzer.MetadataApprovalReasonCode],
+			analyzer.ReasonCode(md[analyzer.MetadataApprovalReasonCode]).Valid()),
+		ApprovalReason: truncateChars(pgText(md[analyzer.MetadataApprovalReason]), maxSidecarAIDecisionReasonChars),
 	}
 	if !e.Event.Timestamp.IsZero() {
 		d.Timestamp = e.Event.Timestamp.UTC().Format(time.RFC3339Nano)

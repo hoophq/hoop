@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { Box, Group, Stack, Text } from '@mantine/core'
 import {
   BadgeCheck,
-  Bot,
   CalendarArrowUp,
   CircleCheckBig,
   CircleUser,
@@ -34,7 +33,6 @@ import {
   canRevoke,
   decidedGroups,
   expiryLabel,
-  isAiReview,
   isHandoffReview,
   isSettled,
   isSidecarReview,
@@ -179,7 +177,6 @@ export default function ReviewModal({
   const mayReject = canReject(review, user)
   const revocable = canRevoke(review)
   const expiry = expiryLabel(review)
-  const ai = isAiReview(review)
   const risk = riskLevel(review)
 
   return (
@@ -240,14 +237,6 @@ export default function ReviewModal({
             </Badge>
           </DetailRow>
 
-          {ai && (
-            <DetailRow icon={Bot} label="Decided by">
-              <Text size="sm" fw={500}>
-                AI agent
-              </Text>
-            </DetailRow>
-          )}
-
           {decided.length > 0 && (
             <Stack gap="md" ml={32}>
               {decided.map((group) => (
@@ -293,19 +282,7 @@ export default function ReviewModal({
           />
         </Stack>
 
-        {/* The AI agent's reject reason is also the rejection reason; show it once. */}
-        {ai && review.decision_reason && (
-          <Alert
-            color={review.status === STATUS.REJECTED ? 'red' : 'green'}
-            variant="light"
-            radius="md"
-            title="Decided by AI agent"
-          >
-            {review.decision_reason}
-          </Alert>
-        )}
-
-        {review.rejection_reason && !(ai && review.decision_reason) && (
+        {review.rejection_reason && (
           <Alert color="red" variant="light" radius="md" title="Rejection reason">
             {review.rejection_reason}
           </Alert>

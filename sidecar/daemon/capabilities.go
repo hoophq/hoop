@@ -269,9 +269,10 @@ func CheckServable(cfg Config, hs Handshake) error {
 		where := fmt.Sprintf("listener %q", l.Name)
 		// The action is a string every build decodes, so no cap tag
 		// marks it: a build without the capability refuses the value.
+		// Validation also needs the cap-tagged handoffs entry beside it.
 		if l.Analyzer != nil {
 			for _, lv := range l.Analyzer.levels() {
-				if lv.level.IsHandoff() {
+				if handsOff(*lv.action) {
 					need(where, fmt.Sprintf("sets %s risk to %s", lv.name, analyzer.ActionHandoff), CapabilityAIHandoff)
 				}
 			}
@@ -401,8 +402,8 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 // and refuses the whole document over one, and the canonical form is what
 // every build reads. approval_mode that disagrees with review_mode is served
 // as written: normalize refuses it, and picking one here would hide that.
-// An object risk level that holds and names no approver is served with its
-// ai_agent default written, so the cap tag on approver catches it.
+// An approvers, handoffs or ai_rules block that names no level is dropped:
+// it says nothing, and an older build refuses the key.
 func ServedForm(cfg Config) Config {
 	listeners := make([]ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
@@ -424,8 +425,17 @@ func ServedForm(cfg Config) Config {
 		if block.SpendApprovalOn == SpendOnForward {
 			block.SpendApprovalOn = ""
 		}
-		for _, lv := range block.levels() {
-			*lv.level = lv.level.canonical()
+		block.HighRisk = canonicalAction(block.HighRisk)
+		block.MediumRisk = canonicalAction(block.MediumRisk)
+		block.LowRisk = canonicalAction(block.LowRisk)
+		if block.Approvers != nil && block.Approvers.isZero() {
+			block.Approvers = nil
+		}
+		if block.Handoffs != nil && block.Handoffs.isZero() {
+			block.Handoffs = nil
+		}
+		if block.AIRules != nil && block.AIRules.isZero() {
+			block.AIRules = nil
 		}
 		if !reflect.DeepEqual(block, *l.Analyzer) {
 			listeners[i].Analyzer = &block

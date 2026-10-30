@@ -42,6 +42,7 @@ func TestPostEventsBoundsTheAIDecisions(t *testing.T) {
 					analyzer.MetadataRiskLevel: "high", analyzer.MetadataAction: big,
 					analyzer.MetadataHandoffDecision: big, analyzer.MetadataApprover: big,
 					analyzer.MetadataApprovalDecision: big, analyzer.MetadataReviewID: big,
+					analyzer.MetadataApprovalReasonCode: big,
 					analyzer.MetadataHandoffReason: reason, analyzer.MetadataApprovalReason: reason,
 				}
 			}))

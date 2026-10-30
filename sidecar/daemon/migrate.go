@@ -109,15 +109,15 @@ func (c *Config) migrateApprovalSpellings() []string {
 			continue
 		}
 		for _, l := range la.levels() {
-			if l.level.holds() {
-				l.level.Action = string(analyzer.ActionRequireApproval)
+			if holdsAction(*l.action) {
+				*l.action = string(analyzer.ActionRequireApproval)
 			}
 		}
 		if la.ApprovalRule != "" {
 			notes = append(notes, fmt.Sprintf("%s: approval_rule %q is deprecated and left in place: "+
-				"write each held level as {action: require_approval, approver: human, "+
-				"approval_groups: [...]} with the groups of that control plane rule, then drop "+
-				"approval_rule", c.Listeners[i].displayName(i), la.ApprovalRule))
+				"write each held level as approvers.<level>: {type: human, groups: [...]} "+
+				"with the groups of that control plane rule, then drop approval_rule",
+				c.Listeners[i].displayName(i), la.ApprovalRule))
 		}
 	}
 	return notes

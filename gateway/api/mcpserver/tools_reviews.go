@@ -369,8 +369,7 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 // nil when err is not a refusal.
 func reviewsUpdateRefusal(err error) *mcp.CallToolResult {
 	switch err {
-	case reviewapi.ErrNotEligible, reviewapi.ErrSelfApproval, reviewapi.ErrWrongState, reviewapi.ErrNoTimeWindow, reviewapi.ErrExpired,
-		reviewapi.ErrDecidedByAgent:
+	case reviewapi.ErrNotEligible, reviewapi.ErrSelfApproval, reviewapi.ErrWrongState, reviewapi.ErrNoTimeWindow, reviewapi.ErrExpired:
 		return errResult(err.Error())
 	case reviewapi.ErrForbidden:
 		return errResult("access denied")

@@ -18,14 +18,34 @@ import (
 
 // This file is ENG-662: per risk level, the AI may apply existing Guardrails
 // and Data Masking rules to a statement, and may create new ones. The level
-// fields live on RiskLevel (guardrails, mask); the existing rules live in the
+// options live in analyzer.ai_rules; the existing rules live in the
 // top-level rule_library.
 
-// CapabilityAIRules means this build decodes a risk level's guardrails and
-// mask and the top-level rule_library, and applies the rules the AI selects.
-// The cap tags on those fields put it in the header. No downgrade exists: an
-// older build has no way to apply an AI-selected rule.
+// CapabilityAIRules means this build reads analyzer.ai_rules and the
+// top-level rule_library, and applies the rules the AI selects. The cap tags
+// on those fields put it in the header, so CheckServable refuses a document
+// that sets either to a build without it. No downgrade exists: an older
+// build has no way to apply an AI-selected rule.
 const CapabilityAIRules = "analyzer_ai_rules"
+
+// LevelAIRules holds the AI rule options of each risk level of an analyzer
+// block.
+type LevelAIRules struct {
+	High   *LevelAIRule `json:"high,omitempty"`
+	Medium *LevelAIRule `json:"medium,omitempty"`
+	Low    *LevelAIRule `json:"low,omitempty"`
+}
+
+// LevelAIRule is the AI rule options of one level. They are not the
+// listener's guardrails and mask blocks, which apply as before. An entry
+// sets one of the two at least.
+type LevelAIRule struct {
+	// Guardrails lets the AI apply rule_library guardrails.
+	Guardrails *AIRuleOptions `json:"guardrails,omitempty"`
+
+	// Mask lets the AI mask the response with rule_library mask rules.
+	Mask *AIRuleOptions `json:"mask,omitempty"`
+}
 
 // AIRuleOptions are the AI rule options of one feature at one risk level.
 type AIRuleOptions struct {
@@ -34,9 +54,30 @@ type AIRuleOptions struct {
 	Mode string `json:"mode,omitempty"`
 
 	// Rules names the rule_library rules of this feature the AI may
-	// apply. Absent allows every one. A name rule_library does not hold
-	// is warned about and ignored.
+	// apply. Absent allows every one; empty allows none. A name
+	// rule_library does not hold is warned about and ignored.
 	Rules []string `json:"rules,omitzero"`
+}
+
+// LevelAIRule returns the AI rule options the block sets for level, or nil.
+func (la *LaneAnalyzerConfig) LevelAIRule(level analyzer.RiskLevel) *LevelAIRule {
+	if la == nil || la.AIRules == nil {
+		return nil
+	}
+	switch level {
+	case analyzer.RiskHigh:
+		return la.AIRules.High
+	case analyzer.RiskMedium:
+		return la.AIRules.Medium
+	case analyzer.RiskLow:
+		return la.AIRules.Low
+	}
+	return nil
+}
+
+// isZero reports a block with no level set.
+func (a *LevelAIRules) isZero() bool {
+	return a == nil || a.High == nil && a.Medium == nil && a.Low == nil
 }
 
 // RuleLibrary holds the existing rules a risk level may let the AI apply.
@@ -117,53 +158,64 @@ func (l *RuleLibrary) validate() []string {
 	return problems
 }
 
-// hasAIRules reports a level that sets AI rule options.
-func (r RiskLevel) hasAIRules() bool { return r.Guardrails != nil || r.Mask != nil }
-
-// appliesAIRules reports a level whose action applies AI rules: allow, warn,
+// appliesAIRules reports an action that applies AI rules: allow, warn,
 // require_approval and ai-handoff. An unset action is allow.
-func (r RiskLevel) appliesAIRules() bool {
-	switch analyzer.Action(r.Action).Canonical() {
+func appliesAIRules(action string) bool {
+	switch analyzer.Action(action).Canonical() {
 	case "", analyzer.ActionAllow, analyzer.ActionWarn, analyzer.ActionRequireReview, analyzer.ActionHandoff:
 		return true
 	}
 	return false
 }
 
-// aiRuleModeProblems refuses an unknown mode.
-func aiRuleModeProblems(where, level string, r RiskLevel) []string {
-	var out []string
-	for _, f := range [...]struct {
-		key string
-		o   *AIRuleOptions
-	}{{"guardrails", r.Guardrails}, {"mask", r.Mask}} {
-		if f.o != nil && !analyzer.RuleMode(f.o.Mode).Valid() {
-			out = append(out, fmt.Sprintf("%s: %s risk %s.mode %q is unknown; use %s or %s",
-				where, level, f.key, f.o.Mode, analyzer.RuleModeExistingOnly, analyzer.RuleModeExistingAndNew))
+// validateLevelAIRules refuses AI rule options the sidecar cannot act on: an
+// entry on a level whose action applies no AI rule, an entry that sets
+// neither guardrails nor mask, and an unknown mode.
+func validateLevelAIRules(la *LaneAnalyzerConfig, where string) []string {
+	var problems []string
+	for _, l := range la.levels() {
+		r := la.LevelAIRule(l.risk)
+		if r == nil {
+			continue
+		}
+		at := fmt.Sprintf("%s: ai_rules.%s", where, l.name)
+		if !appliesAIRules(*l.action) {
+			problems = append(problems, fmt.Sprintf("%s lets the AI apply rules, and the %s risk action %q "+
+				"applies none (only allow, warn, %s and %s do); change the action or remove the entry",
+				at, l.name, *l.action, analyzer.ActionRequireApproval, analyzer.ActionHandoff))
+		}
+		if r.Guardrails == nil && r.Mask == nil {
+			problems = append(problems, fmt.Sprintf("%s sets neither guardrails nor mask; set one or "+
+				"remove the entry", at))
+		}
+		for _, f := range [...]struct {
+			key string
+			o   *AIRuleOptions
+		}{{"guardrails", r.Guardrails}, {"mask", r.Mask}} {
+			if f.o != nil && !analyzer.RuleMode(f.o.Mode).Valid() {
+				problems = append(problems, fmt.Sprintf("%s: %s.mode %q is unknown; use %s or %s",
+					at, f.key, f.o.Mode, analyzer.RuleModeExistingOnly, analyzer.RuleModeExistingAndNew))
+			}
 		}
 	}
-	return out
+	return problems
 }
 
-// aiRuleLevelWarnings warns about AI rule options on a level that applies
-// none: block refuses the statement before a rule could apply.
-func aiRuleLevelWarnings(level string, r RiskLevel) []string {
-	if !r.hasAIRules() || r.appliesAIRules() {
-		return nil
-	}
-	return []string{fmt.Sprintf("analyzer block: %s risk sets guardrails or mask, and its action %q "+
-		"applies no AI rule, so they are ignored", level, r.Action)}
+// aiRuleLevel is one level whose AI rule options apply.
+type aiRuleLevel struct {
+	laneLevel
+	rule *LevelAIRule
 }
 
 // aiRuleLevels lists the levels whose AI rule options apply.
-func (la *LaneAnalyzerConfig) aiRuleLevels() []laneLevel {
-	if la == nil {
+func (la *LaneAnalyzerConfig) aiRuleLevels() []aiRuleLevel {
+	if la == nil || la.AIRules == nil {
 		return nil
 	}
-	var out []laneLevel
+	var out []aiRuleLevel
 	for _, l := range la.levels() {
-		if l.level.hasAIRules() && l.level.appliesAIRules() {
-			out = append(out, l)
+		if r := la.LevelAIRule(l.risk); r != nil && appliesAIRules(*l.action) {
+			out = append(out, aiRuleLevel{l, r})
 		}
 	}
 	return out
@@ -171,7 +223,7 @@ func (la *LaneAnalyzerConfig) aiRuleLevels() []laneLevel {
 
 // usesAIMask reports a lane where the AI may mask a response.
 func (la *LaneAnalyzerConfig) usesAIMask() bool {
-	return slices.ContainsFunc(la.aiRuleLevels(), func(l laneLevel) bool { return l.level.Mask != nil })
+	return slices.ContainsFunc(la.aiRuleLevels(), func(l aiRuleLevel) bool { return l.rule.Mask != nil })
 }
 
 // aiMaskScope is how a lane ties an AI mask to the response of its
@@ -272,7 +324,7 @@ func LaneAIRuleWarnings(lib *RuleLibrary, la *LaneAnalyzerConfig, lc ListenerCon
 	}
 	scope := aiMaskScope(lc)
 	for _, l := range la.aiRuleLevels() {
-		r := l.level
+		r := l.rule
 		for _, f := range [...]struct {
 			key   string
 			o     *AIRuleOptions
@@ -283,50 +335,22 @@ func LaneAIRuleWarnings(lib *RuleLibrary, la *LaneAnalyzerConfig, lc ListenerCon
 			}
 			for _, name := range f.o.Rules {
 				if !f.known[name] {
-					out = append(out, fmt.Sprintf("analyzer block: %s risk %s.rules names %q, which "+
+					out = append(out, fmt.Sprintf("analyzer block: ai_rules.%s.%s.rules names %q, which "+
 						"rule_library does not hold, so it is ignored", l.name, f.key, name))
 				}
 			}
 		}
 		if r.Mask != nil && scope == gate.MaskScopeNone {
-			out = append(out, fmt.Sprintf("analyzer block: %s risk mask: a %s lane %s, so a statement "+
+			out = append(out, fmt.Sprintf("analyzer block: ai_rules.%s.mask: a %s lane %s, so a statement "+
 				"the AI masks is denied", l.name, lc.Protocol, noAIMaskReason(lc)))
 		}
 		if r.Mask != nil && scope == gate.MaskScopeSerial && !gate.ResponseEndKnown(inspect.Protocol(lc.Protocol)) {
-			out = append(out, fmt.Sprintf("analyzer block: %s risk mask: a %s lane cannot see where a "+
+			out = append(out, fmt.Sprintf("analyzer block: ai_rules.%s.mask: a %s lane cannot see where a "+
 				"response ends, so after a statement the AI masks the connection takes no further "+
 				"statement", l.name, lc.Protocol))
 		}
 	}
 	return out
-}
-
-// refuseAIRules refuses a document with AI rule options or a rule_library to
-// a build without CapabilityAIRules.
-func refuseAIRules(cfg Config, hs Handshake, since map[string]string) error {
-	if hs.grants(CapabilityAIRules, since) {
-		return nil
-	}
-	var problems []string
-	if cfg.RuleLibrary != nil {
-		problems = append(problems, "the configuration sets rule_library")
-	}
-	for _, l := range cfg.Listeners {
-		if l.Analyzer == nil {
-			continue
-		}
-		for _, lv := range l.Analyzer.levels() {
-			if lv.level.hasAIRules() {
-				problems = append(problems, fmt.Sprintf("listener %q: %s risk lets the AI apply guardrails "+
-					"or mask rules", l.Name, lv.name))
-			}
-		}
-	}
-	if len(problems) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%s; this sidecar does not report %q, upgrade it to a release that does",
-		strings.Join(problems, "; "), CapabilityAIRules)
 }
 
 // aiRuleUse reports which AI rule features a config uses: a level option or
@@ -342,8 +366,10 @@ func (c *Config) aiRuleUse() (guardrails, mask bool) {
 			continue
 		}
 		for _, l := range lc.Analyzer.levels() {
-			guardrails = guardrails || l.level.Guardrails != nil
-			mask = mask || l.level.Mask != nil
+			if r := lc.Analyzer.LevelAIRule(l.risk); r != nil {
+				guardrails = guardrails || r.Guardrails != nil
+				mask = mask || r.Mask != nil
+			}
 		}
 	}
 	return guardrails, mask
@@ -357,11 +383,11 @@ func (c *Config) aiRuleLicenseProblems(lic license.Status) []string {
 	guardrails, mask := c.aiRuleUse()
 	var problems []string
 	if guardrails && !lic.Allows(license.FeatureGuardrails) {
-		problems = append(problems, "AI-applied guardrails (a risk level's guardrails, or "+
+		problems = append(problems, "AI-applied guardrails (analyzer.ai_rules guardrails, or "+
 			"rule_library.guardrails) need an Enterprise license that grants guardrails."+licenseAdvice(lic))
 	}
 	if mask && !lic.Allows(license.FeatureDataMasking) {
-		problems = append(problems, "AI-applied data masking (a risk level's mask, or rule_library.mask) "+
+		problems = append(problems, "AI-applied data masking (analyzer.ai_rules mask, or rule_library.mask) "+
 			"needs an Enterprise license that grants data masking."+licenseAdvice(lic))
 	}
 	return problems
@@ -377,10 +403,12 @@ type laneAIRules struct {
 }
 
 // buildLaneAIRules resolves a lane's AI rule options against rule_library.
-// A library rule that fails the validation a config rule gets, or that the
-// AI cannot apply (it does not deny, or an ssh lane cannot carry its
-// strategy), is warned about and left out. Mask options with no detector
-// refuse the lane, as a mask block does.
+// A library rule that fails the validation a config rule gets on this lane,
+// or that the AI cannot apply (it does not deny, or an ssh lane cannot carry
+// its strategy), is warned about and left out. A rule the AI creates gets
+// the same validation, and create_guardrail offers no type the lane cannot
+// evaluate. Mask options with no detector refuse the lane, as a mask block
+// does.
 func buildLaneAIRules(lib *RuleLibrary, la *LaneAnalyzerConfig, lc ListenerConfig, det Plugin,
 	log *slog.Logger) (*laneAIRules, []string, error) {
 	levels := la.aiRuleLevels()
@@ -390,19 +418,22 @@ func buildLaneAIRules(lib *RuleLibrary, la *LaneAnalyzerConfig, lc ListenerConfi
 	notes := LaneAIRuleWarnings(lib, la, lc)
 	out := &laneAIRules{levels: map[analyzer.RiskLevel]analyzer.LevelRules{}}
 
+	ssh := isSSH(lc)
 	out.compileGuardrail = func(r policy.Rule) (policy.Evaluator, error) {
 		if r.Action != "" {
 			return nil, fmt.Errorf("action %q: an AI guardrail denies on a match and takes no action", r.Action)
+		}
+		if p := laneGuardrailProblems(r, lc, det); len(p) > 0 {
+			return nil, errors.New(strings.Join(p, "; "))
 		}
 		if det != nil {
 			return policy.NewRulesWithScanner([]policy.Rule{r}, det)
 		}
 		return policy.NewRules([]policy.Rule{r})
 	}
-	ssh := isSSH(lc)
 	if la.usesAIMask() {
 		if det == nil {
-			return nil, nil, errors.New("analyzer block: a risk level lets the AI mask a response, and this " +
+			return nil, nil, errors.New("analyzer block: ai_rules lets the AI mask a response, and this " +
 				"build has no detection plugin to mask with")
 		}
 		out.compileMask = func(def json.RawMessage) (policy.ResponseMask, error) {
@@ -453,16 +484,16 @@ func buildLaneAIRules(lib *RuleLibrary, la *LaneAnalyzerConfig, lc ListenerConfi
 		}
 	}
 
-	types := analyzer.DefaultGuardrailTypes
-	if det == nil {
-		types = slices.DeleteFunc(slices.Clone(types), func(t policy.MatchType) bool { return t == policy.MatchPII })
-	}
+	types := slices.DeleteFunc(slices.Clone(analyzer.DefaultGuardrailTypes), func(t policy.MatchType) bool {
+		return t == policy.MatchPII && (det == nil || len(det.Entities()) == 0) ||
+			ssh && len(policy.ValidateForSSH([]policy.Rule{{Type: t}})) > 0
+	})
 	var strategies []string
 	if ssh {
 		strategies = []string{sshOnlyMaskStrategy}
 	}
 	for _, l := range levels {
-		r := l.level
+		r := l.rule
 		var lr analyzer.LevelRules
 		if r.Guardrails != nil {
 			lr.Guardrails = &analyzer.GuardrailOptions{
@@ -481,12 +512,27 @@ func buildLaneAIRules(lib *RuleLibrary, la *LaneAnalyzerConfig, lc ListenerConfi
 		empty := func(mode analyzer.RuleMode, n int) bool { return mode != analyzer.RuleModeExistingAndNew && n == 0 }
 		if (lr.Guardrails == nil || empty(lr.Guardrails.Mode, len(lr.Guardrails.Rules))) &&
 			(lr.Mask == nil || empty(lr.Mask.Mode, len(lr.Mask.Rules))) {
-			notes = append(notes, fmt.Sprintf("analyzer block: %s risk lets the AI apply no rule and create "+
-				"none, so it has nothing to apply", l.name))
+			notes = append(notes, fmt.Sprintf("analyzer block: ai_rules.%s lets the AI apply no rule and "+
+				"create none, so it has nothing to apply", l.name))
 		}
 		out.levels[l.risk] = lr
 	}
 	return out, notes, nil
+}
+
+// laneGuardrailProblems runs the lane checks a guardrails block gets on one
+// AI guardrail: pii entities the detector finds, the rule types an ssh
+// statement can answer, and the headers an http lane captures.
+func laneGuardrailProblems(r policy.Rule, lc ListenerConfig, det Plugin) []string {
+	rules := []policy.Rule{r}
+	problems := checkPIIEntities(rules, det)
+	if isSSH(lc) {
+		problems = append(problems, validateSSHRules(rules, lc.Name)...)
+	}
+	if inspect.Protocol(lc.Protocol) == inspect.HTTP {
+		problems = append(problems, validateHTTPHeaderRules(rules, lc.HTTP, lc.Name)...)
+	}
+	return problems
 }
 
 // selectRules keeps the rules names allows, in library order. Nil names
