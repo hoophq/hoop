@@ -2,7 +2,7 @@
 # on the host first: libhoop and libhoop-ica are private modules.
 #
 # The three services share one network namespace. The lane binds loopback
-# only until it authenticates callers (ENG-963), and takes a plain http
+# only until it authenticates callers, and takes a plain http
 # upstream on loopback only, so Envoy cannot sit in front of it yet.
 
 name: hoop-mcp-demo

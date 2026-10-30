@@ -1,4 +1,4 @@
-// Package mcpgateway is the engine of a sidecar mcp lane (ADR-0034): it
+// Package mcpgateway is the engine of a sidecar mcp lane: it
 // embeds mcpproxy to proxy one remote MCP server and hands each tool call to
 // the daemon's gate as a statement.
 package mcpgateway

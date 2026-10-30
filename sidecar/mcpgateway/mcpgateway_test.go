@@ -248,7 +248,7 @@ func TestDeniedToolIsAbsentFromTheCatalogAndRefused(t *testing.T) {
 }
 
 // A call a sidecar rule denies answers as a tool error, so the agent keeps
-// the server (ADR-0034, decision 6); an allowed call goes through. One
+// the server; an allowed call goes through. One
 // statement per call, either way.
 func TestARuleDenialIsAToolError(t *testing.T) {
 	ln := &testLane{deny: map[string]string{"delete_customer": "no-delete"}}

@@ -1,4 +1,4 @@
-// The mcp lane engine (ADR-0034). Nested so mcpproxy stays out of the
+// The mcp lane engine. Nested so mcpproxy stays out of the
 // sidecar root module, which depends on libhoop alone.
 module github.com/hoophq/hoop/sidecar/mcpgateway
 

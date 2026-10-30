@@ -1043,7 +1043,7 @@ func (r Rule) matches(stmt inspect.Statement) (bool, error) {
 	case MatchTable:
 		if len(stmt.Relations) == 0 && len(stmt.Tables) == 0 {
 			// An MCP statement without a tool is the catalog: there is no
-			// relation to determine (ADR-0034).
+			// relation to determine.
 			if stmt.Protocol == inspect.MCP {
 				return false, nil
 			}

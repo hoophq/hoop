@@ -4,9 +4,9 @@
 curl ──> hoop-inspect 127.0.0.1:18901 ──> test MCP server 127.0.0.1:18900/mcp
 ```
 
-A `protocol: mcp` lane (ADR-0034) in front of the test MCP server from
+A `protocol: mcp` lane in front of the test MCP server from
 `sidecar/mcpgateway/internal/testupstream`. No Envoy: the lane binds
-loopback only until it authenticates callers (ENG-963), so the three
+loopback only until it authenticates callers, so the three
 containers share one network namespace and nothing is published on the
 host.
 

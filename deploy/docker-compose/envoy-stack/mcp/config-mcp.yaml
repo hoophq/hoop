@@ -1,4 +1,4 @@
-# One mcp lane in front of the test MCP server (ADR-0034).
+# One mcp lane in front of the test MCP server.
 #
 #   curl ──> lane 127.0.0.1:18901 ──> test MCP server 127.0.0.1:18900/mcp
 #

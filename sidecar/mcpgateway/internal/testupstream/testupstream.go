@@ -1,4 +1,4 @@
-// Package testupstream is an MCP server for the ENG-987 spike: streamable-http
+// Package testupstream is an MCP server for tests: streamable-http
 // on /mcp and SSE on /sse, with tools that return PII, delete things, run
 // SQL, and flood the client with notifications.
 package testupstream

@@ -99,7 +99,7 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/ica"
 	// The MCP server an "mcp" block turns on (ADR-0021), same rule again.
 	_ "github.com/hoophq/hoop/sidecar/mcp"
-	// The mcp lane engine (ADR-0034): mcpproxy stays in its own module.
+	// The mcp lane engine: mcpproxy stays in its own module.
 	_ "github.com/hoophq/hoop/sidecar/mcpgateway"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	// The OpenTelemetry exporter a "telemetry" block turns on, same rule:

@@ -19,7 +19,7 @@ import (
 )
 
 // The engine (mcpproxy) lives in the nested sidecar/mcpgateway module; this
-// file is the contract, as ica.go is for libhoop-ica (ADR-0034).
+// file is the contract, as ica.go is for libhoop-ica.
 
 func isMCPGateway(lc ListenerConfig) bool {
 	return inspect.Protocol(lc.Protocol) == inspect.MCP
@@ -70,7 +70,7 @@ func validateMCPGatewayLane(lc ListenerConfig, name string) []string {
 	} else if host, _, err := net.SplitHostPort(lc.Listen); err != nil {
 		problems = append(problems, name+": an mcp listener needs listen as host:port")
 	} else if !loopbackHost(host) {
-		problems = append(problems, name+": an mcp listener may bind only a loopback address until it authenticates its callers (I-18 R6)")
+		problems = append(problems, name+": an mcp listener may bind only a loopback address until it authenticates its callers")
 	}
 	if lc.MaxConns > 0 {
 		problems = append(problems, name+": max_conns does not apply to an mcp listener; MCP runs over HTTP requests, not long connections")
@@ -167,7 +167,7 @@ type MCPGatewayServer interface {
 	Stats() (active, total, denied int64)
 	Notes() []string
 	// EndSessions closes every open MCP session: the next message on one is
-	// refused, so the client initializes again (ADR-0034, decision 5).
+	// refused, so the client initializes again.
 	EndSessions(reason string)
 }
 
@@ -252,8 +252,7 @@ func buildMCPGatewayServer(ln lane, ac AuditConfig, sink audit.Sink, log *slog.L
 
 // mcpLaneRules is the lane rule swapper. A session reads its rules once,
 // when its gate opens, and an MCP session can live for hours, so a swap ends
-// the open sessions and the client initializes again under the new rules
-// (ADR-0034, decision 5).
+// the open sessions and the client initializes again under the new rules.
 type mcpLaneRules struct {
 	*liveRules
 	srv MCPGatewayServer

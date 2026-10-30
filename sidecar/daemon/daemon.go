@@ -693,7 +693,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			}
 			notes = append(notes, srv.Notes()...)
 			if _, _, mc := cfg.resolve(ln.cfg); mc.hasRules() {
-				notes = append(notes, "mcp: mask rules reach this lane from the top-level block and do not apply to it until ENG-965")
+				notes = append(notes, "mcp: mask rules reach this lane from the top-level block and do not apply to it yet")
 			}
 			_ = srv.Close()
 		}
@@ -1512,7 +1512,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if plugin != nil {
 			pluginFactory = factory
 		}
-		// An mcp lane masks nothing until ENG-965: inherited rules are accepted and
+		// An mcp lane masks nothing yet: inherited rules are accepted and
 		// Validate notes them, so one mask block can serve every lane.
 		var masker gate.Masker
 		if !isMCPGateway(lc) {

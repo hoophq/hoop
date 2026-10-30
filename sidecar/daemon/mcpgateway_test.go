@@ -55,7 +55,7 @@ func fakeMCPEngine() (MCPGatewayBuilder, *[]*fakeMCPServer) {
 	}, &built
 }
 
-// mcpLane is the ADR-0034 example lane, as JSON.
+// mcpLane is the README example lane, as JSON.
 const mcpLane = `{"name":"github","protocol":"mcp","listen":"127.0.0.1:18901","upstream":"https://mcp.example.com/mcp","idle_timeout_sec":120,"mcp_gateway":{"transport":"streamable-http","allowed_tools":["get_*","list_*","search_*"],"denied_tools":["*delete*"],"block_sampling":true,"block_elicitation":true,"on_rug_pull":"kill","max_calls_per_session":200,"max_result_kb":256,"tool_rate_limits":{"search_*":30},"overrides":{"get_file_contents":{"description":"Read one file from a repository."}}}}`
 
 // mcpProblems loads one listener and returns what validation refused, or "".
@@ -67,7 +67,7 @@ func mcpProblems(t *testing.T, listener string) string {
 	return ""
 }
 
-// The ADR-0034 example lane validates; each carve-out is refused with a
+// The README example lane validates; each carve-out is refused with a
 // reason the operator can act on; identity_header is accepted.
 func TestMCPGatewayListenerValidation(t *testing.T) {
 	if p := mcpProblems(t, mcpLane); p != "" {
@@ -84,8 +84,8 @@ func TestMCPGatewayListenerValidation(t *testing.T) {
 		{`{` + ok + `,"mcp_gateway":{"tool_rate_limits":{"x":0}}}`, "must be positive"},
 		{`{` + ok + `,"mcp_gateway":{"approval_tools":["x"]}}`, "unknown field"},
 		{`{"name":"m","protocol":"postgres","listen":"127.0.0.1:1","upstream":"h:5432","mcp_gateway":{}}`, "only valid on an mcp listener"},
-		{`{` + ok + `,"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}}`, "ENG-965"},
-		{`{` + ok + `,"analyzer":{"trigger":{"operations":["delete"]}}}`, "ENG-964"},
+		{`{` + ok + `,"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}}`, "mask block"},
+		{`{` + ok + `,"analyzer":{"trigger":{"operations":["delete"]}}}`, "analyzer does not apply"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1","upstream":"https://h/mcp"}`, "host:port"},
 		{`{"name":"m","protocol":"mcp","listen":"127.0.0.1:1","upstream":"http://h/mcp"}`, "loopback only"},
 	}
@@ -196,7 +196,7 @@ func TestMCPLaneSessionRecordsOneStatementPerCall(t *testing.T) {
 	}
 }
 
-// A rule swap ends the open MCP sessions (ADR-0034, decision 5).
+// A rule swap ends the open MCP sessions.
 func TestMCPLaneRuleSwapEndsSessions(t *testing.T) {
 	ln := mcpTestLane(t, `{"listeners":[`+mcpLane+`]}`)
 	srv := &fakeMCPServer{}
@@ -209,8 +209,8 @@ func TestMCPLaneRuleSwapEndsSessions(t *testing.T) {
 }
 
 // Mask rules inherited from the top level reach an mcp lane, so one file
-// serves every lane and the ADR-0034 example validates; Validate notes that
-// they do not apply to this lane until ENG-965.
+// serves every lane and the README example validates; Validate notes that
+// they do not apply to this lane yet.
 func TestMCPGatewayNotesInheritedMaskRules(t *testing.T) {
 	cfg, err := LoadConfigBytes([]byte(`{"mask":{"rules":[{"name":"pii","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]},"listeners":[` + mcpLane + `]}`))
 	if err != nil {
@@ -222,13 +222,12 @@ func TestMCPGatewayNotesInheritedMaskRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if notes := strings.Join(info[0].Notes, "\n"); !strings.Contains(notes, "ENG-965") {
+	if notes := strings.Join(info[0].Notes, "\n"); !strings.Contains(notes, "mask rules reach this lane") {
 		t.Fatalf("notes lack the mask note: %s", notes)
 	}
 }
 
-// Which rule types judge a tools/call and which judge the catalog
-// (ADR-0034, decision 3).
+// Which rule types judge a tools/call and which judge the catalog.
 func TestMCPLaneRuleTypes(t *testing.T) {
 	ctx := context.Background()
 	for _, c := range []struct {
