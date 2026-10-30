@@ -36,6 +36,8 @@ const METADATA_DRIVEN_SUBTYPES = [
   'rdp',
   'git',
   'github',
+  // Its metadata has HOST and PORT, both required, as resources/constants.cljs.
+  'tcp',
 ]
 
 const DEV_ENV_SUBTYPES = [
@@ -48,7 +50,25 @@ const DEV_ENV_SUBTYPES = [
   'ruby-on-rails',
 ]
 
-export const REACT_SETUP_SUBTYPES = new Set([...METADATA_DRIVEN_SUBTYPES, ...DEV_ENV_SUBTYPES])
+// The subtypes with a form of their own, not built from the metadata.
+const ROLE_FORMS = {
+  ssh: 'ssh',
+  'linux-vm': 'linux-vm',
+  httpproxy: 'httpproxy',
+  grafana: 'httpproxy',
+  kibana: 'httpproxy',
+}
+
+export const REACT_SETUP_SUBTYPES = new Set([
+  ...METADATA_DRIVEN_SUBTYPES,
+  ...DEV_ENV_SUBTYPES,
+  ...Object.keys(ROLE_FORMS),
+])
+
+// 'ssh', 'linux-vm', 'httpproxy', or 'metadata' for the metadata-driven form.
+export function roleFormFor(subtype) {
+  return ROLE_FORMS[subtype] ?? 'metadata'
+}
 
 // { type, subtype, command } for a catalog id, or null when the id names
 // nothing. `command` is null when the entry carries none.

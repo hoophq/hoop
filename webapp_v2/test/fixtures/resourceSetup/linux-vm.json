@@ -1,0 +1,32 @@
+{
+  "name": "vm",
+  "type": "custom",
+  "subtype": "linux-vm",
+  "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "vm-run",
+      "access_mode_runbooks": "enabled",
+      "command": [
+        "python3",
+        "-m",
+        "http.server"
+      ],
+      "type": "custom",
+      "secret": {
+        "envvar:API_KEY": "azE=",
+        "filesystem:KUBECONFIG": "YXBpVmVyc2lvbjogdjE="
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "linux-vm"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ const HTTPPROXY_FIELDS = [
     label: 'Remote URL',
     required: true,
     placeholder: 'e.g. https://example.com',
+    type: 'text',
   },
 ]
 

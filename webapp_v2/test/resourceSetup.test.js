@@ -120,11 +120,12 @@ describe('isReactSetup', () => {
     ['kubernetes-token', true],
     ['python-scripts', true],
     ['ruby-on-rails', true],
-    ['ssh', false],
-    ['webapps-and-apis', false],
-    ['httpproxy', false],
+    ['ssh', true],
+    ['webapps-and-apis', true],
+    ['httpproxy', true],
+    ['grafana', true],
+    ['linux-vm', true],
     ['bigquery', false],
-    ['linux-vm', false],
   ])('%s renders React: %s', (id, react) => {
     expect(isReactSetup(setupConfigFor(id, connections))).toBe(react)
   })
@@ -205,6 +206,108 @@ describe('POST /resources matches the CLJS wizard', () => {
     type(0, 'PORT', '5432')
     type(0, 'DB', 'app')
     expect(payload()).toEqual(fixture('postgres-new-agent'))
+  })
+})
+
+// Types into a field of the SSH, HTTP proxy or Linux VM form the way they do:
+// the role's default source, files always manual.
+function typeKey(index, envKey, value) {
+  const { credentials, method, provider } = role(index)
+  const secretsManager = method === CONNECTION_METHODS.SECRETS_MANAGER
+  const source = secretsManager && !envKey.startsWith('filesystem:') ? provider : SOURCES.MANUAL
+  credentials.getState().replaceSecret(envKey, encodeSecretForSource(value, source))
+}
+
+// An env var, header or file row: the form adds a placeholder row, the admin
+// names it, then types its value.
+function row(index, placeholder, name, value) {
+  const { replaceSecret, renameSecret } = role(index).credentials.getState()
+  replaceSecret(placeholder, '')
+  if (name) renameSecret(placeholder, name)
+  typeKey(index, placeholder, value)
+}
+
+describe('POST /resources matches the CLJS wizard: SSH, TCP, Linux VM, HTTP proxy', () => {
+  const agentId = '2d653520-5060-5ec6-81dd-082934b1949d'
+
+  it('ssh, password', () => {
+    begin('ssh', { name: 'ssh-pw', agentId, profile: null })
+    store().setRoleName(role(0).id, 'ssh-pw-admin')
+    typeKey(0, 'envvar:HOST', 'ssh.internal')
+    typeKey(0, 'envvar:PORT', '2222')
+    typeKey(0, 'envvar:USER', 'ubuntu')
+    typeKey(0, 'envvar:PASS', 'pw')
+    expect(payload()).toEqual(fixture('ssh-password'))
+  })
+
+  it('ssh, private key on Vault KV v1', () => {
+    begin('ssh', { name: 'ssh-key', agentId, profile: null })
+    store().setRoleName(role(0).id, 'ssh-key-ops')
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+    typeKey(0, 'envvar:HOST', 'secret/ssh:HOST')
+    typeKey(0, 'envvar:USER', 'secret/ssh:USER')
+    typeKey(0, 'envvar:AUTHORIZED_SERVER_KEYS', 'secret/ssh:KEY')
+    expect(payload()).toEqual(fixture('ssh-key-vault'))
+  })
+
+  it('ssh, local: sent as ssh-local with no secret', () => {
+    begin('ssh', { name: 'ssh-local', agentId, profile: null })
+    store().setRoleName(role(0).id, 'ssh-local-sh')
+    role(0).credentials.getState().setDraft({ subtype: 'ssh-local' })
+    expect(payload()).toEqual(fixture('ssh-local'))
+  })
+
+  it('tcp, from the metadata form', () => {
+    begin('webapps-and-apis', { name: 'tcp', agentId, profile: null })
+    store().setRoleName(role(0).id, 'tcp-web')
+    type(0, 'HOST', 'web.internal')
+    type(0, 'PORT', '8080')
+    expect(payload()).toEqual(fixture('tcp'))
+  })
+
+  it('linux-vm: an env var, a file and the arguments; unnamed rows are left out', () => {
+    begin('linux-vm', { name: 'vm', agentId, profile: null })
+    store().setRoleName(role(0).id, 'vm-run')
+    row(0, 'envvar:NEW_KEY_1', 'envvar:API_KEY', 'k1')
+    row(0, 'envvar:NEW_KEY_2', null, 'no-name')
+    row(0, 'filesystem:NEW_FILE_1', 'filesystem:KUBECONFIG', 'apiVersion: v1')
+    role(0).credentials.getState().setDraft({ command: ['python3', '-m', 'http.server'] })
+    expect(payload()).toEqual(fixture('linux-vm'))
+  })
+
+  it('linux-vm with no arguments keeps ["bash"] (Q17)', () => {
+    begin('linux-vm', { name: 'vm-default', agentId, profile: null })
+    store().setRoleName(role(0).id, 'vm-default-sh')
+    const cljs = fixture('linux-vm-default')
+    expect(cljs.roles[0].command).toEqual([])
+    expect(payload()).toEqual({ ...cljs, roles: [{ ...cljs.roles[0], command: ['bash'] }] })
+  })
+
+  it('httpproxy: a header keeps its case, insecure on', () => {
+    begin('httpproxy', { name: 'web', agentId, profile: null })
+    store().setRoleName(role(0).id, 'web-api')
+    typeKey(0, 'envvar:REMOTE_URL', 'https://api.internal')
+    row(0, 'envvar:HEADER_NEW_HEADER_1', 'envvar:HEADER_X-Api-Key', 'tok')
+    role(0).credentials.getState().replaceSecret('envvar:INSECURE', encodeSecretForSource('true', SOURCES.MANUAL))
+    expect(payload()).toEqual(fixture('httpproxy'))
+  })
+
+  it('grafana on Vault KV v2: INSECURE is sent without a prefix', () => {
+    begin('grafana', { name: 'graf', agentId, profile: null })
+    store().setRoleName(role(0).id, 'graf-ro')
+    store().setRoleMethod(role(0).id, CONNECTION_METHODS.SECRETS_MANAGER)
+    store().setRoleProvider(role(0).id, SOURCES.VAULT_KV2)
+    typeKey(0, 'envvar:REMOTE_URL', 'https://grafana.internal')
+    row(0, 'envvar:HEADER_NEW_HEADER_1', 'envvar:HEADER_Authorization', 'secret/data/grafana:TOKEN')
+    expect(payload()).toEqual(fixture('grafana-vault'))
+  })
+
+  it('appends a newline to the SSH_PRIVATE_KEY file, as config->json does', () => {
+    begin('linux-vm', { name: 'vm-key', agentId, profile: null })
+    row(0, 'filesystem:NEW_FILE_1', 'filesystem:SSH_PRIVATE_KEY', 'KEY')
+    expect(secretOf(role(0).credentials)).toEqual({
+      'filesystem:SSH_PRIVATE_KEY': encodeSecretForSource('KEY\n', SOURCES.MANUAL),
+    })
   })
 })
 

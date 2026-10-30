@@ -1,0 +1,25 @@
+{
+  "name": "vm-default",
+  "type": "custom",
+  "subtype": "linux-vm",
+  "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "vm-default-sh",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "custom",
+      "secret": {},
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "2d653520-5060-5ec6-81dd-082934b1949d",
+      "access_schema": "enabled",
+      "attributes": [],
+      "reviewers": [],
+      "subtype": "linux-vm"
+    }
+  ]
+}

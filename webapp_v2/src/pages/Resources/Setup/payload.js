@@ -22,8 +22,10 @@ function roleAttributes(role, profileAttribute) {
 
 // POST /resources body, the same as process-payload in
 // webapp/src/webapp/resources/setup/events/process_form.cljs for these types.
+// The typed linux-vm arguments replace the catalog command; with none, linux-vm
+// keeps ["bash"], where CLJS sends [] (Q17).
 export function buildCreatePayload({ name, setup, agentId, roles, connections, profileAttribute }) {
-  const command =
+  const catalogCommand =
     metadataForSubtype(connections, setup.subtype)?.resourceConfiguration?.command ??
     setup.command ??
     []
@@ -33,15 +35,18 @@ export function buildCreatePayload({ name, setup, agentId, roles, connections, p
     subtype: setup.subtype,
     agent_id: agentId,
     env_vars: {},
-    roles: roles.map((role) => ({
-      name: role.name,
-      type: setup.type,
-      subtype: setup.subtype,
-      agent_id: agentId,
-      secret: secretOf(role.credentials),
-      command,
-      attributes: roleAttributes(role, profileAttribute),
-      ...ROLE_DEFAULTS,
-    })),
+    roles: roles.map((role) => {
+      const { drafts } = role.credentials.getState()
+      return {
+        name: role.name,
+        type: setup.type,
+        subtype: drafts.subtype,
+        agent_id: agentId,
+        secret: secretOf(role.credentials),
+        command: drafts.command.length > 0 ? drafts.command : catalogCommand,
+        attributes: roleAttributes(role, profileAttribute),
+        ...ROLE_DEFAULTS,
+      }
+    }),
   }
 }
