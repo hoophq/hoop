@@ -402,6 +402,88 @@ func TestReadFenceRefusesSelectsOfKeywordColumns(t *testing.T) {
 	}
 }
 
+// A read-only lane is one operation rule naming every write, the rule the
+// GCP Marketplace read-only preset and the agents-cli template ship. These
+// statements got past it and changed the database (ENG-803): the EXPLAIN
+// forms ran their DELETE and were audited as an allowed select, and
+// SELECT ... INTO created its table the same way, in parentheses as an
+// allowed unknown. ANALYSE ran, while the rule refuses ANALYZE as other.
+//
+// The plans stay allowed. EXPLAIN without ANALYZE, or with ANALYZE false,
+// runs nothing, and a quoted FORMAT value is not the ANALYZE option.
+func TestReadOnlyRuleRefusesWritesBehindExplainAndSelectInto(t *testing.T) {
+	readOnly := rulesFor(t, "read-only",
+		inspect.OpInsert, inspect.OpUpdate, inspect.OpDelete, inspect.OpCreate,
+		inspect.OpDrop, inspect.OpAlter, inspect.OpTruncate, inspect.OpGrant,
+		inspect.OpRevoke, inspect.OpCall, inspect.OpOther)
+
+	for _, tc := range []struct {
+		name, sql  string
+		wantDenied bool
+		wantOp     inspect.Operation
+	}{
+		{"EXPLAIN ANALYSE, the British spelling, is refused as the delete it runs",
+			`EXPLAIN ANALYSE DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"EXPLAIN (ANALYSE) is refused as the delete it runs",
+			`EXPLAIN (ANALYSE) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"a quoted analyze option is refused as the delete it runs",
+			`EXPLAIN ("analyze") DELETE FROM customers WHERE id = 3`, true, inspect.OpDelete},
+		{"a quoted analyze option after another option is refused as the delete it runs",
+			`EXPLAIN (FORMAT JSON, "analyze") DELETE FROM customers WHERE id = 4`, true, inspect.OpDelete},
+		{"SELECT INTO is refused as the create it is",
+			`SELECT * INTO customers_copy FROM customers`, true, inspect.OpCreate},
+		{"SELECT INTO TEMP is refused as the create it is",
+			`SELECT * INTO TEMP t1 FROM customers`, true, inspect.OpCreate},
+		{"SELECT INTO in parentheses is refused as the create it is",
+			`(SELECT * INTO t6 FROM customers)`, true, inspect.OpCreate},
+		{"SELECT INTO in two pairs of parentheses is refused as the create it is",
+			`((SELECT * INTO t30 FROM customers))`, true, inspect.OpCreate},
+		{"ANALYSE, the British spelling, is refused as ANALYZE is",
+			`ANALYSE customers`, true, inspect.OpOther},
+		{"a second ANALYZE turned off does not hide the first",
+			`EXPLAIN (ANALYZE, ANALYZE false) DELETE FROM customers`, true, inspect.OpDelete},
+		{"ANALYZE 0x1, a hexadecimal 1, is refused as the delete it runs",
+			`EXPLAIN (ANALYZE 0x1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"ANALYZE 0_1, a 1 with a separator, is refused as the delete it runs",
+			`EXPLAIN (ANALYZE 0_1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+		{"a quoted analyze option with an octal 1 is refused as the delete it runs",
+			`EXPLAIN ("analyze" 0o1) DELETE FROM customers WHERE id = 2`, true, inspect.OpDelete},
+
+		{"EXPLAIN without ANALYZE passes", `EXPLAIN DELETE FROM customers`, false, ""},
+		{"EXPLAIN with plan options passes", `EXPLAIN (VERBOSE, FORMAT JSON) DELETE FROM customers`, false, ""},
+		{"a quoted FORMAT value passes", `EXPLAIN (FORMAT "json") DELETE FROM customers`, false, ""},
+		{"EXPLAIN with ANALYZE turned off passes", `EXPLAIN (ANALYZE false) DELETE FROM customers`, false, ""},
+		{"a quoted analyze option turned off passes", `EXPLAIN ("analyze" off) DELETE FROM customers`, false, ""},
+		{"a plain SELECT passes", `SELECT * FROM customers`, false, ""},
+		{"a SELECT in parentheses passes as a select", `(SELECT * FROM customers)`, false, inspect.OpSelect},
+		{"a UNION of parenthesized SELECTs passes", `(SELECT id FROM customers) UNION (SELECT id FROM orders)`, false, inspect.OpSelect},
+		// A privilege table names its columns after the statements, and a
+		// CASE branch in parentheses reads them. They are expressions.
+		{"a parenthesized column called update in a CASE passes",
+			`SELECT name, CASE WHEN owner THEN true ELSE (update) END AS can_update FROM privs`, false, inspect.OpSelect},
+		{"a parenthesized column called delete in a CASE passes",
+			`SELECT name, CASE WHEN owner THEN (delete) ELSE false END AS can_delete FROM privs`, false, inspect.OpSelect},
+		{"a parenthesized expression of columns called insert and update passes",
+			`SELECT CASE WHEN owner THEN true ELSE (insert OR update) END FROM privs`, false, inspect.OpSelect},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stmts := inspectOne(t, tc.sql)
+			if len(stmts) == 0 {
+				t.Fatalf("no statements for %q", tc.sql)
+			}
+			for _, s := range stmts {
+				if denied := readOnly.Evaluate(s).Denied; denied != tc.wantDenied {
+					t.Errorf("denied = %v, want %v: operation %q, effects %v, relations %v",
+						denied, tc.wantDenied, s.Operation, s.Effects, s.Relations)
+				}
+				if tc.wantOp != "" && s.Operation != tc.wantOp {
+					t.Errorf("Operation = %q, want %q", s.Operation, tc.wantOp)
+				}
+			}
+		})
+	}
+}
+
 // rulesFor builds a single MatchOperation deny rule.
 func rulesFor(t *testing.T, name string, ops ...inspect.Operation) *policy.Rules {
 	t.Helper()

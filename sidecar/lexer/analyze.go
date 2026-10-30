@@ -375,7 +375,7 @@ func (a *analyzer) walk() {
 		if t.Kind == Punct {
 			switch t.Text {
 			case "(":
-				a.push(i)
+				a.push(i, atHead)
 				atHead = a.top().kind == regCTE || a.top().kind == regSub || a.wrapper
 				continue
 			case ")":
@@ -443,6 +443,17 @@ func (a *analyzer) walk() {
 			continue
 		}
 
+		// A quoted EXPLAIN option is still an option: PostgreSQL compares
+		// its name verbatim, so `EXPLAIN ("analyze") DELETE` runs the
+		// delete. A quoted name the option table does not know is one
+		// PostgreSQL rejects, an extension's option, or an escape this
+		// scanner does not decode (U&"\0061nalyze"). It counts as ANALYZE:
+		// the worst case refuses a plan, and never lets a write through.
+		if t.Kind == Quoted && a.explainOptionName(i) && (t.Text == "analyze" || !wrapperModifier[t.Text]) &&
+			!a.explainOptionOff(i) {
+			a.analyzeSeen = true
+		}
+
 		if t.Kind != Word {
 			atHead = a.wrapper
 			continue
@@ -483,7 +494,7 @@ func (a *analyzer) walk() {
 		// EXPLAIN and its option list precede the real statement, so the
 		// head position has to survive them.
 		if a.wrapper && wrapperModifier[t.Text] {
-			if t.Text == "analyze" {
+			if (t.Text == "analyze" || t.Text == "analyse") && !a.explainOptionOff(i) {
 				a.analyzeSeen = true
 			}
 			atHead = true
@@ -547,7 +558,18 @@ func (a *analyzer) walk() {
 			!(a.d == Oracle && a.forUpdate(i)) {
 			column := a.namesAColumn(i)
 			if !column || a.mayBeAClause(i) {
-				if j := a.claimRelations(i); !column {
+				j := a.claimRelations(i)
+				// PostgreSQL's SELECT ... INTO t creates t, and access
+				// already reports t as written. The effect must say so
+				// too: an operation rule sees the effects, and a select
+				// passed a read-only lane while the table was created.
+				// T-SQL's SELECT INTO creates a table as well, and
+				// MySQL's writes a file or a variable; ENG-905 covers
+				// the dialects outside PostgreSQL.
+				if a.d == Postgres && t.Text == "into" && a.top().verb == Select && j != i {
+					a.effects = append(a.effects, Create)
+				}
+				if !column {
 					i = j
 				}
 			}
@@ -563,6 +585,42 @@ func (a *analyzer) walk() {
 	if len(a.stack) != 1 {
 		a.fail("unbalanced parentheses")
 	}
+}
+
+// explainOptionName reports whether the token at i names an option in the
+// parenthesised list right after EXPLAIN: `EXPLAIN (FORMAT JSON, "analyze")`.
+// A name follows the opening parenthesis or a comma; a value follows its
+// name. The list holds no nested parentheses, so the nearest opening one is
+// the list's own. Anywhere else a quoted name is a column or a relation:
+// `EXPLAIN WITH x("analyze") AS (...)` names a CTE column.
+func (a *analyzer) explainOptionName(i int) bool {
+	if !a.wrapper || i == 0 || !a.puncts(i-1, "(") && !a.puncts(i-1, ",") {
+		return false
+	}
+	j := i - 1
+	for j > 0 && !a.puncts(j, "(") {
+		if a.puncts(j, ")") {
+			return false
+		}
+		j--
+	}
+	return j > 0 && a.toks[j-1].isWord("explain")
+}
+
+// explainOptionOff reports whether the value of the EXPLAIN option named at i
+// turns it off: `EXPLAIN (ANALYZE false) DELETE` plans the DELETE and runs
+// nothing. PostgreSQL reads false, off and 0 as off. The value must be the
+// whole value, ended by a comma or the closing parenthesis: the scanner reads
+// `0x1`, `0_1` or `0b1` as 0 and a word, and PostgreSQL 16 reads each as 1.
+// Any other value leaves the option on, a string literal included, whose text
+// the scanner does not keep: that reading refuses a write. One ANALYZE that is
+// on is enough, so a second one that is off cannot hide it.
+func (a *analyzer) explainOptionOff(i int) bool {
+	if !a.explainOptionName(i) || !a.puncts(i+2, ",") && !a.puncts(i+2, ")") {
+		return false
+	}
+	v := a.toks[i+1]
+	return v.isWord("false") || v.isWord("off") || v.Kind == Number && v.Text == "0"
 }
 
 // headFollows reports whether a statement verb may begin after this keyword.
@@ -698,7 +756,14 @@ func (a *analyzer) sparkStatementAt(i int) bool {
 }
 
 // push opens a region, labelling it from the token before the parenthesis.
-func (a *analyzer) push(i int) {
+//
+// A parenthesis where a statement may begin, and that a query keyword
+// follows, opens a query: `(SELECT * INTO t FROM s)` and `UNION (SELECT
+// ...)`. Read as an expression group, its SELECT was never a head, the
+// statement reported no verb, and the table that SELECT INTO created passed
+// a read-only lane. Anything else stays an expression: THEN and ELSE are
+// head positions too, and `ELSE (update)` reads a column called update.
+func (a *analyzer) push(i int, head bool) {
 	kind := regParen
 	if prev, ok := a.prevWord(i); ok {
 		switch {
@@ -709,6 +774,9 @@ func (a *analyzer) push(i int) {
 			kind = regSub
 		}
 	}
+	if kind == regParen && head && a.opensQuery(i) {
+		kind = regSub
+	}
 	verb := Unknown
 	if kind == regParen {
 		// An expression group inherits its statement's verb so relations
@@ -716,6 +784,21 @@ func (a *analyzer) push(i int) {
 		verb = a.top().verb
 	}
 	a.stack = append(a.stack, region{kind: kind, verb: verb})
+}
+
+// opensQuery reports whether the parenthesis at i opens a query: a query
+// keyword follows it, or another parenthesis that may open one, as in
+// `((SELECT ...))`. A column that one of these keywords names, where a
+// dialect allows it, reads as a select: never as a write.
+func (a *analyzer) opensQuery(i int) bool {
+	if a.puncts(i+1, "(") {
+		return true
+	}
+	if i+1 >= len(a.toks) {
+		return false
+	}
+	next := a.toks[i+1]
+	return next.isWord("select") || next.isWord("with") || next.isWord("values") || next.isWord("table")
 }
 
 func (a *analyzer) pop() {
