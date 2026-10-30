@@ -79,8 +79,7 @@ func TestGetSidecarReviewFindsASpentReview(t *testing.T) {
 		t.Fatalf("claim the approval: claimed=%v err=%v", claimed, err)
 	}
 
-	_, err = models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb",
-		"payments-approvers", models.HashStatement([]byte(statement)), time.Now().UTC())
+	_, err = models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", models.SidecarReviewKey{RuleName: "payments-approvers"}, models.HashStatement([]byte(statement)), time.Now().UTC())
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("the live lookup returned a spent review: err=%v", err)
 	}
@@ -111,13 +110,13 @@ func TestRefusedSidecarReviewIsNotLive(t *testing.T) {
 			if err := models.UpdateReviewStatus(testOrgID, rev.ID, status); err != nil {
 				t.Fatalf("refuse the review: %v", err)
 			}
-			_, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash, time.Now().UTC())
+			_, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", models.SidecarReviewKey{RuleName: "payments-approvers"}, hash, time.Now().UTC())
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				t.Fatalf("the live lookup returned a %s review: err=%v", status, err)
 			}
 
 			next := seedSidecarReview(t, sc, statement)
-			got, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash, time.Now().UTC())
+			got, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", models.SidecarReviewKey{RuleName: "payments-approvers"}, hash, time.Now().UTC())
 			if err != nil {
 				t.Fatalf("the live lookup lost the new review: %v", err)
 			}

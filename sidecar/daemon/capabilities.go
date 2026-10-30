@@ -396,6 +396,8 @@ func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
 // and refuses the whole document over one, and the canonical form is what
 // every build reads. approval_mode that disagrees with review_mode is served
 // as written: normalize refuses it, and picking one here would hide that.
+// An approvers block that names no level is dropped: it says nothing, and an
+// older build refuses the key.
 func ServedForm(cfg Config) Config {
 	listeners := make([]ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
@@ -420,6 +422,9 @@ func ServedForm(cfg Config) Config {
 		block.HighRisk = canonicalAction(block.HighRisk)
 		block.MediumRisk = canonicalAction(block.MediumRisk)
 		block.LowRisk = canonicalAction(block.LowRisk)
+		if block.Approvers != nil && block.Approvers.isZero() {
+			block.Approvers = nil
+		}
 		if !reflect.DeepEqual(block, *l.Analyzer) {
 			listeners[i].Analyzer = &block
 		}

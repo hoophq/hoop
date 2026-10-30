@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pglite/pglitetest"
 	"github.com/hoophq/hoop/gateway/services"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,7 @@ func TestNewSidecarReviewCarriesTheWholePolicy(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 
 	assert.NotNil(t, rev.MinApprovals, "no minimum means every group must approve")
 	assert.Equal(t, 1, *rev.MinApprovals, "the rule's minimum, not a fixed one")
@@ -106,7 +107,7 @@ func TestNewSidecarReviewNamesTheRuleSoTheMinimumIsRead(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 
 	assert.NotNil(t, rev.AccessRequestRuleName,
 		"without the rule name the review needs every group and ignores its force approval list")
@@ -118,7 +119,7 @@ func TestNewSidecarReviewCarriesTheStatementHash(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 
 	assert.True(t, rev.StatementHash.Valid, "a NULL hash is excluded from the unique index")
 	assert.Equal(t, testStatementHash, rev.StatementHash.String)
@@ -239,6 +240,33 @@ func TestListenerNamesApprovalRuleFailsClosedOnDuplicateNames(t *testing.T) {
 	assert.True(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "reporting", "strict-approvers"))
 }
 
+// A risk level filing is authorized only for a level that holds and whose
+// approvers entry names a human. An ai_agent level is decided in the
+// sidecar and never files.
+func TestListenerHoldsForHuman(t *testing.T) {
+	block := func(high string, approvers *daemon.LevelApprovers) []daemon.ListenerConfig {
+		return []daemon.ListenerConfig{{Name: "appdb", Analyzer: &daemon.LaneAnalyzerConfig{
+			HighRisk: high, MediumRisk: "warn", ApprovalRule: "payments-approvers", Approvers: approvers}}}
+	}
+	human := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverHuman, Groups: []string{"dba"}}}
+	agent := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverAIAgent}}
+
+	got := listenerHoldsForHuman(block("require_approval", human), "appdb", analyzer.RiskHigh)
+	require.NotNil(t, got, "a held human level")
+	assert.Equal(t, []string{"dba"}, got.LevelApprover(analyzer.RiskHigh).Groups)
+	assert.NotNil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskHigh), "either spelling")
+
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", agent), "appdb", analyzer.RiskHigh), "ai_agent level")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", nil), "appdb", analyzer.RiskHigh),
+		"a bare hold files under approval_rule, not by level")
+	assert.Nil(t, listenerHoldsForHuman(block("block", human), "appdb", analyzer.RiskHigh), "a level that does not hold")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskMedium), "another level")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "reporting", analyzer.RiskHigh), "another listener")
+
+	dup := append(block("require_review", human), block("require_review", human)...)
+	assert.Nil(t, listenerHoldsForHuman(dup, "appdb", analyzer.RiskHigh), "a duplicate listener name authorizes nothing")
+}
+
 // The control plane stores a sidecar rule without checking these fields, so a
 // review filed against one would be unsettleable or would enforce a policy
 // other than the one it records.
@@ -330,7 +358,7 @@ func TestNewSidecarReviewSnapshotsTheTTLs(t *testing.T) {
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 
 	rule := ruleWithTTLs(ptr.Int(900), ptr.Int(600))
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), now)
 	require.NotNil(t, rev.ExpiresAt)
 	assert.Equal(t, now.Add(15*time.Minute), *rev.ExpiresAt, "the decision deadline counts from filing")
 	require.NotNil(t, rev.ApprovalTTLSec, "the approval clock starts at the approval, so the limit is kept")
@@ -340,12 +368,12 @@ func TestNewSidecarReviewSnapshotsTheTTLs(t *testing.T) {
 	assert.Equal(t, 600, *rev.ApprovalTTLSec, "a copy, not the rule's pointer")
 
 	rule = ruleWithTTLs(nil, ptr.Int(600))
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), now)
 	assert.Nil(t, rev.ExpiresAt, "no pending limit is no decision deadline")
 	require.NotNil(t, rev.ApprovalTTLSec)
 
 	rule = approvalRule()
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), now)
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), now)
 	assert.Nil(t, rev.ExpiresAt)
 	assert.Nil(t, rev.ApprovalTTLSec)
 }
@@ -671,7 +699,7 @@ func TestReviewDecidedAt(t *testing.T) {
 func TestNewSlackReviewRequest(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
-	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 	statement := "DELETE FROM users WHERE id = 42;"
 
 	req := newSlackReviewRequest(sc, rev, "appdb", statement)
@@ -704,7 +732,7 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	assert.Nil(t, req.ExpiresAt, "a rule with no limit shows no deadline")
 
 	rule = ruleWithTTLs(ptr.Int(900), nil)
-	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+	rev = newSidecarReview(sc, "appdb", "session-1", testStatementHash, ruleFiling(rule, testPolicy(t, rule)), time.Now().UTC())
 	req = newSlackReviewRequest(sc, rev, "appdb", statement)
 	require.NotNil(t, req.ExpiresAt, "the approvers see when the review expires")
 	assert.Equal(t, *rev.ExpiresAt, *req.ExpiresAt)

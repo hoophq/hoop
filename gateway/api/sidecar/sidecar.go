@@ -798,10 +798,13 @@ func withOrgLicense(sc *models.Sidecar, hs daemon.Handshake) (daemon.Config, err
 	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
 		return daemon.Config(sc.Configuration), err
 	}
-	if err := daemon.CheckServable(composed, hs); err != nil {
+	// A build that does not read approvers gets the held levels under
+	// approval_rule, or a refusal that names the capability.
+	served := daemon.ServeLevelApprovers(composed, hs)
+	if err := daemon.CheckServable(served, hs); err != nil {
 		return daemon.Config(sc.Configuration), services.ErrSidecarCapabilityMissing{Reason: err.Error()}
 	}
-	return servedConfig(models.SidecarConfiguration(composed), licenseData), nil
+	return servedConfig(models.SidecarConfiguration(served), licenseData), nil
 }
 
 // servedConfig is the document itself: the stored configuration with the

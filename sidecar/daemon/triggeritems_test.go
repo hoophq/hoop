@@ -34,7 +34,7 @@ func TestExcludeOnlyClassifiesEverythingElse(t *testing.T) {
 	la := &LaneAnalyzerConfig{HighRisk: "block", Trigger: &policy.AITrigger{
 		Exclude: []policy.AITriggerItem{{Tables: []string{"audit_log"}}},
 	}}
-	ev, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)
+	ev, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}

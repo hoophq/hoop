@@ -166,6 +166,10 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if err != nil {
 		return nil, nil, err
 	}
+	// The file is what runs: standalone, or a plane that delegates to disk.
+	if local != nil && cfg == local {
+		cfg.Deprecations = append(cfg.Deprecations, cfg.fileDeprecations...)
+	}
 	// Retained so a pii drift rebuilds the detector the way startup would,
 	// and so a reload re-reads the config file the way startup would: a
 	// standalone process on every edit, a plane-owned one on a mid-run
@@ -1543,15 +1547,17 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		// Said out loud because it is the one control observe mode
 		// switches OFF rather than records: every other rule still runs
 		// and still writes what it would have done, while a review
-		// nobody filed cannot be approved later either.
+		// nobody filed cannot be approved later either. The approval
+		// agent is not asked either: its call would decide nothing.
 		if gc.observing() && analyzerHolds(lc.Analyzer) {
 			ln.notes = append(ln.notes,
 				"observe mode files no approval request: a held statement is recorded as "+
-					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
+					policy.AnnotationWouldDeny+" and forwarded, and no approver, person or "+
+					"approval agent, is asked")
 		}
 		// A waiting client sends nothing, so the idle timeout ends a hold
 		// before the review wait does.
-		if !gc.observing() && analyzerHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
+		if !gc.observing() && humanHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
 			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
 			ln.notes = append(ln.notes, fmt.Sprintf(
 				"idle_timeout_sec %d ends a held statement's wait before the %s "+

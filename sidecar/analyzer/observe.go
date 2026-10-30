@@ -23,12 +23,27 @@ const (
 	CallTimeout CallOutcome = "timeout"
 )
 
-// Call describes one classification sent to the provider: every attempt,
-// retries included, under one deadline.
+// CallKind is what one provider call was for.
+type CallKind string
+
+const (
+	// CallClassify is a risk classification.
+	CallClassify CallKind = "classify"
+
+	// CallDecide is the approval agent's decision on a held statement.
+	// It spends from the same purse as a classification.
+	CallDecide CallKind = "decide"
+)
+
+// Call describes one provider call: every attempt, retries included, under
+// one deadline.
 type Call struct {
 	// Rule is the evaluator's name: the lane for an analyzer block, the
 	// rule name for the deprecated rule form.
 	Rule string
+
+	// Kind is classify or decide.
+	Kind CallKind
 
 	Outcome CallOutcome
 
@@ -67,19 +82,33 @@ const (
 
 // call sends one classification, retrying a retryable provider answer while
 // the deadline allows, and reports it through OnCall.
+func (e *Evaluator) call(ctx context.Context, text string) (*Result, error) {
+	start := time.Now()
+	var res *Result
+	attempts, err := e.retrying(ctx, func() error {
+		var err error
+		res, err = e.cfg.Provider.Classify(ctx, e.prompt, text)
+		return err
+	})
+	if err == nil && (res == nil || !res.RiskLevel.Valid()) {
+		err = errors.New("provider returned no usable risk level")
+	}
+	return res, e.reportCall(ctx, CallClassify, start, attempts, err)
+}
+
+// retrying runs send until it succeeds, its error is not a retryable provider
+// answer, MaxRetries is spent, or the deadline would pass during the wait.
 //
 // A retry happens only when the remaining time covers the wait. When it does
 // not, the provider's own answer is returned, not a timeout: "503 Service
 // Unavailable" tells the operator what happened, a deadline that expired
 // while nothing was in flight does not.
-func (e *Evaluator) call(ctx context.Context, text string) (*Result, error) {
-	start := time.Now()
+func (e *Evaluator) retrying(ctx context.Context, send func() error) (int, error) {
 	attempts := 0
-	var res *Result
 	var err error
 	for {
 		attempts++
-		res, err = e.cfg.Provider.Classify(ctx, e.prompt, text)
+		err = send()
 		if err == nil || attempts > e.cfg.MaxRetries {
 			break
 		}
@@ -97,12 +126,15 @@ func (e *Evaluator) call(ctx context.Context, text string) (*Result, error) {
 			break
 		}
 	}
-	if err == nil && (res == nil || !res.RiskLevel.Valid()) {
-		err = errors.New("provider returned no usable risk level")
-	}
+	return attempts, err
+}
 
+// reportCall reports one provider call through OnCall and returns err with
+// the duration and the limit added.
+func (e *Evaluator) reportCall(ctx context.Context, kind CallKind, start time.Time, attempts int, err error) error {
 	c := Call{
 		Rule:     e.cfg.Rule,
+		Kind:     kind,
 		Outcome:  CallOK,
 		Duration: time.Since(start),
 		Timeout:  e.cfg.Timeout,
@@ -126,7 +158,7 @@ func (e *Evaluator) call(ctx context.Context, text string) (*Result, error) {
 	if e.cfg.OnCall != nil {
 		e.cfg.OnCall(c)
 	}
-	return res, err
+	return err
 }
 
 // retryWait decides whether err earns another attempt and how long to wait

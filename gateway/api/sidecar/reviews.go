@@ -26,7 +26,9 @@ import (
 	"github.com/hoophq/hoop/gateway/services"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	slackplugin "github.com/hoophq/hoop/gateway/transport/plugins/slack"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -74,10 +76,20 @@ func (e ruleNotAuthorized) Error() string {
 	return fmt.Sprintf("listener %q is not configured to use approval rule %q", e.listenerName, e.ruleName)
 }
 
+// levelNotAuthorized is ruleNotAuthorized for a filing under a risk level:
+// one message for a listener the stored configuration does not have, a level
+// that does not hold, and a level with no human approver.
+type levelNotAuthorized struct{ listenerName, level string }
+
+func (e levelNotAuthorized) Error() string {
+	return fmt.Sprintf("listener %q is not configured to hold the %s risk level for a human approver",
+		e.listenerName, e.level)
+}
+
 // PostReview
 //
 //	@Summary		Create Sidecar Approval Request
-//	@Description	Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed.
+//	@Description	Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the groups of the listener's analyzer approvers entry for that level decide who approves.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -105,6 +117,10 @@ func PostReview(c *gin.Context) {
 			"listener_name is %d bytes, over %d", n, models.MaxSidecarListenerNameBytes)})
 		return
 	}
+	if err := checkFilingFields(req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
 
 	// Decoded here so a human never sees base64. The raw bytes are capped and
 	// hashed; the blobs and Slack get displayStatement(raw).
@@ -118,6 +134,11 @@ func PostReview(c *gin.Context) {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
 			"message": fmt.Sprintf("statement is larger than %d bytes", maxStatementBytes),
 		})
+		return
+	}
+
+	if req.RiskLevel != "" {
+		postLevelReview(c, sidecar, req, statement)
 		return
 	}
 
@@ -150,7 +171,92 @@ func PostReview(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed building the approval policy")
 		return
 	}
+	fileHeldStatement(c, sidecar, req, statement, ruleFiling(rule, policy))
+}
 
+// ruleFiling files under an approval rule: its groups, minimum, force
+// groups and limits.
+func ruleFiling(rule *models.AccessRequestRule, policy *services.ReviewPolicy) sidecarFiling {
+	return sidecarFiling{
+		key:         models.SidecarReviewKey{RuleName: rule.Name},
+		label:       fmt.Sprintf("rule %q", rule.Name),
+		ruleName:    &rule.Name,
+		policy:      policy,
+		forceGroups: rule.ForceApprovalGroups,
+		pendingTTL:  rule.PendingTTLSec,
+		approvalTTL: rule.ApprovalTTLSec,
+	}
+}
+
+// checkFilingFields refuses a body that names a rule and a risk level, or
+// neither.
+func checkFilingFields(req openapi.SidecarReviewRequest) error {
+	switch {
+	case req.RiskLevel == "" && req.ApprovalRule == "":
+		return errors.New("approval_rule or risk_level is required")
+	case req.RiskLevel == "":
+		return nil
+	case !analyzer.RiskLevel(req.RiskLevel).Valid():
+		return fmt.Errorf("risk_level %q is not high, medium or low", req.RiskLevel)
+	case req.ApprovalRule != "":
+		return errors.New("approval_rule and risk_level are exclusive")
+	}
+	return nil
+}
+
+// postLevelReview files a statement held under a risk level. The level's
+// approvers entry in the listener's composed analyzer block decides who
+// approves; the body only names the level.
+func postLevelReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest, statement []byte) {
+	level := analyzer.RiskLevel(req.RiskLevel)
+	approver, ruleName, err := authorizedRiskLevel(models.DB, sidecar, req.ListenerName, level)
+	if err != nil {
+		var refusal levelNotAuthorized
+		if errors.As(err, &refusal) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": refusal.Error()})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the risk level")
+		return
+	}
+	filing := sidecarFiling{
+		key:    models.SidecarReviewKey{RiskLevel: string(level)},
+		label:  fmt.Sprintf("the %s risk level", level),
+		policy: services.ReviewPolicyForLevel(sidecar.OrgID, approver),
+		level:  string(level),
+	}
+	// The limits are those of the block's approval_rule: an older build files
+	// this level under that rule, so both builds get the same limits.
+	if ruleName != "" {
+		orgID, err := uuid.Parse(sidecar.OrgID)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing the sidecar organization id")
+			return
+		}
+		rule, err := models.GetAccessRequestRuleByName(models.DB, ruleName, orgID)
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			rule = nil
+		case err != nil:
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the approval limits")
+			return
+		}
+		if rule != nil && rule.AccessType == models.AccessTypeSidecar {
+			for name, ttl := range map[string]*int{"pending_ttl_sec": rule.PendingTTLSec, "approval_ttl_sec": rule.ApprovalTTLSec} {
+				if err := services.CheckSidecarReviewTTL(name, ttl); err != nil {
+					c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("access request rule %q: %v", rule.Name, err)})
+					return
+				}
+			}
+			filing.pendingTTL, filing.approvalTTL = rule.PendingTTLSec, rule.ApprovalTTLSec
+		}
+	}
+	fileHeldStatement(c, sidecar, req, statement, filing)
+}
+
+// fileHeldStatement answers from the live review of these bytes, or files a
+// new one under filing.
+func fileHeldStatement(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest, statement []byte, filing sidecarFiling) {
 	// The exact bytes bind the approval to one statement. The sidecar's analyzer
 	// cache key strips literals, and a key of that shape would let an approval
 	// of `DELETE ... WHERE id = 1` release `id = 999`.
@@ -167,7 +273,7 @@ func PostReview(c *gin.Context) {
 	const attempts = 2
 	for range attempts {
 		rev, err := models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
-			req.ListenerName, rule.Name, statementHash, now)
+			req.ListenerName, filing.key, statementHash, now)
 		switch {
 		case err == nil:
 			answerExistingReview(c, sidecar, req.ListenerName, rev, time.Now().UTC(), req.Reserve)
@@ -177,7 +283,7 @@ func PostReview(c *gin.Context) {
 			return
 		}
 
-		rev, expiredIDs, err := createSidecarReview(sidecar, req.ListenerName, display, statementHash, rule, policy, now)
+		rev, expiredIDs, err := createSidecarReview(sidecar, req.ListenerName, display, statementHash, filing, now)
 		switch {
 		case errors.Is(err, gorm.ErrDuplicatedKey):
 			// A racing request filed first. Look again rather than answer: its
@@ -201,7 +307,7 @@ func PostReview(c *gin.Context) {
 			}
 		}
 
-		answerFiledReview(c, sidecar, req, rule, rev, display)
+		answerFiledReview(c, sidecar, req, filing.label, rev, display)
 		return
 	}
 
@@ -438,9 +544,9 @@ func authenticatedSidecar(c *gin.Context) *models.Sidecar {
 // answerFiledReview reports a review this request filed. Forward is false: it
 // was filed a moment ago and no human has seen it.
 func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
-	rule *models.AccessRequestRule, rev *models.Review, display string) {
+	label string, rev *models.Review, display string) {
 	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
-		"listener", req.ListenerName, "rule", rule.Name).
+		"listener", req.ListenerName, "under", label).
 		Infof("registered a sidecar review")
 
 	// TrackEvent, not TrackRequest: this request has no user, and TrackRequest
@@ -734,13 +840,9 @@ func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, 
 	// Composition failing is not an authorization answer: it means the rules
 	// could not be read or do not fit together, so it is reported rather than
 	// rendered as a refusal the admin would look for in their reviewer list.
-	listeners := sidecar.Configuration.Listeners
-	if db != nil {
-		composed, err := services.ComposeSidecarConfiguration(db, sidecar)
-		if err != nil {
-			return nil, fmt.Errorf("failed composing the sidecar configuration: %w", err)
-		}
-		listeners = composed.Listeners
+	listeners, err := composedListeners(db, sidecar)
+	if err != nil {
+		return nil, err
 	}
 	if !listenerNamesApprovalRule(listeners, listenerName, ruleName) {
 		return nil, refuse
@@ -768,23 +870,94 @@ func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, 
 	return rule, nil
 }
 
+// authorizedRiskLevel checks that the calling sidecar may file under this
+// risk level of this listener, against the COMPOSED document as
+// authorizedApprovalRule does. It returns the level's approvers entry and the
+// block's approval_rule ("" when it names none).
+func authorizedRiskLevel(db *gorm.DB, sidecar *models.Sidecar, listenerName string, level analyzer.RiskLevel) (*daemon.LevelApprover, string, error) {
+	listeners, err := composedListeners(db, sidecar)
+	if err != nil {
+		return nil, "", err
+	}
+	block := listenerHoldsForHuman(listeners, listenerName, level)
+	if block == nil {
+		return nil, "", levelNotAuthorized{listenerName: listenerName, level: string(level)}
+	}
+	return block.LevelApprover(level), block.ApprovalRule, nil
+}
+
+// composedListeners are the listeners of the document served to this
+// sidecar: composed with its bound rules. Without a database (the
+// authorization table tests), the stored ones.
+func composedListeners(db *gorm.DB, sidecar *models.Sidecar) ([]daemon.ListenerConfig, error) {
+	if db == nil {
+		return sidecar.Configuration.Listeners, nil
+	}
+	composed, err := services.ComposeSidecarConfiguration(db, sidecar)
+	if err != nil {
+		return nil, fmt.Errorf("failed composing the sidecar configuration: %w", err)
+	}
+	return composed.Listeners, nil
+}
+
+// listenerHoldsForHuman returns the listener's analyzer block when it holds
+// this level and its approvers entry names a human, else nil. Free of the
+// database, like listenerNamesApprovalRule.
+func listenerHoldsForHuman(listeners []daemon.ListenerConfig, listenerName string, level analyzer.RiskLevel) *daemon.LaneAnalyzerConfig {
+	block := uniqueListenerAnalyzer(listeners, listenerName)
+	if block == nil {
+		return nil
+	}
+	var action string
+	switch level {
+	case analyzer.RiskHigh:
+		action = block.HighRisk
+	case analyzer.RiskMedium:
+		action = block.MediumRisk
+	case analyzer.RiskLow:
+		action = block.LowRisk
+	}
+	if analyzer.Action(action).Canonical() != analyzer.ActionRequireReview {
+		return nil
+	}
+	approver := block.LevelApprover(level)
+	if approver == nil || approver.Type != analyzer.ApproverHuman {
+		return nil
+	}
+	return block
+}
+
 // listenerNamesApprovalRule reports whether the configuration SERVED to this
 // sidecar gives this listener this approval rule. It takes the listeners
 // rather than the sidecar, and is free of the database, so the whole
 // authorization table can be asserted without Postgres -- and so the caller
 // cannot forget that the document to read is the composed one.
 func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, ruleName string) bool {
-	if listenerName == "" || ruleName == "" {
+	if ruleName == "" {
 		return false
 	}
-	var analyzer *daemon.LaneAnalyzerConfig
+	// A listener with no analyzer block, or one naming a different rule,
+	// authorizes nothing. There is no inherited default: the people who may
+	// release a statement against one database are not the people who may
+	// release one against another.
+	block := uniqueListenerAnalyzer(listeners, listenerName)
+	return block != nil && block.ApprovalRule == ruleName
+}
+
+// uniqueListenerAnalyzer returns the analyzer block of the one listener with
+// this name, or nil.
+func uniqueListenerAnalyzer(listeners []daemon.ListenerConfig, listenerName string) *daemon.LaneAnalyzerConfig {
+	if listenerName == "" {
+		return nil
+	}
+	var block *daemon.LaneAnalyzerConfig
 	matches := 0
 	for _, listener := range listeners {
 		if listener.Name != listenerName {
 			continue
 		}
 		matches++
-		analyzer = listener.Analyzer
+		block = listener.Analyzer
 	}
 
 	// Listener names are NOT unique: daemon validation keys uniqueness on the
@@ -792,14 +965,23 @@ func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, 
 	// the request says which listener but not which lane, so authorizing
 	// against either one would let the sidecar choose the looser of the two.
 	if matches != 1 {
-		return false
+		return nil
 	}
+	return block
+}
 
-	// A listener with no analyzer block, or one naming a different rule,
-	// authorizes nothing. There is no inherited default: the people who may
-	// release a statement against one database are not the people who may
-	// release one against another.
-	return analyzer != nil && analyzer.ApprovalRule == ruleName
+// sidecarFiling is the policy one filing creates a review under: an approval
+// rule, or a risk level of the listener's analyzer block.
+type sidecarFiling struct {
+	key   models.SidecarReviewKey
+	label string
+	// ruleName is nil under a risk level.
+	ruleName *string
+	// level is the risk level, "" under a rule.
+	level                   string
+	policy                  *services.ReviewPolicy
+	forceGroups             pq.StringArray
+	pendingTTL, approvalTTL *int
 }
 
 // createSidecarReview writes the session and the review one statement needs to
@@ -810,7 +992,7 @@ func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, 
 // so the review and the session show the resource the admin sees. A listener
 // without a mirror (a row that fell behind the reconcile) files them with the
 // listener alone.
-func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) (*models.Review, []string, error) {
+func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, filing sidecarFiling, now time.Time) (*models.Review, []string, error) {
 	sessionID := uuid.NewString()
 
 	mirror, err := models.GetSidecarMirror(models.DB, sidecar.OrgID, sidecar.ID, listenerName)
@@ -823,7 +1005,7 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 	// settles, so the session is not optional bookkeeping.
 	sess := newSidecarSession(sidecar, sessionID, display, now)
 
-	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
+	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, filing, now)
 	if mirror != nil {
 		sess.Connection = mirror.Name
 		rev.ConnectionName = mirror.Name
@@ -853,10 +1035,10 @@ func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, now t
 }
 
 // newSidecarReview builds the row, and with it the whole approval policy the
-// named rule describes. Nothing in the review path spells that out, so an
+// filing describes. Nothing in the review path spells that out, so an
 // omission here is silent: without MinApprovals the review needs every group,
 // and without a group row a role cannot approve at all.
-func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) *models.Review {
+func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statementHash string, filing sidecarFiling, now time.Time) *models.Review {
 	return &models.Review{
 		ID:        uuid.NewString(),
 		OrgID:     sidecar.OrgID,
@@ -880,14 +1062,15 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		OwnerEmail: reviewOwnerEmail,
 		OwnerName:  ptr.String(sidecar.Name),
 
-		MinApprovals:          &policy.MinApprovals,
-		ReviewGroups:          policy.Groups,
-		ForceApprovalGroups:   rule.ForceApprovalGroups,
-		AccessRequestRuleName: &rule.Name,
+		MinApprovals:          &filing.policy.MinApprovals,
+		ReviewGroups:          filing.policy.Groups,
+		ForceApprovalGroups:   filing.forceGroups,
+		AccessRequestRuleName: filing.ruleName,
+		RiskLevel:             sql.NullString{String: filing.level, Valid: filing.level != ""},
 
 		// Fixed at filing like the policy, so a rule edit moves no live review.
-		ExpiresAt:      models.SidecarReviewDeadline(now, rule.PendingTTLSec),
-		ApprovalTTLSec: copyInt(rule.ApprovalTTLSec),
+		ExpiresAt:      models.SidecarReviewDeadline(now, filing.pendingTTL),
+		ApprovalTTLSec: copyInt(filing.approvalTTL),
 
 		CreatedAt: now,
 	}
@@ -928,6 +1111,7 @@ func toOpenApiSidecarReview(r *models.Review) *openapi.Review {
 		// rule held a statement rather than only which rule it asked for.
 		AccessRequestRuleName: r.AccessRequestRuleName,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
+		RiskLevel:             nullStringPtr(r.RiskLevel),
 
 		ExpiresAt:      r.SidecarExpiresAt(),
 		ApprovalTTLSec: r.SidecarApprovalTTLSec(),
@@ -938,12 +1122,20 @@ func toOpenApiSidecarReview(r *models.Review) *openapi.Review {
 	}
 }
 
+func nullStringPtr(v sql.NullString) *string {
+	if !v.Valid {
+		return nil
+	}
+	return &v.String
+}
+
 func toSidecarReviewStatus(r *models.Review) *openapi.SidecarReviewStatus {
 	return &openapi.SidecarReviewStatus{
 		ID:              r.ID,
 		Status:          openapi.ReviewStatusType(r.Status),
 		ListenerName:    r.ListenerName.String,
 		ApprovalRule:    ptr.ToString(r.AccessRequestRuleName),
+		RiskLevel:       r.RiskLevel.String,
 		CreatedAt:       r.CreatedAt,
 		DecidedAt:       reviewDecidedAt(r),
 		RejectionReason: r.RejectionReason,

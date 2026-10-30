@@ -88,7 +88,7 @@ func TestOmittedTriggerClassifiesEverythingUnlessGated(t *testing.T) {
 		provider: rec,
 	}
 	ungated, err := buildLaneAnalyzer("appdb", &LaneAnalyzerConfig{HighRisk: "block"},
-		deps, false, false, nil)
+		deps, false, false, nil, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestOmittedTriggerClassifiesEverythingUnlessGated(t *testing.T) {
 	}
 
 	gated, err := buildLaneAnalyzer("payments", &LaneAnalyzerConfig{HighRisk: "block"},
-		deps, true, true, nil)
+		deps, true, true, nil, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestLaneAnalyzerPromptPrecedence(t *testing.T) {
 				cfg:      &AnalyzerConfig{Provider: "stub", Model: "m", Prompt: tc.cfgPrompt},
 				provider: stubAnalyzerProvider{},
 			}
-			ev, err := buildLaneAnalyzer("appdb", la, deps, true, false, nil)
+			ev, err := buildLaneAnalyzer("appdb", la, deps, true, false, nil, false)
 			if err != nil {
 				t.Fatalf("buildLaneAnalyzer: %v", err)
 			}
@@ -244,13 +244,13 @@ func TestLaneAnalyzerOverridesAndBudgetKeyOnTheLane(t *testing.T) {
 		Operation: inspect.OpDelete,
 	}
 
-	gen1, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)
+	gen1, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
 	gen1.Evaluate(stmt) // spends the whole lane budget of 1
 
-	gen2, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)
+	gen2, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestLaneAnalyzerOverridesAndBudgetKeyOnTheLane(t *testing.T) {
 	}
 
 	// A different lane is a different identity with its own purse.
-	other, err := buildLaneAnalyzer("payments", la, deps, false, false, nil)
+	other, err := buildLaneAnalyzer("payments", la, deps, false, false, nil, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestLaneRateLimitMergesAndItsBucketKeysOnTheLane(t *testing.T) {
 	}
 	build := func(lane string) policy.Evaluator {
 		t.Helper()
-		ev, err := buildLaneAnalyzer(lane, la, deps, false, false, nil)
+		ev, err := buildLaneAnalyzer(lane, la, deps, false, false, nil, false)
 		if err != nil {
 			t.Fatalf("buildLaneAnalyzer: %v", err)
 		}
@@ -774,7 +774,7 @@ func TestLaneCacheOverrideMergesFieldWise(t *testing.T) {
 			}
 			la := laneBlock()
 			la.Cache = tc.cache
-			ev, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)
+			ev, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil, false)
 			if err != nil {
 				t.Fatalf("buildLaneAnalyzer: %v", err)
 			}
@@ -798,7 +798,7 @@ func TestBlockAndRuleBudgetsDoNotCollideOnOneName(t *testing.T) {
 		provider: rec,
 	}
 
-	block, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false, nil)
+	block, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false, nil, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -826,7 +826,7 @@ func TestRedactedSendTransmitsNoValues(t *testing.T) {
 		provider: rec,
 		det:      stubPlugin{entities: []string{"CREDIT_CARD"}, find: pan},
 	}
-	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false, nil)
+	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false, nil, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -857,7 +857,7 @@ func TestLanePrivacySendWithoutDetectorIsRefused(t *testing.T) {
 			}
 			la := laneBlock()
 			la.Send = mode
-			_, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)
+			_, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil, false)
 			if err == nil || !strings.Contains(err.Error(), "detector") {
 				t.Fatalf("a %s override with no detector was accepted: %v", mode, err)
 			}
@@ -883,7 +883,7 @@ func TestRefuseRunsOnCacheHits(t *testing.T) {
 		provider: rec,
 		det:      stubPlugin{entities: []string{"CREDIT_CARD"}, find: pan},
 	}
-	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false, nil)
+	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false, nil, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -950,7 +950,7 @@ func TestRateLimitPerSecPastTheDurationRangeIsRefused(t *testing.T) {
 	la := laneBlock()
 	la.RateLimit = &AnalyzerRateLimitConfig{Calls: 30, PerSec: int(2*maxPerSec + 2)}
 	deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: stubAnalyzerProvider{}}
-	if _, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil); err == nil ||
+	if _, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil, false); err == nil ||
 		!strings.Contains(err.Error(), "rate_limit.per_sec") {
 		t.Errorf("the lane build accepted a wrapping per_sec: %v", err)
 	}

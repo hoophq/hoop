@@ -216,7 +216,27 @@ func (p *Provider) Name() string { return Name }
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
-	body, err := json.Marshal(BuildRequest(p.gen, systemPrompt, content))
+	resp, err := p.send(ctx, BuildRequest(p.gen, systemPrompt, content))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return ParseResponse("analyzer/"+Name, resp)
+}
+
+// Decide implements analyzer.ToolCaller.
+func (p *Provider) Decide(ctx context.Context, systemPrompt, content string, tools []analyzer.ToolSpec) ([]analyzer.ToolCall, error) {
+	resp, err := p.send(ctx, BuildToolRequest(p.gen, systemPrompt, content, tools))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return ParseToolCalls("analyzer/"+Name, resp)
+}
+
+// send posts one request body. The caller closes the response body.
+func (p *Provider) send(ctx context.Context, request Request) (*http.Response, error) {
+	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/gemini: encoding request: %w", err)
 	}
@@ -235,9 +255,7 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/gemini: %w", err)
 	}
-	defer resp.Body.Close()
-
-	return ParseResponse("analyzer/"+Name, resp)
+	return resp, nil
 }
 
 // --- wire format, shared with Vertex ---------------------------------------
@@ -300,10 +318,13 @@ type Schema struct {
 	Required   []string            `json:"required,omitempty"`
 }
 
-// Property is one schema field.
+// Property is one schema field. Format "enum" marks a string with Enum
+// values, as the Gemini schema requires.
 type Property struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Type        string   `json:"type"`
+	Format      string   `json:"format,omitempty"`
+	Description string   `json:"description"`
+	Enum        []string `json:"enum,omitempty"`
 }
 
 // ToolConfig forces a function call.
@@ -341,26 +362,27 @@ type ThinkingConfig struct {
 
 // BuildRequest renders a classification request.
 func BuildRequest(gen GenerationConfig, systemPrompt, content string) Request {
-	specs := analyzer.ToolSpecs()
+	return BuildToolRequest(gen, systemPrompt, content, analyzer.ToolSpecs())
+}
+
+// BuildToolRequest renders a request that offers tools and forces a call.
+// BuildRequest is this with the risk tools. Types go upper-case, the enum
+// names Vertex documents.
+func BuildToolRequest(gen GenerationConfig, systemPrompt, content string, specs []analyzer.ToolSpec) Request {
 	decls := make([]FunctionDeclaration, 0, len(specs))
 	for _, s := range specs {
+		props := make(map[string]Property, len(s.Input.Properties))
+		for name, p := range s.Input.Properties {
+			prop := Property{Type: strings.ToUpper(p.Type), Description: p.Description, Enum: p.Enum}
+			if len(p.Enum) > 0 {
+				prop.Format = "enum"
+			}
+			props[name] = prop
+		}
 		decls = append(decls, FunctionDeclaration{
 			Name:        s.Name,
 			Description: s.Description,
-			Parameters: Schema{
-				Type: "OBJECT",
-				Properties: map[string]Property{
-					"title": {
-						Type:        "STRING",
-						Description: "Under 80 characters. Shown to the user when the statement is blocked. Never quote a value from the statement.",
-					},
-					"explanation": {
-						Type:        "STRING",
-						Description: "Why the statement carries this risk. Never quote a value from the statement.",
-					},
-				},
-				Required: []string{"title", "explanation"},
-			},
+			Parameters:  Schema{Type: "OBJECT", Properties: props, Required: s.Input.Required},
 		})
 	}
 
@@ -413,16 +435,9 @@ type response struct {
 // error an operator pastes into a ticket. The same rule keeps Error.Message
 // out of the returned error: Google's message can quote the offending field.
 func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, error) {
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, analyzer.ResponseError(provider, resp)
-	}
-
-	var out response
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
-		return nil, fmt.Errorf("%s: decoding response: %w", provider, err)
-	}
-	if out.Error != nil {
-		return nil, fmt.Errorf("%s: provider error: %s", provider, out.Error.Status)
+	out, err := decodeResponse(provider, resp)
+	if err != nil {
+		return nil, err
 	}
 
 	for _, cand := range out.Candidates {
@@ -477,4 +492,65 @@ func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, erro
 			provider, finish)
 	}
 	return nil, fmt.Errorf("%s: model called no risk tool (finish_reason %q)", provider, finish)
+}
+
+// decodeResponse reads a 2xx reply, or reports the failure without the body.
+func decodeResponse(provider string, resp *http.Response) (response, error) {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return response{}, analyzer.ResponseError(provider, resp)
+	}
+	var out response
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return response{}, fmt.Errorf("%s: decoding response: %w", provider, err)
+	}
+	if out.Error != nil {
+		return response{}, fmt.Errorf("%s: provider error: %s", provider, out.Error.Status)
+	}
+	return out, nil
+}
+
+// ParseToolCalls returns every functionCall part of a reply, in order. A
+// blocked prompt, a safety stop or a reply cut off at the token limit is an
+// error, with or without calls; a reply with no call is not. Exported so
+// analyzer/vertex reuses it.
+func ParseToolCalls(provider string, resp *http.Response) ([]analyzer.ToolCall, error) {
+	out, err := decodeResponse(provider, resp)
+	if err != nil {
+		return nil, err
+	}
+	// A blocked prompt or a safety stop on any candidate wins over any
+	// call: a function call beside one is not a decision.
+	if out.PromptFeedback != nil && out.PromptFeedback.BlockReason != "" {
+		return nil, fmt.Errorf("%s: model refused to answer (block_reason %q)",
+			provider, out.PromptFeedback.BlockReason)
+	}
+	for _, cand := range out.Candidates {
+		if refusalFinish(cand.FinishReason) {
+			return nil, fmt.Errorf("%s: model refused to answer (finish_reason %q)",
+				provider, cand.FinishReason)
+		}
+		// A candidate cut off at the limit may end inside a call: no decision.
+		if cand.FinishReason == "MAX_TOKENS" {
+			return nil, fmt.Errorf("%s: model reply was cut off (finish_reason %q)",
+				provider, cand.FinishReason)
+		}
+	}
+	var calls []analyzer.ToolCall
+	for _, cand := range out.Candidates {
+		for _, part := range cand.Content.Parts {
+			if part.FunctionCall != nil {
+				calls = append(calls, analyzer.ToolCall{Name: part.FunctionCall.Name, Args: part.FunctionCall.Args})
+			}
+		}
+	}
+	return calls, nil
+}
+
+// refusalFinish reports a finishReason that means a safety stop.
+func refusalFinish(finish string) bool {
+	switch finish {
+	case "SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION":
+		return true
+	}
+	return false
 }

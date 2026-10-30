@@ -595,7 +595,7 @@
             "type": "integer"
           },
           "reviewers_groups": {
-            "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement.",
+            "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement. Ignored when\nsidecar_spec has approvers and names its own approval rule: the groups\nevery human level shares apply, else the admin group.",
             "example": [
               "dba-leads"
             ],
@@ -6143,6 +6143,17 @@
             "readOnly": true,
             "type": "string"
           },
+          "risk_level": {
+            "description": "The analyzer risk level a sidecar filed the approval request under, in place of an approval rule",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "example": "high",
+            "readOnly": true,
+            "type": "string"
+          },
           "session": {
             "description": "The id of session",
             "example": "35DB0A2F-E5CE-4AD8-A308-55C3108956E5",
@@ -8598,6 +8609,17 @@
             "readOnly": true,
             "type": "string"
           },
+          "risk_level": {
+            "description": "The analyzer risk level a sidecar filed the approval request under, in place of an approval rule.\nOnly GET /sessions/{session_id} returns it",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "example": "high",
+            "readOnly": true,
+            "type": "string"
+          },
           "status": {
             "allOf": [
               {
@@ -9136,7 +9158,7 @@
       "openapi.SidecarReviewRequest": {
         "properties": {
           "approval_rule": {
-            "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the approver groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it.\n\nBounded at 254 to match what a rule name may be.",
+            "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the approver groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it. Required without risk_level, refused with it.\n\nBounded at 254 to match what a rule name may be.",
             "example": "payments-approvers",
             "maxLength": 254,
             "type": "string"
@@ -9155,10 +9177,19 @@
             "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release.",
             "example": false,
             "type": "boolean"
+          },
+          "risk_level": {
+            "description": "The analyzer risk level that held the statement, when the listener's\nanalyzer block names a human approver for that level (approvers). The\ncontrol plane reads the level's approval groups in the listener's\nstored configuration",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "example": "high",
+            "type": "string"
           }
         },
         "required": [
-          "approval_rule",
           "listener_name",
           "payload"
         ],
@@ -9198,7 +9229,7 @@
       "openapi.SidecarReviewStatus": {
         "properties": {
           "approval_rule": {
-            "description": "The access request rule the approval request was filed under",
+            "description": "The access request rule the approval request was filed under. Empty on one filed under a risk level",
             "example": "payments-approvers",
             "readOnly": true,
             "type": "string"
@@ -9237,6 +9268,17 @@
           "rejection_reason": {
             "description": "The reason the approver gave when rejecting the approval request",
             "example": "Not during business hours.",
+            "readOnly": true,
+            "type": "string"
+          },
+          "risk_level": {
+            "description": "The analyzer risk level the approval request was filed under, in place of an approval rule",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "example": "high",
             "readOnly": true,
             "type": "string"
           },
@@ -24830,7 +24872,7 @@
         ]
       },
       "post": {
-        "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed.",
+        "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the groups of the listener's analyzer approvers entry for that level decide who approves.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created. Omit it when sending hoop-sidecar-identity.",

@@ -272,6 +272,7 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	// would make a rule unable to widen what it narrowed.
 	out.Trigger = rule.Trigger
 	out.HighRisk, out.MediumRisk, out.LowRisk = rule.HighRisk, rule.MediumRisk, rule.LowRisk
+	out.Approvers = rule.Approvers
 	out.Prompt, out.Message = rule.Prompt, rule.Message
 
 	// The overrides, kept from the listener unless the rule names one. The
@@ -375,13 +376,15 @@ type ErrSidecarCapabilityMissing struct{ Reason string }
 func (e ErrSidecarCapabilityMissing) Error() string { return e.Reason }
 
 // CheckSidecarCapabilities refuses a composed document that the sidecar's last
-// handshake says it cannot decode. A sidecar that never handshaked passes: its
+// handshake says it cannot decode, as the handshake serves it
+// (daemon.ServeLevelApprovers). A sidecar that never handshaked passes: its
 // support is unknown, and the handshake refuses to serve it instead.
 func CheckSidecarCapabilities(sc *models.Sidecar, composed daemon.Config) error {
 	if sc.Capabilities == nil {
 		return nil
 	}
-	if err := daemon.CheckServable(composed, daemon.Handshake{Version: reportedVersion(sc), Capabilities: sc.Capabilities}); err != nil {
+	hs := daemon.Handshake{Version: reportedVersion(sc), Capabilities: sc.Capabilities}
+	if err := daemon.CheckServable(daemon.ServeLevelApprovers(composed, hs), hs); err != nil {
 		return ErrSidecarCapabilityMissing{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
 	}
 	return nil

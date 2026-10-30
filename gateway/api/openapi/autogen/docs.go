@@ -11558,7 +11558,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed.",
+                "description": "Register an approval request for a statement a sidecar held. The sidecar is taken from the token, never the body. An approval request for the same bytes past its deadline is expired and a new one is filed. With risk_level, the groups of the listener's analyzer approvers entry for that level decide who approves.",
                 "consumes": [
                     "application/json"
                 ],
@@ -13639,7 +13639,7 @@ const docTemplate = `{
                     "example": 900
                 },
                 "reviewers_groups": {
-                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement.",
+                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group approves.\n\nRead only while sidecar_spec holds a statement. Ignored when\nsidecar_spec has approvers and names its own approval rule: the groups\nevery human level shares apply, else the admin group.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -19182,6 +19182,17 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": ""
                 },
+                "risk_level": {
+                    "description": "The analyzer risk level a sidecar filed the approval request under, in place of an approval rule",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "readOnly": true,
+                    "example": "high"
+                },
                 "session": {
                     "description": "The id of session",
                     "type": "string",
@@ -21637,6 +21648,17 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": ""
                 },
+                "risk_level": {
+                    "description": "The analyzer risk level a sidecar filed the approval request under, in place of an approval rule.\nOnly GET /sessions/{session_id} returns it",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "readOnly": true,
+                    "example": "high"
+                },
                 "status": {
                     "description": "The status of the approval request\n* PENDING - The resource is waiting for approval\n* APPROVED - The resource is fully approved\n* REJECTED - The resource is fully rejected\n* REVOKED - The resource was revoked after being approved\n* PROCESSING - The approval request is being executed\n* EXECUTED - The approval request was executed\n* UNKNOWN - Unable to know the status of the approval request",
                     "allOf": [
@@ -22174,13 +22196,12 @@ const docTemplate = `{
         "openapi.SidecarReviewRequest": {
             "type": "object",
             "required": [
-                "approval_rule",
                 "listener_name",
                 "payload"
             ],
             "properties": {
                 "approval_rule": {
-                    "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the approver groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it.\n\nBounded at 254 to match what a rule name may be.",
+                    "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the approver groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it. Required without risk_level, refused with it.\n\nBounded at 254 to match what a rule name may be.",
                     "type": "string",
                     "maxLength": 254,
                     "example": "payments-approvers"
@@ -22199,6 +22220,16 @@ const docTemplate = `{
                     "description": "Reserve an approved request instead of spending it\n\nThe review moves to PROCESSING, and the sidecar settles it with what\nthe upstream answered. A plane that predates this field ignores it and\nspends the approval at release.",
                     "type": "boolean",
                     "example": false
+                },
+                "risk_level": {
+                    "description": "The analyzer risk level that held the statement, when the listener's\nanalyzer block names a human approver for that level (approvers). The\ncontrol plane reads the level's approval groups in the listener's\nstored configuration",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "example": "high"
                 }
             }
         },
@@ -22237,7 +22268,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "approval_rule": {
-                    "description": "The access request rule the approval request was filed under",
+                    "description": "The access request rule the approval request was filed under. Empty on one filed under a risk level",
                     "type": "string",
                     "readOnly": true,
                     "example": "payments-approvers"
@@ -22278,6 +22309,17 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "Not during business hours."
+                },
+                "risk_level": {
+                    "description": "The analyzer risk level the approval request was filed under, in place of an approval rule",
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ],
+                    "readOnly": true,
+                    "example": "high"
                 },
                 "status": {
                     "description": "The status of the approval request\n* PENDING - Waiting for an approver\n* APPROVED - Approved and not yet consumed; resend the identical statement\n* REJECTED - Rejected; the statement will not run\n* REVOKED - Revoked after approval\n* EXECUTED - The approval was consumed by a resent statement\n* EXPIRED - The approval request passed its deadline; it never releases the statement",

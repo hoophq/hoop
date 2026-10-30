@@ -106,8 +106,7 @@ func TestPutReviewOnASidecarReview(t *testing.T) {
 			assert.False(t, claim.Forward, "a revoked approval must not release the statement")
 			assert.Equal(t, openapi.ReviewStatusType(models.ReviewStatusRevoked), claim.Review.Status)
 
-			_, err = models.GetLiveSidecarReview(models.DB, statusTestOrgID, sc.ID, "appdb",
-				"payments-approvers", rev.StatementHash.String, time.Now().UTC())
+			_, err = models.GetLiveSidecarReview(models.DB, statusTestOrgID, sc.ID, "appdb", models.SidecarReviewKey{RuleName: "payments-approvers"}, rev.StatementHash.String, time.Now().UTC())
 			assert.True(t, errors.Is(err, gorm.ErrRecordNotFound), "a resend must file a new review, err=%v", err)
 		})
 	}
