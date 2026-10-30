@@ -1,0 +1,66 @@
+/* An insight card: a header that toggles its details. Gray for the analyzer
+   and guardrails: a fill halfway between the modal and gray-0 and a soft
+   border, so the card shows without darkening the modal (lead, 2026-10-30);
+   violet for data masking (Figma "AI Data Masking"). */
+.card {
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-sm);
+}
+
+.card[data-variant='gray'] {
+  background-color: color-mix(in srgb, var(--mantine-color-gray-0) 50%, var(--mantine-color-body));
+  border: 1px solid var(--mantine-color-gray-1);
+}
+
+.card[data-variant='violet'] {
+  background-color: var(--mantine-color-violet-0);
+}
+
+.header {
+  width: 100%;
+  border-radius: var(--mantine-radius-sm);
+}
+
+.header:focus-visible {
+  outline: 2px solid var(--mantine-color-indigo-6);
+  outline-offset: 2px;
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--mantine-color-gray-5);
+  transition: transform 150ms ease;
+}
+
+.chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+.divider {
+  border-top: 1px solid var(--mantine-color-gray-0);
+  padding-top: var(--mantine-spacing-sm);
+}
+
+.tile {
+  flex: 1;
+  border-radius: var(--mantine-radius-md);
+  background-color: var(--mantine-color-violet-1);
+  padding: var(--mantine-spacing-sm);
+}
+
+.chip {
+  border-radius: var(--mantine-radius-sm);
+  background-color: var(--mantine-color-gray-1);
+  padding: var(--mantine-spacing-smAlt);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+}
+
+.trace {
+  max-height: 256px;
+  overflow-y: auto;
+}
+
+.preWrap {
+  white-space: pre-wrap;
+}

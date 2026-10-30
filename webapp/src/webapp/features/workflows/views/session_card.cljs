@@ -6,7 +6,7 @@
                            Clock2 ShieldAlert]]
    [clojure.string :as string]
    [re-frame.core :as rf]
-   [webapp.audit.views.session-details :as session-details]
+   [webapp.audit.session-details-bridge]
    [webapp.connections.constants :as connection-constants]
    [webapp.formatters :as formatters]))
 
@@ -116,11 +116,7 @@
                      :variant "soft"
                      :color "gray"
                      :highContrast true
-                     :on-click (fn []
-                                 (rf/dispatch [:modal->open
-                                               {:id "session-details"
-                                                :maxWidth "95vw"
-                                                :content [session-details/main full]}]))}
+                     :on-click #(rf/dispatch [:session-details/open full])}
           [:> ArrowUpRight {:size 14}]
           [:> Text {:size "2" :weight "medium"} "Open full session"]]]])]))
 

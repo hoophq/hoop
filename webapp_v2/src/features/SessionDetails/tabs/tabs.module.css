@@ -1,0 +1,4 @@
+/* A rejection reason keeps the reviewer's line breaks. */
+.preWrap {
+  white-space: pre-wrap;
+}

@@ -264,6 +264,22 @@ Common mappings:
 | `w-full` | `w="100%"` |
 | `max-w-md` | `maw={448}` |
 
+Radix grays (`bg-[--gray-N]`, `border-[--gray-aN]`) do not match the theme's
+gray numbers: the theme scale starts at Radix step 3 (`src/theme.js`). Map by
+value, or the React page reads darker than the CLJS one:
+
+| Radix (CLJS) | Value | Theme token |
+|--------------|-------|-------------|
+| `--gray-1`, `--gray-2` | `#fcfcfd`, `#f9f9fb` | `--mantine-color-body` |
+| `--gray-3`, `--gray-a3` | `#f0f0f3` | `gray-0` |
+| `--gray-4`, `--gray-a4` | `#e8e8ec` | `gray-1` |
+| `--gray-6`, `--gray-7` | `#d9d9e0`, `#cdced6` | `gray-2` |
+| `--gray-8` | `#b9bbc6` | `gray-3` |
+| `--gray-10` | `#80838d` | `gray-5` |
+| `--gray-11` | `#60646c` | `c="dimmed"` |
+
+A Radix dialog dims the page at 40% (`black-a6`); the Mantine `Modal` default is 60%.
+
 ---
 
 ## Recurring CLJS features → shared React building blocks

@@ -1,0 +1,69 @@
+/* A terminal: dark surface, monospace, the text as the process wrote it. */
+.terminal {
+  height: 600px;
+  overflow: auto;
+  padding: var(--mantine-spacing-mdAlt);
+  border-radius: var(--mantine-radius-lg);
+  background: var(--mantine-color-dark-8);
+  color: var(--mantine-color-gray-2);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  white-space: pre;
+}
+
+.player {
+  height: 600px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--mantine-radius-lg);
+}
+
+/* The Tailwind reset of a ClojureScript route draws svg as a block and hides
+   the play icon of the start prompt. */
+.player :global(.ap-player .ap-overlay-start svg) {
+  display: inline-block;
+}
+
+/* One stream row of the raw view: input gray with a prompt, output white,
+   errors red. */
+.row {
+  border-bottom: 1px solid var(--mantine-color-gray-0);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row[data-type='i'] {
+  background: var(--mantine-color-gray-0);
+}
+
+.row[data-type='e'] {
+  background: var(--mantine-color-red-0);
+}
+
+.rowHead {
+  cursor: pointer;
+  padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-mdAlt);
+}
+
+.rowHead:hover {
+  background: var(--mantine-color-gray-0);
+}
+
+.rowContent {
+  margin: 0 var(--mantine-spacing-mdAlt) var(--mantine-spacing-mdAlt);
+  padding: var(--mantine-spacing-mdAlt);
+  border-radius: var(--mantine-radius-lg);
+  background: var(--mantine-color-dark-6);
+  color: var(--mantine-color-white);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  white-space: pre;
+  overflow: auto;
+}
+
+.mono {
+  font-family: var(--mantine-font-family-monospace);
+}

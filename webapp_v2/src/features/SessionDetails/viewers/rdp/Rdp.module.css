@@ -1,0 +1,74 @@
+/* The RDP replay: the recording scaled into a fixed stage, the PII overlay
+   drawn on a second canvas of the same size, centred the same way. */
+.player {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mantine-color-gray-1);
+  border-radius: var(--mantine-radius-md);
+  overflow: hidden;
+}
+
+/* Full screen through the Fullscreen API: the stage takes what the controls
+   leave. */
+.player[data-fullscreen] {
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+  background: var(--mantine-color-body);
+}
+
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 600px;
+  background: var(--mantine-color-gray-9);
+}
+
+.player[data-fullscreen] .stage {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.canvas {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.stageBadge {
+  position: absolute;
+  top: var(--mantine-spacing-smAlt);
+  right: var(--mantine-spacing-smAlt);
+}
+
+.controls {
+  background: var(--mantine-color-gray-0);
+}
+
+.legend {
+  border-top: 1px solid var(--mantine-color-gray-1);
+  background: var(--mantine-color-body);
+}
+
+.legendLabel {
+  letter-spacing: 0.08em;
+}
+
+.entityToggle {
+  cursor: pointer;
+  user-select: none;
+}
