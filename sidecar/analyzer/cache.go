@@ -34,8 +34,21 @@ type cache struct {
 type cacheEntry struct {
 	key      string
 	result   Result
+	handoff  map[string]handoffMemo
 	expireAt time.Time
 }
+
+// handoffMemo is a hand-off decision kept with the classification it was
+// made on. The entry keys it by handoffKey: the hand-off configuration and
+// every input the agent read that the shape key does not cover.
+type handoffMemo struct {
+	action Action
+	reason string
+}
+
+// maxHandoffMemos bounds the decisions one entry keeps, one per principal,
+// database and so on. A full entry drops them all: the cost is new calls.
+const maxHandoffMemos = 64
 
 // newCache returns a cache holding at most size entries for ttl each. A size
 // or ttl of zero disables caching, and a disabled cache is still a valid
@@ -81,6 +94,50 @@ func (c *cache) get(key string) (Result, bool) {
 	return ent.result, true
 }
 
+// decision returns the hand-off decision the live entry for key keeps under
+// handoffKey. It does not count as a hit or a miss.
+func (c *cache) decision(key, handoffKey string) (handoffMemo, bool) {
+	if !c.enabled() {
+		return handoffMemo{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.entries[key]
+	if !ok {
+		return handoffMemo{}, false
+	}
+	ent := el.Value.(*cacheEntry)
+	if c.now().After(ent.expireAt) {
+		return handoffMemo{}, false
+	}
+	m, ok := ent.handoff[handoffKey]
+	return m, ok
+}
+
+// remember keeps a hand-off decision on the live entry for key, under
+// handoffKey. It does not extend the entry's TTL, and it does nothing when
+// the entry is gone: the decision then is made again with the next
+// classification.
+func (c *cache) remember(key, handoffKey string, m handoffMemo) {
+	if !c.enabled() {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.entries[key]
+	if !ok {
+		return
+	}
+	ent := el.Value.(*cacheEntry)
+	if c.now().After(ent.expireAt) {
+		return
+	}
+	if ent.handoff == nil || len(ent.handoff) >= maxHandoffMemos {
+		ent.handoff = map[string]handoffMemo{}
+	}
+	ent.handoff[handoffKey] = m
+}
+
 // put stores a verdict, evicting the least recently used entry when full.
 func (c *cache) put(key string, res Result) {
 	if !c.enabled() {
@@ -90,8 +147,10 @@ func (c *cache) put(key string, res Result) {
 	defer c.mu.Unlock()
 
 	if el, ok := c.entries[key]; ok {
+		// A new classification: a decision made on the old one is stale.
 		ent := el.Value.(*cacheEntry)
 		ent.result = res
+		ent.handoff = nil
 		ent.expireAt = c.now().Add(c.ttl)
 		c.order.MoveToFront(el)
 		return

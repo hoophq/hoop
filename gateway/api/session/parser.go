@@ -190,6 +190,7 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 		RejectionReason:       r.RejectionReason,
 		ListenerName:          r.ListenerName,
 		RiskLevel:             r.RiskLevel,
+		ViaHandoff:            r.ViaHandoff,
 	}
 }
 

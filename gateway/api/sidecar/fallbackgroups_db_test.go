@@ -62,6 +62,37 @@ func TestTheManagedRuleGroupsComeFromTheHumanLevels(t *testing.T) {
 	assert.Equal(t, requested, got)
 }
 
+// A hand-off level that may select require_approval holds for its human
+// approvers too, so its groups count like a direct hold's.
+func TestTheManagedRuleGroupsCountAHandoffHold(t *testing.T) {
+	startStatusTestDB(t)
+	org := uuid.MustParse(statusTestOrgID)
+	requested := []string{"requested"}
+
+	for _, tc := range []struct {
+		name, handoffs string
+		want           []string
+	}{
+		{"the hand-off level's groups differ from the direct level's",
+			`{"high": {"allowed_actions": ["allow", "require_approval"]}}`,
+			[]string{types.GroupAdmin}},
+		{"a hand-off level that cannot hold does not count",
+			`{"high": {"allowed_actions": ["allow", "block"]}}`,
+			[]string{"sre"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := "handoff-derived-" + uuid.NewString()[:8]
+			spec := json.RawMessage(`{"high": "ai-handoff", "medium": "require_approval",
+				"approval_rule": "` + rule + `", "handoffs": ` + tc.handoffs + `,
+				"approvers": {"high": {"type": "human", "groups": ["dba"]}, "medium": {"type": "human", "groups": ["sre"]}}}`)
+			require.NoError(t, services.SyncAnalyzerApprovalRule(models.DB, org, rule, spec, &requested))
+			got, err := services.AnalyzerApprovalReviewers(models.DB, org, rule)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 // An import stores the groups derived from the file's human levels.
 func TestAnImportDerivesTheManagedRuleGroups(t *testing.T) {
 	startStatusTestDB(t)

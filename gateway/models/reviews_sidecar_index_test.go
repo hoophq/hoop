@@ -1,6 +1,7 @@
 package models_test
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -42,18 +43,24 @@ func sqlLiteral(v any) string {
 // custom and on a generic plan. A predicate the index predicate does not
 // imply (IS NOT DISTINCT FROM, a bound status) leaves a seq scan of every
 // review, on each filing. enable_seqscan off makes the check independent of
-// the row count: the planner takes the index whenever it can.
+// the row count: the planner takes the index whenever it can. A level key
+// uses the 000148 index, which keys on via_handoff: the flag is an index
+// condition, not a filter. Over an empty table the sidecar_id index ties on
+// cost with that six-column index, so the check drops it in a transaction it
+// rolls back.
 func TestTheLiveSidecarLookupUsesThePartialIndexes(t *testing.T) {
 	startTestDB(t)
 	sc := seedSidecar(t, "index-lookup")
 	hash := models.HashStatement([]byte("DELETE FROM t"))
 
 	for _, tc := range []struct {
-		key   models.SidecarReviewKey
-		index string
+		key       models.SidecarReviewKey
+		index     string
+		indexCond string
 	}{
-		{models.SidecarReviewKey{RuleName: "payments-approvers"}, "index_reviews_sidecar_statement"},
-		{models.SidecarReviewKey{RiskLevel: "high"}, "index_reviews_sidecar_level_statement"},
+		{models.SidecarReviewKey{RuleName: "payments-approvers"}, "index_reviews_sidecar_statement", "access_request_rule_name ="},
+		{models.SidecarReviewKey{RiskLevel: "high"}, "index_reviews_sidecar_level_statement", "via_handoff ="},
+		{models.SidecarReviewKey{RiskLevel: "high", ViaHandoff: true}, "index_reviews_sidecar_level_statement", "via_handoff ="},
 	} {
 		query, args := captureQuery(t, func() {
 			_, _ = models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", tc.key, hash, time.Now().UTC())
@@ -68,6 +75,7 @@ func TestTheLiveSidecarLookupUsesThePartialIndexes(t *testing.T) {
 				for _, stmt := range []string{
 					"SET LOCAL enable_seqscan = off",
 					"SET LOCAL plan_cache_mode = " + mode,
+					"DROP INDEX private.index_reviews_sidecar_id",
 					"PREPARE live_lookup AS " + query,
 				} {
 					if err := tx.Exec(stmt).Error; err != nil {
@@ -75,15 +83,47 @@ func TestTheLiveSidecarLookupUsesThePartialIndexes(t *testing.T) {
 					}
 				}
 				defer tx.Exec("DEALLOCATE live_lookup")
-				return tx.Raw("EXPLAIN EXECUTE live_lookup(" + strings.Join(literals, ", ") + ")").Scan(&plan).Error
+				if err := tx.Raw("EXPLAIN EXECUTE live_lookup(" + strings.Join(literals, ", ") + ")").Scan(&plan).Error; err != nil {
+					return err
+				}
+				return errRollback
 			})
-			if err != nil {
+			if !errors.Is(err, errRollback) {
 				t.Fatalf("%+v %s: explain: %v", tc.key, mode, err)
 			}
 			text := strings.Join(plan, "\n")
 			if !strings.Contains(text, tc.index+" ") {
 				t.Errorf("%+v %s: the lookup does not use %s:\n%s", tc.key, mode, tc.index, text)
 			}
+			if !indexCondHas(plan, tc.indexCond) {
+				t.Errorf("%+v %s: %q is not an index condition:\n%s", tc.key, mode, tc.indexCond, text)
+			}
 		}
+	}
+}
+
+// errRollback ends a transaction whose changes the check must not keep.
+var errRollback = errors.New("roll back")
+
+// indexCondHas reports an Index Cond line of plan that holds cond.
+func indexCondHas(plan []string, cond string) bool {
+	for _, line := range plan {
+		if strings.Contains(line, "Index Cond:") && strings.Contains(line, cond) {
+			return true
+		}
+	}
+	return false
+}
+
+// A rule filing carries no hand-off flag: a rule key with one is refused,
+// not matched against a scope no index covers.
+func TestARuleKeyWithAHandoffIsRefused(t *testing.T) {
+	startTestDB(t)
+	sc := seedSidecar(t, "index-refused")
+	_, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb",
+		models.SidecarReviewKey{RuleName: "payments-approvers", ViaHandoff: true},
+		models.HashStatement([]byte("DELETE FROM t")), time.Now().UTC())
+	if err == nil || errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("a rule key with a hand-off must be refused, err=%v", err)
 	}
 }

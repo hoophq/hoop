@@ -503,18 +503,23 @@ type LaneAnalyzerConfig struct {
 	Trigger *policy.AITrigger `json:"trigger,omitempty"`
 
 	// HighRisk, MediumRisk and LowRisk map a verdict onto an action:
-	// allow, warn, block, defer or require_approval. An unset level
-	// defaults to allow, so an operator opts into blocking a tier by
+	// allow, warn, block, defer, require_approval or ai-handoff. An unset
+	// level defaults to allow, so an operator opts into blocking a tier by
 	// naming it.
 	HighRisk   string `json:"high,omitempty"`
 	MediumRisk string `json:"medium,omitempty"`
 	LowRisk    string `json:"low,omitempty"`
 
-	// Approvers names who releases each held level: a person in the
-	// level's groups, or the approval agent. A held level with no entry
-	// files under ApprovalRule. An entry on a level that does not hold is
-	// refused. See LevelApprovers.
+	// Approvers names who releases each held level, and each hold a
+	// hand-off agent selects: a person in the level's groups, or the
+	// approval agent. A held level with no entry files under ApprovalRule.
+	// An entry on a level that cannot hold is refused. See LevelApprovers.
 	Approvers *LevelApprovers `json:"approvers,omitempty" cap:"analyzer_level_approvers"`
+
+	// Handoffs configures each ai-handoff level: the actions its hand-off
+	// agent may select and the agent's prompt. Every ai-handoff level needs
+	// an entry; an entry on another level is refused. See LevelHandoffs.
+	Handoffs *LevelHandoffs `json:"handoffs,omitempty" cap:"analyzer_ai_handoff"`
 
 	// Prompt replaces the inherited risk guidance for this lane. This is
 	// where protocol-specific wording belongs: analyzer.prompt reaches
@@ -1190,6 +1195,7 @@ func buildAnalyzerEvaluator(
 		Guidance:  guidance,
 		Actions:   actions,
 		Approvals: la.approvals(),
+		Handoffs:  la.handoffs(),
 		// Only a block reaches the approval agent, and a block is
 		// named after its lane.
 		Listener:      name,
@@ -1481,6 +1487,8 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 		problems = append(problems, validateGatedExclude(r.Trigger, gated, where)...)
 		problems = append(problems, refuseRuleFormHold(
 			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
+		problems = append(problems, refuseRuleFormHandoff(
+			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
 	}
 	return problems
 }
@@ -1509,6 +1517,24 @@ func refuseRuleFormHold(high, medium, low, where string) []string {
 				"do: it carries no approval_rule to name who may approve a held "+
 				"statement. Move this lane to a listener \"analyzer\" block, which "+
 				"takes both", where, holdAction, level.name)}
+	}
+	return nil
+}
+
+// refuseRuleFormHandoff refuses ai-handoff on the DEPRECATED ai_analysis
+// rule: it has no allowed_actions and no prompt to configure the hand-off,
+// and the listener analyzer block takes both.
+func refuseRuleFormHandoff(high, medium, low, where string) []string {
+	for _, level := range [...]struct{ name, action string }{
+		{"high", high}, {"medium", medium}, {"low", low},
+	} {
+		if analyzer.Action(level.action) != analyzer.ActionHandoff {
+			continue
+		}
+		return []string{fmt.Sprintf(
+			"%s asks for %s on %s risk, which a deprecated ai_analysis rule cannot do. "+
+				"Move this lane to a listener \"analyzer\" block, which takes allowed_actions",
+			where, analyzer.ActionHandoff, level.name)}
 	}
 	return nil
 }
@@ -1603,6 +1629,7 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string, holdNeedsRule bool) 
 	problems = append(problems, validateRiskActions(
 		la.HighRisk, la.MediumRisk, la.LowRisk, where)...)
 	problems = append(problems, validateLevelApprovers(la, where)...)
+	problems = append(problems, validateLevelHandoffs(la, where)...)
 	problems = append(problems, validateTriggerItems(la.Trigger, where)...)
 
 	switch la.Send {
@@ -1809,7 +1836,8 @@ func validateRiskActions(high, medium, low, where string) []string {
 		if !a.Valid() {
 			problems = append(problems, fmt.Sprintf(
 				"%s: unknown action %q for %s risk "+
-					"(allow, warn, block, defer or require_review, also spelled require_approval)", where, raw, level))
+					"(allow, warn, block, defer, require_review, also spelled require_approval, "+
+					"or ai-handoff)", where, raw, level))
 			continue
 		}
 		// `defer` with no OPA is not a refusal. actionMap degrades it

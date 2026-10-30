@@ -251,20 +251,64 @@ func TestListenerHoldsForHuman(t *testing.T) {
 	human := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverHuman, Groups: []string{"dba"}}}
 	agent := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverAIAgent}}
 
-	got := listenerHoldsForHuman(block("require_approval", human), "appdb", analyzer.RiskHigh)
+	got := listenerHoldsForHuman(block("require_approval", human), "appdb", analyzer.RiskHigh, false)
 	require.NotNil(t, got, "a held human level")
 	assert.Equal(t, []string{"dba"}, got.LevelApprover(analyzer.RiskHigh).Groups)
-	assert.NotNil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskHigh), "either spelling")
+	assert.NotNil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskHigh, false), "either spelling")
 
-	assert.Nil(t, listenerHoldsForHuman(block("require_review", agent), "appdb", analyzer.RiskHigh), "ai_agent level")
-	assert.Nil(t, listenerHoldsForHuman(block("require_review", nil), "appdb", analyzer.RiskHigh),
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", agent), "appdb", analyzer.RiskHigh, false), "ai_agent level")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", nil), "appdb", analyzer.RiskHigh, false),
 		"a bare hold files under approval_rule, not by level")
-	assert.Nil(t, listenerHoldsForHuman(block("block", human), "appdb", analyzer.RiskHigh), "a level that does not hold")
-	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskMedium), "another level")
-	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "reporting", analyzer.RiskHigh), "another listener")
+	assert.Nil(t, listenerHoldsForHuman(block("block", human), "appdb", analyzer.RiskHigh, false), "a level that does not hold")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskMedium, false), "another level")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "reporting", analyzer.RiskHigh, false), "another listener")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", human), "appdb", analyzer.RiskHigh, true),
+		"a direct hold is not a hand-off hold")
 
 	dup := append(block("require_review", human), block("require_review", human)...)
-	assert.Nil(t, listenerHoldsForHuman(dup, "appdb", analyzer.RiskHigh), "a duplicate listener name authorizes nothing")
+	assert.Nil(t, listenerHoldsForHuman(dup, "appdb", analyzer.RiskHigh, false), "a duplicate listener name authorizes nothing")
+}
+
+// A hand-off filing is authorized only for an ai-handoff level that allows
+// require_approval and whose approvers entry names a human.
+func TestListenerHoldsForHumanThroughAHandoff(t *testing.T) {
+	block := func(high string, allowed []string, approvers *daemon.LevelApprovers) []daemon.ListenerConfig {
+		la := &daemon.LaneAnalyzerConfig{HighRisk: high, ApprovalRule: "payments-approvers", Approvers: approvers}
+		if allowed != nil {
+			la.Handoffs = &daemon.LevelHandoffs{High: &daemon.LevelHandoff{AllowedActions: allowed}}
+		}
+		return []daemon.ListenerConfig{{Name: "appdb", Analyzer: la}}
+	}
+	human := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverHuman, Groups: []string{"dba"}}}
+	agent := &daemon.LevelApprovers{High: &daemon.LevelApprover{Type: analyzer.ApproverAIAgent}}
+	holds := []string{"allow", "require_approval"}
+
+	got := listenerHoldsForHuman(block("ai-handoff", holds, human), "appdb", analyzer.RiskHigh, true)
+	require.NotNil(t, got, "a hand-off level that may hold for a human")
+	assert.Equal(t, []string{"dba"}, got.LevelApprover(analyzer.RiskHigh).Groups)
+	assert.NotNil(t, listenerHoldsForHuman(block("ai-handoff", []string{"require_review"}, human), "appdb",
+		analyzer.RiskHigh, true), "either spelling")
+
+	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", holds, human), "appdb", analyzer.RiskHigh, false),
+		"a hand-off level files only through its hand-off")
+	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", []string{"allow", "block"}, human), "appdb",
+		analyzer.RiskHigh, true), "a hand-off that cannot hold")
+	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", holds, agent), "appdb", analyzer.RiskHigh, true),
+		"the approval agent decides in the sidecar")
+	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", holds, nil), "appdb", analyzer.RiskHigh, true),
+		"no approvers entry files under approval_rule")
+	assert.Nil(t, listenerHoldsForHuman(block("require_review", holds, human), "appdb", analyzer.RiskHigh, true),
+		"a level that does not hand off")
+	assert.Nil(t, listenerHoldsForHuman(block("ai-handoff", nil, human), "appdb", analyzer.RiskHigh, true),
+		"a hand-off level with no handoffs entry")
+}
+
+// handoff names how a level held, so it means nothing under a rule.
+func TestCheckFilingFieldsReadsHandoffOnlyWithARiskLevel(t *testing.T) {
+	assert.NoError(t, checkFilingFields(openapi.SidecarReviewRequest{RiskLevel: "high", Handoff: true}))
+	assert.EqualError(t, checkFilingFields(openapi.SidecarReviewRequest{ApprovalRule: "r", Handoff: true}),
+		"handoff is read only with risk_level")
+	assert.NoError(t, checkFilingFields(openapi.SidecarReviewRequest{ApprovalRule: "r"}))
 }
 
 // The control plane stores a sidecar rule without checking these fields, so a

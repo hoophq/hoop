@@ -118,24 +118,30 @@ type Review struct {
 	// RiskLevel is the analyzer level a sidecar filed the review under, in
 	// place of an approval rule. Null on a review filed under a rule.
 	RiskLevel sql.NullString `gorm:"column:risk_level"`
+	// ViaHandoff marks a review filed for a hold the hand-off agent of an
+	// ai-handoff level selected.
+	ViaHandoff bool `gorm:"column:via_handoff"`
 }
 
 // SidecarReviewKey is what a sidecar filing is matched on beside the
-// statement: the approval rule, or the risk level filed in its place.
-// Exactly one is set.
+// statement: the approval rule, or the risk level filed in its place, and
+// whether a hand-off filed it. Exactly one of rule and level is set; only a
+// level carries the hand-off flag. A hand-off review never matches a direct
+// filing of the same level, nor the reverse.
 type SidecarReviewKey struct {
-	RuleName  string
-	RiskLevel string
+	RuleName   string
+	RiskLevel  string
+	ViaHandoff bool
 }
 
 // The statement scopes, one per key. Each implies the predicate of its
-// partial unique index (000125 for a rule, 000147 for a level), so a lookup
+// partial unique index (000125 for a rule, 000148 for a level), so a lookup
 // uses the index. IS NOT DISTINCT FROM implies neither. The statuses are
 // literal: a generic plan proves no predicate from a bound status. Args: org,
 // sidecar, listener, the key, the statement hash.
 var (
 	sidecarRuleStatement  = sidecarStatementScope(`access_request_rule_name = ? AND risk_level IS NULL`)
-	sidecarLevelStatement = sidecarStatementScope(`access_request_rule_name IS NULL AND risk_level = ?`)
+	sidecarLevelStatement = sidecarStatementScope(`access_request_rule_name IS NULL AND risk_level = ? AND via_handoff = ?`)
 )
 
 // sidecarStatementScope matches the reviews of one statement under key that
@@ -146,20 +152,21 @@ func sidecarStatementScope(key string) string {
 			ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked, ReviewStatusExpired)
 }
 
-// scope returns the statement scope of the key and its args.
+// scope returns the statement scope of the key and its args. A rule filing
+// carries no hand-off flag: a rule key with one is refused.
 func (k SidecarReviewKey) scope(orgID, sidecarID, listenerName, statementHash string) (string, []any, error) {
 	switch {
-	case k.RuleName != "" && k.RiskLevel == "":
+	case k.RuleName != "" && k.RiskLevel == "" && !k.ViaHandoff:
 		return sidecarRuleStatement, []any{orgID, sidecarID, listenerName, k.RuleName, statementHash}, nil
 	case k.RuleName == "" && k.RiskLevel != "":
-		return sidecarLevelStatement, []any{orgID, sidecarID, listenerName, k.RiskLevel, statementHash}, nil
+		return sidecarLevelStatement, []any{orgID, sidecarID, listenerName, k.RiskLevel, k.ViaHandoff, statementHash}, nil
 	}
-	return "", nil, fmt.Errorf("a sidecar review key needs a rule or a risk level, not %+v", k)
+	return "", nil, fmt.Errorf("a sidecar review key needs a rule or a risk level, and a hand-off only with a level, not %+v", k)
 }
 
 // sidecarReviewKeyOf is the key rev was filed under.
 func sidecarReviewKeyOf(rev *Review) SidecarReviewKey {
-	key := SidecarReviewKey{RiskLevel: rev.RiskLevel.String}
+	key := SidecarReviewKey{RiskLevel: rev.RiskLevel.String, ViaHandoff: rev.ViaHandoff}
 	if rev.AccessRequestRuleName != nil {
 		key.RuleName = *rev.AccessRequestRuleName
 	}
@@ -393,7 +400,7 @@ func getReviewByIdOrSid(db *gorm.DB, orgID, id string, viewer *ReviewViewer) (*R
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	risk_level
+	risk_level, via_handoff
 	FROM private.reviews rv
 	WHERE org_id = ? AND (id = ? OR session_id = ?)`+visibility,
 		append([]any{orgID, id, id}, visibilityArgs...)...).
@@ -436,7 +443,7 @@ func ListReviews(db *gorm.DB, orgID string, viewer ReviewViewer) (*[]Review, err
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	risk_level
+	risk_level, via_handoff
 	FROM private.reviews rv
 	WHERE org_id = ?`+visibility, append([]any{orgID}, visibilityArgs...)...).
 		Find(&reviews).
@@ -777,7 +784,7 @@ const sidecarReviewSelect = `
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec, reserved_at,
-	risk_level
+	risk_level, via_handoff
 	FROM private.reviews rv`
 
 // GetLiveSidecarReview returns the review already filed for these exact

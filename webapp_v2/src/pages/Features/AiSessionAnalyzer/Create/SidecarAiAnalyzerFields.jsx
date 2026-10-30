@@ -12,9 +12,10 @@ import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
 import { analyzerBlocked } from '@/pages/Sidecars/config'
-import { REVIEW_MODE_HOLD, REVIEW_MODES, isHoldAction } from '@/pages/sidecarRuleVocabulary'
+import { REVIEW_MODE_HOLD, REVIEW_MODES, isHandoffAction, isHoldAction } from '@/pages/sidecarRuleVocabulary'
 import OptionalLabel from '../components/OptionalLabel'
 import LevelApprover from './sections/LevelApprover'
+import LevelHandoff from './sections/LevelHandoff'
 import TriggerItemsInput from './sections/TriggerItemsInput'
 
 // Provider, model and credential are not here: they live in the sidecar's own
@@ -64,6 +65,8 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     set,
     setLevelAction,
     setApproval,
+    setHandoffPrompt,
+    setAllowed,
     setApprover,
     groupOptionsFor,
     pendingMinutes,
@@ -204,6 +207,18 @@ export default function SidecarAiAnalyzerFields({ editor }) {
                   groupOptions={groupOptionsFor(level)}
                   onApprover={(approver) => setApprover(level, approver)}
                   onChange={(patch) => setApproval(level, patch)}
+                />
+              )}
+              {isHandoffAction(form[level]) && (
+                <LevelHandoff
+                  handoff={form.handoff[level]}
+                  approval={form.approval[level]}
+                  approvalRule={form.approval_rule}
+                  groupOptions={groupOptionsFor(level)}
+                  onPrompt={(prompt) => setHandoffPrompt(level, prompt)}
+                  onAllowed={(value, checked) => setAllowed(level, value, checked)}
+                  onApprover={(approver) => setApprover(level, approver)}
+                  onApproval={(patch) => setApproval(level, patch)}
                 />
               )}
             </Stack>

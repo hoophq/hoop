@@ -78,11 +78,17 @@ func holdsAction(action string) bool {
 	return analyzer.Action(action).Canonical() == analyzer.ActionRequireReview
 }
 
+// levelHolds reports a level that can hold a statement for approval: its
+// action holds, or its hand-off agent can select require_approval.
+func (la *LaneAnalyzerConfig) levelHolds(l laneLevel) bool {
+	return holdsAction(*l.action) || la.handoffHolds(l)
+}
+
 // heldApprover is who releases a held level: "" for a level with no
 // approvers entry, which files under the block's approval_rule. A level that
 // does not hold has no approver.
 func (la *LaneAnalyzerConfig) heldApprover(l laneLevel) analyzer.Approver {
-	if !holdsAction(*l.action) {
+	if !la.levelHolds(l) {
 		return ""
 	}
 	if a := la.LevelApprover(l.risk); a != nil {
@@ -91,19 +97,19 @@ func (la *LaneAnalyzerConfig) heldApprover(l laneLevel) analyzer.Approver {
 	return ""
 }
 
-// analyzerHolds reports whether a lane's analyzer block holds any risk level
+// analyzerHolds reports whether a lane's analyzer block can hold a statement
 // for approval, by a human or by the approval agent.
 func analyzerHolds(la *LaneAnalyzerConfig) bool {
-	return la != nil && slices.ContainsFunc(la.levels(), func(l laneLevel) bool { return holdsAction(*l.action) })
+	return la != nil && slices.ContainsFunc(la.levels(), la.levelHolds)
 }
 
-// humanHolds reports a block where some level waits for a person: a level
-// with no approvers entry, or one whose approver is human. Only such a lane
-// files a review that waits, so only it reads review_mode,
+// humanHolds reports a block where some level can wait for a person: a
+// level with no approvers entry, or one whose approver is human. Only such a
+// lane files a review that waits, so only it reads review_mode,
 // spend_approval_on, match_ignore and needs somewhere to file.
 func humanHolds(la *LaneAnalyzerConfig) bool {
 	return la != nil && slices.ContainsFunc(la.levels(), func(l laneLevel) bool {
-		return holdsAction(*l.action) && la.heldApprover(l) != analyzer.ApproverAIAgent
+		return la.levelHolds(l) && la.heldApprover(l) != analyzer.ApproverAIAgent
 	})
 }
 
@@ -111,17 +117,18 @@ func humanHolds(la *LaneAnalyzerConfig) bool {
 // the only level the block's approval_rule serves.
 func ruleHolds(la *LaneAnalyzerConfig) bool {
 	return la != nil && slices.ContainsFunc(la.levels(), func(l laneLevel) bool {
-		return holdsAction(*l.action) && la.LevelApprover(l.risk) == nil
+		return la.levelHolds(l) && la.LevelApprover(l.risk) == nil
 	})
 }
 
-// approvals maps each held level with an approvers entry onto its approver,
-// for the evaluator.
+// approvals maps each level whose action holds and that has an approvers
+// entry onto its approver, for the evaluator. A hand-off level carries its
+// approver in handoffs.
 func (la *LaneAnalyzerConfig) approvals() map[analyzer.RiskLevel]analyzer.Approval {
 	var out map[analyzer.RiskLevel]analyzer.Approval
 	for _, l := range la.levels() {
 		ap := la.heldApprover(l)
-		if ap == "" {
+		if ap == "" || !holdsAction(*l.action) {
 			continue
 		}
 		if out == nil {
@@ -146,7 +153,12 @@ func validateLevelApprovers(la *LaneAnalyzerConfig, where string) []string {
 			continue
 		}
 		at := fmt.Sprintf("%s: approvers.%s", where, l.name)
-		if !holdsAction(*l.action) {
+		switch {
+		case handsOff(*l.action) && !la.handoffHolds(l):
+			problems = append(problems, fmt.Sprintf("%s names an approver, and the %s risk hand-off "+
+				"agent cannot select %s; add it to handoffs.%s.allowed_actions or remove the entry",
+				at, l.name, analyzer.ActionRequireApproval, l.name))
+		case !la.levelHolds(l):
 			problems = append(problems, fmt.Sprintf("%s names an approver, and the %s risk action %q "+
 				"holds nothing; set %s: %s or remove the entry", at, l.name, *l.action, l.name,
 				analyzer.ActionRequireApproval))

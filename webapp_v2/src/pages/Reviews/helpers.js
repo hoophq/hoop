@@ -52,8 +52,16 @@ const RISK_LEVEL = {
 }
 export const riskLevel = (review) => RISK_LEVEL[review?.risk_level] ?? null
 
-// The table's rule cell: the approval rule, else the risk level.
-export const ruleLabel = (review) => review?.access_request_rule_name ?? riskLevel(review)?.label ?? null
+// Filed by a hand-off agent that chose "Hold for approval" (ENG-661).
+export const isHandoffReview = (review) => review?.via_handoff === true
+export const HANDOFF_ROUTE = 'Hand-off → Hold for approval'
+
+// The table's rule cell: the approval rule, else the risk level and the route.
+export function ruleLabel(review) {
+  if (review?.access_request_rule_name) return review.access_request_rule_name
+  const parts = [riskLevel(review)?.label, isHandoffReview(review) ? 'Hand-off' : null]
+  return parts.filter(Boolean).join(' · ') || null
+}
 
 // Only the groups that decided. A group still pending carries no reviewer and
 // no date, and the review's own status already says nobody has acted.

@@ -261,7 +261,8 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 		}
 		rule := daemon.LaneAnalyzerConfig{
 			Trigger: base.Trigger, HighRisk: base.HighRisk, MediumRisk: base.MediumRisk,
-			LowRisk: base.LowRisk, Approvers: base.Approvers, Prompt: base.Prompt, Message: base.Message,
+			LowRisk: base.LowRisk, Approvers: base.Approvers, Handoffs: base.Handoffs,
+			Prompt: base.Prompt, Message: base.Message,
 			ApprovalRule: base.ApprovalRule, ReviewMode: base.ReviewMode,
 			MatchIgnore: base.MatchIgnore,
 		}
@@ -273,7 +274,7 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 		if err != nil {
 			return nil, err
 		}
-		if rule.ApprovalRule == "" && holds(rule) {
+		if rule.ApprovalRule == "" && blockHolds(&rule) {
 			rule.ApprovalRule = ruleName
 		}
 		spec, err := json.Marshal(rule)
@@ -284,21 +285,12 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 			Targets: []ImportedTarget{{Listener: l.Name}}})
 
 		base.Trigger = nil
-		base.HighRisk, base.MediumRisk, base.LowRisk, base.Approvers = "", "", "", nil
+		base.HighRisk, base.MediumRisk, base.LowRisk, base.Approvers, base.Handoffs = "", "", "", nil, nil
 		base.Prompt, base.Message, base.ApprovalRule, base.ReviewMode = "", "", "", ""
 		base.MatchIgnore = nil
 		l.Analyzer = &base
 	}
 	return out, nil
-}
-
-func holds(b daemon.LaneAnalyzerConfig) bool {
-	for _, a := range []string{b.HighRisk, b.MediumRisk, b.LowRisk} {
-		if holdsAction(a) {
-			return true
-		}
-	}
-	return false
 }
 
 // ImportSidecarRulesTx writes the rule items of an import, with their bindings

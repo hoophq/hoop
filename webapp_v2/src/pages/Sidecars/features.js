@@ -1,4 +1,10 @@
-import { APPROVER_HUMAN, isHoldAction, readLevelApprover } from '@/pages/sidecarRuleVocabulary'
+import {
+  APPROVER_HUMAN,
+  isHandoffAction,
+  isHoldAction,
+  readLevelApprover,
+  readLevelHandoff,
+} from '@/pages/sidecarRuleVocabulary'
 import { FEATURES, FEATURE_ORDER } from './config'
 import {
   SOURCE_DISTRIBUTED,
@@ -37,15 +43,28 @@ const RISK_ACTIONS = {
   defer: 'reports',
 }
 
+// Who approves a hold: the block's approval rule, the AI agent, or the members
+// of some groups. `sep` follows "Human": ": " in a level, " " inside a hand-off
+// list.
+function approverDetail(read, sep) {
+  if (!read) return 'approval rule'
+  if (read.approver !== APPROVER_HUMAN) return 'AI agent'
+  return `Human${sep}${read.groups.length > 0 ? read.groups.join(', ') : 'administrators'}`
+}
+
 // A held level names its approver in `approvers.<level>` (ENG-680). A hold
-// with no entry is decided through the block's approval rule.
+// with no entry is decided through the block's approval rule. A hand-off
+// lists in `handoffs.<level>` the actions its agent may select (ENG-661).
 function riskDetail(spec, level) {
   const action = spec[level]
-  if (!isHoldAction(action)) return RISK_ACTIONS[action] ?? action
   const read = readLevelApprover(spec, level)
-  if (!read) return 'hold (approval rule)'
-  if (read.approver !== APPROVER_HUMAN) return 'hold (AI agent)'
-  return read.groups.length > 0 ? `hold (Human: ${read.groups.join(', ')})` : 'hold (Human: administrators)'
+  if (isHandoffAction(action)) {
+    const allowed = readLevelHandoff(spec, level)?.allowed ?? []
+    const parts = allowed.map((a) => (isHoldAction(a) ? `hold: ${approverDetail(read, ' ')}` : a))
+    return parts.length > 0 ? `hand-off (${parts.join(', ')})` : 'hand-off'
+  }
+  if (!isHoldAction(action)) return RISK_ACTIONS[action] ?? action
+  return `hold (${approverDetail(read, ': ')})`
 }
 
 const MASK_STRATEGY_LABELS = {

@@ -206,12 +206,45 @@ export const REVIEW_ACTION = 'require_review'
 const HOLD_ACTIONS = new Set([REVIEW_ACTION, 'require_approval'])
 export const isHoldAction = (action) => HOLD_ACTIONS.has(action)
 
-// analyzerActionsFor lists the level actions, the hold included.
+// The action that lets an AI agent select a level's action from the level's
+// `handoffs.<level>.allowed_actions` (ENG-661).
+export const HANDOFF_ACTION = 'ai-handoff'
+export const isHandoffAction = (action) => action === HANDOFF_ACTION
+
+// analyzerActionsFor lists the level actions, the hold and the hand-off included.
 export function analyzerActionsFor() {
   return [
     ...ANALYZER_ACTIONS,
     { value: REVIEW_ACTION, label: 'Hold for approval', description: 'Wait for an AI agent or human to approve' },
+    { value: HANDOFF_ACTION, label: 'Hand off to AI agent', description: 'Let an AI agent select an action' },
   ]
+}
+
+// The actions a hand-off agent may select, from least to most restrictive.
+// The hold is spelled `require_approval`, as the sidecar reads it.
+export const HANDOFF_HOLD = 'require_approval'
+export const HANDOFF_CHOICES = [
+  { value: 'allow', label: 'Allow', description: 'Run with no check' },
+  { value: 'warn', label: 'Warn', description: 'Run and show a warning' },
+  { value: 'block', label: 'Block', description: 'Stop the statement' },
+  { value: HANDOFF_HOLD, label: 'Hold for approval', description: 'Wait for an AI agent or human to approve' },
+]
+const HANDOFF_VALUES = HANDOFF_CHOICES.map((c) => c.value)
+
+// readLevelHandoff reads `handoffs.<level>` of a stored analyzer spec:
+// {allowed (in HANDOFF_CHOICES order, `require_review` read as the hold),
+// prompt}. It is null when the level has no entry. Unknown values are
+// dropped; when none is left, the most restrictive action stays.
+export function readLevelHandoff(spec, level) {
+  const entry = spec?.handoffs?.[level]
+  if (entry == null || typeof entry !== 'object') return null
+  const names = Array.isArray(entry.allowed_actions) ? entry.allowed_actions : []
+  const set = new Set(names.map((n) => (isHoldAction(n) ? HANDOFF_HOLD : n)))
+  const allowed = HANDOFF_VALUES.filter((v) => set.has(v))
+  return {
+    allowed: allowed.length > 0 ? allowed : ['block'],
+    prompt: typeof entry.prompt === 'string' ? entry.prompt : '',
+  }
 }
 
 // Who decides a held statement of one risk level (ENG-680): the
