@@ -4,7 +4,8 @@ import fs from 'fs';
 import path from 'path';
 
 // Static assets the React shell shares with the ClojureScript app. They are
-// not built by shadow-cljs: /images and /icons are committed under
+// not built by shadow-cljs: /images, /icons and /rdpclient (the RDP bitmap
+// decoder the session replay loads) are committed under
 // webapp/resources/public, and /data/connections-metadata.json is downloaded
 // there by `npm --prefix ../webapp run download-connection-metadata`. Serving
 // them from disk means `npm run dev` works without shadow-cljs (the control
@@ -12,7 +13,7 @@ import path from 'path';
 const CLJS_PUBLIC_DIR = path.resolve(__dirname, '../webapp/resources/public');
 // The sidecar listener schema, generated from the daemon's struct tags.
 const SIDECAR_SCHEMA = path.resolve(__dirname, '../sidecar/daemon/schema.json');
-const CLJS_STATIC_PREFIXES = ['/images/', '/icons/', '/data/'];
+const CLJS_STATIC_PREFIXES = ['/images/', '/icons/', '/data/', '/rdpclient/'];
 const CONTENT_TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
@@ -22,6 +23,8 @@ const CONTENT_TYPES = {
   '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
+  '.js': 'text/javascript',
+  '.wasm': 'application/wasm',
 };
 const METADATA_HINT =
   'connections-metadata.json is not downloaded yet. Run: npm --prefix ../webapp run download-connection-metadata';
@@ -90,7 +93,8 @@ export default defineConfig({
         changeOrigin: true
       },
       // ClojureScript build output (JS bundle, CSS) → shadow-cljs dev server.
-      // /images, /icons and /data are served from disk by cljsStaticAssets().
+      // /images, /icons, /data and /rdpclient are served from disk by
+      // cljsStaticAssets().
       '/js': {
         target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
         changeOrigin: true
