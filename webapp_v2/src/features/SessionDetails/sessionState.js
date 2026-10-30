@@ -46,6 +46,29 @@ export const HIDDEN_METADATA_KEYS = new Set([
   'sidecar_session_id',
 ])
 
+// The insight cards by tab (NB19): the AI Session Analyzer and the input
+// guardrails judged the input, the output guardrails the output. A guardrail
+// entry with no direction is an input rule, as the card labels it.
+export function insightsByTab({ guardrails_info: guardrails = [], ai_analysis: analysis } = {}) {
+  const entries = guardrails || []
+  return {
+    input: {
+      analysis: analysis && Object.keys(analysis).length ? analysis : null,
+      guardrails: entries.filter((entry) => entry.direction !== 'output'),
+    },
+    output: { guardrails: entries.filter((entry) => entry.direction === 'output') },
+  }
+}
+
+// The tab that holds why a session was blocked, so it opens first; null when
+// nothing blocked it. The input side wins: it stopped the run first.
+export function blockReasonTab(session) {
+  const { input, output } = insightsByTab(session)
+  if (input.analysis?.action === 'block_execution' || input.guardrails.length) return 'input'
+  if (output.guardrails.length) return 'output'
+  return null
+}
+
 // A finished session that a guardrail or the AI Session Analyzer stopped was
 // blocked, one whose review was rejected never ran, and an exec that exited
 // with an error failed: none of them succeeded. A connect session's exit code

@@ -1,0 +1,4 @@
+/* A value with no spaces (a runbook payload) breaks at the modal edge. */
+.value {
+  overflow-wrap: anywhere;
+}

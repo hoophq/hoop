@@ -34,8 +34,24 @@
   padding: var(--mantine-spacing-lgAlt);
 }
 
-.actionBar {
-  border-top: 1px solid var(--mantine-color-gray-3);
+/* The action bar sticks to the bottom of the body, edge to edge, and the
+   content scrolls behind it. With nothing behind it, it has no border and no
+   fill and 24px of padding; with content behind it, a border and a fill that
+   lets the content show faded. */
+.footer {
+  position: sticky;
+  bottom: calc(-1 * var(--mantine-spacing-lgAlt));
+  z-index: 1;
+  margin: 0 calc(-1 * var(--mantine-spacing-lgAlt)) calc(-1 * var(--mantine-spacing-lgAlt));
+  padding: var(--mantine-spacing-lgAlt);
+}
+
+.footer[data-overlap] {
   padding: var(--mantine-spacing-sm) var(--mantine-spacing-lgAlt);
-  background: var(--mantine-color-body);
+  border-top: 1px solid var(--mantine-color-gray-3);
+  background: color-mix(in srgb, var(--mantine-color-body) 75%, transparent);
+}
+
+.footer:empty {
+  display: none;
 }

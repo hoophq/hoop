@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
-import { Group, Title } from '@mantine/core'
-import { Link2, Square, Workflow, X } from 'lucide-react'
+import { Anchor, Group, Text, Title } from '@mantine/core'
+import { Check, Link2, Square, Workflow, X } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import Button from '@/components/Button'
 import { useSessionDetailsStore } from '@/stores/useSessionDetailsStore'
@@ -20,6 +20,8 @@ export default function Header({ session, ready, onClose }) {
   const isAdmin = useUserStore((s) => s.isAdmin)
   const disableClipboard = useUserStore((s) => s.disableClipboard)
   const kill = useSessionDetailsStore((s) => s.kill)
+  const rerunId = useSessionDetailsStore((s) => s.rerunId)
+  const showSession = useSessionDetailsStore((s) => s.showSession)
   const killing = useSessionDetailsStore((s) => s.killing)
 
   const exec = session?.verb === 'exec'
@@ -58,6 +60,17 @@ export default function Header({ session, ready, onClose }) {
           <Button {...SOFT} color="red" leftSection={<Square size={16} />} loading={killing} onClick={kill}>
             Kill Session
           </Button>
+        )}
+        {ready && rerunId && (
+          <Group gap={4} wrap="nowrap">
+            <Check size={16} color="var(--mantine-color-green-filled)" aria-hidden />
+            <Text size="sm" c="dimmed">
+              This session was re-run
+            </Text>
+            <Anchor component="button" size="sm" onClick={() => showSession(rerunId, { verb: 'exec' })}>
+              View
+            </Anchor>
+          </Group>
         )}
         {canRerun && <RerunAction session={session} buttonProps={SOFT} />}
         {ready && !disableClipboard && (

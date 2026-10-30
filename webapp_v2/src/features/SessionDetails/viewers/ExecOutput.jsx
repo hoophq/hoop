@@ -6,7 +6,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import ViewOptions from '../components/ViewOptions'
 import DownloadMenu from './exec/DownloadMenu'
 import PlainText from './exec/PlainText'
-import PreviewUnavailable from './exec/PreviewUnavailable'
+import PreviewUnavailable from '../components/PreviewUnavailable'
 import { downloadOutput } from './exec/download'
 import { SQL_SUBTYPES, decodeOutput, isTabular, parseMatrix, sanitizeOutput } from './exec/output'
 
