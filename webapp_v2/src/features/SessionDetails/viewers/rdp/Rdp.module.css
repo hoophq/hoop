@@ -3,7 +3,7 @@
 .player {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--mantine-color-gray-3);
+  border: 1px solid var(--mantine-color-gray-1);
   border-radius: var(--mantine-radius-md);
   overflow: hidden;
 }
@@ -56,12 +56,12 @@
 }
 
 .controls {
-  background: var(--mantine-color-gray-1);
+  background: var(--mantine-color-gray-0);
 }
 
 .legend {
-  border-top: 1px solid var(--mantine-color-gray-3);
-  background: var(--mantine-color-gray-0);
+  border-top: 1px solid var(--mantine-color-gray-1);
+  background: var(--mantine-color-body);
 }
 
 .legendLabel {

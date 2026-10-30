@@ -1,9 +1,9 @@
 .header {
   padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-mdAlt);
-  border: 1px solid var(--mantine-color-gray-3);
+  border: 1px solid var(--mantine-color-gray-1);
   border-top-left-radius: var(--mantine-radius-md);
   border-top-right-radius: var(--mantine-radius-md);
-  background: var(--mantine-color-gray-0);
+  background: var(--mantine-color-body);
 }
 
 .body {
@@ -11,7 +11,7 @@
   min-height: 200px;
   max-height: 60vh;
   overflow-y: auto;
-  border: 1px solid var(--mantine-color-gray-3);
+  border: 1px solid var(--mantine-color-gray-1);
   border-top: 0;
   border-bottom-left-radius: var(--mantine-radius-md);
   border-bottom-right-radius: var(--mantine-radius-md);
@@ -19,7 +19,7 @@
 
 .row {
   padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-mdAlt);
-  border-bottom: 1px solid var(--mantine-color-gray-2);
+  border-bottom: 1px solid var(--mantine-color-gray-0);
 }
 
 .row:hover {
@@ -28,7 +28,7 @@
 
 .protocol {
   padding: var(--mantine-spacing-xsAlt) var(--mantine-spacing-mdAlt);
-  border-bottom: 1px solid var(--mantine-color-gray-2);
+  border-bottom: 1px solid var(--mantine-color-gray-0);
   color: var(--mantine-color-dimmed);
 }
 

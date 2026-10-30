@@ -50,6 +50,6 @@
 
 .notice {
   border-radius: var(--mantine-radius-sm);
-  background-color: var(--mantine-color-gray-2);
+  background-color: var(--mantine-color-gray-1);
   padding: var(--mantine-spacing-xsAlt) var(--mantine-spacing-smAlt);
 }

@@ -28,7 +28,7 @@
 /* One stream row of the raw view: input gray with a prompt, output white,
    errors red. */
 .row {
-  border-bottom: 1px solid var(--mantine-color-gray-3);
+  border-bottom: 1px solid var(--mantine-color-gray-0);
 }
 
 .row:last-child {
@@ -49,7 +49,7 @@
 }
 
 .rowHead:hover {
-  background: var(--mantine-color-gray-1);
+  background: var(--mantine-color-gray-0);
 }
 
 .rowContent {
