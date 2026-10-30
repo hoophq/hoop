@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -139,6 +140,26 @@ func TestAURLLaneNeedsTheCapability(t *testing.T) {
 	cfg.Listeners[0].Upstream = "hoop.dev:443"
 	if err := CheckServable(cfg, old); err != nil {
 		t.Errorf("a host:port lane was refused to an older build: %v", err)
+	}
+}
+
+// An older sidecar drops pii.ner and then refuses the rule naming PERSON, so
+// the plane serves the block only to a build whose detector reads it.
+func TestPIINERNeedsTheCapability(t *testing.T) {
+	cfg := Config{PII: json.RawMessage(`{"entities":["PERSON"],"ner":{"backend":"go"}}`)}
+	if err := CheckServable(cfg, Handshake{Capabilities: SidecarCapabilities()}); err != nil {
+		t.Errorf("this build was refused pii.ner: %v", err)
+	}
+	old := Handshake{Version: "1.230.0", Capabilities: []string{"protocol:postgres", "rule:pii"}}
+	err := CheckServable(cfg, old)
+	if err == nil || !strings.Contains(err.Error(), "sets pii.ner") || !strings.Contains(err.Error(), CapabilityPIINER) {
+		t.Errorf("an older build was served pii.ner: %v", err)
+	}
+	for _, pii := range []string{`{"entities":["US_SSN"]}`, `{"ner":null}`, ``} {
+		cfg.PII = json.RawMessage(pii)
+		if err := CheckServable(cfg, old); err != nil {
+			t.Errorf("pii %q was refused to an older build: %v", pii, err)
+		}
 	}
 }
 

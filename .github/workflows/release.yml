@@ -905,14 +905,18 @@ jobs:
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
-  # hoophq/hoopsidecar: the inspection sidecar image, the three targets of
+  # hoophq/hoopsidecar: the inspection sidecar image, the image targets of
   # Dockerfile.sidecar (see that file for what each ships):
   #
-  #   :<version>              Ubuntu 24.04 LTS + the binary only
-  #   :<version>-distroless   distroless static + the binary only
-  #   :<version>-ica          Ubuntu 24.04 LTS + hoop-inspect with the Citrix
-  #                           ICA engine, tesseract and ONNX Runtime
-  #   :latest                 an alias of the unsuffixed tag
+  #   :<version>                      Ubuntu 24.04 LTS + the binary only
+  #   :<version>-distroless           distroless cc + the binary only
+  #   :<version>-alcatraz             the unsuffixed flavour + the alcatraz
+  #                                   NER model and ONNX Runtime
+  #   :<version>-distroless-alcatraz  distroless + the same
+  #   :<version>-ica                  Ubuntu 24.04 LTS + hoop-inspect with
+  #                                   the Citrix ICA engine, tesseract and
+  #                                   ONNX Runtime
+  #   :latest                         an alias of the unsuffixed tag
   #
   # The Ubuntu flavour carries no suffix on purpose: it is the image, and it
   # keeps a shell, so the tag someone reaches for without thinking is the one
@@ -920,14 +924,16 @@ jobs:
   # is named. deploy/helm-chart/chart/sidecar/ defaults to :latest, so the two
   # have to agree.
   #
-  # No -alcatraz pair, unlike hoopagent: sidecar/pii/alcatraz wires the
-  # pattern-and-checksum core only and never loads the ONNX model, so baking it
-  # in would ship ~250MB nothing reads. The bright-line note in
-  # Dockerfile.sidecar has the rest.
+  # The -alcatraz pair is for a config whose `pii.ner` block serves
+  # PERSON/LOCATION/ORGANIZATION/NRP: the model is never fetched at runtime,
+  # so a relay without it on disk refuses those rules at config load.
+  # Everything else — invocation contract, user, what the image can serve —
+  # is the base flavour's. No :latest alias for them.
   #
   # hoophq/hoopsidecar is a clean-only repository: nothing published under it
   # may carry an AGPL/SSPL component, so that the repository has none in its
   # history. The slim flavours are a stock rootfs plus the `hoop` binary; the
+  # -alcatraz pair adds model weights and ONNX Runtime, which carry none; the
   # ica flavour adds Ubuntu's tesseract packages, ONNX Runtime and the
   # libhoop-ica worker, none built FROM hoophq/agent-tools. Do not add a tag
   # here without reading that note.
@@ -991,6 +997,40 @@ jobs:
           push: true
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless
+      - name: Build and push (alcatraz)
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz
+      - name: Build and push (distroless-alcatraz)
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: distroless-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
+      # Same check as the hoopagent job: export the published image's
+      # filesystem, the only way into the distroless flavour.
+      - name: Verify published alcatraz images
+        run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
+          scripts/ci/verify-alcatraz-image.sh \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
       # The ica flavour builds hoop-inspect from source with the libhoop-ica
       # engine linked in (cgo, -tags ORT). It needs no tarball, and it needs
       # a token that reads both private modules and the libhoop-ica release

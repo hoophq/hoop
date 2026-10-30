@@ -12,17 +12,9 @@ const nonEmpty = (value) => Array.isArray(value) && value.length > 0
 const DEFAULT_RISK_ACTION = 'allow_execution'
 const RISK_ACTIONS = ['low_risk_action', 'medium_risk_action', 'high_risk_action']
 
+// The agent half of an analyzer rule. Guardrail and masking rules need no such
+// test: their one form writes both halves, so field presence says nothing.
 const AGENT_FIELDS = {
-  [RULE_KIND_GUARDRAIL]: (r) =>
-    nonEmpty(r.connection_ids) ||
-    nonEmpty(r.attributes) ||
-    nonEmpty(r.input?.rules) ||
-    nonEmpty(r.output?.rules),
-  [RULE_KIND_DATAMASKING]: (r) =>
-    nonEmpty(r.connection_ids) ||
-    nonEmpty(r.attributes) ||
-    nonEmpty(r.supported_entity_types) ||
-    nonEmpty(r.custom_entity_types),
   [RULE_KIND_ANALYZER]: (r) =>
     nonEmpty(r.connection_names) ||
     Boolean(r.custom_prompt) ||
@@ -30,14 +22,32 @@ const AGENT_FIELDS = {
     RISK_ACTIONS.some((key) => (r.risk_evaluation?.[key] ?? DEFAULT_RISK_ACTION) !== DEFAULT_RISK_ACTION),
 }
 
+// What binds a rule to agent resources, as opposed to what it says.
+const AGENT_BINDINGS = {
+  [RULE_KIND_GUARDRAIL]: (r) => nonEmpty(r.connection_ids) || nonEmpty(r.attributes),
+  [RULE_KIND_DATAMASKING]: (r) => nonEmpty(r.connection_ids) || nonEmpty(r.attributes),
+  [RULE_KIND_ANALYZER]: (r) => nonEmpty(r.connection_names),
+}
+
+// Where a rule runs is where it is bound: agent resources, sidecar listeners, or both.
 export function ruleTraffic(kind, rule) {
+  const agent = AGENT_BINDINGS[kind](rule ?? {})
+  const sidecar = nonEmpty(rule?.sidecar_targets)
+  if (agent && sidecar) return TRAFFIC_BOTH
+  return sidecar ? TRAFFIC_SIDECAR : TRAFFIC_AGENT
+}
+
+// Which form edits a stored analyzer rule. A rule the agent runs opens the
+// gateway form whatever its targets: that form binds them too. A sidecar rule
+// that also carries agent fields has no form that keeps both halves.
+export function ruleForm(kind, rule) {
   if (rule?.sidecar_spec == null) return TRAFFIC_AGENT
   return AGENT_FIELDS[kind](rule) ? TRAFFIC_BOTH : TRAFFIC_SIDECAR
 }
 
 // `traffics` is what useRuleTraffics() answers. With one, the page needs no data to pick.
-export function resolveRuleTraffic(traffics, kind, rule) {
-  return traffics.length === 1 ? traffics[0] : ruleTraffic(kind, rule)
+export function resolveRuleForm(traffics, kind, rule) {
+  return traffics.length === 1 ? traffics[0] : ruleForm(kind, rule)
 }
 
 export function newRulePath(basePath, traffic) {

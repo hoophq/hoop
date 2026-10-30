@@ -25,6 +25,7 @@ export default function ConnectionsMultiSelect({
   label = 'Resource Roles',
   placeholder = 'Select resource roles...',
   required = false,
+  disabled = false,
 }) {
   const { options, loading, hasMore, searchValue, setSearch, loadMore, ensureLoaded } =
     usePaginatedConnections({ pageSize: 50 })
@@ -91,6 +92,7 @@ export default function ConnectionsMultiSelect({
       label={label}
       placeholder={placeholder}
       required={required}
+      disabled={disabled}
       value={value}
       onChange={onChange}
       options={options}

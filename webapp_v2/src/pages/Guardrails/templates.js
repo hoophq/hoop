@@ -12,8 +12,8 @@
 // - `name` is the ?template= deep-link value the activation-journey cards send
 //   to /guardrails/new, and is globally unique across subtypes.
 // - Everything except `title` and `cardDescription` (UI-only card labels) is
-//   already shaped like a POST /guardrails payload, so `input` and `output`
-//   feed apiRulesToRows() directly to seed the create form.
+//   already shaped like a POST /guardrails payload, so the editor's loader
+//   reads `input` and `output` directly to seed the create form.
 // - Regexes are Python syntax, evaluated by the gateway — never "fix" one to
 //   satisfy a JavaScript reader.
 export const GUARDRAIL_TEMPLATES_BY_SUBTYPE = {

@@ -204,6 +204,35 @@ func Load(db *gorm.DB, orgID string, kind services.SidecarRuleKind, ruleName str
 	return out, nil
 }
 
+// bindingKinds maps a kind to the name ListSidecarRuleBindings reports.
+var bindingKinds = map[services.SidecarRuleKind]string{
+	services.SidecarRuleGuardrail: "guardrail",
+	services.SidecarRuleMask:      "datamasking",
+	services.SidecarRuleAnalyzer:  "analyzer",
+}
+
+// LoadAll is Load for every rule of one kind in the organization, keyed by
+// rule name, in one query: the list pages read it to tell which traffic a
+// rule protects. A rule bound nowhere has no entry.
+func LoadAll(db *gorm.DB, orgID string, kind services.SidecarRuleKind) (map[string][]openapi.SidecarRuleTarget, error) {
+	org, err := uuid.Parse(orgID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := models.ListSidecarRuleBindings(db, org, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed reading the sidecar targets of the %s rules: %w", kind, err)
+	}
+	out := map[string][]openapi.SidecarRuleTarget{}
+	for _, r := range rows {
+		if r.Kind != bindingKinds[kind] {
+			continue
+		}
+		out[r.RuleName] = append(out[r.RuleName], openapi.SidecarRuleTarget{SidecarID: r.SidecarID, ListenerName: r.ListenerName})
+	}
+	return out, nil
+}
+
 // storedTargets is where the rule is bound today.
 func storedTargets(kind services.SidecarRuleKind, orgID uuid.UUID, ruleName string) ([]models.SidecarRuleTarget, error) {
 	if ruleName == "" {

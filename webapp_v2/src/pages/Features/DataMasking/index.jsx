@@ -5,26 +5,19 @@ import { Info, ListVideo, Network, Rotate3d } from 'lucide-react'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
-import { useNewRuleTraffics } from '@/hooks/useNewRuleTraffics'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
 import { useAgentsEnabled } from '@/modes/agents'
 import Alert from '@/components/Alert'
 import PageLoader from '@/components/PageLoader'
-import NewRuleButton from '@/components/NewRuleButton'
+import Button from '@/components/Button'
 import ValueFilter from '@/components/ValueFilter'
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import SidecarListenerFilter from '@/components/SidecarListenerFilter'
 import { boundRuleNames } from '@/pages/Sidecars/config'
-import {
-  RULE_KIND_DATAMASKING,
-  TRAFFIC_AGENT,
-  TRAFFIC_SIDECAR,
-  newRuleHint,
-  newRulePath,
-} from '@/utils/ruleTraffic'
+import { RULE_KIND_DATAMASKING, TRAFFIC_AGENT, TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 import { useDataMaskingStore } from './store'
 import RuleListItem from './components/RuleListItem'
 import DataMaskingPromotion from './components/DataMaskingPromotion'
@@ -59,7 +52,6 @@ export default function DataMasking() {
   const { traffics, mixed, showAgentFilters, showSidecarFilter, matches } = traffic
   const agentRules = traffics.includes(TRAFFIC_AGENT)
   const sidecarRules = traffics.includes(TRAFFIC_SIDECAR)
-  const newTraffics = useNewRuleTraffics()
   const agentsEnabled = useAgentsEnabled()
   const agentBlocked = agentsEnabled && agentRules && !RULE_DRIVEN_PROVIDERS.includes(redactProvider)
 
@@ -102,7 +94,7 @@ export default function DataMasking() {
   const activeFilterCount =
     (role ? 1 : 0) + (attribute ? 1 : 0) + (target ? 1 : 0) + (traffic.active ? 1 : 0)
 
-  const goCreate = (kind) => navigate(newRulePath('/features/data-masking/new', kind))
+  const goCreate = () => navigate('/features/data-masking/new')
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin they have no rules configured.
@@ -123,7 +115,7 @@ export default function DataMasking() {
         <DataMaskingPromotion
           redactProvider={redactProvider}
           providerRequired={!sidecarRules}
-          onConfigure={() => goCreate(newTraffics[0])}
+          onConfigure={goCreate}
         />
       </FullBleed>
     )
@@ -138,14 +130,9 @@ export default function DataMasking() {
             Automatically mask sensitive data in real-time at the protocol layer
           </Text>
         </Stack>
-        <NewRuleButton
-          traffics={newTraffics}
-          onCreate={goCreate}
-          disabled={atFreeLimit}
-          blocked={agentBlocked ? { [TRAFFIC_AGENT]: 'Needs a DLP provider' } : undefined}
-        >
+        <Button onClick={goCreate} disabled={atFreeLimit}>
           Create new rule
-        </NewRuleButton>
+        </Button>
       </Group>
 
       {atFreeLimit && (
@@ -202,7 +189,7 @@ export default function DataMasking() {
         <EmptyState
           compact
           title="No Live Data Masking rules yet"
-          description={newRuleHint(newTraffics)}
+          description="Create one for your resource roles or sidecar listeners."
         />
       ) : filteredRules.length === 0 ? (
         <EmptyState

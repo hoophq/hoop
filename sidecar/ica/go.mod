@@ -30,7 +30,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hoophq/alcatraz v0.23.0 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
-	github.com/hoophq/libhoop v0.0.0-20261028122443-e602d2f8d44b // indirect
+	github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/knights-analytics/hugot v0.7.7 // indirect
 	github.com/knights-analytics/ortgenai v0.3.2 // indirect

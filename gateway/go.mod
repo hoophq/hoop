@@ -42,8 +42,8 @@ require (
 	github.com/hoophq/hoop/agent v0.0.0-20260730225053-339623147f24
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20261028122443-e602d2f8d44b
-	github.com/hoophq/mcpproxy v0.1.1
+	github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33
+	github.com/hoophq/mcpproxy v0.1.5
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/lib/pq v1.12.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0

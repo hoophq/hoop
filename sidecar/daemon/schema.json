@@ -282,6 +282,55 @@
           "type": "list",
           "label": "Sensitive query parameters",
           "help": "Extra parameter names whose value is redacted before anything sees the request."
+        },
+        {
+          "key": "sql",
+          "type": "object",
+          "label": "SQL in request bodies",
+          "help": "Reads the SQL a JSON API carries in its request body, so operation and table rules judge it. Request bodies are captured.",
+          "fields": [
+            {
+              "key": "dialect",
+              "type": "string",
+              "label": "Dialect",
+              "help": "The SQL dialect the API runs. spark is Databricks SQL.",
+              "enum": [
+                "spark",
+                "postgres",
+                "mysql",
+                "mssql",
+                "googlesql",
+                "clickhouse",
+                "oracle"
+              ]
+            },
+            {
+              "key": "fields",
+              "type": "map",
+              "label": "Fields",
+              "help": "A resource pattern, as an http_resource rule writes it, and the JSON path of the SQL in a request to it, such as statement or params.arguments.query.",
+              "placeholder": "/api/2.0/sql/statements"
+            },
+            {
+              "key": "tools",
+              "type": "list",
+              "label": "JSON-RPC tools",
+              "help": "For an MCP server: the tools whose tools/call arguments carry SQL. Required when a path is under params.arguments; any other JSON-RPC message there carries none."
+            },
+            {
+              "key": "refuse",
+              "type": "list",
+              "label": "Refuse",
+              "help": "field=value pairs whose results would not pass through this listener. A request carrying one is refused before it is forwarded.",
+              "placeholder": "disposition=EXTERNAL_LINKS"
+            },
+            {
+              "key": "refuse_message",
+              "type": "string",
+              "label": "Refuse message",
+              "help": "What a refused client is told: the value to ask for instead. Required with Refuse."
+            }
+          ]
         }
       ]
     },

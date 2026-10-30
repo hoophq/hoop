@@ -671,7 +671,8 @@ jobs:
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
-  # Preview build of hoophq/hoopsidecar, both targets of Dockerfile.sidecar.
+  # Preview build of hoophq/hoopsidecar, the two slim targets of
+  # Dockerfile.sidecar and the same two with the alcatraz NER model baked in.
   # Mirrors the release workflow. hoophq/hoopsidecar is a clean-only repository
   # — see the bright-line note in Dockerfile.sidecar before adding a tag here.
   #
@@ -681,9 +682,8 @@ jobs:
   # a preview moving it would repoint every install that took the default at an
   # unreviewed branch. Previews are reachable only by their PR-numbered tag.
   #
-  # No -alcatraz targets to build, unlike hoopagent: sidecar/pii/alcatraz never
-  # loads the ONNX model, so there is no baked-in artifact for a preview to
-  # validate.
+  # The -alcatraz targets are built on PRs for the same reason as hoopagent's:
+  # nothing short of pulling the artifact says the model is there.
   docker-publish-hoopsidecar:
     runs-on: ubuntu-latest
     name: Publish Sidecar Image (hoopsidecar)
@@ -732,6 +732,40 @@ jobs:
           push: true
           tags: |
             hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless
+      - name: Build and push (alcatraz)
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz
+      - name: Build and push (distroless-alcatraz)
+        uses: docker/build-push-action@v7
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: distroless-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
+      # Same check as the hoopagent job: export the published image's
+      # filesystem, the only way into the distroless flavour.
+      - name: Verify published alcatraz images
+        run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
+          scripts/ci/verify-alcatraz-image.sh \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-alcatraz \
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless-alcatraz
 
   # Preview of the ica assets bundle, the export-only target of
   # Dockerfile.sidecar; mirrors the step release.yml runs inside its

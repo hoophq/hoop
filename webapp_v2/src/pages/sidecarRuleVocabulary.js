@@ -226,11 +226,12 @@ export const REVIEW_MODES = [
 
 // Entity types both the guardrail `pii` rule and a mask rule name. The
 // detector supports more; these are the ones worth offering, and the field
-// accepts anything the operator types.
+// accepts anything the operator types. PERSON, LOCATION, ORGANIZATION and
+// NRP come from the NER model, so a sidecar refuses them without `pii.ner`.
 export const ENTITY_TYPES = [
   'EMAIL_ADDRESS', 'CREDIT_CARD', 'IBAN_CODE', 'PHONE_NUMBER', 'IP_ADDRESS',
   'US_SSN', 'BR_CPF', 'BR_CNPJ', 'AWS_ACCESS_KEY', 'PRIVATE_KEY',
-  'PERSON', 'LOCATION', 'DATE_TIME', 'URL',
+  'PERSON', 'LOCATION', 'ORGANIZATION', 'NRP', 'DATE_TIME', 'URL',
 ]
 
 // ruleTypesFor narrows the type list to what a set of bound listeners can all

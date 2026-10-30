@@ -144,6 +144,11 @@ const (
 // motivated it. A caller MUST close the connection rather than forward.
 var ErrStreamUnsafe = codectypes.ErrStreamUnsafe
 
+// ErrResponseStarted rides beside ErrStreamUnsafe when the refused response
+// already reached the client in part: the caller cuts it without writing a
+// reply of its own.
+var ErrResponseStarted = codectypes.ErrResponseStarted
+
 // Operations lists every operation a codec can report. A config naming one
 // outside it is a typo that never matches, so it is refused rather than
 // loaded. TestOperationsMatchLibhoop holds it to the constants libhoop

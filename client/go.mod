@@ -33,7 +33,7 @@ require (
 	github.com/hoophq/hoop/sidecar/mcpgateway v0.0.0
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/telemetry/otlp v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20261028122443-e602d2f8d44b
+	github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/lib/pq v1.12.3
 	github.com/stretchr/testify v1.11.1
@@ -159,7 +159,7 @@ require (
 	github.com/hoophq/alcatraz v0.23.0 // indirect
 	github.com/hoophq/alcatraz/ner v0.23.0 // indirect
 	github.com/hoophq/libhoop-ica v0.7.1 // indirect
-	github.com/hoophq/mcpproxy v0.1.1 // indirect
+	github.com/hoophq/mcpproxy v0.1.5 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect

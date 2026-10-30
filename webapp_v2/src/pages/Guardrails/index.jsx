@@ -5,12 +5,11 @@ import { Info, ListVideo, Network, Rotate3d } from 'lucide-react'
 import Alert from '@/components/Alert'
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
-import NewRuleButton from '@/components/NewRuleButton'
+import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import SidecarListenerFilter from '@/components/SidecarListenerFilter'
 import ValueFilter from '@/components/ValueFilter'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
-import { useNewRuleTraffics } from '@/hooks/useNewRuleTraffics'
 import { useRuleTrafficFilter } from '@/hooks/useRuleTrafficFilter'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
@@ -18,22 +17,14 @@ import { useAgentsEnabled } from '@/modes/agents'
 import { boundRuleNames } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
-import {
-  RULE_KIND_GUARDRAIL,
-  TRAFFIC_AGENT,
-  TRAFFIC_SIDECAR,
-  newRuleHint,
-  newRulePath,
-} from '@/utils/ruleTraffic'
+import { RULE_KIND_GUARDRAIL, TRAFFIC_AGENT, TRAFFIC_SIDECAR } from '@/utils/ruleTraffic'
 import { useGuardrailsStore } from './store'
+import { AGENT_DLP_REQUIRED } from './helpers'
 import GuardrailListItem from './components/GuardrailListItem'
 import GuardrailsPromotion from './components/GuardrailsPromotion'
 
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Guardrails free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
-
-const AGENT_DLP_REQUIRED =
-  'Guardrails for agent resources need a DLP provider (Microsoft Presidio or Google Cloud DLP). Sidecars enforce guardrails without one.'
 
 function uniqueSorted(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b))
@@ -62,7 +53,6 @@ export default function Guardrails() {
   const sidecarRules = traffics.includes(TRAFFIC_SIDECAR)
   const agentsEnabled = useAgentsEnabled()
   const agentBlocked = agentsEnabled && agentRules && !hasRedactCredentials
-  const newTraffics = useNewRuleTraffics()
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [selectedAttribute, setSelectedAttribute] = useState(null)
@@ -107,7 +97,7 @@ export default function Guardrails() {
   const activeFilterCount =
     (role ? 1 : 0) + (attribute ? 1 : 0) + (target ? 1 : 0) + (traffic.active ? 1 : 0)
 
-  const goCreate = (kind) => navigate(newRulePath('/guardrails/new', kind))
+  const goCreate = () => navigate('/guardrails/new')
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin they have no guardrails configured.
@@ -126,7 +116,7 @@ export default function Guardrails() {
   if (!sidecarRules && !hasRedactCredentials) {
     return (
       <FullBleed>
-        <GuardrailsPromotion dlpAvailable={false} onCreate={() => goCreate(newTraffics[0])} />
+        <GuardrailsPromotion dlpAvailable={false} onCreate={goCreate} />
       </FullBleed>
     )
   }
@@ -134,7 +124,7 @@ export default function Guardrails() {
   if (list.length === 0 && !mixed) {
     return (
       <FullBleed>
-        <GuardrailsPromotion dlpAvailable onCreate={() => goCreate(newTraffics[0])} />
+        <GuardrailsPromotion dlpAvailable onCreate={goCreate} />
       </FullBleed>
     )
   }
@@ -148,14 +138,9 @@ export default function Guardrails() {
             Create custom rules to guide and protect usage of your resource roles and sidecar listeners
           </Text>
         </Stack>
-        <NewRuleButton
-          traffics={newTraffics}
-          onCreate={goCreate}
-          disabled={atFreeLimit}
-          blocked={agentBlocked ? { [TRAFFIC_AGENT]: 'Needs a DLP provider' } : undefined}
-        >
+        <Button onClick={goCreate} disabled={atFreeLimit}>
           Create new rule
-        </NewRuleButton>
+        </Button>
       </Group>
 
       {atFreeLimit && (
@@ -212,7 +197,7 @@ export default function Guardrails() {
         <EmptyState
           compact
           title="No Guardrails yet"
-          description={newRuleHint(newTraffics)}
+          description="Create one for your resource roles or sidecar listeners."
         />
       ) : filteredGuardrails.length === 0 ? (
         <EmptyState
