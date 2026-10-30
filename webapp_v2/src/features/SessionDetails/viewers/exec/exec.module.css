@@ -1,0 +1,55 @@
+/* The plain text output (Figma "Output | Plain Text"): the CodeSnippet dark
+   box, virtualized. */
+.terminal {
+  position: relative;
+  border-radius: var(--mantine-radius-md);
+  background-color: var(--mantine-color-dark-8);
+  color: var(--mantine-color-gray-2);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  padding: var(--mantine-spacing-sm);
+  overflow: hidden;
+}
+
+/* With the clipboard disabled the output cannot be selected either. */
+.terminal[data-no-select] {
+  user-select: none;
+}
+
+.scroller {
+  position: relative;
+  overflow: auto;
+  height: 100%;
+}
+
+.line {
+  height: 20px;
+  line-height: 20px;
+  white-space: pre;
+}
+
+.clipped {
+  font-style: italic;
+  opacity: 0.6;
+  user-select: none;
+}
+
+.copy {
+  position: absolute;
+  top: var(--mantine-spacing-xsAlt);
+  right: var(--mantine-spacing-md);
+  z-index: 1;
+}
+
+/* Figma "Preview Not Available": the file facts and a download. */
+.preview {
+  border-radius: var(--mantine-radius-md);
+  background-color: var(--mantine-color-gray-0);
+  padding: var(--mantine-spacing-lgAlt);
+}
+
+.notice {
+  border-radius: var(--mantine-radius-sm);
+  background-color: var(--mantine-color-gray-2);
+  padding: var(--mantine-spacing-xsAlt) var(--mantine-spacing-smAlt);
+}
