@@ -100,14 +100,15 @@ export const authService = {
 
   // The user `token` belongs to. Over fetch, outside the api.js interceptors:
   // it asks about one given token, and a 401 for it must not sign out the
-  // token that is current by the time it answers.
+  // token that is current by the time it answers. Returns that user and the
+  // token this check leaves stored: the gateway may renew it in the answer.
   async getUserForToken(token) {
     const res = await fetch(`${api.defaults.baseURL}${AUTH_ENDPOINTS.USER}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     storeRenewedToken(token, res.headers);
     if (!res.ok) throw new Error(`userinfo failed with status ${res.status}`);
-    return res.json();
+    return { user: await res.json(), token: res.headers.get('X-New-Access-Token') || token };
   },
 
   // Get server info (license, features)

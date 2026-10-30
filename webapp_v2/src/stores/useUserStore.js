@@ -214,9 +214,10 @@ window.addEventListener('storage', async (event) => {
   const token = event.newValue
   if (event.key !== 'jwt-token' || !token || !useUserStore.getState().user) return
   try {
-    const user = await authService.getUserForToken(token)
-    // A newer token replaced this one while the check ran: its own check decides.
-    if (localStorage.getItem('jwt-token') !== token) return
+    const { user, token: checked } = await authService.getUserForToken(token)
+    // A newer token replaced this one while the check ran: its own check
+    // decides. `checked` is this token, or its renewal from the check's answer.
+    if (localStorage.getItem('jwt-token') !== checked) return
     const shown = useUserStore.getState().user?.id
     if (user?.id && shown && user.id !== shown) window.location.reload()
   } catch {

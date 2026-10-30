@@ -22,8 +22,10 @@ const { useUserStore } = await import('@/stores/useUserStore')
 
 // The account each token belongs to; a token not listed gets a 401.
 const owners = { 'token-of-a': 'user-a', 'renewed-token-of-a': 'user-a', 'token-of-b': 'user-b' }
-// Per token, a promise the test holds back to answer late.
+// Per token, a promise the test holds back to answer late, and the renewal
+// the gateway sends in X-New-Access-Token.
 let held
+let renewals
 const fetch = vi.fn(async (url, init) => {
   const token = init.headers.Authorization.replace(/^Bearer /, '')
   await held[token]
@@ -31,7 +33,7 @@ const fetch = vi.fn(async (url, init) => {
   return {
     ok: !!id,
     status: id ? 200 : 401,
-    headers: new Headers(),
+    headers: new Headers(renewals[token] ? { 'X-New-Access-Token': renewals[token] } : {}),
     json: async () => ({ id }),
   }
 })
@@ -48,6 +50,7 @@ beforeEach(() => {
   fetch.mockClear()
   reload.mockClear()
   held = {}
+  renewals = {}
   storage.set('jwt-token', 'token-of-a')
   useUserStore.setState({ user: { id: 'user-a' } })
 })
@@ -56,6 +59,13 @@ describe('a token another tab stores', () => {
   it('of another account reloads this tab', async () => {
     await otherTab('jwt-token', 'token-of-b')
     expect(fetch.mock.calls[0][0]).toBe('http://gateway.test/api/userinfo')
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
+  it('of another account reloads this tab when the check renews it', async () => {
+    renewals['token-of-b'] = 'renewed-token-of-b'
+    await otherTab('jwt-token', 'token-of-b')
+    expect(localStorage.getItem('jwt-token')).toBe('renewed-token-of-b')
     expect(reload).toHaveBeenCalledOnce()
   })
 

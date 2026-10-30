@@ -1,5 +1,5 @@
-import api, { storeRenewedToken } from './api'
 import { useAuthStore } from '@/stores/useAuthStore'
+import api, { storeRenewedToken } from './api'
 
 export const serverLogsService = {
   list: ({ limit = 500 } = {}) => api.get('/server-logs', { params: { limit } }),

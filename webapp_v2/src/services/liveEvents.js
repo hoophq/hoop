@@ -1,5 +1,5 @@
-import api, { storeRenewedToken } from './api'
 import { useAuthStore } from '@/stores/useAuthStore'
+import api, { storeRenewedToken } from './api'
 
 // The event types the gateway sends (gateway/liveevents).
 export const LIVE_EVENTS = {
