@@ -124,7 +124,7 @@ func startLane(t *testing.T, policy daemon.MCPGatewayConfig, open func(context.C
 }
 
 type client struct {
-	url, sid string
+	url, sid, version string
 }
 
 func (c *client) post(t *testing.T, body string) (int, string) {
@@ -134,6 +134,9 @@ func (c *client) post(t *testing.T, body string) (int, string) {
 	req.Header.Set("accept", "application/json, text/event-stream")
 	if c.sid != "" {
 		req.Header.Set("Mcp-Session-Id", c.sid)
+	}
+	if c.sid != "" && c.version != "" {
+		req.Header.Set("MCP-Protocol-Version", c.version)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -200,6 +203,29 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 
 // A denied tool is missing from tools/list, and a call to it is refused by
 // mcpproxy before the gate sees it; the refusal reaches the sidecar session.
+// A client that negotiated an older revision echoes it on every later request.
+func TestNegotiatedOlderRevisionIsAccepted(t *testing.T) {
+	for _, rev := range []string{"2025-06-18", "2025-03-26"} {
+		t.Run(rev, func(t *testing.T) {
+			ln := &testLane{}
+			_, url := startLane(t, daemon.MCPGatewayConfig{}, ln.open)
+			c := &client{url: url}
+			code, body := c.post(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"`+rev+`","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`)
+			if code != http.StatusOK || !strings.Contains(body, `"protocolVersion":"`+rev+`"`) {
+				t.Fatalf("initialize: %d %s", code, body)
+			}
+			c.version = rev
+			if catalog := c.list(t); !strings.Contains(catalog, `"echo"`) {
+				t.Fatalf("tools/list on %s: %s", rev, catalog)
+			}
+			c.version = "2025-11-25"
+			if code, body := c.post(t, `{"jsonrpc":"2.0","id":3,"method":"tools/list"}`); code != http.StatusBadRequest {
+				t.Fatalf("tools/list echoing 2025-11-25 after negotiating %s: %d %s, want 400", rev, code, body)
+			}
+		})
+	}
+}
+
 func TestDeniedToolIsAbsentFromTheCatalogAndRefused(t *testing.T) {
 	ln := &testLane{}
 	_, url := startLane(t, daemon.MCPGatewayConfig{DeniedTools: []string{"delete_*"}}, ln.open)
