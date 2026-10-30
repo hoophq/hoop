@@ -482,14 +482,22 @@
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
         session-id (-> current-route :route-params :session-id)]
-    (rf/dispatch [:destroy-page-loader])
     ;; With the React session details, /sessions/:id is the list with the
-    ;; details open over it; closing them goes back to /sessions.
-    (if @(rf/subscribe [:session-details/react?])
+    ;; details open over it; closing them goes back to /sessions. Until the
+    ;; flag is known the layout renders empty: it is what reads /serverinfo.
+    (cond
+      (not @(rf/subscribe [:session-details/flag-known?]))
+      [layout :application-hoop [:div {:class "h-full"}]]
+
+      @(rf/subscribe [:session-details/react?])
       (do
+        (rf/dispatch [:destroy-page-loader])
         (rf/dispatch [:session-details/open {:id session-id :close-to "/sessions"}])
         [sessions-page])
+
+      :else
       (do
+        (rf/dispatch [:destroy-page-loader])
         (rf/dispatch [:audit->get-session-details-page session-id])
         [layout :application-hoop [:div {:class "bg-white p-large h-full"}
                                    [session-details/main]]]))))

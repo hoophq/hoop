@@ -27,8 +27,11 @@ export default function InputTab({ session }) {
   const disableDownload = useUserStore((s) => s.disableSessionsDownload)
   const user = useUserStore((s) => s.user)
   const isAdmin = useUserStore((s) => s.isAdmin)
-  const allowed = !disableDownload && canDownloadInput(session, { user, isAdmin })
-  const onDownload = allowed ? () => downloadInput(session.id) : undefined
+  const download = () => downloadInput(session.id)
+  // The large-input card offers Download to every user, as the ClojureScript
+  // one did (matrix FD16); the gateway refuses who it does not serve.
+  const onLargeDownload = disableDownload ? undefined : download
+  const onDownload = !disableDownload && canDownloadInput(session, { user, isAdmin }) ? download : undefined
 
   const insights = <Insights session={session} tabs={['input']} />
 
@@ -40,7 +43,7 @@ export default function InputTab({ session }) {
           title="Session Input"
           size={session.script_size}
           message="Input script is too large to display"
-          onDownload={onDownload}
+          onDownload={onLargeDownload}
         />
       </Stack>
     )
