@@ -3368,6 +3368,52 @@ lower case. A call a rule denies answers as a tool result with
 <message>`, because agents keep a server that returns a tool error and
 drop one that returns a protocol error.
 
+| | `mcp_gateway.denied_tools` | `guardrails` `table` rule |
+|---|---|---|
+| `tools/list` | the tool is removed | the tool is listed |
+| a denied call | JSON-RPC error `-32010` | tool result, `isError: true` |
+| reload | restart | hot, ends the open sessions |
+| control plane | no form yet (ENG-959) | the rules screen |
+
+An empty `allowed_tools` allows every tool, and `denied_tools` wins over
+it. [ADR-0034](https://github.com/hoophq/adr/blob/main/0034-sidecar-mcp-lane-embeds-mcpproxy.md),
+decision 2, keeps tool allow and deny in `mcp_gateway`: a rule cannot
+filter the catalog.
+
+Each `tools/call` is one statement: `operation: call`, `tables: [<tool>]`,
+the text `<tool>` and its arguments JSON on the next line, and the metadata
+`mcp.method`, `mcp.tool` and `mcp.session`. These rule types read it:
+
+```yaml
+guardrails:
+  rules:
+    - {name: no-delete, type: table, tables: [delete_customer]}               # the tool name
+    - {name: no-prod, type: deny_words_list, words: [prod-db]}                # tool name and arguments
+    - {name: no-prod-db, type: pattern_match, pattern_regex: '"db":\s*"prod-'}  # tool name and arguments
+    - {name: no-calls, type: operation, operations: [call]}                   # every tools/call
+    - {name: no-delete-md, type: metadata, metadata: {mcp.tool: [delete_customer]}}
+```
+
+Each `tools/list` is one catalog statement: `direction: server`,
+`operation: show`, no tables, one `<name>: <description>` line per tool.
+Rules and OPA judge it too, and a hit ends the session: a
+`deny_words_list` word in a tool description ends it. A `table` rule never
+matches the catalog, `require_table_match` included.
+
+With `opa`, the lane consults OPA on every call and on the catalog. The
+input for a call, beside the `context` every lane sends:
+
+```json
+{"protocol": "mcp", "direction": "client", "operation": "call",
+ "tables": ["get_file_contents"], "statement": "get_file_contents\n{\"path\":\"README.md\"}",
+ "metadata": {"mcp.method": "tools/call", "mcp.tool": "get_file_contents", "mcp.session": "<id>"}}
+```
+
+`opa: {responses: false}` keeps the catalog from OPA. The lane has no
+human review: an `analyzer` block is refused (ENG-964), and so is
+mcpproxy's `approval_tools`. [`deploy/docker-compose/envoy-stack/mcp`](../deploy/docker-compose/envoy-stack/mcp/README.md)
+runs one session through a lane.
+
 One sidecar session per MCP session: it opens on the first message,
 records `initialize` as an activity (client name, version, protocol
 version), one statement per `tools/call` (allowed or denied, with the
