@@ -1,0 +1,91 @@
+.header {
+  padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-mdAlt);
+  border: 1px solid var(--mantine-color-gray-3);
+  border-top-left-radius: var(--mantine-radius-md);
+  border-top-right-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-gray-0);
+}
+
+.body {
+  position: relative;
+  min-height: 200px;
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid var(--mantine-color-gray-3);
+  border-top: 0;
+  border-bottom-left-radius: var(--mantine-radius-md);
+  border-bottom-right-radius: var(--mantine-radius-md);
+}
+
+.row {
+  padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-mdAlt);
+  border-bottom: 1px solid var(--mantine-color-gray-2);
+}
+
+.row:hover {
+  background: var(--mantine-color-gray-0);
+}
+
+.protocol {
+  padding: var(--mantine-spacing-xsAlt) var(--mantine-spacing-mdAlt);
+  border-bottom: 1px solid var(--mantine-color-gray-2);
+  color: var(--mantine-color-dimmed);
+}
+
+.time {
+  width: 80px;
+  flex: none;
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.pre {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.terminal {
+  min-height: 200px;
+  padding: var(--mantine-spacing-mdAlt);
+  background: var(--mantine-color-dark-8);
+  color: var(--mantine-color-gray-2);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  white-space: pre;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.pulse {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.jump {
+  position: sticky;
+  bottom: var(--mantine-spacing-smAlt);
+  display: flex;
+  justify-content: flex-end;
+  padding-right: var(--mantine-spacing-smAlt);
+  pointer-events: none;
+}
+
+.jump > * {
+  pointer-events: auto;
+}
