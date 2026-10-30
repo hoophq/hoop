@@ -68,7 +68,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		}
 
 		if otrev.Status == models.ReviewStatusApproved {
-			if err := models.UpdateReviewStatus(otrev.OrgID, otrev.ID, models.ReviewStatusProcessing); err != nil {
+			if err := models.MarkReviewProcessing(models.DB, otrev.OrgID, otrev.ID, pctx.UserEmail); err != nil {
 				return nil, plugintypes.InternalErr("failed updating the approved request", err)
 			}
 		}

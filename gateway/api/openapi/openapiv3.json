@@ -8548,6 +8548,12 @@
             "readOnly": true,
             "type": "string"
           },
+          "executed_by": {
+            "description": "The email of the user who ran the approved request. Absent before it runs, and on older requests.\nOnly GET /sessions/{session_id} returns it",
+            "example": "alice@example.com",
+            "readOnly": true,
+            "type": "string"
+          },
           "force_approval_groups": {
             "description": "Groups that can force approve sessions for this approval request",
             "example": [
