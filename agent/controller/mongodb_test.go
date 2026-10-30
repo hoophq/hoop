@@ -33,9 +33,11 @@ func TestMongoExecArgsKeepsOtherCommands(t *testing.T) {
 }
 
 func TestMongoExecArgsFallsBackToMongosh(t *testing.T) {
-	if _, err := os.Stat(legacyMongoShell); err == nil {
-		t.Skipf("%v exists on this host", legacyMongoShell)
-	}
+	exists := false
+	orig := legacyMongoShellExists
+	legacyMongoShellExists = func() bool { return exists }
+	t.Cleanup(func() { legacyMongoShellExists = orig })
+
 	dir := t.TempDir()
 	mongosh := dir + "/mongosh"
 	if err := os.WriteFile(mongosh, []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -50,4 +52,7 @@ func TestMongoExecArgsFallsBackToMongosh(t *testing.T) {
 	t.Setenv("PATH", dir)
 	assert.Equal(t, []string{mongosh, "--quiet", "$CONNECTION_STRING", "--file", "/dev/stdin"},
 		mongoExecArgs(params, args))
+
+	exists = true
+	assert.Equal(t, args, mongoExecArgs(params, args), "legacy shell present: keep it")
 }

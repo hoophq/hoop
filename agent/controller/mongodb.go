@@ -102,6 +102,12 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 // queries (gateway/api/connections, getConnectionCommandOverride).
 const legacyMongoShell = "/usr/local/bin/mongo"
 
+// legacyMongoShellExists is a var so tests do not depend on the host.
+var legacyMongoShellExists = func() bool {
+	_, err := os.Stat(legacyMongoShell)
+	return err == nil
+}
+
 // mongoExecArgs runs the gateway MongoDB schema queries with mongosh when the
 // agent has no legacy shell. Images without the SSPL 5.0 shell (agent-tools
 // clean train, tarball installs) ship only mongosh. mongosh reads the script as
@@ -112,7 +118,7 @@ func mongoExecArgs(connParams *pb.AgentConnectionParams, args []string) []string
 		len(args) == 0 || args[0] != legacyMongoShell {
 		return args
 	}
-	if _, err := os.Stat(legacyMongoShell); err == nil {
+	if legacyMongoShellExists() {
 		return args
 	}
 	mongosh, err := exec.LookPath("mongosh")
