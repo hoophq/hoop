@@ -32,6 +32,9 @@ export const useUserStore = create((set, get) => ({
   analyticsTracking: false,
   analyticsMode: 'anonymous',
   disableClipboard: false,
+  // /serverinfo disable_sessions_download (DISABLE_SESSIONS_DOWNLOAD): the
+  // gateway answers 403 to a session download, so the UI hides the items.
+  disableSessionsDownload: false,
   gatewayVersion: null,
   redactProvider: null,
   featureFlags: {},
@@ -80,6 +83,7 @@ export const useUserStore = create((set, get) => ({
       analyticsTracking, 
       analyticsMode, 
       disableClipboard, 
+      disableSessionsDownload: !!serverInfo?.disable_sessions_download,
       featureFlags, 
       redactProvider, 
       apiUrl,

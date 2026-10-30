@@ -4,7 +4,7 @@
    [re-frame.core :as rf]
    [webapp.connections.native-client-access.constants :as constants]
    [webapp.connections.native-client-access.main :as native-client-access-main]
-   [webapp.audit.views.session-details :as session-details]))
+   [webapp.audit.session-details-bridge]))
 
 
 ;; ── React shell delegation ────────────────────────────────────────────────
@@ -87,9 +87,7 @@
      {:db (update-in db [:native-client-access :requesting-connections] disj connection-name)
       :fx [[:dispatch [:modal->close]]
            [:dispatch-later {:ms 100
-                             :dispatch [:modal->open {:id "session-details"
-                                                     :maxWidth "95vw"
-                                                     :content [session-details/main {:id (:session_id response) :verb "connect"}]}]}]
+                             :dispatch [:session-details/open {:id (:session_id response) :verb "connect"}]}]
            [:dispatch [:show-snackbar {:level :info
                                        :text "This connection requires approval"}]]]}
      ;; No review - existing flow

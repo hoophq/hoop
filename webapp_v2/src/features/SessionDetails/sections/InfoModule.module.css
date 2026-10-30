@@ -1,0 +1,13 @@
+/* Collapsed, the last visible detail fades into the "See more" button. */
+.fade {
+  position: relative;
+}
+
+.fade::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--mantine-spacing-lgAlt)) 0 100% 0;
+  height: var(--mantine-spacing-lgAlt);
+  background: linear-gradient(to bottom, transparent, var(--mantine-color-body));
+  pointer-events: none;
+}

@@ -3,7 +3,7 @@
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
-            [webapp.audit.views.session-details :as session-details]
+            [webapp.audit.session-details-bridge]
             [webapp.components.ag-grid-table :as ag-grid-table]
             [webapp.components.results-download-menu :as download-menu]
             [webapp.components.results-matrix :as results-matrix]
@@ -73,12 +73,8 @@
                                  (results-matrix/rows? response)))
             session-id (:session_id (:data @script-response))
             on-view-session-details (when session-id
-                                      #(rf/dispatch
-                                        [:modal->open
-                                         {:id "session-details"
-                                          :maxWidth "95vw"
-                                          :content [session-details/main
-                                                    {:id session-id :verb "exec"}]}]))
+                                      #(rf/dispatch [:session-details/open
+                                                     {:id session-id :verb "exec"}]))
             menu-props (when session-id
                          {:results response
                           :matrix (:matrix parsed)

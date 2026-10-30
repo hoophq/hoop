@@ -162,6 +162,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.sessions_react": {
+		Name:        "experimental.sessions_react",
+		Description: "Show the session details in the new web app, wherever they open: the Web Terminal, Runbooks, the sessions list, a /sessions/<id> link and the workflow cards. When off, the previous session details show.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 	FlagAgents: {
 		Name:        FlagAgents,
 		Description: "Show the agent pages in the web app menu (agents, terminal, runbooks, machine identities, provisioning, resource discovery, event routing) and the agent onboarding. When off, the menu hides them, and the web app opens on Sidecars for admins and on Approvals for other users. Agents and their sessions keep working. Turned on once for every organization that already had an agent.",

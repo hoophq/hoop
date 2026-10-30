@@ -2,7 +2,7 @@
   (:require ["@radix-ui/themes" :refer [Box Button Callout Spinner Flex Text]]
             ["lucide-react" :refer [AlertTriangle Clock]]
             [re-frame.core :as rf]
-            [webapp.audit.views.session-details :as session-details]
+            [webapp.audit.session-details-bridge]
             [webapp.components.log-lines :as log-lines]
             [webapp.components.virtualized-list :as vlist]
             [webapp.formatters :as formatters]))
@@ -30,12 +30,7 @@
   (case status
     :success (if has-review?
                [:div {:class "group relative py-regular pl-regular pr-large whitespace-pre"
-                      :on-click (fn []
-                                  (rf/dispatch (rf/dispatch
-                                                [:modal->open
-                                                 {:id "session-details"
-                                                  :maxWidth "95vw"
-                                                  :content [session-details/main {:id session-id :verb "exec"}]}])))}
+                      :on-click #(rf/dispatch [:session-details/open {:id session-id :verb "exec"}])}
                 [:div {:class "text-sm mb-1"}
                  "This task needs approval. Please click here to see the details."]
                 [:div {:class "text-gray-11 text-sm"}
@@ -71,12 +66,7 @@
                   [:<>
                    [:> Button {:size "1"
                                :variant "soft"
-                               :on-click (fn []
-                                           (rf/dispatch
-                                            [:modal->open
-                                             {:id "session-details"
-                                              :maxWidth "95vw"
-                                              :content [session-details/main {:id session-id :verb "exec"}]}]))}
+                               :on-click #(rf/dispatch [:session-details/open {:id session-id :verb "exec"}])}
                     "View session details"]
                    [:> Text {:size "1" :class "text-gray-10 font-mono"}
                     (str "Session: " session-id)]])]]]

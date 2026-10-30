@@ -1,0 +1,41 @@
+/* The session-details modal (Figma "Detailed View Rework"): 24px from the
+   viewport, at most 1276px wide and the viewport tall. The header and the
+   action bar stay put; the body scrolls between them. */
+.inner {
+  padding: var(--mantine-spacing-lgAlt);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 2 * var(--mantine-spacing-lgAlt));
+  overflow: hidden;
+  border-radius: calc(2 * var(--mantine-radius-lg));
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+
+.header {
+  padding: var(--mantine-spacing-lgAlt) var(--mantine-spacing-lgAlt) 0;
+}
+
+.scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-lgAlt);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--mantine-spacing-lgAlt);
+}
+
+.actionBar {
+  border-top: 1px solid var(--mantine-color-gray-3);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-lgAlt);
+  background: var(--mantine-color-body);
+}
