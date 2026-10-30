@@ -49,9 +49,11 @@ One product: the gateway. `hoop start control-plane` runs the same gateway and U
   Layout + PageLayout), `Guard` a React route without the shell. `Home`, `Onboarding` and
   `CatchAll` are the ClojureScript leaves `/`, `/onboarding/*` and `/*`. Only `Router.jsx`
   reads them.
-- **Agent and sidecar rule forms are siblings.** Guardrail, masking and analyzer forms
-  come as `Gateway*Form` (agent traffic) and `Sidecar*Form` (sidecar traffic), picked
-  per rule with `<ByRuleTraffic>` in `Router.jsx`.
+- **Guardrail and masking rules have one form each.** `pages/Guardrails/Create/GuardrailForm.jsx`
+  and `pages/Features/DataMasking/Create/DataMaskingForm.jsx` write both halves of a rule (the
+  agent fields and `sidecar_spec`); an option one engine does not run carries a
+  `RuleSupportTag` (`utils/ruleSupport.js`). Only the analyzer keeps `Gateway*Form` /
+  `Sidecar*Form` siblings, picked per rule with `<ByRuleTraffic>` in `Router.jsx`.
 - **Sidecar features are always on.** Every gateway serves sidecars, so the Sidecars
   pages, nav and palette items and the sidecar traffic of a rule carry no gate. The
   agents product follows `agentsEnabled()` (`modes/agents.js`, the `experimental.agents`

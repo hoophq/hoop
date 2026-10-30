@@ -13,9 +13,8 @@ import {
 // `listener` null reads the sidecar's defaults plus every distributed rule;
 // a listener reads what that lane resolves to plus the rules bound to its name.
 
-// The rule types of sidecar/policy a guardrail list can show. NOT the two in
-// pages/Guardrails/helpers.js — those belong to the gateway's own guardrails,
-// a different product with a different schema.
+// The rule types of sidecar/policy a guardrail list can show. The agent runs
+// only deny_words_list and pattern_match (utils/ruleSupport.js).
 const RULE_TYPE_LABELS = {
   deny_words_list: 'Deny words',
   pattern_match: 'Pattern match',

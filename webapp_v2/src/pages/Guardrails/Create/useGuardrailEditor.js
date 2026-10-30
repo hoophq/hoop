@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
+import { AGENT_GUARDRAIL_TYPES, guardrailAgentBlockers } from '@/utils/ruleSupport'
 import { operationsFor, ruleTypesFor } from '@/pages/sidecarRuleVocabulary'
 import { useGuardrailsStore } from '../store'
 
@@ -8,6 +9,7 @@ export const emptyRule = () => ({
   key: Math.random().toString(36).slice(2),
   name: '',
   type: 'operation',
+  direction: 'input',
   message: '',
   action: '',
   operations: [],
@@ -22,10 +24,24 @@ export const emptyRule = () => ({
   statuses: [],
 })
 
-function specToRules(spec) {
-  const rules = spec?.rules ?? []
-  if (rules.length === 0) return [emptyRule()]
-  return rules.map((r) => ({ ...emptyRule(), ...r, key: Math.random().toString(36).slice(2) }))
+const withKey = (rule) => ({ ...emptyRule(), ...rule, key: Math.random().toString(36).slice(2) })
+
+// The spec is the UI's truth for statement rules; the agent `input` half is
+// read only when there is no spec, since save rewrites it from the spec. An
+// agent rule has no name, so it takes the guardrail's (numbered when several).
+function loadRules(guardrail) {
+  const spec = guardrail?.sidecar_spec?.rules
+  const input = guardrail?.input?.rules ?? []
+  const output = guardrail?.output?.rules ?? []
+  const base = guardrail?.name ?? ''
+  const nameOf = (list, i) => (list.length > 1 ? `${base}/${i + 1}` : base)
+  const rules = [
+    ...(spec
+      ? spec.map((r) => withKey({ ...r, direction: 'input' }))
+      : input.map((r, i) => withKey({ ...r, name: nameOf(input, i), direction: 'input' }))),
+    ...output.map((r, i) => withKey({ ...r, name: nameOf(output, i), direction: 'output' })),
+  ]
+  return rules.length > 0 ? rules : [emptyRule()]
 }
 
 // The gateway refuses a field the rule type does not declare.
@@ -47,8 +63,28 @@ function rulesToSpec(rules, typeFields) {
   return { rules: out }
 }
 
+const agentRule = (r) => ({
+  type: r.type,
+  words: r.type === 'deny_words_list' ? (r.words ?? []) : [],
+  pattern_regex: r.type === 'pattern_match' ? (r.pattern_regex ?? '') : '',
+  message: (r.message ?? '').trim(),
+})
+
+const agentInput = (rules) =>
+  rules.filter((r) => r.direction === 'input' && guardrailAgentBlockers(r).length === 0).map(agentRule)
+
+// Whether the stored agent statement rules are what the loaded list writes.
+// They differ when the API or Terraform set the two halves apart; saving
+// then rewrites the agent half, which the form says before it does.
+function agentHalfDiffersFrom(guardrail, rules) {
+  if (!guardrail?.sidecar_spec?.rules) return false
+  const stored = (guardrail.input?.rules ?? []).map((r) => JSON.stringify(agentRule(r)))
+  const derived = agentInput(rules).map((r) => JSON.stringify(r))
+  return stored.length !== derived.length || stored.some((s, i) => s !== derived[i])
+}
+
 // Shared by the rule page and the sidecar dialog. `targets` seeds a new rule's listeners.
-export function useSidecarGuardrailEditor({ guardrail, id, isEdit, targets: seed = [], onSaved, onDeleted }) {
+export function useGuardrailEditor({ guardrail, id, isEdit, targets: seed = [], onSaved, onDeleted }) {
   const submitting = useGuardrailsStore((s) => s.submitting)
   const createGuardrail = useGuardrailsStore((s) => s.createGuardrail)
   const updateGuardrail = useGuardrailsStore((s) => s.updateGuardrail)
@@ -57,8 +93,11 @@ export function useSidecarGuardrailEditor({ guardrail, id, isEdit, targets: seed
 
   const [name, setName] = useState(guardrail?.name ?? '')
   const [description, setDescription] = useState(guardrail?.description ?? '')
+  const [connectionIds, setConnectionIds] = useState(guardrail?.connection_ids ?? [])
+  const [attributes, setAttributes] = useState(guardrail?.attributes ?? [])
   const [targets, setTargets] = useState(guardrail?.sidecar_targets ?? seed)
-  const [rules, setRules] = useState(() => specToRules(guardrail?.sidecar_spec))
+  const [rules, setRules] = useState(() => loadRules(guardrail))
+  const [agentHalfDiffers] = useState(() => agentHalfDiffersFrom(guardrail, rules))
 
   // A sidecar refuses at startup a rule type its lane cannot read, so the
   // type list narrows to what every bound lane accepts.
@@ -74,6 +113,13 @@ export function useSidecarGuardrailEditor({ guardrail, id, isEdit, targets: seed
   const operations = useMemo(() => operationsFor(protocols[0]), [protocols])
   const typeFields = (t) => types.find((x) => x.value === t)?.fields ?? []
 
+  // Statement rules the agent cannot run. The agent half carries the others.
+  const agentBlocked = useMemo(
+    () => rules.filter((r) => r.direction === 'input' && guardrailAgentBlockers(r).length > 0),
+    [rules],
+  )
+  const agentBound = connectionIds.length > 0 || attributes.length > 0
+
   const canSubmit = name.trim() !== '' && !submitting
 
   const save = async () => {
@@ -84,21 +130,31 @@ export function useSidecarGuardrailEditor({ guardrail, id, isEdit, targets: seed
       showSnackbar({ level: 'error', text: `Rule ${unsupported + 1} has a type the selected listeners cannot run.` })
       return false
     }
-    const spec = rulesToSpec(rules, typeFields)
-    if (spec.rules.length === 0) {
+    const named = rules.filter((r) => r.name.trim() !== '')
+    if (named.length === 0) {
       showSnackbar({ level: 'error', text: 'Give every rule a name, or remove it.' })
       return false
     }
+    const badOutput = rules.findIndex((r) => r.direction === 'output' && !AGENT_GUARDRAIL_TYPES.includes(r.type))
+    if (badOutput !== -1) {
+      showSnackbar({
+        level: 'error',
+        text: `Rule ${badOutput + 1} checks results, which only deny words and pattern rules can do.`,
+      })
+      return false
+    }
+    const outputRules = named.filter((r) => r.direction === 'output')
+    const inputRules = named.filter((r) => r.direction === 'input')
+    const spec = rulesToSpec(inputRules, typeFields)
     const payload = {
       id: isEdit ? id : '',
       name: name.trim(),
       description,
-      // Gateway-only fields.
-      connection_ids: [],
-      attributes: [],
-      input: { rules: [] },
-      output: { rules: [] },
-      sidecar_spec: spec,
+      connection_ids: connectionIds,
+      attributes,
+      input: { rules: agentInput(inputRules) },
+      output: { rules: outputRules.map(agentRule) },
+      sidecar_spec: spec.rules.length > 0 ? spec : null,
       sidecar_targets: targets,
     }
     const { ok, error } = isEdit ? await updateGuardrail(id, payload) : await createGuardrail(payload)
@@ -128,12 +184,19 @@ export function useSidecarGuardrailEditor({ guardrail, id, isEdit, targets: seed
     setName,
     description,
     setDescription,
+    connectionIds,
+    setConnectionIds,
+    attributes,
+    setAttributes,
     targets,
     setTargets,
     rules,
     setRules,
     types,
     operations,
+    agentBlocked,
+    agentBound,
+    agentHalfDiffers,
     canSubmit,
     submitting,
     save,

@@ -301,22 +301,29 @@ func List(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guard rail rules: %v", err)
 		return
 	}
+	// The web app reads the sidecar block and the targets to show which
+	// traffic the rule protects.
+	targets, err := sidecarbind.LoadAll(models.DB, ctx.GetOrgID(), services.SidecarRuleGuardrail)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the sidecar targets of the rules: %v", err)
+		return
+	}
 
 	rules := []openapi.GuardRailRuleResponse{}
 	for _, rule := range ruleList {
 		rules = append(rules, openapi.GuardRailRuleResponse{
-			ID:            rule.ID,
-			Name:          rule.Name,
-			Description:   rule.Description,
-			ManagedBy:     rule.ManagedBy,
-			Input:         rule.Input,
-			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			Attributes:    rule.Attributes,
-			// The web app reads it to show which traffic the rule protects.
-			SidecarSpec: rule.SidecarSpec,
-			CreatedAt:   rule.CreatedAt,
-			UpdatedAt:   rule.UpdatedAt,
+			ID:             rule.ID,
+			Name:           rule.Name,
+			Description:    rule.Description,
+			ManagedBy:      rule.ManagedBy,
+			Input:          rule.Input,
+			Output:         rule.Output,
+			ConnectionIDs:  rule.ConnectionIDs,
+			Attributes:     rule.Attributes,
+			SidecarSpec:    rule.SidecarSpec,
+			SidecarTargets: targets[rule.Name],
+			CreatedAt:      rule.CreatedAt,
+			UpdatedAt:      rule.UpdatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, rules)
