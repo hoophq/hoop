@@ -99,6 +99,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 | `/features/data-masking/edit/:id` | React | Done |
 | `/roles/:connectionName/configure` | React | Done |
 | `/resources` | React | Done (ENG-911). The CLJS `:resources` panel stays until ENG-922, so a rollback reverts the route |
+| `/resources/new?type=<catalog id>` | React per family | ENG-913: metadata-driven types and dev envs (`REACT_SETUP_SUBTYPES` in `pages/Resources/Setup/catalog.js`). `modes/ByResourceSetup` renders the CLJS wizard for every other type |
 | `/rulepacks` | React | Done (gated by `experimental.rulepacks`) |
 | `/rulepacks/:id` | React | Done (gated by `experimental.rulepacks`) |
 | `/features/event-routing` | React | Done |
@@ -150,7 +151,7 @@ The three product leaves `/`, `/onboarding/*` and `/*` are CLJS.
 /onboarding/*                 first-run setup (except /onboarding/protection-rules → React)
 /sessions, /sessions/filtered, /sessions/:id
 /workflows/:correlation-id
-/resources/new, /resources/configure/:id, /resources/:id/add-role
+/resources/new (types outside REACT_SETUP_SUBTYPES), /resources/configure/:id, /resources/:id/add-role
 /resource-catalog
 /provisioning
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)

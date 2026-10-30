@@ -213,11 +213,11 @@
 
 (defn dispatch-setup-navigation
   "Dispatch navigation to appropriate setup flow"
-  [setup-config is-onboarding?]
+  [setup-config is-onboarding? catalog-id]
   ;; Initialize resource setup with data from catalog
   (rf/dispatch [:resource-setup->initialize-from-catalog setup-config])
 
-  ;; Navigate to resource setup flow
+  ;; Navigate to resource setup flow. React reads ?type= to pick its wizard.
   (if is-onboarding?
     (rf/dispatch [:navigate :onboarding-setup-resource])
-    (rf/dispatch [:navigate :resource-setup-new])))
+    (rf/dispatch [:navigate :resource-setup-new {:type catalog-id}])))

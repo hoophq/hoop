@@ -1,21 +1,27 @@
 import { useMemo, useState } from 'react'
 import { Combobox, Group, Pill, PillsInput, ScrollArea, useCombobox } from '@mantine/core'
-import { Award } from 'lucide-react'
+import { Award, Plus } from 'lucide-react'
 import classes from './AttributesSelect.module.css'
 
+const CREATE_PREFIX = '$create:'
+
 /**
- * Attributes selector for the Details tab. Every selected attribute is a
- * removable pill. Options flagged `managed: true` (the protection-profile
- * attribute) render with the indigo award styling — in the field and in the
- * dropdown — but behave like any other attribute: removing the pill detaches
- * the role from the profile on save, and it can be re-added from the
- * dropdown, where managed entries are listed first.
+ * Role attributes selector (Configure Role, resource setup wizard). Every
+ * selected attribute is a removable pill. Options flagged `managed: true` (the
+ * protection-profile attribute) render with the indigo award styling — in the
+ * field and in the dropdown — but behave like any other attribute: removing the
+ * pill detaches the role from the profile on save, and it can be re-added from
+ * the dropdown, where managed entries are listed first.
+ *
+ * With `onCreate`, a search that matches no option offers to create it.
  */
 export default function AttributesSelect({
   options = [],
   value = [],
   onChange,
+  onCreate,
   placeholder,
+  label,
 }) {
   const combobox = useCombobox({
     onDropdownClose: () => combobox.resetSelectedOption(),
@@ -29,6 +35,11 @@ export default function AttributesSelect({
   )
 
   const handleOptionSubmit = (val) => {
+    if (val.startsWith(CREATE_PREFIX)) {
+      onCreate(val.slice(CREATE_PREFIX.length))
+      setSearch('')
+      return
+    }
     const next = selectedSet.has(val) ? value.filter((v) => v !== val) : [...value, val]
     onChange?.(next)
     setSearch('')
@@ -45,8 +56,8 @@ export default function AttributesSelect({
           withRemoveButton
           onRemove={() => handleValueRemove(val)}
           className={classes.managedPill}
-          bg="indigo.3"
-          c="indigo.9"
+          bg="indigo.0"
+          c="indigo.7"
         >
           <Group gap={4} wrap="nowrap" component="span" display="inline-flex">
             <Award size={12} aria-hidden="true" />
@@ -87,12 +98,30 @@ export default function AttributesSelect({
     ),
   )
 
+  const typed = search.trim()
+  const canCreate =
+    Boolean(onCreate) &&
+    typed !== '' &&
+    !options.some((o) => o.value === typed) &&
+    !selectedSet.has(typed)
+  if (canCreate) {
+    optionNodes.push(
+      <Combobox.Option value={CREATE_PREFIX + typed} key={CREATE_PREFIX + typed}>
+        <Group gap={4} wrap="nowrap">
+          <Plus size={12} aria-hidden="true" />
+          {`Create "${typed}"`}
+        </Group>
+      </Combobox.Option>,
+    )
+  }
+
   const empty = optionNodes.length === 0
 
   return (
     <Combobox store={combobox} onOptionSubmit={handleOptionSubmit}>
       <Combobox.DropdownTarget>
         <PillsInput
+          label={label}
           onClick={() => combobox.openDropdown()}
           rightSection={<Combobox.Chevron />}
           rightSectionPointerEvents="none"
@@ -113,6 +142,14 @@ export default function AttributesSelect({
                   if (event.key === 'Backspace' && search.length === 0 && value.length > 0) {
                     event.preventDefault()
                     handleValueRemove(value[value.length - 1])
+                  }
+                  // Enter never submits the enclosing form. With no option
+                  // highlighted it creates the typed attribute, as CLJS does.
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    if (canCreate && combobox.getSelectedOptionIndex() === -1) {
+                      handleOptionSubmit(CREATE_PREFIX + typed)
+                    }
                   }
                 }}
               />

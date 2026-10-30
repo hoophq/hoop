@@ -48,3 +48,13 @@ export async function identify(user, mode) {
   userObj.traits({})
   await instance.identify(hashedId, buildTraits(user, mode, hashedId))
 }
+
+// Segment event names are KPIs read in the dashboards; CLJS sends the same ones.
+export const EVENTS = {
+  ACTIVATION_FEATURE_CTA: 'Activation Journey - Feature CTA',
+}
+
+// Same properties as the CLJS :segment->track, which adds the hostname.
+export function track(event, properties = {}) {
+  return load().track(event, { hostname: window.location.hostname, ...properties })
+}

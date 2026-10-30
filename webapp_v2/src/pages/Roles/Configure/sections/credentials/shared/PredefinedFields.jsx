@@ -12,7 +12,7 @@ import {
   SOURCES,
 } from '@/pages/Roles/Configure/utils/secretsCodec'
 import { CONNECTION_METHODS } from '@/utils/connectionPolicy'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 
 const AWS_IAM_PASS_VALUE = 'authtoken'
 const AWS_IAM_PASS_ENCODED = encodeSecretForSource(
@@ -42,11 +42,12 @@ export default function PredefinedFields({
   connectionMethod,
   hideRoleInfo,
 }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const fieldSources = useConfigureRoleStore((s) => s.fieldSources)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
-  const setFieldSource = useConfigureRoleStore((s) => s.setFieldSource)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const fieldSources = useCredentialsStore((s) => s.fieldSources)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const setFieldSource = useCredentialsStore((s) => s.setFieldSource)
+  const createMode = useCredentialsStore((s) => s.createMode)
 
   const isAwsIam = connectionMethod === CONNECTION_METHODS.AWS_IAM
   const currentSecrets = connection.secret || {}
@@ -102,6 +103,31 @@ export default function PredefinedFields({
         const fieldKeyLower = field.key.toLowerCase()
         const isAwsIamScoped = isAwsIam && (fieldKeyLower === 'user' || fieldKeyLower === 'pass')
         const source = isAwsIamScoped ? SOURCES.AWS_IAM_ROLE : detectedSource
+
+        // The resource setup wizard keeps every field masked, as the CLJS
+        // wizard does. A file has no source picker there and is sent as typed.
+        if (createMode) {
+          const isFile = envKey.startsWith('filesystem:')
+          const fieldSource = isFile ? SOURCES.MANUAL : source
+          return (
+            <SourcedInput
+              key={envKey}
+              label={field.label}
+              tooltip={field.description}
+              required={field.required}
+              placeholder={field.placeholder}
+              type={field.type}
+              minRows={field.minRows}
+              value={decodeForDisplay(staged?.value)}
+              onChange={(plain) =>
+                replaceSecret(envKey, encodeSecretForSource(plain, fieldSource))
+              }
+              source={fieldSource}
+              sources={isFile ? null : sourceOptionsFor(availableSources)}
+              onSourceChange={(nextSource) => setFieldSource(envKey, nextSource)}
+            />
+          )
+        }
 
         // Any value the backend round-tripped renders editable; empty
         // values (Manual secrets the gateway stripped) fall through to

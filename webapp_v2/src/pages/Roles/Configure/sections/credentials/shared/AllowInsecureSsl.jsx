@@ -5,7 +5,7 @@ import Switch from '@/components/Switch'
 import ToggleSection from '@/pages/Roles/Configure/components/ToggleSection'
 import InlineAction from '@/pages/Roles/Configure/components/SecretField/InlineAction'
 import { decodeSecretValue, encodeSecretValue } from '@/pages/Roles/Configure/utils/secretsCodec'
-import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
+import { useCredentialsStore } from '@/pages/Roles/Configure/sections/credentials/store'
 
 const ENV_KEY = 'envvar:INSECURE'
 const TITLE = 'Allow insecure SSL'
@@ -46,10 +46,10 @@ function MaskedRow({ left, action }) {
 // When the value IS readable — write-only off, or a brand-new connection —
 // it stays the ordinary ToggleSection.
 export default function AllowInsecureSsl({ connection }) {
-  const stagedSecrets = useConfigureRoleStore((s) => s.stagedSecrets)
-  const replaceSecret = useConfigureRoleStore((s) => s.replaceSecret)
-  const cancelSecretChange = useConfigureRoleStore((s) => s.cancelSecretChange)
-  const hideRoleInfo = useConfigureRoleStore((s) => s.hideRoleInfo)
+  const stagedSecrets = useCredentialsStore((s) => s.stagedSecrets)
+  const replaceSecret = useCredentialsStore((s) => s.replaceSecret)
+  const cancelSecretChange = useCredentialsStore((s) => s.cancelSecretChange)
+  const hideRoleInfo = useCredentialsStore((s) => s.hideRoleInfo)
   const [revealed, setRevealed] = useState(false)
 
   const staged = stagedSecrets[ENV_KEY]

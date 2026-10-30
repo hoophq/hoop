@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { identify as analyticsIdentify } from '@/services/analytics'
+import { identify as analyticsIdentify, track as analyticsTrack } from '@/services/analytics'
 import { authService } from '@/services/auth'
 import licenseService from '@/services/license'
 import { ROLE_ADMIN, ROLE_APPROVER, ROLE_STANDARD } from '@/utils/roles'
@@ -202,6 +202,13 @@ export const useUserStore = create((set, get) => ({
     if (!analyticsTracking) return
     analyticsIdentify(user, analyticsMode).catch((err) => {
       console.warn('[analytics] identify failed:', err)
+    })
+  },
+
+  trackEvent: (event, properties) => {
+    if (!get().analyticsTracking) return
+    analyticsTrack(event, properties).catch((err) => {
+      console.warn('[analytics] track failed:', err)
     })
   },
 }))

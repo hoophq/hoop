@@ -1,0 +1,33 @@
+{
+  "name": "pg-new-agent",
+  "type": "database",
+  "subtype": "postgres",
+  "agent_id": "140c2a87-5dee-544d-b738-63f6c1975167",
+  "env_vars": {},
+  "roles": [
+    {
+      "name": "pg-new-agent-ro",
+      "access_mode_runbooks": "enabled",
+      "command": [],
+      "type": "database",
+      "secret": {
+        "envvar:HOST": "ZGIyLmludGVybmFs",
+        "envvar:USER": "YXBw",
+        "envvar:PASS": "cA==",
+        "envvar:PORT": "NTQzMg==",
+        "envvar:DB": "YXBw"
+      },
+      "access_mode_connect": "enabled",
+      "redact_types": [],
+      "access_mode_exec": "enabled",
+      "redact_enabled": false,
+      "agent_id": "140c2a87-5dee-544d-b738-63f6c1975167",
+      "access_schema": "enabled",
+      "attributes": [
+        "hoop_protection_profile-protection_permissive"
+      ],
+      "reviewers": [],
+      "subtype": "postgres"
+    }
+  ]
+}

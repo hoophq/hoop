@@ -488,6 +488,8 @@ import SourcedInput from '@/components/SourcedInput'
 <SourcedInput size="sm" {...props} />
 ```
 Supports `type="text" | "password" | "textarea"` and `size="sm" | "md" | "lg"` (default `md`, the app-wide control default). Heights track the `--hoop-control-height-*` variables so a SourcedInput lines up with a TextInput of the same size on the same form. Textareas render the picker stacked above instead of inline — multi-line + horizontal picker doesn't read cleanly.
+`tooltip` adds a help icon next to the label that shows the text on hover (the resource setup wizard passes the catalog field description).
+The picker keeps the width of its longest option, so inputs line up. The label reads `--input-label-size` and its gap `--input-label-gap`, so a page that resizes Mantine labels resizes these too.
 
 ### `PasswordInput`
 Password / secret input with visibility toggle.
@@ -824,17 +826,26 @@ Reference implementation for a **multi-tab edit page with write-only secrets and
 
 When migrating a similar edit page, prefer extending this pattern over rolling a new state shape.
 
-> **`sections/AttributesSelect.jsx` (single consumer — graduation planned).**
-> Combobox+PillsInput attribute picker with mixed pill styles: Hoop-managed
-> protection-profile attributes render as indigo award pills (removable and
-> re-addable like any other — removing one detaches the role from the
-> profile on save), user attributes as plain pills. Deliberately NOT built on
-> `components/MultiSelect` (Mantine's MultiSelect can't custom-render
-> individual selected pills) nor on `components/PaginatedMultiSelect` (its
-> contract is pagination/server-search specific, and it also only renders
-> uniform pills). When the React resource-creation wizard needs the same
-> control, graduate this to `src/components/` and consider extracting a
-> shared PillsInput base with `PaginatedMultiSelect`.
+> **The credential renderers read `useCredentialsStore`**
+> (`sections/credentials/store.js`), not `useConfigureRoleStore`. With no
+> provider it is the Configure Role store. The resource setup wizard wraps each
+> role in `CredentialsStoreProvider` with a store of its own
+> (`pages/Resources/Setup/roleCredentials.js`); `createMode: true` there makes
+> `PredefinedFields` render every field as a new, masked input. The secret
+> actions both stores share are `utils/credentialsSlice.js`.
+
+### `AttributesSelect`
+Role attributes picker (Configure Role, resource setup wizard). Hoop-managed
+protection-profile attributes (`managed: true`) render as indigo award pills,
+removable and re-addable like any other; user attributes as plain pills.
+`onCreate(name)` adds a "Create" option for a search that matches nothing.
+```jsx
+import AttributesSelect from '@/components/AttributesSelect'
+
+<AttributesSelect options={options} value={selected} onChange={setSelected} onCreate={createAttribute} />
+```
+Not built on `MultiSelect` (it cannot render one pill differently) nor on
+`PaginatedMultiSelect` (its contract is server search and paging).
 
 ### Settings `SectionRow`
 Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
@@ -988,7 +999,7 @@ Non-obvious notes only:
 
 - `api.js` — the base Axios instance (Bearer-token interceptor + 401 → saved
   URL + logout). Every other service imports it; never call axios directly.
-- `analytics.js` — Segment (`identify()` only today), not a gateway API
+- `analytics.js` — Segment, not a gateway API: `identify()` and `track(event, props)`. Send events through `useUserStore.trackEvent`, which checks `analytics_tracking`; names live in `EVENTS`
   wrapper; the write key is a build-time define (see the env table in
   `README.md`).
 - `accessRequests.js` — `/access-requests/rules`. `list()` deliberately sends no

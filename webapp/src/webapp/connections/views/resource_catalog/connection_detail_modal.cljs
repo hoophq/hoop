@@ -19,7 +19,8 @@
       (if setup-config
         (helpers/dispatch-setup-navigation
          setup-config
-         (helpers/is-onboarding-context?))
+         (helpers/is-onboarding-context?)
+         (:id connection))
         (js/console.warn "No setup mapping found for connection:" (:id connection))))))
 
 (defn modal-overview-tab [overview setupGuide]
