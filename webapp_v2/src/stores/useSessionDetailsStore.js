@@ -6,7 +6,7 @@ import { runbooksService } from '@/services/runbooks'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { showSnackbar } from '@/utils/snackbar'
 import { localTimeToUtc } from '@/utils/datetime'
-import { recordingFormat } from '@/features/SessionDetails/decoders/sessionFormat'
+import { outputViewer } from '@/features/SessionDetails/decoders/sessionFormat'
 
 // Above this, GET /sessions/:id does not expand the stream or the input.
 export const LARGE_PAYLOAD_BYTES = 4 * 1024 * 1024
@@ -162,8 +162,8 @@ export const useSessionDetailsStore = create((set, get) => ({
       const largeInput = (base.script_size ?? 0) > LARGE_PAYLOAD_BYTES
       let session = base
       if (!(largeOutput && largeInput)) {
-        // A finished RDP session replays from /rdp-frames: its stream is never shown.
-        const rdpReplay = base.verb === 'connect' && base.status !== 'open' && recordingFormat(base) === 'rdp'
+        // The RDP player reads /rdp-frames, open session or not (P2): it never shows the stream.
+        const rdpReplay = outputViewer(base) === 'rdp'
         const skipStream = largeOutput || rdpReplay
         const expand = [!skipStream && 'event_stream', !largeInput && 'session_input'].filter(Boolean)
         const encoding = skipStream ? null : streamEncoding(base)

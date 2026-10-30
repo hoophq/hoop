@@ -1,3 +1,5 @@
+import { ROLE_ADMIN, ROLE_AUDITOR } from '@/utils/roles'
+
 // Decisions about a session that more than one section reads.
 
 export const hasReview = (session) => Boolean(session?.review?.id)
@@ -47,11 +49,11 @@ export const HIDDEN_METADATA_KEYS = new Set([
 ])
 
 // The gateway serves a session file to its owner, an admin or an auditor
-// (session.go); NB01's input Download shows only to them. The web app cannot
-// name the auditor group (AUDITOR_USERNAME), so an auditor does not see it.
-// The large-input card keeps the ClojureScript rule (InputTab).
-export function canDownloadInput(session, { user, isAdmin } = {}) {
-  return Boolean(isAdmin) || (Boolean(session?.user_id) && session.user_id === user?.id)
+// (session.go); NB01's input Download shows only to them, by the /userinfo
+// role. The large-input card keeps the ClojureScript rule (InputTab).
+export function canDownloadInput(session, { user, role } = {}) {
+  if (role === ROLE_ADMIN || role === ROLE_AUDITOR) return true
+  return Boolean(session?.user_id) && session.user_id === user?.id
 }
 
 // The badge of a review or of one of its groups. A review that runs

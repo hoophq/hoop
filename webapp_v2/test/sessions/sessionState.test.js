@@ -95,12 +95,13 @@ describe('review badge (E1)', () => {
 
 describe('input download (NB01)', () => {
   const session = { user_id: 'owner-1' }
-  it('shows to the owner and to an admin', () => {
-    expect(canDownloadInput(session, { user: { id: 'owner-1' } })).toBe(true)
-    expect(canDownloadInput(session, { user: { id: 'admin-1' }, isAdmin: true })).toBe(true)
+  it('shows to the owner, an admin and an auditor', () => {
+    expect(canDownloadInput(session, { user: { id: 'owner-1' }, role: 'standard' })).toBe(true)
+    expect(canDownloadInput(session, { user: { id: 'admin-1' }, role: 'admin' })).toBe(true)
+    expect(canDownloadInput(session, { user: { id: 'auditor-1' }, role: 'auditor' })).toBe(true)
   })
   it('hides from an approver the gateway refuses', () => {
-    expect(canDownloadInput(session, { user: { id: 'approver-1' } })).toBe(false)
-    expect(canDownloadInput({ user_id: '' }, { user: { id: '' } })).toBe(false)
+    expect(canDownloadInput(session, { user: { id: 'approver-1' }, role: 'approver' })).toBe(false)
+    expect(canDownloadInput({ user_id: '' }, { user: { id: '' }, role: 'standard' })).toBe(false)
   })
 })
