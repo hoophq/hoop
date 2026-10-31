@@ -23,6 +23,11 @@ const (
 	// identity so the auth interceptor can load the MI without an extra
 	// DB round-trip through a credential-session row.
 	MachineIdentityOrgIDHeaderKey = "machine-identity-org-id"
+
+	// ServiceIdentityFlagHeaderKey marks credentials issued to API keys or AI agents.
+	ServiceIdentityFlagHeaderKey = "is-service-identity-credential"
+	// ServiceIdentityOrgIDHeaderKey scopes service identity lookup to its organization.
+	ServiceIdentityOrgIDHeaderKey = "service-identity-org-id"
 )
 
 func generateSecureRandomKeyOrDie() string {
