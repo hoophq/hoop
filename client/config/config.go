@@ -55,17 +55,23 @@ func NewConfigFile(apiURL, grpcURL, token, tlsCA string) (string, error) {
 
 // Remove the configuration file if it exists
 func Remove() error {
-	filepath, _, _ := clientconfig.NewPath(clientconfig.ClientFile)
-	if filepath != "" {
-		return os.Remove(filepath)
+	filepath, _, err := clientconfig.NewPath(clientconfig.ClientFile)
+	if err != nil {
+		return err
+	}
+	if filepath == "" {
+		return nil
+	}
+	if err := os.Remove(filepath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }
 
-// Load builds an client config file in the following order.
-// load the configuration based on environment variables  (HOOP_GRPCURL, HOOP_APIURL & HOOP_TOKEN)
-// load based in the configuration file $HOME/.hoop/client.toml.
-// load a configuration file if localhost grpc port has connectivity.
+// Load builds a client config in the following order.
+// Environment variables HOOP_GRPCURL, HOOP_APIURL and HOOP_TOKEN.
+// The file HOOP_CONFIG, or $HOME/.hoop/config.toml when HOOP_CONFIG is unset.
+// Localhost, when the local gRPC port accepts a connection.
 func Load() (*Config, error) {
 	// TODO: if env is set, use it
 	grpcURL := os.Getenv("HOOP_GRPCURL")
@@ -92,8 +98,46 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	data, err := os.ReadFile(filepath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("failed reading configuration file=%v, err=%v", filepath, err)
+	}
+	if err != nil {
+		data = nil
+	}
+	profiles, err := clientconfig.ParseProfileFile(data)
+	if err != nil && clientconfig.HasProfileHeader(data) {
+		return nil, fmt.Errorf("failed decoding configuration file=%v, err=%v", filepath, err)
+	}
+	if profiles.HasProfiles() {
+		active, err := profiles.Active()
+		if err != nil {
+			return nil, err
+		}
+		if active.APIURL == "" {
+			return nil, fmt.Errorf("profile %q has no api_url", active.Name)
+		}
+		conf := &Config{
+			Token:         active.Token,
+			ApiURL:        active.APIURL,
+			GrpcURL:       active.GrpcURL,
+			TlsCAB64Enc:   active.TLSCA,
+			SkipTLSVerify: active.SkipTLSVerify,
+			Mode:          clientconfig.ModeConfigFile,
+			HoopHomeDir:   hoopHomeDir,
+			filepath:      filepath,
+		}
+		if conf.TlsCAB64Enc == "" {
+			conf.TlsCAB64Enc = base64.StdEncoding.EncodeToString([]byte(tlsCA))
+		}
+		conf.InsecureGRPC = hasInsecureScheme(conf.GrpcURL)
+		if skipTLSVerify != "" {
+			conf.SkipTLSVerify = skipTLSVerify == "true"
+		}
+		return conf, nil
+	}
 	var conf Config
-	if _, err := toml.DecodeFile(filepath, &conf); err != nil {
+	if _, err := toml.Decode(string(data), &conf); err != nil {
 		return nil, fmt.Errorf("failed decoding configuration file=%v, err=%v", filepath, err)
 	}
 	conf.HoopHomeDir = hoopHomeDir
@@ -140,6 +184,9 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 	}, err
 }
 
+// Path returns the file this config was loaded from.
+func (c *Config) Path() string { return c.filepath }
+
 func (c *Config) isEmpty() bool  { return c.GrpcURL == "" && c.ApiURL == "" }
 func (c *Config) IsValid() bool  { return c.ApiURL != "" }
 func (c *Config) HasToken() bool { return c.Mode == clientconfig.ModeLocal || c.Token != "" }
@@ -167,6 +214,19 @@ func (c *Config) Save() (bool, error) {
 		return false, nil
 	}
 	debugTokenClaims(c.Token)
+	err := clientconfig.UpdateActiveProfile(c.filepath, clientconfig.Profile{
+		Token:         c.Token,
+		APIURL:        c.ApiURL,
+		GrpcURL:       c.GrpcURL,
+		TLSCA:         c.TlsCAB64Enc,
+		SkipTLSVerify: c.SkipTLSVerify,
+	})
+	if err == nil {
+		return true, nil
+	}
+	if !clientconfig.IsNotProfiles(err) && !os.IsNotExist(err) {
+		return false, err
+	}
 	confBuffer := bytes.NewBuffer([]byte{})
 	if err := toml.NewEncoder(confBuffer).Encode(c); err != nil {
 		return false, fmt.Errorf("failed saving config to %s, encode-err=%v", c.filepath, err)
