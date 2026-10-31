@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"github.com/hoophq/libhoop"
+	"os"
+	"os/exec"
 	"strings"
+
+	"github.com/hoophq/libhoop"
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -93,4 +96,40 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 	// write the first packet when establishing the connection
 	_, _ = serverWriter.Write(pkt.Payload)
 	a.connStore.Set(clientConnectionIDKey, serverWriter)
+}
+
+// legacyMongoShell is the shell the gateway forces for its MongoDB schema
+// queries (gateway/api/connections, getConnectionCommandOverride).
+const legacyMongoShell = "/usr/local/bin/mongo"
+
+// legacyMongoShellExists is a var so tests do not depend on the host.
+var legacyMongoShellExists = func() bool {
+	_, err := os.Stat(legacyMongoShell)
+	return err == nil
+}
+
+// mongoExecArgs runs the gateway MongoDB schema queries with mongosh when the
+// agent has no legacy shell. Images without the SSPL 5.0 shell (agent-tools
+// clean train, tarball installs) ship only mongosh. mongosh reads the script as
+// a file: from stdin it runs a REPL and prints its prompt into the output.
+func mongoExecArgs(connParams *pb.AgentConnectionParams, args []string) []string {
+	if connParams.ConnectionType != string(pb.ConnectionTypeMongoDB) ||
+		connParams.ClientVerb != pb.ClientVerbPlainExec ||
+		len(args) == 0 || args[0] != legacyMongoShell {
+		return args
+	}
+	if legacyMongoShellExists() {
+		return args
+	}
+	mongosh, err := exec.LookPath("mongosh")
+	if err != nil {
+		// keep the legacy shell, the exec fails with the missing file error
+		return args
+	}
+	return mongoshArgs(mongosh, args)
+}
+
+func mongoshArgs(mongosh string, args []string) []string {
+	out := append([]string{mongosh}, args[1:]...)
+	return append(out, "--file", "/dev/stdin")
 }
