@@ -73,6 +73,11 @@ type ICARuntimeConfig struct {
 	// MaxSessions bounds concurrent ICA sessions across every ica lane.
 	// Default 32, 1..4096.
 	MaxSessions int `json:"max_sessions,omitempty"`
+	// Capacity readiness is opt-in; validate LB behavior before enabling.
+	ReadinessCapacity bool `json:"readiness_capacity,omitempty" cap:"ica_readiness_capacity"`
+	ReadinessHeadroom int  `json:"readiness_headroom,omitempty" cap:"ica_readiness_headroom"`
+	// DrainTimeoutSec bounds graceful lane close, default 30, maximum 3600.
+	DrainTimeoutSec int `json:"drain_timeout_sec,omitempty" cap:"ica_drain_timeout"`
 	// ConnectTimeoutSec bounds the VDA dial. Default 10, 1..60.
 	ConnectTimeoutSec int `json:"connect_timeout_sec,omitempty"`
 	// FailureDiagnosticDir enables the engine's metadata-only failure files
@@ -157,6 +162,16 @@ func (r *ICARuntimeConfig) validate(onHost bool, listeners []ListenerConfig) []s
 	where := "ica"
 	if r.MaxSessions != 0 && (r.MaxSessions < 1 || r.MaxSessions > 4096) {
 		problems = append(problems, where+": max_sessions must be 1..4096")
+	}
+	maxSessions := r.MaxSessions
+	if maxSessions == 0 {
+		maxSessions = 32
+	}
+	if r.ReadinessHeadroom < 0 || r.ReadinessHeadroom >= maxSessions || (!r.ReadinessCapacity && r.ReadinessHeadroom != 0) {
+		problems = append(problems, "ica.readiness_headroom requires capacity readiness and must be less than max_sessions")
+	}
+	if r.DrainTimeoutSec < 0 || r.DrainTimeoutSec > 3600 {
+		problems = append(problems, "ica.drain_timeout_sec must be 0..3600")
 	}
 	if r.ConnectTimeoutSec != 0 && (r.ConnectTimeoutSec < 1 || r.ConnectTimeoutSec > 60) {
 		problems = append(problems, where+": connect_timeout_sec must be 1..60")
@@ -248,6 +263,9 @@ type ICAConfig struct {
 	// list from transparent.source_cidrs instead and refuses this one.
 	SourceCIDRs []string `json:"source_cidrs,omitempty" cap:"ica_source_cidrs" label:"Source CIDRs" placeholder:"10.20.1.10/32" help:"Single mode: networks allowed to connect, such as the Citrix Gateway SNIP. Empty admits any source."`
 
+	// Slots selects unprivileged TCP slot routing; upstream and transparent must be empty.
+	Slots *ICASlotsConfig `json:"slots,omitempty" cap:"ica_slots" ui:"-"`
+
 	// Display pins the framebuffer geometry and ThinWire channel for every
 	// session. With no block, the engine's defaults apply (1264x1040,
 	// channel 9).
@@ -258,6 +276,19 @@ type ICAConfig struct {
 	// experimental. A client that cannot reach the UDP port falls back to
 	// TCP.
 	EDT bool `json:"edt,omitempty" cap:"ica_edt" label:"EDT (experimental)" help:"Also accept Citrix EDT over UDP on the same address and port. Experimental; clients fall back to TCP."`
+}
+
+// ICASlotsConfig maps consecutive listener ports to VDA names. Use either a
+// pattern (one %d or %03d) or an explicit names list. DNS is resolved per
+// connection with a 2-second timeout and a cache of at most 30 seconds.
+type ICASlotsConfig struct {
+	FirstPort       int      `json:"first_port,omitempty"`
+	Count           int      `json:"count,omitempty"`
+	UpstreamPattern string   `json:"upstream_pattern,omitempty"`
+	Names           []string `json:"names,omitempty"`
+	UpstreamPort    int      `json:"upstream_port,omitempty"`
+	UpstreamCIDRs   []string `json:"upstream_cidrs,omitempty"`
+	FrontendCIDR    string   `json:"frontend_cidr,omitempty"`
 }
 
 // ICATransparentConfig is CIDR mode's admission policy.
@@ -331,6 +362,11 @@ func (c *ICAConfig) validate(lc ListenerConfig, name string) []string {
 		problems = append(problems, name+": ica.tenant_id is required and at most 128 characters")
 	}
 	switch {
+	case c.Slots != nil:
+		if c.Transparent != nil || lc.Upstream != "" || c.EDT || lc.Network == "unix" {
+			problems = append(problems, name+": slots require TCP and refuse upstream, transparent and EDT")
+		}
+		problems = append(problems, c.Slots.validate(lc, c.SourceCIDRs, name)...)
 	case c.Transparent != nil && lc.Upstream != "":
 		problems = append(problems, name+": upstream and ica.transparent are two modes; keep one: a fixed VDA, or the VDA each connection was destined to")
 	case c.Transparent == nil && lc.Upstream == "":
@@ -425,6 +461,7 @@ type ICALane struct {
 	// mode, Upstream is the configured VDA (host:port; the engine resolves a
 	// hostname once, at start) and SourcePrefixes is ica.source_cidrs, which
 	// when empty admits any source.
+	Slots            *ICASlotsConfig
 	Transparent      bool
 	Upstream         string
 	SourcePrefixes   []netip.Prefix
@@ -448,6 +485,8 @@ type ICARuntime struct {
 	OCRWorker, Tessdata, NERModel, NERORTLibrary string
 	FailureDiagnosticDir                         string
 	MaxSessions, ConnectTimeoutSec               int
+	ReadinessCapacity                            bool
+	ReadinessHeadroom, DrainTimeoutSec           int
 	Options                                      ICAOptions
 	// EDTRetentionSec and EDTReplayBudgetBytes are 0 for the engine's
 	// defaults.
@@ -564,7 +603,7 @@ func icaRuntimeFor(cfg *Config) ICARuntime {
 		return ICARuntime{}
 	}
 	out := ICARuntime{OCRWorker: r.OCRWorker, Tessdata: r.Tessdata, NERModel: r.NERModel, NERORTLibrary: r.NERORTLibrary,
-		FailureDiagnosticDir: r.FailureDiagnosticDir, MaxSessions: r.MaxSessions, ConnectTimeoutSec: r.ConnectTimeoutSec}
+		FailureDiagnosticDir: r.FailureDiagnosticDir, MaxSessions: r.MaxSessions, ConnectTimeoutSec: r.ConnectTimeoutSec, ReadinessCapacity: r.ReadinessCapacity, ReadinessHeadroom: r.ReadinessHeadroom, DrainTimeoutSec: r.DrainTimeoutSec}
 	if r.Options != nil {
 		out.Options = *r.Options
 	}
@@ -584,6 +623,12 @@ func resolveICALane(lc ListenerConfig, name string, events func(ICAEvent) error,
 		EDT: ic.EDT, Events: events, Log: log}
 	if ic.Display != nil {
 		lane.Width, lane.Height, lane.ThinwireChannel = ic.Display.Width, ic.Display.Height, uint(ic.Display.ThinwireChannel)
+	}
+	if ic.Slots != nil {
+		c := *ic.Slots
+		c.Names = slices.Clone(c.Names)
+		c.UpstreamCIDRs = slices.Clone(c.UpstreamCIDRs)
+		lane.Slots = &c
 	}
 	if ic.Transparent == nil {
 		lane.Upstream = lc.Upstream
@@ -640,7 +685,9 @@ func icaLaneNotes(lc ListenerConfig) []string {
 		return nil
 	}
 	var notes []string
-	if ic.Transparent == nil {
+	if ic.Slots != nil {
+		notes = append(notes, fmt.Sprintf("ica: TCP slot mode; ports %d..%d, VDA names resolved on connection, DNS cache at most 30s", ic.Slots.FirstPort, ic.Slots.FirstPort+ic.Slots.Count-1))
+	} else if ic.Transparent == nil {
 		notes = append(notes, fmt.Sprintf("ica: single-VDA mode; every session goes to %s, and the engine resolves that name once at start", lc.Upstream))
 	} else {
 		notes = append(notes, fmt.Sprintf("ica: CIDR mode; the VDA is each connection's original destination within %s on ports %s, admitted from %s",
@@ -797,7 +844,7 @@ func (b *icaAuditBridge) event(kind audit.Kind, e ICAEvent) *audit.Event {
 	// suppressed and dropped ride on EDT refusals: how many datagrams the
 	// engine folded into this row, and how many refusal rows it could not
 	// queue.
-	for _, key := range []string{"decision", "stage", "transport", "upstream", "end_cause", "suppressed", "dropped"} {
+	for _, key := range []string{"decision", "stage", "transport", "upstream", "slot", "upstream_name", "end_cause", "suppressed", "dropped"} {
 		if v, ok := e.Data[key]; ok {
 			out.Metadata[key] = fmt.Sprint(v)
 		}

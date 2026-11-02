@@ -258,11 +258,16 @@ existingSecret: ''
 # Secret change: after rotating a key in it, change `configRevision` (above)
 # to roll the pods.
 
-# -- Readiness and liveness probes against the admin server's /healthz on
-# 19000. The port is not configurable: it is written into the Deployment, the
-# Service and both probes as a literal, and a config that puts admin anywhere
-# else is refused at render.
+# -- Admin probes on port 19000. Defaults remain /healthz. ICA deployments
+# should set readinessPath and startupPath to /readyz so model loading finishes
+# before traffic is admitted. Liveness stays /healthz; startup is opt-in.
 probe: {}
+  # readinessPath: /readyz
+  # livenessPath: /healthz
+  # startupPath: /readyz
+  # startupFailureThreshold: 180
+  # startupPeriodSeconds: 5
+  # timeoutSeconds: 2
   # initialDelaySeconds: 5
   # periodSeconds: 10
 
@@ -412,3 +417,13 @@ serviceAccount:
   name: ''
   # Annotations to add to the service account
   annotations: {}
+
+# -- Optional pod/container hardening. Empty contexts preserve image defaults.
+podSecurityContext: {}
+containerSecurityContext: {}
+automountServiceAccountToken: true
+terminationGracePeriodSeconds: 30
+
+# Optional informational lane ports, e.g. generated TCP slot ports.
+# Services and the application config must match; declaring a port does not bind it.
+extraContainerPorts: []

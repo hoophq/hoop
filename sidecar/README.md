@@ -5409,3 +5409,11 @@ because `e2e/` is deliberately not a `go.work` member:
 Each codec runs a split-read matrix: the tests feed the same message in two
 chunks at every possible boundary, then assert that a fragment emits no
 statement and that reassembly loses none.
+
+### ICA cell slots (TCP)
+
+The optional listener `ica.slots` block maps consecutive unprivileged ports to VDA hostnames, using one shared OCR/NER runtime. See [config.slots.yaml](../deploy/ica-sidecar/examples/config.slots.yaml). Use one `%d`/`%03d` hostname pattern or an explicit `names` list, plus destination/frontend CIDRs; Gateway sources are mandatory. Fixed `upstream`, transparent mode and EDT are mutually exclusive with slots. Names resolve on connection with a 2-second timeout and at most a 30-second application cache, then the engine validates and dials a literal allowed address. Audits include slot, upstream_name and upstream.
+
+`ica.readiness_capacity` is off by default. With it enabled, `ica.readiness_headroom` reserves capacity in the readiness signal; hard admission still checks max_sessions across all ICA lanes. Verify established connections survive Azure/Kubernetes readiness changes before using this as an LB capacity signal. `ica.drain_timeout_sec` controls Close/signal draining (default 30, maximum 3600); Kubernetes termination grace must be longer. No cross-pod session migration is provided.
+
+The adapter pins the published **libhoop-ica v0.8.0** cell API; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.
