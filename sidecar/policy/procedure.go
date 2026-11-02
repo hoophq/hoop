@@ -58,13 +58,17 @@ func (r Rule) matchesProcedure(stmt inspect.Statement) (matched, ok bool) {
 	if stmt.Direction == inspect.FromServer {
 		return false, true
 	}
-	called := procedureParts(inspect.ProcedureOf(stmt))
-	if len(called) == 0 {
-		return false, true
-	}
-	for _, want := range r.procedures {
-		if trailingParts(called, want) {
-			return true, true
+	// Every procedure the statement calls: a batch runs them all, so a rule
+	// naming any one of them has a say.
+	for _, name := range inspect.ProceduresOf(stmt) {
+		called := procedureParts(name)
+		if len(called) == 0 {
+			continue
+		}
+		for _, want := range r.procedures {
+			if trailingParts(called, want) {
+				return true, true
+			}
 		}
 	}
 	return false, true
@@ -133,8 +137,18 @@ func procedureParts(name string) []string {
 }
 
 // procedureValue is what a deferring procedure rule reports: the normalized
-// name the rule matched, so a policy reads one spelling whatever the client
-// sent.
-func procedureValue(stmt inspect.Statement) string {
-	return strings.Join(procedureParts(inspect.ProcedureOf(stmt)), ".")
+// name of the first configured procedure the statement calls, so a policy
+// reads one spelling whatever the client sent. A statement calling several
+// is reported by the one the rule was written for; the others are in the
+// statement text.
+func (r Rule) procedureValue(stmt inspect.Statement) string {
+	for _, name := range inspect.ProceduresOf(stmt) {
+		called := procedureParts(name)
+		for _, want := range r.procedures {
+			if trailingParts(called, want) {
+				return strings.Join(called, ".")
+			}
+		}
+	}
+	return ""
 }

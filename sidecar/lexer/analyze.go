@@ -56,11 +56,14 @@ type Analysis struct {
 	// Reason names what defeated the scan. Empty when Complete.
 	Reason string
 
-	// Callee is the procedure a leading EXEC, EXECUTE or CALL names, as the
-	// client wrote it: delimiters and schema parts kept, so a policy
-	// normalizes one spelling. Empty when the statement opens with another
-	// verb or names no procedure (`EXEC ('...')`, `EXECUTE IMMEDIATE`).
-	Callee string
+	// Callees are the procedures every top-level EXEC, EXECUTE or CALL in
+	// the statement names, in order, as the client wrote them: delimiters
+	// and schema parts kept, so a policy normalizes one spelling. A call
+	// that names no procedure (`EXEC ('...')`, `EXECUTE IMMEDIATE`) adds
+	// nothing. Top-level because `SET NOCOUNT ON; EXEC p` runs p as surely
+	// as `EXEC p` does, while a CALL inside a block or a subquery is the
+	// block's business and the block is already unreadable.
+	Callees []string
 }
 
 // Severity returns the most consequential effect, for a caller that needs one
@@ -179,9 +182,9 @@ type analyzer struct {
 
 	incomplete string
 
-	// callee is the name a leading EXEC, EXECUTE or CALL named; see
-	// Analysis.Callee.
-	callee string
+	// callees are the names every top-level EXEC, EXECUTE or CALL named;
+	// see Analysis.Callees.
+	callees []string
 }
 
 // Analyze reports what one SQL statement does.
@@ -352,6 +355,11 @@ func mergeAnalyses(primary, alt Analysis) Analysis {
 			// Write dominates: a relation read under one reading and
 			// written under the other is written.
 			out.Relations[i].Access = Write
+		}
+	}
+	for _, c := range alt.Callees {
+		if !slices.Contains(out.Callees, c) {
+			out.Callees = append(out.Callees, c)
 		}
 	}
 	return out
@@ -755,13 +763,15 @@ func (a *analyzer) head(t Token, i int) bool {
 		a.fail(why)
 	}
 
-	// Only the statement's own head: `SET NOCOUNT ON; EXEC p` opens with
-	// SET, and a CALL inside a block or a subquery is not what the client
-	// asked to run.
-	if verb == Call && len(a.effects) == 0 && !a.explainSeen && a.top().kind == regTop {
+	// Every top-level call in the statement. `SET NOCOUNT ON; EXEC p` runs
+	// p; a CALL inside a block or a subquery is not what the client asked
+	// to run, and EXPLAIN plans without running.
+	if verb == Call && !a.explainSeen && a.top().kind == regTop {
 		switch t.Text {
 		case "exec", "execute", "call":
-			a.callee = a.calleeAt(i + 1)
+			if name := a.calleeAt(i + 1); name != "" {
+				a.callees = append(a.callees, name)
+			}
 		}
 	}
 
@@ -1528,7 +1538,7 @@ func (a *analyzer) result() Analysis {
 		Relations: a.rels,
 		Complete:  a.incomplete == "",
 		Reason:    a.incomplete,
-		Callee:    a.callee,
+		Callees:   a.callees,
 	}
 }
 

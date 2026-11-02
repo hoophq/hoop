@@ -1,15 +1,16 @@
 package inspect_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
-// ProcedureOf reads the name the codec recorded before it reads the text:
+// ProceduresOf reads the name the codec recorded before it reads the text:
 // a TDS RPCRequest names its procedure outside the SQL, and the text is a
-// rendering. Without metadata the lexer reads the leading EXEC or CALL.
-func TestProcedureOf(t *testing.T) {
+// rendering. Without metadata the lexer reads every top-level EXEC or CALL.
+func TestProceduresOf(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		stmt inspect.Statement
@@ -24,6 +25,10 @@ func TestProcedureOf(t *testing.T) {
 			Protocol: inspect.MSSQL, Direction: inspect.FromClient,
 			Text: "exec dbo.get_secrets", Operation: inspect.OpUnknown,
 		}, "dbo.get_secrets"},
+		{"batch with a call behind SET", inspect.Statement{
+			Protocol: inspect.MSSQL, Direction: inspect.FromClient,
+			Text: "SET NOCOUNT ON; EXEC dbo.get_secrets; EXEC dbo.audit_touch", Operation: inspect.OpUnknown,
+		}, "dbo.get_secrets,dbo.audit_touch"},
 		{"postgres call", inspect.Statement{
 			Protocol: inspect.Postgres, Direction: inspect.FromClient,
 			Text: "CALL purge()", Operation: inspect.OpUnknown,
@@ -49,8 +54,8 @@ func TestProcedureOf(t *testing.T) {
 			Text: "exec dbo.get_secrets", Operation: inspect.OpUnknown,
 		}, ""},
 	} {
-		if got := inspect.ProcedureOf(tc.stmt); got != tc.want {
-			t.Errorf("%s: ProcedureOf = %q, want %q", tc.name, got, tc.want)
+		if got := strings.Join(inspect.ProceduresOf(tc.stmt), ","); got != tc.want {
+			t.Errorf("%s: ProceduresOf = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }

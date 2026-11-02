@@ -104,26 +104,27 @@ func sqlDialect(proto Protocol) (d lexer.Dialect, ok bool) {
 // the procedure a TDS RPCRequest named, as the client sent it.
 const MetadataMSSQLProc = "mssql.proc"
 
-// ProcedureOf returns the stored procedure a client statement calls, as the
-// client named it, or "" when it calls none.
+// ProceduresOf returns the stored procedures a client statement calls, as
+// the client named them, or nil when it calls none.
 //
 // A TDS RPCRequest carries the name outside the text, under
 // Metadata["mssql.proc"], and that wins: its text is a rendering. Otherwise
-// the lexer reads the name off a leading EXEC, EXECUTE or CALL. A response
-// calls nothing. The name is not normalized; policy folds `[dbo].[x]`,
-// dbo.x and DBO.X into one.
-func ProcedureOf(stmt Statement) string {
+// the lexer reads every top-level EXEC, EXECUTE or CALL in the text, so a
+// batch `SET NOCOUNT ON; EXEC a; EXEC b` names both. A response calls
+// nothing. The names are not normalized; policy folds `[dbo].[x]`, dbo.x
+// and DBO.X into one.
+func ProceduresOf(stmt Statement) []string {
 	if p := stmt.Metadata[MetadataMSSQLProc]; p != "" {
-		return p
+		return []string{p}
 	}
 	if stmt.Direction == FromServer || stmt.Text == "" {
-		return ""
+		return nil
 	}
 	d, ok := sqlDialect(stmt.Protocol)
 	if !ok {
-		return ""
+		return nil
 	}
-	return lexer.Analyze(stmt.Text, d).Callee
+	return lexer.Analyze(stmt.Text, d).Callees
 }
 
 // AnalyzeSQLIn classifies a statement under an explicit lexical dialect, for

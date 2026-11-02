@@ -77,8 +77,9 @@ func TestProcedureMatchesAcrossSpellings(t *testing.T) {
 	}
 }
 
-// A batch names the procedure in its text only; the lexer reads it there,
-// under the lane's dialect.
+// A batch names the procedure in its text only; the lexer reads every
+// top-level call there, under the lane's dialect. `SET NOCOUNT ON; EXEC p`
+// runs p, so it matches: sqlcmd and most drivers prefix a batch with SET.
 func TestProcedureMatchesABatchByItsText(t *testing.T) {
 	rules := procedureRule("get_secrets", "purge")
 	for _, tc := range []struct {
@@ -91,7 +92,8 @@ func TestProcedureMatchesABatchByItsText(t *testing.T) {
 		{batch(inspect.Postgres, "CALL purge()"), true},
 		{batch(inspect.MySQL, "CALL `app`.`purge`(1)"), true},
 		{batch(inspect.Postgres, "SELECT purge()"), false},
-		{batch(inspect.MSSQL, "SET NOCOUNT ON; EXEC dbo.get_secrets"), false},
+		{batch(inspect.MSSQL, "SET NOCOUNT ON; EXEC dbo.get_secrets"), true},
+		{batch(inspect.MSSQL, "EXEC dbo.get_customers; EXEC dbo.get_secrets"), true},
 	} {
 		if got := rules.Evaluate(tc.stmt).Denied; got != tc.want {
 			t.Errorf("%s: denied=%v, want %v", tc.stmt.Text, got, tc.want)

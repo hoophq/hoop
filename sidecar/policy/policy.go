@@ -979,7 +979,7 @@ func (r Rule) findingValues(stmt inspect.Statement) map[string]any {
 		// The normalized name, not the client's spelling: a policy
 		// compares against one form, and the raw name is already in
 		// input.statement or input.metadata.
-		return map[string]any{"procedure": procedureValue(stmt)}
+		return map[string]any{"procedure": r.procedureValue(stmt)}
 	}
 	return nil
 }
