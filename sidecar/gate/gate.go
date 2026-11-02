@@ -1455,7 +1455,20 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 	}
 
 	d.Payload = out
+	g.recordDeclined(ctx, res)
 	g.recordMasked(ctx, d, entities, res.Cells)
+}
+
+// recordDeclined writes the one record a codec produces when it stops
+// rewriting for the rest of the connection. Values keep travelling after
+// it, unmasked, and the client sees nothing different: this row is the only
+// place the gap shows.
+func (g *Gate) recordDeclined(ctx context.Context, res inspect.ReframeResult) {
+	if res.Declined == "" {
+		return
+	}
+	g.writeAudit(ctx, audit.ActivityEvent(g.session(), "masking_declined",
+		map[string]string{"reason": res.Declined}))
 }
 
 // recordMasked counts and audits the cells the codec masked in bytes that

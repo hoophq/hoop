@@ -2755,7 +2755,7 @@ ABI.md.
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | `RowDescription` ('T'), `DataRow` ('D'), and the three terminators that end a result set | yes |
 | `mysql` | `COM_QUERY` (0x03), `COM_STMT_PREPARE` (0x16) and the prepared-statement commands (0x17, 0x19, 0x1a, 0x1c); handshake read for the negotiated capabilities, not skipped | column definitions and both row encodings, text and binary, for masking; the terminator that ends a result set | yes |
 | `mongodb` | `OP_MSG` commands and the legacy `OP_QUERY` hello; document-sequence sections are reassembled into the command | cursor `firstBatch`/`nextBatch`, `findAndModify.value`, distinct values and inline map-reduce results for masking | yes |
-| `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
+| `mssql` | `SQLBatch` (0x01), every call in an `RPCRequest` (0x03) with prepared handles resolved to their text, and a readable `LOGIN7` (0x10); all reassembled across packets | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2), `RETURNVALUE` (0xAC) for masking; login replies scanned for a routing redirect and the feature acknowledgements; prepare replies read for the handle | yes, both directions on one codec |
 | `oracle` | Plaintext TCP Oracle Net (TNS/TTC) SQL calls from thin and OCI (thick) clients; negotiated TTC request layouts and cursor re-execution | Verified result-set columns and rows for character-value masking | yes |
 | `http` | HTTP/1.x requests; HTTP/2 streams, each bridged into one HTTP/1.1 request | HTTP/1.x responses | no |
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
@@ -3606,6 +3606,45 @@ leaving no trace that it stopped being watched. The codec returns
 the connection ends with a message naming the redirect target. No rule enables
 this behaviour and none can switch it off.
 
+**Every procedure call is a statement.** An `RPCRequest` is how a driver
+calls a procedure by name (`callproc`, `EXEC` from an ORM) and how .NET and
+JDBC send every parameterized query: `sp_executesql` with the statement as
+a parameter, `sp_prepexec`/`sp_prepare` for a prepared one, the `sp_cursor*`
+family for a server cursor. A call to one of those yields the statement it
+carries, whether the client named the proc by its well-known id or by name
+in any spelling (`sys.sp_executesql`, `[sp_executesql]`), so a rule refusing
+`SELECT * FROM dbo.secrets` as a batch refuses
+`callproc("sp_executesql", (sql,))` too. Any other procedure yields
+`EXEC <name>` with `mssql.proc` set and no parameter values: the scanner
+reports it `unknown` with the reason "stored procedure; body is in the
+catalog", a rule naming `unknown` or demanding a table match refuses it,
+and the trail records it either way. One message may batch several calls
+(SqlClient's `SqlCommandSet`); each is a statement. A parameter the codec
+cannot measure — a table-valued parameter, `sql_variant`, XML, a UDT, an
+Always Encrypted value — ends the walk, and the call it belongs to is
+`unknown` with a reason naming the type, because a further call may sit
+behind it. `sp_execute` and the cursor fetch/close procs run a handle the
+server returned for an earlier prepare. The codec drives both directions of
+the connection (it is Duplex, like MySQL's), reads the handle out of the
+prepare's reply and files the text under it, so an `sp_execute` is judged
+and recorded as the SQL it runs, with `mssql.proc: sp_execute` and
+`mssql.handle`. A handle prepared before the connection was observed, or
+whose reply the codec could not read, is `unknown` with a reason naming the
+handle: the fail-closed direction.
+
+**A readable login is a statement too.** `LOGIN <user>`, operation `other`,
+with `mssql.login.user`, `.host`, `.app`, `.database`, `.library` and `.tds`
+in metadata; an integrated login reports `mssql.login.integrated` and no
+user. The password, the SSPI ticket and the federated token are never
+reported. Readable means the LOGIN7 crossed in the clear: a client that sent
+ENCRYPT_NOT_SUP (go-mssqldb `encrypt=disable`), a TDS 8.0 session whose TLS
+something in front terminated, or a relay terminating the login itself.
+Under ENCRYPT_OFF, the default of every driver, the login is the one
+encrypted packet and yields no statement; `mssql.login_encrypted` on the
+session's statements says so. The codec also lifts the user name as the
+connection's credential, the seam an identity header uses on an http lane;
+no mssql lane option consumes it yet, so the principal stays `anonymous`.
+
 **MSSQL masks its responses**, by the same re-framing mechanism Postgres uses
 and against a harder framing. TDS nests two: an 8-byte packet header wrapping
 a token stream, where one `ROW` spans packets and one packet holds several
@@ -3614,12 +3653,25 @@ tokens repack, so the codec strips the headers, rewrites the token stream, and
 lays fresh packets over the result. Patching bytes in place cannot work,
 because a longer value has nowhere to go.
 
-A column type it cannot measure (SQL_VARIANT, XML, UDT) stops the rewriting
-for that connection. Guessing a length would desynchronize the client, which
-turns a privacy gap into a lost session. Statements and policy carry on; only
-masking steps aside. Whatever was already rewritten is kept and emitted, so a
-value masked earlier in a response stays masked when an unmeasurable token
-turns up later in the same one.
+A column type it cannot measure (SQL_VARIANT, XML, UDT, an Always Encrypted
+column) stops the rewriting for that connection. Guessing a length would
+desynchronize the client, which turns a privacy gap into a lost session.
+Statements and policy carry on; only masking steps aside. Whatever was
+already rewritten is kept and emitted, so a value masked earlier in a
+response stays masked when an unmeasurable token turns up later in the same
+one. The stop is recorded once, as an `activity` row `masking_declined` with
+the reason, because values keep travelling after it and neither end of the
+connection can tell.
+
+An OUTPUT parameter comes back in a `RETURNVALUE` token and is masked under
+the parameter's name without its `@`: a rule on column `email` reaches
+`@email OUTPUT`, not `@e`. A PII rule reaches either.
+
+A driver that negotiates Always Encrypted (mssql-jdbc does on every
+connection, whether or not a column uses it) gets a key table in front of
+every result set's columns; the codec reads the login response for the
+acknowledgement and parses accordingly, so a JDBC result set masks like any
+other.
 
 A worked deployment, with Envoy terminating TDS 8.0, a Kerberos client and an
 AD domain controller, lives in
@@ -4344,7 +4396,7 @@ opa}` so a statement the local rules already forbid costs no network round
 trip. The Go package is still `policy`; the config keys are what split.
 
 **Guardrails are Hoop's own rules**, written under `guardrails` and evaluated
-in-process against a decoded statement. Ten local rule types, plus the
+in-process against a decoded statement. Eleven local rule types, plus the
 DEPRECATED `ai_analysis` one that the listener `analyzer` block replaced, and
 `guardrails.mode` decides whether a match denies or lands in the audit record
 as `guardrails.would_deny`. Nothing here needs a policy engine, a network hop
@@ -4361,8 +4413,8 @@ and never leave the process, and an `opa` block with no `guardrails.rules`
 hands every statement to Rego.
 
 **The local rule types.** SQL: `deny_words_list`, `pattern_match` (RE2),
-`operation`, `table`. HTTP: `http_resource`, `http_status`, `http_header`.
-gRPC: `grpc_status`. Cross-protocol: `pii` (see [Masking and
+`operation`, `table`, `procedure`. HTTP: `http_resource`, `http_status`,
+`http_header`. gRPC: `grpc_status`. Cross-protocol: `pii` (see [Masking and
 PII](#masking-and-pii)) and `metadata`, which reads `Statement.Metadata`:
 the rule ANDs keys, ORs the values under one key, lowercases both sides and
 compares them for equality; a key the statement lacks never matches. It is
@@ -4465,6 +4517,48 @@ rules:
     require_table_match: true   # deny when the relations could not be determined
 ```
 
+#### Stored procedures
+
+A procedure call reaches policy as the statement `EXEC <name>` (or the
+client's `CALL x()`) with `operation: unknown`, `sql.incomplete` set to
+`stored procedure; body is in the catalog`, and no relations: the body is on
+the server, so the scanner cannot say what the call does. A TDS RPCRequest,
+the form a driver's parameterized call takes, also carries
+`metadata["mssql.proc"]` with the name as the client sent it
+(`dbo.get_secrets`, `[dbo].[get_secrets]`, `appdb.dbo.get_secrets`). A batch
+`exec dbo.get_secrets`, a Postgres `CALL purge()` or a MySQL `CALL x()` is
+text only.
+
+A `procedure` rule names the procedures and reads the name from the metadata
+or, for a batch, from the leading `EXEC`/`EXECUTE`/`CALL` in the text. Names
+compare case-insensitively with the `[...]`, `"..."` and `` `...` `` delimiters
+removed, and a configured name matches the trailing parts of the called one:
+`get_secrets` matches `dbo.get_secrets` and `appdb.dbo.get_secrets`;
+`dbo.get_secrets` matches `appdb.dbo.get_secrets` and not
+`custom.get_secrets`. A response never matches.
+
+```yaml
+rules:
+  - name: no-secrets
+    type: procedure
+    procedures: [get_secrets, dbo.rotate_keys]
+    message: get_secrets and rotate_keys run from the deploy job only
+```
+
+The same fence written before the type existed still works: a
+`deny_words_list` or `pattern_match` rule scoped with `operations: [unknown]`
+reads the `EXEC` text, at the cost of one pattern per spelling. In Rego the
+name is `input.metadata["mssql.proc"]` on an RPC call and only in
+`input.statement` on a batch. A deferring `procedure` rule reports
+`findings.procedure.values.procedure`, the normalized name.
+
+**`require_table_match` refuses every procedure call.** A `table` rule with
+`require_table_match: true` and no `operations:` scope denies every statement
+the scanner found no relation in, and a procedure call is one of them, as are
+the `SET` and `USE` batches a driver sends on connect. The lane loads and
+`-validate` says so. Scope the rule with `operations:` or name the procedures
+in a `procedure` rule.
+
 **OPA.** Posts to an OPA Data API endpoint. sidecar does not own policy;
 it owns the *input document*:
 
@@ -4520,16 +4614,16 @@ after them.
 
 `findings` rides the decide phase only, and only where something reported. It
 is a map keyed by **source**, the producer that wrote the entry: local rules
-key by rule TYPE (`pii`, `deny_words_list`, `operation`, ...), the analyzer
-keys as `ai_analysis`. Every entry has one shape:
+key by rule TYPE (`pii`, `deny_words_list`, `operation`, `procedure`, ...),
+the analyzer keys as `ai_analysis`. Every entry has one shape:
 
 - `status` is always set, and is one of `ok`, `cached`, `skipped`,
   `unavailable`, `error`. Only `ok` and `cached` mean the source answered.
 - `reason` narrows a non-ok status where the producer has more to say. The
   analyzer's `unavailable` carries `budget_exhausted`, `rate_limited` or `refused`.
 - `values` is the producer's own: `risk_level` under `ai_analysis`,
-  `entities` under `pii`, `words` under `deny_words_list`. Read a key only
-  under a source you know writes it.
+  `entities` under `pii`, `words` under `deny_words_list`, `procedure` under
+  `procedure`. Read a key only under a source you know writes it.
 - `rule` names what produced the entry: the first configured rule of that
   type, or the listener for its analyzer block.
 
@@ -4748,9 +4842,10 @@ matched.
 `values.rules` and nothing else: the match itself is the whole message.
 `deny_words_list` adds `values.words`, because which of several configured
 words fired is not recoverable from `input.statement` without reimplementing
-the matcher. `pii` adds `values.entities`, and it is the only type
-contributing a fact the input document does not carry at all: running a
-detector over the statement is not something Rego does.
+the matcher, and `procedure` adds `values.procedure`, the called name
+normalized, for the same reason. `pii` adds `values.entities`, and it is the
+only type contributing a fact the input document does not carry at all:
+running a detector over the statement is not something Rego does.
 
 **A matched pattern's text is never reported.** `pattern_match` says that it
 matched and stops there. The text is content lifted out of the statement, and

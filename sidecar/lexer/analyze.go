@@ -55,6 +55,12 @@ type Analysis struct {
 
 	// Reason names what defeated the scan. Empty when Complete.
 	Reason string
+
+	// Callee is the procedure a leading EXEC, EXECUTE or CALL names, as the
+	// client wrote it: delimiters and schema parts kept, so a policy
+	// normalizes one spelling. Empty when the statement opens with another
+	// verb or names no procedure (`EXEC ('...')`, `EXECUTE IMMEDIATE`).
+	Callee string
 }
 
 // Severity returns the most consequential effect, for a caller that needs one
@@ -172,6 +178,10 @@ type analyzer struct {
 	fromFirst bool
 
 	incomplete string
+
+	// callee is the name a leading EXEC, EXECUTE or CALL named; see
+	// Analysis.Callee.
+	callee string
 }
 
 // Analyze reports what one SQL statement does.
@@ -745,6 +755,16 @@ func (a *analyzer) head(t Token, i int) bool {
 		a.fail(why)
 	}
 
+	// Only the statement's own head: `SET NOCOUNT ON; EXEC p` opens with
+	// SET, and a CALL inside a block or a subquery is not what the client
+	// asked to run.
+	if verb == Call && len(a.effects) == 0 && !a.explainSeen && a.top().kind == regTop {
+		switch t.Text {
+		case "exec", "execute", "call":
+			a.callee = a.calleeAt(i + 1)
+		}
+	}
+
 	if a.d == Oracle {
 		switch {
 		case oracleOpaque[t.Text] != "":
@@ -1259,6 +1279,32 @@ func (a *analyzer) tableChanges(j int) (int, Relation, bool) {
 	return j, Relation{}, false
 }
 
+// calleeAt returns the source text of the name that starts at token j: name
+// tokens joined by dots, read from the bytes so brackets, quotes and case
+// survive. Empty when j names nothing: a parenthesis (`EXEC ('...')`), a
+// string, or IMMEDIATE, which makes EXECUTE dynamic SQL with no procedure.
+// T-SQL's `EXEC @status = dbo.proc` is read past its return variable.
+func (a *analyzer) calleeAt(j int) string {
+	if a.puncts(j, "@") && j+1 < len(a.toks) && a.toks[j+1].isName() && a.puncts(j+2, "=") {
+		j += 3
+	}
+	if j >= len(a.toks) || !a.toks[j].isName() || a.toks[j].isWord("immediate") {
+		return ""
+	}
+	k := j
+	for a.puncts(k+1, ".") && k+2 < len(a.toks) && a.toks[k+2].isName() {
+		k += 2
+	}
+	if a.spans == nil {
+		a.spans = tokenSpans(a.src, a.rules)
+	}
+	// Both come from the same scanner; a stream that differs yields nothing.
+	if len(a.spans) != len(a.toks) {
+		return ""
+	}
+	return a.src[a.spans[j][0]:a.spans[k][1]]
+}
+
 // literalName reads the Literal token at k as a relation name: a string
 // whose content is a dotted name, `'c.s.t'` or "`a b`.t". It reports false
 // for any other content and for a string with an escape or an embedded
@@ -1482,6 +1528,7 @@ func (a *analyzer) result() Analysis {
 		Relations: a.rels,
 		Complete:  a.incomplete == "",
 		Reason:    a.incomplete,
+		Callee:    a.callee,
 	}
 }
 

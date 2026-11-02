@@ -1562,6 +1562,21 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 				"defer names a decision this lane has no opa.url for, so a deferred "+
 					"match or risk level denies instead of reporting a finding")
 		}
+		// A strict table rule with no scope refuses every statement whose
+		// relations the scanner could not read, and that set is wider
+		// than a table: a stored procedure call names none, and neither
+		// does the SET or USE a driver sends on connect. Said here, so
+		// the operator learns it from -validate and not from a login that
+		// fails.
+		for _, r := range gc.Rules {
+			if r.Type == policy.MatchTable && r.RequireTableMatch && len(r.Operations) == 0 {
+				ln.notes = append(ln.notes, fmt.Sprintf(
+					"table rule %q sets require_table_match with no operations scope, so it "+
+						"also refuses every stored-procedure call and the driver's SET/USE "+
+						"batches, whose relations the scanner cannot read. Add operations: to "+
+						"scope it, or name the procedures in a procedure rule", r.Name))
+			}
+		}
 		// An omitted trigger on an ungated lane classifies EVERYTHING.
 		// That is what the operator wrote, and it is also a model call
 		// per statement shape, so the resolved lane says it out loud

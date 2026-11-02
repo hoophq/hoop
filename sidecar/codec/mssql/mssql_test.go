@@ -19,8 +19,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
+	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
 
@@ -124,9 +126,11 @@ func loginResponse(between ...[]byte) []byte {
 // response has been seen — which is also the only place MS-TDS puts routing
 // information.
 //
-// Retirement has to key off a SERVER-side observation. The gate builds one
-// codec per direction, so a flag set while decoding the client's stream is
-// written on an instance this one cannot reach.
+// Retirement keys off a SERVER-side observation. The codec is Duplex now
+// (one instance drives both directions, for prepared handles), so the old
+// failure — a flag set on the client-side instance that the server-side one
+// never saw — cannot recur, and this test keeps proving the retirement
+// happens at all.
 func mssqlGate(t *testing.T) *gate.Gate {
 	t.Helper()
 	g, err := gate.New(
@@ -139,16 +143,11 @@ func mssqlGate(t *testing.T) *gate.Gate {
 	return g
 }
 
-// The regression test for the bug this guard shipped with.
-//
-// gate.New builds an Inspector per direction, so there are two Codec values
-// and neither sees the other's fields. The guard originally retired on a flag
-// set while decoding a CLIENT query, which the server-side codec never
-// observes: the flag stayed false for the life of every connection, the scan
-// never retired, and result rows were searched for redirect tokens forever.
-//
-// A codec-level test drove both directions through one Codec and passed,
-// which is exactly why this one goes through gate.New instead.
+// The regression test for the bug this guard shipped with: the guard once
+// retired on a flag set while decoding a CLIENT query, on a codec instance
+// the server side never shared, so the scan never retired and result rows
+// were searched for redirect tokens forever. It goes through gate.New so it
+// sees the codec as the relay builds it.
 func TestRoutingGuardRetiresAcrossDirectionCodecs(t *testing.T) {
 	g := mssqlGate(t)
 	ctx := context.Background()
@@ -194,4 +193,122 @@ func doneToken() []byte {
 	b = binary.LittleEndian.AppendUint16(b, 0)
 	b = binary.LittleEndian.AppendUint16(b, 0)
 	return binary.LittleEndian.AppendUint64(b, 0)
+}
+
+// rpcByName builds an RPCRequest calling proc by name, the way FreeTDS's
+// callproc does, with each value as an NVARCHAR parameter.
+func rpcByName(proc string, args ...string) []byte {
+	var body bytes.Buffer
+	const allHeadersLen = 22
+	binary.Write(&body, binary.LittleEndian, uint32(allHeadersLen))
+	body.Write(make([]byte, allHeadersLen-4))
+	binary.Write(&body, binary.LittleEndian, uint16(len([]rune(proc))))
+	body.Write(ucs2(proc))
+	binary.Write(&body, binary.LittleEndian, uint16(0)) // OptionFlags
+	for _, a := range args {
+		body.WriteByte(0) // unnamed
+		body.WriteByte(0) // StatusFlags
+		body.WriteByte(0xe7)
+		binary.Write(&body, binary.LittleEndian, uint16(8000))
+		body.Write(make([]byte, 5))
+		v := ucs2(a)
+		binary.Write(&body, binary.LittleEndian, uint16(len(v)))
+		body.Write(v)
+	}
+	return tdsPacket(0x03, true, body.Bytes())
+}
+
+// auditSink keeps every statement event.
+type auditSink struct{ events []audit.Event }
+
+// Write keeps the row a denial produces (a violation) and the row an
+// allowed statement produces (a statement); the lifecycle rows are noise here.
+func (s *auditSink) Write(_ context.Context, ev audit.Event) error {
+	if ev.Kind == audit.KindStatement || ev.Kind == audit.KindViolation {
+		s.events = append(s.events, ev)
+	}
+	return nil
+}
+func (s *auditSink) Close() error { return nil }
+
+// A procedure call by name used to cross the relay with no statement, so a
+// rule that refused `SELECT * FROM dbo.secrets` as a batch let
+// callproc("sp_executesql", ("SELECT * FROM dbo.secrets",)) through, and
+// callproc("dbo.get_secrets") left no audit record. Every call is a
+// statement now: the same rule refuses the same SQL whichever message type
+// carries it, a bare EXEC is unreadable to the lexer and refused by a rule
+// that demands a table match, and the trail records the call either way.
+func TestProcedureCallsReachThePolicy(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{{
+		Name: "no-secrets", Type: policy.MatchTable, Tables: []string{"secrets"},
+		RequireTableMatch: true, Message: "secrets is off limits",
+	}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	ctx := context.Background()
+
+	cases := []struct {
+		name     string
+		pkt      []byte
+		wantText string
+		wantOp   inspect.Operation
+	}{
+		{"batch", sqlBatch("SELECT * FROM dbo.secrets"), "SELECT * FROM dbo.secrets", inspect.OpSelect},
+		{"callproc-sp_executesql", rpcByName("sp_executesql", "SELECT * FROM dbo.secrets"), "SELECT * FROM dbo.secrets", inspect.OpSelect},
+		{"callproc-by-name", rpcByName("dbo.get_secrets"), "EXEC dbo.get_secrets", inspect.OpUnknown},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &auditSink{}
+			g, err := gate.New(
+				session.New(inspect.MSSQL, session.Identity{Subject: "alice@example.com"}),
+				gate.Config{Protocol: inspect.MSSQL, Policy: rules, Audit: sink},
+			)
+			if err != nil {
+				t.Fatalf("gate.New: %v", err)
+			}
+			d := g.Request(ctx, tc.pkt)
+			if d.Allowed {
+				t.Fatalf("forwarded: %+v", d.Statements)
+			}
+			if d.Rule != "no-secrets" {
+				t.Errorf("rule = %q, want no-secrets", d.Rule)
+			}
+			if len(sink.events) != 1 || sink.events[0].Kind != audit.KindViolation {
+				t.Fatalf("got %+v, want one violation", sink.events)
+			}
+			ev := sink.events[0]
+			if ev.Statement != tc.wantText || ev.Operation != tc.wantOp || ev.Allowed {
+				t.Errorf("event = {Statement:%q Operation:%q Allowed:%v}, want {%q %q false}",
+					ev.Statement, ev.Operation, ev.Allowed, tc.wantText, tc.wantOp)
+			}
+			if ev.Metadata["mssql.proc"] == "" && tc.name != "batch" {
+				t.Error("mssql.proc missing from the audit record of a procedure call")
+			}
+		})
+	}
+}
+
+// With no rule standing in its way a call is forwarded, and it is still in
+// the trail: the complaint was the silence, not only the bypass.
+func TestAllowedProcedureCallIsAudited(t *testing.T) {
+	sink := &auditSink{}
+	g, err := gate.New(
+		session.New(inspect.MSSQL, session.Identity{Subject: "alice@example.com"}),
+		gate.Config{Protocol: inspect.MSSQL, Audit: sink},
+	)
+	if err != nil {
+		t.Fatalf("gate.New: %v", err)
+	}
+	d := g.Request(context.Background(), rpcByName("dbo.delete_customer", "3"))
+	if !d.Allowed {
+		t.Fatalf("refused with no policy: %s", d.Message)
+	}
+	if len(sink.events) != 1 || sink.events[0].Statement != "EXEC dbo.delete_customer" {
+		t.Fatalf("events = %+v, want one for EXEC dbo.delete_customer", sink.events)
+	}
+	if strings.Contains(sink.events[0].Statement, "3") {
+		t.Error("a parameter value reached the audit statement")
+	}
 }
