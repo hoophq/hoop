@@ -1348,7 +1348,7 @@ func (c *Config) validate(onHost bool) error {
 	}
 
 	problems = append(problems, c.validatePlugins()...)
- problems=append(problems,c.validateICASlotBinds()...)
+	problems = append(problems, c.validateICASlotBinds()...)
 
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {

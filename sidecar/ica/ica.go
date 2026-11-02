@@ -486,8 +486,13 @@ func (s *server) Serve(ctx context.Context) error {
 		s.logReleaseError(releaseRuntime(shared))
 		return nil
 	}
+	// The manager derives every session's lifetime from the ctx it gets, so
+	// the daemon's shutdown ctx must not reach it: cancelling it on SIGTERM
+	// would drop admitted desktops before Close's bounded drain runs. Startup
+	// work (the upstream DNS lookup) still takes the daemon ctx, so a shutdown
+	// that lands mid-start is not stuck behind the resolver.
 	sessionCtx, sessionCancel := context.WithCancel(context.WithoutCancel(ctx))
-	manager, tcp, edt, tc, summary, err := s.start(sessionCtx, shared)
+	manager, tcp, edt, tc, summary, err := s.start(ctx, sessionCtx, shared)
 	if err != nil {
 		sessionCancel()
 		err = errors.Join(err, releaseRuntime(shared))
@@ -597,8 +602,9 @@ func (s *server) mode() string {
 
 // start builds the manager and the listeners for one Serve. It builds the
 // manager first, because a bound socket with no manager behind it would
-// accept connections and drop them.
-func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager, net.Listener, net.Listener, ica.TransparentConfig, string, error) {
+// accept connections and drop them. startCtx bounds the one-shot startup work;
+// sessionCtx is what the manager and the listeners live under.
+func (s *server) start(startCtx, sessionCtx context.Context, shared *sharedRuntime) (*ica.Manager, net.Listener, net.Listener, ica.TransparentConfig, string, error) {
 	tc := ica.TransparentConfig{TenantID: s.lane.TenantID, Width: s.lane.Width, Height: s.lane.Height,
 		ThinwireChannel: s.lane.ThinwireChannel}
 	var (
@@ -622,7 +628,7 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 		tc.ResolveDestination = ica.OriginalDestination
 		summary = fmt.Sprintf("%v ports %v", s.lane.UpstreamPrefixes, s.lane.UpstreamPorts)
 	} else {
-		addr, port, err := resolveUpstream(ctx, s.lane.Upstream)
+		addr, port, err := resolveUpstream(startCtx, s.lane.Upstream)
 		if err != nil {
 			return nil, nil, nil, tc, "", err
 		}
@@ -637,7 +643,7 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 		summary = fixed
 	}
 
-	manager, err := ica.NewManager(ctx, ica.ManagerConfig{
+	manager, err := ica.NewManager(sessionCtx, ica.ManagerConfig{
 		Runtime: shared.runtime, NetworkPolicy: policy, MaxSessions: s.maxSessions(), SessionLimit: shared.limit,
 		ConnectTimeout:        time.Duration(s.rt.ConnectTimeoutSec) * time.Second,
 		EnableExperimentalEDT: s.lane.EDT, EDTRetention: time.Duration(s.rt.EDTRetentionSec) * time.Second,
@@ -647,13 +653,13 @@ func (s *server) start(ctx context.Context, shared *sharedRuntime) (*ica.Manager
 	if err != nil {
 		return nil, nil, nil, tc, "", fmt.Errorf("ica manager: %w", err)
 	}
-	tcp, err := s.listen(ctx)
+	tcp, err := s.listen(sessionCtx)
 	if err != nil {
 		return nil, nil, nil, tc, "", errors.Join(err, manager.Close())
 	}
 	var edt net.Listener
 	if s.lane.EDT {
-		if edt, err = s.listenEDT(ctx); err != nil {
+		if edt, err = s.listenEDT(sessionCtx); err != nil {
 			return nil, nil, nil, tc, "", errors.Join(fmt.Errorf("edt: %w", err), tcp.Close(), manager.Close())
 		}
 	}

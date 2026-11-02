@@ -24,7 +24,12 @@ func TestSlotConfigAndCapabilities(t *testing.T) {
 	tests := []func(*Config){
 		func(c *Config) { c.Listeners[0].Upstream = "10.77.0.31:2598" }, func(c *Config) { c.Listeners[0].ICA.EDT = true },
 		func(c *Config) { c.Listeners[0].ICA.SourceCIDRs = nil }, func(c *Config) { c.Listeners[0].ICA.Slots.UpstreamPattern = "%s.local" },
-		func(c *Config) { c.Listeners[0].ICA.Slots.FrontendCIDR = "10.77.0.0/24" }, func(c *Config) { c.Listeners[0].ICA.Slots.FirstPort = 19000; c.Listeners[0].Listen = ":19000" },
+		func(c *Config) { c.Listeners[0].ICA.Slots.FrontendCIDR = "10.77.0.0/24" },
+		func(c *Config) {
+			c.Admin.Listen = "127.0.0.1:19000"
+			c.Listeners[0].ICA.Slots.FirstPort = 19000
+			c.Listeners[0].Listen = ":19000"
+		},
 		func(c *Config) {
 			c.Listeners = append(c.Listeners, ListenerConfig{Name: "other", Protocol: "http", Listen: "127.0.0.1:21002", Upstream: "127.0.0.1:80"})
 		},
@@ -36,5 +41,13 @@ func TestSlotConfigAndCapabilities(t *testing.T) {
 		if _, e := LoadConfigBytes(raw); e == nil {
 			t.Fatalf("invalid slot config %d accepted", i)
 		}
+	}
+	// With admin off nothing binds 19000, so a slot range over it is fine.
+	c := slotsDoc()
+	c.Listeners[0].ICA.Slots.FirstPort = 19000
+	c.Listeners[0].Listen = ":19000"
+	raw, _ = json.Marshal(c)
+	if _, e := LoadConfigBytes(raw); e != nil {
+		t.Fatal("slot range over 19000 refused with admin off:", e)
 	}
 }

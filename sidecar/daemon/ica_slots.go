@@ -55,6 +55,13 @@ func (s *ICASlotsConfig) validate(lc ListenerConfig, sources []string, name stri
 	if s.UpstreamPattern != "" && (strings.Count(s.UpstreamPattern, "%") != 1 || len(icaSlotPattern.FindAllStringIndex(s.UpstreamPattern, -1)) != 1) {
 		return bad("pattern needs one %d or %03d")
 	}
+	// Mirrors libhoop-ica slots.New so a bad name fails at config load under the
+	// listener's name rather than at Serve. Slot destinations are DNS names
+	// resolved on each connection, so a slot keeps following its VDA when the
+	// address changes: a literal IP would turn the slot into a static
+	// port-to-address map that skips that resolution, and a bare label would
+	// depend on the resolver's search path. Two slots on one name would leave
+	// the slot and upstream_name in audits unable to identify the port.
 	seen := map[string]bool{}
 	for i := 1; i <= s.Count; i++ {
 		var h string
@@ -106,15 +113,14 @@ func (c *Config) validateICASlotBinds() []string {
 				out = append(out, l.displayName(i)+": slot ports overlap another listener")
 			}
 		}
-		// Admin's production default; an explicit admin address is checked too.
-		admin := c.Admin.Listen
-		if admin == "" {
-			admin = "127.0.0.1:19000"
-		}
-		_, p, _ := net.SplitHostPort(admin)
-		n, _ := strconv.Atoi(p)
-		if n >= s.FirstPort && n < s.FirstPort+s.Count {
-			out = append(out, l.displayName(i)+": slot ports overlap admin listener")
+		// An empty admin.listen disables the admin server, so there is
+		// nothing to overlap; only an explicit address is checked.
+		if c.Admin.Listen != "" {
+			_, p, _ := net.SplitHostPort(c.Admin.Listen)
+			n, _ := strconv.Atoi(p)
+			if n >= s.FirstPort && n < s.FirstPort+s.Count {
+				out = append(out, l.displayName(i)+": slot ports overlap admin listener")
+			}
 		}
 	}
 	return out
