@@ -3641,9 +3641,21 @@ ENCRYPT_NOT_SUP (go-mssqldb `encrypt=disable`), a TDS 8.0 session whose TLS
 something in front terminated, or a relay terminating the login itself.
 Under ENCRYPT_OFF, the default of every driver, the login is the one
 encrypted packet and yields no statement; `mssql.login_encrypted` on the
-session's statements says so. The codec also lifts the user name as the
-connection's credential, the seam an identity header uses on an http lane;
-no mssql lane option consumes it yet, so the principal stays `anonymous`.
+session's statements says so. The user name of a readable SQL login is the
+session's principal: the `LOGIN` row loses `mssql.login.user` and every row
+from there carries `principal: <user>`, which OPA reads as
+`input.context.principal`. The session opens as the connection and turns
+into the named one on the login frame, so the trail shows a 0-statement
+anonymous session_start/end before it, as an http lane does. A login the
+codec could not read, or an integrated one, leaves the principal
+`anonymous` and is never refused over it. No lane option governs this. A
+lane that wants no unnamed sessions says so in Rego:
+
+```rego
+result := {"denied": true, "rule": "named-callers-only", "message": "log in with a SQL login this relay can read"} if {
+	input.context.principal == "anonymous"
+}
+```
 
 **MSSQL masks its responses**, by the same re-framing mechanism Postgres uses
 and against a harder framing. TDS nests two: an 8-byte packet header wrapping

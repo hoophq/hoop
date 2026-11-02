@@ -23,7 +23,9 @@ import (
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
+	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
+	mssqlauth "github.com/hoophq/libhoop/v2/codec/mssql/auth"
 )
 
 func ucs2(s string) []byte {
@@ -310,5 +312,86 @@ func TestAllowedProcedureCallIsAudited(t *testing.T) {
 	}
 	if strings.Contains(sink.events[0].Statement, "3") {
 		t.Error("a parameter value reached the audit statement")
+	}
+}
+
+// loginPacket builds a plaintext LOGIN7 for user, or an integrated one.
+func loginPacket(t *testing.T, user string, integrated bool) []byte {
+	t.Helper()
+	l := &mssqlauth.Login{TDSVersion: 0x74000004, PacketSize: 4096, HostName: "app-01", AppName: "smoke"}
+	if integrated {
+		l.SetIntegrated([]byte{0x60, 0x82})
+	} else {
+		l.SetSQLAuth(user, "Hoop!Smoke2026")
+	}
+	body, err := mssqlauth.EncodeLogin(l)
+	if err != nil {
+		t.Fatalf("EncodeLogin: %v", err)
+	}
+	return tdsPacket(0x10, true, body)
+}
+
+// principalSink keeps every row with the principal it was filed under.
+type principalSink struct{ rows []audit.Event }
+
+func (s *principalSink) Write(_ context.Context, ev audit.Event) error {
+	s.rows = append(s.rows, ev)
+	return nil
+}
+func (s *principalSink) Close() error { return nil }
+
+// The session is named for the SQL login the relay could read, and only
+// then. A LOGIN7 it could not read, or one carrying a Kerberos ticket,
+// leaves the session anonymous and is never refused: that was the whole
+// behaviour before the login was read at all, and it stays the default.
+func TestPrincipalComesFromAReadableLogin(t *testing.T) {
+	cases := []struct {
+		name      string
+		login     []byte
+		principal string
+	}{
+		{"sql-auth", loginPacket(t, "app_billing", false), "app_billing"},
+		{"integrated", loginPacket(t, "", true), session.AnonymousPrincipal},
+		{"no-login", nil, session.AnonymousPrincipal},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &principalSink{}
+			g, err := gate.New(
+				session.New(inspect.MSSQL, session.Identity{PeerAddr: "10.0.0.7:5000"}),
+				gate.Config{Protocol: inspect.MSSQL, Audit: sink, RequestIdentity: proxy.LoginIdentity{}},
+			)
+			if err != nil {
+				t.Fatalf("gate.New: %v", err)
+			}
+			ctx := context.Background()
+			if tc.login != nil {
+				if d := g.Request(ctx, tc.login); !d.Allowed {
+					t.Fatalf("login refused: %s", d.Message)
+				}
+			}
+			if d := g.Request(ctx, sqlBatch("SELECT 1")); !d.Allowed {
+				t.Fatalf("query refused: %s", d.Message)
+			}
+			var stmt *audit.Event
+			for i := range sink.rows {
+				if sink.rows[i].Kind == audit.KindStatement && sink.rows[i].Statement == "SELECT 1" {
+					stmt = &sink.rows[i]
+				}
+			}
+			if stmt == nil {
+				t.Fatal("the query was not recorded")
+			}
+			if stmt.Principal != tc.principal {
+				t.Errorf("principal = %q, want %q", stmt.Principal, tc.principal)
+			}
+			for _, ev := range sink.rows {
+				if ev.Kind == audit.KindStatement && strings.HasPrefix(ev.Statement, "LOGIN") {
+					if _, has := ev.Metadata["mssql.login.user"]; has && tc.principal != session.AnonymousPrincipal {
+						t.Error("the lifted user name stayed on the LOGIN row")
+					}
+				}
+			}
+		})
 	}
 }
