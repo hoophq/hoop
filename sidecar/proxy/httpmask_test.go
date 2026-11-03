@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/proxy"
 )
@@ -112,13 +111,13 @@ func emailRows(n int) []byte {
 	return b.Bytes()
 }
 
-// An uncompressed JSON response larger than the inspection buffer, on a lane
-// with a masker, is refused and the relay keeps serving. It used to answer
-// 403 and then crash the whole process: discarding the held body called a
-// nil masker (ENG-817).
+// A one-document JSON response larger than the mask limit (16 MiB), on a
+// lane with a masker, is refused and the relay keeps serving. It used to
+// answer 403 and then crash the whole process: discarding the held body
+// called a nil masker (ENG-817).
 func TestOversizedJSONResponseIsRefusedAndTheRelayKeepsServing(t *testing.T) {
 	up := newRouteUpstream(t, map[string][]byte{
-		"/big":   jsonResponse(emailRows(9<<20), ""),
+		"/big":   jsonResponse(emailRows(17<<20), ""),
 		"/small": jsonResponse([]byte(`{"e":"ada@example.com"}`), ""),
 	})
 	srv := startServer(t, proxy.Config{
@@ -178,22 +177,17 @@ func rawExchange(t *testing.T, addr, raw string) []byte {
 }
 
 // A chunked JSON stream goes out a value at a time. When a later value is
-// too large to hold, the head and the first value already reached the
-// client: the relay cuts the response there. It used to write a 403 status
-// line inside the 200 response, which no client can parse. A lane without
-// a mask rule forwards the stream as it arrives, so the same holds there.
+// too large to hold (16 MiB), the head and the first value already reached
+// the client: the relay cuts the response there. It used to write a 403
+// status line inside the 200 response, which no client can parse. Without
+// a mask rule nothing is held, so the stream passes whole: see
+// TestLargeHTTPResponseReachesTheClientWholeWithoutRules.
 func TestChunkedStreamRefusedMidResponseIsCut(t *testing.T) {
-	for name, masker := range map[string]gate.Masker{"masked": emailMasker{}, "no mask rule": nil} {
-		t.Run(name, func(t *testing.T) { chunkedStreamRefusedMidResponse(t, masker) })
-	}
-}
-
-func chunkedStreamRefusedMidResponse(t *testing.T, masker gate.Masker) {
 	var b strings.Builder
 	b.WriteString("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n")
 	first := `{"e":"ada@example.com"}`
 	fmt.Fprintf(&b, "%x\r\n%s\r\n", len(first), first)
-	big := emailRows(9 << 20)
+	big := emailRows(17 << 20)
 	for i := 0; i < len(big); i += 1 << 16 {
 		part := big[i:min(i+1<<16, len(big))]
 		fmt.Fprintf(&b, "%x\r\n%s\r\n", len(part), part)
@@ -203,21 +197,18 @@ func chunkedStreamRefusedMidResponse(t *testing.T, masker gate.Masker) {
 		"/watch": []byte(b.String()),
 		"/small": jsonResponse([]byte(`{"e":"ada@example.com"}`), ""),
 	})
-	cfg := proxy.Config{
+	srv := startServer(t, proxy.Config{
 		Upstream:   up.addr(),
 		Protocol:   inspect.HTTP,
+		Masker:     emailMasker{},
 		DenyWriter: proxy.ProtocolDenyWriter{},
-	}
-	if masker != nil {
-		cfg.Masker = masker
-	}
-	srv := startServer(t, cfg)
+	})
 
 	got := rawExchange(t, srv.Addr().String(), "GET /watch HTTP/1.1\r\nHost: h\r\n\r\n")
 	if n := bytes.Count(got, []byte("HTTP/1.1 ")); n != 1 || !bytes.HasPrefix(got, []byte("HTTP/1.1 200 OK")) {
 		t.Fatalf("want the 200 alone, cut short; got %d status lines: %.300q", n, got)
 	}
-	if masker != nil && (bytes.Contains(got, []byte("ada@example.com")) || !bytes.Contains(got, []byte("[REDACTED]"))) {
+	if bytes.Contains(got, []byte("ada@example.com")) || !bytes.Contains(got, []byte("[REDACTED]")) {
 		t.Fatalf("the first value was not masked, or the refused one leaked: %.300q", got)
 	}
 	if r := roundTrip(t, srv.Addr().String(), "GET /small HTTP/1.1\r\nHost: h\r\n\r\n"); !strings.HasPrefix(r, "200") {

@@ -792,6 +792,118 @@ func TestGateHonorsCodecReassemblyLimit(t *testing.T) {
 	}
 }
 
+// closeDelimitedCodec models libhoop codec/http on a response body with no
+// length and no chunking: it forwards the bytes as they arrive and hands
+// the response statement over only at stream end.
+type closeDelimitedCodec struct {
+	ended   int
+	started bool // what ResponseStarted reports while the body is in flight
+}
+
+func (*closeDelimitedCodec) Protocol() inspect.Protocol { return inspect.HTTP }
+func (*closeDelimitedCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
+}
+func (*closeDelimitedCodec) Rewrite(data []byte, _ func(string, []byte) []byte) ([]byte, inspect.ReframeResult, error) {
+	return data, inspect.ReframeResult{}, nil
+}
+func (*closeDelimitedCodec) Flush(func(string, []byte) []byte) []byte { return nil }
+func (c *closeDelimitedCodec) ResponseStarted() bool                  { return c.started && c.ended == 0 }
+func (c *closeDelimitedCodec) EndOfStream(dir inspect.Direction) []inspect.Statement {
+	c.ended++
+	if dir != inspect.FromServer || c.ended > 1 {
+		return nil
+	}
+	return []inspect.Statement{{
+		Protocol: inspect.HTTP, Direction: inspect.FromServer, Text: "HTTP/1.1 200 OK",
+		HTTP: &inspect.HTTPDetail{Method: "GET", Path: "/rows", Resource: "/rows", StatusCode: 200},
+	}}
+}
+
+// A close-delimited response body ends with the connection, so its
+// statement exists only then. EndOfStream asks the codec for it and judges
+// it as inspect would have: the audit trail records the response, and a
+// rule on it is audited as a denial (ENG-946). The denial asks for no
+// frame when the response reached the client in part, and keeps it when
+// the codec still held the response whole.
+func TestEndOfStreamResponseIsJudgedAndAudited(t *testing.T) {
+	for name, tc := range map[string]struct {
+		pol     policy.Evaluator
+		started bool
+	}{
+		"allowed":      {nil, true},
+		"denied, sent": {no200(t), true},
+		"denied, held": {no200(t), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pol := tc.pol
+			sink := &recordingSink{}
+			g, err := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}), gate.Config{
+				Protocol:     inspect.HTTP,
+				Audit:        sink,
+				Policy:       pol,
+				CodecFactory: func() inspect.Codec { return &closeDelimitedCodec{started: tc.started} },
+			})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			ctx := context.Background()
+			if d := g.Response(ctx, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nrow1\nrow2\n")); !d.Allowed || len(d.Statements) != 0 {
+				t.Fatalf("body in flight: %+v", d)
+			}
+			if len(sink.kinds()) != 0 {
+				t.Fatalf("recorded before the body ended: %v", sink.kinds())
+			}
+			d := g.EndOfStream()
+			if d.Allowed != (pol == nil) || len(d.Statements) != 1 || len(d.Payload) != 0 {
+				t.Fatalf("EndOfStream = %+v, want Allowed=%v, one statement, no bytes", d, pol == nil)
+			}
+			if pol != nil && (d.NoFrame != tc.started || d.DeniedStatement == nil || d.Rule == "") {
+				t.Fatalf("a denial at stream end must name its rule and ask for NoFrame=%v: %+v", tc.started, d)
+			}
+			kind := audit.KindStatement
+			if pol != nil {
+				kind = audit.KindViolation
+			}
+			ev := sink.find(kind)
+			if ev == nil {
+				t.Fatalf("the response that ended with the stream left no %s event: %v", kind, sink.kinds())
+			}
+			if ev.Statement != "HTTP/1.1 200 OK" || ev.Allowed != (pol == nil) {
+				t.Fatalf("event = %+v, want the response statement with Allowed=%v", ev, pol == nil)
+			}
+			if statements, denied := g.Stats(); statements != 1 || denied != btoi(pol != nil) {
+				t.Fatalf("Stats = %d/%d, want 1 statement and %d denied", statements, denied, btoi(pol != nil))
+			}
+			// The relay may call it more than once; the codec answers once.
+			if again := g.EndOfStream(); !again.Allowed || len(again.Statements) != 0 {
+				t.Fatalf("second EndOfStream = %+v", again)
+			}
+			if n := len(sink.kinds()); n != 1 {
+				t.Fatalf("recorded %d times: %v", n, sink.kinds())
+			}
+		})
+	}
+}
+
+func no200(t *testing.T) *policy.Rules {
+	t.Helper()
+	r, err := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-200", Type: policy.MatchHTTPStatus}.WithStatuses("200"),
+	})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	return r
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 func TestGateFiltersBeforeDecodeAndForward(t *testing.T) {
 	codec := &filteringCodec{}
 	g, err := gate.New(newSession(), gate.Config{
