@@ -1,15 +1,14 @@
-/* An insight card: a header that toggles its details. Gray for the analyzer
-   and guardrails: a fill halfway between the modal and gray-0 and a soft
-   border, so the card shows without darkening the modal (lead, 2026-10-30);
-   violet for data masking (Figma "AI Data Masking"). */
+/* An insight card: a header that toggles its details. A subtle surface for
+   the analyzer and guardrails (theme.js); violet for data masking (Figma
+   "AI Data Masking"). */
 .card {
   border-radius: var(--mantine-radius-md);
   padding: var(--mantine-spacing-sm);
 }
 
 .card[data-variant='gray'] {
-  background-color: color-mix(in srgb, var(--mantine-color-gray-0) 50%, var(--mantine-color-body));
-  border: 1px solid var(--mantine-color-gray-1);
+  background-color: var(--hoop-surface-subtle);
+  border: 1px solid var(--hoop-border-subtle);
 }
 
 .card[data-variant='violet'] {
@@ -37,7 +36,7 @@
 }
 
 .divider {
-  border-top: 1px solid var(--mantine-color-gray-0);
+  border-top: 1px solid var(--hoop-border-divider);
   padding-top: var(--mantine-spacing-sm);
 }
 
@@ -50,7 +49,7 @@
 
 .chip {
   border-radius: var(--mantine-radius-sm);
-  background-color: var(--mantine-color-gray-1);
+  background-color: var(--hoop-surface-strong);
   padding: var(--mantine-spacing-smAlt);
   font-family: var(--mantine-font-family-monospace);
   font-size: var(--mantine-font-size-xs);

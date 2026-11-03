@@ -1,6 +1,6 @@
 .header {
   padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-mdAlt);
-  border: 1px solid var(--mantine-color-gray-1);
+  border: 1px solid var(--hoop-border-subtle);
   border-top-left-radius: var(--mantine-radius-md);
   border-top-right-radius: var(--mantine-radius-md);
   background: var(--mantine-color-body);
@@ -11,7 +11,7 @@
   min-height: 200px;
   max-height: 60vh;
   overflow-y: auto;
-  border: 1px solid var(--mantine-color-gray-1);
+  border: 1px solid var(--hoop-border-subtle);
   border-top: 0;
   border-bottom-left-radius: var(--mantine-radius-md);
   border-bottom-right-radius: var(--mantine-radius-md);
@@ -19,16 +19,16 @@
 
 .row {
   padding: var(--mantine-spacing-smAlt) var(--mantine-spacing-mdAlt);
-  border-bottom: 1px solid var(--mantine-color-gray-0);
+  border-bottom: 1px solid var(--hoop-border-divider);
 }
 
 .row:hover {
-  background: var(--mantine-color-gray-0);
+  background: var(--hoop-surface-muted);
 }
 
 .protocol {
   padding: var(--mantine-spacing-xsAlt) var(--mantine-spacing-mdAlt);
-  border-bottom: 1px solid var(--mantine-color-gray-0);
+  border-bottom: 1px solid var(--hoop-border-divider);
   color: var(--mantine-color-dimmed);
 }
 

@@ -3,7 +3,7 @@
 .player {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--mantine-color-gray-1);
+  border: 1px solid var(--hoop-border-subtle);
   border-radius: var(--mantine-radius-md);
   overflow: hidden;
 }
@@ -56,11 +56,11 @@
 }
 
 .controls {
-  background: var(--mantine-color-gray-0);
+  background: var(--hoop-surface-muted);
 }
 
 .legend {
-  border-top: 1px solid var(--mantine-color-gray-1);
+  border-top: 1px solid var(--hoop-border-subtle);
   background: var(--mantine-color-body);
 }
 
