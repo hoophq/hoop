@@ -24,7 +24,7 @@ function RawRow({ row }) {
       >
         <Group gap="sm" wrap="nowrap">
           {row.deniedRules && <DeniedBadge rules={row.deniedRules} />}
-          <Text size="xs" className={classes.mono} truncate flex={1} c={row.type === 'e' ? 'red.9' : undefined}>
+          <Text size="xs" className={classes.mono} truncate flex={1} c={row.type === 'e' ? 'red' : undefined}>
             {row.type === 'i' ? `> ${row.text}` : row.text}
           </Text>
           <Text size="xs" c="dimmed" flex="none">

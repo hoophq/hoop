@@ -25,12 +25,12 @@ const THEME = themeAlpine
     rowHeight: 36,
     headerHeight: 36,
     foregroundColor: 'var(--mantine-color-text)',
-    headerBackgroundColor: 'var(--mantine-color-gray-0)',
+    headerBackgroundColor: 'var(--hoop-surface-muted)',
     backgroundColor: 'var(--mantine-color-body)',
-    borderColor: 'var(--mantine-color-gray-3)',
+    borderColor: 'var(--hoop-border-subtle)',
     wrapperBorderRadius: 'var(--mantine-radius-md)',
     oddRowBackgroundColor: 'var(--mantine-color-body)',
-    accentColor: 'var(--mantine-color-indigo-6)',
+    accentColor: 'var(--mantine-primary-color-filled)',
   })
 
 const DEFAULT_COL_DEF = { resizable: true, sortable: true, filter: true }

@@ -46,7 +46,7 @@ function StatusPill({ state }) {
       icon={
         <Box
           component="span"
-          bg={`${pill.color}.6`}
+          bg={pill.color}
           className={`${classes.dot} ${pill.pulse ? classes.pulse : ''}`}
           aria-hidden
         />
@@ -99,7 +99,7 @@ function ProtocolRow({ row }) {
   )
 }
 
-const TEXT_COLORS = { o: undefined, e: 'red.9' }
+const TEXT_COLORS = { o: undefined, e: 'red' }
 
 function TextRow({ row }) {
   return (

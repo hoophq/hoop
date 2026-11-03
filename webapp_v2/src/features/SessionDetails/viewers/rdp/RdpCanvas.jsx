@@ -5,6 +5,7 @@ import { drawBitmap } from './rleDecoder'
 import classes from './Rdp.module.css'
 
 // The recording background before its first bitmap.
+// theme-exception: the remote screen's own black, behind the first frame.
 const SCREEN_BLACK = '#000'
 
 // A bitmap is a region update, so a frame is everything drawn up to it. Forward
@@ -41,6 +42,7 @@ export default function RdpCanvas({ frames, index, time, width, height, snapshot
     for (const detection of activeDetections(snapshots, time) || []) {
       const { x, y, width: w, height: h, entity_type: type } = detection
       if (!(w > 0 && h > 0) || !enabledTypes.has(type)) continue
+      // theme-exception: a canvas needs a concrete color; it reads the entity's palette from the theme.
       const color = theme.colors[entityColor(type)]?.[6] || theme.colors.gray[6]
       ctx.fillStyle = alpha(color, 0.25)
       ctx.strokeStyle = alpha(color, 0.85)

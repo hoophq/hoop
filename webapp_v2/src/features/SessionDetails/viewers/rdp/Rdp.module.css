@@ -16,8 +16,8 @@
   background: var(--mantine-color-body);
 }
 
-/* The one dark surface the theme does not name: a video stage behind the
-   recording, as a media player draws it. */
+/* theme-exception: a video stage behind the recording, as a media player
+   draws it; no component or role owns it. */
 .stage {
   position: relative;
   display: flex;
