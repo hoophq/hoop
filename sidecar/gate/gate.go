@@ -854,10 +854,13 @@ func (g *Gate) DiscardResponse() {
 // body). Each takes the path a decoded response takes in inspect: the
 // exchange it answers, the request it releases once judged, then policy,
 // audit and the counters through judge. The Decision carries the
-// statements, for the relay's clock, and a denial: the body already
-// reached the client, so the relay cannot withhold it, but it discards what
-// the reframer still holds and cuts the response, as for a denial inside
-// one. No bytes travel in it.
+// statements, for the relay's clock, and a denial. Most such bodies have
+// reached the client by then, so the relay cannot withhold them: it
+// discards what the reframer still holds and cuts the response, as for a
+// denial inside one (NoFrame). A body the reframer still holds whole, head
+// included (a short text body with no newline), has not: the relay
+// discards it and answers with its deny frame. No bytes travel in the
+// Decision.
 //
 // The relay calls it on a normal server EOF only, before FlushResponse, so
 // the audit row precedes the last bytes out. After a read error or a reset
@@ -873,6 +876,9 @@ func (g *Gate) EndOfStream() Decision {
 	if !ok {
 		return d
 	}
+	// Read before the codec lets go of the response: afterwards it reports
+	// nothing in progress.
+	started := g.responseStarted(nil)
 	stmts := ender.EndOfStream(inspect.FromServer)
 	d.Statements = stmts
 	if len(stmts) == 0 {
@@ -893,7 +899,7 @@ func (g *Gate) EndOfStream() Decision {
 		if j.refusal != nil {
 			r := *j.refusal
 			r.Statements = stmts
-			r.Payload, r.NoFrame = nil, true
+			r.Payload, r.NoFrame = nil, started
 			return r
 		}
 		if j.err != nil {
@@ -906,7 +912,7 @@ func (g *Gate) EndOfStream() Decision {
 			d.Review = j.review
 			denied := stmt
 			d.DeniedStatement = &denied
-			d.NoFrame = true
+			d.NoFrame = started
 			return d
 		}
 	}

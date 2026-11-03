@@ -796,7 +796,8 @@ func TestGateHonorsCodecReassemblyLimit(t *testing.T) {
 // length and no chunking: it forwards the bytes as they arrive and hands
 // the response statement over only at stream end.
 type closeDelimitedCodec struct {
-	ended int
+	ended   int
+	started bool // what ResponseStarted reports while the body is in flight
 }
 
 func (*closeDelimitedCodec) Protocol() inspect.Protocol { return inspect.HTTP }
@@ -807,6 +808,7 @@ func (*closeDelimitedCodec) Rewrite(data []byte, _ func(string, []byte) []byte) 
 	return data, inspect.ReframeResult{}, nil
 }
 func (*closeDelimitedCodec) Flush(func(string, []byte) []byte) []byte { return nil }
+func (c *closeDelimitedCodec) ResponseStarted() bool                  { return c.started && c.ended == 0 }
 func (c *closeDelimitedCodec) EndOfStream(dir inspect.Direction) []inspect.Statement {
 	c.ended++
 	if dir != inspect.FromServer || c.ended > 1 {
@@ -821,16 +823,26 @@ func (c *closeDelimitedCodec) EndOfStream(dir inspect.Direction) []inspect.State
 // A close-delimited response body ends with the connection, so its
 // statement exists only then. EndOfStream asks the codec for it and judges
 // it as inspect would have: the audit trail records the response, and a
-// rule on it is audited as a denial (ENG-946).
+// rule on it is audited as a denial (ENG-946). The denial asks for no
+// frame when the response reached the client in part, and keeps it when
+// the codec still held the response whole.
 func TestEndOfStreamResponseIsJudgedAndAudited(t *testing.T) {
-	for name, pol := range map[string]policy.Evaluator{"allowed": nil, "denied": no200(t)} {
+	for name, tc := range map[string]struct {
+		pol     policy.Evaluator
+		started bool
+	}{
+		"allowed":      {nil, true},
+		"denied, sent": {no200(t), true},
+		"denied, held": {no200(t), false},
+	} {
 		t.Run(name, func(t *testing.T) {
+			pol := tc.pol
 			sink := &recordingSink{}
 			g, err := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}), gate.Config{
 				Protocol:     inspect.HTTP,
 				Audit:        sink,
 				Policy:       pol,
-				CodecFactory: func() inspect.Codec { return &closeDelimitedCodec{} },
+				CodecFactory: func() inspect.Codec { return &closeDelimitedCodec{started: tc.started} },
 			})
 			if err != nil {
 				t.Fatalf("New: %v", err)
@@ -846,8 +858,8 @@ func TestEndOfStreamResponseIsJudgedAndAudited(t *testing.T) {
 			if d.Allowed != (pol == nil) || len(d.Statements) != 1 || len(d.Payload) != 0 {
 				t.Fatalf("EndOfStream = %+v, want Allowed=%v, one statement, no bytes", d, pol == nil)
 			}
-			if pol != nil && (!d.NoFrame || d.DeniedStatement == nil || d.Rule == "") {
-				t.Fatalf("a denial at stream end must name its rule and ask for no frame: %+v", d)
+			if pol != nil && (d.NoFrame != tc.started || d.DeniedStatement == nil || d.Rule == "") {
+				t.Fatalf("a denial at stream end must name its rule and ask for NoFrame=%v: %+v", tc.started, d)
 			}
 			kind := audit.KindStatement
 			if pol != nil {

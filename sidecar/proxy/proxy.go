@@ -935,12 +935,15 @@ func (s *Server) pump(
 					log.Warn("inspection reported an error", "direction", string(dir), "error", d.Err)
 				}
 				if !d.Allowed {
-					// The body already reached the client: what the
-					// reframer still holds is dropped, and the response is
-					// cut, as for a denial inside one.
+					// What the reframer still holds is dropped. A body that
+					// reached the client in part is cut, as for a denial
+					// inside one; one held whole gets the deny frame.
 					s.denied.Add(1)
 					log.Info("statement denied", "direction", string(dir), "rule", d.Rule, "message", d.Message)
 					g.DiscardResponse()
+					if !d.NoFrame {
+						s.writeDenyFrame(g, dst, dir, d, log)
+					}
 					return
 				}
 			}

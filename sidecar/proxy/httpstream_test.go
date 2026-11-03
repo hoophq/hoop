@@ -184,42 +184,58 @@ func TestLargeHTTPResponseAuditKeepsTheBodyUpToMaxBodyBytes(t *testing.T) {
 	}
 }
 
-// A close-delimited response is judged when the upstream closes, after its
-// body went out. A rule that denies it cannot take the body back, but the
-// lane drops what the masker still held (the last line, with no newline),
-// records the denial and counts it; the rest of the masked body stays as
-// it went out.
+// A close-delimited response is judged when the upstream closes. A rule
+// that denies it cannot take back a body that went out: the lane drops
+// what the masker still held (the last line, with no newline), cuts the
+// response, records the denial and counts it. A short text body with no
+// newline is still held whole then, head included: the client gets the
+// lane's 403 instead.
 func TestCloseDelimitedResponseDeniedAtStreamEndIsCutAndAudited(t *testing.T) {
-	body := []byte("1\tada@example.com\n2\tada@example.com\n3\tbob@example.com")
-	sink := audit.NewMemorySink(64)
-	srv := startServer(t, proxy.Config{
-		Upstream:   oneShotUpstream(t, tsvResponse("close-delimited", body)),
-		Protocol:   inspect.HTTP,
-		Policy:     no200Responses(t),
-		Masker:     emailMasker{},
-		Audit:      sink,
-		DenyWriter: proxy.ProtocolDenyWriter{},
-	})
-	got := rawExchange(t, srv.Addr().String(), "GET /rows HTTP/1.1\r\nHost: h\r\n\r\n")
-	_, b := parseResponse(t, got)
-	if want := "1\t[REDACTED]\n2\t[REDACTED]\n"; string(b) != want {
-		t.Fatalf("client read %q, want the masked lines before the end and nothing held after the denial", b)
-	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && !hasKind(sink.Events(), audit.KindSessionEnd) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	var violations int
-	for _, ev := range sink.Events() {
-		if ev.Kind == audit.KindViolation && ev.Direction == inspect.FromServer {
-			violations++
-		}
-	}
-	if violations != 1 {
-		t.Fatalf("got %d response violations, want 1: %+v", violations, sink.Events())
-	}
-	if _, _, denied := srv.Stats(); denied != 1 {
-		t.Fatalf("denied = %d, want 1", denied)
+	for name, tc := range map[string]struct {
+		body, want string
+		status     int
+	}{
+		"sent in part": {"1\tada@example.com\n2\tada@example.com\n3\tbob@example.com", "1\t[REDACTED]\n2\t[REDACTED]\n", 200},
+		"held whole":   {"1\tada@example.com", "", 403},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sink := audit.NewMemorySink(64)
+			srv := startServer(t, proxy.Config{
+				Upstream:   oneShotUpstream(t, tsvResponse("close-delimited", []byte(tc.body))),
+				Protocol:   inspect.HTTP,
+				Policy:     no200Responses(t),
+				Masker:     emailMasker{},
+				Audit:      sink,
+				DenyWriter: proxy.ProtocolDenyWriter{},
+			})
+			got := rawExchange(t, srv.Addr().String(), "GET /rows HTTP/1.1\r\nHost: h\r\n\r\n")
+			resp, b := parseResponse(t, got)
+			if resp.StatusCode != tc.status {
+				t.Fatalf("status %s, want %d: %q", resp.Status, tc.status, got)
+			}
+			if tc.status == 200 && string(b) != tc.want {
+				t.Fatalf("client read %q, want the masked lines before the end and nothing held after the denial", b)
+			}
+			if bytes.Contains(got, []byte("ada@example.com")) {
+				t.Fatalf("the address went out: %q", got)
+			}
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) && !hasKind(sink.Events(), audit.KindSessionEnd) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			var violations int
+			for _, ev := range sink.Events() {
+				if ev.Kind == audit.KindViolation && ev.Direction == inspect.FromServer {
+					violations++
+				}
+			}
+			if violations != 1 {
+				t.Fatalf("got %d response violations, want 1: %+v", violations, sink.Events())
+			}
+			if _, _, denied := srv.Stats(); denied != 1 {
+				t.Fatalf("denied = %d, want 1", denied)
+			}
+		})
 	}
 }
 
