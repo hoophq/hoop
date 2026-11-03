@@ -6,6 +6,7 @@ import (
 
 	"github.com/hoophq/hoop/client/cmd/admin"
 	"github.com/hoophq/hoop/client/cmd/config"
+	"github.com/hoophq/hoop/client/cmd/contexts"
 	"github.com/hoophq/hoop/client/cmd/runbooks"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/client/cmd/versions"
@@ -63,6 +64,7 @@ func init() {
 	rootCmd.AddCommand(config.MainCmd)
 	rootCmd.AddCommand(admin.MainCmd)
 	rootCmd.AddCommand(versions.MainCmd)
+	rootCmd.AddCommand(contexts.MainCmd)
 	rootCmd.AddCommand(claudeCmd)
 }
 
