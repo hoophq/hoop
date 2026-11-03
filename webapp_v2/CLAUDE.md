@@ -418,6 +418,15 @@ Available Mantine CSS variables (set by the theme in `src/theme.js`):
 var(--mantine-spacing-xsAlt | smAlt | mdAlt | lgAlt | xlAlt | xxlAlt | xxxlAlt)
 var(--mantine-spacing-xs | sm | md | lg | xl)
 
+/* Colors come from the theme. A surface is a component (Paper variant,
+   Divider, Alert, CodeSnippet) whose theme sets its color; a CSS Module names
+   no color unless it draws a one-off effect. Where no component fits, use the
+   role tokens below, never gray-N (the gray scale starts at Radix step 3;
+   CLJS_PATTERNS.md has the mapping). */
+var(--hoop-surface-subtle | muted | strong | raised)
+var(--hoop-border-subtle | divider)
+var(--hoop-terminal-bg | text)
+
 /* Font sizes — xs=12px sm=14px md=16px lg=18px xl=20px */
 var(--mantine-font-size-xs | sm | md | lg | xl)
 

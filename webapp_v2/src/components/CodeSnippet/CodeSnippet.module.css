@@ -3,7 +3,7 @@
 }
 
 .root[data-variant='black'] {
-  background-color: var(--mantine-color-dark-8);
+  background-color: var(--hoop-terminal-bg);
 }
 
 .root[data-variant='gray'] {
@@ -25,7 +25,7 @@
 }
 
 .root[data-variant='black'] .pre {
-  color: var(--mantine-color-gray-2);
+  color: var(--hoop-terminal-text);
 }
 
 .root[data-variant='gray'] .pre {

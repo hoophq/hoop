@@ -14,6 +14,8 @@ import {
   ComboboxTheme,
 } from '@/components/Input/theme';
 import { PaperTheme } from '@/components/Paper/theme'
+import { ModalTheme } from '@/components/Modal/theme'
+import { DividerTheme } from '@/components/Divider/theme'
 import { StepperTheme } from '@/components/Stepper/theme';
 import { ButtonTheme } from '@/components/Button/theme';
 import { ActionIconTheme } from '@/components/ActionIcon/theme';
@@ -42,6 +44,23 @@ export function cssVariablesResolver(theme) {
       // Pure white. theme.white is #FCFCFD — same as --mantine-color-body,
       // so it cannot separate a surface from the page.
       '--hoop-surface-raised': '#ffffff',
+
+      // Surfaces and borders by role: a page names what a gray is for, and its
+      // weight is set here once. The gray scale starts at Radix step 3, so a
+      // CLJS `--gray-N` is not the theme's `gray-N` (CLJS_PATTERNS.md).
+      // A card on the page or in a modal: halfway to gray-0, with a soft border.
+      '--hoop-surface-subtle': 'color-mix(in srgb, var(--mantine-color-gray-0) 50%, var(--mantine-color-body))',
+      // A row hover, an input row, a control strip, a "preview not available" card.
+      '--hoop-surface-muted': 'var(--mantine-color-gray-0)',
+      // A chip or a notice that sits on a subtle surface.
+      '--hoop-surface-strong': 'var(--mantine-color-gray-1)',
+      // The outline of a card, a viewer or a bar.
+      '--hoop-border-subtle': 'var(--mantine-color-gray-1)',
+      // A line between rows of a list.
+      '--hoop-border-divider': 'var(--mantine-color-gray-0)',
+      // The dark terminal surface: CodeSnippet "black" and the session output viewers.
+      '--hoop-terminal-bg': 'var(--mantine-color-dark-8)',
+      '--hoop-terminal-text': 'var(--mantine-color-gray-2)',
 
       // Control height scale — the single source of truth for Button,
       // ActionIcon, and every Input-based component. md is the app-wide
@@ -280,6 +299,8 @@ export const theme = createTheme({
     // so a plain theme entry stands in for Component.extend().
     PickerInputBase: { defaultProps: { size: 'md' } },
     Paper: PaperTheme,
+    Modal: ModalTheme,
+    Divider: DividerTheme,
     Stepper: StepperTheme,
     Button: ButtonTheme,
     ActionIcon: ActionIconTheme,

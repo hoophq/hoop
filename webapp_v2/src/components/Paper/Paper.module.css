@@ -10,3 +10,31 @@
 .root {
   --paper-border-color: var(--mantine-color-gray-2);
 }
+
+/* Surfaces by role. A page picks a variant; the colors live here and in the
+   theme tokens (theme.js). A border shows only with `withBorder`. */
+.root[data-variant='subtle'] {
+  --paper-border-color: var(--hoop-border-subtle);
+  background-color: var(--hoop-surface-subtle);
+}
+
+.root[data-variant='outline'] {
+  --paper-border-color: var(--hoop-border-subtle);
+}
+
+.root[data-variant='muted'] {
+  background-color: var(--hoop-surface-muted);
+}
+
+.root[data-variant='strong'] {
+  background-color: var(--hoop-surface-strong);
+}
+
+/* AI features (Figma "AI Data Masking"). */
+.root[data-variant='accent'] {
+  background-color: var(--mantine-color-violet-0);
+}
+
+.root[data-variant='accent-strong'] {
+  background-color: var(--mantine-color-violet-1);
+}

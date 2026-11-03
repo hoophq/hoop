@@ -312,6 +312,26 @@ Global resting border color **and height scale** for every Input-based component
 ### `Paper` (theme-level, no wrapper)
 Global border color for `Paper` — and `Card`, which renders through Paper — via `Paper.extend()` in `src/components/Paper/theme.js` (registered in `src/theme.js`). Same story as `Input`: Mantine declares `--paper-border-color` per color scheme directly on the Paper root, out of reach of `cssVariablesResolver`, so a co-located CSS Module rule overrides it on the element. Only visible on instances using `withBorder`; the value matches the app-wide input resting border. To change it, edit `src/components/Paper/Paper.module.css`.
 
+
+Surfaces by role, set in `Paper.module.css` from the theme tokens. Pick a
+`variant` instead of a color:
+
+| `variant` | Use | Border with `withBorder` |
+|-----------|-----|---------------|
+| `subtle` | a card in a page or modal (insight cards) | soft |
+| `outline` | a framed viewer (live tail, RDP player) | soft |
+| `muted` | a gray strip, a "preview not available" card | — |
+| `strong` | a chip or a notice on a subtle surface | — |
+| `accent`, `accent-strong` | AI features (Figma "AI Data Masking") | — |
+
+```jsx
+<Paper withBorder variant="subtle" radius="md" p="sm">…</Paper>
+```
+
+### `Divider` (theme-level, no wrapper)
+`components/Divider/theme.js` gives every `Divider` the soft border color
+(Mantine's default is `gray-3`, too dark in this theme). A `color` prop still
+overrides it.
 ### `Pill` (theme-level, no wrapper)
 Chips are styled globally via `Pill.extend()` in `src/components/Pill/theme.js` (registered in `src/theme.js`): fully rounded, Figma neutral background `rgba(0,0,51,0.06)`, `#60646c` text. Every Mantine component that renders pills — `MultiSelect`, `TagsInput`, `PillsInput` compositions — inherits it automatically, matching the legacy webapp's react-select chips. Variant pills (e.g. the managed protection-profile pill) override per instance with `bg`/`c` style props.
 
@@ -367,7 +387,7 @@ and `ActionMenu.Divider` are re-exported. The header's user menu is the `target`
 > bundles. Revisit if a third drawer appears.
 
 ### `Modal`
-Application modal dialog wrapping Mantine `Modal` with centered + radius defaults.
+Application modal dialog wrapping Mantine `Modal` with centered + radius defaults. Every Mantine modal dims the page at 40%, as the CLJS dialogs do (`components/Modal/theme.js`).
 ```jsx
 import Modal from '@/components/Modal'
 import { useDisclosure } from '@mantine/hooks'
