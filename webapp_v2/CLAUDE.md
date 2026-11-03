@@ -322,7 +322,7 @@ window.hoopDispatch(['modal->open', 'some-modal'])
 
 **1. Mantine style props** — always first. Cover the vast majority of cases.
 ```jsx
-<Box mih="100%" p="md" maw={400} w="90%" h="100vh" bg="gray.0" />
+<Box mih="100%" p="md" maw={400} w="90%" h="100vh" />
 <Text c="dimmed" fz="sm" fw={600} ta="center" />
 <Stack gap="lg" align="center" />
 ```
@@ -436,11 +436,14 @@ var(--mantine-line-height-xs | sm | md | lg | xl)
 /* Border radius — xs=4.5px sm=6px md=9px lg=12px xl=18px */
 var(--mantine-radius-xs | sm | md | lg | xl)
 
-/* Colors — e.g. indigo, gray, green, amber, red, sky */
-var(--mantine-color-{name}-{0-9})
-var(--mantine-color-{name}-filled)       /* primary shade, solid bg */
+/* Semantic colors, never a shade number: outside src/components and
+   src/theme.js, test/themeColors.test.js fails on --mantine-color-{name}-{0-9},
+   a hex or an rgb(). A one-off effect says `theme-exception:` in its comment. */
+var(--mantine-color-{name}-filled)       /* solid fill */
 var(--mantine-color-{name}-light)        /* light variant bg */
 var(--mantine-color-{name}-light-color)  /* light variant text */
+var(--mantine-primary-color-filled | light | light-color)
+var(--mantine-color-text | dimmed | body)
 ```
 
 ```css
@@ -448,14 +451,14 @@ var(--mantine-color-{name}-light-color)  /* light variant text */
 .label { font-size: 12px; margin-bottom: 8px; color: #3e63dd; }
 
 /* ✅ Correct — always reference the theme */
-.label { font-size: var(--mantine-font-size-xs); margin-bottom: var(--mantine-spacing-sm); color: var(--mantine-color-indigo-8); }
+.label { font-size: var(--mantine-font-size-xs); margin-bottom: var(--mantine-spacing-sm); color: var(--mantine-color-dimmed); }
 ```
 
 ## Text color — use Mantine tokens, not raw names
 
 - For secondary text use `c="dimmed"`. The `--mantine-color-dimmed` variable is set in `theme.js` `cssVariablesResolver()` to Radix slate11 (`#60646c`, ~5.7:1 on white — passes WCAG AA). Body text is `--mantine-color-text` = slate12 (`#1c2024`).
 - Never use raw names like `c="dark"` or `c="light"` — those palettes are not defined in `theme.js` and silently fall back to Mantine defaults. For near-black text simply omit the prop to inherit `var(--mantine-color-text)`; `gray.9` is `#4d4d60` (a mid slate), not near-black.
-- On dark navy surfaces (`--brand-navy`), never color text with the gray scale — it is calibrated for light backgrounds. Use white color-mix tones instead (see `EnterpriseBanner.module.css`, `pages/Auth/Setup/Setup.module.css`).
+- On dark navy surfaces (`--brand-navy`), never color text with the gray scale — it is calibrated for light backgrounds. Use the `--hoop-on-navy-*` tokens (`theme.js`); `EnterpriseBanner` and `SelectionCard` keep their own tones inside `src/components`.
 - When adding a new palette or changing `primaryColor`, re-verify `c="dimmed"` contrast in DevTools.
 
 ## CSS Layers — do not disable
@@ -483,7 +486,7 @@ Debug checklist:
 1. Is the CSS Module imported in the JSX? (Vite only bundles it if there's `import classes from './X.module.css'`.)
 2. Are classes applied via `classNames={{ slot: classes.foo }}`, not `className`? Internal slots of Mantine components ignore `className`.
 3. Is the slot name correct? Check the "Styles API" section of the Mantine component's docs.
-4. Does the CSS Module use only `var(--mantine-*)` values? Hardcoded hex/px are forbidden by the styling hierarchy — the only sanctioned literals are Figma alpha-overlay tints that have no Mantine variable (e.g. `rgba(0, 0, 51, 0.06)` Neutral Alpha and `rgba(0, 0, 0, 0.05)` Black Alpha, used by `Pill/theme.js` and `Sidebar.module.css` hover/active states), and rgba-white contrast painting on the dark `--brand-navy` surfaces (`SelectionCard`).
+4. Does the CSS Module name a color? It must not: colors come from the component's theme or the role tokens in `theme.js` (the sidebar's Figma alpha overlays are `--hoop-nav-*`, white tones on the brand navy are `--hoop-on-navy-*`). `test/themeColors.test.js` fails on a shade or a literal outside `src/components` and `src/theme.js`.
 5. If it still doesn't apply and `layers.css` is imported, inspect the rule in DevTools and confirm it's inside `@layer mantine` — if not, the `styles.layer.css` import was broken.
 
 ## Reference Implementation

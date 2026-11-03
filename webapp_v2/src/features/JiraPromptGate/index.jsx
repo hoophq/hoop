@@ -18,7 +18,7 @@ function CmdbError({ onRetry, onCancel }) {
           {"We couldn't retrieve some required CMDB data from your Jira server. This template requires valid CMDB fields to continue."}
         </Text>
         {/* amber, not orange: theme.js has no orange palette. */}
-        <Text fz="sm" c="amber.9">
+        <Text fz="sm" c="amber">
           This is usually due to Jira server availability or permission issues. Please contact your
           Jira administrator to ensure the CMDB service is functioning properly.
         </Text>

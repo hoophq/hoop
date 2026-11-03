@@ -21,7 +21,7 @@
 /* An expanded row tints its header so the panel below reads as belonging to
    it; the panel itself stays on the body surface. */
 .row[data-expanded] {
-  background-color: var(--mantine-color-indigo-0);
+  background-color: var(--mantine-primary-color-light);
 }
 
 .panel {

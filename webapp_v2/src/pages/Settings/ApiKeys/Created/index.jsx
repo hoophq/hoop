@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Alert, Box, Button, Flex, Group, Stack, Text, TextInput, Title } from '@mantine/core'
+import { Alert, Box, Button, Flex, Group, Stack, Text, TextInput, Title, ThemeIcon } from '@mantine/core'
 import { CheckCircle, Info } from 'lucide-react'
 import CopyButton from '@/components/CopyButton'
 
@@ -13,9 +13,9 @@ export default function ApiKeysCreated() {
       <Box maw={520} w="100%">
         <Stack gap="xl">
           <Flex direction="column" align="center" gap="sm">
-            <Box p="md" bg="green.1" style={{ borderRadius: '50%' }}>
-              <CheckCircle size={40} color="var(--mantine-color-green-7)" />
-            </Box>
+            <ThemeIcon variant="light" color="green" size={72} radius={72}>
+              <CheckCircle size={40} />
+            </ThemeIcon>
             <Title order={2} ta="center">
               Your API key is ready!
             </Title>

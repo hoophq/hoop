@@ -63,7 +63,7 @@ export function SidebarCollapsed({ nav }) {
         {sections.map(({ id, label, block, items }, index) => (
           <Box key={id} w="100%" mt={index > 0 && block === sections[index - 1].block ? 'md' : undefined}>
             {index > 0 && block !== sections[index - 1].block && (
-              <Divider color="gray.1" my="sm" w={RAIL_ITEM_WIDTH} mx="auto" />
+              <Divider my="sm" w={RAIL_ITEM_WIDTH} mx="auto" />
             )}
             <Stack gap="xsAlt" align="center" role="list" aria-label={label}>
               {items.filter((item) => item.icon).map(renderItem)}

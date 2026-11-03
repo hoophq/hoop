@@ -50,7 +50,7 @@ function OutcomeBadge({ httpStatus }) {
 
 function ExpandedRow({ log }) {
   return (
-    <Box bg="gray.0" p="md">
+    <Box bg="var(--hoop-surface-muted)" p="md">
       <Stack gap="lg">
         <Group gap="xs">
           <Network size={16} />
@@ -72,16 +72,16 @@ function ExpandedRow({ log }) {
 
         {(log.http_status == null || log.http_status >= 400) && log.error_message && (
           <Group gap="xs" align="flex-start">
-            <CircleAlert size={16} color="var(--mantine-color-red-6)" />
+            <CircleAlert size={16} color="var(--mantine-color-red-filled)" />
             <Text size="sm" c="dimmed">Error:</Text>
-            <Text size="sm" fw={500} c="red.7">{log.error_message}</Text>
+            <Text size="sm" fw={500} c="red">{log.error_message}</Text>
           </Group>
         )}
 
         {log.request_payload_redacted && Object.keys(log.request_payload_redacted).length > 0 && (
           <Stack gap="xs">
             <Text size="sm" fw={700}>Raw Payload</Text>
-            <Code block bg="black" c="gray.0" className={classes.codeBlock}>
+            <Code block variant="terminal" className={classes.codeBlock}>
               {JSON.stringify(log.request_payload_redacted, null, 2)}
             </Code>
           </Stack>

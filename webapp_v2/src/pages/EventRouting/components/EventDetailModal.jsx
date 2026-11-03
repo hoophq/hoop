@@ -21,7 +21,7 @@ export default function EventDetailModal() {
   })()
 
   return (
-    <Modal opened={!!evt} onClose={onClose} title={<Code bg="indigo.1" c="indigo.9">{evt.name}</Code>} size="lg">
+    <Modal opened={!!evt} onClose={onClose} title={<Code variant="accent">{evt.name}</Code>} size="lg">
       <Stack gap="md">
         <Group justify="space-between" align="flex-start">
           <EventDescription text={evt.description} size="sm" c="dimmed" style={{ flex: 1 }} />
@@ -53,20 +53,9 @@ export default function EventDetailModal() {
 
         <Stack gap={4}>
           <Title order={5}>Sample payload</Title>
-          <Box
-            p="sm"
-            bg="dark.7"
-            c="gray.0"
-            style={{
-              borderRadius: 'var(--mantine-radius-sm)',
-              fontFamily: 'var(--mantine-font-family-monospace)',
-              fontSize: 12,
-              lineHeight: 1.55,
-              overflow: 'auto',
-            }}
-          >
-            <pre style={{ margin: 0 }}>{sampleJson}</pre>
-          </Box>
+          <Code block variant="terminal" display="block" w="100%">
+            {sampleJson}
+          </Code>
         </Stack>
       </Stack>
     </Modal>

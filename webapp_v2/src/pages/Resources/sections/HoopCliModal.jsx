@@ -95,7 +95,7 @@ export default function HoopCliModal({ connectionName, onClose }) {
           </Stack>
         </ScrollArea>
         {/* Absolute, so the picture takes the content's height instead of setting it. */}
-        <Box w="45%" pos="relative" bg="indigo.0" visibleFrom="sm">
+        <Box w="45%" pos="relative" bg="var(--mantine-primary-color-light)" visibleFrom="sm">
           <Image src="/images/illustrations/cli-promotion.png" alt="" pos="absolute" inset={0} w="100%" h="100%" fit="cover" />
         </Box>
       </Group>

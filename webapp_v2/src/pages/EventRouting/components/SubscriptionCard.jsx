@@ -30,7 +30,7 @@ export default function SubscriptionCard({ sub }) {
                 <Box
                   w={8}
                   h={8}
-                  bg="red.6"
+                  bg="red"
                   style={{ borderRadius: '50%' }}
                   aria-label="Has recent failures"
                 />
@@ -54,7 +54,7 @@ export default function SubscriptionCard({ sub }) {
 
         <Group gap="md" wrap="wrap">
           <Meta label="Event">
-            {eventName ? <Code bg="indigo.1" c="indigo.9">{eventName}</Code> : <Text size="xs" c="dimmed">—</Text>}
+            {eventName ? <Code variant="accent">{eventName}</Code> : <Text size="xs" c="dimmed">—</Text>}
           </Meta>
           <Meta label="Role">
             <Text size="xs">{sub.connectionName || '—'}</Text>

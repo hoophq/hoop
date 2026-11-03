@@ -38,3 +38,12 @@
 .root[data-variant='accent-strong'] {
   background-color: var(--mantine-color-violet-1);
 }
+
+/* A tinted note: information (indigo) or a warning (amber). */
+.root[data-variant='info'] {
+  background-color: var(--mantine-color-indigo-0);
+}
+
+.root[data-variant='warning'] {
+  background-color: var(--mantine-color-amber-0);
+}

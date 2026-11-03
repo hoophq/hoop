@@ -15,7 +15,7 @@ export default function RoleSummary({ role, iconSrc, iconAlt }) {
           {role.resource_name}
         </Text>
         <Group gap={4}>
-          <Box w={6} h={6} bg={online ? 'green.6' : 'red.6'} bdrs="xl" aria-hidden="true" />
+          <Box w={6} h={6} bg={online ? 'green' : 'red'} bdrs="xl" aria-hidden="true" />
           <Text size="xs" c="dimmed">
             {capitalize(role.status)}
           </Text>
