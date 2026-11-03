@@ -20,8 +20,8 @@ github.com/google/jsonschema-go v0.4.3 h1:/DBOLZTfDow7pe2GmaJNhltueGTtDKICi8V8p+
 github.com/google/jsonschema-go v0.4.3/go.mod h1:r5quNTdLOYEz95Ru18zA0ydNbBuYoo9tgaYcxEYhJVE=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33 h1:LA3gQWvjrwb7iErn8gshVYKDwzfmb1nMLiideTuObhQ=
-github.com/hoophq/libhoop v0.0.0-20261029182010-fd5e0b48bb33/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
+github.com/hoophq/libhoop v0.0.0-20261103131009-c86c3c21eb7f h1:uZY3C1JwxF+7/FnekT5f7QgPklHxhHBIblM6zaIYwkg=
+github.com/hoophq/libhoop v0.0.0-20261103131009-c86c3c21eb7f/go.mod h1:g0+whcHAPsvbtIcrorFc27RoyyZ5/DSZ4gcwqKWyrtw=
 github.com/hoophq/mcpproxy v0.1.5 h1:AYrkZkJ/VsJ/ruo+K3ZAkjUCVVHbFx5eo2/kSWOX/mw=
 github.com/hoophq/mcpproxy v0.1.5/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=

@@ -137,6 +137,11 @@ func TestViaStopsAfterAProtocolSwitch(t *testing.T) {
 		if out, err := c.Filter(inspect.FromClient, []byte(tc.head+"\r\n")); err != nil || string(out) != tc.head+via()+"\r\n" {
 			t.Fatalf("switch request: %q, %v", out, err)
 		}
+		// The gate decodes what Filter let through; a 2xx answers a
+		// CONNECT only when the codec saw the CONNECT.
+		if _, _, err := c.Decode(inspect.FromClient, []byte(tc.head+via()+"\r\n")); err != nil {
+			t.Fatal(err)
+		}
 		if _, _, err := c.Decode(inspect.FromServer, []byte("HTTP/1.1 "+tc.answer+"\r\n\r\n")); err != nil {
 			t.Fatal(err)
 		}

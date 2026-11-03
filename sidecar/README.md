@@ -2610,6 +2610,7 @@ capability it does not implement is a feature the lane refuses at load:
 | `gate.Duplex` | the meaning of a server message depends on client-side state (negotiated capabilities, the command in flight, a prepared statement's text). The gate then builds ONE instance for both directions; the per-direction reassembly buffers still stay apart |
 | `gate.StreamFilter` | the codec must change bytes before inspection or forwarding, in both directions: ClickHouse clamps the advertised protocol revisions here. A filter may hold a prefix and return nothing; an error is fatal |
 | `MaxReassemblyBytes() int` | the protocol admits a message larger than the 8 MiB default and the codec is the authority on its own cap |
+| `EndOfStream(dir) []Statement` | a statement completes only when the server stream ends, as a close-delimited HTTP body does. The relay asks on a normal server EOF, before the reframer flushes, and judges and audits what comes back; a denial then drops what the reframer still holds and cuts the response when part of it went out, or answers with the deny frame when the reframer still held it whole |
 | `gate.CredentialSource` | requests carry a credential the lane resolves to an identity (HTTP's `Authorization` or an identity header). The gate refuses `RequestIdentity` on a codec without it |
 | `gate.DenyFramer` | always, for a protocol `proxy.ProtocolDenyWriter` does not know by name. The gate asks the codec first and falls back to the writer; without either a denial is a bare socket close with no reason the user can read |
 | `gate.Labeled` | the protocol is registered and the control-plane listener form should show a human-readable name |
@@ -4039,6 +4040,15 @@ credential, since a caller holding the `*http.Request` already has the
 header; it still keeps it out of `HTTP.Headers` unless `Options.Headers`
 names it.
 
+**A response body streams.** The lane forwards a response body as it
+arrives, under every framing (`Content-Length`, chunked, ended by the
+close), with no size limit: a 20 MiB export passes whole. Its statement is
+emitted when the body ends, with the body cut at `max_body_bytes` (64 KiB
+unless set) and `body_truncated` set, under `capture_body`. What is held
+and bounded is only a body masking must rewrite as one unit; see [Masking
+and PII](#masking-and-pii). Before this, every http lane cut a response at
+8 MiB with a 403 (ENG-946).
+
 **Normalized resources.** `/users/12345/orders/98765` becomes
 `/users/*/orders/*`, so one rule replaces a regex per endpoint. A short slug
 like `/users/alice` survives intact: merging it with `/users/settings` would
@@ -4895,14 +4905,17 @@ ends and what declares its length.
   value, or each text line, goes out as soon as it is whole, so a `kubectl
   get -w` or a `kubectl logs -f` is not held to its end — and a gzip or
   deflate body is undone around the masker and compressed again. A binary
-  body is forwarded as it arrives. A text or JSON body under an encoding
+  body is forwarded as it arrives, and a text body streams line by line,
+  so neither has a size limit; a fixed-length text body over 16 MiB goes
+  out chunked, which an HTTP/1.0 response cannot, so that one is held and
+  refused at 16 MiB. A text or JSON body under an encoding
   the codec cannot undo (zstd, br, lz4) is refused with a 403 and an error
-  event rather than forwarded unmasked. So is a body too large to mask: one
-  held past the 8 MiB inspection buffer, or a gzip or deflate body that
-  inflates past 16 MiB. A gzip body is small on the wire, so the server, not
-  the client, decides whether it reaches that size, and forwarding it as it
-  came would hand the client every row unmasked. The lane keeps serving after
-  the refusal.
+  event rather than forwarded unmasked. So is a body masked as one unit
+  that is larger than 16 MiB: one JSON document, or a gzip or deflate body
+  that inflates past it. A gzip body is small on the wire, so the server,
+  not the client, decides whether it reaches that size, and forwarding it as
+  it came would hand the client every row unmasked. The lane keeps serving
+  after the refusal.
 
 A codec that cannot re-frame gets its `mask.rules` refused at startup,
 because accepting a masking config that can never fire is the failure that
@@ -5525,3 +5538,11 @@ because `e2e/` is deliberately not a `go.work` member:
 Each codec runs a split-read matrix: the tests feed the same message in two
 chunks at every possible boundary, then assert that a fragment emits no
 statement and that reassembly loses none.
+
+### ICA cell slots (TCP)
+
+The optional listener `ica.slots` block maps consecutive unprivileged ports to VDA hostnames, using one shared OCR/NER runtime. See [config.slots.yaml](../deploy/ica-sidecar/examples/config.slots.yaml). Use one `%d`/`%03d` hostname pattern or an explicit `names` list, plus destination/frontend CIDRs; Gateway sources are mandatory. Fixed `upstream`, transparent mode and EDT are mutually exclusive with slots. Names resolve on connection with a 2-second timeout and at most a 30-second application cache, then the engine validates and dials a literal allowed address. Audits include slot, upstream_name and upstream.
+
+`ica.readiness_capacity` is off by default. With it enabled, `ica.readiness_headroom` reserves capacity in the readiness signal; hard admission still checks max_sessions across all ICA lanes. Verify established connections survive Azure/Kubernetes readiness changes before using this as an LB capacity signal. `ica.drain_timeout_sec` controls Close/signal draining (default 30, maximum 3600); Kubernetes termination grace must be longer. No cross-pod session migration is provided.
+
+The adapter pins the published **libhoop-ica v0.8.0** cell API; a local engine checkout or workspace replacement is no longer needed. The sidecar command and Linux CLI pin the same version. See the complete [CPU cell config.yaml](../deploy/ica-sidecar/examples/cell/config.yaml) and [deployment/probe notes](../deploy/ica-sidecar/examples/cell/README.md) for two VDA slots, shared capacity readiness and drain settings. Rebuild the ICA image/bundle to use this dependency; changing the source pin does not update running deployments.
