@@ -52,7 +52,7 @@ func TestContextUseWritesLegacyConfigAndKeepsLogin(t *testing.T) {
 	must(t, s.Save(&Context{Name: "dev", ApiURL: "https://dev.example.com", GrpcURL: "grpcs://dev.example.com:8443", Token: "dev-token"}))
 	must(t, s.Save(&Context{Name: "prd", ApiURL: "https://prd.example.com"}))
 
-	if _, err := s.Use("dev"); err != nil {
+	if _, err := s.Use("dev", false); err != nil {
 		t.Fatal(err)
 	}
 	got := readLegacy(t, cfg)
@@ -64,7 +64,7 @@ func TestContextUseWritesLegacyConfigAndKeepsLogin(t *testing.T) {
 	}
 
 	// prd has no login yet: switch, then `hoop login` writes config.toml.
-	if _, err := s.Use("prd"); err != nil {
+	if _, err := s.Use("prd", false); err != nil {
 		t.Fatal(err)
 	}
 	if got := readLegacy(t, cfg); got.ApiURL != "https://prd.example.com" || got.Token != "" {
@@ -76,7 +76,7 @@ func TestContextUseWritesLegacyConfigAndKeepsLogin(t *testing.T) {
 	}
 
 	// switching away saves the new login into prd
-	if _, err := s.Use("dev"); err != nil {
+	if _, err := s.Use("dev", false); err != nil {
 		t.Fatal(err)
 	}
 	prd, err := s.Get("prd")
@@ -95,7 +95,7 @@ func TestContextSaveBackSkipsForeignConfig(t *testing.T) {
 	cfg := filepath.Join(home, "config.toml")
 	must(t, s.Save(&Context{Name: "dev", ApiURL: "https://dev.example.com", Token: "dev-token"}))
 	must(t, s.Save(&Context{Name: "prd", ApiURL: "https://prd.example.com", Token: "prd-token"}))
-	if _, err := s.Use("dev"); err != nil {
+	if _, err := s.Use("dev", false); err != nil {
 		t.Fatal(err)
 	}
 	// `hoop config create` points config.toml at another installation
@@ -106,13 +106,45 @@ func TestContextSaveBackSkipsForeignConfig(t *testing.T) {
 	if active, _ := s.Active(); active != "" {
 		t.Fatalf("active = %q, want none once config.toml points elsewhere", active)
 	}
-	if _, err := s.Use("prd"); err != nil {
+	// that login is in no context: refuse, and leave config.toml alone
+	if _, err := s.Use("prd", false); !errors.Is(err, ErrUnsavedConfig) {
+		t.Fatalf("use prd over an unsaved config: err = %v, want ErrUnsavedConfig", err)
+	}
+	if got := readLegacy(t, cfg); got.ApiURL != "https://other.example.com" || got.Token != "other-token" {
+		t.Fatalf("config.toml changed after a refused use: %+v", got)
+	}
+	// --force overwrites it, and still saves nothing into dev
+	if _, err := s.Use("prd", true); err != nil {
 		t.Fatal(err)
 	}
 	dev, err := s.Get("dev")
 	must(t, err)
 	if dev.ApiURL != "https://dev.example.com" || dev.Token != "dev-token" {
 		t.Fatalf("dev was overwritten with a foreign config: %+v", dev)
+	}
+}
+
+func TestContextUseAcceptsConfigSavedInAContext(t *testing.T) {
+	home := t.TempDir()
+	s := NewContextStore(home)
+	cfg := filepath.Join(home, "config.toml")
+	// a CLI configured before contexts existed
+	old := &Config{filepath: cfg, ApiURL: "https://dev.example.com", Token: "dev-token"}
+	if _, err := old.Save(); err != nil {
+		t.Fatal(err)
+	}
+	must(t, s.Save(&Context{Name: "prd", ApiURL: "https://prd.example.com"}))
+	if _, err := s.Use("prd", false); !errors.Is(err, ErrUnsavedConfig) {
+		t.Fatalf("err = %v, want ErrUnsavedConfig", err)
+	}
+	// `hoop context create dev` copies config.toml and marks it active
+	must(t, s.Save(&Context{Name: "dev", ApiURL: "https://dev.example.com", Token: "dev-token"}))
+	must(t, s.SetActive("dev"))
+	if active, _ := s.Active(); active != "dev" {
+		t.Fatalf("active = %q, want dev", active)
+	}
+	if _, err := s.Use("prd", false); err != nil {
+		t.Fatalf("use prd once config.toml is saved: %v", err)
 	}
 }
 
@@ -135,7 +167,7 @@ func TestContextListAndRemove(t *testing.T) {
 	}
 	must(t, s.Save(&Context{Name: "prd", ApiURL: "https://prd.example.com"}))
 	must(t, s.Save(&Context{Name: "dev", ApiURL: "https://dev.example.com"}))
-	if _, err := s.Use("dev"); err != nil {
+	if _, err := s.Use("dev", false); err != nil {
 		t.Fatal(err)
 	}
 	items, err := s.List()
@@ -150,7 +182,7 @@ func TestContextListAndRemove(t *testing.T) {
 	if err := s.Remove("dev"); !errors.Is(err, ErrContextNotFound) {
 		t.Fatalf("remove twice: %v", err)
 	}
-	if _, err := s.Use("missing"); !errors.Is(err, ErrContextNotFound) {
+	if _, err := s.Use("missing", false); !errors.Is(err, ErrContextNotFound) {
 		t.Fatalf("use missing: %v", err)
 	}
 }

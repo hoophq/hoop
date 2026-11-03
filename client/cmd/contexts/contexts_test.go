@@ -2,6 +2,9 @@ package contexts
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/hoophq/hoop/common/featureflag"
@@ -30,5 +33,28 @@ func TestDecideFlag(t *testing.T) {
 				t.Fatalf("syncHint = %q, wantHint %v", got.syncHint, tc.wantHint)
 			}
 		})
+	}
+}
+
+func TestHasContextCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as the fake binary")
+	}
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body), 0700); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// what released versions before `hoop context` answer
+	old := write("old", `echo 'Error: unknown command "context" for "hoop"' >&2; exit 1`)
+	if err := hasContextCommand(old); err == nil {
+		t.Fatal("a binary without `context` was accepted")
+	}
+	newer := write("new", `[ "$1 $2" = "context --help" ] || exit 2; echo usage`)
+	if err := hasContextCommand(newer); err != nil {
+		t.Fatalf("a binary with `context` was refused: %v", err)
 	}
 }

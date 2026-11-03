@@ -25,11 +25,14 @@ require any gateway configuration).`,
 	},
 }
 
-// Sync installs and activates the CLI version the configured gateway reports,
-// the same as `hoop versions sync`.
-func Sync() error { return runSync() }
+// SyncIf installs the CLI version the configured gateway reports, like
+// `hoop versions sync`, but activates it only when accept returns nil for
+// the installed binary. Otherwise it returns a *NotActivatedError.
+func SyncIf(accept func(binary string) error) error { return runSyncIf(accept) }
 
-func runSync() error {
+func runSync() error { return runSyncIf(nil) }
+
+func runSyncIf(accept func(binary string) error) error {
 	// The version-mismatch warning would otherwise fire right before
 	// the "Installing <new>..." banner we print below. Silence it for
 	// this process so the user only sees the upgrade story we're
@@ -55,7 +58,7 @@ func runSync() error {
 	}
 
 	fmt.Printf("Gateway at %s reports version %s\n", conf.ApiURL, target)
-	return installAndActivate(target)
+	return installAndActivateIf(target, accept)
 }
 
 // formatUnactionableGatewayVersion turns a ValidateInstallableVersion
